@@ -34,8 +34,11 @@ import {runPr, runPrBody} from "./pr-verb.ts";
 import {runPush} from "./push-verb.ts";
 import {
 	ADMISSION_EXIT_CODES,
+	CITATION_GRAMMAR,
 	CLAIM_PURPOSES,
+	DECISION_TYPE_LABEL,
 	DEFAULT_CLAIM_PURPOSE,
+	EPIC_TYPE_LABEL,
 	READY_FOR_AGENT,
 } from "./scope-admission.ts";
 import {runScratch} from "./scratch-verb.ts";
@@ -158,7 +161,7 @@ const claim = leafCommand(
 		override: Flag.string("override").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"claim an issue the admission test refused on either axis, naming why; requires --override-lane, and both are written into the claim marker",
+				"claim an issue the admission test refused on the scope or audience axis, naming why; requires --override-lane, and both are written into the claim marker. A type-axis refusal is not overridable — a decision cites its ruling, an epic changes its --purpose",
 			),
 		),
 		overrideLane: Flag.string("override-lane").pipe(
@@ -167,9 +170,15 @@ const claim = leafCommand(
 				"the lane an --override is taken for; required with it, refused without it",
 			),
 		),
+		cites: Flag.string("cites").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				`the founder ruling comment this build transcribes, as ${CITATION_GRAMMAR} — the type axis's one arm, and only on a ${DECISION_TYPE_LABEL}`,
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({number, token, purpose, override, overrideLane, repo}) {
+	Effect.fn(function* ({number, token, purpose, override, overrideLane, cites, repo}) {
 		yield* emit(
 			yield* runClaim({
 				number,
@@ -181,13 +190,14 @@ const claim = leafCommand(
 				purpose,
 				override: Option.getOrNull(override),
 				overrideLane: Option.getOrNull(overrideLane),
+				cites: Option.getOrNull(cites),
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Race the claim marker on an issue and win it or name the winner."),
 	Command.withDescription(
-		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated (#5175); the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used. --token makes the re-claim idempotent per LANE: handed the token this lane already holds, a number that lane already owns answers won with that same marker and writes nothing (#5782), while a same-session marker under another nonce is a sibling lane and races normally. A lost race retracts this run's own marker and exits 15, never 0 — including when the winner is another lane of THIS session, since ownership turns on the whole token and never the session id (#6037); an unset CLAUDE_CODE_SESSION_ID, a --token that is not a claim token of this session, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum), 15 (proven lost), and from the admission test: ${admissionExits}. Example: fabrika build claim 4312 --purpose gate`,
+		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated (#5175); the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. The type axis binds a build claim against an ISSUE only, so ${DECISION_TYPE_LABEL} and ${EPIC_TYPE_LABEL} refuse before any marker is written; --cites ${CITATION_GRAMMAR} opens it on a decision whose choice a founder already recorded on that issue, and the URL must name this repository and the issue being judged. It is not an override: it says the refusal does not apply, and it is never accepted for an epic. Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used and "cites" when a ruling was cited. --token makes the re-claim idempotent per LANE: handed the token this lane already holds, a number that lane already owns answers won with that same marker and writes nothing (#5782), while a same-session marker under another nonce is a sibling lane and races normally. A lost race retracts this run's own marker and exits 15, never 0 — including when the winner is another lane of THIS session, since ownership turns on the whole token and never the session id (#6037); an unset CLAUDE_CODE_SESSION_ID, a --token that is not a claim token of this session, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum), 15 (proven lost), and from the admission test: ${admissionExits}. Example: fabrika build claim 4312 --purpose gate`,
 	),
 );
 

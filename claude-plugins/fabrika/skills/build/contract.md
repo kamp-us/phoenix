@@ -130,6 +130,14 @@ from two separate questions, computed together and answered together:
   be added **beside** it, not folded into it. Refusal is `21`, and it binds a **build-purpose** claim
   only (see `build claim`'s `--purpose`, #5175) — and not even that one when the claim repairs an
   open PR whose served issue is `type:decision` (#5914).
+- **The type axis** — is the deliverable a pull request an agent build lane produces? The four types
+  that are (`type:feature` / `type:chore` / `type:bug` / `type:investigation`) are declared once in
+  the same module, and `type:decision` and `type:epic` are not. Refusal is `30`. It binds a **fresh
+  build** and nothing else: a `plan` or `gate` claim takes an epic by design (#5175), and a repair
+  claim names a PR whose existence already answers the question. The rule is older than the axis —
+  it lived in `build pick`'s private type set, where a number handed straight to `build claim` met
+  no type check at all and an in-lane `type:decision` carrying `ready-for:agent` was admitted with
+  no refusal (#5490).
 
 **Keep the two names apart.** *Scope admission* is a different question from the audience axis (who
 the work is for), from dependency eligibility (`build eligible` asks whether an issue's predecessors
@@ -155,6 +163,30 @@ through no pool — so the claim seam runs the same predicate before it writes a
 either one is a hole: without the claim refusal the direct handoff is unfenced, without the pool
 filter every off-campaign issue is still offered and the refusal only arrives after an agent has
 chosen.
+
+**That argument covers the type rule too, and #5490 is what it cost to leave it uncovered.** The
+type set was the pool's own constant, so the claim seam could not see it and the audience axis was
+doing the type rule's job by coincidence — a `type:decision` was refused because triage happens to
+route decisions to `ready-for:human`, not because it is a decision. Where that coincidence did not
+hold the claim was simply admitted, and where it did the refusal named the wrong objection: an
+operator sent to fix `audience-not-agent` would re-label the issue `ready-for:agent`, satisfy the
+fence, and build the wrong artifact. So the type axis sits in the module with the other two, and
+refusals are reported **scope, then type, then audience** — the order an operator's remedies run in.
+
+**The type axis has one arm, and a citation is the only thing that opens it.** A `type:decision`
+whose choice a founder has already recorded on the issue is buildable, because the deliverable is
+then transcription rather than judgement (founder ruling on
+[#5879, comment 5335398768](https://github.com/kamp-us/phoenix/issues/5879#issuecomment-5335398768)).
+`build claim --cites <url>` names that ruling comment, in the grammar
+`https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<comment-id>`, and the verb refuses a URL
+that names another repository or another issue — a ruling recorded elsewhere opens nothing here. It
+is **not an override**: an override admits a proven refusal, while a citation says the refusal does
+not apply, so a type refusal is not on the overridable set at all. What the verb can check is the
+pointer's shape and its target; whether that comment rules anything is the reader's judgement and is
+stated as such. `type:epic` has no arm — its deliverable is a ledger no citation turns into a pull
+request, and the remedy is `--purpose plan` or `--purpose gate`. The arm opens the type axis and
+nothing else: the issue still has to carry `ready-for:agent`, which triage stamps, so a
+`ready-for:human` decision with a perfect citation is still `21`.
 
 **The inputs, and where each is read.**
 
@@ -279,6 +311,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `22` | proven: every changed file falls outside every surface's validators — there is nothing to run, so the verdict is a refusal, never a green |
 | `23` | proven: the local head does not contain the published remote head — the push would drop its commits |
 | `24` | proven: `git commit` ran and HEAD did not move — no commit was created |
+| `30` | proven: not admitted on the type axis — the issue is `type:decision` or `type:epic`, whose deliverable is not a pull request a build lane produces |
 | `127` | the verb never ran at all (unresolved binary — the shell's code, not this process's) |
 
 **`7` versus `11` is the split the whole group rests on** (the `wire` group's `ABSENT` vs
@@ -841,6 +874,7 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `15` | proven: another lane's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this lane does not hold. `claim` also refuses here over a claim this lane has *adopted* — release it first |
 | `20` | `claim` only, proven: the issue's home is outside every declared focus row — no marker was written |
 | `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written. Unreachable when the target is an open PR serving a `type:decision` issue (#5914) |
+| `30` | `claim --purpose build` against an **issue** only, proven: the issue is `type:decision` or `type:epic` — no marker was written. Not overridable: a decision opens it with `--cites <ruling-comment-url>`, an epic with `--purpose plan` or `--purpose gate` |
 
 **Errors**
 
@@ -849,6 +883,8 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `build claim: issue #<n> is proven absent or closed.` | 7 | refusal |
 | `build claim: #<n> is homed in milestone <home>, outside the declared focus <milestones> — refusing before any marker; pass --override "<reason>" --override-lane "<lane>" to claim it anyway.` | 20 | refusal |
 | `build claim: #<n> carries <audience>, not "ready-for:agent" — refusing before any marker; pass --override "<reason>" --override-lane "<lane>" to claim it anyway.` (`<audience>` is the issue's `ready-for:` label, or the literal `no "ready-for:" label` when it carries none) | 21 | refusal |
+| `build claim: type not buildable — this issue carries <label>, whose deliverable is not a pull request an agent build lane produces; <remedy>.` (`<remedy>` names `--cites` for a decision and `--purpose plan`/`--purpose gate` for an epic) | 30 | refusal |
+| `build claim: --cites <detail>; nothing was written.` — the URL is not an issue-comment URL, or names another repository or another issue | 1 | refusal |
 | `build claim: cannot read the "## Focus" declaration: <reason> — scope is UNKNOWN, never admitted; nothing was written.` | 11 | refusal |
 | `build claim: the "## Focus" declaration does not parse: <detail> — a malformed declaration is never read as "no focus"; nothing was written.` | 4 | refusal |
 | `build claim: #<n> is already held by this lane (comment <id>) — answered with the marker that owns it; nothing was written.` — beside `{"answer":"won", …}` on exit 0, when `--token` names a lane that already holds `<n>` | 0 | answer |

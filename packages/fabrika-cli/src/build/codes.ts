@@ -143,3 +143,16 @@ export const AUTHORIZATION_VOID = 26;
  * `29` — a group never re-uses a number the base already spoke for.
  */
 export const LOCAL_LANE_UNWRITTEN = 29;
+/**
+ * Proven: not admitted on the **type axis** — the deliverable is not a pull request a build lane
+ * produces (#5490).
+ *
+ * The third sibling of {@link OUT_OF_FOCUS} and {@link AUDIENCE_NOT_AGENT}, and seated apart from
+ * both for the reason they are seated apart from each other: the remedy is unlike either. `20` says
+ * edit the focus row, `21` says re-label the audience, and this one says the work belongs to another
+ * skill's lane — `/adr` for a decision, `plan-epic` for an epic — or, on a decision whose choice a
+ * founder already recorded, that the claim must cite that ruling comment. Borrowing `21` is what the
+ * code did before there was a fence at all, and it named the wrong objection: an operator sent to
+ * re-label a decision `ready-for:agent` would satisfy `21` and still be building the wrong artifact.
+ */
+export const TYPE_NOT_BUILDABLE = 30;
