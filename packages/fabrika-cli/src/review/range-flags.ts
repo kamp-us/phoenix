@@ -8,8 +8,10 @@
  *
  * **The range's merge base is `git merge-base <base> <tip>`, and that is not a second meaning for the
  * word.** Every range reader already in the tree takes its diff under git's three-dot form —
- * `./content-binding.ts`'s `rawDiffArgs` builds `<base>...<tip>`, and `../lane/prove-verb.ts` folds a
- * child's verdict over that same pair — and `<a>...<b>` is by git's definition the diff from
+ * `../io/git.ts`'s `rawDiffArgs` builds `<base>...<tip>` for the `diffRangeRaw` that
+ * `./content-binding.ts`'s `rangeContentAt` digests, which is the read `./range-post.ts` delegates a
+ * range's content binding to, and `../lane/prove-verb.ts` folds a child's verdict over that same pair
+ * — and `<a>...<b>` is by git's definition the diff from
  * `merge-base(a, b)` to `b`. So the commit a PR-scoped read resolves through `./head.ts` and the
  * commit a range implies are the same commit reached two ways. {@link rangeMergeBase} names it
  * explicitly only because reading *bytes* out of a commit needs a name, where diffing a range does not.

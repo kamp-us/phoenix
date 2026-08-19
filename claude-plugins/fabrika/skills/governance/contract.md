@@ -822,6 +822,7 @@ either; the bytes come from the object database.
 | `governance base: cannot resolve the merge base of <base>..<tip>: <reason> — the base rules are UNKNOWN; refusing to judge by the head's.` | 11 | refusal |
 | `governance base: cannot read <path> at <sha>: <reason> — UNKNOWN.` | 11 | refusal |
 | `governance base: --base and --tip come together — a range has two ends.` | 10 | refusal |
+| `governance base: --<base\|tip> "<v>" is not a revision — expected 7–40 lowercase hex characters.` | 10 | refusal |
 | `governance base: a range is its own subject — drop the pull-request number, or drop --base/--tip.` | 10 | refusal |
 | `governance base: name a pull request, or scope a range with --base and --tip — there is no subject here.` | 10 | refusal |
 | `governance base: #<n>'s head moved to <live> while resolving — re-run.` | 12 | refusal |

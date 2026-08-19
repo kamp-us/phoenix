@@ -241,6 +241,14 @@ describe("runBase over a range", () => {
 		expect(none.stderr.join("\n")).toContain("there is no subject here");
 	});
 
+	it("refuses a range end that is not a revision, under this verb's own name, on 10", async () => {
+		const bad = await run([], {...ranged, tip: "origin/main"});
+		expect(bad.code).toBe(OFF_VOCABULARY);
+		expect(bad.stderr.join("\n")).toContain(
+			'governance base: --tip "origin/main" is not a revision',
+		);
+	});
+
 	it("resolves no PR on a range — the epic child has none to resolve", async () => {
 		const fake = fakeShell(happyRange);
 		await Effect.runPromise(Effect.provide(runBase({...options, ...ranged}), fake.layer));
