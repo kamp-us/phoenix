@@ -53,7 +53,7 @@ lane's claim from yours (#6037).
 should pick the issue up to **build**, and an epic earns that label only *after* it has been planned
 and gated — at step 3, from this very run — so fencing this gate on it is circular, and the fence
 binds build-purpose claims only.
-A `gate` claim is admitted without the label; the scope axis still binds, so an out-of-focus epic is still exit
+A `gate` claim is admitted without the label; the scope axis still binds, so an out-of-scope epic is still exit
 `20`. Never reach for `--override` to get past the audience axis — that is the fail-open convention
 the purpose exists to remove.
 
@@ -63,7 +63,7 @@ the session identity from `CLAUDE_CODE_SESSION_ID`, and an unset one is exit `1`
 an identity is not a claim. **Any other non-zero here (`1`, `8`, `9`, `10`, `11`, `20`) ends
 `STOPPED` with no note**: you hold no claim, and `build note` requires one, so there is nothing
 postable — report the code in the terminal line instead. `10` is an off-enum `--purpose`, and `20`
-is a proven out-of-focus epic. Exit `21` is no longer reachable at this step, because a `gate` claim
+is a proven out-of-scope epic. Exit `21` is no longer reachable at this step, because a `gate` claim
 is not bound by the audience axis.
 
 ```bash

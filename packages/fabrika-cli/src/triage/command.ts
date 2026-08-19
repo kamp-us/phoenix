@@ -328,7 +328,7 @@ const homes = leafCommand(
 ).pipe(
 	Command.withShortDescription("The assignable homes: open milestones and standing lanes."),
 	Command.withDescription(
-		"List the assignable homes: every OPEN milestone joined to its roadmap arc/campaign row by `#<number>`, plus the two standing lanes. First stdout line is `homes`, then one `<kind>\\t<key>\\t<label>` line per candidate; every milestone in declared focus carries a fourth column, `running: p0/blocker only` (a `running` field under `--json`) — such a campaign is closed to new intake unless the work is p0 or blocks one of its own in-flight lanes. Exits 7 (zero open milestones, or the roadmap parsed to 0 arc rows), 11 (the milestone list or the roadmap could not be read). Example: fabrika triage homes",
+		"List the assignable homes: every OPEN milestone joined to its roadmap arc/campaign row by `#<number>`, plus the two standing lanes. First stdout line is `homes`, then one `<kind>\\t<key>\\t<label>` line per candidate; every `active` campaign's milestone carries a fourth column, `running: p0/blocker only` (a `running` field under `--json`) — such a campaign is closed to new intake unless the work is p0 or blocks one of its own in-flight lanes. Exits 7 (zero open milestones, or the roadmap parsed to 0 arc rows), 11 (the milestone list or the roadmap could not be read). Example: fabrika triage homes",
 	),
 );
 

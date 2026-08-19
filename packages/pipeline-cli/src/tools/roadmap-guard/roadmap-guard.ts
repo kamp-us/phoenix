@@ -7,7 +7,7 @@
  * fetch live in `gate.ts`/`github.ts`; this module never touches disk or the network.
  *
  * ROADMAP.md is the SOLE parsed surface; milestones are the projection validated
- * against it (#2630/#2632). The invariants (I1–I6, extended to campaign rows):
+ * against it (#2630/#2632). The invariants (I1–I5, extended to campaign rows):
  *   I1 — every row is pinned to its milestone BY NUMBER and that milestone exists.
  *        A QUEUED arc gets its milestone lazily on activation, so a queued arc with
  *        no pin is legal; every other row (active/done arc, any campaign) must pin.
@@ -16,24 +16,27 @@
  *   I3 — NO UNCLAIMED OPEN MILESTONE: every open milestone is claimed by some row.
  *   I4 — FAIL-CLOSED ON ZERO SCOPE (ADR 0092): zero arc rows or zero milestones ⇒
  *        a non-passing verdict, never a vacuous green (the readme-guard precedent).
- *   I5 — STATE SYMMETRY (the active↔done campaign lifecycle, #2660): an `active` row's
- *        milestone is OPEN and a `done` row's milestone is CLOSED — no active row over a
- *        closed milestone, no done row over an open one. Applies to any row whose pin
- *        resolves and whose state is active/done (arc or campaign); a queued arc is exempt
- *        (its milestone opens lazily on activation, I1). This is the campaign guard's core:
- *        it keeps ROADMAP.md's lifecycle cell and the milestone's open/closed reality from
+ *   I5 — STATE SYMMETRY (the campaign lifecycle, #2660): an OPEN milestone under an `active`
+ *        or `paused` row, a CLOSED one under a `done` row — no open/paused row over a closed
+ *        milestone, no done row over an open one. Applies to any row whose pin resolves and
+ *        whose state is active/paused/done (arc or campaign); a queued arc is exempt (its
+ *        milestone opens lazily on activation, I1). This is the campaign guard's core: it
+ *        keeps ROADMAP.md's lifecycle cell and the milestone's open/closed reality from
  *        silently disagreeing.
- *   I6 — THE DECLARED FOCUS IS HONEST (#5012, widened to N rows by #6005): EVERY `## Focus`
- *        row's milestone resolves, is OPEN, and is claimed by an `active` arc or campaign
- *        row. Row COUNT is not an invariant — a repo running several streams declares one
- *        row each. An ABSENT or EMPTY `## Focus` section is the well-formed default — no
- *        focus is declared — and is never a violation.
+ *
+ * I6 — the focus-row-honesty check — retired with the `## Focus` table it kept honest
+ * (ADR 0304): a campaign's `active` cell IS the dispatch permission, so there is no second
+ * declaration surface left to reconcile.
  */
 
 /** An arc is sequenced ahead (`queued`) then made current (`active`) and retired (`done`). */
 export type ArcState = "active" | "queued" | "done";
-/** A campaign has no queued state — it opens `active` and ends `done` (ROADMAP.md § Campaigns). */
-export type CampaignState = "active" | "done";
+/**
+ * A campaign has no queued state — it opens `active` and ends `done` (ROADMAP.md § Campaigns).
+ * `paused` is alive but not being executed: its milestone is open and no lane opens against it,
+ * which is what makes the one cell the dispatch permission (ADR 0304).
+ */
+export type CampaignState = "active" | "paused" | "done";
 
 export type RowKind = "arc" | "campaign";
 
@@ -51,18 +54,6 @@ export interface RoadmapRow {
 	readonly state: string;
 }
 
-/**
- * One parsed `## Focus` row — a milestone declared to be in focus, plus the date it was
- * declared. `milestone` is the `#N` pin resolved to its number, or `null` when the cell
- * carries no number; unlike a queued arc's deferred pin, an unresolvable focus pin is always
- * a violation (I6) — a declaration that names nothing declares nothing.
- */
-export interface FocusRow {
-	readonly milestone: number | null;
-	/** The raw `Declared` cell, e.g. `2026-08-09`. Carried for the violation message. */
-	readonly declaredAt: string;
-}
-
 /** A GitHub milestone reduced to the REST-projection facts the guard validates against. */
 export interface Milestone {
 	readonly number: number;
@@ -72,7 +63,7 @@ export interface Milestone {
 
 /** The legal states per row kind — an out-of-set state is drift (a `row-state` violation). */
 const ARC_STATES: ReadonlyArray<string> = ["active", "queued", "done"];
-const CAMPAIGN_STATES: ReadonlyArray<string> = ["active", "done"];
+const CAMPAIGN_STATES: ReadonlyArray<string> = ["active", "paused", "done"];
 
 /**
  * One drift finding. `code` names which invariant fired (`row-state` is the row
@@ -80,7 +71,7 @@ const CAMPAIGN_STATES: ReadonlyArray<string> = ["active", "done"];
  * names the offending row/milestone so the report can print it on stderr (ADR 0092 §1).
  */
 export interface Violation {
-	readonly code: "I1" | "I2" | "I3" | "I5" | "I6" | "row-state";
+	readonly code: "I1" | "I2" | "I3" | "I5" | "row-state";
 	readonly message: string;
 }
 
@@ -95,8 +86,8 @@ export type RoadmapGuardVerdict =
 			readonly arcCount: number;
 			readonly campaignCount: number;
 			readonly milestoneCount: number;
-			/** 0 (nothing declared) or 1 — I6 admits no more. */
-			readonly focusCount: number;
+			/** How many campaign rows are `active` — the milestones a lane may open against. */
+			readonly activeCampaignCount: number;
 	  }
 	/** Zero arc rows or zero milestones in scope — fail closed, never a vacuous pass (ADR 0092, I4). */
 	| {
@@ -124,17 +115,13 @@ const pinMayBeAbsent = (row: RoadmapRow): boolean => row.kind === "arc" && row.s
  *
  * Order: I4 (zero-scope) fails closed first — with no arcs or no milestones there is
  * nothing to meaningfully check, so refuse rather than pass vacuously. Otherwise every
- * violation is collected (row well-formedness, then I1, I2, I3, I5, I6) so one run names
+ * violation is collected (row well-formedness, then I1, I2, I3, I5) so one run names
  * all drift, not just the first.
- *
- * `focus` defaults to the empty list because that IS the declaration's well-formed default
- * (absent or empty `## Focus` ⇒ no focus declared), not a convenience.
  */
 export const judge = (
 	arcs: ReadonlyArray<RoadmapRow>,
 	campaigns: ReadonlyArray<RoadmapRow>,
 	milestones: ReadonlyArray<Milestone>,
-	focus: ReadonlyArray<FocusRow> = [],
 ): RoadmapGuardVerdict => {
 	if (arcs.length === 0 || milestones.length === 0) {
 		return {
@@ -204,52 +191,25 @@ export const judge = (
 		}
 	}
 
-	// I5 — state symmetry (the active↔done lifecycle, #2660): an active row's milestone is
-	// open, a done row's is closed. Only rows whose pin resolves are checked (an absent or
-	// dangling pin is already I1); a queued arc has no open/closed expectation (I1 lazy pin).
+	// I5 — state symmetry (the campaign lifecycle, #2660): an active or paused row's milestone
+	// is open, a done row's is closed. `paused` sits with `active` because pausing a campaign
+	// says nothing about its milestone — the work is alive, just not being dispatched (ADR 0304).
+	// Only rows whose pin resolves are checked (an absent or dangling pin is already I1); a
+	// queued arc has no open/closed expectation (I1 lazy pin).
 	for (const row of rows) {
 		if (row.milestone === null) continue;
 		const m = byNumber.get(row.milestone);
 		if (m === undefined) continue; // dangling pin already reported by I1
-		const expected = row.state === "active" ? "open" : row.state === "done" ? "closed" : null;
+		const expected =
+			row.state === "active" || row.state === "paused"
+				? "open"
+				: row.state === "done"
+					? "closed"
+					: null;
 		if (expected !== null && m.state !== expected) {
 			violations.push({
 				code: "I5",
-				message: `${row.kind} row "${row.name}" is "${row.state}" but its milestone #${m.number} ("${m.title}") is ${m.state} — an active row needs an open milestone, a done row a closed one`,
-			});
-		}
-	}
-
-	// I6 — every declared focus row is honest. Zero rows is checked by nothing, and so is the
-	// count: requiring an `active` claimer per row is what stops the focus pointing at a
-	// milestone the roadmap retired or never adopted.
-	for (const row of focus) {
-		const where = row.declaredAt === "" ? "focus row" : `focus row (declared ${row.declaredAt})`;
-		if (row.milestone === null) {
-			violations.push({
-				code: "I6",
-				message: `${where} pins no milestone by number — a focus row must carry a \`#N\` pin`,
-			});
-			continue;
-		}
-		const m = byNumber.get(row.milestone);
-		if (m === undefined) {
-			violations.push({
-				code: "I6",
-				message: `${where} pins milestone #${row.milestone}, which does not exist`,
-			});
-			continue;
-		}
-		if (m.state !== "open") {
-			violations.push({
-				code: "I6",
-				message: `${where} pins milestone #${m.number} ("${m.title}"), which is closed — a declared focus must be an open milestone`,
-			});
-		}
-		if (!rows.some((r) => r.milestone === row.milestone && r.state === "active")) {
-			violations.push({
-				code: "I6",
-				message: `${where} pins milestone #${m.number} ("${m.title}"), which is claimed by no active arc or campaign row`,
+				message: `${row.kind} row "${row.name}" is "${row.state}" but its milestone #${m.number} ("${m.title}") is ${m.state} — an active or paused row needs an open milestone, a done row a closed one`,
 			});
 		}
 	}
@@ -262,20 +222,20 @@ export const judge = (
 		arcCount: arcs.length,
 		campaignCount: campaigns.length,
 		milestoneCount: milestones.length,
-		focusCount: focus.length,
+		activeCampaignCount: campaigns.filter((c) => c.state === "active").length,
 	};
 };
 
 /** Render the human-readable report for a verdict (ADR 0092 §1 — "emit what you scanned"). */
 export const renderReport = (verdict: RoadmapGuardVerdict): string => {
 	if (verdict.pass) {
-		const focus =
-			verdict.focusCount === 0
-				? "no focus declared"
-				: `${verdict.focusCount} focus row(s) declared`;
+		const active =
+			verdict.activeCampaignCount === 0
+				? "no campaign active"
+				: `${verdict.activeCampaignCount} campaign(s) active`;
 		return (
 			`roadmap-guard: in sync — ${verdict.arcCount} arc row(s) + ${verdict.campaignCount} campaign row(s) ` +
-			`validated against ${verdict.milestoneCount} milestone(s), ${focus} (I1–I6 all green).`
+			`validated against ${verdict.milestoneCount} milestone(s), ${active} (I1–I5 all green).`
 		);
 	}
 	if (verdict.reason === "zero-scope") {
@@ -289,8 +249,8 @@ export const renderReport = (verdict: RoadmapGuardVerdict): string => {
 	return (
 		`roadmap-guard: ${verdict.violations.length} ROADMAP.md ↔ milestone drift violation(s):\n` +
 		`${lines.join("\n")}\n\n` +
-		"ROADMAP.md's `## Arcs`/`## Campaigns`/`## Focus` tables and the GitHub milestone projection have drifted.\n" +
-		"Reconcile the offending row(s)/milestone(s) above (roadmap map #2620; invariants I1–I6, #2632/#2660/#5012)."
+		"ROADMAP.md's `## Arcs`/`## Campaigns` tables and the GitHub milestone projection have drifted.\n" +
+		"Reconcile the offending row(s)/milestone(s) above (roadmap map #2620; invariants I1–I5, #2632/#2660)."
 	);
 };
 
@@ -363,30 +323,14 @@ const toRow = (kind: RowKind, cells: ReadonlyArray<string>): RoadmapRow => ({
 });
 
 /**
- * Parse `ROADMAP.md`'s `## Focus` table (`#N | declared-at`) into rows. An absent section, a
- * section with no table, and a header-only table all yield `[]` — nothing declared (I6). A
- * row whose every cell is blank is a stray table artifact and is dropped; a row carrying a
- * date but no pin is KEPT, so I6 reds on it instead of it reading as no declaration at all.
- */
-export const parseFocus = (md: string): ReadonlyArray<FocusRow> =>
-	parseSectionRows(md, "Focus")
-		.map((cells) => ({
-			milestone: parseMilestoneCell(cells[0] ?? ""),
-			declaredAt: (cells[1] ?? "").trim(),
-		}))
-		.filter((r) => r.milestone !== null || r.declaredAt !== "");
-
-/**
- * Parse `ROADMAP.md`'s `## Arcs`, `## Campaigns` and `## Focus` tables into rows. Arc and
- * campaign rows with an empty name are dropped (a stray table artifact), never turned into
- * a phantom row.
+ * Parse `ROADMAP.md`'s `## Arcs` and `## Campaigns` tables into rows. Rows with an empty name
+ * are dropped (a stray table artifact), never turned into a phantom row.
  */
 export const parseRoadmap = (
 	md: string,
 ): {
 	readonly arcs: ReadonlyArray<RoadmapRow>;
 	readonly campaigns: ReadonlyArray<RoadmapRow>;
-	readonly focus: ReadonlyArray<FocusRow>;
 } => {
 	const arcs = parseSectionRows(md, "Arcs")
 		.map((cells) => toRow("arc", cells))
@@ -394,5 +338,5 @@ export const parseRoadmap = (
 	const campaigns = parseSectionRows(md, "Campaigns")
 		.map((cells) => toRow("campaign", cells))
 		.filter((r) => r.name !== "");
-	return {arcs, campaigns, focus: parseFocus(md)};
+	return {arcs, campaigns};
 };

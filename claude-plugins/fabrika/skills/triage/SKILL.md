@@ -133,7 +133,7 @@ Lane-entering work (an epic, or a parentless feature) additionally carries a `##
 *is* that home — inside your rewrite for a feature, on stdin for an epic — and **only the founder
 approves a pitch**. Take an existing home: **triage never creates a milestone**, and
 `wayfinder:backlog` is bounded to genuine fog rather than work you would rather not decide about.
-**A milestone in declared focus is closed to new intake** unless the work is `p0` or blocks one of
+**An `active` campaign's milestone is closed to new intake** unless the work is `p0` or blocks one of
 that milestone's own in-flight lanes — `triage homes` marks those rows `running`, and is where you read
 which milestones they are. That is a subtraction and nothing more: home the work by fit exactly as above.
 Every row the verb prints, and what `running` is derived from, is its own section
