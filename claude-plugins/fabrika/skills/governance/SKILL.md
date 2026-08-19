@@ -1,6 +1,6 @@
 ---
 name: governance
-description: "The governance-corpus integrity gate — does this diff contradict the decision corpus, and does it quietly weaken a guard? Fire it on \"/fabrika:governance\", \"does this contradict an ADR\", \"does this weaken a gate\", \"governance verdict for PR #N\" — and unprompted whenever a diff touches `.decisions/`, `.claude/`, `.github/` or `claude-plugins/`, including a diff that edits this skill. Also produces the periodic landed-decision readout. Not acceptance criteria or editorial craft (`review`), not rendered visuals (`review-ui`), not control-plane routing (CODEOWNERS decides that)."
+description: "The governance-corpus integrity gate — does this diff contradict the decision corpus, and does it quietly weaken a guard? Fire it on \"/fabrika:governance\", \"does this contradict an ADR\", \"does this weaken a gate\", \"governance verdict for PR #N\" — and unprompted whenever a diff touches one of this repo's governed roots, including a diff that edits this skill. Also produces the periodic landed-decision readout. Not acceptance criteria or editorial craft (`review`), not rendered visuals (`review-ui`), not control-plane routing (CODEOWNERS decides that)."
 arguments: [pr_number]
 argument-hint: "[pr-number] — the pull request to judge against the decision corpus"
 ---
@@ -34,9 +34,9 @@ fabrika governance scope $pr_number
 
 **On an epic child there is no PR, and the subject is the range instead.** An epic run opens one
 tail PR (ADR [0285](../../../../.decisions/0285-epic-machine-ends-in-review.md)), so mid-run the
-child branch is all there is. A `claude-plugins/**` child sits under a governance root by
-construction, and this namespace is owed at every round on such a diff (ADR
-[0293](../../../../.decisions/0293-governance-fires-every-round.md)), so the range is the normal
+child branch is all there is. A documentation epic's children sit under a governance root by
+construction wherever this repo homes its skills, and this namespace is owed at every round on such
+a diff (ADR [0293](../../../../.decisions/0293-governance-fires-every-round.md)), so the range is the normal
 subject on a documentation epic, not an edge. Drop the positional and name the two ends your caller
 gave you; the answer is the same four fields, with `<base>..<tip>` where a head SHA would be:
 
@@ -49,9 +49,8 @@ reads across is `merge-base(base, tip)` — the same commit the range's own thre
 from, which is the commit §4 then serves this skill's bytes at.
 
 <!-- anchor: DERIVED-NOT-ELECTED --> The requirement is a **total function of the changed-file list
-alone**, over the roots this repo declares in `.fabrika.jsonc`'s `governedRoots` — shipping as
-`.decisions/`, `.claude/`, `.github/`, `claude-plugins/` and `.fabrika.jsonc` itself. Four properties
-make that checkable:
+alone**, over the roots this repo declares in `.fabrika.jsonc`'s `governedRoots`. Read them off
+`fabrika status settings`, never off this page. Four properties make that checkable:
 
 - **Derived, not elected.** Nothing feeds the derivation and nothing can decline it. A repo declares
   *which roots* it governs, never *whether* a diff under them is judged, and a list that is empty or
@@ -369,19 +368,3 @@ time and refuses a moved one.
 **Listed and model-invocable — no `disable-model-invocation`, no `context: fork` — both halves in
 one file.** `review` step 6 directs the model to fire this skill, and a user-only skill is
 model-unreachable and cannot join a stack; `context: fork` would stop that stack mid-review.
-
-## Required repo files
-
-fabrika installs into repos that are not phoenix, so every surface this skill leans on is declared
-here. The when-missing vocabulary is closed and shared across fabrika — **fail-loud** (stop, name
-the surface by its repo-relative path, point at front-door), **degrade** (continue with a narrower
-answer, stated), **bootstrap** (front-door creates it). No row dead-ends on a bare error.
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| `.decisions/` holding `NNNN-slug.md` records with `status:` frontmatter | the corpus half's subject: `sweep` ranks against it and `digest` lists what landed in it | **fail-loud** — `sweep` and `digest` exit `7` naming the scanned directory and its zero count; a sweep over no corpus is not a clean sweep. |
-| At least 10 live-`accepted` records in it | below the rarity floor every term scores as common and the ranking carries no information | **degrade** — the outcome is `indeterminate` at exit `0`, stated as "no information", and the domain is read by hand. Never `no-overlap`. |
-| The harness roots this repo uses — `.decisions/`, `.claude/`, `.github/`, `claude-plugins/` | `scope` derives the namespace requirement from them; they are the boundary | **degrade** — the derivation is total over the roots that exist, and `scope` names any absent root on stderr, so a narrower answer is never read as a proven `not-required`. |
-| A git remote in this checkout serving the repo under review | every read binds to a commit out of the object database, so the bytes are provably that commit's | **fail-loud** — the read verbs exit `11`; an artifact that cannot be tied to a commit shows UNKNOWN, and no unbound fallback is taken. |
-| *(nothing)* — `.github/CODEOWNERS` is **not** read by this skill | listed to close the question: no verb here reads it, `guards` deliberately carries no ownership clause, and control-plane routing is not this skill's answer to compute or to state | **not applicable** — its absence changes nothing here. |
-| A durable readout artifact — the issue the front door reads | `readout` upserts the digest there; a digest with nowhere to land is one nobody can overrule from | **bootstrap** — front-door creates it; until it does, `readout` exits `7` naming the absent target rather than posting the digest somewhere improvised. |

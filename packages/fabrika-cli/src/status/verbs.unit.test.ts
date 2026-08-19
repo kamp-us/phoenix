@@ -45,17 +45,16 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {configState, countsOf, probeRow, runConfig, type SurfaceRow} from "./config-verb.ts";
 import {noAsOf, oneLine, readNow} from "./fields.ts";
 import {runMenu} from "./menu-verb.ts";
 import {
 	badFieldRefusal,
 	boardField,
-	configField,
 	lanesField,
 	menuField,
 	readoutField,
 	runOpen,
+	settingsField,
 } from "./open-verb.ts";
 import {ARTIFACT_TITLE, digestComment, issueNumberOf, runReadout} from "./readout-verb.ts";
 import {
@@ -81,17 +80,6 @@ const resolvedRoster = (skills: ReadonlyArray<RosterSkill>): RosterRead => ({
 	tier: "repo",
 	skills,
 	unreadableFrontmatter: skills.filter((s) => !s.frontmatterReadable).length,
-});
-
-const surface = (over: Partial<SurfaceRow>): SurfaceRow => ({
-	skill: "build",
-	surfaceId: "-",
-	disposition: "degrade",
-	presence: "present",
-	consequence: "-",
-	detail: "ROADMAP.md",
-	asOf: AS_OF,
-	...over,
 });
 
 describe("the roster row", () => {
@@ -263,47 +251,6 @@ describe("status menu", () => {
 	});
 });
 
-describe("status config", () => {
-	it("is `gaps`, never `satisfied`, over a roster that holds zero skills", () => {
-		expect(configState([], 0)).toBe("gaps");
-	});
-
-	it("is `satisfied` only when every declared surface is proven present", () => {
-		expect(configState([surface({})], 1)).toBe("satisfied");
-		expect(configState([surface({presence: "unprobeable"})], 1)).toBe("gaps");
-		expect(configState([surface({presence: "unknown"})], 1)).toBe("gaps");
-		expect(configState([surface({disposition: "undeclared", presence: "unknown"})], 1)).toBe(
-			"gaps",
-		);
-	});
-
-	it("deduplicates the missing count by id while every declaring row still prints", () => {
-		const counts = countsOf([
-			surface({skill: "build", surfaceId: "taxonomy", presence: "missing"}),
-			surface({skill: "operate", surfaceId: "taxonomy", presence: "missing"}),
-			surface({skill: "review", surfaceId: "other", presence: "missing"}),
-		]);
-		expect(counts.missing).toBe(2);
-		expect(counts.declaredSkills).toBe(3);
-	});
-
-	it("counts a disposition off the canonical three under off-vocabulary rather than refusing", () => {
-		expect(countsOf([surface({disposition: "warn"})]).offVocabulary).toBe(1);
-	});
-
-	it("renders the header and one line per surface", () => {
-		const out = runConfig({
-			roster: resolvedRoster([skill("build", "---\nname: build\ndescription: d\n---\n")]),
-			surfaces: [surface({})],
-			json: false,
-		});
-		expect(out.code).toBe(ANSWER);
-		expect(out.stdout).toBe(
-			"config\tsatisfied\t1\t0\t0\t0\nsurface\tbuild\t-\tdegrade\tpresent\t-\tROADMAP.md\t2026-08-09T14:22:03Z\n",
-		);
-	});
-});
-
 describe("status board", () => {
 	const counted = (name: string, count: number): Bucket => ({
 		name,
@@ -422,48 +369,7 @@ describe("status bootstrap", () => {
 	});
 });
 
-/**
- * #5777: the row declaring `` `.gitignore` covering `.fabrika/` `` was probed by existence alone, so
- * a repo whose `.gitignore` says nothing about `.fabrika/` scored it `present` — a false positive
- * indistinguishable from a correct answer. The buildable surface is the other half: nothing could
- * make the row true.
- */
 describe("the .fabrika/ gitignore row", () => {
-	const declared = {
-		surfaceId: "gitignore-row",
-		disposition: "degrade",
-		consequence: "the verbs still work",
-		subject: {_tag: "PathContaining", path: ".gitignore", contains: ".fabrika/"},
-	} as const;
-
-	const ctx = {
-		repoRoot: "/repo",
-		labels: {_tag: "Known", labels: new Set<string>()} as const,
-		repoName: "o/r",
-		asOf: noAsOf,
-	};
-
-	const probe = (files: Record<string, string | null>, unreadable: ReadonlyArray<string> = []) =>
-		Effect.runPromise(
-			Effect.provide(probeRow("operate", declared, ctx), fakeFs({files, unreadable}).layer),
-		);
-
-	it("reads the file, so an uncovered .fabrika/ is missing and not present", async () => {
-		const row = await probe({"/repo/.gitignore": "node_modules\ndist\n"});
-		expect(row.presence).toBe("missing");
-		expect(row.detail).toBe(".gitignore does not cover .fabrika/");
-	});
-
-	it("reports present only when the row is actually there — phoenix's own answer", async () => {
-		const row = await probe({"/repo/.gitignore": "node_modules\n\n# fabrika\n/.fabrika/\n"});
-		expect(row.presence).toBe("present");
-	});
-
-	it("keeps an absent file missing and an unreadable one unknown", async () => {
-		expect((await probe({})).presence).toBe("missing");
-		expect((await probe({"/repo/.gitignore": "x"}, ["/repo/.gitignore"])).presence).toBe("unknown");
-	});
-
 	const bootstrap = (files: Record<string, string | null>) => {
 		const fs = fakeFs({files});
 		return Effect.runPromise(
@@ -779,7 +685,11 @@ describe("status open is TOTAL — every unreadable source is a field state, nev
 	it("renders five fields at exit 0 when EVERY source failed", () => {
 		const fields = [
 			menuField({_tag: "Failed", path: "/x", display: "x", reason: "EACCES"}, AS_OF),
-			configField({_tag: "Failed", path: "/x", display: "x", reason: "EACCES"}, [], AS_OF),
+			settingsField(
+				[{key: "governedRoots", provenance: "unknown", detail: "EACCES"}],
+				".fabrika.jsonc",
+				AS_OF,
+			),
 			boardField({_tag: "Failed", repo: "acme/storefront", reason: "EAI_AGAIN"}),
 			readoutField({_tag: "NoFormat"}),
 			lanesField(
@@ -795,11 +705,13 @@ describe("status open is TOTAL — every unreadable source is a field state, nev
 		for (const field of fields) expect(field.state).toBe("unknown");
 	});
 
-	it("renders a resolved-but-empty roster as `empty`/`gaps`, not `unknown` and not `satisfied`", () => {
+	it("renders a resolved-but-empty roster as `empty`, not `unknown`", () => {
 		expect(menuField(resolvedRoster([]), AS_OF).state).toBe("empty");
-		const config = configField(resolvedRoster([]), [], AS_OF);
-		expect(config.state).toBe("gaps");
-		expect(config.detail).toBe("empty roster — nothing declared, nothing proven");
+	});
+
+	// A surface registering zero keys is unread, not resolved: ADR 0092's zero-scope seat as a field.
+	it("renders a settings surface carrying no keys as `unknown`", () => {
+		expect(settingsField([], ".fabrika.jsonc", AS_OF).state).toBe("unknown");
 	});
 
 	it("has exactly one refusal seat, and it is the off-vocabulary `--field`", () => {

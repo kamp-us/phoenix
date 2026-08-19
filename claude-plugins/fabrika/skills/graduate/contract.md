@@ -970,30 +970,6 @@ $ echo $?
 
 ---
 
-## Required repo files (verb-level)
-
-fabrika installs into repos that are not the one it was authored in. The **when-missing** vocabulary
-is closed and is the same in every fabrika skill, so one reader parses all of them: **fail-loud**
-(stop, name the surface, point at front-door), **degrade** (continue with a narrower answer,
-stated), **bootstrap** (front-door creates it —
-[#4952](https://github.com/kamp-us/phoenix/issues/4952)).
-
-| Must exist | Why | When missing |
-| --- | --- | --- |
-| `gh` authenticated to `--repo` with `issues: write` | every verb reads an issue; `graduate emit` creates one and comments on another | **fail-loud** — `11` before any write, `8` after one; never a silent empty answer |
-| The `status:needs-triage` label | the only label `graduate emit` applies, and what makes the spec findable by triage | **fail-loud** — `7` naming the label; front-door bootstrap #4952 |
-| A source issue carrying `grilling:session` or `wayfinding:map` | the only two trail surfaces | **fail-loud** — `12`. A repo with neither has nothing to graduate, which is a first-run **fact**: the way forward is `fabrika status bootstrap issue-shape-markers` and then a `grilling` session, not a fix to this group |
-| `repos/<owner>/<repo>/collaborators/<login>/permission` readable | the imported `grill read` resolver checks a ruling's authority against it (ADR 0055) | **fail-loud** — `11`, and the trail is UNKNOWN: never `ready`. The load-bearing row — a degrade here would license synthesizing over an unproven ruling |
-
-Nothing else. No `.decisions/`, no `.patterns/`, no CODEOWNERS, no merge-queue configuration, no
-design manifest: this group opens no pull request and gates no merge. Stated explicitly, because an
-absent row reads as nobody checked.
-
-<!-- anchor: FIRST-RUN-HAS-A-WAY-FORWARD --> **No refusal here is a first-run dead-end.** A fresh
-repo hits exactly two of the rows above: the missing label (`7`, bootstrapped by front-door) and the
-absent source (`12`, whose way forward is to run `grilling` first). Neither is a state a new adopter
-can reach and be stuck in, which is the failure a sibling shipped when its first ADR was
-structurally unmintable.
 
 ## Completeness self-test
 

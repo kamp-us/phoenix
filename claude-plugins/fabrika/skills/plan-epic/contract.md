@@ -1164,22 +1164,6 @@ $ echo $?
 
 ---
 
-## Required repo files (verb-level)
-
-The skill's own table ([SKILL.md](SKILL.md)) carries the run-level rows; these are the reads and
-writes this contract's verbs make, so an implementer sees the dependency set in one place.
-Vocabulary: **fail-loud** / **degrade** / **bootstrap** (front-door, #4952).
-
-| Must exist | Why | When missing |
-| --- | --- | --- |
-| A `type:epic` issue, open | every verb's subject | **fail-loud** — exit `7` / `10` naming the gap. |
-| A git checkout with a reachable `origin/main` | the run directory lives in it, and `ledger open` proves freshness there | **fail-loud** — `11` at any `ledger` verb whose tree root will not read, and `13` from `build tree` at step 1; an unprovable freshness read is `11`, never `20`. |
-| Labels `status:planned`, `ready-for:human`, `ready-for:agent`, `type:*`, `p0`/`p1`/`p2` | every child is born carrying them | **fail-loud** — `ledger child` exits `10` rather than creating a label (#4285); taxonomy creation is the front door's. |
-| At least one open milestone, or a standing-lane exemption | `--milestone` is validated against the open set | **degrade** — a child is minted unhomed; the repo's own homing guard reds it at the labelling seam. This contract computes no second answer. |
-| `product-development-cycle.md` at the repo root | decides whether `**Containment:**` is required | **degrade** — *absent* means containment is not required; an *unreadable* probe is `11`. Never silently dropped. |
-| `.fabrika.jsonc`'s `containmentVocabulary` | names which child types are asked for a `**Containment:**` marker and which values satisfy one | **degrade** — an absent file or key resolves to the shipped pair (`type:feature`; `flag`/`exempt`), and an empty half means no child is ever asked. A file that exists and will not read, or a value that does not decode, is `11` — never an empty vocabulary. |
-| The `<!-- fabrika:enriched … -->` marker on the epic body | `ledger write` resolves the plan region by it | **degrade** — a body with no marker is treated as `fresh` and the plan is appended; the marker is what makes a *re-plan* resolvable, and its absence on a re-plan is `22`. |
-| Repository permissions readable | `build claim`'s ACL-sourced ownership resolution (ADR 0055) | **fail-loud** — as declared in [`build`'s contract](../build/contract.md); an unreadable permission is `Unknown`, never a demotion. |
 
 ---
 

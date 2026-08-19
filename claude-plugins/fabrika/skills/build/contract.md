@@ -1367,7 +1367,7 @@ fabrika build check --surface code
 | `--surface` | enum: `code` \| `prose` \| `plan` \| `workflows` | yes | — | the surface whose validators run; the skill names it, this verb anchors it |
 
 **Output** — machine. On green, one JSON object:
-`{"verdict": "green", "surface": "code", "tree": "<abs tree root>", "ran": ["pnpm typecheck", "pnpm lint:worktree"], "unvalidated": []}`.
+`{"verdict": "green", "surface": "code", "tree": "<abs tree root>", "ran": [<the commands that ran>], "unvalidated": []}`.
 Red and unknown produce no stdout (`18` / `11`), diagnostics on stderr verbatim from the runners.
 
 `unvalidated` is always present and lists the changed files **this verdict does not cover** —
@@ -1508,15 +1508,15 @@ changed file into code, markdown, workflow YAML, or **none of them** — that la
 an absence. A diff that is *wholly* it (only `*.sh`, only `*.sql`) refuses on `22` under **every**
 surface: no validator covers those files, so any verdict would be a green over an unread tree. The
 remedy is to extend a validator to cover the class, never to rename the surface — widening the code
-pattern to swallow `.yml` was considered and rejected, because it would claim `pnpm typecheck`
-validated a shell script (#5229). "Split the diff" is not offered as a remedy anywhere here: a lane
+pattern to swallow `.yml` was considered and rejected, because it would claim a repo's code
+validators had validated a shell script (#5229). "Split the diff" is not offered as a remedy anywhere here: a lane
 cannot split a diff it has already written (#5301).
 
 **The workflow class is that remedy taken, not an exception to it** (#5991). `.github/workflows/**`
 sat in the unvalidatable bucket while CI validated it every run, so a lane whose whole diff was
 workflow YAML — the diff class where an unvalidated push costs the most, since the repo's own gates
 live there — could reach no green under any surface. It is a class of its own rather than part of
-`code` for the reason the rejected widening names: its validators are not `pnpm typecheck`.
+`code` for the reason the rejected widening names: its validators are not the code validators.
 
 Its validators are declared, not compiled in: `.fabrika.jsonc`'s `workflowValidators` holds one entry
 per command the repo runs over its own workflows, each an argv plus the `reads` list naming the
@@ -1593,6 +1593,9 @@ surface that ran, so a file another surface would have read counts as uncovered 
 $ fabrika build check --surface code
 {"verdict":"green","surface":"code","tree":"/private/var/<redacted>/build-4312","ran":["pnpm typecheck","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
 ```
+
+`ran` echoes whatever `codeValidators` resolved to; the two above are **phoenix's** shipped pair, not
+a contract.
 
 **Grounding**
 

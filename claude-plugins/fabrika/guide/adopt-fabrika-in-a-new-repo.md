@@ -31,19 +31,29 @@ non-obvious.
 ## 2. Find out what your repo is missing
 
 ```bash
-fabrika status config
+fabrika status settings
 ```
 
-This is the completeness answer, and it is the one to keep re-running. **A `read-back conformed`
-from `status bootstrap` means one surface landed — it does not mean the setup is finished**, and
-nothing in that verb's output says so ([#5772](https://github.com/kamp-us/phoenix/issues/5772);
-`status config`'s per-skill rows are what closed the gap,
-[#5779](https://github.com/kamp-us/phoenix/issues/5779)).
+Every key on the config surface, with what it resolves to here and whether that came from your file
+or the shipped default. **A `read-back conformed` from `status bootstrap` means one surface landed —
+it does not mean the setup is finished**, and nothing in that verb's output says so
+([#5772](https://github.com/kamp-us/phoenix/issues/5772)).
 
-Each row is one surface a landed skill declares, with the disposition that skill takes when it is
-absent: `fail-loud`, `degrade` or `bootstrap`. Act on `fail-loud` rows for skills you will use.
-`degrade` rows are optional by declaration. `unprobeable` means the declared subject is not a path or
-a label — a `package.json` script, a running dev server — so the verb cannot check it for you.
+The `surfaceDispositions` key is the list of every repo surface fabrika reads, each with what happens
+when it is missing:
+
+- **fail-loud** — a verb refuses and names the surface. Build these for the skills you will use.
+- **degrade** — fabrika continues with a narrower answer and says so. Optional by declaration.
+- **bootstrap** — the verb answers `bootstrap` at exit 0: you have not adopted that surface yet.
+
+**A `fail-loud` surface can still be one the CLI builds for you.** The two are separate questions —
+what happens to a run, and who can create the thing — and step 3 below is the answer to the second.
+
+The dispositions are yours to change. A repo that runs no design system declares
+`"surfaceDispositions": {"design-manifest": "degrade"}` and stops being told to build one; every key
+you do not name keeps its shipped value. The registry itself is
+[`packages/fabrika-cli/src/config/keys/surface-dispositions.ts`](../../../packages/fabrika-cli/src/config/keys/surface-dispositions.ts),
+which says in one line what each surface is.
 
 ## 3. Create the surfaces the CLI can create
 
@@ -113,8 +123,8 @@ spelling reads as `exists`. Commit the change before running a lane
 
 ## 6. Write a `ROADMAP.md`
 
-**Write one even though the corpus calls it optional.** The `build` skill's required-files table
-declares `ROADMAP.md` **degrade** — an absent file means no focus is declared and the scope fence is
+**Write one even though the config calls it optional.** `roadmapFile` resolves to `ROADMAP.md`
+unless you say otherwise, and an absent file means no focus is declared and the scope fence is
 inert. But `triage homes` refuses `PRECONDITION_UNKNOWN` (exit 11) when the file is absent, because
 its read cannot tell an absent file from an unreadable one:
 

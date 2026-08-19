@@ -592,9 +592,9 @@ so it is never printed for a manifest that does carry a catalog.
 **An unreadable manifest is UNKNOWN and never `unpinned`.** The two are one keystroke apart in
 consequence: `unpinned` says the repo does not carry this dependency, and a failed read says nothing
 at all. Fusing them is the same defect the `7`/`11` split exists to prevent — a 404 is a verdict, a
-5xx is a verdict about nothing. A manifest that is genuinely **absent** is the degrade path the
-skill's required-files table declares: every declaration reports `unpinned` at exit `0`, with the
-absence named on stderr.
+5xx is a verdict about nothing. A manifest that is genuinely **absent** is the `dep-manifest`
+surface's degrade path: every declaration reports `unpinned` at exit `0`, with the absence named on
+stderr.
 
 **Scope** — every anchor declaration in the subject doc, resolved against the `catalog:` map of
 `--manifest` at the fetched `--base`. The scope line goes to stderr naming the base sha, the manifest
@@ -746,7 +746,7 @@ $ fabrika pattern new worker-queue-retry --anchor acme-queue@4.2.0 --json
 - The template lives here rather than in `SKILL.md` because a template in two places is a template
   that drifts, and the skill's job is the judgment the template cannot carry — the same split
   `adr new` takes.
-- Creating `--dir` when it is absent is the bootstrap half of the required-files table: a repo
+- Creating `--dir` when it is absent is what makes the `patterns-dir` surface `bootstrap`: a repo
   adopting fabrika has no `.patterns/`, and its first pattern doc has to be writable on the documented
   path. Refusing there is the first-run dead-end the portability rules forbid.
 - The `--anchor` line's bytes are pinned to `pattern anchor`'s grammar in one place, so the writer and
@@ -884,16 +884,6 @@ $ echo $?
   and a reader will hit sooner. Exit `12` is why the target is proven first.
 
 ---
-
-## Required repo files
-
-The works-here checklist is stated once, in [`SKILL.md`](SKILL.md)'s `## Required repo files`
-table — the three-column shape with a bolded disposition in the third cell that one reader parses
-across every fabrika skill. It is not restated here; a second copy is a second thing to drift.
-
-Two rows bind implementation directly and are named again only as pointers: `id:patterns-dir` is why
-`pattern new` creates `--dir` when it is absent, and `id:patterns-index` is why `pattern register`
-exits `15` with the doc already written rather than refusing the whole run.
 
 ## Namespaces and gates — what this group does not join
 

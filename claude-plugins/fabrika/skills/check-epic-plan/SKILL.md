@@ -226,17 +226,3 @@ an epic it never validated.
 <!-- anchor: ABSENT-IS-NOT-UNREADABLE --> **A 404 is a verdict; anything else is UNKNOWN.** An
 unreadable probe never becomes an absence, and a class that could not be derived is named in
 `skipped` rather than quietly evaluating false.
-
-## Required repo files
-
-fabrika installs into repos that are not phoenix; the when-missing vocabulary is closed —
-**fail-loud** / **degrade** / **bootstrap** (front-door) — the same table as every fabrika skill.
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| A planned epic: a `type:epic` issue with native sub-issue links to its children | `plan read` derives the child set from it | **fail-loud** — `plan read` exits `7`/`10`; the run ends `PLAN-UNGATEABLE`. |
-| A `## Dependencies` block in the epic body | the topology the three dependency defects rest on | **fail-loud**, two ways: *absent* is the defect `MISSING_DEPS_SECTION`, so the run ends `PLAN-REFUSED` and routes to the planning lane; *unparseable or duplicated* is `plan read`'s `4`, which ends `STOPPED`. |
-| The label taxonomy: `status:planned`, `status:triaged`, `status:needs-triage`, `ready-for:human`, `ready-for:agent`, `type:*`, `p0`/`p1`/`p2` | the floor reads them and the flip writes three — `status:triaged` and `status:planned` on children, `ready-for:agent` on the epic; `POST .../labels` **creates** an unknown label rather than rejecting it, so the vocabulary is a precondition, not politeness | **fail-loud** — `plan flip` exits `23` naming the absent label rather than minting it; taxonomy creation is the front door's. |
-| The cycle doc `.fabrika.jsonc`'s `cycleDoc` names — `product-development-cycle.md` unless a repo declares otherwise — at the repo root | gates whether `MISSING_CONTAINMENT` is derived | **degrade** — an *absent* file evaluates the class false; an *unreadable* probe puts it in `skipped` and the run ends `PLAN-CLEARED-PARTIAL`. Never silently dropped. |
-| `.fabrika.jsonc`'s `containmentVocabulary` | names which types the class is derived over and which values satisfy it | **degrade** — an absent file or key resolves to the shipped pair, and an empty half means no child is ever asked; a config that exists and will not read is `11`, never an empty vocabulary. |
-| Repository permissions readable for claim authorship | `build claim`'s ownership resolution is ACL-sourced | **fail-loud** — as declared for `build claim` (`fabrika wire doc-section --heading "build claim" < <build skill's base dir>/contract.md`); a permission read that fails is `Unknown`, never a demotion to unclaimed. |

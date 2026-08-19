@@ -11,11 +11,12 @@
 import {fileURLToPath} from "node:url";
 import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {CONFIG_PATH} from "../config/document.ts";
 import {readConfigSource} from "../config/source.ts";
 import {discoverRepoRoot} from "../delegate/root.ts";
 import {leafCommand} from "../excess-operand.ts";
 import type {Attempt} from "../io/git.ts";
-import {listLabels, resolveRepo} from "../io/issues.ts";
+import {resolveRepo} from "../io/issues.ts";
 import {readStdin} from "../io/stdin.ts";
 import {DEFAULT_STALE_MINUTES} from "../lane/stale.ts";
 import {runStale} from "../lane/stale-verb.ts";
@@ -23,13 +24,11 @@ import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {readBoard, runBoard} from "./board-verb.ts";
 import {knownIds, runBootstrap} from "./bootstrap-verb.ts";
-import {labelSetOf, probeSurfaces, runConfig, type SurfaceRow} from "./config-verb.ts";
 import {instant, readNow} from "./fields.ts";
 import {runMenu} from "./menu-verb.ts";
 import {
 	badFieldRefusal,
 	boardField,
-	configField,
 	FIELDS,
 	type Field,
 	isFieldName,
@@ -37,6 +36,7 @@ import {
 	menuField,
 	readoutField,
 	runOpen,
+	settingsField,
 } from "./open-verb.ts";
 import {badIssueRefusal, issueNumberOf, readReadout, runReadout} from "./readout-verb.ts";
 import {type RosterSources, readRoster} from "./roster.ts";
@@ -102,41 +102,6 @@ const menu = leafCommand(
 	Command.withShortDescription("The landed skill roster, derived from the installed plugin."),
 	Command.withDescription(
 		"List the landed skill roster, derived from the installed plugin's skills tree rather than from a committed file. First stdout line is `menu\\t<ready|empty>\\t<count>\\t<as-of>`, then one `skill\\t<name>\\t<invocation>\\t<model|user>\\t<description>` line each. An implicitly-resolved roster holding zero skills is `empty` at exit 0. Exits 7 (an explicitly passed --skills-dir is proven absent), 11 (the resolved roster could not be read — UNKNOWN, never empty). Example: fabrika status menu",
-	),
-);
-
-const config = leafCommand(
-	"config",
-	{
-		skill: Flag.string("skill").pipe(Flag.optional),
-		skillsDir: skillsDirFlag,
-		repo: repoFlag,
-		json: jsonFlag,
-	},
-	Effect.fn(function* ({skill, skillsDir, repo, json}) {
-		const roster = yield* readRoster(rosterSources(Option.getOrNull(skillsDir)));
-		if (roster._tag !== "Resolved") {
-			yield* emit(runConfig({roster, surfaces: [], json}));
-			return;
-		}
-		const target = yield* resolveTarget(Option.getOrNull(repo));
-		const labels = target._tag === "Ok" ? yield* listLabels(target.value) : null;
-		const surfaces = yield* probeSurfaces({
-			roster,
-			only: Option.getOrNull(skill),
-			ctx: {
-				repoRoot: yield* repositoryRoot,
-				labels: labelSetOf(labels),
-				repoName: target._tag === "Ok" ? target.value : "the target repo",
-				asOf: readNow(instant(new Date())),
-			},
-		});
-		yield* emit(runConfig({roster, surfaces, json}));
-	}),
-).pipe(
-	Command.withShortDescription("Which repo surfaces the landed skills need, and which exist."),
-	Command.withDescription(
-		"Report which repo surfaces every landed skill declares it needs and whether each is present here — the detection verb (#4952). First stdout line is `config\\t<satisfied|gaps|unknown>\\t<declared>\\t<missing>\\t<undeclared>\\t<off-vocabulary>`, then one `surface\\t…` line per declared row. A skill with no `## Required repo files` section emits one `undeclared` row, never zero. Exits 7 (an explicitly passed --skills-dir is proven absent), 11 (the roster or a SKILL.md inside it could not be read — the declaration set is UNKNOWN). Example: fabrika status config",
 	),
 );
 
@@ -283,29 +248,17 @@ const open = leafCommand(
 		const target: Attempt<string> = yield* resolveTarget(Option.getOrNull(repo));
 		const repoName = target._tag === "Ok" ? target.value : "unresolved";
 
-		const needsRoster = wanted.includes("menu") || wanted.includes("config");
-		const roster = needsRoster
+		const roster = wanted.includes("menu")
 			? yield* readRoster(rosterSources(Option.getOrNull(skillsDir)))
 			: null;
 
 		const fields: Field[] = [];
-		let surfaces: ReadonlyArray<SurfaceRow> = [];
-		if (roster !== null && roster._tag === "Resolved" && wanted.includes("config")) {
-			const labels = target._tag === "Ok" ? yield* listLabels(target.value) : null;
-			surfaces = yield* probeSurfaces({
-				roster,
-				only: null,
-				ctx: {
-					repoRoot: yield* repositoryRoot,
-					labels: labelSetOf(labels),
-					repoName,
-					asOf,
-				},
-			});
-		}
 		for (const name of wanted) {
 			if (name === "menu" && roster !== null) fields.push(menuField(roster, asOf));
-			if (name === "config" && roster !== null) fields.push(configField(roster, surfaces, asOf));
+			if (name === "settings") {
+				const source = yield* readConfigSource(yield* repositoryRoot);
+				fields.push(settingsField(settingRows(source), CONFIG_PATH, asOf));
+			}
 			if (name === "board") {
 				fields.push(
 					boardField(
@@ -347,10 +300,10 @@ const open = leafCommand(
 	}),
 ).pipe(
 	Command.withShortDescription(
-		"The composite front-door readout: menu, config, board, readout, lanes.",
+		"The composite front-door readout: menu, settings, board, readout, lanes.",
 	),
 	Command.withDescription(
-		"The composite front-door readout: five fields — menu, config, board, readout, lanes — each with its own state, source and freshness. The lanes field renders `fabrika lane stale`'s sweep over both default roots at its documented threshold: `stale` names the silent lanes, zero stale lanes is the proven negative `empty` (no lanes on disk is `empty` too), and an unreadable root or lane record is `unknown` with its reason — it reports, it never resumes. Every unreadable source becomes a field state, so this verb has no zero-scope seat and no failed-read seat: it is injected before the session reads a token and a refusal would write zero bytes. First stdout line is `open\\t<field-count>`, then one `field\\t<name>\\t<state>\\t<detail>\\t<source>\\t<as-of>` line each. Exits 10 (--field is off the closed vocabulary). Example: fabrika status open",
+		"The composite front-door readout: five fields — menu, settings, board, readout, lanes — each with its own state, source and freshness. The lanes field renders `fabrika lane stale`'s sweep over both default roots at its documented threshold: `stale` names the silent lanes, zero stale lanes is the proven negative `empty` (no lanes on disk is `empty` too), and an unreadable root or lane record is `unknown` with its reason — it reports, it never resumes. Every unreadable source becomes a field state, so this verb has no zero-scope seat and no failed-read seat: it is injected before the session reads a token and a refusal would write zero bytes. First stdout line is `open\\t<field-count>`, then one `field\\t<name>\\t<state>\\t<detail>\\t<source>\\t<as-of>` line each. Exits 10 (--field is off the closed vocabulary). Example: fabrika status open",
 	),
 );
 
@@ -359,7 +312,6 @@ export const statusCommand = Command.make("status").pipe(
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing
 		// one. The comment is what keeps the formatter from collapsing the list back.
 		open,
-		config,
 		settings,
 		menu,
 		readout,
@@ -368,6 +320,6 @@ export const statusCommand = Command.make("status").pipe(
 	]),
 	Command.withShortDescription("Answer what state the factory is in."),
 	Command.withDescription(
-		"Answer what state the factory is in — the composite front-door readout, the repo-surface detection verb, the resolved `.fabrika.jsonc` config surface, the derived skill roster, the landed-decision digest, the board's bucket counts, and the one primitive that creates a missing surface",
+		"Answer what state the factory is in — the composite front-door readout, the resolved `.fabrika.jsonc` config surface, the derived skill roster, the landed-decision digest, the board's bucket counts, and the one primitive that creates a missing surface",
 	),
 );

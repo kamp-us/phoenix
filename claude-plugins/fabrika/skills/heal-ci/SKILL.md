@@ -262,21 +262,3 @@ shipper's required set. A hold is label-triggered and platform-enforced, never a
 
 Open decisions you surface, never resolve: which surface owns an unpulled PR, and whether the
 red-main layer supersedes, feeds, or is disjoint from this lane.
-
-## Required repo files
-
-fabrika installs into repos that are not phoenix, so every repo surface this skill leans on is
-declared here: what must exist, why this skill needs it, and the one named outcome when it is
-absent. The when-missing vocabulary is closed — **fail-loud** (stop, name the missing surface by
-its repo-relative path, point at front-door), **degrade** (continue with a narrower answer,
-stated), **bootstrap** (front-door creates it) — and it is the same table in every fabrika skill,
-so one reader parses all of them. Onboarding a repo missing one of these is the
-[`front-door`](../front-door/SKILL.md) skill's lane. No row here dead-ends on a bare error.
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| A gate-verdict history — the SHA-bound verdict markers a review lane posts | The `ungated` and `gated-unshipped` classes are computed entirely from whether a required namespace holds an in-force verdict at the head | **degrade** — a repo whose review lane has never run holds no verdict on any PR, so `ungated` would fire on every open PR and the first scheduled sweep would report the entire board stranded, forever. `diagnose` reports the gate axis `undeterminable` instead, classifies on the remaining axes, and names the absent surface once per run rather than once per PR. |
-| A CI workflow directory (`.github/workflows/`) with at least one active workflow | `diagnose` and `surface` read run and check-run state at the head; with no workflows there is no CI signal to classify | **degrade** — a proven-zero active-workflow inventory makes every red class unreachable, so `diagnose` prints `none` on its `ci` line and answers on the ownership and gate axes alone. A zero inventory that cannot be *read* is exit `11`, never `none`. |
-| The base ref's declared required-status contexts — a **ruleset** for preference, branch protection otherwise | `surface` compares them against the runs that actually post — the whole check-surface class | **degrade**, on two absences this run must never conflate. `no-requirements` needs a *successful* ruleset read returning nothing that requires a status context — the branch-protection endpoint answers `404` both when a base is genuinely unprotected and when the token cannot see it, so that status alone proves nothing. Where the requirement set cannot be established, `surface` answers `unprobeable`: the check-surface axis is skipped, stated, and never reported as clean. |
-| A claim signal — assignee, or the claim-marker comment form the construction lane writes | `diagnose` separates `attended` / `claim-stale` / `ungated` on it | **degrade** — with no claim signal readable, no PR can be shown attended on the ownership axis, which is the fail-safe direction: a false strand costs one look, a false `attended` is the incident. The run states that ownership was undetectable. |
-| An issue-intake path — the `report` seam and its `status:needs-triage` label | An `unclassified` red and unhealable defects leave through it; an observation that stays in the run dies there | **fail-loud** — the run ends `NO-INTAKE — <surface>`, naming the absent intake surface and carrying the full finding in its report so nothing is lost. It is a proven-absent surface, never `UNKNOWN`, which would claim a verb failed when none did. |
