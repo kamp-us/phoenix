@@ -36,6 +36,7 @@ import {DEFAULT_QUEUE_LABEL, DEFAULT_QUEUE_LIMIT, runQueue} from "./queue-verb.t
 import {runRepairCriteria} from "./repair-criteria-verb.ts";
 import {ROADMAP_FILE} from "./roadmap.ts";
 import {runSplit} from "./split-verb.ts";
+import {readStandingLanes} from "./standing-lanes.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
 const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
@@ -351,14 +352,29 @@ const homes = leafCommand(
 			);
 		}
 		const path = named ?? declared?.value ?? ROADMAP_FILE;
+		const lanes = yield* readStandingLanes(process.cwd());
+		if (lanes._tag === "Refused") {
+			return yield* emit(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`triage homes: ${CONFIG_PATH} is refused — ${lanes.reason.replace(/\.$/, "")}, so which standing lanes this repo runs is unread; the homes list is UNKNOWN, never short.`,
+				),
+			);
+		}
 		yield* emit(
-			yield* runHomes({roadmap: path, repo: Option.getOrNull(repo), json, env: process.env}),
+			yield* runHomes({
+				roadmap: path,
+				standingLanes: lanes.value,
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("The assignable homes: open milestones and standing lanes."),
 	Command.withDescription(
-		"List the assignable homes: every OPEN milestone joined to its roadmap arc/campaign row by `#<number>`, plus the two standing lanes. First stdout line is `homes`, then one `<kind>\\t<key>\\t<label>` line per candidate; every `active` campaign's milestone carries a fourth column, `running: p0/blocker only` (a `running` field under `--json`) — such a campaign is closed to new intake unless the work is p0 or blocks one of its own in-flight lanes. An ABSENT roadmap is not a refusal: every milestone lists with a null arc row and stderr says no roadmap was found. Exits 7 (zero open milestones, or a roadmap that exists and parsed to 0 arc rows), 11 (the milestone list could not be read, or a roadmap that exists could not be read or probed). Example: fabrika triage homes",
+		"List the assignable homes: every OPEN milestone joined to its roadmap arc/campaign row by `#<number>`, plus every standing lane this repo BOTH declares in `.fabrika.jsonc` (`boardVocabulary.standingLanes`) and carries the label for — a repo whose board lacks a declared lane is offered none, so no listed home can fail a label write later. First stdout line is `homes`, then one `<kind>\\t<key>\\t<label>` line per candidate; every `active` campaign's milestone carries a fourth column, `running: p0/blocker only` (a `running` field under `--json`) — such a campaign is closed to new intake unless the work is p0 or blocks one of its own in-flight lanes. An ABSENT roadmap is not a refusal: every milestone lists with a null arc row and stderr says no roadmap was found. Exits 7 (zero open milestones, or a roadmap that exists and parsed to 0 arc rows), 11 (the milestone list, the repo's label set or a roadmap that exists could not be read or probed, or `.fabrika.jsonc` yielded no usable lane set). Example: fabrika triage homes",
 	),
 );
 
