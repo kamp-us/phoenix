@@ -65,6 +65,11 @@ apps/web/tests/e2e/.auth
 # Per-machine, never committed — mirrors the plugin's ${CLAUDE_PLUGIN_DATA}.
 /.claude/.pipeline-cli-data/
 
+# Linked git worktrees — the spawned shells' isolated trees, and the one an epic
+# run assembles in (`fabrika lane assembly`, #6163). Machine-local checkouts of
+# this same repo; each carries a `.git` file git would otherwise offer to track.
+/.claude/worktrees/
+
 
 # OS
 .DS_Store

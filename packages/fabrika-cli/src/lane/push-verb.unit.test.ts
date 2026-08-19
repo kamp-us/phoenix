@@ -8,6 +8,7 @@ import {
 	APPEND_UNKNOWN,
 	LANE_ABSENT,
 	LANE_UNREADABLE,
+	PRIMARY_CHECKOUT,
 	REF_NOT_MOVED,
 	UNSAFE_PUSH,
 	WRONG_BRANCH,
@@ -21,6 +22,7 @@ const BRANCH = `epic/${EPIC}`;
 const LANE_FILES = {[`${ROOT}/${EPIC}/workflow.json`]: coderTemplateText()};
 
 const CURRENT_BRANCH = /^git rev-parse --abbrev-ref HEAD$/;
+const GIT_DIRS = /^git rev-parse --path-format=absolute --git-dir --git-common-dir$/;
 const HEAD_SHA = /^git rev-parse HEAD$/;
 const UPSTREAM = /^git rev-parse --abbrev-ref --symbolic-full-name /;
 const PRESENT = /^git rev-parse --verify --quiet /;
@@ -46,7 +48,11 @@ const remote = (
 ];
 
 /** On the assembly branch, at HEAD, with a remote head this checkout holds and contains. */
+const IN_LINKED_WORKTREE = okOut("/checkout/.git/worktrees/epic-5680\n/checkout/.git\n");
+const IN_MAIN_CHECKOUT = okOut("/checkout/.git\n/checkout/.git\n");
+
 const GROUND: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+	[GIT_DIRS, IN_LINKED_WORKTREE],
 	[CURRENT_BRANCH, okOut(`${BRANCH}\n`)],
 	[HEAD_SHA, okOut(`${HEAD}\n`)],
 	[UPSTREAM, errOut("fatal: no upstream")],
@@ -86,6 +92,30 @@ describe("runPush", () => {
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout).toContain(`remote ref read back: ${HEAD}`);
 		expect(calls.some((line) => line.startsWith("git merge-base"))).toBe(false);
+	});
+
+	it("refuses a push from the repository's main working tree — the assembly seat is never it (#6163)", async () => {
+		const {outcome, calls} = await run([
+			[GIT_DIRS, IN_MAIN_CHECKOUT],
+			...remote(refRow(OLD_HEAD), refRow(HEAD)),
+			...GROUND,
+		]);
+
+		expect(outcome.code).toBe(PRIMARY_CHECKOUT);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.join("\n")).toContain("lane assembly");
+		expect(pushed(calls)).toBe(false);
+	});
+
+	it("is UNKNOWN, never a push, when whether this tree is linked cannot be read", async () => {
+		const {outcome, calls} = await run([
+			[GIT_DIRS, errOut("fatal: not a git repository")],
+			...remote(refRow(OLD_HEAD), refRow(HEAD)),
+			...GROUND,
+		]);
+
+		expect(outcome.code).toBe(LANE_UNREADABLE);
+		expect(pushed(calls)).toBe(false);
 	});
 
 	it("refuses a checked-out branch that is not this epic's assembly branch, pushing nothing", async () => {

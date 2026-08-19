@@ -198,3 +198,14 @@ export const CLAIM_NOT_MINE = 31;
  * this verb exists to delete (#5736).
  */
 export const TOKEN_UNRECOGNISED = 32;
+
+/**
+ * An epic run's assembly git write was aimed at the **main working tree** — the branch is checked
+ * out there, or the verb is standing there. Fail-closed and never overridable: `operate`'s boot used
+ * to switch the invoking checkout onto `epic/<n>` and keep it there for the whole run, which parked
+ * a human's working tree on the epic branch and left a concurrent epic no tree to assemble in
+ * (#6163). Its own seat rather than {@link WRONG_BRANCH}'s: that one says the tree is on the wrong
+ * branch, this one says the branch is in the wrong tree, and the remedies are opposite — switch,
+ * versus `lane assembly` a worktree of the run's own.
+ */
+export const PRIMARY_CHECKOUT = 33;

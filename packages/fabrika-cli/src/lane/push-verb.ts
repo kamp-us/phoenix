@@ -14,6 +14,11 @@
  *
  * There is no force flag. The assembly branch only ever grows, one merge per landed child, so a
  * non-fast-forward push is always a mistake and the flag that would let one through does not exist.
+ *
+ * It is also the run's fail-closed isolation gate. Every assembly publication passes through here,
+ * so this is where "the assembly seat never stands in the main working tree" is proven rather than
+ * assumed: a push from the primary checkout is refused on `33` before anything is fetched, read back
+ * or sent (#6163).
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -29,9 +34,11 @@ import {
 import {currentBranch} from "../io/issues.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
+import {standingInLinkedWorktree} from "./assembly.ts";
 import {
 	APPEND_UNKNOWN,
 	LANE_UNREADABLE,
+	PRIMARY_CHECKOUT,
 	REF_NOT_MOVED,
 	UNSAFE_PUSH,
 	WRONG_BRANCH,
@@ -57,6 +64,21 @@ export const runPush = (
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
 
 		const branch = epicBranch(options.epic);
+
+		const linked = yield* standingInLinkedWorktree;
+		if (linked._tag === "Failure") {
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot tell whether this tree is a linked worktree: ${linked.reason} — nothing was pushed.`,
+			);
+		}
+		if (!linked.value) {
+			return refuse(
+				PRIMARY_CHECKOUT,
+				`${VERB}: this is the repository's main working tree — an epic run assembles in a worktree of its own, never in the driver's checkout. Place it with \`fabrika lane assembly ${options.epic}\` and push from there. Nothing was pushed.`,
+			);
+		}
+
 		const checkedOut = yield* currentBranch;
 		if (checkedOut === null) {
 			return refuse(
