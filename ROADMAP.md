@@ -82,7 +82,6 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 
 | Campaign | Milestone | State |
 |----------|-----------|-------|
-| TEMPORARY drift row for #5560 — reverted in the next commit | #9999 | active |
 | Mentor Audit | #27 | done |
 | Crew-MCP Finish — replace the tmux relay with crew-mcp | #28 | done |
 | Deterministic Crew Mechanics | #29 | done |
