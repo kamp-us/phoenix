@@ -12,10 +12,9 @@
  *
  * Two branch groups are worth naming because their scope is not obvious from the pattern:
  *
- * - The kampus-pipeline clauses cover whole DIRECTORIES, not file types (founder ruling on #4446).
- *   `.github/CODEOWNERS` has no `*` catch-all and the `main` ruleset pairs
- *   `required_approving_review_count: 0` with `require_code_owner_review: true`, so a path matching
- *   NO row merges on ZERO approvals — which made a non-`.sh` file beside a gated script ungated.
+ * - The kampus-pipeline clauses (skills/, lib/, agents/, hooks) retired with the plugin itself
+ *   (#5937): the tree is deleted, so they classified paths that can no longer exist, and their
+ *   CODEOWNERS rows went with them.
  * - `^packages/fabrika-cli/src/ci/` is the ONE §CP path in THIS package, and the narrowness is the
  *   ruling, not an omission: `ci-required`'s verdict core is moving here, and it must arrive already
  *   covered or it lands matching no CODEOWNERS row, which merges at zero approvals. The rest of the
@@ -27,4 +26,4 @@
  */
 
 export const CONTROL_PLANE_RE =
-	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/|^claude-plugins/kampus-pipeline/lib/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/fabrika-cli/src/ci/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$|^biome\\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\\.lefthook)[^/]+$";
+	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^packages/ci-required/|^packages/fabrika-cli/src/ci/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$|^biome\\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\\.lefthook)[^/]+$";
