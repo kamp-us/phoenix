@@ -7,6 +7,7 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
+import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {ok} from "../io/git.ts";
@@ -342,6 +343,16 @@ describe("status bootstrap", () => {
 	it("carries exactly six ids", () => {
 		expect(BUILDABLE_SURFACES).toHaveLength(6);
 		expect(NOT_BUILDABLE).toBe(12);
+	});
+
+	/**
+	 * Buildability and disposition are separate axes over the same surface, so a surface can be
+	 * buildable here and carry any disposition there — but it cannot be buildable and carry none.
+	 * `roadmap-focus` shipped exactly that way and the gap reached a review round (#6301).
+	 */
+	it("names no surface the disposition registry has never heard of", () => {
+		const registered = new Set(SURFACE_REGISTRY.map((surface) => surface.id));
+		for (const surface of BUILDABLE_SURFACES) expect(registered.has(surface.id)).toBe(true);
 	});
 
 	it("builds every issue-shape marker the ideation skills mint issues with", () => {

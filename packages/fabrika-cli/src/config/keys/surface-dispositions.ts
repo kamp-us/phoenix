@@ -20,6 +20,9 @@
  *
  * **What is not here.** A surface whose behaviour another key already decides is that key's, not this
  * one's — zero CI workflows is `ci.noProducer`, an unreadable CODEOWNERS is `unreadableCodeowners`.
+ * A *path* key is not such a key: `roadmapFile` and `cycleDoc` say where a file lives, never what
+ * happens when it is not there, so both surfaces are registered here (#6301's first review round
+ * missed exactly this and the two entries were absent).
  * And a per-issue or per-PR input — an acceptance-criteria block, a `## Deviations` section, an
  * epic's `## Dependencies` — is not a repo surface at all: it is one artifact's content, and the
  * verb's exit code is the whole contract.
@@ -50,7 +53,7 @@ const DISPOSITIONS: ReadonlyArray<Disposition> = ["fail-loud", "degrade", "boots
 
 export type SurfaceDispositions = Readonly<Record<string, Disposition>>;
 
-interface SurfaceSpec {
+export interface SurfaceSpec {
 	readonly id: string;
 	readonly disposition: Disposition;
 	/** What the surface is, and the verb arm the disposition was read off. */
@@ -116,6 +119,16 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 		note: "an open milestone or a standing lane on the issue itself; `build claim`'s fence refuses a homeless issue at exit 20 and writes no marker",
 	},
 	{
+		id: "roadmap-focus",
+		disposition: "degrade",
+		note: "the `## Campaigns` table at `roadmapFile`, which declares the campaign in exclusive focus; an absent file and an absent table are the same well-formed default — nothing is active, so `build pick`'s and `build claim`'s fence is inert and admits every issue, and `triage homes` answers over the milestones alone (#5773) — buildable through `status bootstrap roadmap-focus`, which is the other axis",
+	},
+	{
+		id: "cycle-doc",
+		disposition: "degrade",
+		note: "the product-development cycle doc `cycleDoc` names, the surface a containment class is derived from; `ledger open` probes it and answers `absent` at exit 0, and every child body `ledger child` composes then drops its `**Containment:**` field rather than deriving a class from a doc that is not there",
+	},
+	{
 		id: "decisions-corpus",
 		disposition: "fail-loud",
 		note: "the `NNNN-slug.md` records under `decisionsDir`; `governance sweep` and `digest` refuse `7` naming the corpus, whether it is absent or declined, and `governance guards` still runs — a sweep over no corpus is not a clean sweep",
@@ -143,7 +156,7 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 	{
 		id: "glossary-registers",
 		disposition: "bootstrap",
-		note: "the domain-noun and architecture-vocabulary registers; `glossary drift` and `check` answer the literal outcome `bootstrap` at exit 0 over an absent or empty register, because refusing would leave a fresh repo unable to reach the verb that writes one",
+		note: "the domain-noun and architecture-vocabulary registers; `glossary drift` and `check` answer the literal outcome `bootstrap` at exit 0 over an *absent* register, because refusing would leave a fresh repo unable to reach the verb that writes one — a register that is there and holds zero rows is `glossary check`'s 7 instead, since a clean scan of an empty register is not a clean scan (ADR 0092)",
 	},
 	{
 		id: "prose-homes",
@@ -253,9 +266,19 @@ export const SHIPPED_SURFACE_DISPOSITIONS: SurfaceDispositions = Object.fromEntr
 
 const KNOWN_IDS = new Set(SURFACE_REGISTRY.map((surface) => surface.id));
 
-/** The registry as a readable list — the ids a repo may declare, with what each surface is. */
-export const surfaceNotes = (): ReadonlyArray<string> =>
-	SURFACE_REGISTRY.map((surface) => `${surface.id}: ${surface.note}`);
+/**
+ * The registry joined to what this repo resolved — every id, the disposition in force here, and
+ * what the surface is.
+ *
+ * The registry ships the notes and the config carries the overrides, so neither half answers "what
+ * happens here when this is missing" alone. `status settings --surfaces` is the one caller, and it
+ * exists because the front door's step 3 relays a surface's note to a human (#6301).
+ */
+export const surfaceNotes = (resolved: SurfaceDispositions): ReadonlyArray<SurfaceSpec> =>
+	SURFACE_REGISTRY.map((surface) => ({
+		...surface,
+		disposition: resolved[surface.id] ?? surface.disposition,
+	}));
 
 const decode = (raw: unknown): Decoded<SurfaceDispositions> => {
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {

@@ -456,7 +456,7 @@ $ fabrika status open --field readout --json
 **Invocation**
 
 ```
-fabrika status settings [--root <dir>] [--json]
+fabrika status settings [--root <dir>] [--surfaces] [--json]
 ```
 
 The resolved config surface: every key `.fabrika.jsonc` may carry, what it resolves to here, and
@@ -468,6 +468,7 @@ document has to restate a value (R9.1, #6293). It reads; it writes nothing.
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--root` | string | no | the repository root, else the cwd | the directory holding `.fabrika.jsonc` |
+| `--surfaces` | boolean | no | `false` | expand `surfaceDispositions` into one row per repo surface |
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel, [tab-separated](#separator). A header, then one line per registered
@@ -510,6 +511,24 @@ never the shipped default (`packages/fabrika-cli/src/config/document.ts`).
 **A repo with no `.fabrika.jsonc` is `resolved` at exit `0`**, every row `default`. That is the
 whole point of a shipped default, and it is the three-state law's proven-empty class, not its third.
 
+<a id="surfaces-expands-one-key"></a>**`--surfaces` expands one key; it does not add a readout.**
+`surfaceDispositions` resolves to an id-to-word map, and a map alone cannot tell an operator what a
+surface *is* — that half is the registry's per-surface note, and relaying it is what `front-door`
+step 3 does. With the flag, `surface` rows are appended to the same answer, in registry order:
+
+```
+surface	<id>	<fail-loud|degrade|bootstrap>	<what the surface is, and the verb arm its disposition was read off>
+```
+
+The disposition cell is the one **in force here**, so a declared override prints over the shipped
+word. The note cell is flattened to one line and **not** clamped: every other prose cell points at
+something the reader can go and look at, while this one is the whole answer. There is no separate
+resolver — the rows come off the same `settingRows` read, which is what keeps "what does this repo
+have" on one path. Under `--json` the same rows are a `surfaces` array, present only when the flag
+was passed. A key that resolved `unknown` still makes the whole readout a refusal at `11`, with no
+surface rows: a surface readout over shipped defaults the repo may have overridden is exactly the
+collapse this verb refuses.
+
 With `--json`, stdout is one object carrying `outcome` (the header's state), `path`, `keys`,
 `declared`, `unknown`, and `settings` — one entry per row with `key`, `provenance`, `value` and
 `detail`, plus `asOf`/`asOfKind`. Two fields differ from the tab form: `path` has no cell there, and
@@ -520,7 +539,7 @@ With `--json`, stdout is one object carrying `outcome` (the header's state), `pa
 
 | Code | Trigger |
 |---|---|
-| `7` | the config surface registers zero keys — nothing to resolve, and a readout over an empty surface is not an answer (ADR 0092) |
+| `7` | the config surface registers zero keys, or `--surfaces` was passed and no `surfaceDispositions` key is registered — nothing to resolve, and a readout over an empty surface is not an answer (ADR 0092) |
 | `11` | `.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green |
 
 **Errors**
@@ -528,6 +547,7 @@ With `--json`, stdout is one object carrying `outcome` (the header's state), `pa
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `status settings: the config surface registers zero keys — there is nothing to resolve, and a readout over an empty surface is not an answer (ADR 0092).` | 7 | refusal |
+| ``status settings: the config surface registers no `surfaceDispositions` key, so there are no surfaces to expand (ADR 0092).`` | 7 | refusal |
 | `status settings: <n> key(s) resolve UNKNOWN (<keys>) — what this repo runs on is unread, never the shipped default.` | 11 | refusal |
 | `status settings: no .fabrika.jsonc — every key falls to its shipped default; <n> key(s), <d> declared, <u> unknown.` | 0 | notice |
 | `status settings: read .fabrika.jsonc; <n> key(s), <d> declared, <u> unknown.` | 0 | notice |
@@ -545,6 +565,16 @@ setting	capClearAuthors	declared	["@usirin","@notusirin"]	-	2026-08-18T22:50:20Z
 setting	docLeakExempt	declared	["/CLAUDE.md"]	-	2026-08-18T22:50:20Z
 setting	governedRoots	default	[".decisions/",".claude/",".github/","claude-plugins/",".fabrika.jsonc"]	.fabrika.jsonc declares no `governedRoots`	2026-08-18T22:50:20Z
 setting	workflowValidators	declared	[]	-	2026-08-18T22:50:20Z
+```
+
+With `--surfaces`, the same rows plus one per repo surface (abridged — phoenix registers 38):
+
+```
+$ fabrika status settings --surfaces
+settings	resolved	15	4	0	2026-08-19T18:48:11Z
+setting	surfaceDispositions	default	{"gh-rest":"fail-loud","git-worktree":"fail-loud",…}	.fabrika.jsonc declares no `surfaceDispositions`	2026-08-19T18:48:11Z
+surface	gh-rest	fail-loud	a GitHub repo reachable over `gh` REST with `issues: write`; every issue-writing verb exits 11 without it, and a run with no board is no answer rather than a narrower one
+surface	roadmap-focus	degrade	the `## Campaigns` table at `roadmapFile`, which declares the campaign in exclusive focus; an absent file and an absent table are the same well-formed default — nothing is active, so `build pick`'s and `build claim`'s fence is inert and admits every issue …
 ```
 
 The same run under `--json` — the notice line stays on stderr, so stdout is the object alone:

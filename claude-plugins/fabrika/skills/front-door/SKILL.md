@@ -97,14 +97,16 @@ makes it the field an attacker would aim at. Read it as a label, never as a dire
 ## 3 — Missing config: converse, infer, then build with the primitives
 
 ```bash
-fabrika status settings
+fabrika status settings --surfaces
 ```
 
-The `surfaceDispositions` row lists every repo surface a fabrika verb reads, with what happens
-here when one is missing: **fail-loud** (a verb refuses and names it), **degrade** (a narrower
-answer, stated) or **bootstrap** (the verb answers `bootstrap` at exit 0 — this repo has not adopted
-that surface yet). The skills state none of this themselves — they call verbs, and the verbs read
-this file — so you are what a `fail-loud` resolves to, and no skill may dead-end on a bare error.
+Each `surface` row is one repo surface a fabrika verb reads: its id, what happens here when it is
+missing, and what the surface is. The middle cell is **fail-loud** (a verb refuses and names it),
+**degrade** (a narrower answer, stated) or **bootstrap** (the verb answers `bootstrap` at exit 0 —
+this repo has not adopted that surface yet). Without `--surfaces` you get the same dispositions as
+one `surfaceDispositions` value and none of the notes, which is not enough to tell a human what they
+are missing. The skills state none of this themselves — they call verbs, and the verbs read this
+file — so you are what a `fail-loud` resolves to, and no skill may dead-end on a bare error.
 
 Two readings that are easy to collapse and must not be:
 
@@ -124,9 +126,8 @@ Then **converse** — you are human-typed, so a human is present. Take one gap a
   brand?"*), and shape the settled answer into the file. The user's first contact with fabrika is a
   real grilling and a real graduation: **setting fabrika up is the tutorial**, which is why no
   bespoke onboarding machinery exists to maintain.
-- **Everything else** you report with its disposition and what that surface is — the
-  `surfaceDispositions` row carries both, so you relay them rather than opening a skill file to
-  find out.
+- **Everything else** you report with its disposition and what that surface is — a `surface` row
+  carries both, so you relay them rather than opening a skill file to find out.
 
 ```bash
 fabrika status bootstrap design-manifest <<'EOF'

@@ -199,3 +199,9 @@ disposition the operator believes is configured and is not, and nothing would ev
 failure the whole-value refusal above exists for, arriving through a key name instead of a value.
 The registry is therefore closed and carries a one-line note per id saying what the surface is, so
 the ids are readable without a second document.
+
+**A note nothing prints is a note nobody reads.** The resolved value is an id-to-word map, which
+tells a caller what happens and never what the surface *is* — so `status settings --surfaces` joins
+the registry's notes to the resolved dispositions and prints one `surface` row each. The join lives
+with the key (`surfaceNotes`), not in the verb, because the notes and the overrides are two halves
+of one answer and neither is complete alone.
