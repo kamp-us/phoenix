@@ -13,6 +13,7 @@ import {Argument, Command, Flag} from "effect/unstable/cli";
 import {resolveEntrypoint} from "../delegate/entrypoint.ts";
 import {leafCommand} from "../excess-operand.ts";
 import type {VerbOutcome} from "../verb.ts";
+import {runAssembly} from "./assembly-verb.ts";
 import {runBrief} from "./brief-verb.ts";
 import {runLaneClaim, runLaneRelease} from "./claim-verb.ts";
 import {runEmit} from "./emit-verb.ts";
@@ -274,6 +275,34 @@ const emitLane = leafCommand(
 	),
 );
 
+const assembly = leafCommand(
+	"assembly",
+	{
+		epic: Argument.integer("epic").pipe(
+			Argument.withDescription("the epic issue whose run owns the assembly worktree"),
+		),
+		remove: Flag.boolean("remove").pipe(
+			Flag.withDescription("remove the run's assembly worktree instead of placing it"),
+		),
+		root: rootFlag,
+	},
+	Effect.fn(function* ({epic, remove, root}) {
+		yield* emit(
+			yield* runAssembly({
+				epic,
+				remove,
+				root: Option.getOrNull(root) ?? DEFAULT_LANES_ROOT,
+				lane: String(epic),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Place, resume or remove an epic run's assembly worktree."),
+	Command.withDescription(
+		"Place the working tree an epic run assembles in — `epic/<n>` checked out at `.claude/worktrees/epic-<n>`, both derived from the epic number and never taken from the caller — and print its absolute path on stdout. The invoking checkout is NEVER switched: `operate`'s boot used to `git switch --create` the assembly branch in whatever tree ran it, which parked a human's working tree on `epic/<n>` for the whole run and left a second concurrent epic no tree to integrate in (#6163). Idempotent: a worktree already holding the branch is resumed and its path answered, with nothing written. `--remove` is the lane's terminal step and never forces — a dirty assembly tree is unlanded work, so git's refusal is the answer. Every mode reads the outcome back off `git worktree list` before answering. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (the placement or removal ran and did not read back — UNKNOWN), 11 (the working trees or origin could not be read — nothing was placed or removed), 33 (`epic/<n>` is checked out in the main working tree — switch that tree off it first). Examples: fabrika lane assembly 5680 · fabrika lane assembly 5680 --remove",
+	),
+);
+
 const pushLane = leafCommand(
 	"push",
 	{
@@ -447,6 +476,7 @@ export const laneCommand = Command.make("lane").pipe(
 		open,
 		emitLane,
 		brief,
+		assembly,
 		pushLane,
 		stale,
 		claim,

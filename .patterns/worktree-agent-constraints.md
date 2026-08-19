@@ -377,6 +377,41 @@ written once never went stale. A fail-closed stop with no reachable way forward 
 into improvising past the guard (the detached-HEAD repair of #4826), so treat "the remedy is
 executable by whoever reads it" as part of the guard, not as message polish.
 
+## Not every worktree is an agent's — the epic assembly seat has one too
+
+`fabrika`'s `operate` runs an epic's assembly branch (`epic/<n>`) in a worktree of
+its own at `<main>/.claude/worktrees/epic-<n>`, placed and removed by
+`fabrika lane assembly <n>`. Nothing about it is a subagent: it is the driver's own
+seat for merging children and pushing the run's single branch. It exists because the
+old boot ran `git switch --create epic/<n>` in whatever checkout invoked the skill —
+which parked a human's working tree on the epic branch for hours and left a second
+concurrent epic no tree to assemble in
+([#6163](https://github.com/kamp-us/phoenix/issues/6163)).
+
+**How a verb proves a git write is not landing in the main working tree.** Compare
+git's own two directory pointers in the tree the process is standing in:
+
+```bash
+git rev-parse --path-format=absolute --git-dir --git-common-dir
+```
+
+They are the same path in the main working tree and differ in every linked one
+(`<common>/worktrees/<name>` versus `<common>`). `--path-format` is git 2.31+.
+
+Two things this deliberately is **not**:
+
+- **Not a path comparison against `git worktree list`.** That list prints paths as
+  recorded, while `git rev-parse --show-toplevel` resolves symlinks, so the two
+  disagree on a symlinked prefix (`/var` versus `/private/var` on macOS) and the
+  guard would refuse the legal path.
+- **Not a boolean with a default.** A read fault is UNKNOWN and refuses; it never
+  falls back to "linked", which would wave the write through unproven.
+
+`git worktree list --porcelain` is still the right read for *which* tree holds a
+branch — its first record is always the main working tree, which is what makes "the
+primary checkout" nameable at all
+([`packages/fabrika-cli/src/lane/assembly.ts`](../packages/fabrika-cli/src/lane/assembly.ts)).
+
 ## Why these constraints exist (and where the real fix lives)
 
 The self-mod classifier exists to keep an autonomous agent from rewriting the
