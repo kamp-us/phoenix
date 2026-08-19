@@ -3,12 +3,22 @@ import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {CODEOWNERS, ENV, files, HEAD, pull} from "./fixtures.test-support.ts";
+import {
+	branchRules,
+	CODEOWNERS,
+	ENV,
+	files,
+	HEAD,
+	pull,
+	repository,
+} from "./fixtures.test-support.ts";
 import {runScope} from "./scope-verb.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
 const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
 const OWNERS = /contents\/\.github\/CODEOWNERS/;
+const RULES = /^gh api repos\/o\/r\/rules\/branches\/main$/;
+const REPO = /^gh api repos\/o\/r$/;
 
 const options = {pr: 4321, repo: null, json: false, env: ENV};
 
@@ -28,11 +38,13 @@ describe("runScope", () => {
 		expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\topen\tpart-of:4000`);
 	});
 
-	it("prints one derivation: state, issue ref, classes, the namespaces they require, cp and count", async () => {
+	it("prints one derivation: state, issue ref, classes, the namespaces they require, cp, landing and count", async () => {
 		const out = await run([
 			[PULL, pull()],
 			[FILES, files("apps/web/src/App.tsx", "README.md")],
 			[OWNERS, okOut(CODEOWNERS)],
+			[RULES, branchRules("pull_request")],
+			[REPO, repository()],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
@@ -45,10 +57,37 @@ describe("runScope", () => {
 				"namespace\treview-doc",
 				"namespace\treview-ui",
 				"cp\tnot-control-plane",
+				"landing\tdirect\tsquash",
 				"files\t2",
 				"",
 			].join("\n"),
 		);
+	});
+
+	it("names the queue path when a queue governs the base — the shipper's route, read once", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[FILES, files("README.md", "DEVELOPMENT.md")],
+			[OWNERS, okOut(CODEOWNERS)],
+			[RULES, branchRules("merge_queue")],
+		]);
+		expect(out.stdout).toContain(`landing\tqueue\t-\n`);
+	});
+
+	/**
+	 * The one field that degrades rather than refusing: `ship merge` re-derives the same fact and
+	 * refuses `11` on the same failed read, so a printed `unknown` can never license a landing.
+	 */
+	it("prints `unknown` and still answers when the landing path cannot be read", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[FILES, files("README.md", "DEVELOPMENT.md")],
+			[OWNERS, okOut(CODEOWNERS)],
+			[RULES, errOut("HTTP 503")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain(`landing\tunknown\t-\n`);
+		expect(out.stderr.some((line) => line.includes("cannot read main's landing path"))).toBe(true);
 	});
 
 	it("derives review-ui from a rendered surface but not from its own test file", async () => {
