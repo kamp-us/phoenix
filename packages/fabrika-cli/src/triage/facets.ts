@@ -111,6 +111,7 @@ const ownsType = ownsIn("type");
 const ownsPriority = ownsIn("priority");
 const ownsStatus = ownsIn("status");
 const ownsAudience = ownsIn("audience");
+const ownsLane = ownsIn("lane");
 
 /**
  * The facet table for the triaged transition.
@@ -132,7 +133,7 @@ export const triagedFacets = (input: {
 	{name: "priority", owns: ownsPriority, keep: [input.priority]},
 	{name: "status", owns: ownsStatus, keep: [TRIAGED]},
 	{name: "audience", owns: ownsAudience, keep: [`ready-for:${input.readyFor}`]},
-	{name: "lane", owns: isStandingLane, keep: input.lane === null ? [] : [input.lane]},
+	{name: "lane", owns: ownsLane, keep: input.lane === null ? [] : [input.lane]},
 ];
 
 /**
@@ -148,7 +149,7 @@ export const parkedFacets = (): ReadonlyArray<Facet> => [
 	{name: "priority", owns: ownsPriority, keep: []},
 	{name: "status", owns: ownsStatus, keep: [NEEDS_INFO]},
 	{name: "audience", owns: ownsAudience, keep: []},
-	{name: "lane", owns: isStandingLane, keep: []},
+	{name: "lane", owns: ownsLane, keep: []},
 ];
 
 /** One atomic write the plan will issue. `AddLabels` is one change because it is one API call. */

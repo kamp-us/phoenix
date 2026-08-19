@@ -110,6 +110,21 @@ describe("runPark under a refused config", () => {
 		);
 		expect(shell.calls).toEqual([]);
 	});
+
+	/** The same three non-decoding arms `apply` refuses — one guard, so one set of cases. */
+	it.each([
+		["a file that is there and denied", {unreadable: true} as const, "could not be read"],
+		["a document that is not a JSON object", "[1, 2]", "not a JSON object"],
+		["a key no decoder accepted", '{"triageFacets": "garbage"}', "`triageFacets` is not an array"],
+	])("refuses %s, and posts nothing", async (_case, config, expected) => {
+		const shell = guardedShell(happy());
+		const out = await Effect.runPromise(
+			Effect.provide(runPark(options), triageContext(shell, config)),
+		);
+		expect(out.code).toBe(CONFIG_REFUSED);
+		expect(out.stderr.join(" ")).toContain(expected);
+		expect(shell.calls).toEqual([]);
+	});
 });
 
 describe("runPark", () => {

@@ -71,3 +71,17 @@ repo root **above** `cwd` first: a config read only at the top level would resol
 defaults for every run from a subdirectory, which is a silent widening nothing reports. Take the
 `cwd` as an option off `command.ts` (`cwd: process.cwd()`) rather than reading it in the verb, so a
 unit test can point the load at a scripted filesystem.
+
+## A gate refuses on a config that never decoded
+
+`loadConfig` answers `Config` for a file nobody could open, a file that is not a JSON object, and a
+key whose value the decoder rejected — those arms live per key in `Resolution`, not on the `Load`,
+because a caller reading one key has no business being stopped by another key's malformity. A gate
+is the opposite case: it is about to write, and it needs *every* key it is judged against to have
+decoded.
+
+So a gate never reads `load._tag === "Config"` as "it loaded". It calls `unusableReason(load)`
+(`config/unusable.ts`), which answers the one reason no value of this config may be used, or `null`.
+Keying on the refusal alone is fail-open on exactly the inputs the surface exists to separate: the
+first round of `triage`'s guard let an unreadable and a malformed config straight through to the
+label write, with the containment check never run (#6292).

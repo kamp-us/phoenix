@@ -162,7 +162,7 @@ or the search index could not be read
 | `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — |
 | `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — |
 | `17` | refused: a live claim marker on the target names a session other than this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `18` | refused: `.fabrika.jsonc` is refused at load, so no value of it may be used — the containment invariant, checked against what the repo actually declared | — | — | — | — | — | — | ✓ | ✓ | — |
+| `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -1554,7 +1554,7 @@ for drift, not because they are currently absent.)
 | `11` | the issue, its comments, the claim on it, the repository's label set, or its milestone set could not be read |
 | `17` | a live claim marker on the issue names another session |
 | `16` | `--ready-for agent` over a live body the wire reader does not answer `Found` on — every type but `epic`; nothing was written |
-| `18` | `.fabrika.jsonc` declares a triage facet that violates containment — refused at load, before the issue is even read |
+| `18` | `.fabrika.jsonc` yielded no usable value — a key's load-time check refused it (the containment invariant is one such check), the file could not be read, or a key did not decode; refused at load, before the issue is even read |
 
 The issue being proven absent is `7` as well — the same zero-scope seat, since there is no issue to
 stamp.
@@ -1720,7 +1720,7 @@ it.
 | `9` | the writes landed but the read-back does not match |
 | `11` | the issue, its comments, the claim on it, or the repository's label set could not be read |
 | `17` | a live claim marker on the issue names another session |
-| `18` | `.fabrika.jsonc` declares a triage facet that violates containment — refused at load, before the comment is posted |
+| `18` | `.fabrika.jsonc` yielded no usable value — a key's load-time check refused it (the containment invariant is one such check), the file could not be read, or a key did not decode; refused at load, before the comment is posted |
 
 **Errors**
 

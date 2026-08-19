@@ -133,6 +133,26 @@ describe("runApply under a refused config", () => {
 		);
 		expect(out.code).toBe(0);
 	});
+
+	/**
+	 * A config that never decoded is a config with no containment answer, and the first round of
+	 * this guard let all three arms through to the write because it keyed on the load's refusal
+	 * alone. Each asserts the refusal AND the empty call list, since "nothing was written" is the
+	 * claim, not "the exit code was 18".
+	 */
+	it.each([
+		["a file that is there and denied", {unreadable: true} as const, "could not be read"],
+		["a document that is not a JSON object", "[1, 2]", "not a JSON object"],
+		["a key no decoder accepted", '{"triageFacets": "garbage"}', "`triageFacets` is not an array"],
+	])("refuses %s, and reads nothing", async (_case, config, expected) => {
+		const shell = guardedShell(happy());
+		const out = await Effect.runPromise(
+			Effect.provide(runApply(options), triageContext(shell, config)),
+		);
+		expect(out.code).toBe(CONFIG_REFUSED);
+		expect(out.stderr.join(" ")).toContain(expected);
+		expect(shell.calls).toEqual([]);
+	});
 });
 
 describe("runApply", () => {

@@ -13,15 +13,18 @@
 
 import {Effect, type FileSystem, type Path} from "effect";
 import {CONFIG_PATH} from "../config/document.ts";
+import {unusableReason} from "../config/unusable.ts";
 import {loadRepoConfig} from "../config/working-root.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {CONFIG_REFUSED} from "./codes.ts";
 
 /**
- * The refusal this repo's config earns, or `null` when it loads.
+ * The refusal this repo's config earns, or `null` when every key of it decoded.
  *
  * `null` is not "the config is absent" — an absent file loads to the shipped defaults, which is the
- * ordinary case and passes here like any other conforming config.
+ * ordinary case and passes here like any other conforming config. It is also not "the load raised no
+ * refusal": a file that could not be read, or that no decoder accepted, is a config this verb has no
+ * containment answer for, and `../config/unusable.ts` is what keeps those out of the write path.
  */
 export const configRefusal = (
 	verb: string,
@@ -29,9 +32,10 @@ export const configRefusal = (
 ): Effect.Effect<VerbOutcome | null, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const load = yield* loadRepoConfig(cwd);
-		if (load._tag === "Config") return null;
+		const unusable = unusableReason(load);
+		if (unusable === null) return null;
 		// Each key words its own refusal, and they do not agree about a final period.
-		const reason = load.reason.replace(/\.$/, "");
+		const reason = unusable.replace(/\.$/, "");
 		return refuse(
 			CONFIG_REFUSED,
 			`${verb}: ${CONFIG_PATH} is refused — ${reason}. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.`,

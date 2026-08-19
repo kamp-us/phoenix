@@ -209,7 +209,7 @@ const apply = leafCommand(
 ).pipe(
 	Command.withShortDescription("Stamp the whole triaged transition as one reconcile."),
 	Command.withDescription(
-		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>`. Exits 7 (no such issue, it is closed, or a label this run would write does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed, including the claim on the issue), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session), 18 (.fabrika.jsonc is refused at load — a facet declares a value it does not own). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47",
+		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>`. Exits 7 (no such issue, it is closed, or a label this run would write does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed, including the claim on the issue), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47",
 	),
 );
 
@@ -231,7 +231,7 @@ const park = leafCommand(
 ).pipe(
 	Command.withShortDescription("Demote an issue to needs-info with the questions on stdin."),
 	Command.withDescription(
-		"Demote an issue to status:needs-info with the questions on STDIN, clearing every priced facet — type, priority, audience, lane and milestone. The comment is posted BEFORE the labels move. Prints `parked\\t<n>\\t<comment-url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue, it is closed, or status:needs-info does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed, including the claim on the issue), 17 (a live claim marker on the issue names another session), 18 (.fabrika.jsonc is refused at load — a facet declares a value it does not own). Example: fabrika triage park 4290 < questions.md",
+		"Demote an issue to status:needs-info with the questions on STDIN, clearing every priced facet — type, priority, audience, lane and milestone. The comment is posted BEFORE the labels move. Prints `parked\\t<n>\\t<comment-url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue, it is closed, or status:needs-info does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed, including the claim on the issue), 17 (a live claim marker on the issue names another session), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable). Example: fabrika triage park 4290 < questions.md",
 	),
 );
 

@@ -147,13 +147,17 @@ export const CRITERIA_REQUIRED = 16;
  */
 export const CLAIMED_ELSEWHERE = 17;
 /**
- * Refused: `.fabrika.jsonc` loads but is refused, so no key's value may be used and nothing is
- * written.
+ * Refused: no value of `.fabrika.jsonc` may be used, so nothing is written.
  *
- * The one that reaches triage is the containment invariant (`../config/containment.ts`): a facet is
- * delete authority, so a config declaring a value its facet does not own — or an enumerated facet
- * owning a label no value produces — reconciles an issue into a shape nobody asked for. #4285 is the
- * incident, and it printed a success line while it happened.
+ * The seat covers every way a config fails to yield one — a key's load-time check refusing it, a
+ * file that could not be read, a document that is not a JSON object, a key no decoder accepted —
+ * because from a write path they are one answer: this repo has no usable config, and every label the
+ * reconcile would judge is judged against it. `../config/unusable.ts` is where that set is decided.
+ *
+ * The load-time check that reaches triage is the containment invariant
+ * (`../config/containment.ts`): a facet is delete authority, so a config declaring a value its facet
+ * does not own — or an enumerated facet owning a label no value produces — reconciles an issue into
+ * a shape nobody asked for. #4285 is the incident, and it printed a success line while it happened.
  *
  * Its own seat rather than {@link OFF_VOCABULARY}'s: that one is a bad *argument*, fixed by re-running
  * the verb with another value, and this one is a bad *repository*, fixed by editing a file — a caller
@@ -221,7 +225,8 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	},
 	{
 		code: CONFIG_REFUSED,
-		meaning: "refused: .fabrika.jsonc is refused at load, so no value of it may be used",
+		meaning:
+			"refused: no value of .fabrika.jsonc may be used — a key's load-time check refused it, it could not be read, or it did not decode",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},
