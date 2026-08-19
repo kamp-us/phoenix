@@ -20,6 +20,7 @@
 import {Effect, type FileSystem, Path} from "effect";
 import {pnpmWorkspaceGlobs} from "../delegate/root.ts";
 import {exists, isDirectory, type ReadFailed, readDir, readFile} from "../io/fs.ts";
+import {isRecord, parseJson} from "../io/json.ts";
 
 /** One real workspace member: a directory under a declared glob that carries a `package.json`. */
 export interface WorkspaceMember {
@@ -27,6 +28,16 @@ export interface WorkspaceMember {
 	readonly dir: string;
 	/** The declared member glob it was found under. */
 	readonly glob: string;
+	/**
+	 * The manifest's `name` — turbo's per-task line prefix, which is the only thing that maps a
+	 * package-relative diagnostic path back to a repo-relative one (`../ci/tsc-annotate.ts`).
+	 *
+	 * `null` when the manifest does not parse or declares no string name. Deliberately not an
+	 * error: a member is a directory with a `package.json`, and every guard above judges that fact
+	 * alone — making a malformed manifest fail the *scan* would red every guard on a defect only
+	 * one of them can see.
+	 */
+	readonly name: string | null;
 }
 
 export interface MemberScan {
@@ -53,6 +64,17 @@ export const undeclaredGlobs = (
 	requested: ReadonlyArray<string>,
 ): ReadonlyArray<string> => requested.filter((glob) => !declared.includes(glob));
 
+/** The manifest's `name`, or `null` when it does not parse or declares no string name. */
+const manifestName = (
+	manifest: string,
+): Effect.Effect<string | null, ReadFailed, FileSystem.FileSystem> =>
+	readFile(manifest).pipe(
+		Effect.map((text) => {
+			const parsed = parseJson(text);
+			return isRecord(parsed) && typeof parsed.name === "string" ? parsed.name : null;
+		}),
+	);
+
 /** The members under one `<dir>/*` glob, or the single literal member a non-glob path names. */
 const membersUnder = (
 	root: string,
@@ -61,17 +83,21 @@ const membersUnder = (
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
 		if (!glob.endsWith("/*")) {
-			return (yield* exists(path.join(root, glob, MANIFEST))) ? [{dir: glob, glob}] : [];
+			const manifest = path.join(root, glob, MANIFEST);
+			if (!(yield* exists(manifest))) return [];
+			return [{dir: glob, glob, name: yield* manifestName(manifest)}];
 		}
 		const parent = glob.slice(0, -2);
 		const base = path.join(root, parent);
 		if (!(yield* exists(base))) return [];
 		const found: Array<WorkspaceMember> = [];
-		for (const name of yield* readDir(base)) {
-			const abs = path.join(base, name);
+		for (const child of yield* readDir(base)) {
+			const abs = path.join(base, child);
 			// `stat` follows symlinks, so a symlinked member still counts; plain files never do.
 			if (!(yield* isDirectory(abs))) continue;
-			if (yield* exists(path.join(abs, MANIFEST))) found.push({dir: `${parent}/${name}`, glob});
+			const manifest = path.join(abs, MANIFEST);
+			if (!(yield* exists(manifest))) continue;
+			found.push({dir: `${parent}/${child}`, glob, name: yield* manifestName(manifest)});
 		}
 		return found;
 	});
