@@ -1360,12 +1360,13 @@ class the diff does not contain (`--surface prose` over a diff with no markdown 
 skill's judgment is taken, then checked against the tree, never silently accepted.
 
 **The anchor refuses an absent class, never a present other one.** One rule holds for every surface,
-so a mixed code+markdown diff is runnable under either of the two surfaces that claim a class in it:
-`code` runs the CI commands and names the markdown, `prose` scans the markdown and names the code,
-`plan` checks the ledger grammar and names the code, and `workflows` lints the workflow YAML and
-names everything else. `prose` used to refuse on the *presence* of a code file, which
-left the repo's most common diff shape — one `.ts` plus one `.md` — with no invocation that opened
-the markdown at all, so the leak scan and the link resolver never ran on it (#5301). The presence of
+so a diff is runnable under every surface that claims a class in it: `code` runs the CI commands,
+`prose` scans the markdown, `plan` checks the ledger grammar, `workflows` lints the workflow YAML,
+and each of them names every changed file it did not open in `unvalidated`. A mixed code+markdown
+diff is runnable under three of them on that rule — `code` claims its code, and `prose` and `plan`
+both claim its markdown. `prose` used to refuse on the *presence* of a code file, which left the
+repo's most common diff shape — one `.ts` plus one `.md` — with no invocation that opened the
+markdown at all, so the leak scan and the link resolver never ran on it (#5301). The presence of
 another class is not a contradiction with the surface; it is exactly what `unvalidated` discloses.
 
 **A named class for "unvalidatable", because an absence cannot be refused.** The anchor sorts each

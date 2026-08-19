@@ -209,10 +209,12 @@ export type ValidatorsRead =
  * to the per-file coverage `build check --surface workflows` reports, so admitting one would only
  * buy back the false green this key exists to refuse.
  *
- * A malformed entry refuses the **whole** list, the way the other two keys do. Here that is the loud
- * direction as well as the consistent one: `build check --surface workflows` refuses UNKNOWN when no
- * validator ran at all, so a dropped entry surfaces as a refusal rather than as a green standing on
- * fewer validators than the operator declared.
+ * A malformed entry refuses the **whole** list, the way the other two keys do, and the reason prints
+ * as a scope note beside whatever verdict follows. What that costs depends on the tree: with no
+ * `actionlint` present nothing is left to open a changed workflow, so `build check --surface
+ * workflows` refuses UNKNOWN; with `actionlint` present the run stands on it alone — still per-file
+ * honest, still disclosed, but over fewer validators than the operator declared. Loud in the first
+ * case, narrowed and stated in the second, never a silent green in either.
  */
 export const readWorkflowValidators = (text: string): ValidatorsRead => {
 	const parsed = parseJson(stripJsonComments(text));

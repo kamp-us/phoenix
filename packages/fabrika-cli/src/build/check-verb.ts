@@ -486,7 +486,8 @@ const readValidatorScope = (
 
 /**
  * The `workflows` surface: `actionlint` over the changed workflow files, plus the repo's own
- * declared workflow commands. A green requires that at least one of them actually ran.
+ * declared workflow commands. A green requires that at least one changed workflow was actually
+ * opened, which is not the same as at least one validator having run.
  *
  * `actionlint` is not a repo dependency anywhere — in phoenix CI installs a pinned tarball at job
  * time — so a tree that lacks it is the ordinary case, not a broken one. It is therefore run when
