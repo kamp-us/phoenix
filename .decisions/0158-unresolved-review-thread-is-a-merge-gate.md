@@ -13,8 +13,8 @@ tags: [pipeline, ship-it, review-code, control-plane]
 The merge gate silently discards inline review comments before merge — and not just the
 bot's. A **human** inline `"fix this"` (left inline rather than as a formal
 Request-Changes) is merged past unread exactly as a bot's lint finding is. Neither
-[`review-code`](../claude-plugins/kampus-pipeline/skills/review-code/SKILL.md) nor
-[`ship-it`](../claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md) ingests any
+`review-code` nor
+`ship-it` ingests any
 **unresolved inline thread** as a merge signal, so a reviewer's substantive objection is
 treated as noise and auto-shipped over. The failure is **silent** — nothing surfaces that
 a thread was dropped — which is the dangerous part. The grounded instance: the

@@ -167,7 +167,7 @@ of the resident core. Applied to the two non-gate, baseline-measured skills:
 
 | Skill (resident core) | on-disk before | after | resident Δ | what moved |
 |---|---:|---:|---:|---|
-| `triage/SKILL.md` | 8,583 tok | 8,077 tok | **−506 tok** (−42 ln) | deslop + the **rare** close-not-planned protocol lifted to [`triage/close-not-planned.md`](../claude-plugins/kampus-pipeline/skills/triage/close-not-planned.md) (681 tok), `Read` **on-demand only on a kill** — never resident on the common triaged / needs-info paths |
+| `triage/SKILL.md` | 8,583 tok | 8,077 tok | **−506 tok** (−42 ln) | deslop + the **rare** close-not-planned protocol lifted to `triage/close-not-planned.md` (681 tok), `Read` **on-demand only on a kill** — never resident on the common triaged / needs-info paths |
 | `write-code/SKILL.md` | 26,277 tok | 26,213 tok | **−64 tok** (−5 ln) | deslop of the `gh api` + glossary boilerplate (within the resident first-~837-line window — see the caveat below) |
 
 **Translating the resident Δ to billed tokens, grounded in the transcript.** `cache_read` is the
@@ -500,7 +500,7 @@ stage's own independent diff-read**, not transferable cross-stage source. No ski
 
 The **right-sized fan-out lever** (ADR [0120](../.decisions/0120-stage-right-sizing-trivial-diff-lighter-gate.md),
 epic [#1527](https://github.com/kamp-us/phoenix/issues/1527)) routes a *trivially-classified* PR
-through a **lighter, still-fail-closed** gate ([`review-trivial`](../claude-plugins/kampus-pipeline/skills/review-trivial/SKILL.md),
+through a **lighter, still-fail-closed** gate (`review-trivial`,
 #1558) instead of the full `review-code`/`review-doc`/`review-skill` fan-out — the classifier
 (#1557) and the executor wiring (#1559, tier **off by default**) are already on `main`. This child
 ([#1560](https://github.com/kamp-us/phoenix/issues/1560)) is the ADR 0112 adoption gate: it measures
@@ -568,7 +568,7 @@ Reproduce (frozen corpus above → the two mechanical checks):
 node packages/pipeline-cli/src/bin.ts trivial-diff classify --repo kamp-us/phoenix --diff-file <fixture.patch>
 # the lighter gate's own deterministic Step-2 scans over the added lines (review-trivial/SKILL.md):
 grep -E '^\+' f.patch | grep -vE '^\+\+\+' | grep -niE 'api[_-]?key|secret|token|password|BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16}|ghp_[0-9A-Za-z]{30,}|xox[baprs]-|-----BEGIN'
-grep -E '^\+' f.patch | grep -vE '^\+\+\+' | grep -nE '(~/|/Users/|/home/|/private/var/folders/|[A-Za-z]:\\\\)'
+grep -E '^\+' f.patch | grep -vE '^\+\+\+' | grep -nE '(~[/]|[/]Users[/]|[/]home[/]|[/]private[/]var[/]folders[/]|[A-Za-z]:\\\\)'
 ```
 
 **The finding — two of the three named failure classes clear with provably NO regression; one is

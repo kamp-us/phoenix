@@ -72,17 +72,13 @@ Non-vacuity is worth one extra assertion: pin that the markdown slice *alone* no
 literal, so the positive match can only have come through the follow path. Counting scanned files
 does not prove it — a section that sources three scripts is satisfied by an unrelated sibling.
 
-## Where it is used
+## Where it was proven (retired instances, #5937 — cited as the pattern's provenance)
 
-- `class-probe.ts` — `parseClassProbes` / `parseUiProbe` read the canonical `HAS_*_RE=` and `UI_RE=`
-  lines out of `gh-issue-intake-formats.md` §CLASS and `ship-it/SKILL.md`, with `FAILCLOSED_PROBES`
-  over-dispatching gates on an unreadable source.
-- `step3-contract.ts` — `parseStep3EntryTest` reads ship-it Step 3's branch-2 entry condition and
-  resolves the rollup fields it tests, so `checks.unit.test.ts`'s branch mirror derives its pending
-  predicate from the skill instead of copying it. Heading-sliced, so it resolves its surface through
-  `resolveStep3Section` and reads the bindings out of the script Step 3 sources.
-- `step55-contract.ts` — `parseReconcileBudget` / `parseMergeDispositions` read ship-it Step 5.5's
-  poll budget and its three disposition renderings the same way, through `resolveStep55Section`.
+All three instances read the v1 `kampus-pipeline` skills and retired with them:
+`class-probe.ts` (the `HAS_*_RE=`/`UI_RE=` probe lines), `step3-contract.ts` (ship-it Step 3's
+branch-2 entry test) and `step55-contract.ts` (Step 5.5's poll budget + dispositions). The
+pattern outlives them: the next time behaviour ships as SKILL.md prose, pin it by parsing the
+skill's literal line, not by hand-mirroring it in TS.
 
 ## The failure it prevents
 

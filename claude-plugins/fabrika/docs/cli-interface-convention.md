@@ -12,7 +12,7 @@ founder given](https://github.com/kamp-us/phoenix/issues/4631)). The method that
 derivation: an authoring session works out which verbs its skill needs and writes the spec, and
 **that spec is the contract the CLI implements** ([#4638
 ruling](https://github.com/kamp-us/phoenix/issues/4638)). The v1 scripts under
-[`../../kampus-pipeline/`](../../kampus-pipeline/) are a frozen baseline to compare against, never a
+`../../kampus-pipeline/` are a frozen baseline to compare against, never a
 source of truth to port from. A spec clause that says "same as the v1 script" has derived nothing.
 
 ---

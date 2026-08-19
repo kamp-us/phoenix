@@ -342,9 +342,8 @@ every copy can drift from while each author assumes some other copy is authorita
 matchers in [`lint.ts`](../../../packages/pipeline-cli/src/tools/gh-phoenix/lint.ts)) reds on a
 GraphQL-path `gh` invocation anywhere in the corpus it walks and fails closed on zero scope
 ([ADR 0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). That walk is rooted at
-`claude-plugins/kampus-pipeline/`, so **fabrika's own corpus is outside its scope** — here the rule
-is prose held by review, not machine-checked. Extending the walk is its own change; this doc does
-not assume it.
+the whole `claude-plugins/` tree (the workflow's `WALK_ROOT`), so **fabrika's own corpus is inside
+its scope** — the rule stated here is the same one that job machine-checks on every push.
 
 > Source: the org's Projects-classic constraint, carried through v1 as a per-skill standing
 > invariant. Five fabrika contracts each restated it before this section existed

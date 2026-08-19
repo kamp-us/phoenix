@@ -63,7 +63,7 @@ session's* `report → triage` run (#851–#864): the dedup + draft + file workf
 produced those issues is exactly what the skill formalizes — the skill is a formalization
 of a run that already works, not a new mechanism.
 
-The skill files findings **type-blind**, exactly as [`report`](https://github.com/kamp-us/phoenix/blob/main/claude-plugins/kampus-pipeline/skills/report/SKILL.md)
+The skill files findings **type-blind**, exactly as `report`
 does: it does not pre-type or pre-prioritize a finding — that is triage's call. It does
 **not** invent a parallel intake path; it reuses `report`'s.
 

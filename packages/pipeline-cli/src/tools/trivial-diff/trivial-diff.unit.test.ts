@@ -13,10 +13,7 @@ import {type ClassifyOptions, classify, parseUnifiedDiff} from "./trivial-diff.t
 const LIVE_RE = CONTROL_PLANE_RE;
 
 const FORMATS_ON_DISK = fileURLToPath(
-	new URL(
-		"../../../../../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",
-		import.meta.url,
-	),
+	new URL("../control-plane-paths/boundaries.md", import.meta.url),
 );
 // The live GUARD_ADR_RE (ADR 0164), parsed from the same single source the shared
 // guard-content-probe verb reads — never re-literaled here, so the guard-touching bound cannot
@@ -136,18 +133,9 @@ describe("classify — §CP forces non-trivial (live boundary, checked first)", 
 		);
 	});
 
-	it("a pipeline agent-definition path (claude-plugins/…/agents/) → non-trivial (ADR 0150)", () => {
+	it("the gate-critical boundaries doc → non-trivial (control-plane checked before doc bound)", () => {
 		const c = classify(
-			fileDiff("claude-plugins/kampus-pipeline/agents/coder.md", ["a tweak"]),
-			opts(),
-		);
-		expect(c.verdict).toBe("non-trivial");
-		expect(c.reason).toMatch(/control-plane/);
-	});
-
-	it("the gate-critical formats doc → non-trivial (control-plane checked before doc bound)", () => {
-		const c = classify(
-			fileDiff("claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md", ["a tweak"]),
+			fileDiff("packages/pipeline-cli/src/tools/control-plane-paths/boundaries.md", ["a tweak"]),
 			opts(),
 		);
 		expect(c.verdict).toBe("non-trivial");

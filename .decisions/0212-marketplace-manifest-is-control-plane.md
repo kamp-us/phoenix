@@ -17,7 +17,7 @@ where an autonomous green-then-ship merge could compromise the pipeline's own gu
 boundary is the single-source path regex in
 [`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts),
 its byte-synced `CONTROL_PLANE_RE=` copy in
-[`gh-issue-intake-formats.md`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md),
+`gh-issue-intake-formats.md`,
 and `.github/CODEOWNERS`.
 
 `.claude-plugin/marketplace.json` is the manifest declaring what the `kampus` marketplace serves —

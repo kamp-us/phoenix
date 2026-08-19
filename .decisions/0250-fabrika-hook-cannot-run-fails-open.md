@@ -29,7 +29,7 @@ Ruled by the founder seat on [#5079](https://github.com/kamp-us/phoenix/issues/5
 
 ### Horn A — fail open, because it is a deliberate hard invariant in v1
 
-v1's [`../claude-plugins/kampus-pipeline/hooks/guard.sh`](../claude-plugins/kampus-pipeline/hooks/guard.sh)
+v1's `../claude-plugins/kampus-pipeline/hooks/guard.sh`
 L25–34 carries an explicit **`#1050` FAIL-OPEN INVARIANT (HARD)**: when the CLI is absent — not yet
 installed, a degraded/offline install, or a hook firing with a stripped PATH before SessionStart
 completes — the wrapper **must** consume stdin and exit 0, never abort the hook or the spawn. The
@@ -67,7 +67,7 @@ revival of #3743. (`guard.sh` is v1 and frozen — ADR
 strongest support.** The #787–#789 blast radius is a property of a **git** hook: `.git/hooks` is
 shared across every linked worktree, and `git worktree add` execs hooks with a stripped PATH, so
 one failing hook aborts worktree creation for the whole crew
-([`../claude-plugins/kampus-pipeline/hooks/create-worktree.sh`](../claude-plugins/kampus-pipeline/hooks/create-worktree.sh)
+(`../claude-plugins/kampus-pipeline/hooks/create-worktree.sh`
 L52–55 states exactly that). fabrika ships **no git hook**: a repo-wide grep for `.git/hooks` finds
 zero hits under `claude-plugins/fabrika/`, and everything fabrika declares lives in
 [`../claude-plugins/fabrika/hooks.json`](../claude-plugins/fabrika/hooks.json) as **Claude Code

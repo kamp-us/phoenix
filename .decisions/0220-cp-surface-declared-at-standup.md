@@ -28,12 +28,12 @@ classifies control-plane, and the repo builds and reviews normally and merges no
 
 **This is a family of sites, not one.** The same "unresolved ⇒ `'.'`" idiom carries three different
 contract values: `CONTROL_PLANE_RE` in
-[`ship-it`](../claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md),
-[`review-code`](../claude-plugins/kampus-pipeline/skills/review-code/SKILL.md) and
-[`review-doc`](../claude-plugins/kampus-pipeline/skills/review-doc/SKILL.md); `UI_RE` in `ship-it`
-and [`review-design`](../claude-plugins/kampus-pipeline/skills/review-design/SKILL.md); and
+`ship-it`,
+`review-code` and
+`review-doc`; `UI_RE` in `ship-it`
+and `review-design`; and
 `GUARD_ADR_RE` in
-[`gh-issue-intake-formats.md`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md).
+`gh-issue-intake-formats.md`.
 The ruling below governs the pattern, not a single line.
 
 **`'.'` was never a safety property.** It is fail-closed only in the repo it was written for.
@@ -118,7 +118,7 @@ The shape has precedent: ADR [0210](0210-direction-binds-at-intake.md) binds its
 explicitly *never* as a merge gate, for the same reason — a constraint discovered at merge is a
 constraint discovered too late to act on. This is that move applied to the §CP declaration.
 
-The stand-up surface already exists: the [`doctor`](../claude-plugins/kampus-pipeline/skills/doctor/SKILL.md)
+The stand-up surface already exists: the `doctor`
 skill and its `doctor.sh`, which verifies a repo's pipeline prerequisites before its first run and
 exits non-zero on a gating gap. The §CP-declaration check belongs there as a **gating** tier — one
 that fails the checklist, not a Tier-3 warn.

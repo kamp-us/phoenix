@@ -41,7 +41,7 @@ the spec real.
 4. **Assert the handler against the fixture, and assert the shape.** Drive the real handler
    (for a shell hook: `execFileSync` the script against a throwaway git repo, feeding the
    golden payload on stdin — see
-   [`create-worktree.hook.test.ts`](../packages/pipeline-cli/src/tools/worktree-sweep/create-worktree.hook.test.ts)),
+   `create-worktree.hook.test.ts`, retired with v1 — #5937),
    plus a direct shape assertion (`assert.notProperty(p, "worktree_path")`) so the captured
    contract's *absences* are guarded too. The litmus: **the test must FAIL against the old
    fabricated contract** — if it passes against both shapes it isn't guarding the real one.
@@ -52,7 +52,7 @@ the spec real.
    `ci-required` need — blocking, not advisory). Advisory would not have stopped #2925. The
    subtlety: the job is path-gated, so the `packages` filter in
    [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) must list the handler's *source*
-   (`claude-plugins/kampus-pipeline/hooks/**`) — else a hook-only edit skips the gate and the
+   (today `claude-plugins/fabrika/hooks.json`) — else a hook-only edit skips the gate and the
    guard never runs on the very change class it exists to catch.
 
 ## The rule, one line

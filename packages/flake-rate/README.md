@@ -23,7 +23,7 @@ Actions REST API — no new recording hook, no workflow change:
 - `run_attempt == 1` + `conclusion: success` → **first-try-green**.
 - `run_attempt > 1` + `conclusion: success` → **rerun-to-green** — a flake that reached
   green by *retry*, not by determinism. This is exactly the laundered-flake signal
-  [`heal-ci`](../../claude-plugins/kampus-pipeline/skills/heal-ci/SKILL.md) produces when it reruns a known
+  `heal-ci` produces when it reruns a known
   transient once (the failure mode behind PR
   [#755](https://github.com/kamp-us/phoenix/pull/755)).
 

@@ -370,7 +370,7 @@ lives as a contextual CTA in *that product's* Subnav — never as a global topba
 
 This section transcribes only what ADR 0176 (via map #2583) ratified. A nav decision not
 covered by the taxonomy, the zone grammar, the class table, or a prohibition above is a **gap
-to surface to the founder** (file it via the [report](claude-plugins/kampus-pipeline/skills/report/SKILL.md) skill) —
+to surface to the founder** (file it via the `report` skill) —
 never a blank for an agent to fill with invented IA law. The IA section grows only when the
 founder ratifies more law into ADR 0176 (or a successor).
 
@@ -380,6 +380,6 @@ founder ratifies more law into ADR 0176 (or a successor).
 
 This manifest transcribes only what ADR 0162 ratified. If a UI decision is not covered by a
 pillar, a value, a token annotation, or a prohibition above, that is a **gap to surface to the
-founder** (file it via the [report](claude-plugins/kampus-pipeline/skills/report/SKILL.md) skill), not a blank for an
+founder** (file it via the `report` skill), not a blank for an
 agent to fill with invented design law. The manifest grows only when the founder ratifies more
 law into ADR 0162 (or a successor).

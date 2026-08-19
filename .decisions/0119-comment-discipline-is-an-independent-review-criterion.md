@@ -11,7 +11,7 @@ tags: [pipeline, review-code, comments, split-role]
 ## Context
 
 CLAUDE.md holds a standing rule — **"Comments earn their place or die"** — and the
-[`deslop-comments`](../claude-plugins/kampus-pipeline/skills/deslop-comments/SKILL.md)
+`deslop-comments`
 skill is its rubric. Issue [#1242](https://github.com/kamp-us/phoenix/issues/1242) asked
 the pipeline to *enforce* that rule on the AI-generated over-commenting that reliably
 lands in fresh diffs (narration of obvious control flow, comments restating the symbol,

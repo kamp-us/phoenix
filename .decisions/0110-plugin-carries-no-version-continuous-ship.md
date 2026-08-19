@@ -10,7 +10,7 @@ tags: [plugin-portability, packaging, distribution, pipeline]
 
 ## Context
 
-The plugin manifest [`claude-plugins/kampus-pipeline/.claude-plugin/plugin.json`](../claude-plugins/kampus-pipeline/.claude-plugin/plugin.json)
+The plugin manifest `claude-plugins/kampus-pipeline/.claude-plugin/plugin.json`
 has no `version` field, and the marketplace plugin entry in
 [`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json) carries none either.
 A structural plugin audit reads the omission as a defect ("a plugin manifest should declare a
@@ -48,7 +48,7 @@ install by git commit SHA, and every commit is the new "version".
   contract. The absence is the correct state.
 - Because `plugin.json` is strict JSON (no comments), the rationale cannot live inline in the
   manifest. The builder-facing note lives in
-  [`claude-plugins/kampus-pipeline/README.md`](../claude-plugins/kampus-pipeline/README.md),
+  `claude-plugins/kampus-pipeline/README.md`,
   which points at this ADR for the why + history; this ADR is the canonical decision record.
 
 ## Consequences

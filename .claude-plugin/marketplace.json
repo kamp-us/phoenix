@@ -6,7 +6,7 @@
 		"url": "https://github.com/kamp-us"
 	},
 	"metadata": {
-		"description": "The kamp.us self-hosted marketplace — distributes the repo-agnostic agent pipeline plugin.",
+		"description": "The kamp.us self-hosted marketplace — distributes the fabrika agent pipeline plugin.",
 		"version": "0.1.0"
 	},
 	"plugins": [
