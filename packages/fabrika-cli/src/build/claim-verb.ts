@@ -39,8 +39,11 @@
  * handed straight to `claim` passes through no pool — which is why the refusal has teeth here and is
  * advice at the pool. In repair the number is a **PR**, which carries no home and no audience of its
  * own, so the test runs over the issue that PR serves (#5562) — and when that issue is
- * `type:decision` the audience axis does not bind, because triage bars a decision from
- * `ready-for:agent` and the fence could otherwise never be satisfied (#5914).
+ * `type:decision` the audience axis does not bind, because triage routes a decision to
+ * `ready-for:human` by default and a repair lane would otherwise fail a fence it had no way to
+ * satisfy (#5914). The default is not an exclusion — a decision issue carrying a founder ruling
+ * comment is buildable as transcription (ADR 0300) — so the exemption is read off the target being
+ * a PR, never off the pairing being impossible.
  */
 import {Effect, type FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

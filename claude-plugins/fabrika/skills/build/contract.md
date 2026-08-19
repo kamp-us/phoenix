@@ -738,10 +738,11 @@ claim (founder ruling on [#5866](https://github.com/kamp-us/phoenix/issues/5866)
 Triage routes a decision to `ready-for:human` by default, so an ADR PR's repair lane was failing a
 fence it could normally never pass — the only way through was `--override`, which spent a
 founder-authorized escape hatch on routine repair. That default is not an exclusion: a decision
-issue carrying a founder ruling comment is buildable as transcription and triage stamps it
-`ready-for:agent` (ADR
+issue carrying a founder ruling comment is buildable as transcription (ADR
 [0300](../../../../.decisions/0300-a-cited-ruling-makes-a-decision-buildable.md)), which is why the
-exemption is read off the target rather than off the impossibility of the pairing.
+exemption is read off the target rather than off the impossibility of the pairing. This axis reads
+the `ready-for:` label the issue carries and never infers one from the type, so which decision issues
+end up carrying `ready-for:agent` is triage's judgement, not a behaviour this verb assumes.
 The exemption is read off the **target**, not typed: there is no `--purpose repair`, because a flag
 could be passed against a bare issue and would then have to be refused, while naming a PR is already
 proof that a build is in flight. Its width is exactly one pairing — the same decision issue claimed

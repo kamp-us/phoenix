@@ -60,8 +60,11 @@ Two refusals before claiming: a `type:decision`'s deliverable is a recorded choi
 (`build-ui`'s) — **do not claim either**. The decision refusal has one arm, and a citation is the only
 thing that opens it: when the issue carries a founder ruling comment that already made the choice,
 the deciding is done and the writing is all that is left, so claim it and transcribe — turn that
-ruling into the ADR or amendment it names, nothing more, and record the comment's URL in the PR body
-as the ruling you transcribed (ADR [0300](../../../../.decisions/0300-a-cited-ruling-makes-a-decision-buildable.md)).
+ruling into the ADR or amendment it names, nothing more. **The citation goes inside the artifact you
+write** — the ADR or amendment names the ruling comment's URL in its own text, so it lands in the
+diff, which is a surface `review diff` serves; free prose in the PR body is read by no verb, so a URL
+that lives only there is invisible to every gate. Name it in the PR body as well, for the merge
+record (ADR [0300](../../../../.decisions/0300-a-cited-ruling-makes-a-decision-buildable.md)).
 **With no citable ruling comment the refusal stands exactly as it reads above.** You never judge a
 decision settled yourself: "this looks settled" is not a citation, a converged thread is not a
 citation, and a gap the ruling left open goes back to the founder rather than getting filled here.

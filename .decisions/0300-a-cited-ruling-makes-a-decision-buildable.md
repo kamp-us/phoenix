@@ -45,8 +45,10 @@ whether the question is settled.
   claim is refused exactly as it was before this ADR.
 - The builder cites a comment. "This looks settled", "the thread converged", or a ruling inferred
   from anything other than a comment recording it is not a citation.
-- The builder records the cited comment's URL in the PR body, so the ruling it transcribed is
-  readable off the merge record.
+- The builder records the cited comment's URL **inside the artifact it writes** — the ADR or
+  amendment names the ruling it transcribes — so the citation lands in the diff, where `review diff`
+  serves it. It goes in the PR body too, for the merge record, but the body is not where it counts:
+  no verb serves free body prose, so a URL that lives only there is readable by no gate.
 - The builder transcribes only what the ruling says. Filling a gap the ruling left open is deciding,
   and it goes back to the founder.
 - `build pick`'s type exclusion is unchanged: this route is entered by number, never picked.
@@ -56,11 +58,16 @@ whether the question is settled.
 A ruled decision now costs one agent lane instead of one founder round-trip, which is the whole
 point — the ruling was already the expensive part.
 
-The cost is that the fence is prose the builder reads, not a check the CLI runs. `build claim`'s
+The cost is that the fence is prose the builder reads, not a check anything runs. `build claim`'s
 audience axis already admits a `type:decision` issue that triage stamped `ready-for:agent`, so the
-refusal and its arm both live in the skill. A builder that transcribes without a citation is caught
-at review, not at claim time. Mechanizing the citation check is a separate question and a separate
-ticket; nobody has asked for it yet, and the review gate reads the PR body where the URL lands.
+refusal and its arm both live in the skill.
+
+**Nothing catches an uncited transcription today.** Putting the URL in the artifact means a reviewer
+who opens the diff can see it, because the diff is served by a verb — but no gate looks for it, and
+none knows a given PR is a transcription that owes one. So the fence is the builder's discipline plus
+a human reading the record, and the honest cost of this ADR is that a builder who skips the citation
+ships. Mechanizing the check is a separate question and a separate ticket; nobody has asked for it
+yet.
 
 ## Records
 
