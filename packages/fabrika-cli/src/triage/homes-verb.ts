@@ -27,8 +27,6 @@ import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {parseRoadmap, roadmapRowFor} from "./roadmap.ts";
 import {scannedLine} from "./scope.ts";
 
-export const DEFAULT_ROADMAP = "ROADMAP.md";
-
 /** One standing lane: a label that is a home in its own right, and what routing to it means. */
 export interface StandingLane {
 	readonly label: string;

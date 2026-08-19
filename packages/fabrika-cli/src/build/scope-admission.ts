@@ -27,6 +27,8 @@
 import {Effect, type FileSystem, Result} from "effect";
 import {exists, type ReadFailed, readFile} from "../io/fs.ts";
 import {issueRefOf} from "../review/classes.ts";
+import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
+import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {
 	AUDIENCE_NOT_AGENT,
@@ -35,9 +37,6 @@ import {
 	PRECONDITION_UNKNOWN,
 	TYPE_NOT_BUILDABLE,
 } from "./codes.ts";
-
-/** The declaration's file, relative to the repository root. */
-export const DEFAULT_ROADMAP = "ROADMAP.md";
 
 /**
  * The labels that are a home in their own right (ADR 0208), admitted on the scope axis whatever the
@@ -67,8 +66,11 @@ const READY_FOR_PREFIX = "ready-for:";
  */
 export const DECISION_TYPE_LABEL = "type:decision";
 
-/** The type whose deliverable is a ledger of children rather than one pull request — `plan-epic`'s. */
-export const EPIC_TYPE_LABEL = "type:epic";
+/**
+ * The epic type label, re-exported at the seam that fences on it — defined once in
+ * `triage/facets.ts`, where the `--type` vocabulary it derives from lives.
+ */
+export {EPIC_TYPE_LABEL};
 
 /**
  * The four types an agent build lane may take — the type axis's whole vocabulary, declared once.
@@ -759,7 +761,7 @@ const unreadable = (path: string, failure: ReadFailed): FocusRead => ({
  * split: a probe that cannot be performed is itself UNKNOWN, never "absent".
  */
 export const readDeclaredFocus = (
-	path: string = DEFAULT_ROADMAP,
+	path: string = ROADMAP_FILE,
 ): Effect.Effect<FocusRead, never, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
 		const probe = yield* Effect.result(exists(path));

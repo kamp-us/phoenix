@@ -15,6 +15,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type PhaseLine, type RequiresLine, readTopology, renderRef} from "../build/dependencies.ts";
 import {openIssue} from "../build/target.ts";
 import {getIssue, type IssueRecord} from "../io/issues.ts";
+import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {read as readAcceptanceCriteria} from "../wire/acceptance-criteria.ts";
 import {BAD_SECTIONS, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -36,7 +37,6 @@ import type {ChildLedger, CriteriaToken, Ledger, Phase} from "./model.ts";
 /** Child reads and child writes run bounded. v1 spawned one `gh api` per child, unbounded. */
 export const FAN_OUT = 8;
 
-export const EPIC_TYPE_LABEL = "type:epic";
 const DEPENDENCIES_HEADING = "Dependencies";
 
 /** The four sentences a verb owns, so this module can refuse in the caller's voice. */

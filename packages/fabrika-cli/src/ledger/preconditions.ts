@@ -20,11 +20,10 @@ import {nonceOf} from "../build/lane.ts";
 import {badNumber, openIssue, resolveTargetRepo} from "../build/target.ts";
 import {assertGround} from "../build/tree.ts";
 import type {IssueRecord} from "../io/issues.ts";
+import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {CLAIM_NOT_MINE, OFF_VOCABULARY, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runDir, runKey} from "./run.ts";
-
-export const EPIC_LABEL = "type:epic";
 
 /** The per-verb halves of the shared refusals — the same facts, each verb's own wording. */
 export interface LedgerMessages {
@@ -79,7 +78,7 @@ export const openGround = (
 			messages.unreadable(`#${epicNumber}`, reason),
 		);
 		if (target._tag === "Refused") return refused(target.outcome);
-		if (!target.issue.labels.includes(EPIC_LABEL)) {
+		if (!target.issue.labels.includes(EPIC_TYPE_LABEL)) {
 			return refused(refuse(OFF_VOCABULARY, messages.notAnEpic(epicNumber)));
 		}
 

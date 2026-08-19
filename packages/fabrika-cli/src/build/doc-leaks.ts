@@ -38,6 +38,8 @@
  * Every arm is a generic structural shape. None of them names an operator, a machine or a repo.
  */
 
+import {DECISIONS_ROOT} from "../review/classes.ts";
+
 /** A machine-local path shape, and the report line it produces. */
 export interface PathPattern {
 	readonly pattern: RegExp;
@@ -81,7 +83,7 @@ export interface DocLeak {
 }
 
 const DOC_SUFFIXES = [".md", ".mdx", ".markdown"] as const;
-const DOC_DIRS = ["/.decisions/", "/.patterns/"] as const;
+const DOC_DIRS = [`/${DECISIONS_ROOT}`, "/.patterns/"] as const;
 
 const normalize = (path: string): string => path.replace(/\\/g, "/");
 

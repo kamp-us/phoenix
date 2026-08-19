@@ -37,6 +37,18 @@ export const isStandingLane = (label: string): label is StandingLane =>
 export const TYPES = ["bug", "feature", "chore", "decision", "investigation", "epic"] as const;
 export type TriageType = (typeof TYPES)[number];
 
+/** The label form of one type. Every `type:*` label the package writes or matches comes from here. */
+export const typeLabel = (type: TriageType): string => `type:${type}`;
+
+/**
+ * The type whose deliverable is a ledger of children rather than one pull request.
+ *
+ * Three modules held their own copy of the string — `plan/load.ts`, `ledger/preconditions.ts` and
+ * `build/scope-admission.ts` — which is the drift shape #5772 collapsed for the status and facet
+ * vocabularies. Derived from {@link TYPES}, so the label and the vocabulary cannot disagree.
+ */
+export const EPIC_TYPE_LABEL = typeLabel("epic");
+
 /** The closed `--priority` vocabulary — the enum whose absence made `--p 1` mint a label `1`. */
 export const PRIORITIES = ["p0", "p1", "p2"] as const;
 export type TriagePriority = (typeof PRIORITIES)[number];
@@ -84,7 +96,7 @@ export const triagedFacets = (input: {
 	readonly readyFor: TriageAudience;
 	readonly lane: StandingLane | null;
 }): ReadonlyArray<Facet> => [
-	{name: "type", owns: ownsType, keep: [`type:${input.type}`]},
+	{name: "type", owns: ownsType, keep: [typeLabel(input.type)]},
 	{name: "priority", owns: ownsPriority, keep: [input.priority]},
 	{name: "status", owns: ownsStatus, keep: [TRIAGED]},
 	{name: "audience", owns: ownsAudience, keep: [`ready-for:${input.readyFor}`]},

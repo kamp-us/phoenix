@@ -2,6 +2,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {FAILED} from "../verb.ts";
 import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
 import {
@@ -33,7 +34,6 @@ import {
 	truncatedComments,
 } from "./fixtures.test-support.ts";
 import {runPick} from "./pick-verb.ts";
-import {DEFAULT_ROADMAP} from "./scope-admission.ts";
 
 const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
@@ -328,7 +328,7 @@ describe("runClaim", () => {
  * that posted and then refused would leave a marker on the issue with nothing to retract it.
  */
 describe("runClaim — the admission test runs before any marker is written", () => {
-	const FOCUSED = fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}});
+	const FOCUSED = fakeFs({files: {[ROADMAP_FILE]: focusTable(44)}});
 
 	const claimWith = (target: ExecResult, fs = FOCUSED, overrides: Partial<typeof options> = {}) => {
 		const shell = unblocked([
@@ -365,7 +365,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	it("claims an issue homed in the SECOND declared milestone, off the same predicate (#6005)", async () => {
 		const {out} = await claimWith(
 			OUT_OF_CAMPAIGN,
-			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable([44, 39])}}),
+			fakeFs({files: {[ROADMAP_FILE]: focusTable([44, 39])}}),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).answer).toBe("won");
@@ -375,7 +375,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	it("refuses an out-of-focus issue naming the whole declared set in the remedy", async () => {
 		const {out} = await claimWith(
 			OUT_OF_CAMPAIGN,
-			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable([44, 46])}}),
+			fakeFs({files: {[ROADMAP_FILE]: focusTable([44, 46])}}),
 		);
 		expect(out.code).toBe(OUT_OF_FOCUS);
 		expect(out.stderr.some((line) => line.includes("milestones #44, #46"))).toBe(true);
@@ -391,7 +391,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	it("refuses an unreadable declaration on 11 — scope is UNKNOWN, never admitted", async () => {
 		const {out, shell} = await claimWith(
 			CLAIMABLE,
-			fakeFs({files: {[DEFAULT_ROADMAP]: null}, unprobeable: [DEFAULT_ROADMAP]}),
+			fakeFs({files: {[ROADMAP_FILE]: null}, unprobeable: [ROADMAP_FILE]}),
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
@@ -401,7 +401,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	it("refuses a malformed declaration on 4 — never read as 'no focus'", async () => {
 		const {out, shell} = await claimWith(
 			CLAIMABLE,
-			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44).replace("2026-08-09", "the 9th")}}),
+			fakeFs({files: {[ROADMAP_FILE]: focusTable(44).replace("2026-08-09", "the 9th")}}),
 		);
 		expect(out.code).toBe(BAD_SECTIONS);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
@@ -432,7 +432,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	it("never lets --override past an UNKNOWN admission — a failed read has proven nothing", async () => {
 		const {out, shell} = await claimWith(
 			CLAIMABLE,
-			fakeFs({files: {[DEFAULT_ROADMAP]: null}, unprobeable: [DEFAULT_ROADMAP]}),
+			fakeFs({files: {[ROADMAP_FILE]: null}, unprobeable: [ROADMAP_FILE]}),
 			{override: "I know what I am doing", overrideLane: "build-ui"},
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -529,7 +529,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
  * read is the issue the PR's lane serves.
  */
 describe("runClaim — a PR number is judged by the issue it serves", () => {
-	const FOCUSED = fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}});
+	const FOCUSED = fakeFs({files: {[ROADMAP_FILE]: focusTable(44)}});
 	const SERVED = /^gh api repos\/o\/r\/issues\/5553$/;
 
 	const pull = (body: string) =>
@@ -871,7 +871,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
  * gated. Every case runs that one issue and varies nothing but the purpose.
  */
 describe("runClaim — the purpose axis", () => {
-	const FOCUSED = fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}});
+	const FOCUSED = fakeFs({files: {[ROADMAP_FILE]: focusTable(44)}});
 
 	const claimWith = (target: ExecResult, overrides: Partial<typeof options> = {}) => {
 		const shell = unblocked([
@@ -1542,7 +1542,7 @@ describe("runClaim — the blockedness gate", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runClaim(options),
-				Layer.merge(shell.layer, fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}}).layer),
+				Layer.merge(shell.layer, fakeFs({files: {[ROADMAP_FILE]: focusTable(44)}}).layer),
 			),
 		);
 		expect(out.code).toBe(OUT_OF_FOCUS);
