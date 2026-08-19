@@ -18,6 +18,10 @@ const LIST = /^git worktree list --porcelain$/;
 const ADD = /^git worktree add /;
 const REMOVE = /^git worktree remove /;
 const FETCH = /^git fetch /;
+const BRANCHES = /^git for-each-ref /;
+
+const NO_BRANCHES = okOut("main\n");
+const BRANCH_SURVIVED = okOut(`main\n${BRANCH}\n`);
 
 const listing = (...blocks: ReadonlyArray<readonly [string, string | null]>): ExecResult =>
 	okOut(
@@ -52,6 +56,7 @@ describe("runAssembly", () => {
 		const {outcome, calls} = await run([
 			[once(LIST), CLEAN],
 			[LIST, SEATED],
+			[BRANCHES, NO_BRANCHES],
 			[FETCH, okOut("")],
 			[ADD, okOut("")],
 			[/^git remote set-head /, okOut("")],
@@ -91,6 +96,7 @@ describe("runAssembly", () => {
 	it("reports a placement that did not land rather than answering the path it meant to make", async () => {
 		const {outcome} = await run([
 			[LIST, CLEAN],
+			[BRANCHES, NO_BRANCHES],
 			[FETCH, okOut("")],
 			[ADD, errOut("fatal: could not create work tree dir")],
 		]);
@@ -103,6 +109,7 @@ describe("runAssembly", () => {
 	it("never cuts the assembly branch off a stale base — a failed fetch places nothing", async () => {
 		const {outcome, calls} = await run([
 			[LIST, CLEAN],
+			[BRANCHES, NO_BRANCHES],
 			[FETCH, errOut("network is unreachable")],
 		]);
 
@@ -144,6 +151,31 @@ describe("runAssembly", () => {
 
 		expect(outcome.code).toBe(APPEND_UNKNOWN);
 		expect(outcome.stderr.join("\n")).toContain("NOT removed");
+	});
+
+	it("resumes a branch that outlived its worktree, checking it out rather than re-cutting it (#6163)", async () => {
+		const {outcome, calls} = await run([
+			[once(LIST), CLEAN],
+			[LIST, SEATED],
+			[BRANCHES, BRANCH_SURVIVED],
+		]);
+
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout.trim()).toBe(EXPECTED);
+		expect(calls).toContain(`git worktree add ${EXPECTED} ${BRANCH}`);
+		expect(calls.some((line) => line.includes("worktree add -b"))).toBe(false);
+		expect(calls.some((line) => line.startsWith("git fetch"))).toBe(false);
+	});
+
+	it("is UNKNOWN, never a placement, when the branch list cannot be read", async () => {
+		const {outcome, calls} = await run([
+			[LIST, CLEAN],
+			[BRANCHES, errOut("fatal: not a git repository")],
+		]);
+
+		expect(outcome.code).toBe(LANE_UNREADABLE);
+		expect(calls.some((line) => line.startsWith("git worktree add"))).toBe(false);
+		expect(calls.some((line) => line.startsWith("git fetch"))).toBe(false);
 	});
 
 	it("refuses a lane that was never emitted, before it touches any working tree", async () => {

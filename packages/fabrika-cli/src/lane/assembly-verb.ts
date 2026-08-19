@@ -16,6 +16,7 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {execCapture} from "../io/exec.ts";
+import {localBranches} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
 import {assemblySeat, worktrees} from "./assembly.ts";
@@ -101,24 +102,34 @@ export const runAssembly = (
 			]);
 		}
 
-		// `origin/HEAD` is git's own pointer at the default branch, so the cut needs no branch name;
-		// `set-head` refreshes it in a checkout where it was never written.
-		const fetched = yield* execCapture("git", ["fetch", "--quiet", "origin"]);
-		if (!fetched.ok) {
+		const branches = yield* localBranches;
+		if (branches._tag === "Failure") {
 			return refuse(
 				LANE_UNREADABLE,
-				`${VERB}: cannot fetch origin: ${fetched.reason} — the assembly branch is never cut off a stale base.`,
+				`${VERB}: cannot read this repository's branches: ${branches.reason} — whether ${branch} already exists is UNKNOWN, so nothing was placed.`,
 			);
 		}
-		yield* execCapture("git", ["remote", "set-head", "origin", "--auto"]);
-		const created = yield* execCapture("git", [
-			"worktree",
-			"add",
-			"-b",
-			branch,
-			seat.expected,
-			"origin/HEAD",
-		]);
+		// The branch outliving its worktree is the ordinary state after `--remove` at a terminal, a
+		// pruned tree, or a crash mid-run — so it is resumed, checked out as it stands. Only a first
+		// placement cuts, and only a cut needs a fresh base: `origin/HEAD` is git's own pointer at the
+		// default branch, and `set-head` writes it in a checkout where it was never set.
+		const resuming = branches.value.includes(branch);
+		if (!resuming) {
+			const fetched = yield* execCapture("git", ["fetch", "--quiet", "origin"]);
+			if (!fetched.ok) {
+				return refuse(
+					LANE_UNREADABLE,
+					`${VERB}: cannot fetch origin: ${fetched.reason} — the assembly branch is never cut off a stale base.`,
+				);
+			}
+			yield* execCapture("git", ["remote", "set-head", "origin", "--auto"]);
+		}
+		const created = yield* execCapture(
+			"git",
+			resuming
+				? ["worktree", "add", seat.expected, branch]
+				: ["worktree", "add", "-b", branch, seat.expected, "origin/HEAD"],
+		);
 		const after = yield* seatOf(options.epic, branch);
 		if (after._tag === "Unreadable") {
 			return refuse(
@@ -134,6 +145,6 @@ export const runAssembly = (
 			);
 		}
 		return answer(`${after.seat.path}\n`, [
-			`${VERB}: placed ${branch} for the lane at ${loaded.dir}; the invoking checkout was not switched.`,
+			`${VERB}: ${resuming ? "re-placed the worktree of the existing" : "placed"} ${branch} for the lane at ${loaded.dir}; the invoking checkout was not switched.`,
 		]);
 	});

@@ -134,9 +134,12 @@ node <fabrika> lane assembly $lane_key
 
 Its stdout is the absolute path of that worktree — `.claude/worktrees/epic-<lane-key>`, cut off the
 repository's default branch through git's own `origin/HEAD` pointer — and **every git write this run
-performs on the assembly branch happens there, addressed as `git -C <that path>`**. It is idempotent,
-so running it again on a later pass resumes the same tree and re-prints the same path; run it at the
-top of any pass that is about to integrate rather than carrying a path you remembered.
+performs on the assembly branch happens there, addressed as `git -C <that path>`**. It is idempotent
+from either side: a later pass finding the tree still there resumes it and re-prints the same path,
+and a pass finding the branch alive with its tree gone — what `--remove` at a terminal leaves behind,
+and what a pruned tree or a crashed run leaves too — checks that branch out again as it stands,
+merges and all. So run it at the top of any pass that is about to integrate rather than carrying a
+path you remembered.
 
 The boot used to be `git switch --create epic/$lane_key` in whatever tree invoked this skill, which
 in practice is a human's working tree: it then sat on the epic branch for hours, every tool reading
@@ -146,7 +149,8 @@ integrate side by side, each in its own tree.
 
 The verb's refusals are all parks, not retries: `33` is `epic/<lane-key>` already checked out in the
 main working tree — switch that tree off it and run the verb again, never assemble there; `8` is a
-placement that ran and did not read back, UNKNOWN; `11` is working trees or an origin that could not
+placement that ran and did not read back, UNKNOWN (an existing `epic/<lane-key>` is not this: it is
+the resume above, and the verb answers its path); `11` is working trees or an origin that could not
 be read. Placing it is not optional — without the branch `lane prove` reads every child's range as
 UNKNOWN (exit `11`), so a run driven without it proves nothing it records.
 
@@ -501,9 +505,10 @@ about:
 node <fabrika> lane assembly $lane_key --remove
 ```
 
-It never forces, so a tree holding uncommitted work is refused rather than dropped: that refusal is
-exit `8`, and it means unlanded work is sitting there — name it in the transcript comment and leave
-the tree. A park is not a terminal, so a `LANE-PARKED` run leaves the worktree in place for the
+It never forces, so a tree holding uncommitted work is refused rather than dropped. That refusal is
+exit `8`, and it carries git's own reason: uncommitted work sitting there is the usual one, a process
+still standing inside the tree (the `cd` in §3 is one) is the other. Read the reason it prints, name
+it in the transcript comment, and leave the tree. A park is not a terminal, so a `LANE-PARKED` run leaves the worktree in place for the
 successor that resumes the lane.
 
 Both ends of the loop release the claim, and it is the **last** thing the run does — after the park
