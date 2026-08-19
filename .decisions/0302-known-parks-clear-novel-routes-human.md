@@ -1,12 +1,12 @@
 ---
-id: 0301
+id: 0302
 title: Only a registered recipe proven by a re-fold clears a lane park without a human
 status: accepted
 date: 2026-08-19
 tags: [fabrika, lane, pipeline, recipes, agents]
 ---
 
-# 0301 — Only a registered recipe proven by a re-fold clears a lane park without a human
+# 0302 — Only a registered recipe proven by a re-fold clears a lane park without a human
 
 **What this decides:** a parked lane gets out on its own only when a recipe table already names that
 exact park and a second fold proves the task left it. Every other park goes to a person through a
