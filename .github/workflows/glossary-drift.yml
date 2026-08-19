@@ -68,16 +68,19 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # `continue-on-error` lets a non-zero exit reach the final step, which is what turns an
-      # unreadable sweep into a red instead of a silent skip. The JSON shape carries the verdict:
-      # `outcome` is drift / clean / bootstrap, and the candidate rows are what a filed issue quotes.
+      # The JSON shape carries the verdict: `outcome` is drift / clean / bootstrap, and the candidate
+      # rows are what a filed issue quotes.
+      # `set +e` is load-bearing: GitHub runs a `run:` block under `bash -e`, so an unread sweep would
+      # abort the step at the `node` line and never write `code=` — leaving the gate below reading an
+      # output the failure itself erased (#5560). The exit code is recorded on both paths, and the
+      # step stays green so no `continue-on-error` is needed to reach the two steps after it.
       - name: glossary drift sweep
         id: sweep
-        continue-on-error: true
         env:
           REGISTER: ${{ inputs.register || 'both' }}
         run: |
-          set -o pipefail
+          set +e
+          set -uo pipefail
           node packages/fabrika-cli/src/bin.ts glossary drift --register "$REGISTER" --json \
             > drift.json 2> drift-diagnostics.txt
           echo "code=$?" >> "$GITHUB_OUTPUT"
@@ -108,9 +111,17 @@ jobs:
             --body "$(printf 'The weekly glossary-drift sweep found candidate coinages in the %s commit(s) that landed since the registers last changed (%s) — terms named in shipped work that `.glossary/` does not declare.\n\nThe extraction is recall-biased by design (ADR 0128): a false positive costs one triage glance. For each row, either declare the term with `/fabrika:glossary` or dismiss it.\n\n%s\n' "$SCANNED" "$SINCE" "$CANDIDATES")"
 
       # An unread sweep is never a pass: 4, 7 and 11 all mean the verdict is UNKNOWN, and a green run
-      # under any of them would report "no drift" from a range nobody read (#4776).
+      # under any of them would report "no drift" from a range nobody read (#4776). The step always
+      # runs and decides in bash rather than in the `if:` — only `0` passes, so an empty code (the
+      # sweep step failed to record one) reds the job instead of resolving to green (ADR 0092).
       - name: Fail the job on an unread sweep
-        if: ${{ steps.sweep.outputs.code != '0' }}
+        env:
+          CODE: ${{ steps.sweep.outputs.code }}
         run: |
-          echo "glossary-drift: exit ${{ steps.sweep.outputs.code }} — 4 is an unparseable term table, 7 a --paths matching nothing, 11 an unreadable register or commit range. See the sweep step output above." >&2
+          set -uo pipefail
+          if [ "${CODE-}" = "0" ]; then
+            echo "glossary-drift: the sweep read its whole range."
+            exit 0
+          fi
+          echo "glossary-drift: exit '${CODE-}' — 4 is an unparseable term table, 7 a --paths matching nothing, 11 an unreadable register or commit range, and an empty code means the sweep step never recorded one. See the sweep step output above." >&2
           exit 1

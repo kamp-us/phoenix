@@ -54,17 +54,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # The guard reads the live milestone projection over `gh api`, so it needs a token.
-      # `continue-on-error` lets a red proceed to the scheduled issue-filing step below;
-      # the final gate step re-fails the job for the blocking (non-schedule) triggers.
+      # `set +e` is load-bearing: GitHub runs a `run:` block under `bash -e`, so a red check would
+      # abort the step at the pipeline and never write `code=` — leaving the gate below reading an
+      # output the failure itself erased (#5560). The exit code is recorded on both paths, and the
+      # step stays green so no `continue-on-error` is needed to reach the two steps after it.
       - name: roadmap-guard check
         id: guard
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -o pipefail
+          set +e
+          set -uo pipefail
           node packages/fabrika-cli/src/bin.ts guard roadmap-guard check 2>&1 | tee guard-output.txt
-          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          echo "code=${PIPESTATUS[0]-}" >> "$GITHUB_OUTPUT"
 
       # Scheduled drift → file a status:needs-triage issue (the out-of-band drift the PR
       # trigger can't see). No PR to block on a schedule run, so the issue IS the signal.
@@ -86,8 +88,19 @@ jobs:
       # Block the PR / milestone-event / dispatch run on red, and a schedule run too when the
       # code is anything but the `12` already filed above — an unreadable projection (11) or an
       # empty scan (7) is an unanswered question, never a pass.
+      #
+      # The step runs on every path it does not hand to the filing step above, and decides pass/fail
+      # in bash rather than in the `if:` — only `0` passes, so an empty code (the check step failed
+      # to record one) reds the job instead of resolving to green (ADR 0092).
       - name: Fail the job on drift or an unanswered scan
-        if: ${{ steps.guard.outputs.code != '0' && !(github.event_name == 'schedule' && steps.guard.outputs.code == '12') }}
+        if: ${{ !(github.event_name == 'schedule' && steps.guard.outputs.code == '12') }}
+        env:
+          CODE: ${{ steps.guard.outputs.code }}
         run: |
-          echo "roadmap-guard: exit ${{ steps.guard.outputs.code }} — 12 is ROADMAP.md ↔ milestone drift, 11 an unreadable ROADMAP.md or projection, 7 an empty scan. See the check step output above." >&2
+          set -uo pipefail
+          if [ "${CODE-}" = "0" ]; then
+            echo "roadmap-guard: ROADMAP.md and the milestone projection are in sync."
+            exit 0
+          fi
+          echo "roadmap-guard: exit '${CODE-}' — 12 is ROADMAP.md ↔ milestone drift, 11 an unreadable ROADMAP.md or projection, 7 an empty scan, and an empty code means the check step never recorded one. See the check step output above." >&2
           exit 1
