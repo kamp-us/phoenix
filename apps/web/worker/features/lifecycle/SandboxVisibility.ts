@@ -24,13 +24,19 @@ import {
  * authority) uses it; otherwise it degrades to a non-moderator viewer keyed by the
  * threaded `viewerId` — so an author still sees their OWN sandboxed content on a
  * plain `{viewerId}` re-read, while a missing identity safely reads as anonymous.
+ *
+ * The degraded path claims neither elevated class: `seesSandboxedInPlace` (#6423) is
+ * resolved from the flag + the opt-in preference, which a bare `{viewerId}` cannot
+ * witness, so it degrades `false` exactly as `canSeeSandboxed` does.
  */
 export const resolveSandboxViewer = (opts: {
 	readonly viewerId?: string | null | undefined;
 	readonly sandboxViewer?: SandboxViewer | undefined;
 }): SandboxViewer =>
 	opts.sandboxViewer ??
-	(opts.viewerId != null ? {viewerId: opts.viewerId, canSeeSandboxed: false} : anonymousViewer);
+	(opts.viewerId != null
+		? {viewerId: opts.viewerId, canSeeSandboxed: false, seesSandboxedInPlace: false}
+		: anonymousViewer);
 
 /** The two lifecycle columns a content read filters the sandbox dimension on. */
 export interface SandboxColumns {
@@ -51,9 +57,10 @@ export interface SandboxColumns {
  * by the caller's orthogonal `isNull(removedAt)` guard, so it is not selected here):
  *
  * - `Live` (`Everyone`) — `sandboxed_at IS NULL`: the public base, visible to all.
- * - `Sandboxed` (`AuthorOrModerator`) — a signed-in viewer additionally sees their own
- *   sandboxed rows (`author_id = :viewerId`); a moderator is handled by the
- *   `canSeeSandboxed` short-circuit in {@link sandboxVisibleWhere} (no restriction).
+ * - `Sandboxed` (`AuthorOrModeratorOrInPlaceViewer`) — an opted-in in-place viewer
+ *   (#6423) sees every sandboxed row (`sandboxed_at IS NOT NULL`, author-blind); any
+ *   other signed-in viewer sees only their own (`author_id = :viewerId`); a moderator is
+ *   handled by the `canSeeSandboxed` short-circuit in {@link sandboxVisibleWhere}.
  * - `Removed` (`NoOne`) — `undefined`: not selected in the sandbox dimension.
  */
 export const sandboxArm = (
@@ -65,9 +72,10 @@ export const sandboxArm = (
 		case "Live":
 			return isNull(cols.sandboxedAt);
 		case "Sandboxed":
-			// Only the AuthorOrModerator rule's author branch survives here for a
-			// non-moderator (the moderator branch is the caller's `canSeeSandboxed`
-			// short-circuit): a signed-in viewer sees their OWN sandboxed rows.
+			// The rule's moderator branch is the caller's `canSeeSandboxed` short-circuit,
+			// so two branches survive here: the in-place viewer's author-blind widening
+			// (#6423) and, failing that, the author's own rows.
+			if (viewer.seesSandboxedInPlace) return isNotNull(cols.sandboxedAt);
 			return viewer.viewerId !== null ? eq(cols.authorId, viewer.viewerId) : undefined;
 		case "Removed":
 			return undefined;
@@ -87,6 +95,10 @@ export const sandboxArm = (
  *   set is visible (drizzle `and()` drops an `undefined` term).
  * - signed-in member — `sandboxed_at IS NULL OR author_id = :viewerId`: public
  *   content plus their own sandboxed content.
+ * - opted-in in-place viewer (#6423) — `sandboxed_at IS NULL OR sandboxed_at IS NOT
+ *   NULL`: every non-removed row, since the caller's `isNull(removedAt)` guard is
+ *   orthogonal and stays where it is. It rides `seesSandboxedInPlace`, not
+ *   `canSeeSandboxed`, so the moderator backlog reads are untouched.
  * - anonymous/public (`viewerId` null) — `sandboxed_at IS NULL`: public only.
  */
 export const sandboxVisibleWhere = (
