@@ -411,6 +411,13 @@ Two things this deliberately is **not**:
 branch — its first record is always the main working tree, which is what makes "the
 primary checkout" nameable at all
 ([`packages/fabrika-cli/src/lane/assembly.ts`](../packages/fabrika-cli/src/lane/assembly.ts)).
+Read the whole record, though, not just its path and branch: a tree whose directory
+was deleted without `git worktree prune` still gets a record, marked with a
+`prunable` line. Drop that line and the listing says a branch is held by a tree
+nothing can run in. Git also refuses to place a new worktree over the leftover
+registration (`fatal: '<path>' is a missing but already registered worktree`), so
+the record has to be cleared — `git worktree remove <path>` exits 0 on one — before
+the branch can be placed again.
 
 ## Why these constraints exist (and where the real fix lives)
 

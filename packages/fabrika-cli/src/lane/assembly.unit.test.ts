@@ -28,16 +28,39 @@ HEAD cccc333
 detached
 `;
 
+const STALE = `worktree ${MAIN}
+HEAD aaaa111
+branch refs/heads/main
+
+worktree ${MAIN}/.claude/worktrees/epic-5680
+HEAD bbbb222
+branch refs/heads/epic/5680
+prunable gitdir file points to non-existent location
+`;
+
 const run = <A>(effect: Shell<A>, script: ExecResult): Promise<A> =>
 	Effect.runPromise(Effect.provide(effect, fakeShell([[/^git /, script]]).layer));
 
 describe("parseWorktreeList", () => {
 	it("reads every tree with its short branch, main first — git's own ordering", () => {
 		expect(parseWorktreeList(LIST)).toEqual([
-			{path: MAIN, branch: "main"},
-			{path: `${MAIN}/.claude/worktrees/epic-5680`, branch: "epic/5680"},
-			{path: `${MAIN}/.claude/worktrees/agent-77`, branch: null},
+			{path: MAIN, branch: "main", prunable: false},
+			{path: `${MAIN}/.claude/worktrees/epic-5680`, branch: "epic/5680", prunable: false},
+			{path: `${MAIN}/.claude/worktrees/agent-77`, branch: null, prunable: false},
 		]);
+	});
+
+	it("keeps the prunable flag git prints for a record whose directory is gone", () => {
+		expect(parseWorktreeList(STALE)).toEqual([
+			{path: MAIN, branch: "main", prunable: false},
+			{path: `${MAIN}/.claude/worktrees/epic-5680`, branch: "epic/5680", prunable: true},
+		]);
+	});
+
+	it("reads a bare `prunable` line too, which git prints when it carries no reason", () => {
+		expect(
+			parseWorktreeList("worktree /gone\nHEAD aaaa111\nbranch refs/heads/epic/5680\nprunable\n"),
+		).toEqual([{path: "/gone", branch: "epic/5680", prunable: true}]);
 	});
 
 	it("answers no tree at all for bytes carrying no worktree record, so a caller cannot read one", () => {
@@ -98,6 +121,14 @@ branch refs/heads/epic/5680
 		expect(assemblySeat(elsewhere, 5680, "epic/5680")).toMatchObject({
 			_tag: "Isolated",
 			path: "/tmp/assembly",
+		});
+	});
+
+	it("names a record whose directory is gone stale, never isolated at a dead path (#6163)", () => {
+		expect(assemblySeat(trees(STALE), 5680, "epic/5680")).toEqual({
+			_tag: "Stale",
+			path: `${MAIN}/.claude/worktrees/epic-5680`,
+			expected: `${MAIN}/.claude/worktrees/epic-5680`,
 		});
 	});
 

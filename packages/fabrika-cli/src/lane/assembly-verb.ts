@@ -91,7 +91,9 @@ export const runAssembly = (
 				);
 			}
 			return answer(`${seat.path}\n`, [
-				`${VERB}: removed the assembly worktree for #${options.epic}.`,
+				seat._tag === "Stale"
+					? `${VERB}: the assembly worktree for #${options.epic} was already gone; cleared the record git still held for it.`
+					: `${VERB}: removed the assembly worktree for #${options.epic}.`,
 			]);
 		}
 
@@ -100,6 +102,25 @@ export const runAssembly = (
 			return answer(`${seat.path}\n`, [
 				`${VERB}: resuming the assembly worktree of the lane at ${loaded.dir}.`,
 			]);
+		}
+		if (seat._tag === "Stale") {
+			// A record whose directory is gone is no tree to work in, and git refuses to add over the
+			// registration ("missing but already registered worktree"), so it is cleared before the
+			// placement rather than answered as a path §2 would then try to `git -C` into.
+			const cleared = yield* execCapture("git", ["worktree", "remove", seat.path]);
+			const recheck = yield* seatOf(options.epic, branch);
+			if (recheck._tag === "Unreadable") {
+				return refuse(
+					APPEND_UNKNOWN,
+					`${VERB}: cleared the stale worktree record at ${seat.path} and cannot re-read the working trees: ${recheck.reason} — the outcome is UNKNOWN.`,
+				);
+			}
+			if (recheck.seat._tag !== "Absent") {
+				return refuse(
+					APPEND_UNKNOWN,
+					`${VERB}: git still carries a worktree record for ${branch} at ${seat.path}${cleared.ok ? "" : `: ${cleared.reason}`} — nothing was placed, because a placement over a registered path is refused.`,
+				);
+			}
 		}
 
 		const branches = yield* localBranches;
@@ -138,10 +159,10 @@ export const runAssembly = (
 			);
 		}
 		if (after.seat._tag === "Conscripted") return conscripted(branch, after.seat.path);
-		if (after.seat._tag === "Absent") {
+		if (after.seat._tag !== "Isolated") {
 			return refuse(
 				APPEND_UNKNOWN,
-				`${VERB}: no worktree holds ${branch} after the placement${created.ok ? "" : `: ${created.reason}`} — it was NOT placed.`,
+				`${VERB}: no working tree holds ${branch} after the placement${created.ok ? "" : `: ${created.reason}`} — it was NOT placed.`,
 			);
 		}
 		return answer(`${after.seat.path}\n`, [

@@ -30,6 +30,12 @@ export interface WorktreeEntry {
 	readonly path: string;
 	/** The short branch name, or `null` on a detached HEAD. */
 	readonly branch: string | null;
+	/**
+	 * Git flagged this record as pointing at a directory that is no longer there. The record still
+	 * names a path and a branch, so a parser that drops this field hands the caller a live-looking
+	 * tree nothing can be run in.
+	 */
+	readonly prunable: boolean;
 }
 
 /**
@@ -47,6 +53,9 @@ export const parseWorktreeList = (stdout: string): ReadonlyArray<WorktreeEntry> 
 			return {
 				path,
 				branch: branch === undefined ? null : branch.replace(/^refs\/heads\//, ""),
+				// git writes the reason after the keyword ("prunable gitdir file points to a
+				// non-existent location") but omits it when there is none, so both shapes count.
+				prunable: lines.some((line) => line === "prunable" || line.startsWith("prunable ")),
 			};
 		})
 		.filter((entry): entry is WorktreeEntry => entry !== null);
@@ -103,6 +112,12 @@ export type AssemblySeat =
 	| {readonly _tag: "Isolated"; readonly path: string; readonly expected: string}
 	/** The main working tree itself is on `epic/<n>` — the conscription #6163 exists to refuse. */
 	| {readonly _tag: "Conscripted"; readonly path: string; readonly expected: string}
+	/**
+	 * Git holds a record for the branch at a directory that is gone. No tree to work in, and the
+	 * registration blocks a fresh `git worktree add` until it is cleared — so `path` is what to
+	 * clear, never what to answer.
+	 */
+	| {readonly _tag: "Stale"; readonly path: string; readonly expected: string}
 	/** No working tree holds the branch; `expected` is where one belongs. */
 	| {readonly _tag: "Absent"; readonly expected: string};
 
@@ -118,7 +133,8 @@ export const assemblySeat = (trees: WorkingTrees, epic: number, branch: string):
 		return {_tag: "Conscripted", path: trees.main.path, expected};
 	}
 	const held = trees.linked.find((entry) => entry.branch === branch);
-	return held === undefined
-		? {_tag: "Absent", expected}
+	if (held === undefined) return {_tag: "Absent", expected};
+	return held.prunable
+		? {_tag: "Stale", path: held.path, expected}
 		: {_tag: "Isolated", path: held.path, expected};
 };

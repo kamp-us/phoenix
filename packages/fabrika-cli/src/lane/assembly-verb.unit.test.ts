@@ -23,12 +23,16 @@ const BRANCHES = /^git for-each-ref /;
 const NO_BRANCHES = okOut("main\n");
 const BRANCH_SURVIVED = okOut(`main\n${BRANCH}\n`);
 
-const listing = (...blocks: ReadonlyArray<readonly [string, string | null]>): ExecResult =>
+const listing = (
+	...blocks: ReadonlyArray<readonly [string, string | null] | readonly [string, string, "prunable"]>
+): ExecResult =>
 	okOut(
 		blocks
 			.map(
-				([path, branch]) =>
-					`worktree ${path}\nHEAD aaaa111\n${branch === null ? "detached" : `branch refs/heads/${branch}`}\n`,
+				([path, branch, prunable]) =>
+					`worktree ${path}\nHEAD aaaa111\n${branch === null ? "detached" : `branch refs/heads/${branch}`}\n${
+						prunable === undefined ? "" : "prunable gitdir file points to non-existent location\n"
+					}`,
 			)
 			.join("\n"),
 	);
@@ -36,6 +40,7 @@ const listing = (...blocks: ReadonlyArray<readonly [string, string | null]>): Ex
 const CLEAN = listing([MAIN, "main"]);
 const SEATED = listing([MAIN, "main"], [EXPECTED, BRANCH]);
 const CONSCRIPTED = listing([MAIN, BRANCH]);
+const STALE = listing([MAIN, "main"], [EXPECTED, BRANCH, "prunable"]);
 
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
@@ -165,6 +170,55 @@ describe("runAssembly", () => {
 		expect(calls).toContain(`git worktree add ${EXPECTED} ${BRANCH}`);
 		expect(calls.some((line) => line.includes("worktree add -b"))).toBe(false);
 		expect(calls.some((line) => line.startsWith("git fetch"))).toBe(false);
+	});
+
+	it("clears a worktree record whose directory is gone, then places the branch again (#6163)", async () => {
+		const {outcome, calls} = await run([
+			[once(LIST), STALE],
+			[once(LIST), CLEAN],
+			[LIST, SEATED],
+			[REMOVE, okOut("")],
+			[BRANCHES, BRANCH_SURVIVED],
+			[ADD, okOut("")],
+		]);
+
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout.trim()).toBe(EXPECTED);
+		expect(calls).toEqual([
+			"git worktree list --porcelain",
+			`git worktree remove ${EXPECTED}`,
+			"git worktree list --porcelain",
+			"git for-each-ref --format=%(refname:short) refs/heads",
+			`git worktree add ${EXPECTED} ${BRANCH}`,
+			"git worktree list --porcelain",
+		]);
+	});
+
+	it("never answers the dead path of a stale record whose registration would not clear", async () => {
+		const {outcome, calls} = await run([
+			[LIST, STALE],
+			[REMOVE, errOut("fatal: validation failed, cannot remove working tree")],
+		]);
+
+		expect(outcome.code).toBe(APPEND_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(calls.some((line) => line.startsWith("git worktree add"))).toBe(false);
+	});
+
+	it("clears the record left by a worktree already gone when --remove runs at terminal", async () => {
+		const {outcome, calls} = await run(
+			[
+				[once(LIST), STALE],
+				[LIST, CLEAN],
+				[REMOVE, okOut("")],
+			],
+			true,
+		);
+
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout.trim()).toBe(EXPECTED);
+		expect(calls).toContain(`git worktree remove ${EXPECTED}`);
+		expect(calls.some((line) => line.includes("--force"))).toBe(false);
 	});
 
 	it("is UNKNOWN, never a placement, when the branch list cannot be read", async () => {

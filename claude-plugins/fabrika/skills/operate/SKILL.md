@@ -138,8 +138,10 @@ performs on the assembly branch happens there, addressed as `git -C <that path>`
 from either side: a later pass finding the tree still there resumes it and re-prints the same path,
 and a pass finding the branch alive with its tree gone — what `--remove` at a terminal leaves behind,
 and what a pruned tree or a crashed run leaves too — checks that branch out again as it stands,
-merges and all. So run it at the top of any pass that is about to integrate rather than carrying a
-path you remembered.
+merges and all. A tree whose directory was deleted without `git worktree prune` counts as gone the
+same way: git still lists a record for it, the verb reads that record's `prunable` line, clears the
+registration and places the branch again, so the path it prints is always one you can `cd` into. So
+run it at the top of any pass that is about to integrate rather than carrying a path you remembered.
 
 The boot used to be `git switch --create epic/$lane_key` in whatever tree invoked this skill, which
 in practice is a human's working tree: it then sat on the epic branch for hours, every tool reading
@@ -149,9 +151,10 @@ integrate side by side, each in its own tree.
 
 The verb's refusals are all parks, not retries: `33` is `epic/<lane-key>` already checked out in the
 main working tree — switch that tree off it and run the verb again, never assemble there; `8` is a
-placement that ran and did not read back, UNKNOWN (an existing `epic/<lane-key>` is not this: it is
-the resume above, and the verb answers its path); `11` is working trees or an origin that could not
-be read. Placing it is not optional — without the branch `lane prove` reads every child's range as
+placement that ran and did not read back, UNKNOWN — a stale record git would not let go of reads as
+this too, since nothing can be placed over a registration that survives (an existing
+`epic/<lane-key>`, with or without its tree, is not this: it is the resume above, and the verb
+answers its path); `11` is working trees or an origin that could not be read. Placing it is not optional — without the branch `lane prove` reads every child's range as
 UNKNOWN (exit `11`), so a run driven without it proves nothing it records.
 
 Done when `lane status` folds and prints a `stateValue`.
