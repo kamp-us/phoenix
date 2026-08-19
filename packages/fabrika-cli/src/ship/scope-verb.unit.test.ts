@@ -19,6 +19,7 @@ const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
 const OWNERS = /contents\/\.github\/CODEOWNERS/;
 const RULES = /^gh api repos\/o\/r\/rules\/branches\/main$/;
 const REPO = /^gh api repos\/o\/r$/;
+const CONFIG = /contents\/\.fabrika\.jsonc/;
 
 const options = {pr: 4321, repo: null, json: false, env: ENV};
 
@@ -147,25 +148,59 @@ describe("runScope", () => {
 		expect(out.stdout).toContain("cp\tcontrol-plane");
 	});
 
-	it("holds on unknown when the boundary is proven absent — never match-everything", async () => {
+	it("is not-control-plane when the boundary is proven absent — this repo has no control plane", async () => {
 		const out = await run([
 			[PULL, pull({changedFiles: 1})],
 			[FILES, files("README.md")],
 			[OWNERS, errOut("gh: Not Found (HTTP 404)")],
 		]);
 		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("cp\tnot-control-plane");
+	});
+
+	it("still holds on unknown for a boundary that reads fine and bounds nothing", async () => {
+		const out = await run([
+			[PULL, pull({changedFiles: 1})],
+			[FILES, files("README.md")],
+			[OWNERS, okOut("/a/ owner@example.test\n")],
+		]);
+		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("cp\tunknown");
 	});
 
-	it("refuses an UNREADABLE boundary on 11 — a failed read is not `unknown`", async () => {
+	it("refuses an UNREADABLE boundary on 11 when the repo declares `refuse`", async () => {
 		const out = await run([
 			[PULL, pull({changedFiles: 1})],
 			[FILES, files("README.md")],
 			[OWNERS, errOut("gh: Bad gateway (HTTP 502)")],
+			[CONFIG, okOut('{"unreadableCodeowners": "refuse"}')],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("the scope is UNKNOWN");
+	});
+
+	it("ships an UNREADABLE boundary on the shipped default, and names the waiver on stderr", async () => {
+		const out = await run([
+			[PULL, pull({changedFiles: 1})],
+			[FILES, files("README.md")],
+			[OWNERS, errOut("gh: Bad gateway (HTTP 502)")],
+			[CONFIG, errOut("gh: Not Found (HTTP 404)")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("cp\tnot-control-plane");
+		expect(out.stderr.join("\n")).toContain("unreadableCodeowners");
+	});
+
+	it("refuses on 11 when the POLICY could not be read either — nothing waives an unread gate", async () => {
+		const out = await run([
+			[PULL, pull({changedFiles: 1})],
+			[FILES, files("README.md")],
+			[OWNERS, errOut("gh: Bad gateway (HTTP 502)")],
+			[CONFIG, errOut("gh: Bad gateway (HTTP 502)")],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain(".fabrika.jsonc");
 	});
 
 	it("refuses zero changed files on 7", async () => {

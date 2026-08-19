@@ -23,6 +23,12 @@ rather than a branch in fabrika's source (ADR 0273, epic
 | `resolve-board.ts` | `resolveBoard(load, shipped)` — joins `boardVocabulary` and `triageFacets` into one table and re-runs containment over the join |
 | `ci-producer.ts` | `producerFor(...)` — the "does this repo produce CI at all" rule `review ci` and `ship checks` both decide through, over a workflow count and `ci.noProducer` |
 
+A key read at a PR's **base ref** rather than the working tree opens the bytes through that
+group's own platform reader and hands `loadConfig` a `Text` or an `Absent`.
+`ship/boundary.ts` is the worked example: it reads `unreadableCodeowners` off the base ref with
+the same `readFileAtRef` it reads `.github/CODEOWNERS` with, so the policy and the artifact it
+governs are read at one ref and cannot disagree.
+
 Whoever opens the file says which of three things it found — `Absent`, `Text`, `Unreadable` — and
 hands that to `loadConfig`. A key module never sees a file, only the parsed record.
 
@@ -59,6 +65,13 @@ value that reproduces today's behaviour, and make an explicitly-declared empty l
 where empty would disable something. The widen-only keys are the exception and say so in their own
 docblocks: for `capClearAuthors`, `docLeakExempt` and `workflowValidators`, empty **is** the strict
 answer.
+
+A shipped default may be **looser** than today's behaviour only on a founder ruling, and only
+paired with a declaration that holds the strict value where the guard matters.
+`unreadableCodeowners` is the one such key: its default ships on an unreadable CODEOWNERS, phoenix
+declares `refuse`, and a unit test reads this repo's own `.fabrika.jsonc` and reds if that
+declaration ever leaves. The pairing is the whole permission — landing the loose default without
+the declaration is the fail-open, so both land in one change or neither does.
 
 **A key whose value could disable or widen a guard is refused at load.** `refuseLoad` on a
 `KeyGroup` refuses the whole load, before any key's value is used. Two keys use it, for the same
