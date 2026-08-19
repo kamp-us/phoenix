@@ -28,6 +28,12 @@ import {
 	NONCE,
 } from "./fixtures.test-support.ts";
 
+/** Every regex metacharacter escaped, so a scripted path matches itself and nothing else. */
+const escapeRe = (literal: string): string => literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The lane root `GIT_DIRS` reports — every base read is pinned to it. */
+const ROOT = "/repo/trees/lane-a";
+
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
 const BRANCH = /^git rev-parse --abbrev-ref HEAD$/;
 const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
@@ -38,14 +44,18 @@ const MERGE_BASE = /^git merge-base HEAD origin\/main$/;
 const DIFF = /^git diff --name-only /;
 const UNTRACKED_ARGV = "git ls-files --others --exclude-standard --full-name -- :/";
 const UNTRACKED = /^git ls-files --others --exclude-standard --full-name -- :\/$/;
-const LS_TREE = /^git --literal-pathspecs ls-tree -r --name-only -z /;
+/**
+ * Anchored to the lane root, because that is what the pattern has to prove. An `ls-tree` pathspec
+ * resolves against the process cwd, so a matcher that stops before `-C <root>` passes just as
+ * happily on the cwd-relative shape that silently returns nothing (#5755 round 3).
+ */
+const LS_TREE = new RegExp(
+	`^git -C ${escapeRe(ROOT)} --literal-pathspecs ls-tree -r --name-only -z `,
+);
 const TYPECHECK = /^pnpm typecheck --force$/;
 const LINT = /^pnpm lint:worktree$/;
 
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
-
-/** Every regex metacharacter escaped, so a scripted path matches itself and nothing else. */
-const escapeRe = (literal: string): string => literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** A scripted untracked-file list. Placed ahead of `LANE_OK`, whose default is an empty one. */
 const untracked = (stdout: string): readonly [RegExp, ExecResult] => [UNTRACKED, okOut(stdout)];
@@ -61,7 +71,11 @@ const atBase = (
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[LS_TREE, okOut(`${Object.keys(files).join("\0")}\0`)],
 	...Object.entries(files).map(
-		([path, text]) => [new RegExp(`^git show ${HEAD}:${escapeRe(path)}$`), okOut(text)] as const,
+		([path, text]) =>
+			[
+				new RegExp(`^git -C ${escapeRe(ROOT)} show ${HEAD}:${escapeRe(path)}$`),
+				okOut(text),
+			] as const,
 	),
 ];
 
@@ -842,6 +856,29 @@ describe("the leak scan reds this diff's leaks, not the file's", () => {
 		expect(out.stderr.some((line) => line.includes(`${FILE}:2`))).toBe(true);
 	});
 
+	// Round 3 of #5755: an `ls-tree` pathspec resolves against the process cwd, and
+	// `--literal-pathspecs` switches off the `:(top)` magic that would anchor it. From a
+	// subdirectory the roster came back empty at exit 0 — indistinguishable from "this diff created
+	// every one of them", which restored the exact false red this feature removes. Only the argv
+	// proves the anchor; a matcher that stops before the operands passes under both shapes.
+	it("pins both base reads to the lane root, operands and all", async () => {
+		const shell = fakeShell([
+			...atBase({[FILE]: TAXONOMY}),
+			...LANE_OK,
+			[DIFF, okOut(`${FILE}\n`)],
+		]);
+		await Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, surface: "prose"}),
+				Layer.merge(shell.layer, fakeFs({files: {[PATH]: TAXONOMY}}).layer),
+			),
+		);
+		expect(shell.calls).toContain(
+			`git -C ${ROOT} --literal-pathspecs ls-tree -r --name-only -z ${HEAD} -- ${FILE}`,
+		);
+		expect(shell.calls).toContain(`git -C ${ROOT} show ${HEAD}:${FILE}`);
+	});
+
 	it("reds the whole text of a doc this diff creates — nothing predates a new file", async () => {
 		const out = await run(
 			[...LANE_OK, [DIFF, okOut(`${FILE}\n`)]],
@@ -869,7 +906,7 @@ describe("the leak scan reds this diff's leaks, not the file's", () => {
 		const out = await run(
 			[
 				[LS_TREE, okOut(`${FILE}\0`)],
-				[/^git show /, errOut("fatal: bad object")],
+				[new RegExp(`^git -C ${escapeRe(ROOT)} show `), errOut("fatal: bad object")],
 				...LANE_OK,
 				[DIFF, okOut(`${FILE}\n`)],
 			],

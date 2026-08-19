@@ -237,14 +237,23 @@ export const mergeBase = (base: string): Shell<Attempt<string>> =>
  * a spelling that matches nothing. `--literal-pathspecs` because these operands are pathspecs: a path
  * carrying `*`, `?`, `[` or a leading `:` would otherwise match something other than itself, and the
  * roster would answer about a file nobody asked for.
+ *
+ * `-C root` is why the caller passes a root at all: an `ls-tree` pathspec resolves against the
+ * process cwd, and `--literal-pathspecs` also switches off the `:(top)` magic that would anchor it,
+ * so from a subdirectory every root-relative path matches nothing. That failure is exit 0 with no
+ * output — indistinguishable from "this diff created all of them", the one distinction this reader
+ * exists to keep. Pinning the cwd makes the operands and the printed names root-relative both.
  */
 export const treePaths = (
+	root: string,
 	rev: string,
 	paths: ReadonlyArray<string>,
 ): Shell<Attempt<ReadonlyArray<string>>> =>
 	Effect.gen(function* () {
 		if (paths.length === 0) return ok([]);
 		const r = yield* execCapture("git", [
+			"-C",
+			root,
 			"--literal-pathspecs",
 			"ls-tree",
 			"-r",
@@ -258,10 +267,15 @@ export const treePaths = (
 		return ok(r.stdout.split("\0").filter((p) => p !== ""));
 	});
 
-/** A file's bytes as of `rev`. The caller proves the path is in that rev's tree first. */
-export const showAt = (rev: string, path: string): Shell<Attempt<string>> =>
+/**
+ * A file's bytes as of `rev`. The caller proves the path is in that rev's tree first.
+ *
+ * `-C root` for the same reason as `treePaths`: a `<rev>:<path>` operand happens to resolve from the
+ * tree root today, and pinning the cwd makes the pair anchored by design rather than by accident.
+ */
+export const showAt = (root: string, rev: string, path: string): Shell<Attempt<string>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("git", ["show", `${rev}:${path}`]);
+		const r = yield* execCapture("git", ["-C", root, "show", `${rev}:${path}`]);
 		return r.ok ? ok(r.stdout) : fail(r.reason);
 	});
 

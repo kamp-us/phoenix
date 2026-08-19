@@ -525,7 +525,7 @@ export const runCheck = (
 			);
 		}
 		const scoped = [...noted, exempt.note];
-		const atBase = yield* treePaths(merged.value, markdown);
+		const atBase = yield* treePaths(lane.root, merged.value, markdown);
 		if (atBase._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -548,7 +548,7 @@ export const runCheck = (
 			}
 			let baseText: string | null = null;
 			if (inBase.has(file)) {
-				const before = yield* showAt(merged.value, file);
+				const before = yield* showAt(lane.root, merged.value, file);
 				if (before._tag === "Failure") {
 					return refuse(
 						PRECONDITION_UNKNOWN,

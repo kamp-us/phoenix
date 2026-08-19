@@ -7,8 +7,7 @@
  * nor can fix. Its `attribute()` classifies each head finding against the merge base's findings,
  * keyed on file plus the exact offending text with the line number deliberately dropped, consumed
  * as a multiset budget. That is this module, with the file folded into the key. The convergence is
- * the argument for the pick: two guards written years apart against the same problem landed on the
- * same three properties.
+ * the argument for the pick: two guards arrived independently at the same three properties.
  *
  * The alternative — read the diff hunks and keep only findings on added lines — is rejected for one
  * reason: a markdown file is edited by rewriting prose, and a moved paragraph, a re-wrapped line or

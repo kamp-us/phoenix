@@ -1358,6 +1358,9 @@ markdown validators over an epic ledger. Consequences worth knowing before readi
   base's copies are a budget the head's occurrences spend, so adding a third copy of a leak the base
   held twice still reds.
 - A file the diff creates has no base text, so its whole content is this diff's.
+- Both base reads are pinned to the lane root with `git -C`, so the answer does not change with the
+  directory you invoke the verb from. Unpinned, a run from a subdirectory listed nothing at the base
+  and treated every changed file as created — the old red, back, at exit 0 with nothing to see.
 - The baseline is keyed by path, so a **rename reds every leak the file already carried** — the
   new path has no base text. Intended, not a miss: a doc moved to a new home is a fresh chance to
   fix what it carries. It is the one case where a red names a line the author did not write.
@@ -1369,14 +1372,15 @@ markdown validators over an epic ledger. Consequences worth knowing before readi
 `cli-invocation-guard` reached the same shape for the same class of problem in #4250: its
 `attribute()` classifies head findings against the merge base's, keyed on file plus the exact
 offending text with the line number deliberately dropped, spent as a multiset budget. Two guards
-written years apart converging on those three properties is the argument for the pick. The
-alternative — read the diff hunks and keep only findings on added lines — is rejected because
-markdown is edited by rewriting prose, and a moved paragraph, a re-wrapped line or a rename presents
-every carried line as added, so it would reproduce the false red on the most ordinary doc edit there
-is. **Only the leak scan is baselined.** A leak is
-decided entirely by the bytes of its own line; a link's resolvability is a property of the tree, and
-the same untouched line goes dead the moment the diff moves its target — baselining the link resolver
-would green the PR that broke every link in the repo.
+arriving independently at those three properties is the argument for the pick. The alternative —
+read the diff hunks and keep only findings on added lines — is rejected because markdown is edited
+by rewriting prose, and a moved paragraph, a re-wrapped line or a rename presents every carried line
+as added, so it would reproduce the false red on the most ordinary doc edit there is.
+
+**Only the leak scan is baselined.** A leak is decided entirely by the bytes of its own line; a
+link's resolvability is a property of the tree, and the same untouched line goes dead the moment the
+diff moves its target — baselining the link resolver would green the PR that broke every link in the
+repo.
 
 A predictor and the gate it predicts have to carry the same path shapes, and fabrika may not import
 the gate's module (ADR 0238, ADR 0273). So the agreement is pinned rather than promised, on ADR
