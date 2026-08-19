@@ -173,10 +173,12 @@ the child in the run manifest, links, then re-reads. `23` means the child **exis
 that number is what you report. Do not re-mint it.
 
 `**Containment:**` is emitted only when the run's `cycleDoc` read is `present` — `ledger child`
-takes that from the run directory, so you neither pass it nor remember it. Its leading keyword is
-`flag`, `exempt` or `none`; a trailing parenthetical is yours to write and is preserved. **On a
-`type:feature` child only `flag` or `exempt` will do** — the gate reds `none` and unset alike, so
-`ledger child` refuses both rather than letting you author a defect.
+takes that from the run directory, so you neither pass it nor remember it. Which keywords are legal
+is the repo's `containmentVocabulary` (`fabrika status settings` prints what it resolves to; in
+phoenix it is `flag` / `exempt` over `type:feature`), plus the reserved `none`, which declines. A
+trailing parenthetical is yours to write and is preserved. **On a child of an asked type only a
+legal value will do** — the gate reds `none` and unset alike, so `ledger child` refuses both rather
+than letting you author a defect.
 
 `**Stories:**` carries bare integers or `none`, and `ledger child` refuses anything else — a
 parser that harvests every digit run reads `1, 3 (see #<other>)` as claiming a story nobody wrote.
@@ -320,5 +322,6 @@ fabrika installs into repos that are not phoenix. When-missing vocabulary: **fai
 | A git checkout of this repo, and a reachable `origin/main` | the plan is grounded in source, and staleness is proven rather than assumed | **fail-loud** — `13` ends `STOPPED`; an unprovable freshness read is `11`, never "probably fresh". |
 | The label taxonomy: `type:*`, `p0`/`p1`/`p2`, `status:planned`, `ready-for:human`, `ready-for:agent` | every child is born carrying them; `POST .../labels` **creates** an unknown label rather than rejecting it | **fail-loud** — `ledger child` exits `10` naming the absent label rather than minting it; taxonomy creation is the front door's. |
 | An open milestone, or one of the standing-lane labels `wayfinder:backlog` / `axis:pipeline-hardening` | every child needs a home, because the claim fence refuses a homeless issue at exit `20` and nothing downstream can build it | **fail-loud** — `ledger child` exits `10` before it reads or creates anything, naming both remedies (#5969). Pass `--milestone` unless the child is genuinely standing-lane work, in which case `--label` it with the parent's lane; creating a milestone is the front door's. |
-| The cycle doc `.fabrika.jsonc`'s `cycleDoc` names — `product-development-cycle.md` unless a repo declares otherwise — at the repo root | decides whether `**Containment:**` is required on a `type:feature` child | **degrade** — absent means containment is not required; an *unreadable* probe is `11`, never "absent". |
+| The cycle doc `.fabrika.jsonc`'s `cycleDoc` names — `product-development-cycle.md` unless a repo declares otherwise — at the repo root | decides whether `**Containment:**` is required on a child of an asked type | **degrade** — absent means containment is not required; an *unreadable* probe is `11`, never "absent". |
+| `.fabrika.jsonc`'s `containmentVocabulary` | names which types are asked for a marker and which values satisfy one | **degrade** — an absent file or key resolves to the shipped pair, and an empty half means no child is ever asked; a file that exists and will not read is `11`, never an empty vocabulary. |
 | Repository permissions readable for claim authorship | `build claim`'s ownership resolution is ACL-sourced | **fail-loud** — as declared for `build claim` (`fabrika wire doc-section --heading "build claim" < <build skill's base dir>/contract.md`); a failed permission read is `Unknown`, never a demotion to unclaimed. |

@@ -10,10 +10,19 @@
  * `plan flip`. The codes are identical; only the sentence moves.
  */
 
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type PhaseLine, type RequiresLine, readTopology, renderRef} from "../build/dependencies.ts";
 import {openIssue} from "../build/target.ts";
+import {CONFIG_PATH} from "../config/document.ts";
+import {
+	CONTAINMENT_VOCABULARY,
+	type ContainmentVocabulary,
+	containmentVocabularyKey,
+	readContainment,
+} from "../config/keys/containment-vocabulary.ts";
+import {resolve} from "../config/load.ts";
+import {loadRepoConfig} from "../config/working-root.ts";
 import {getIssue, type IssueRecord} from "../io/issues.ts";
 import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
@@ -26,7 +35,6 @@ import {
 	CONTAINMENT_FIELD,
 	fieldLines,
 	readChildStories,
-	readContainment,
 	readEpicStories,
 	STORIES_FIELD,
 	sectionCount,
@@ -48,6 +56,40 @@ export interface PlanMessages {
 	readonly notAnEpic: (epic: number) => string;
 	readonly unreadable: (what: string, reason: string) => string;
 }
+
+/**
+ * The containment vocabulary this repo resolves to, or the refusal it owes.
+ *
+ * Every plan verb reads it before it fetches anything: the vocabulary decides which children are
+ * asked for a marker and which values satisfy one, so a config nobody could read leaves the floor
+ * UNKNOWN rather than clean. An absent file is not that case — it resolves to the shipped pair like
+ * any other repo that declared nothing.
+ */
+export type VocabularyRead =
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {readonly _tag: "Vocabulary"; readonly vocabulary: ContainmentVocabulary};
+
+export const readContainmentVocabulary = (
+	messages: PlanMessages,
+	cwd: string,
+): Effect.Effect<VocabularyRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const resolved = resolve(yield* loadRepoConfig(cwd), containmentVocabularyKey);
+		switch (resolved._tag) {
+			case "Declared":
+			case "Default":
+				return {_tag: "Vocabulary" as const, vocabulary: resolved.value};
+			case "Malformed":
+			case "Unknown":
+				return {
+					_tag: "Refused" as const,
+					outcome: refuse(
+						PRECONDITION_UNKNOWN,
+						messages.unreadable(`${CONFIG_PATH}'s \`${CONTAINMENT_VOCABULARY}\``, resolved.reason),
+					),
+				};
+		}
+	});
 
 export type EpicTarget =
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
@@ -95,6 +137,7 @@ export const loadLedger = (
 	epic: IssueRecord,
 	/** Where this repo keeps its cycle doc — `cycleDoc`, resolved by the verb. */
 	cycleDocPath: string,
+	vocabulary: ContainmentVocabulary,
 ): Effect.Effect<LedgerRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const number = epic.number;
@@ -186,7 +229,7 @@ export const loadLedger = (
 				criteriaCount: criteria.count,
 				stories: childStories._tag === "Ids" ? childStories.ids : null,
 				storiesValue: childStories._tag === "NonConforming" ? childStories.value : null,
-				containment: readContainment(fieldLines(payload.body, CONTAINMENT_FIELD)[0]),
+				containment: readContainment(fieldLines(payload.body, CONTAINMENT_FIELD)[0], vocabulary),
 			});
 		}
 
@@ -243,6 +286,7 @@ export const deriveFloorFor = (
 	messages: PlanMessages,
 	repo: string,
 	ledger: LedgerScope,
+	vocabulary: ContainmentVocabulary,
 ): Effect.Effect<FloorRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const probed = yield* Effect.forEach(
@@ -263,5 +307,5 @@ export const deriveFloorFor = (
 			}
 			if (found._tag === "Absent") provenAbsent.add(ref);
 		}
-		return {_tag: "Floor" as const, floor: deriveFloor({ledger, provenAbsent})};
+		return {_tag: "Floor" as const, floor: deriveFloor({ledger, provenAbsent, vocabulary})};
 	});

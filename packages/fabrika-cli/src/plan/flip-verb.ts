@@ -51,6 +51,7 @@ import {
 	FAN_OUT,
 	loadLedger,
 	type PlanMessages,
+	readContainmentVocabulary,
 	requireEpic,
 	scannedChildren,
 } from "./load.ts";
@@ -143,6 +144,9 @@ export const runFlip = (
 		const held = yield* requireClaim(VERB, repo, options.number, asking.caller);
 		if (held._tag === "Refused") return held.outcome;
 
+		const vocabulary = yield* readContainmentVocabulary(MESSAGES, options.cwd);
+		if (vocabulary._tag === "Refused") return vocabulary.outcome;
+
 		const cycle = yield* cycleDocOr(
 			VERB,
 			options.cwd,
@@ -150,7 +154,7 @@ export const runFlip = (
 		);
 		if (cycle._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, cycle.message);
 
-		const read = yield* loadLedger(MESSAGES, repo, target.issue, cycle.path);
+		const read = yield* loadLedger(MESSAGES, repo, target.issue, cycle.path, vocabulary.vocabulary);
 		if (read._tag === "Refused") return read.outcome;
 		const ledger = read.ledger;
 		const scanned = scannedChildren(
@@ -159,7 +163,7 @@ export const runFlip = (
 		);
 		const notes = [...held.notes, scanned];
 
-		const derived = yield* deriveFloorFor(MESSAGES, repo, ledger);
+		const derived = yield* deriveFloorFor(MESSAGES, repo, ledger, vocabulary.vocabulary);
 		if (derived._tag === "Refused") return derived.outcome;
 		if (derived.floor.defects.length > 0) {
 			return refuse(

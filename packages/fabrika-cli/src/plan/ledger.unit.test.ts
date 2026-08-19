@@ -2,7 +2,6 @@ import {describe, expect, it} from "vitest";
 import {
 	fieldLines,
 	readChildStories,
-	readContainment,
 	readEpicStories,
 	sectionCount,
 	unfencedLines,
@@ -109,21 +108,5 @@ describe("readChildStories", () => {
 			_tag: "NonConforming",
 			value: "1, 3 (see #4021)",
 		});
-	});
-});
-
-describe("readContainment", () => {
-	it.each([
-		["flag", "flag"],
-		["exempt", "exempt"],
-		["none", "none"],
-		["flag (behind kampus-plan-gate)", "flag"],
-	])("reads the leading keyword of %s", (value, expected) => {
-		expect(readContainment(value)).toBe(expected);
-	});
-
-	it("reads anything off the closed set as unset", () => {
-		expect(readContainment("probably")).toBeNull();
-		expect(readContainment(undefined)).toBeNull();
 	});
 });

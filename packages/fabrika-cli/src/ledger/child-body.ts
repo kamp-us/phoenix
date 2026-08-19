@@ -10,17 +10,16 @@
  * `**Containment:**` is emitted **only** when the run's cycle-doc read is `present`. v1's documented
  * spec template omitted the field entirely while its skill body required it, so an author following
  * the template dropped it on every child and the tolerant read made "forgot" indistinguishable from
- * "no cycle doc".
+ * "no cycle doc". *Which* types owe a value and which values satisfy it is the repo's declared
+ * vocabulary (`../config/keys/containment-vocabulary.ts`), never a set compiled in here.
  */
 
 import {
-	CONTAINMENT_FIELD,
-	type Containment,
-	fieldLines,
-	readChildStories,
+	type ContainmentVocabulary,
+	containmentGap,
 	readContainment,
-	STORIES_FIELD,
-} from "../plan/ledger.ts";
+} from "../config/keys/containment-vocabulary.ts";
+import {CONTAINMENT_FIELD, fieldLines, readChildStories, STORIES_FIELD} from "../plan/ledger.ts";
 import {read as readAcceptanceCriteria} from "../wire/acceptance-criteria.ts";
 import type {CycleDoc} from "./run.ts";
 
@@ -81,7 +80,8 @@ export interface ComposedChild {
 	readonly _tag: "Composed";
 	readonly body: string;
 	readonly stories: ReadonlyArray<number> | null;
-	readonly containment: Containment | null;
+	/** The declared containment keyword, off the resolved vocabulary; `null` when there is none. */
+	readonly containment: string | null;
 	readonly criteria: number;
 }
 
@@ -92,8 +92,10 @@ const bad = (reason: string): ChildBodyCheck => ({_tag: "Bad", reason});
 export interface ChildBodyInput {
 	readonly text: string;
 	readonly cycleDoc: CycleDoc;
-	/** The `--type` label the child is born with; only `type:feature` owes a containment value. */
+	/** The `--type` label the child is born with; only an asked type owes a containment value. */
 	readonly type: string;
+	/** Which types are asked for a marker and which values satisfy one, off `.fabrika.jsonc`. */
+	readonly vocabulary: ContainmentVocabulary;
 }
 
 /**
@@ -131,11 +133,12 @@ export const composeChildBody = (input: ChildBodyInput): ChildBodyCheck => {
 	}
 
 	const containmentValue = fieldLines(body, CONTAINMENT_FIELD)[0];
-	const containment = readContainment(containmentValue);
-	if (input.cycleDoc === "present" && input.type === "type:feature") {
-		if (containment !== "flag" && containment !== "exempt") {
+	const containment = readContainment(containmentValue, input.vocabulary);
+	if (input.cycleDoc === "present") {
+		const gap = containmentGap(input.vocabulary, [input.type], containment);
+		if (gap !== null) {
 			return bad(
-				`type:feature child needs **Containment:** flag or exempt — got "${containmentValue ?? ""}", and the cycle doc is present.`,
+				`${gap.type} child needs **Containment:** ${input.vocabulary.values.join(" or ")} — got "${containmentValue ?? ""}", and the cycle doc is present.`,
 			);
 		}
 	}

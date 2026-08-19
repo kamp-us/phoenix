@@ -8,7 +8,11 @@
  * `UNVERIFIABLE_ASSIGNEE` rests on and no fixture that always includes it could exercise the split.
  */
 
-import {okOut} from "../fakes.test-support.ts";
+import type {FileSystem, Path} from "effect";
+import {Layer} from "effect";
+import type {ChildProcessSpawner} from "effect/unstable/process";
+import {CONFIG_PATH} from "../config/document.ts";
+import {fakeFs, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 
 export const EPIC = 4300;
@@ -95,3 +99,25 @@ export const child = (options: {
 
 export const labelSet = (...names: ReadonlyArray<string>): ExecResult =>
 	okOut(`${names.join("\n")}\n`);
+
+/** The directory a plan verb under test is standing in. Its config is the one the load reads. */
+export const CWD = "/repo";
+
+/**
+ * The context a plan verb needs: the scripted shell, plus a filesystem carrying `config` as this
+ * repo's `.fabrika.jsonc` — or carrying none, which is the shipped-vocabulary case every existing
+ * test runs in.
+ *
+ * `unreadable` is its own arm rather than an absent file, because that is the pair the config
+ * surface exists to keep apart: absent resolves to the shipped vocabulary, denied leaves the floor
+ * UNKNOWN.
+ */
+export const planContext = (
+	shell: {readonly layer: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>},
+	config?: string | {readonly unreadable: true},
+): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path> => {
+	const path = `${CWD}/${CONFIG_PATH}`;
+	const files = config === undefined ? {} : {[path]: typeof config === "string" ? config : ""};
+	const unreadable = config === undefined || typeof config === "string" ? [] : [path];
+	return Layer.merge(shell.layer, fakeFs({files, unreadable}).layer);
+};
