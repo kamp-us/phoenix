@@ -180,18 +180,34 @@ export const readDocLeakExempt = (text: string): ExemptRead => {
 /** An argv whose head is the binary, so a caller cannot spawn an empty command. */
 export type Argv = readonly [string, ...ReadonlyArray<string>];
 
+/**
+ * One declared validator: the command to spawn, plus the workflow files it opens.
+ *
+ * `reads` is what makes the surface's green checkable per file. A declared guard takes no path
+ * arguments — it reads a fixed set — so without this the verb can only prove that *something* ran,
+ * and a diff touching a workflow nobody opens greens with an empty `unvalidated` list (#5991).
+ */
+export interface WorkflowValidator {
+	readonly argv: Argv;
+	readonly reads: ReadonlyArray<string>;
+}
+
 export type ValidatorsRead =
-	| {readonly _tag: "Validators"; readonly commands: ReadonlyArray<Argv>}
+	| {readonly _tag: "Validators"; readonly validators: ReadonlyArray<WorkflowValidator>}
 	/** The bytes were read in full and hold no usable list — the repo declares no validator. */
 	| {readonly _tag: "Unusable"; readonly reason: string};
 
 /**
- * The commands the repo declares as validators of its own workflow YAML, each an argv array.
+ * The commands the repo declares as validators of its own workflow YAML, each with the files it reads.
  *
  * Declared rather than compiled in, because the commands that machine-read a repo's workflows are
  * that repo's own — in phoenix three `pipeline-cli` guards — and fabrika installs into repos it does
  * not control (ADR 0273). An argv array rather than a command line: fabrika spawns it directly, and
  * splitting a string would put a quoting grammar between the config and the process.
+ *
+ * `reads` is mandatory and non-empty: a validator that names no file it opens can contribute nothing
+ * to the per-file coverage `build check --surface workflows` reports, so admitting one would only
+ * buy back the false green this key exists to refuse.
  *
  * A malformed entry refuses the **whole** list, the way the other two keys do. Here that is the loud
  * direction as well as the consistent one: `build check --surface workflows` refuses UNKNOWN when no
@@ -212,21 +228,28 @@ export const readWorkflowValidators = (text: string): ValidatorsRead => {
 	}
 	const malformed: ValidatorsRead = {
 		_tag: "Unusable",
-		reason: `\`${WORKFLOW_VALIDATORS}\` holds an entry that is not a non-empty array of strings — expected an argv, e.g. ["node", "tools/lint-workflows.js"]`,
+		reason: `\`${WORKFLOW_VALIDATORS}\` holds an entry that is not {"command": [non-empty argv of strings], "reads": [non-empty list of workflow paths]} — e.g. {"command": ["node", "tools/lint-workflows.js"], "reads": [".github/workflows/ci.yml"]}`,
 	};
-	const commands: Argv[] = [];
-	for (const entry of raw) {
-		if (!Array.isArray(entry)) return malformed;
+	const strings = (value: unknown): ReadonlyArray<string> | null => {
+		if (!Array.isArray(value)) return null;
 		const parts: string[] = [];
-		for (const part of entry) {
-			if (typeof part !== "string") return malformed;
-			parts.push(part);
+		for (const part of value) {
+			if (typeof part !== "string" || part.trim() === "") return null;
+			parts.push(part.trim());
 		}
-		const [binary, ...args] = parts;
+		return parts;
+	};
+	const validators: WorkflowValidator[] = [];
+	for (const entry of raw) {
+		if (!isRecord(entry)) return malformed;
+		const command = strings(entry.command);
+		const reads = strings(entry.reads);
+		if (command === null || reads === null || reads.length === 0) return malformed;
+		const [binary, ...args] = command;
 		if (binary === undefined) return malformed;
-		commands.push([binary, ...args]);
+		validators.push({argv: [binary, ...args], reads});
 	}
-	return commands.length === 0
+	return validators.length === 0
 		? {_tag: "Unusable", reason: `\`${WORKFLOW_VALIDATORS}\` is empty — this repo declares none`}
-		: {_tag: "Validators", commands};
+		: {_tag: "Validators", validators};
 };

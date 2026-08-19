@@ -140,9 +140,9 @@ the only surface a workflows-only lane can green under. **One run per class pres
 nothing in the diff unread.
 
 `--surface workflows` runs `actionlint` over the changed workflow files when this tree has one, plus
-the commands the repo declares under `workflowValidators`. It is UNKNOWN, never green, when neither
-can be executed — that is a verdict over files nothing opened, and CI's own workflow jobs supersede
-it either way.
+the commands the repo declares under `workflowValidators`. Its green is per file: a changed workflow
+nothing opened is named in `unvalidated`, and a run that opened none of them is UNKNOWN, never green.
+CI's own workflow jobs supersede it either way.
 
 Commit through the verb, never a hand-rolled `git commit` — it is the only thing that reads the
 message back off the commit it just made:
@@ -344,5 +344,5 @@ fabrika skill, so one reader parses all of them. No row here dead-ends on a bare
 | The prose placement homes — `README`, `DEVELOPMENT.md`, `.decisions/`, `.patterns/`, `reports/`, `.glossary/LANGUAGE.md` | [`references/prose.md`](references/prose.md)'s one-home rule places every prose fact in exactly one of them | **degrade** — write into the homes that exist and disclose the substituted home in the PR's `## Deviations`; a home is never invented silently |
 | `.fabrika.jsonc` with a `capClearAuthors` array | It is the set `build clear` admits a round-clearance from, and `build verdicts` honours a recorded one against | **degrade** — an absent file, an absent key or an empty array all mean nobody may clear a round: `build clear` refuses on `25` and the cap stands at its declared value, which is the pre-clearance behaviour. A read that *failed* is exit `11`, never an empty set. |
 | `.fabrika.jsonc` with a `docLeakExempt` array | It names the docs whose subject IS path hygiene, which `build check --surface prose` skips its leak scan on — repo policy, since those docs differ repo by repo | **degrade** — an absent file, an absent key, an empty array or a malformed entry all mean *nothing is exempt*, so the scan stays strictest and a mis-declared exemption reads as a red, never a silent pass. A config that exists and cannot be read is exit `11`, never an empty list. |
-| `.fabrika.jsonc` with a `workflowValidators` array | It names the repo's own commands that machine-read `.github/workflows/**`, which is what `build check --surface workflows` runs beside `actionlint` | **degrade** — an absent file, an absent key, an empty array or a malformed entry all mean the repo declares none, and the surface then stands on `actionlint` alone. Where that is absent too, nothing opened a workflow file and the verdict is exit `11`, UNKNOWN, never green. A declared command that cannot be spawned is `11` as well, naming it. |
+| `.fabrika.jsonc` with a `workflowValidators` array, each entry a `command` argv plus the `reads` list of workflow files it opens | It names the repo's own commands that machine-read `.github/workflows/**`, which is what `build check --surface workflows` runs beside `actionlint`, and `reads` is what tells the verb which changed workflow a passing run actually covers | **degrade** — an absent file, an absent key, an empty array or a malformed entry all mean the repo declares none, and the surface then stands on `actionlint` alone. Where that is absent too, no changed workflow was opened and the verdict is exit `11`, UNKNOWN, never green — as it is whenever everything that ran reads other files. A declared command that cannot be spawned is `11` as well, naming it. |
 | `.github/workflows/ci.yml` | It is the superseding authority over `build check`'s in-tree prediction (`fabrika wire doc-section --heading "build check" < <skill-base>/contract.md`) | **degrade** — with no CI gate to supersede it, `build check`'s green is the only evidence the PR carries, and the PR says so in its `## Deviations` |

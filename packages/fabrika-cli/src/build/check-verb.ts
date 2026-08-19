@@ -23,7 +23,12 @@
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {execCapture, execStatus} from "../io/exec.ts";
-import {type Argv, CONFIG_PATH, readDocLeakExempt, readWorkflowValidators} from "../repo-config.ts";
+import {
+	CONFIG_PATH,
+	readDocLeakExempt,
+	readWorkflowValidators,
+	type WorkflowValidator,
+} from "../repo-config.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {requireSession} from "./claim.ts";
 import {
@@ -440,7 +445,11 @@ const diagnostics = (output: string): ReadonlyArray<string> => {
 
 /** The declared workflow validators, or why there are none — `Unreadable` is the one UNKNOWN answer. */
 type ValidatorScope =
-	| {readonly _tag: "Scope"; readonly commands: ReadonlyArray<Argv>; readonly note: string}
+	| {
+			readonly _tag: "Scope";
+			readonly validators: ReadonlyArray<WorkflowValidator>;
+			readonly note: string;
+	  }
 	| {readonly _tag: "Unreadable"; readonly reason: string};
 
 const readValidatorScope = (
@@ -453,12 +462,12 @@ const readValidatorScope = (
 			return read._tag === "Validators"
 				? {
 						_tag: "Scope",
-						commands: read.commands,
-						note: `${VERB}: ${read.commands.length} workflow validator(s) declared in ${CONFIG_PATH}.`,
+						validators: read.validators,
+						note: `${VERB}: ${read.validators.length} workflow validator(s) declared in ${CONFIG_PATH}.`,
 					}
 				: {
 						_tag: "Scope",
-						commands: [],
+						validators: [],
 						note: `${VERB}: no repo workflow validator is declared — ${read.reason}.`,
 					};
 		}),
@@ -467,7 +476,7 @@ const readValidatorScope = (
 				error.reason._tag === "NotFound"
 					? {
 							_tag: "Scope",
-							commands: [],
+							validators: [],
 							note: `${VERB}: no repo workflow validator is declared — this repo has no ${CONFIG_PATH}.`,
 						}
 					: {_tag: "Unreadable", reason: error.reason._tag},
@@ -486,9 +495,12 @@ const readValidatorScope = (
  * decides. A declared validator is the other row of that table — it ships with the repo, so one that
  * cannot be spawned is fail-loud, UNKNOWN, never green.
  *
- * What holds both readings honest is the last check: when *nothing* ran, the verb has opened no
- * workflow file, and a green there would be exactly the unread-tree green the third file class was
- * introduced to make refusable (#5229).
+ * What holds both readings honest is per-file coverage, not a count of validators that ran. Only
+ * `actionlint` is handed the changed paths; a declared guard reads the fixed set it names in `reads`.
+ * So a changed workflow file counts as opened only when `actionlint` ran over it or a passing
+ * declared validator names it; every other changed workflow is reported in `unvalidated`, and a run
+ * that opened **none** of them refuses UNKNOWN — that green would be the unread-tree green the
+ * named file class was introduced to make refusable (#5229, #5991).
  */
 const runWorkflowSurface = (
 	fs: FileSystem.FileSystem,
@@ -508,6 +520,7 @@ const runWorkflowSurface = (
 		}
 		const scoped = [...noted, declared.note];
 		const ran: string[] = [];
+		const opened = new Set<string>();
 		const lint = yield* execStatus(ACTIONLINT, workflows);
 		const notInstalled = lint._tag === "Unstartable" ? lint.reason : null;
 		if (lint._tag === "Ran") {
@@ -518,8 +531,9 @@ const runWorkflowSurface = (
 				]);
 			}
 			ran.push(ACTIONLINT);
+			for (const file of workflows) opened.add(file);
 		}
-		for (const argv of declared.commands) {
+		for (const {argv, reads} of declared.validators) {
 			const label = argv.join(" ");
 			const result = yield* execStatus(argv[0], argv.slice(1));
 			if (result._tag === "Unstartable") {
@@ -536,6 +550,7 @@ const runWorkflowSurface = (
 				]);
 			}
 			ran.push(label);
+			for (const file of workflows) if (reads.includes(file)) opened.add(file);
 		}
 		if (ran.length === 0) {
 			return refuse(
@@ -544,15 +559,35 @@ const runWorkflowSurface = (
 				scoped,
 			);
 		}
-		const disclosed =
-			notInstalled === null
-				? scoped
+		const unopened = workflows.filter((file) => !opened.has(file));
+		if (opened.size === 0) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${ran.length} workflow validator(s) ran, but none of them opened any of the ${workflows.length} changed workflow file(s) (${unopened.join(", ")}) — ${ACTIONLINT} did not run here (${notInstalled}) and no declared validator reads them, so the verdict is UNKNOWN, never green.`,
+				scoped,
+			);
+		}
+		const disclosed = [
+			...scoped,
+			...(notInstalled === null
+				? []
 				: [
-						...scoped,
 						`${VERB}: ${ACTIONLINT} did NOT run (${notInstalled}) — ci.yml's actionlint job supersedes this verdict on workflow syntax.`,
-					];
+					]),
+			...(unopened.length === 0
+				? []
+				: [
+						`${VERB}: no validator that ran opens ${unopened.join(", ")} — reported in \`unvalidated\`, so this green claims nothing about ${unopened.length === 1 ? "it" : "them"}.`,
+					]),
+		];
 		return answer(
-			JSON.stringify({verdict: "green", surface: "workflows", tree: root, ran, unvalidated}),
+			JSON.stringify({
+				verdict: "green",
+				surface: "workflows",
+				tree: root,
+				ran,
+				unvalidated: [...unvalidated, ...unopened],
+			}),
 			disclosed,
 		);
 	});

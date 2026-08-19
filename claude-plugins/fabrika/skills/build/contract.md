@@ -1320,7 +1320,9 @@ Per surface:
   machine-local path (the imported `doc-leaks.ts` predicate); every fabrika-doc reference cited by
   id exists.
 - **workflows** — the changed files under `.github/workflows/`: `actionlint` over exactly those
-  files, plus every command the repo declares under `.fabrika.jsonc`'s `workflowValidators`.
+  files, plus every command the repo declares under `.fabrika.jsonc`'s `workflowValidators`. A
+  declared command takes no paths, so the green covers a changed workflow only when `actionlint` ran
+  or a declared command's `reads` names it; the rest are reported in `unvalidated`.
 - **plan** — everything `prose` runs, plus the changed ledger's `## Dependencies` block parsing
   under the canonical grammar (defined in `build eligible`): issue refs (`#<int>`) resolve to real
   issues, ledger-local refs (`C<int>`) resolve within the ledger, and no child is its own
@@ -1358,9 +1360,10 @@ class the diff does not contain (`--surface prose` over a diff with no markdown 
 skill's judgment is taken, then checked against the tree, never silently accepted.
 
 **The anchor refuses an absent class, never a present other one.** One rule holds for every surface,
-so a mixed code+markdown diff is runnable under both of theirs: `code` runs the CI commands and names
-the markdown, `prose` scans the markdown and names the code, `plan` checks the ledger grammar and
-names the code, and `workflows` lints the workflow YAML and names everything else. `prose` used to refuse on the *presence* of a code file, which
+so a mixed code+markdown diff is runnable under either of the two surfaces that claim a class in it:
+`code` runs the CI commands and names the markdown, `prose` scans the markdown and names the code,
+`plan` checks the ledger grammar and names the code, and `workflows` lints the workflow YAML and
+names everything else. `prose` used to refuse on the *presence* of a code file, which
 left the repo's most common diff shape — one `.ts` plus one `.md` — with no invocation that opened
 the markdown at all, so the leak scan and the link resolver never ran on it (#5301). The presence of
 another class is not a contradiction with the surface; it is exactly what `unvalidated` discloses.
@@ -1380,16 +1383,24 @@ workflow YAML — the diff class where an unvalidated push costs the most, since
 live there — could reach no green under any surface. It is a class of its own rather than part of
 `code` for the reason the rejected widening names: its validators are not `pnpm typecheck`.
 
-Its validators are declared, not compiled in: `.fabrika.jsonc`'s `workflowValidators` holds one argv
-array per command the repo runs over its own workflows (in phoenix, the three `pipeline-cli` guards
-that machine-read one). `actionlint` runs on top when this tree has it — it is a pinned tarball CI
-installs at job time and no repo's dependency, so its absence is the ordinary case and is
-**disclosed** beside the green rather than skipped in silence; `ci.yml`'s own `actionlint` job is
-the superseding authority there, as it is for every verdict this verb prints. A declared command
-that cannot be spawned is the other polarity: it ships with the repo, so it is `11`, UNKNOWN, naming
-the command. Holding both honest is one last check — when **nothing** ran, the verb opened no
-workflow file, and that green is exactly the one the named-class design exists to refuse, so it is
-`11` too.
+Its validators are declared, not compiled in: `.fabrika.jsonc`'s `workflowValidators` holds one entry
+per command the repo runs over its own workflows (in phoenix, the three `pipeline-cli` guards that
+machine-read one), each an argv plus the `reads` list naming the workflow files that command opens.
+`actionlint` runs on top when this tree has it — it is a pinned tarball CI installs at job time and
+no repo's dependency, so its absence is the ordinary case and is **disclosed** beside the green
+rather than skipped in silence; `ci.yml`'s own `actionlint` job is the superseding authority there,
+as it is for every verdict this verb prints. A declared command that cannot be spawned is the other
+polarity: it ships with the repo, so it is `11`, UNKNOWN, naming the command.
+
+What holds both honest is per-file coverage, not a count of what ran. A declared guard takes no path
+arguments — it reads the fixed set it names — so "some validator ran" would not tell a reader that
+the workflow *this diff changed* was ever opened, and an early cut of this surface greened with an
+empty `unvalidated` list over exactly that (#5991). So a changed workflow counts as opened only when
+`actionlint` ran over it or a passing declared validator names it in `reads`; every other changed
+workflow is listed in the green's `unvalidated` and disclosed on stderr, and a run where **none** of
+them was opened — nothing ran at all, or everything that ran reads other files — is `11`, because
+that green is exactly the one the named-class design exists to refuse. This is why `reads` is
+mandatory and non-empty: an entry that names no file can only buy the false green back.
 
 Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`).
 
@@ -1415,6 +1426,8 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | `build check: cannot read .fabrika.jsonc (<reason>) — which docs are leak-scan exempt is UNKNOWN, never green.` | 11 | refusal |
 | `build check: cannot read .fabrika.jsonc (<reason>) — which commands validate this repo's workflows is UNKNOWN, never green.` | 11 | refusal |
 | `build check: no workflow validator could be executed — actionlint is not installed here (<reason>) and this repo declares none — so no file was opened and the verdict is UNKNOWN, never green.` | 11 | refusal |
+| `build check: <n> workflow validator(s) ran, but none of them opened any of the <m> changed workflow file(s) (<files>) — actionlint did not run here (<reason>) and no declared validator reads them, so the verdict is UNKNOWN, never green.` | 11 | refusal |
+| `build check: no validator that ran opens <files> — reported in \`unvalidated\`, so this green claims nothing about them.` | 0 | scope note beside a green |
 | `build check: <n> workflow validator(s) declared in .fabrika.jsonc.` | 0 | scope note |
 | `build check: no repo workflow validator is declared — <reason>.` | 0 | scope note |
 | `build check: actionlint did NOT run (<reason>) — ci.yml's actionlint job supersedes this verdict on workflow syntax.` | 0 | scope note beside a green |

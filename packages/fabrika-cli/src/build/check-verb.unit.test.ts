@@ -825,7 +825,10 @@ describe("the prose link check still reds a dead link", () => {
 describe("--surface workflows", () => {
 	const CONFIG = "/repo/trees/lane-a/.fabrika.jsonc";
 	const GUARD = ["node", "guards/bin.js", "path-filter-guard", "check"];
-	const DECLARED = {[CONFIG]: JSON.stringify({workflowValidators: [GUARD]})};
+	const declaring = (reads: ReadonlyArray<string>) => ({
+		[CONFIG]: JSON.stringify({workflowValidators: [{command: GUARD, reads}]}),
+	});
+	const DECLARED = declaring([".github/workflows/ci.yml"]);
 	const GUARD_LINE = /^node guards\/bin\.js path-filter-guard check$/;
 	const ACTIONLINT = /^actionlint /;
 	const WORKFLOWS = okOut(".github/workflows/ci.yml\n.github/workflows/publish.yml\n");
@@ -889,10 +892,52 @@ describe("--surface workflows", () => {
 	});
 
 	it("greens without actionlint, disclosing that it did not run", async () => {
-		const {out} = await workflows([[GUARD_LINE, okOut("")]], DECLARED, NO_ACTIONLINT);
+		const {out} = await workflows(
+			[[GUARD_LINE, okOut("")]],
+			declaring([".github/workflows/ci.yml", ".github/workflows/publish.yml"]),
+			NO_ACTIONLINT,
+		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).ran).toEqual([GUARD.join(" ")]);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual([]);
 		expect(out.stderr.some((line) => line.includes("actionlint did NOT run"))).toBe(true);
+	});
+
+	// The finding on #6220's first round: `ran.length > 0` proves a validator ran, never that it
+	// opened the file the diff changed. Only actionlint takes the changed paths; a declared guard
+	// reads the fixed set it names, so coverage is per file or it is a claim about nothing.
+	it("names a changed workflow no validator that ran opens in `unvalidated`", async () => {
+		const {out} = await workflows([[GUARD_LINE, okOut("")]], DECLARED, NO_ACTIONLINT);
+		expect(out.code).toBe(0);
+		const verdict = JSON.parse(out.stdout);
+		expect(verdict.ran).toEqual([GUARD.join(" ")]);
+		expect(verdict.unvalidated).toEqual([".github/workflows/publish.yml"]);
+		expect(
+			out.stderr.some((line) =>
+				line.includes("no validator that ran opens .github/workflows/publish.yml"),
+			),
+		).toBe(true);
+	});
+
+	it("refuses on 11 when every validator ran and none of them opened a changed file", async () => {
+		const {out} = await workflows(
+			[[GUARD_LINE, okOut("")]],
+			declaring([".github/workflows/deploy.yml"]),
+			NO_ACTIONLINT,
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(
+			"none of them opened any of the 2 changed workflow file(s)",
+		);
+	});
+
+	it("refuses the whole declared list when an entry names no file it reads", async () => {
+		const {out} = await workflows([], {[CONFIG]: JSON.stringify({workflowValidators: [GUARD]})}, [
+			ACTIONLINT,
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("no workflow validator could be executed");
 	});
 
 	it("refuses on 11 when nothing could run — a green there would have opened no file", async () => {

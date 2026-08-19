@@ -24,15 +24,29 @@
 		"/skills/triage/SKILL.md"
 	],
 
-	// The repo's own commands that machine-read `.github/workflows/**`, each an argv array.
-	// `fabrika build check --surface workflows` runs them over a workflows-touching diff, on top of
-	// `actionlint` when the tree has one (#5991). In phoenix these are the three CI guards that open
-	// a workflow file: the path-filter list, the change-detect wiring, and publish isolation. They
-	// run from the repo with no extra install, which is why they — not actionlint, a pinned tarball
-	// CI installs at job time — are what a local green stands on.
+	// The repo's own commands that machine-read `.github/workflows/**`. `fabrika build check
+	// --surface workflows` runs them over a workflows-touching diff, on top of `actionlint` when the
+	// tree has one (#5991). In phoenix these are the three CI guards that open a workflow file: the
+	// path-filter list, the change-detect wiring, and publish isolation. They run from the repo with
+	// no extra install, which is why they — not actionlint, a pinned tarball CI installs at job time
+	// — are what a local green stands on.
+	//
+	// `reads` is the exact set of workflow files that command opens. These guards take no path
+	// arguments, so this is the only thing that tells the verb WHICH changed workflow a passing run
+	// actually covers; a changed workflow no entry here names is reported in the green's
+	// `unvalidated` list, and a diff none of them names refuses UNKNOWN instead of greening.
 	"workflowValidators": [
-		["node", "packages/pipeline-cli/src/bin.ts", "path-filter-guard", "check"],
-		["node", "packages/pipeline-cli/src/bin.ts", "change-detect-guard", "check"],
-		["node", "packages/pipeline-cli/src/bin.ts", "publish-isolation-guard", "check"]
+		{
+			"command": ["node", "packages/pipeline-cli/src/bin.ts", "path-filter-guard", "check"],
+			"reads": [".github/workflows/ci.yml", ".github/workflows/deploy.yml"]
+		},
+		{
+			"command": ["node", "packages/pipeline-cli/src/bin.ts", "change-detect-guard", "check"],
+			"reads": [".github/workflows/ci.yml"]
+		},
+		{
+			"command": ["node", "packages/pipeline-cli/src/bin.ts", "publish-isolation-guard", "check"],
+			"reads": [".github/workflows/publish.yml"]
+		}
 	]
 }

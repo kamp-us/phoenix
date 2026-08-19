@@ -78,14 +78,20 @@ describe("readCapClearAuthors", () => {
 });
 
 describe("readWorkflowValidators", () => {
-	it("reads each declared command as an argv, in declaration order", () => {
+	it("reads each declared command with the files it opens, in declaration order", () => {
 		expect(
 			readWorkflowValidators(
-				'{"workflowValidators": [["node", "guards/bin.js", "check"], ["lint-workflows"]]}',
+				'{"workflowValidators": [{"command": ["node", "guards/bin.js", "check"], "reads": [".github/workflows/ci.yml"]}, {"command": ["lint-workflows"], "reads": [".github/workflows/a.yml", ".github/workflows/b.yml"]}]}',
 			),
 		).toEqual({
 			_tag: "Validators",
-			commands: [["node", "guards/bin.js", "check"], ["lint-workflows"]],
+			validators: [
+				{argv: ["node", "guards/bin.js", "check"], reads: [".github/workflows/ci.yml"]},
+				{
+					argv: ["lint-workflows"],
+					reads: [".github/workflows/a.yml", ".github/workflows/b.yml"],
+				},
+			],
 		});
 	});
 
@@ -97,8 +103,24 @@ describe("readWorkflowValidators", () => {
 		{shape: "a key that is not an array", text: '{"workflowValidators": "actionlint"}'},
 		{shape: "an empty array", text: '{"workflowValidators": []}'},
 		{shape: "an entry that is a bare string", text: '{"workflowValidators": ["actionlint"]}'},
-		{shape: "an empty argv", text: '{"workflowValidators": [[]]}'},
-		{shape: "an argv holding a non-string", text: '{"workflowValidators": [["node", 7]]}'},
+		{
+			shape: "a bare argv, which declares no file it opens",
+			text: '{"workflowValidators": [["actionlint"]]}',
+		},
+		{shape: "an empty argv", text: '{"workflowValidators": [{"command": [], "reads": ["a.yml"]}]}'},
+		{
+			shape: "an argv holding a non-string",
+			text: '{"workflowValidators": [{"command": ["node", 7], "reads": ["a.yml"]}]}',
+		},
+		{shape: "no reads key", text: '{"workflowValidators": [{"command": ["actionlint"]}]}'},
+		{
+			shape: "an empty reads list",
+			text: '{"workflowValidators": [{"command": ["actionlint"], "reads": []}]}',
+		},
+		{
+			shape: "a reads entry that is blank",
+			text: '{"workflowValidators": [{"command": ["actionlint"], "reads": ["  "]}]}',
+		},
 	])("refuses the whole list on $shape", ({text}) => {
 		expect(readWorkflowValidators(text)._tag).toBe("Unusable");
 	});
