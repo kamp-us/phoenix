@@ -52,7 +52,7 @@
  * comment is buildable as transcription (ADR 0300) — so the exemption is read off the target being
  * a PR, never off the pairing being impossible.
  */
-import {Effect, type FileSystem} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {
 	createComment,
@@ -99,7 +99,7 @@ import {
 	parseCitation,
 	parseClaimPurpose,
 	purposeScopeLine,
-	readDispatch,
+	readDeclaredDispatch,
 	scopeSubjectOf,
 	typeAxisOf,
 	typeScopeLine,
@@ -109,6 +109,8 @@ import {openIssue, resolveAdmissionSubject, resolveTargetRepo, scannedLine} from
 export interface ClaimOptions {
 	readonly number: number;
 	readonly repo: string | null;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** A fresh UUID, supplied by the adapter so the token this run mints is deterministic under test. */
 	readonly uuid: string;
@@ -137,9 +139,11 @@ export interface ClaimOptions {
 	readonly token: string | null;
 }
 
+// `cwd` is dropped with the claim-only fields: the scope fence is `build claim`'s, and confirm /
+// release / adopt ask about a marker rather than about what this repo admits.
 export type ProtocolOptions = Omit<
 	ClaimOptions,
-	"uuid" | "at" | "purpose" | "override" | "overrideLane" | "cites" | "token"
+	"uuid" | "at" | "purpose" | "override" | "overrideLane" | "cites" | "token" | "cwd"
 > & {
 	/** The token `build claim` handed this lane — the identity it is asking under (#6037). */
 	readonly token: string;
@@ -222,7 +226,7 @@ export const runClaim = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > =>
 	Effect.gen(function* () {
 		const purpose = parseClaimPurpose(options.purpose);
@@ -272,7 +276,7 @@ export const runClaim = (
 			}
 		}
 
-		const read = yield* readDispatch();
+		const read = yield* readDeclaredDispatch(options.cwd);
 		if (read._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,

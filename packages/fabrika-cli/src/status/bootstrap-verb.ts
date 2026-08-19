@@ -21,6 +21,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {audienceLabel, type BoardVocabulary, statusList, typeLabel} from "../config/board.ts";
 import {CONFIG_PATH} from "../config/document.ts";
 import {loadConfig} from "../config/load.ts";
+import {type Read, readRoadmapFile} from "../config/paths.ts";
 import {resolveBoard} from "../config/resolve-board.ts";
 import {readConfigSource} from "../config/source.ts";
 import {appendText, exists, readFile, writeFile} from "../io/fs.ts";
@@ -156,8 +157,18 @@ export type BuildableSurface =
 	| {
 			readonly id: string;
 			readonly kind: "file";
-			/** The registry default write path. */
+			/** The registry default write path — where this lands in a repo that declares nothing. */
 			readonly defaultPath: string;
+			/**
+			 * How the repo names this file in `.fabrika.jsonc`, when it may name it at all.
+			 *
+			 * Absent means the path is fixed by convention and only `--path` moves it. Present means a
+			 * bootstrap must scaffold where the *readers* look: writing `ROADMAP.md` in a repo whose
+			 * fence reads `PLAN.md` leaves an inert file and no signal that it is inert.
+			 */
+			readonly declared?: (
+				root: string,
+			) => Effect.Effect<Read<string>, never, FileSystem.FileSystem | Path.Path>;
 			/**
 			 * Present only where the content is machine-read. Absent leaves the notice and the `--json`
 			 * object exactly as they were, which is what keeps the other surfaces byte-identical.
@@ -196,7 +207,13 @@ ${FABRIKA_IGNORE_ROW}`;
 /** Six ids. A seventh is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
-	{id: "roadmap-focus", kind: "file", defaultPath: ROADMAP_FILE, count: roadmapCount},
+	{
+		id: "roadmap-focus",
+		kind: "file",
+		defaultPath: ROADMAP_FILE,
+		declared: readRoadmapFile,
+		count: roadmapCount,
+	},
 	{
 		id: "gitignore-row",
 		kind: "line",
@@ -288,14 +305,37 @@ interface Target {
 	readonly absolute: string;
 }
 
-/** The write target of a path-taking surface, or the refusal a `--path` outside the repo owes. */
+/**
+ * The write target of a path-taking surface, or the refusal it owes.
+ *
+ * Three sources in one order: an explicit `--path`, else the repo's declared path for surfaces that
+ * have a key, else the registry default. A config that cannot be decoded refuses rather than falling
+ * through to the default — scaffolding phoenix's path into a repo that declared its own is the
+ * silent half of the same defect a wrong `--path` makes loud.
+ */
 const targetOf = (
-	defaultPath: string,
+	surface: {
+		readonly defaultPath: string;
+		readonly declared?: (
+			root: string,
+		) => Effect.Effect<Read<string>, never, FileSystem.FileSystem | Path.Path>;
+	},
 	input: BootstrapInput,
-): Effect.Effect<Target | VerbOutcome, never, Path.Path> =>
+): Effect.Effect<Target | VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
-		const relative = input.path ?? defaultPath;
+		const declared =
+			input.path === null && surface.declared !== undefined
+				? yield* surface.declared(input.repoRoot)
+				: null;
+		if (declared !== null && declared._tag === "Refused") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${CONFIG_PATH} is refused — ${declared.reason.replace(/\.$/, "")}, so where this surface belongs is unread. Nothing was written.`,
+			);
+		}
+		const relative =
+			input.path ?? (declared?._tag === "Value" ? declared.value : surface.defaultPath);
 		const absolute = path.resolve(input.repoRoot, relative);
 		// Containment is checked on the RESOLVED path, so `../` cannot walk out of the repository.
 		if (absolute !== input.repoRoot && !absolute.startsWith(`${input.repoRoot}${path.sep}`)) {
@@ -314,7 +354,7 @@ const buildFile = (
 	input: BootstrapInput,
 ): Effect.Effect<VerbOutcome, never, Requirements> =>
 	Effect.gen(function* () {
-		const target = yield* targetOf(surface.defaultPath, input);
+		const target = yield* targetOf(surface, input);
 		if (!isTarget(target)) return target;
 		const {relative, absolute} = target;
 		const probe = yield* Effect.result(exists(absolute));
@@ -374,7 +414,7 @@ const buildLine = (
 	input: BootstrapInput,
 ): Effect.Effect<VerbOutcome, never, Requirements> =>
 	Effect.gen(function* () {
-		const target = yield* targetOf(surface.defaultPath, input);
+		const target = yield* targetOf(surface, input);
 		if (!isTarget(target)) return target;
 		const {relative, absolute} = target;
 

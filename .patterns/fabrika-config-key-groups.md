@@ -22,6 +22,7 @@ rather than a branch in fabrika's source (ADR 0273, epic
 | `board.ts` | The board vocabulary's shape (`BoardVocabulary`, `StatusNames`) and how a facet's delete authority is composed from it — pure, so `triage/facets.ts` can build the shipped default off it |
 | `resolve-board.ts` | `resolveBoard(load, shipped)` — joins `boardVocabulary` and `triageFacets` into one table and re-runs containment over the join |
 | `ci-producer.ts` | `producerFor(...)` — the "does this repo produce CI at all" rule `review ci` and `ship checks` both decide through, over a workflow count and `ci.noProducer` |
+| `paths.ts` | One reader per path key off the working tree — the value, where it came from, and the refusal a verb prints verbatim |
 
 A key read at a PR's **base ref** rather than the working tree opens the bytes through that
 group's own platform reader and hands `loadConfig` a `Text` or an `Absent`.
@@ -139,6 +140,32 @@ name inside one, so no expected-job set exists to drift (#5603, R17.1). And **a 
 address is refused, not repaired**: `gateWorkflow` takes a bare filename, so
 `.github/workflows/ci.yml` is `Malformed` rather than silently basenamed — a declaration quietly
 rewritten is one the operator believes is configured and is not.
+
+## A path key, and the one path a repo may decline
+
+The path surface — `governedRoots`, `decisionsDir`, `roadmapFile`, `cycleDoc`, `designHarness` — is
+where a repo says which files fabrika reads by name (#6296). Three things hold across all of them.
+
+**The shipped default is the string's one home, and the old literal re-exports it.**
+`review/classes.ts`'s `DECISIONS_ROOT`, `plan/github.ts`'s `CYCLE_DOC_PATH`, `triage/roadmap.ts`'s
+`ROADMAP_FILE` and `ui/conventions.ts`'s `HARNESS_PATH` are now `export {…} from` the key module, so
+a caller that scaffolds the file and a caller that reads a repo's declared one cannot drift apart.
+
+**A reader that could not read is not a reader that read nothing.** `config/paths.ts` gives one
+function per key — `governedRootsOr`, `cycleDocOr`, `designHarnessOr`, `decisionsDirOr` — each
+answering the value plus a note naming where it came from, or the one refusal sentence its callers
+print. The exit code stays each verb's; only the sentence is shared, so seven verbs cannot word the
+same fault seven ways. `Malformed` and `Unknown` both refuse there: falling back to the shipped
+default on a typo silently restores phoenix's own paths inside a repo that is not phoenix.
+
+**Absent is not declined.** An absent key is "this repo said nothing" and resolves to the shipped
+value; a *declined* key is "this repo has no such surface", and only `decisionsDir` can be declined,
+by writing `null`. The asymmetry is the point: a repo with no decision corpus changes what
+`governance` may conclude and what `adr` may write, so the absence has to be declared before those
+verbs act on it — while `roadmapFile` and its siblings name files whose absence the filesystem
+already reports, and a decline key there would be a second way to say what the tree says. Model the
+declinable one as a two-arm type (`{_tag: "Path"} | {_tag: "Declined"}`), never a nullable string:
+a `null` path is the shape that gets `?? ".decisions"`-ed back into the default the repo refused.
 
 ## An empty declared list is the caller's answer, not the decoder's
 

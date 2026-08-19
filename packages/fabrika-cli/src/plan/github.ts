@@ -24,8 +24,15 @@ import {absent, type Existence, httpStatusOf, pagedJson, present, unknown} from 
 import {isRecord, parseJson} from "../io/json.ts";
 import type {CycleDoc} from "./model.ts";
 
-/** The cycle doc the containment class is gated on, at the target repository's root. */
-export const CYCLE_DOC_PATH = "product-development-cycle.md";
+/**
+ * The cycle doc the containment class is gated on, at the target repository's root, as this package
+ * ships it.
+ *
+ * Where a repo actually keeps it is `cycleDoc` in `.fabrika.jsonc`
+ * (`../config/keys/paths.ts`), resolved by the verb and handed to {@link probeCycleDoc}. This
+ * constant is that key's shipped default, re-exported from the one place it is written.
+ */
+export {SHIPPED_CYCLE_DOC as CYCLE_DOC_PATH} from "../config/keys/paths.ts";
 
 /** One native sub-issue link: the child's number plus the open/closed facts the payload carries. */
 export interface SubIssueLink {
@@ -139,9 +146,9 @@ export const getChild = (repo: string, child: number): Shell<Existence<ChildPayl
  * `skipped` array rather than evaluating it false. Folding `unknown` into `absent` is precisely v1's
  * bug: a transient failure silently switched the whole class off for a run.
  */
-export const probeCycleDoc = (repo: string): Shell<CycleDoc> =>
+export const probeCycleDoc = (repo: string, path: string): Shell<CycleDoc> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", ["api", `repos/${repo}/contents/${CYCLE_DOC_PATH}`]);
+		const r = yield* execCapture("gh", ["api", `repos/${repo}/contents/${path}`]);
 		if (r.ok) return "present" as const;
 		return httpStatusOf(r.reason) === 404 ? ("absent" as const) : ("unknown" as const);
 	});

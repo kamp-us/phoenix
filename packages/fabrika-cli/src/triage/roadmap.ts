@@ -12,14 +12,14 @@
  */
 
 /**
- * The declaration file itself, relative to the repository root — the one home for the name.
+ * The declaration file's **shipped default**, relative to the repository root.
  *
- * `build`'s scope fence, `triage homes` and `status bootstrap` all point at the same file, and each
- * used to spell it out for itself. It sits beside the parser because the parser is what gives the
- * name meaning, and it is a constant rather than a config read on purpose (#6291): one home first,
- * a key over that home later.
+ * #6291 put one home under the name and said a key would follow; #6296 is that key —
+ * `roadmapFile` in `.fabrika.jsonc` (`../config/keys/paths.ts`), which `build pick`, `build claim`
+ * and `triage homes` resolve before they read. This re-export keeps the string written once, for
+ * the callers that scaffold the file rather than read a repo's declared one.
  */
-export const ROADMAP_FILE = "ROADMAP.md";
+export {SHIPPED_ROADMAP_FILE as ROADMAP_FILE} from "../config/keys/paths.ts";
 
 /** One roadmap row: the first column, and the milestone its second column pins. */
 export interface RoadmapRow {

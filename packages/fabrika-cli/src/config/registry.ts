@@ -14,6 +14,7 @@ import {codeValidatorsKey} from "./keys/code-validators.ts";
 import {unreadableCodeownersKey} from "./keys/control-plane.ts";
 import {docLeakExemptKey} from "./keys/doc-leak-exempt.ts";
 import {governedRootsKey} from "./keys/governed-roots.ts";
+import {cycleDocKey, decisionsDirKey, designHarnessKey, roadmapFileKey} from "./keys/paths.ts";
 import {triageFacetsKey} from "./keys/triage-facets.ts";
 import {workflowValidatorsKey} from "./keys/workflow-validators.ts";
 
@@ -22,8 +23,12 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(capClearAuthorsKey),
 	register(ciKey),
 	register(codeValidatorsKey),
+	register(cycleDocKey),
+	register(decisionsDirKey),
+	register(designHarnessKey),
 	register(docLeakExemptKey),
 	register(governedRootsKey),
+	register(roadmapFileKey),
 	register(triageFacetsKey),
 	register(unreadableCodeownersKey),
 	register(workflowValidatorsKey),

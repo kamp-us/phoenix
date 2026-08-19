@@ -29,6 +29,7 @@ const REPORT_BODY = "## Summary\n\nsomething is off.\n\n## Pointers\n\n- a file\
 const options = {
 	repo: null,
 	limit: 20,
+	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 

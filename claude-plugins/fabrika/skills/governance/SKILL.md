@@ -49,12 +49,15 @@ reads across is `merge-base(base, tip)` — the same commit the range's own thre
 from, which is the commit §4 then serves this skill's bytes at.
 
 <!-- anchor: DERIVED-NOT-ELECTED --> The requirement is a **total function of the changed-file list
-alone**, over four roots — `.decisions/`, `.claude/`, `.github/`, `claude-plugins/`. Four properties
+alone**, over the roots this repo declares in `.fabrika.jsonc`'s `governedRoots` — shipping as
+`.decisions/`, `.claude/`, `.github/`, `claude-plugins/` and `.fabrika.jsonc` itself. Four properties
 make that checkable:
 
-- **Derived, not elected.** Nothing feeds the derivation and nothing can decline it. `review` reads
-  the same fact off the `governance` line its own `scope` prints — the same four-root derivation,
-  not its three-root `harness` flag (#5607) — and routes here; it never decides whether you were
+- **Derived, not elected.** Nothing feeds the derivation and nothing can decline it. A repo declares
+  *which roots* it governs, never *whether* a diff under them is judged, and a list that is empty or
+  that drops `.fabrika.jsonc` is refused at load rather than honoured. `review` reads the same fact
+  off the `governance` line its own `scope` prints — the same derivation over the same list, not its
+  three compiled-in `harness` roots (#5607) — and routes here; it never decides whether you were
   needed.
 - **Fail-closed on absence.** The refusal belongs at the enqueue seam, not to a reviewer's good
   intentions: `governance` is a required namespace in `fabrika ship gate`'s conjunction, so a

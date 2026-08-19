@@ -1,6 +1,6 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	INCOMPLETE_SCAN,
@@ -31,6 +31,7 @@ const options = {
 	sha: null as string | null,
 	repo: null,
 	json: false,
+	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
@@ -41,7 +42,9 @@ const shell = (
 	const fake = fakeShell(script);
 	return {
 		fake,
-		out: Effect.runPromise(Effect.provide(runScope({...options, ...overrides}), fake.layer)),
+		out: Effect.runPromise(
+			Effect.provide(runScope({...options, ...overrides}), Layer.merge(fake.layer, unconfigured)),
+		),
 	};
 };
 
@@ -79,6 +82,33 @@ describe("runScope", () => {
 				"",
 			].join("\n"),
 		);
+	});
+
+	// The whole point of #6296: the fence a repo declares is the fence this verb derives over. The
+	// same diff answers `not-required` above under the shipped roots.
+	it("derives the namespace over a FOREIGN repo's declared roots", async () => {
+		const declared = fakeFs({
+			files: {
+				"/repo/.fabrika.jsonc": JSON.stringify({governedRoots: ["src/", ".fabrika.jsonc"]}),
+			},
+		});
+		const out = await Effect.runPromise(
+			Effect.provide(runScope({...options}), Layer.merge(fakeShell(happy()).layer, declared.layer)),
+		);
+		expect(out.stdout).toContain("governance\trequired");
+		expect(out.stderr).toContain(
+			"review scope: governance derived over 2 root(s) — `governedRoots` as declared in .fabrika.jsonc.",
+		);
+	});
+
+	it("refuses rather than deriving when the config cannot be decoded", async () => {
+		const broken = fakeFs({files: {"/repo/.fabrika.jsonc": '{"governedRoots": []}'}});
+		const out = await Effect.runPromise(
+			Effect.provide(runScope({...options}), Layer.merge(fakeShell(happy()).layer, broken.layer)),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("nothing would be governed");
 	});
 
 	it("emits the record with --json, including the derived namespace set", async () => {
@@ -215,7 +245,10 @@ describe("runScope refusals and diagnostics", () => {
 	it("refuses a non-PR number, and an unresolvable repo, on 1", async () => {
 		expect((await run(happy(), {pr: 0})).code).toBe(1);
 		const out = await Effect.runPromise(
-			Effect.provide(runScope({...options, env: {}}), fakeShell([]).layer),
+			Effect.provide(
+				runScope({...options, env: {}}),
+				Layer.merge(fakeShell([]).layer, unconfigured),
+			),
 		);
 		expect(out.code).toBe(1);
 	});

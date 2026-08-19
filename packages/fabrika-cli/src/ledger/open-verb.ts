@@ -18,6 +18,7 @@ import {Effect, FileSystem, Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {scannedLine} from "../build/target.ts";
 import {readTree} from "../build/tree.ts";
+import {cycleDocOr} from "../config/paths.ts";
 import {searchOpenIssues} from "../io/issues.ts";
 import {probeCycleDoc} from "../plan/github.ts";
 import {sectionCount} from "../plan/ledger.ts";
@@ -97,7 +98,13 @@ export const runOpen = (
 			);
 		}
 
-		const cycleDoc = yield* probeCycleDoc(repo);
+		const cycle = yield* cycleDocOr(
+			VERB,
+			options.cwd,
+			"where the cycle doc lives is unread, so the containment class cannot be derived.",
+		);
+		if (cycle._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, cycle.message, notes);
+		const cycleDoc = yield* probeCycleDoc(repo, cycle.path);
 
 		const tokens = tokenize(epic.title);
 		const backlog = yield* openBacklog(repo);

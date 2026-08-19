@@ -346,6 +346,15 @@ export const okOut = (stdout: string): ExecResult => ({ok: true, stdout, reason:
 
 export const errOut = (reason: string): ExecResult => ({ok: false, stdout: "", reason});
 
+/**
+ * A tree with no `.fabrika.jsonc` in it — every config key resolves to its shipped default.
+ *
+ * The layer a verb needs once it reads the path surface (#6296) and the test is not about the
+ * config. It is `fakeFs`'s empty case rather than a second noop layer so a test that later *does*
+ * declare a config swaps this for a `fakeFs({files: {…}})` and nothing else changes.
+ */
+export const unconfigured: Layer.Layer<FileSystem.FileSystem | Path.Path> = fakeFs({}).layer;
+
 /** `git ls-tree --name-only` output: one name per line. */
 export const tree = (...names: ReadonlyArray<string>): string => names.join("\n");
 

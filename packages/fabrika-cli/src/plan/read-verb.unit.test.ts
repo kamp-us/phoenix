@@ -1,6 +1,6 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {BAD_SECTIONS, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {child, childBody, epic, epicBody, labelSet, subIssues} from "./fixtures.test-support.ts";
@@ -15,11 +15,14 @@ const CYCLE = /^gh api repos\/o\/r\/contents\/product-development-cycle\.md$/;
 const options = {
 	number: 4300,
 	repo: null,
+	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
 const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
-	Effect.runPromise(Effect.provide(runRead(options), fakeShell(script).layer));
+	Effect.runPromise(
+		Effect.provide(runRead(options), Layer.merge(fakeShell(script).layer, unconfigured)),
+	);
 
 const CLEAN: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[EPIC, epic()],
@@ -164,7 +167,9 @@ describe("runRead", () => {
 
 	it("reads the child fetches at bounded fan-out, one request per child", async () => {
 		const shell = fakeShell([...CLEAN, [/^gh api --paginate repos\/o\/r\/labels/, labelSet()]]);
-		await Effect.runPromise(Effect.provide(runRead(options), shell.layer));
+		await Effect.runPromise(
+			Effect.provide(runRead(options), Layer.merge(shell.layer, unconfigured)),
+		);
 		expect(shell.calls.filter((line) => /issues\/430[12]$/.test(line))).toHaveLength(2);
 	});
 });

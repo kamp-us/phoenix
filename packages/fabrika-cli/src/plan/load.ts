@@ -93,6 +93,8 @@ export const loadLedger = (
 	messages: PlanMessages,
 	repo: string,
 	epic: IssueRecord,
+	/** Where this repo keeps its cycle doc — `cycleDoc`, resolved by the verb. */
+	cycleDocPath: string,
 ): Effect.Effect<LedgerRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const number = epic.number;
@@ -207,7 +209,7 @@ export const loadLedger = (
 			epic: number,
 			children,
 			epicStories: stories.ids,
-			cycleDoc: yield* probeCycleDoc(repo),
+			cycleDoc: yield* probeCycleDoc(repo, cycleDocPath),
 			topology: {phases, edges},
 			dependenciesAbsent: topology._tag === "Absent",
 		};

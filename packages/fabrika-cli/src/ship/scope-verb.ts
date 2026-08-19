@@ -18,9 +18,10 @@
  * the write — `ship merge` re-derives the same fact itself and refuses `11` where this printed
  * `unknown`, so a degraded read here can never license a landing.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {UNREADABLE_CODEOWNERS} from "../config/keys/control-plane.ts";
+import {governedRootsOr} from "../config/paths.ts";
 import {listPullFiles} from "../io/pulls.ts";
 import {issueRefOf, partitionWithUi, renderIssueRef, shipNamespacesOf} from "../review/classes.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -35,6 +36,8 @@ export interface ScopeOptions {
 	readonly pr: number;
 	readonly repo: string | null;
 	readonly json: boolean;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -44,11 +47,22 @@ const lifecycleOf = (merged: boolean, draft: boolean, state: string): string =>
 
 export const runScope = (
 	options: ScopeOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const {pr, json} = options;
 		const bad = badNumber(VERB, "a pull-request number", pr);
 		if (bad !== null) return bad;
+
+		const governed = yield* governedRootsOr(
+			VERB,
+			options.cwd,
+			"whether this diff derives the governance namespace is UNKNOWN, and a required set short one namespace is a merge gated on less than the diff earns.",
+		);
+		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
 
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
@@ -87,7 +101,7 @@ export const runScope = (
 			);
 		}
 
-		const partition = partitionWithUi(files);
+		const partition = partitionWithUi(files, governed.roots);
 		const namespaces = shipNamespacesOf(partition);
 		if (namespaces.length === 0) {
 			return refuse(
