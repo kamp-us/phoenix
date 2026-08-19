@@ -2,8 +2,8 @@
  * The Cloudflare boundary: list the account's Worker scripts + D1 databases + Flagship
  * apps/flags, and (only when the bin asks) delete one. Shells the CF REST API via `curl` over
  * `ChildProcessSpawner` — the SAME transport `.github/workflows/deploy.yml` uses for
- * its `/d1/database?name=` lookup, and the same `runGh`-shaped boundary
- * `@kampus/flake-rate` uses for `gh`. REST only; Schema decodes the untrusted envelope
+ * its `/d1/database?name=` lookup, and the same boundary shape `src/github.ts` uses for
+ * `gh`. REST only; Schema decodes the untrusted envelope
  * at the trust boundary (`.patterns/effect-schema-validation.md`); every infra fault is
  * a typed error in the `E` channel (`.patterns/effect-errors.md`).
  *
@@ -151,7 +151,7 @@ const splitStatus = (raw: string): {body: string; status: number} => {
 
 /**
  * Run `curl <args>` and return the response body + HTTP status, lowering a non-zero exit
- * (or a spawn `PlatformError`) into `CfCommandError`. Mirrors `@kampus/flake-rate`'s `runGh`.
+ * (or a spawn `PlatformError`) into `CfCommandError`. Mirrors `src/github.ts`'s `runGh`.
  *
  * Because `curlArgs` drops `-f`, a non-zero exit here now means a genuine PROCESS-level
  * fault (DNS, connection refused, timeout) — an HTTP error (4xx/5xx) keeps `curl` at exit 0
@@ -407,7 +407,7 @@ const resolveCreds = Effect.gen(function* () {
 });
 
 /**
- * The live `Cloudflare` layer. Mirrors `@kampus/flake-rate`'s `GithubLive`: the
+ * The live `Cloudflare` layer. Mirrors this package's `GithubLive`: the
  * `ChildProcessSpawner` is captured at construction and provided into each method (so
  * public methods carry `R = never`); credentials are resolved once, lazily (the layer
  * build is side-effect-free, so `--help` never reads the env). Provide `NodeServices.layer`

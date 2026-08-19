@@ -45,11 +45,10 @@ const importerAddDiff = (pkgPath: string): string =>
 	].join("\n");
 
 describe("the grounded worker-import closure (issue #1014)", () => {
-	it("worker's two import deps + the two own-D1-tier packages are integration-relevant", () => {
+	it("worker's two import deps + the own-D1-tier package are integration-relevant", () => {
 		assert.isTrue(INTEGRATION_RELEVANT_PACKAGES.has("db-schema"));
 		assert.isTrue(INTEGRATION_RELEVANT_PACKAGES.has("fate-effect"));
 		assert.isTrue(INTEGRATION_RELEVANT_PACKAGES.has("preview-seed"));
-		assert.isTrue(INTEGRATION_RELEVANT_PACKAGES.has("moderator-grant"));
 	});
 
 	it("d1-rest is NOT worker-relevant — the issue guessed wrong; grounded on source", () => {
@@ -106,14 +105,9 @@ describe("AC scenarios (issue #1014) — the four the PR body sanity-checks", ()
 	});
 });
 
-describe("own-D1-tier packages keep tripping (AC: preview-seed/moderator-grant)", () => {
+describe("own-D1-tier packages keep tripping (AC: preview-seed)", () => {
 	it("packages/preview-seed/** → relevant", () => {
 		const r = classify(input({changedFiles: ["packages/preview-seed/src/seed.ts"]}));
-		assert.strictEqual(r.verdict, "relevant");
-	});
-
-	it("packages/moderator-grant/** → relevant", () => {
-		const r = classify(input({changedFiles: ["packages/moderator-grant/src/bin.ts"]}));
 		assert.strictEqual(r.verdict, "relevant");
 	});
 });

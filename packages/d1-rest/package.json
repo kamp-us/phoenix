@@ -2,7 +2,7 @@
 	"name": "@kampus/d1-rest",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Single canonical D1 REST transport (makeD1Rest) — the one D1Database-shaped binding over the Cloudflare D1 REST query API that preview-seed / fts-backfill / moderator-grant all import, so a transport fix (e.g. the meta.changes mapping #940) lands once instead of in triplicate (issue #941). A true leaf — no @kampus/web — so fts-backfill's @kampus/web prod-dep stays acyclic.",
+	"description": "Single canonical D1 REST transport (makeD1Rest) — the one D1Database-shaped binding over the Cloudflare D1 REST query API that preview-seed / fts-backfill both import, so a transport fix (e.g. the meta.changes mapping #940) lands once instead of in triplicate (issue #941). A true leaf — no @kampus/web — so fts-backfill's @kampus/web prod-dep stays acyclic.",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts"

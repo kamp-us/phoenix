@@ -26,10 +26,10 @@
  * `db-schema` and `fate-effect` (apps/web/package.json), and each of those is a
  * leaf (no `@kampus/*` deps of its own). So the worker's transitive in-repo
  * closure is exactly {db-schema, fate-effect}. `d1-rest` is NOT in it (the issue
- * guessed it was) — it's consumed only by fts-backfill/preview-seed/moderator-grant.
- * preview-seed + moderator-grant are added to the integration-relevant set anyway:
- * they own their OWN real-D1 integration tiers run by the `integration` job
- * (ADR 0082, #672/#930), so a change to either must still trip integration.
+ * guessed it was) — it's consumed only by fts-backfill/preview-seed. preview-seed is
+ * added to the integration-relevant set anyway: it owns its OWN real-D1 integration
+ * tier run by the `integration` job (ADR 0082, #672), so a change to it must still
+ * trip integration.
  */
 
 /**
@@ -47,9 +47,8 @@ export const INTEGRATION_RELEVANT_PACKAGES: ReadonlySet<string> = new Set([
 	// worker's grounded @kampus/* import closure (apps/web/package.json; both leaves)
 	"db-schema",
 	"fate-effect",
-	// own real-D1 integration tiers run by the `integration` job (ADR 0082, #672/#930)
+	// own real-D1 integration tier run by the `integration` job (ADR 0082, #672)
 	"preview-seed",
-	"moderator-grant",
 ]);
 
 /** The lockfile whose attribution is the hard, fail-safe-to-running case. */

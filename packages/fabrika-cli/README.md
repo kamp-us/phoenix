@@ -1205,15 +1205,16 @@ Three consequences worth knowing before you install it:
   where that did not complete fails loudly, with the remediation command, rather than silently.
 - **Storing golden bytes is an injected `StoreLeg`, not a dependency.** A repo's goldens live
   in its own asset store, so anything naming a host or a credential stayed with the consuming
-  repo — phoenix keeps that half in `packages/design-capture/`. This package owns the shape and
+  repo. This package owns the shape and
   the diff, never the store. It is also what keeps the package installable: a published artifact
   may depend only on what a clean registry resolves
   ([ADR 0201](../../.decisions/0201-pipeline-tenant-phoenix-first.md) §3), and phoenix's depo client is
   private.
-- **The capture bin is still phoenix's** — `node packages/design-capture/src/bin.ts capture …`,
-  unchanged. It is a v1 caller, not the adopter-facing surface; the adopter-facing surface is the
-  `ui` verb group ([#5061](https://github.com/kamp-us/phoenix/issues/5061)) — see
-  [the `ui` group](#the-ui-group). This move deliberately changed no behavior.
+- **The adopter-facing surface is the `ui` verb group**
+  ([#5061](https://github.com/kamp-us/phoenix/issues/5061)) — see
+  [the `ui` group](#the-ui-group). Phoenix's v1 `design-capture` bin was the other caller; it was
+  deleted unused in [#6346](https://github.com/kamp-us/phoenix/issues/6346), and the move here
+  deliberately changed no behavior.
 
 ## Development
 

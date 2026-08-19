@@ -2,7 +2,7 @@
  * The minimal drizzle schema the admin grant touches — a local slice, NOT a
  * `@kampus/web` import (the worker's `schema.ts` isn't an exported subpath, and
  * pulling the whole worker graph into a `packages/` CLI is the anti-pattern
- * `@kampus/founder-seed` / `@kampus/moderator-grant` avoid the same way). Two tables:
+ * `@kampus/founder-seed` avoids the same way). Two tables:
  * `relation_tuple` (where the `admin` grant is written) and a `user` slice (to
  * resolve a `--username` selector to its id, and to verify the subject exists before
  * minting a grant for it). Canonical schema: `apps/web/worker/db/drizzle/schema.ts`;

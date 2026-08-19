@@ -16,7 +16,7 @@
  * come from the environment at runtime (`$CLOUDFLARE_API_TOKEN` / `$CLOUDFLARE_ACCOUNT_ID`),
  * never from source.
  *
- * Wired per effect-smol's CLI guidance (mirrors `@kampus/flake-rate`): `effect/unstable/cli`
+ * Wired per effect-smol's CLI guidance: `effect/unstable/cli`
  * for typed args/flags, the live `Cloudflare` + `Github` provided over `NodeServices.layer`
  * (supplying `ChildProcessSpawner`), run via `NodeRuntime.runMain`.
  */
