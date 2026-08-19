@@ -59,7 +59,7 @@ second answer to a gated question can contradict the gate (interface convention 
 |---|---|---|
 | `build tree` | prove the ground: optionally clean, optionally this lane's | two git-derivable assertions — no judgment; *what to do on a refusal* (stop, report) stays in the skill |
 | `build pick` | the ranked candidate pool: `status:triaged` + `ready-for:agent` + unassigned, paginated | a label/assignee filter over a paged listing — no judgment; the *choice* among candidates stays in the skill |
-| `build eligible` | one issue's dependency gate: `eligible` / blocked-by-named-edge / UNKNOWN | derivable entirely from the parent ledger's `## Dependencies`, issue states, and the commits `epic/<parent>` adds over the trunk in this tree |
+| `build eligible` | one issue's dependency gate: `eligible` / blocked-by-named-edge / UNKNOWN | derivable entirely from the issue's native `blocked_by` edges, those blockers' states, and the commits `epic/<parent>` adds over the trunk in this tree |
 | `build claim` | race the earliest-authorized claim on an issue; win, or name the winner | a deterministic race protocol; *what to do on a loss* stays in the skill |
 | `build confirm` | re-prove this LANE still holds the claim before a mutation | a lookup with a defined answer |
 | `build release` | retract this LANE's own claim | a guarded single write |
@@ -140,8 +140,8 @@ from two separate questions, computed together and answered together:
   no refusal (#5490).
 
 **Keep the two names apart.** *Scope admission* is a different question from the audience axis (who
-the work is for), from dependency eligibility (`build eligible` asks whether an issue's predecessors
-are done), from priority (a home confers no band, ADR 0219), and from the milestone pick-order
+the work is for), from dependency eligibility (`build eligible` asks whether an issue's `blocked_by`
+blockers are done), from priority (a home confers no band, ADR 0219), and from the milestone pick-order
 tiebreaker (ADR 0072) — the same not-this list ADR 0245 draws. Among admitted issues the ranking is
 unchanged, and a scope refusal never reads as blocked — `16` is `build eligible`'s alone, and no
 scope outcome borrows it. This section is the term ADR 0245 asks this contract to carry, at exactly
@@ -556,19 +556,30 @@ fabrika build eligible 4312 [--repo <owner/name>]
 `{"answer": "eligible", "number": 4312, "parent": 4300}` (`parent` is `null` for a standalone
 issue). Blocked and unknown produce no stdout — they are exits `16` and `11`.
 
-The derivation: resolve the parent epic (three-way — parent found / proven standalone /
-unreadable). For a child, read the parent ledger's `## Dependencies` topology and the states of
-every predecessor: a phase predecessor still open, or an open `requires:` edge, is a block, and
-**every** blocking edge is named on stderr (#4244, #4920) — a lane learns everything it waits on
-from one call, not one edge per call. Blockedness is **derived from the topology, never read off a
-label** — a label is a claim, the topology is the fact. The parent body arrives through the content
-gate.
+**The source of blockedness is GitHub's native `blocked_by` graph, and there is no second one**
+(#5387, ADR 0301, delivered by #5913). The verb reads the issue's own `blocked_by` list and the
+state of every blocker it names: a blocker still open is a block, and **every** blocking edge is
+named on stderr (#4244, #4920) — a lane learns everything it waits on from one call, not one edge
+per call. A `blocked_by` entry is not a block on its own, because the endpoint lists every blocker
+whatever its state; the "any blocker still open" derivation lives in the reader
+(`packages/fabrika-cli/src/build/blockedness.ts`), which is the one module every seam answering this
+question reads through.
 
-**A predecessor is discharged from two sources, and the second one is git** (#6063). It is
+**The epic ledger's prose `## Dependencies` block is not an input.** It is a human-readable
+rendering of the ledger's shape and nothing parses it to decide whether work may start — a label is
+a claim, a prose block is a rendering, the graph is the fact. `build check --surface plan`,
+`ledger topology` and the epic machine emitter still read that block for planning and sequencing;
+none of them answers eligibility.
+
+**The edges are the issue's own, so a standalone issue is gated exactly like an epic child.** The
+parent epic is still resolved (three-way — parent found / proven standalone / unreadable), because
+the assembly-branch discharge below is named from it and the answer carries it.
+
+**A blocker is discharged from two sources, and the second one is git** (#6063). It is
 discharged when its issue is closed **or** when the parent epic's assembly branch, `epic/<parent>`,
 carries a commit whose message names it. Under ADR 0285 an epic run is one branch and one PR, so no
 child issue closes until the tail PR merges — reading only the closed state would make every
-phase-2-or-later child of a run in flight permanently blocked, on a gate that cannot be satisfied
+later-phase child of a run in flight permanently blocked, on a gate that cannot be satisfied
 before the epic it blocks has shipped. The branch name is derived from the parent's number, never
 taken from a caller, and the message is read with the same `#<n>` rule `build commit` and
 `lane prove` use.
@@ -583,59 +594,44 @@ discharge an edge whose work was never built.
 The second source only ever discharges, and only on evidence it read: a branch this tree does not
 carry, a trunk this repo would not name, no merge base, or a git read that failed, leaves every edge
 exactly as the board gave it — `16` for an open one, `11` for an unread one — and names the unread
-branch on stderr. A ledger-local `C<int>` ref is
-never discharged this way, since no commit can name an issue nobody filed. The branch is read only
-when at least one edge is still undischarged, so a standalone issue and a child whose predecessors
-are all closed make no git call at all.
+branch on stderr. The branch is read only when at least one edge is still undischarged **and** the
+issue has a parent, so a standalone issue and a child whose blockers are all closed make no git call
+at all.
 
-**Every predecessor is read before the answer is seated**, so the answer never depends on the order
-the topology lists them in. A predecessor whose state could not be read is its **own reported row**
-on stderr, never counted closed: beside a *proven* open edge it leaves the verdict `16` (one proven
-open edge is proof of blockedness whatever else was unreadable) and is named there so the edge list
-is not read as complete; with nothing proven open it is `11`, because the blocking set is only
-complete when every predecessor's state is known.
+**Every read fails closed, on every axis** (ADR 0092). An edge list that could not be read is `11`,
+never "no edges, so not blocked" — including a `404` on the list of an issue this verb has already
+proven open, which is an unexplained answer rather than an empty one. A blocker the token cannot see
+counts open, never discharged.
 
-**The `## Dependencies` grammar — canonical here** (no wire module ships for it yet; when one
-lands in `packages/fabrika-cli/src/wire/`, it implements this section and this section becomes a
-pointer). The section holds only blank lines and list lines of two forms:
-
-```
-- phase <int>: <ref>[, <ref>…]
-- <ref> requires: <ref>[, <ref>…]
-```
-
-where `<ref>` is `#<int>` (an issue) or a ledger-local id matching `C<int>`. Semantics: an issue
-in phase *k* is blocked while any ref in a phase < *k* is open; a `requires:` line blocks its
-subject while any listed ref is open; a ledger-local ref resolves within the ledger, an issue ref
-resolves to that issue's state. Any other non-blank line inside the section is **unparseable**,
-and the whole derivation refuses on `4` — "no parseable edges" is never read as "no edges".
-`build check --surface plan` validates this same grammar, and
-[`references/plan.md`](references/plan.md) points authors at it.
+**Every blocker is read before the answer is seated**, so the answer never depends on the order the
+graph lists them in. A blocker whose state could not be read is its **own reported row** on stderr,
+never counted closed: beside a *proven* open edge it leaves the verdict `16` (one proven open edge
+is proof of blockedness whatever else was unreadable) and is named there so the edge list is not
+read as complete; with nothing proven open it is `11`, because the blocking set is only complete
+when every blocker's state is known.
 
 **Exit status** (beyond the universal four)
 
 | Code | Trigger |
 |---|---|
-| `4` | the parent ledger was read but its `## Dependencies` block is absent or unparseable — eligibility cannot be derived, fail-closed |
 | `7` | the issue is proven absent (404) or closed |
-| `11` | the issue, parent, or any predecessor could not be read — eligibility is UNKNOWN |
-| `16` | proven blocked — an open predecessor or `requires:` edge no commit in `<base>..epic/<parent>` discharges, named on stderr |
+| `11` | the issue, its parent, its `blocked_by` list, or any blocker could not be read — eligibility is UNKNOWN |
+| `16` | proven blocked — an open blocker no commit in `<base>..epic/<parent>` discharges, named on stderr |
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `build eligible: issue #<n> is proven absent or closed.` | 7 | refusal |
-| `build eligible: parent #<p> has no parseable "## Dependencies" block — eligibility cannot be derived, and "no edges found" is never read as "eligible".` | 4 | refusal |
 | `build eligible: cannot read <what>: <reason> — eligibility is UNKNOWN, never "eligible".` | 11 | refusal |
-| `build eligible: <n> predecessors could not be read — eligibility is UNKNOWN, never "eligible".` | 11 | refusal |
-| `build eligible: cannot read <edge-kind> predecessor #<m>: <reason> — its state is UNKNOWN, never counted closed.` | 11 or 16 | detail line, one per unread predecessor |
-| `build eligible: blocked by <n> open dependency edges: <edge-kind> #<m>, <edge-kind> #<k>.` | 16 | refusal |
+| `build eligible: <n> blockers could not be read — eligibility is UNKNOWN, never "eligible".` | 11 | refusal |
+| `build eligible: cannot read blocker #<m>: <reason> — its state is UNKNOWN, never counted closed.` | 11 or 16 | detail line, one per unread blocker |
+| `build eligible: blocked by <n> open blocked_by edges: #<m>, #<k>.` | 16 | refusal |
 | `build eligible: origin/<trunk>..epic/<p> adds a commit naming #<m> — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).` | 0, 11 or 16 | detail line, once |
-| `build eligible: origin/<trunk>..epic/<p> adds <n> commit(s), none naming an undischarged predecessor.` | 11 or 16 | detail line, once |
+| `build eligible: origin/<trunk>..epic/<p> adds <n> commit(s), none naming an undischarged blocker.` | 11 or 16 | detail line, once |
 | `build eligible: cannot read epic/<p> in this tree: <reason> — no edge is counted discharged off it, and every edge keeps the state the board gave it.` (`<reason>` also covers an unnameable trunk and an absent merge base — the range's other two endpoints) | 11 or 16 | detail line, once |
 
-**Scope** — one issue, its parent (if any), every predecessor the parent's topology names, and —
+**Scope** — one issue, its parent (if any), every blocker its `blocked_by` list names, and —
 only when an edge is still undischarged — `epic/<parent>` in this tree.
 The scope line on stderr counts the edges checked, so `eligible` is readable as "N edges, all
 closed", never as "no edges found". An edge whose state could not be read is subtracted from that
@@ -645,29 +641,30 @@ claim by its own stderr row, so "all closed" is never asserted over an edge nobo
 
 ```
 $ fabrika build eligible 4312
+build eligible: scanned 0 blocked_by edges; standalone.
 {"answer":"eligible","number":4312,"parent":null}
 ```
 
 ```
 $ fabrika build eligible 4319
-build eligible: scanned 2 dependency edges; parent #4300.
-build eligible: blocked by 2 open dependency edges: requires: #4310, requires: #4311.
+build eligible: scanned 2 blocked_by edges; parent #4300.
+build eligible: blocked by 2 open blocked_by edges: #4310, #4311.
 $ echo $?
 16
 ```
 
 ```
 $ fabrika build eligible 4321
-build eligible: scanned 2 dependency edges; parent #4300.
-build eligible: cannot read phase predecessor #4310: gh: Bad gateway (HTTP 502) — its state is UNKNOWN, never counted closed.
-build eligible: blocked by 1 open dependency edge: phase #4311.
+build eligible: scanned 2 blocked_by edges; parent #4300.
+build eligible: cannot read blocker #4310: gh: Bad gateway (HTTP 502) — its state is UNKNOWN, never counted closed.
+build eligible: blocked by 1 open blocked_by edge: #4311.
 $ echo $?
 16
 ```
 
 ```
 $ fabrika build eligible 6007
-build eligible: scanned 1 dependency edge; parent #5817.
+build eligible: scanned 1 blocked_by edge; parent #5817.
 build eligible: origin/main..epic/5817 adds a commit naming #6004 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).
 {"answer":"eligible","number":6007,"parent":5817}
 $ echo $?
@@ -676,8 +673,13 @@ $ echo $?
 
 **Grounding**
 
-- #4244 — lane entry must refuse while a `requires:` member is open.
-- #6063 — inside a one-PR epic run every predecessor issue is open by design (ADR 0285), so the
+- #5387 / ADR 0301 — one carrier for blockedness. The founder ruled that every dependency in
+  fabrika sits behind GitHub's native `blocked_by` edges and that a prose dependency block is at
+  most a rendering of them, never a parsed input. #5913 is the `build eligible` half of that
+  migration; the claim-seam gate and the `build pick` exclusion reason follow in #6249, over the
+  same reader this verb introduced.
+- #4244 — lane entry must refuse while a blocker is open.
+- #6063 — inside a one-PR epic run every blocker issue is open by design (ADR 0285), so the
   closed-state proxy made the gate structurally unsatisfiable: no child could become eligible before
   the epic shipped, and no epic could ship before its children built. The fix is the second
   discharge source, reading the assembly branch the way `lane prove` already reads a child's range —
@@ -688,8 +690,8 @@ $ echo $?
   differently per session. Its acceptance also fixes two properties of the answer: a `blocked`
   refusal names **every** open edge, and every unreadable input on the path is `11` with a test
   pinning it, so no read failure anywhere can resolve to "eligible".
-- #4104 — `status:planned` children invisible to a label-driven picker; topology-derived here.
-- ADR 0092 — an unreadable predecessor is `11`, never a pass.
+- #4104 — `status:planned` children invisible to a label-driven picker; graph-derived here.
+- ADR 0092 — an unreadable blocker is `11`, never a pass.
 
 ---
 
@@ -1375,10 +1377,17 @@ Per surface:
   declared command takes no paths, so the green covers a changed workflow only when `actionlint` ran
   or a declared command's `reads` names it; the rest are reported in `unvalidated`.
 - **plan** — everything `prose` runs, plus the changed ledger's `## Dependencies` block parsing
-  under the canonical grammar (defined in `build eligible`): issue refs (`#<int>`) resolve to real
-  issues, ledger-local refs (`C<int>`) resolve within the ledger, and no child is its own
-  predecessor. A ledger is markdown, so the markdown validators are its baseline and the grammar is
-  the specialization on top.
+  under the canonical grammar, which is **this section** and is implemented by
+  `packages/fabrika-cli/src/build/dependencies.ts`. The section holds only blank lines and list
+  lines of two forms, `- phase <int>: <ref>[, <ref>…]` and `- <ref> requires: <ref>[, <ref>…]`,
+  where `<ref>` is an issue ref (`#<int>`) or a ledger-local id (`C<int>`); the section ends at the
+  next ATX heading or the first thematic break, whichever comes first, and any other non-blank line
+  inside it is unparseable and reds. Issue refs must resolve to real issues, ledger-local refs must
+  resolve within the ledger, and no child may be its own predecessor. A ledger is markdown, so the
+  markdown validators are its baseline and the grammar is the specialization on top.
+  **This block is a rendering of the ledger's shape for a human reader, never a source of
+  blockedness** — that is the native `blocked_by` graph's alone (#5387, ADR 0301), and
+  `build eligible` parses nothing here.
 
 **The prose leak scan predicts the repo's committed-file gate, and is not the body guard.** Those
 are two questions with two answers, and asking the body guard about a file in a diff made this verb

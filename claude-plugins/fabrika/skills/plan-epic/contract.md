@@ -214,7 +214,10 @@ emitted **only** when the cycle-doc probe reads `present` — v1's documented sp
 the field entirely while its skill body required it, so an author following the template dropped
 it on every child and the tolerant read made "forgot" indistinguishable from "no cycle doc".
 
-**`## Dependencies` — the rendered block.** Exactly the two line forms `readTopology` parses, and
+**`## Dependencies` — the rendered block.** It is a picture of the plan's shape for a human reader
+and **nothing gates on it**: blockedness sits behind GitHub's native `blocked_by` edges alone
+(#5387, ADR 0301), and `build eligible` stopped parsing this block in #5913. Exactly the two line
+forms `readTopology` parses, and
 nothing else: one `- phase <n>: #<ref>[, #<ref>…]` row per phase, phases ascending and members
 ascending within a row, then one `- #<ref> requires: #<ref>[, #<ref>…]` row per child that declares
 a prerequisite, ascending by subject. There is no `###` heading inside the section, no label column,
