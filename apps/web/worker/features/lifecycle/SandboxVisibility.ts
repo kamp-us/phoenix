@@ -15,6 +15,7 @@ import {
 	anonymousViewer,
 	type LifecycleTag,
 	lifecycleVisibilityRule,
+	ruleVisibleTo,
 	type SandboxViewer,
 } from "./EntityLifecycle.ts";
 
@@ -155,6 +156,36 @@ export const ownSandboxed = (
 	record: OwnerSandboxRecord,
 	viewerId: string | null | undefined,
 ): boolean => record.sandboxedAt != null && viewerId != null && record.authorId === viewerId;
+
+/**
+ * The reader-facing çaylak marker (#6425): `true` iff the row is still sandboxed
+ * (#1205) AND this viewer is reading it **in place** — the opted-in yazar of #6423.
+ * It says "what you are looking at is hazırlık-stage work by a çaylak", to the one
+ * audience that asked to be shown such rows inside the ordinary feed.
+ *
+ * Not {@link ownSandboxed}, and never merged with it. `sandboxed` is owner-scoped: it
+ * is the author's own "incelemede" signal about their own row, and the client renders
+ * it as `ReviewBadge`. This one is about somebody ELSE's row, for a reader who is not
+ * its author. The two are true for disjoint viewers on the same row, so a single field
+ * could not carry both meanings.
+ *
+ * It rides `seesSandboxedInPlace` alone, not the whole
+ * `AuthorOrModeratorOrInPlaceViewer` rule. Entitlement is still structural — the
+ * in-place class is one of that rule's three arms, asserted here through
+ * {@link ruleVisibleTo} rather than restated — but the other two arms are deliberately
+ * excluded: the author already has `sandboxed`, the moderator has the review queue, and
+ * both of them reach sandboxed rows with `PHOENIX_CAYLAK_VISIBILITY` off, which would
+ * strand the marker outside its containment flag. Only `seesSandboxedInPlace` is
+ * flag-gated, so riding it is what makes the field structurally `false` everywhere while
+ * the flag is off.
+ *
+ * Derived from the resolved {@link SandboxViewer} the read already carries — never from
+ * anything a client supplies (#4313 is the shipped instance of that failure).
+ */
+export const sandboxedInPlace = (record: OwnerSandboxRecord, viewer: SandboxViewer): boolean =>
+	record.sandboxedAt != null &&
+	viewer.seesSandboxedInPlace &&
+	ruleVisibleTo(lifecycleVisibilityRule.Sandboxed, record.authorId, viewer);
 
 /** The lifecycle columns the moderator sandbox queue reads. */
 export interface SandboxBacklogColumns {
