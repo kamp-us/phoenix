@@ -37,6 +37,7 @@ import {
 	ownSandboxed,
 	resolveSandboxViewer,
 	sandboxBacklogWhere,
+	sandboxedInPlace,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
 import {isMutedAuthor, mutedAuthorsWhere} from "../mute/read-mask.ts";
@@ -735,6 +736,7 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 	) {
 		if (ids.length === 0) return [];
 		const viewerId = opts.viewerId ?? null;
+		const viewer = resolveSandboxViewer(opts);
 		const fetched = yield* run((db) =>
 			db
 				.select()
@@ -749,7 +751,7 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 								authorId: schema.postRecord.authorId,
 								isDraft: schema.postRecord.isDraft,
 							},
-							resolveSandboxViewer(opts),
+							viewer,
 						),
 						// Mute read-mask (#3113): drop muted authors' posts from the muter's batch.
 						mutedAuthorsWhere(schema.postRecord.authorId, opts.mutedIds),
@@ -765,9 +767,12 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		// `sandboxed` is the owner-scoped in-review flag (#2200): computed off the fetched
 		// record (`sandboxed_at` + `author_id`) against the viewer, so it lands `true` only
 		// for the author's own still-in-review post and never leaks to another viewer.
+		// `sandboxedInPlace` (#6425) is the OTHER audience's marker off the SAME resolved
+		// viewer — the opted-in in-place reader's honest "this is çaylak work" signal.
 		const intrinsic = fetched.map((p) => ({
 			...toPostSummaryRow(p),
 			sandboxed: ownSandboxed(p, viewerId),
+			sandboxedInPlace: sandboxedInPlace(p, viewer),
 		}));
 		const scalared = yield* stampViewerScalars(intrinsic, viewerId, postViewerScalars);
 		const reacted = yield* stampReactionAggregate(reactionSvc, "post", scalared, viewerId);

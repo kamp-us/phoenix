@@ -44,6 +44,7 @@ export const toPost = (r: PostFields): Post => ({
 	isSaved: r.isSaved ?? null,
 	isDraft: r.isDraft ?? null,
 	sandboxed: r.sandboxed ?? false,
+	sandboxedInPlace: r.sandboxedInPlace ?? false,
 	reactions: r.reactions ?? EMPTY_REACTION_AGGREGATE,
 	tags: [...r.tags],
 });
@@ -52,10 +53,10 @@ export const toPost = (r: PostFields): Post => ({
  * The viewer-invariant BASE post (#2322, epic #2316 leg B): `toPost` minus the two
  * viewer scalars (`myVote`/`isSaved`). The GET-able base feed serves this so its bytes
  * are identical for anon and every signed-in viewer — the per-viewer scalars ride the
- * separate authed `PostOverlay` read instead. `sandboxed` stays but is structurally
- * `false` on the base path (the route reads the ANONYMOUS sandbox viewer, and any
- * sandboxed post is filtered out of the feed before it reaches here), so it carries no
- * viewer-derived value.
+ * separate authed `PostOverlay` read instead. `sandboxed` and `sandboxedInPlace` stay but
+ * are structurally `false` on the base path (the route reads the ANONYMOUS sandbox
+ * viewer, and any sandboxed post is filtered out of the feed before it reaches here),
+ * so they carry no viewer-derived value.
  */
 export type BasePost = Omit<Post, "myVote" | "isSaved">;
 
@@ -77,7 +78,7 @@ export const toPostFromPage = (
 	isSaved: boolean | null = null,
 	reactions: ReactionAggregate = EMPTY_REACTION_AGGREGATE,
 	identity: {authorUsername?: string | null; authorDisplayName?: string | null} = {},
-	sandboxed = false,
+	sandbox: {sandboxed?: boolean; sandboxedInPlace?: boolean} = {},
 ): Post =>
 	toPost({
 		id: page.id,
@@ -96,7 +97,8 @@ export const toPostFromPage = (
 		updatedAt: page.updatedAt,
 		myVote,
 		isSaved,
-		sandboxed,
+		sandboxed: sandbox.sandboxed ?? false,
+		sandboxedInPlace: sandbox.sandboxedInPlace ?? false,
 		reactions,
 		tags: page.tags,
 	});
@@ -116,5 +118,6 @@ export const toComment = (r: CommentFields): Comment => ({
 	deletedAt: r.deletedAt ?? null,
 	myVote: r.myVote ?? null,
 	sandboxed: r.sandboxed ?? false,
+	sandboxedInPlace: r.sandboxedInPlace ?? false,
 	reactions: r.reactions ?? EMPTY_REACTION_AGGREGATE,
 });

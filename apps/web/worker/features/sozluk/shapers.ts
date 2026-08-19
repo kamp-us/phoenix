@@ -80,5 +80,6 @@ export const toDefinition = (r: DefinitionRow): Definition => ({
 	updatedAt: r.updatedAt,
 	myVote: r.myVote ?? null,
 	sandboxed: r.sandboxed ?? false,
+	sandboxedInPlace: r.sandboxedInPlace ?? false,
 	reactions: r.reactions ?? EMPTY_REACTION_AGGREGATE,
 });

@@ -20,6 +20,7 @@ import {
 	publicLiveWhere,
 	sandboxArm,
 	sandboxBacklogWhere,
+	sandboxedInPlace,
 	sandboxVisibleWhere,
 } from "./SandboxVisibility.ts";
 
@@ -256,6 +257,58 @@ describe("ownSandboxed — the owner-scoped in-review flag (never leaks review s
 
 	it("an anonymous viewer (null id) never reads the flag", () => {
 		assert.isFalse(ownSandboxed(ownSandboxedRecord, null));
+	});
+});
+
+describe("sandboxedInPlace — the reader-facing çaylak marker (#6425)", () => {
+	const sandboxedRow = {sandboxedAt: at, authorId: AUTHOR};
+	const liveRow = {sandboxedAt: null, authorId: AUTHOR};
+
+	it("the opted-in in-place reader reads true on someone else's still-sandboxed row", () => {
+		assert.isTrue(sandboxedInPlace(sandboxedRow, viewers.inPlaceYazar));
+	});
+
+	it("the same reader reads false on a live row — the marker is about hazırlık, not authorship", () => {
+		assert.isFalse(sandboxedInPlace(liveRow, viewers.inPlaceYazar));
+	});
+
+	// The three shapes acceptance criterion 4 names, plus the moderator: none of them is
+	// the audience this marker addresses, so none of them receives it.
+	for (const name of ["anonymous", "yazar", "otherMember", "moderator", "caylakAuthor"] as const) {
+		it(`${name} never reads the marker on a sandboxed row`, () => {
+			assert.isFalse(sandboxedInPlace(sandboxedRow, viewers[name]));
+		});
+	}
+
+	// `PHOENIX_CAYLAK_VISIBILITY` off is exactly `seesSandboxedInPlace: false` for every
+	// viewer (#6423's `inPlaceVisibility` short-circuits on the flag before either store
+	// read). Asserted rather than assumed: with the flag down there is no viewer shape,
+	// on any row, that can reach the marker.
+	it("with the containment flag off, no viewer shape reads the marker on any row", () => {
+		for (const viewer of Object.values(viewers)) {
+			const flagOff = {...viewer, seesSandboxedInPlace: false};
+			assert.isFalse(sandboxedInPlace(sandboxedRow, flagOff));
+			assert.isFalse(sandboxedInPlace(liveRow, flagOff));
+		}
+	});
+
+	// The masked shapes never reach the stamp at all — the read's `sandboxVisibleWhere`
+	// drops the row before it is shaped, so "no marker" is the second line of defence and
+	// "no row" is the first.
+	it("every shape that reads false on a sandboxed row is also denied the row itself", () => {
+		for (const [name, viewer] of Object.entries(viewers)) {
+			if (sandboxedInPlace(sandboxedRow, viewer)) continue;
+			if (name === "caylakAuthor" || name === "moderator") continue;
+			assert.isFalse(L.isVisibleTo(sandboxed, AUTHOR, viewer), name);
+		}
+	});
+
+	it("is disjoint from ownSandboxed — no viewer reads both on one row", () => {
+		for (const viewer of Object.values(viewers)) {
+			assert.isFalse(
+				ownSandboxed(sandboxedRow, viewer.viewerId) && sandboxedInPlace(sandboxedRow, viewer),
+			);
+		}
 	});
 });
 

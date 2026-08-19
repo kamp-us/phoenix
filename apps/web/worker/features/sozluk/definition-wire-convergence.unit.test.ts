@@ -54,6 +54,9 @@ describe("Sözlük Definition wire shaper — derived from the one column→fiel
 			// Owner-scoped in-review flag (#2200): stamped only by the read path, so a bare
 			// row shape defaults it `false` and never leaks review state to another viewer.
 			sandboxed: false,
+			// Reader-facing çaylak marker (#6425): same story, other audience — a bare row
+			// shape defaults it `false`, so only a read path with a resolved viewer sets it.
+			sandboxedInPlace: false,
 			reactions: EMPTY_REACTION_AGGREGATE,
 		});
 	});
@@ -73,6 +76,7 @@ describe("Sözlük Definition wire shaper — derived from the one column→fiel
 			"myVote",
 			"reactions",
 			"sandboxed",
+			"sandboxedInPlace",
 			"score",
 			"updatedAt",
 		]);
@@ -81,6 +85,7 @@ describe("Sözlük Definition wire shaper — derived from the one column→fiel
 		assert.strictEqual(wire.myVote, null);
 		// Owner-scoped in-review flag defaults `false` on a bare row shape (#2200).
 		assert.strictEqual(wire.sandboxed, false);
+		assert.strictEqual(wire.sandboxedInPlace, false);
 		// No reactions stamped on a bare row read → the empty aggregate.
 		assert.deepStrictEqual(wire.reactions, EMPTY_REACTION_AGGREGATE);
 	});

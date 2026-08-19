@@ -58,6 +58,20 @@ export interface CommentRow extends IntrinsicRow {
 	 */
 	sandboxed?: boolean;
 	/**
+	 * The reader-facing çaylak marker (#6425): `true` iff this comment is still
+	 * sandboxed AND the viewer is the opted-in in-place reader of #6423, stamped by the
+	 * read paths via `sandboxedInPlace` off the resolved `SandboxViewer`.
+	 *
+	 * The twin of `sandboxed` above, and never a substitute for it. `sandboxed` is
+	 * owner-scoped — the AUTHOR's "incelemede" signal about their OWN comment, rendered
+	 * as `ReviewBadge`. This one marks SOMEBODY ELSE's hazırlık-stage comment for a
+	 * reader who asked to see çaylak work in place. Disjoint audiences on the same row,
+	 * so they cannot collapse into one field. `undefined` when a read doesn't stamp it;
+	 * the shaper then defaults `false`, which is also what every viewer gets while
+	 * `PHOENIX_CAYLAK_VISIBILITY` is off.
+	 */
+	sandboxedInPlace?: boolean;
+	/**
 	 * The author's LIVE handle (`user_profile.username` / `.displayName`), stamped by
 	 * `stampAuthorIdentity` after the batched `getProfileIdentitiesByIds` read (#2139)
 	 * so the client renders the CURRENT display name via `actorLabel`, not the write-time
@@ -89,6 +103,7 @@ export type CommentFields = Omit<IntrinsicRow, "updatedAt" | "deletedAt"> & {
 	deletedAt?: Date | null;
 	myVote?: boolean | null;
 	sandboxed?: boolean;
+	sandboxedInPlace?: boolean;
 	authorUsername?: string | null;
 	authorDisplayName?: string | null;
 	reactions?: ReactionAggregate;
@@ -121,6 +136,7 @@ export const commentViewFields = {
 	deletedAt: true,
 	myVote: true,
 	sandboxed: true,
+	sandboxedInPlace: true,
 	authorUsername: true,
 	authorDisplayName: true,
 	reactions: true,

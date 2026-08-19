@@ -94,6 +94,20 @@ export interface PostSummaryRow extends Omit<IntrinsicRow, "updatedAt" | "isDraf
 	 */
 	sandboxed?: boolean;
 	/**
+	 * The reader-facing çaylak marker (#6425): `true` iff this post is still sandboxed
+	 * AND the viewer is the opted-in in-place reader of #6423, stamped by the read paths
+	 * via `sandboxedInPlace` off the resolved `SandboxViewer`.
+	 *
+	 * The twin of `sandboxed` above, and never a substitute for it. `sandboxed` is
+	 * owner-scoped — the AUTHOR's "incelemede" signal about their OWN post, rendered as
+	 * `ReviewBadge`. This one marks SOMEBODY ELSE's hazırlık-stage post for a reader who
+	 * asked to see çaylak work in place. Disjoint audiences on the same row, so they
+	 * cannot collapse into one field. A read that doesn't stamp it leaves it `undefined`
+	 * → the shaper defaults `false`, which is also what every viewer gets while
+	 * `PHOENIX_CAYLAK_VISIBILITY` is off.
+	 */
+	sandboxedInPlace?: boolean;
+	/**
 	 * The author's LIVE handle (`user_profile.username` / `.displayName`), stamped by
 	 * `stampAuthorIdentity` after the batched `getProfileIdentitiesByIds` read (#2139)
 	 * so the client renders the CURRENT display name via `actorLabel`, not the write-time
@@ -141,6 +155,7 @@ export type PostFields = Omit<IntrinsicRow, "updatedAt" | "isDraft" | "tags"> & 
 	myVote?: boolean | null;
 	isSaved?: boolean | null;
 	sandboxed?: boolean;
+	sandboxedInPlace?: boolean;
 	authorUsername?: string | null;
 	authorDisplayName?: string | null;
 	reactions?: ReactionAggregate;
@@ -174,6 +189,7 @@ export const postViewFields = {
 	isSaved: true,
 	isDraft: true,
 	sandboxed: true,
+	sandboxedInPlace: true,
 	authorUsername: true,
 	authorDisplayName: true,
 	reactions: true,
