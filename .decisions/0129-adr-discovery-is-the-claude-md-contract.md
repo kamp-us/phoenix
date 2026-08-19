@@ -1,7 +1,7 @@
 ---
 id: 0129
 title: ADR discovery is the CLAUDE.md contract alone — drop the SessionStart-hook indirection (supersedes 0126 §Decision 3)
-status: accepted
+status: amended-in-part by [0305](0305-v1-cli-deletion-retires-three-git-boundary-guards.md)
 date: 2026-07-03
 tags: [decisions, pipeline, docs, autonomy]
 ---

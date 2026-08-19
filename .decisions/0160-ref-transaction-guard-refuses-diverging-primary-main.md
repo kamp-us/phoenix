@@ -1,7 +1,7 @@
 ---
 id: 0160
 title: "A git reference-transaction guard refuses a diverging refs/heads/main ref-move on the shared primary checkout — caller-agnostic and fail-closed, where the #1571 PreToolUse Bash hook cannot reach"
-status: accepted
+status: amended-in-part by [0305](0305-v1-cli-deletion-retires-three-git-boundary-guards.md)
 date: 2026-07-05
 tags: [pipeline, git, worktree, primary-checkout, gates, control-plane]
 ---
