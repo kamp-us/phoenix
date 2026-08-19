@@ -1,7 +1,7 @@
 ---
 id: 0298
 title: The declared focus is a set of milestones, not one
-status: accepted
+status: superseded by [0304](0304-campaign-active-is-the-dispatch-permission.md)
 date: 2026-08-18
 tags: [fabrika, pipeline, roadmap, adoption]
 ---

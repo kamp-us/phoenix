@@ -1,11 +1,17 @@
 /**
- * `triage claim` — take a session-scoped claim on one issue, proven by read-back.
+ * `triage claim` — take one lane's claim on one issue, proven by read-back.
  *
- * Post this session's marker, re-read every marker on the issue, discard the ones older than the
+ * Post this lane's marker, re-read every marker on the issue, discard the ones older than the
  * TTL, and let the earliest survivor win. `won` and `lost` are both **proven answers** and both exit
  * 0, with the discriminator in the state word: a losing claim is something this verb *determined*,
  * so seating it on a non-zero code would make "another sweep holds it" indistinguishable from "the
  * verb is broken".
+ *
+ * **A claim names a lane, and the lane is the token this verb hands back.** A run with no `--token`
+ * mints one and races under its nonce; a run that passes the token it was handed re-enters the lane
+ * it already owns. That is what makes re-entry idempotent *and* keeps two triagers of one session
+ * apart — the session id alone told each sibling of a fan-out that it held its sibling's marker, and
+ * both wrote the issue (#6132).
  *
  * Everything a marker set could fail to say is a refusal instead. An unreadable comment list, a
  * shape that is not a list of comments, a marker whose ordering key will not parse — none of them
@@ -23,13 +29,19 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {createComment, deleteComment, getIssue, listComments, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
+	claimNonceOf,
+	composeClaimToken,
 	DEFAULT_TTL_MINUTES,
 	expiryOf,
 	isStampableSession,
+	type LaneCaller,
+	laneCaller,
 	markerBody,
 	markersOf,
 	myMarker,
+	parseClaimToken,
 	resolveClaim,
+	TOKEN_PREFIX,
 } from "./claim.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {scannedLine} from "./scope.ts";
@@ -38,6 +50,10 @@ export interface ClaimOptions {
 	readonly issue: number;
 	readonly repo: string | null;
 	readonly json: boolean;
+	/** The token this lane was already handed, or `null` on a first claim — see {@link callerFrom}. */
+	readonly token: string | null;
+	/** The UUID a fresh lane's token is minted from; injected so a test can pin the nonce. */
+	readonly uuid: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly now: () => Date;
 }
@@ -76,6 +92,53 @@ const sessionFrom = (
 	return {session};
 };
 
+/**
+ * The lane that is asking — the one it was handed a token for, or a fresh one minted here.
+ *
+ * A token from another session is refused rather than trusted: the env says which session is
+ * running, the flag says which lane of it, and a pair that disagrees is a token threaded through
+ * from somewhere else.
+ */
+const callerFrom = (
+	session: string,
+	token: string | null,
+	uuid: string,
+): {readonly caller: LaneCaller; readonly token: string} | {readonly refusal: VerbOutcome} => {
+	if (token === null) {
+		const minted = composeClaimToken(session, uuid);
+		const nonce = claimNonceOf(minted);
+		if (nonce === null) {
+			return {
+				refusal: refuse(
+					FAILED,
+					`${VERB}: could not mint a lane token for session ${session} — nothing was written.`,
+				),
+			};
+		}
+		return {caller: laneCaller(session, nonce, minted), token: minted};
+	}
+	const trimmed = token.trim();
+	const parsed = parseClaimToken(trimmed);
+	const nonce = claimNonceOf(trimmed);
+	if (parsed === null || nonce === null) {
+		return {
+			refusal: refuse(
+				FAILED,
+				`${VERB}: --token "${trimmed}" is not a claim token (${TOKEN_PREFIX}:<session-id>:<uuid>) — which lane is asking is not stated.`,
+			),
+		};
+	}
+	if (parsed.session !== session) {
+		return {
+			refusal: refuse(
+				FAILED,
+				`${VERB}: --token "${trimmed}" carries session ${parsed.session}, but this run is session ${session} — a lane names itself, never another.`,
+			),
+		};
+	}
+	return {caller: laneCaller(session, nonce, trimmed), token: trimmed};
+};
+
 export const runClaim = (
 	options: ClaimOptions,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
@@ -89,6 +152,10 @@ export const runClaim = (
 		const stamped = sessionFrom(options.env);
 		if ("refusal" in stamped) return stamped.refusal;
 		const {session} = stamped;
+
+		const asking = callerFrom(session, options.token, options.uuid);
+		if ("refusal" in asking) return asking.refusal;
+		const {caller, token: laneToken} = asking;
 
 		const repoAttempt = yield* resolveRepo(options.repo, options.env);
 		if (repoAttempt._tag === "Failure") {
@@ -122,12 +189,14 @@ export const runClaim = (
 		}
 
 		const now = options.now().getTime();
-		// Re-running inside one session is idempotent: a second marker is strictly later than the
-		// first, so it can win nothing the first did not and only adds litter to clean up.
+		// Re-entering one lane is idempotent: a second marker under the same nonce is strictly later
+		// than the first, so it can win nothing the first did not and only adds litter to clean up. It
+		// is the LANE that re-enters, not the session — a sibling lane of the same session holds a
+		// marker under another nonce, and posting its own is exactly what the race needs (#6132).
 		const alreadyHeld = myMarker(
 			resolveClaim({
 				markers: markersOf(before.value),
-				session,
+				caller,
 				now,
 				ttlMinutes: DEFAULT_TTL_MINUTES,
 			}),
@@ -135,7 +204,7 @@ export const runClaim = (
 
 		let postedId: number | null = null;
 		if (alreadyHeld === null) {
-			const posted = yield* createComment(repo, issue, markerBody(session));
+			const posted = yield* createComment(repo, issue, markerBody(caller));
 			if (posted._tag === "Failure") {
 				return refuse(
 					WRITE_UNKNOWN,
@@ -153,14 +222,14 @@ export const runClaim = (
 				postedId === null
 					? []
 					: [
-							`${VERB}: this session's marker ${postedId} is live on #${issue} and was not read back — delete it by hand if this session stops here.`,
+							`${VERB}: this lane's marker ${postedId} is live on #${issue} and was not read back — delete it by hand if this lane stops here.`,
 						],
 			);
 		}
 		const scope = scannedLine(VERB, repo, after.value.length, "comment");
 		const resolution = resolveClaim({
 			markers: markersOf(after.value),
-			session,
+			caller,
 			now,
 			ttlMinutes: DEFAULT_TTL_MINUTES,
 		});
@@ -187,13 +256,15 @@ export const runClaim = (
 						JSON.stringify({
 							outcome: "won",
 							session,
+							token: laneToken,
 							holder: null,
+							holderLane: null,
 							markers: resolution.live,
 							expired: resolution.expired,
 						}),
 						[scope],
 					)
-				: answer("won", [scope]);
+				: answer(`won\t${laneToken}`, [scope]);
 		}
 
 		// A losing claim deletes the marker it just posted, before it says so. Litter survives the
@@ -204,18 +275,27 @@ export const runClaim = (
 			const expiry = expiryOf(resolution.mine.createdAt, DEFAULT_TTL_MINUTES) ?? "an unknown time";
 			return refuse(
 				READBACK_MISMATCH,
-				`${VERB}: lost #${issue}, but this session's marker ${resolution.mine.id} could not be deleted: ${deleted.reason} — a stale claim is live on the issue until ${expiry}; delete it by hand.`,
+				`${VERB}: lost #${issue}, but this lane's marker ${resolution.mine.id} could not be deleted: ${deleted.reason} — a stale claim is live on the issue until ${expiry}; delete it by hand.`,
 				[scope],
 			);
 		}
 
-		const notice = `${VERB}: #${issue} is held by session ${resolution.holder.session} since ${resolution.holder.createdAt} — backing off.`;
+		// The lane is named beside the session because under a fan-out the winner IS this session — a
+		// notice reading "held by session <mine>" and nothing else describes a lane losing to itself.
+		const holderLane = resolution.holder.lane;
+		const heldBy =
+			holderLane === null
+				? `session ${resolution.holder.session}`
+				: `session ${resolution.holder.session} on lane ${holderLane}`;
+		const notice = `${VERB}: #${issue} is held by ${heldBy} since ${resolution.holder.createdAt} — backing off.`;
 		return json
 			? answer(
 					JSON.stringify({
 						outcome: "lost",
 						session,
+						token: laneToken,
 						holder: resolution.holder.session,
+						holderLane,
 						markers: resolution.live,
 						expired: resolution.expired,
 					}),

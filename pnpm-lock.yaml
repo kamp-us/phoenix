@@ -826,6 +826,12 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
+      fast-xml-parser:
+        specifier: 'catalog:'
+        version: 5.8.0
+      yaml:
+        specifier: 'catalog:'
+        version: 2.9.0
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'

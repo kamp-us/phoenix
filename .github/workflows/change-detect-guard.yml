@@ -7,9 +7,9 @@ name: change-detect-guard
 # only when the token is empty. That live API read is the sole flake surface of the step: a
 # transient GitHub-API-HTML blip (`invalid character '<'`) hard-fails it and reds the
 # `ci-required` aggregate on a defect-free PR (#3244). This runs
-# `pipeline-cli change-detect-guard check` so a regression back to the API mode cannot merge.
+# `fabrika guard change-detect-guard check` so a regression back to the API mode cannot merge.
 # It fails closed on zero scope — a missing job/step/`with:` block (ADR 0092). The scan lives
-# once in the tool.
+# once in fabrika-cli's `guard` group (#6093), which every ported guard shares.
 on:
   pull_request:
   push:
@@ -41,8 +41,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Exit 1 when ci.yml's changes-job dorny/paths-filter step isn't in API-free git-mode
-      # (a set/defaulted token), or on zero scope (a missing job/step/with, fail-closed).
-      # Report on stderr. See #3245.
+      # Non-zero on three distinct seats, so a red says which thing happened: 12 the step is in
+      # API mode (a set or defaulted token), 7 zero scope (a missing job/step/`with:`,
+      # fail-closed, ADR 0092), 11 ci.yml could not be read so the verdict is UNKNOWN. The
+      # report is on stderr, with an ::error annotation beside it. Reproduce locally with the
+      # same verb. See #3245.
       - name: Check the ci.yml change-detection API-free git-mode invariant
-        run: node packages/pipeline-cli/src/bin.ts change-detect-guard check
+        run: node packages/fabrika-cli/src/bin.ts guard change-detect-guard check

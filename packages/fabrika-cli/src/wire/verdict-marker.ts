@@ -150,6 +150,21 @@ export const read = (artifact: string): VerdictMarkerRead => {
 	return {_tag: "Found", value: {namespace, polarity, sha, content, clause: text}};
 };
 
+/**
+ * The marker on `artifact` when it is `namespace`'s, else `null` — the membership question a caller
+ * asking "is this comment *that gate's* verdict?" actually has.
+ *
+ * One nullable answer rather than {@link read}'s three, because `Absent` and `Malformed` both mean
+ * *not this gate's verdict* to such a caller. It lives here so a caller never re-derives the
+ * namespace test off its own regex, which is how a second copy of this grammar starts (ADR 0251).
+ * A body reaching for the format and failing it is `null` too: a drifted marker is not a verdict,
+ * and reading it as one is the permissive direction.
+ */
+export const readNamespaced = (artifact: string, namespace: string): VerdictMarker | null => {
+	const parsed = read(artifact);
+	return parsed._tag === "Found" && parsed.value.namespace === namespace ? parsed.value : null;
+};
+
 /** Compose the marker's first line. Round-trips through {@link read}. */
 export const emit = ({namespace, polarity, sha, content, clause: text}: VerdictMarker): string => {
 	const bound = content === null ? `@ ${sha}` : `@ ${sha} ${CONTENT_PREFIX}${content}`;

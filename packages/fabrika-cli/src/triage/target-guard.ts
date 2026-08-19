@@ -12,6 +12,11 @@
  * one": an unclaimed issue is the ordinary first-triage case, and demanding a marker would refuse
  * every existing caller. The consequence is that this guard narrows the window rather than closing
  * it — two unclaimed sessions still race — which is `triage claim`'s job, not this one's.
+ *
+ * **The session is the whole identity here, and the lane nonce #6132 added is not read.** These five
+ * verbs are handed no claim token, so a sibling lane of one session reads its sibling's marker as
+ * its own and passes — the same window that stayed open before, no wider. Closing it means threading
+ * the token through every mutating verb, which is its own change.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

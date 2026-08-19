@@ -17,10 +17,12 @@ import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
 import {adrCommand} from "./adr/command.ts";
 import {buildCommand} from "./build/command.ts";
+import {ciCommand} from "./ci/command.ts";
 import {glossaryCommand} from "./glossary/command.ts";
 import {governanceCommand} from "./governance/command.ts";
 import {graduateCommand} from "./graduate/command.ts";
 import {grillCommand} from "./grill/command.ts";
+import {guardCommand} from "./guard/command.ts";
 import {handoffCommand} from "./handoff/command.ts";
 import {healCiCommand} from "./heal-ci/command.ts";
 import {hookCommand} from "./hook/command.ts";
@@ -48,10 +50,12 @@ export type VerbGroup = Command.Command<any, any, object, unknown, NodeServices.
 export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	adrCommand,
 	buildCommand,
+	ciCommand,
 	glossaryCommand,
 	governanceCommand,
 	graduateCommand,
 	grillCommand,
+	guardCommand,
 	handoffCommand,
 	healCiCommand,
 	hookCommand,

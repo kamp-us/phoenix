@@ -14,6 +14,7 @@
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form
  * silently opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  */
+import {randomUUID} from "node:crypto";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
@@ -236,24 +237,30 @@ const claim = leafCommand(
 	"claim",
 	{
 		issue: Argument.integer("issue").pipe(Argument.withDescription("the issue number to claim")),
+		token: Flag.string("token").pipe(
+			Flag.withDescription("the token a previous claim handed this lane — re-enter it, never mint"),
+			Flag.optional,
+		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({issue, repo, json}) {
+	Effect.fn(function* ({issue, token, repo, json}) {
 		yield* emit(
 			yield* runClaim({
 				issue,
 				repo: Option.getOrNull(repo),
 				json,
+				token: Option.getOrNull(token),
+				uuid: randomUUID(),
 				env: process.env,
 				now: () => new Date(),
 			}),
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Take a session-scoped claim on one issue."),
+	Command.withShortDescription("Take one lane's claim on one issue."),
 	Command.withDescription(
-		'Take a session-scoped claim on one issue, proven by re-reading the markers back. Prints `won` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Exits 1 (CLAUDE_CODE_SESSION_ID unset), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read — never "won"). Example: fabrika triage claim 4312',
+		"Take one lane's claim on one issue, proven by re-reading the markers back. Prints `won\\t<claim-token>` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Keep the token: passing it back as --token re-enters this lane instead of minting a second one, which is what tells two triagers of ONE session apart. Exits 1 (CLAUDE_CODE_SESSION_ID unset, or --token is not this session's), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read — never \"won\"). Example: fabrika triage claim 4312",
 	),
 );
 
