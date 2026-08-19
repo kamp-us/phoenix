@@ -11,7 +11,7 @@
  * fail-open of #4060.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
-import {exists} from "../io/fs.ts";
+import {exists, readFile} from "../io/fs.ts";
 import type {Attempt} from "../io/git.ts";
 import {answer, type VerbOutcome} from "../verb.ts";
 import {type AsOf, asOfToken, detail, EMPTY_CELL, row} from "./fields.ts";
@@ -90,7 +90,13 @@ export interface ProbeContext {
 	readonly asOf: AsOf;
 }
 
-/** Probe one declared row's subject. A probe that could not be performed is `unknown`, never `false`. */
+/**
+ * Probe one declared row's subject. A probe that could not be performed is `unknown`, never `false`.
+ *
+ * A `PathContaining` subject costs a file read on top of the existence probe, and that is the whole
+ * point of the case: its `present` means the declared content is in the file, not that some file of
+ * that name is on disk.
+ */
 export const probeRow = (
 	skill: string,
 	declared: DeclaredRow,
@@ -126,16 +132,32 @@ export const probeRow = (
 					};
 		}
 		const declaredPath = declared.subject.path;
-		const probe = yield* Effect.result(exists(`${ctx.repoRoot}/${declaredPath}`));
+		const absolute = `${ctx.repoRoot}/${declaredPath}`;
+		const probe = yield* Effect.result(exists(absolute));
 		if (Result.isFailure(probe)) {
 			return {...base, presence: "unknown" as const, detail: detail(probe.failure.reason)};
 		}
-		return probe.success
-			? {...base, presence: "present" as const, detail: declaredPath}
+		if (!probe.success) {
+			return {
+				...base,
+				presence: "missing" as const,
+				detail: detail(`no ${declaredPath} at the repo root`),
+			};
+		}
+		if (declared.subject._tag === "Path") {
+			return {...base, presence: "present" as const, detail: declaredPath};
+		}
+		const wanted = declared.subject.contains;
+		const text = yield* Effect.result(readFile(absolute));
+		if (Result.isFailure(text)) {
+			return {...base, presence: "unknown" as const, detail: detail(text.failure.reason)};
+		}
+		return text.success.includes(wanted)
+			? {...base, presence: "present" as const, detail: detail(`${declaredPath} covers ${wanted}`)}
 			: {
 					...base,
 					presence: "missing" as const,
-					detail: detail(`no ${declaredPath} at the repo root`),
+					detail: detail(`${declaredPath} does not cover ${wanted}`),
 				};
 	});
 
