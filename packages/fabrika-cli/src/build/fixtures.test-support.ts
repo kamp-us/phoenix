@@ -119,9 +119,16 @@ export const candidates = (
 		),
 	);
 
-/** A `ROADMAP.md` whose `## Focus` table declares one milestone — the fence, switched on. */
-export const focusTable = (milestone: number, declared = "2026-08-09"): string =>
-	`# Roadmap\n\n## Focus\n\n| Milestone | Declared |\n|-----------|------------|\n| #${milestone} | ${declared} |\n\n## Arcs\n`;
+/** A `ROADMAP.md` whose `## Focus` table declares these milestones, one row each — the fence, on. */
+export const focusTable = (
+	milestones: number | ReadonlyArray<number>,
+	declared = "2026-08-09",
+): string => {
+	const rows = (typeof milestones === "number" ? [milestones] : milestones)
+		.map((milestone) => `| #${milestone} | ${declared} |`)
+		.join("\n");
+	return `# Roadmap\n\n## Focus\n\n| Milestone | Declared |\n|-----------|------------|\n${rows}\n\n## Arcs\n`;
+};
 
 /** The claim marker body a session posts. */
 export const marker = (session: string, uuid: string): string =>

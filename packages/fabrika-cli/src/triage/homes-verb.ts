@@ -12,14 +12,14 @@
  * offers only open, roadmap-joined milestones, which designs out the mismatch where a closed
  * milestone reports as a valid home.
  *
- * One row can carry a **running** marker: the campaign in exclusive focus is closed to new intake
- * unless the work is p0 or blocks one of that milestone's own in-flight lanes (#6080). Which
- * milestone that is, is data — `ROADMAP.md`'s `## Focus` table, the same declaration `build pick`
- * fences on, read through the same parser off the roadmap text this verb already has open. The
- * marked row is still offered: the two exceptions are real, and a removed row cannot carry them.
+ * A row can carry a **running** marker: a campaign in declared focus is closed to new intake unless
+ * the work is p0 or blocks one of that milestone's own in-flight lanes (#6080). Which milestones
+ * those are, is data — `ROADMAP.md`'s `## Focus` table, the same declaration `build pick` fences on,
+ * read through the same parser off the roadmap text this verb already has open. A marked row is still
+ * offered: the two exceptions are real, and a removed row cannot carry them.
  */
 import {Effect, Result} from "effect";
-import {focusScopeLine, readFocus} from "../build/scope-admission.ts";
+import {declaredMilestones, focusScopeLine, readFocus} from "../build/scope-admission.ts";
 import {readFile} from "../io/fs.ts";
 import {listOpenMilestones, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse} from "../verb.ts";
@@ -116,7 +116,7 @@ export const runHomes = Effect.fn("runHomes")(function* (options: HomesOptions) 
 	// Malformed is never read as "no milestone is running": it marks no row and says so here, and it
 	// does not refuse — a home list is still the right answer over an unreadable focus declaration.
 	const focus = readFocus(read.success);
-	const inFocus = focus._tag === "Declared" ? focus.milestone : null;
+	const inFocus = new Set(focus._tag === "Malformed" ? [] : declaredMilestones(focus));
 
 	const homes = [...milestones.value]
 		.sort((a, b) => a.number - b.number)
@@ -126,7 +126,7 @@ export const runHomes = Effect.fn("runHomes")(function* (options: HomesOptions) 
 			roadmapRow: roadmapRowFor(rows, milestone.number),
 			// `undefined` rather than `false`: `JSON.stringify` drops the key, so a not-in-focus row
 			// serialises byte-for-byte as it did before the marker existed.
-			running: milestone.number === inFocus ? RUNNING_MARKER : undefined,
+			running: inFocus.has(milestone.number) ? RUNNING_MARKER : undefined,
 		}));
 	const notices = [scope, focusScopeLine("triage homes", focus)];
 

@@ -278,15 +278,15 @@ describe("judge — I5 active↔done state symmetry (the campaign lifecycle, #26
 	});
 });
 
-describe("judge — I6 the declared focus is honest (#5012)", () => {
-	// The four reds the declaration is guarded against, plus the two readings of "nothing
-	// declared" that must stay legal — absence and emptiness are the same well-formed default.
+describe("judge — I6 every declared focus row is honest (#5012, widened by #6005)", () => {
+	// The three reds each row is guarded against, plus the two readings of "nothing declared"
+	// that must stay legal — absence and emptiness are the same well-formed default.
 	const i6 = (v: ReturnType<typeof judge>): ReadonlyArray<string> =>
 		v.pass || v.reason === "zero-scope"
 			? []
 			: v.violations.filter((x) => x.code === "I6").map((x) => x.message);
 
-	it("PASSES with NO focus row at all — no exclusive focus declared is the default", () => {
+	it("PASSES with NO focus row at all — no focus declared is the default", () => {
 		const v = judge(goodArcs, goodCampaigns, goodMilestones, []);
 		expect(v.pass).toBe(true);
 		if (v.pass) expect(v.focusCount).toBe(0);
@@ -306,11 +306,19 @@ describe("judge — I6 the declared focus is honest (#5012)", () => {
 		expect(judge(goodArcs, goodCampaigns, goodMilestones, [focusRow(17)]).pass).toBe(true);
 	});
 
-	it("FAILS I6 on MORE THAN ONE focus row", () => {
+	it("PASSES several honest focus rows — row count is not an invariant (#6005)", () => {
+		const v = judge(goodArcs, goodCampaigns, goodMilestones, [focusRow(17), focusRow(27)]);
+		expect(v.pass).toBe(true);
+		if (v.pass) expect(v.focusCount).toBe(2);
+	});
+
+	it("still reds the DISHONEST row among several, and only that row", () => {
 		const messages = i6(
-			judge(goodArcs, goodCampaigns, goodMilestones, [focusRow(17), focusRow(27)]),
+			judge(goodArcs, goodCampaigns, goodMilestones, [focusRow(17), focusRow(99)]),
 		);
-		expect(messages.some((m) => m.includes("AT MOST ONE focus row"))).toBe(true);
+		expect(messages).toEqual([
+			"focus row (declared 2026-08-09) pins milestone #99, which does not exist",
+		]);
 	});
 
 	it("FAILS I6 when the focus milestone DOES NOT RESOLVE", () => {
@@ -484,7 +492,7 @@ describe("parseSectionRows + parseRoadmap", () => {
 		]);
 	});
 
-	it("parses the focus table into at most one row with its pin + declared-at date", () => {
+	it("parses the focus table into one row per declaration with its pin + declared-at date", () => {
 		expect(parseRoadmap(md).focus).toEqual([{milestone: 27, declaredAt: "2026-08-09"}]);
 	});
 
@@ -503,7 +511,7 @@ describe("parseSectionRows + parseRoadmap", () => {
 	});
 });
 
-describe("parseFocus — absence and emptiness both mean NO exclusive focus (#5012)", () => {
+describe("parseFocus — absence and emptiness both mean NO focus declared (#5012)", () => {
 	it("returns [] for an ABSENT `## Focus` section", () => {
 		expect(parseFocus("# Roadmap\n\n## Arcs\n\n| Arc | Milestone | State |\n|-|-|-|\n")).toEqual(
 			[],
@@ -517,7 +525,7 @@ describe("parseFocus — absence and emptiness both mean NO exclusive focus (#50
 	});
 
 	it("returns [] for a `## Focus` section carrying prose and no table", () => {
-		expect(parseFocus("## Focus\n\nNo exclusive focus is declared right now.\n")).toEqual([]);
+		expect(parseFocus("## Focus\n\nNo focus is declared right now.\n")).toEqual([]);
 	});
 
 	it("keeps a dated row with NO pin so I6 can red on it, rather than reading it as no focus", () => {
@@ -525,7 +533,7 @@ describe("parseFocus — absence and emptiness both mean NO exclusive focus (#50
 		expect(rows).toEqual([{milestone: null, declaredAt: "2026-08-09"}]);
 	});
 
-	it("parses every row so I6 sees the over-declaration rather than only the first", () => {
+	it("parses EVERY row, so the declared set is the whole table (#6005)", () => {
 		const rows = parseFocus(
 			"## Focus\n\n| Milestone | Declared |\n|-|-|\n| #44 | 2026-08-09 |\n| #27 | 2026-08-01 |\n",
 		);

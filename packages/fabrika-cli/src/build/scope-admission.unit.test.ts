@@ -45,7 +45,25 @@ Prose above the table, including a \`Milestone | Declared\` mention that is not 
 ## Dependencies
 `;
 
-const declared: Focus = {_tag: "Declared", milestone: 44, declared: "2026-08-09"};
+const FOCUS_44_AND_46 = `## Focus
+
+| Milestone | Declared |
+|-----------|----------|
+| #44 | 2026-08-09 |
+| #46 | 2026-08-18 |
+`;
+
+const declared: Focus = {
+	_tag: "Declared",
+	milestones: [{milestone: 44, declared: "2026-08-09"}],
+};
+const declaredBoth: Focus = {
+	_tag: "Declared",
+	milestones: [
+		{milestone: 44, declared: "2026-08-09"},
+		{milestone: 46, declared: "2026-08-18"},
+	],
+};
 const noFocus: Focus = {_tag: "None"};
 
 const issue = (over: Partial<IssueFacts> = {}): IssueFacts => ({
@@ -72,10 +90,16 @@ describe("readFocus", () => {
 		).toEqual(noFocus);
 	});
 
-	it("refuses two data rows — exclusive focus admits at most one", () => {
-		const two =
-			"## Focus\n\n| Milestone | Declared |\n|---|---|\n| #44 | 2026-08-09 |\n| #24 | 2026-08-01 |\n";
-		expect(readFocus(two)._tag).toBe("Malformed");
+	it("reads N data rows as the declared set — a repo running several streams (#6005)", () => {
+		expect(readFocus(FOCUS_44_AND_46)).toEqual(declaredBoth);
+	});
+
+	it("makes ONE bad row among good ones malformed for the whole declaration", () => {
+		const mixed =
+			"## Focus\n\n| Milestone | Declared |\n|---|---|\n| #44 | 2026-08-09 |\n| 46 | 2026-08-18 |\n";
+		const parsed = readFocus(mixed);
+		expect(parsed._tag).toBe("Malformed");
+		expect(parsed._tag === "Malformed" && parsed.reason).toContain("row 2");
 	});
 
 	it("refuses a milestone cell that is not #<int> — never reading it as 'no focus'", () => {
@@ -102,7 +126,7 @@ describe("the two axes stay apart", () => {
 	it("scope reads campaign membership only — an out-of-focus issue is refused whatever its audience", () => {
 		expect(scopeAxisOf(declared, issue({milestone: 24}))).toEqual({
 			_tag: "OutOfFocus",
-			focus: 44,
+			focus: [44],
 			home: "24",
 		});
 		expect(audienceAxisOf(issue({milestone: 24}))).toEqual({_tag: "Agent"});
@@ -174,6 +198,42 @@ describe("admissionOf", () => {
 	it("still applies the audience axis to a standing lane", () => {
 		const standing = issue({milestone: null, labels: ["axis:pipeline-hardening"]});
 		expect(admissionOf(declared, standing)._tag).toBe("AudienceNotAgent");
+	});
+
+	it("admits a member of the declared set, naming the member that matched (#6005)", () => {
+		expect(scopeAxisOf(declaredBoth, issue({milestone: 46}))).toEqual({
+			_tag: "InFocus",
+			milestone: 46,
+		});
+		expect(scopeAxisOf(declaredBoth, issue({milestone: 44}))).toEqual({
+			_tag: "InFocus",
+			milestone: 44,
+		});
+	});
+
+	it("refuses a home in NEITHER declared milestone, naming the whole set", () => {
+		const out = admissionOf(declaredBoth, issue({milestone: 24}));
+		expect(out._tag).toBe("OutOfFocus");
+		const text = admissionRefusal("build claim", out)?.stderr.join("\n") ?? "";
+		expect(text).toContain("milestones #44, #46");
+	});
+
+	it("still exempts a standing lane under a multi-milestone set (ADR 0208)", () => {
+		const standing = issue({milestone: null, labels: STANDING_LANE_LABELS.slice(0, 1)});
+		expect(scopeAxisOf(declaredBoth, standing)).toEqual({
+			_tag: "LaneExempt",
+			lane: STANDING_LANE_LABELS[0],
+		});
+	});
+
+	it("reports the whole set on the scope line and the machine channel", () => {
+		const line = focusScopeLine("build pick", declaredBoth);
+		expect(line).toContain("2 milestones");
+		expect(line).toContain("#44 (declared 2026-08-09)");
+		expect(line).toContain("#46 (declared 2026-08-18)");
+		expect(focusReport(declaredBoth)).toEqual({state: "declared", milestones: ["44", "46"]});
+		expect(focusScopeLine("build pick", declared)).toContain("milestone #44, declared 2026-08-09");
+		expect(focusReport(declared)).toEqual({state: "declared", milestones: ["44"]});
 	});
 
 	it("admits everything with no declaration, and records the fence inert", () => {
@@ -402,7 +462,7 @@ describe("scopeSubjectOf", () => {
 });
 
 describe("noServedIssue", () => {
-	const unserved = noServedIssue(5556, 44, "carries no reference");
+	const unserved = noServedIssue(5556, [44], "carries no reference");
 
 	it("refuses at 20, naming the case that fired and the remedy", () => {
 		const refusal = admissionRefusal("build claim", unserved);
