@@ -11,7 +11,6 @@ import "./AuthPage.css";
 
 type Mode = "sign-in" | "sign-up";
 
-/** The `User` write-back selection for the post-signup `setUsername` call. */
 const SetUsernameView = view<User>()({
 	id: true,
 	email: true,
@@ -28,17 +27,15 @@ export function AuthPage() {
 	const [mode, setMode] = useState<Mode>("sign-in");
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
-	// #1888: the chosen handle whose post-signup `setUsername` failed. Non-null ⇒
-	// the account exists but the handle didn't land — render the blocking retry
-	// surface and keep the redirect gate latched until it resolves or is abandoned.
+	// Non-null ⇒ the account exists but the chosen handle didn't land; the redirect gate
+	// stays latched until it resolves or is abandoned (#1888).
 	const [stuckUsername, setStuckUsername] = useState<string | null>(null);
 	const isSignIn = mode === "sign-in";
 	const fate = useFateClient();
 
-	// Route the chosen handle through the `setUsername` mutation (`username` is
-	// better-auth `input: false`, so it can't ride `signUp.email`). Returns the
-	// inline error message on failure, or `null` once the handle lands. Handles
-	// BOTH fate shapes: a returned `{error}` and a thrown boundary error.
+	// A separate mutation because `username` is better-auth `input: false`, so it can't
+	// ride `signUp.email`. Both fate failure shapes reach here: a returned `{error}` and
+	// a thrown boundary error.
 	async function setUsernameOrFail(handle: string): Promise<string | null> {
 		try {
 			const {error: callError} = await fate.mutations.user.setUsername({
@@ -62,8 +59,6 @@ export function AuthPage() {
 				setError(message);
 				return;
 			}
-			// Landed — clear the stuck state and release the gate so the Layout
-			// redirect carries the user into the app with the chosen handle set.
 			setStuckUsername(null);
 			endUsernameResolution();
 		} finally {
@@ -71,10 +66,8 @@ export function AuthPage() {
 		}
 	}
 
-	// The deliberate escape hatch: give up on the chosen handle and fall through to
-	// the null-username bootstrap. Releasing the gate lets the redirect proceed;
-	// the account still has no handle, so `UsernameBootstrap` mounts — but only
-	// after an explicit choice, never as a silent default.
+	// The escape hatch: drop the chosen handle and fall through to the null-username
+	// bootstrap — reachable only by explicit choice, never as a silent default.
 	function abandonStuckUsername() {
 		setStuckUsername(null);
 		setError(null);
@@ -89,8 +82,8 @@ export function AuthPage() {
 		if (isSignIn) {
 			const email = String(data.get("email") ?? "");
 			const password = String(data.get("password") ?? "");
-			// Form is `noValidate` — drive the required/format checks in Turkish through
-			// the `kp-auth__error` surface instead of the browser's locale-default bubble.
+			// The form is `noValidate`, so these hand-rolled checks are the only ones that
+			// run — the browser's bubble would speak the wrong language.
 			const fieldError = validateSignIn(email, password);
 			if (fieldError) {
 				setError(fieldError);
@@ -109,17 +102,13 @@ export function AuthPage() {
 		const name = String(data.get("name") ?? "");
 		const email = String(data.get("email") ?? "");
 		const password = String(data.get("password") ?? "");
-		// Username is optional at signup; when present it must pass the same rule the
-		// server enforces (`assertUsername`). Pre-flight here so a bad handle never
-		// creates the account, then surfaces as a confusing post-signup failure.
-		// Normalize identically to the bootstrap fallback so the two never diverge.
+		// Normalize identically to the bootstrap fallback, or the two paths diverge.
 		const username = String(data.get("username") ?? "")
 			.trim()
 			.toLowerCase();
 
-		// Form is `noValidate` — validate the required/format constraints in Turkish
-		// through the `kp-auth__error` surface (no browser-locale bubble), in visual
-		// field order: görünen ad → e-posta → kullanıcı adı → parola.
+		// Pre-flight the handle against the same rule the server enforces, so a bad one
+		// never creates the account and then fails confusingly after signup.
 		const fieldError =
 			validateName(name) ??
 			validateEmail(email) ??
@@ -138,41 +127,28 @@ export function AuthPage() {
 				return;
 			}
 
-			// `username` is better-auth `input: false`, so it can't ride `signUp.email`;
-			// route the chosen handle through the same `setUsername` mutation the
-			// bootstrap fallback uses (cookie-authenticated by the session signup just
-			// established). A blank field leaves `username === null` so the layout's
-			// bootstrap gate fires as the fallback (AC3).
 			if (username) {
-				// Latch the redirect gate BEFORE the async setUsername: `signUp.email`
-				// already established the session, so the Layout redirect would fire the
-				// instant this handler yields. Holding it keeps AuthPage mounted so a
-				// failure is visible + retryable here — never buried under the redirect,
-				// which is the #1888 silent-drop.
+				// Latch the gate BEFORE the await: `signUp.email` already established the
+				// session, so the Layout redirect fires the instant this handler yields and
+				// a setUsername failure would be buried under it (#1888).
 				beginUsernameResolution();
 				const message = await setUsernameOrFail(username);
 				if (message) {
-					// The handle didn't land. Do NOT release the gate: park in the retry
-					// surface so the chosen handle is never silently dropped into the
-					// email-prefill bootstrap.
+					// Deliberately no `endUsernameResolution()` here: park in the retry surface
+					// rather than dropping the handle into the email-prefill bootstrap.
 					setStuckUsername(username);
 					setError(message);
 					return;
 				}
-				// Landed — release the gate so the Layout redirect proceeds.
 				endUsernameResolution();
 			}
-			// Redirect is intentionally not handled here: the Layout's effect
-			// watches `session.data` and navigates off /auth to `?returnTo=…`
-			// (or `/`) once the session lands (and the gate is clear).
+			// No redirect here by design: the Layout's effect watches `session.data` and
+			// navigates off /auth once the session lands and the gate is clear.
 		} finally {
 			setPending(false);
 		}
 	}
 
-	// #1888: the account exists but the chosen handle failed to set. Block on a
-	// visible, retryable surface — never fall through to the redirect + email
-	// prefill, which is how the chosen handle got silently dropped before.
 	if (stuckUsername != null) {
 		return (
 			<div className="kp-auth">

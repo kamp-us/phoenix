@@ -1,19 +1,5 @@
-/**
- * `BanControls` — the moderator-UI ban/unban affordance for one actor (#970, epic
- * #1665). Shows the actor's current banned-state + reason and lets an admin ban
- * (reason + optional expiry) or unban. Reads/writes the `requireAdmin`-gated,
- * `phoenix-user-ban`-flagged fate surface, so a non-admin's read/write fails closed
- * server-side (the read degrades to hidden, the write to the "no authority" message).
- *
- * The caller renders this INSIDE a `<FlagGate flag={PHOENIX_USER_BAN}>`, so with the
- * flag off (default / Flagship outage) the whole control is dark — the client half of
- * the ship-dark contract (ADR 0083). Render decisions are DOM-free in
- * `ban-controls.ts` (unit-tested); this is the thin shell.
- *
- * a11y: a labelled region; a real `<form>` with a required `gerekçe` field + an
- * optional `datetime-local` expiry; Manti Button actions; the banned-state + outcome are
- * text in `role="status"` live regions, never color; copy is lowercase Turkish.
- */
+// This control does no flag check of its own: the caller must render it inside a
+// `<FlagGate flag={PHOENIX_USER_BAN}>` so it goes dark by default (ADR 0083).
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {BanState} from "../../../worker/features/fate/views";

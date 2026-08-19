@@ -1,10 +1,3 @@
-/**
- * Anon-affordance regression for the existing-term definition composer (#2211): a
- * logged-out visitor must see a sign-in prompt, never the live composer they can't
- * submit — matching the sözlük new-term branch and pano. The fate read hooks are
- * spied (the composer never mounts on the signed-out path, so its own deep wiring
- * is out of scope); the gate is driven purely by the mocked session.
- */
 import {render, screen} from "@testing-library/react";
 import type {ViewRef} from "react-fate";
 import {MemoryRouter} from "react-router";
@@ -26,8 +19,7 @@ vi.mock("../fate/useReadbackRefetch", () => ({
 	useConfirmGone: () => vi.fn(),
 }));
 
-// Composer leaf deps — stubbed so the signed-in branch mounts the composer without
-// its full fate/flag/draft wiring (the gate, not the composer internals, is under test).
+// Composer leaf deps, stubbed so the signed-in branch mounts without its full wiring.
 vi.mock("../flags/useFlag", () => ({useFlag: () => ({value: false, loading: false})}));
 vi.mock("../components/authorship/FirstContributionOnramp", () => ({
 	FirstContributionOnramp: () => null,

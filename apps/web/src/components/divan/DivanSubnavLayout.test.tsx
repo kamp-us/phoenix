@@ -1,15 +1,3 @@
-/**
- * divan's persistent product Subnav zone (#2604, placement law #2587). Pins: (1) the zone is a
- * persistent layout — its `.kp-subnav` node survives a within-divan navigation (no remount); (2)
- * the routed page publishes its çaylaklar ↔ raporlar section switch UP into the zone, where it
- * renders as Subnav filters (`.kp-subnav__filter` — the #2586 taxonomy switcher treatment, never a
- * resting boxed `.kp-divan__nav-tab` pill); (3) a switch click drives the published onFilterChange;
- * (4) a non-mod page (no second section) publishes null and the zone shows the bare substrate bar;
- * (5) with NO zone ancestor (flag off) the publish hook returns null — the signal DivanWorkspace
- * uses to keep painting its own in-page nav byte-identically as today; (6) the switcher renders
- * through SubnavShell INSIDE the bar's `.kp-subnav__filters` row (ADR 0182 destinations zone),
- * never a detached sibling.
- */
 import {fireEvent, render, screen} from "@testing-library/react";
 import {useEffect, useState} from "react";
 import {Link, MemoryRouter, Route, Routes} from "react-router";
@@ -21,7 +9,6 @@ const SECTION_FILTERS = [
 	{id: "raporlar", label: "raporlar"},
 ];
 
-/** A stand-in for DivanWorkspace: publishes the section switch up exactly as the page does. */
 function FakeDivanLeaf({hasSwitch = true}: {hasSwitch?: boolean}) {
 	const setDivanSubnav = useSetDivanSubnavContent();
 	const [section, setSection] = useState("caylaklar");
@@ -67,8 +54,6 @@ describe("DivanSubnavLayout — divan product Subnav zone (#2604)", () => {
 
 	it("renders the switcher through SubnavShell INSIDE the bar's filters row, not a detached sibling (ADR 0182)", () => {
 		const {container} = renderZone();
-		// the destinations zone lives inside the shell's bar — the switcher buttons are descendants
-		// of `.kp-subnav > .kp-subnav__filters`, closing the orphaned-sibling composition class.
 		const inBar = container.querySelectorAll(".kp-subnav .kp-subnav__filters .kp-subnav__filter");
 		expect(inBar).toHaveLength(2);
 	});
@@ -76,7 +61,6 @@ describe("DivanSubnavLayout — divan product Subnav zone (#2604)", () => {
 	it("carries the switchers as taxonomy filters — one taxonomy class, no resting boxed pill (#2586/#2590)", () => {
 		const {container} = renderZone();
 		for (const el of container.querySelectorAll(".kp-subnav__filter")) {
-			// exactly the taxonomy filter class — never the resting-boxed `.kp-divan__nav-tab` pill
 			expect(el.classList.contains("kp-divan__nav-tab")).toBe(false);
 		}
 		expect(container.querySelector(".kp-divan__nav")).toBeNull();

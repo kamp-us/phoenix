@@ -1,9 +1,3 @@
-/**
- * The shared moderation actor-row handle rule (ADR 0147), asserted DOM-free — one
- * tested handle resolver every mod/admin surface reuses (divan's `caylakLabel`, the
- * admin user-list #968) instead of each forking its own. Mirrors the divan
- * `caylakLabel` contract, generalized over the fallback noun.
- */
 import {describe, expect, it} from "vitest";
 import {actorLabel} from "./actor-identity";
 
@@ -22,7 +16,6 @@ describe("actorLabel — the shared actor-row display handle", () => {
 	it("degrades to the surface's fallback noun when both are blank/absent", () => {
 		expect(actorLabel(null, null, "çaylak")).toBe("çaylak");
 		expect(actorLabel("", "  ", "çaylak")).toBe("çaylak");
-		// a different surface (e.g. the admin user-list) supplies its own fallback noun
 		expect(actorLabel(null, null, "kullanıcı")).toBe("kullanıcı");
 	});
 
@@ -34,7 +27,6 @@ describe("actorLabel — the shared actor-row display handle", () => {
 	it("returns only the fixed noun when username is absent — never an email leak", () => {
 		expect(actorLabel(null, null, "kullanıcı")).toBe("kullanıcı");
 		expect(actorLabel("  ", null, "kullanıcı")).toBe("kullanıcı");
-		// with a display name present, that name renders — the email is never consulted
 		expect(actorLabel("Ada Lovelace", null, "kullanıcı")).toBe("Ada Lovelace");
 	});
 });

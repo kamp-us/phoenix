@@ -11,12 +11,8 @@ import {
 } from "./optimisticCommentDelete";
 
 /**
- * Covers the load-bearing optimistic `comment.delete` core (ADR 0125 D1, #1680): the
- * reply-aware strategy decision (leaf-drop vs conservative tombstone), the pure
- * edge-removal, the tombstone field partial, and the store-driving apply + rollback
- * (edge-drop, tombstone, and the shared commentCount decrement). Inspected off the
- * REAL exported functions the call site routes through; fate's own snapshot/restore +
- * live-frame reconcile are exercised at the integration/e2e tier.
+ * Pins the optimistic `comment.delete` core (ADR 0125 D1). fate's own
+ * snapshot/restore + live-frame reconcile are covered at the integration/e2e tier.
  */
 const fixedNow = new Date("2026-07-02T12:00:00.000Z");
 
@@ -80,7 +76,6 @@ const COMMENT_ID = "comm_1";
 const COMMENT_ENTITY = toEntityId("Comment", COMMENT_ID);
 const LIST_KEY = "Post:post_1.comments";
 
-/** A minimal in-memory {@link CommentDeleteStore} over records + one comments list. */
 function fakeStore(seed: {
 	records?: Record<string, Record<string, unknown>>;
 	list?: List;
@@ -96,8 +91,7 @@ function fakeStore(seed: {
 	return {
 		read: (id) => records.get(id),
 		merge: (id, partial) => records.set(id, {...(records.get(id) ?? {}), ...partial}),
-		// snapshot/restore round-trip the whole record via the real Snapshot shape
-		// ({record}), so fate's pre-write state is restored on rollback.
+		// Round-trips the real `Snapshot` shape, so rollback is fate's, not a stand-in.
 		snapshot: (id): Snapshot => ({record: {...records.get(id)}}),
 		restore: (id, snap) => records.set(id, {...(snap.record ?? {})}),
 		getListsForField: (ownerId, field) =>

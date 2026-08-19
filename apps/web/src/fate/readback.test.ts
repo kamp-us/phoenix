@@ -8,7 +8,6 @@ const state = (expectedId: string, probesRemaining: number): ReadbackState => ({
 
 describe("decideReadback", () => {
 	it("settles immediately when the live push already landed the node", () => {
-		// The whole point: if the `appendNode` won the race, never refetch.
 		expect(decideReadback(new Set(["c1", "c2"]), state("c2", 3))).toEqual({action: "settled"});
 	});
 
@@ -45,7 +44,6 @@ describe("decideReadback", () => {
 
 describe("decideConfirmGone", () => {
 	it("settles immediately when the delete push already reconciled the node away", () => {
-		// The whole point: if the `deleteEdge` (or tombstone) won, never refetch.
 		expect(decideConfirmGone(new Set(["c1"]), state("c2", 3))).toEqual({action: "settled"});
 	});
 

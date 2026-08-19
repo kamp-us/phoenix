@@ -4,13 +4,9 @@ import {type AnyKnob, type AnyKnobSchema, type KnobValue, resolveKnobDefaults} f
 import type {KnobState} from "./useKnobs";
 
 /**
- * The URL-backed knob state (#3093): the query string IS the source of truth, so a specific
- * exhibit state is shareable and landable. One source, not two synced ones — reading a URL and
- * reflecting a knob change are the same round-trip, so there is no state↔URL drift to race.
- *
- * Only knobs that differ from their schema default are written, keeping a pristine exhibit's URL
- * param-free; a default-valued knob drops its param. History is `replace`d — twiddling a knob
- * refines the current entry rather than stacking a back-button trap.
+ * The query string is the only copy of knob state — there is no second one to drift. Only knobs
+ * that differ from their default are written, and history is `replace`d so twiddling a knob does
+ * not stack a back-button trap.
  */
 export function useUrlKnobs(schema: AnyKnobSchema): KnobState {
 	const [searchParams, setSearchParams] = useSearchParams();
@@ -61,7 +57,6 @@ function serializeKnobValue(value: KnobValue): string {
 	return String(value);
 }
 
-/** Coerce a raw query-param string back to the knob's typed value, or `undefined` if it doesn't fit. */
 function parseKnobValue(knob: AnyKnob, raw: string): KnobValue | undefined {
 	switch (knob.kind) {
 		case "string":

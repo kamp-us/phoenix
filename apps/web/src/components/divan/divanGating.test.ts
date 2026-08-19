@@ -1,10 +1,3 @@
-/**
- * The divan surface's gating contract (#1290, epic #1202) — the pure render
- * decisions asserted without a DOM (the pure-extraction idiom of `flagGateChild`
- * / `shouldShowOnramp`; `apps/web/src` has no jsdom/testing-library). These are
- * the AC the surface lives or dies on: çaylak/visitor ⇒ no topbar entry; vouch
- * disabled until the detail is opened.
- */
 import {describe, expect, it} from "vitest";
 import {
 	canVouch,

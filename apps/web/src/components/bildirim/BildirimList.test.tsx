@@ -1,17 +1,10 @@
 /**
- * Regression for #2982 (topbar popover "yüklenemedi"). The list's live-reconcile must
- * read the viewer's unread count through the seed-gated, NON-suspending `useBildirimUnread`
- * — NOT a suspending `useLiveView(channelRef)`. The suspending read's `readView` fires a
- * `byId` against the loader-less `NotificationChannel` synthetic source on any cache miss,
- * which 500s as `INTERNAL_ERROR` (#2206) and rendered the popover's generic error. These
- * pin the byId-safe wiring: the count comes from `useBildirimUnread`, and an unread bump
- * refetches the list (network-only) — the #1700 freshness behavior, preserved.
+ * Regression for #2982: the list's live-reconcile must read the unread count through the
+ * seed-gated, NON-suspending `useBildirimUnread`, not a suspending `useLiveView(channelRef)`
+ * whose `byId` 500s (#2206) and rendered the popover's generic error.
  *
- * `react-fate` and `useBildirimUnread` are mocked so this measures BildirimList's reconcile
- * wiring, not the fate cache; the loader-less-source byId-safety of `useBildirimUnread`
- * itself is pinned by its own suite (`useBildirimUnread.test.tsx`, #2206). Mocking
- * `react-fate` WITHOUT a `useLiveView` export also fails the import outright if the
- * suspending channel read is ever reintroduced here.
+ * The `react-fate` mock below deliberately omits a `useLiveView` export, so reintroducing
+ * the suspending channel read fails the import outright.
  */
 import {render} from "@testing-library/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
@@ -29,10 +22,8 @@ vi.mock("./useBildirimUnread", () => ({
 }));
 
 vi.mock("react-fate", () => ({
-	// A view factory usable at module load: `view<T>()(selection)` → the selection object.
 	view: () => (selection: unknown) => selection,
 	useRequest: () => ({"bildirim.list": {}}),
-	// Empty connection → BildirimList renders its empty state (no rows, no useView needed).
 	useListView: () => [[], null],
 	useFateClient: () => ({request: requestSpy}),
 	useView: (_view: unknown, node: unknown) => node,
@@ -53,7 +44,6 @@ describe("BildirimList live-reconcile — byId-safe (#2982 / #2206)", () => {
 	it("reads the live unread count via the seed-gated useBildirimUnread (never a suspending channel read)", () => {
 		liveUnread = 2;
 		render(<BildirimList />);
-		// Enabled when signed in, keyed by the viewer's id — the byId-safe path.
 		expect(useBildirimUnread).toHaveBeenCalledWith(true, "user-1");
 	});
 
@@ -62,7 +52,7 @@ describe("BildirimList live-reconcile — byId-safe (#2982 / #2206)", () => {
 		const {rerender} = render(<BildirimList />);
 		expect(requestSpy).not.toHaveBeenCalled();
 
-		liveUnread = 3; // a recorded notification lands → count rises
+		liveUnread = 3;
 		rerender(<BildirimList />);
 
 		expect(requestSpy).toHaveBeenCalledTimes(1);

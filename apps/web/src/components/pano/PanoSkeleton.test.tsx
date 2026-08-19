@@ -1,9 +1,6 @@
 /**
- * Height-match regression for #2161: the feed skeleton must reserve one row per
- * post the first page carries, else the footer jumps (~941px, 6 rows under a
- * 20-post page) when content lands. The row count is single-sourced from
- * `PANO_FEED_PAGE_SIZE`, so this pins the skeleton to the same page size the feed
- * request uses — the two can't silently drift back apart.
+ * Regression for #2161: a skeleton with fewer rows than the first page reserves the
+ * wrong height and the footer jumps (~941px) when content lands.
  */
 import {render, screen} from "@testing-library/react";
 import {describe, expect, it} from "vitest";

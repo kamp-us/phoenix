@@ -1,18 +1,8 @@
 /**
- * `ProfileHeader` — the shared, presentational profile-header primitive (#2203):
- * avatar (image-or-initials) + display name + `@handle`{+ standing} + the canonical
- * activity tiles. Consumed by BOTH the owner's self-service `/profile`
- * (`ProfilePage`) and the public `/u/:username` (`UserProfileHeader`), which
- * previously hand-derived two headers that drifted (two stat orders, a standing
- * badge on one but not the other). This component owns the DOM; each surface only
- * maps its own data source (imperative `useMe`/`useProfileStats` on `/profile`, the
- * fate `Profile` view on `/u/`) into these plain props.
- *
- * The activity-tile order is the single source `profileStatTiles`; `karma` is the
- * optional owner-only tile (`showKarma`), rendered via the shared `Karma` atom and
- * kept structurally last. `standingLabel`
- * is likewise optional (owner-only — the public view has no viewed-user tier), so a
- * `null` renders handle-only, exactly as before.
+ * The one presentational profile header, owning the DOM for BOTH the owner's
+ * `/profile` and the public `/u/:username`. Each surface only maps its own data
+ * source into these plain props — the two used to hand-derive headers that drifted
+ * apart (#2203).
  */
 import {Karma} from "../karma/Karma";
 import {Alert} from "../ui/Alert";
@@ -30,15 +20,11 @@ export interface ProfileHeaderStats {
 export interface ProfileHeaderProps {
 	readonly displayName: string;
 	readonly handle: string;
-	/** Owner-only trusted-tier subtitle; `null`/absent ⇒ handle-only. */
 	readonly standingLabel?: string | null;
-	/** Avatar image; falls back to display-name initials when absent. */
 	readonly image?: string | null;
-	/** Activity + karma counts. `null` renders the tiles as an error strip. */
 	readonly stats: ProfileHeaderStats | null;
-	/** A failed stats read — renders the error strip, never a misleading `0` (#448). */
+	/** A failed stats read renders the error strip, never a misleading `0` (#448). */
 	readonly statsError?: boolean;
-	/** Emit the karma tile — owner-only, shown on `/profile`. */
 	readonly showKarma?: boolean;
 }
 

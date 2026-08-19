@@ -1,18 +1,8 @@
-/**
- * The pure core of the optimistic `definition.delete` slice (#1681, epic #1637, ADR
- * 0125 D1), tested without fate/React — the pure-core idiom of the add-side sibling
- * `definitionAddOptimistic.unit`. Covers the nested-list edge drop + rollback
- * ({@link dropOptimisticDefinitionEdge}) against a fake store: the drop reconciles
- * against the server `deleteEdge` by canonical id (no reappear), and rollback
- * restores the edge on rejection.
- */
-
 import {assert, describe, it} from "@effect/vitest";
 import type {List} from "@nkzw/fate";
 import type {DefinitionListStore} from "./definitionAddOptimistic";
 import {dropOptimisticDefinitionEdge} from "./definitionDeleteOptimistic";
 
-/** A fake store recording setList/restoreList, seeded with per-key list snapshots. */
 function fakeStore(lists: ReadonlyArray<readonly [string, List]>): DefinitionListStore & {
 	readonly current: Map<string, List | undefined>;
 } {
@@ -75,8 +65,7 @@ describe("dropOptimisticDefinitionEdge — nested-list edge drop + rollback", ()
 	});
 
 	it("reconciles by canonical id — a redundant drop of an already-gone id is a no-op (no reappear)", () => {
-		// Models the server `deleteEdge` frame landing after the optimistic drop: the id
-		// is already absent, so removing it again changes nothing — one absent edge.
+		// Models the server `deleteEdge` frame landing after the optimistic drop.
 		const store = fakeStore([["list-1", {ids: ["Definition:a", "Definition:c"]}]]);
 		dropOptimisticDefinitionEdge(store, TERM, TARGET);
 		assert.deepStrictEqual(store.current.get("list-1")?.ids, ["Definition:a", "Definition:c"]);

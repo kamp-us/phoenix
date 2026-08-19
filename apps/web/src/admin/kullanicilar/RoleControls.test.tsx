@@ -1,16 +1,8 @@
-/**
- * `RoleControls` component contract (#3523) — the per-row role-assign affordance wires the
- * `Admin.over(platform)`-gated `user.setRole` mutation (#3522). Pins: the toggle label per
- * current role, that a click invokes `user.setRole` with the toggled role, that a success
- * re-reads the roster (`onRoleChanged`) and shows the outcome, and that the invisible
- * `Denied` (a non-admin / flag-off refusal) shows the no-authority line and re-reads nothing.
- */
 import {fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {RoleControls} from "./RoleControls";
 
-// Keep react-fate's real `view` (used at module load for `RoleStateSelect`); stub the client
-// so no transport is built — `setRole` is the only mutation the affordance touches.
+// `importOriginal` keeps react-fate's real `view`, which `RoleStateSelect` needs at module load.
 let setRoleResult: {result?: {role: string}; error?: unknown};
 const setRoleCalls: {userId: string; role: string}[] = [];
 vi.mock("react-fate", async (importOriginal) => {

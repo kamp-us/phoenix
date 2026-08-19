@@ -5,19 +5,9 @@ import {isAuthRedirectError} from "../pano/useVoteToggle";
 import {nextReaction, type OptimisticReactionAggregate, reactionOptimistic} from "./reactionModel";
 import type {ReactDispatch} from "./useReactionBar";
 
-/**
- * Models the tap→dispatch branch of {@link useReactionBar} exactly — resolve the
- * cardinality-one next reaction ({@link nextReaction}) + the optimistic aggregate
- * ({@link reactionOptimistic}), fire the `*.react` mutation, and on a rejected
- * mutation route through the REAL `isAuthRedirectError` (redirect on
- * `UNAUTHORIZED`, silent otherwise) — over the same controllable-dispatch idiom as
- * `DefinitionCard.test.ts`'s vote harness. The hook itself is a thin
- * `useCallback`/`useSession` wrapper; this drives the real payload + error logic
- * so a regression in the react/change/retract routing or the optimistic-then-
- * reconcile-on-fail path fails here, not only in an e2e. (fate owns the actual
- * cache rollback; the harness asserts the failed mutation reaches the catch so
- * nothing throws past the handler.)
- */
+// The harness below re-models `useReactionBar`'s tap body rather than rendering the hook:
+// the hook is a thin `useCallback`/`useSession` wrapper, and this drives the real payload
+// and error logic. Keep the two in step when either changes.
 function reactHarness(aggregate: ReactionAggregate | null | undefined) {
 	const calls: Array<{emoji: ReactionEmoji | null; optimistic: OptimisticReactionAggregate}> = [];
 	let rejectWith: unknown = null;
@@ -29,7 +19,6 @@ function reactHarness(aggregate: ReactionAggregate | null | undefined) {
 		return {result: {}, error: null};
 	};
 
-	// The hook's tap body, sans React: resolve emoji + optimistic, dispatch, catch.
 	const onReact = async (tapped: ReactionEmoji) => {
 		const current = aggregate?.myReaction ?? null;
 		const emoji = nextReaction(current, tapped);

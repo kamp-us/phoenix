@@ -1,21 +1,17 @@
 /**
- * Layout-preserving loading placeholders for the pano surfaces, composed from the
- * shared `Skeleton` atom (the same primitive the sözlük skeleton uses — #1633/#1636).
- * Each mirrors the real DOM shape (feed row grid / post-detail header) so content
- * arrival swaps in without a layout jump.
+ * Loading placeholders that mirror the real DOM shape, so content arrival swaps in
+ * without a layout jump.
  */
 import {PANO_FEED_PAGE_SIZE} from "../../lib/panoNav";
 import {Skeleton} from "../ui/atoms";
 import "./PanoPost.css";
 import "../../pages/PanoPostDetail.css";
 
-// Match the skeleton row count to the feed's first-page size so it reserves the
-// SAME height the arriving page occupies — a 6-row skeleton under a 20-post page
-// jumped the footer ~941px on arrival (#2161). Single-sourced from `panoNav` so the
-// two can't drift.
+// Single-sourced from `panoNav`: the row count must equal the feed's first page or
+// the skeleton reserves the wrong height (a 6-row skeleton under 20 posts jumped the
+// footer ~941px, #2161).
 const FEED_ROWS = PANO_FEED_PAGE_SIZE;
 
-/** Feed-row skeleton — mirrors `PanoPostCard`'s [rank | vote | body] grid. */
 export function PanoFeedSkeleton() {
 	return (
 		<div
@@ -47,7 +43,6 @@ export function PanoFeedSkeleton() {
 	);
 }
 
-/** Post-detail skeleton — mirrors the `kp-pano-postpage__head` title/url/meta stack. */
 export function PanoPostSkeleton() {
 	return (
 		<div

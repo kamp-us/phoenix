@@ -1,10 +1,3 @@
-/**
- * The saved-posts reconcile contract (#1417) — the one saved-ness rule asserted
- * without a DOM (the pure-extraction idiom of `divanGating` / `searchTarget`). These
- * are the AC the page lives or dies on: count + empty-state must track live `isSaved`,
- * not edge-`node` truthiness, so an in-list un-save decrements the count and un-saving
- * the last loaded row trips the empty state.
- */
 import {describe, expect, it} from "vitest";
 import {countSavedRows, isRowSaved} from "./savedReconcile";
 

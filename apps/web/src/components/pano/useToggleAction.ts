@@ -19,41 +19,28 @@ import {useCallback, useRef} from "react";
  */
 export type ToggleAction = "set" | "unset";
 
-/** The mutation pair the loop drives toward the desired on-state. */
 export interface ToggleDispatch {
-	/** Current on-state at call time, the source of truth the loop reconciles against. */
 	readonly on: boolean;
-	/** Fire the underlying fate mutation; resolves when it settles (success or rollback). */
+	/** Resolves when the mutation settles — success or rollback. */
 	readonly dispatch: (action: ToggleAction) => Promise<void>;
 }
 
-/**
- * The corrective action to move from `achieved` toward `desired`, or `null`
- * when they already agree (nothing left to send). Pure — part of the
- * load-bearing race logic, unit-tested without a DOM.
- */
 export function nextToggleAction(achieved: boolean, desired: boolean): ToggleAction | null {
 	if (achieved === desired) return null;
 	return desired ? "set" : "unset";
 }
 
-/** What {@link runToggleLoop} reads each turn — supplied by the hook over refs. */
 export interface ToggleLoopState {
-	/** The user's latest intended end-state; `null` means settled. */
+	/** `null` means settled — the loop and a fresh re-entry both stop on it. */
 	readonly desired: boolean | null;
-	/** Mark the intent satisfied so the loop (and a fresh re-entry) stops. */
 	readonly clearDesired: () => void;
-	/** Latest committed dispatch surface — re-read so payloads track current props. */
+	/** Re-read each turn so payloads track current props. */
 	readonly read: () => ToggleDispatch;
 }
 
 /**
- * The serialize-and-supersede loop, extracted hook-free so the race is unit-
- * testable. Dispatches corrective mutations until `achieved` matches `desired`,
- * re-reading `desired` each turn so a toggle issued mid-flight is picked up
- * rather than dropped. `achieved` is seeded from the committed on-state and
- * advanced by each action actually dispatched — the loop never depends on a
- * re-render landing between iterations to observe its own progress. The caller
+ * `achieved` is advanced by each dispatched action, never re-read from props: the
+ * loop must not depend on a re-render landing between iterations. Caller
  * guarantees a single concurrent run.
  */
 export async function runToggleLoop(getState: () => ToggleLoopState): Promise<void> {
@@ -71,12 +58,6 @@ export async function runToggleLoop(getState: () => ToggleLoopState): Promise<vo
 	}
 }
 
-/**
- * Returns a `toggle()` that flips the desired on-state and drives the dispatch
- * loop. Only one loop runs at a time (preserving anti-double-submit), and it
- * always converges on the latest desired state — so a toggle-back issued
- * mid-flight is never dropped.
- */
 export function useToggleAction(read: () => ToggleDispatch): () => void {
 	const readRef = useRef(read);
 	readRef.current = read;

@@ -18,7 +18,6 @@ describe("ExhibitStage — knob-value → props plumbing (behavior)", () => {
 		const host = container.querySelector(".kp-btn");
 		expect(host).not.toBeNull();
 		expect(host?.textContent).toContain("Kaydet");
-		// variant default is "primary"
 		expect(host?.getAttribute("data-variant")).toBe("primary");
 		expect(host?.hasAttribute("aria-busy")).toBe(false);
 	});
@@ -48,7 +47,6 @@ describe("ExhibitStage — knob-value → props plumbing (behavior)", () => {
 
 	it("labels every knob control (accessibility)", () => {
 		render(<ExhibitStage exhibit={buttonExhibit} />);
-		// the knob labels are the component's technical (English) prop names
 		expect(screen.getByText("Loading")).toBeTruthy();
 		expect(screen.getByText("Appearance")).toBeTruthy();
 	});

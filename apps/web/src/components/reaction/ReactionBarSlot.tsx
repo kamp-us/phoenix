@@ -1,16 +1,7 @@
-/**
- * The reaction row's flag-gated slot, shared by the three surfaces the bar
- * renders on (pano post/comment, sözlük definition). It wraps `FlagGate` with a
- * reserved-height fallback so the slot occupies its final height BEFORE the
- * async `phoenix-reactions` gate resolves — otherwise the bar mounts late across
- * every already-laid-out card at once and shoves the feed downward (#2054).
- *
- * The reserved height (`.kp-reaction-slot`) matches the mounted bar's
- * `min-height` (`.kp-reaction-bar`), both sourced from `--reaction-bar-height`
- * in ReactionBar.css, so the swap is exact — no residual shift once reactions
- * load. FlagGate's shared `null` safe-default is untouched: this passes an
- * explicit sized fallback rather than changing the primitive's default.
- */
+// The sized fallback is not decoration: FlagGate's default `null` has zero height, so the
+// bar mounting after the async `phoenix-reactions` gate resolves shoves every laid-out
+// card downward at once (#2054). `.kp-reaction-slot` and `.kp-reaction-bar` both take
+// their height from `--reaction-bar-height` in ReactionBar.css — keep them in step.
 import type {ReactNode} from "react";
 import {FlagGate} from "../../flags/FlagGate";
 import {PHOENIX_REACTIONS} from "../../flags/keys";

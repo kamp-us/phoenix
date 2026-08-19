@@ -1,15 +1,7 @@
 /**
- * Pano feed page — fate. One `PanoFeed` serves every subfeed, selected by the
- * deep-linkable `?sort=` param: the sort subfeeds (sıcak / yeni / en iyi /
- * tartışma) and the per-viewer kaydedilenler collection (`?sort=saved`), one feed
- * shape + one routing model (#2196).
- *
- * The sort subfeeds share `useRequest({posts, args:{sort}})` + `useLiveListView`;
- * connection identity keeps the filter args (`sort`/`host`) but strips pagination,
- * so each combo paginates independently. The saved variant is the same feed shape
- * over a DIFFERENT data source (`savedPosts`) with its own preserved behavior:
- * signed-in-only (auth redirect w/ `returnTo`), live-`isSaved` row-drop via
- * `savedReconcile`, and no ranks (a personal collection has no ordinal meaning).
+ * Pano feed page. One component serves every subfeed off the deep-linkable
+ * `?sort=` param — including `?sort=saved`, which is the same feed shape over a
+ * different data source (`savedPosts`).
  */
 import * as React from "react";
 import {useLiveListView, useLiveView, useRequest, type ViewRef} from "react-fate";
@@ -39,11 +31,7 @@ import {
 import {authRedirectPath} from "../lib/returnTo";
 import {countSavedRows, isRowSaved} from "./savedReconcile";
 
-/**
- * `live: {prepend: "visible"}` makes a server-pushed `prependNode` (a new post
- * from another client) appear at the top immediately, instead of fate's default
- * `"edge"` mode buffering it until a page load. See `.patterns/fate-live-views.md`.
- */
+// `prepend: "visible"` overrides fate's default `"edge"` buffering — see `.patterns/fate-live-views.md`.
 const PostConnectionView = {
 	items: {node: PanoPostCardView},
 	live: {prepend: "visible"},
@@ -56,22 +44,13 @@ const SavedConnectionView = {
 type Chrome = (children: React.ReactNode, meta: React.ReactNode) => React.ReactNode;
 
 export function PanoFeed({host}: {host?: string}) {
-	// The `?sort=` param is the source of truth for the active variant: derived every
-	// render (not seeded once), and switching a chip writes it back to the URL — so
-	// reload, back/forward, and share-current-URL all preserve the active subfeed
-	// instead of resetting to the default (#2072). The saved variant is `?sort=saved`.
 	const [searchParams, setSearchParams] = useSearchParams();
 	const session = useSession();
 	const variant = panoVariantFromParam(searchParams.get(PANO_SORT_PARAM));
 	const filterId = panoActiveFilterId(variant);
-	// Switching a chip swaps to a different connection, so the content re-suspends.
-	// Writing the `?sort=` param inside `startTransition` marks that re-fetch as
-	// non-urgent: React keeps the CURRENT feed committed + interactive under the stable
-	// `<Screen>` boundary instead of hard-swapping to the skeleton, and surfaces the
-	// in-flight swap as `isPending` (#2161). The cold load still shows the skeleton.
+	// A chip swap re-suspends the content; writing `?sort=` inside `startTransition` keeps the
+	// current feed committed instead of hard-swapping to the skeleton.
 	const [isPending, startTransition] = React.useTransition();
-	// Push (not replace) a history entry so browser back/forward step across the
-	// visited subfeeds, per the acceptance criteria.
 	const setFilterId = React.useCallback(
 		(id: string) => {
 			startTransition(() => {
@@ -98,8 +77,6 @@ export function PanoFeed({host}: {host?: string}) {
 		</FeedChrome>
 	);
 
-	// Saved is signed-in only: a signed-out load redirects to auth with a `returnTo`
-	// back to kaydedilenler.
 	if (variant.kind === "saved") {
 		if (session.isPending) return null;
 		if (!signedIn) return <Navigate to={authRedirectPath(SAVED_HREF)} replace />;
@@ -138,14 +115,7 @@ function FeedContent({
 	pending: boolean;
 	chrome: Chrome;
 }) {
-	// Member-mute (#3117), dark behind `member-mute`. Read once here and threaded to every row
-	// so a card can hide a muted member's post + offer the "sustur" action without each card
-	// re-evaluating the flag. Off (default) ⇒ no mute surface, byte-identical to today.
 	const {value: muteEnabled} = useFlag(MEMBER_MUTE, false);
-	// Feed snapshot (leg A, #2319): under the containment flag, run the feed read
-	// stale-while-revalidate so a snapshot hydrated into the public client paints
-	// synchronously and the network patch lands in the background. Flag off ⇒ an
-	// `undefined` options arg, behaviorally identical to today's cache-first default.
 	const {posts} = useRequest(
 		{
 			posts: {
@@ -186,10 +156,7 @@ function FeedRows({
 }) {
 	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
 
-	// Reload→first-feed-paint instrumentation (#2326, epic #2316): mark the first committed
-	// feed rows so the epic's founding floor is readable in a DevTools/Performance trace.
-	// Fires once per tab (the module latches) and classifies the path (snapshot/edge/cold)
-	// from the boot-time snapshot signal; no-op when the instrument is off. See `feedPerf.ts`.
+	// First-feed-paint instrumentation: latches once per tab, no-op when off. See `feedPerf.ts`.
 	React.useEffect(() => {
 		if (items.length > 0) markFeedPaintOnce();
 	}, [items.length]);
@@ -198,10 +165,6 @@ function FeedRows({
 
 	return chrome(
 		<>
-			{/* During a chip-driven sort swap the current rows stay committed but dim +
-			    go inert (`aria-busy`), so the swap reads as "loading the next sort" rather
-			    than a frozen screen — the `startTransition` in the parent keeps them here
-			    instead of unmounting to the skeleton (#2161). */}
 			<div
 				className="kp-pano-list"
 				aria-busy={pending}
@@ -259,8 +222,6 @@ function SavedRows({connection, chrome}: {connection: SavedConnection; chrome: C
 		});
 	}, []);
 
-	// A genuinely deleted entity has no node — that's edge presence (a row can't render),
-	// NOT saved-ness, which is the live `isSaved` below.
 	const nodes = items.flatMap(({node}) => (node ? [node] : []));
 	const count = countSavedRows(
 		nodes.map((node) => node.id),
@@ -289,12 +250,6 @@ function SavedRows({connection, chrome}: {connection: SavedConnection; chrome: C
 	);
 }
 
-/**
- * One saved row. Reads the post's live `isSaved` so an un-save (from this card's own
- * `PostSaveButton`, or another client/tab) drops the row immediately, and reports that
- * same saved-ness up so the list count + empty-state track it. Ranks are omitted — a
- * saved list has no ordinal meaning.
- */
 function SavedRow({
 	post,
 	onReconcile,
@@ -361,8 +316,6 @@ interface ChromeProps {
 }
 
 function FeedChrome({host, filterId, setFilterId, signedIn, meta, children}: ChromeProps) {
-	// kaydedilenler is a per-viewer chip, so it joins the sort chips only signed-in —
-	// same subnav row, driven by the same `onFilterChange` → `?sort=` mechanism (#1641).
 	const filters = React.useMemo<SubnavFilter[]>(
 		() =>
 			signedIn
@@ -370,12 +323,9 @@ function FeedChrome({host, filterId, setFilterId, signedIn, meta, children}: Chr
 				: PANO_FILTERS,
 		[signedIn],
 	);
-	// Per the nav-IA placement law (#2601), pano's Subnav lives in the persistent product zone
-	// (`PanoSubnavLayout`), not per-page here: publish this feed's filters/meta/crumb UP into
-	// that zone rather than painting a second Subnav, and fold the active site-filter into the
-	// zone's crumb slot as transient state paint — so the resting-chrome PanoCrumb strip is
-	// gone. `inZone` requires the zone ancestor's setter, so the eager public paint above the
-	// router (App.tsx, no ancestor) keeps its own Subnav + PanoCrumb strip.
+	// Pano's Subnav lives in the persistent zone (`PanoSubnavLayout`), so this feed publishes UP
+	// into it rather than painting its own. `inZone` is false only for the eager public paint
+	// above the router (App.tsx has no zone ancestor), which keeps the local Subnav fallback.
 	const setPanoSubnav = useSetPanoSubnavContent();
 	const navigate = useNavigate();
 	const inZone = setPanoSubnav != null;

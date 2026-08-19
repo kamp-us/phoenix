@@ -1,23 +1,17 @@
 /**
- * Kullanıcılar role-assign gating (#3523) — the two-gate contract at the component tier:
- * the panel is behind `phoenix-user-admin`, and the per-row role affordance is behind its
- * own `phoenix-user-role-assign` dark-ship flag. Off ⇒ invisible, as a whole column (header
- * + cells), never an empty one. The read-view dark-ship (whole panel off) is proven
- * in-browser by `tests/e2e/31-kullanicilar-darkship.spec.ts`; this pins the role-column flag.
+ * This pins the role-column flag only. The whole-panel dark-ship is proven in-browser by
+ * `tests/e2e/31-kullanicilar-darkship.spec.ts`.
  */
 import {render, screen} from "@testing-library/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import KullanicilarPanel from "./KullanicilarPanel";
 
-// Keyed flag mock — both the panel `FlagGate` (`phoenix-user-admin`) and the role column's
-// `useFlag` (`phoenix-user-role-assign`) read through this, so one map drives both gates.
+// Keyed by flag so one map drives both gates: the panel `FlagGate` and the column's `useFlag`.
 let flags: Record<string, boolean>;
 vi.mock("../../flags/useFlag", () => ({
 	useFlag: (key: string) => ({value: flags[key] ?? false, loading: false}),
 }));
 
-// Keep react-fate's real `view`; stub the read hooks to yield exactly one roster row and the
-// client so no transport is built. The row's derived `role` is what the affordance mutates.
 const ROW = {
 	id: "u-1",
 	username: "anka",

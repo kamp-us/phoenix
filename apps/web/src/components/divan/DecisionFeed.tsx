@@ -1,21 +1,8 @@
 /**
- * `DecisionFeed` — the shared team-ledger surface (#1704, ADR 0098/0138): a moderator's
- * view of recent decisions off the gated `report.listResolved` read (`Moderate`-gated
- * server-side; a non-moderator's read denies the invisible `UNAUTHORIZED`, caught by the
- * page's `<Screen>`). Each row names the decided target, the decision (kaldırıldı /
- * yoksayıldı), the **resolver** (which mod — first-class, not a footnote), and when —
- * so "what did my brother already decide" is legible across both moderators.
- *
- * A wave-removal (rows sharing a `waveId`, #1855) collapses into ONE feed entry — "N hedef ·
- * dalga" — whose `Geri getir` triggers `report.restoreWave`, restoring the batch as a unit
- * (every target back live + every report reopened). A lone removal (null `waveId`) keeps its
- * single `report.restore`. The pure grouping (`groupDecisionFeed`) is unit-tested DOM-free;
- * each row's `waveId` is lifted off its ref by a hidden `DecisionProbe` (the #1855
- * `WaveProbe` idiom), since a connection node ref exposes only its id. A restored row/wave
- * drops from the feed (it's no longer resolved).
- *
- * a11y (the divan baseline): a real `<ul>` list, decision/resolver/age as text (never
- * color), lowercase Turkish copy.
+ * `DecisionFeed` — the shared team-ledger surface (#1704, ADR 0098/0138) off the gated
+ * `report.listResolved` read. A wave-removal (rows sharing a `waveId`, #1855) collapses into
+ * ONE entry whose `Geri getir` restores the batch as a unit; a lone removal keeps its single
+ * `report.restore`. A restored row/wave drops from the feed — it is no longer resolved.
  */
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -51,9 +38,8 @@ const ResolvedReportRowView = view<ResolvedReport>()({
 
 const ResolvedReportConnectionView = {items: {node: ResolvedReportRowView}} as const;
 
-// The `report.restore` / `report.restoreWave` ack (ADR 0098) — the result-only
-// `ResolveReceipt`. The feed doesn't render the ack (plain round-trip); it's requested to
-// satisfy the mutation view.
+// The ack is requested only to satisfy the mutation's view param; the feed renders nothing
+// from it (plain round-trip, no optimistic UI).
 const ResolveReceiptView = view<ResolveReceipt>()({
 	id: true,
 	targetKind: true,
@@ -70,15 +56,14 @@ export function DecisionFeed() {
 	const [items] = useListView(ResolvedReportConnectionView, result["report.listResolved"]);
 	const fate = useFateClient();
 
-	// Targets restored this session drop from the feed without a re-fetch (a restore reopens
-	// the group, so it's no longer a decision) — the same MODE-over-the-read the triage loop
-	// uses for resolved ids.
+	// Targets restored this session drop from the feed without a re-fetch — a MODE over the
+	// same read.
 	const [restoredIds, setRestoredIds] = useState<ReadonlyArray<string>>([]);
 	const [busyId, setBusyId] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
-	// A connection node ref exposes only its id; each row's `waveId` is lifted off the ref by
-	// a hidden `DecisionProbe` (the #1855 `WaveProbe` idiom) so the parent can group waves.
+	// A connection node ref exposes only its id, so each row's `waveId` is lifted off the ref
+	// by a hidden `DecisionProbe` before the parent can group waves.
 	const [waveById, setWaveById] = useState<Record<string, string | null>>({});
 	const onProbe = useCallback((id: string, waveId: string | null) => {
 		setWaveById((prev) => (prev[id] === waveId ? prev : {...prev, [id]: waveId}));
@@ -90,7 +75,6 @@ export function DecisionFeed() {
 		return map;
 	}, [items]);
 
-	// Group the live (not-yet-restored) rows into feed entries — waves collapse to one entry.
 	const liveRows = items
 		.map(({node}) => ({id: String(node.id), waveId: waveById[String(node.id)] ?? null}))
 		.filter((r) => !restoredIds.includes(r.id));
@@ -119,8 +103,6 @@ export function DecisionFeed() {
 		[fate],
 	);
 
-	// Restore a whole wave as a unit (#1855): one `report.restoreWave` reopens every report
-	// sharing the id AND brings every target back live; all members drop from the feed.
 	const restoreWave = useCallback(
 		async (waveId: string, memberIds: ReadonlyArray<string>) => {
 			setBusyId(waveId);
@@ -197,9 +179,8 @@ export function DecisionFeed() {
 	);
 }
 
-// A hidden data-loader: lifts one decision row's `waveId` off its ref to the feed, so the
-// parent can collapse a wave into one entry without pre-resolving every row (the #1855
-// `WaveProbe` idiom). Renders nothing.
+// A hidden data-loader: lifts one row's `waveId` to the feed so the parent can collapse a
+// wave without pre-resolving every row. Renders nothing.
 function DecisionProbe({
 	node,
 	onProbe,
@@ -279,9 +260,8 @@ function DecisionRow({
 	);
 }
 
-// One wave-removal (#1855) as a single feed entry: "N hedef · dalga". The shared decision +
-// resolver are read off the wave's first member (a wave stamps one uniform triad across its
-// targets), and `Geri getir` restores the whole batch as a unit (`report.restoreWave`).
+// The shared decision + resolver are read off the wave's first member — a wave stamps one
+// uniform triad across its targets.
 function WaveDecisionRow({
 	node,
 	memberCount,

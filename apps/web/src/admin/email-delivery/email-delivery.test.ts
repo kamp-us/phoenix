@@ -1,7 +1,3 @@
-/**
- * `email-delivery` pure-logic coverage (#2732) — the roll-up cell labels + the mark/clear
- * outcome-message mapping, DOM-free (the `ban-controls.ts` idiom).
- */
 import {describe, expect, it} from "vitest";
 import {
 	emailDeliveryOutcomeMessage,

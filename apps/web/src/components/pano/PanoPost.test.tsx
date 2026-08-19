@@ -1,8 +1,6 @@
 /**
- * a11y regression proof (#2215): the pano vote button's accessible name must
- * TOGGLE with vote state — "Oyunu geri al" (undo) when the viewer's vote is
- * active, "Yukarı oy" otherwise — mirroring the sözlük `DefinitionCard` control.
- * A static aria-label leaves screen-reader users with stale toggle feedback.
+ * Regression proof for #2215: a static aria-label on the vote button leaves screen
+ * reader users with stale toggle feedback.
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";

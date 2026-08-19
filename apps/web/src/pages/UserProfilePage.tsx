@@ -1,8 +1,6 @@
 /**
- * Public user profile page — fate. One batched `useRequest` resolves header +
- * first page of contributions; the screen view **spreads** `UserProfileHeaderView`
- * and adds the nested `contributions` connection (node: `ContributionView`), which
- * switches on the `kind` discriminant (ADR 0018). See `.patterns/fate-connections.md`.
+ * Public user profile page. The nested `contributions` connection switches on a `kind`
+ * discriminant (ADR 0018); see `.patterns/fate-connections.md` for the masking rules.
  */
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {useParams} from "react-router";
@@ -73,7 +71,6 @@ function UserProfileContent({username}: {username: string}) {
 		<div className="kp-user-profile" data-testid="user-profile-page">
 			<div className="kp-user-profile__inner">
 				<UserProfileHeader profile={profile} fallbackHandle={username} />
-				{/* The çaylak→yazar promotion surface (#1206); the server is the sole authority. */}
 				<ProfilePromotion profile={profile} />
 				<ContributionsList profile={profile} />
 			</div>
@@ -94,9 +91,7 @@ function ContributionsList({profile}: {profile: ViewRef<"Profile">}) {
 	const data = useView(UserProfileView, profile);
 	const {userId} = useView(UserProfileHeaderView, profile);
 	const {me} = useMe();
-	// Same gate as the status block: the "incelemede" badge shows only for a çaylak
-	// viewing their own profile. A non-owner never receives a sandboxed row from the
-	// server, so this also keeps the badge off others' feeds.
+	// The badge is own-profile only; a non-owner never receives a sandboxed row anyway.
 	const sandboxBadge = shouldShowCaylakStatus(me?.tier, me?.id === userId);
 	const [items, loadNext] = useListView(ContributionsConnectionView, data.contributions);
 

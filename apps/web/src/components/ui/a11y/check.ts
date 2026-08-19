@@ -1,15 +1,7 @@
 /**
- * The invariant checker for the property-based a11y loop (#2175, ADR 0162 pillar
- * 4): given one rendered primitive, run the jsdom-decidable pillar-4 invariants
- * and return the violations. The geometry/paint invariants (contrast, tap-target)
- * are NOT run here — jsdom has no layout engine and applies no CSS, so they are
- * reported once per primitive as warnings by the suite (see `posture.ts`), never
- * asserted per render.
- *
- * axe is the engine for name + ARIA correctness; its violations are bucketed onto
- * the `accessible-name` / `valid-aria` invariant ids. `focusable` is a direct DOM
- * probe (focus the control, read `document.activeElement`) — the honest test of
- * keyboard operability, which axe alone does not assert.
+ * The invariant checker for the property-based a11y loop — see
+ * `.patterns/property-based-a11y.md`. Only the jsdom-decidable invariants run here;
+ * the geometry/paint ones (contrast, tap-target) never assert per render.
  */
 import axe from "axe-core";
 import type {InvariantId} from "./posture.ts";
@@ -53,7 +45,6 @@ const ARIA_RULES = [
 
 const ENFORCED_AXE_RULES = [...NAME_RULES, ...ARIA_RULES];
 
-/** Map an axe rule id onto the invariant it belongs to (name rules → accessible-name). */
 const invariantForRule = (ruleId: string): InvariantId =>
 	NAME_RULES.has(ruleId) ? "accessible-name" : "valid-aria";
 
@@ -86,7 +77,6 @@ const checkFocusable = (root: HTMLElement, spec: InteractiveSpec): InvariantViol
 	return null;
 };
 
-/** Run the enforced (jsdom-decidable) pillar-4 invariants; [] means clean. */
 export const runEnforcedInvariants = async (
 	root: HTMLElement,
 	spec: PrimitiveSpec,

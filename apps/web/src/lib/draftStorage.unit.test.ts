@@ -43,12 +43,9 @@ describe("draftStorage", () => {
 	});
 
 	it("survives the signed-out → auth-redirect → return round-trip, then clears on submit (AC1+AC2)", () => {
-		// One Storage stands in for localStorage across the whole journey: it persists
-		// while the form unmounts during the auth redirect and remounts on return.
 		const storage = fakeStorage();
 		const route = "/sozluk/effect";
 
-		// 1. The signed-out user types a definition. Autosave persists it as they write.
 		const typed: PanoDraft = {
 			mode: "text",
 			url: "",
@@ -58,12 +55,10 @@ describe("draftStorage", () => {
 		};
 		writeDraft(storage, route, typed);
 
-		// 2. They hit submit, are bounced to /auth, sign in, and are returned — the form
-		//    component fully remounts. The persisted draft is still there to OFFER.
+		// The form fully remounts across the auth redirect; the draft survives to be offered.
 		const offered = readDraft(storage, route, isPanoDraft);
-		expect(offered).toEqual(typed); // restorable — NOT lost across the round-trip
+		expect(offered).toEqual(typed);
 
-		// 3. They restore it and submit successfully → the draft clears.
 		clearDraft(storage, route);
 		expect(readDraft(storage, route, isPanoDraft)).toBeNull();
 	});

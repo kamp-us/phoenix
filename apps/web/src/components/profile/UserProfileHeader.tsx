@@ -39,9 +39,6 @@ export function UserProfileHeader(props: UserProfileHeaderProps) {
 				}}
 				showKarma
 			/>
-			{/* The çaylak's own "yazarlığa giden yol" status block (#1291); renders only
-			    for a çaylak on their own profile, off an aggregate-only read (one-way
-			    glass). */}
 			<CaylakStatusBlock profileUserId={profile.userId} />
 		</>
 	);

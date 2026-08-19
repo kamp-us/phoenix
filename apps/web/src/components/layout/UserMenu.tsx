@@ -33,7 +33,6 @@ export function UserMenu({
 	onLogout,
 }: {
 	user: {name: string; src?: string; username?: string | null};
-	/** Present only when the `phoenix-bildirim` flag put a bildirim entry in the topbar. */
 	bildirim?: {to: string};
 	themeChoice?: ThemeChoice;
 	onThemeChange?: (choice: ThemeChoice) => void;

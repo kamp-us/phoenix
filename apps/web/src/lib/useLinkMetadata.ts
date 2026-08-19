@@ -1,16 +1,9 @@
 /**
- * `useLinkMetadata()` (#1642) — the one shared implementation both pano submit
- * surfaces (`PanoSubmitPage`, `PanoCreateDialog`) use to prefill `title`/`body`
- * from a pasted link's page metadata. The hook owns the network edge — URL
- * validation, aborting an in-flight request when the URL changes, and the
- * safe-default parse — so neither surface hand-rolls a second copy.
+ * Link-metadata prefill for both pano submit surfaces (#1642).
  *
- * Safe-default, always: an invalid URL or any fetch failure resolves to `{}`
- * (the hook never throws), so prefill is best-effort and can only ever leave
- * the form untouched. The prefill *policy* — write a field ONLY when it is
- * still empty/untouched, so user input is never clobbered — is the pure
- * {@link prefillIfEmpty} helper, shared by both surfaces so the "never
- * overwrite" guarantee has a single definition.
+ * Safe-default, always: an invalid URL or any fetch failure resolves to `{}` and the hook
+ * never throws, so a prefill can only ever leave the form untouched. The "never clobber
+ * user input" rule itself is {@link prefillIfEmpty}, so both surfaces share one definition.
  */
 import {useCallback, useEffect, useRef, useState} from "react";
 import {
@@ -20,12 +13,11 @@ import {
 
 export type {LinkMetadata};
 
-/** Longest prefilled value we write — keeps a prefill within the title bound and editable. */
+/** Keeps a prefill within the title bound and editable. */
 export const PREFILL_MAX_LEN = 200;
 
 const EMPTY: LinkMetadata = {};
 
-/** A well-formed `http(s)` URL — the only shape worth asking the worker to fetch. */
 function isFetchableUrl(url: string): boolean {
 	try {
 		const parsed = new URL(url.trim());
@@ -35,12 +27,7 @@ function isFetchableUrl(url: string): boolean {
 	}
 }
 
-/**
- * Apply `value` to a field via `set` ONLY when the field is still empty/untouched
- * (`current` is blank after trim). This is the "never clobber user input" rule,
- * shared by both submit surfaces. Values are clamped to {@link PREFILL_MAX_LEN}
- * so a prefill stays within the title bound and fully editable.
- */
+/** The "never clobber user input" rule: write only into a field still blank after trim. */
 export function prefillIfEmpty(
 	current: string,
 	value: string | undefined,
@@ -52,9 +39,8 @@ export function prefillIfEmpty(
 }
 
 export interface UseLinkMetadata {
-	/** `true` while a metadata request is in flight. */
 	readonly loading: boolean;
-	/** Fetch metadata for `url`; resolves `{}` on an invalid URL or any failure. */
+	/** Resolves `{}` on an invalid URL or any failure — never rejects. */
 	readonly fetchMetadata: (url: string) => Promise<LinkMetadata>;
 }
 
@@ -62,7 +48,6 @@ export function useLinkMetadata(): UseLinkMetadata {
 	const [loading, setLoading] = useState(false);
 	const abortRef = useRef<AbortController | null>(null);
 
-	// Abort any still-in-flight request on unmount.
 	useEffect(() => () => abortRef.current?.abort(), []);
 
 	const fetchMetadata = useCallback(async (url: string): Promise<LinkMetadata> => {

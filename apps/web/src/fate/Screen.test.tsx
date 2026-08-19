@@ -1,9 +1,6 @@
 /**
- * First component/DOM smoke test of the SPA seam (#1419): render the `Screen`
- * error boundary through its real React interface and pin both halves of its
- * code-forwarding contract — the boundary forwards a fate error's `.code`
- * verbatim, and falls a non-fate throw back to `INTERNAL_SERVER_ERROR`. Asserted
- * only by comments before this tier existed (see `Screen.tsx`).
+ * Pins both halves of `Screen`'s code-forwarding contract through its real React
+ * interface (#1419).
  */
 import {render, screen} from "@testing-library/react";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";

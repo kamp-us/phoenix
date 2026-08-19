@@ -1,9 +1,6 @@
 /**
- * The pure decision core of the ADR-0095 client cold-start handling: which
- * live-errors are the transient `LIVE_UNAVAILABLE`/503 back-off signal (retry) vs a
- * genuine app error (drop to console), and the bounded back-off schedule. The React
- * wiring in `useGlobalLivePin` / `FateProvider` is exercised separately once the SPA
- * has a component-test seam (#1419) — this tier covers the falsifiable logic.
+ * The pure decision core of the ADR-0095 client cold-start handling. The React wiring
+ * in `useGlobalLivePin` / `FateProvider` is covered separately (#1419).
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {
@@ -67,8 +64,7 @@ describe("nextLiveRetryDelayMs", () => {
 });
 
 describe("createLiveRetryController", () => {
-	// Fake timers model the back-off elapsing without wall-clock waits; the controller
-	// uses the global `setTimeout`/`clearTimeout` these replace.
+	// The controller defaults to the global `setTimeout`/`clearTimeout` these replace.
 	beforeEach(() => vi.useFakeTimers());
 	afterEach(() => vi.useRealTimers());
 
@@ -100,9 +96,8 @@ describe("createLiveRetryController", () => {
 		const controller = createLiveRetryController();
 		const fire = vi.fn();
 
-		// Each round = one failed cold connect that reports an error to 3 subscriptions,
-		// then the back-off elapses and the reconnect fires. The budget must last exactly
-		// LIVE_RETRY_MAX_ATTEMPTS rounds regardless of the 3× error fan-out.
+		// Each round = one failed cold connect reporting to 3 subscriptions. The budget
+		// must last exactly LIVE_RETRY_MAX_ATTEMPTS rounds despite the 3× fan-out.
 		for (let round = 0; round < LIVE_RETRY_MAX_ATTEMPTS; round++) {
 			controller.schedule(fire);
 			controller.schedule(fire);
@@ -113,7 +108,6 @@ describe("createLiveRetryController", () => {
 
 		expect(fire).toHaveBeenCalledTimes(LIVE_RETRY_MAX_ATTEMPTS);
 
-		// Budget spent: a further failed connect schedules nothing.
 		controller.schedule(fire);
 		expect(vi.getTimerCount()).toBe(0);
 		expect(fire).toHaveBeenCalledTimes(LIVE_RETRY_MAX_ATTEMPTS);
@@ -153,7 +147,6 @@ describe("createLiveRetryController", () => {
 		const controller = createLiveRetryController();
 		const fire = vi.fn();
 
-		// Spend the whole budget — the exhausted, once-terminal state (#3790).
 		for (let round = 0; round < LIVE_RETRY_MAX_ATTEMPTS; round++) {
 			controller.schedule(fire);
 			vi.advanceTimersByTime(nextLiveRetryDelayMs(round));
@@ -162,11 +155,9 @@ describe("createLiveRetryController", () => {
 		expect(fire).toHaveBeenCalledTimes(LIVE_RETRY_MAX_ATTEMPTS);
 		expect(vi.getTimerCount()).toBe(0);
 
-		// An `online`/`visibilitychange` re-arm: the reconnect fires NOW on a fresh budget.
 		controller.rearm(fire);
 		expect(fire).toHaveBeenCalledTimes(LIVE_RETRY_MAX_ATTEMPTS + 1);
 
-		// The fresh budget is full again — LIVE_RETRY_MAX_ATTEMPTS more back-off attempts.
 		for (let round = 0; round < LIVE_RETRY_MAX_ATTEMPTS; round++) {
 			controller.schedule(fire);
 			vi.advanceTimersByTime(nextLiveRetryDelayMs(round));

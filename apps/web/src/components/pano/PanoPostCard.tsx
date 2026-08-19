@@ -1,8 +1,6 @@
 /**
- * fate-shaped card for the pano feed. Reads its slice via
- * `useLiveView(PanoPostCardView, ref)`. Rank and hide stay with the parent
- * because they're list-position state, not Post state; save reads `isSaved` off
- * the post itself, so the card owns the bookmark toggle (`PostSaveButton`).
+ * fate-shaped card for the pano feed. Rank and hide belong to the parent —
+ * list-position state, not Post state.
  */
 import {useLiveView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
@@ -44,13 +42,7 @@ export const PanoPostCardView = view<Post>()({
 	tags: true,
 });
 
-/**
- * The identity-guarded viewer scalars for one row's controls (leg B compose path). While
- * the session is still resolving the overlay is `pending` → neutral (base painted, overlay
- * not yet landed); once resolved it is a single-row batch tagged with the current identity,
- * which `resolveOverlay` re-checks so a stale/foreign overlay reads neutral. See
- * `panoFeedOverlay`.
- */
+/** Identity-guarded viewer scalars — a stale or foreign overlay reads neutral. See `panoFeedOverlay`. */
 function composedScalars(
 	sessionPending: boolean,
 	viewerId: string | null,
@@ -77,21 +69,12 @@ export function PanoPostCard({
 	rank?: number;
 	onHide?: (id: string) => void;
 	/**
-	 * Base + overlay composition (#2323, leg B). Set on the viewer-invariant base feed
-	 * rows: the viewer scalars (`myVote`/`isSaved`) render through the identity guard
-	 * (`panoFeedOverlay`): neutral while the session is still resolving (base painted,
-	 * overlay pending), then the viewer's own scalars once the session lands under a
-	 * matching identity — so a stale/foreign overlay (e.g. a snapshot's prior-identity
-	 * scalars) never paints. Unset (the default) ⇒ scalars read straight off the post,
-	 * the authed path (`?sort=saved` / detail) whose read already stamps the viewer.
+	 * Set on viewer-invariant base feed rows (#2323): viewer scalars go through the
+	 * identity guard. Unset ⇒ read straight off the post, whose read already stamped
+	 * the viewer.
 	 */
 	compose?: boolean;
-	/**
-	 * Member-mute (#3117, dark behind `member-mute`) — the feed reads the flag once and
-	 * threads it here so a card can hide a muted member's post + render the "sustur"
-	 * affordance without every card evaluating the flag itself. Off (default / flag-off) ⇒
-	 * no mute surface, byte-identical to today.
-	 */
+	/** Threaded down from the feed, which reads the `member-mute` flag once (#3117). */
 	muteEnabled?: boolean;
 }) {
 	const data = useLiveView(PanoPostCardView, post);
@@ -103,12 +86,8 @@ export function PanoPostCard({
 		data.authorUsername ?? null,
 		data.author,
 	);
-	// A muted member's post disappears from the muter's feed the instant it is muted (the
-	// client overlay; the server read-mask #3113 is the persisted source of truth). Only
-	// under the flag — off, the overlay is always empty so this never fires.
+	// Client-side echo of the mute; the server read-mask (#3113) is the source of truth.
 	if (muteEnabled && data.authorId && isMuted(data.authorId)) return null;
-	// The viewer scalars fed to the vote/save controls: flag-off reads them straight off the
-	// post (byte-identical to today); compose routes them through the identity guard below.
 	const {myVote, isSaved} = compose
 		? composedScalars(session.isPending, session.data?.user?.id ?? null, data)
 		: {myVote: data.myVote ?? null, isSaved: data.isSaved ?? null};
@@ -134,10 +113,8 @@ export function PanoPostCard({
 							))}
 						</span>
 					) : null}
-					{/* Title routes to the post detail EVERYWHERE — feed, saved, search — matching
-					    the landing row; the external URL lives on the domain label below + the
-					    detail hero. See the founder ruling on #2437 (discussion-first: the title
-					    lands people on the conversation, the domain label is the source link-out). */}
+					{/* Deliberate: the title routes to the post detail everywhere, never to the
+					    external URL — that link-out lives on the domain label. Founder ruling, #2437. */}
 					<Link className="kp-pano-post__title kp-prose" to={href} title={data.title}>
 						{data.title}
 					</Link>
@@ -155,8 +132,6 @@ export function PanoPostCard({
 					) : null}
 				</div>
 				<MetaRow className="kp-pano-post__meta">
-					{/* Live author identity via `actorLabel` (#2139): current displayName → @username,
-					    falling back to the write-time `author` snapshot for an unstamped/legacy row. */}
 					<span className="author">{authorLabel}</span>
 					<MetaRow.Dot />
 					<span>{agoLabel}</span>

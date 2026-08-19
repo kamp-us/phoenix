@@ -1,12 +1,3 @@
-/**
- * The A–Z index ARIA contract (#2169, a11y pillar of epic #2168). The alphabet is
- * the sözlük letter index (`SozlukAlphabet`): populated letters are real
- * `/sozluk?harf=<l>` links, empty letters are inert. These pin the accessible
- * semantics an AT user relies on to tell a navigable letter from an empty one and
- * to hear which letter each control is — the muted-color populated/empty
- * distinction and the single-char label ambiguity are both invisible to a screen
- * reader without these attributes.
- */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {render} from "@testing-library/react";
@@ -37,7 +28,6 @@ describe("SozlukAlphabet — A–Z index ARIA (#2169)", () => {
 		const {container} = renderAlphabet({});
 		const a = container.querySelector("a.kp-sozluk-alphabet__letter");
 		expect(a?.getAttribute("aria-label")).toBe("A harfi");
-		// populated letters are real links (an href), never inert spans
 		expect(a?.tagName.toLowerCase()).toBe("a");
 	});
 
@@ -54,12 +44,9 @@ describe("SozlukAlphabet — A–Z index ARIA (#2169)", () => {
 		const spans = container.querySelectorAll("span.kp-sozluk-alphabet__letter.is-empty");
 		expect(spans).toHaveLength(1);
 		const z = spans[0] as HTMLElement;
-		// an inert span is not a link (no interactive role announced)
 		expect(z.tagName.toLowerCase()).toBe("span");
-		// the AT-only suffix spells the empty distinction the muted color conveys visually
 		const hidden = z.querySelector(".kp-visually-hidden");
 		expect(hidden?.textContent).toBe("(Z harfi, terim yok)");
-		// its full accessible text is the visible glyph + the hidden suffix
 		expect(z.textContent).toBe("z(Z harfi, terim yok)");
 	});
 

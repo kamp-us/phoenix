@@ -1,8 +1,3 @@
-/**
- * The flags console module codec (#2742): parse/apply/serialize the `phoenix_flag_overrides`
- * cookie and the Turkish render decisions — DOM-free, so on/off/clear cookie writes and the row
- * labels are proven without a `document` (the `ban-controls.ts` idiom).
- */
 import {describe, expect, it} from "vitest";
 import {
 	actionButtonLabel,

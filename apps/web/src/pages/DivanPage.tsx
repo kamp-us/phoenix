@@ -1,19 +1,10 @@
 /**
- * `DivanPage` — the `/divan` reviewer workspace (#1290, epic #1202): the
- * yazar/mod proving ground where a çaylak's sandboxed work is reviewed toward
- * promotion.
+ * The `/divan` reviewer workspace. Two invariants:
  *
- * Access is SERVER-authoritative — the gated `divan.roster` read denies a
- * çaylak/visitor the invisible `UNAUTHORIZED` (`requireDivanAccess`, yazar OR
- * mod). The roster's `<Screen>` catches that and renders the "yetkin yok" state;
- * no client-side authority guess decides who may enter.
- *
- * It reads ONLY the `sandboxBacklogWhere` DESTINATION (roster + per-çaylak
- * backlog) — never the inline `{mod, author}` filter — so çaylak work stays
- * one-way glass, visible only inside the divan.
- *
- * The moderator-only raporlar section (#1701) sits inside this workspace, shown
- * only for the trusted server-side `isModerator` signal — see `Raporlar.tsx`.
+ * - Access is server-authoritative: `divan.roster` denies a çaylak/visitor `UNAUTHORIZED`,
+ *   which `<Screen>` renders as "yetkin yok". Deliberately no client-side role check.
+ * - It reads ONLY the `sandboxBacklogWhere` destination, never the inline `{mod, author}`
+ *   filter, so çaylak work stays visible only inside the divan.
  */
 import {useEffect, useState} from "react";
 import {useMe} from "../auth/useMe";
@@ -29,8 +20,6 @@ import {Button} from "../components/ui/Button";
 import {Screen} from "../fate/Screen";
 import "../components/divan/Divan.css";
 
-// The çaylaklar ↔ raporlar section switch as Subnav filters (#2604): when the divan Subnav zone
-// is mounted, the switch is published up to it rather than painted in-page.
 const DIVAN_SECTION_FILTERS: SubnavFilter[] = [
 	{id: "caylaklar", label: "çaylaklar"},
 	{id: "raporlar", label: "raporlar"},
@@ -43,23 +32,15 @@ export function DivanPage() {
 function DivanWorkspace() {
 	const {me} = useMe();
 	const [selectedId, setSelectedId] = useState<string | null>(null);
-	// The raporlar (moderation-queue) entry (#1701): rendered only for the trusted
-	// server-side isModerator signal — never tier — so for a non-mod viewer /divan is
-	// exactly the çaylak workspace. The server stays authoritative: report.listOpen
-	// denies a forced non-mod read the invisible UNAUTHORIZED, caught by <Screen> below.
+	// Gate raporlar on the server-side isModerator signal, never on tier.
 	const raporlarVisible = me?.isModerator ?? false;
 	const [section, setSection] = useState<"caylaklar" | "raporlar">("caylaklar");
 	const showRaporlarPane = raporlarVisible && section === "raporlar";
-	// The triage loop is the product; the grid is its Esc fallback (#1703, ADR 0138).
-	// Entering the raporlar section always starts in the loop; Esc's outermost rung
-	// de-escalates to the grid without leaving the section.
+	// The loop is the product, the grid its Esc fallback — see ADR 0138.
 	const [raporlarMode, setRaporlarMode] = useState<"loop" | "grid">("loop");
 
-	// The section switch lives in divan's persistent Subnav zone (#2604, epic #2596). The page owns
-	// the switch state (roster vs raporlar pane below), so it publishes the switchers UP to the zone
-	// (the pano publish-up shape) and drops its own in-page nav. Only a moderator has a second
-	// section, so a non-mod viewer publishes null (a bare Subnav bar). No zone ancestor ⇒ setter
-	// null ⇒ the in-page nav renders instead.
+	// The page owns the switch state, so it publishes the switchers UP into divan's persistent
+	// Subnav zone. No zone ancestor ⇒ setter null ⇒ the in-page nav below renders instead.
 	const setDivanSubnav = useSetDivanSubnavContent();
 	const inZone = setDivanSubnav != null;
 
@@ -82,7 +63,6 @@ function DivanWorkspace() {
 				: null,
 		);
 	}, [inZone, setDivanSubnav, raporlarVisible, section]);
-	// Clear the zone's content on unmount, so the persistent zone falls back to the bare bar.
 	useEffect(() => {
 		return () => setDivanSubnav?.(null);
 	}, [setDivanSubnav]);
@@ -143,8 +123,6 @@ function DivanWorkspace() {
 							</Screen>
 						</section>
 
-						{/* The shared decision feed (#1704) — a DISTINCT section, its own gated
-						    read, so who-decided-what stays legible below the live queue. */}
 						<section className="kp-divan__decisions-pane" aria-label="son kararlar">
 							<h2 className="kp-divan__decisions-title">son kararlar</h2>
 							<Screen
@@ -192,7 +170,6 @@ function DivanWorkspace() {
 	);
 }
 
-/** The divan's denied / failed read state — "yetkin yok" for the invisible gate. */
 function AccessError({code}: {readonly code: string}) {
 	const denied = code === "UNAUTHORIZED" || code === "FORBIDDEN";
 	return (

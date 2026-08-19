@@ -1,15 +1,8 @@
 /**
- * Behavior-pin for the `@nkzw/fate` pnpm patch (ADR 0038). The patch makes
- * `createHTTPTransport`'s native live client coalesce same-tick `add` (subscribe)
- * operations into ONE `/fate/live` control POST: upstream 1.3.1 fired its own
- * `control([op])` per `add` after the SSE `open`, so a feed load with N `useLiveView`
- * mounts issued N single-op POSTs, each re-validating the session (phoenix #2273). The
- * patch buffers adds and flushes them once per tick across the `open` microtask
- * boundary, and — on a rejected flush — discards the whole batch as a group and reports
- * the error. This file pins BOTH: N same-tick subscribes ⇒ exactly one control POST, and
- * a rejected coalesced flush drops every batched op (not one) and reports the error. Reds
- * if the patch is dropped: unpatched, each `add` POSTs on its own, so N subscribes issue N
- * POSTs and the count assertions fail.
+ * Behavior-pin for the `@nkzw/fate` pnpm patch (ADR 0038), which coalesces same-tick
+ * `add` operations into ONE `/fate/live` control POST and, on a rejected flush,
+ * discards the whole batch as a group. Reds if the patch is dropped: unpatched, each
+ * `add` POSTs on its own and the count assertions fail.
  */
 // @patch-pin: @nkzw/fate@1.3.1
 
@@ -20,12 +13,11 @@ type ControlOperation = {id: string; kind: string; entityId?: string};
 type ControlBody = {operations: ReadonlyArray<ControlOperation>};
 type Listener = (event: unknown) => void;
 
-// The `fetch` option createHTTPTransport calls for control POSTs — the same narrow shape the
-// sibling batching test passes; assignable to the transport option without a cast.
+// The narrow `fetch` shape the transport option accepts without a cast.
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
-// createHTTPTransport's EventSourceConstructor type is not exported; asserted once at the
-// call site.
+// createHTTPTransport's EventSourceConstructor type is not exported, so the stub is
+// asserted to this shape once at the call site.
 type EventSourceCtor = new (
 	url: string,
 	options?: {withCredentials?: boolean},
@@ -35,8 +27,6 @@ type EventSourceCtor = new (
 	removeEventListener(type: string, listener: (event: Event) => void): void;
 };
 
-// Synchronous EventSource stub: records listeners so the test drives `open` deterministically
-// without a real network stream.
 class MockEventSource {
 	static instances: MockEventSource[] = [];
 	readonly url: string;
@@ -111,17 +101,14 @@ describe("@nkzw/fate patch pin — same-tick /fate/live subscribe coalescing (#2
 		});
 		const {subscribeById} = makeTransport(fetchMock);
 
-		// Five mounts subscribe in one synchronous tick, as a feed of cards does.
 		const ids = ["a", "b", "c", "d", "e"];
 		for (const id of ids) subscribeById("Post", id, ["id", "body"], undefined, {onData: vi.fn()});
 
-		// No control POST until the stream opens.
 		expect(fetchMock).not.toHaveBeenCalled();
 
 		onlySource().emit("open", {});
 		await settle();
 
-		// The pin: ONE POST for all five subscribes, not five.
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		const posted = calls.at(0);
 		expect(posted?.operations).toHaveLength(ids.length);
@@ -157,11 +144,9 @@ describe("@nkzw/fate patch pin — same-tick /fate/live subscribe coalescing (#2
 		subscribeById("Post", "failed-b", ["id"], undefined, failedB);
 		await settle();
 
-		// Coalesced even on the failing path: one POST for both ops, not two.
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 		expect(calls.at(1)?.operations).toHaveLength(2);
 
-		// The error was reported to live subscriptions (reportError → onError).
 		expect(survivor.onError).toHaveBeenCalledWith(expect.any(Error));
 
 		// The whole batch was discarded from `operations`: a reconnect resubscribe carries

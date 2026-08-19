@@ -21,7 +21,6 @@ const USER_MENU_CSS = readSource("./UserMenu.css");
 const GLOBAL_CSS = readSource("../../styles/global.css");
 const BUTTON_CSS = readSource("../ui/Button.css");
 
-// The Manti popover panel is portaled and mounts a tick after the trigger click.
 async function openMenu() {
 	render(
 		<MemoryRouter>
@@ -47,13 +46,11 @@ describe("UserMenu row box", () => {
 		expect(logout.tagName).toBe("BUTTON");
 		expect(logout.getAttribute("data-scope")).toBe("button");
 		expect(logout.getAttribute("data-part")).toBe("root");
-		// It still wears the shared row box, so it is indistinguishable from its link siblings.
 		expect(logout.classList.contains("kp-user-menu__item")).toBe(true);
 		expect(logout.classList.contains("kp-user-menu__item--action")).toBe(true);
 		expect(USER_MENU_CSS).toMatch(/\.kp-user-menu__item\s*\{[^}]*padding:\s*0 var\(--s-3\)/);
 	});
 
-	// One hover for both row types, and it has to outrank two separate globals to exist at all.
 	it("the row hover outranks the tertiary-variant hover and drops the a:hover underline", () => {
 		const hoverRule = USER_MENU_CSS.match(
 			/\.kp-user-menu__popup\s+\.kp-user-menu__item:hover:not\(:disabled\)\s*\{([^}]*)\}/,

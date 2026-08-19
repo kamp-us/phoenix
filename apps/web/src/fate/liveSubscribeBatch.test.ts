@@ -1,14 +1,8 @@
 /**
- * Regression for #2273: react-fate's HTTP transport (defined in `@nkzw/fate`, re-exported
- * by `react-fate` — the import phoenix uses) must coalesce same-tick live subscribe control
- * messages into ONE `POST /fate/live`. Unpatched 1.3.1 fired a separate `control([op])` per
- * `add()` after the SSE `open`, so a feed load with N `useLiveView` mounts issued N
- * single-operation POSTs, each re-running better-auth session validation (~22 on an authed
- * /pano load). Fixed by `patches/@nkzw__fate@1.3.1.patch` (ADR 0038), which buffers adds and
- * flushes them as one batched control POST — the same batching the reconnect path already
- * did via `control(resubscribe)`. This drives the native live client through a mocked
- * EventSource + fetch and asserts one POST carries every operation, and that a live frame
- * still routes to each subscription afterward.
+ * Regression for #2273: the HTTP transport must coalesce same-tick live subscribe
+ * control messages into ONE `POST /fate/live`. Unpatched 1.3.1 POSTed once per `add()`,
+ * each re-running session validation (~22 on an authed /pano load); fixed by
+ * `patches/@nkzw__fate@1.3.1.patch` (ADR 0038). Reds if that patch is dropped.
  */
 
 import {createHTTPTransport} from "react-fate";
@@ -29,8 +23,8 @@ type ControlBody = {
 
 type Listener = (event: unknown) => void;
 
-// The shape createHTTPTransport's `eventSource` option expects (its EventSourceConstructor
-// type is not exported); MockEventSource is asserted to it once at the call site.
+// createHTTPTransport's EventSourceConstructor type is not exported, so MockEventSource is
+// asserted to this shape once at the call site.
 type EventSourceCtor = new (
 	url: string,
 	options?: {withCredentials?: boolean},
@@ -40,8 +34,6 @@ type EventSourceCtor = new (
 	removeEventListener(type: string, listener: (event: Event) => void): void;
 };
 
-// A synchronous EventSource stub: records listeners so the test can drive `open` and dispatch
-// live frames deterministically, without a real network stream.
 class MockEventSource {
 	static instances: MockEventSource[] = [];
 	readonly url: string;
@@ -78,7 +70,7 @@ class MockEventSource {
 	}
 }
 
-// Drain the microtask + timer queue so the `open.then(flush)` batch flush and its awaited
+// Drains the microtask + timer queue so the `open.then(flush)` batch flush and its awaited
 // fetch/json settle before we assert.
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -119,12 +111,10 @@ describe("react-fate live transport — same-tick subscribe batching (#2273)", (
 		const {subscribeById} = makeTransport(fetchMock);
 		const handlers = {a: {onData: vi.fn()}, b: {onData: vi.fn()}, c: {onData: vi.fn()}};
 
-		// Three mounts subscribe in the same synchronous tick, as a feed of PanoPostCards does.
 		subscribeById("Post", "a", ["id", "body"], undefined, handlers.a);
 		subscribeById("Post", "b", ["id", "body"], undefined, handlers.b);
 		subscribeById("Post", "c", ["id", "body"], undefined, handlers.c);
 
-		// Exactly one SSE stream, and no control POST until the stream opens.
 		expect(MockEventSource.instances).toHaveLength(1);
 		expect(fetchMock).not.toHaveBeenCalled();
 
@@ -133,7 +123,6 @@ describe("react-fate live transport — same-tick subscribe batching (#2273)", (
 		source?.emit("open", {});
 		await settle();
 
-		// The batching guarantee: one POST for all three subscribes, not three.
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		const call = calls.at(0);
 		expect(call?.url).toBe("/fate/live");
@@ -145,7 +134,6 @@ describe("react-fate live transport — same-tick subscribe batching (#2273)", (
 			"c",
 		]);
 
-		// No subscription is lost: a live frame per entity still routes to its handler.
 		source?.emit("next", {
 			data: JSON.stringify({
 				event: {data: {__typename: "Post", body: "updated-a", id: "a"}, select: ["body"]},

@@ -1,11 +1,6 @@
 /**
- * `FunnelPage` — the `/funnel` founder/mod conversion readout (#1589): the tracer
- * bullet for the çaylak→yazar metrics, today just the current tier population.
- *
- * Access is SERVER-authoritative — the gated `funnel.summary` read denies a non-mod
- * the invisible `UNAUTHORIZED` (`requireFunnelAccess`). The `<Screen>` catches that
- * and renders the "yetkin yok" state; no client-side authority guess decides who
- * may enter, mirroring `DivanPage`.
+ * Access is server-authoritative: `funnel.summary` denies a non-mod `UNAUTHORIZED`, which
+ * `<Screen>` renders as "yetkin yok". Deliberately no client-side role check here.
  */
 import {FunnelSummary} from "../components/funnel/FunnelSummary";
 import {Alert} from "../components/ui/Alert";
@@ -36,7 +31,6 @@ export function FunnelPage() {
 	);
 }
 
-/** The readout's denied / failed state — "yetkin yok" for the invisible gate. */
 function AccessError({code}: {readonly code: string}) {
 	const denied = code === "UNAUTHORIZED" || code === "FORBIDDEN";
 	return (

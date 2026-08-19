@@ -1,23 +1,7 @@
 /**
- * `KullanicilarPanel` — the kullanıcılar (user-roster) admin console module (#3200), the
- * React consumer of the gated `userAdmin.list` read. It lists the paginated, searchable
- * user roster (kullanıcı adı, e-posta, rol, durum, seviye, kayıt) inside the shipped
- * `AdminConsole` shell.
- *
- * Gated behind the default-off `phoenix-user-admin` flag via `FlagGate` (the email-delivery
- * module's stance): with it off nothing renders and no roster request fires, so the surface
- * ships dark until a human flips the flag (ADR 0083) — the client half of the two-gate
- * contract whose worker half fails the invisible `Denied`.
- *
- * Per-row role affordance (#3523): the `rol işlemleri` column wires the `user.setRole`
- * mutation (#3522) behind its OWN default-off `phoenix-user-role-assign` flag, so the whole
- * column is invisible until both that flag and `phoenix-user-admin` are on. The remaining
- * per-user action (yasakla/kaldır) is a sibling child, wired later.
- *
- * Render decisions live DOM-free in `kullanicilar.ts` / `role-controls.ts` (unit-tested);
- * this is the thin shell.
- * a11y: a labelled region + table; search is a real `<form>`; every cell is text, never
- * color; lowercase Turkish copy per the design law.
+ * The `FlagGate` is load-bearing, not cosmetic: with the default-off flag off, nothing renders
+ * and no roster request fires, so this surface ships dark until a human flips it (ADR 0083).
+ * It is the client half of a two-gate contract — the worker half fails the invisible `Denied`.
  */
 import {Suspense, useState} from "react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -54,14 +38,12 @@ export default function KullanicilarPanel() {
 }
 
 function KullanicilarRoster() {
-	// The applied search is separate from the input value so a keystroke doesn't refetch the
-	// roster — only submitting the form (or clearing it) changes the request args.
+	// The applied search is separate from the draft so a keystroke doesn't refetch the roster.
 	const [draft, setDraft] = useState("");
 	const [applied, setApplied] = useState("");
-	// Bumped after a role assignment to remount RosterList, forcing a fresh network-only
-	// re-read so the row's derived `role` re-resolves through the gated view (#3523). A
-	// `RoleState` write doesn't touch the `UserAdmin` entity in the store, so the row can't
-	// self-update — the re-read is what reflects it.
+	// Bumped after a role assignment to remount RosterList and force a fresh network-only
+	// re-read. A `RoleState` write doesn't touch the `UserAdmin` entity in the store, so the
+	// row can't self-update — the re-read is what reflects it.
 	const [reloadNonce, setReloadNonce] = useState(0);
 
 	function onSubmit(event: React.FormEvent) {
@@ -107,11 +89,8 @@ function RosterList({
 	readonly search: string;
 	readonly onRoleChanged: () => void;
 }) {
-	// The role-assign column is gated on its OWN dark-ship flag (#3522), evaluated once
-	// here so the whole column — header + cells — appears or disappears as a unit: flag
-	// off ⇒ no action column at all (not an empty one), the invisible-Denied client half.
-	// The panel already sits inside the `phoenix-user-admin` FlagGate, so both flags must
-	// be on for the controls to render.
+	// Read once here so the whole column — header and cells — appears or disappears as a unit:
+	// flag off means no action column at all, not an empty one.
 	const {value: roleAssignOn} = useFlag(PHOENIX_USER_ROLE_ASSIGN, false);
 	const result = useRequest(
 		{

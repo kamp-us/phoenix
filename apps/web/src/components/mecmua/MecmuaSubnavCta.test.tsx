@@ -1,11 +1,3 @@
-/**
- * mecmua's primary action in its Subnav CTA slot (#2603, placement law #2587). Pins the
- * gate-parity halves: (1) a yazar with the write flag live reaches `/mecmua/yaz` through the
- * CTA (reachability, verified by actually routing there on click) and sees the sanctioned
- * primary-action treatment; (2) a non-yazar / signed-out / flag-off viewer gets no CTA —
- * the CTA rides the exact {@link shouldShowMecmuaWriteCta} gate the editor does, so it never
- * dead-ends a viewer into a page they'd be publish-gated on.
- */
 import {fireEvent, render, screen} from "@testing-library/react";
 import {MemoryRouter, Route, Routes} from "react-router";
 import {afterEach, describe, expect, it, vi} from "vitest";
@@ -47,7 +39,6 @@ describe("MecmuaSubnavCta — mecmua primary action in the Subnav CTA slot (#260
 		writeFlag = true;
 		renderCta();
 		const cta = screen.getByRole("button", {name: "yeni yazı"});
-		// Sanctioned primary-action treatment (#2586 taxonomy), not the utility filter/tab style.
 		expect(cta.getAttribute("data-variant")).toBe("primary");
 		expect(screen.queryByTestId("mecmua-editor")).toBeNull();
 		fireEvent.click(cta);

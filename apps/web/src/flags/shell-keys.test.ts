@@ -1,8 +1,6 @@
 /**
- * The fail-closed drift check for the shell-key manifest (#2928, ADR 0179 §3): the worker
- * injects `window.__BOOT__` and the client reads it, and this proves BOTH key sets derive
- * from the one manifest — a divergence throws. Deliberately an in-app unit test, NOT a
- * CI guard, so this slice stays NON-§CP (#2928).
+ * The fail-closed drift check for the shell-key manifest (ADR 0179 §3). Deliberately an in-app
+ * unit test, NOT a CI guard, so this slice stays NON-§CP (#2928).
  */
 import {describe, expect, it} from "vitest";
 import {MECMUA_FEED, MECMUA_PUBLIC_READ} from "./keys";
@@ -20,8 +18,6 @@ describe("shell-key manifest — the geometry-law member set", () => {
 	});
 
 	it("the __BOOT__ boolean-member keys are exactly the flag keys — the user is not a member key", () => {
-		// ADR 0185 superseded #2933's `signedIn` presence bit with the typed `user` object, so the
-		// boolean member set carries the shell flags and nothing else; `user` is a distinct field.
 		expect([...BOOT_MEMBER_KEYS]).toEqual([...SHELL_FLAG_KEYS]);
 		expect([...BOOT_MEMBER_KEYS]).not.toContain("signedIn");
 		expect([...BOOT_MEMBER_KEYS]).not.toContain("user");
@@ -29,8 +25,6 @@ describe("shell-key manifest — the geometry-law member set", () => {
 });
 
 describe("assertShellBootKeysSingleSourced — fail-closed single-source guard", () => {
-	// The seam both sides derive from the manifest: the worker injects BOOT_MEMBER_KEYS, the
-	// client reads BOOT_MEMBER_KEYS — the shared-source case the guard must accept.
 	const canonical = [...BOOT_MEMBER_KEYS];
 
 	it("accepts when the worker-injected and client-consumed sets both derive from the manifest", () => {

@@ -1,27 +1,19 @@
-/**
- * The client seam for member-mute (sustur, #3117): the muted-set read and the mute/unmute
- * dispatch. Consumers gate on the default-off `member-mute` flag first — this hook holds no
- * flag, only the fate write + the optimistic overlay ({@link muteStore}).
- *
- * `mute` / `unmute` write the overlay OPTIMISTICALLY, dispatch the `mute.set` / `mute.remove`
- * fate mutation, and ROLL BACK on failure. Phoenix wire codes are boundary-class, so a
- * rejected mutation THROWS rather than returning `{error}` (see
- * `.patterns/fate-mutations-client.md`); both branches are handled — the `{error}` return and
- * the throw — and either rolls the overlay back.
- */
+// This hook holds no flag; consumers gate on the default-off `member-mute` flag first.
+//
+// A rejected mutation THROWS rather than returning `{error}` (phoenix wire codes are
+// boundary-class — see `.patterns/fate-mutations-client.md`), so both the `{error}` return
+// and the catch below are live paths and both must roll the overlay back.
 import {useCallback, useSyncExternalStore} from "react";
 import {useFateClient, view} from "react-fate";
 import type {MuteReceipt} from "../../../worker/features/fate/views";
 import {muteStoreSnapshot, setMemberMuted, subscribeMuteStore} from "./muteStore";
 
-/** The `mute.set` / `mute.remove` write-back selection — the presence receipt. */
 const MuteReceiptView = view<MuteReceipt>()({
 	id: true,
 	isMuted: true,
 	changed: true,
 });
 
-/** The current muted set + an `isMuted` predicate, re-rendering on any overlay change. */
 export function useMutedMembers(): {
 	readonly isMuted: (id: string) => boolean;
 	readonly mutedIds: ReadonlySet<string>;
@@ -31,7 +23,6 @@ export function useMutedMembers(): {
 	return {isMuted, mutedIds};
 }
 
-/** The mute/unmute dispatch — optimistic overlay write + fate mutation + rollback on failure. */
 export function useMemberMute(): {
 	readonly mute: (memberId: string) => Promise<{readonly ok: boolean}>;
 	readonly unmute: (memberId: string) => Promise<{readonly ok: boolean}>;

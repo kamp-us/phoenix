@@ -28,8 +28,6 @@ export function DensityProvider({children}: {children: React.ReactNode}) {
 		setChoiceState(next);
 	}, []);
 
-	// tokens.css keys the whole --s-* spacing ramp off [data-density], so the
-	// chosen value lands on the document root here (mirroring theme.tsx).
 	React.useEffect(() => {
 		document.documentElement.dataset.density = choice;
 	}, [choice]);

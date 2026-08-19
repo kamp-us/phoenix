@@ -1,17 +1,5 @@
-/**
- * `MutedMembersList` — the manage-my-mutes surface (#3117, epic #2035): one row per member
- * the viewer has muted, off the `CurrentUser`-scoped `mute.listMine` read model (#3114),
- * newest-first, each row offering a per-row "geri al" (unmute). The `mute.listMine` read is
- * flag-gated server-side (off ⇒ the invisible `MUTE_DISABLED`, caught by the page's
- * `<Screen>`), so this only ever renders under the on-path; the page (`MutesPage`) self-gates
- * the whole route on `member-mute`.
- *
- * Unmuting drives {@link useMemberMute} (which also clears the feed overlay) and drops the row
- * locally on success, so the list reflects the change without a refetch.
- *
- * a11y: a real `<ul>`, the member handle as text, the empty state as a composed treatment
- * (never a bare void), lowercase Turkish copy.
- */
+// No flag check here: `mute.listMine` is flag-gated server-side and `MutesPage` self-gates
+// the whole route, so this only ever renders on the on-path.
 
 import {VolumeX} from "lucide-react";
 import {useState} from "react";

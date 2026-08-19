@@ -1,20 +1,13 @@
-/**
- * The inline "sustur" affordance on a member's feed content (#3117, epic #2035). An inline
- * meta-row action (the `ReportButton` / `gizle` idiom — a reset inline `button` styled by
- * `MetaRow`, not a standalone `Button` wrapper), so it reads consistently with the row's
- * other actions. On the feed it is a mute-only action: the instant a member is muted the
- * card unmounts (the overlay hides it), so this control never renders in the muted state —
- * un-muting lives on the manage screen (`MutedMembersList`). The card owns the gating (flag
- * on, signed in, not the viewer's own content) and only mounts this when it can act.
- */
+// Mute-only by design: the card unmounts the instant a member is muted, so there is no
+// muted state to render here — un-muting lives on `MutedMembersList`. The card also owns
+// the gating (flag on, signed in, not the viewer's own content) and only mounts this
+// button when it can act, which is why there is no check for any of that below.
 import {useState} from "react";
 import {Button} from "../ui/Button";
 import {useMemberMute} from "./useMemberMute";
 
 export interface MuteButtonProps {
-	/** The member to mute — the `mute.set` target. */
 	readonly memberId: string;
-	/** The member's displayed handle, for the action's accessible name. */
 	readonly memberLabel: string;
 	readonly testId?: string;
 }

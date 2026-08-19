@@ -1,15 +1,8 @@
 /**
- * `Raporlar` — the moderation queue's first visible surface (#1701, ADR 0098 §5):
- * one row per open-reported target group off the gated `report.listOpen` read
- * (`Moderate`-gated server-side; a non-moderator's read denies the invisible
- * `UNAUTHORIZED`, caught by the page's `<Screen>`). Each row shows the target
- * kind, the report count (the pile-on signal), the reason when present, the
- * first-reported age, and the reported target's in-situ context (#1702): its
- * excerpt/title + author, linked to the target on its own surface. Out of scope:
- * resolve/dismiss, history (sibling slices).
- *
- * a11y (the divan baseline): a real `<ul>` list, counts and ages as text (never
- * color), lowercase Turkish copy.
+ * `Raporlar` — the moderation queue's grid surface (#1701, ADR 0098 §5): one row per
+ * open-reported target group off the gated `report.listOpen` read (`Moderate`-gated
+ * server-side, so a non-moderator's read denies the invisible `UNAUTHORIZED`, caught by the
+ * page's `<Screen>`).
  */
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {OpenReport} from "../../../worker/features/fate/views";

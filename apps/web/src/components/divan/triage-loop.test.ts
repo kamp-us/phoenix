@@ -1,11 +1,3 @@
-/**
- * The triage-loop hero's interaction contract (#1703, ADR 0138) — the pure focus /
- * verdict-key / confirm-gate / Esc-ladder decisions asserted without a DOM, per the
- * `raporlarGating.test.ts` precedent. The AC the loop lives or dies on: one target at
- * a time with a real focus-state; `j/k` navigate; `Y` dismisses in one keystroke while
- * `R` gates on a confirm; `U`/`O`/`Esc` bindings; the reputation-in-row + reporter
- * diversity copy.
- */
 import {describe, expect, it} from "vitest";
 import type {TargetKind} from "../../../worker/db/target-kind";
 import {

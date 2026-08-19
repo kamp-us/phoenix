@@ -11,7 +11,6 @@ describe("Button — the widened primitive (#2163)", () => {
 		expect(btn.getAttribute("type")).toBe("button");
 		expect(btn.classList.contains("kp-btn")).toBe(true);
 		expect(btn.getAttribute("data-variant")).toBe("primary");
-		// unset toggle/busy/icon add nothing
 		expect(btn.hasAttribute("aria-pressed")).toBe(false);
 		expect(btn.hasAttribute("aria-busy")).toBe(false);
 		expect(btn.hasAttribute("disabled")).toBe(false);
@@ -41,7 +40,7 @@ describe("Button — the widened primitive (#2163)", () => {
 		expect(btn.getAttribute("aria-busy")).toBe("true");
 		expect(btn.hasAttribute("disabled")).toBe(true);
 		expect(container.querySelector('[data-part="spinner"]')).not.toBeNull();
-		expect(container.querySelector(".kp-btn__icon")).toBeNull(); // spinner replaces the icon
+		expect(container.querySelector(".kp-btn__icon")).toBeNull();
 		expect(btn.textContent).toContain("kaydet");
 	});
 });

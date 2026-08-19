@@ -1,12 +1,6 @@
 /**
- * The composer exhibit — atölye's first FEATURE-level exhibit (beyond the UI primitives):
- * the shared `@kampus/composer` editor folded in as a live, knob-driven piece (#3095).
- *
- * This module is deliberately tiptap-free: the heavy demo is `React.lazy`-loaded from
- * `Composer.exhibit.live` so the atölye registry/index chunk never pays for ProseMirror
- * (the #2523 performance-pillar split). The standalone `/lab/composer` route stays the
- * canonical full round-trip playground (documented NOT-throwaway); this exhibit shows a
- * focused live demo and links out to it — it does not embed or regress that proof.
+ * Deliberately tiptap-free: the demo is `React.lazy`-loaded from `Composer.exhibit.live` so the
+ * atölye registry/index chunk never pays for ProseMirror (#2523). A direct import undoes that.
  */
 
 import type * as React from "react";

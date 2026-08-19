@@ -3,13 +3,9 @@ import {Button, type ButtonProps} from "./Button";
 import "./CountToggle.css";
 
 /**
- * The count-pill toggle primitive (#2163, pillar cohesiveness; epic #2168). A
- * pressable pill carrying an icon/label and an optional aggregate count, its
- * on/off state exposed via `aria-pressed` and carried visually by the accent
- * tint (never color alone — the pressed state is in the ARIA + the shape). The
- * reaction bar's per-emoji buttons are the canonical instance; this extracts the
- * pill so the shape is built once instead of re-assembled per surface. Role
- * tokens only; the 24px floor is the WCAG 2.5.8 minimum target size (#2166).
+ * The count-pill toggle primitive — see ADR 0162. Pressed state is carried by
+ * `aria-pressed` and the shape, never by the accent tint alone; role tokens only,
+ * and the 24px floor is the WCAG 2.5.8 minimum target size (#2166).
  *
  * @component CountToggle
  * @whenToUse The pressable count-pill — a reaction/vote/toggle affordance that
@@ -21,16 +17,12 @@ import "./CountToggle.css";
  */
 export interface CountToggleProps
 	extends Omit<ButtonProps, "children" | "pressed" | "count" | "icon"> {
-	/** On/off state → `aria-pressed` + the accent-tinted pressed styling. */
 	pressed?: boolean;
-	/** Aggregate count rendered after the icon/label. Hidden when 0 unless `showZero`. */
+	/** Hidden when 0 unless `showZero`. */
 	count?: number;
-	/** Render a `0` count instead of hiding it. */
 	showZero?: boolean;
-	/** Leading icon/glyph (decorative — name the control via `aria-label`). */
 	icon?: React.ReactNode;
 	children?: React.ReactNode;
-	/** Test id for the count element (the label lives on the button's own props). */
 	countTestId?: string;
 }
 

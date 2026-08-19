@@ -1,9 +1,3 @@
-/**
- * Nav-IA topbar zone grammar + taxonomy classing (#2611, epic #2595). Pins the structural
- * spine the tema/status/accent-scarcity children (#2612–#2614) build on: every element sits
- * in its one lawful taxonomy zone (destination / utility / status-signal / primary-action,
- * #2586/#2587), each zone stably classed + testid'd.
- */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {fireEvent, render, screen, waitFor, within} from "@testing-library/react";
@@ -30,13 +24,10 @@ describe("Topbar nav-IA zone grammar (#2611)", () => {
 		const destination = screen.getByTestId("topbar-zone-destination");
 		const utility = screen.getByTestId("topbar-zone-utility");
 		const statusSignal = screen.getByTestId("topbar-zone-status-signal");
-		// The zone class is present on each zone (the headless targeting contract).
 		expect(destination.classList.contains("kp-topbar__zone")).toBe(true);
 		expect(destination.classList.contains("kp-topbar__zone--destination")).toBe(true);
 		expect(utility.classList.contains("kp-topbar__zone--utility")).toBe(true);
 		expect(statusSignal.classList.contains("kp-topbar__zone--status-signal")).toBe(true);
-		// destination = product-noun nav; utility = the ambient search control;
-		// status-signal = the read-only karma + divan affordances.
 		expect(destination.contains(screen.getByRole("link", {name: "sözlük"}))).toBe(true);
 		expect(destination.contains(screen.getByRole("link", {name: "pano"}))).toBe(true);
 		expect(utility.contains(screen.getByRole("textbox", {name: "Ara"}))).toBe(true);
@@ -104,9 +95,6 @@ describe("Topbar accent-scarcity containment law (#2614)", () => {
 	});
 
 	it("no taxonomy zone (utility / status-signal / destination) paints an accent fill", () => {
-		// The accent budget is reserved for the promoted primary action alone; the non-CTA
-		// zones carry neutral role tokens only. (The primary-action zone is empty post-#2600,
-		// so today the reclassed topbar renders zero accent fills.)
 		for (const r of rules.filter((r) => ACCENT_FILL.test(r.body))) {
 			expect(r.selector).not.toMatch(/kp-topbar__zone--(utility|status-signal|destination)/);
 		}
@@ -194,16 +182,10 @@ describe("Topbar status/signal zone (#2613)", () => {
 	it("the unread bildirim renders an INTERACTIVE bell in the status zone, not a bare number (#2787)", () => {
 		const {container} = renderStatus({bildirim: {to: "/bildirimler", unread: 3}});
 		const signal = screen.getByTestId("topbar-bildirim-badge");
-		// Lives in the status-signal zone, not on the user-menu trigger.
 		expect(screen.getByTestId("topbar-zone-status-signal").contains(signal)).toBe(true);
 		expect(container.querySelector(".kp-topbar__user")?.contains(signal)).toBe(false);
-		// A drawn Lucide bell (an <svg>), so the count reads as "unread notifications", not a
-		// bare number; the count text is still present and the accessible name carries it.
 		expect(signal.querySelector("svg")).not.toBeNull();
 		expect(signal.textContent).toContain("3");
-		// #2787 evolves the display-only status bell into a disclosure button: it is now an
-		// interactive popover trigger (aria-haspopup/expanded), and the unread count stays its
-		// accessible name (ADR 0166). The live announcement moves to a sibling role="status".
 		expect(signal.tagName).toBe("BUTTON");
 		expect(signal.getAttribute("aria-haspopup")).toBe("dialog");
 		expect(signal.getAttribute("aria-expanded")).toBe("false");
@@ -221,7 +203,6 @@ describe("Topbar status/signal zone (#2613)", () => {
 		renderStatus({});
 		const karma = screen.getByTestId("topbar-karma");
 		expect(screen.getByTestId("topbar-zone-status-signal").contains(karma)).toBe(true);
-		// A read-only glyph, never a control: not rendered as (nor wrapped by) a button/link.
 		expect(karma.tagName).toBe("SPAN");
 		expect(karma.closest("button")).toBeNull();
 		expect(karma.closest("a")).toBeNull();
@@ -232,8 +213,6 @@ describe("Topbar status/signal zone (#2613)", () => {
 		const divan = screen.getByTestId("topbar-divan-link");
 		expect(screen.getByTestId("topbar-zone-status-signal").contains(divan)).toBe(true);
 		expect(divan.classList.contains("kp-topbar__signal-link")).toBe(true);
-		// A drawn glyph, not a text peer-noun — an <svg>, with "divan" carried as the link's
-		// accessible name so it stays discoverable without reading as a destination noun.
 		expect(divan.querySelector("svg")).not.toBeNull();
 		expect(screen.getByRole("link", {name: "divan"})).toBe(divan);
 	});
@@ -272,14 +251,10 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 				/>
 			</MemoryRouter>,
 		);
-		// The Manti popover is portaled — open it, then the tema row appears.
 		fireEvent.click(screen.getByText("Elif"));
-		// `ayarlar` sits directly above the tema row. The panel's rows are real links,
-		// not menuitems: UserMenu is a Popover so the picker can keep radio semantics.
 		expect(await screen.findByRole("link", {name: "ayarlar"})).toBeTruthy();
 		const row = await screen.findByTestId("topbar-theme-row");
 		expect(row.textContent).toContain("tema");
-		// The active choice is a real aria-checked radio, not a ✓ glyph on a command.
 		const picker = within(row).getByTestId("topbar-theme-picker");
 		for (const label of ["açık", "koyu", "otomatik"]) {
 			expect(within(picker).getByRole("radio", {name: label})).toBeTruthy();
@@ -300,7 +275,6 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 			/kp-theme-picker/.test(r.selector),
 		);
 		expect(rule).toBeDefined();
-		// A density token, not a pinned px — it must ride compact/normal/spacious.
 		expect(rule?.body).toMatch(/min-height:\s*var\(--letter-size\)/);
 		// Unscoped to either host (no .kp-topbar / .kp-user-menu prefix), and specific enough
 		// to beat ToggleGroup.css's own 0-2-0 item rule without depending on import order.
@@ -354,11 +328,7 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 	});
 });
 
-// Reserved signed-in account slot (#2933, ADR 0179 §1). `reserveSignedInSlots` (driven by
-// `__BOOT__.user != null` in the shell frame, ADR 0185) reserves the account cluster's geometry at
-// first paint: with no `user` yet it renders a fixed-geometry placeholder in the account slot, so
-// when fate publishes the real user menu it fills the same slot with zero cluster shift — no
-// giriş-yap↔user-cluster swap, no empty→pop. Off ⇒ the slot stays null (today's render).
+// See ADR 0179 §1 and ADR 0185.
 describe("Topbar reserved signed-in account slot (#2933)", () => {
 	function renderReserved(props: Partial<Parameters<typeof Topbar>[0]>) {
 		return render(
@@ -371,31 +341,24 @@ describe("Topbar reserved signed-in account slot (#2933)", () => {
 	it("reserve on, no user: renders a fixed-geometry account placeholder (inert, not a control)", () => {
 		renderReserved({reserveSignedInSlots: true});
 		const placeholder = screen.getByTestId("topbar-user-placeholder");
-		// Reuses the `.kp-topbar__user` box so the real menu swaps in with no geometry change.
 		expect(placeholder.classList.contains("kp-topbar__user")).toBe(true);
 		expect(placeholder.classList.contains("kp-topbar__user--placeholder")).toBe(true);
-		// A stand-in, never a control: not a button, hidden from assistive tech.
 		expect(placeholder.tagName).toBe("SPAN");
 		expect(placeholder.getAttribute("aria-hidden")).toBe("true");
 		expect(placeholder.closest("button")).toBeNull();
-		// No real user menu yet — the account cluster is reserved, not filled.
 		expect(screen.queryByRole("button", {name: /Elif/})).toBeNull();
 	});
 
 	it("reserve on → user arrives: the placeholder is replaced by the real menu in the SAME account slot (zero cluster shift)", () => {
 		const {container, rerender} = renderReserved({reserveSignedInSlots: true});
 		const header = container.querySelector(".kp-topbar");
-		// The account slot is the header's last child; before fate it holds the placeholder.
 		expect(header?.lastElementChild).toBe(screen.getByTestId("topbar-user-placeholder"));
 
-		// Fate publishes the real user: same reservation, now a real user prop.
 		rerender(
 			<MemoryRouter>
 				<Topbar nav={NAV} reserveSignedInSlots user={{name: "Elif", username: "elif"}} />
 			</MemoryRouter>,
 		);
-		// The placeholder is gone and the real menu trigger occupies the SAME last-child slot —
-		// content filled in place, the cluster position never moved (the AC-4 no-shift proof).
 		expect(screen.queryByTestId("topbar-user-placeholder")).toBeNull();
 		const trigger = container.querySelector(".kp-topbar__user");
 		expect(trigger?.textContent).toContain("Elif");

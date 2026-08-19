@@ -1,16 +1,7 @@
 /**
- * The primitive classification registry for the property-based a11y loop (#2175,
- * ADR 0162 pillar 4). Each runtime export of `../index.ts` is classified once as
- * `interactive`, `presentational`, or `deferred`, and the interactive/presentational
- * entries carry a `fast-check` arbitrary that generates a randomized VALID render
- * (a representative prop combination) for the harness to assert invariants over.
- *
- * Auto-coverage: the suite enumerates the barrel's runtime exports and requires
- * every one to appear here (see `a11y-pbt.test.tsx`'s coverage test) — a newly
- * added primitive that no one classified fails the gate, so the covered set can
- * never silently go stale. `deferred` is a conscious, reasoned parking spot (a
- * machine-backed portal primitive, or a control needing composition context to
- * have an accessible name), not an escape hatch — each carries its promotion reason.
+ * The primitive classification registry for the property-based a11y loop — see
+ * `.patterns/property-based-a11y.md`. Arbitraries must generate only VALID props,
+ * and `deferred` is a reason-carrying parking spot, not an escape hatch.
  */
 
 import fc from "fast-check";
@@ -26,7 +17,6 @@ import {MetaRow} from "../MetaRow";
 import {NumberInput} from "../NumberInput";
 import {ScrollArea} from "../ScrollArea";
 
-/** An interactive control: name/focus invariants apply to its `selector` element. */
 export interface InteractiveSpec {
 	readonly kind: "interactive";
 	/** CSS selector for the control inside the render root (button/a/input). */
@@ -34,13 +24,11 @@ export interface InteractiveSpec {
 	readonly arb: fc.Arbitrary<ReactElement>;
 }
 
-/** A decorative/structural primitive: only the structural axe invariants apply. */
 export interface PresentationalSpec {
 	readonly kind: "presentational";
 	readonly arb: fc.Arbitrary<ReactElement>;
 }
 
-/** A primitive not (yet) in the bare-prop harness, with the reason it is parked. */
 export interface DeferredSpec {
 	readonly kind: "deferred";
 	readonly reason: string;
@@ -50,7 +38,6 @@ export type PrimitiveSpec = InteractiveSpec | PresentationalSpec | DeferredSpec;
 
 /** A short, always-present, human-readable label so a control has an accessible name. */
 const label = fc.constantFrom("Beğen", "Yanıtla", "Paylaş", "Gönder", "Kaydet", "Aç");
-/** Prose children for a presentational container. */
 const text = fc.constantFrom("kamp.us", "sözlük", "panolar", "bir başlık", "42");
 
 const buttonArb: fc.Arbitrary<ReactElement> = fc
@@ -179,22 +166,15 @@ const scrollAreaArb: fc.Arbitrary<ReactElement> = text.map((children) => (
 	<ScrollArea orientation="vertical">{children}</ScrollArea>
 ));
 
-/** Reason shared by Manti primitives parked out of the bare-prop harness. */
 const COMPOUND_REASON =
 	"Manti machine primitive — needs required items/trigger/content props or a portal interaction to render a representative surface; covered by composed-usage tests.";
 
-/**
- * The classification of EVERY runtime export of `../index.ts`. The coverage test
- * asserts this key set equals the barrel's runtime export set, so adding or
- * removing a primitive without updating this map fails the gate.
- */
+/** EVERY runtime export of `../index.ts` — the coverage test fails on any drift. */
 export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
-	// Interactive controls — the full name/focus/ARIA invariant set applies.
 	Button: {kind: "interactive", selector: "button", arb: buttonArb},
 	CountToggle: {kind: "interactive", selector: "button", arb: countToggleArb},
 	NumberInput: {kind: "interactive", selector: "input", arb: numberInputArb},
 
-	// Presentational primitives — structural ARIA invariants only.
 	Surface: {kind: "presentational", arb: surfaceArb},
 	Card: {kind: "presentational", arb: cardArb},
 	MetaRow: {kind: "presentational", arb: metaRowArb},
@@ -208,7 +188,6 @@ export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
 	Mark: {kind: "presentational", arb: inlineAtomArb(Mark)},
 	Skeleton: {kind: "presentational", arb: skeletonArb},
 
-	// Deferred — Manti machine / portal / provider-bound primitives.
 	Collapsible: {kind: "deferred", reason: COMPOUND_REASON},
 	Dialog: {kind: "deferred", reason: COMPOUND_REASON},
 	Menu: {kind: "deferred", reason: COMPOUND_REASON},
@@ -219,7 +198,6 @@ export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
 	Tooltip: {kind: "deferred", reason: COMPOUND_REASON},
 	TooltipProvider: {kind: "deferred", reason: COMPOUND_REASON},
 
-	// Deferred — form controls whose accessible name comes from Manti's field-owning props.
 	Form: {
 		kind: "deferred",
 		reason: "native form wrapper — needs labelled Manti controls in a composed fixture.",
@@ -233,7 +211,6 @@ export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
 		reason: "Manti Textarea — accessible name comes from its required composed label prop.",
 	},
 
-	// Deferred — controls with side effects / data props needing a composed fixture.
 	CopyLinkButton: {
 		kind: "deferred",
 		reason: "control with a clipboard side effect + a URL prop — needs a composed fixture.",

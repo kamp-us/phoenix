@@ -1,11 +1,5 @@
-/**
- * Pins the CLS fix (#2054): the reaction slot must reserve its height BEFORE the
- * async `phoenix-reactions` gate resolves, so the late-mounting bar swaps into an
- * already-sized slot instead of growing every already-laid-out card at once and
- * shoving the feed downward. The load-bearing property is that the loading/off
- * state renders the sized `.kp-reaction-slot` placeholder — NOT FlagGate's bare
- * `null` (zero height), which is the origin of the jump.
- */
+// Pins the CLS fix (#2054): the loading/off state must render the sized
+// `.kp-reaction-slot` placeholder, never FlagGate's bare zero-height `null`.
 import {render} from "@testing-library/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {ReactionBarSlot} from "./ReactionBarSlot";
@@ -29,9 +23,7 @@ describe("ReactionBarSlot — reserves the reaction row's height before the gate
 				<div data-testid="the-bar">bar</div>
 			</ReactionBarSlot>,
 		);
-		// The reserved-height placeholder is present — height is reserved up front...
 		expect(container.querySelector(".kp-reaction-slot")).not.toBeNull();
-		// ...and the gated bar is NOT shown in the off/safe path.
 		expect(container.querySelector('[data-testid="the-bar"]')).toBeNull();
 	});
 
@@ -43,7 +35,6 @@ describe("ReactionBarSlot — reserves the reaction row's height before the gate
 			</ReactionBarSlot>,
 		);
 		expect(container.querySelector('[data-testid="the-bar"]')).not.toBeNull();
-		// The reserved fallback is gone once the real (also height-reserving) bar mounts.
 		expect(container.querySelector(".kp-reaction-slot")).toBeNull();
 	});
 });

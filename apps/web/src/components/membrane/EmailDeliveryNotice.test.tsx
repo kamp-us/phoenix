@@ -1,9 +1,3 @@
-/**
- * The failing-email membrane notice (epic #2687, Child #2693). Pins the render contract of the
- * presentational notice (Turkish copy + a recovery CTA that actually reaches the change-email
- * surface + dismissal) and the mount gate (dark behind the flag, present only for a failing
- * signed-in user, hidden once dismissed).
- */
 import {readFileSync} from "node:fs";
 import {join} from "node:path";
 import {fireEvent, render, screen} from "@testing-library/react";
@@ -46,7 +40,6 @@ describe("EmailDeliveryNotice — presentational (#2693)", () => {
 		renderNotice(<EmailDeliveryNotice recoveryHref="/profile" />);
 		const notice = screen.getByTestId("email-delivery-notice");
 		expect(notice.textContent).toContain("e-postana ulaşamıyoruz");
-		// The meaning is carried by text, not color alone (four-pillars a11y).
 		expect(notice.textContent).toContain("geri dönüyor");
 	});
 

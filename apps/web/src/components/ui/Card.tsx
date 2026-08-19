@@ -1,25 +1,12 @@
 import type * as React from "react";
 import "./Card.css";
 
-/**
- * The composite surface primitive (#2163, pillar cohesiveness; epic #2168). Every
- * page used to hand-assemble its own bordered/tinted box shell — background,
- * border, radius, padding, elevation — as a near-duplicate copy that drifted from
- * the next. `Surface` is the one parameterized shell those copies collapse onto:
- * it emits only role-token classes (no color/spacing/shadow literal lives here),
- * so a shell reads its background from a `tone`, its lift from an `elevation`
- * (the ADR 0162 four-level ramp), and its border/radius/padding from tokens.
- *
- * `Card` is the opinionated default for NEW surfaces — a bordered, subtly-raised,
- * padded box — so a fresh card reaches for one cohesive shape instead of inventing
- * another. A migration that must preserve an existing shell's exact look uses
- * `Surface` with explicit props (moving the shell declarations off the feature CSS
- * and onto props, leaving only the call-site's own layout behind).
- */
+// The composite surface primitive — see ADR 0162. `Surface` emits only role-token
+// classes: no color/spacing/shadow literal may live here.
 
 /** Background role of the surface — the role token, never a raw scale. */
 export type SurfaceTone = "default" | "raised" | "sunken";
-/** The ADR 0162 four-level elevation ramp (flat · raised · dropdown · overlay). */
+/** The ADR 0162 four-level elevation ramp. */
 export type Elevation = "flat" | "raised" | "dropdown" | "overlay";
 /** Corner radius, off the `--r-*` token scale. */
 export type SurfaceRadius = "none" | "sm" | "md" | "lg";
@@ -27,7 +14,6 @@ export type SurfaceRadius = "none" | "sm" | "md" | "lg";
 export type SurfacePadding = "none" | "sm" | "md" | "lg";
 
 export interface SurfaceProps extends React.HTMLAttributes<HTMLElement> {
-	/** Render element (article/section/aside/li/…). Defaults to `div`. */
 	as?: React.ElementType;
 	tone?: SurfaceTone;
 	elevation?: Elevation;
