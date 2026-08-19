@@ -1,14 +1,8 @@
 /**
- * Pins the reaction-bar placement decision (#2212, founder ruled option (b)
- * keep-but-relocate): pano reactions live on the post DETAIL surface, not the
- * feed row — mirroring how sözlük scopes reactions to the definition detail
- * (`DefinitionCard`), never the term list. The upvote (△) stays the feed-level
- * signal, so `PostVoteWidget` must remain on the card.
+ * Pins the founder ruling on #2212: reactions on the post detail, never the feed row.
  *
- * A static source assertion (like `styles/focus-layer.test.ts`) rather than a
- * render: the contract is *which surface wires the bar*, which the imports +
- * JSX tag encode directly and stably — no fate client/session harness, and it
- * won't churn when unrelated card work lands.
+ * Deliberately a static source assertion, not a render — the contract is *which
+ * surface wires the bar*, which the imports encode directly and stably.
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";

@@ -23,35 +23,21 @@ export interface ViewerOverlay {
  *  footprint so the later patch causes no layout shift. */
 export const NEUTRAL_OVERLAY: ViewerOverlay = {myVote: null, isSaved: null};
 
-/**
- * A landed overlay batch, tagged with the identity it was read under. `identity` is the
- * resolved viewer id (`null` for anon); `byId` maps each base row's post id to that
- * viewer's scalars. Tagging the batch with its identity is what lets `resolveOverlay`
- * reject a batch that belongs to a previous identity during a re-key/compose window.
- */
+// The batch carries the `identity` it was read under (`null` = anon) so `resolveOverlay`
+// can reject a batch belonging to a previous identity during a re-key window.
 export interface OverlayBatch {
 	readonly identity: string | null;
 	readonly byId: ReadonlyMap<string, ViewerOverlay>;
 }
 
-/** The overlay's lifecycle: `pending` before the viewer's scalars land (base already
- *  painted), then `landed` once they arrive under a known identity. */
 export type OverlayState =
 	| {readonly status: "pending"}
 	| ({readonly status: "landed"} & OverlayBatch);
 
 export const PENDING_OVERLAY: OverlayState = {status: "pending"};
 
-/**
- * Resolve one base row's overlay against the current viewer — the identity guard.
- *
- * Returns the row's scalars ONLY when the overlay has landed AND was read under the
- * SAME identity as the current viewer AND carries this id; otherwise the neutral state.
- * The identity match is the guard: an overlay batch landed under identity A is inert for
- * viewer B (and for anon), so a stale/foreign overlay can never paint — it reads neutral
- * until B's own batch lands. A missing id (a base row the overlay batch didn't cover yet)
- * likewise stays neutral, never borrowing a sibling row's scalars.
- */
+// The identity guard: every non-match falls to neutral, so a stale or foreign overlay
+// can never paint and an uncovered row never borrows a sibling's scalars.
 export function resolveOverlay(
 	state: OverlayState,
 	viewerIdentity: string | null,

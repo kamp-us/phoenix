@@ -32,12 +32,8 @@ export function Subnav({
 	activeFilter?: string;
 	onFilterChange?: (id: string) => void;
 	links?: SubnavLink[];
-	// Zone slots for the SubnavShell recipe (ADR 0182): `leading` is the context/crumb zone
-	// and `destinations` is the single sub-destinations/filters zone the consumer composes
-	// its route-links or stateful buttons inside. `destinations` renders INSIDE the bar's
-	// filters row — the structural fix for sözlük's orphaned alphabet, which had rendered as
-	// a detached sibling of the bar. Additive over the older typed `filters`/`links` arrays;
-	// the #2973–#2978 migration moves consumers onto these zones.
+	// Zone slots for the SubnavShell recipe, additive over the older `filters`/`links` arrays
+	// the #2973–#2978 migration moves consumers off. See ADR 0182.
 	leading?: React.ReactNode;
 	destinations?: React.ReactNode;
 	crumb?: {label: React.ReactNode; onClear?: () => void};
@@ -49,11 +45,6 @@ export function Subnav({
 	// #2586 taxonomy / #2590 IA rule). Absent ⇒ nothing renders.
 	input?: React.ReactNode;
 	meta?: React.ReactNode;
-	// The primary-action slot (placement law #2587): a product's promoted verb (pano/yeni,
-	// mecmua yaz) renders here in the dedicated primary-action position. The passed node
-	// carries the sanctioned primary-action treatment itself (the `Button` primitive's
-	// `primary` variant per the #2586 taxonomy) — the slot only positions it, never the
-	// utility filter/tab treatment (#2590). Absent ⇒ nothing renders.
 	cta?: React.ReactNode;
 }) {
 	return (

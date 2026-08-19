@@ -1,14 +1,6 @@
-/**
- * The "tehlikeli alan" account-deletion confirmation dialog. The confirm action
- * is gated behind typing the exact phrase `account.delete` requires
- * (`hesabımı kalıcı olarak sil`, mirrored from the worker's `Schema.Literal`):
- * the confirm button is disabled until the typed text matches, so a destructive
- * call on an unconfirmed dialog is unrepresentable. On success the caller clears
- * the session and the page redirects — see `onConfirmed`.
- *
- * The mutation classifies as boundary, so it may throw OR return `{error}`; we
- * handle both and surface the failure inline (see `.patterns/fate-mutations-client.md`).
- */
+// The account-deletion confirmation dialog. `account.delete` is a boundary mutation,
+// so it may throw OR return `{error}` and both paths are handled below — see
+// `.patterns/fate-mutations-client.md`.
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {AccountDeletionReceipt} from "../../../worker/features/fate/views";
@@ -20,7 +12,6 @@ import {Input} from "../ui/Form";
 // types it verbatim and the mutation input re-validates it server-side.
 export const CONFIRMATION_PHRASE = "hesabımı kalıcı olarak sil";
 
-/** The gate: the confirm action is reachable only when the typed text is exact. */
 export const matchesConfirmation = (typed: string): boolean => typed === CONFIRMATION_PHRASE;
 
 const ReceiptView = view<AccountDeletionReceipt>()({
@@ -35,7 +26,6 @@ export function DeleteAccountDialog({
 }: {
 	open: boolean;
 	onOpenChange: (v: boolean) => void;
-	/** Run after the account is anonymized — clears the session and redirects. */
 	onConfirmed: () => Promise<void> | void;
 }) {
 	const fate = useFateClient();

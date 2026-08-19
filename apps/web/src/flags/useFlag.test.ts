@@ -1,18 +1,7 @@
 /**
- * The `useFlag` resolution cores — the two pure edges the render-only hook is built on
- * (`apps/web/src` has no jsdom/testing-library, so the hook itself is exercised e2e; these
- * cover the wiring that would otherwise ship green past everything but the e2e).
- *
- * - `resolveFlagResponse` (#1111): the fetch-path safe-default wiring of `resolveFlag` — a
- *   hook that forgot to route the server JSON through `resolveFlag`, or dropped the non-2xx
- *   guard, fails here.
- * - `resolveBootFlag` (#2932, ADR 0179): the synchronous `__BOOT__` member path — member keys
- *   resolve from the injected payload with no fetch, a non-member or an absent `__BOOT__` returns
- *   `undefined` so the hook falls back to fetch. (The signed-in identity moved to the typed
- *   `__BOOT__.user` object, `readBootUser` in `boot.ts`, covered by `boot.test.ts` — ADR 0185.)
- *
- * Node-tested with no DOM/`fetch`, per the repo's pure-extraction idiom
- * (`toProfileStatsState` / `useToggleAction.test.ts`).
+ * The two pure edges `useFlag` is built on: the fetch-path safe-default wiring
+ * (`resolveFlagResponse`) and the synchronous `__BOOT__` member path (`resolveBootFlag`, ADR 0179).
+ * Node-tested with no DOM/`fetch` — the hook itself is exercised e2e.
  */
 import {describe, expect, it} from "vitest";
 import {MECMUA_FEED, MECMUA_PUBLIC_READ} from "./keys";
@@ -20,7 +9,6 @@ import {resolveBootFlag, resolveFlagResponse} from "./useFlag";
 
 describe("resolveFlagResponse — useFlag's safe-default wiring of resolveFlag", () => {
 	it("returns the server value when the response is 2xx and the flag is on (the gated path)", () => {
-		// Default off, server evaluated it on → the gate flips to the gated path.
 		expect(resolveFlagResponse(true, {flags: {"new-ui": true}}, "new-ui", false)).toBe(true);
 	});
 
@@ -31,7 +19,6 @@ describe("resolveFlagResponse — useFlag's safe-default wiring of resolveFlag",
 	});
 
 	it("holds the default on a non-2xx response (the fetch-error path)", () => {
-		// A 500/404 must not flip the gate on — the off/old/safe path holds (#488).
 		expect(resolveFlagResponse(false, {flags: {"new-ui": true}}, "new-ui", false)).toBe(false);
 		expect(resolveFlagResponse(false, null, "new-ui", true)).toBe(true);
 	});
@@ -41,7 +28,6 @@ describe("resolveFlagResponse — useFlag's safe-default wiring of resolveFlag",
 	});
 
 	it("holds the default when the 2xx body is structurally malformed", () => {
-		// The body is untrusted JSON; the resolveFlag guard, not a cast, rejects it.
 		expect(resolveFlagResponse(true, null, "new-ui", false)).toBe(false);
 		expect(resolveFlagResponse(true, {flags: {"new-ui": "yes"}}, "new-ui", false)).toBe(false);
 	});
@@ -49,15 +35,12 @@ describe("resolveFlagResponse — useFlag's safe-default wiring of resolveFlag",
 
 describe("resolveBootFlag — the synchronous __BOOT__ member resolution", () => {
 	it("returns the injected value for a shell-key-manifest member (no fetch, loading:false)", () => {
-		// A member key present in __BOOT__ resolves to its edge-injected value on first render.
 		expect(resolveBootFlag({[MECMUA_PUBLIC_READ]: true}, MECMUA_PUBLIC_READ)).toBe(true);
 		expect(resolveBootFlag({[MECMUA_PUBLIC_READ]: false}, MECMUA_PUBLIC_READ)).toBe(false);
 		expect(resolveBootFlag({[MECMUA_FEED]: true}, MECMUA_FEED)).toBe(true);
 	});
 
 	it("returns undefined for a member when __BOOT__ is absent (the fetch fallback signal)", () => {
-		// The never-hang fallback serves an untransformed asset with no __BOOT__ — the hook must
-		// fall back to fetch, so resolution is undefined rather than a crash or a false default.
 		expect(resolveBootFlag(undefined, MECMUA_PUBLIC_READ)).toBeUndefined();
 	});
 
@@ -72,7 +55,6 @@ describe("resolveBootFlag — the synchronous __BOOT__ member resolution", () =>
 	});
 
 	it("returns undefined for a non-member key regardless of __BOOT__ (always the fetch path)", () => {
-		// A non-member key never resolves synchronously even if __BOOT__ happens to carry it.
 		expect(resolveBootFlag({"mecmua-write": true} as never, "mecmua-write")).toBeUndefined();
 		expect(resolveBootFlag(undefined, "mecmua-write")).toBeUndefined();
 	});

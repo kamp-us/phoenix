@@ -24,10 +24,9 @@ import "./PanoSubmitPage.css";
 
 type Mode = "link" | "text";
 
-/** The submit route — keys the autosaved draft, matching the auth `returnTo` below (#1214). */
 const PANO_SUBMIT_ROUTE = "/pano/yeni";
 
-/** The client-side autosave draft for the pano submit form (localStorage, not the server `saveDraft`). */
+// The client-side autosave draft (localStorage), not the server-side `saveDraft`.
 interface PanoDraft {
 	mode: Mode;
 	url: string;
@@ -52,9 +51,7 @@ function isPanoDraft(value: unknown): value is PanoDraft {
 const isPanoDraftEmpty = (d: PanoDraft): boolean =>
 	d.url.trim() === "" && d.title.trim() === "" && d.body.trim() === "" && d.tags.length === 0;
 
-// The five kinds + their CSS modifier (`cls`) come from the shared typed home
-// `src/lib/panoTags.ts` (#1030) — the same module the server allow-list imports,
-// so the form can't drift from the producer enum.
+// Sourced from the same module the server allow-list imports, so the form can't drift.
 const TAGS = POST_TAG_KINDS.map((kind) => ({kind, label: tagLabel(kind), cls: tagClass(kind)}));
 
 const URL_RE = /^https?:\/\/[^/]+/i;
@@ -68,7 +65,6 @@ const TITLE_MAX = 200;
 const BODY_MAX = 10_000;
 const TITLE_MIN = 5;
 
-/** Submit-form copy that overrides the shared {@link WIRE_MESSAGES} base. */
 const PANO_SUBMIT_OVERRIDES: WireMessageOverrides = {
 	TITLE_REQUIRED: "başlık boş olamaz",
 	TITLE_TOO_LONG: `başlık en fazla ${TITLE_MAX} karakter olabilir`,
@@ -101,8 +97,6 @@ export function PanoSubmitPage() {
 		run,
 	} = useDraftSubmit({overrides: PANO_SUBMIT_OVERRIDES, redirectPath: () => "/pano/yeni"});
 
-	// Prefill the (still-empty) title/context from the pasted link's metadata on
-	// URL blur — the shared policy in `prefillIfEmpty` never clobbers user input.
 	async function prefillFromUrl() {
 		const meta = await fetchMetadata(url);
 		prefillIfEmpty(title, meta.title, setTitle);
@@ -165,11 +159,9 @@ export function PanoSubmitPage() {
 		const linkUrl = mode === "link" && trimmedUrl ? trimmedUrl : null;
 		await run(
 			() =>
-				// The pano feed is a registered no-filter root list, so `insert: "before"`
-				// declaratively prepends the new post with a temp-id optimistic node fate
-				// reconciles to the server id (the same row `live.post.feed.appendNode`
-				// carries — reconcile dedups by id, so no double-row for the mutator's own
-				// client). See `.patterns/fate-mutations-client.md`.
+				// The optimistic prepend and the `appendNode` push carry the same row; fate's
+				// reconcile dedups by id, so the mutator's own client gets no double-row.
+				// See `.patterns/fate-mutations-client.md`.
 				fate.mutations.post.submit({
 					input: {
 						title: trimmedTitle,
@@ -183,10 +175,8 @@ export function PanoSubmitPage() {
 						url: linkUrl,
 						host: linkUrl ? hostOf(linkUrl) : null,
 						tags: Array.from(selectedTags),
-						// Shared actor-label rule (#2126): display name → fixed noun, never the
-						// email the old `?? user.email` could leak into the optimistic author.
-						// The session user has no typed `username`; the server round-trip
-						// replaces this optimistic author with the stored value.
+						// Never fall back to `user.email` here — it would leak into the rendered
+						// optimistic author (#2126).
 						author: actorLabel(user.name, null, "kullanıcı"),
 						authorId: user.id,
 						now,
@@ -194,7 +184,7 @@ export function PanoSubmitPage() {
 				}),
 			"gönderi paylaşılamadı",
 			(result) => {
-				draft.clear(); // submitted successfully — the autosaved draft is spent
+				draft.clear();
 				const newId = result?.slug ?? result?.id;
 				if (newId) navigate(`/pano/${newId}`);
 			},

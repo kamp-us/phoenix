@@ -35,54 +35,16 @@ export function Topbar({
 	brandName?: string;
 	brandTo?: string;
 	nav?: NavItem[];
-	/**
-	 * The yazar/mod-only divan entry's href (#1290). Rendered only when set — the
-	 * Layout passes it solely when the server granted divan access (yazar OR mod), so
-	 * it is invisible to çaylak/visitor. Kept distinct from `nav` so the gated entry
-	 * never leaks into the always-on nav list.
-	 */
 	divanTo?: string;
-	/** `username` drives the @username link; null means the bootstrap CTA. */
 	user?: {name: string; src?: string; username?: string | null};
-	/**
-	 * The signed-in user's ambient self-karma (#1208). Rendered only when present —
-	 * `undefined` for a signed-out viewer, whose topbar carries no karma.
-	 */
 	karma?: number;
-	/**
-	 * The bildirim entry (#1694). Rendered only when set — the Layout passes it
-	 * solely when the `phoenix-bildirim` flag is on AND the viewer is signed in,
-	 * so with the flag off (the dark default) the topbar is exactly as before.
-	 * The unread signal renders only when `unread > 0`, as the status-zone bell (#2613).
-	 */
 	bildirim?: {to: string; unread: number};
 	actions?: React.ReactNode;
-	/**
-	 * The active search query to echo in the header input on the results page
-	 * (#2199) — seeded from the URL `q` by the Layout only on `/search`, empty
-	 * elsewhere. It keys an uncontrolled `defaultValue` (below), so the field
-	 * stays freely editable and a query→query navigation re-seeds it.
-	 */
 	searchQuery?: string;
 	onSearchSubmit?: (query: string) => void;
-	/**
-	 * The current theme selection + its setter, driving the three-way theme picker
-	 * (light/dark/auto) — the sole theme control (#2612). The picker renders in the user
-	 * menu for a signed-in visitor and in the utility zone for a signed-out one, so every
-	 * visitor keeps exactly one theme control.
-	 */
 	themeChoice?: ThemeChoice;
 	onThemeChange?: (choice: ThemeChoice) => void;
 	onLogout?: () => void;
-	/**
-	 * Reserve the signed-in account cluster's geometry at first paint (#2933, ADR 0179 §1).
-	 * Driven by `__BOOT__.user != null` (`readBootUser`, ADR 0185) in the shell frame: when the
-	 * edge resolved a signed-in session, the account slot holds its geometry from the first frame.
-	 * With `__BOOT__.user` present the shell also seeds the real `user` chip synchronously, so the
-	 * cluster paints its content immediately rather than a placeholder; this placeholder covers the
-	 * residual reserve-without-content window (a boot/session divergence). False (absent `__BOOT__`
-	 * / signed-out) ⇒ the account slot stays null until `user` arrives — today's conditional render.
-	 */
 	reserveSignedInSlots?: boolean;
 }) {
 	// ⌘K (mac) / Ctrl+K (other) focuses search, backing the <Kbd>⌘K</Kbd> hint below.
@@ -101,8 +63,6 @@ export function Topbar({
 	const before = dotAt >= 0 ? brandName.slice(0, dotAt) : brandName;
 	const after = dotAt >= 0 ? brandName.slice(dotAt + 1) : "";
 
-	// The topbar's leaf elements, built once and placed into their zones below — one node
-	// each, never a second drifting copy of the search form or user menu.
 	const brand = (
 		<Link className="kp-topbar__brand" to={brandTo}>
 			{before}
@@ -116,11 +76,8 @@ export function Topbar({
 			{n.label}
 		</NavLink>
 	));
-	// Under the zone grammar divan is a status/signal glyph (#2613): a gated signal, not a
-	// peer product noun, so it sits in the status zone rather than `.kp-topbar__nav` and reads
-	// as the canonical Gavel icon (ADR 0166) under an accessible "divan" name, carrying the
-	// `kp-topbar__signal-link` treatment (grouped in the CSS). Null when the caller passes no
-	// `divanTo` — the access probe (#1290) withholds it from a viewer without divan access.
+	// divan is a status glyph, not a peer product noun, so it belongs in the status zone and not
+	// `.kp-topbar__nav`. See ADR 0176 for the zone law, ADR 0166 for the icon.
 	const divanLink = divanTo ? (
 		<NavLink
 			key={divanTo}
@@ -164,9 +121,6 @@ export function Topbar({
 			/>
 		</form>
 	);
-	// The three-way theme picker (#2612) — the sole theme control. Signed-in ⇒ it lives in
-	// the user menu next to `ayarlar`; signed-out ⇒ in the utility zone, so exactly one
-	// renders either way. Null unless the caller wires both halves of the controlled pair.
 	const themePicker =
 		themeChoice && onThemeChange ? (
 			<ThemeChoicePicker
@@ -179,12 +133,6 @@ export function Topbar({
 		typeof karma === "number" ? (
 			<Karma value={karma} variant="inline" testId="topbar-karma" className="kp-topbar__karma" />
 		) : null;
-	// The unread bildirim signal in the status zone (#2613), now an INTERACTIVE bell that
-	// opens an in-place popover of recent bildirimler (#2787) — the near-universal
-	// bell→dropdown pattern, with the full `/bildirimler` page kept as the "tümünü gör"
-	// destination. The count is still the trigger's accessible name (ADR 0166). Same render
-	// rule as before — only when the `phoenix-bildirim` flag put a `bildirim` here AND
-	// unread > 0.
 	const bildirimSignal =
 		bildirim && showUnreadBadge(bildirim.unread) ? (
 			<BildirimPopover to={bildirim.to} unread={bildirim.unread} />
@@ -198,11 +146,8 @@ export function Topbar({
 			onLogout={onLogout}
 		/>
 	) : null;
-	// The account slot: the real user menu once fate publishes it, else — when `__BOOT__`
-	// reserved a signed-in first paint — a fixed-geometry placeholder that holds the slot open
-	// so the menu late-fills in place with no shift (#2933). Mirrors `.kp-topbar__user`'s box
-	// (avatar + name) and is inert (aria-hidden, not a control). Signed-out / no reservation ⇒
-	// null, exactly today's render.
+	// The placeholder holds the account slot's geometry until fate publishes the real user, so
+	// the menu fills in place with no shift. See ADR 0179 §1 and ADR 0185.
 	const accountSlot =
 		userMenu ??
 		(reserveSignedInSlots ? (
@@ -216,15 +161,8 @@ export function Topbar({
 			</span>
 		) : null);
 
-	// Nav-IA zone grammar (#2611): every element is classed by the #2586 taxonomy and
-	// placed in its one lawful zone (#2587 Model-2). Zones carry a stable class +
-	// data-testid so the structure is headlessly targetable; brand + account (actions /
-	// user menu) are the structural spine, not a taxonomy class. The primary-action zone
-	// is empty/reserved — #2600 relocated the promoted `+ gönderi` verb to the pano
-	// Subnav CTA, so no product-scoped occupant lives in the global bar (it does not
-	// re-add one). The status-signal zone carries the read-only signals reworked in #2613:
-	// the divan glyph, the karma glyph, and the bildirim bell — each a legible affordance in
-	// its lawful zone, none a control or accent.
+	// Every element sits in its one lawful zone (see ADR 0176). The primary-action zone is
+	// empty on purpose — #2600 moved `+ gönderi` to the pano Subnav CTA; do not refill it.
 	return (
 		<header className="kp-topbar">
 			{brand}

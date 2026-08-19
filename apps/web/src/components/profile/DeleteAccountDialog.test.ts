@@ -4,8 +4,6 @@ import {CONFIRMATION_PHRASE, matchesConfirmation} from "./DeleteAccountDialog";
 
 describe("DeleteAccountDialog confirmation gate", () => {
 	it("the dialog phrase equals the worker's Schema.Literal — a drift would silently un-gate", () => {
-		// The whole "make a wrong confirmation unrepresentable" guarantee rests on the
-		// client phrase matching the mutation's literal exactly; this binds them.
 		expect(CONFIRMATION_PHRASE).toBe(ACCOUNT_DELETE_CONFIRMATION);
 	});
 

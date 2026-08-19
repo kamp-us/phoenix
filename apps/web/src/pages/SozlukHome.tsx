@@ -1,12 +1,7 @@
 /**
- * Sözlük home page — fate. Two term connections (recent + popular) resolve in one
- * batched `useRequest({recentTerms, popularTerms})`; each maps to a fixed-sort
- * `list` root over the `terms` keyset (see `worker/features/sozluk/lists.ts`).
- * The masthead promotes a `+ yeni tanım` create CTA — the "go to a term" search half
- * folded into the global ⌘K `ara` (#2995, the #2412 single-search contract), so this
- * page carries no local search box. The alphabet's letter filter (`?harf=`) still
- * narrows the already-loaded first page client-side, so the filtered-to-zero copy names
- * that scope ("ilk sayfada"), never the whole corpus.
+ * Sözlük home page. No local search box — that folded into the global ⌘K (#2995). The
+ * `?harf=` letter filter narrows only the already-loaded first page, client-side, which
+ * is why the filtered-to-zero copy names that scope ("ilk sayfada") not the whole corpus.
  */
 import * as React from "react";
 import {useListView, useRequest, useView, type ViewRef} from "react-fate";
@@ -28,9 +23,8 @@ const homeRequest = {
 
 type TermConnection = ReturnType<typeof useRequest<typeof homeRequest>>["recentTerms"];
 
-// The active letter is URL-driven (`/sozluk?harf=<letter>`, issue #693): the
-// alphabet renders real links, so the filter is shareable + back-button-correct
-// rather than transient component state.
+// The letter lives in the URL, not component state, so the filter is shareable and
+// back-button-correct.
 export function SozlukHome() {
 	const [params] = useSearchParams();
 	const letter = params.get("harf") ?? undefined;
@@ -100,15 +94,8 @@ function SozlukHomeChrome({status, errorMessage, children}: ChromeProps) {
 	);
 }
 
-/**
- * Tracks which rows survive the client-side letter filter. Each row reads its own fate
- * view, so match state can only be reported up per-row via `onMatch`; this hook owns the
- * resulting map and derives the column's display state from it.
- *
- * - `empty` — the connection itself has zero terms (genuine-empty).
- * - `no-match` — terms exist but the letter filter excluded every loaded row.
- * - `ok` — at least one row is visible.
- */
+// Each row reads its own fate view, so match state can only travel up per-row; this hook
+// owns the map and separates a genuinely empty connection from a filtered-to-zero one.
 function useFilteredColumn(items: readonly {node: ViewRef<"Term">}[]) {
 	const [matches, setMatches] = React.useState<Record<string, boolean>>({});
 	const onMatch = React.useCallback((id: string, matched: boolean) => {
@@ -153,11 +140,6 @@ function ColumnEmptyState({children}: {children: React.ReactNode}) {
 	return <p className="kp-sozluk-home__empty">{children}</p>;
 }
 
-/**
- * A column row that reads its own title and drops out of the DOM when the active
- * letter excludes it, with the filter colocated. Used by both columns so a letter
- * filters "son eklenenler" and "en çok oylananlar" alike.
- */
 function FilterableTermRow({
 	node,
 	letter,

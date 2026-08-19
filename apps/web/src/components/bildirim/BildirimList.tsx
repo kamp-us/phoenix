@@ -1,12 +1,4 @@
-/**
- * `BildirimList` — the notification center's list (#1694): the `bildirim.list`
- * connection paginated via `useListView`, with per-row mark-read and a
- * mark-all-read header action. Read state folds the server `readAt` stamp with
- * this session's mark actions (`rowUnread`) — the receipt doesn't rewrite listed
- * rows, so the fold is what makes a marked row stop reading as unread without a
- * reload. A dead target (`targetUrl: null`) renders the tombstone row
- * (`bildirimTarget`), never a broken link.
- */
+/** `BildirimList` — the notification center's list (#1694), with per-row and mark-all read actions. */
 import {useEffect, useRef, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
@@ -50,20 +42,13 @@ export function BildirimList() {
 	const fate = useFateClient();
 	const userId = useSession().data?.user?.id ?? null;
 
-	// Live-reconcile the center over `/fate/live` (#1700): when a recorded notification
-	// bumps the viewer's live unread count, refetch the list once (network-only) so the
-	// new row surfaces without a nav or refresh. `bildirim.list` has no per-node live
-	// topic; the per-recipient count is the coarse signal that a re-read is due.
+	// `bildirim.list` has no per-node live topic, so the per-recipient unread count is the
+	// coarse signal that a re-read is due (#1700).
 	//
-	// The count comes from `useBildirimUnread` — the same seed-gated, NON-suspending live
-	// read the shell badge uses — NOT a `useLiveView(channelRef)`. `NotificationChannel` is
-	// a loader-less `Fate.syntheticSource`, so the suspending read's `readView` fires a
-	// `byId` on any cache miss, which 500s through fate's capability-less arm as an
-	// `INTERNAL_ERROR` (#2206). That surfaced as the popover's generic "yüklenemedi": the
-	// popover mounts this list from the shell where the co-bundled hydration isn't a hard
-	// guarantee, so the suspending read hit the `byId`. `useBildirimUnread` never issues a
-	// `byId` (it reads only once its own query seed has hydrated the cache), so the live
-	// count is byId-safe in every mount context (#2982).
+	// The count must come from the seed-gated, NON-suspending `useBildirimUnread`, never a
+	// `useLiveView(channelRef)`: the suspending read's `readView` fires a `byId` against the
+	// loader-less `NotificationChannel` source on a cache miss, which 500s (#2206) and
+	// surfaced as the popover's generic "yüklenemedi" (#2982).
 	const liveUnread = useBildirimUnread(userId != null, userId);
 	const lastUnread = useRef<number | null>(null);
 	useEffect(() => {
@@ -74,8 +59,6 @@ export function BildirimList() {
 		lastUnread.current = liveUnread;
 	}, [liveUnread, userId, fate]);
 
-	// This session's mark state — the receipt confirms the write but doesn't
-	// rewrite the listed rows, so rows fold these into their unread reading.
 	const [markedIds, setMarkedIds] = useState<ReadonlySet<string>>(new Set());
 	const [allMarked, setAllMarked] = useState(false);
 	const [markAllBusy, setMarkAllBusy] = useState(false);

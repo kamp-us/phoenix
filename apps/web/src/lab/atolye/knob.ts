@@ -1,14 +1,5 @@
-/**
- * prop-knobs — the typed knob schema that live-drives an exhibit's props.
- *
- * A knob is one on-screen control (`string`→text · `number`→number · `boolean`→Switch ·
- * `enum`→ToggleGroup) bound to one host-component prop. The one non-obvious thing:
- * `KnobForType` parameterizes each knob over its prop's type so a knob can only target a
- * real prop AND can only carry a value assignable to it — the invalid-states-unrepresentable
- * guarantee lives in this file's type layer, not in a runtime check.
- */
+// prop-knobs — one typed control per host-component prop. See .patterns/atolye-exhibit-harness.md
 
-/** The only value kinds a knob produces — everything reachable through a control. */
 export type KnobValue = string | number | boolean;
 
 export interface StringKnob {
@@ -46,13 +37,7 @@ export interface EnumKnob<V extends KnobValue = KnobValue> {
 	readonly options: readonly EnumOption<V>[];
 }
 
-/**
- * The knob a prop of type `T` admits — the soundness core. A prop can only be knobbed
- * when its type reduces to a `KnobValue`; anything else (`ReactNode`, a callback) maps to
- * `never`, so it is unrepresentable in a schema and must be supplied via `fixedProps`.
- * An open `string` gets a text knob; a string/number literal union gets an enum whose
- * options are drawn from that exact union.
- */
+/** A prop whose type is not a `KnobValue` maps to `never` — unknobbable, so it must go through `fixedProps`. */
 export type KnobForType<T> = [T] extends [boolean]
 	? BooleanKnob
 	: [T] extends [number]
@@ -65,21 +50,16 @@ export type KnobForType<T> = [T] extends [boolean]
 				: EnumKnob<T & KnobValue>
 			: never;
 
-/** A per-prop knob map over a component's props `P` — a knob key must be a real prop of `P`. */
 export type KnobSchema<P> = {
 	readonly [K in keyof P]?: KnobForType<NonNullable<P[K]>>;
 };
 
-/** The type-erased runtime shapes — what the presentational layer switches on. */
 export type AnyKnob = StringKnob | NumberKnob | BooleanKnob | EnumKnob;
 export type AnyKnobSchema = Readonly<Record<string, AnyKnob>>;
 
-/** Current knob values keyed by prop name — the object spread onto the host component. */
 export type KnobValues = Readonly<Record<string, KnobValue>>;
 
 /**
- * The initial value map for a schema: each knob's `default`, keyed by its prop name.
- *
  * The param is `Partial<AnyKnobSchema>`, not `AnyKnobSchema`, so a raw authored
  * `KnobSchema<P>` is accepted at the public boundary without a cast: `KnobSchema<P>` maps
  * each prop optionally (`[K in keyof P]?`), so its erased values are `AnyKnob | undefined` —

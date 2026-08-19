@@ -1,11 +1,4 @@
-/**
- * Pins ADR 0118's load-bearing invariant: the SPA Sentry wiring ships INERT. With no
- * `VITE_SENTRY_DSN`, `initSentry`/`captureBoundaryError` never touch `@sentry/react` and
- * never throw — the integration activates only once the maintainer provisions a DSN. The
- * inert block stubs the DSN empty and imports `./sentry` fresh so the invariant is proven
- * deterministically, independent of a developer's local `apps/web/.env` (#1661). Also pins
- * the DSN gate and the native-`dataCollection` shape.
- */
+/** Pins ADR 0118's invariant: with no `VITE_SENTRY_DSN`, the SPA Sentry wiring is inert. */
 import {afterEach, describe, expect, it, vi} from "vitest";
 
 const {init, captureException, setTag} = vi.hoisted(() => ({
@@ -15,14 +8,12 @@ const {init, captureException, setTag} = vi.hoisted(() => ({
 }));
 vi.mock("@sentry/react", () => ({init, captureException, setTag}));
 
-// The inert block imports `initSentry`/`captureBoundaryError`/`tagFlag` dynamically (after stubbing
-// the DSN), so only the DSN-independent helpers are imported statically here.
+// Only the DSN-independent helpers can be imported statically — see `loadInert` below.
 import {browserOptions, flagTag, sentryEnabled} from "./sentry";
 
 afterEach(() => {
 	vi.clearAllMocks();
-	// The inert block stubs VITE_SENTRY_DSN and resets the module registry; restore both so
-	// neither leaks into sibling tests.
+	// The DSN stub and the module-registry reset must not leak into sibling tests.
 	vi.unstubAllEnvs();
 	vi.resetModules();
 });
@@ -40,11 +31,9 @@ describe("sentryEnabled — the inert gate", () => {
 });
 
 describe("inert without a DSN (the whole point of ADR 0118's parked-provisioning ship)", () => {
-	// `sentry.ts` binds `const dsn = import.meta.env.VITE_SENTRY_DSN` at MODULE LOAD, so the
-	// static top-of-file import binds `dsn` to whatever ambient `.env` supplies — a provisioned
-	// local DSN (#1656) would defeat the invariant. Stub the DSN empty, drop the module cache,
-	// and re-import so the fresh evaluation reads the empty stub — proving the gate is inert
-	// BECAUSE it saw no DSN, deterministically regardless of `apps/web/.env` (#1661).
+	// `sentry.ts` binds its `dsn` at MODULE LOAD, so a statically-imported copy would carry
+	// whatever a developer's local `.env` supplies and defeat the invariant (#1656). Stubbing
+	// empty + dropping the module cache proves the gate is inert BECAUSE it saw no DSN (#1661).
 	const loadInert = async () => {
 		vi.stubEnv("VITE_SENTRY_DSN", "");
 		vi.resetModules();
@@ -71,7 +60,6 @@ describe("inert without a DSN (the whole point of ADR 0118's parked-provisioning
 });
 
 describe("flag attribution — the tag-naming contract (#1821)", () => {
-	// The DSN-independent naming: `flag.<key>` = `on|off`, so a graduation query is `flag.<key>:on`.
 	it("flagTag maps a resolved flag to a queryable flag.<key> tag", () => {
 		expect(flagTag("phoenix-bildirim", true)).toEqual({
 			tagKey: "flag.phoenix-bildirim",
@@ -83,8 +71,7 @@ describe("flag attribution — the tag-naming contract (#1821)", () => {
 		});
 	});
 
-	// With a DSN, a resolved flag lands on the global Sentry scope as a queryable tag. The loader
-	// stubs a real DSN + re-imports so `tagFlag` reads the enabled gate (mirrors `loadInert`).
+	// Mirrors `loadInert`, with a real DSN so `tagFlag` reads the enabled gate.
 	const loadEnabled = async () => {
 		vi.stubEnv("VITE_SENTRY_DSN", "https://abc@o0.ingest.de.sentry.io/1");
 		vi.resetModules();
@@ -104,8 +91,6 @@ describe("decided defaults (ADR 0118)", () => {
 	it("browserOptions is pure native dataCollection with no beforeSend", () => {
 		const opts = browserOptions("https://abc@o0.ingest.de.sentry.io/1");
 		expect(opts.dsn).toBe("https://abc@o0.ingest.de.sentry.io/1");
-		// dataCollection is the whole story; the deprecated `sendDefaultPii` is gone,
-		// and no hand-rolled `beforeSend` scrub remains (server-side scrubbing is the backstop).
 		expect(opts.sendDefaultPii).toBeUndefined();
 		expect(opts.dataCollection).toEqual({
 			userInfo: false,

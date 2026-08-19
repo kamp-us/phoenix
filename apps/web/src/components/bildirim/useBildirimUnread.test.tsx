@@ -1,16 +1,9 @@
 /**
  * Regression pin for #2206: the topbar unread badge must NEVER issue a `byId` against
  * the loader-less `NotificationChannel` synthetic source — a `byId` there 500s through
- * fate's capability-less error arm, and this badge mounts on every authenticated page,
- * so an ungated read was 500-spam on 100% of authed pageviews.
- *
- * `client.readView` is exactly the call that fetches a `byId` on a cache miss (fate's
- * `readView` → `fetchByIdAndNormalize` when `missing.size > 0`). The fix gates the read
- * behind the `bildirim.channel` query seed, so `readView` is only ever called once the
- * channel is hydrated (a pure cache hit, no `byId`). The stub client below records every
- * `readView`, and the load-bearing assertion is that it is NOT invoked before the seed
- * resolves — pre-fix, `getSnapshot` called `readView` on the first synchronous render
- * (empty cache → `byId` → 500).
+ * fate's capability-less error arm, on every authenticated pageview. `client.readView`
+ * is the call that fetches a `byId` on a cache miss, so the load-bearing assertion below
+ * is that `readView` is not invoked before the `bildirim.channel` seed resolves.
  */
 import {act, renderHook, waitFor} from "@testing-library/react";
 import type {ReactNode} from "react";
@@ -42,8 +35,6 @@ function makeClient(unreadCount: number) {
 		data: {unreadCount},
 	};
 	const fulfilled = {status: "fulfilled" as const, value: snapshot};
-	// Unhydrated → a bare pending thenable (fate's cache-miss branch, which fires the byId);
-	// hydrated → the stable fulfilled snapshot (a pure cache hit).
 	const readView = vi.fn(() => (hydrated ? fulfilled : Promise.resolve(null)));
 	const request = vi.fn(() =>
 		seed.then(() => {
@@ -81,15 +72,10 @@ describe("useBildirimUnread — no byId against the loader-less NotificationChan
 			wrapper: wrapperFor(client),
 		});
 
-		// The seed request fired, but the reactive read did NOT — a readView on the empty
-		// cache is exactly the byId that 500s. This is the regression: pre-fix the first
-		// synchronous getSnapshot called readView before any hydration.
 		expect(request).toHaveBeenCalledWith({"bildirim.channel": {view: expect.anything()}});
 		expect(readView).not.toHaveBeenCalled();
 		expect(result.current).toBe(0);
 
-		// Resolve the seed → the cache hydrates → now the read is a pure cache hit and the
-		// badge reflects the live count. The read path still works: no regression to #1700.
 		await act(async () => {
 			resolveSeed();
 			await Promise.resolve();

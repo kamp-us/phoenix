@@ -1,8 +1,3 @@
-/**
- * The /lab/atolye index lists exactly what the headless registry enumerates and deep-links each
- * row to its detail route (#3092). The registry is the seam: the page holds no exhibit list of its
- * own, so it can never drift from `listExhibits()`.
- */
 import {render, screen, within} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
 import {describe, expect, it} from "vitest";

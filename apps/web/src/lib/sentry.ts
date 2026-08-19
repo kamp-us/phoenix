@@ -1,40 +1,26 @@
 /**
- * SPA-side Sentry wiring (ADR 0118). The browser tier is the decisive gap CF-native
- * Workers Observability (#1222) structurally cannot see — SPA crashes that today
- * `console.error` and vanish at the `Screen.tsx` boundary. This captures them, but
- * stays INERT until a DSN is provisioned: an absent/empty DSN skips `init` entirely,
- * so nothing is sent and nothing throws. The maintainer provisions the Sentry account
- * + DSN later (the same parked-on-external-provisioning pattern ADR 0118 names).
+ * SPA-side Sentry wiring — see ADR 0118 for the why and the decided defaults.
  *
- * A Sentry DSN is a public, client-side value, so the SPA reads it from a build-time
- * Vite env var (`VITE_SENTRY_DSN`) baked into the bundle — distinct from the worker's
- * `SENTRY_DSN` secret_text binding. The EU data region is realized by the ingest host
- * the provisioned DSN points at; the decided defaults (EU region, PII scrub) are ADR
- * 0118's and adjustable there.
+ * Ships INERT: with no DSN provisioned, nothing inits, nothing sends, nothing throws.
+ * The DSN is a public value read from the build-time `VITE_SENTRY_DSN`, deliberately
+ * NOT the worker's `SENTRY_DSN` secret binding.
  */
 import * as Sentry from "@sentry/react";
 import {flagTag} from "../../worker/features/flagship/flag-tag";
 
-// The `flag.<key>`:`on`/`off` naming contract now lives in one SDK-free module shared with the
-// worker tagger (`worker/lib/sentry.ts`), so both tiers stamp an identical shape and the #1822
-// graduation query reads uniformly across client + worker — see `flag-tag.ts` for the why (#1821).
+// Re-exported from the SDK-free module the worker tagger also uses, so both tiers stamp an
+// identical `flag.<key>` shape and one graduation query reads across them (#1821).
 export {FLAG_TAG_PREFIX, flagTag} from "../../worker/features/flagship/flag-tag";
 
-/**
- * Whether a usable DSN is present — the single gate every Sentry path checks, so the
- * integration is provably inert when unset (no init, no capture, no network, no throw).
- */
+/** The single gate every Sentry path checks, so the integration is provably inert when unset. */
 export function sentryEnabled(dsn: string | undefined): dsn is string {
 	return typeof dsn === "string" && dsn.trim().length > 0;
 }
 
 /**
- * The decided client options (ADR 0118): pure native `dataCollection` (SDK ≥10.57,
- * the granular successor to the removed `sendDefaultPii`), no `beforeSend`. It
- * suppresses the cookies/headers/user/`query_string` PII. Query strings carry no
- * GDPR-PII in this app (only short-lived auth/OAuth tokens, caught by Sentry's
- * server-side default data-scrubbing by field name), so no client-side URL scrub is
- * needed — server-side Advanced Data Scrubbing is the backstop.
+ * The decided options (ADR 0118): native `dataCollection`, no `beforeSend`. The missing
+ * client-side URL scrub is deliberate — query strings here carry no GDPR-PII, and
+ * server-side Advanced Data Scrubbing is the backstop.
  */
 export function browserOptions(dsn: string): Sentry.BrowserOptions {
 	return {
@@ -50,7 +36,6 @@ export function browserOptions(dsn: string): Sentry.BrowserOptions {
 
 const dsn = import.meta.env.VITE_SENTRY_DSN;
 
-/** Initialize Sentry for the SPA — a no-op when no DSN is provisioned (inert). */
 export function initSentry(): void {
 	if (!sentryEnabled(dsn)) {
 		return;
@@ -58,10 +43,6 @@ export function initSentry(): void {
 	Sentry.init(browserOptions(dsn));
 }
 
-/**
- * Forward an error-boundary catch to Sentry. No-ops when inert, so the boundary's own
- * `console.error` stays the only effect until a DSN is set.
- */
 export function captureBoundaryError(error: unknown, componentStack?: string | null): void {
 	if (!sentryEnabled(dsn)) {
 		return;
@@ -72,11 +53,7 @@ export function captureBoundaryError(error: unknown, componentStack?: string | n
 	);
 }
 
-/**
- * Record a resolved flag on the global Sentry scope so subsequently-captured errors carry its
- * state as a queryable `flag.<key>` tag (#1821). No-ops when inert (no DSN) — no scope mutation,
- * no network, mirroring init/capture — so tagging adds nothing while Sentry is off.
- */
+/** Puts a resolved flag on the global scope so later captures carry it as `flag.<key>` (#1821). */
 export function tagFlag(key: string, value: boolean): void {
 	if (!sentryEnabled(dsn)) {
 		return;

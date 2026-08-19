@@ -1,8 +1,3 @@
-/**
- * The optimistic membership payload for `post.submit` (#1676, epic #1637), tested
- * off the pure {@link postSubmitMembership} core — no DOM. Covers the optimistic
- * node shape and its no-phantom-self-upvote contract (#707).
- */
 import {assert, describe, it} from "@effect/vitest";
 import {type OptimisticSubmitInput, postSubmitMembership} from "./panoSubmitArgs";
 

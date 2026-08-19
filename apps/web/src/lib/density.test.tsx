@@ -4,9 +4,7 @@ import {DensityProvider, useDensity} from "./density";
 import {DENSITY_STORAGE_KEY} from "./densityStorage";
 
 // jsdom in the `client` tier ships no localStorage (Node's is experimental/off), so the
-// provider's persistence seam has nothing to read/write against by default. Install a
-// fake Storage on `window` per test so the mount-read and the setChoice-write are
-// observable — the same fake-Storage shape themeStorage's unit test uses.
+// provider has nothing to read/write against without a fake installed per test.
 function installFakeStorage(initial?: Record<string, string>): Storage {
 	const map = new Map<string, string>(Object.entries(initial ?? {}));
 	const storage: Storage = {

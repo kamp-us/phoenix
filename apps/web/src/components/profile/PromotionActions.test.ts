@@ -1,11 +1,3 @@
-/**
- * `PromotionActions` decision coverage (#1206) — the mod-direct promote
- * call→outcome→copy mapping, factored DOM-free (the `flagGateChild` /
- * `toProfileStatsState` pure-extraction idiom; `apps/web/src` has no jsdom). Proves
- * `user.promote`'s `{result, error}` lands on the right lowercase-Turkish status,
- * including the authority-denial outcome. (The vouch UI is a deferred slice — only
- * the mod-direct surface is built here.)
- */
 import {describe, expect, it} from "vitest";
 import {
 	promoteOutcome,

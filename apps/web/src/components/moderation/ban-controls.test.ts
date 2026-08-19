@@ -1,7 +1,3 @@
-/**
- * `ban-controls` pure-logic coverage (#970) — the banned-state labels, the
- * outcome-message mapping, and the expiry parse, DOM-free (the divan-gating idiom).
- */
 import {describe, expect, it} from "vitest";
 import {banExpiryLabel, banOutcomeMessage, banStatusLabel, parseExpiry} from "./ban-controls";
 

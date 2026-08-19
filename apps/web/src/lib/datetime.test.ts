@@ -13,7 +13,6 @@ describe("editedAfter", () => {
 		const updatedFar = "2026-05-09T10:00:30.000Z";
 		expect(editedAfter(created, updatedFar)).toBe(false);
 
-		// Exactly at the boundary (60s) is still inside the grace window.
 		const updatedBoundary = "2026-05-09T10:01:00.000Z";
 		expect(editedAfter(created, updatedBoundary)).toBe(false);
 	});
@@ -46,9 +45,7 @@ describe("editedAfter", () => {
 describe("formatEditedTooltipTR", () => {
 	it("formats a valid iso into Turkish date+time", () => {
 		const out = formatEditedTooltipTR("2026-05-09T13:45:00.000Z");
-		// Locale day/month/year + hour/minute. We assert presence of digits
-		// and Turkish month abbreviation rather than the full literal to keep
-		// the test portable across host TZ.
+		// Asserted loosely on purpose: the full literal is host-TZ dependent.
 		expect(out).toMatch(/2026/);
 		expect(out.length).toBeGreaterThan(8);
 	});

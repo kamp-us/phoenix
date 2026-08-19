@@ -1,14 +1,4 @@
-/**
- * `MutesPage` — the `/susturduklarim` manage-my-mutes route (#3117, epic #2035): the viewer's
- * susturduklarım screen, off the `mute.listMine` read model (#3114). The reachable surface of
- * the member-mute vertical, alongside the feed "sustur" affordance (`MuteButton`).
- *
- * Ships dark behind the default-off `member-mute` flag: with the flag off the route self-404s
- * (the `BildirimlerPage` / `MecmuaIndexPage` self-gate idiom), so it is effectively absent
- * until a human flips the flag at release (ADR 0083); loading shows a neutral placeholder so
- * the 404 never flashes before the flag resolves. Signed-out redirects to auth with a
- * `returnTo` back here — managing your own mutes is a signed-in surface.
- */
+/** `/susturduklarim` — ships dark behind the default-off `member-mute` flag (ADR 0083). */
 import {Navigate} from "react-router";
 import {useSession} from "../auth/client";
 import {MutedMembersList} from "../components/mute/MutedMembersList";

@@ -1,16 +1,8 @@
 /**
- * The shared focus layer is defined ONCE (#2169, the discord/focus-rings idiom):
- * `global.css` carries a single `:focus-visible` rule that paints the
- * `--focus-ring` token on every interactive control, and component CSS no longer
- * hand-rolls its own `outline: var(--focus-ring)` copy. These pin that
- * single-source invariant against a regression that reintroduces a per-component
- * ring: a new bespoke `outline: var(--focus-ring)` (or the pre-#2169 divergent
- * `outline: 2px solid var(--accent)`) fails here rather than only under manual
- * review.
- *
- * The one sanctioned exception is the skip-link, which uses `:focus` (not
- * `:focus-visible`) on purpose — it is reached only by keyboard so it must show on
- * any focus — and is allow-listed below.
+ * The focus ring is painted ONCE, in `global.css` (#2169). These pin that
+ * single source: a bespoke per-component `outline: var(--focus-ring)` (or the
+ * pre-#2169 divergent `outline: 2px solid var(--accent)`) fails here rather than
+ * only under manual review.
  */
 import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
@@ -19,7 +11,6 @@ import {describe, expect, it} from "vitest";
 const SRC = join(import.meta.dirname, "..");
 const GLOBAL_CSS = join(SRC, "styles", "global.css");
 
-/** Recursively collect every `.css` under `src/`. */
 function cssFiles(dir: string): string[] {
 	const out: string[] = [];
 	for (const entry of readdirSync(dir, {withFileTypes: true})) {
@@ -35,7 +26,6 @@ describe("shared focus layer (#2169)", () => {
 		const css = readFileSync(GLOBAL_CSS, "utf8");
 		// zero-specificity :where() selector so component variants override without a fight
 		expect(css).toMatch(/:where\([^)]*\):focus-visible\s*\{[^}]*outline:\s*var\(--focus-ring\)/s);
-		// the offset token rides on the same rule
 		expect(css).toMatch(
 			/:where\([^)]*\):focus-visible\s*\{[^}]*outline-offset:\s*var\(--focus-ring-offset\)/s,
 		);

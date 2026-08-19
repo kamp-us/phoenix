@@ -1,20 +1,8 @@
 /**
- * `/mecmua/:slug` — the PUBLIC reader for a single published mecmua post (#2498, epic
- * #2467). Client-only per the map (#2466 — SEO/prerender explicitly deferred): it
- * fetches the anonymous `GET /fate/mecmua/post/:slug` route and renders the published
- * post's başlık + markdown body through `@kampus/composer` in read-only mode (#2581) —
- * the reader is the editor with editing switched off, so write and read share ONE tiptap
- * render path (editor≈reader parity) and can't re-diverge (the raw-markdown bug #2578).
- * A draft / miss / off-flag all 404 server-side, surfaced here as the shared NotFoundPage.
- *
- * Tiptap is kept OFF public first-paint: the body renders through `MecmuaPostBody`, a
- * `React.lazy` chunk that alone imports the composer (the #2523 lazy-split applied to the
- * reader) — landing/index/other routes carry no tiptap; opening a post loads that chunk.
- *
- * The whole surface ships dark behind `MECMUA_PUBLIC_READ` (default-off): the page
- * self-gates (off ⇒ 404), mirroring `DivanPage`, so the route is absent until a human
- * flips the flag at release (ADR 0083). The route itself also 404s while the flag is
- * off — the page gate just avoids a fetch and a flash.
+ * `/mecmua/:slug` — the public reader for one published post. The body renders through
+ * `@kampus/composer` in read-only mode, so write and read share one tiptap render path and
+ * can't re-diverge (the raw-markdown bug #2578). Client-only; SEO/prerender is deferred.
+ * Ships dark behind `MECMUA_PUBLIC_READ` (default-off; ADR 0083).
  */
 import {lazy, Suspense, useEffect, useState} from "react";
 import {useParams} from "react-router";
@@ -24,14 +12,10 @@ import {MECMUA_PUBLIC_READ} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {NotFoundPage} from "./NotFoundPage";
 
-// The composer (and tiptap) live behind this dynamic import so they stay off mecmua public
-// first-paint — the reader route's own module graph never statically references tiptap.
+// Lazy on purpose: this is the only reference to the composer, which keeps tiptap off
+// public first-paint. A static import here would pull it into every route's chunk.
 const MecmuaPostBody = lazy(() => import("../components/mecmua/MecmuaPostBody"));
 
-/**
- * The wire shape the anon read route returns. `authorId` is the subscribe target — the
- * follow toggle (#2527) subscribes the reader to this post's author.
- */
 interface MecmuaPostWire {
 	readonly id: string;
 	readonly title: string;
@@ -49,8 +33,7 @@ export function MecmuaPostPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_PUBLIC_READ, false);
 	const {slug} = useParams<{slug: string}>();
 
-	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first (the
-	// DivanPage self-gate idiom).
+	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first.
 	if (flagLoading) {
 		return (
 			<div className="kp-page">
@@ -75,8 +58,7 @@ function MecmuaPostReader({slug}: {slug: string}) {
 		fetch(`/fate/mecmua/post/${encodeURIComponent(slug)}`, {headers: {accept: "application/json"}})
 			.then(async (res) => {
 				if (cancelled) return;
-				// 404 = a draft (masked), a genuine miss, or the flag off — all render as the
-				// not-found state. Any other non-2xx is a transient read error.
+				// 404 covers a masked draft and the flag being off, not just a genuine miss.
 				if (res.status === 404) return setState({kind: "not-found"});
 				if (!res.ok) return setState({kind: "error"});
 				const post = (await res.json()) as MecmuaPostWire;

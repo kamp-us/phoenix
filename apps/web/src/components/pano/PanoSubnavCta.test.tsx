@@ -1,9 +1,6 @@
 /**
- * pano's primary action in its Subnav CTA slot (#2600, placement law #2587). Pins the two
- * behavior-bearing halves: (1) a signed-in user reaches `/pano/yeni` through the CTA
- * (reachability, verified by actually routing there on click); (2) a signed-out visitor
- * gets no CTA — the affordance is a one-for-one replacement of the topbar's signed-in
- * `+ gönderi`, so signed-out stays with the topbar `giriş yap`, not a Subnav CTA.
+ * The signed-out case is deliberate (#2600): the CTA replaces the topbar's signed-in
+ * `+ gönderi` one-for-one, so a signed-out visitor keeps the topbar `giriş yap`.
  */
 import {fireEvent, render, screen} from "@testing-library/react";
 import {MemoryRouter, Route, Routes} from "react-router";
@@ -33,7 +30,6 @@ describe("PanoSubnavCta — pano primary action in the Subnav CTA slot (#2600)",
 		sessionState = {data: {user: {id: "u1"}}, isPending: false} as SessionResult;
 		renderCta();
 		const cta = screen.getByRole("button", {name: "yeni gönderi"});
-		// Sanctioned primary-action treatment (#2586 taxonomy), not the utility filter/tab style.
 		expect(cta.getAttribute("data-variant")).toBe("primary");
 		expect(screen.queryByTestId("pano-submit")).toBeNull();
 		fireEvent.click(cta);

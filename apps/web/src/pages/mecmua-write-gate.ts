@@ -1,14 +1,7 @@
 /**
- * The mecmua write-gate pure core, DOM-free AND composer-free (#2523). Held apart from
- * `MecmuaEditorPage` — which pulls in `@kampus/composer` (tiptap/ProseMirror) — so the
- * entry-point CTA consumers (`MecmuaIndexPage`, nav) can decide gating without dragging
- * the heavy editor payload into the entry chunk. That leak is exactly what #2523 removes:
- * lazy-splitting the editor route only helps if nothing eagerly imports it, so the gate
- * helpers live in their own composer-free module.
- *
- * Publish is offered ONLY to a yazar; the tier is the trusted account level read off the
- * fate `me` view. Publish is server-gated by `PublishMecmua` regardless — this only
- * governs what the UI offers.
+ * Keep this module composer-free (#2523): its consumers are the nav and index CTAs, and
+ * folding it back into `MecmuaEditorPage` would drag tiptap into the entry chunk, undoing
+ * the editor route's lazy split. The server gates publish regardless — this is UI only.
  */
 import type {Tier} from "../../worker/features/kunye/standing";
 
@@ -28,11 +21,8 @@ export function mecmuaPublishAffordance(
 }
 
 /**
- * Should the "yeni yazı" entry-point CTA (nav + index) be shown to this viewer (#2532)?
- * Gate parity with the editor is structural, not restated: the CTA appears exactly when
- * the write flag is live AND {@link mecmuaPublishAffordance} would offer publish (yazar
- * tier), so it never dead-ends a çaylak/visitor/signed-out reader into a page they'd be
- * publish-gated on. `MECMUA_WRITE` off, or any non-yazar/undefined tier, resolves false.
+ * Derived from `mecmuaPublishAffordance` rather than restating its rule, so the CTA can
+ * never dead-end a viewer into a page they would be publish-gated on.
  */
 export function shouldShowMecmuaWriteCta(
 	flagOn: boolean,

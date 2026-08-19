@@ -1,9 +1,3 @@
-/**
- * The signup→setUsername redirect gate (#1888). Pins the latch semantics the
- * AuthPage writer and Layout reader share: begin latches (redirect holds), end
- * releases (redirect proceeds), both idempotent, and `useUsernameResolutionPending`
- * re-renders subscribers on each transition.
- */
 import {act, renderHook} from "@testing-library/react";
 import {afterEach, describe, expect, it} from "vitest";
 import {

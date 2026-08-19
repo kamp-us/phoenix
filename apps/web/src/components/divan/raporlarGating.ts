@@ -1,12 +1,8 @@
 /**
- * The raporlar (moderation-queue) surface's render decisions (#1701), factored
- * DOM-free in the `divanGating.ts` idiom so each gate is unit-testable without a
- * React runtime. The queue is a moderator-only view inside `/divan`: visibility
- * keys on the trusted server-side `isModerator` signal (`useMe`, #1320) — never on
- * `tier`, so a dual-role yazar+moderator still sees the entry. The client gate is a
- * courtesy only: the `report.listOpen` read stays `Moderate`-gated server-side, so a
- * forced read by a non-moderator denies the invisible `UNAUTHORIZED` (rendered as the
- * divan's "yetkin yok" state).
+ * The raporlar (moderation-queue) surface's render decisions (#1701), factored DOM-free
+ * because `apps/web/src` has no jsdom. The client gate is a courtesy only: `report.listOpen`
+ * stays `Moderate`-gated server-side, so a forced non-mod read denies the invisible
+ * `UNAUTHORIZED`.
  */
 import type {TargetKind} from "../../../worker/db/target-kind";
 
@@ -14,12 +10,8 @@ const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
-/**
- * The lowercase-Turkish first-reported age for a queue row ("az önce" /
- * "N dakika önce" / "N saat önce" / "N gün önce"), or `null` for a malformed
- * timestamp — the row then renders no age rather than lying "az önce". A clock
- * skew that puts the report in the future clamps to "az önce".
- */
+// `null` for a malformed timestamp — the row renders no age rather than lying "az önce";
+// a clock skew putting the report in the future clamps to "az önce".
 export function reportAgeLabel(firstReportedAt: string, nowMs: number): string | null {
 	const reportedMs = Date.parse(firstReportedAt);
 	if (Number.isNaN(reportedMs)) return null;
@@ -30,18 +22,12 @@ export function reportAgeLabel(firstReportedAt: string, nowMs: number): string |
 	return `${Math.floor(elapsed / DAY_MS)} gün önce`;
 }
 
-/** The reason cell's copy: the reporter's reason when present, else "gerekçe yok". */
 export function reasonLabel(reason: string | null): string {
 	const trimmed = reason?.trim();
 	return trimmed ? trimmed : "gerekçe yok";
 }
 
-/**
- * The in-situ link for a reported target (#1702): a post/comment opens its pano post
- * detail (`/pano/<ref>` — the comment's `ref` is its parent post id), a definition
- * opens its sözlük term page (`/sozluk/<ref>`). `null` when the server couldn't
- * resolve the routing ref, so the row renders context without a broken link.
- */
+// A comment's routing `ref` is its parent post id, so post and comment both open /pano/<ref>.
 export function targetHref(kind: TargetKind, ref: string | null): string | null {
 	const trimmed = ref?.trim();
 	if (!trimmed) return null;
@@ -54,17 +40,11 @@ export function targetHref(kind: TargetKind, ref: string | null): string | null 
 	}
 }
 
-/**
- * The queue row's target-excerpt copy: the server-resolved excerpt/title when
- * present, else the lowercase-Turkish "içerik yüklenemedi" (a target whose content
- * couldn't be read — sandboxed/gone), never an empty cell.
- */
 export function targetExcerptLabel(excerpt: string | null): string {
 	const trimmed = excerpt?.trim();
 	return trimmed ? trimmed : "içerik yüklenemedi";
 }
 
-/** The author byline copy: `@handle` when resolved, else "yazar bilinmiyor". */
 export function targetAuthorLabel(author: string | null): string | null {
 	const trimmed = author?.trim();
 	return trimmed ? `@${trimmed}` : null;

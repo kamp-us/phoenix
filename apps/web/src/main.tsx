@@ -12,10 +12,8 @@ initSentry();
 const root = document.getElementById("root");
 if (!root) throw new Error("#root not found");
 
-// FateProvider is no longer at the app root: its `session.isPending → null` remount
-// guard (#438) would blank the entire static shell on every cold load (#2160). It now
-// wraps only the fate-consuming subtree (the routed content + auth-dependent topbar
-// chips) inside the shell frame in App.tsx, so the shell paints on the first frame.
+// Deliberately no FateProvider here: its `session.isPending → null` guard (#438) would blank
+// the whole shell on every cold load, so it wraps only the fate-consuming subtree in App.tsx (#2160).
 createRoot(root).render(
 	<StrictMode>
 		<BrowserRouter>

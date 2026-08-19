@@ -1,13 +1,3 @@
-/**
- * The profile-header standing-label contract (#1302), asserted DOM-free — the
- * per-tier mapping is factored out of `ProfilePage` and tested as a pure function
- * (the pure-extraction idiom of `shouldShowOnramp`).
- *
- * The load-bearing invariant is honesty: the subtitle must reflect the account's
- * real tier and NEVER fall back to a static lie like the `yeni üye` it replaces.
- * These tests pin both halves — the true per-tier label AND the null (handle-only)
- * fallback for every state with no honest label.
- */
 import {describe, expect, it} from "vitest";
 import {profileStandingLabel} from "./profileStanding";
 

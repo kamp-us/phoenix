@@ -1,7 +1,5 @@
-// Vote/edit/delete dispatch through `fate.mutations.definition.*` with optimistic
-// updates; the `FateWireCode`s these raise are boundary-class in fate's mutation
-// taxonomy, so mutations throw and we catch per-call-site. See
-// `.patterns/fate-mutations-client.md`.
+// Mutations throw their boundary-class wire errors, so every call site catches.
+// See `.patterns/fate-mutations-client.md`.
 import * as React from "react";
 import {toEntityId, useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
@@ -48,14 +46,12 @@ export const DefinitionView = view<Definition>()({
 
 const BODY_MAX = 10_000;
 
-// `report.submit` ack (ADR 0082 — a report has no read view). `created: false` is the
-// idempotent re-report no-op, which `ReportButton` surfaces as "zaten bildirildi".
+// `created: false` is the idempotent re-report no-op, surfaced as "zaten bildirildi".
 const ReportReceiptView = view<ReportReceipt>()({
 	id: true,
 	created: true,
 });
 
-/** Definition-form copy that overrides the shared {@link WIRE_MESSAGES} base. */
 const DEFINITION_OVERRIDES: WireMessageOverrides = {
 	BODY_REQUIRED: "tanım boş olamaz",
 	BODY_TOO_LONG: `tanım en fazla ${BODY_MAX} karakter olabilir`,
@@ -66,19 +62,11 @@ export interface DefinitionCardProps {
 	definition: ViewRef<"Definition">;
 	rank: number;
 	top: boolean;
-	/** Term slug — passed to the auth redirect so a signed-out vote returns here. */
 	slug: string;
-	/**
-	 * Hands the deleted definition's id to the list's delete-side read-back, so a
-	 * lost `deleteEdge` push self-heals via a network-only refetch (#1687).
-	 */
 	onDeleted?: (definitionId: string) => void;
 }
 
 export function DefinitionCard(props: DefinitionCardProps) {
-	// Live: a definition vote/edit on another client publishes
-	// `live.update("Definition", id, …)` with the re-resolved node inline, so the
-	// score/body re-render here without a refetch.
 	const definition = useLiveView(DefinitionView, props.definition);
 	const fate = useFateClient();
 	const session = useSession();
@@ -158,22 +146,16 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	}
 
 	async function onDeleteConfirm() {
-		// `definition.delete` is a **`Term`** mutation (it returns the re-resolved
-		// parent so counts update), so fate's `delete: true` can't be used — it
-		// would `deleteRecord("Term", definitionId)`, the wrong entity. And the
-		// definition lives in the *nested* `Term.definitions` connection, whose
-		// membership `insert`/`delete` can't touch. The resolver instead publishes
-		// `live.topic("Term.definitions", {id: slug}).deleteEdge`, which the
-		// list's `useLiveListView` consumes — the card drops out in place (this
-		// client's own view included), no reload.
+		// `definition.delete` returns the parent `Term`, so fate's `delete: true` can't
+		// be used — it would `deleteRecord("Term", definitionId)`, the wrong entity. The
+		// card drops out via the resolver's `Term.definitions` `deleteEdge` push instead.
 		await runDelete(
 			() => {
 				const promise = fate.mutations.definition.delete({input: {id: definition.id}});
-				// Optimistic edge-drop (ADR 0125 D1): remove the edge from the nested list
-				// state now so the card disappears instantly. The definition id is already
-				// canonical, so the server `deleteEdge` frame removes an id already gone —
-				// a no-op by canonical id, no reappear. Roll the drop back on any failure
-				// (fate has no record write to restore for this Term-returning mutation).
+				// Optimistic edge-drop (ADR 0125): the id is already canonical, so the server
+				// `deleteEdge` frame removes an id already gone — a no-op, no reappear. Rolled
+				// back by hand on failure; this Term-returning mutation writes no record fate
+				// could restore.
 				const rollback = dropOptimisticDefinitionEdge(
 					fate.store,
 					toEntityId("Term", props.slug),
@@ -306,8 +288,6 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					{/* Owner-only in-review signal (#2200): `sandboxed` is owner-scoped server-side,
 					    re-gated on `isAuthor` so only the author sees their own pending definition's state. */}
 					{isAuthor && definition.sandboxed ? <ReviewBadge /> : null}
-					{/* Live author identity via `actorLabel` (#2139): CURRENT displayName → @username,
-					    falling back to the write-time `author` snapshot for an unstamped/legacy row. */}
 					<span className="author">
 						{actorLabel(
 							definition.authorDisplayName ?? null,

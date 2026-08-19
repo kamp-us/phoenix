@@ -7,11 +7,7 @@ export interface KnobState {
 	readonly reset: () => void;
 }
 
-/**
- * The knob-state primitive: seeds from the schema's defaults and updates one knob at a time.
- * Kept separate from the panel so #3093 can lift this state into the URL (deep-linkable knob
- * state) without re-implementing the plumbing.
- */
+/** Kept separate from the panel so the detail route can swap in URL-backed state (`useUrlKnobs`). */
 export function useKnobs(schema: AnyKnobSchema): KnobState {
 	const [values, setValues] = React.useState<KnobValues>(() => resolveKnobDefaults(schema));
 	const setKnob = React.useCallback((key: string, value: KnobValue) => {

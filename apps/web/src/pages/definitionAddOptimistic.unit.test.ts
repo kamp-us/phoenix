@@ -1,11 +1,3 @@
-/**
- * The pure cores of the optimistic `definition.add` slice (#1679, epic #1637, ADR
- * 0125), tested without fate/React — the pure-core idiom of `panoSubmitArgs.unit`.
- * Covers the branch predicate + the temp-node's server-mirroring shape
- * ({@link buildOptimisticDefinition}) and the nested-list edge injection + rollback
- * ({@link appendOptimisticDefinitionEdge}) against a fake store.
- */
-
 import {assert, describe, it} from "@effect/vitest";
 import type {EntityId, List, Snapshot} from "@nkzw/fate";
 import {
@@ -54,7 +46,6 @@ describe("buildOptimisticDefinition — the optimistic nested node", () => {
 	});
 });
 
-/** A fake store recording setList/restoreList + the term record, seeded per key/id. */
 function fakeStore(
 	lists: ReadonlyArray<readonly [string, List]>,
 	records?: Record<string, Record<string, unknown>>,

@@ -17,10 +17,6 @@ export function PanoCreateDialog({
 	const [mode, setMode] = React.useState<"link" | "text">("link");
 	const {fetchMetadata} = useLinkMetadata();
 
-	// On URL blur, prefill the (still-empty) sibling title from the link's
-	// metadata. Uncontrolled form: reach the title input by name off the shared
-	// <form>, and let `prefillIfEmpty` enforce the never-clobber rule — the same
-	// shared policy `PanoSubmitPage` uses.
 	async function prefillFromUrl(e: React.FocusEvent<HTMLInputElement>) {
 		const form = e.currentTarget.form;
 		const url = e.currentTarget.value;

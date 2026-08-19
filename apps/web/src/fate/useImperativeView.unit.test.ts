@@ -1,11 +1,3 @@
-/**
- * Covers `readImperativeView` — the request → readView → cast read body the three
- * above-Suspense hooks used to each copy (#1420). The single `as` cast is the
- * load-bearing thing here (the #448 swallow site): `readView`'s static type drops
- * the selected scalars, so the `ok` case asserts a selected field reads back
- * through the cast. Pure (no DOM/React), per the issue's "pure-core unit test"
- * option.
- */
 import {view} from "react-fate";
 import {describe, expect, it, vi} from "vitest";
 import {type ImperativeViewClient, readImperativeView} from "./useImperativeView";

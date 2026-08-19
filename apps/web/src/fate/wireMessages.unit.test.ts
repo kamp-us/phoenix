@@ -1,10 +1,6 @@
 /**
- * The shared code→message registry (#1421). The load-bearing guarantee is
- * **exhaustiveness**: `WIRE_MESSAGES` covers every `FateWireCode`, so a new code
- * added to `FATE_WIRE_CODES` without a message is a *compile* error — but this
- * test also pins it at runtime so the closure of the #1422 class is asserted, not
- * just type-checked. The `messageForCode` resolution order (override wins over
- * base) is pinned too, since the per-surface copy preservation rides on it.
+ * `WIRE_MESSAGES` exhaustiveness is already a compile error when broken; this pins it
+ * at runtime too, so the closure of the #1422 class is asserted, not just type-checked.
  */
 import {describe, expect, it} from "vitest";
 import {FATE_WIRE_CODES, messageForCode, WIRE_MESSAGES} from "./wireMessages";

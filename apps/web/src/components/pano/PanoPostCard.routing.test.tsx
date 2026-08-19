@@ -1,9 +1,4 @@
-/**
- * Title/domain routing on the feed card (#2437, founder ruling). A link-type row's
- * TITLE routes to the post detail (`/pano/:id`) everywhere — never off-site — and the
- * external URL lives on the domain label with an outbound cue. A text row (no `url`)
- * keeps the "yazı" label as a plain span. Mirrors the compose test's fate/session mocks.
- */
+/** Pins the founder ruling on #2437: the title never routes off-site. */
 import {render} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
 import {afterEach, describe, expect, it, vi} from "vitest";

@@ -1,11 +1,7 @@
 /**
- * `/lab/composer` — the live proof / first consumer of `@kampus/composer`, kept +
- * canonical under the `/lab/*` public convention (#2469 / PR #2474). NOT throwaway:
- * this route stays as the working demonstration of the shared headless composer base,
- * exercising its full markdown round-trip end to end. The editor is wired entirely
- * through `@kampus/composer` — the app supplies only chrome (masthead, panels, CSS);
- * the base owns the tiptap wrapping (StarterKit + `@tiptap/markdown`), so nothing here
- * imports tiptap directly.
+ * `/lab/composer` — NOT throwaway: this route is the permanent working demonstration of
+ * `@kampus/composer`'s markdown round-trip (#2469). Nothing here imports tiptap directly;
+ * the base owns that wrapping and the app supplies only chrome.
  */
 
 import {Composer, renderTestMarkdown, useComposerEditor} from "@kampus/composer";
@@ -13,15 +9,11 @@ import {useState} from "react";
 import {Badge, Button, Textarea} from "../components/ui";
 import "./LabComposerPage.css";
 
-// The canonical render-test content is the shared `renderTestMarkdown` fixture the base
-// exports (#2482) — the single source, so this playground and `@kampus/composer`'s
-// round-trip test can never drift. The panels below double as its live render checklist.
+// Seeded from the base's own round-trip fixture so the playground can't drift from it.
 const SEED_MARKDOWN = renderTestMarkdown;
 
 export function LabComposerPage() {
 	const [pasted, setPasted] = useState(SEED_MARKDOWN);
-	// Bumped on every editor transaction so the read-only round-trip panels below
-	// re-derive `getMarkdown()`/`getJSON()` from the live editor state.
 	const [rev, setRev] = useState(0);
 
 	const composer = useComposerEditor({
@@ -29,7 +21,7 @@ export function LabComposerPage() {
 		onUpdate: () => setRev((n) => n + 1),
 	});
 
-	// `rev` is read to tie the derivation to the latest transaction (see the state above).
+	// Not dead: reading `rev` is what ties the panels below to the latest transaction.
 	void rev;
 	const markdown = composer ? composer.getMarkdown() : "";
 	const json = composer ? JSON.stringify(composer.toJSON(), null, 2) : "";
@@ -102,18 +94,12 @@ export function LabComposerPage() {
 }
 
 /**
- * Storage SKETCH ONLY (#2465 AC) — a shape to *feel*, deliberately inert. There is no
- * wired `Fate.mutation` and no `/fate/live` publish here; a real composer draft would
- * persist through the fate mutation pattern in `apps/web/worker/features/*` and, being a
- * write over a fanned entity, MUST publish the live invalidation + be classified in
- * `apps/web/worker/features/fate-live/fanned-mutations.ts` (CLAUDE.md fanout rule). That
- * wiring is explicitly out of scope for this v1 lab route (baseKit-only, #2464).
+ * A SKETCH, deliberately inert (#2465): no `Fate.mutation`, no `/fate/live` publish. Wiring
+ * one would make this a fanned write owing the live invalidation — out of scope here.
  */
 type ComposerDraftRow = {
 	id: string;
 	authorId: string;
-	// Store BOTH: markdown as the human-editable source of truth, tiptap JSON as the
-	// render-fast structural cache. The round-trip above is what proves they stay in sync.
 	markdown: string;
 	docJson: string;
 	updatedAt: number;
@@ -132,7 +118,7 @@ function StorageSketch() {
 		"// Fate.mutation('composer.saveDraft', { markdown, docJson }) -> upsert row",
 		"//   then publish the live invalidation (fanned-entity rule) — deferred to rich phase.",
 	].join("\n");
-	// Reference the row type so the sketched shape is a real, type-checked artifact.
+	// Not dead: this reference is what type-checks the sketched row shape.
 	const _shape: ComposerDraftRow | null = null;
 	void _shape;
 	return (

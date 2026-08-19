@@ -1,12 +1,3 @@
-/**
- * remove-the-wave's interaction + copy contract (#1855, ADR 0138) — the pure
- * grouping / safe-selection / blast-radius / batch-key / partial-failure decisions
- * asserted without a DOM, per the `triage-loop.test.ts` precedent. The AC the wave
- * lives or dies on: `Shift-X` grabs an author's reported targets; the manifest
- * auto-deselects zero-report targets while `T`/`Space` select; `⌥R` opens a
- * blast-radius confirm naming target-count + reports-collapsed + reversibility;
- * `Enter`/`Esc` apply/cancel; a partial failure surfaces which targets did not resolve.
- */
 import {describe, expect, it} from "vitest";
 import {
 	batchVerdict,

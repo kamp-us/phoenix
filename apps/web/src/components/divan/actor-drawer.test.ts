@@ -1,12 +1,3 @@
-/**
- * The künye actor-drawer's interaction + copy contract (#1852, ADR 0138) — the pure
- * key-mapping / hop-target / kefil-guard / drawer-copy decisions asserted without a DOM,
- * per the `triage-loop.test.ts` precedent. The AC the keystone lives or dies on: `A`
- * toggles, `V`/`M` hop between chambers on the same actor, the mod record NEVER
- * auto-verdicts in kefil mode, and every künye field renders its Turkish label (tier,
- * karma, üretim, kaldırılan, bildirilen, kefil durumu, "bu aktör") with faithful zeros
- * and a null-safe unresolved actor.
- */
 import {describe, expect, it} from "vitest";
 import {
 	type ActorStanding,

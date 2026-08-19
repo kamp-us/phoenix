@@ -16,13 +16,10 @@ type Expect<T extends true> = T;
 type Equal<A, B> =
 	(<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
-// A prop type maps to exactly one knob kind.
 type _Bool = Expect<Equal<KnobForType<boolean>, BooleanKnob>>;
 type _Num = Expect<Equal<KnobForType<number>, NumberKnob>>;
 type _Str = Expect<Equal<KnobForType<string>, StringKnob>>;
-// A literal union — the enum case — carries its own union as the knob's value type.
 type _Enum = Expect<Equal<KnobForType<ButtonVariant>, EnumKnob<ButtonVariant>>>;
-// A non-KnobValue prop (a callback, a node) is unrepresentable as a knob.
 type _None = Expect<Equal<KnobForType<() => void>, never>>;
 
 interface DemoProps {
@@ -33,7 +30,6 @@ interface DemoProps {
 	onClick?: () => void;
 }
 
-// A well-typed schema over DemoProps compiles; the negative cases below must NOT.
 const demoSchema: KnobSchema<DemoProps> = {
 	variant: {kind: "enum", default: "primary", options: [{value: "primary"}, {value: "secondary"}]},
 	loading: {kind: "boolean", default: false},

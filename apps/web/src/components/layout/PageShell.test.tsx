@@ -1,10 +1,3 @@
-/**
- * PageShell recipe (#2973, ADR 0182) — the shell names a product page's vertical zone-stack
- * once: the persistent Subnav zone on top, the routed content below. Two properties are
- * load-bearing: (1) the zones render in structural order (subnav ABOVE content) through the
- * shell, and (2) the flat element-props make an undeclared page zone a TYPE error, not a lint
- * finding — the same orphan-as-type-error guarantee SubnavShell has.
- */
 import {render, screen} from "@testing-library/react";
 import {describe, expect, it} from "vitest";
 import {PageShell} from "./PageShell";
@@ -22,11 +15,8 @@ describe("PageShell — the page zone-stack recipe (#2973)", () => {
 		const subnav = screen.getByTestId("subnav");
 		const content = screen.getByTestId("content");
 		expect(shell).toBeTruthy();
-		// Both zones live inside the shell…
 		expect(shell?.contains(subnav)).toBe(true);
 		expect(shell?.contains(content)).toBe(true);
-		// …and the subnav zone precedes the content zone in DOM order — the page anatomy is the
-		// persistent bar on top, the routed content below (DOCUMENT_POSITION_FOLLOWING = 4).
 		const order = subnav.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING;
 		expect(order).toBeTruthy();
 	});
@@ -47,7 +37,6 @@ describe("PageShell — the page zone-stack recipe (#2973)", () => {
 			/>,
 		);
 		const shell = container.querySelector(".kp-page-shell");
-		// The composed SubnavShell's bar is the top zone, inside the shell.
 		expect(shell?.querySelector(".kp-subnav")).toBeTruthy();
 		expect(shell?.querySelector(".kp-subnav__cta")?.contains(screen.getByTestId("cta"))).toBe(true);
 	});

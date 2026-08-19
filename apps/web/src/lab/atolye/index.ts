@@ -1,8 +1,3 @@
-/**
- * atölye harness core — the public surface the index (#3092) and detail (#3093) routes,
- * the catalog (#3094), and the composer fold-in (#3095) build against.
- */
-
 export type {ExhibitStageProps} from "./ExhibitStage";
 export {ExhibitStage} from "./ExhibitStage";
 export type {AnyExhibit, Exhibit} from "./exhibit";

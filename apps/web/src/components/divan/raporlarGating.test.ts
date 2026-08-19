@@ -1,10 +1,3 @@
-/**
- * The raporlar (moderation-queue) gating contract (#1701) — the pure render
- * decisions asserted without a DOM, per the `divanGating.test.ts` precedent. The
- * moderator-only entry keys on the trusted `isModerator` signal, never `tier`
- * (asserted at the DivanPage call site, since the visibility check is now a plain
- * `isModerator` read).
- */
 import {describe, expect, it} from "vitest";
 import {
 	reasonLabel,

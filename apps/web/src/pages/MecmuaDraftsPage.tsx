@@ -1,14 +1,7 @@
 /**
- * `/mecmua/yazilarim` — the author's OWN posts (#2544): the private retrieval surface
- * the mecmua write path lacked. It reads the `CurrentUser`-scoped `mecmuaMyPosts` fate
- * root (drafts + published, newest-started first) and lists each as a card linking to
- * the editor at that post's id (`/mecmua/yaz/:id`), so a saved taslak is reopenable —
- * closing the #2429 Story 3 "keep multiple drafts" journey the write-only path broke.
- *
- * The whole surface ships dark behind `MECMUA_WRITE` (default-off): the page self-gates
- * (off ⇒ 404), the same seam the editor gates on, and `mecmuaMyPosts` serves empty while
- * the flag is off — so no unreleased authoring surface leaks (ADR 0083). Signed-out reads
- * are empty (the read is author-scoped), rendered as the empty state.
+ * `/mecmua/yazilarim` — the author's own drafts + published posts, off the `CurrentUser`-scoped
+ * `mecmuaMyPosts` root. Ships dark behind `MECMUA_WRITE` (default-off; ADR 0083); that root
+ * serves empty while the flag is off, so a signed-out or gated read just renders empty.
  */
 import {NotebookPen} from "lucide-react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -40,11 +33,9 @@ const myPostsRequest = {
 
 export function MecmuaDraftsPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_WRITE, false);
-	// The write CTA lives once in the mecmua Subnav's primary-action slot, so this page paints
-	// no in-page copy (header or empty state) — exactly one mecmua write CTA (#2603 de-dup).
+	// No in-page write CTA on purpose: mecmua's single one lives in the Subnav (#2603).
 
-	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first (the
-	// MecmuaEditorPage / MecmuaPostPage self-gate idiom).
+	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first.
 	if (flagLoading) {
 		return (
 			<div className="kp-page">

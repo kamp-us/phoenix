@@ -1,40 +1,17 @@
-/**
- * The load-bearing, hook-free core of the curated-palette reaction bar (#1867,
- * epic #1840) — the reaction twin of `voteOptimistic` / `optimisticEdit`. Kept
- * pure and unit-testable apart from React so the palette-render shape, the
- * cardinality-one tap semantics, and the optimistic-aggregate delta are driven
- * by tests, not only by an e2e.
- *
- * The reaction affordance is NOT an open emoji picker: it renders the fixed,
- * curated `REACTION_EMOJI` palette (👍 ❤️ 😂 🤔 😢 🔥) — every palette member is
- * always shown, in palette order, with its aggregate count, and the viewer's own
- * current reaction highlighted. The server's `reactions` aggregate
- * (`ReactionAggregate`) supplies only the members with a non-zero tally plus the
- * viewer's `myReaction`; this core fills the zero-count members so the bar's
- * shape is stable regardless of what the sparse aggregate carries.
- */
+// A fixed curated palette, never an open picker — see ADR 0139. The server's aggregate is
+// SPARSE (non-zero tallies only), so this core fills the zero-count members to keep the
+// bar's shape stable.
 import {REACTION_EMOJI, type ReactionEmoji} from "../../../worker/db/reaction-emoji";
 import type {ReactionAggregate} from "../../../worker/features/reaction/Reaction";
 
-/**
- * The optimistic aggregate shape fate's `optimistic` payload accepts — a MUTABLE
- * `counts` array, structurally the write-back view's `reactions` field. The
- * server-supplied {@link ReactionAggregate} types `counts` as a `ReadonlyArray`
- * (read side), but fate's `OptimisticUpdate` wants a mutable array, so the
- * optimistic producer returns this mutable twin rather than the readonly one.
- */
+// A mutable twin of `ReactionAggregate` purely because fate's `OptimisticUpdate` rejects
+// the readonly `counts` array the read side uses. Don't collapse the two.
 export interface OptimisticReactionAggregate {
 	counts: Array<{emoji: ReactionEmoji; count: number}>;
 	myReaction: ReactionEmoji | null;
 }
 
-/**
- * The Turkish reaction glosses fixed by ADR 0139 — one per palette member, in the
- * same affective order. This is the single in-code seed of the ADR's gloss table;
- * the bar uses it as each reaction's accessible name (ARIA label) so a screen
- * reader announces "beğendim" / "sevdim" / … rather than the raw glyph. Keyed by
- * the canonical `REACTION_EMOJI` member so it can never drift from the palette.
- */
+// The glosses ADR 0139 fixes; they are each button's accessible name, not decoration.
 export const REACTION_GLOSS: Record<ReactionEmoji, string> = {
 	"👍": "beğendim",
 	"❤️": "sevdim",
@@ -44,7 +21,6 @@ export const REACTION_GLOSS: Record<ReactionEmoji, string> = {
 	"🔥": "efsane",
 };
 
-/** One palette slot as the bar renders it: the emoji, its Turkish gloss, its aggregate count, and whether it is the viewer's current reaction. */
 export interface ReactionSlot {
 	readonly emoji: ReactionEmoji;
 	readonly gloss: string;
@@ -52,17 +28,8 @@ export interface ReactionSlot {
 	readonly active: boolean;
 }
 
-/** The empty aggregate the bar falls back to when the view supplies none (a target absent from the batch read). */
 export const EMPTY_AGGREGATE: ReactionAggregate = {counts: [], myReaction: null};
 
-/**
- * Project a (possibly sparse) `ReactionAggregate` onto the full ordered palette:
- * every `REACTION_EMOJI` member appears exactly once, in palette order, carrying
- * its aggregate count (0 when absent from `counts`) and `active` iff it is the
- * viewer's `myReaction`. A missing/undefined aggregate reads as empty — the bar
- * still renders the whole palette at zero, so a target with no reactions shows the
- * affordance rather than nothing.
- */
 export function reactionSlots(aggregate: ReactionAggregate | undefined | null): ReactionSlot[] {
 	const agg = aggregate ?? EMPTY_AGGREGATE;
 	const countOf = new Map<string, number>(agg.counts.map((c) => [c.emoji, c.count]));
@@ -74,12 +41,8 @@ export function reactionSlots(aggregate: ReactionAggregate | undefined | null): 
 	}));
 }
 
-/**
- * The cardinality-one tap semantics as the emoji sent to `react`: tapping the
- * viewer's CURRENT reaction retracts it (`null`); tapping any OTHER palette member
- * sets/changes to it. One tap, one reaction per (viewer, target) — never two.
- * Pure so the retract-vs-change decision is unit-tested apart from the hook.
- */
+// Cardinality-one: one reaction per (viewer, target), so re-tapping the current one
+// retracts rather than adding a second.
 export function nextReaction(
 	current: ReactionEmoji | null,
 	tapped: ReactionEmoji,
@@ -87,15 +50,6 @@ export function nextReaction(
 	return current === tapped ? null : tapped;
 }
 
-/**
- * The optimistic `ReactionAggregate` after a tap, given the current aggregate —
- * the reaction analog of `voteOptimistic`. It moves the viewer's own tally off
- * their prior reaction (if any) and onto the new one (unless the tap retracts),
- * clamps every tally at `0` (a retract never renders a negative count), drops
- * zero-count members (matching the server's sparse, non-zero `counts` shape), and
- * re-orders by the palette. Passed to fate as `optimistic: {reactions}`, so the
- * bar updates instantly and fate reconciles/rolls back on the server response.
- */
 export function reactionOptimistic(
 	aggregate: ReactionAggregate | undefined | null,
 	tapped: ReactionEmoji,
@@ -104,10 +58,8 @@ export function reactionOptimistic(
 	const prior = agg.myReaction;
 	const next = nextReaction(prior, tapped);
 	const tally = new Map<string, number>(agg.counts.map((c) => [c.emoji, c.count]));
-	// Move the viewer's own contribution: -1 off the prior reaction, +1 onto the
-	// new one. A retract (next === null) only decrements; a fresh react only
-	// increments; a change does both. The 0-floor guards a stale aggregate that
-	// under-counts the prior tally.
+	// The 0-floor guards a stale aggregate that under-counts the prior tally; without it
+	// a retract can render a negative count.
 	if (prior !== null) tally.set(prior, Math.max(0, (tally.get(prior) ?? 0) - 1));
 	if (next !== null) tally.set(next, (tally.get(next) ?? 0) + 1);
 	const counts = REACTION_EMOJI.flatMap((emoji) => {

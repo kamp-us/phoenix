@@ -1,9 +1,3 @@
-/**
- * The shared prefill policy (#1642): `prefillIfEmpty` is the single definition
- * of "write a form field ONLY when it is still empty/untouched", used by both
- * pano submit surfaces so neither can clobber user input. Tested pure, without a
- * DOM.
- */
 import {describe, expect, it, vi} from "vitest";
 import {PREFILL_MAX_LEN, prefillIfEmpty} from "./useLinkMetadata";
 
