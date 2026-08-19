@@ -52,8 +52,36 @@ describe("parseHarness", () => {
 			'"viewport.width" is not a positive integer',
 		],
 		["an unknown key", config({browser: "chromium"}), 'unknown key "browser"'],
+		[
+			"a non-string command",
+			config({command: 3}),
+			'"command" is missing or not a non-empty string',
+		],
+		["a non-string url", config({url: 3}), '"url" is missing or is not an http(s) base URL'],
+		["a null readyPath", config({readyPath: null}), '"readyPath" is not a path beginning with "/"'],
+		["a non-object viewport", config({viewport: 3}), '"viewport" is not an object'],
+		[
+			"an unknown key inside viewport",
+			config({viewport: {width: 390, height: 844, depth: 2}}),
+			'unknown key "depth"',
+		],
+		["a non-object top level", JSON.stringify([]), "the top level is not an object"],
 	])("refuses %s whole-file", (_label, text, violation) => {
 		expect(parseHarness(text)).toEqual({_tag: "Violation", violation});
+	});
+
+	it("refuses a file that is not JSON, naming the parse error", () => {
+		const parsed = parseHarness("{oops");
+		expect(parsed._tag).toBe("Violation");
+		if (parsed._tag !== "Violation") return;
+		expect(parsed.violation).toMatch(/^the file is not JSON \(/);
+	});
+
+	it("reads an explicit null evidenceStore as no store", () => {
+		const parsed = parseHarness(config({evidenceStore: null}));
+		expect(parsed._tag).toBe("Config");
+		if (parsed._tag !== "Config") return;
+		expect(parsed.config.evidenceStore).toBeNull();
 	});
 });
 

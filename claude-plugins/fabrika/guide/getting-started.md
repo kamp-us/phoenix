@@ -148,10 +148,21 @@ fabrika triage homes
 
 ```
 triage homes: scanned 5 open milestones in kamp-us/phoenix.
-triage homes: focus: none declared — scope fence inert.
+triage homes: campaigns: 2 active — fabrika fast follows (#46), fabrika everywhere (#47).
 homes
 milestone	24	Geçit
+milestone	25	Mecmua v2 — PARKED (reading-experience arc, unstarted)
+milestone	42	Taste-Skill Library
+milestone	46	fabrika fast follows	running: p0/blocker only
+milestone	47	fabrika everywhere	running: p0/blocker only
+lane	wayfinder:backlog	fog — uncharted work upstream of any arc
+lane	axis:pipeline-hardening	the standing pipeline and reliability lane
 ```
+
+That output is from a repo already set up, so yours will differ: one `milestone` row, the one you
+just created, and a second line reading `campaigns: none active — scope fence inert.` because your
+roadmap has no campaigns table. The two `lane` rows are phoenix's own standing lanes and print in
+every repo — [the how-to](adopt-fabrika-in-a-new-repo.md) explains why you ignore them.
 
 Your milestone should be in that list. Commit `ROADMAP.md`.
 
