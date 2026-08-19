@@ -11,14 +11,13 @@ import {
 	disposition,
 	EXEMPT_LABELS,
 	judge,
-	type LabelUniverse,
-	PRESENT,
 	renderReport,
 	resolve,
 	type Scope,
 	type TriagedIssue,
 	toGuardVerdict,
 } from "./homing.ts";
+import {type LabelUniverse, PRESENT} from "./label-universe.ts";
 import {verdictCode} from "./verdict.ts";
 
 const issue = (

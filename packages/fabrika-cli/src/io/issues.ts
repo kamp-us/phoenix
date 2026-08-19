@@ -284,6 +284,16 @@ export interface IssueRecord {
 	 * unhomed issue's (#5562).
 	 */
 	readonly isPullRequest: boolean;
+	/**
+	 * Whether this issue hangs under a parent — a sub-issue, which inherits its epic's contract.
+	 *
+	 * Read from `parent_issue_url` AND `parent`: the sub-issues API has shipped both shapes, and a
+	 * reader that knows only `parent` resolves every sub-issue as parentless. **The list endpoints
+	 * carry neither key**, so a caller that needs this fact re-reads the issue singly; a list record
+	 * always answers `false` here, which is the fail-open direction for a scope filter and the reason
+	 * `pitch-verb.ts` never filters on a list record.
+	 */
+	readonly isSubIssue: boolean;
 }
 
 const toIssueRecord = (value: unknown): IssueRecord | null => {
@@ -309,6 +319,9 @@ const toIssueRecord = (value: unknown): IssueRecord | null => {
 		stateReason: typeof state_reason === "string" ? state_reason : null,
 		comments: typeof value.comments === "number" ? value.comments : 0,
 		isPullRequest: isRecord(value.pull_request),
+		isSubIssue:
+			(value.parent_issue_url !== undefined && value.parent_issue_url !== null) ||
+			(value.parent !== undefined && value.parent !== null),
 	};
 };
 

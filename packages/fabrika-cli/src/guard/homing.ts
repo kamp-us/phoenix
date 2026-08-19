@@ -13,6 +13,7 @@
  * IO-free and total; the board read lives in `./homing-verb.ts`.
  */
 
+import type {LabelUniverse} from "./label-universe.ts";
 import {clean, type GuardVerdict, unknown, violation, zeroScope} from "./verdict.ts";
 
 export const VERB = "guard homing-guard check";
@@ -39,13 +40,6 @@ export interface TriagedIssue {
 	readonly milestone: number | null;
 	readonly labels: ReadonlyArray<string>;
 }
-
-/** Whether the repo defines the labels that define scope at all. */
-export type LabelUniverse =
-	| {readonly _tag: "present"}
-	| {readonly _tag: "absent"; readonly missing: ReadonlyArray<string>};
-
-export const PRESENT: LabelUniverse = {_tag: "present"};
 
 /**
  * What the guard scanned. `backlog` is the whole open `status:triaged` set (the CI/sweep surface);

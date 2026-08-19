@@ -27,6 +27,7 @@ import {runHomingGuard} from "./homing-verb.ts";
 import {runLeakGuard} from "./leak-verb.ts";
 import {runPatchGuard} from "./patch-verb.ts";
 import {runPathFilterGuard} from "./path-filter-verb.ts";
+import {runPitchGuard} from "./pitch-verb.ts";
 import {runPointerGuard} from "./pointer-verb.ts";
 import {runPublishIsolationGuard} from "./publish-isolation-verb.ts";
 import {runReadmeGuard} from "./readme-verb.ts";
@@ -140,6 +141,41 @@ const homingGuard = Command.make("homing-guard").pipe(
 	Command.withShortDescription("Every triaged issue leaves triage with exactly one home."),
 	Command.withDescription(
 		"Every issue that leaves triage carries exactly one home: an arc/campaign milestone, or one of exactly two standing-lane labels. A standing lane is milestone-less by design, so the two marks cannot both be true (ADR 0202 forward-motion doctrine, ADR 0208 standing-lane exemption).",
+	),
+);
+
+const pitchCheck = leafCommand(
+	"check",
+	{
+		issue: Flag.integer("issue").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"check one issue (default: the whole open lane-entering status:triaged backlog)",
+			),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({issue, repo}) {
+		yield* emit(
+			yield* runPitchGuard({
+				issue: Option.getOrNull(issue),
+				repo: Option.getOrNull(repo),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Red unless every pickable bet carries a founder-approved pitch."),
+	Command.withDescription(
+		"Every lane-entering issue — a `status:triaged` `type:epic`, or a `status:triaged` `type:feature` with no parent — must carry a five-field `## Pitch` section (Problem / Arc / Appetite / Rabbit-holes / No-gos) and a founder `pitch-approved: appetite <N> cycles` comment naming the same <N> the body declares. Approval is resolved at the GitHub ACL, write+ only and fail-closed (ADR 0055), and an agent-provenance-stamped marker never counts. `--issue N` scopes the scan to the issue triage just stamped, which is the intake seam the requirement binds at; a bare run sweeps the whole open lane-entering backlog. This guard binds at INTAKE only — it is never wired to red a pull request (founder ruling #3909). Prints the one-line all-clear on stdout; a red puts the per-issue remedy on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: the backlog sweep found no lane-entering issue at all — fail-closed, ADR 0092), 11 (the board, the label set, an issue or its comments could not be read, so the verdict is UNKNOWN), 12 (a pickable bet carries no founder-approved pitch). Example: fabrika guard pitch-guard check --issue 4312",
+	),
+);
+
+const pitchGuard = Command.make("pitch-guard").pipe(
+	Command.withSubcommands([pitchCheck]),
+	Command.withShortDescription("Lane-entering work becomes pickable only with an approved pitch."),
+	Command.withDescription(
+		"Direction binds at intake: an epic or a standalone feature only becomes pickable carrying a five-field pitch the founder approved (founder ruling #3909). The pitch is drafted by triage and approved by the founder — never by an agent.",
 	),
 );
 
@@ -589,6 +625,7 @@ const guards = [
 	readmeGuard,
 	skillLint,
 	homingGuard,
+	pitchGuard,
 	roadmapGuard,
 	unresolvedThreadsGuard,
 	settingsEnvGuard,

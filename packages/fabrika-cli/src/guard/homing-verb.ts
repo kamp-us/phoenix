@@ -15,24 +15,17 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {
-	getIssue,
-	type IssueRecord,
-	listLabels,
-	openIssuesWithLabelRecords,
-	resolveRepo,
-} from "../io/issues.ts";
+import {getIssue, type IssueRecord, openIssuesWithLabelRecords, resolveRepo} from "../io/issues.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	judge,
-	type LabelUniverse,
-	PRESENT,
 	type Scope,
 	TRIAGED_LABEL,
 	type TriagedIssue,
 	toGuardVerdict,
 	VERB,
 } from "./homing.ts";
+import {PRESENT, universeOf} from "./label-universe.ts";
 import {emitVerdict, type GuardVerdict, unknown} from "./verdict.ts";
 
 export interface HomingGuardOptions {
@@ -72,18 +65,6 @@ const backlogScan = (
 				};
 	});
 
-/** The label universe, read only when it is the fact that disambiguates an empty issue scope. */
-const universeOf = (
-	repo: string,
-): Effect.Effect<LabelUniverse | null, never, ChildProcessSpawner.ChildProcessSpawner> =>
-	Effect.gen(function* () {
-		const attempt = yield* listLabels(repo);
-		if (attempt._tag === "Failure") return null;
-		return attempt.value.includes(TRIAGED_LABEL)
-			? PRESENT
-			: {_tag: "absent", missing: [TRIAGED_LABEL]};
-	});
-
 const issueScan = (
 	repo: string,
 	number: number,
@@ -111,7 +92,8 @@ const issueScan = (
 		if (one.labels.includes(TRIAGED_LABEL)) {
 			return {_tag: "Scanned", issues: [one], scope: {_tag: "issue", number, universe: PRESENT}};
 		}
-		const universe = yield* universeOf(repo);
+		// Read only here: this is the one fork where an empty scope is ambiguous (#4272).
+		const universe = yield* universeOf(repo, [TRIAGED_LABEL]);
 		return universe === null
 			? refused(
 					`${VERB}: issue #${number} is not ${TRIAGED_LABEL}, and the label set of ${repo} could not be read to tell that from a repo that never defined it (#4272) — the verdict is UNKNOWN, never clean.`,

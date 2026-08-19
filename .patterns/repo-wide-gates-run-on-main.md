@@ -63,6 +63,8 @@ enforces the property it gated.)
 
 Workflows with no `pull_request` trigger at all (schedules, issue events, release events)
 are out of scope: `changelog`, `epic-autoclose`, `homing-guard`, `orphan-sweep`,
-`pr-cleanup`, `publish`, `release-please`. (`cp-bank-guard`, `glossary-drift`,
-`orphan-heal` and `pitch-guard` retired in
-[#6097](https://github.com/kamp-us/phoenix/issues/6097).)
+`pr-cleanup`, `publish`, `release-please`. (`cp-bank-guard` and `orphan-heal` retired in
+[#6097](https://github.com/kamp-us/phoenix/issues/6097); `glossary-drift` and `pitch-guard`
+lost their wiring in that batch with no authorizing record and were restored onto the
+`fabrika guard` surface under the founder ruling on
+[#5720](https://github.com/kamp-us/phoenix/issues/5720#issuecomment-5337358152).)

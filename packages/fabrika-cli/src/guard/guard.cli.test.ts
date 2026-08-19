@@ -8,7 +8,7 @@
  * non-zero code, and that zero scope reds rather than passing (ADR 0092). One spawn per registered
  * guard covers the registration; the taxonomy is proven once, on readme-guard.
  *
- * The three BOARD guards reach GitHub, so their registration spawn resolves the leaf and stops
+ * The four BOARD guards reach GitHub, so their registration spawn resolves the leaf and stops
  * there. Running one for real would put the network in a unit suite and make the verdict a fact
  * about the live board — registration is the only thing a spawn adds over their verb tests, and it
  * is exactly what resolving the leaf proves: an unregistered path exits on the unknown-subcommand
@@ -106,6 +106,7 @@ describe("fabrika guard, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () 
 
 	it.each([
 		["homing-guard", "standing-lane"],
+		["pitch-guard", "Rabbit-holes"],
 		["roadmap-guard", "milestone"],
 		["unresolved-threads-guard", "review-code"],
 	])("reaches %s's check leaf by its registration alone", (guard, marker) => {

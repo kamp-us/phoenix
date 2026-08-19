@@ -1,0 +1,114 @@
+name: glossary-drift
+
+# The out-of-band backstop of ADR 0128 prong (b) (#1748): a periodic sweep that diffs the surfaces
+# that moved since the registers last changed against `.glossary/`, and files the concept-level
+# vocabulary drift it finds as a `status:needs-triage` issue.
+#
+# This catches the class a structural review gate cannot see — a term coined in a regular code PR
+# that never routes through `/adr` or `plan-epic` (the grounded miss #1726: the release-lever
+# redefinition landed in a plain code PR with zero glossary pressure). A gate reads path signals;
+# this reads the words an author used to name what they shipped.
+#
+# It is OFF the per-PR blocking path BY CONSTRUCTION (ADR 0128 rejects extending the gate, option
+# (a)): `fabrika glossary drift` exits 0 on `drift`, `clean` AND `bootstrap` alike — a hit is a FILED
+# ISSUE, never a non-zero gate exit — so it can never block a merge. The lag between a term shipping
+# and the next sweep filing it is the deliberate ADR-0128 price of staying off the fail-closed gate.
+#
+# The safety and the heuristic live in the CLI's pure core
+# (packages/fabrika-cli/src/glossary/drift-verb.ts): recall-biased candidate extraction (a false
+# positive costs a triage glance, not a merge round-trip) and a suppression pass against the declared
+# keys. The three non-zero exits it DOES speak are unanswered questions, not drift — 4 an unparseable
+# term table, 7 a `--paths` matching nothing, 11 an unreadable register or commit range — and the
+# final step reds the run on each rather than letting an unread sweep pass as clean.
+on:
+  schedule:
+    # Weekly, Monday 04:23 UTC — off-hours and off the top of the hour (the GitHub scheduler
+    # congests on-the-hour crons), and offset from the other sweeps so they do not file in the same
+    # minute. Weekly, not daily: ADR 0128 accepts merge-cadence lag by design, and a weekly window
+    # keeps the filed-issue rate low enough that each hit gets a real triage glance rather than
+    # becoming noise.
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      file_issue:
+        description: "File a status:needs-triage issue on detected drift (true) or print-only (false)"
+        type: boolean
+        default: false
+      register:
+        description: "Which register to sweep against: terms, language, or both"
+        type: string
+        default: "both"
+
+concurrency:
+  # Never let two sweeps race — a duplicate filed issue is pure triage noise.
+  group: glossary-drift
+  cancel-in-progress: false
+
+permissions:
+  contents: read # checkout + read the commit range
+  issues: write # file the drift issue via gh
+
+jobs:
+  sweep:
+    name: sweep the moved surfaces against the glossary registers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          # The sweep resolves the commit that last touched each register and walks forward from it,
+          # so it needs more than the default shallow single-commit checkout.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # `continue-on-error` lets a non-zero exit reach the final step, which is what turns an
+      # unreadable sweep into a red instead of a silent skip. The JSON shape carries the verdict:
+      # `outcome` is drift / clean / bootstrap, and the candidate rows are what a filed issue quotes.
+      - name: glossary drift sweep
+        id: sweep
+        continue-on-error: true
+        env:
+          REGISTER: ${{ inputs.register || 'both' }}
+        run: |
+          set -o pipefail
+          node packages/fabrika-cli/src/bin.ts glossary drift --register "$REGISTER" --json \
+            > drift.json 2> drift-diagnostics.txt
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+          cat drift-diagnostics.txt
+          echo "outcome=$(jq -r '.outcome // "unread"' drift.json)" >> "$GITHUB_OUTPUT"
+
+      # A scheduled run always files: surfacing drift autonomously is the whole point of prong (b).
+      # A manual dispatch defaults to print-only so a human can eyeball the candidates first.
+      #
+      # Keyed on the `drift` outcome at exit 0, never on "not clean": `bootstrap` means this repo has
+      # no register yet, and an issue filed under this title for that would report drift the sweep
+      # never saw.
+      - name: File a status:needs-triage issue on detected drift
+        if: >-
+          ${{ steps.sweep.outputs.code == '0' && steps.sweep.outputs.outcome == 'drift'
+          && (github.event_name == 'schedule' || inputs.file_issue == true) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CANDIDATES="$(jq -r '.candidates[] | "- `\(.phrase)` — \(.hits) hit(s), first seen in \(.firstSurface)"' drift.json)"
+          SINCE="$(jq -r '.sinceCommit' drift.json)"
+          SCANNED="$(jq -r '.scannedCommits' drift.json)"
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "glossary-drift: candidate coinages in the surfaces that moved" \
+            --label "status:needs-triage" \
+            --body "$(printf 'The weekly glossary-drift sweep found candidate coinages in the %s commit(s) that landed since the registers last changed (%s) — terms named in shipped work that `.glossary/` does not declare.\n\nThe extraction is recall-biased by design (ADR 0128): a false positive costs one triage glance. For each row, either declare the term with `/fabrika:glossary` or dismiss it.\n\n%s\n' "$SCANNED" "$SINCE" "$CANDIDATES")"
+
+      # An unread sweep is never a pass: 4, 7 and 11 all mean the verdict is UNKNOWN, and a green run
+      # under any of them would report "no drift" from a range nobody read (#4776).
+      - name: Fail the job on an unread sweep
+        if: ${{ steps.sweep.outputs.code != '0' }}
+        run: |
+          echo "glossary-drift: exit ${{ steps.sweep.outputs.code }} — 4 is an unparseable term table, 7 a --paths matching nothing, 11 an unreadable register or commit range. See the sweep step output above." >&2
+          exit 1
