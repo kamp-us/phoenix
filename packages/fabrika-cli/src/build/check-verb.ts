@@ -19,6 +19,10 @@
  * for the unvalidatable file class that keeps that distinction representable (#5229), and
  * {@link notCoveredBy} for the per-surface coverage the green's `unvalidated` list reports (#5288),
  * and {@link readMarkdown} for the file the verb could not open (#5304).
+ *
+ * **A prose red must be this diff's.** The leak scan is baselined against the merge base, so a file
+ * that merely enters a diff no longer hands its author every defect line it already carried; the
+ * shape and its deliberate limits live in `prose-baseline.ts` (#5755).
  */
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -40,9 +44,10 @@ import {
 } from "./codes.ts";
 import {predecessorsOf, readTopology, renderRef, sameRef} from "./dependencies.ts";
 import {docLeaks} from "./doc-leaks.ts";
-import {changedFiles, mergeBase} from "./git.ts";
+import {changedFiles, mergeBase, showAt, treePaths} from "./git.ts";
 import {defaultBranch} from "./github.ts";
 import {requireLane} from "./lane-guard.ts";
+import {introducedLeaks} from "./prose-baseline.ts";
 import {resolveTargetRepo} from "./target.ts";
 
 const VERB = "build check";
@@ -190,20 +195,29 @@ export const surfaceMismatch = (surface: Surface, files: ReadonlyArray<string>):
 };
 
 /**
- * The machine-local paths a committed prose file carries, as defect lines.
+ * The machine-local paths **this diff introduced** into a committed prose file, as defect lines.
  *
  * The scanner is {@link docLeaks}, the committed-file one — not `report/leaks.ts`'s body scanner,
  * which this verb used to call. That scanner guards runtime issue bodies, an ungated surface, and
  * it is deliberately stricter than the repo's committed-file gate on three axes; asking it about a
  * file in a diff made this predictor red on bytes CI passes clean, and the red was unclearable in
  * the lane that inherited it (#5687). See `doc-leaks.ts` for the three divergences.
+ *
+ * `baseText` is the file as of the merge base, or `null` for a file this diff creates. Subtracting
+ * the base's own leaks is what stops a one-paragraph edit inheriting every defect line already in
+ * the file — see `prose-baseline.ts` for why the shape is a baseline, the same one #4250 reached in
+ * `cli-invocation-guard`, and for why only the leak scan is baselined (#5755).
  */
 const leakDefects = (
 	file: string,
 	text: string,
+	baseText: string | null,
 	exempt: ReadonlyArray<string>,
 ): ReadonlyArray<string> =>
-	docLeaks(file, text, exempt).map(
+	introducedLeaks(
+		baseText === null ? [] : docLeaks(file, baseText, exempt),
+		docLeaks(file, text, exempt),
+	).map(
 		(leak) => `${file}:${leak.line} carries a machine-local path (${leak.reason}): ${leak.matched}`,
 	);
 
@@ -715,6 +729,15 @@ export const runCheck = (
 			);
 		}
 		const scoped = [...noted, exempt.note];
+		const atBase = yield* treePaths(lane.root, merged.value, markdown);
+		if (atBase._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot list the changed markdown at the merge base ${merged.value} (${atBase.reason}) — which defects predate this diff is UNKNOWN, never green.`,
+				scoped,
+			);
+		}
+		const inBase = new Set(atBase.value);
 		const defects: string[] = [];
 		for (const file of markdown) {
 			const path = `${lane.root}/${file}`;
@@ -727,7 +750,19 @@ export const runCheck = (
 					scoped,
 				);
 			}
-			defects.push(...leakDefects(file, read.text, exempt.paths));
+			let baseText: string | null = null;
+			if (inBase.has(file)) {
+				const before = yield* showAt(lane.root, merged.value, file);
+				if (before._tag === "Failure") {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot read ${file} at the merge base ${merged.value} (${before.reason}) — which of its defects predate this diff is UNKNOWN, never green.`,
+						scoped,
+					);
+				}
+				baseText = before.value;
+			}
+			defects.push(...leakDefects(file, read.text, baseText, exempt.paths));
 			const dir = path.slice(0, path.lastIndexOf("/"));
 			for (const target of linkTargets(read.text)) {
 				const absolute = normalizePath(
