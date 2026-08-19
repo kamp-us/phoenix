@@ -147,13 +147,14 @@ const ci = leafCommand(
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
+				cwd: process.cwd(),
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Roll up the live check runs at a head, fail-closed."),
 	Command.withDescription(
-		"Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. First stdout line is `ci\\t<sha>\\t<rollup>`, then `check\\t<count>` and one `<name>\\t<status>` line per run. Exits 7 (PR or --sha proven absent, or zero check runs declared — ADR 0092), 11 (the enumeration failed — CI state is UNKNOWN, never green), 13 (received fewer runs than declared — #3999). Example: fabrika review ci 4321 --sha 03135b91",
+		'Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. First stdout line is `ci\\t<sha>\\t<rollup>`, then `check\\t<count>` and one `<name>\\t<status>` line per run. An empty enumeration asks whether the repo produces CI at all: with zero workflows it refuses, unless `.fabrika.jsonc` declares `ci.noProducer: "degrade"`, which rolls up `no-producer` — never green. Exits 7 (PR or --sha proven absent, zero check runs declared, or zero workflows — ADR 0092), 11 (the enumeration, the workflow inventory or `.fabrika.jsonc` could not be read — CI state is UNKNOWN, never green), 13 (received fewer runs than declared — #3999). Example: fabrika review ci 4321 --sha 03135b91',
 	),
 );
 

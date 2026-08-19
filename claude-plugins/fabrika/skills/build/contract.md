@@ -1525,8 +1525,10 @@ a gap: the commands here that machine-read a workflow all live in `pipeline-cli`
 forbids any fabrika verb from invoking, so this repo's workflow surface stands on `actionlint` alone
 and refuses `11` where that is absent too. `actionlint` runs on top when this tree has it — it is a pinned tarball CI installs at job time and
 no repo's dependency, so its absence is the ordinary case and is **disclosed** beside the green
-rather than skipped in silence; `ci.yml`'s own `actionlint` job is the superseding authority there,
-as it is for every verdict this verb prints. A declared command that cannot be spawned is the other
+rather than skipped in silence; the gate workflow's own `actionlint` job is the superseding authority
+there, as it is for every verdict this verb prints. That workflow is named by `ci.gateWorkflow` in
+`.fabrika.jsonc` — phoenix's `ci.yml` when a repo declares nothing, and a bare filename or the load
+is refused `11` (#6026, #6298). A declared command that cannot be spawned is the other
 polarity: it ships with the repo, so it is `11`, UNKNOWN, naming the command.
 
 What holds both honest is per-file coverage, not a count of what ran. A declared guard takes no path
@@ -1569,7 +1571,7 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | `build check: no validator that ran opens <files> — reported in \`unvalidated\`, so this green claims nothing about them.` | 0 | scope note beside a green |
 | `build check: <n> workflow validator(s) declared in .fabrika.jsonc.` | 0 | scope note |
 | `build check: no repo workflow validator is declared — <reason>.` | 0 | scope note |
-| `build check: actionlint did NOT run (<reason>) — ci.yml's actionlint job supersedes this verdict on workflow syntax.` | 0 | scope note beside a green |
+| `build check: actionlint did NOT run (<reason>) — <ci.gateWorkflow>'s actionlint job supersedes this verdict on workflow syntax.` | 0 | scope note beside a green |
 | `build check: <n> leak-scan exemption(s) declared in .fabrika.jsonc.` | 0 | scope note |
 | `build check: nothing is leak-scan exempt — <reason>.` | 0 | scope note |
 | `build check: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |

@@ -1049,6 +1049,37 @@ describe("--surface workflows", () => {
 		expect(JSON.parse(out.stdout).ran).toEqual([GUARD.join(" ")]);
 		expect(JSON.parse(out.stdout).unvalidated).toEqual([]);
 		expect(out.stderr.some((line) => line.includes("actionlint did NOT run"))).toBe(true);
+		expect(out.stderr.some((line) => line.includes("ci.yml's actionlint job supersedes"))).toBe(
+			true,
+		);
+	});
+
+	it("names the gate workflow the repo declares, not phoenix's (#6026)", async () => {
+		const {out} = await workflows(
+			[[GUARD_LINE, okOut("")]],
+			{
+				[CONFIG]: JSON.stringify({
+					workflowValidators: [{command: GUARD, reads: [".github/workflows/ci.yml"]}],
+					ci: {gateWorkflow: "build.yml"},
+				}),
+			},
+			NO_ACTIONLINT,
+		);
+		expect(out.code).toBe(0);
+		expect(out.stderr.some((line) => line.includes("build.yml's actionlint job supersedes"))).toBe(
+			true,
+		);
+	});
+
+	it("refuses on 11 when `ci` is declared off-vocabulary — never the shipped gate name", async () => {
+		const {out} = await workflows([[GUARD_LINE, okOut("")]], {
+			[CONFIG]: JSON.stringify({
+				workflowValidators: [{command: GUARD, reads: [".github/workflows/ci.yml"]}],
+				ci: {gateWorkflow: ".github/workflows/build.yml"},
+			}),
+		});
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("bare workflow filename");
 	});
 
 	// The finding on #6220's first round: `ran.length > 0` proves a validator ran, never that it
