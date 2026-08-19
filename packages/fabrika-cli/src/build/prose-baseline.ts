@@ -49,7 +49,7 @@ import type {DocLeak} from "./doc-leaks.ts";
  *
  * Keyed as a JSON pair rather than a delimited string: no separator means no separator to collide
  * with, and no non-printing byte in this file's source (a raw NUL here made git call the whole
- * module binary, so no diff of it could be read — #6215).
+ * module binary, so no diff of it could be read — #5755).
  */
 const identity = (leak: DocLeak): string => JSON.stringify([leak.reason, leak.matched]);
 
