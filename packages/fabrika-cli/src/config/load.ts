@@ -38,3 +38,25 @@ export const resolve = <A>(load: Load, group: KeyGroup<A>): Resolution<A> =>
 	load._tag === "Refused"
 		? {_tag: "Malformed", reason: load.reason}
 		: resolveKey(load.state, group);
+
+/** One key's resolution, carried with its key so a reader over the whole registry can name it. */
+export interface Resolved {
+	readonly key: string;
+	readonly resolution: Resolution<unknown>;
+}
+
+/**
+ * Every registered key off one load, in registry order.
+ *
+ * The readout verb reads the surface, not a key: it has no static type to resolve against, so it
+ * goes through the registry's erased `readout` and gets the same four arms {@link resolve} does —
+ * including a refused load's "every key is malformed", which stays stated once, here.
+ */
+export const resolveAll = (load: Load): ReadonlyArray<Resolved> =>
+	KEY_GROUPS.map((group) => ({
+		key: group.key,
+		resolution:
+			load._tag === "Refused"
+				? ({_tag: "Malformed", reason: load.reason} as const)
+				: group.readout(load.state),
+	}));

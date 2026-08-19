@@ -26,6 +26,7 @@ access per
 |---|---|---|
 | `status open` | the composite front-door readout: five fields, each with its own state, source and freshness | assembling five independent reads and rendering each one's three-state outcome is a total function; deciding what to *do* about a gap is the skill's |
 | `status config` | which repo surfaces every landed skill declares it needs, and whether each is present here | parsing a fixed table shape and probing a path or a label is mechanical, zero judgement (the founder's detection-verb ruling, #4952); drafting a missing surface's *content* is judgment |
+| `status settings` | every key on the `.fabrika.jsonc` config surface, its resolved value, and where that value came from | resolving a key against a shipped default and naming its provenance is a total function; deciding what a repo *should* declare is judgment |
 | `status menu` | the landed skill roster with each skill's invocation and one-line description | reading a directory and each file's frontmatter is a total function; choosing which skill fits the work at hand is judgment |
 | `status readout` | the landed-decision digest as published in the durable artifact | fetching an artifact and decoding a registered wire format is mechanical; ranking the rows is `governance`'s judgment and is not recomputed here |
 | `status board` | counts of the board's decided buckets, each with its own freshness | counting labelled issues over named REST endpoints is arithmetic; ranking or picking from them is `build pick`'s |
@@ -623,6 +624,126 @@ $ fabrika status config --json
   the token lacks admin on, GitHub omits a key entirely and `gh api --jq` exits `0` printing nothing,
   making absent indistinguishable from false; every probe here asserts the positive shape required.
 - ADR 0092 — zero scope reds; an unread field is UNKNOWN, never a negative answer.
+
+---
+
+## `status settings`
+
+**Invocation**
+
+```
+fabrika status settings [--root <dir>] [--json]
+```
+
+The resolved config surface: every key `.fabrika.jsonc` may carry, what it resolves to here, and
+where that value came from. It is the one place a skill asks what a key resolves to, so no skill
+document has to restate a value (R9.1, #6293). It reads; it writes nothing.
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--root` | string | no | the repository root, else the cwd | the directory holding `.fabrika.jsonc` |
+| `--json` | boolean | no | `false` | emit the result object |
+
+**Output** — machine channel, [tab-separated](#separator). A header, then one line per registered
+key in registry order:
+
+```
+settings	<resolved|unknown>	<keys>	<declared>	<unknown>	<as-of>
+setting	<key>	<declared|default|unknown>	<value-as-json>	<detail>	<as-of>
+```
+
+`<value-as-json>` is the value as JSON, which is what keeps the cell tab-free — a declared string
+holding a tab escapes rather than splitting the row. It is printed **in the spelling the file
+carries**, not in the shape the package decodes to: `capClearAuthors` prints `["@usirin"]`, never
+`[{"_tag":"User","login":"usirin"}]`. `<as-of>` is this invocation's own read of the file,
+`asOfKind: "read-now"`, the same instant on every row because every row comes off it.
+
+<a id="provenance-is-the-column"></a>**Provenance is the load-bearing column.** "the governance
+roots are the four shipped defaults" and "the governance roots are four values this repo declared"
+are different facts, and an agent reading a bare value cannot tell whether the repo made a choice.
+
+| Provenance | Meaning |
+|---|---|
+| `declared` | the file carries this key and its value decoded |
+| `default` | no file, or no such key — the shipped default, with which of the two in `<detail>` |
+| `unknown` | the value could not be established, with the reason in `<detail>` and no value printed |
+
+**Three, not the loader's four.** `packages/fabrika-cli/src/config/key-group.ts` distinguishes a
+*malformed* declared value from an *unreadable* file; both land here as `unknown`, because the value
+this repo runs on is equally unestablished either way and neither may ever render as the default it
+did not resolve to. The two reasons stay distinguishable in `<detail>`, which carries the loader's
+own words.
+
+**A key that resolves `unknown` makes the whole readout a refusal at `11`.** A non-zero exit
+[carries no payload](#separator), so stdout is empty and stderr carries the scope line, the reason,
+and one `setting` line per UNKNOWN key — the resolved rows are not printed beside a refusal, since
+that invites a caller to read the bytes without reading the status. This is the same rule
+`build check` and `build clearances` already hold on this file: an unreadable config is UNKNOWN,
+never the shipped default (`packages/fabrika-cli/src/config/document.ts`).
+
+**A repo with no `.fabrika.jsonc` is `resolved` at exit `0`**, every row `default`. That is the
+whole point of a shipped default, and it is the three-state law's proven-empty class, not its third.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `7` | the config surface registers zero keys — nothing to resolve, and a readout over an empty surface is not an answer (ADR 0092) |
+| `11` | `.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `status settings: the config surface registers zero keys — there is nothing to resolve, and a readout over an empty surface is not an answer (ADR 0092).` | 7 | refusal |
+| `status settings: <n> key(s) resolve UNKNOWN (<keys>) — what this repo runs on is unread, never the shipped default.` | 11 | refusal |
+| `status settings: no .fabrika.jsonc — every key falls to its shipped default; <n> key(s), <d> declared, <u> unknown.` | 0 | notice |
+| `status settings: read .fabrika.jsonc; <n> key(s), <d> declared, <u> unknown.` | 0 | notice |
+| `status settings: could not read .fabrika.jsonc: <reason>; <n> key(s), <d> declared, <u> unknown.` | 11 | notice |
+
+**Scope** — every key in `packages/fabrika-cli/src/config/registry.ts`, resolved against one open and
+one parse of the file. No pagination: the scope is a registry, not a list read.
+
+**Examples**
+
+```
+$ fabrika status settings
+settings	resolved	4	3	0	2026-08-18T22:50:20Z
+setting	capClearAuthors	declared	["@usirin","@notusirin"]	-	2026-08-18T22:50:20Z
+setting	docLeakExempt	declared	["/CLAUDE.md"]	-	2026-08-18T22:50:20Z
+setting	governedRoots	default	[".decisions/",".claude/",".github/","claude-plugins/",".fabrika.jsonc"]	.fabrika.jsonc declares no `governedRoots`	2026-08-18T22:50:20Z
+setting	workflowValidators	declared	[]	-	2026-08-18T22:50:20Z
+```
+
+```
+$ fabrika status settings --root /srv/storefront
+status settings: could not read .fabrika.jsonc: /srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory; 4 key(s), 0 declared, 4 unknown.
+setting	capClearAuthors	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-18T22:51:02Z
+setting	docLeakExempt	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-18T22:51:02Z
+setting	governedRoots	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-18T22:51:02Z
+setting	workflowValidators	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-18T22:51:02Z
+status settings: 4 key(s) resolve UNKNOWN (capClearAuthors, docLeakExempt, governedRoots, workflowValidators) — what this repo runs on is unread, never the shipped default.
+$ echo $?
+11
+```
+
+**Grounding**
+
+- R9.1 (#5603 comment 31, founder, verbatim) — *"this file will be used by cli only, the skills
+  ideally should be just using the cli but whatever cli will do will depend on the config. this is a
+  hard requirement."* One reader means skills must be able to *get an answer*; a rule with no verb
+  behind it pushes the value back into prose.
+- #6290 — the loader this verb reads through. The `Default` / `Unknown` split is that module's, and
+  is why a readout can say which without re-deriving it.
+- ADR 0092 — zero scope reds; an unread value is UNKNOWN, never a negative answer.
+
+**Why not the `config` name.** `status config` answers a different question — which repo surfaces the
+landed skills declare and whether each is present — and #6301 retires it along with the
+`## Required repo files` tables it parses. Taking its name now would break `status open`'s `config`
+field mid-epic; the two never overlap, and after #6301 there is one verb answering "what does this
+repo have".
 
 ---
 

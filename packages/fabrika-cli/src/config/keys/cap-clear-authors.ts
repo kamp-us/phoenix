@@ -50,8 +50,13 @@ const decode = (raw: unknown): Decoded<ReadonlyArray<GrantAuthor>> => {
 	return {_tag: "Value", value: authors};
 };
 
+/** One entry back in the spelling the file carries — the shape a readout prints and a repo writes. */
+export const grantAuthorText = (author: GrantAuthor): string =>
+	author._tag === "User" ? `@${author.login}` : `@${author.org}/${author.team}`;
+
 export const capClearAuthorsKey: KeyGroup<ReadonlyArray<GrantAuthor>> = {
 	key: CAP_CLEAR_AUTHORS,
 	shippedDefault: [],
 	decode,
+	render: (authors) => authors.map(grantAuthorText),
 };
