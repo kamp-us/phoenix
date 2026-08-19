@@ -26,8 +26,8 @@ the repo it would land in:
   them, and nobody has ruled whether a plain campaign is the same ritual minus the wave gate or a
   second mode the skill carries.
 - **The shell is v1's, and the deterministic half outlived it.**
-  [`packages/pipeline-cli/src/tools/campaign/`](../packages/pipeline-cli/src/tools/campaign/) and
-  [`.../roadmap/`](../packages/pipeline-cli/src/tools/roadmap/) survived the retirement. The nine
+  `packages/pipeline-cli/src/tools/campaign/` and
+  `.../roadmap/` survived the retirement. The nine
   scripts below are the glue those verbs were meant to replace, not code to re-home.
 
 The port itself is not this file's business, and neither is it a builder's: a fabrika skill reaches
