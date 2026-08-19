@@ -63,7 +63,7 @@ const repoFlag = Flag.string("repo").pipe(
 const skillsDirFlag = Flag.string("skills-dir").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		"the roster root to read (default: $CLAUDE_PLUGIN_ROOT's skills tree, else a plugin the CLI runs from inside of, else claude-plugins/fabrika/skills beneath the repo root, else the same path beneath the checkout the CLI itself runs from, else the installed fabrika plugin under Claude Code's plugin cache at $CLAUDE_CONFIG_DIR/plugins/cache, which is ~/.claude/plugins/cache when $CLAUDE_CONFIG_DIR is unset or empty)",
+		"the roster root to read (default: $CLAUDE_PLUGIN_ROOT's skills tree, else a plugin the CLI runs from inside of, else claude-plugins/fabrika/skills beneath the repo root, else the same path beneath the checkout the CLI itself runs from, else the installed fabrika plugin under Claude Code's plugin cache, which is plugins/cache beneath $CLAUDE_CONFIG_DIR, or beneath .claude in the home directory when $CLAUDE_CONFIG_DIR is unset or empty)",
 	),
 );
 
