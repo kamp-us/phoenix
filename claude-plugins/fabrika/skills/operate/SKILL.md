@@ -524,7 +524,7 @@ human's `UNBLOCKED`, recorded through the same `lane transition` verb — you ne
 `UNBLOCKED`. One exception, and it is still not yours: on a **known** park a recipe verb owns,
 `recipe unpark` records that lane's `UNBLOCKED` itself, and only after a re-fold proves the task
 left the park. The rule and its actor list are ADR
-[0301](../../../../.decisions/0301-known-parks-clear-novel-routes-human.md)'s, which amends ADR 0297
+[0302](../../../../.decisions/0302-known-parks-clear-novel-routes-human.md)'s, which amends ADR 0297
 in part — this section states no park-clearing authority of its own. You relay that verb's exit into
 the chore lane's own event and type no `UNBLOCKED` anywhere.
 
