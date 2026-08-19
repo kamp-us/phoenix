@@ -1165,6 +1165,10 @@ why `≥ 24` is this workspace's number and not the published package's. Emit an
 same binary — the stable native `tsc` (ADR 0271) — so the published artifact and the gate cannot
 disagree about the compiler.
 
+This package re-implements v1's work and never calls into it (ADR
+[0238](../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)); v1 is deleted, so that is
+history rather than a live constraint.
+
 A verb is a **pure function of its dependencies** — the `*-verb.ts` modules compute a `VerbOutcome`
 (exit code, stdout, stderr) and never write a stream or exit. The Effect CLI layer in each group's
 `command.ts` does both. That split is what makes each refusal as deterministically testable as each
