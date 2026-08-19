@@ -1,7 +1,7 @@
 name: skill-gh-lint
 
-# Three mechanical gates over the skill+agent corpus, all in pipeline-cli's
-# `gh-phoenix lint-skills` mode (match logic lives once in lint.ts, never re-grepped here):
+# Four mechanical gates over the skill + agent corpus under `claude-plugins/`, all in fabrika-cli's
+# `guard skill-lint check` (the match logic lives once in skill-lint.ts, never re-grepped here):
 #   1. REST-only-on-this-org (#743): FAIL on any GraphQL-path `gh` invocation
 #      (`gh project`, GraphQL `gh pr/issue edit`, `gh api graphql`).
 #   2. Frontmatter YAML validity (#1766): FAIL on any SKILL.md / agents/*.md whose
@@ -9,24 +9,19 @@ name: skill-gh-lint
 #      unquoted-`description:`-with-a-colon-space defect that breaks GitHub's renderer).
 #   3. Sanctioned push path (#4213): FAIL on a git push invocation in any RUNNABLE block
 #      (a fenced shell block, or a whole .sh) — a bare push cannot report whether the ref
-#      landed, so `pipeline-cli verified-push` is the only sanctioned path. Prose ABOUT a
-#      bare push is untouched; the skills have to explain why it is forbidden.
+#      landed, so `fabrika build push` is the only sanctioned path. Prose ABOUT a bare push
+#      is untouched; the skills have to explain why it is forbidden.
 #   4. Fence portability (#4605): FAIL on a repo-relative `./claude-plugins/…` path literal
 #      inside a fenced block. That literal resolves only inside a phoenix checkout; a
 #      marketplace consumer's install lives in their plugin cache, OUTSIDE their repo, so the
-#      same fence is `No such file or directory` there — the live customer-down break this
-#      gate exists to make unrepeatable. The portable form is the hook-planted
-#      `./.claude/.pipeline/…` link. Prose about the old form is untouched, same as gate 3.
+#      same fence is `No such file or directory` there.
 #
-# Scans the FULL corpus (not just changed files) so a bad call/frontmatter anywhere
-# is caught regardless of which PR introduced it, and FAILS CLOSED on zero scope per
-# ADR 0092: a lint that scanned nothing is a broken lint, exit 3. The walk roots at
-# `claude-plugins` — the whole plugin tree, every plugin dir, skills/** and agents/**
-# alike — so a new skill, a new agent, or a whole new PLUGIN is gated automatically.
-# It used to root at a single plugin dir, which silently excluded every
-# sibling plugin dir while the job still reported green: a guard green from an empty
-# corner is indistinguishable from a guard green from clean code (#5004). The per-plugin coverage assertion in the lint
-# step is what now makes that narrowing loud instead of silent.
+# The scan walks the FULL corpus, not just changed files, so a defect anywhere is caught
+# regardless of which PR introduced it. The walk, its zero-scope floor and the per-plugin
+# coverage assertion (#5004 — a green from an empty corner is indistinguishable from a green
+# from clean code) moved OUT of this file's bash and into the verb when the guard was ported off
+# pipeline-cli (#6098), so each of them is now pinned by a unit test instead of living in a shell
+# step nothing covers.
 on:
   pull_request:
   push:
@@ -55,62 +50,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # The corpus is the whole `claude-plugins` tree — skills/** AND agents/** (the subagent
-      # definitions, also frontmatter-bearing #1766) — across every plugin dir. Hand the CLI every
-      # .md/.sh file; the tool self-scopes (gh-grep drops self-exempt files; the frontmatter
-      # check scopes to SKILL.md / agents/*.md; the push check takes every .md/.sh) and
-      # fails closed (exit 3) if ANY scope is empty (ADR 0092).
-      #
-      # `set -e` is deliberately absent (.patterns/skill-script-shell-shape.md): every
-      # failure below is a named assertion that prints WHY and exits 3, so a silent abort
-      # can never be read as a pass.
+      # Non-zero on three distinct seats, so a red says which thing happened: 12 a defect was
+      # found, 7 zero scope (fail-closed, ADR 0092 — nothing walked, a plugin dir contributed
+      # no file, or a check saw none), 11 a read failed so the verdict is UNKNOWN. The report is
+      # on stderr, with ::error annotations beside it. Reproduce locally with the same verb.
       - name: Lint skill + agent corpus
-        run: |
-          set -uo pipefail
-
-          # The coverage anchor is the literal plugin tree, held SEPARATE from the walk root
-          # on purpose: the assertion below has to stay true when someone narrows the walk.
-          PLUGINS_ROOT=claude-plugins
-          WALK_ROOT=claude-plugins
-
-          # Resolve physically (`cd -P`/`pwd -P`) and compare against an independently
-          # derived path. find(1) does not descend a symlinked root, so a `claude-plugins`
-          # that is a link — or a `..`-folding logical path that resolves elsewhere, which
-          # has produced a false pass in this repo before — would walk nothing.
-          ROOT_PHYS="$(cd -P "$PLUGINS_ROOT" 2>/dev/null && pwd -P)"
-          if [ "$ROOT_PHYS" != "$(pwd -P)/$PLUGINS_ROOT" ]; then
-            echo "skill-gh-lint: FAIL — scan root '$PLUGINS_ROOT' does not physically resolve to \$PWD/$PLUGINS_ROOT (got '${ROOT_PHYS:-<unresolvable>}'); the walk would scan nothing or the wrong tree." >&2
-            exit 3
-          fi
-
-          FILES=()
-          while IFS= read -r -d '' f; do FILES+=("$f"); done \
-            < <(find "$WALK_ROOT" -type f \( -name '*.md' -o -name '*.sh' \) -print0 | sort -z)
-
-          # ADR 0092. This fires BEFORE the CLI's own zero-scope exit 3, because a walk that
-          # matched nothing must not reach a tool that could be handed no arguments at all.
-          if [ "${#FILES[@]}" -eq 0 ]; then
-            echo "skill-gh-lint: FAIL — the walk of '$WALK_ROOT' matched zero files (zero-scope fail-closed, ADR 0092)." >&2
-            exit 3
-          fi
-
-          # The coverage assertion, and the reason this job can no longer go green on a
-          # corner it never looked at (#5004): EVERY plugin dir must contribute at least one
-          # scanned file. Narrow the walk root back to a single plugin and this reds by name,
-          # instead of passing while three quarters of the tree sits outside the gate.
-          UNCOVERED=()
-          for d in "$PLUGINS_ROOT"/*/; do
-            plugin="${d%/}"
-            covered=""
-            for f in "${FILES[@]}"; do
-              case "$f" in "$plugin"/*) covered=1; break ;; esac
-            done
-            [ -n "$covered" ] || UNCOVERED+=("$plugin")
-          done
-          if [ "${#UNCOVERED[@]}" -ne 0 ]; then
-            echo "skill-gh-lint: FAIL — these plugin dirs contributed ZERO scanned files, so the walk does not cover them: ${UNCOVERED[*]}" >&2
-            exit 3
-          fi
-
-          echo "skill-gh-lint: walking ${#FILES[@]} file(s) under '$WALK_ROOT'; every plugin dir under '$PLUGINS_ROOT' is covered."
-          node packages/pipeline-cli/src/bin.ts gh-phoenix lint-skills "${FILES[@]}"
+        run: node packages/fabrika-cli/src/bin.ts guard skill-lint check

@@ -102,11 +102,11 @@ jobs:
             exit 0
           fi
 
-          node packages/pipeline-cli/src/bin.ts release-pr-body sanitize \
+          node packages/fabrika-cli/src/bin.ts ci pr-body \
             < "$RUNNER_TEMP/body.md" > "$RUNNER_TEMP/repaired.md"
           status=$?
           if [ "$status" -ne 0 ]; then
-            echo "::error::release-pr-body sanitize exited $status — refusing to guess at the body."
+            echo "::error::ci pr-body exited $status — refusing to guess at the body."
             exit "$status"
           fi
 

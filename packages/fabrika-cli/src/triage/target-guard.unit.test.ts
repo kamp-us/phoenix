@@ -22,6 +22,7 @@ const target = (over: Partial<IssueRecord> = {}): IssueRecord => ({
 	stateReason: null,
 	comments: 0,
 	isPullRequest: false,
+	isSubIssue: false,
 	...over,
 });
 

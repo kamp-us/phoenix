@@ -37,12 +37,14 @@ time of writing (#5085's carried-forward questions).
 Every `pull_request`-triggered workflow in `.github/workflows/`, classified by guard scope.
 
 **Repo-wide → gained `push: main`** (18): `a11y-pbt`, `catalog-guard`,
-`change-detect-guard`, `codeowners-cp`, `commands-guard`, `decisions-index`,
+`change-detect-guard`, `codeowners-cp`, `decisions-index`,
 `design-inventory-guard`, `design-token-guard`, `doc-links`, `fanout-guard`,
 `migrations-guard`, `patch-guard`, `path-filter-guard`, `pointer-guard`,
 `publish-isolation-guard`, `readme-guard`, `settings-env-guard`, `workflow-contract`.
 (The audit named 20; `crew-fanout-guard` and `crew-leak-guard` left with the crew, ADR
-[0279](../.decisions/0279-v1-crew-retired-in-full.md).)
+[0279](../.decisions/0279-v1-crew-retired-in-full.md), and `commands-guard` retired in
+[#6098](https://github.com/kamp-us/phoenix/issues/6098) — fabrika's own unit suite already
+enforces the property it gated.)
 
 **Deliberately left `pull_request`-only** (5):
 
@@ -56,10 +58,17 @@ Every `pull_request`-triggered workflow in `.github/workflows/`, classified by g
 
 **Already carried `push: main`** (3): `ci`, `deploy`, `skill-gh-lint`.
 (The audit named 6; `adoption-lint`, `cli-invocation-guard` and `trap-status-guard` policed
-the v1 plugin's shell and were deleted with it,
-[#5937](https://github.com/kamp-us/phoenix/issues/5937).)
+the v1 plugin's shell and are gone with it —
+[#5937](https://github.com/kamp-us/phoenix/issues/5937) deleted the plugin, and the guard
+fleet's own migration retired `adoption-lint` in
+[#6096](https://github.com/kamp-us/phoenix/issues/6096) and the other two in
+[#6098](https://github.com/kamp-us/phoenix/issues/6098). `skill-gh-lint` kept the trigger
+through its port onto `fabrika guard`.)
 
 Workflows with no `pull_request` trigger at all (schedules, issue events, release events)
-are out of scope: `changelog`, `cp-bank-guard`, `epic-autoclose`, `glossary-drift`,
-`homing-guard`, `orphan-heal`, `orphan-sweep`, `pitch-guard`, `pr-cleanup`, `publish`,
-`release-please`.
+are out of scope: `changelog`, `epic-autoclose`, `homing-guard`, `orphan-sweep`,
+`pr-cleanup`, `publish`, `release-please`. (`cp-bank-guard` and `orphan-heal` retired in
+[#6097](https://github.com/kamp-us/phoenix/issues/6097); `glossary-drift` and `pitch-guard`
+lost their wiring in that batch with no authorizing record and were restored onto the
+`fabrika guard` surface under the founder ruling on
+[#5720](https://github.com/kamp-us/phoenix/issues/5720#issuecomment-5337358152).)

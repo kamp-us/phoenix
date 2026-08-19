@@ -3,10 +3,10 @@ name: decisions-index
 # The PR-side ADR-file validation for ambient ADR discovery (ADR 0126, #1718):
 # there is no committed `.decisions/index.md` anymore, so nothing is regenerated
 # or pushed on merge. `validate` remains the number-lock backstop — it asserts the
-# ADR files carry no duplicate `id` and no filename/front-matter number mismatch
-# (the #1471 collision class, the ADR 0074 number-lock). Discovery is ambient: the
-# compact map is emitted by `pipeline-cli decisions-index compact` and injected via
-# a SessionStart hook (#1728), with `ls .decisions/` + frontmatter as the fallback.
+# ADR files carry the four index fields, no duplicate `id`, and no filename/front-matter
+# number mismatch (the #1471 collision class, the ADR 0074 number-lock). Discovery is
+# ambient: `ls .decisions/` plus each file's frontmatter is the map (ADR 0129). The scan
+# lives once in fabrika-cli's `guard` group (#6093), which every ported guard shares.
 on:
   pull_request:
   push:
@@ -41,7 +41,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Exit 1 on a duplicate ADR id or a filename/front-matter number mismatch
-      # (reason on stderr); any other non-zero means the run could not complete.
+      # Non-zero on three distinct seats, so a red says which thing happened: 12 a duplicate
+      # id, a filename/front-matter mismatch or a missing index field, 7 zero scope (no
+      # .decisions/ or no records in it — fail-closed, ADR 0092), 11 a record could not be
+      # read so the verdict is UNKNOWN. The report is on stderr, with ::error annotations
+      # beside it. Reproduce locally with the same verb.
       - name: Validate decisions ADR files
-        run: node packages/pipeline-cli/src/bin.ts decisions-index validate
+        run: node packages/fabrika-cli/src/bin.ts guard decisions-index validate

@@ -48,7 +48,7 @@ A behavior-pinning test self-registers with a single-line comment marker:
 
 ## What `patch-guard` enforces (fail-closed)
 
-`pipeline-cli patch-guard check` (CI job `.github/workflows/patch-guard.yml`) reads the
+`fabrika guard patch-guard check` (CI job `.github/workflows/patch-guard.yml`) reads the
 `patchedDependencies` map and every `@patch-pin:` marker across the test tree, and **fails
 closed** ([ADR 0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md)) on:
 

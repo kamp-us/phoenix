@@ -10,7 +10,7 @@ name: roadmap-guard
 #   I4 fail-closed on zero scope (ADR 0092)
 #   I5 active↔done state symmetry — an active row's milestone is open, a done row's closed
 #      (the campaign lifecycle guard, #2660)
-# The check lives once in pipeline-cli (`roadmap-guard check`); this workflow only wires
+# The check lives once in fabrika-cli (`guard roadmap-guard check`); this workflow only wires
 # it to the four triggers.
 on:
   # Block a PR that drifts ROADMAP.md ↔ milestones.
@@ -63,13 +63,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail
-          node packages/pipeline-cli/src/bin.ts roadmap-guard check 2>&1 | tee guard-output.txt
+          node packages/fabrika-cli/src/bin.ts guard roadmap-guard check 2>&1 | tee guard-output.txt
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
-      # Scheduled red → file a status:needs-triage issue (the out-of-band drift the PR
+      # Scheduled drift → file a status:needs-triage issue (the out-of-band drift the PR
       # trigger can't see). No PR to block on a schedule run, so the issue IS the signal.
+      #
+      # Keyed on `12` (a PROVEN violation), not on any non-zero: the guard group splits its
+      # refusals three ways (7 zero scope, 11 unreadable, 12 violation), and a `11` filed under
+      # this title would report drift the guard never saw. The other two red the job below.
       - name: File a status:needs-triage issue on scheduled drift
-        if: ${{ github.event_name == 'schedule' && steps.guard.outputs.code != '0' }}
+        if: ${{ github.event_name == 'schedule' && steps.guard.outputs.code == '12' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -79,10 +83,11 @@ jobs:
             --label "status:needs-triage" \
             --body "$(printf 'The weekly roadmap-guard sweep found ROADMAP.md ↔ GitHub-milestone drift. Reconcile ROADMAP.md'\''s `## Arcs`/`## Campaigns` tables with the milestone projection (roadmap map #2620; invariants I1–I4, #2632).\n\nGuard output:\n\n```\n%s\n```\n' "$(cat guard-output.txt)")"
 
-      # Block the PR / milestone-event / dispatch run on red. On a schedule run the drift
-      # was already reported as an issue above, so the job does not hard-fail there.
-      - name: Fail the job on drift (blocking triggers)
-        if: ${{ github.event_name != 'schedule' && steps.guard.outputs.code != '0' }}
+      # Block the PR / milestone-event / dispatch run on red, and a schedule run too when the
+      # code is anything but the `12` already filed above — an unreadable projection (11) or an
+      # empty scan (7) is an unanswered question, never a pass.
+      - name: Fail the job on drift or an unanswered scan
+        if: ${{ steps.guard.outputs.code != '0' && !(github.event_name == 'schedule' && steps.guard.outputs.code == '12') }}
         run: |
-          echo "roadmap-guard: ROADMAP.md ↔ milestone drift — see the check step output above." >&2
+          echo "roadmap-guard: exit ${{ steps.guard.outputs.code }} — 12 is ROADMAP.md ↔ milestone drift, 11 an unreadable ROADMAP.md or projection, 7 an empty scan. See the check step output above." >&2
           exit 1

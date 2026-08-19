@@ -648,6 +648,82 @@ Five properties are worth knowing before you call them:
 
 This group reaches no network and touches no GitHub artifact: every read is the local tree. It gates
 no merge and emits no verdict, so it registers in no verdict namespace and no wire format.
+
+## The `ci` group
+
+The workflow plumbing, migrated here from `pipeline-cli` alongside the guards
+([#6099](https://github.com/kamp-us/phoenix/issues/6099)). These are **not** guards: they are the
+release path and the build path, where a mistake breaks cutting a release or breaks the evidence a
+merge gate reads, rather than breaking a check.
+
+| Verb | Answers |
+|---|---|
+| `ci changelog` | one Keep-a-Changelog release section derived from a range's closed-issue/merged-PR metadata (ADR [0069](../../.decisions/0069-derived-changelog-from-shipped-work.md)) |
+| `ci pr-body` | a standing Release PR body with every stray HTML tag neutralized, so release-please can parse its own PR back ([#5946](https://github.com/kamp-us/phoenix/issues/5946)) |
+| `ci annotate` | a typecheck's output echoed through unchanged, with each tsc diagnostic re-emitted as a `::error` workflow command ([#3873](https://github.com/kamp-us/phoenix/issues/3873)) |
+| `ci evidence` | the ADR [0054](../../.decisions/0054-run-evidence-bundle.md) §2 run-evidence manifest for a crabbox run, which `ship evidence` reads back and binds to the head SHA |
+
+Two things in the group do not follow the ordinary verb shape, and both are forced:
+
+- **`ci annotate` writes its own streams** instead of returning a `VerbOutcome`. The outcome shape
+  buffers stdout until the verb finishes, and the whole point of a pass-through filter is that the
+  CI log stays live while the typecheck runs. It also always exits `0` — it is a reporter, and the
+  typecheck's redness rides on the producer's exit code through `set -o pipefail`, so a non-zero
+  exit here would only ever mask which side of the pipe actually failed.
+- **`ci-required` is a bare bin, not a verb** —
+  [`src/ci/required-bin.ts`](./src/ci/required-bin.ts), the aggregator that decides whether every
+  should-have-run gating job actually ran (ADR
+  [0092](../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). Its gate job runs on every PR
+  and installs no dependencies, so nothing on its entry path may import `effect`; a registered
+  `Command` would put the whole CLI dependency tree on the always-on aggregator's critical path. The
+  job set it covers is declared once, in `ci.yml`'s `CI_REQUIRED_JOBS`, beside the `needs:` list it
+  must match — a declared job whose `env:` keys are absent reds rather than reading as not-required.
+
+## The `guard` group
+
+The repo's fail-closed CI gates, migrating here from `pipeline-cli` (epic
+[#5720](https://github.com/kamp-us/phoenix/issues/5720)). Unlike every other group this one nests —
+a guard is its own subcommand and `check` is its leaf — so a workflow step and a human reproducing
+its red type the same thing:
+
+```bash
+node packages/fabrika-cli/src/bin.ts guard readme-guard check
+```
+
+| Verb | Answers |
+|---|---|
+| `guard readme-guard check` | whether every real `packages/*` workspace member carries a `README.md` |
+| `guard skill-lint check` | whether the `claude-plugins/` skill + agent corpus holds a GraphQL-path `gh` call, an unparseable frontmatter block, a bare `git push` in a runnable block, or a plugin path literal that only resolves inside this repo |
+| `guard path-filter-guard check` | whether `deploy.yml`'s `deploy:` run-set still matches `ci.yml`'s `e2e:` one, globs and `token`/`base` diff basis alike |
+| `guard change-detect-guard check` | whether change detection is still on API-free git mode (`token: ''`) rather than the flaky API-HTML path |
+| `guard codeowners-cp check` | whether every path the §CP boundary marks control-plane is owned by a human team in `.github/CODEOWNERS` |
+| `guard decisions-index validate` | whether the ADR corpus holds a duplicate id, a filename that disagrees with its frontmatter, or a missing index field |
+| `guard design-token-guard check` | whether component CSS holds a dead `var()` ref, a raw hex outside the raw-scale layer, or an off-grid px over its file's ceiling |
+| `guard design-inventory check` / `generate` | whether the committed component inventory still matches the JSDoc it is extracted from, and the one write mode that regenerates it |
+
+Three things are shared by the group rather than rebuilt per guard, which is the point of it
+([#6093](https://github.com/kamp-us/phoenix/issues/6093)):
+
+`skill-lint` also owns its own walk, and that is deliberate: in `pipeline-cli` the corpus walk, the
+zero-scope floor and the per-plugin coverage assertion lived in forty lines of workflow bash, which
+put four fail-closed decisions where no test could reach them and made a local repro a retyped
+`find`. They are verb code now ([#6098](https://github.com/kamp-us/phoenix/issues/6098)).
+
+- **Scope.** `members.ts` resolves real workspace members — a directory under a declared
+  `pnpm-workspace.yaml` glob that carries a `package.json`. A dead-shell directory is not a member,
+  and a read that fails is never an empty scan.
+- **The change.** `changed-files.ts` resolves what a change-scoped guard diffs against, per CI leg:
+  a PR's target branch, the merge queue's batch base (ADR
+  [0132](../../.decisions/0132-merge-queue-for-base-freshness.md)), a dispatch's default branch, or no
+  baseline at all on `push`. An event it cannot read is `Unresolvable` — never an empty diff.
+- **The verdict.** `verdict.ts` seats every guard on one taxonomy: `0` clean, `12` violation, `7`
+  zero scope (ADR [0092](../../.decisions/0092-gates-fail-closed-on-zero-scope.md)), `11` a read
+  failed so the answer is UNKNOWN. Three numbers, not one, because CI reds on all of them and a
+  human fixing one needs to know which. The report goes to stderr, with GitHub `::error`
+  annotations beside it under Actions — the runner feeds both a step's streams into one command
+  parser, so an annotation on stderr renders exactly as one on stdout, and stdout stays empty on
+  every refusal the way the interface convention requires.
+
 ## The `governance` group
 
 The contract is

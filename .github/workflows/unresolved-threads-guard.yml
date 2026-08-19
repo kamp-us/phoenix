@@ -7,7 +7,7 @@ name: unresolved-threads-guard
 # AND §CP PRs bank for a MANUAL merge that never touches ship-it Step 3.6 — so a §CP PR's
 # only line of defense was that soft prose. On PR #3329 a CodeQL finding on
 # `.github/workflows/commands-guard.yml:35` reached a human merger flagged merge-ready with
-# no flag. This job runs `pipeline-cli unresolved-threads-guard check --pr <n>`: it reads the
+# no flag. This job runs `fabrika guard unresolved-threads-guard check --pr <n>`: it reads the
 # PR's review threads (the ONE sanctioned GraphQL `reviewThreads` read, ADR 0158 — REST has
 # no isResolved) + the latest author-gated review-code verdict, and reds when a live
 # unresolved thread is unaccounted-for in that verdict. Running on every PR, it covers the
@@ -74,4 +74,4 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node packages/pipeline-cli/src/bin.ts unresolved-threads-guard check --pr "${{ github.event.pull_request.number }}"
+        run: node packages/fabrika-cli/src/bin.ts guard unresolved-threads-guard check --pr "${{ github.event.pull_request.number }}"
