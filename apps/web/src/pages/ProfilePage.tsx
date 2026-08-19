@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState} from "react";
 import {useFateClient, view} from "react-fate";
-import {Navigate} from "react-router";
+import {Link, Navigate} from "react-router";
 import type {User} from "../../worker/features/fate/views";
 import {authClient, clearBearerToken, useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
@@ -11,8 +11,11 @@ import {ProfileContributionSignal} from "../components/profile/ProfileContributi
 import {ProfileHeader} from "../components/profile/ProfileHeader";
 import {profileStandingLabel} from "../components/profile/profileStanding";
 import {Alert, Button, Input, ToggleGroup} from "../components/ui";
+import {PHOENIX_CAYLAK_VISIBILITY} from "../flags/keys";
+import {useFlag} from "../flags/useFlag";
 import {type Density, useDensity} from "../lib/density";
 import {type ThemeChoice, useTheme} from "../lib/theme";
+import {CAYLAK_VISIBILITY_PATH} from "./CaylakVisibilityPage";
 import {useProfileStats} from "./useProfileStats";
 import "./ProfilePage.css";
 
@@ -54,6 +57,10 @@ export function ProfilePage() {
 	const stats = statsState.status === "ok" ? statsState.stats : null;
 	const {choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const {choice: densityChoice, setChoice: setDensityChoice} = useDensity();
+	// The entry point into /caylak-gorunurlugu (#6426): shown only when the feature is live AND
+	// the viewer is a yazar, so a dark route and a route the server would refuse are both
+	// unreachable from here rather than reachable-then-404.
+	const {value: caylakVisibilityOn} = useFlag(PHOENIX_CAYLAK_VISIBILITY, false);
 	const [revokingAll, setRevokingAll] = useState(false);
 	const [revokeAllError, setRevokeAllError] = useState<string | null>(null);
 	const [deleteOpen, setDeleteOpen] = useState(false);
@@ -282,6 +289,21 @@ export function ProfilePage() {
 						</span>
 						<span />
 					</div>
+					{caylakVisibilityOn && me?.tier === "yazar" ? (
+						<div className="kp-profile__row">
+							<span className="label">çaylak katkıları</span>
+							<span className="value">
+								çaylakların yazdıklarını akışında görüp görmeyeceğini seçersin.
+							</span>
+							<Link
+								className="edit-btn"
+								to={CAYLAK_VISIBILITY_PATH}
+								data-testid="caylak-visibility-link"
+							>
+								ayarla
+							</Link>
+						</div>
+					) : null}
 				</section>
 
 				<section className="kp-profile__section">

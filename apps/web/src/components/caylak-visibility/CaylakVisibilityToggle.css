@@ -1,0 +1,17 @@
+/* The çaylak in-place visibility control (#6426). Role tokens only — no color literal. */
+
+.kp-caylak-visibility-toggle {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+}
+
+.kp-caylak-visibility-toggle__hint {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.kp-caylak-visibility-toggle__error {
+	font: var(--t-body-sm);
+}
