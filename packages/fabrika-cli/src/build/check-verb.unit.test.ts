@@ -860,6 +860,9 @@ describe("the leak scan reds this diff's leaks, not the file's", () => {
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.some((line) => line.includes(`merge base ${HEAD}`))).toBe(true);
+		// This refusal is raised past the exemption read, so it owes the same scope line every other
+		// refusal past that point carries.
+		expect(out.stderr.some((line) => line.includes("nothing is leak-scan exempt"))).toBe(true);
 	});
 
 	it("refuses on 11 when a file in the base tree cannot be read there", async () => {

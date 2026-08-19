@@ -177,8 +177,8 @@ export const surfaceMismatch = (surface: Surface, files: ReadonlyArray<string>):
  *
  * `baseText` is the file as of the merge base, or `null` for a file this diff creates. Subtracting
  * the base's own leaks is what stops a one-paragraph edit inheriting every defect line already in
- * the file — see `prose-baseline.ts` for why the shape is a baseline and not #4250's added-line
- * attribution, and for why only the leak scan is baselined (#5755).
+ * the file — see `prose-baseline.ts` for why the shape is a baseline, the same one #4250 reached in
+ * `cli-invocation-guard`, and for why only the leak scan is baselined (#5755).
  */
 const leakDefects = (
 	file: string,
@@ -524,16 +524,16 @@ export const runCheck = (
 				noted,
 			);
 		}
+		const scoped = [...noted, exempt.note];
 		const atBase = yield* treePaths(merged.value, markdown);
 		if (atBase._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot list the changed markdown at the merge base ${merged.value} (${atBase.reason}) — which defects predate this diff is UNKNOWN, never green.`,
-				noted,
+				scoped,
 			);
 		}
 		const inBase = new Set(atBase.value);
-		const scoped = [...noted, exempt.note];
 		const defects: string[] = [];
 		for (const file of markdown) {
 			const path = `${lane.root}/${file}`;

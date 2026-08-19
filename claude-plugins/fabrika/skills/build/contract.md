@@ -32,8 +32,8 @@ scar is named, the verb here designs it out; that is the only thing a rebuild in
   declares a path shape.
 - `packages/fabrika-cli/src/build/prose-baseline.ts` — `introducedLeaks`, the multiset difference
   that leaves a changed file's *pre-existing* leaks with the author who wrote them. `build check
-  --surface prose` imports it; the docblock carries why the shape is a baseline and not #4250's
-  added-line attribution.
+  --surface prose` imports it; the docblock carries why the shape is a baseline and where its
+  prediction runs looser than the gate.
 - `packages/fabrika-cli/src/report/compose.ts` — `normalizeForReadback` (three steps: CRLF→LF,
   strip trailing spaces/tabs per line, strip trailing newlines — read the body, the docblock
   understates it). Both writing verbs' read-backs compare through it, never byte-for-byte:
@@ -1350,7 +1350,8 @@ would make the predictor looser than what it predicts.
 used to read the whole text of every changed markdown file, so a PR that edited one paragraph
 inherited every defect line already in it — content the author never wrote and must not change, which
 made a correct one-line doc fix unmergeable (#5755). The verb now scans the file at the merge base as
-well and reports only what this diff added. Two consequences worth knowing before reading a red:
+well and reports only what this diff added. This applies to `--surface plan` too, which runs the same
+markdown validators over an epic ledger. Consequences worth knowing before reading a red:
 
 - Identity is the pattern's reason plus the matched bytes, never the line number, because an
   insertion above a leak shifts it. Byte-identical leaks are therefore told apart by **count**: the
@@ -1360,11 +1361,19 @@ well and reports only what this diff added. Two consequences worth knowing befor
 - The baseline is keyed by path, so a **rename reds every leak the file already carried** — the
   new path has no base text. Intended, not a miss: a doc moved to a new home is a fresh chance to
   fix what it carries. It is the one case where a red names a line the author did not write.
+- The base text is scanned with the **head's** exemption list, so a diff that removes a doc from
+  `.fabrika.jsonc`'s `docLeakExempt` cancels that doc's pre-existing leaks on both sides and greens
+  here. `leak-guard.yml` scans it whole and still reds it — the one case where this predictor is
+  looser than the gate it predicts, and the gate is the one that decides.
 
-The shape is a merge-base baseline and not the added-line attribution `cli-invocation-guard` took for
-the same class of problem in #4250. Markdown is edited by rewriting prose, and a moved paragraph, a
-re-wrapped line or a rename presents every carried line as added, so attribution would reproduce the
-false red on the most ordinary doc edit there is. **Only the leak scan is baselined.** A leak is
+`cli-invocation-guard` reached the same shape for the same class of problem in #4250: its
+`attribute()` classifies head findings against the merge base's, keyed on file plus the exact
+offending text with the line number deliberately dropped, spent as a multiset budget. Two guards
+written years apart converging on those three properties is the argument for the pick. The
+alternative — read the diff hunks and keep only findings on added lines — is rejected because
+markdown is edited by rewriting prose, and a moved paragraph, a re-wrapped line or a rename presents
+every carried line as added, so it would reproduce the false red on the most ordinary doc edit there
+is. **Only the leak scan is baselined.** A leak is
 decided entirely by the bytes of its own line; a link's resolvability is a property of the tree, and
 the same untouched line goes dead the moment the diff moves its target — baselining the link resolver
 would green the PR that broke every link in the repo.

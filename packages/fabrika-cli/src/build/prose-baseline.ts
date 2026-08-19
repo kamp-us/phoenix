@@ -2,19 +2,32 @@
  * What a changed markdown file's leak scan owes this PR — the leaks it carries **minus** the ones it
  * already carried at the merge base.
  *
- * **The shape is a merge-base baseline, not added-line attribution** (#5755, and the pick was open).
- * `cli-invocation-guard` took the attribution shape for the same class of problem in #4250 — a guard
- * must not red a PR for a violation it neither introduced nor can fix — and that shape reads the
- * diff hunks and keeps only findings on added lines. It is rejected here for one reason: a markdown
- * file is edited by rewriting prose, and a moved paragraph, a re-wrapped line or a rename presents
- * every carried line as added. The shape that fixes the false red would reproduce it on the most
- * ordinary doc edit there is. A baseline compares content, so a line that merely *moved* is still
- * the base's line.
+ * **The shape is a merge-base baseline, and `cli-invocation-guard` reached the same one** for the
+ * same class of problem in #4250 — a guard must not red a PR for a violation it neither introduced
+ * nor can fix. Its `attribute()` classifies each head finding against the merge base's findings,
+ * keyed on file plus the exact offending text with the line number deliberately dropped, consumed
+ * as a multiset budget. That is this module, with the file folded into the key. The convergence is
+ * the argument for the pick: two guards written years apart against the same problem landed on the
+ * same three properties.
+ *
+ * The alternative — read the diff hunks and keep only findings on added lines — is rejected for one
+ * reason: a markdown file is edited by rewriting prose, and a moved paragraph, a re-wrapped line or
+ * a rename presents every carried line as added. The shape that fixes the false red would reproduce
+ * it on the most ordinary doc edit there is. A baseline compares content, so a line that merely
+ * *moved* is still the base's line.
  *
  * The baseline is keyed by path, so a **rename reds every leak the file already carried**: there is
  * no base text at the new path, and the whole content is this diff's. That is the intended answer —
  * a doc moved into a new home is a fresh chance to fix what it carries — but it is the one case
  * where "predates this diff" and "predates this path" part ways, so read a rename's reds as new.
+ *
+ * The other place the baseline runs looser than the gate it predicts: **the base text is scanned
+ * with the *head's* exemption list**, so a diff that removes a doc from `.fabrika.jsonc`'s
+ * `docLeakExempt` makes that doc's pre-existing leaks appear on both sides and cancel. This
+ * predictor greens; `leak-guard.yml`, which scans every changed file whole and is unbypassable,
+ * still reds it. Scanning the base with the base's list would fix the prediction, at the cost of a
+ * second config read against a tree the verb otherwise never parses — not worth it while the
+ * authoritative gate is the one that decides.
  *
  * The cost of comparing content is that a leak has no stable line number across an edit — an
  * insertion above shifts every line below it — so identity has to drop the line and become the
