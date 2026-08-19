@@ -909,22 +909,6 @@ $ echo $?
 
 ---
 
-## Required repo files (verb-level)
-
-fabrika installs into repos that are not phoenix. The **when-missing** vocabulary is closed and is
-the same in every fabrika skill, so one reader parses all of them: **fail-loud** (stop, name the
-surface by its repo-relative path, point at front-door), **degrade** (continue with a narrower
-answer, stated), **bootstrap** (front-door creates it — [#4952](https://github.com/kamp-us/phoenix/issues/4952)).
-
-| Must exist | Why | When missing |
-| --- | --- | --- |
-| `gh` authenticated to `--repo` with `issues: write` | every verb reads or writes an issue or comment over REST | **fail-loud** — `11` before any write, `8` after one; never a silent empty answer |
-| The `grilling:session` label | `grill open` applies it on mint and resumes on it | **bootstrap** — `fabrika status bootstrap issue-shape-markers`; until it is run, `grill open` exits `7` naming the label |
-| `repos/<repo>/collaborators/<login>/permission` readable | clause 1 of every ruling (ADR 0055) | **fail-loud** — `11`, and every question's state is UNKNOWN: never `open`, never `ruled`. The load-bearing row — a degrade here would silently license the exact failure the skill exists to prevent |
-
-Nothing else. No `.decisions/`, no `.patterns/`, no CODEOWNERS, no merge-queue configuration, no
-design manifest: this group opens no pull request and gates no merge. Stated explicitly, because an
-absent row reads as nobody checked.
 
 ## Completeness self-test
 

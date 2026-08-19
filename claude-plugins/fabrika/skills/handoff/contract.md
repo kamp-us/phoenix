@@ -955,31 +955,6 @@ $ echo $?
 
 ---
 
-## Required repo files
-
-The skill's run-level works-here checklist is [`SKILL.md`](SKILL.md)'s `## Required repo files`
-table, and **front-door's detection parses that one**
-([#4952](https://github.com/kamp-us/phoenix/issues/4952)). This table is the same shape and the same
-four rows, scoped to the reads **these verbs** make; it adds no row the skill's table does not
-already carry. When-missing vocabulary is the closed set **fail-loud** / **degrade** / **bootstrap**.
-
-| Must exist | Why this group needs it | When missing |
-| --- | --- | --- |
-| A GitHub repository reachable over `gh` REST, with a token carrying `issues: write` | `take` and `claim` post the two comments; `read` and `capture` read the issue, its comments and its pull request | **fail-loud** — `11` before any write, `8` after one. `capture` is unaffected in its git half but still refuses, because a ground state missing its board half is not the shape a pack embeds |
-| A git working tree — the repo root resolves, and `git status` / `git rev-parse` / `git rev-list` answer | `capture` derives every `git.*` field; `read` re-derives them to compare | **fail-loud** — `11` from `capture`, `take` and `read`. `claim` is unaffected: it touches no git state |
-| A remote named `origin` the branch can be compared against | `git.reachable`, `aheadBy` and `behindBy` are computed against the upstream, and reachability is what `take`'s `12` rests on | **degrade** — with no upstream, `capture` reports `reachable: "unknown"` and both counts `null` at exit `0`; `take` then refuses `12` unless `--declare-unreachable` is given, because unknown reachability is not proven reachability |
-| Readable collaborator permissions — `repos/<repo>/collaborators/<login>/permission` | `read` resolves a pack's author and `claim` resolves a claim's author before either is honoured (ADR 0055) | **fail-loud** — `11`. A permission read that fails is UNKNOWN, never a grant. The load-bearing row: degrading here would let any GitHub account author a document a successor acts on |
-
-Nothing else is required. These verbs read no `.decisions/`, no `.patterns/`, no CODEOWNERS, no
-design manifest, no label vocabulary and no merge-queue configuration — they open no pull request,
-gate no merge, and apply no label. Stated explicitly, because an absent row reads as nobody checked.
-
-**First-run behaviour in a fresh repository.** Every refusal above names a way forward, and none is a
-first-run dead end: an issue with no pack is `read`'s ordinary `none` at exit `0` rather than a
-refusal, there is no label to bootstrap, and the first `handoff take` on a repository that has never
-seen one needs nothing that does not already exist. The only first-run friction is a repository with
-no `origin`, which degrades rather than blocks.
-
 ## Self-test against the completeness test
 
 1. **Every flag has a type and, if optional, a default** — the four Inputs tables.

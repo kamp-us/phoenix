@@ -5,13 +5,12 @@
  * The content is the skill's judgement; the write, the collision guard and the read-back are this
  * verb's. That split is why file content arrives on stdin: *"/fabrika shows what's missing, then
  * runs the primitives to build the missing thing"* (#4952). A **line** surface is the exception and
- * carries its own row here: its text is what this group's own `status config` probe matches, so a
- * caller supplying it would let two repos spell one row two ways and each read the other's `missing`.
+ * carries its own row here: a caller supplying its text would let two repos spell one row two ways.
  *
- * **What this builds is fixed in {@link BUILDABLE_SURFACES}, never inferred from a declaration.** A
- * row's disposition says what *the declaring skill* does when a surface is missing — `build-ui`
- * declares `design-system-manifest.md` **fail-loud** *and* points at this verb — so reading
- * `fail-loud` as "unbuildable" would make the most important onboarding surface unreachable.
+ * **What this builds is fixed in {@link BUILDABLE_SURFACES}, never read off a disposition.** A
+ * surface's disposition in `surfaceDispositions` says what happens to a *run* that finds it missing —
+ * `design-manifest` is `fail-loud` and buildable here at once — so reading `fail-loud` as
+ * "unbuildable" would make the most important onboarding surface unreachable.
  *
  * **`exists` is an exit-`0` answer, not a refusal.** A target already there is a proven fact the
  * caller acts on, and a non-zero exit cannot carry it. Nothing is written and nothing is overwritten.

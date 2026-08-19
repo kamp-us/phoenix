@@ -183,3 +183,25 @@ code validator is present, and `build check --surface code` refuses UNKNOWN on i
 greening (nothing was checked) or redding (which claims the code failed, #6015). Deciding it in the
 decoder would put one verb's vocabulary in the config module and leave every other reader of the key
 stuck with it.
+
+## A key over a closed id set merges, and refuses an id it does not know
+
+`surfaceDispositions` (#6301) is a record rather than a list: one entry per repo surface fabrika
+reads, each `fail-loud | degrade | bootstrap`. Two rules make that shape safe.
+
+**The registry is the shipped default, and a repo declares only what it moves.** A declared record is
+merged over the shipped one, so `{"design-manifest": "degrade"}` resolves as that one change and
+every other surface at its shipped disposition. Requiring the whole record instead would make a repo
+restate thirty-odd values it does not care about, and every restated value is one that drifts.
+
+**An id outside the registry is `Malformed`, not ignored.** `"desing-manifest": "degrade"` is a
+disposition the operator believes is configured and is not, and nothing would ever say so — the same
+failure the whole-value refusal above exists for, arriving through a key name instead of a value.
+The registry is therefore closed and carries a one-line note per id saying what the surface is, so
+the ids are readable without a second document.
+
+**A note nothing prints is a note nobody reads.** The resolved value is an id-to-word map, which
+tells a caller what happens and never what the surface *is* — so `status settings --surfaces` joins
+the registry's notes to the resolved dispositions and prints one `surface` row each. The join lives
+with the key (`surfaceNotes`), not in the verb, because the notes and the overrides are two halves
+of one answer and neither is complete alone.

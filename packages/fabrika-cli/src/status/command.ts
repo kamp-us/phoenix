@@ -11,11 +11,12 @@
 import {fileURLToPath} from "node:url";
 import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {CONFIG_PATH} from "../config/document.ts";
 import {readConfigSource} from "../config/source.ts";
 import {discoverRepoRoot} from "../delegate/root.ts";
 import {leafCommand} from "../excess-operand.ts";
 import type {Attempt} from "../io/git.ts";
-import {listLabels, resolveRepo} from "../io/issues.ts";
+import {resolveRepo} from "../io/issues.ts";
 import {readStdin} from "../io/stdin.ts";
 import {DEFAULT_STALE_MINUTES} from "../lane/stale.ts";
 import {runStale} from "../lane/stale-verb.ts";
@@ -23,13 +24,11 @@ import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {readBoard, runBoard} from "./board-verb.ts";
 import {knownIds, runBootstrap} from "./bootstrap-verb.ts";
-import {labelSetOf, probeSurfaces, runConfig, type SurfaceRow} from "./config-verb.ts";
 import {instant, readNow} from "./fields.ts";
 import {runMenu} from "./menu-verb.ts";
 import {
 	badFieldRefusal,
 	boardField,
-	configField,
 	FIELDS,
 	type Field,
 	isFieldName,
@@ -37,6 +36,7 @@ import {
 	menuField,
 	readoutField,
 	runOpen,
+	settingsField,
 } from "./open-verb.ts";
 import {badIssueRefusal, issueNumberOf, readReadout, runReadout} from "./readout-verb.ts";
 import {type RosterSources, readRoster} from "./roster.ts";
@@ -105,41 +105,6 @@ const menu = leafCommand(
 	),
 );
 
-const config = leafCommand(
-	"config",
-	{
-		skill: Flag.string("skill").pipe(Flag.optional),
-		skillsDir: skillsDirFlag,
-		repo: repoFlag,
-		json: jsonFlag,
-	},
-	Effect.fn(function* ({skill, skillsDir, repo, json}) {
-		const roster = yield* readRoster(rosterSources(Option.getOrNull(skillsDir)));
-		if (roster._tag !== "Resolved") {
-			yield* emit(runConfig({roster, surfaces: [], json}));
-			return;
-		}
-		const target = yield* resolveTarget(Option.getOrNull(repo));
-		const labels = target._tag === "Ok" ? yield* listLabels(target.value) : null;
-		const surfaces = yield* probeSurfaces({
-			roster,
-			only: Option.getOrNull(skill),
-			ctx: {
-				repoRoot: yield* repositoryRoot,
-				labels: labelSetOf(labels),
-				repoName: target._tag === "Ok" ? target.value : "the target repo",
-				asOf: readNow(instant(new Date())),
-			},
-		});
-		yield* emit(runConfig({roster, surfaces, json}));
-	}),
-).pipe(
-	Command.withShortDescription("Which repo surfaces the landed skills need, and which exist."),
-	Command.withDescription(
-		"Report which repo surfaces every landed skill declares it needs and whether each is present here — the detection verb (#4952). First stdout line is `config\\t<satisfied|gaps|unknown>\\t<declared>\\t<missing>\\t<undeclared>\\t<off-vocabulary>`, then one `surface\\t…` line per declared row. A skill with no `## Required repo files` section emits one `undeclared` row, never zero. Exits 7 (an explicitly passed --skills-dir is proven absent), 11 (the roster or a SKILL.md inside it could not be read — the declaration set is UNKNOWN). Example: fabrika status config",
-	),
-);
-
 const settings = leafCommand(
 	"settings",
 	{
@@ -149,9 +114,14 @@ const settings = leafCommand(
 				"the directory holding .fabrika.jsonc (default: the repository root, else the cwd)",
 			),
 		),
+		surfaces: Flag.boolean("surfaces").pipe(
+			Flag.withDescription(
+				"expand `surfaceDispositions` into one `surface` row per repo surface, each with the disposition in force here and what that surface is",
+			),
+		),
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({root, json}) {
+	Effect.fn(function* ({root, surfaces, json}) {
 		const dir = Option.getOrNull(root) ?? (yield* repositoryRoot);
 		const source = yield* readConfigSource(dir);
 		yield* emit(
@@ -160,13 +130,14 @@ const settings = leafCommand(
 				rows: settingRows(source),
 				asOf: readNow(instant(new Date())),
 				json,
+				surfaces,
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("The resolved config surface, every key with its provenance."),
 	Command.withDescription(
-		"Print every key on the config surface with its resolved value and where that value came from — the one place a skill asks what `.fabrika.jsonc` resolves to, so no document has to restate a value. First stdout line is `settings\\t<resolved|unknown>\\t<keys>\\t<declared>\\t<unknown>\\t<as-of>`, then one `setting\\t<key>\\t<declared|default|unknown>\\t<value-as-json>\\t<detail>\\t<as-of>` line each. A repo with no `.fabrika.jsonc` prints the full shipped-default set at exit 0; a key whose value could not be established makes the whole readout a refusal that names each UNKNOWN key on stderr, never the default it did not resolve to. This verb writes nothing. Exits 7 (the config surface registers zero keys — ADR 0092), 11 (`.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green). Example: fabrika status settings",
+		"Print every key on the config surface with its resolved value and where that value came from — the one place a skill asks what `.fabrika.jsonc` resolves to, so no document has to restate a value. First stdout line is `settings\\t<resolved|unknown>\\t<keys>\\t<declared>\\t<unknown>\\t<as-of>`, then one `setting\\t<key>\\t<declared|default|unknown>\\t<value-as-json>\\t<detail>\\t<as-of>` line each. A repo with no `.fabrika.jsonc` prints the full shipped-default set at exit 0; a key whose value could not be established makes the whole readout a refusal that names each UNKNOWN key on stderr, never the default it did not resolve to. Pass --surfaces to expand `surfaceDispositions` into one `surface\\t<id>\\t<fail-loud|degrade|bootstrap>\\t<what the surface is>` line per repo surface, appended to the same readout — the id-to-word value alone says nothing about what a surface is, and that half is what an operator relays. This verb writes nothing. Exits 7 (the config surface registers zero keys, or --surfaces was passed and no `surfaceDispositions` key is registered — ADR 0092), 11 (`.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green). Example: fabrika status settings",
 	),
 );
 
@@ -283,29 +254,17 @@ const open = leafCommand(
 		const target: Attempt<string> = yield* resolveTarget(Option.getOrNull(repo));
 		const repoName = target._tag === "Ok" ? target.value : "unresolved";
 
-		const needsRoster = wanted.includes("menu") || wanted.includes("config");
-		const roster = needsRoster
+		const roster = wanted.includes("menu")
 			? yield* readRoster(rosterSources(Option.getOrNull(skillsDir)))
 			: null;
 
 		const fields: Field[] = [];
-		let surfaces: ReadonlyArray<SurfaceRow> = [];
-		if (roster !== null && roster._tag === "Resolved" && wanted.includes("config")) {
-			const labels = target._tag === "Ok" ? yield* listLabels(target.value) : null;
-			surfaces = yield* probeSurfaces({
-				roster,
-				only: null,
-				ctx: {
-					repoRoot: yield* repositoryRoot,
-					labels: labelSetOf(labels),
-					repoName,
-					asOf,
-				},
-			});
-		}
 		for (const name of wanted) {
 			if (name === "menu" && roster !== null) fields.push(menuField(roster, asOf));
-			if (name === "config" && roster !== null) fields.push(configField(roster, surfaces, asOf));
+			if (name === "settings") {
+				const source = yield* readConfigSource(yield* repositoryRoot);
+				fields.push(settingsField(settingRows(source), CONFIG_PATH, asOf));
+			}
 			if (name === "board") {
 				fields.push(
 					boardField(
@@ -347,10 +306,10 @@ const open = leafCommand(
 	}),
 ).pipe(
 	Command.withShortDescription(
-		"The composite front-door readout: menu, config, board, readout, lanes.",
+		"The composite front-door readout: menu, settings, board, readout, lanes.",
 	),
 	Command.withDescription(
-		"The composite front-door readout: five fields — menu, config, board, readout, lanes — each with its own state, source and freshness. The lanes field renders `fabrika lane stale`'s sweep over both default roots at its documented threshold: `stale` names the silent lanes, zero stale lanes is the proven negative `empty` (no lanes on disk is `empty` too), and an unreadable root or lane record is `unknown` with its reason — it reports, it never resumes. Every unreadable source becomes a field state, so this verb has no zero-scope seat and no failed-read seat: it is injected before the session reads a token and a refusal would write zero bytes. First stdout line is `open\\t<field-count>`, then one `field\\t<name>\\t<state>\\t<detail>\\t<source>\\t<as-of>` line each. Exits 10 (--field is off the closed vocabulary). Example: fabrika status open",
+		"The composite front-door readout: five fields — menu, settings, board, readout, lanes — each with its own state, source and freshness. The lanes field renders `fabrika lane stale`'s sweep over both default roots at its documented threshold: `stale` names the silent lanes, zero stale lanes is the proven negative `empty` (no lanes on disk is `empty` too), and an unreadable root or lane record is `unknown` with its reason — it reports, it never resumes. Every unreadable source becomes a field state, so this verb has no zero-scope seat and no failed-read seat: it is injected before the session reads a token and a refusal would write zero bytes. First stdout line is `open\\t<field-count>`, then one `field\\t<name>\\t<state>\\t<detail>\\t<source>\\t<as-of>` line each. Exits 10 (--field is off the closed vocabulary). Example: fabrika status open",
 	),
 );
 
@@ -359,7 +318,6 @@ export const statusCommand = Command.make("status").pipe(
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing
 		// one. The comment is what keeps the formatter from collapsing the list back.
 		open,
-		config,
 		settings,
 		menu,
 		readout,
@@ -368,6 +326,6 @@ export const statusCommand = Command.make("status").pipe(
 	]),
 	Command.withShortDescription("Answer what state the factory is in."),
 	Command.withDescription(
-		"Answer what state the factory is in — the composite front-door readout, the repo-surface detection verb, the resolved `.fabrika.jsonc` config surface, the derived skill roster, the landed-decision digest, the board's bucket counts, and the one primitive that creates a missing surface",
+		"Answer what state the factory is in — the composite front-door readout, the resolved `.fabrika.jsonc` config surface, the derived skill roster, the landed-decision digest, the board's bucket counts, and the one primitive that creates a missing surface",
 	),
 );

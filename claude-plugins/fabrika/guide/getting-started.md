@@ -169,15 +169,16 @@ Your milestone should be in that list. Commit `ROADMAP.md`.
 ## 7. See what is still missing
 
 ```bash
-fabrika status config
+fabrika status settings
 ```
 
-The first line is the summary — how many surfaces the installed skills declare, how many are
-missing, and how many skills declare none. This is the verb that tells you whether the setup is
-finished; a `created` from step 4 says one surface landed, not that the repo is ready.
+One row per config key, with its resolved value and whether that value is yours or the shipped
+default. The `surfaceDispositions` row is the one to read here: it lists every repo surface fabrika
+reads and what happens when one is absent — `fail-loud`, `degrade` or `bootstrap`. A `created` from
+step 4 says one surface landed, not that the repo is ready.
 
-Some rows will say `missing`. That is fine for now — every one of them belongs to a skill this
-lesson does not use.
+Plenty of surfaces will still be absent. That is fine for now — every one of them belongs to a skill
+this lesson does not use.
 
 ## 8. File your first issue
 

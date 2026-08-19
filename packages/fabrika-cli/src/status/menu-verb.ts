@@ -31,9 +31,8 @@ export type RosterUnresolved = Exclude<RosterRead, {readonly _tag: "Resolved"}>;
 /**
  * The refusal an unresolved roster owes.
  *
- * Shared with `status config`, which seats the identical pair on the identical two codes: `7` is a
- * fact about a caller-supplied path, `11` is a failed read, and folding them is the defect this
- * group exists to prevent.
+ * `7` is a fact about a caller-supplied path, `11` is a failed read, and folding them is the defect
+ * this group exists to prevent.
  */
 export const rosterRefusal = (verb: string, roster: RosterUnresolved): VerbOutcome =>
 	roster._tag === "AbsentExplicit"

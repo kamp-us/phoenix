@@ -234,3 +234,20 @@ skill can obtain by opening the repository it is installed into, and nothing els
 conformance (ADR `0171`). It needs that "not …"
 disambiguation, so it is routed to [`.glossary/TERMS.md`](../.glossary/TERMS.md) through the glossary
 skill rather than added inline here.
+
+## Amendment (2026-08-19) — the declaration surface moved to the config file
+
+Founder ruling R10.1, recorded on [#5603](https://github.com/kamp-us/phoenix/issues/5603) comment 39
+and built as [#6301](https://github.com/kamp-us/phoenix/issues/6301): *"rule a, because we make it as
+deterministic as possible this way, right?"* The per-skill `## Required repo files` table was two
+mechanisms answering "what does this repo have", which R6.1 rules against. The tables and their
+reader are removed; the disposition each row carried lives on the `surfaceDispositions` key in
+`.fabrika.jsonc`, one entry per surface fabrika reads, printed by `fabrika status settings`.
+
+**What this ADR still rules, unchanged:** every input a fabrika skill needs is obtainable by opening
+the repo it is installed into; a disposition states what the code already does; a `fail-loud` path
+names the absent surface and never dead-ends bare. **What moved:** the declaration is one config key
+rather than thirty-two tables, so the checkable violations above read against
+`surfaceDispositions` — a surface fabrika reads with no entry there, or an entry that contradicts
+what its verb does — rather than against a skill's own section. The `undeclared` row and the reader
+that emitted it are gone with the tables.

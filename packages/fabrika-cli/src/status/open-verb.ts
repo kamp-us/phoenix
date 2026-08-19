@@ -22,16 +22,16 @@ import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import type {BoardRead} from "./board-verb.ts";
 import {boardState} from "./board-verb.ts";
 import {OFF_VOCABULARY} from "./codes.ts";
-import {configState, countsOf, type SurfaceRow} from "./config-verb.ts";
 import {type AsOf, asOfToken, detail, noAsOf, row} from "./fields.ts";
 import {menuState} from "./menu-verb.ts";
 import {type ReadoutRead, readingOf} from "./readout-verb.ts";
 import type {RosterRead} from "./roster.ts";
+import {type SettingRow, settingsState} from "./settings-verb.ts";
 
 const VERB = "status open";
 
 /** The closed `--field` vocabulary. Any other value is off-vocabulary. */
-export const FIELDS = ["menu", "config", "board", "readout", "lanes"] as const;
+export const FIELDS = ["menu", "settings", "board", "readout", "lanes"] as const;
 export type FieldName = (typeof FIELDS)[number];
 
 export interface Field {
@@ -70,42 +70,31 @@ export const menuField = (roster: RosterRead, asOf: AsOf): Field =>
 			};
 
 /**
- * The one row worth naming: a roster that resolved and holds **zero** skills is `gaps`, never
- * `satisfied`. "Every declared surface is present" is vacuously true over zero surfaces, and
- * rendering the fresh install this skill onboards as fine is the exact fail-open of #4060.
+ * What this repo runs on, off the one config surface — the field that replaced the per-skill
+ * declaration probe when the `## Required repo files` tables retired (#6301).
+ *
+ * A key that did not resolve makes the whole field `unknown`, carrying those keys' names. A partial
+ * green here would be the collapse the config surface exists to prevent: a reader cannot act on
+ * "four keys resolved" without knowing whether the fifth is a default or unread.
  */
-export const configField = (
-	roster: RosterRead,
-	surfaces: ReadonlyArray<SurfaceRow>,
+export const settingsField = (
+	rows: ReadonlyArray<SettingRow>,
+	source: string,
 	asOf: AsOf,
 ): Field => {
-	if (roster._tag !== "Resolved") {
-		return {
-			name: "config",
-			state: UNKNOWN,
-			detail: detail(
-				roster._tag === "Failed" ? roster.reason : "the named --skills-dir is not there",
-			),
-			source: rosterSource(roster),
-			asOf: noAsOf,
-		};
-	}
-	if (roster.skills.length === 0) {
-		return {
-			name: "config",
-			state: "gaps",
-			detail: "empty roster — nothing declared, nothing proven",
-			source: roster.display,
-			asOf,
-		};
-	}
-	const counts = countsOf(surfaces);
+	const unknown = rows.filter((one) => one.provenance === "unknown");
+	const declared = rows.filter((one) => one.provenance === "declared").length;
 	return {
-		name: "config",
-		state: configState(surfaces, roster.skills.length),
-		detail: `${counts.declaredSkills} declared, ${counts.missing} missing, ${counts.undeclaredSkills} undeclared`,
-		source: roster.display,
-		asOf,
+		name: "settings",
+		state: rows.length === 0 ? UNKNOWN : settingsState(rows),
+		detail:
+			rows.length === 0
+				? "the config surface registers zero keys"
+				: unknown.length === 0
+					? `${rows.length} keys, ${declared} declared`
+					: detail(`${unknown.length} unread: ${unknown.map((one) => one.key).join(", ")}`),
+		source,
+		asOf: rows.length === 0 ? noAsOf : asOf,
 	};
 };
 

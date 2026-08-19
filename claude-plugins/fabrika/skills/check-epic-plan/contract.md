@@ -864,21 +864,6 @@ $ echo $?
 
 ---
 
-## Required repo files (verb-level)
-
-The skill's own table ([SKILL.md](SKILL.md)) carries the run-level rows; these are the reads and
-writes this contract's verbs make, so an implementer sees the dependency set in one place.
-Vocabulary: **fail-loud** / **degrade** / **bootstrap** (front-door, #4952).
-
-| Must exist | Why | When missing |
-| --- | --- | --- |
-| The epic issue: `type:epic`, native sub-issue links to its children | `plan read` derives the whole ledger from it | **fail-loud** — exit `7` / `10` naming the gap. |
-| A `## Dependencies` block in the epic body | the topology the three dependency defects rest on | **fail-loud**, two ways: *absent* is defect `MISSING_DEPS_SECTION` (a `defective` floor); *unparseable or duplicated* is `plan read`'s `4`. |
-| Child issues carrying `### Acceptance criteria` blocks | the imported wire read supplies `ZERO_AC`'s input | **fail-loud** — the read's `absent` / `malformed` token becomes a defect; no criterion is invented. |
-| Labels `status:planned`, `status:triaged`, `status:needs-triage`, `ready-for:human`, `type:*`, `p0`/`p1`/`p2` | the floor reads them; the flip writes two | **fail-loud** — `plan flip` exits `23` rather than creating a label (#4285); taxonomy creation is the front door's. |
-| `product-development-cycle.md` at the repo root | gates whether `MISSING_CONTAINMENT` is derived | **degrade** — an *absent* file derives the class and evaluates it false; an *unreadable* probe puts the class in `skipped`, named on the answer and in the marker. Never silently dropped. |
-| `.fabrika.jsonc`'s `containmentVocabulary` | names which types the class is derived over and which values satisfy it | **degrade** — an absent file or key resolves to the shipped pair (`type:feature`; `flag`/`exempt`), and an empty half means no child is ever asked. A file that exists and will not read, or a value that does not decode, is `11` — the floor is UNKNOWN, never clean. |
-| Repository permissions readable | `build claim`'s ACL-sourced ownership resolution (ADR 0055) | **fail-loud** — as declared in [`build`'s contract](../build/contract.md); an unreadable permission is `Unknown`, never a demotion. |
 
 ---
 

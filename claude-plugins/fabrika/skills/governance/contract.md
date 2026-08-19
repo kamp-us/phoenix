@@ -1247,27 +1247,6 @@ $ printf 'row\t0240\troutine\tno tension found\n' | fabrika governance readout 4
 
 ---
 
-## Required repo files
-
-The skill's works-here checklist is stated once, in [`SKILL.md`](SKILL.md)'s "Required repo files"
-section, with the closed **fail-loud / degrade / bootstrap** vocabulary every fabrika skill shares.
-The verb-level facts behind those rows are the `7` / `11` / `13` seats in the matrix above, so this
-spec adds nothing to that table rather than restating it in a second home.
-
-Two rows bear directly on an implementer and are worth naming here, because they are the ones a
-foreign repo will hit first: a repository with no decision corpus at all makes `governance sweep` and
-`governance digest` exit `7` rather than answer `no-overlap` or `none`, and a repository holding
-fewer than ten live-`accepted` records makes every sweep `indeterminate` at exit `0`. Neither is a
-bug report; both are the fail-closed direction, and the second is why `indeterminate` is a distinct
-token rather than a quiet `no-overlap`.
-
-Where the corpus lives is `decisionsDir` in `.fabrika.jsonc`, defaulting to `.decisions`, and
-`--dir` overrides it for one run. **A repo may write `null` there to declare it keeps none.** Then
-this group runs only its weakens-a-guard half: `governance guards` reads no corpus and answers as
-always, while `governance sweep` and `governance digest` refuse on `7` naming the declined key —
-never `no-overlap`, which reads as "checked, nothing found". A verdict from such a repo is a verdict
-about guards alone, and its body says so.
-
 ## The eval-enumeration obligation (leaf rule)
 
 Stated once, in [`SKILL.md`](SKILL.md)'s "Eval enumeration" section — the single home #4891's
