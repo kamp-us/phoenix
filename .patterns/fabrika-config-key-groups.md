@@ -94,3 +94,13 @@ So a gate never reads `load._tag === "Config"` as "it loaded". It calls `unusabl
 Keying on the refusal alone is fail-open on exactly the inputs the surface exists to separate: the
 first round of `triage`'s guard let an unreadable and a malformed config straight through to the
 label write, with the containment check never run (#6292).
+
+## An empty declared list is the caller's answer, not the decoder's
+
+A key whose shipped default is non-empty has a third state its decoder must not fold away: the repo
+declared the key, and declared it **empty**. That is well-formed data, so `decode` accepts it; what
+it means is the caller's to say. `codeValidators` is the worked example — an empty list means no
+code validator is present, and `build check --surface code` refuses UNKNOWN on it rather than
+greening (nothing was checked) or redding (which claims the code failed, #6015). Deciding it in the
+decoder would put one verb's vocabulary in the config module and leave every other reader of the key
+stuck with it.
