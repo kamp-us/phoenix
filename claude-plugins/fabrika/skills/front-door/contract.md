@@ -489,9 +489,9 @@ no gap it can act on, and making the example below unproducible (#5298). **No sl
 from prose** — a rule that kebab-cased a cell would turn "The board label taxonomy — `status:triaged`,
 …" into `the-board-label-taxonomy`, two implementers would ship two id sets, and a reworded cell
 would silently break every documented invocation. The ids this group itself needs are fixed in
-[the buildable-surface registry](#buildable-surfaces). **Landed skills do not carry id tokens yet**;
-until they do, every row of theirs reports id `-`, which is why the registry below is the authority
-for what `bootstrap` accepts.
+[the buildable-surface registry](#buildable-surfaces). **Almost no landed skill carries an id token**
+— `operate`'s `.gitignore` row is the first, and every other row reports id `-` — which is why the
+registry below, and never the roster, is the authority for what `bootstrap` accepts.
 
 <a id="disposition-is-reported-never-interpreted"></a>**The disposition is printed verbatim, and an
 unrecognized word is reported rather than refused.** Every landed skill uses exactly the three
@@ -971,13 +971,14 @@ Creates **one** missing surface from this group's own registry and reads it back
 skill's judgement; the write, the collision guard and the read-back are this verb's.
 
 <a id="buildable-surfaces"></a>**The buildable-surface registry.** What this verb builds is fixed
-here, not inferred from any declaration ([why](#disposition-does-not-gate-bootstrap)). Five ids, and
-a sixth is a change to this table, not a new rule.
+here, not inferred from any declaration ([why](#disposition-does-not-gate-bootstrap)). Six ids, and
+a seventh is a change to this table, not a new rule.
 
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
 | `design-manifest` | `--path`, default `design-system-manifest.md` at the repo root | **stdin**, required — the skill's inferred draft | the file's bytes match stdin through `normalizeForReadback` |
 | `roadmap-focus` | `--path`, default `ROADMAP.md` at the repo root | **stdin**, required | same |
+| `gitignore-row` | `--path`, default `.gitignore` at the repo root | **none** — the two comment lines and the row `/.fabrika/`, fixed below, appended to whatever the file already holds | the re-read contains both the row and the whole of the pre-existing text, each through `normalizeForReadback` |
 | `label-taxonomy` | the repo's labels | **none** — the set is every imported `STATUSES` member (`status:needs-triage`, `status:triaged`, `status:needs-info`, `status:planned`, `status:awaiting-release`), every imported `PRIORITIES` member (`p0`, `p1`, `p2`), `type:` + every imported `TYPES` member, and `ready-for:` + every imported `AUDIENCES` member — sixteen today, each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
 | `issue-shape-markers` | the repo's labels | **none** — three labels, each at colour `1D76DB`, with the descriptions fixed below | every label in the set resolves on a re-read |
 | `readout-artifact` | one open issue in the repo | **none** — title exactly `Governance readout`; body exactly the two lines below | the issue resolves open, its title matches exactly, and its body matches through `normalizeForReadback` |
@@ -1011,6 +1012,24 @@ covers all three markers rather than one each, because a fresh repo needs the wh
 `graduate trail` dispatches on two of them at once — and three ids means three commands, of which the
 skipped one fails later in exactly the shape this registry exists to prevent.
 
+The `gitignore-row` block, fixed here so no clause defers to source. The last line is the row
+itself, and it is also the marker the collision guard and the read-back match on:
+
+```gitignore
+# fabrika's local machine state — the per-lane ledger `fabrika lane` writes under
+# `.fabrika/lanes/<n>/`. One machine's run log; never committed.
+/.fabrika/
+```
+
+<a id="line-surface"></a>**A line surface appends; it never rewrites what is already in the file.**
+A `.gitignore` carries rows from every tool in the tree, so this verb is one contributor to a file it
+does not author — which makes the file's existence the wrong collision guard. The guard is the row:
+present anywhere in the text, this is `exists` at exit `0` and nothing is written; absent, the block
+goes on the end and the pre-existing bytes are re-read intact. Both halves are substring reads over
+the same marker, so a hand-added row spelled the same way is recognised as the row it is. A target
+this verb cannot *read* is exit `11` — whether the row is already there is UNKNOWN, and appending
+blind would be the duplicate row this guard exists to prevent.
+
 The `readout-artifact` body, fixed here so no clause defers to another skill's prose:
 
 ```markdown
@@ -1023,7 +1042,7 @@ here; `fabrika status readout` displays it. This issue stays open and is not wor
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | string | yes | — | one `<surface-id>` from the registry above |
-| `--path` | string | no | the registry default | override the write path for a file surface; must resolve inside the repository root |
+| `--path` | string | no | the registry default | override the write path for a file or line surface; must resolve inside the repository root |
 | `--repo` | string | no | resolved | the repository, for the two non-file surfaces |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | text | yes for `design-manifest` and `roadmap-focus` | — | the content. `NoStdin` and `Text("")` are exit `3`; a **failed** stdin read is exit `1` — the content is UNKNOWN, never empty, the split `packages/fabrika-cli/src/report/file-verb.ts` already ships |
@@ -1054,7 +1073,10 @@ same name. Reconciling a hand-made label's colour is a hand fix.
 
 **The operation.** Resolve the id against the registry — not in it is `12`. Probe the target; already
 present is `exists` at `0`. For a stdin surface: read stdin, leak-scan the content (`5`, `6`), write,
-re-read and compare through `normalizeForReadback` (`9` on mismatch). A write whose outcome cannot be
+re-read and compare through `normalizeForReadback` (`9` on mismatch). For the [line
+surface](#line-surface) the probe is the marker rather than the path, the content is the registry's
+own block so no stdin is read and no leak scan is owed, and the read-back asserts the marker **and**
+the prior text. A write whose outcome cannot be
 confirmed is `8`, never a reported success. **One surface per invocation**, deliberately: a verb
 creating several would have to report a partial outcome, and a partial write reported as success is
 #4557's shape. The skill loops.
@@ -1085,8 +1107,13 @@ creating several would have to report a partial outcome, and a partial write rep
 | `status bootstrap: wrote <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
 | `status bootstrap: --path <v> resolves outside the repository root.` | 10 | usage error |
 | `status bootstrap: cannot probe <target>: <reason> — nothing was written.` | 11 | refusal |
-| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, label-taxonomy, issue-shape-markers, readout-artifact.` | 12 | refusal |
+| `status bootstrap: cannot read <target>: <reason> — whether <marker> is already there is UNKNOWN, and nothing was written.` | 11 | refusal |
+| `status bootstrap: appending <marker> to <target> failed: <reason> — whether it landed is UNKNOWN. Re-read before retrying.` | 8 | refusal |
+| `status bootstrap: appended <marker> to <target> and it could not be read back: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
+| `status bootstrap: appended <marker> to <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
+| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact.` | 12 | refusal |
 | `status bootstrap: created <target> for <surface-id>, read-back conformed.` | 0 | notice |
+| `status bootstrap: appended <marker> to <target> for <surface-id>, read-back conformed.` | 0 | notice |
 
 **Scope** — the single write target named by `<surface-id>`.
 
