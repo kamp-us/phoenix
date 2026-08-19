@@ -1385,9 +1385,11 @@ live there — could reach no green under any surface. It is a class of its own 
 `code` for the reason the rejected widening names: its validators are not `pnpm typecheck`.
 
 Its validators are declared, not compiled in: `.fabrika.jsonc`'s `workflowValidators` holds one entry
-per command the repo runs over its own workflows (in phoenix, the three `pipeline-cli` guards that
-machine-read one), each an argv plus the `reads` list naming the workflow files that command opens.
-`actionlint` runs on top when this tree has it — it is a pinned tarball CI installs at job time and
+per command the repo runs over its own workflows, each an argv plus the `reads` list naming the
+workflow files that command opens. Phoenix declares none, and that is the ordinary shape rather than
+a gap: the commands here that machine-read a workflow all live in `pipeline-cli`, which ADR 0238
+forbids any fabrika verb from invoking, so this repo's workflow surface stands on `actionlint` alone
+and refuses `11` where that is absent too. `actionlint` runs on top when this tree has it — it is a pinned tarball CI installs at job time and
 no repo's dependency, so its absence is the ordinary case and is **disclosed** beside the green
 rather than skipped in silence; `ci.yml`'s own `actionlint` job is the superseding authority there,
 as it is for every verdict this verb prints. A declared command that cannot be spawned is the other
