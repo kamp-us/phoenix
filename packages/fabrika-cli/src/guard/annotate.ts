@@ -6,7 +6,7 @@
  * A location is a closed union rather than optional `file`/`line` fields, so the state GitHub
  * silently drops — a `line=` with no `file=` — cannot be constructed.
  *
- * **The commands ride on stderr here, where pipeline-cli wrote them to stdout.** The runner wires
+ * **The commands ride on stderr here, where v1 wrote them to stdout.** The runner wires
  * BOTH streams of a `run:` step into an `OutputManager` over the same `ActionCommandManager`
  * (`actions/runner`, `src/Runner.Worker/Handlers/ScriptHandler.cs`: `StepHost.OutputDataReceived`
  * and `StepHost.ErrorDataReceived` both feed one command manager), so a command on stderr is parsed

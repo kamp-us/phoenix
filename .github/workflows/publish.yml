@@ -3,14 +3,14 @@
 # tag's prefix names which workspace member publishes, and per-package independent
 # versions/tags are preserved.
 #
-# Release tag grammar: `<unscoped-name>-v<version>` (e.g. `pipeline-cli-v0.1.0`,
-# `fabrika-cli-v0.1.0`), where `<version>` exactly equals that package's package.json
+# Release tag grammar: `<unscoped-name>-v<version>` (e.g. `fabrika-cli-v0.1.0`),
+# where `<version>` exactly equals that package's package.json
 # `version`. The resolve step below fails the run before any publish step when the
 # prefix maps to no published package or the versions disagree, so a mistagged or
 # unknown release never publishes.
 #
 # The resolve step's tag-match arms are the SINGLE source of truth for the published set:
-# `pipeline-cli publish-isolation-guard check` parses THIS file's tag-grammar regex
+# `fabrika guard publish-isolation-guard check` parses THIS file's tag-grammar regex
 # anchors to derive which packages publish (ADR 0201 §4), so adding an arm widens the
 # guard's scope automatically and dropping one narrows it. Keep the arms as literal
 # anchored regexes — moving the grammar behind a variable or an external file zeroes
@@ -38,8 +38,8 @@ name: publish
 # ── Why there are TWO triggers (#5718) ────────────────────────────────────────
 #   release-please creates the GitHub Release with `secrets.GITHUB_TOKEN`, and GitHub
 #   creates no workflow run for an event raised with that token — so `release: published`
-#   below never fires on a bot-cut release, and `fabrika-cli-v0.2.0`/`pipeline-cli-v0.3.0`
-#   sat unpublished until a human draft-cycled both releases by hand. `workflow_dispatch`
+#   below never fires on a bot-cut release, and `fabrika-cli-v0.2.0` sat unpublished
+#   until a human draft-cycled the release by hand. `workflow_dispatch`
 #   always creates a run whatever token raised it, so release-please.yml dispatches THIS
 #   file at `ref: <tag>` for each tag it just created.
 #
@@ -116,10 +116,7 @@ jobs:
           TAG: ${{ github.event.release.tag_name || github.ref_name }}
         run: |
           set -uo pipefail
-          if [[ "$TAG" =~ ^pipeline-cli-v([0-9].*)$ ]]; then
-            PKG_DIR="packages/pipeline-cli"
-            TAG_VERSION="${BASH_REMATCH[1]}"
-          elif [[ "$TAG" =~ ^fabrika-cli-v([0-9].*)$ ]]; then
+          if [[ "$TAG" =~ ^fabrika-cli-v([0-9].*)$ ]]; then
             PKG_DIR="packages/fabrika-cli"
             TAG_VERSION="${BASH_REMATCH[1]}"
           else

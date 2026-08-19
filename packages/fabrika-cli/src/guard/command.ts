@@ -1,6 +1,6 @@
 /**
  * The `guard` verb group — `fabrika guard <name> check`, the CI gates that used to live in
- * `pipeline-cli` (epic #5720).
+ * the v1 CLI (epic #5720).
  *
  * Unlike every other group here, this one nests: a guard is its own subcommand and `check` is its
  * leaf, so CI reads `node packages/fabrika-cli/src/bin.ts guard readme-guard check` — the shape
@@ -387,7 +387,7 @@ const publishIsolationCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a published package linking a private or workspace dep."),
 	Command.withDescription(
-		"Every package the release pipeline ships must be installable from a clean registry state: no `workspace:*` specifier and no `@kampus/*` dependency that is not itself published (ADR 0201 §3). The published set is DERIVED from `publish.yml`'s release-tag grammar rather than hand-kept, so it cannot drift from what actually publishes. The forcing incident: `pipeline-cli@0.2.0` published green and was uninstallable, because it declared three phoenix-private packages as registry deps (#3802). Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on the offending manifest under Actions. Exits 7 (zero scope: no published package derived, or a tag prefix maps to no member — fail-closed, ADR 0092), 11 (a manifest could not be read or does not parse, so the verdict is UNKNOWN), 12 (a published package links a private or workspace dep). Example: fabrika guard publish-isolation-guard check",
+		"Every package the release pipeline ships must be installable from a clean registry state: no `workspace:*` specifier and no `@kampus/*` dependency that is not itself published (ADR 0201 §3). The published set is DERIVED from `publish.yml`'s release-tag grammar rather than hand-kept, so it cannot drift from what actually publishes. The forcing incident: a `@kampus/*` CLI published green at 0.2.0 and was uninstallable, because it declared three phoenix-private packages as registry deps (#3802). Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on the offending manifest under Actions. Exits 7 (zero scope: no published package derived, or a tag prefix maps to no member — fail-closed, ADR 0092), 11 (a manifest could not be read or does not parse, so the verdict is UNKNOWN), 12 (a published package links a private or workspace dep). Example: fabrika guard publish-isolation-guard check",
 	),
 );
 

@@ -3,15 +3,15 @@
  *
  * `DOC_PATH_PATTERNS` and phoenix's `leak-guard` must carry the same path shapes, or the in-tree
  * predictor and the gate it predicts disagree on real bytes. ADR 0238 bars an import edge between
- * the two packages and ADR 0273 requires fabrika to run in a repo that has no `pipeline-cli`, so
+ * the two packages and ADR 0273 requires fabrika to run in a repo that has no v1 CLI, so
  * neither side can derive the shapes from the other. ADR 0251 rules what you do instead: commit the
  * canonical bytes as a golden fixture and have every side pin it in a test of its own, because a
  * docblock promising "these agree" is a promise no repo can keep — #3506 is the recorded incident
  * where two copies of these exact patterns drifted with nothing red.
  *
  * The fixture is fabrika's, so this test is self-contained: it passes in a repo with no
- * `pipeline-cli` at all. The conforming side reads the same file in
- * `packages/pipeline-cli/src/tools/leak-guard/fabrika-doc-leak-conformance.test.ts` — a test-time
+ * the v1 CLI at all. The conforming side reads the same file in
+ * v1's conformance test — a test-time
  * file read, never an import.
  */
 import {describe, expect, it} from "vitest";

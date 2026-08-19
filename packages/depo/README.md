@@ -1,6 +1,6 @@
 # @kampus/depo
 
-The client for **depo** — kampus's internal asset store / CDN ([ADR 0144](../../.decisions/0144-depo-internal-asset-cdn.md)). A thin `put(file)` **library** plus a `depo` **bin** over it. **Not** a `pipeline-cli` subcommand: depo is general infra decoupled from any one consumer, so a non-pipeline caller must not have to pull in the pipeline tool.
+The client for **depo** — kampus's internal asset store / CDN ([ADR 0144](../../.decisions/0144-depo-internal-asset-cdn.md)). A thin `put(file)` **library** plus a `depo` **bin** over it. **Not** a v1-CLI subcommand: depo is general infra decoupled from any one consumer, so a non-pipeline caller must not have to pull in the pipeline tool.
 
 ## What it is
 

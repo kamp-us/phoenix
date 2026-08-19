@@ -41,8 +41,13 @@ const SHELL_CONSTRUCTS: ReadonlyArray<readonly [RegExp, string]> = [
 	[/[<>]/, "redirects a stream"],
 ];
 
-/** Rule 6's reach, as strings a fabrika hook command may never name. */
-const OUTSIDE_FABRIKA: ReadonlyArray<string> = ["pipeline-cli", "kampus-pipeline"];
+/**
+ * Rule 6's reach, as strings a fabrika hook command may never name.
+ *
+ * The v1 verb package was the list's other member until its tree was deleted (#6100); the plugin
+ * name stays because `claude-plugins/kampus-pipeline/` is still on disk and still nameable.
+ */
+const OUTSIDE_FABRIKA: ReadonlyArray<string> = ["kampus-pipeline"];
 
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
 	typeof value === "object" && value !== null && !Array.isArray(value)

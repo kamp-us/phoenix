@@ -1,6 +1,6 @@
 /**
  * `guard skill-lint check` — the four mechanical gates over the plugin corpus (#743, #1766, #4213,
- * #4605), ported off `pipeline-cli gh-phoenix lint-skills` (epic #5720).
+ * #4605), ported off v1's `gh-phoenix lint-skills` (epic #5720).
  *
  * **The scope walk moved into the verb.** In v1 it lived in `skill-gh-lint.yml` as forty lines of
  * bash — the physical-root resolution, the `find`, the zero-scope floor and the per-plugin coverage

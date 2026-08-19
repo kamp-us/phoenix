@@ -7,18 +7,16 @@
 
 	// Docs whose subject IS path hygiene: they must spell the forbidden path shapes out, so
 	// `fabrika build check --surface prose` skips its leak scan on them. Repo-relative path
-	// suffixes, matched by suffix the way `pipeline-cli leak-guard scan` matches its own
+	// suffixes, matched by suffix the way `fabrika guard leak-guard scan` matches its own
 	// self-exempt list (#5687). This is phoenix's second declaration of one policy, and it is the
 	// MARKDOWN half: the gate also self-exempts shell and TypeScript files the prose surface never
 	// scans. The two are held equal by a test, not by this comment —
-	// `packages/pipeline-cli/src/tools/leak-guard/fabrika-doc-leak-conformance.test.ts` reds when
-	// either side moves (ADR 0251). A repo without these docs declares an empty list, or no key at
-	// all, and nothing is exempt.
+	// `packages/fabrika-cli/src/guard/leak.golden.test.ts` reds when either side moves (ADR 0251).
+	// A repo without these docs declares an empty list, or no key at all, and nothing is exempt.
 	"docLeakExempt": [
 		"/CLAUDE.md",
 		"/agents/triager.md",
 		"/packages/leak-guard/README.md",
-		"/packages/pipeline-cli/README.md",
 		"/skills/report/SKILL.md",
 		"/skills/review-doc/SKILL.md",
 		"/skills/triage/SKILL.md"
@@ -29,12 +27,9 @@
 	// the tree has one (#5991), and `reads` names the exact workflow files that command opens — the
 	// only thing that tells the verb WHICH changed workflow a passing run actually covers.
 	//
-	// Phoenix declares none, and the empty list is the ruling rather than a gap. The three CI guards
-	// that open a workflow file here — path-filter, change-detect, publish-isolation — all live in
-	// `pipeline-cli`, and ADR 0238 says no fabrika verb invokes it; declaring them would have made
-	// this key the one tether keeping v1 alive, on a package already ruled for deletion (#6100).
-	// Founder ruling on #5991, 2026-08-18: drop them, the surface stands on `actionlint` alone. So a
-	// local tree without `actionlint` opens no workflow file and `--surface workflows` refuses `11`,
-	// UNKNOWN — never green — and `ci.yml`'s own jobs stay the deciding authority on these files.
+	// Phoenix declares none, and the empty list is the ruling rather than a gap: founder ruling on
+	// #5991, 2026-08-18 — the surface stands on `actionlint` alone. So a local tree without
+	// `actionlint` opens no workflow file and `--surface workflows` refuses `11`, UNKNOWN — never
+	// green — and `ci.yml`'s own jobs stay the deciding authority on these files.
 	"workflowValidators": []
 }

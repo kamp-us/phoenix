@@ -1,6 +1,6 @@
 /**
  * `guard unresolved-threads check` — the ADR 0158 merge gate, ported off
- * `pipeline-cli unresolved-threads-guard` (epic #5720).
+ * v1's `unresolved-threads-guard` (epic #5720).
  *
  * The whole decision is in `./unresolved-threads.ts`; this file is the two reads it rests on and the
  * fail-closed posture around them.

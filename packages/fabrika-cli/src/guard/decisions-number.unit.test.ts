@@ -1,5 +1,5 @@
 /**
- * The ADR number-lock rule — the duplicate-id and number-mismatch cases from `pipeline-cli`'s
+ * The ADR number-lock rule — the duplicate-id and number-mismatch cases from the v1 CLI's
  * `decisions-index.unit.test.ts`, re-seated on a defect list instead of a thrown error.
  */
 import {describe, expect, it} from "vitest";

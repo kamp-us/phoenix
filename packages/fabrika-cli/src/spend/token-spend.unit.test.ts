@@ -4,7 +4,7 @@
  * ADR 0238 has fabrika re-implement v1's token meter rather than call it, which would leave two
  * implementations of one specified formula free to drift. The shared fixture below is what closes
  * that: `fixtures/one-ruler/transcript.jsonl` plus its expected figures are asserted here **and**
- * by v1's `packages/pipeline-cli/src/tools/token-spend/token-spend.unit.test.ts`, so the two are
+ * by v1's `token-spend.unit.test.ts`, so the two are
  * pinned to one set of numbers instead of trusted to agree. Editing the fixture without editing
  * `expected.json` reds both suites, which is the point.
  */

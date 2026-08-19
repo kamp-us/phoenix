@@ -1,5 +1,5 @@
 /**
- * `ci pr-body`, ported from `pipeline-cli release-pr-body sanitize` (#6099) — the
+ * `ci pr-body`, ported from v1's `release-pr-body sanitize` (#6099) — the
  * empty-output-means-no-work contract and the fd-0 taxonomy.
  */
 import {Effect} from "effect";

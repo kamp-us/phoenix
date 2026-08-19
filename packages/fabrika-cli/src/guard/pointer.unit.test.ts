@@ -1,5 +1,5 @@
 /**
- * `pointer-guard`'s extraction and path-likeness filter, ported from `pipeline-cli`'s
+ * `pointer-guard`'s extraction and path-likeness filter, ported from the v1 CLI's
  * `pointer-guard.unit.test.ts` (#988) — the precision boundary is what these cases pin.
  */
 import {describe, expect, it} from "vitest";

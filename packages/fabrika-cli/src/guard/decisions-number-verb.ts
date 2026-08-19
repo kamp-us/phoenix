@@ -1,5 +1,5 @@
 /**
- * `guard decisions-index validate` — ported off `pipeline-cli decisions-index validate` (epic #5720).
+ * `guard decisions-index validate` — ported off v1's `decisions-index validate` (epic #5720).
  *
  * The verb is the IO boundary and nothing else: list `.decisions/`, read each record, hand them to
  * the pure rule in `./decisions-number.ts`, seat the answer on the group's exit taxonomy.

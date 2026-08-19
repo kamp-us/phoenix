@@ -1,7 +1,7 @@
 /**
  * `guard catalog-guard check` — every dep in every workspace `package.json` is on
  * `catalog:`/`workspace:`, never a hardcoded version (#2737), ported off
- * `pipeline-cli catalog-guard check` (epic #5720).
+ * v1's `catalog-guard check` (epic #5720).
  *
  * The verb is scope plus IO: the members come from `./members.ts`, the root manifest is added here
  * because the catalog rule governs it too, and the rule itself lives in `./catalog.ts`.

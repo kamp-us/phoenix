@@ -1,6 +1,6 @@
 /**
  * `guard settings-env-guard check` — no `.claude/settings.json` `env` value carries an unexpanded
- * `${...}` token (#2495), ported off `pipeline-cli settings-env-guard check` (epic #5720).
+ * `${...}` token (#2495), ported off v1's `settings-env-guard check` (epic #5720).
  *
  * The verb is the IO boundary and nothing else: read the settings file, hand its `env` block to the
  * pure rule in `./settings-env.ts`, seat the answer on the group's exit taxonomy.

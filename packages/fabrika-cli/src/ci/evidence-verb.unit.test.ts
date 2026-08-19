@@ -1,5 +1,5 @@
 /**
- * `ci evidence`, ported from `pipeline-cli crabbox-manifest` (#6099) — the commit-stamp binding
+ * `ci evidence`, ported from v1's `crabbox-manifest` (#6099) — the commit-stamp binding
  * ADR 0054 §1 rests on, and the refusals that keep a half-formed manifest off disk.
  */
 import {Effect, Layer} from "effect";

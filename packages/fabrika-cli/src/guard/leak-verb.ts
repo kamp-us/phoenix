@@ -1,6 +1,6 @@
 /**
  * `guard leak-guard scan <file>...` — the authoritative no-machine-local-paths gate over a change's
- * files, ported off `pipeline-cli leak-guard scan` (epic #5720).
+ * files, ported off v1's `leak-guard scan` (epic #5720).
  *
  * The argument shape is part of the port: CI resolves the diff and hands the file list in, because
  * the scan's scope IS the change. The verb self-scopes from there — `findLeaks` reads only doc and

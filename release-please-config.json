@@ -6,9 +6,6 @@
 	"include-component-in-tag": true,
 	"separate-pull-requests": false,
 	"packages": {
-		"packages/pipeline-cli": {
-			"component": "pipeline-cli"
-		},
 		"packages/fabrika-cli": {
 			"component": "fabrika-cli"
 		}

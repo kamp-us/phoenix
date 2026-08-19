@@ -1,5 +1,5 @@
 /**
- * `guard design-token-guard check` — ported off `pipeline-cli design-token-guard check` (epic #5720).
+ * `guard design-token-guard check` — ported off v1's `design-token-guard check` (epic #5720).
  *
  * The verb is the IO boundary: walk `apps/web/src` for CSS, parse each file's facts, read the
  * app-side allow-list config, hand both to the pure rule in `./design-token.ts`, seat the answer on

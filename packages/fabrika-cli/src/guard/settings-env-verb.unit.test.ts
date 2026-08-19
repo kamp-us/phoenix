@@ -1,6 +1,6 @@
 /**
  * `guard settings-env-guard check`'s IO boundary and exit taxonomy, over a scripted filesystem —
- * the `gate.unit.test.ts` cases from `pipeline-cli`, re-seated on the three guard exit codes.
+ * the `gate.unit.test.ts` cases from the v1 CLI, re-seated on the three guard exit codes.
  */
 // biome-ignore-all lint/suspicious/noTemplateCurlyInString: the unexpanded brace token is the fixture under test; every case here must spell one in a plain string.
 import {Effect} from "effect";

@@ -55,8 +55,8 @@ export const files = (...names: ReadonlyArray<string>): ExecResult =>
 
 export const CODEOWNERS = `# a boundary
 /.github/    @kamp-us/control-plane
-/packages/pipeline-cli/src/*  @kamp-us/control-plane
-/packages/pipeline-cli/src/tools/
+/packages/demo-cli/src/*  @kamp-us/control-plane
+/packages/demo-cli/src/tools/
 `;
 
 export const checkRuns = (

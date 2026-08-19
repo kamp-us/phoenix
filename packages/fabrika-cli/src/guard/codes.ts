@@ -12,7 +12,7 @@
  * - `11` {@link PRECONDITION_UNKNOWN} — a read failed, so the verdict is UNKNOWN, not "clean".
  * - `12` {@link VIOLATION} — the scan ran over real scope and found the thing the guard forbids.
  *
- * CI treats all three as red, which is why the pipeline-cli guards could collapse them onto `1`.
+ * CI treats all three as red, which is why the v1 guards could collapse them onto `1`.
  * A human or an agent reproducing the red cannot: "your change broke the rule" and "I could not
  * read the tree" have opposite remedies, and `1` is also what a bad flag and a failed module load
  * return (`../verb.ts`), so a proven violation seated there is unreadable as proof.

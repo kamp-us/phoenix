@@ -1,5 +1,5 @@
 /**
- * The `path-filter-guard` rule — the `path-filter-guard.unit.test.ts` cases from `pipeline-cli`.
+ * The `path-filter-guard` rule — the `path-filter-guard.unit.test.ts` cases from the v1 CLI.
  *
  * The basis cases are the ones the #3722 defect needed: byte-identical globs passed the pre-#3722
  * guard while the two steps read two different changed-file sets, so equality of the LISTS is

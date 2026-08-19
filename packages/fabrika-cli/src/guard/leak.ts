@@ -1,6 +1,6 @@
 /**
  * The authoritative leak gate's pure half — does a committed file put a machine-local filesystem
- * path into a shared artifact (#173, #312)? Ported off `pipeline-cli leak-guard scan` (epic #5720).
+ * path into a shared artifact (#173, #312)? Ported off v1's `leak-guard scan` (epic #5720).
  *
  * CI is the unbypassable surface here: it is the only place that sees every PR's diff whatever
  * wrote it (an agent tool, an editor, a `cat >`, a human commit), which is why the rule lives as a
@@ -102,8 +102,6 @@ export const DOC_SELF_EXEMPT = [
 	"/packages/fabrika-cli/src/guard/leak-verb.ts",
 	"/packages/fabrika-cli/src/guard/leak-verb.unit.test.ts",
 	"/packages/leak-guard/README.md",
-	// Documents the deny-list shapes, so it must spell the forbidden tokens out.
-	"/packages/pipeline-cli/README.md",
 	"/skills/review-doc/SKILL.md",
 	"/skills/triage/SKILL.md",
 	"/skills/report/SKILL.md",

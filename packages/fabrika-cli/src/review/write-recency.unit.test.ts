@@ -121,10 +121,10 @@ describe("latestByWriteRecency", () => {
  * The interop pin. fabrika reimplements this format and never calls v1 (ADR 0238), so nothing at
  * build time couples the two — the only thing keeping them one format is that the bytes match. The
  * literal below is v1's own matcher, copied verbatim from
- * `packages/pipeline-cli/src/tools/verdict/verdict-match.ts`; if this test goes red, a fabrika-posted
+ * v1's `verdict-match.ts`; if this test goes red, a fabrika-posted
  * verdict has become unorderable to the resolver the enqueue gate reads, which is the whole defect.
  */
-describe("the emitted line is what pipeline-cli's resolver reads", () => {
+describe("the emitted line is what v1's resolver reads", () => {
 	const consumerRe =
 		/^[ \t]*Verdict-written:[ \t]*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)[ \t]*$/gim;
 

@@ -1,6 +1,6 @@
 /**
  * `guard roadmap-guard check` over a scripted filesystem and a scripted `gh` — the exit taxonomy the
- * port exists for. The pipeline-cli original exited `1` for drift, for an unreadable ROADMAP.md and
+ * port exists for. The v1 original exited `1` for drift, for an unreadable ROADMAP.md and
  * for a `gh` that could not answer; each case below pins one of those onto its own code.
  */
 import {Effect, Layer} from "effect";
