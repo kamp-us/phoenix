@@ -48,15 +48,14 @@ lane check arms too.
 fabrika build pick
 ```
 
-The pool is `status:triaged` + `ready-for:agent` + unassigned + inside the campaign in exclusive
-focus, p0 first. **An assigned issue is not yours whatever its labels** — assignment is how humans keep
-documents out of this pool. Read the `excluded` entries beside the pool: each names why an issue was
-left out — `out-of-scope`, `audience-not-agent` or `unreadable` from the admission test, or
-`no-acceptance-criteria` and `blocked`, this verb's own two axes: a body carrying no criteria block
-to build against, and an issue whose native `blocked_by` graph still names an open blocker.
-`campaigns` says whether any campaign is active at all — an inert fence is a fact to report, not a
-shorter pool to
-explain.
+The pool is `status:triaged` + `ready-for:agent` + unassigned + homed on a milestone some
+`## Campaigns` row marks `active`, p0 first. **An assigned issue is not yours whatever its labels**
+— assignment is how humans keep documents out of this pool. Read the `excluded` entries beside the
+pool: each names why an issue was left out — `out-of-scope`, `audience-not-agent` or `unreadable`
+from the admission test, or `no-acceptance-criteria` and `blocked`, this verb's own two axes: a body
+carrying no criteria block to build against, and an issue whose native `blocked_by` graph still
+names an open blocker. `campaigns` says whether any campaign is active at all — an inert fence is a
+fact to report, not a shorter pool to explain.
 Two refusals before claiming: a `type:decision`'s deliverable is a recorded choice
 (`/adr`'s, not yours), and a rendered-visual deliverable is outside this skill's modality
 (`build-ui`'s) — **do not claim either**. The decision refusal has one arm, and a citation is the only

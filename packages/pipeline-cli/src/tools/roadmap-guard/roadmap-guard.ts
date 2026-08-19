@@ -32,9 +32,9 @@
 /** An arc is sequenced ahead (`queued`) then made current (`active`) and retired (`done`). */
 export type ArcState = "active" | "queued" | "done";
 /**
- * A campaign has no queued state — it opens `active` and ends `done` (ROADMAP.md § Campaigns).
- * `paused` is alive but not being executed: its milestone is open and no lane opens against it,
- * which is what makes the one cell the dispatch permission (ADR 0304).
+ * A campaign has no queued state — a newly added row is `paused`, and it ends `done` (ROADMAP.md
+ * § Campaigns). `paused` is alive but not being executed: its milestone is open and no lane opens
+ * against it, which is what makes the one cell the dispatch permission (ADR 0304).
  */
 export type CampaignState = "active" | "paused" | "done";
 
@@ -63,6 +63,10 @@ export interface Milestone {
 
 /** The legal states per row kind — an out-of-set state is drift (a `row-state` violation). */
 const ARC_STATES: ReadonlyArray<string> = ["active", "queued", "done"];
+/**
+ * A newly added campaign row defaults to `paused` — flipping it to `active` is the separate act
+ * that grants dispatch permission, so naming a campaign never grants it (founder ruling on #6289).
+ */
 const CAMPAIGN_STATES: ReadonlyArray<string> = ["active", "paused", "done"];
 
 /**
