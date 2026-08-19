@@ -1,6 +1,14 @@
 /**
- * The `## Dependencies` grammar — canonical here, consumed by `build eligible` and validated by
- * `build check --surface plan`.
+ * The `## Dependencies` grammar — canonical here, validated by `build check --surface plan` and
+ * rendered into an epic ledger by `ledger topology`.
+ *
+ * **This block is a rendering, never a source of blockedness.** #5387 ruled that every dependency
+ * in fabrika sits behind GitHub's native `blocked_by` edges and that a prose block is at most a
+ * picture of them; ADR 0301 extends that to standalone issues. `build eligible` therefore parses
+ * nothing here — it reads the graph through `./blockedness.ts` (#5913). What still reads this
+ * grammar reads it for planning and sequencing: the plan surface's well-formedness check, the
+ * ledger renderer, and the epic machine emitter. A reader that wants to know whether work may start
+ * asks the graph.
  *
  * The section holds only blank lines and list lines of two forms:
  *

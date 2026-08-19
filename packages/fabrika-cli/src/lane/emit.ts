@@ -3,7 +3,8 @@
  * out, byte-deterministic (#5688; phase 3 of #5680).
  *
  * **No second grammar and no second cycle walk.** The topology is read through the shipped
- * `build/dependencies.ts` parser — the same reader `build eligible` gates on — and the cycle check
+ * `build/dependencies.ts` parser — the same reader `build check --surface plan` validates with,
+ * while `build eligible` gates on the native `blocked_by` graph instead — and the cycle check
  * is `ledger/topology-doc.ts`'s `findCycle` over the same union graph (declared `requires` edges
  * plus the edges the phase order implies). What this module adds is only the machine rendering:
  * one region per child, phases sequenced by `onDone`, parallel within a phase, and one epic tail
