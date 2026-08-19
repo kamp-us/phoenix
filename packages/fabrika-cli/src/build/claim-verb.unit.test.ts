@@ -12,6 +12,7 @@ import {
 	OFF_VOCABULARY,
 	OUT_OF_SCOPE,
 	PRECONDITION_UNKNOWN,
+	PRIOR_BUILD_MISMATCH,
 	READBACK_MISMATCH,
 	TYPE_NOT_BUILDABLE,
 	WRITE_UNKNOWN,
@@ -102,6 +103,7 @@ const options = {
 	override: null as string | null,
 	overrideLane: null as string | null,
 	cites: null as string | null,
+	resume: false,
 };
 
 const run = (
@@ -244,6 +246,7 @@ describe("runClaim", () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
 			unclaimed(),
+			unclaimed(),
 			[POST, errOut("gh: Gateway timeout (HTTP 504)")],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
@@ -260,6 +263,7 @@ describe("runClaim", () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
 			unclaimed(),
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, okOut(JSON.stringify({body: "something else"}))],
 		]);
@@ -269,6 +273,7 @@ describe("runClaim", () => {
 	it("refuses an unreadable marker set on 11 — never 'unclaimed'", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
@@ -637,6 +642,20 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		const {out, shell} = await claimPull("Fixes #5553\n", errOut("gh: Bad gateway (HTTP 502)"));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+	});
+
+	/**
+	 * The prior-build gate asks "has this child been built and graded", which a repair lane has
+	 * already answered by naming a PR — `build verdicts` folds that PR's own verdicts. So the gate
+	 * must not fire here: it would cost a comment page for nothing, and a PR thread carrying a range
+	 * marker or a broken one would refuse the very repair it was written to route to (#6386).
+	 */
+	it("never runs the prior-build gate on a PR target — repair has already answered its question", async () => {
+		const {out, shell} = await claimPull("Fixes #5553\n", served(44));
+		expect(out.code).toBe(0);
+		expect(out.stderr.join("\n")).not.toContain("standing range verdict");
+		// Two comment reads on the admitting path: the existing-claim scan, and the marker read-back.
+		expect(shell.calls.filter((line) => COMMENTS.test(line))).toHaveLength(2);
 	});
 
 	it("judges the audience on the served issue too, so a repair lane is not refused at 21", async () => {
@@ -1561,5 +1580,164 @@ describe("runClaim — the blockedness gate", () => {
 		);
 		expect(out.code).toBe(OUT_OF_SCOPE);
 		expect(shell.calls.some((line) => EDGES.test(line))).toBe(false);
+	});
+});
+
+/**
+ * The FAIL-then-respawn path (#6386): an epic child released after a `FAIL` was offered to the next
+ * lane as ordinary work, because "no lane holds this number" and "this number has no reviewed build"
+ * are different facts and the protocol only ever asked the first. It reproduced twice on epic #5631,
+ * each time costing a whole build lane and, on #6298, producing two divergent implementations of one
+ * criterion.
+ */
+describe("runClaim — the prior-build gate on an epic child", () => {
+	const RANGE =
+		"9f2c1ab4d5e6f708192a3b4c5d6e7f8091a2b3c4..03135b917283a4b5c6d7e8f90a1b2c3d4e5f6071";
+	const rangeVerdict = (polarity: string) =>
+		`review-code: ${polarity} range:${RANGE} content:2f1a9c4e0b7d — the child's range`;
+
+	it("refuses a fresh build claim on a child whose newest range verdict is FAIL", async () => {
+		const out = await run(runClaim, [
+			[ISSUE, CLAIMABLE],
+			unclaimed(),
+			[COMMENTS, comments({id: 8801, body: rangeVerdict("FAIL")})],
+		]);
+		expect(out.code).toBe(PRIOR_BUILD_MISMATCH);
+		expect(out.stderr.join("\n")).toContain("review-code FAIL over");
+		expect(out.stderr.join("\n")).toContain("comment 8801");
+		expect(out.stderr.join("\n")).toContain('"fabrika build claim 4312 --resume"');
+		expect(out.stderr.join("\n")).toContain("--resume-lane");
+	});
+
+	it("writes no marker when it refuses — the claim path leaves nothing to retract", async () => {
+		const shell = unblocked([
+			[ISSUE, CLAIMABLE],
+			unclaimed(),
+			[COMMENTS, comments({id: 8801, body: rangeVerdict("FAIL")})],
+		]);
+		await Effect.runPromise(
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
+		);
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+	});
+
+	it("admits the claim under --resume, so the refusal points at a route that exists", async () => {
+		const out = await run(
+			runClaim,
+			[
+				[ISSUE, CLAIMABLE],
+				unclaimed(),
+				[once(COMMENTS), comments({id: 8801, body: rangeVerdict("FAIL")})],
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), okOut("write\n")],
+			],
+			{resume: true},
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({answer: "won", purpose: "build"});
+		expect(out.stderr.join("\n")).toContain("--resume-lane");
+	});
+
+	it("refuses --resume on a child holding no standing FAIL — the flag is checked, not trusted", async () => {
+		const out = await run(
+			runClaim,
+			[
+				[ISSUE, CLAIMABLE],
+				unclaimed(),
+				[COMMENTS, comments({id: 8801, body: rangeVerdict("PASS")})],
+			],
+			{resume: true},
+		);
+		expect(out.code).toBe(PRIOR_BUILD_MISMATCH);
+		expect(out.stderr.join("\n")).toContain("drop --resume");
+	});
+
+	it("admits an ordinary fresh claim on a child whose verdicts all PASS", async () => {
+		const out = await run(runClaim, [
+			[ISSUE, CLAIMABLE],
+			unclaimed(),
+			[once(COMMENTS), comments({id: 8801, body: rangeVerdict("PASS")})],
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+		]);
+		expect(out.code).toBe(0);
+	});
+
+	it("refuses on 11 when the comments cannot be read — never 'no prior build'", async () => {
+		const out = await run(runClaim, [
+			[ISSUE, CLAIMABLE],
+			unclaimed(),
+			[COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain('UNKNOWN, never "no"');
+	});
+
+	it("refuses on 11 when a comment reaches for a verdict marker and misses — never 'no prior build'", async () => {
+		const out = await run(runClaim, [
+			[ISSUE, CLAIMABLE],
+			unclaimed(),
+			[
+				COMMENTS,
+				comments({
+					id: 8802,
+					body: `review-code: FAIL range:${RANGE} — the child's range`,
+				}),
+			],
+		]);
+		// A FAIL missing its content binding is still a reviewer saying no. Counting it and admitting
+		// the claim anyway would read a broken verdict as "the reviewer never ran" (#6386, criterion 6).
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toContain('UNKNOWN, never "no prior build"');
+		expect(out.stderr.join("\n")).toContain("#8802");
+	});
+
+	it("refuses a malformed marker under --resume too — the flag cannot read what the gate cannot", async () => {
+		const out = await run(
+			runClaim,
+			[
+				[ISSUE, CLAIMABLE],
+				unclaimed(),
+				[
+					COMMENTS,
+					comments({id: 8803, body: "review-code: SHIPPED range:x..y content:2f1a9c4e0b7d — ?"}),
+				],
+			],
+			{resume: true},
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+	});
+
+	it("leaves ordinary discussion alone — only a gate-namespace first line can be malformed", async () => {
+		const out = await run(runClaim, [
+			[ISSUE, CLAIMABLE],
+			unclaimed(),
+			[once(COMMENTS), comments({id: 8804, body: "note: this range looks wrong to me"})],
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+		]);
+		expect(out.code).toBe(0);
+	});
+
+	it("does not run for a plan-purpose claim — an epic is not a child", async () => {
+		const out = await run(
+			runClaim,
+			[
+				[ISSUE, issue({labels: labelled("type:epic", "p1", "status:triaged")})],
+				unclaimed(),
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), okOut("write\n")],
+			],
+			{purpose: "plan"},
+		);
+		expect(out.code).toBe(0);
 	});
 });

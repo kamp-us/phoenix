@@ -3,7 +3,7 @@
  *
  * Off the tree rather than off a search index because a child's work is never published: nothing on
  * GitHub knows it exists until the epic's single PR opens at the tail (ADR 0285). The branch is
- * nominated by `build branch`'s own grammar (`./prove.ts`'s `childLaneBranches`, never a second
+ * nominated by `build branch`'s own grammar (`../build/lane.ts`'s `childLaneBranches`, never a second
  * regex) and the range is then the evidence — a branch is only a name until commits naming this
  * child sit on it.
  *

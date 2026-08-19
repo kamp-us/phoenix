@@ -82,10 +82,12 @@ import {
 	CLAIM_NOT_MINE,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
+	PRIOR_BUILD_MISMATCH,
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {composeToken, nonceOf, parseToken} from "./lane.ts";
+import {failing, readRangeVerdicts} from "./range-verdicts.ts";
 import {
 	admissionOf,
 	admissionRefusal,
@@ -135,11 +137,23 @@ export interface ClaimOptions {
 	 * only be asked of the session, which is exactly the question #6037 proved a lane must not ask.
 	 */
 	readonly token: string | null;
+	/**
+	 * Whether this lane is resuming an epic child's build rather than starting one — see
+	 * {@link readPriorBuild}.
+	 *
+	 * It is a word rather than a derivation because there is nothing to derive it *from*: repair is
+	 * read off an open PR (founder ruling on #5866, #5914) and an epic child opens none. The ruling's
+	 * objection to a typed mode was that a flag is passable in a state where it means nothing, and
+	 * that objection is answered here rather than dodged — `--resume` is checked against the very
+	 * fact it asserts, so it refuses on a child carrying no standing `FAIL` exactly as its absence
+	 * refuses on one that does.
+	 */
+	readonly resume: boolean;
 }
 
 export type ProtocolOptions = Omit<
 	ClaimOptions,
-	"uuid" | "at" | "purpose" | "override" | "overrideLane" | "cites" | "token"
+	"uuid" | "at" | "purpose" | "override" | "overrideLane" | "cites" | "token" | "resume"
 > & {
 	/** The token `build claim` handed this lane — the identity it is asking under (#6037). */
 	readonly token: string;
@@ -181,6 +195,112 @@ const readOverride = (reason: string | null, lane: string | null): OverrideRead 
 	}
 	return {_tag: "Read", override: {lane: lane.trim(), reason: reason.trim()}};
 };
+
+type PriorBuildRead =
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {readonly _tag: "Read"; readonly notes: ReadonlyArray<string>};
+
+/**
+ * The gate a fresh build claim on an epic child clears: has this child already been built and graded?
+ *
+ * "No lane holds this number" and "this number has no reviewed build" are different facts, and the
+ * claim protocol only ever asked the first — so a child released after a `FAIL` was handed to the
+ * next lane as ordinary work and re-implemented from scratch, twice on epic #5631 (#6386). The
+ * second fact lives in the child's range-scoped verdict comments (`./range-verdicts.ts`), which is
+ * the only place it *can* live: a child opens no PR (ADR 0285).
+ *
+ * Both directions refuse, because both are a lane about to do the wrong work — one would rebuild
+ * over a graded artifact, the other would try to resume a branch no reviewer has ruled on. Neither
+ * refusal is overridable by `--override`, which admits an issue the *scope* fence barred; this is
+ * not a question about whether the issue is in scope.
+ *
+ * Three answers, then, not two: `FAIL`, no `FAIL`, and **unreadable** — an unreachable comment page
+ * and a marker that reaches for the range format and misses it both land in the third, refuse on
+ * `11`, and are never folded into the second.
+ */
+const readPriorBuild = (
+	repo: string,
+	number: number,
+	resume: boolean,
+	lines: ReadonlyArray<string>,
+): Effect.Effect<PriorBuildRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const listed = yield* listComments(repo, number);
+		if (listed._tag === "Failure") {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${CLAIM}: cannot read the comments on #${number}: ${listed.reason} — whether it already carries a graded build is UNKNOWN, never "no"; nothing was written.`,
+					lines,
+				),
+			};
+		}
+		const read = readRangeVerdicts(listed.value);
+		const failed = failing(read);
+		const notes = [
+			`${CLAIM}: read ${listed.value.length} comment(s) on #${number}; ${read.standing.length} standing range verdict(s)${
+				read.standing.length === 0
+					? ""
+					: `: ${read.standing.map((v) => `${v.namespace} ${v.polarity}`).join(", ")}`
+			}.`,
+		];
+		// Fail-closed on the same axis as an unreadable comment page above, and for the same reason: a
+		// FAIL posted in a broken format is exactly the verdict this gate exists to see, and counting
+		// it on stderr while admitting the claim resolves "unreadable" to "no prior build" — the one
+		// reading the module's docblock names as the failure to avoid. Only a comment whose first line
+		// opens with a gate namespace can land here (`../wire/marker-line.ts`), so ordinary discussion
+		// on a child never trips it.
+		if (read.malformed.length > 0) {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${CLAIM}: ${read.malformed.length} comment(s) on #${number} reach for a verdict marker and are not readable range ones — ${read.malformed.join(
+						"; ",
+					)}. A verdict that cannot be read is UNKNOWN, never "no prior build"; repost or delete the comment(s), then claim again. Nothing was written.`,
+					[...lines, ...notes],
+				),
+			};
+		}
+		if (failed.length > 0 && !resume) {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					PRIOR_BUILD_MISMATCH,
+					`${CLAIM}: #${number} already carries a build a reviewer failed — ${failed
+						.map((v) => `${v.namespace} FAIL over ${v.range} (comment ${v.commentId})`)
+						.join(
+							"; ",
+						)}. A fresh build would re-implement it; run "fabrika build claim ${number} --resume" to take the repair lane instead, then "fabrika build branch ${number} --resume-lane --token <token>" to stand on the branch that build left. Nothing was written.`,
+					[...lines, ...notes],
+				),
+			};
+		}
+		if (failed.length === 0 && resume) {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					PRIOR_BUILD_MISMATCH,
+					`${CLAIM}: --resume says #${number} holds a build to repair, and no gate holds a standing FAIL over it — drop --resume and claim it as the fresh build it is. Nothing was written.`,
+					[...lines, ...notes],
+				),
+			};
+		}
+		return {
+			_tag: "Read" as const,
+			notes: resume
+				? [
+						...notes,
+						`${CLAIM}: resuming the build #${number} already carries — repair the ${failed
+							.map((v) => `${v.namespace} FAIL over ${v.range}`)
+							.join(
+								", ",
+							)} on the branch that build left ("fabrika build branch ${number} --resume-lane"), never a fresh one.`,
+					]
+				: notes,
+		};
+	});
 
 const preflight = (
 	verb: string,
@@ -352,6 +472,16 @@ export const runClaim = (
 				);
 			}
 			gateNotes.push(scannedLine(CLAIM, gate.scanned, "blocked_by edge", "none open"));
+
+			// Last of the three IO gates, and last for the same reason blockedness is second: it costs a
+			// comment page, and a number the pure axes already refused should never pay for it. Only a
+			// fresh build-purpose claim asks — `plan` and `gate` claim epics, and a repair claim names a
+			// PR, whose own verdicts `build verdicts` already folds.
+			if (purpose === "build" && repair._tag === "NotRepair") {
+				const prior = yield* readPriorBuild(repo, number, options.resume, lines);
+				if (prior._tag === "Refused") return prior.outcome;
+				gateNotes.push(...prior.notes);
+			}
 		}
 
 		const token = composeToken(session, options.uuid);

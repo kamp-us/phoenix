@@ -98,6 +98,22 @@ export const parseLaneBranch = (name: string): LaneBranch | null => {
 export const laneNumber = (lane: LaneBranch): number =>
 	lane._tag === "Create" ? lane.number : lane.pr;
 
+/**
+ * The local branches this grammar says were cut for one issue's build — every reader's one source.
+ *
+ * It lives beside the grammar rather than beside its callers because there are now three of them —
+ * `lane prove`'s range read, `lane brief`'s, and `build branch --resume-lane` — and a second filter
+ * spelled from the same regex is how one of them comes to see a branch the others do not.
+ */
+export const childLaneBranches = (
+	issue: number,
+	branches: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+	branches.filter((name) => {
+		const lane = parseLaneBranch(name);
+		return lane !== null && lane._tag === "Create" && lane.number === issue;
+	});
+
 export const createBranchName = (number: number, slug: string, nonce: string): string =>
 	`build/${number}-${slug}-${nonce}`;
 

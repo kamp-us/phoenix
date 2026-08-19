@@ -77,7 +77,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build pr` | open the PR from a stdin body, refusing the known defect shapes, with read-back | mechanical guards over an authored body; *authoring* stays in the skill |
 | `build pr-body` | replace an open PR's body from a stdin body, under `build pr`'s guards, with read-back | the same mechanical guards as `build pr`, over a `PATCH` that moves no ref; *authoring* stays in the skill |
 | `build note` | post a progress/handoff comment, head-stamped, leak-guarded, with read-back | as `report note`, plus the head stamp |
-| `build verdicts` | the paginated, current-head, per-gate verdict fold on a PR | fetch-all + fold via the wire module; *acting on rows* stays in the skill |
+| `build verdicts` | the paginated, per-gate verdict fold: current-head on a PR, range-bound on an epic child | fetch-all + fold via the wire module; *acting on rows* stays in the skill |
 | `build clear` | record the founder's clearance of one extra repair round on a PR | a conjunctive ACL/authorization protocol with read-back; *whether to grant* is the founder's, never the verb's |
 
 **Considered and not derived: a surface classifier.** Naming the surface (code / prose / plan) is
@@ -320,6 +320,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `23` | proven: the local head does not contain the published remote head — the push would drop its commits |
 | `24` | proven: `git commit` ran and HEAD did not move — no commit was created |
 | `30` | proven: not admitted on the type axis — the issue is `type:decision` or `type:epic`, whose deliverable is not a pull request a build lane produces |
+| `31` | proven: the claim's mode and the child's standing range verdict disagree — a fresh build over a child holding a `FAIL`, or a `--resume` over a child holding none |
 | `127` | the verb never ran at all (unresolved binary — the shell's code, not this process's) |
 
 **`7` versus `11` is the split the whole group rests on** (the `wire` group's `ABSENT` vs
@@ -909,6 +910,39 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `20` | `claim` only, proven: the issue's home is pinned by no `active` campaign row — no marker was written |
 | `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written. Unreachable when the target is an open PR serving a `type:decision` issue (#5914) |
 | `30` | `claim --purpose build` against an **issue** only, proven: the issue is `type:decision` or `type:epic` — no marker was written. Not overridable: a decision opens it with `--cites <ruling-comment-url>`, an epic with `--purpose plan` or `--purpose gate` |
+| `31` | `claim --purpose build` against an **issue** only, proven: the claim's mode disagrees with the child's standing range verdicts — a fresh claim over a child holding a `FAIL`, or `--resume` over a child holding none. No marker was written, and neither direction is overridable: `--override` admits a *scope* refusal, and this is not one |
+
+**The prior-build gate — "no lane holds this" is not "this has no reviewed build"**
+
+An epic child opens no pull request (ADR 0285), so its review lands as range-bound comments on the
+child issue (ADR 0276) — a surface neither `build eligible` (which reads the `blocked_by` graph) nor
+the claim protocol (which reads claim markers) ever looked at. A child released after a `FAIL` was
+therefore handed to the next lane as ordinary work and rebuilt from scratch, twice on epic #5631; on
+#6298 the two lanes chose different config-key shapes for one criterion, and only `lane prove`'s
+refusal kept the wrong branch out of the assembly (#6386).
+
+So a fresh build-purpose claim against an issue folds those comments — newest write per namespace,
+the same rule `lane prove` folds on — and refuses on `31` when any namespace's newest verdict is
+`FAIL`. Staleness is deliberately not asked: a stale `FAIL` still proves the child was built and
+graded, which is the fact this gate exists for. The read runs **after** the pure axes and the
+blockedness gate, so an issue those already refused pays for no comment page, and an unreadable page
+is `11` — never "no prior build".
+
+**The gate has three answers, not two, and the third is `11`.** A comment whose first line opens with
+a gate namespace and then fails to parse as a range marker is a verdict that *cannot be read*, and it
+is refused on the same code an unreachable comment page is, in both directions — with `--resume` and
+without. Counting the break on stderr and admitting the claim anyway would resolve unreadable to "no
+prior build", which is the failure this whole gate exists to stop, wearing a log line: a `FAIL`
+posted in a broken format is still a reviewer saying no. Only a gate-namespace first line can reach
+this arm (`packages/fabrika-cli/src/wire/marker-line.ts`), so ordinary discussion on a child never
+trips it, and the remedy is to repost or delete the comment.
+
+`--resume` is the other side, and it is **checked, not trusted**: it admits a claim over a standing
+`FAIL` and refuses on `31` over a child holding none. Repair is otherwise derived from the target
+being an open PR and never typed (founder ruling on #5866, #5914); the objection there was that a
+typed mode is passable in a state where it means nothing, and a child has no PR to derive from — so
+the word is admitted here exactly because the seam checks the fact it asserts. The route it opens is
+`build branch --resume-lane`.
 
 **Errors**
 
@@ -932,6 +966,10 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `build claim: --purpose "<value>" is not one of plan \| gate \| build — an unrecognised purpose refuses, and never falls back to build.` | 10 | usage error |
 | `build claim: the marker write failed: <reason> — the claim state is UNKNOWN; run "fabrika build confirm <n> --token <minted token>" before any further action.` — preceded by `build claim: the token this run minted is <minted token> — it addresses the marker the failed write may still have landed. Do not re-run "fabrika build claim <n>": it mints a second token, and if the first marker landed the race resolves to that earlier one, leaving a claim no lane holds a token for.` | 8 | refusal |
 | `build claim: cannot read the claim markers on #<n>: <reason> — ownership is UNKNOWN, never "unclaimed".` | 11 | refusal |
+| `build claim: #<n> already carries a build a reviewer failed — <gate> FAIL over <base>..<tip> (comment <id>). A fresh build would re-implement it; run "fabrika build claim <n> --resume" to take the repair lane instead, then "fabrika build branch <n> --resume-lane --token <token>" to stand on the branch that build left. Nothing was written.` | 31 | refusal |
+| `build claim: --resume says #<n> holds a build to repair, and no gate holds a standing FAIL over it — drop --resume and claim it as the fresh build it is. Nothing was written.` | 31 | refusal |
+| `build claim: cannot read the comments on #<n>: <reason> — whether it already carries a graded build is UNKNOWN, never "no"; nothing was written.` | 11 | refusal |
+| `build claim: <n> comment(s) on #<n> reach for a verdict marker and are not readable range ones — <#id: why>; …. A verdict that cannot be read is UNKNOWN, never "no prior build"; repost or delete the comment(s), then claim again. Nothing was written.` | 11 | refusal |
 | `build claim: lost to <token> (posted <timestamp>, authorized).` | 15 | refusal |
 | `build claim: the marker landed but the read-back does not match — the claim needs a human eye.` | 9 | refusal |
 | `build confirm: #<n> is held by <winning token>, not by <caller token>.` — with ` — another lane of this same session` appended when the two tokens share a session id | 15 | refusal |
@@ -1091,6 +1129,7 @@ $ fabrika build issue 4312
 ```
 fabrika build branch 4312 --slug editor-focus-loss --token <token> [--base <ref>]
 fabrika build branch --resume 4310 --token <token>
+fabrika build branch 6296 --resume-lane --token <token>
 ```
 
 **Inputs**
@@ -1101,6 +1140,7 @@ fabrika build branch --resume 4310 --token <token>
 | `--slug` | string | yes (create mode) | — | kebab-case, ≤5 words, must not begin with `-` |
 | `--base` | string | no | `origin/main` | the base ref, **fetched before the branch is cut** |
 | `--resume` | integer | exclusive with the positional | — | a PR number whose head branch to switch to, for repair |
+| `--resume-lane` | boolean | no | `false` | child-repair mode: take over the local branch a prior lane built `<number>` on. Exclusive with `--resume` and with `--slug` |
 | `--token` | string | yes | — | the token `build claim` handed this lane — which lane is asking (#6037). Not a claim token, or one carrying another session id, is `1` |
 
 
@@ -1126,17 +1166,39 @@ head branch — `build push` publishes via that tracked upstream, so the PR upda
 name carries the *current* repair claim's nonce. Each repair run gets its own local branch, so a
 dead earlier lane can never pin this one (#4868's class). A closed or merged PR refuses (`7`).
 
+**Child-repair mode (`--resume-lane`) — resume for the artifact that has no PR to resume.** An epic
+child opens none (ADR 0285), so `--resume` has nothing to take, and a fresh cut off the assembly
+branch would throw away the commits a reviewer already graded. This mode instead finds the one local
+branch this file's own grammar says was cut for `<number>`
+(`packages/fabrika-cli/src/build/lane.ts`'s `childLaneBranches`, the same reader `lane prove` and
+`lane brief` take), **re-keys** it to this claim's nonce with `git branch -m`, and checks it out. The
+slug comes off that name, so `--slug` is refused; nothing is fetched, because a child's branch is
+never published. A re-run under the same nonce resolves the same name and re-keys nothing.
+
+Renaming rather than cutting a second branch is the whole point: two branches carrying one child's
+commits is the range `lane prove` reports as underivable, and that refusal cannot be cleared from
+inside a worktree, because `git branch -D` refuses a branch another worktree holds (#6386).
+
+**The re-key is proven safe before it runs, because `git branch -m` will not refuse for it.** Unlike
+`-D`, a rename of a branch a second worktree has checked out **succeeds** — git exits 0 and retargets
+that worktree's `HEAD` to the new name; only the `git switch` afterwards fails, by which point the
+prior lane is silently standing on a branch keyed to this one. So the verb reads
+`git worktree list --porcelain` first and refuses on `11` naming the worktree that holds the branch,
+which is the operator's to release. If a switch fails after a rename did land, the refusal says the
+rename stands rather than "nothing was changed" — that phrase is reserved for a tree that was not
+touched. Measured against git 2.40.1 rather than reasoned about.
+
 Preconditions, guarded identically to `build tree`: a readable tree root (`11`), a confirmed claim
-(`15` / `11`) — in create mode on `<number>`, in resume mode on the `--resume` PR's number, which
-is the number repair mode claims.
+(`15` / `11`) — in create and child-repair mode on `<number>`, in resume mode on the `--resume` PR's
+number, which is the number repair mode claims.
 
 **Exit status** (beyond the universal four)
 
 | Code | Trigger |
 |---|---|
-| `7` | `--resume`'s PR is proven absent, closed, or merged |
-| `10` | `--slug` is not kebab-case, exceeds 5 words, or is flag-shaped |
-| `11` | the fetch failed, or the claim state could not be read |
+| `7` | `--resume`'s PR is proven absent, closed, or merged; or `--resume-lane` found no branch anywhere in this clone's refs cut for `<number>` |
+| `10` | `--slug` is not kebab-case, exceeds 5 words, or is flag-shaped; or `--resume-lane` was given beside `--resume` or `--slug` |
+| `11` | the fetch failed, the claim state could not be read, or `--resume-lane` could not read this clone's branches or its worktrees, found several candidates, proved another worktree holds the branch, or could not re-key or check out the one it found |
 | `15` | proven: the claim on `<number>` is foreign |
 
 **Errors**
@@ -1146,6 +1208,14 @@ is the number repair mode claims.
 | `build branch: --slug "<value>" is not kebab-case (lowercase letters, digits, single hyphens, ≤5 words).` | 10 | refusal |
 | `build branch: cannot fetch <ref>: <reason> — refusing to cut a branch off a stale base.` | 11 | refusal |
 | `build branch: PR #<n> is proven closed or merged — nothing to resume.` | 7 | refusal |
+| `build branch: --resume-lane takes over the local branch of an epic child, which has no PR — it cannot be combined with --resume <pr>.` | 10 | refusal |
+| `build branch: --resume-lane reads the slug off the branch it takes over — drop --slug "<value>".` | 10 | refusal |
+| `build branch: no branch anywhere in this clone's refs was cut for #<n> — the build to resume is gone. …` | 7 | refusal |
+| `build branch: <a>, <b> were all cut for #<n> — which one this lane resumes is not derivable here; retire the superseded branches, then re-run.` | 11 | refusal |
+| `build branch: <branch> is checked out in the worktree <path>, so re-keying it here would rename the branch out from under that lane rather than fail — retiring or releasing that worktree is an operator's act, not this lane's. Nothing was changed.` | 11 | refusal |
+| `build branch: cannot read which worktree holds <branch>: <reason> — re-keying it could silently retarget another lane's HEAD, so whether the take-over is safe is UNKNOWN; nothing was changed.` | 11 | refusal |
+| `build branch: cannot re-key <old> to <new>: <reason> — nothing was changed.` | 11 | refusal |
+| `build branch: cannot check out <new>: <reason> — <old> WAS re-keyed to <new> and that rename stands; this tree is still on the branch it started on, so re-run once <new> is free, or rename it back.` | 11 | refusal |
 | `build branch: #<n> is held by <winning token>, not by <caller token>.` | 15 | refusal |
 
 **Scope** — not a judging verb. It mutates only the current tree's HEAD and local refs.
@@ -2060,7 +2130,8 @@ fabrika build verdicts --pr 4310 [--repo <owner/name>]
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--pr` | integer | yes | — | the pull request whose verdict state is folded |
+| `--pr` | integer | exactly one of `--pr` / `--issue` | — | the pull request whose verdict state is folded |
+| `--issue` | integer | exactly one of `--pr` / `--issue` | — | the epic child whose range-scoped verdicts are folded |
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository read |
 
 **Output** — machine. One JSON object:
@@ -2125,11 +2196,23 @@ review-appended acceptance-criterion rows dated at or past `CAP_ROUND`.
 comment/review counts. An unreadable page is `11` — never a shorter list.** All content passes
 the content gate.
 
+**The child arm (`--issue`).** An epic child opens no PR (ADR 0285), so the same fold is asked of the
+range-bound comments on the child issue (ADR 0276) — this is where a lane sent to repair by
+`build claim --resume` reads its findings, through a verb rather than a raw fetch. Each row names the
+`range` it was formed over instead of a `sha`/`current` pair, `kind` is `range-marker`, and there is
+no `head` and no `frozenCriteria`, because neither exists on this surface. A round is one graded
+**tip** — the range analogue of one graded head, folded through the same counter — so two gates over
+one range are one round. `clearances` is always empty and stderr says why: a grant is recorded
+against a PR's base branch and a child has none, so a child at its cap escalates to the operator
+rather than reading a grant with nowhere to live. A comment reaching for the range format and missing
+it is named on stderr, never dropped.
+
 **Exit status** (beyond the universal four)
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent or closed |
+| `7` | the PR is proven absent or closed; or `--issue`'s number is proven absent, or is a pull request |
+| `10` | neither `--pr` nor `--issue` was given, or both were |
 | `11` | the head, any comment page, any review page, or the grant-author set could not be read — the fold is UNKNOWN, never partial |
 
 **Errors**
@@ -2139,6 +2222,8 @@ the content gate.
 | `build verdicts: PR #<n> is proven absent or closed.` | 7 | refusal |
 | `build verdicts: cannot read <what> (page <k>): <reason> — the verdict state is UNKNOWN, never "none".` | 11 | refusal |
 | `build verdicts: cannot read the recorded cap clearances: <reason> — whether the budget is spent is UNKNOWN, never "capped".` | 11 | refusal |
+| `build verdicts: give either --pr <n> or --issue <n>, never both and never neither.` | 10 | usage error |
+| `build verdicts: #<n> is a pull request — its verdicts are head-bound; drop --issue and pass --pr.` | 7 | refusal |
 
 **Scope** — one PR: its head, all comments, all reviews. The stderr scope line names the head SHA
 and both counts, so an empty `rows` is auditable as "N comments read, none carried a marker".
