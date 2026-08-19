@@ -61,9 +61,10 @@ required namespace, and how the control-plane state is derived, is the verb's se
 control-plane until proven otherwise: all machine gates still apply, plus a deterministic discharge.
 An ADR-only PR is `not-control-plane` and owes no approval; its required `governance` verdict is
 what still gates it (founder ruling, 2026-08-15 on #5531). A repo with **no** `.github/CODEOWNERS`
-at the base ref is `not-control-plane` too — it has declared no control plane, so there is nothing
-to discharge (#6299). Both owner shapes bound the surface: an individual `@login` owner satisfies
-the gate on its own approval, with no team roster involved.
+at the base ref is an empty row set, which classifies `unknown` — so it is held, not waved through:
+a boundary nobody declared is not a declaration that nothing is control-plane (ADR 0220 §4). Both
+owner shapes bound the surface: an individual `@login` owner satisfies the gate on its own approval,
+with no team roster involved (#6299).
 
 ```bash
 fabrika ship cp-approval $pr_number --sha 03135b91

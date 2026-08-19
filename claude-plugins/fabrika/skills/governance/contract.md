@@ -1028,7 +1028,7 @@ $ fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contr
 
 ```
 $ fabrika governance post 4400 --polarity PASS --sha 9f2c1a77 --clause "ok" < verdict.md
-governance post: #4400's diff touches no governance root (.decisions/, .claude/, .github/, claude-plugins/) — the namespace is not required here, and a verdict in it would attest a scope nobody derived.
+governance post: #4400's diff touches no governance root (.decisions/, .claude/, .github/, claude-plugins/, .fabrika.jsonc) — the namespace is not required here, and a verdict in it would attest a scope nobody derived.
 $ echo $?
 14
 ```

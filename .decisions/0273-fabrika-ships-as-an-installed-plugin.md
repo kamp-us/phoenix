@@ -127,9 +127,10 @@ part of the campaign, not adjacent to it."*
 **Binding constraints.**
 - Every input a fabrika skill, contract, or verb requires is obtainable by opening the repository it
   is installed into.
-- Each skill declares that input set in its `## Required repo files` section, in the three-column
-  shape the front-door contract parses, with each row's disposition drawn from the closed set
-  **`fail-loud` · `degrade` · `bootstrap`**.
+- That input set is declared in the `surfaceDispositions` key group, one entry per surface, each
+  disposition drawn from the closed set **`fail-loud` · `degrade` · `bootstrap`**. (Superseded shape:
+  this was a `## Required repo files` section in every skill until the 2026-08-19 amendment below
+  removed the tables and their reader.)
 - A declared disposition states what the skill **already does**. A row that contradicts the code is
   worse than no row.
 - A `fail-loud` row names the absent surface and points at the front door; it never dead-ends in a

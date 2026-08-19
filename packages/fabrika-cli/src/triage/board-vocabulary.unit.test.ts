@@ -179,6 +179,7 @@ describe("status bootstrap under a declared board vocabulary", () => {
 					path: null,
 					json: true,
 					repoRoot: CWD,
+					configSource: config === null ? {_tag: "Absent"} : {_tag: "Text", text: config},
 					repo: ok("o/r"),
 					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
 				}),
@@ -202,5 +203,31 @@ describe("status bootstrap under a declared board vocabulary", () => {
 		const wrote = calls.filter((line) => CREATE.test(line)).join(" ");
 		expect(wrote).toContain("status:needs-triage");
 		expect(wrote).toContain("type:bug");
+	});
+
+	// The fail-open this pins is a write, not a readout: an unlocated root reads no file, resolves
+	// the shipped taxonomy and mints it into a repo that may have declared another (#4285's
+	// mechanism, arriving from the other direction).
+	it("writes nothing when the config could not be read", async () => {
+		const shell = guardedShell([
+			[LIST, okOut("")],
+			[CREATE, okOut("{}")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "label-taxonomy",
+					path: null,
+					json: true,
+					repoRoot: CWD,
+					configSource: {_tag: "Unreadable", reason: "cannot resolve the repo root"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.merge(shell.layer, fakeFs({files: {}}).layer),
+			),
+		);
+		expect(out.code).toBe(11);
+		expect(shell.calls.some((line) => CREATE.test(line))).toBe(false);
 	});
 });

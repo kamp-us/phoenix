@@ -402,8 +402,9 @@ downstream verb consumes, and that verb guards itself.
 | `ship scope: file list shows <k> of <m> declared files — refusing to partition a truncated read.` | 13 | refusal |
 
 **Scope** — one PR's metadata and changed-file list, paginated and count-checked, plus one
-boundary read from the PR's base ref, and — only when that read failed — one `.fabrika.jsonc`
-read from the same ref. The partition is total over what was read.
+boundary read from the PR's base ref and one `governedRoots` read from the checkout the verb runs
+in. A boundary read that failed refuses `11` on the spot and reads no config. The partition is total
+over what was read.
 
 **Examples**
 

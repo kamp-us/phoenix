@@ -18,11 +18,10 @@
 import {Effect, type FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {audienceLabel, type BoardVocabulary, statusList, typeLabel} from "../config/board.ts";
-import {CONFIG_PATH} from "../config/document.ts";
+import {CONFIG_PATH, type ConfigSource} from "../config/document.ts";
 import {loadConfig} from "../config/load.ts";
 import {type Read, readRoadmapFile} from "../config/paths.ts";
 import {resolveBoard} from "../config/resolve-board.ts";
-import {readConfigSource} from "../config/source.ts";
 import {appendText, exists, readFile, writeFile} from "../io/fs.ts";
 import type {Attempt} from "../io/git.ts";
 import {
@@ -235,6 +234,16 @@ export interface BootstrapInput {
 	readonly path: string | null;
 	readonly json: boolean;
 	readonly repoRoot: string;
+	/**
+	 * The config arm read at the repo root above the cwd, resolved by the caller.
+	 *
+	 * Separate from `repoRoot` because the two tolerate a failed discovery differently. `repoRoot`
+	 * may fall back to the cwd: a path probe rooted there answers about a real directory and reports
+	 * nothing present that was not found. A label *write* cannot take that fallback — reading no
+	 * config at an unlocated root resolves the shipped taxonomy and mints it into a repo that may
+	 * have declared another, so a failed discovery has to arrive here as `Unreadable`.
+	 */
+	readonly configSource: ConfigSource;
 	/** The resolved target repo, or the failure that makes the two non-file surfaces unanswerable. */
 	readonly repo: Attempt<string>;
 	readonly stdin: Effect.Effect<StdinRead>;
@@ -484,12 +493,7 @@ const buildLabels = (
 		if (input.repo._tag === "Failure") return UNRESOLVED_REPO;
 		const repo = input.repo.value;
 
-		// Read at `repoRoot` rather than through `loadRepoConfig`, which discovers the root by
-		// running git: the root is already known here, and a bootstrap must not depend on a checkout.
-		const board = resolveBoard(
-			loadConfig(yield* readConfigSource(input.repoRoot)),
-			FACET_VOCABULARY,
-		);
+		const board = resolveBoard(loadConfig(input.configSource), FACET_VOCABULARY);
 		if (board._tag === "Refused") {
 			return refuse(
 				PRECONDITION_UNKNOWN,

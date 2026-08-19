@@ -271,8 +271,9 @@ deliberately do **not** set it: they classify a foreign repo's skill text for th
 the `governance` skill; the flag only makes the seam mechanical.
 
 **`governance` is a fourth-root answer, and it is why `harness` must not be read as one.** The line
-is `touchesGovernanceRoot` over the same file list — `.decisions/` plus the three `harness` roots,
-the one derivation `governance scope` prints, imported rather than recomputed (#4730). So a
+is `touchesGovernanceRoot` over the same file list, against the **declared** governance roots
+(`governedRoots`, whose shipped value here is `.decisions/` plus the three `harness` roots) — the
+one derivation `governance scope` prints, imported rather than recomputed (#4730). So a
 `.decisions/`-only diff prints `harness\tfalse` and `governance\trequired`, which is exactly the
 pair a reviewer keying the governance obligation off `harness` got wrong on PR #5604: a clean PASS,
 then the ship gate blocking on `ns governance absent` with nobody told to fill it (#5607). The token

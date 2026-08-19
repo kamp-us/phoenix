@@ -1662,11 +1662,11 @@ surface that ran, so a file another surface would have read counts as uncovered 
 
 ```
 $ fabrika build check --surface code
-{"verdict":"green","surface":"code","tree":"/private/var/<redacted>/build-4312","ran":["pnpm typecheck","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
+{"verdict":"green","surface":"code","tree":"/private/var/<redacted>/build-4312","ran":["pnpm typecheck --force","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
 ```
 
-`ran` echoes whatever `codeValidators` resolved to; the two above are **phoenix's** shipped pair, not
-a contract.
+`ran` echoes whatever `codeValidators` resolved to, one `argv.join(" ")` per validator; the two
+above are **phoenix's** shipped pair, not a contract.
 
 **Grounding**
 

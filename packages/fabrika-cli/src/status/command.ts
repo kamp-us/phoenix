@@ -79,9 +79,11 @@ const rosterSources = (explicit: string | null): RosterSources => ({
 /**
  * The repository root a declared path is probed against, falling back to the cwd.
  *
- * The fallback is safe here and only here: a probe rooted at the cwd answers about *some* real
- * directory, and every row it produces says which path it looked at. Nothing is reported present
- * that was not found.
+ * The fallback is safe for **path probes and nothing else**: a probe rooted at the cwd answers about
+ * *some* real directory, and every row it produces says which path it looked at, so nothing is
+ * reported present that was not found. It does not extend to reading config, because "no file at a
+ * root nobody located" would resolve as "this repo declared nothing" — which is why anything that
+ * writes off the config takes `repoConfigSource` instead, where a failed discovery is `Unreadable`.
  */
 const repositoryRoot: Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> = Effect.gen(
 	function* () {
@@ -226,6 +228,7 @@ const bootstrap = leafCommand(
 				path: Option.getOrNull(path),
 				json,
 				repoRoot: yield* repositoryRoot,
+				configSource: yield* repoConfigSource(process.cwd()),
 				repo: yield* resolveTarget(Option.getOrNull(repo)),
 				stdin: Effect.sync(readStdin),
 			}),

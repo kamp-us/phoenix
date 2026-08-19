@@ -13,8 +13,7 @@
 
 import {Effect, type FileSystem, type Path} from "effect";
 import {discoverRepoRoot} from "../delegate/root.ts";
-import {exists, readFile} from "../io/fs.ts";
-import {CONFIG_PATH, type ConfigSource} from "./document.ts";
+import type {ConfigSource} from "./document.ts";
 import {type Load, loadConfig} from "./load.ts";
 import {readConfigSource} from "./source.ts";
 
@@ -25,34 +24,15 @@ import {readConfigSource} from "./source.ts";
  * and a config read only at the top level would resolve to the shipped defaults for every run from a
  * subdirectory — a silent, invisible widening. A `cwd` in no repository at all falls back to itself,
  * which changes nothing: there is no file there either, and the answer is the shipped defaults.
+ *
+ * The three arms come from {@link repoConfigSource}, which is the one opener; this is that answer
+ * loaded. Two openers with the same three-arm semantics is drift bait, so there is only one.
  */
 export const loadRepoConfig = (
 	cwd: string,
 ): Effect.Effect<Load, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
-		const root = yield* Effect.result(discoverRepoRoot(cwd));
-		if (root._tag === "Failure") {
-			return loadConfig({
-				_tag: "Unreadable",
-				reason: `cannot resolve the repo root above ${cwd}: ${root.failure.reason}`,
-			});
-		}
-		const path = `${root.success ?? cwd}/${CONFIG_PATH}`;
-		// Probed rather than inferred from the read's error text: an absent file and a denied one are
-		// opposite answers here, and sniffing `ENOENT` out of a message would read a permission fault
-		// as "this repo declared nothing".
-		const there = yield* Effect.result(exists(path));
-		const source: ConfigSource = yield* Effect.gen(function* () {
-			if (there._tag === "Failure") {
-				return {_tag: "Unreadable", reason: `${path}: ${there.failure.reason}`} as const;
-			}
-			if (!there.success) return {_tag: "Absent"} as const;
-			const read = yield* Effect.result(readFile(path));
-			return read._tag === "Success"
-				? ({_tag: "Text", text: read.success} as const)
-				: ({_tag: "Unreadable", reason: `${path}: ${read.failure.reason}`} as const);
-		});
-		return loadConfig(source);
+		return loadConfig(yield* repoConfigSource(cwd));
 	});
 
 /**

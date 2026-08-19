@@ -28,8 +28,9 @@ rather than a branch in fabrika's source (ADR 0273, epic
 
 A key read at a PR's **base ref** rather than the working tree opens the bytes through that
 group's own platform reader and hands `loadConfig` a `Text` or an `Absent`. Read the policy at the
-same ref as the artifact it governs, through the same reader, so the two cannot disagree — no key
-takes this shape today.
+same ref as the artifact it governs, through the same reader, so the two cannot disagree.
+`capClearAuthors` is the live instance: `build/clearances.ts` opens the bytes with `readFileAtRef`
+at the base ref and hands them through `repo-config.ts` into `loadConfig`.
 
 Whoever opens the file says which of three things it found — `Absent`, `Text`, `Unreadable` — and
 hands that to `loadConfig`. A key module never sees a file, only the parsed record.
@@ -110,7 +111,9 @@ what a key resolves to so no skill document has to restate it, and a readout pri
 `{"_tag":"User","login":"…"}` where the file says `"@…"` hands back this package's internal shape and
 leaves the reader to reverse it. `render` is display only: `Registration.readout` applies it,
 `Registration.resolve` does not, so a caller computing with a value never gets the display form.
-`capClearAuthors` and `workflowValidators` carry one; a plain string array needs none.
+Four key groups carry one — `cap-clear-authors.ts`, `code-validators.ts`, `paths.ts` (for
+`decisionsDir`, whose `Declined` renders `null`) and `workflow-validators.ts`; a plain string array
+needs none.
 
 ## Reading a key at the working tree
 
