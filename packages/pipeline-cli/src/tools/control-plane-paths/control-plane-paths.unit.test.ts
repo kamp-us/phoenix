@@ -311,14 +311,16 @@ describe("CONTROL_PLANE_RE narrows packages/pipeline-cli to its enforcement core
 	});
 });
 
-// ADR 0299 — the `ci-required` verdict core moved to `packages/fabrika-cli/src/ci/` (#6099) and the
-// §CP fence follows it there. Every path below classified NOT-control-plane before this branch, which
-// under a CODEOWNERS with no `*` catch-all and the ruleset at `required_approving_review_count: 0`
-// means the file deciding every merge's required check merged on ZERO approvals.
+// ADR 0299 — the `ci-required` verdict core is MOVING to `packages/fabrika-cli/src/ci/` via open
+// child #6099 of epic #5720; on `main` today the dir does not exist and `ci.yml` still runs the
+// pipeline-cli bin. The fence lands ahead of the move: every path below classifies
+// NOT-control-plane on `main`, so without this branch, the day #6099 lands, a PR touching only the
+// new dir would merge on ZERO approvals — no `*` catch-all in CODEOWNERS, and the ruleset pairs
+// `required_approving_review_count: 0` with `require_code_owner_review: true`.
 describe("CONTROL_PLANE_RE covers fabrika-cli's CI-check core (ADR 0299)", () => {
 	const ci = "packages/fabrika-cli/src/ci";
 
-	it("classifies the relocated ci-required verdict core — the whole dir, any depth", () => {
+	it("classifies the incoming ci-required verdict core — the whole dir, any depth", () => {
 		for (const path of [
 			`${ci}/required.ts`, // the pass/fail logic itself
 			`${ci}/required-bin.ts`, // what .github/workflows/ci.yml's ci-required job runs
