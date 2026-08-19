@@ -528,7 +528,7 @@ export const runCheck = (
 		if (atBase._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot list the changed markdown at ${base} (${atBase.reason}) — which defects predate this diff is UNKNOWN, never green.`,
+				`${VERB}: cannot list the changed markdown at the merge base ${merged.value} (${atBase.reason}) — which defects predate this diff is UNKNOWN, never green.`,
 				noted,
 			);
 		}
@@ -552,7 +552,7 @@ export const runCheck = (
 				if (before._tag === "Failure") {
 					return refuse(
 						PRECONDITION_UNKNOWN,
-						`${VERB}: cannot read ${file} at ${base} (${before.reason}) — which of its defects predate this diff is UNKNOWN, never green.`,
+						`${VERB}: cannot read ${file} at the merge base ${merged.value} (${before.reason}) — which of its defects predate this diff is UNKNOWN, never green.`,
 						scoped,
 					);
 				}

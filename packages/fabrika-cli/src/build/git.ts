@@ -234,7 +234,9 @@ export const mergeBase = (base: string): Shell<Attempt<string>> =>
  * fault refuses every PR that adds a doc. Asking the tree first keeps the two apart.
  *
  * `-z` because a path with a space or a quote is quoted in the default output and would come back in
- * a spelling that matches nothing.
+ * a spelling that matches nothing. `--literal-pathspecs` because these operands are pathspecs: a path
+ * carrying `*`, `?`, `[` or a leading `:` would otherwise match something other than itself, and the
+ * roster would answer about a file nobody asked for.
  */
 export const treePaths = (
 	rev: string,
@@ -243,6 +245,7 @@ export const treePaths = (
 	Effect.gen(function* () {
 		if (paths.length === 0) return ok([]);
 		const r = yield* execCapture("git", [
+			"--literal-pathspecs",
 			"ls-tree",
 			"-r",
 			"--name-only",

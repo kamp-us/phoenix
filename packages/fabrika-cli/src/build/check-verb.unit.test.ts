@@ -38,11 +38,14 @@ const MERGE_BASE = /^git merge-base HEAD origin\/main$/;
 const DIFF = /^git diff --name-only /;
 const UNTRACKED_ARGV = "git ls-files --others --exclude-standard --full-name -- :/";
 const UNTRACKED = /^git ls-files --others --exclude-standard --full-name -- :\/$/;
-const LS_TREE = /^git ls-tree -r --name-only -z /;
+const LS_TREE = /^git --literal-pathspecs ls-tree -r --name-only -z /;
 const TYPECHECK = /^pnpm typecheck --force$/;
 const LINT = /^pnpm lint:worktree$/;
 
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
+
+/** Every regex metacharacter escaped, so a scripted path matches itself and nothing else. */
+const escapeRe = (literal: string): string => literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** A scripted untracked-file list. Placed ahead of `LANE_OK`, whose default is an empty one. */
 const untracked = (stdout: string): readonly [RegExp, ExecResult] => [UNTRACKED, okOut(stdout)];
@@ -58,8 +61,7 @@ const atBase = (
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[LS_TREE, okOut(`${Object.keys(files).join("\0")}\0`)],
 	...Object.entries(files).map(
-		([path, text]) =>
-			[new RegExp(`^git show ${HEAD}:${path.replace(/[.]/g, "\\.")}$`), okOut(text)] as const,
+		([path, text]) => [new RegExp(`^git show ${HEAD}:${escapeRe(path)}$`), okOut(text)] as const,
 	),
 ];
 
@@ -857,6 +859,7 @@ describe("the leak scan reds this diff's leaks, not the file's", () => {
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
+		expect(out.stderr.some((line) => line.includes(`merge base ${HEAD}`))).toBe(true);
 	});
 
 	it("refuses on 11 when a file in the base tree cannot be read there", async () => {
@@ -872,6 +875,7 @@ describe("the leak scan reds this diff's leaks, not the file's", () => {
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
+		expect(out.stderr.some((line) => line.includes(`merge base ${HEAD}`))).toBe(true);
 	});
 
 	// The link resolver is deliberately NOT baselined: a link's resolvability is a property of the

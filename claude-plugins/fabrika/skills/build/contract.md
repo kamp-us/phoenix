@@ -1357,6 +1357,9 @@ well and reports only what this diff added. Two consequences worth knowing befor
   base's copies are a budget the head's occurrences spend, so adding a third copy of a leak the base
   held twice still reds.
 - A file the diff creates has no base text, so its whole content is this diff's.
+- The baseline is keyed by path, so a **rename reds every leak the file already carried** — the
+  new path has no base text. Intended, not a miss: a doc moved to a new home is a fresh chance to
+  fix what it carries. It is the one case where a red names a line the author did not write.
 
 The shape is a merge-base baseline and not the added-line attribution `cli-invocation-guard` took for
 the same class of problem in #4250. Markdown is edited by rewriting prose, and a moved paragraph, a
@@ -1418,8 +1421,8 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | `build check: cannot read the claim markers on #<n>: <reason> — the lane is UNKNOWN.` | 11 | refusal |
 | `build check: cannot read <file> (<reason>) — it is in the diff and is not absent, so the verdict is UNKNOWN, never green.` | 11 | refusal |
 | `build check: cannot read .fabrika.jsonc (<reason>) — which docs are leak-scan exempt is UNKNOWN, never green.` | 11 | refusal |
-| `build check: cannot list the changed markdown at <base> (<reason>) — which defects predate this diff is UNKNOWN, never green.` | 11 | refusal |
-| `build check: cannot read <file> at <base> (<reason>) — which of its defects predate this diff is UNKNOWN, never green.` | 11 | refusal |
+| `build check: cannot list the changed markdown at the merge base <sha> (<reason>) — which defects predate this diff is UNKNOWN, never green.` | 11 | refusal |
+| `build check: cannot read <file> at the merge base <sha> (<reason>) — which of its defects predate this diff is UNKNOWN, never green.` | 11 | refusal |
 | `build check: <n> leak-scan exemption(s) declared in .fabrika.jsonc.` | 0 | scope note |
 | `build check: nothing is leak-scan exempt — <reason>.` | 0 | scope note |
 | `build check: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
