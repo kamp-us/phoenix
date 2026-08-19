@@ -1439,7 +1439,7 @@
 			"file": ".decisions/0187-crew-mcp-is-not-control-plane.md",
 			"kind": "adr",
 			"verdict": "POINTER",
-			"action": "Append one dated line at the end of the file:\n\n> Amendment 2026-08-19: the enforcement-surface test still governs, only the paths moved. The classifier regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (verified present, with `control-plane-re.pin.test.ts` beside it); `packages/pipeline-crew-mcp/` itself is gone with the v1 crew (ADR [0279](0279-retire-v1-crew.md)), and the §CP examples `packages/ci-required/` + `packages/pipeline-cli/` are retired too — the live §CP package clause is `^packages/fabrika-cli/src/ci/` (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). Read the §CP set from the live regex, never from this ADR's examples.\n\n(Fix the 0279 link filename to the real slug when writing: `ls .decisions/0279-*` — use whatever that prints.)",
+			"action": "Append one dated line at the end of the file:\n\n> Amendment 2026-08-19: the enforcement-surface test still governs, only the paths moved. The classifier regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (no dedicated pin test; `codeowners-cp.unit.test.ts` exercises it); `packages/pipeline-crew-mcp/` itself is gone with the v1 crew (ADR [0279](0279-retire-v1-crew.md)), and the §CP examples `packages/ci-required/` + `packages/pipeline-cli/` are retired too — the live §CP package clause is `^packages/fabrika-cli/src/ci/` (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). Read the §CP set from the live regex, never from this ADR's examples.\n\n(Fix the 0279 link filename to the real slug when writing: `ls .decisions/0279-*` — use whatever that prints.)",
 			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
 			"evidence": [
 				{
@@ -1455,13 +1455,13 @@
 					"text": "# 0187 — pipeline-crew-mcp is not §CP; control-plane is an enforcement-surface test, not a proximity test"
 				}
 			],
-			"appendedLine": "> Amendment 2026-08-19: the enforcement-surface test still governs, only the paths moved. The classifier regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (verified present, with `control-plane-re.pin.test.ts` beside it); `packages/pipeline-crew-mcp/` itself is gone with the v1 crew (ADR [0279](0279-v1-crew-retired-in-full.md)), and the §CP examples `packages/ci-required/` + `packages/pipeline-cli/` are retired too — the live §CP package clause is `^packages/fabrika-cli/src/ci/` (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). Read the §CP set from the live regex, never from this ADR's examples."
+			"appendedLine": "> Amendment 2026-08-19: the enforcement-surface test still governs, only the paths moved. The classifier regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (no dedicated pin test; `codeowners-cp.unit.test.ts` exercises it); `packages/pipeline-crew-mcp/` itself is gone with the v1 crew (ADR [0279](0279-v1-crew-retired-in-full.md)), and the §CP examples `packages/ci-required/` + `packages/pipeline-cli/` are retired too — the live §CP package clause is `^packages/fabrika-cli/src/ci/` (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). Read the §CP set from the live regex, never from this ADR's examples."
 		},
 		{
 			"file": ".decisions/0193-lint-governance-config-is-control-plane.md",
 			"kind": "adr",
 			"verdict": "POINTER",
-			"action": "Append one dated line at the end of the file: \"> Amendment 2026-08-19: `packages/pipeline-cli` is gone; the single-source §CP path regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (tests: `packages/fabrika-cli/src/guard/control-plane-re.pin.test.ts`, `codeowners-cp.unit.test.ts`). The ruling — `biome.jsonc` + `biome-plugins/` are §CP — is unchanged.\" Body otherwise byte-identical.",
+			"action": "Append one dated line at the end of the file: \"> Amendment 2026-08-19: `packages/pipeline-cli` is gone; the single-source §CP path regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (tests: `packages/fabrika-cli/src/guard/codeowners-cp.unit.test.ts`, `codeowners-cp-verb.unit.test.ts`). The ruling — `biome.jsonc` + `biome-plugins/` are §CP — is unchanged.\" Body otherwise byte-identical.",
 			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
 			"evidence": [
 				{
@@ -1477,7 +1477,7 @@
 					"text": "- **The `CONTROL_PLANE_RE` classifier** (ship-it's soft gate) gains two anchored branches:"
 				}
 			],
-			"appendedLine": "> Amendment 2026-08-19: `packages/pipeline-cli` is gone; the single-source §CP path regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (tests: `packages/fabrika-cli/src/guard/control-plane-re.pin.test.ts`, `codeowners-cp.unit.test.ts`). The ruling — `biome.jsonc` + `biome-plugins/` are §CP — is unchanged."
+			"appendedLine": "> Amendment 2026-08-19: `packages/pipeline-cli` is gone; the single-source §CP path regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (tests: `packages/fabrika-cli/src/guard/codeowners-cp.unit.test.ts`, `codeowners-cp-verb.unit.test.ts`). The ruling — `biome.jsonc` + `biome-plugins/` are §CP — is unchanged."
 		},
 		{
 			"file": ".decisions/0199-worktree-isolation-identity-is-derived-not-inherited.md",
@@ -1563,7 +1563,7 @@
 			"file": ".decisions/0212-marketplace-manifest-is-control-plane.md",
 			"kind": "adr",
 			"verdict": "POINTER",
-			"action": "Append one dated line at the end of the file:\n\n> Amendment 2026-08-19: the ruling still binds — `/.claude-plugin/ @kamp-us/control-plane` is live in `.github/CODEOWNERS` and the `^\\.claude-plugin/` branch now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (pinned by `control-plane-re.pin.test.ts`), not `packages/pipeline-cli/`. The `kampus-pipeline` clauses are history only: the plugin is deleted (ADR [0303](0303-kampus-pipeline-plugin-retired.md)) and its marketplace entry survives sha-pinned, so the deferred `claude-plugins/kampus-pipeline/.claude-plugin/plugin.json` gap is moot; fabrika is the one pipeline.\n\n(Verify the 0303 filename slug when writing the link.)",
+			"action": "Append one dated line at the end of the file:\n\n> Amendment 2026-08-19: the ruling still binds — `/.claude-plugin/ @kamp-us/control-plane` is live in `.github/CODEOWNERS` and the `^\\.claude-plugin/` branch now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (exercised by `codeowners-cp.unit.test.ts`), not `packages/pipeline-cli/`. The `kampus-pipeline` clauses are history only: the plugin is deleted (ADR [0303](0303-kampus-pipeline-plugin-retired.md)) and its marketplace entry survives sha-pinned, so the deferred `claude-plugins/kampus-pipeline/.claude-plugin/plugin.json` gap is moot; fabrika is the one pipeline.\n\n(Verify the 0303 filename slug when writing the link.)",
 			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
 			"evidence": [
 				{
@@ -1579,7 +1579,7 @@
 					"text": "including `kampus-pipeline`, the plugin that ships the gate-critical skills (`ship-it`,"
 				}
 			],
-			"appendedLine": "> Amendment 2026-08-19: the ruling still binds — `/.claude-plugin/ @kamp-us/control-plane` is live in `.github/CODEOWNERS` and the `^\\.claude-plugin/` branch now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (pinned by `control-plane-re.pin.test.ts`), not `packages/pipeline-cli/`. The `kampus-pipeline` clauses are history only: the plugin is deleted (ADR [0303](0303-retire-kampus-pipeline-plugin.md)) and its marketplace entry survives sha-pinned, so the deferred `claude-plugins/kampus-pipeline/.claude-plugin/plugin.json` gap is moot; fabrika is the one pipeline."
+			"appendedLine": "> Amendment 2026-08-19: the ruling still binds — `/.claude-plugin/ @kamp-us/control-plane` is live in `.github/CODEOWNERS` and the `^\\.claude-plugin/` branch now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (exercised by `codeowners-cp.unit.test.ts`), not `packages/pipeline-cli/`. The `kampus-pipeline` clauses are history only: the plugin is deleted (ADR [0303](0303-retire-kampus-pipeline-plugin.md)) and its marketplace entry survives sha-pinned, so the deferred `claude-plugins/kampus-pipeline/.claude-plugin/plugin.json` gap is moot; fabrika is the one pipeline."
 		},
 		{
 			"file": ".decisions/0217-lane-claim-authority.md",
