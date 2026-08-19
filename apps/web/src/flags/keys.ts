@@ -184,6 +184,25 @@ export const PROFILE_CANVAS = "profile-canvas";
  */
 export const MEMBER_MUTE = "member-mute";
 
+/**
+ * Çaylak in-place visibility dark-ship flag (#6421, epic #4306). The SINGLE seam the
+ * whole vertical gates behind: the yazar opt-in preference read + its mutation, the
+ * third viewer class the sandbox read masks grow (distinct from the moderator class),
+ * the çaylak marker field on the content wire shape, and both client surfaces (the
+ * settings toggle and the marker render). Default-off so the feature reaches production
+ * dark — with it off the containment wall of ADR 0206 behaves exactly as today; flipping
+ * it on is the human release act (ADR 0083).
+ *
+ * `phoenix` is the product namespace even though the feature is about çaylaks: it spans
+ * pano, sözlük and a settings surface, which is the `phoenix-reactions` /
+ * `phoenix-bildirim` shared-seam precedent, not a product-scoped key.
+ *
+ * The key spells `caylak`, not `çaylak`, because the flag-key grammar is ASCII-only
+ * (`.patterns/feature-flags-schema-lifecycle.md`) — not a typo. The product noun stays
+ * `çaylak` in every Turkish user-facing string.
+ */
+export const PHOENIX_CAYLAK_VISIBILITY = "phoenix-caylak-visibility";
+
 /** A declared flag paired with its default variation — the row the flags console lists (#2742). */
 export interface FlagDeclaration {
 	readonly key: string;
@@ -214,4 +233,5 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_USER_ADMIN, defaultValue: false},
 	{key: PROFILE_CANVAS, defaultValue: false},
 	{key: MEMBER_MUTE, defaultValue: false},
+	{key: PHOENIX_CAYLAK_VISIBILITY, defaultValue: false},
 ];

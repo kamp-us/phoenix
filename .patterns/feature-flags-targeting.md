@@ -91,6 +91,7 @@ reviewable in the repo.
 | `phoenix-flags-targeting-demo` | **IaC** (`demoTargetingFlag`) | The #511 demonstrator: internal-role targeting + 25% consistent-hash rollout, declared in-stack so the rule is reviewable. |
 | `phoenix-authorship-loop` | **IaC** (`authorshipLoopFlag`) | Default-off dark-ship (#1204) + an environment force-on rule (#1511): `equals environment == audit` serves `on` for the rite-audit stage only; prod-never is structural (the rule can't match `production`). |
 | `phoenix-flags-probe` | Neither (undeclared) | The #508 dark-ship probe reads its safe default; intentionally undeclared. |
+| `phoenix-caylak-visibility` | **IaC** (`caylakVisibilityFlag`) | Default-off dark-ship (#6421, epic #4306), no targeting rules: the release of çaylak in-place visibility is one reviewable flip, so the safe default belongs in version control rather than the dashboard. |
 
 The flag schema / naming + lifecycle convention (the flag-key naming grammar, value-type discipline,
 the default-=-safe-state invariant, and when a flag graduates IaC↔dashboard / is retired) lives in
