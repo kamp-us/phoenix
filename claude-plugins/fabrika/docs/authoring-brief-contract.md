@@ -279,7 +279,7 @@ package (#6100), so there is no longer a second implementation to read — only 
 
 - the next id, `max(id) + 1` zero-padded, parsed from `.decisions/` frontmatter → `fabrika adr next`.
 - reds on a duplicate id or a filename/frontmatter mismatch, the CI backstop the number lock relies
-  on → `fabrika guard decisions-number check`.
+  on → `fabrika guard decisions-index validate`.
 - the `id · title · status` map, ascending by id → **nothing ships this**; #6332 tracks it.
 
 Derive nothing for work that is already *enforced* somewhere else — a second answer to a gated
