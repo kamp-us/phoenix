@@ -179,13 +179,14 @@ const checks = leafCommand(
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
+				cwd: process.cwd(),
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Roll up the head CI, latest run per context."),
 	Command.withDescription(
-		"Roll up the head CI from REST check-runs, latest-per-context. First stdout line is `checks\\t<sha>\\t<green|red|pending|wedged|no-runs>`, then `run\\t<count>`, one `<name>\\t<status>\\t<gating|informational>` line per run, and `facts\\tworkflows:<n>\\truns:<n>` — the zero-checkset discriminators. With --wait a `settle\\t<settled|budget-exhausted|head-moved>` line leads the emission. The rollup is fail-closed on the ambiguous rows and the informational carve-out is ADR 0061's denylist; a wedge is diagnosed and named, and the cancel-and-rerun lever stays an operator's (#3999). Exits 7 (PR or --sha proven absent), 11 (the check-run or workflow read failed — CI state is UNKNOWN, never green), 13 (entries received < declared). Example: fabrika ship checks 4321 --sha 03135b91 --wait",
+		"Roll up the head CI from REST check-runs, latest-per-context. First stdout line is `checks\\t<sha>\\t<green|red|pending|wedged|no-runs|no-producer>`, then `run\\t<count>`, one `<name>\\t<status>\\t<gating|informational>` line per run, and `facts\\tworkflows:<n>\\truns:<n>` — the zero-checkset discriminators. A repo with zero workflows is `no-producer`, never `pending`: no CI at all and CI that has not reported yet are different facts. That case refuses unless `.fabrika.jsonc` declares `ci.noProducer: \"degrade\"`. With --wait a `settle\\t<settled|budget-exhausted|head-moved>` line leads the emission. The rollup is fail-closed on the ambiguous rows and the informational carve-out is ADR 0061's denylist; a wedge is diagnosed and named, and the cancel-and-rerun lever stays an operator's (#3999). Exits 7 (PR or --sha proven absent, or zero workflows under the default — ADR 0092), 11 (the check-run read, the workflow read or `.fabrika.jsonc` failed — CI state is UNKNOWN, never green), 13 (entries received < declared). Example: fabrika ship checks 4321 --sha 03135b91 --wait",
 	),
 );
 

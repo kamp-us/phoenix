@@ -845,7 +845,7 @@ fabrika ship checks 4321 --sha 03135b91 [--wait] [--budget-seconds 600] [--caden
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line:
-`checks\t<sha>\t<green|red|pending|wedged|no-runs>`. Second line: `run\t<count>` — the count
+`checks\t<sha>\t<green|red|pending|wedged|no-runs|no-producer>`. Second line: `run\t<count>` — the count
 of latest-per-context check-run lines that follow (gating and informational both), the line
 channel's own completeness proof. Then one line per check run, latest-per-context:
 `<name>\t<success|failure|neutral|cancelled|skipped|timed_out|action_required|in_progress|queued|stale>\t<gating|informational>`.
@@ -856,7 +856,14 @@ parser — [ruled on
 head across all workflows, **pre-dedupe** (which is why it can exceed the `run` line count:
 that one counts latest-per-context check-run rows). These are the zero-checkset
 discriminators (`no-runs` requires workflows ≥ 1 and runs = 0 at this head: Actions exist
-and none fired — the dropped-trigger state `ship nudge` re-derives). With `--wait`, progress goes to stderr and
+and none fired — the dropped-trigger state `ship nudge` re-derives).
+
+**Zero workflows is `no-producer`, and it no longer collapses into `pending`** (#6298). A repo with
+no CI and a repo whose CI has not reported yet are different facts, and printing the second over the
+first tells an operator to wait for a run nothing will ever start. Workflow *existence* is the whole
+test — nothing inspects what a workflow does (#5603, R17.1). That case refuses on `7` unless the
+repo declares `ci.noProducer: "degrade"` in `.fabrika.jsonc`, which prints the `no-producer` rollup
+at exit `0` with the fact on stderr. With `--wait`, progress goes to stderr and
 the final stdout adds `settle\t<settled|budget-exhausted|head-moved>` before the first line's
 shape is emitted at the terminal state.
 
@@ -888,8 +895,8 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR or the `--sha` commit is proven absent |
-| `11` | the check-run or workflow read failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
+| `7` | the PR or the `--sha` commit is proven absent; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
+| `11` | the check-run read, the workflow read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
 | `13` | entries received < declared `total_count` — never read as "no red checks" |
 
 **Errors**
@@ -898,14 +905,20 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 |---|---|---|
 | `ship checks: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship checks: no commit <sha> on PR #<n>.` | 7 | refusal |
+| `ship checks: <repo> has zero workflows — no CI producer, so no head can be evidenced (ADR 0092). A repo that runs no workflows declares \`ci.noProducer: "degrade"\`.` | 7 | refusal |
+| `ship checks: cannot read \`ci\` from the repo config (<reason>) — whether <repo> produces CI is UNKNOWN, never green.` | 11 | refusal |
+| `ship checks: <repo> declares \`ci.noProducer: degrade\` and has zero workflows — no producer, so there is nothing to roll up.` | 0 | notice |
 | `ship checks: cannot enumerate <what> at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
 | `ship checks: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration.` | 13 | refusal |
 | `ship checks: the live head is <live>, you are enumerating <sha> — the head moved.` | 0 | notice |
 
 **Scope** — the check runs and workflow inventory at one commit, paginated,
 count-verified. Zero *declared* check runs with zero workflows is `green`-ineligible and
-reads `no-runs`-ineligible too — it is the foreign-repo/no-Actions case, reported as
-`facts	workflows:0	runs:0` with rollup `pending`, which the skill treats per its own law.
+`no-runs`-ineligible too — it is the repo that produces no CI at all, and what it costs is
+`ci.noProducer`'s answer. Under the shipped `refuse` it is exit `7`: a head whose checks will
+never report is not a head to wait on. Where the repo declared `degrade` it is rollup
+`no-producer` at exit 0, printed with `facts	workflows:0	runs:0`. Neither arm greens, and
+neither prints `pending` — that collapse is what made this state read as *wait longer* forever.
 
 **Examples**
 
@@ -924,6 +937,13 @@ $ fabrika ship checks 4322 --sha 9fe12ab0
 checks	9fe12ab0	no-runs
 run	0
 facts	workflows:12	runs:0
+```
+
+```
+$ fabrika ship checks 4323 --sha 7c04ef19   # a repo declaring "ci": {"noProducer": "degrade"}
+checks	7c04ef19	no-producer
+run	0
+facts	workflows:0	runs:0
 ```
 
 ```

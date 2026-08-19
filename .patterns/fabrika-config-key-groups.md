@@ -21,6 +21,7 @@ rather than a branch in fabrika's source (ADR 0273, epic
 | `containment.ts` | The triage-facet containment invariant, checked over declared data |
 | `board.ts` | The board vocabulary's shape (`BoardVocabulary`, `StatusNames`) and how a facet's delete authority is composed from it — pure, so `triage/facets.ts` can build the shipped default off it |
 | `resolve-board.ts` | `resolveBoard(load, shipped)` — joins `boardVocabulary` and `triageFacets` into one table and re-runs containment over the join |
+| `ci-producer.ts` | `producerFor(...)` — the "does this repo produce CI at all" rule `review ci` and `ship checks` both decide through, over a workflow count and `ci.noProducer` |
 
 Whoever opens the file says which of three things it found — `Absent`, `Text`, `Unreadable` — and
 hands that to `loadConfig`. A key module never sees a file, only the parsed record.
@@ -110,6 +111,20 @@ So a gate never reads `load._tag === "Config"` as "it loaded". It calls `unusabl
 Keying on the refusal alone is fail-open on exactly the inputs the surface exists to separate: the
 first round of `triage`'s guard let an unreadable and a malformed config straight through to the
 label write, with the containment check never run (#6292).
+
+## A key whose sub-keys answer one question is one module, not several
+
+`ci` holds two: `noProducer` (what a repo with zero Actions workflows gets — `refuse | degrade`,
+shipped `refuse`) and `gateWorkflow` (the filename fabrika names when it points at the gate that
+supersedes an in-tree prediction). They are one key group because they are one question — *what may
+fabrika assume about this repo's CI?* — and splitting them would put two registry lines and two
+resolutions in front of every reader who needs both.
+
+Two rules travel with it. **Existence is the whole test**: nothing opens a workflow or matches a job
+name inside one, so no expected-job set exists to drift (#5603, R17.1). And **a shape the API cannot
+address is refused, not repaired**: `gateWorkflow` takes a bare filename, so
+`.github/workflows/ci.yml` is `Malformed` rather than silently basenamed — a declaration quietly
+rewritten is one the operator believes is configured and is not.
 
 ## An empty declared list is the caller's answer, not the decoder's
 

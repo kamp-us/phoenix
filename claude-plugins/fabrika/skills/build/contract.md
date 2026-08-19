@@ -49,7 +49,7 @@ second answer to a gated question can contradict the gate (interface convention 
   *refuses a body that asserts the classification* (#4153) — it never computes one.
 - **A changed-files leak scanner.** `leak-guard.yml` reds it in CI. The writing verbs guard only
   the text this skill itself posts.
-- **A CI-rollup reader.** `ci.yml` owns redness; the review/ship stages read it. `build check` is
+- **A CI-rollup reader.** The repo's CI gate owns redness; the review/ship stages read it. `build check` is
   an in-tree *prediction*, not a second verdict over the gate's question.
 - **A trivial-diff classifier.** v1's ships dormant by design (ADR 0120); nothing here consumes it.
 - **Any opinion about where a lane runs.** No provisioner, no locker, no reaper — and no refusal
@@ -1525,8 +1525,10 @@ a gap: the commands here that machine-read a workflow all live in `pipeline-cli`
 forbids any fabrika verb from invoking, so this repo's workflow surface stands on `actionlint` alone
 and refuses `11` where that is absent too. `actionlint` runs on top when this tree has it — it is a pinned tarball CI installs at job time and
 no repo's dependency, so its absence is the ordinary case and is **disclosed** beside the green
-rather than skipped in silence; `ci.yml`'s own `actionlint` job is the superseding authority there,
-as it is for every verdict this verb prints. A declared command that cannot be spawned is the other
+rather than skipped in silence; the gate workflow's own `actionlint` job is the superseding authority
+there, as it is for every verdict this verb prints. That workflow is named by `ci.gateWorkflow` in
+`.fabrika.jsonc` — phoenix's `ci.yml` when a repo declares nothing, and a bare filename or the load
+is refused `11` (#6026, #6298). A declared command that cannot be spawned is the other
 polarity: it ships with the repo, so it is `11`, UNKNOWN, naming the command.
 
 What holds both honest is per-file coverage, not a count of what ran. A declared guard takes no path
@@ -1569,7 +1571,7 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | `build check: no validator that ran opens <files> — reported in \`unvalidated\`, so this green claims nothing about them.` | 0 | scope note beside a green |
 | `build check: <n> workflow validator(s) declared in .fabrika.jsonc.` | 0 | scope note |
 | `build check: no repo workflow validator is declared — <reason>.` | 0 | scope note |
-| `build check: actionlint did NOT run (<reason>) — ci.yml's actionlint job supersedes this verdict on workflow syntax.` | 0 | scope note beside a green |
+| `build check: actionlint did NOT run (<reason>) — <ci.gateWorkflow>'s actionlint job supersedes this verdict on workflow syntax.` | 0 | scope note beside a green |
 | `build check: <n> leak-scan exemption(s) declared in .fabrika.jsonc.` | 0 | scope note |
 | `build check: nothing is leak-scan exempt — <reason>.` | 0 | scope note |
 | `build check: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
@@ -1615,7 +1617,7 @@ $ fabrika build check --surface code
 - v1's discipline was prose-only (`SKILL.md:895-935`, exact-CI-command mandate with no
   enforcement); here the command set is the verb's, not the agent's memory.
 - ADR 0092 — zero diff is a refusal, not a vacuous green.
-- The gate's own answer (`ci.yml`) supersedes this verdict wherever they disagree; this verb
+- The gate's own answer supersedes this verdict wherever they disagree; this verb
   predicts, the gate decides (interface convention rule 6).
 
 ---

@@ -7,7 +7,7 @@
  * read by the verb, not the agent's memory: v1 mandated the exact CI commands in prose with nothing
  * enforcing it (`SKILL.md:895-935`).
  *
- * **This verb predicts; the gate decides.** `ci.yml` owns redness, and where the two disagree the
+ * **This verb predicts; the gate decides.** The repo's CI gate owns redness, and where they disagree the
  * gate's answer supersedes this one (interface convention rule 6). Nothing here re-reads CI.
  *
  * `--surface` is an **anchor, not a second classifier**: naming the surface is a judgement the skill
@@ -26,6 +26,8 @@
  */
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import type {Resolution} from "../config/key-group.ts";
+import {type CiSurface, ciKey} from "../config/keys/ci.ts";
 import {
 	CODE_VALIDATORS,
 	type CodeValidator,
@@ -71,12 +73,15 @@ const WORKFLOW_RE = /^\.github\/workflows\/[^/]+\.ya?ml$/;
 const ACTIONLINT = "actionlint";
 
 /**
- * The workflow whose job supersedes this verb on workflow syntax.
+ * The name of the workflow whose job supersedes this verb on workflow syntax, as the repo declares
+ * it under `ci.gateWorkflow` — phoenix's `ci.yml` when it declares nothing (#6026, #6298).
  *
- * It is phoenix's file name, not a fact about GitHub — a repo installing fabrika may call its gate
- * anything (#6026). One home here so the name a message states can later become a config read.
+ * A name, never an inspection: nothing here opens the file or matches a job inside it.
  */
-export const CI_WORKFLOW = "ci.yml";
+const gateWorkflowName = (
+	root: string,
+): Effect.Effect<Resolution<CiSurface>, never, FileSystem.FileSystem> =>
+	Effect.map(readConfigSource(root), (source) => resolve(loadConfig(source), ciKey));
 
 export interface CheckOptions {
 	readonly surface: string;
@@ -606,7 +611,7 @@ const readValidatorScope = (
  * `actionlint` is not a repo dependency anywhere — in phoenix CI installs a pinned tarball at job
  * time — so a tree that lacks it is the ordinary case, not a broken one. It is therefore run when
  * present and **disclosed** when absent, which is the "degrade, stated" answer `SKILL.md`'s
- * missing-surface table gives for an absent superseding authority: `ci.yml`'s `actionlint` job still
+ * missing-surface table gives for an absent superseding authority: the gate workflow's `actionlint` job still
  * decides. A declared validator is the other row of that table — it ships with the repo, so one that
  * cannot be spawned is fail-loud, UNKNOWN, never green.
  *
@@ -623,7 +628,11 @@ const runWorkflowSurface = (
 	workflows: ReadonlyArray<string>,
 	unvalidated: ReadonlyArray<string>,
 	noted: ReadonlyArray<string>,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+> =>
 	Effect.gen(function* () {
 		const declared = yield* readValidatorScope(fs, root);
 		if (declared._tag === "Unreadable") {
@@ -633,6 +642,15 @@ const runWorkflowSurface = (
 				noted,
 			);
 		}
+		const gate = yield* gateWorkflowName(root);
+		if (gate._tag === "Malformed" || gate._tag === "Unknown") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read \`ci\` from ${CONFIG_PATH} (${gate.reason}) — which workflow supersedes this verdict is UNKNOWN, never green.`,
+				noted,
+			);
+		}
+		const ciWorkflow = gate.value.gateWorkflow;
 		const scoped = [...noted, declared.note];
 		const ran: string[] = [];
 		const opened = new Set<string>();
@@ -687,7 +705,7 @@ const runWorkflowSurface = (
 			...(notInstalled === null
 				? []
 				: [
-						`${VERB}: ${ACTIONLINT} did NOT run (${notInstalled}) — ${CI_WORKFLOW}'s actionlint job supersedes this verdict on workflow syntax.`,
+						`${VERB}: ${ACTIONLINT} did NOT run (${notInstalled}) — ${ciWorkflow}'s actionlint job supersedes this verdict on workflow syntax.`,
 					]),
 			...(unopened.length === 0
 				? []
