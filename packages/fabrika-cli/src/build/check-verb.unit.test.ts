@@ -94,9 +94,15 @@ describe("surfaceMismatch — the anchor, not a second classifier", () => {
 
 	// #5301: the anchor refuses an ABSENT class, never a present other one — the asymmetry that left a
 	// mixed diff's markdown with no surface to run under.
-	it("accepts a mixed diff under every surface", () => {
+	it("refuses --surface workflows over a diff with no workflow file", () => {
+		expect(surfaceMismatch("workflows", ["a.ts", "README.md"])).toContain("no workflows file");
+	});
+
+	it("accepts a diff holding every class under every surface", () => {
 		for (const surface of SURFACES) {
-			expect(surfaceMismatch(surface, ["a.ts", "README.md"])).toBeNull();
+			expect(
+				surfaceMismatch(surface, ["a.ts", "README.md", ".github/workflows/ci.yml"]),
+			).toBeNull();
 		}
 	});
 });
@@ -106,14 +112,37 @@ describe("classifyDiff — matched-neither is a bucket, not an absence", () => {
 		expect(classifyDiff([".github/workflows/ci.yml", "scripts/x.sh", "a.ts", "R.md"])).toEqual({
 			code: ["a.ts"],
 			markdown: ["R.md"],
-			unvalidatable: [".github/workflows/ci.yml", "scripts/x.sh"],
+			workflows: [".github/workflows/ci.yml"],
+			unvalidatable: ["scripts/x.sh"],
 		});
 	});
 
 	it("puts every file in exactly one bucket", () => {
-		const files = ["a.tsx", "b.mjs", "c.json", "d.md", "e.mdx", "f.sql", "g.css", "LICENSE"];
-		const {code, markdown, unvalidatable} = classifyDiff(files);
-		expect([...code, ...markdown, ...unvalidatable].sort()).toEqual([...files].sort());
+		const files = [
+			"a.tsx",
+			"b.mjs",
+			"c.json",
+			"d.md",
+			"e.mdx",
+			"f.sql",
+			"g.css",
+			"LICENSE",
+			".github/workflows/ci.yaml",
+		];
+		const {code, markdown, workflows, unvalidatable} = classifyDiff(files);
+		expect([...code, ...markdown, ...workflows, ...unvalidatable].sort()).toEqual(
+			[...files].sort(),
+		);
+	});
+
+	it("claims workflow YAML only where GitHub reads it from", () => {
+		const {workflows, unvalidatable} = classifyDiff([
+			".github/workflows/ci.yml",
+			".github/actions/setup/action.yml",
+			"apps/web/config.yml",
+		]);
+		expect(workflows).toEqual([".github/workflows/ci.yml"]);
+		expect(unvalidatable).toEqual([".github/actions/setup/action.yml", "apps/web/config.yml"]);
 	});
 });
 
@@ -252,26 +281,33 @@ describe("runCheck", () => {
 		expect(JSON.parse(out.stdout).verdict).toBe("green");
 	});
 
-	// The #5229 regression: before the third bucket existed, this exact diff returned
+	// The #5229 regression: before the unvalidatable bucket existed, this diff shape returned
 	// {"verdict":"green","surface":"prose","ran":["markdown link + leak scan"]} having opened no file.
-	const WORKFLOW_ONLY = okOut(".github/workflows/ship.yml\nclaude-plugins/x/foo.sh\n");
+	// It was a workflow-plus-shell diff then; the workflow half has validators of its own since #5991,
+	// so the shape is now carried by two files that genuinely still have none.
+	const NO_SURFACE = okOut("migrations/0007.sql\nclaude-plugins/x/foo.sh\n");
 
 	it("refuses a wholly-unvalidatable diff on 22 under --surface prose — the false green", async () => {
-		const out = await run([...LANE_OK, [DIFF, WORKFLOW_ONLY]], {surface: "prose"});
+		const out = await run([...LANE_OK, [DIFF, NO_SURFACE]], {surface: "prose"});
 		expect(out.code).toBe(UNCLASSIFIED_DIFF);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"build check: no surface validates any of the 2 changed file(s) (.github/workflows/ship.yml, claude-plugins/x/foo.sh) — there is nothing here to run, so the verdict is a refusal, never green.",
+			"build check: no surface validates any of the 2 changed file(s) (claude-plugins/x/foo.sh, migrations/0007.sql) — there is nothing here to run, so the verdict is a refusal, never green.",
 		);
 	});
 
 	it("refuses the same diff on 22 under --surface plan", async () => {
-		const out = await run([...LANE_OK, [DIFF, WORKFLOW_ONLY]], {surface: "plan"});
+		const out = await run([...LANE_OK, [DIFF, NO_SURFACE]], {surface: "plan"});
+		expect(out.code).toBe(UNCLASSIFIED_DIFF);
+	});
+
+	it("refuses the same diff on 22 under --surface workflows — no workflow file either", async () => {
+		const out = await run([...LANE_OK, [DIFF, NO_SURFACE]], {surface: "workflows"});
 		expect(out.code).toBe(UNCLASSIFIED_DIFF);
 	});
 
 	it("refuses the same diff on 22 under --surface code, naming the honest reason", async () => {
-		const shell = fakeShell([...LANE_OK, [DIFF, WORKFLOW_ONLY]]);
+		const shell = fakeShell([...LANE_OK, [DIFF, NO_SURFACE]]);
 		const out = await Effect.runPromise(
 			Effect.provide(runCheck(options), Layer.merge(shell.layer, fakeFs({}).layer)),
 		);
@@ -781,5 +817,194 @@ describe("the prose link check still reds a dead link", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).verdict).toBe("green");
+	});
+});
+
+// #5991: a workflows-only diff refused under every surface, so the repo's own gates were the one
+// diff class a lane could not get an in-tree green on.
+describe("--surface workflows", () => {
+	const CONFIG = "/repo/trees/lane-a/.fabrika.jsonc";
+	const GUARD = ["node", "guards/bin.js", "path-filter-guard", "check"];
+	const declaring = (reads: ReadonlyArray<string>) => ({
+		[CONFIG]: JSON.stringify({workflowValidators: [{command: GUARD, reads}]}),
+	});
+	const DECLARED = declaring([".github/workflows/ci.yml"]);
+	const GUARD_LINE = /^node guards\/bin\.js path-filter-guard check$/;
+	const ACTIONLINT = /^actionlint /;
+	const WORKFLOWS = okOut(".github/workflows/ci.yml\n.github/workflows/publish.yml\n");
+	const NO_ACTIONLINT = [ACTIONLINT];
+
+	const workflows = (
+		script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+		files: Record<string, string> = DECLARED,
+		unstartable: ReadonlyArray<RegExp> = [],
+	) => {
+		const shell = fakeShell([...LANE_OK, [DIFF, WORKFLOWS], ...script], undefined, unstartable);
+		return Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, surface: "workflows"}),
+				Layer.merge(shell.layer, fakeFs({files}).layer),
+			),
+		).then((out) => ({out, calls: shell.calls}));
+	};
+
+	it("greens a workflows-only diff, naming actionlint and the declared guard as what ran", async () => {
+		const {out, calls} = await workflows([
+			[ACTIONLINT, okOut("")],
+			[GUARD_LINE, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			verdict: "green",
+			surface: "workflows",
+			tree: "/repo/trees/lane-a",
+			ran: ["actionlint", GUARD.join(" ")],
+			unvalidated: [],
+		});
+		expect(calls).toContain("actionlint .github/workflows/ci.yml .github/workflows/publish.yml");
+	});
+
+	it("reds on 18 when actionlint reds, printing its diagnostics above the verdict", async () => {
+		const {out} = await workflows([[ACTIONLINT, errOut('ci.yml:7:9: unexpected key "runs-on"')]]);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-2)).toBe('ci.yml:7:9: unexpected key "runs-on"');
+		expect(out.stderr.at(-1)).toBe("build check: red — actionlint failed; diagnostics above.");
+	});
+
+	it("bounds a runaway linter's output, so the verdict is not buried under it", async () => {
+		const flood = Array.from({length: 60}, (_, i) => `ci.yml:${i}:1: nope`).join("\n");
+		const {out} = await workflows([[ACTIONLINT, errOut(flood)]]);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.at(-2)).toBe("… 20 more line(s); re-run the command itself for the rest.");
+		expect(out.stderr.at(-1)).toBe("build check: red — actionlint failed; diagnostics above.");
+	});
+
+	it("reds on 18 when a declared guard reds, naming the command", async () => {
+		const {out} = await workflows([
+			[ACTIONLINT, okOut("")],
+			[GUARD_LINE, errOut("ci.yml's path filter names a path no job reads")],
+		]);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.at(-1)).toBe(
+			`build check: red — ${GUARD.join(" ")} failed; diagnostics above.`,
+		);
+	});
+
+	it("greens without actionlint, disclosing that it did not run", async () => {
+		const {out} = await workflows(
+			[[GUARD_LINE, okOut("")]],
+			declaring([".github/workflows/ci.yml", ".github/workflows/publish.yml"]),
+			NO_ACTIONLINT,
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).ran).toEqual([GUARD.join(" ")]);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual([]);
+		expect(out.stderr.some((line) => line.includes("actionlint did NOT run"))).toBe(true);
+	});
+
+	// The finding on #6220's first round: `ran.length > 0` proves a validator ran, never that it
+	// opened the file the diff changed. Only actionlint takes the changed paths; a declared guard
+	// reads the fixed set it names, so coverage is per file or it is a claim about nothing.
+	it("names a changed workflow no validator that ran opens in `unvalidated`", async () => {
+		const {out} = await workflows([[GUARD_LINE, okOut("")]], DECLARED, NO_ACTIONLINT);
+		expect(out.code).toBe(0);
+		const verdict = JSON.parse(out.stdout);
+		expect(verdict.ran).toEqual([GUARD.join(" ")]);
+		expect(verdict.unvalidated).toEqual([".github/workflows/publish.yml"]);
+		expect(
+			out.stderr.some((line) =>
+				line.includes("no validator that ran opens .github/workflows/publish.yml"),
+			),
+		).toBe(true);
+	});
+
+	it("refuses on 11 when every validator ran and none of them opened a changed file", async () => {
+		const {out} = await workflows(
+			[[GUARD_LINE, okOut("")]],
+			declaring([".github/workflows/deploy.yml"]),
+			NO_ACTIONLINT,
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(
+			"none of them opened any of the 2 changed workflow file(s)",
+		);
+	});
+
+	it("refuses the whole declared list when an entry names no file it reads", async () => {
+		const {out} = await workflows([], {[CONFIG]: JSON.stringify({workflowValidators: [GUARD]})}, [
+			ACTIONLINT,
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("no workflow validator could be executed");
+	});
+
+	it("refuses on 11 when nothing could run — a green there would have opened no file", async () => {
+		const {out} = await workflows([], {}, NO_ACTIONLINT);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("no workflow validator could be executed");
+		expect(out.stderr.at(-1)).toContain("actionlint is not installed here");
+	});
+
+	it("refuses on 11 when a declared guard is not installed, naming it", async () => {
+		const {out} = await workflows([[ACTIONLINT, okOut("")]], DECLARED, [GUARD_LINE]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(`${GUARD.join(" ")} could not be executed`);
+	});
+
+	it("refuses on 11 when the config cannot be read — the validator set is UNKNOWN", async () => {
+		const shell = fakeShell([...LANE_OK, [DIFF, WORKFLOWS], [ACTIONLINT, okOut("")]]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, surface: "workflows"}),
+				Layer.merge(shell.layer, fakeFs({files: {[CONFIG]: "{}"}, unreadable: [CONFIG]}).layer),
+			),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("which commands validate this repo's workflows is UNKNOWN");
+	});
+
+	it("refuses on 10 over a diff with no workflow file", async () => {
+		const shell = fakeShell([...LANE_OK, [DIFF, okOut("apps/web/src/App.tsx\n")]]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, surface: "workflows"}),
+				Layer.merge(shell.layer, fakeFs({}).layer),
+			),
+		);
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.at(-1)).toBe(
+			"build check: --surface workflows, but the diff changes no workflows file — the surface is provably wrong.",
+		);
+	});
+});
+
+describe("a mixed workflow-plus-code diff — each surface reads its own class and names the other", () => {
+	const MIXED = okOut(".github/workflows/ci.yml\napps/web/src/App.tsx\n");
+	const CONFIG = "/repo/trees/lane-a/.fabrika.jsonc";
+
+	it("runs the CI commands under --surface code, disclosing the workflow it did not read", async () => {
+		const out = await run([...LANE_OK, [DIFF, MIXED], [TYPECHECK, okOut("")], [LINT, okOut("")]]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual([".github/workflows/ci.yml"]);
+	});
+
+	it("lints the workflow under --surface workflows, disclosing the code it did not read", async () => {
+		const shell = fakeShell([...LANE_OK, [DIFF, MIXED], [/^actionlint /, okOut("")]]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, surface: "workflows"}),
+				Layer.merge(shell.layer, fakeFs({files: {[CONFIG]: "{}"}}).layer),
+			),
+		);
+		expect(out.code).toBe(0);
+		const verdict = JSON.parse(out.stdout);
+		expect(verdict.ran).toEqual(["actionlint"]);
+		expect(verdict.unvalidated).toEqual(["apps/web/src/App.tsx"]);
+		expect(shell.calls).toContain("actionlint .github/workflows/ci.yml");
+		expect(out.stderr.some((line) => line.includes("NOT covered by this verdict"))).toBe(true);
 	});
 });

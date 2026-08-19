@@ -276,7 +276,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `19` | refused: the requested push is unsafe (detached HEAD, or a non-fast-forward without `--force-with-lease`) |
 | `20` | proven: not admitted on the scope axis, out of focus — the issue's home is none of the declared milestones and no standing-lane label exempts it |
 | `21` | proven: not admitted on the audience axis, audience not agent — the issue's `ready-for:` label is not `ready-for:agent`, or is absent |
-| `22` | proven: every changed file falls outside all three surfaces' validators — there is nothing to run, so the verdict is a refusal, never a green |
+| `22` | proven: every changed file falls outside every surface's validators — there is nothing to run, so the verdict is a refusal, never a green |
 | `23` | proven: the local head does not contain the published remote head — the push would drop its commits |
 | `24` | proven: `git commit` ran and HEAD did not move — no commit was created |
 | `127` | the verb never ran at all (unresolved binary — the shell's code, not this process's) |
@@ -1292,7 +1292,7 @@ fabrika build check --surface code
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--surface` | enum: `code` \| `prose` \| `plan` | yes | — | the surface whose validators run; the skill names it, this verb anchors it |
+| `--surface` | enum: `code` \| `prose` \| `plan` \| `workflows` | yes | — | the surface whose validators run; the skill names it, this verb anchors it |
 
 **Output** — machine. On green, one JSON object:
 `{"verdict": "green", "surface": "code", "tree": "<abs tree root>", "ran": ["pnpm typecheck", "pnpm lint:worktree"], "unvalidated": []}`.
@@ -1300,7 +1300,7 @@ Red and unknown produce no stdout (`18` / `11`), diagnostics on stderr verbatim 
 
 `unvalidated` is always present and lists the changed files **this verdict does not cover** —
 computed against *this* surface's validators, so it holds both the class no surface validates
-(`.yml`, `.sh`, `.sql`, `.css`, …) and the class another surface would have read. Markdown under
+(`.sh`, `.sql`, `.css`, …) and the class another surface would have read. Markdown under
 `--surface code` is the common case, and its mirror is code under `--surface plan`. A non-empty list
 beside a green is the honest reading of a mixed diff, and the same line is repeated on stderr.
 
@@ -1334,6 +1334,10 @@ Per surface:
 - **prose** — changed markdown files: every relative link resolves against this tree; no
   machine-local path (the imported `doc-leaks.ts` predicate); every fabrika-doc reference cited by
   id exists.
+- **workflows** — the changed files under `.github/workflows/`: `actionlint` over exactly those
+  files, plus every command the repo declares under `.fabrika.jsonc`'s `workflowValidators`. A
+  declared command takes no paths, so the green covers a changed workflow only when `actionlint` ran
+  or a declared command's `reads` names it; the rest are reported in `unvalidated`.
 - **plan** — everything `prose` runs, plus the changed ledger's `## Dependencies` block parsing
   under the canonical grammar (defined in `build eligible`): issue refs (`#<int>`) resolve to real
   issues, ledger-local refs (`C<int>`) resolve within the ledger, and no child is its own
@@ -1370,22 +1374,51 @@ The surface anchor: the verb diffs the branch against its base and refuses a sur
 class the diff does not contain (`--surface prose` over a diff with no markdown is `10`) — the
 skill's judgment is taken, then checked against the tree, never silently accepted.
 
-**The anchor refuses an absent class, never a present other one.** One rule holds for all three
-surfaces, so a mixed code+markdown diff is runnable under every one of them: `code` runs the CI
-commands and names the markdown, `prose` scans the markdown and names the code, `plan` checks the
-ledger grammar and names the code. `prose` used to refuse on the *presence* of a code file, which
-left the repo's most common diff shape — one `.ts` plus one `.md` — with no invocation that opened
-the markdown at all, so the leak scan and the link resolver never ran on it (#5301). The presence of
+**The anchor refuses an absent class, never a present other one.** One rule holds for every surface,
+so a diff is runnable under every surface that claims a class in it: `code` runs the CI commands,
+`prose` scans the markdown, `plan` checks the ledger grammar, `workflows` lints the workflow YAML,
+and each of them names every changed file it did not open in `unvalidated`. A mixed code+markdown
+diff is runnable under three of them on that rule — `code` claims its code, and `prose` and `plan`
+both claim its markdown. `prose` used to refuse on the *presence* of a code file, which left the
+repo's most common diff shape — one `.ts` plus one `.md` — with no invocation that opened the
+markdown at all, so the leak scan and the link resolver never ran on it (#5301). The presence of
 another class is not a contradiction with the surface; it is exactly what `unvalidated` discloses.
 
-**Three file classes, because two cannot express "unvalidatable".** The anchor sorts each changed
-file into code, markdown, or **neither** — the third class is named, not an absence. A diff that is
-*wholly* the third class (only `.github/workflows/*.yml`, only `*.sh`) refuses on `22` under **every**
+**A named class for "unvalidatable", because an absence cannot be refused.** The anchor sorts each
+changed file into code, markdown, workflow YAML, or **none of them** — that last class is named, not
+an absence. A diff that is *wholly* it (only `*.sh`, only `*.sql`) refuses on `22` under **every**
 surface: no validator covers those files, so any verdict would be a green over an unread tree. The
 remedy is to extend a validator to cover the class, never to rename the surface — widening the code
 pattern to swallow `.yml` was considered and rejected, because it would claim `pnpm typecheck`
 validated a shell script (#5229). "Split the diff" is not offered as a remedy anywhere here: a lane
 cannot split a diff it has already written (#5301).
+
+**The workflow class is that remedy taken, not an exception to it** (#5991). `.github/workflows/**`
+sat in the unvalidatable bucket while CI validated it every run, so a lane whose whole diff was
+workflow YAML — the diff class where an unvalidated push costs the most, since the repo's own gates
+live there — could reach no green under any surface. It is a class of its own rather than part of
+`code` for the reason the rejected widening names: its validators are not `pnpm typecheck`.
+
+Its validators are declared, not compiled in: `.fabrika.jsonc`'s `workflowValidators` holds one entry
+per command the repo runs over its own workflows, each an argv plus the `reads` list naming the
+workflow files that command opens. Phoenix declares none, and that is the ordinary shape rather than
+a gap: the commands here that machine-read a workflow all live in `pipeline-cli`, which ADR 0238
+forbids any fabrika verb from invoking, so this repo's workflow surface stands on `actionlint` alone
+and refuses `11` where that is absent too. `actionlint` runs on top when this tree has it — it is a pinned tarball CI installs at job time and
+no repo's dependency, so its absence is the ordinary case and is **disclosed** beside the green
+rather than skipped in silence; `ci.yml`'s own `actionlint` job is the superseding authority there,
+as it is for every verdict this verb prints. A declared command that cannot be spawned is the other
+polarity: it ships with the repo, so it is `11`, UNKNOWN, naming the command.
+
+What holds both honest is per-file coverage, not a count of what ran. A declared guard takes no path
+arguments — it reads the fixed set it names — so "some validator ran" would not tell a reader that
+the workflow *this diff changed* was ever opened, and an early cut of this surface greened with an
+empty `unvalidated` list over exactly that (#5991). So a changed workflow counts as opened only when
+`actionlint` ran over it or a passing declared validator names it in `reads`; every other changed
+workflow is listed in the green's `unvalidated` and disclosed on stderr, and a run where **none** of
+them was opened — nothing ran at all, or everything that ran reads other files — is `11`, because
+that green is exactly the one the named-class design exists to refuse. This is why `reads` is
+mandatory and non-empty: an entry that names no file can only buy the false green back.
 
 Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`).
 
@@ -1409,6 +1442,13 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | `build check: cannot read the claim markers on #<n>: <reason> — the lane is UNKNOWN.` | 11 | refusal |
 | `build check: cannot read <file> (<reason>) — it is in the diff and is not absent, so the verdict is UNKNOWN, never green.` | 11 | refusal |
 | `build check: cannot read .fabrika.jsonc (<reason>) — which docs are leak-scan exempt is UNKNOWN, never green.` | 11 | refusal |
+| `build check: cannot read .fabrika.jsonc (<reason>) — which commands validate this repo's workflows is UNKNOWN, never green.` | 11 | refusal |
+| `build check: no workflow validator could be executed — actionlint is not installed here (<reason>) and this repo declares none — so no file was opened and the verdict is UNKNOWN, never green.` | 11 | refusal |
+| `build check: <n> workflow validator(s) ran, but none of them opened any of the <m> changed workflow file(s) (<files>) — actionlint did not run here (<reason>) and no declared validator reads them, so the verdict is UNKNOWN, never green.` | 11 | refusal |
+| `build check: no validator that ran opens <files> — reported in \`unvalidated\`, so this green claims nothing about them.` | 0 | scope note beside a green |
+| `build check: <n> workflow validator(s) declared in .fabrika.jsonc.` | 0 | scope note |
+| `build check: no repo workflow validator is declared — <reason>.` | 0 | scope note |
+| `build check: actionlint did NOT run (<reason>) — ci.yml's actionlint job supersedes this verdict on workflow syntax.` | 0 | scope note beside a green |
 | `build check: <n> leak-scan exemption(s) declared in .fabrika.jsonc.` | 0 | scope note |
 | `build check: nothing is leak-scan exempt — <reason>.` | 0 | scope note |
 | `build check: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
@@ -1444,6 +1484,9 @@ $ fabrika build check --surface code
 - #5301 — the disclosure was honest but there was still nowhere to send the markdown: `--surface
   prose` refused whenever one code file was present, so a mixed diff's prose was unscannable under
   every surface. The anchor now refuses an absent class rather than a present other one.
+- #5991 — the unvalidatable class swallowed `.github/workflows/**`, so a workflows-only lane refused
+  under every surface and pushed the repo's own gates with no in-tree evidence at all. Carved out as
+  its own class with its own validators, declared per repo.
 - #5304 — the green's disclosure was true at the file-open level and false at the validator level: a
   catch-all `PlatformError` skipped a file nothing could open, and `plan` claimed the whole `markdown`
   class while running only the grammar. A read that did not execute now refuses on `11`, and a
