@@ -399,6 +399,45 @@ export const rangeCommits = (
 		return ok(rows);
 	});
 
+/** One commit and the parents git recorded for it, in git's own order — `^1` first. */
+export interface ParentedCommit {
+	readonly sha: string;
+	readonly parents: ReadonlyArray<string>;
+}
+
+/**
+ * The commits between `base` and `tip` that descend from `base`, each with its parents, newest
+ * first.
+ *
+ * `--ancestry-path` because the question is what happened *to* `base` on the way to `tip`, not what
+ * else landed alongside it: the walk is then the few commits `base` flows through, and the merge
+ * that integrated it is one of them.
+ */
+export const rangeParents = (
+	base: string,
+	tip: string,
+): Shell<Attempt<ReadonlyArray<ParentedCommit>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", [
+			"rev-list",
+			"--parents",
+			"--ancestry-path",
+			`${base}..${tip}`,
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows: ParentedCommit[] = [];
+		for (const line of r.stdout.split("\n")) {
+			if (line.trim() === "") continue;
+			const names = line.trim().split(/\s+/);
+			const [sha, ...parents] = names;
+			if (sha === undefined || !names.every(isObjectName)) {
+				return fail(`unreadable rev-list row "${line.trim().slice(0, 80)}"`);
+			}
+			rows.push({sha, parents});
+		}
+		return ok(rows);
+	});
+
 /** The merge base of two commits, as a full object name. */
 export const mergeBase = (a: string, b: string): Shell<Attempt<string>> =>
 	Effect.gen(function* () {
