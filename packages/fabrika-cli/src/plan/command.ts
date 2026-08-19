@@ -42,6 +42,12 @@ const epicArg = Argument.integer("number").pipe(
 	Argument.withDescription("the epic whose ledger this verb reads"),
 );
 
+const tokenFlag = Flag.string("token").pipe(
+	Flag.withDescription(
+		"the claim token `build claim <epic> --purpose gate` handed this lane — its identity",
+	),
+);
+
 const digestFlag = Flag.string("digest").pipe(
 	Flag.withDescription(
 		"the 12-lowercase-hex scope digest `plan check` printed; the verb recomputes it and refuses on 21 if the plan moved",
@@ -76,14 +82,16 @@ const check = leafCommand(
 
 const flip = leafCommand(
 	"flip",
-	{number: epicArg, digest: digestFlag, repo: repoFlag},
-	Effect.fn(function* ({number, digest, repo}) {
-		yield* emit(yield* runFlip({number, digest, repo: Option.getOrNull(repo), env: process.env}));
+	{number: epicArg, digest: digestFlag, token: tokenFlag, repo: repoFlag},
+	Effect.fn(function* ({number, digest, token, repo}) {
+		yield* emit(
+			yield* runFlip({number, digest, token, repo: Option.getOrNull(repo), env: process.env}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("Flip every planned child to triaged, re-gating first."),
 	Command.withDescription(
-		'Flip every status:planned child to status:triaged, re-gating first, and report the OBSERVED result per child — flipped | already | unchanged | not-planned, read back from GitHub, never asserted from intent. status:triaged is added before status:planned is removed, always, so a child caught mid-write still carries a status: label. Zero planned children is an answer with terminal "nothing-to-flip", not a refusal. Exits 4 (the grammar refused during the re-gate), 7 (zero children), 8 (a write was attempted and no re-read could prove its outcome), 10 (not a type:epic, or --digest is not 12 lowercase hex), 11 (a read failed — nothing was written), 15 (this session does not hold the epic\'s claim), 20 (the re-gate derived hard defects), 21 (the plan moved since the check), 22 (at least one child is unchanged — the refs are on stderr), 23 (a label the flip must write is absent from the repo taxonomy — refused, never created, #4285). Example: fabrika plan flip 4300 --digest 4d90e1bb27ac',
+		'Flip every status:planned child to status:triaged, re-gating first, and report the OBSERVED result per child — flipped | already | unchanged | not-planned, read back from GitHub, never asserted from intent. status:triaged is added before status:planned is removed, always, so a child caught mid-write still carries a status: label. Zero planned children is an answer with terminal "nothing-to-flip", not a refusal. Exits 4 (the grammar refused during the re-gate), 7 (zero children), 8 (a write was attempted and no re-read could prove its outcome), 10 (not a type:epic, or --digest is not 12 lowercase hex), 11 (a read failed — nothing was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking, since ownership turns on the whole token and never the session id, #6060), 20 (the re-gate derived hard defects), 21 (the plan moved since the check), 22 (at least one child is unchanged — the refs are on stderr), 23 (a label the flip must write is absent from the repo taxonomy — refused, never created, #4285). Example: fabrika plan flip 4300 --digest 4d90e1bb27ac --token build:s-9f2e:c1a4d6f8-…',
 	),
 );
 
@@ -92,6 +100,7 @@ const verdict = leafCommand(
 	{
 		number: epicArg,
 		digest: digestFlag,
+		token: tokenFlag,
 		polarity: Flag.string("polarity").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -100,11 +109,12 @@ const verdict = leafCommand(
 		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({number, digest, polarity, repo}) {
+	Effect.fn(function* ({number, digest, token, polarity, repo}) {
 		yield* emit(
 			yield* runVerdict({
 				number,
 				digest,
+				token,
 				polarity: Option.getOrNull(polarity),
 				repo: Option.getOrNull(repo),
 				env: process.env,
@@ -115,7 +125,7 @@ const verdict = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the plan gate's verdict, bound to the scope digest."),
 	Command.withDescription(
-		'Post the gate\'s verdict comment, bound to the scope digest, and read it back. Prints {"answer":"posted","epic":n,"polarity":"PASS","digest":"…","skipped":[],"comment":id,"caveats":k}. The polarity is DERIVED by re-running the floor — a caller never supplies it. Optional stdin carries advisory caveats, one per line, "caveat: <kind> #<ref> — <text>", over the closed set ac-not-checkable | brief-fidelity | slice-too-broad | dependency-implied-not-declared; an empty stdin is an ordinary answer. Exits 4 (the grammar refused), 5/6 (the authored caveats carry a machine-local path, or are a bare @ path reference), 7 (zero children), 8 (posted and unprovable — UNKNOWN), 9 (posted but the read-back does not match), 10 (--digest malformed, not a type:epic, --polarity disagrees with the derived floor, an off-set caveat kind, or a caveat naming a ref outside the scanned set), 11 (a read failed — nothing was posted), 15 (this session does not hold the epic\'s claim), 21 (the plan moved since the check). Example: fabrika plan verdict 4300 --digest 4d90e1bb27ac < caveats.md',
+		'Post the gate\'s verdict comment, bound to the scope digest, and read it back. Prints {"answer":"posted","epic":n,"polarity":"PASS","digest":"…","skipped":[],"comment":id,"caveats":k}. The polarity is DERIVED by re-running the floor — a caller never supplies it. Optional stdin carries advisory caveats, one per line, "caveat: <kind> #<ref> — <text>", over the closed set ac-not-checkable | brief-fidelity | slice-too-broad | dependency-implied-not-declared; an empty stdin is an ordinary answer. Exits 4 (the grammar refused), 5/6 (the authored caveats carry a machine-local path, or are a bare @ path reference), 7 (zero children), 8 (posted and unprovable — UNKNOWN), 9 (posted but the read-back does not match), 10 (--digest malformed, not a type:epic, --polarity disagrees with the derived floor, an off-set caveat kind, or a caveat naming a ref outside the scanned set), 11 (a read failed — nothing was posted), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking, since ownership turns on the whole token and never the session id, #6060), 21 (the plan moved since the check). Example: fabrika plan verdict 4300 --digest 4d90e1bb27ac --token build:s-9f2e:c1a4d6f8-… < caveats.md',
 	),
 );
 

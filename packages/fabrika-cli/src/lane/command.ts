@@ -335,10 +335,16 @@ const brief = leafCommand(
 	),
 );
 
+const laneTokenFlag = Flag.string("token").pipe(
+	Flag.optional,
+	Flag.withDescription("the lane-claim token `lane claim` handed this driver — its identity"),
+);
+
 const claim = leafCommand(
 	"claim",
 	{
 		lane: laneArgument,
+		token: laneTokenFlag,
 		repo: Flag.string("repo").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -346,12 +352,13 @@ const claim = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({lane, repo}) {
+	Effect.fn(function* ({lane, token, repo}) {
 		yield* emit(
 			yield* onKey(lane, Option.none(), (key) =>
 				runLaneClaim({
 					key,
 					lane,
+					token: Option.getOrNull(token),
 					repo: Option.getOrNull(repo),
 					env: process.env,
 					uuid: randomUUID(),
@@ -363,7 +370,7 @@ const claim = leafCommand(
 ).pipe(
 	Command.withShortDescription("Race the driver's claim on a lane and win it or name the winner."),
 	Command.withDescription(
-		'Race the earliest AUTHORIZED lane-claim marker on the issue a lane drives: post this driver\'s token (lane:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Two drivers over one lane used to be invisible until the builders they spawned collided one level down (#5761). The namespace is the driver\'s own — `lane-claim:`/`lane:`, never `build-claim:`/`build:` — so the builder this driver spawns claims the same issue and wins; the two races never see each other. Authorization is the author\'s repository permission (ADR 0055); marker text confers nothing. No admission test runs here — the fence is the spawned builder\'s. Prints {"answer":"won","lane":"…","number":n,"token":"…"}. A `chore:<name>` lane, or any key that is not a board number, has no thread to race on and answers {"answer":"unclaimable","lane":"…","why":"…"} at exit 0 with nothing written. A lost race retracts this run\'s own marker and exits 31, never 0; an unset CLAUDE_CODE_SESSION_ID is 1. Exits 8 (the marker write failed — UNKNOWN, never a claim), 9 (the marker landed and does not read back), 11 (the marker set could not be read — UNKNOWN, never "unclaimed"), 21 (the key is not a lane key), 31 (proven lost). Example: fabrika lane claim 5492',
+		'Race the earliest AUTHORIZED lane-claim marker on the issue a lane drives: post this driver\'s token (lane:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Two drivers over one lane used to be invisible until the builders they spawned collided one level down (#5761). The namespace is the driver\'s own — `lane-claim:`/`lane:`, never `build-claim:`/`build:` — so the builder this driver spawns claims the same issue and wins; the two races never see each other. Authorization is the author\'s repository permission (ADR 0055); marker text confers nothing. No admission test runs here — the fence is the spawned builder\'s. Prints {"answer":"won","lane":"…","number":n,"token":"…"}. --token makes the re-claim idempotent per DRIVER: handed the token this driver already holds, a lane it already owns answers won with that same marker and writes nothing, so N claims can never leave N markers for a later release to peel off one at a time (#6087); a same-session marker under another nonce is a sibling driver and races normally. A `chore:<name>` lane, or any key that is not a board number, has no thread to race on and answers {"answer":"unclaimable","lane":"…","why":"…"} at exit 0 with nothing written. A lost race retracts this run\'s own marker and exits 31, never 0 — including when the winner is another driver of THIS session, since ownership turns on the whole token and never the session id (#6060); an unset CLAUDE_CODE_SESSION_ID, or a --token that is not a lane-claim token of this session, is 1. Exits 8 (the marker write failed — UNKNOWN, never a claim), 9 (the marker landed and does not read back), 11 (the marker set could not be read — UNKNOWN, never "unclaimed"; this run\'s own marker is retracted first), 21 (the key is not a lane key), 31 (proven lost). Example: fabrika lane claim 5492',
 	),
 );
 
@@ -371,6 +378,7 @@ const release = leafCommand(
 	"release",
 	{
 		lane: laneArgument,
+		token: laneTokenFlag,
 		repo: Flag.string("repo").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -378,17 +386,23 @@ const release = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({lane, repo}) {
+	Effect.fn(function* ({lane, token, repo}) {
 		yield* emit(
 			yield* onKey(lane, Option.none(), (key) =>
-				runLaneRelease({key, lane, repo: Option.getOrNull(repo), env: process.env}),
+				runLaneRelease({
+					key,
+					lane,
+					token: Option.getOrNull(token),
+					repo: Option.getOrNull(repo),
+					env: process.env,
+				}),
 			),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Retract this driver's own lane-claim marker."),
 	Command.withDescription(
-		'Retract this driver\'s own lane-claim marker, so the lane is drivable again — run at both ends of the loop, the terminal fold and the park. It refuses to delete a marker this session does not hold: a driver never retracts another driver\'s claim. Prints {"answer":"released","lane":"…","number":n}. A `chore:<name>` lane, or any key that is not a board number, was never claimable and answers {"answer":"inert","lane":"…","why":"…"} at exit 0. Exits 1 (CLAUDE_CODE_SESSION_ID unset), 8 (the retraction failed — whether the claim is still held is UNKNOWN), 11 (the marker set could not be read), 21 (the key is not a lane key), 31 (proven: held by another driver, or no claim exists). Example: fabrika lane release 5492',
+		'Retract this DRIVER\'s OWN lane-claim marker, and only its own, so the lane is drivable again — run at both ends of the loop, the terminal fold and the park. --token says which driver that is: ownership turns on the whole token, so a sibling driver of one session is a foreign holder here and its marker is never swept (#6060). Every marker carrying this driver\'s token goes, not merely the winning one, so a duplicate a re-claim left behind cannot outlive the release (#6087). Prints {"answer":"released","lane":"…","number":n}. A `chore:<name>` lane, or any key that is not a board number, was never claimable and answers {"answer":"inert","lane":"…","why":"…"} at exit 0 — and needs no token, having never been handed one. Exits 1 (CLAUDE_CODE_SESSION_ID unset, --token omitted on a board number, or a --token that is not a lane-claim token of this session), 8 (the retraction failed — whether the claim is still held is UNKNOWN), 11 (the marker set could not be read), 21 (the key is not a lane key), 31 (proven: held by another driver, or no claim exists). Example: fabrika lane release 5492 --token lane:s-9f2e:c1a4d6f8-…',
 	),
 );
 

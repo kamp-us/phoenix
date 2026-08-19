@@ -27,6 +27,7 @@ import {
 	epic,
 	labelSet,
 	milestones,
+	TOKEN,
 } from "./fixtures.test-support.ts";
 import {manifestPath, parseManifest, renderRunRecord, runJsonPath} from "./run.ts";
 
@@ -75,6 +76,7 @@ const options = {
 	assignee: null as string | null,
 	milestone: HOME as string | null,
 	labels: [] as ReadonlyArray<string>,
+	token: TOKEN,
 	repo: null,
 	env,
 };

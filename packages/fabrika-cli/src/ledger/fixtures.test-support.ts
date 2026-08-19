@@ -7,7 +7,7 @@
  * for the same reason the link and unlink take it: it is the field the relation is keyed on.
  */
 
-import {comments, LANE_UUID, marker, NONCE} from "../build/fixtures.test-support.ts";
+import {comments, LANE_TOKEN, LANE_UUID, marker, NONCE} from "../build/fixtures.test-support.ts";
 import {okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PLAN_SECTIONS} from "./plan-block.ts";
@@ -146,7 +146,7 @@ export const milestones = (...rows: ReadonlyArray<readonly [number, string]>): E
 export const issueRows = (...rows: ReadonlyArray<readonly [number, string]>): ExecResult =>
 	okOut(rows.map(([number, title]) => `${number}\t${title}`).join("\n"));
 
-/** The claim on the epic, held by this session under the lane the run key is derived from. */
+/** The claim on the epic, held by the lane `TOKEN` names — the one the run key is derived from. */
 export const CLAIMED: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[
 		new RegExp(`^gh api --paginate repos/${REPO}/issues/${EPIC}/comments`),
@@ -154,5 +154,8 @@ export const CLAIMED: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	],
 	[new RegExp(`^gh api repos/${REPO}/collaborators/agent/permission`), okOut("write\n")],
 ];
+
+/** The `--token` the fixture lane passes: the claim `CLAIMED` posts, read back as an identity. */
+export const TOKEN = LANE_TOKEN;
 
 export {NONCE};

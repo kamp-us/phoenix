@@ -71,9 +71,18 @@ node <fabrika> lane claim $lane_key
 Exit `0` is yours to drive — `won` on an issue lane, `unclaimable` on a `chore:<name>` key, which
 carries no board number for a marker to sit on and so races with nobody. Exit `31` is a **proven
 loss**: another driver holds this lane, its token is named on stderr, and this run ends `LANE-HELD`
-having emitted no ledger and spawned no shell. `1` (no `CLAUDE_CODE_SESSION_ID`), `8` (the marker
-write is UNKNOWN), `9` (it landed and does not read back) and `11` (the marker set could not be
-read) all end `STOPPED` naming the code — an unproven claim is never driven through.
+having emitted no ledger and spawned no shell. `1` (no `CLAUDE_CODE_SESSION_ID`, or a `--token` that
+is not a lane-claim token of this session), `8` (the marker write is UNKNOWN), `9` (it landed and
+does not read back) and `11` (the marker set could not be read) all end `STOPPED` naming the code —
+an unproven claim is never driven through.
+
+**Keep the `token` a `won` prints — it is this driver's name, and `lane release` takes it as
+`--token`.** One session routinely spawns several operators, so a release handed only the session id
+cannot tell a sibling driver's marker from yours, and used to delete it: an unrecoverable retraction
+that left the lane reading unclaimed ([#6060](https://github.com/kamp-us/phoenix/issues/6060)).
+Re-claiming with the token you already hold is the idempotent path — it answers `won` with the same
+marker and writes nothing, rather than stacking a second marker a single release cannot clear
+([#6087](https://github.com/kamp-us/phoenix/issues/6087)).
 
 The claim is the driver's own namespace, `lane-claim:`, not the builder's `build-claim:`. That is
 what lets the builder you spawn on this very number claim it and win: two markers on one thread,
@@ -463,11 +472,16 @@ comment or the transcript has landed, so a successor that wins the lane the mome
 the artifact already there:
 
 ```bash
-node <fabrika> lane release $lane_key
+node <fabrika> lane release $lane_key --token <lane-claim-token>
 ```
 
-Exit `0` is released (or `inert` on a chore key, which was never claimable). `31` means this session
-holds no claim — say so and stop; you never retract another driver's marker. `8` or `11` leaves
+The token is the one step 1's `won` printed — omit it on a board lane and the verb refuses on `1`
+rather than guessing which driver is releasing. A `chore:<name>` key needs none, having never been
+handed one.
+
+Exit `0` is released (or `inert` on a chore key, which was never claimable). `31` means this driver
+holds no claim — say so and stop; you never retract another driver's marker, including a sibling
+driver of your own session. `8` or `11` leaves
 whether the lane is still held UNKNOWN: name the code in your terminal line rather than reporting a
 release you cannot prove. A `STOPPED` run releases too — a claim outliving the driver that took it
 is the same lane nobody can pick up.
