@@ -47,8 +47,11 @@ const READY_FOR_PREFIX = "ready-for:";
 /**
  * The type whose deliverable is a recorded choice rather than a pull request — `/adr`'s lane.
  *
- * Triage routes such an issue to `ready-for:human`, so `type:decision` and `ready-for:agent` are
- * mutually exclusive by construction. That is the collision {@link RepairClaim} answers.
+ * Triage routes such an issue to `ready-for:human` by default, which is the collision
+ * {@link RepairClaim} answers: an ADR PR's repair lane would otherwise fail a fence it could not
+ * pass. The default is not an exclusion — a decision issue carrying a founder ruling comment is
+ * buildable as transcription and is stamped `ready-for:agent` (ADR 0300), so this axis reads the
+ * audience label it finds and never infers one from the type.
  */
 export const DECISION_TYPE_LABEL = "type:decision";
 

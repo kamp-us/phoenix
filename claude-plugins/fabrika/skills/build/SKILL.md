@@ -57,7 +57,15 @@ against. `focus` says whether a focus is declared at all — an inert fence is a
 shorter pool to explain.
 Two refusals before claiming: a `type:decision`'s deliverable is a recorded choice
 (`/adr`'s, not yours), and a rendered-visual deliverable is outside this skill's modality
-(`build-ui`'s) — **do not claim either**. This skill is not a router: on its own text surfaces
+(`build-ui`'s) — **do not claim either**. The decision refusal has one arm, and a citation is the only
+thing that opens it: when the issue carries a founder ruling comment that already made the choice,
+the deciding is done and the writing is all that is left, so claim it and transcribe — turn that
+ruling into the ADR or amendment it names, nothing more, and record the comment's URL in the PR body
+as the ruling you transcribed (ADR [0300](../../../../.decisions/0300-a-cited-ruling-makes-a-decision-buildable.md)).
+**With no citable ruling comment the refusal stands exactly as it reads above.** You never judge a
+decision settled yourself: "this looks settled" is not a citation, a converged thread is not a
+citation, and a gap the ruling left open goes back to the founder rather than getting filled here.
+This skill is not a router: on its own text surfaces
 it executes the whole loop itself. In pick mode neither the argument nor your caller gave you a
 number, so the one `pick` returned stands in its place everywhere below. Then gate your choice:
 
@@ -274,11 +282,12 @@ fabrika build claim $issue_or_pr_number
 fabrika build verdicts --pr $issue_or_pr_number
 ```
 
-**Step 1's "never claim a `type:decision`" is about picking one up fresh, and it does not reach
-here.** An ADR PR is served by a decision issue, and repairing it is the ordinary path: the claim
-admits it with no flag and no `--override`, and says so on its purpose line (#5914). Everything else
-still refuses — the same decision issue claimed by its own number is `21`, and the scope fence binds
-this claim exactly as it binds a build.
+**Step 1's refusal of a `type:decision` is about picking one up fresh, and it does not reach here.**
+An ADR PR is served by a decision issue, and repairing it is the ordinary path: the claim admits it
+with no flag and no `--override`, and says so on its purpose line (#5914) — no citation needed, since
+the PR being in flight is already the proof a ruling was transcribed. Everything else still refuses —
+the same decision issue claimed by its own number reads its own audience label and is `21` on a
+`ready-for:human`, and the scope fence binds this claim exactly as it binds a build.
 
 The fold is the only entry: paginated, current-head, per-gate — polarity visible, round count
 included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer, but an
