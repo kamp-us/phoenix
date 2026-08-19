@@ -39,10 +39,12 @@
 # The standalone *-guard packages were folded into pipeline-cli and deleted (#1003); ci-required
 # stays standalone (ADR 0092) and keeps its own owner line.
 /packages/ci-required/          @kamp-us/control-plane
-# Control-plane: fabrika-cli's CI-check core — the `ci-required` verdict logic the `main` ruleset's
-# single always-on required context runs (ADR 0299, extending ADR 0218's enforcement-core shape).
-# This ONE directory and nothing wider: the rest of `packages/fabrika-cli/` is ordinary (founder
-# ruling on #6164). Must stay in lockstep with the §CP `^packages/fabrika-cli/src/ci/` branch.
+# Control-plane: fabrika-cli's CI-check core — where the `ci-required` verdict logic behind the
+# `main` ruleset's single always-on required context is moving (open child #6099 of epic #5720; the
+# dir does not exist yet, and `ci.yml` still runs the pipeline-cli bin). This row lands ahead of the
+# move so the core arrives covered (ADR 0299, extending ADR 0218's enforcement-core shape). This ONE
+# directory and nothing wider: the rest of `packages/fabrika-cli/` is ordinary (founder ruling on
+# #6164). Must stay in lockstep with the §CP `^packages/fabrika-cli/src/ci/` branch.
 /packages/fabrika-cli/src/ci/   @kamp-us/control-plane
 # Control-plane: pipeline-cli's ENFORCEMENT CORE only, not the whole package (ADR 0218, amending
 # ADR 0100). Must stay in lockstep with the three §CP `packages/pipeline-cli/` regex branches —

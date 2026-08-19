@@ -1136,7 +1136,8 @@ hold and the boundary cannot rot as skills are added (ADR 0227).
 A PR touching **any** path in this set is **control plane**: `ship-it` never auto-merges it off a
 gate verdict alone — it merges only once a `@kamp-us/control-plane` member approves at head, and
 `ship-it` then enqueues it. Every widening of the boundary, and the reason for each, is an ADR —
-0053, 0065, 0073, 0100, 0103, 0135, 0150, 0174, 0193, 0212, 0218, 0227, 0299 — plus the founder rulings on
+0053, 0065, 0073, 0100, 0103, 0135, 0150, 0174, 0193, 0212, 0218, 0227, 0299 — plus the founder
+rulings on
 [#3402](https://github.com/kamp-us/phoenix/issues/3402) and
 [#4446](https://github.com/kamp-us/phoenix/issues/4446). Read them in `.decisions/`, where ADR
 discovery is the CLAUDE.md contract; they are not restated here.
