@@ -38,6 +38,7 @@ describe("splitTopLevelBranches", () => {
 			"(\\.claude|\\.github)/",
 			"\\.claude-plugin/",
 			"packages/ci-required/",
+			"packages/fabrika-cli/src/ci/",
 			"packages/pipeline-cli/src/[^/]+$",
 			"packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/",
 			"packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$",
@@ -115,6 +116,7 @@ describe("cpPaths over the live regex", () => {
 			".github/",
 			".claude-plugin/",
 			"packages/ci-required/",
+			"packages/fabrika-cli/src/ci/",
 			"packages/pipeline-cli/src/*",
 			"packages/pipeline-cli/src/tools/ci-required/",
 			"packages/pipeline-cli/src/tools/codeowners-cp/",
@@ -197,6 +199,7 @@ describe("findUncovered — the drift check", () => {
 		"/.github/ @usirin",
 		"/.claude-plugin/ @usirin",
 		"/packages/ci-required/ @usirin",
+		"/packages/fabrika-cli/src/ci/ @usirin",
 		"/packages/pipeline-cli/src/* @usirin",
 		"/packages/pipeline-cli/src/tools/ci-required/ @usirin",
 		"/packages/pipeline-cli/src/tools/codeowners-cp/ @usirin",
@@ -225,6 +228,7 @@ describe("findUncovered — the drift check", () => {
 			"/.github/ @usirin",
 			"/.claude-plugin/ @usirin",
 			"/packages/ci-required/ @usirin",
+			"/packages/fabrika-cli/src/ci/ @usirin",
 			"/packages/pipeline-cli/ @usirin",
 			"/biome.jsonc @usirin",
 			"/biome-plugins/ @usirin",
@@ -246,6 +250,7 @@ describe("findUncovered — the drift check", () => {
 		].join("\n");
 		const uncovered = findUncovered(paths, parseCodeownersPatterns(stale)).map((p) => p.path);
 		expect(uncovered).toEqual([
+			"packages/fabrika-cli/src/ci/",
 			"packages/pipeline-cli/src/*",
 			"packages/pipeline-cli/src/tools/ci-required/",
 			"packages/pipeline-cli/src/tools/codeowners-cp/",

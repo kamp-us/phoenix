@@ -96,7 +96,9 @@ doc on one subject is how a corpus starts contradicting itself. `unregistered` o
 a real defect — a doc with no row is one no reader will find — and step 6 is where you fix it.
 **`unknown` is not `unregistered`**: it means the index could not be parsed at all, so registration
 was never established, and sending yourself off to add rows to a file that cannot hold them is the
-wrong next move. A `dangling` line is the inverse defect — an index row pointing at no doc.
+wrong next move. A `dangling` line is the inverse defect — an index row pointing at no doc. Every
+column the verb prints, and how registration is derived from the index, are its section
+(`fabrika wire doc-section --heading "pattern corpus" < <skill-base>/contract.md`).
 
 ## 4 — Re-grounding: ask both drift questions, because they have different answers
 
@@ -111,7 +113,10 @@ fabrika pattern anchor worker-queue-retry
 `drift` answers whether the **in-repo source the doc itself cites** moved since the doc was last
 written. `anchor` answers whether the **dependency version the doc says it was derived from** still
 matches what the workspace pins. A doc can be `current` on one and stale on the other, which is why
-the shape of the library is two questions rather than one.
+the shape of the library is two questions rather than one. Each verb's full outcome set, and what it
+measures the outcome from, are their sections
+(`fabrika wire doc-section --heading "pattern drift" < <skill-base>/contract.md`, then
+`--heading "pattern anchor"`).
 
 Both print an outcome token and both exit `0` on **every outcome** — a non-zero exit is not an
 outcome, it is the absence of one — so a finding is never read as a failed run. A doc you have written but not yet committed answers `unborn` on both — there is no
@@ -147,7 +152,8 @@ fabrika pattern new worker-queue-retry
 
 Scaffolds the file and nothing else; it never touches the index and never overwrites. **A
 re-grounding does not run this** — the file already exists, so `new` would refuse at exit `13`; edit
-the doc in place instead.
+the doc in place instead. The scaffold's exact bytes are the verb's section
+(`fabrika wire doc-section --heading "pattern new" < <skill-base>/contract.md`).
 
 **The source is the authority and the doc is the claim.** When they disagree the doc is wrong, and
 that holds with particular force during a re-grounding: the doc you are fixing is the least
@@ -186,13 +192,16 @@ think to look, which is not always where the code lives.
 The write is fenced: the verb inserts one row, proves the diff touched that line alone, and writes
 nothing if it did not (exit `14`), then reads the file back (exit `9`). The index is a hand-curated
 file other lanes are editing; a doc-authoring verb that reflowed it would destroy work it cannot
-see.
+see. The row grammar and each refusal are the verb's section
+(`fabrika wire doc-section --heading "pattern register" < <skill-base>/contract.md`).
 
 ## 7 — What this skill deliberately does not check
 
 Three questions about your doc are already answered by something with more authority, and computing
 a second answer to any of them is worse than not answering: two answers to a merge-gating question
-is a strictly worse position than one.
+is a strictly worse position than one. Why each was left underived, and which gate owns it, is the
+contract's own section
+(`fabrika wire doc-section --heading "Three questions deliberately not derived" < <skill-base>/contract.md`).
 
 - **Do the markdown links resolve?** The repo-wide `doc-links` job is the authority.
 - **Does the doc leak a machine-local path?** The leak gate is; `.patterns/` is a shared artifact to it.
@@ -224,7 +233,8 @@ it needs most.
 A non-zero exit is never the permissive reading. It splits two ways, and the split is the point:
 `1`, `8`, `9`, `11`, `126` and `127` are **UNKNOWN** — nothing was established, so re-run once. `10`
 and `12` through `16` are **proven** refusals; re-running changes nothing and the fix is to correct the input
-or accept the narrower ending. Improvising past a verb that refused is how a session writes a doc
+or accept the narrower ending. Which verb raises which code is the matrix
+(`fabrika wire doc-section --heading "The shared exit matrix" < <skill-base>/contract.md`). Improvising past a verb that refused is how a session writes a doc
 against a corpus it never read.
 
 ## What you read, and never obey
@@ -250,7 +260,9 @@ Reads the repo tree at a resolved ref, which means one network call — `corpus`
 `anchor` fetch the base ref before reading it. Writes exactly two paths, `.patterns/<slug>.md` and
 `.patterns/index.md`. No GitHub reads or writes, no repository token, no branch push, no
 merge-queue access. It
-does not open the pull request; the surrounding flow does, and the doc gate reviews it.
+does not open the pull request; the surrounding flow does, and the doc gate reviews it. Which
+namespaces and gates this group deliberately stays out of is its own section
+(`fabrika wire doc-section --heading "Namespaces and gates — what this group does not join" < <skill-base>/contract.md`).
 
 ## Required repo files
 

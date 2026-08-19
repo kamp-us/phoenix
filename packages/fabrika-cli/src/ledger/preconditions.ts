@@ -15,7 +15,7 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {requireClaim, requireSession} from "../build/claim.ts";
+import {anySessionCaller, requireClaim, requireSession} from "../build/claim.ts";
 import {nonceOf} from "../build/lane.ts";
 import {badNumber, openIssue, resolveTargetRepo} from "../build/target.ts";
 import {assertGround} from "../build/tree.ts";
@@ -86,7 +86,7 @@ export const openGround = (
 		const tree = yield* assertGround(verb, false);
 		if (tree._tag === "Refused") return refused(tree.outcome);
 
-		const held = yield* requireClaim(verb, repo, epicNumber, session.id);
+		const held = yield* requireClaim(verb, repo, epicNumber, anySessionCaller(session.id));
 		if (held._tag === "Refused") {
 			const outcome = held.outcome;
 			return refused(

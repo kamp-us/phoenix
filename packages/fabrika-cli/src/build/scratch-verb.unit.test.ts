@@ -4,7 +4,7 @@ import {fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {FAILED} from "../verb.ts";
 import {CLAIM_NOT_MINE, OFF_VOCABULARY} from "./codes.ts";
-import {comments, issue, LANE_UUID, marker, NONCE} from "./fixtures.test-support.ts";
+import {comments, issue, LANE_TOKEN, LANE_UUID, marker, NONCE} from "./fixtures.test-support.ts";
 import {runScratch} from "./scratch-verb.ts";
 
 const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
@@ -20,6 +20,7 @@ const CLAIMED: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 const options = {
 	number: 4312,
 	slug: "notes",
+	token: LANE_TOKEN,
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
 		string,

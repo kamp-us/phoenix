@@ -5,7 +5,8 @@ import {
 	stateNode,
 	twoPhaseWorkflow,
 } from "./fixtures.test-support.ts";
-import {compile, OPERATOR_EVENTS, topology} from "./machine.ts";
+import {applyEvent, foldLog, type LogEntry} from "./fold.ts";
+import {type CompiledLane, compile, OPERATOR_EVENTS, topology} from "./machine.ts";
 
 const compiled = (workflow: unknown) => {
 	const result = compile(workflow);
@@ -16,6 +17,26 @@ const compiled = (workflow: unknown) => {
 const defined = <T>(value: T | undefined): T => {
 	if (value === undefined) throw new Error("expected the compiled task to be present");
 	return value;
+};
+
+/** Drive one task's events through `applyEvent`, returning the leaf state each one folded to. */
+const leaves = (
+	lane: CompiledLane,
+	task: string,
+	events: ReadonlyArray<string>,
+): ReadonlyArray<string> => {
+	const log: LogEntry[] = [];
+	const statesOf = () => {
+		const fold = foldLog(lane, log);
+		if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
+		return fold.states;
+	};
+	return events.map((event) => {
+		const applied = applyEvent(lane, statesOf(), task, event, "2026-08-17T00:00:00.000Z");
+		if (applied._tag !== "Applied") throw new Error(`${task} ${event}: ${applied.reason}`);
+		log.push(applied.entry);
+		return defined(statesOf()[task]).type;
+	});
 };
 
 const defectsOf = (workflow: unknown): string => {
@@ -39,6 +60,7 @@ describe("the compiler — structural recognition", () => {
 		expect(defined(lane.tasks.issue).initial).toEqual({type: "queued", retries: 0, maxRetries: 2});
 		expect([...defined(lane.tasks.issue).finals].sort()).toEqual(["frozen", "shipped"]);
 		expect([...defined(lane.tasks.issue).errorFinals]).toEqual(["frozen"]);
+		expect([...defined(lane.tasks.issue).openFinals]).toEqual(["frozen"]);
 	});
 
 	it("reads a guarded array as retry-or-fallthrough by shape, never by guard name", () => {
@@ -66,8 +88,30 @@ describe("the compiler — structural recognition", () => {
 
 		expect(defined(summary.tasks.issue).states.queued).toEqual(["WIP", "BLOCKED"]);
 		expect(defined(summary.tasks.issue).states.review).toEqual(["PASS", "BLOCKED", "FAIL"]);
+		expect(defined(summary.tasks.issue).states.ship).toEqual(["DONE", "BLOCKED", "FAIL"]);
 		expect(defined(summary.tasks.issue).states.shipped).toEqual([]);
+		// `frozen` is a final that carries a door: a park the lane trips on, not an end (ADR 0297).
+		expect(defined(summary.tasks.issue).states.frozen).toEqual(["UNBLOCKED"]);
 		expect(summary.trigger).toBeUndefined();
+	});
+
+	it("re-enters build on a FAIL at ship, and freezes once the retries are spent (#5807)", () => {
+		const lane = compiled(coderWorkflow());
+		const toShip = ["WIP", "DONE", "PASS"];
+		const roundTrip = ["FAIL", "DONE", "PASS"];
+
+		expect(leaves(lane, "issue", [...toShip, ...roundTrip, ...roundTrip, "FAIL"])).toEqual([
+			"build",
+			"review",
+			"ship",
+			"build",
+			"review",
+			"ship",
+			"build",
+			"review",
+			"ship",
+			"frozen",
+		]);
 	});
 
 	it("compiles the committed chore template, carrying its declared trigger", () => {
@@ -82,13 +126,12 @@ describe("the compiler — structural recognition", () => {
 			maxRetries: 2,
 		});
 		expect([...defined(lane.tasks.park_sweep).errorFinals]).toEqual(["frozen"]);
+		expect([...defined(lane.tasks.park_sweep).openFinals]).toEqual(["frozen"]);
 	});
 
 	it("holds the chore template to the same six events as every other lane", () => {
 		const summary = topology(compiled(choreWorkflow()));
-		const listened = new Set(
-			Object.values(defined(summary.tasks.park_sweep).states).flatMap((events) => events),
-		);
+		const listened = new Set(Object.values(defined(summary.tasks.park_sweep).states).flat());
 
 		for (const event of listened) expect(OPERATOR_EVENTS).toContain(event);
 	});

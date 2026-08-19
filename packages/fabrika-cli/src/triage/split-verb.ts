@@ -44,6 +44,7 @@ import {
 	isExistingChild,
 	normalizeTitle,
 } from "./split.ts";
+import {guardTarget} from "./target-guard.ts";
 
 const VERB = "triage split";
 const QUEUE_LABEL = "status:needs-triage";
@@ -170,6 +171,17 @@ export const runSplit = Effect.fn(function* (options: SplitOptions) {
 	if (parentIssue._tag === "Unknown") {
 		return unreadable(`parent #${parent}`, repo, parentIssue.reason, []);
 	}
+
+	const guarded = yield* guardTarget({
+		verb: VERB,
+		repo,
+		issue: parent,
+		target: parentIssue.value,
+		noun: "parent",
+		env: options.env,
+		now: options.now,
+	});
+	if (guarded !== null) return guarded;
 
 	// Read 1's label is a hardcoded literal while --repo is generic, so a renamed label or a
 	// scope-limited token returns HTTP 200 with `[]` — not a read failure, and therefore not 11. The

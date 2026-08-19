@@ -70,6 +70,21 @@ describe("readEpicStories", () => {
 		const body = "### User stories\n\n1. one\n\n### Other\n\n2. not a story\n";
 		expect(readEpicStories(body)).toEqual({_tag: "Stories", ids: [1]});
 	});
+
+	/**
+	 * The boundary is `../build/dependencies.ts`'s, imported rather than restated, so this reader and
+	 * the topology reader cannot disagree about where a last section ends (#5816).
+	 */
+	it("stops at a thematic break, so an appended amendment adds no stories", () => {
+		const body =
+			"### User stories\n\n1. one\n\n---\n\n## Amendment — 2026-08-16\n\n2. not a story\n";
+		expect(readEpicStories(body)).toEqual({_tag: "Stories", ids: [1]});
+	});
+
+	it("stops at whichever of the break and the heading comes first", () => {
+		const heldByHeading = "### User stories\n\n1. one\n\n### Other\n\n2. no\n\n---\n\n3. no\n";
+		expect(readEpicStories(heldByHeading)).toEqual({_tag: "Stories", ids: [1]});
+	});
 });
 
 describe("readChildStories", () => {

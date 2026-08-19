@@ -293,7 +293,16 @@ describe("emitMachine", () => {
 						],
 					},
 				},
-				ship: {on: {"EPIC_4300.DONE": "shipped", "EPIC_4300.BLOCKED": "human:cp-approval"}},
+				ship: {
+					on: {
+						"EPIC_4300.DONE": "shipped",
+						"EPIC_4300.BLOCKED": "human:cp-approval",
+						"EPIC_4300.FAIL": [
+							{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
+							{target: "human:epic-review"},
+						],
+					},
+				},
 				shipped: {type: "final"},
 				"human:epic-review": {type: "final"},
 			},
@@ -306,6 +315,25 @@ describe("emitMachine", () => {
 		expect(
 			drive(compiled, [...LAND_ALL, ["epic_4300", "PASS"], ["epic_4300", "DONE"]]),
 		).toMatchObject({stateValue: "complete", status: "done"});
+	});
+
+	it("takes a FAIL at the epic ship back to review, and parks it once the retries are spent", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		const toShip: ReadonlyArray<readonly [string, string]> = [...LAND_ALL, ["epic_4300", "PASS"]];
+		expect(drive(compiled, [...toShip, ["epic_4300", "FAIL"]]).stateValue).toEqual({
+			epic: {epic_4300: "review"},
+		});
+
+		const spent = drive(compiled, [
+			...toShip,
+			["epic_4300", "FAIL"],
+			["epic_4300", "PASS"],
+			["epic_4300", "FAIL"],
+			["epic_4300", "PASS"],
+			["epic_4300", "FAIL"],
+		]);
+		expect(spent).toMatchObject({stateValue: "tripped", status: "done"});
+		expect(spent.context.errors).toEqual(["epic_4300"]);
 	});
 
 	it("trips the lane when the epic review fails past its retry budget — a park, never `complete`", () => {
@@ -361,6 +389,21 @@ describe("emitMachine", () => {
 
 	it("refuses a block that parses to zero phase lines as no topology", () => {
 		expect(emitMachine(4300, "## Dependencies\n\n", CHILDREN)).toEqual({_tag: "NoTopology"});
+	});
+
+	it("refuses a childless issue whose body carries prose under the topology heading", () => {
+		const text = "## Dependencies\n\nNone blocking. PR #5899 merged, so this is buildable\n";
+		expect(emitMachine(5908, text, [])).toEqual({_tag: "NoTopology"});
+	});
+
+	it("refuses a childless issue whose body carries a well-formed topology", () => {
+		const text = "## Dependencies\n\n- phase 1: #4301\n";
+		expect(emitMachine(4300, text, [])).toEqual({_tag: "NoTopology"});
+	});
+
+	it("still refuses an unparseable line once the epic has children", () => {
+		const out = emitMachine(4300, "## Dependencies\n\n- phase one: #4301\n", CHILDREN);
+		expect(out).toMatchObject({_tag: "Unparseable", line: 3, text: "- phase one: #4301"});
 	});
 
 	it("refuses a phase member that is not a child of the epic, naming it", () => {

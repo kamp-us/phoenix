@@ -55,10 +55,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # The corpus is the whole `claude-plugins` tree — skills/** (the .claude/skills and
-      # root skills/ symlinks point into it) AND agents/** (the subagent definitions, also
-      # frontmatter-bearing #1766) — across every plugin dir, the same root
-      # trap-status-guard.yml and cli-invocation-guard.yml already walk. Hand the CLI every
+      # The corpus is the whole `claude-plugins` tree — skills/** AND agents/** (the subagent
+      # definitions, also frontmatter-bearing #1766) — across every plugin dir. Hand the CLI every
       # .md/.sh file; the tool self-scopes (gh-grep drops self-exempt files; the frontmatter
       # check scopes to SKILL.md / agents/*.md; the push check takes every .md/.sh) and
       # fails closed (exit 3) if ANY scope is empty (ADR 0092).

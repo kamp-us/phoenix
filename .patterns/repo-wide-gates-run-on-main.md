@@ -54,8 +54,10 @@ Every `pull_request`-triggered workflow in `.github/workflows/`, classified by g
 | `unresolved-threads-guard` | Reads a PR's review threads; a `push` carries no PR number. |
 | `roadmap-guard` | Repo-wide, but its `milestone` event and weekly schedule already cover post-merge drift. |
 
-**Already carried `push: main`** (6): `adoption-lint`, `ci`, `cli-invocation-guard`,
-`deploy`, `skill-gh-lint`, `trap-status-guard`.
+**Already carried `push: main`** (3): `ci`, `deploy`, `skill-gh-lint`.
+(The audit named 6; `adoption-lint`, `cli-invocation-guard` and `trap-status-guard` policed
+the v1 plugin's shell and were deleted with it,
+[#5937](https://github.com/kamp-us/phoenix/issues/5937).)
 
 Workflows with no `pull_request` trigger at all (schedules, issue events, release events)
 are out of scope: `changelog`, `cp-bank-guard`, `epic-autoclose`, `glossary-drift`,

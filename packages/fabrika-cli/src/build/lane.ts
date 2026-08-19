@@ -19,27 +19,41 @@ export const TOKEN_PREFIX = "build";
 /** A UUID's first 8 hex characters — the nonce every lane branch carries. */
 export const NONCE_LENGTH = 8;
 
-const TOKEN_RE = /^build:([^:\s]+):([0-9a-f-]{8,})$/;
+const TOKEN_RES = new Map<string, RegExp>();
 
-/** The `<session-id>` and `<uuid>` halves of a token, or `null` when it is not a build token. */
+// Derived from the prefix rather than typed beside it, so a second claim namespace (`lane:`, #5761)
+// cannot ship a token writer and a token reader that disagree.
+const tokenRe = (prefix: string): RegExp => {
+	const cached = TOKEN_RES.get(prefix);
+	if (cached !== undefined) return cached;
+	const compiled = new RegExp(`^${prefix}:([^:\\s]+):([0-9a-f-]{8,})$`);
+	TOKEN_RES.set(prefix, compiled);
+	return compiled;
+};
+
+/** The `<session-id>` and `<uuid>` halves of a token, or `null` when it does not carry `prefix`. */
 export const parseToken = (
 	token: string,
+	prefix: string = TOKEN_PREFIX,
 ): {readonly session: string; readonly uuid: string} | null => {
-	const m = TOKEN_RE.exec(token.trim());
+	const m = tokenRe(prefix).exec(token.trim());
 	return m?.[1] === undefined || m[2] === undefined ? null : {session: m[1], uuid: m[2]};
 };
 
 /** The lane nonce a token confers, or `null` when the token does not parse. */
-export const nonceOf = (token: string): string | null => {
-	const parsed = parseToken(token);
+export const nonceOf = (token: string, prefix: string = TOKEN_PREFIX): string | null => {
+	const parsed = parseToken(token, prefix);
 	if (parsed === null) return null;
 	const hex = parsed.uuid.replace(/-/g, "").slice(0, NONCE_LENGTH);
 	return hex.length === NONCE_LENGTH ? hex : null;
 };
 
 /** Compose a token from this session's id and a fresh UUID. */
-export const composeToken = (session: string, uuid: string): string =>
-	`${TOKEN_PREFIX}:${session}:${uuid}`;
+export const composeToken = (
+	session: string,
+	uuid: string,
+	prefix: string = TOKEN_PREFIX,
+): string => `${prefix}:${session}:${uuid}`;
 
 /**
  * A slug the branch name may carry: kebab-case, ≤5 words, never flag-shaped.

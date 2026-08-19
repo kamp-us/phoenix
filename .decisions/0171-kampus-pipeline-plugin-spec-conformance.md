@@ -1,7 +1,7 @@
 ---
 id: 0171
 title: kampus-pipeline is audited spec-conformant against the official Claude Code plugin spec — the `$schema` URL is corrected, every remaining shape is a documented-intentional deviation
-status: amended-in-part by [0291](0291-retire-kampus-pipeline-plugin.md)
+status: amended-in-part by [0303](0303-retire-kampus-pipeline-plugin.md)
 date: 2026-07-07
 tags: [plugin-portability, packaging, distribution, pipeline]
 ---

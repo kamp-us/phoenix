@@ -266,19 +266,22 @@ export const PATTERN_SEATS: SharedSeats = {
 };
 
 /**
- * `lane`'s seats: four, on `spend`'s reading widened by a write.
+ * `lane`'s seats: five, on `spend`'s reading widened by a write.
  *
  * Its verbs read a local lane directory and append to its log, so the base's facts they establish
  * are the target that is not there (`LANE_ABSENT`), the target read in full that is not the shape
  * (`MALFORMED_RECORD`, the `review-ui` whole-record widening of the section seat), the append that
  * did not land (`APPEND_UNKNOWN`), and the read that failed before any of that could be proven
- * (`LANE_UNREADABLE`). The private band runs `12`-`30`, skipping `27` and `28` because the base
- * already speaks for both.
+ * (`LANE_UNREADABLE`). `lane claim` adds the fifth: it posts a marker and reads it back, so alone in
+ * this group it can establish *the write landed and the read-back contradicts it* (`MARKER_READBACK`,
+ * #5761). The private band runs `12`-`31`, skipping `27` and `28` because the base already speaks for
+ * both.
  */
 export const LANE_SEATS: SharedSeats = {
 	MALFORMED_RECORD: "BAD_SECTIONS",
 	LANE_ABSENT: "NO_TARGET",
 	APPEND_UNKNOWN: "WRITE_UNKNOWN",
+	MARKER_READBACK: "READBACK_MISMATCH",
 	LANE_UNREADABLE: "PRECONDITION_UNKNOWN",
 };
 

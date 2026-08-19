@@ -118,6 +118,34 @@ export const UNREPAIRABLE = 14;
  * re-send rather than a hand-edit.
  */
 export const MALFORMED_CRITERIA = 15;
+/**
+ * Refused: `--ready-for agent` over a body whose acceptance-criteria block the wire reader does not
+ * answer `Found` on.
+ *
+ * `ready-for:agent` is the promise that a builder can pick the issue up cold, and the criteria block
+ * is what the promise is made of — so the stamp asserts it at the cheapest door there is. Without
+ * this seat the contract is first read at `review criteria`, once a branch, a build, a push, a PR
+ * and a CI run have already been spent on an issue that never carried one (#6025).
+ *
+ * Its own code rather than {@link MALFORMED_CRITERIA}'s: that one is `enrich`'s answer about a body
+ * it composed and has not written yet, and it allows `Absent` deliberately. This one is `apply`'s
+ * answer about a body already on the board, where `Absent` is the case it exists to refuse.
+ */
+export const CRITERIA_REQUIRED = 16;
+/**
+ * Refused: a live claim marker on the target names a session other than this one.
+ *
+ * The claim protocol was advisory at exactly the point it needed to bite — `triage claim` resolved
+ * the race and no verb after it re-read the answer, so a session that read `lost` could still
+ * overwrite the winner's authored body (#5644, on #5642). Every mutating verb now re-reads it, and
+ * this is what they refuse on.
+ *
+ * Its own seat rather than {@link ZERO_SCOPE}'s: a closed target and a contested one need opposite
+ * responses — the first says this issue is finished, the second says wait or take the next one — and
+ * a caller cannot route on a code that fuses them. Holding **no** marker is not this refusal: an
+ * unclaimed issue is the ordinary first-triage case and stays mutable.
+ */
+export const CLAIMED_ELSEWHERE = 17;
 
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
@@ -167,6 +195,15 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 		code: MALFORMED_CRITERIA,
 		meaning:
 			"refused: the composed body's authored region carries an acceptance-criteria block the wire reader classifies Malformed",
+	},
+	{
+		code: CRITERIA_REQUIRED,
+		meaning:
+			"refused: --ready-for agent over a body carrying no acceptance-criteria block the wire reader answers Found on",
+	},
+	{
+		code: CLAIMED_ELSEWHERE,
+		meaning: "refused: a live claim marker on the target names another session",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

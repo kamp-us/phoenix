@@ -1,7 +1,7 @@
 ---
 id: 0239
 title: release-please in manifest mode derives versions by changed path; humans still cut the release
-status: accepted
+status: amended-in-part by [0292](0292-dispatched-publish-path-tag-bound.md)
 date: 2026-08-02
 tags: [release-engineering, packaging, npm, ci, pipeline]
 ---

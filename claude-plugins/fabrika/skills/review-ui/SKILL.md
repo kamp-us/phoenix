@@ -36,8 +36,11 @@ fabrika review scope $pr_number
 ```
 
 The shared gate mechanics are the shipped `review` group's verbs, reused as-is — scope, diff,
-criteria, ci, verdicts, deviations ([`../review/contract.md`](../review/contract.md)); this skill adds
-only the `review-ui` group ([`contract.md`](contract.md)). **You owe a verdict only when the PR
+criteria, ci, verdicts, deviations, each addressed in that group's contract by its own name
+(`fabrika wire doc-section --heading "review scope" < <review skill's base dir>/contract.md`, and
+likewise `--heading "review diff"`, `"review criteria"`, `"review ci"`, `"review verdicts"`,
+`"review deviations"`). This skill adds only the `review-ui` group, whose three verbs are listed at
+`fabrika wire doc-section --heading "Verb inventory" < <skill-base>/contract.md`. **You owe a verdict only when the PR
 changes a rendered-visual surface** — a page, component, screen, state, or style a user sees. Read
 the diff (`fabrika review diff $pr_number`) and decide; a PR with no rendered delta is `review`'s alone —
 end **ROUTED-ELSEWHERE**, emit nothing, because a namespace you did not judge is one you never
@@ -80,7 +83,11 @@ surface is FAIL ground** — a screenshot of a broken page is not composition to
 FAIL finding, because an undisclosed hole in the evidence is indistinguishable from a clean read.
 Exit 16 or an every-surface-unreachable render is **CANT-SEE**: post no verdict — the empty
 namespace fail-closes the ship gate — and name the blocker on the PR through `fabrika review-ui
-note` (stdin body, never a marker); never a "plausible" partial PASS.
+note` (stdin body, never a marker); never a "plausible" partial PASS. Each per-surface outcome, each
+run-level refusal and what makes a capture valid are the verb's section
+(`fabrika wire doc-section --heading "review-ui render" < <skill-base>/contract.md`; the note verb is
+`--heading "review-ui note"`). The two render paths this needs are
+`--heading "Required environment — the two render paths"`.
 
 **Two eyes, one record:** when this session's tool surface carries the `claude-in-chrome` tools you
 may additionally inspect the preview live — navigate, probe states, look closer. Detection is tool
@@ -130,7 +137,8 @@ paths; upserts one comment; reads it back from live state. On a control-plane PR
 marker). Control-plane membership is an **input**: this skill computes no control-plane
 classification, the carrier is explicit, and the gate's authority stays at the merge check.
 Precedence: **an unseen input blocks PASS, never FAIL** — FAIL on what you saw, naming every unseen
-piece UNKNOWN.
+piece UNKNOWN. The marker format, the evidence-upload proof and every exit are the verb's section
+(`fabrika wire doc-section --heading "review-ui post" < <skill-base>/contract.md`).
 
 ## Terminal vocabulary
 

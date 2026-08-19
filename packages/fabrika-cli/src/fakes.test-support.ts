@@ -8,7 +8,7 @@
  * [.patterns/effect-process-cli-shell.md](../../../.patterns/effect-process-cli-shell.md). The seam
  * a test replaces is therefore the same seam production uses.
  */
-import {Effect, FileSystem, Layer, Path, PlatformError, Sink, Stream} from "effect";
+import {Effect, FileSystem, Layer, Option, Path, PlatformError, Sink, Stream} from "effect";
 import {ChildProcessSpawner} from "effect/unstable/process";
 import type {ExecResult} from "./io/exec.ts";
 
@@ -33,6 +33,24 @@ const denied = (method: string, path: string) =>
 			pathOrDescriptor: path,
 		}),
 	);
+
+/** Only `type` is read by anything under test; the rest of `File.Info` is filler the shape demands. */
+const info = (type: "File" | "Directory"): FileSystem.File.Info => ({
+	type,
+	mtime: Option.none(),
+	atime: Option.none(),
+	birthtime: Option.none(),
+	dev: 0,
+	ino: Option.none(),
+	mode: 0,
+	nlink: Option.none(),
+	uid: Option.none(),
+	gid: Option.none(),
+	rdev: Option.none(),
+	size: FileSystem.Size(0),
+	blksize: Option.none(),
+	blocks: Option.none(),
+});
 
 export interface FakeFsOptions {
 	/** Directory path → base names. An absent or `null` entry makes the directory unreadable. */
@@ -100,6 +118,13 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 					: Effect.succeed(
 							(Object.hasOwn(files, path) && files[path] !== null) || directories.has(path),
 						),
+			stat: (path: string) => {
+				if (options.unprobeable?.includes(path) === true) return notFound("stat", path);
+				if (directories.has(path) || dirs[path] != null) return Effect.succeed(info("Directory"));
+				return Object.hasOwn(files, path) && files[path] !== null
+					? Effect.succeed(info("File"))
+					: notFound("stat", path);
+			},
 			makeDirectory: (path: string) => {
 				if (options.unwritable?.includes(path) === true) return notFound("makeDirectory", path);
 				directories.add(path);
@@ -177,10 +202,17 @@ const pipedInput = (stdin: unknown): Effect.Effect<string> => {
  * The script speaks in {@link ExecResult}s because that is what a caller reads; the spawner maps
  * `ok: false` onto a non-zero exit with the reason on stderr, which is the shape `execCapture`
  * lowers back into the same record.
+ *
+ * `unstartable` is the third answer, and it is not expressible as an `ExecResult`: a binary absent
+ * from `PATH` never runs at all, and the spawn fails with a `PlatformError` where a child that runs
+ * and exits non-zero does not. A caller that tells a red from an UNKNOWN reads exactly that
+ * difference, so a test over it needs the two scripted apart ({@link faultingShell} fails every
+ * spawn, which cannot express "`git` works and `actionlint` is not installed").
  */
 export const fakeShell = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	fallback: ExecResult = {ok: false, stdout: "", reason: "unscripted command"},
+	unstartable: ReadonlyArray<RegExp> = [],
 ): FakeShell => {
 	const calls: string[] = [];
 	const inputs: string[] = [];
@@ -195,6 +227,15 @@ export const fakeShell = (
 				inputs.push(
 					yield* pipedInput(cmd._tag === "StandardCommand" ? cmd.options.stdin : undefined),
 				);
+				if (unstartable.some((pattern) => pattern.test(line))) {
+					return yield* Effect.fail(
+						PlatformError.badArgument({
+							module: "ChildProcess",
+							method: "spawn",
+							description: `spawn ${cmd._tag === "StandardCommand" ? cmd.command : line} ENOENT`,
+						}),
+					);
+				}
 				const result = script.find(([pattern]) => pattern.test(line))?.[1] ?? fallback;
 				return ChildProcessSpawner.makeHandle({
 					pid: ChildProcessSpawner.ProcessId(1),

@@ -2,7 +2,7 @@
  * The `pitch-guard` tool — `pipeline-cli pitch-guard check [--issue <N>]`.
  *
  * The enforcement half of the pitch requirement (#3963; founder ruling #3909's §PITCH intake
- * format — its v1 skill-doc home retired with ADR 0291). Reds when lane-entering
+ * format — its v1 skill-doc home retired with ADR 0303). Reds when lane-entering
  * work is pickable (`status:triaged`) without a well-formed, founder-approved pitch — the teeth
  * that keep the format from landing advisory-only:
  *

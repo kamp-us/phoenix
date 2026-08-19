@@ -11,6 +11,7 @@ import {
 } from "./codes.ts";
 import {
 	BASE,
+	BASE_TIP,
 	binding,
 	files,
 	HEAD,
@@ -64,7 +65,7 @@ const happy = (
 ];
 
 describe("runScope", () => {
-	it("prints the head, the linked issue, the present classes and the two flags", async () => {
+	it("prints the head, the linked issue, the present classes, the flags and the governance token", async () => {
 		const out = await run(happy());
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
@@ -74,6 +75,7 @@ describe("runScope", () => {
 				"class\tdoc\t1",
 				"self\tfalse",
 				"harness\tfalse",
+				"governance\tnot-required",
 				"",
 			].join("\n"),
 		);
@@ -86,8 +88,37 @@ describe("runScope", () => {
 			head: HEAD,
 			issue: {kind: "fixes", number: 4287},
 			scanned: 2,
+			governance: "not-required",
 			namespaces: ["review-code", "review-doc"],
 		});
+	});
+
+	/**
+	 * The governance line is the four-root derivation, not the three-root `harness` flag (#5607): a
+	 * `.decisions/`-only diff owes a governance verdict while touching no harness root, and a reviewer
+	 * keying off `harness` posted a clean PASS on PR #5604 that the ship gate then blocked.
+	 */
+	it("prints `governance required` on a `.decisions/`-only diff, where `harness` is false", async () => {
+		const out = await run([
+			[PULL, pull()],
+			...binding(),
+			[PATHS_AT(), paths(".decisions/0280-review-shell-carries-the-spawn-tool.md")],
+			[FILES, files("docs/moved.md")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("harness\tfalse");
+		expect(out.stdout).toContain("governance\trequired");
+	});
+
+	it("keeps the two answers apart on a harness diff — both roots, both tokens", async () => {
+		const out = await run([
+			[PULL, pull()],
+			...binding(),
+			[PATHS_AT(), paths(".github/workflows/ci.yml")],
+			[FILES, files("docs/moved.md")],
+		]);
+		expect(out.stdout).toContain("harness\ttrue");
+		expect(out.stdout).toContain("governance\trequired");
 	});
 
 	it("prints `-` for a PR with neither marker, never a fabricated issue", async () => {
@@ -122,11 +153,14 @@ describe("runScope reads the partial-split marker its own builder emits", () => 
 });
 
 describe("runScope refusals and diagnostics", () => {
+	// `binding()` puts `origin/main` ahead of the branch point, so the base on this line naming `BASE`
+	// rather than `BASE_TIP` is what says the verb reports the merge base (#5770).
 	it("reports the commit it bound to, then what it scanned against what was declared", async () => {
 		const out = await run(happy());
 		expect(out.stderr[0]).toBe(
 			`review scope: bound to ${HEAD} (base ${BASE}) — read from the object database, nothing checked out.`,
 		);
+		expect(out.stderr[0]).not.toContain(BASE_TIP);
 		expect(out.stderr[1]).toBe("review scope: scanned 2 changed files; 2 declared by GitHub.");
 	});
 

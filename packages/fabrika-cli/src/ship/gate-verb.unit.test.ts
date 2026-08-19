@@ -418,6 +418,8 @@ describe("requiredWithFloor", () => {
  */
 describe("runGate — staleness is the content question", () => {
 	const BASE = "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736";
+	/** Ahead of {@link BASE}, so the digest is proven to be taken over the branch point (#5770). */
+	const BASE_TIP = "5a4b3c2d1e0f98877665544332211000ffeeddcc";
 	/** The digest of RAW below, written out so the fixture cannot agree with the code by calling it. */
 	const DIGEST = "65ebe421b3c0";
 	const RAW = `:100644 100644 ${"a".repeat(40)} ${"b".repeat(40)} M\0apps/web/src/a.ts\0`;
@@ -431,8 +433,9 @@ describe("runGate — staleness is the content question", () => {
 		[new RegExp(`^git rev-parse --verify --quiet ${HEAD}\\^\\{commit\\}$`), okOut(`${HEAD}\n`)],
 		[/^git remote$/, okOut("origin\n")],
 		[/^git fetch --quiet origin main$/, okOut("")],
-		[/^git rev-parse --verify --quiet origin\/main\^\{commit\}$/, okOut(`${BASE}\n`)],
-		[/^git diff .* --raw --abbrev=40 -z /, raw],
+		[/^git rev-parse --verify --quiet origin\/main\^\{commit\}$/, okOut(`${BASE_TIP}\n`)],
+		[new RegExp(`^git merge-base ${BASE_TIP} ${HEAD}$`), okOut(`${BASE}\n`)],
+		[new RegExp(`^git diff .* --raw --abbrev=40 -z ${BASE}\\.\\.\\.${HEAD}$`), raw],
 	];
 
 	const bindingMarker = (sha: string, content: string | null): string =>

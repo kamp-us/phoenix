@@ -4,6 +4,7 @@ import {
 	claimOf,
 	epicOf,
 	foldNamespaces,
+	integratedFrom,
 	issueOf,
 	judgeVerdicts,
 	roleOf,
@@ -93,10 +94,40 @@ describe("childLaneBranches", () => {
 	});
 });
 
+describe("integratedFrom", () => {
+	const TIP = "4cca8326";
+	const EPIC_BEFORE = "ec3894d2";
+
+	it("reads the epic branch as it stood off the integrating merge's first parent", () => {
+		expect(
+			integratedFrom(TIP, [
+				{sha: "aaaa1111", parents: ["ec3894d3", "sibling1"]},
+				{sha: "ec3894d3", parents: [EPIC_BEFORE, TIP]},
+			]),
+		).toBe(EPIC_BEFORE);
+	});
+
+	it("answers nothing for a tip no merge took in — a branch cut and never built on", () => {
+		// The never-built tip IS an epic commit, so a later sibling merge names it as its FIRST
+		// parent. Answering with that merge's second parent would hand back a sibling's fork point.
+		expect(integratedFrom(TIP, [{sha: "aaaa1111", parents: [TIP, "sibling1"]}])).toBe(null);
+	});
+
+	it("takes the oldest merge when a tip was taken in twice", () => {
+		expect(
+			integratedFrom(TIP, [
+				{sha: "bbbb2222", parents: ["later", TIP]},
+				{sha: "ec3894d3", parents: [EPIC_BEFORE, TIP]},
+			]),
+		).toBe(EPIC_BEFORE);
+	});
+});
+
 describe("traceRange", () => {
 	const commit = (issue: number) => `feat(lane): do the thing (#${issue})`;
 	const carrying = {
 		branch: "build/5829-prove-range-arms-154c981b",
+		base: "664eb9d",
 		tip: "03135b9",
 		messages: [commit(5829)],
 	};
@@ -105,6 +136,7 @@ describe("traceRange", () => {
 		expect(traceRange(5829, "epic/5800", [carrying])).toEqual({
 			_tag: "One",
 			branch: carrying.branch,
+			base: "664eb9d",
 			tip: "03135b9",
 			commits: 1,
 			naming: 1,
@@ -119,6 +151,7 @@ describe("traceRange", () => {
 		expect(traceRange(5829, "epic/5800", [mixed])).toEqual({
 			_tag: "One",
 			branch: carrying.branch,
+			base: "664eb9d",
 			tip: "03135b9",
 			commits: 3,
 			naming: 1,

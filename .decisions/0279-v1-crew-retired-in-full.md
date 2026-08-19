@@ -1,7 +1,7 @@
 ---
 id: 0279
 title: The v1 crew is retired in full, kampus-pipeline survives
-status: amended-in-part by [0291](0291-retire-kampus-pipeline-plugin.md)
+status: amended-in-part by [0303](0303-retire-kampus-pipeline-plugin.md)
 date: 2026-08-14
 tags: [pipeline, pipeline-crew, crew-mcp, fabrika, retirement]
 ---

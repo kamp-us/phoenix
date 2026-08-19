@@ -1,6 +1,11 @@
 /**
  * `review scope` — the head SHA, the linked issue, the artifact-class partition of the PR's changed
- * files, and the `self` / `harness` flags.
+ * files, the `self` / `harness` flags, and the `governance` requirement.
+ *
+ * The `governance` line reads {@link touchesGovernanceRoot} — the same four-root derivation
+ * `governance scope` prints, imported rather than recomputed. `harness` is three roots and answers a
+ * different question, so a reviewer who read it as the governance requirement missed one on every
+ * `.decisions/`-only diff (#5607).
  *
  * The refusals are the point: the partition is total over **what was read**, so the verb exists to
  * make sure it is never run over less than everything. A PR GitHub reports as having zero changed
@@ -19,7 +24,13 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {issueRefOf, namespacesOf, partition, renderIssueRef} from "./classes.ts";
+import {
+	issueRefOf,
+	namespacesOf,
+	partition,
+	renderIssueRef,
+	touchesGovernanceRoot,
+} from "./classes.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {bindHead, boundLine} from "./head.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
@@ -58,7 +69,7 @@ export const runScope = (
 		if (bound._tag === "Refused") return bound.outcome;
 		const head = bound.head;
 
-		const listed = yield* diffRangePaths(head.base, head.sha);
+		const listed = yield* diffRangePaths(head.mergeBase, head.sha);
 		if (listed._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -82,12 +93,13 @@ export const runScope = (
 		if (files.length === 0) {
 			return refuse(
 				INCOMPLETE_SCAN,
-				`${VERB}: git reports no changed files for the range ${head.base}...${head.sha}, so ${head.sha} has nothing to partition — refusing to scope an empty read (#3999).`,
+				`${VERB}: git reports no changed files for the range ${head.mergeBase}...${head.sha}, so ${head.sha} has nothing to partition — refusing to scope an empty read (#3999).`,
 				diagnostics,
 			);
 		}
 
 		const result = partition(files);
+		const governance = touchesGovernanceRoot(files) ? "required" : "not-required";
 		const issue = issueRefOf(pull.body);
 		if (json) {
 			return answer(
@@ -98,6 +110,7 @@ export const runScope = (
 					classes: result.classes,
 					self: result.self,
 					harness: result.harness,
+					governance,
 					scanned: result.scanned,
 					namespaces: namespacesOf(result),
 				}),
@@ -110,6 +123,7 @@ export const runScope = (
 				...result.classes.map((entry) => `class\t${entry.name}\t${entry.files}`),
 				`self\t${result.self}`,
 				`harness\t${result.harness}`,
+				`governance\t${governance}`,
 			].join("\n"),
 			diagnostics,
 		);

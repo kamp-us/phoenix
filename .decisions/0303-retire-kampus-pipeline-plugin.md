@@ -1,5 +1,5 @@
 ---
-id: 0291
+id: 0303
 title: The kampus-pipeline Plugin Is Retired — Deleted, Not Frozen
 status: accepted
 date: 2026-08-19

@@ -46,6 +46,21 @@
  * plugin's own `plugin.json`, which a live founder ruling deliberately keeps OUT of §CP (#3765).
  * See ADR 0212.
  *
+ * The fabrika-cli clause (`^packages/fabrika-cli/src/ci/`) is the ONE §CP path in that package, and
+ * the narrowness is the ruling, not an omission. `ci-required`'s verdict core — the pass/fail for the
+ * single always-on required status context on `main` — is MOVING out of the pipeline-cli
+ * `ci-required` tool and into `packages/fabrika-cli/src/ci/` via open child #6099 of epic #5720; on
+ * `main` today `ci.yml` still runs the pipeline-cli bin, and the new dir does not exist yet. This
+ * clause lands AHEAD of that move deliberately (founder's landing note on #6164), so the core
+ * arrives already covered: without it, the day #6099 lands the covered path goes dead and the live
+ * one is uncovered, a PR touching only the new dir matches no CODEOWNERS row, and with no `*`
+ * catch-all and the ruleset at `required_approving_review_count: 0` + `require_code_owner_review:
+ * true`, that merges at ZERO approvals. Under ADR 0187's enforcement test the core stays §CP
+ * wherever it runs. The rest of `packages/fabrika-cli/` is ordinary by founder ruling on #6164 —
+ * verbatim: "i'm ok with it as long as it's scoped to the ci checks, if not i trust fabrika enough
+ * to self drive itself". Recorded in ADR 0299, extending ADR 0218's enforcement-core shape to
+ * fabrika-cli.
+ *
  * The pipeline-cli clauses cover an **enforcement core**, not the whole package (ADR 0218,
  * amending ADR 0100). Three branches:
  *
@@ -78,4 +93,4 @@
  * `codeowners-cp check` holds them in sync.
  */
 export const CONTROL_PLANE_RE =
-	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$|^biome\\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\\.lefthook)[^/]+$";
+	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^packages/ci-required/|^packages/fabrika-cli/src/ci/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$|^biome\\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\\.lefthook)[^/]+$";

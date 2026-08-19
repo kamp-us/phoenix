@@ -215,6 +215,57 @@ export const execCapture = (file: string, args: ReadonlyArray<string>): Exec =>
 	captured(file, args, null);
 
 /**
+ * A validator's run, with "it is not installed" kept apart from "it ran and found defects".
+ *
+ * {@link execCapture} fuses the two into `ok: false`, which is right for `git`/`gh` — a failed read
+ * is a failed read — and wrong for a validator, where the two answers have opposite polarity: a
+ * non-zero exit is a proven red, and an absent binary proves nothing and must refuse UNKNOWN.
+ *
+ * The split is the spawner's, not a guess off the message: `NodeChildProcessSpawner` resumes the
+ * spawn with a `PlatformError` from the child's `error` event, which is where Node reports `ENOENT`
+ * for a binary that is not on `PATH`; a child that starts and exits non-zero never reaches it.
+ */
+export type ExecStatus =
+	/** `output` is the child's diagnostics — stderr when it wrote any, else stdout. */
+	| {readonly _tag: "Ran"; readonly ok: boolean; readonly output: string}
+	| {readonly _tag: "Unstartable"; readonly reason: string};
+
+/**
+ * Run a validator for its status and its diagnostics.
+ *
+ * Both streams are captured rather than inherited, and stdout deliberately does not pass through:
+ * this package's stdout is its machine channel, and a linter that writes its findings there —
+ * `actionlint` does — would fuse its output with the verb's own answer. The caller re-emits what it
+ * captured on stderr, where a refusal's notes already go.
+ */
+export const execStatus = (
+	file: string,
+	args: ReadonlyArray<string>,
+): Effect.Effect<ExecStatus, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.scoped(
+		Effect.gen(function* () {
+			const handle = yield* ChildProcess.make(file, [...args]);
+			const [stdout, stderr, exitCode] = yield* Effect.all(
+				[collect(handle.stdout), collect(handle.stderr), handle.exitCode],
+				{concurrency: "unbounded"},
+			);
+			const output = stderr.trim() === "" ? stdout : stderr;
+			return {
+				_tag: "Ran" as const,
+				ok: exitCode === 0,
+				output: output.trim() === "" ? `${file} exited ${exitCode}` : output,
+			};
+		}),
+	).pipe(
+		Effect.catchTag("PlatformError", (cause) =>
+			Effect.succeed<ExecStatus>({
+				_tag: "Unstartable",
+				reason: firstLine(cause.message) || `could not run ${file}`,
+			}),
+		),
+	);
+
+/**
  * The same run with `input` piped to the child's stdin — the file-free carrying path.
  *
  * It exists so a message can reach a command **without a file on disk at all** (§SP rule 1). The

@@ -16,15 +16,14 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {createComment, getIssue, listLabels, resolveRepo} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {NEEDS_INFO, NEEDS_TRIAGE} from "../labels.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {applyChanges} from "./facet-writes.ts";
 import {parkedFacets, planReconcile, renderShape, shapeViolations} from "./facets.ts";
 import {scannedLine} from "./scope.ts";
-
-/** The one label a park writes. Its absence is a `7`, because the API would otherwise mint it. */
-const NEEDS_INFO = "status:needs-info";
+import {guardTarget} from "./target-guard.ts";
 
 const SURFACE: AuthoredSurface = {
 	verb: "triage park",
@@ -79,6 +78,15 @@ export const runPark = (
 		}
 		if (target._tag === "Unknown") return unreadable(`issue #${issue}`, repo, target.reason);
 
+		const guarded = yield* guardTarget({
+			verb: "triage park",
+			repo,
+			issue,
+			target: target.value,
+			env: options.env,
+		});
+		if (guarded !== null) return guarded;
+
 		const vocabulary = yield* listLabels(repo);
 		if (vocabulary._tag === "Failure") return unreadable("the label set", repo, vocabulary.reason);
 		const diagnostics = [scannedLine("triage park", repo, vocabulary.value.length, "label")];
@@ -114,7 +122,7 @@ export const runPark = (
 			);
 		}
 
-		const expected = `expected ${NEEDS_INFO} present and status:needs-triage absent`;
+		const expected = `expected ${NEEDS_INFO} present and ${NEEDS_TRIAGE} absent`;
 		const back = yield* getIssue(repo, issue);
 		if (back._tag !== "Present") {
 			return refuse(

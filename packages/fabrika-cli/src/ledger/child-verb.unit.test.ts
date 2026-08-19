@@ -39,6 +39,10 @@ const MILESTONES = /^gh api --paginate repos\/o\/r\/milestones/;
 
 const MINTED_LABELS = ["type:feature", "p1", "status:planned", "ready-for:agent"];
 
+/** Every child is born homed (#5969), so the shared options carry a milestone the fixture knows. */
+const HOME = "fabrika campaign";
+const LANE = "axis:pipeline-hardening";
+
 const RUN_JSON = (cycleDoc: "present" | "absent" | "unknown" = "present") =>
 	renderRunRecord({
 		epic: 4300,
@@ -58,7 +62,7 @@ const HAPPY: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[MILESTONES, milestones([44, "fabrika campaign"])],
 	[CREATE, CREATED],
 	[LINK, okOut("{}")],
-	[READBACK, childIssue({number: 4301, labels: MINTED_LABELS})],
+	[READBACK, childIssue({number: 4301, labels: MINTED_LABELS, milestone: HOME})],
 	[SUBS, okOut(JSON.stringify([{number: 4301, id: 90210, state: "open", state_reason: null}]))],
 ];
 
@@ -69,7 +73,7 @@ const options = {
 	priority: "p1",
 	readyFor: "agent" as string | null,
 	assignee: null as string | null,
-	milestone: null as string | null,
+	milestone: HOME as string | null,
 	labels: [] as ReadonlyArray<string>,
 	repo: null,
 	env,
@@ -101,7 +105,7 @@ describe("runChild", () => {
 			epic: 4300,
 			child: 4301,
 			linked: true,
-			observed: {labels: [...MINTED_LABELS].sort(), assignees: [], milestone: null},
+			observed: {labels: [...MINTED_LABELS].sort(), assignees: [], milestone: HOME},
 			stories: [1, 2],
 			containment: "flag",
 		});
@@ -169,6 +173,40 @@ describe("runChild", () => {
 		expect(outcome.stderr.at(-1)).toBe(
 			"ledger child: --ready-for human requires --assignee — a held child is born assigned (#4693).",
 		);
+	});
+
+	/**
+	 * #5969: a child with neither an open milestone nor a standing lane is refused by the claim fence
+	 * at exit 20, so it can never be built. The three cases are the whole homing axis.
+	 */
+	it("refuses a homeless child before it reads anything, naming both remedies", async () => {
+		const {outcome, calls} = await run({milestone: null});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toBe(
+			"ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built (#5969).",
+		);
+		expect(calls).toEqual([]);
+	});
+
+	it("mints a milestone-homed child", async () => {
+		const {outcome, calls} = await run({milestone: HOME});
+		expect(outcome.code).toBe(0);
+		expect(calls.find((line) => CREATE.test(line)) ?? "").toContain("milestone=44");
+	});
+
+	/** ADR 0208's lane exemption holds here too — homing is never collapsed into "milestone required". */
+	it("mints a lane-homed child carrying no milestone", async () => {
+		const {outcome, calls} = await run({milestone: null, labels: [LANE]}, [
+			...HAPPY.filter(([pattern]) => pattern !== LABELS && pattern !== READBACK),
+			[LABELS, labelSet(...DEFAULT_LABELS, LANE)],
+			[READBACK, childIssue({number: 4301, labels: [...MINTED_LABELS, LANE]})],
+		]);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout).observed.milestone).toBe(null);
+		const create = calls.find((line) => CREATE.test(line)) ?? "";
+		expect(create).toContain(`labels[]=${LANE}`);
+		expect(create).not.toContain("milestone=");
+		expect(calls.some((line) => MILESTONES.test(line))).toBe(false);
 	});
 
 	it("refuses a retired priority", async () => {

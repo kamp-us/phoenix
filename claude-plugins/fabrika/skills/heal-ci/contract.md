@@ -121,7 +121,7 @@ At authoring time v1's `heal-ci` was still the live project-level skill at
 `claude-plugins/kampus-pipeline/skills/`, so the name resolved ambiguously while both existed
 ([#4761](https://github.com/kamp-us/phoenix/issues/4761)). The cutover has since happened: the v1
 plugin tree is deleted (ADR
-[0291](../../../../.decisions/0291-retire-kampus-pipeline-plugin.md), #5937), `heal-ci` resolves
+[0303](../../../../.decisions/0303-retire-kampus-pipeline-plugin.md), #5937), `heal-ci` resolves
 uniquely to this skill, and it is reached as `/fabrika:heal-ci`.
 
 This spec closes the counterpart gap `ship`'s contract records: *"the skill routes red CI to

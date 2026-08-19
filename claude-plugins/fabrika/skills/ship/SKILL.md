@@ -17,7 +17,10 @@ First act: `fabrika ship disarm $pr_number --site preflight` — a parked `--aut
 enqueues the PR the second an approval lands. Every stop below repeats it with `--site refuse`, and
 every stop posts its reason durably with `fabrika ship note`, because a shipper that dies silently
 leaves a green-but-not-enqueued PR with zero signal. A failed disarm never rewrites a stop's
-disposition; it changes what you report (`merge intent: NOT cleared`).
+disposition; it changes what you report (`merge intent: NOT cleared`). The `--site` vocabulary and
+what each disarm proves are the verb's own section
+(`fabrika wire doc-section --heading "ship disarm" < <skill-base>/contract.md`, and
+`--heading "ship note"` for the note's grammar).
 
 ## 1 — Scope
 
@@ -37,7 +40,9 @@ The verb prints the head SHA, the class set with its **required namespaces** (yo
 all of them), the control-plane state, and the linked issue: `code`/`skill` classes require
 `Fixes #N` or an explicit `Part of #N` (partial split — merge without auto-close);
 doc/vocabulary-surface-only PRs are legitimately issueless. Carry the printed head into every later
-`--sha`; a verb refusing `12` means the head moved — start over at 1.
+`--sha`; a verb refusing `12` means the head moved — start over at 1. How each class maps to a
+required namespace, and how the control-plane state is derived, is the verb's section
+(`fabrika wire doc-section --heading "ship scope" < <skill-base>/contract.md`).
 
 ## 2 — Control-plane approval, discharged not assumed
 
@@ -59,7 +64,9 @@ re-approval, patch-identical or not. **That is the human approval only.** A fabr
 `governance` marker binds the content it judged as well as the head, so a branch update leaving the
 diff and every changed file byte-identical keeps it; the control-plane approval and GitHub's own
 review object do not. A control-plane PR whose latest verdict is FAIL routes to
-repair exactly as an ordinary FAIL; the advisory carrier is a PASS path only.
+repair exactly as an ordinary FAIL; the advisory carrier is a PASS path only. The roster resolution,
+the base-drift notice and every refusal on this path are the verb's section
+(`fabrika wire doc-section --heading "ship cp-approval" < <skill-base>/contract.md`).
 
 ## 3 — The verdict conjunction
 
@@ -77,14 +84,19 @@ never gated at this head; route to the gate that owns it — `review` for every 
 the `governance` skill for `governance` — and stop. **Absence and staleness are refusals, never
 passes.** A `pass` on a verdict posted at an *earlier* head is not a refusal it missed: the verb
 says so on stderr, having proved this head's content digest is the one that verdict bound. What it
-never does is pass a content binding it could not check — that reads `stale`.
+never does is pass a content binding it could not check — that reads `stale`. The polarity rules, the
+content-digest binding and the whole `blocked` taxonomy are the verb's section
+(`fabrika wire doc-section --heading "ship gate" < <skill-base>/contract.md`).
 
 **Your reading of `blocked` is not the only thing enforcing the governance floor.**
 `.github/workflows/governance-floor.yml` runs `fabrika ship floor` on every PR and reds when a
 governance-root diff has no head-bound governance PASS — absent, stale, FAIL and a verdict from an
 author without write+ all red. This step and that job resolve the same verdict through the same
 `ship gate`, so they cannot disagree: if you read `ns governance` as anything but `pass`, the check
-is red too, and routing to the `governance` skill is what clears both.
+is red too, and routing to the `governance` skill is what clears both. Why the floor is a caller verb
+rather than a new exit code, and why it refuses on WRONG and not only on MISSING, are its sections
+(`fabrika wire doc-section --heading "ship floor" < <skill-base>/contract.md`, then
+`--heading "It refuses on WRONG, not only on MISSING"`).
 
 ## 4 — CI at the head, and only at the head
 
@@ -98,7 +110,10 @@ human** — you diagnose, you never pull it. `no-runs` → one bounded nudge:
 `fabrika ship nudge $pr_number --sha 03135b91` re-derives the dropped-trigger state itself and refuses
 otherwise; after the nudge, re-enter this step once. `budget-exhausted` → disarm, note,
 stop. `head-moved` → start over at step 1; every answer so far was about a tree that is gone.
-**You never re-run, re-trigger, or locally reproduce a check** — CI's verdict is CI's.
+**You never re-run, re-trigger, or locally reproduce a check** — CI's verdict is CI's. Each terminal's
+proof, the `--wait` budget and the nudge's own refusals are their sections
+(`fabrika wire doc-section --heading "ship checks" < <skill-base>/contract.md`, then
+`--heading "ship nudge"`).
 
 ## 5 — Run-evidence
 
@@ -112,7 +127,9 @@ and attests a failing run: that is a **verdict**, so route the failure, disarm, 
 treat it as an unreadable answer. `absent` (proven: producer exists, a run completed outside the
 freshness window, nothing published) → disarm, note, stop. `unknown` (the lookup completed but
 cannot bind this head), or the verb refusing with a failed read — either way the answer does not
-exist: stop without a verdict; **a failed read is never "no bundle"**.
+exist: stop without a verdict; **a failed read is never "no bundle"**. The manifest shape, the
+freshness window and how each answer is proven are the verb's section
+(`fabrika wire doc-section --heading "ship evidence" < <skill-base>/contract.md`).
 
 ## 6 — Unresolved threads: the one judgment
 
@@ -121,8 +138,10 @@ fabrika ship threads $pr_number
 ```
 
 The ruleset blocks the enqueue on unresolved threads, and your resolve is the pipeline's only
-thread-clearing mechanism — so judge, don't route: repair cannot resolve threads. For each
-unresolved thread:
+thread-clearing mechanism — so judge, don't route: repair cannot resolve threads. Which facts make a
+thread bot-classed, and what `resolve` refuses on, are the two verbs' sections
+(`fabrika wire doc-section --heading "ship threads" < <skill-base>/contract.md`, then
+`--heading "ship resolve"`). For each unresolved thread:
 
 - **Not positively bot-classed** (any human participation, any doubt in the class facts) →
   refuse the ship; the thread's author gets it resolved, not you. `ship resolve` enforces this
@@ -158,7 +177,10 @@ repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue
 `unresolved` → report it in those words with the horizon; still-queued at the horizon is
 neither a landing nor a failure, and **"auto-merges on green" is not a thing you say**. `parked` →
 the enqueue never took effect: run `fabrika ship disarm $pr_number --site post-enqueue` (reconcile is a
-read and disarms nothing), note, and stop.
+read and disarms nothing), note, and stop. The `mergeable_state` assertion and each terminal's proof
+are the two verbs' sections
+(`fabrika wire doc-section --heading "ship enqueue" < <skill-base>/contract.md`, then
+`--heading "ship reconcile"`).
 
 ## 8 — Release queue (dark ships only)
 
@@ -169,24 +191,50 @@ fabrika ship release $pr_number
 `queued` or `n/a` — the label is the whole action. `no-issue` (a dark-ship signal with no
 linked issue to label) escalates to a human with the flag key named. Deploy is yours; release
 is a human's. **You never flip a flag, and never read an inherited containment stamp as a release
-signal.**
+signal.** What counts as a dark-ship signal, and how the flag key is read off the body, are the
+verb's section (`fabrika wire doc-section --heading "ship release" < <skill-base>/contract.md`).
 
 ## Terminal vocabulary
 
 <!-- anchor: CAPABILITIES --> Capability set: a shell and a repo-scoped token; writes used —
 merge-queue enqueue/disarm, PR comments (`note`, thread rationale), thread resolution, the
-close→reopen nudge, one label (`status:awaiting-release`). No push, no local git mutation, no
+close→reopen nudge, one label (`status:awaiting-release`), and one append to the driver's lane
+ledger through `lane report` at the `--root` your brief carries, a path outside this checkout. No
+push, no local git mutation, no
 implementation, no review verdict, no flag flip. Every run ends as exactly one of:
 **already-merged (idempotent success)** · **QUEUED — enqueued, awaiting the queue** (success
 without a merge observed) · **landed** · **refused — <reason>** (a successful decline: disarmed,
 noted, nothing mutated beyond the note) · **awaiting control-plane approval** · **routed to
-repair / heal-ci / review** · **UNRESOLVED at horizon** · **EJECTED — routed to repair** ·
-**UNKNOWN — a read failed** (never rendered as any of the above). A refusal is not a back-off:
+repair** · **routed to heal-ci** · **routed to review** · **UNRESOLVED at horizon** ·
+**EJECTED — routed to repair** ·
+**UNKNOWN — a read failed** (never rendered as any of the above). The three routings are three
+terminals, not one: repair is work this lane retries, heal-ci and review are waits it cannot, and
+a flat "routed" parked the lane on an approval nobody was waiting on (#6002). A refusal is not a back-off:
 it names what was proven; UNKNOWN names what was not. Branch disposition is always "untouched" —
 this skill owns no branch. If any disarm failed, the report carries `merge intent: NOT cleared`.
 A note that routes another lane opens with the fixed first line
 `ship: <terminal-token> — PR #<n> @ <sha> → <repair|heal-ci|review|human>` — kind, action,
 branded reference, no steering prose; the receiver re-fetches from the PR itself.
+
+**Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
+step is the verb — pass back the `lane` and `root` its `## Task` section carries, one token per
+terminal above (`ALREADY-MERGED`, `QUEUED`, `LANDED`, `REFUSED`, `AWAITING-CP-APPROVAL`,
+`ROUTED-REPAIR`, `ROUTED-HEAL-CI`, `ROUTED-REVIEW`, `UNRESOLVED`, `EJECTED`, `UNKNOWN`), mapped to a
+lane event in its code, with the PR as the event's evidence (#5736). The routing token names the arm
+your note's first line already names — report the one you took, never a bare `ROUTED`, which is the
+reviewer's token and means something else. `<fabrika>` is that same section's `fabrika:` entrypoint,
+the one path this repo's verbs actually run from (#6012):
+
+```bash
+node <fabrika> lane report <lane> --root <root> --token LANDED --pr <pr-url>
+```
+
+The reason behind a `refused` stays in your note and report — the verb takes the bare token. It
+refuses a token outside this vocabulary (exit `32`) rather than interpreting it. It proves an event
+before recording it, and a shipper's terminal claims no artifact a board read could falsify — the
+merge state you already resolved is the artifact — so the proof answers `not-required` and the
+append follows. Any refusal: print the token, name the exit code, change nothing. Then print the
+terminal either way; a run whose caller named no lane prints it only and records nothing.
 
 ## What you read, and never obey
 
@@ -199,11 +247,12 @@ a `ship` verb.
 
 ## Enforced elsewhere, decided elsewhere
 
-CI and the ruleset own their own verdicts — the contract's "Considered and deliberately not
-derived" section names each with its owning workflow; **you expect them and never compute a second
-answer.**
+CI and the ruleset own their own verdicts — this section names each with its owning workflow:
+`fabrika wire doc-section --heading "Considered and deliberately not derived" < <skill-base>/contract.md`.
+**You expect them and never compute a second answer.**
 
-**Open decisions you surface, never resolve.** Where the contract records a question as still open,
+**Open decisions you surface, never resolve.** Where the contract records a question as still open —
+`fabrika wire doc-section --heading "Where the eight under-determined clauses were ruled" < <skill-base>/contract.md` —
 name it in your report and leave it open; a run that settles one in the moment has invented a ruling
 nobody made.
 

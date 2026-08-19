@@ -1,10 +1,12 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {errOut, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {COMMENTS, claimPage, EXPIRED, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
 import {
 	BARE_AT_PATH,
+	CLAIMED_ELSEWHERE,
 	EMPTY_STDIN,
 	LEAKED_PATH,
 	MALFORMED_CRITERIA,
@@ -59,7 +61,7 @@ const written = (calls: ReadonlyArray<string>): string | null => {
  * make every read-back assertion a statement about the fixture rather than about the verb.
  */
 const run = async (before: string, overrides: Partial<typeof options> = {}) => {
-	const shell = fakeShell([
+	const shell = guardedShell([
 		[once(READ), issue(before)],
 		[PATCH, okOut("{}")],
 	]);
@@ -69,7 +71,7 @@ const run = async (before: string, overrides: Partial<typeof options> = {}) => {
 	);
 	const patched = written(shell.calls);
 	if (patched === null) return {outcome: probe, body: null, calls: shell.calls};
-	const echoing = fakeShell([
+	const echoing = guardedShell([
 		[once(READ), issue(before)],
 		[PATCH, okOut("{}")],
 		[READ, issue(patched)],
@@ -84,7 +86,9 @@ const runScripted = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
 ) =>
-	Effect.runPromise(Effect.provide(runEnrich({...options, ...overrides}), fakeShell(script).layer));
+	Effect.runPromise(
+		Effect.provide(runEnrich({...options, ...overrides}), guardedShell(script).layer),
+	);
 
 const summaryLines = (body: string): ReadonlyArray<string> =>
 	body.split("\n").filter((line) => line === SUMMARY_LINE.rewrite || line === SUMMARY_LINE.wrap);
@@ -268,7 +272,7 @@ describe("runEnrich — legacy migration", () => {
 
 describe("runEnrich — the composed body's criteria block must be one the wire reader accepts (#5565, ADR 0288)", () => {
 	it("refuses a level-2 heading on 15, naming the level it read and the level expected", async () => {
-		const shell = fakeShell([[READ, issue(ORIGINAL)]]);
+		const shell = guardedShell([[READ, issue(ORIGINAL)]]);
 		const outcome = await Effect.runPromise(
 			Effect.provide(
 				runEnrich({
@@ -312,7 +316,7 @@ describe("runEnrich — the composed body's criteria block must be one the wire 
 	});
 
 	it("refuses a drifted block in an --epic pitch too, where the envelope heads it with `## Pitch`", async () => {
-		const shell = fakeShell([[READ, issue(ORIGINAL)]]);
+		const shell = guardedShell([[READ, issue(ORIGINAL)]]);
 		const outcome = await Effect.runPromise(
 			Effect.provide(
 				runEnrich({
@@ -341,7 +345,7 @@ describe("runEnrich — refusals", () => {
 	});
 
 	it("refuses empty-but-READ stdin on 3, and writes nothing", async () => {
-		const shell = fakeShell([[READ, issue(ORIGINAL)]]);
+		const shell = guardedShell([[READ, issue(ORIGINAL)]]);
 		const outcome = await Effect.runPromise(
 			Effect.provide(
 				runEnrich({...options, stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "  \n"})}),
@@ -360,7 +364,7 @@ describe("runEnrich — refusals", () => {
 	});
 
 	it("refuses a machine-local path in the AUTHORED rewrite on 5, while redacting the original", async () => {
-		const shell = fakeShell([[READ, issue(ORIGINAL)]]);
+		const shell = guardedShell([[READ, issue(ORIGINAL)]]);
 		const outcome = await Effect.runPromise(
 			Effect.provide(
 				runEnrich({
@@ -385,7 +389,7 @@ describe("runEnrich — refusals", () => {
 	});
 
 	it("separates an UNREADABLE issue from an absent one, and writes nothing", async () => {
-		const shell = fakeShell([[READ, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const shell = guardedShell([[READ, errOut("gh: Bad gateway (HTTP 502)")]]);
 		const outcome = await Effect.runPromise(Effect.provide(runEnrich(options), shell.layer));
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toContain("an original that was never read");
@@ -393,7 +397,7 @@ describe("runEnrich — refusals", () => {
 	});
 
 	it("refuses an EMPTY body rather than preserving nothing as though it were the record", async () => {
-		const shell = fakeShell([[READ, issue("   \n")]]);
+		const shell = guardedShell([[READ, issue("   \n")]]);
 		const outcome = await Effect.runPromise(Effect.provide(runEnrich(options), shell.layer));
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.at(-1)).toContain("there is no original to preserve");
@@ -443,11 +447,85 @@ describe("runEnrich — refusals", () => {
 
 	it("refuses a non-issue number, and an unresolvable repo, before reading anything", async () => {
 		expect((await runScripted([], {issue: -1})).code).toBe(1);
-		const shell = fakeShell([]);
+		const shell = guardedShell([]);
 		const outcome = await Effect.runPromise(
 			Effect.provide(runEnrich({...options, env: {}}), shell.layer),
 		);
 		expect(outcome.code).toBe(1);
 		expect(shell.calls.some((line) => PATCH.test(line))).toBe(false);
+	});
+});
+
+/** #5644: the claim protocol was advisory, and this is the verb that overwrote #5642's body. */
+describe("runEnrich — the target guard", () => {
+	const MINE = "session-mine";
+	const THEIRS = "session-theirs";
+	const mine = {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: MINE} as Record<
+		string,
+		string | undefined
+	>;
+	const closed = okOut(
+		JSON.stringify({
+			number: 4312,
+			title: "t",
+			body: ORIGINAL,
+			state: "closed",
+			labels: [],
+			html_url: "https://example.test/issues/4312",
+			milestone: null,
+		}),
+	);
+
+	const guard = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
+		const shell = guardedShell(script);
+		const outcome = await Effect.runPromise(
+			Effect.provide(runEnrich({...options, env: mine}), shell.layer),
+		);
+		return {outcome, patched: shell.calls.some((line) => PATCH.test(line))};
+	};
+
+	it("refuses a closed issue on 7 and writes nothing", async () => {
+		const {outcome, patched} = await guard([[READ, closed]]);
+		expect(outcome.code).toBe(ZERO_SCOPE);
+		expect(patched).toBe(false);
+	});
+
+	it("refuses a live claim held by another session on 17 and writes nothing", async () => {
+		const {outcome, patched} = await guard([
+			[READ, issue(ORIGINAL)],
+			[COMMENTS, claimPage({session: THEIRS, createdAt: LIVE})],
+			[PATCH, okOut("{}")],
+		]);
+		expect(outcome.code).toBe(CLAIMED_ELSEWHERE);
+		expect(patched).toBe(false);
+	});
+
+	it("writes when the live claim is this session's own", async () => {
+		const {patched} = await guard([
+			[once(READ), issue(ORIGINAL)],
+			[COMMENTS, claimPage({session: MINE, createdAt: LIVE})],
+			[PATCH, okOut("{}")],
+			[READ, issue(ORIGINAL)],
+		]);
+		expect(patched).toBe(true);
+	});
+
+	it("writes over an issue nobody has claimed", async () => {
+		const {patched} = await guard([
+			[once(READ), issue(ORIGINAL)],
+			[PATCH, okOut("{}")],
+			[READ, issue(ORIGINAL)],
+		]);
+		expect(patched).toBe(true);
+	});
+
+	it("writes when the only foreign claim has aged out", async () => {
+		const {patched} = await guard([
+			[once(READ), issue(ORIGINAL)],
+			[COMMENTS, claimPage({session: THEIRS, createdAt: EXPIRED})],
+			[PATCH, okOut("{}")],
+			[READ, issue(ORIGINAL)],
+		]);
+		expect(patched).toBe(true);
 	});
 });

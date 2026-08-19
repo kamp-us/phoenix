@@ -2,7 +2,14 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {classifyDiff, notCoveredBy, runCheck, SURFACES, surfaceMismatch} from "./check-verb.ts";
+import {
+	classifyDiff,
+	linkTargets,
+	notCoveredBy,
+	runCheck,
+	SURFACES,
+	surfaceMismatch,
+} from "./check-verb.ts";
 import {
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
@@ -29,10 +36,15 @@ const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
 const REPO_META = /^gh api repos\/o\/r --jq \.default_branch$/;
 const MERGE_BASE = /^git merge-base HEAD origin\/main$/;
 const DIFF = /^git diff --name-only /;
+const UNTRACKED_ARGV = "git ls-files --others --exclude-standard --full-name -- :/";
+const UNTRACKED = /^git ls-files --others --exclude-standard --full-name -- :\/$/;
 const TYPECHECK = /^pnpm typecheck --force$/;
 const LINT = /^pnpm lint:worktree$/;
 
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
+
+/** A scripted untracked-file list. Placed ahead of `LANE_OK`, whose default is an empty one. */
+const untracked = (stdout: string): readonly [RegExp, ExecResult] => [UNTRACKED, okOut(stdout)];
 
 const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[REV_PARSE, GIT_DIRS],
@@ -42,6 +54,7 @@ const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[PERM, okOut("write\n")],
 	[REPO_META, okOut("main\n")],
 	[MERGE_BASE, okOut(`${HEAD}\n`)],
+	untracked(""),
 ];
 
 const options = {
@@ -81,9 +94,15 @@ describe("surfaceMismatch — the anchor, not a second classifier", () => {
 
 	// #5301: the anchor refuses an ABSENT class, never a present other one — the asymmetry that left a
 	// mixed diff's markdown with no surface to run under.
-	it("accepts a mixed diff under every surface", () => {
+	it("refuses --surface workflows over a diff with no workflow file", () => {
+		expect(surfaceMismatch("workflows", ["a.ts", "README.md"])).toContain("no workflows file");
+	});
+
+	it("accepts a diff holding every class under every surface", () => {
 		for (const surface of SURFACES) {
-			expect(surfaceMismatch(surface, ["a.ts", "README.md"])).toBeNull();
+			expect(
+				surfaceMismatch(surface, ["a.ts", "README.md", ".github/workflows/ci.yml"]),
+			).toBeNull();
 		}
 	});
 });
@@ -93,14 +112,37 @@ describe("classifyDiff — matched-neither is a bucket, not an absence", () => {
 		expect(classifyDiff([".github/workflows/ci.yml", "scripts/x.sh", "a.ts", "R.md"])).toEqual({
 			code: ["a.ts"],
 			markdown: ["R.md"],
-			unvalidatable: [".github/workflows/ci.yml", "scripts/x.sh"],
+			workflows: [".github/workflows/ci.yml"],
+			unvalidatable: ["scripts/x.sh"],
 		});
 	});
 
 	it("puts every file in exactly one bucket", () => {
-		const files = ["a.tsx", "b.mjs", "c.json", "d.md", "e.mdx", "f.sql", "g.css", "LICENSE"];
-		const {code, markdown, unvalidatable} = classifyDiff(files);
-		expect([...code, ...markdown, ...unvalidatable].sort()).toEqual([...files].sort());
+		const files = [
+			"a.tsx",
+			"b.mjs",
+			"c.json",
+			"d.md",
+			"e.mdx",
+			"f.sql",
+			"g.css",
+			"LICENSE",
+			".github/workflows/ci.yaml",
+		];
+		const {code, markdown, workflows, unvalidatable} = classifyDiff(files);
+		expect([...code, ...markdown, ...workflows, ...unvalidatable].sort()).toEqual(
+			[...files].sort(),
+		);
+	});
+
+	it("claims workflow YAML only where GitHub reads it from", () => {
+		const {workflows, unvalidatable} = classifyDiff([
+			".github/workflows/ci.yml",
+			".github/actions/setup/action.yml",
+			"apps/web/config.yml",
+		]);
+		expect(workflows).toEqual([".github/workflows/ci.yml"]);
+		expect(unvalidatable).toEqual([".github/actions/setup/action.yml", "apps/web/config.yml"]);
 	});
 });
 
@@ -166,7 +208,7 @@ describe("runCheck", () => {
 		const out = await run([...LANE_OK, [DIFF, okOut("")]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe(
-			"build check: the diff against origin/main is empty — nothing to validate (ADR 0092).",
+			"build check: this tree changes nothing against origin/main, tracked or untracked — nothing to validate (ADR 0092).",
 		);
 	});
 
@@ -239,26 +281,33 @@ describe("runCheck", () => {
 		expect(JSON.parse(out.stdout).verdict).toBe("green");
 	});
 
-	// The #5229 regression: before the third bucket existed, this exact diff returned
+	// The #5229 regression: before the unvalidatable bucket existed, this diff shape returned
 	// {"verdict":"green","surface":"prose","ran":["markdown link + leak scan"]} having opened no file.
-	const WORKFLOW_ONLY = okOut(".github/workflows/ship.yml\nclaude-plugins/x/foo.sh\n");
+	// It was a workflow-plus-shell diff then; the workflow half has validators of its own since #5991,
+	// so the shape is now carried by two files that genuinely still have none.
+	const NO_SURFACE = okOut("migrations/0007.sql\nclaude-plugins/x/foo.sh\n");
 
 	it("refuses a wholly-unvalidatable diff on 22 under --surface prose — the false green", async () => {
-		const out = await run([...LANE_OK, [DIFF, WORKFLOW_ONLY]], {surface: "prose"});
+		const out = await run([...LANE_OK, [DIFF, NO_SURFACE]], {surface: "prose"});
 		expect(out.code).toBe(UNCLASSIFIED_DIFF);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"build check: no surface validates any of the 2 changed file(s) (.github/workflows/ship.yml, claude-plugins/x/foo.sh) — there is nothing here to run, so the verdict is a refusal, never green.",
+			"build check: no surface validates any of the 2 changed file(s) (claude-plugins/x/foo.sh, migrations/0007.sql) — there is nothing here to run, so the verdict is a refusal, never green.",
 		);
 	});
 
 	it("refuses the same diff on 22 under --surface plan", async () => {
-		const out = await run([...LANE_OK, [DIFF, WORKFLOW_ONLY]], {surface: "plan"});
+		const out = await run([...LANE_OK, [DIFF, NO_SURFACE]], {surface: "plan"});
+		expect(out.code).toBe(UNCLASSIFIED_DIFF);
+	});
+
+	it("refuses the same diff on 22 under --surface workflows — no workflow file either", async () => {
+		const out = await run([...LANE_OK, [DIFF, NO_SURFACE]], {surface: "workflows"});
 		expect(out.code).toBe(UNCLASSIFIED_DIFF);
 	});
 
 	it("refuses the same diff on 22 under --surface code, naming the honest reason", async () => {
-		const shell = fakeShell([...LANE_OK, [DIFF, WORKFLOW_ONLY]]);
+		const shell = fakeShell([...LANE_OK, [DIFF, NO_SURFACE]]);
 		const out = await Effect.runPromise(
 			Effect.provide(runCheck(options), Layer.merge(shell.layer, fakeFs({}).layer)),
 		);
@@ -381,6 +430,75 @@ describe("runCheck", () => {
 			},
 		);
 		expect(out.code).toBe(0);
+	});
+});
+
+// The #5687 divergence: `build check` asked `report/leaks.ts`'s ISSUE-BODY scanner about a file in a
+// diff, so it red on bytes `pipeline-cli leak-guard scan` — the gate it predicts — passes clean, and
+// the red was unclearable inside the lane that inherited it.
+describe("the prose leak scan predicts the committed-file gate, not the body guard", () => {
+	const CONFIG = "/repo/trees/lane-a/.fabrika.jsonc";
+	const LEAKY = "the Lineage bullets name ~/code/github.com/o/r on purpose\n";
+
+	it("greens a fenced regex literal quoting the home marker", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("reports/snapshot.md\n")]],
+			{surface: "prose"},
+			{
+				"/repo/trees/lane-a/reports/snapshot.md":
+					"```bash\ngrep -nE '(~/|/Users/|/home/)' -- .\n```\n",
+			},
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).verdict).toBe("green");
+	});
+
+	it("greens a doc citing a scratch root — a temp root is a comment-surface rule", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("reports/snapshot.md\n")]],
+			{surface: "prose"},
+			{"/repo/trees/lane-a/reports/snapshot.md": "scratch lands under /tmp/fabrika-build/x\n"},
+		);
+		expect(out.code).toBe(0);
+	});
+
+	it("greens a doc the repo declared exempt", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("CLAUDE.md\n")]],
+			{surface: "prose"},
+			{[CONFIG]: '{"docLeakExempt": ["/CLAUDE.md"]}', "/repo/trees/lane-a/CLAUDE.md": LEAKY},
+		);
+		expect(out.code).toBe(0);
+	});
+
+	it("reds the same bytes in a doc the list does not name", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/guide.md\n")]],
+			{surface: "prose"},
+			{[CONFIG]: '{"docLeakExempt": ["/CLAUDE.md"]}', "/repo/trees/lane-a/docs/guide.md": LEAKY},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+	});
+
+	it("exempts nothing when the repo declares no list, and says so", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("CLAUDE.md\n")]],
+			{surface: "prose"},
+			{"/repo/trees/lane-a/CLAUDE.md": LEAKY},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.some((line) => line.includes("nothing is leak-scan exempt"))).toBe(true);
+	});
+
+	it("refuses an unreadable config on 11 — which docs are exempt is UNKNOWN, never green", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/guide.md\n")]],
+			{surface: "prose"},
+			{[CONFIG]: "{}", "/repo/trees/lane-a/docs/guide.md": "fine\n"},
+			[CONFIG],
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
 	});
 });
 
@@ -518,5 +636,375 @@ describe("--surface plan covers the markdown class it claims", () => {
 		const verdict = JSON.parse(out.stdout);
 		expect(verdict.unvalidated).toEqual([]);
 		expect(verdict.ran).toEqual(["markdown link + leak scan", "## Dependencies grammar"]);
+	});
+});
+
+// #5823: `git diff` reports no untracked path, so a brand-new file reached neither the validated
+// set nor `unvalidated` — invisible instead of disclosed, under a green verdict. The lane order is
+// construct, check, then commit, so every new file is untracked exactly when the verb runs.
+describe("the enumeration unions the untracked files with the diff", () => {
+	it("counts an untracked file in the scanned scope", async () => {
+		const out = await run([
+			untracked("packages/fabrika-cli/src/build/pr-title.ts\n"),
+			...LANE_OK,
+			[DIFF, okOut("apps/web/src/App.tsx\n")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stderr).toContain("build check: 2 changed file(s) against origin/main.");
+		expect(JSON.parse(out.stdout).unvalidated).toEqual([]);
+	});
+
+	it("names an untracked markdown file in a code run's unvalidated list", async () => {
+		const out = await run([
+			untracked("docs/new-guide.md\n"),
+			...LANE_OK,
+			[DIFF, okOut("apps/web/src/App.tsx\n")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual(["docs/new-guide.md"]);
+	});
+
+	// The prose scanners read per enumerated file, so an unlisted markdown file is scanned by nothing.
+	it("scans an untracked markdown file under --surface prose", async () => {
+		const out = await run(
+			[untracked("docs/new-guide.md\n"), ...LANE_OK, [DIFF, okOut("docs/tracked.md\n")]],
+			{surface: "prose"},
+			{
+				"/repo/trees/lane-a/docs/tracked.md": "fine\n",
+				"/repo/trees/lane-a/docs/new-guide.md": "run it from /Users/someone/phoenix\n",
+			},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.some((line) => line.includes("machine-local path"))).toBe(true);
+	});
+
+	it("validates an all-untracked tree instead of refusing it as empty", async () => {
+		const out = await run([
+			untracked("apps/web/src/New.tsx\n"),
+			...LANE_OK,
+			[DIFF, okOut("")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stderr).toContain("build check: 1 changed file(s) against origin/main.");
+	});
+
+	it("lists a path both sources report exactly once", async () => {
+		const out = await run([
+			untracked("b.ts\na.ts\n"),
+			...LANE_OK,
+			[DIFF, okOut("b.ts\nc.ts\n")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stderr).toContain("build check: 3 changed file(s) against origin/main.");
+	});
+
+	it("still refuses on 7 when neither source yields a path", async () => {
+		const out = await run([untracked(""), ...LANE_OK, [DIFF, okOut("")]]);
+		expect(out.code).toBe(ZERO_SCOPE);
+	});
+
+	// Scripting stdout cannot catch a cwd-scoped read: bare `ls-files --others` answers only for the
+	// cwd and answers cwd-relative, while `git diff` answers repo-wide and root-relative. Run from a
+	// subdirectory that drops untracked files elsewhere in the tree and misresolves the rest against
+	// `lane.root`. Only the argv proves the two reads cover the same tree, so assert the argv.
+	it("reads the untracked list repo-wide and root-relative", async () => {
+		const shell = fakeShell([
+			untracked("apps/web/src/New.tsx\n"),
+			...LANE_OK,
+			[DIFF, okOut("apps/web/src/App.tsx\n")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runCheck(options), Layer.merge(shell.layer, fakeFs({}).layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(shell.calls).toContain(UNTRACKED_ARGV);
+	});
+
+	it("refuses an unreadable untracked read on 11 — a short list is a fail-open green", async () => {
+		const out = await run([
+			[UNTRACKED, errOut("fatal: not a git repository")],
+			...LANE_OK,
+			[DIFF, okOut("apps/web/src/App.tsx\n")],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("the verdict is UNKNOWN, never green");
+	});
+});
+
+// #5639: the extractor read a markdown link written as an *example* as a live one, so the five docs
+// that state this repo's link convention could not pass the surface that reads them.
+describe("linkTargets — an illustrated link is not a link", () => {
+	const TOOLS_MD_493 =
+		"`doc-links` validates markdown `[text](path)` links and *masks* code spans by construction.\n";
+
+	it("returns no target for the TOOLS.md line that illustrates the link grammar", () => {
+		expect(linkTargets(TOOLS_MD_493)).toEqual([]);
+	});
+
+	it("returns no target for a link inside a fenced block", () => {
+		expect(linkTargets("intro\n\n```markdown\nSee [the ADR](NNNN-slug.md).\n```\n")).toEqual([]);
+	});
+
+	it("returns no target for a link inside a tilde fence, or a fence indented up to three", () => {
+		expect(linkTargets("~~~\n[a](gone.md)\n~~~\n")).toEqual([]);
+		expect(linkTargets("   ```\n[a](gone.md)\n   ```\n")).toEqual([]);
+	});
+
+	it("returns no target for a link inside a multi-backtick span", () => {
+		expect(linkTargets("write `` [a](`x`.md) `` to show it\n")).toEqual([]);
+	});
+
+	it("still returns a real relative link", () => {
+		expect(linkTargets("see [the index](.patterns/index.md) first\n")).toEqual([
+			".patterns/index.md",
+		]);
+	});
+
+	it("still returns a real repo-rooted link", () => {
+		expect(linkTargets("see [the index](/.patterns/index.md)\n")).toEqual(["/.patterns/index.md"]);
+	});
+
+	it("still returns a link sharing its line with an unrelated code span", () => {
+		expect(linkTargets("run `pnpm dev`, then read [the guide](DEVELOPMENT.md)\n")).toEqual([
+			"DEVELOPMENT.md",
+		]);
+	});
+
+	it("still returns a link after a fence closes, and after an unpartnered backtick", () => {
+		expect(linkTargets("```\n[a](gone.md)\n```\n\n[b](DEVELOPMENT.md)\n")).toEqual([
+			"DEVELOPMENT.md",
+		]);
+		expect(linkTargets("a lone ` tick, then [b](DEVELOPMENT.md)\n")).toEqual(["DEVELOPMENT.md"]);
+	});
+
+	it("keeps skipping schemes and bare fragments, masked or not", () => {
+		expect(linkTargets("[home](https://kamp.us) and [top](#intro)\n")).toEqual([]);
+	});
+});
+
+describe("the prose link check still reds a dead link", () => {
+	const DOC = "/repo/trees/lane-a/docs/guide.md";
+
+	it("reds a genuinely dead relative link in a changed doc", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/guide.md\n")]],
+			{surface: "prose"},
+			{
+				[DOC]: "see [the plan](plan.md)\n",
+			},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.some((line) => line.includes('links to "plan.md"'))).toBe(true);
+	});
+
+	it("greens the same doc when that link is written as an example", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/guide.md\n")]],
+			{surface: "prose"},
+			{
+				[DOC]: "write `[the plan](plan.md)` to cite it\n",
+			},
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).verdict).toBe("green");
+	});
+});
+
+// #5991: a workflows-only diff refused under every surface, so the repo's own gates were the one
+// diff class a lane could not get an in-tree green on.
+describe("--surface workflows", () => {
+	const CONFIG = "/repo/trees/lane-a/.fabrika.jsonc";
+	const GUARD = ["node", "guards/bin.js", "path-filter-guard", "check"];
+	const declaring = (reads: ReadonlyArray<string>) => ({
+		[CONFIG]: JSON.stringify({workflowValidators: [{command: GUARD, reads}]}),
+	});
+	const DECLARED = declaring([".github/workflows/ci.yml"]);
+	const GUARD_LINE = /^node guards\/bin\.js path-filter-guard check$/;
+	const ACTIONLINT = /^actionlint /;
+	const WORKFLOWS = okOut(".github/workflows/ci.yml\n.github/workflows/publish.yml\n");
+	const NO_ACTIONLINT = [ACTIONLINT];
+
+	const workflows = (
+		script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+		files: Record<string, string> = DECLARED,
+		unstartable: ReadonlyArray<RegExp> = [],
+	) => {
+		const shell = fakeShell([...LANE_OK, [DIFF, WORKFLOWS], ...script], undefined, unstartable);
+		return Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, surface: "workflows"}),
+				Layer.merge(shell.layer, fakeFs({files}).layer),
+			),
+		).then((out) => ({out, calls: shell.calls}));
+	};
+
+	it("greens a workflows-only diff, naming actionlint and the declared guard as what ran", async () => {
+		const {out, calls} = await workflows([
+			[ACTIONLINT, okOut("")],
+			[GUARD_LINE, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			verdict: "green",
+			surface: "workflows",
+			tree: "/repo/trees/lane-a",
+			ran: ["actionlint", GUARD.join(" ")],
+			unvalidated: [],
+		});
+		expect(calls).toContain("actionlint .github/workflows/ci.yml .github/workflows/publish.yml");
+	});
+
+	it("reds on 18 when actionlint reds, printing its diagnostics above the verdict", async () => {
+		const {out} = await workflows([[ACTIONLINT, errOut('ci.yml:7:9: unexpected key "runs-on"')]]);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-2)).toBe('ci.yml:7:9: unexpected key "runs-on"');
+		expect(out.stderr.at(-1)).toBe("build check: red — actionlint failed; diagnostics above.");
+	});
+
+	it("bounds a runaway linter's output, so the verdict is not buried under it", async () => {
+		const flood = Array.from({length: 60}, (_, i) => `ci.yml:${i}:1: nope`).join("\n");
+		const {out} = await workflows([[ACTIONLINT, errOut(flood)]]);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.at(-2)).toBe("… 20 more line(s); re-run the command itself for the rest.");
+		expect(out.stderr.at(-1)).toBe("build check: red — actionlint failed; diagnostics above.");
+	});
+
+	it("reds on 18 when a declared guard reds, naming the command", async () => {
+		const {out} = await workflows([
+			[ACTIONLINT, okOut("")],
+			[GUARD_LINE, errOut("ci.yml's path filter names a path no job reads")],
+		]);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.at(-1)).toBe(
+			`build check: red — ${GUARD.join(" ")} failed; diagnostics above.`,
+		);
+	});
+
+	it("greens without actionlint, disclosing that it did not run", async () => {
+		const {out} = await workflows(
+			[[GUARD_LINE, okOut("")]],
+			declaring([".github/workflows/ci.yml", ".github/workflows/publish.yml"]),
+			NO_ACTIONLINT,
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).ran).toEqual([GUARD.join(" ")]);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual([]);
+		expect(out.stderr.some((line) => line.includes("actionlint did NOT run"))).toBe(true);
+	});
+
+	// The finding on #6220's first round: `ran.length > 0` proves a validator ran, never that it
+	// opened the file the diff changed. Only actionlint takes the changed paths; a declared guard
+	// reads the fixed set it names, so coverage is per file or it is a claim about nothing.
+	it("names a changed workflow no validator that ran opens in `unvalidated`", async () => {
+		const {out} = await workflows([[GUARD_LINE, okOut("")]], DECLARED, NO_ACTIONLINT);
+		expect(out.code).toBe(0);
+		const verdict = JSON.parse(out.stdout);
+		expect(verdict.ran).toEqual([GUARD.join(" ")]);
+		expect(verdict.unvalidated).toEqual([".github/workflows/publish.yml"]);
+		expect(
+			out.stderr.some((line) =>
+				line.includes("no validator that ran opens .github/workflows/publish.yml"),
+			),
+		).toBe(true);
+	});
+
+	it("refuses on 11 when every validator ran and none of them opened a changed file", async () => {
+		const {out} = await workflows(
+			[[GUARD_LINE, okOut("")]],
+			declaring([".github/workflows/deploy.yml"]),
+			NO_ACTIONLINT,
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(
+			"none of them opened any of the 2 changed workflow file(s)",
+		);
+	});
+
+	it("refuses the whole declared list when an entry names no file it reads", async () => {
+		const {out} = await workflows([], {[CONFIG]: JSON.stringify({workflowValidators: [GUARD]})}, [
+			ACTIONLINT,
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("no workflow validator could be executed");
+	});
+
+	it("refuses on 11 when nothing could run — a green there would have opened no file", async () => {
+		const {out} = await workflows([], {}, NO_ACTIONLINT);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("no workflow validator could be executed");
+		expect(out.stderr.at(-1)).toContain("actionlint is not installed here");
+	});
+
+	it("refuses on 11 when a declared guard is not installed, naming it", async () => {
+		const {out} = await workflows([[ACTIONLINT, okOut("")]], DECLARED, [GUARD_LINE]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain(`${GUARD.join(" ")} could not be executed`);
+	});
+
+	it("refuses on 11 when the config cannot be read — the validator set is UNKNOWN", async () => {
+		const shell = fakeShell([...LANE_OK, [DIFF, WORKFLOWS], [ACTIONLINT, okOut("")]]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, surface: "workflows"}),
+				Layer.merge(shell.layer, fakeFs({files: {[CONFIG]: "{}"}, unreadable: [CONFIG]}).layer),
+			),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("which commands validate this repo's workflows is UNKNOWN");
+	});
+
+	it("refuses on 10 over a diff with no workflow file", async () => {
+		const shell = fakeShell([...LANE_OK, [DIFF, okOut("apps/web/src/App.tsx\n")]]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, surface: "workflows"}),
+				Layer.merge(shell.layer, fakeFs({}).layer),
+			),
+		);
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.at(-1)).toBe(
+			"build check: --surface workflows, but the diff changes no workflows file — the surface is provably wrong.",
+		);
+	});
+});
+
+describe("a mixed workflow-plus-code diff — each surface reads its own class and names the other", () => {
+	const MIXED = okOut(".github/workflows/ci.yml\napps/web/src/App.tsx\n");
+	const CONFIG = "/repo/trees/lane-a/.fabrika.jsonc";
+
+	it("runs the CI commands under --surface code, disclosing the workflow it did not read", async () => {
+		const out = await run([...LANE_OK, [DIFF, MIXED], [TYPECHECK, okOut("")], [LINT, okOut("")]]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual([".github/workflows/ci.yml"]);
+	});
+
+	it("lints the workflow under --surface workflows, disclosing the code it did not read", async () => {
+		const shell = fakeShell([...LANE_OK, [DIFF, MIXED], [/^actionlint /, okOut("")]]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, surface: "workflows"}),
+				Layer.merge(shell.layer, fakeFs({files: {[CONFIG]: "{}"}}).layer),
+			),
+		);
+		expect(out.code).toBe(0);
+		const verdict = JSON.parse(out.stdout);
+		expect(verdict.ran).toEqual(["actionlint"]);
+		expect(verdict.unvalidated).toEqual(["apps/web/src/App.tsx"]);
+		expect(shell.calls).toContain("actionlint .github/workflows/ci.yml");
+		expect(out.stderr.some((line) => line.includes("NOT covered by this verdict"))).toBe(true);
 	});
 });

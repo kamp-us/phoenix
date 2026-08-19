@@ -16,6 +16,7 @@ const FULL_CODEOWNERS = [
 	"/.github/ @usirin",
 	"/.claude-plugin/ @usirin",
 	"/packages/ci-required/ @usirin",
+	"/packages/fabrika-cli/src/ci/ @usirin",
 	"/packages/pipeline-cli/ @usirin",
 	"/biome.jsonc @usirin",
 	"/biome-plugins/ @usirin",

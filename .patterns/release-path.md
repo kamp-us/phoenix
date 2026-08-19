@@ -63,12 +63,30 @@ Ruled by ADR [0076](../.decisions/0076-decisions-index-npm-publish-automated-rel
 ruling — so superseded-0076 remains this constraint's only ADR home, cited as live on that
 point alone (ADR 0239 §2 carries the same caveat).
 
-### 3. The package ships compiled JS, never raw `.ts`
+### 3. The package ships compiled JS, never raw `.ts` — plus every asset `tsc` will not emit
 
 Node refuses to strip types under `node_modules`, so a source-only tarball is dead on
 arrival for a consumer. `bin`/`exports` point at `dist/`, `files` is `[dist]`, and
 `publish.yml` runs an explicit build step before publishing (`prepublishOnly` also runs it;
 the explicit step makes the gate visible).
+
+`tsc` emits `.js`/`.d.ts` and copies nothing else, so a file under `src/` that no module
+imports never reaches `dist/`. A module reading such a file by path off `import.meta.url`
+therefore works in-tree and finds nothing in every install — invisible until someone runs the
+published package, which is how `fabrika-cli` released a `lane open` that could boot no lane
+at all ([#6011](https://github.com/kamp-us/phoenix/issues/6011)). A package whose build is
+`tsc` alone carries a copy step after it
+([`packages/fabrika-cli/scripts/copy-src-assets.mjs`](../packages/fabrika-cli/scripts/copy-src-assets.mjs)),
+and the rule that step applies is **every** non-`.ts` file with no exception list: an
+exception list is maintained by whoever adds an asset knowing that reading a file by path is
+different from importing it, which is exactly the knowledge the defect proves absent.
+
+Only a build-and-pack test can see this — read from `src/`, the asset is right there. The
+worked one is
+[`packages/fabrika-cli/src/packaging.cli.test.ts`](../packages/fabrika-cli/src/packaging.cli.test.ts):
+it runs the real build, packs the real tarball, and drives the tarball's own `dist/bin.js`.
+The two sibling published packages do not have it yet
+([#6039](https://github.com/kamp-us/phoenix/issues/6039)).
 
 **No live ADR rules this.** It is written down in ADR 0076 §1, which is superseded and
 which 0103 does not restate on this point, and in `publish.yml`'s own comment citing

@@ -3,7 +3,8 @@
  * out, byte-deterministic (#5688; phase 3 of #5680).
  *
  * **No second grammar and no second cycle walk.** The topology is read through the shipped
- * `build/dependencies.ts` parser — the same reader `build eligible` gates on — and the cycle check
+ * `build/dependencies.ts` parser — the same reader `build check --surface plan` validates with,
+ * while `build eligible` gates on the native `blocked_by` graph instead — and the cycle check
  * is `ledger/topology-doc.ts`'s `findCycle` over the same union graph (declared `requires` edges
  * plus the edges the phase order implies). What this module adds is only the machine rendering:
  * one region per child, phases sequenced by `onDone`, parallel within a phase, and one epic tail
@@ -48,7 +49,9 @@ export type EmitResult =
  * `landed`; every other close (`not_planned`, `duplicate`, a legacy null reason) is
  * closed-without-landing and boots `frozen` — `lane status` reads `frozen` as an error final and
  * trips the phase, which is the loud answer for a topology that still requires a child the board
- * abandoned. Marking it `landed` would fabricate a landing.
+ * abandoned. Marking it `landed` would fabricate a landing. A child booted there left no state
+ * behind it, so `frozen`'s `UNBLOCKED` door has nowhere to resume to and the fold refuses it —
+ * that child is re-emitted, not unfrozen (ADR 0297).
  */
 const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
 	if (link.state === "open") return "queued";
@@ -65,7 +68,8 @@ const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
  * `integrate` is the merge of the reviewed range into the epic branch, and it is a *state* so that a
  * collision between two children resolves inside the run: its `FAIL` — a textual conflict, or a
  * failed post-merge check, which is the semantic collision — re-enters `build` under the same
- * guarded-FAIL retry array `review` uses, and exhausts into `frozen`. No route from it reaches a
+ * guarded-FAIL retry array `review` uses, and exhausts into `frozen` — a park with an `UNBLOCKED`
+ * door back to the state it left, spent retries held (ADR 0297). No route from it reaches a
  * merge queue, and none reaches `landed` without passing back through `review`: post-resolution
  * content is not what the range verdict judged, so the verdict is re-proven before the landing
  * rather than after it.
@@ -98,12 +102,17 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
 		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		hist: {type: "history"},
 		landed: {type: "final"},
-		frozen: {type: "final"},
+		frozen: {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
 	},
 });
 
 /**
  * The epic's own region — the tail phase's single task: review the one PR, then merge it once.
+ *
+ * `ship` carries the same guarded FAIL, because a PR can be re-reviewed at a rewritten head while
+ * the lane sits there and a park clear is exactly that path (#5807). Its retry arm is `review` for
+ * the same reason the review edge's is: the repair round happens outside the machine, so the next
+ * thing the lane can record is another verdict.
  *
  * `review` FAIL is a two-arm guarded array so the fallthrough final is an *error* final by the
  * compiler's own structural read; a plain target would leave a failed epic review folding to
@@ -125,7 +134,16 @@ const epicRegion = (ns: string): Record<string, unknown> => ({
 				],
 			},
 		},
-		ship: {on: {[`${ns}.DONE`]: "shipped", [`${ns}.BLOCKED`]: "human:cp-approval"}},
+		ship: {
+			on: {
+				[`${ns}.DONE`]: "shipped",
+				[`${ns}.BLOCKED`]: "human:cp-approval",
+				[`${ns}.FAIL`]: [
+					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
+					{target: "human:epic-review"},
+				],
+			},
+		},
 		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		"human:cp-approval": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		hist: {type: "history"},
@@ -149,6 +167,11 @@ export const emitMachine = (
 	body: string,
 	children: ReadonlyArray<SubIssueLink>,
 ): EmitResult => {
+	// Childlessness is read before the body, because an issue with no sub-issue links is not an epic
+	// whatever its prose says — parsing first let a plain issue's `## Dependencies` heading refuse as
+	// a malformed epic record and dead-end the boot (#5973).
+	if (children.length === 0) return {_tag: "NoTopology"};
+
 	const topo = readTopology(body);
 	if (topo._tag === "Absent") return {_tag: "NoTopology"};
 	if (topo._tag === "Unparseable") return {_tag: "Unparseable", line: topo.line, text: topo.text};

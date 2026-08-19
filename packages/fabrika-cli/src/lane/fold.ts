@@ -19,11 +19,18 @@ import {
 	type TaskState,
 } from "./machine.ts";
 
-/** One appended line of `events.jsonl`: which task, which (namespaced) event, when. */
+/**
+ * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
+ * event a shell reported through `lane report`, the artifact refs its terminal named (#5712). The
+ * refs are evidence carried verbatim; the fold reads only `task`/`event`, so a line with or
+ * without them folds identically.
+ */
 export interface LogEntry {
 	readonly task: string;
 	readonly event: string;
 	readonly at: string;
+	readonly pr?: string;
+	readonly comment?: string;
 }
 
 export type ParseLogResult =
@@ -44,7 +51,13 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(`line ${index + 1} is not JSON`);
 			continue;
 		}
-		const record = parsed as {task?: unknown; event?: unknown; at?: unknown};
+		const record = parsed as {
+			task?: unknown;
+			event?: unknown;
+			at?: unknown;
+			pr?: unknown;
+			comment?: unknown;
+		};
 		if (
 			typeof record !== "object" ||
 			record === null ||
@@ -55,7 +68,20 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(`line ${index + 1} does not carry string \`task\`/\`event\`/\`at\``);
 			continue;
 		}
-		entries.push({task: record.task, event: record.event, at: record.at});
+		if (
+			(record.pr !== undefined && typeof record.pr !== "string") ||
+			(record.comment !== undefined && typeof record.comment !== "string")
+		) {
+			defects.push(`line ${index + 1} carries a non-string \`pr\`/\`comment\` ref`);
+			continue;
+		}
+		entries.push({
+			task: record.task,
+			event: record.event,
+			at: record.at,
+			...(record.pr === undefined ? {} : {pr: record.pr}),
+			...(record.comment === undefined ? {} : {comment: record.comment}),
+		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};
 };
@@ -216,15 +242,28 @@ export const applyEvent = (
 		};
 	}
 	const previous = deriveStatus(lane, states);
-	if (previous.status === "done") {
+	// A task sitting in an open final is parked, not finished: the door out is still walkable (ADR
+	// 0297). This is a fact about the task alone — a phase holding a parked child beside an
+	// unfinished sibling never folds, so the lane's own status says nothing about it.
+	const compiled = lane.tasks[taskId];
+	const state = states[taskId];
+	const inOpenFinal =
+		compiled !== undefined && state !== undefined && compiled.openFinals.has(state.type);
+	// Only the tripped terminal admits an event once the whole lane has folded — `complete` means
+	// every task finished clean, and no door leads out of that.
+	const parked =
+		previous.status === "done" && previous.stateValue === lane.terminals.tripped && inOpenFinal;
+	if (previous.status === "done" && !parked) {
 		return {
 			_tag: "Refused",
 			reason: `workflow is "${String(previous.stateValue)}" — no further events`,
 		};
 	}
-	const activePhase = lane.phases.find(
-		(phase) => typeof (previous.stateValue as Record<string, unknown>)[phase.name] === "object",
-	);
+	const activePhase = parked
+		? lane.phases.find((phase) => phase.tasks.includes(taskId))
+		: lane.phases.find(
+				(phase) => typeof (previous.stateValue as Record<string, unknown>)[phase.name] === "object",
+			);
 	if (activePhase === undefined || !activePhase.tasks.includes(taskId)) {
 		return {
 			_tag: "Refused",
@@ -245,6 +284,14 @@ export const applyEvent = (
 			return {_tag: "Refused", reason: `${error.name}: ${error.message}`};
 		}
 		throw error;
+	}
+	// A region booted straight into a park left no state behind it, so its door resolves to the park
+	// itself; recording that would answer "resumed" for a fold that did not move.
+	if (inOpenFinal && next.type === stateIn(states, taskId).type) {
+		return {
+			_tag: "Refused",
+			reason: `task "${taskId}" booted in "${next.type}" and left no state to resume — the door leads back to itself`,
+		};
 	}
 	const entry: LogEntry = {task: taskId, event: `${taskId.toUpperCase()}.${event}`, at};
 	const current = deriveStatus(lane, {...states, [taskId]: next});

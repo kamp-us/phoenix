@@ -25,6 +25,46 @@ describe("readTopology", () => {
 	it("refuses a ref that is neither #<int> nor C<int>", () => {
 		expect(readTopology(ledger("- phase 1: #210, PR-7"))._tag).toBe("Unparseable");
 	});
+
+	it("ends the section at a thematic break, so an appended amendment does not refuse it", () => {
+		const read = readTopology(
+			"# Epic\n\n## Dependencies\n\n- phase 1: #210\n- phase 2: #212\n\n---\n\n## Amendment — 2026-08-16\n\nnothing here parses as an edge\n",
+		);
+		expect(read._tag).toBe("Parsed");
+		expect(read._tag === "Parsed" ? read.edges : []).toHaveLength(2);
+	});
+
+	it.each([
+		"***",
+		"___",
+		"- - -",
+		"   ---",
+	])("ends the section at the %s spelling of a thematic break", (marker) => {
+		const read = readTopology(
+			`## Dependencies\n\n- phase 1: #210\n${marker}\nnot a topology line\n`,
+		);
+		expect(read._tag).toBe("Parsed");
+		expect(read._tag === "Parsed" ? read.edges : []).toHaveLength(1);
+	});
+
+	it("keeps only the edges above the break", () => {
+		const read = readTopology("## Dependencies\n\n- phase 1: #210\n\n---\n\n- phase 2: #212\n");
+		expect(read._tag === "Parsed" ? read.edges : []).toEqual([
+			{_tag: "Phase", phase: 1, members: [{_tag: "Issue", number: 210}]},
+		]);
+	});
+
+	it("still refuses a garbage line reached before any break", () => {
+		const read = readTopology("## Dependencies\n\n- phase 1: #210\nnot an edge\n\n---\n");
+		expect(read._tag).toBe("Unparseable");
+		expect(read._tag === "Unparseable" ? read.line : 0).toBe(4);
+		expect(read._tag === "Unparseable" ? read.text : "").toBe("not an edge");
+	});
+
+	it("does not read a two-dash rule or a four-space-indented one as a break", () => {
+		expect(readTopology("## Dependencies\n\n- phase 1: #210\n--\n")._tag).toBe("Unparseable");
+		expect(readTopology("## Dependencies\n\n- phase 1: #210\n    ---\n")._tag).toBe("Unparseable");
+	});
 });
 
 describe("predecessorsOf", () => {

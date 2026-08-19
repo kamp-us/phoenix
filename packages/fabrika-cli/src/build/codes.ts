@@ -118,3 +118,41 @@ export const HEAD_DROPS_REMOTE = 23;
  * else (#5484).
  */
 export const COMMIT_NOT_CREATED = 24;
+/**
+ * Proven: the invoking account may not clear a cap — outside the configured grant-author set, or
+ * below `write` at the repository ACL.
+ *
+ * One seat for both clauses because they answer one question, "may this account grant?", and a
+ * caller's next move is the same either way: get authority, then re-run. Its own seat rather than a
+ * borrowed `21`: that code is about the *issue's* audience label, and this one is about who may hold
+ * founder authority — the remedies share nothing. It is never {@link PRECONDITION_UNKNOWN}: the
+ * config, the memberships and the ACL were read in full, so the refusal is a fact about the account
+ * (#5959; the ACL clause is ADR 0055's).
+ */
+export const GRANT_UNAUTHORIZED = 25;
+/** Proven: the quoted authorization is empty or undated — a bare stamp is void (#4938). */
+export const AUTHORIZATION_VOID = 26;
+/**
+ * Proven: the grant is recorded on the PR and the local lane did not take it.
+ *
+ * Never {@link WRITE_UNKNOWN}: the remote half landed and read back, so the outcome is known and
+ * partial. The lane freezes a round early until a re-run reconciles it, which is the conservative
+ * direction and a state an operator must be able to see rather than infer.
+ *
+ * `27` and `28` are the base's (`QUEUE_UNREADABLE`, `SEARCH_UNREADABLE`), so the next free seat is
+ * `29` — a group never re-uses a number the base already spoke for.
+ */
+export const LOCAL_LANE_UNWRITTEN = 29;
+/**
+ * Proven: not admitted on the **type axis** — the deliverable is not a pull request a build lane
+ * produces (#5490).
+ *
+ * The third sibling of {@link OUT_OF_FOCUS} and {@link AUDIENCE_NOT_AGENT}, and seated apart from
+ * both for the reason they are seated apart from each other: the remedy is unlike either. `20` says
+ * edit the focus row, `21` says re-label the audience, and this one says the work belongs to another
+ * skill's lane — `/adr` for a decision, `plan-epic` for an epic — or, on a decision whose choice a
+ * founder already recorded, that the claim must cite that ruling comment. Borrowing `21` is what the
+ * code did before there was a fence at all, and it named the wrong objection: an operator sent to
+ * re-label a decision `ready-for:agent` would satisfy `21` and still be building the wrong artifact.
+ */
+export const TYPE_NOT_BUILDABLE = 30;

@@ -42,8 +42,9 @@ flowchart TD
 		camp_flag_retirement_adr_0136["Flag Retirement (ADR 0136)"]:::done
 		camp_writing_craft_import["Writing-Craft Import"]:::done
 		camp_fabrika_kampus_pipeline_v2["fabrika — kampus-pipeline v2"]:::done
-		camp_switching_to_fabrika["switching to fabrika"]:::active
+		camp_switching_to_fabrika["switching to fabrika"]:::done
 		camp_fabrika_fast_follows["fabrika fast follows"]:::active
+		camp_fabrika_everywhere["fabrika everywhere"]:::active
 	end
 	ext_3642["#3642"]:::external
 	ext_3833["#3833"]:::external
@@ -100,6 +101,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | fabrika — kampus-pipeline v2 | #44 | done |
 | switching to fabrika | #45 | done |
 | fabrika fast follows | #46 | active |
+| fabrika everywhere | #47 | active |
 
 **The table is a parsed contract.** It is the single source the campaign skill (which appends a row and flips its state) and the lifecycle guard (which reads it) both bind to, so the grammar is pinned here rather than re-derived at either end:
 
@@ -110,17 +112,17 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 
 ## Focus
 
-The one milestone in **exclusive focus**: the campaign an execution engine may open lanes against. The `## Campaigns` table above cannot answer this — campaigns run concurrently and many are `active` at once. This section can, and it is data rather than prose, so an agent reads the focus instead of waiting for a ruling to reach it.
+The milestones in **declared focus**: the campaigns an execution engine may open lanes against. The `## Campaigns` table above cannot answer this — campaigns run concurrently and many are `active` at once. This section can, and it is data rather than prose, so an agent reads the focus instead of waiting for a ruling to reach it.
 
 | Milestone | Declared |
 |-----------|----------|
 | #46 | 2026-08-18 |
 
-**The grammar.** Columns are `Milestone | Declared`, in that order. `Milestone` pins the focus **by number** (`#N`) — the same row→milestone-by-number binding `## Arcs` and `## Campaigns` use, and the one link to the operational projection. `Declared` is the ISO date (`YYYY-MM-DD`) the focus was declared. The table carries **at most one row**: exclusive focus admits exactly one milestone.
+**The grammar.** Columns are `Milestone | Declared`, in that order. `Milestone` pins one focused milestone **by number** (`#N`) — the same row→milestone-by-number binding `## Arcs` and `## Campaigns` use, and the one link to the operational projection. `Declared` is the ISO date (`YYYY-MM-DD`) that row was declared. The table carries **N rows**, one per milestone in focus, and the focus is the set of them: a repo running several streams at once declares a row each (#6005). Phoenix runs one, so phoenix's table has one row. **One unreadable row makes the whole declaration unreadable** — a fence never falls back to the rows it could parse.
 
-**Absence and emptiness both mean no exclusive focus is declared.** A missing `## Focus` section and a present-but-empty one are the same well-formed default, and every consumer reads them the same way — nothing is out of scope, everything stays admissible. Neither is ever a refusal: a fence that refused on absence would wedge the pipeline the moment nobody had declared a focus (founder ruling on #5011 — an empty `## Focus` admits everything).
+**Absence and emptiness both mean no focus is declared.** A missing `## Focus` section and a present-but-empty one are the same well-formed default, and every consumer reads them the same way — nothing is out of scope, everything stays admissible. Neither is ever a refusal: a fence that refused on absence would wedge the pipeline the moment nobody had declared a focus (founder ruling on #5011 — an empty `## Focus` admits everything).
 
-**Guarded.** `roadmap-guard` invariant **I6** keeps the declaration honest: at most one row, whose milestone resolves, is open, and is claimed by an `active` arc or campaign row above. Reading the declaration at the pick and claim seams is separate work (#5015, #5016); this section is the surface those read.
+**Guarded.** `roadmap-guard` invariant **I6** keeps the declaration honest: every row's milestone resolves, is open, and is claimed by an `active` arc or campaign row above. Row count is not an invariant. Reading the declaration at the pick and claim seams is separate work (#5015, #5016); this section is the surface those read.
 
 ## Dependencies
 

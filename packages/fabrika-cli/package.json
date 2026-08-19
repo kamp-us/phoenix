@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/fabrika-cli",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "@kampus/fabrika-cli — the deterministic verb package fabrika skills call; `fabrika <group> <verb> …` (epic #4650)",
 	"license": "MIT",
 	"repository": {
@@ -28,6 +28,9 @@
 	},
 	"publishConfig": {
 		"access": "public",
+		"engines": {
+			"node": ">=22.12"
+		},
 		"bin": {
 			"fabrika": "./dist/bin.js"
 		},
@@ -46,7 +49,7 @@
 		}
 	},
 	"scripts": {
-		"build": "tsc -p tsconfig.build.json",
+		"build": "tsc -p tsconfig.build.json && node ./scripts/copy-src-assets.mjs",
 		"postinstall": "node ./scripts/provision-browser.mjs",
 		"prepublishOnly": "pnpm run build",
 		"typecheck": "tsc -p tsconfig.json",

@@ -325,6 +325,16 @@ ruling mandates, and it is the input a `write-code` agent builds from.
 reading the authoring transcript, without asking the session a question, and without opening a v1
 script.
 
+**What it is at runtime.** The authoring spec is `contract.md`'s primary role; runtime lookup is
+not a role it carries. A running shell whose question has one addressable answer — an exit-code
+row, a grammar table, a terminal vocabulary, one section — gets it from a CLI verb
+(`fabrika wire doc-section --heading <x> < <skill-base>/contract.md`, or a dedicated lookup verb
+like `fabrika triage codes`), never by opening the whole contract. Only a judgment-shaped pass —
+authoring a skill, reviewing one, resolving an ambiguity the verbs cannot address — opens the file
+in full. The why is ADR
+[0291](../../../.decisions/0291-runtime-lookups-verb-served.md); the pointer-sizing side of the
+same split is [skill-conventions §2](skill-conventions.md).
+
 ### Required sections
 
 A spec has a header and one block per verb.

@@ -48,7 +48,7 @@ them *regardless of the plugin toggle* — and
 [0277](../../../.decisions/0277-v1-retirement-keeps-the-plugin-suppression.md)); the plugin tree
 itself, along with its `kampus-pipeline@kampus: false` suppression line in
 `.claude/settings.json`, was deleted outright by ADR
-[0291](../../../.decisions/0291-retire-kampus-pipeline-plugin.md) (#5937). Fabrika's four shells
+[0303](../../../.decisions/0303-retire-kampus-pipeline-plugin.md) (#5937). Fabrika's four shells
 are the only definitions spelling these names now.
 
 ## Why exactly four
@@ -98,7 +98,7 @@ sets until that filing is triaged and built.
 
 For the reviewer the grant is a tool grant and nothing more: the behaviour stays in
 [`../skills/review/SKILL.md`](../skills/review/SKILL.md) §6, which makes the `governance` namespace
-**derived-required** on a `harness: true` diff — fire the `governance` skill, wait for it, and never
+**derived-required** on a `governance: required` diff — fire the `governance` skill, wait for it, and never
 emit that namespace yourself. Without a spawn tool the shell derives that requirement mid-run and
 dead-ends, leaving the PR with a governance check nothing in the run can clear. The grant only lets
 the shell obey an instruction it already carried. Founder ruling of 2026-08-14 on

@@ -45,6 +45,10 @@ the claim is `build`'s, reused, not a second lock:
 fabrika build claim $epic_number --purpose gate
 ```
 
+The token `claim` prints is `<claim-token>` below — this LANE's name, which every later verb takes as
+`--token`. A session runs several lanes, so a verb handed only the session id cannot tell a sibling
+lane's claim from yours (#6037).
+
 `--purpose gate` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
 should pick the issue up to **build**, and an epic earns that label only *after* it has been planned
 and gated — at step 3, from this very run — so fencing this gate on it is circular, and the fence
@@ -76,8 +80,9 @@ assignee slot, criteria token, stories and containment.
 fabrika plan check $epic_number
 ```
 
-This is the **whole pass/fail decision** over the closed hard-defect enum in
-[`contract.md`](contract.md). Do not read the ledger and form your own verdict beside it: two
+This is the **whole pass/fail decision** over the closed hard-defect enum
+(`fabrika wire doc-section --heading "The floor — thirteen defect types" < <skill-base>/contract.md`).
+Do not read the ledger and form your own verdict beside it: two
 answers to one question is how a gate contradicts itself. Both arms exit `0` — read `answer`
 (`clean` or `defective`), and carry `digest` forward to every verb that writes.
 
@@ -147,9 +152,9 @@ it answers `posted` with a comment id.
 **Every clean floor comes through here, `FLIP-PARTIAL` included** — skip it there and the caveats
 that run formed are simply dropped. A partial flip writes only `status:planned` / `status:triaged` on
 a subset of children plus the epic's own audience label, none of them in the digest and none a floor
-trigger ([`contract.md`](contract.md), `flip-neutral`), so the digest you carried still binds and
+trigger (the flip-neutrality invariant — `fabrika wire doc-section --heading "The scope digest" < <skill-base>/contract.md`), so the digest you carried still binds and
 this verb still re-derives a clean floor after a `22`. **Order on
-that terminal: this verdict first, then `fabrika build note` with the un-flipped refs.** The note's
+that terminal: this verdict first, then `fabrika build note $epic_number --token <claim-token>` with the un-flipped refs.** The note's
 body is free prose — no closed-kind check, no digest binding — so it carries refs and
 never caveats, and posting the verdict first is what keeps the rule below true.
 
@@ -171,7 +176,7 @@ it with `report` and let the verdict stand.
 ## Terminal vocabulary
 
 End as exactly one. **Every case holds no branch and no checkout — there is nothing to push, leave
-local, or remove.** Release the claim with `fabrika build release $epic_number` on every terminal reached
+local, or remove.** Release the claim with `fabrika build release $epic_number --token <claim-token>` on every terminal reached
 **after step 1 answered `won`** — if it never did, you hold nothing and there is nothing to release.
 An unreleased claim is a lock nobody can reclaim, which a human then clears by hand.
 
@@ -190,7 +195,7 @@ An unreleased claim is a lock nobody can reclaim, which a human then clears by h
   and no verdict is posted; re-check from step 2.
 - `FLIP-PARTIAL` — `22`: the floor was clean and something did not move — some children, or the
   epic's own audience label. Post the verdict with any caveats (step 4), **then** the refs the verb
-  named with `fabrika build note` — refs only, no claim about what any issue carries now (step 3);
+  named with `fabrika build note $epic_number --token <claim-token>` — refs only, no claim about what any issue carries now (step 3);
   the epic needs a human. Never reported as a gate failure.
 - `PLAN-UNGATEABLE` — `7` or `10`: the target is **proven** not gateable — absent or closed, not a
   `type:epic`, or it has zero children. Nothing was written. Proven, so not `STOPPED`.
@@ -204,7 +209,7 @@ An unreleased claim is a lock nobody can reclaim, which a human then clears by h
 - `STOPPED` — everything else that leaves the run UNKNOWN with nothing written: `4`, `11`, `23`, a
   claim whose own state is UNKNOWN, a `15` from a verb after the claim was won (the claim moved
   under you), and any `1`, `126` or `127` — a verb that could not run is never a verdict. Post the
-  state for a successor with `fabrika build note` **when you hold the claim**; when the claim itself
+  state for a successor with `fabrika build note $epic_number --token <claim-token>` **when you hold the claim**; when the claim itself
   is what failed, report the code instead.
 
 Any cross-lane signal is closed-vocabulary — kind + action + the branded ref, no free prose; the
@@ -233,4 +238,4 @@ fabrika installs into repos that are not phoenix; the when-missing vocabulary is
 | A `## Dependencies` block in the epic body | the topology the three dependency defects rest on | **fail-loud**, two ways: *absent* is the defect `MISSING_DEPS_SECTION`, so the run ends `PLAN-REFUSED` and routes to the planning lane; *unparseable or duplicated* is `plan read`'s `4`, which ends `STOPPED`. |
 | The label taxonomy: `status:planned`, `status:triaged`, `status:needs-triage`, `ready-for:human`, `ready-for:agent`, `type:*`, `p0`/`p1`/`p2` | the floor reads them and the flip writes three — `status:triaged` and `status:planned` on children, `ready-for:agent` on the epic; `POST .../labels` **creates** an unknown label rather than rejecting it, so the vocabulary is a precondition, not politeness | **fail-loud** — `plan flip` exits `23` naming the absent label rather than minting it; taxonomy creation is the front door's. |
 | `product-development-cycle.md` at the repo root | gates whether `MISSING_CONTAINMENT` is derived | **degrade** — an *absent* file evaluates the class false; an *unreadable* probe puts it in `skipped` and the run ends `PLAN-CLEARED-PARTIAL`. Never silently dropped. |
-| Repository permissions readable for claim authorship | `build claim`'s ownership resolution is ACL-sourced | **fail-loud** — as declared in [`build`'s contract](../build/contract.md); a permission read that fails is `Unknown`, never a demotion to unclaimed. |
+| Repository permissions readable for claim authorship | `build claim`'s ownership resolution is ACL-sourced | **fail-loud** — as declared for `build claim` (`fabrika wire doc-section --heading "build claim" < <build skill's base dir>/contract.md`); a permission read that fails is `Unknown`, never a demotion to unclaimed. |

@@ -24,7 +24,7 @@ access per
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `status open` | the composite front-door readout: four fields, each with its own state, source and freshness | assembling four independent reads and rendering each one's three-state outcome is a total function; deciding what to *do* about a gap is the skill's |
+| `status open` | the composite front-door readout: five fields, each with its own state, source and freshness | assembling five independent reads and rendering each one's three-state outcome is a total function; deciding what to *do* about a gap is the skill's |
 | `status config` | which repo surfaces every landed skill declares it needs, and whether each is present here | parsing a fixed table shape and probing a path or a label is mechanical, zero judgement (the founder's detection-verb ruling, #4952); drafting a missing surface's *content* is judgment |
 | `status menu` | the landed skill roster with each skill's invocation and one-line description | reading a directory and each file's frontmatter is a total function; choosing which skill fits the work at hand is judgment |
 | `status readout` | the landed-decision digest as published in the durable artifact | fetching an artifact and decoding a registered wire format is mechanical; ranking the rows is `governance`'s judgment and is not recomputed here |
@@ -145,7 +145,7 @@ vocabulary in this group. Four consequences bind every verb below:
    clamping, so the failure stays attributable — the shape
    `packages/pipeline-cli/src/tools/run-evidence/run-evidence.ts` prints, and the shape v1's
    `doctor.sh` prints when it tells the reader what not to conclude.
-3. **Per-field state cannot be an exit code.** A composite readout has four independent outcomes and
+3. **Per-field state cannot be an exit code.** A composite readout has five independent outcomes and
    one exit status; because a non-zero exit cannot carry a payload, the exit status answers only
    *"did I produce a readout at all"* and each field carries its own state inside it.
 4. <a id="open-is-total"></a>**`status open` therefore has no zero-scope and no failed-read seat at
@@ -188,6 +188,14 @@ this list: it builds from a fixed [registry](#buildable-surfaces) and reads no r
    an environment variable, because interface rule 5 forbids a variable-rooted invocation and a verb
    never requires an env var to locate itself.
 3. `claude-plugins/fabrika/skills/` beneath the repo root, which is the in-repo development case.
+4. That same `claude-plugins/fabrika/skills/` beneath the checkout the CLI itself runs from, found by
+   walking up from the running module — the rung that answers when fabrika runs out of a phoenix
+   checkout against a target repo carrying no roster of its own, where tier 2 cannot fire (the CLI at
+   `packages/fabrika-cli/` has no plugin manifest above it) and tier 3 is rooted at that target repo
+   (#5775). Resolution again, never an environment variable.
+
+The tier word printed on the scope line is `explicit` · `plugin` · `repo` · `checkout`, one per rung
+in that order.
 
 **A roster that resolves and holds zero skills is `empty` at exit `0`, a fact, not a refusal.** These
 are supplying verbs, and interface convention §4 requires a supplying verb to decide once, in its
@@ -224,6 +232,10 @@ purpose — keeping proven-empty apart from unread — to chance.
 | `readout` | artifact unfetchable, or the format unregistered | `unknown` | the raw failure |
 | `readout` | artifact fetched, its `updated_at` unreadable | `unknown` | `freshness unreadable` — a digest whose age cannot be established is not a digest you may present as current |
 | `menu` / `config` | roster readable, one `SKILL.md` inside it unreadable | `unknown` | which file failed — a partial roster is not a roster |
+| `lanes` | sweep answered, ≥1 lane verdicted `stale` | `stale` | `<n> stale: <key> (<age>m), …` — each silent lane named with its age |
+| `lanes` | sweep answered, zero `stale`, zero `unreadable` | `empty` | `no lanes on disk`, or `<n> lane(s), none silent past <threshold>m` — the threshold echoed from the verb's answer, never a second constant. **Zero lanes on disk is this row, not a fault**: a fresh checkout has none |
+| `lanes` | sweep answered, zero `stale`, ≥1 lane record `unreadable` | `unknown` | which lane failed and why — a lane whose silence cannot be judged is never flattened to clean |
+| `lanes` | the sweep refused — a lane root is there and cannot be listed | `unknown` | the refusal's reason — the lane set is UNKNOWN, never empty |
 
 **A proven-absent artifact is `absent` inside the composite, never `unknown`** — the two rows above
 that both yield `absent` are both facts about the repository, and only a failed *read* is `unknown`.
@@ -348,7 +360,7 @@ fabrika status open [--field <name>] [--repo <owner/name>] [--skills-dir <path>]
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--field` | string | no | all four | render one field only — `menu`, `config`, `board` or `readout`; any other value is off-vocabulary |
+| `--field` | string | no | all five | render one field only — `menu`, `config`, `board`, `readout` or `lanes`; any other value is off-vocabulary |
 | `--repo` | string | no | resolved | the repository the board and digest fields read |
 | `--skills-dir` | string | no | [resolved](#roster-location) | the roster root the menu and config fields read |
 | `--json` | boolean | no | `false` | emit the result object |
@@ -374,7 +386,7 @@ field	<name>	<state>	<detail>	<source>	<as-of>
 the render: the resolved roster path for `menu`/`config`, `<owner>/<name>` for `board`, and
 `<owner>/<name>#<issue>` for `readout` when an artifact resolved — otherwise `<owner>/<name>`.
 
-**No aggregate state, deliberately.** A roll-up over four independently-sourced fields would need a
+**No aggregate state, deliberately.** A roll-up over five independently-sourced fields would need a
 rule for "three fine, one unknown", and every such rule either hides the unknown or drowns the three.
 
 **Exit status**
@@ -392,7 +404,7 @@ token; a refusal would write zero bytes on the cold start it exists for.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `status open: --field "<v>" is not one of menu, config, board, readout.` | 10 | usage error |
+| `status open: --field "<v>" is not one of menu, config, board, readout, lanes.` | 10 | usage error |
 | `status open: roster <path> (<tier>), <n> skills; repo <owner/name>; <k> field(s) rendered, <u> unknown.` | 0 | notice |
 
 **Scope** — the fields requested, each named on the scope line with the source it resolved and the
@@ -471,15 +483,18 @@ them."* This verb is that reader.
 `` `id:<slug>` `` token in its first cell; `<slug>` is `[a-z0-9-]+`. A row with no id token reports
 id `-`, and that is the whole of what an absent id decides: **the id column and `<presence>` are
 independent**. The probe still runs, so an id-less row's `<presence>` and `<detail>` carry what the
-probe proved, exactly as on a row that has an id. Coupling the two would report every row on the
-current tree `unknown` — no landed skill carries an id token — leaving a detection verb that names
-no gap it can act on, and making the example below unproducible (#5298). **No slug is derived
-from prose** — a rule that kebab-cased a cell would turn "The board label taxonomy — `status:triaged`,
+probe proved, exactly as on a row that has an id. Coupling the two would report nearly every row on
+the current tree `unknown` — 8 of the roster's 102 rows carry an id token, and they sit in three
+skills (`write-pattern`, `operate`, `front-door`) — leaving a detection verb that names almost no
+gap it can act on, and making the example below unproducible (#5298). **No slug is derived from
+prose** — a rule that kebab-cased a cell would turn "The board label taxonomy — `status:triaged`,
 …" into `the-board-label-taxonomy`, two implementers would ship two id sets, and a reworded cell
 would silently break every documented invocation. The ids this group itself needs are fixed in
-[the buildable-surface registry](#buildable-surfaces). **Landed skills do not carry id tokens yet**;
-until they do, every row of theirs reports id `-`, which is why the registry below is the authority
-for what `bootstrap` accepts.
+[the buildable-surface registry](#buildable-surfaces). **A roster id is not a registry id**, which
+is why the registry below, and never the roster, is the authority for what `bootstrap` accepts:
+`write-pattern`'s six ids (`patterns-dir`, `patterns-index`, `admission-bar`, `git-history`,
+`doc-gates`, `dep-manifest`) name no buildable surface at all, so a `bootstrap` that read the
+roster would accept six ids it cannot build.
 
 <a id="disposition-is-reported-never-interpreted"></a>**The disposition is printed verbatim, and an
 unrecognized word is reported rather than refused.** Every landed skill uses exactly the three
@@ -959,16 +974,27 @@ Creates **one** missing surface from this group's own registry and reads it back
 skill's judgement; the write, the collision guard and the read-back are this verb's.
 
 <a id="buildable-surfaces"></a>**The buildable-surface registry.** What this verb builds is fixed
-here, not inferred from any declaration ([why](#disposition-does-not-gate-bootstrap)). Five ids, and
-a sixth is a change to this table, not a new rule.
+here, not inferred from any declaration ([why](#disposition-does-not-gate-bootstrap)). Six ids, and
+a seventh is a change to this table, not a new rule.
 
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
 | `design-manifest` | `--path`, default `design-system-manifest.md` at the repo root | **stdin**, required — the skill's inferred draft | the file's bytes match stdin through `normalizeForReadback` |
-| `roadmap-focus` | `--path`, default `ROADMAP.md` at the repo root | **stdin**, required | same |
-| `label-taxonomy` | the repo's labels | **none** — the set is `status:needs-triage`, `status:triaged`, one label per member of the imported `PRIORITIES` (`p0`, `p1`, `p2`), each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
+| `roadmap-focus` | `--path`, default `ROADMAP.md` at the repo root | **stdin**, required — to the [grammar below](#roadmap-grammar), which is not the drafting skill's judgement | same, plus the parsed row count in the notice ([why](#roadmap-grammar)) |
+| `gitignore-row` | `--path`, default `.gitignore` at the repo root | **none** — the two comment lines and the row `/.fabrika/`, fixed below, appended to whatever the file already holds | the re-read contains both the row and the whole of the pre-existing text, each through `normalizeForReadback` |
+| `label-taxonomy` | the repo's labels | **none** — the set is every imported `STATUSES` member (`status:needs-triage`, `status:triaged`, `status:needs-info`, `status:planned`, `status:awaiting-release`), every imported `PRIORITIES` member (`p0`, `p1`, `p2`), `type:` + every imported `TYPES` member, and `ready-for:` + every imported `AUDIENCES` member — sixteen today, each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
 | `issue-shape-markers` | the repo's labels | **none** — three labels, each at colour `1D76DB`, with the descriptions fixed below | every label in the set resolves on a re-read |
 | `readout-artifact` | one open issue in the repo | **none** — title exactly `Governance readout`; body exactly the two lines below | the issue resolves open, its title matches exactly, and its body matches through `normalizeForReadback` |
+
+<a id="taxonomy-is-derived"></a>**The taxonomy is derived from the vocabularies, never restated.**
+Every name comes from the constant the writing verb already reads — `STATUSES` for the five statuses,
+`PRIORITIES`, `TYPES` and `AUDIENCES` for the rest — so a seventh `TYPES` member widens what this
+verb creates with no second edit anywhere. v1 restated two statuses and `PRIORITIES` and stopped, and
+the eleven it omitted are each a label some verb writes; since a verb finds its label absent and
+refuses rather than letting the API mint it (#4285), a repo that ran the whole documented bootstrap
+could not `triage apply`, `triage park`, `plan flip` or `ship release` (#5772). In a repo bootstrapped
+before the widening the verb reports `created` naming only the names it added, which is the honest
+answer for a set that grew — not a contradiction of the earlier `exists`.
 
 The three marker labels, fixed here so no clause defers to another skill's prose or to source:
 
@@ -989,6 +1015,58 @@ covers all three markers rather than one each, because a fresh repo needs the wh
 `graduate trail` dispatches on two of them at once — and three ids means three commands, of which the
 skipped one fails later in exactly the shape this registry exists to prevent.
 
+<a id="roadmap-grammar"></a>**`roadmap-focus` is the one file whose shape is not the skill's
+judgement.** Every other stdin surface is prose a human and the skill settle together; a `ROADMAP.md`
+is read by machine — `triage homes` joins the repo's open milestones to its rows — so a plausible
+draft that does not parse joins nothing. The grammar is stated here, in full, because the drafting
+session must not need a second file open:
+
+- The section headings are exactly `## Arcs` and `## Campaigns`. A section runs to the next `## `
+  heading. Any other spelling — `## Arcs (2026)`, `### Arcs` — is not the section.
+- Each row is `| <name> | #<number> | <state> |`, and it counts **only** when the *second* cell is
+  `#<number>` and the first is non-empty. That is what drops the header row and the `|---|`
+  separator without matching on their text.
+- **The join key is that number, never the title.** An arc named `Geçit` pins a milestone titled
+  `Sözlük — search and discovery`; the two share no substring, so a title cell joins nothing.
+- The `State` column is **not read**. It is for humans; nothing filters on it.
+
+```markdown
+## Arcs
+
+| Arc | Milestone | State |
+|---|---|---|
+| Geçit | #46 | active |
+```
+
+**So the write reports what parsed** — `status bootstrap roadmap-focus` runs the same parser over the
+bytes it just wrote and appends the counts to its notice: `read-back conformed — 3 arcs, 0
+campaigns`, singular at one (`1 arc`). `--json` carries them as the number fields `arcs` and
+`campaigns`. The tab-separated line does not change.
+
+**The count is reported, never enforced.** Zero arcs is still `created` at exit `0`, and the
+read-back predicate stays the byte match this table states — a count is not a second predicate.
+Refusing an unjoinable roadmap belongs to `triage homes`, whose exit `7` already fires at the point
+the rows are actually needed; gating here would block the write a human then has to fix by hand. A
+later reader tempted to "fix" this into a gate is looking at the design, not a gap.
+
+The `gitignore-row` block, fixed here so no clause defers to source. The last line is the row
+itself, and it is also the marker the collision guard and the read-back match on:
+
+```gitignore
+# fabrika's local machine state — the per-lane ledger `fabrika lane` writes under
+# `.fabrika/lanes/<n>/`. One machine's run log; never committed.
+/.fabrika/
+```
+
+<a id="line-surface"></a>**A line surface appends; it never rewrites what is already in the file.**
+A `.gitignore` carries rows from every tool in the tree, so this verb is one contributor to a file it
+does not author — which makes the file's existence the wrong collision guard. The guard is the row:
+present anywhere in the text, this is `exists` at exit `0` and nothing is written; absent, the block
+goes on the end and the pre-existing bytes are re-read intact. Both halves are substring reads over
+the same marker, so a hand-added row spelled the same way is recognised as the row it is. A target
+this verb cannot *read* is exit `11` — whether the row is already there is UNKNOWN, and appending
+blind would be the duplicate row this guard exists to prevent.
+
 The `readout-artifact` body, fixed here so no clause defers to another skill's prose:
 
 ```markdown
@@ -1001,7 +1079,7 @@ here; `fabrika status readout` displays it. This issue stays open and is not wor
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | string | yes | — | one `<surface-id>` from the registry above |
-| `--path` | string | no | the registry default | override the write path for a file surface; must resolve inside the repository root |
+| `--path` | string | no | the registry default | override the target path for a file or line surface; must resolve inside the repository root |
 | `--repo` | string | no | resolved | the repository, for the two non-file surfaces |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | text | yes for `design-manifest` and `roadmap-focus` | — | the content. `NoStdin` and `Text("")` are exit `3`; a **failed** stdin read is exit `1` — the content is UNKNOWN, never empty, the split `packages/fabrika-cli/src/report/file-verb.ts` already ships |
@@ -1032,7 +1110,11 @@ same name. Reconciling a hand-made label's colour is a hand fix.
 
 **The operation.** Resolve the id against the registry — not in it is `12`. Probe the target; already
 present is `exists` at `0`. For a stdin surface: read stdin, leak-scan the content (`5`, `6`), write,
-re-read and compare through `normalizeForReadback` (`9` on mismatch). A write whose outcome cannot be
+re-read and compare through `normalizeForReadback` (`9` on mismatch), and for `roadmap-focus` parse
+the written bytes and [report the counts](#roadmap-grammar). For the [line
+surface](#line-surface) the probe is the marker rather than the path, the content is the registry's
+own block so no stdin is read and no leak scan is owed, and the read-back asserts the marker **and**
+the prior text. A write whose outcome cannot be
 confirmed is `8`, never a reported success. **One surface per invocation**, deliberately: a verb
 creating several would have to report a partial outcome, and a partial write reported as success is
 #4557's shape. The skill loops.
@@ -1063,8 +1145,14 @@ creating several would have to report a partial outcome, and a partial write rep
 | `status bootstrap: wrote <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
 | `status bootstrap: --path <v> resolves outside the repository root.` | 10 | usage error |
 | `status bootstrap: cannot probe <target>: <reason> — nothing was written.` | 11 | refusal |
-| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, label-taxonomy, issue-shape-markers, readout-artifact.` | 12 | refusal |
+| `status bootstrap: cannot read <target>: <reason> — whether <marker> is already there is UNKNOWN, and nothing was written.` | 11 | refusal |
+| `status bootstrap: appending <marker> to <target> failed: <reason> — whether it landed is UNKNOWN. Re-read before retrying.` | 8 | refusal |
+| `status bootstrap: appended <marker> to <target> and it could not be read back: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
+| `status bootstrap: appended <marker> to <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
+| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact.` | 12 | refusal |
 | `status bootstrap: created <target> for <surface-id>, read-back conformed.` | 0 | notice |
+| `status bootstrap: created <target> for roadmap-focus, read-back conformed — <n> arc(s), <n> campaign(s).` | 0 | notice |
+| `status bootstrap: appended <marker> to <target> for <surface-id>, read-back conformed.` | 0 | notice |
 
 **Scope** — the single write target named by `<surface-id>`.
 
@@ -1083,6 +1171,28 @@ bootstrap	created	design-manifest	design-system-manifest.md	ok
 $ fabrika status bootstrap readout-artifact
 bootstrap	created	readout-artifact	acme/storefront#9420	ok
 ```
+
+```
+$ fabrika status bootstrap roadmap-focus <<'EOF'
+# Roadmap
+## Arcs
+| Arc | Milestone | State |
+|---|---|---|
+| Storefront | #12 | active |
+EOF
+bootstrap	created	roadmap-focus	ROADMAP.md	ok
+status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 1 arc, 0 campaigns.
+```
+
+```
+$ fabrika status bootstrap roadmap-focus --json < inert-draft.md
+{"outcome":"created","surfaceId":"roadmap-focus","target":"ROADMAP.md","readback":"ok","arcs":0,"campaigns":0}
+$ echo $?
+0
+```
+
+The second is a draft whose milestone cells carry titles rather than `#<n>`: written, conformed, and
+joining nothing. It exits `0` — the count is the signal, not a gate.
 
 ```
 $ fabrika status bootstrap merge-queue
@@ -1124,9 +1234,9 @@ states what the group itself needs. Dispositions use the canonical three.
 
 | Must exist | Why this group needs it | When missing |
 | --- | --- | --- |
-| A resolvable skill roster — the installed plugin's own skills tree, or `claude-plugins/fabrika/skills/` in-repo, or an explicit `--skills-dir` | it is the roster `status menu` renders and the declaration set `status config` parses | **degrade** — an implicitly-resolved roster holding zero skills is `empty` / `gaps` at exit `0`, never silence; only an **explicitly passed** absent path is `7`, and an unreadable one is `11` ([why](#roster-location)). |
+| A resolvable skill roster — the installed plugin's own skills tree, `claude-plugins/fabrika/skills/` in the target repo, that same path in the checkout the CLI itself runs from, or an explicit `--skills-dir` | it is the roster `status menu` renders and the declaration set `status config` parses | **degrade** — an implicitly-resolved roster holding zero skills is `empty` / `gaps` at exit `0`, never silence; only an **explicitly passed** absent path is `7`, and an unreadable one is `11` ([why](#roster-location)). |
 | A resolvable repo — `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote | `board`, `readout` and the non-file arms of `bootstrap` read against it | **degrade** for `status open`, which renders those fields `unknown`; **fail-loud** at exit `1` for `board`, `readout` and `bootstrap` invoked directly, which have no other answer to give. |
-| The board label taxonomy — `status:needs-triage`, `status:triaged`, `p0`–`p2` | `status board`'s six bucket calls | **bootstrap** — absent labels render `unknown` with detail `label absent`, never `0`, and `status bootstrap label-taxonomy` creates them. |
+| The board label taxonomy — the whole set the [buildable-surface registry](#buildable-surfaces) derives, not a subset restated here | `status board`'s six bucket calls read five of it; every state-writing verb elsewhere needs the rest | **bootstrap** — absent labels render `unknown` with detail `label absent`, never `0`, and `status bootstrap label-taxonomy` creates the whole set. |
 | The issue-shape markers — `wayfinding:map`, `prototyping:spike`, `grilling:session` | `status bootstrap issue-shape-markers` is where three skills' bootstrap pointers land | **bootstrap** — `status bootstrap issue-shape-markers` creates the whole set, and reports `exists` at `0` where it is already there. |
 | One open issue titled exactly `Governance readout`, or `$FABRIKA_GOVERNANCE_READOUT_ISSUE` | `status readout`'s artifact | **bootstrap** — `status bootstrap readout-artifact` creates it; until then the reading is `absent` at exit `0`, a proven fact and not a failed read. |
 | The registered `governance-digest` wire format | `status readout` decodes the artifact block through it | **fail-loud** — exit `11`, UNKNOWN, never `absent`. Not built yet; tracked at [#5199](https://github.com/kamp-us/phoenix/issues/5199) ([sequencing](#sequencing)). |

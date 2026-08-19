@@ -143,8 +143,9 @@ fabrika map ticket 9140 --digest a1b2c3d4e5f6 --kind research --question "does b
 
 One call per open question. The verb files the ticket, links it as a native sub-issue, sets the
 native blocking edges, and splices its line onto the map — one act, so the four cannot drift apart.
-`--kind` is one of `research`, `prototype`, `decision`; the grammar and the edge semantics are in
-[`contract.md`](contract.md).
+`--kind` is one of `research`, `prototype`, `decision`; the grammar and the edge semantics are one
+lookup each: `fabrika wire doc-section --heading "map ticket" < <skill-base>/contract.md`, and
+`--heading "The edge reads"` for the edge semantics.
 
 **Every ticket resolves a decision or an unknown, never a deliverable.** A ticket that names
 something to build is the failure mode: re-frame it as the question underneath, or — if it is
@@ -213,16 +214,30 @@ Two kinds of question leave this skill, and `map fork` records where each went.
 primitive, which owns question rounds, recommended answers, and the four-clause attestation a ruling
 needs. Do not reimplement any of that here, and never write an answer onto the map in his voice.
 
+**Hand it the ticket number, and take the session number back from the verb.** `--session` is not a
+number you invent or relay by hand: `grill open --ticket <t>` binds the session to the ticket and
+prints the session, and running it again on the same ticket resumes that same session rather than
+minting a second one. That is the only mechanism carrying a ticket into a session — a topic composed
+from the ticket's title binds nothing, and the map never learns where the ruling went (#5661).
+
 ```bash
+fabrika grill open --ticket 9144 --repo kamp-us/phoenix   # → {"session":9301,…}
 fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9144 --session 9301
 ```
+
+The same pair closes the loop in step 6: `grill read 9301` reports each question's id and state, and
+`map record --ruled-on 9301 --question-id R1.2` cites the one that reads `ruled`. Nobody carries a
+number between sessions by hand — a ticket resolves to its session, and the session names its
+questions.
 
 **An empirical question is a spike's.** When the only thing that settles a question is *running
 something* — not a conversation, not a subagent reading source — the model fires the
 **`prototyping`** Skill: one throwaway spike answering ONE named question. This skill never grows
-that code itself, and the spike stays disposable.
+that code itself, and the spike stays disposable. `spike open --ticket <t>` carries the ticket the
+same way and prints the spike number `--spike` takes.
 
 ```bash
+fabrika spike open --question "…" --kind logic --ticket 9147   # → the spike number
 fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9147 --spike 9310
 ```
 
@@ -340,7 +355,8 @@ Every non-zero terminal here wrote nothing, except `WRITE-UNPROVEN`, where wheth
 the open question.
 
 `10` is held as a deliberate gap and is unreachable, so it reaches no terminal by design
-([`contract.md`](contract.md), the shared exit matrix). Every **non-zero** code the contract seats
+(`fabrika wire doc-section --heading "The shared exit matrix" < <skill-base>/contract.md`).
+Every **non-zero** code the contract seats
 lands on exactly one terminal above; `0` is disambiguated by which verb produced it and, for
 `map read`, by the `frontier` token.
 
@@ -365,9 +381,9 @@ every fabrika skill, so one reader parses all of them.
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
 | A GitHub repository reachable over `gh` REST, with a token carrying `issues: write` | every map, ticket, lane and resolution is an issue, a comment or an edge ([`contract.md`](contract.md), all eight verbs) | **fail-loud** — no artifact can be written or read, so no state is provable; end `STOPPED` and name the repo |
-| The `wayfinding:map` label | `map open` applies it on mint and resumes on it; without it every run mints a map no later run can find ([`contract.md`](contract.md), `map open`) | **bootstrap** — `fabrika status bootstrap issue-shape-markers` creates it; until it is run, `map open` exits `7` naming the label rather than silently opening an unlabelled issue |
-| GitHub's native issue-dependency and sub-issue endpoints, enabled for the repository | the frontier's blocking edges and the ticket-to-map link live there, not in the body, and `map read` derives the whole frontier from them ([`contract.md`](contract.md), `map ticket` / `map read`) | **fail-loud** — `11`, and the frontier is UNKNOWN, never empty. Degrading to a prose topology would put the state back in a body no tool writes |
-| Readable collaborator permissions — `repos/<repo>/collaborators/<login>/permission` | resolves a lane claim's author ([`contract.md`](contract.md), `map lane`) | **fail-loud** — `11`. A permission read that fails is UNKNOWN, never a demotion that would free another run's lane |
+| The `wayfinding:map` label | `map open` applies it on mint and resumes on it; without it every run mints a map no later run can find (`fabrika wire doc-section --heading "map open" < <skill-base>/contract.md`) | **bootstrap** — `fabrika status bootstrap issue-shape-markers` creates it; until it is run, `map open` exits `7` naming the label rather than silently opening an unlabelled issue |
+| GitHub's native issue-dependency and sub-issue endpoints, enabled for the repository | the frontier's blocking edges and the ticket-to-map link live there, not in the body, and `map read` derives the whole frontier from them (`fabrika wire doc-section --heading "map ticket" < <skill-base>/contract.md`, likewise `--heading "map read"`) | **fail-loud** — `11`, and the frontier is UNKNOWN, never empty. Degrading to a prose topology would put the state back in a body no tool writes |
+| Readable collaborator permissions — `repos/<repo>/collaborators/<login>/permission` | resolves a lane claim's author (`fabrika wire doc-section --heading "map lane" < <skill-base>/contract.md`) | **fail-loud** — `11`. A permission read that fails is UNKNOWN, never a demotion that would free another run's lane |
 | The `wayfinder:backlog` label | where a destination `map open` refuses parks | **degrade** — the refusal already carries the verdict and names the label it could not apply; the routing is then yours to place |
 
 Nothing else is required. This skill reads no `.decisions/`, no `.patterns/`, no CODEOWNERS, no

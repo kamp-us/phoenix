@@ -43,7 +43,15 @@
 							"ship": {
 								"on": {
 									"ISSUE.DONE": "shipped",
-									"ISSUE.BLOCKED": "human:cp-approval"
+									"ISSUE.BLOCKED": "human:cp-approval",
+									"ISSUE.FAIL": [
+										{
+											"target": "build",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{ "target": "frozen" }
+									]
 								}
 							},
 							"blocked": {
@@ -58,7 +66,12 @@
 							},
 							"hist": { "type": "history" },
 							"shipped": { "type": "final" },
-							"frozen": { "type": "final" }
+							"frozen": {
+								"type": "final",
+								"on": {
+									"ISSUE.UNBLOCKED": "hist"
+								}
+							}
 						}
 					}
 				},

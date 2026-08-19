@@ -2,7 +2,7 @@
  * `pitch-guard` pure core — decide whether every pickable piece of lane-entering work carries
  * a well-formed, founder-approved pitch. The invariant and the field set come from the §PITCH
  * intake format (founder ruling #3909); its v1 skill-doc home retired with the kampus-pipeline
- * plugin (ADR 0291), so this module now carries the field set. IO-free and total — the
+ * plugin (ADR 0303), so this module now carries the field set. IO-free and total — the
  * `gh api` reads live in `github.ts`/`gate.ts`.
  *
  * The guard binds at INTAKE only. Its inverse is half the founder ruling: no merge-blocking

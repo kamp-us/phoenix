@@ -85,7 +85,10 @@
 								"type": "final"
 							},
 							"frozen": {
-								"type": "final"
+								"type": "final",
+								"on": {
+									"ISSUE_4301.UNBLOCKED": "hist"
+								}
 							}
 						}
 					},
@@ -148,7 +151,10 @@
 								"type": "final"
 							},
 							"frozen": {
-								"type": "final"
+								"type": "final",
+								"on": {
+									"ISSUE_4302.UNBLOCKED": "hist"
+								}
 							}
 						}
 					}
@@ -225,7 +231,10 @@
 								"type": "final"
 							},
 							"frozen": {
-								"type": "final"
+								"type": "final",
+								"on": {
+									"ISSUE_4303.UNBLOCKED": "hist"
+								}
 							}
 						}
 					}
@@ -265,7 +274,17 @@
 							"ship": {
 								"on": {
 									"EPIC_4300.DONE": "shipped",
-									"EPIC_4300.BLOCKED": "human:cp-approval"
+									"EPIC_4300.BLOCKED": "human:cp-approval",
+									"EPIC_4300.FAIL": [
+										{
+											"target": "review",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{
+											"target": "human:epic-review"
+										}
+									]
 								}
 							},
 							"blocked": {

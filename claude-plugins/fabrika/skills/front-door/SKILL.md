@@ -32,7 +32,7 @@ source was read and holds nothing, spelled `empty`, `absent`, `missing`, `unprob
 `malformed` depending on what was read; or **`unknown`, with the reason attached** — the source could
 not be read. Several words share the middle class; only one word is ever the third. The mechanics —
 which core outcome becomes which state, per field — are fixed in
-[`contract.md`](contract.md#core-to-field); what is yours is the reading.
+the core-to-field mapping (`fabrika wire doc-section --heading "How each core outcome becomes a field state in status open" < <skill-base>/contract.md`); what is yours is the reading.
 
 This is a rule about **fields**. A `status config` row reporting one *surface* as `undeclared` or
 `unprobeable` is a proven negative about that surface, not an unread source, and it does not by
@@ -46,13 +46,15 @@ indistinguishable from one that ran and found nothing unless something manufactu
 The verb manufactures it; do not flatten it.
 
 **Freshness is a field, not a promise.** A field read from a durable artifact is only as fresh as
-that artifact's last write, not the moment you read it ([the two kinds](contract.md#as-of-is-mandatory)) —
+that artifact's last write, not the moment you read it (the two kinds — `fabrika wire doc-section --heading "Freshness is carried per field, never assumed" < <skill-base>/contract.md`) —
 so a digest can be `found` and a week stale at once, and saying only "found" answers the wrong
 question.
 
 **Say where each answer came from, and drill in rather than guess.** Every field names its source, so
 the session can re-run one instead of trusting the render. Each field has one command behind it —
-`fabrika status menu`, `fabrika status config`, `fabrika status readout`, and for the board:
+`fabrika status menu`, `fabrika status config`, `fabrika status readout`, `fabrika lane stale` for
+the lanes field (the stale-lane sweep over this machine's `.fabrika/` roots — it reports, it never
+resumes), and for the board:
 
 ```bash
 fabrika status board
@@ -113,7 +115,7 @@ Three readings that are easy to collapse and must not be:
 - A **disposition is not a statement about who can build the surface.** It says what the *declaring*
   skill does when the surface is missing. `build-ui` declares the design manifest `fail-loud` — that
   skill stops — and still points here to have it built. What you can build is the contract's
-  [buildable-surface registry](contract.md#buildable-surfaces), nothing else.
+  buildable-surface registry (`fabrika wire doc-section --heading "status bootstrap" < <skill-base>/contract.md`), nothing else.
 
 Then **converse** — you are human-typed, so a human is present. Take one gap at a time:
 
@@ -132,6 +134,24 @@ fabrika status bootstrap design-manifest <<'EOF'
 …the draft you and the human settled on…
 EOF
 ```
+
+<!-- anchor: MACHINE-READ-SURFACE --> **`roadmap-focus` is the exception to "draft by inference".**
+`ROADMAP.md` is read by machine — `triage homes` joins the repo's open milestones to its `## Arcs`
+and `## Campaigns` rows by the `#<number>` in each row's **second** cell, never by the title — so a
+plausible-looking draft joins nothing. The content (which arcs, which campaigns) is still yours and
+the human's; the *shape* is not. Read the grammar before drafting — it is stated in full in the same
+section the registry lives in (`fabrika wire doc-section --heading "status bootstrap" <
+<skill-base>/contract.md`) — then read the row count back off the notice:
+
+```bash
+fabrika status bootstrap roadmap-focus <<'EOF'
+…the roadmap you and the human settled on…
+EOF
+# status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 1 arc, 0 campaigns.
+```
+
+`0 arcs` is written and conformed, and it is also a roadmap nothing can join — fix it now rather
+than leaving `triage homes` to refuse over it in some later session.
 
 <!-- anchor: DESIGN-LAW-IS-REPO-CONTENT --> **The design law is repo content, never skill content.**
 phoenix's manifest is one repo's instance. Write what *this* repo's evidence supports; a pillar
@@ -215,14 +235,15 @@ routes through a verb** and none through an ad-hoc `gh` call. Re-gating is named
 The when-missing vocabulary is the one every fabrika skill shares — **fail-loud**, **degrade**,
 **bootstrap**. This skill is where the other tables' bootstrap pointers land, so it degrades rather
 than stops wherever it still has something true to say. The verbs' own needs are specified in
-[`contract.md`](contract.md#required-repo-files); this table is what the *skill* leans on.
+their own Required-repo-files section (`fabrika wire doc-section --heading "Required repo files" < <skill-base>/contract.md`); this table is what the *skill* leans on.
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
 | The `status` verb group in the installed `fabrika` CLI | it is every command on this page; the group is greenfield and not yet built | **degrade** — say no readout appeared, name what you cannot see, and answer by hand what you can. An absent front door is a stated UNKNOWN, never a clean state. |
-| A resolvable skill roster — the installed plugin's own skills tree, or `claude-plugins/fabrika/skills/` in-repo | the menu is derived from it and `status config` parses each skill's declared surfaces | **degrade** — a roster that resolves and holds nothing renders `empty` at exit `0`; only an explicitly-passed absent path refuses. A zero roster is never rendered as "no skills exist". |
+| A resolvable skill roster — the installed plugin's own skills tree, or `claude-plugins/fabrika/skills/` in the target repo, else that same path in the checkout the CLI itself runs from | the menu is derived from it and `status config` parses each skill's declared surfaces | **degrade** — a roster that resolves and holds nothing renders `empty` at exit `0`; only an explicitly-passed absent path refuses. A zero roster is never rendered as "no skills exist". |
 | A resolvable repo — `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote | the board and digest fields read against it | **degrade** — those two fields render `unknown` with the reason; the menu and config fields are local and still answer. The readout never fails whole because one source is unreachable. |
-| The board label taxonomy — `status:needs-triage`, `status:triaged`, `p0`–`p2` | `status board` counts these buckets | **bootstrap** — absent labels render `unknown (label absent)`, never `0`, and `status bootstrap label-taxonomy` creates them. |
+| `id:gitignore-row` `.gitignore` covering `.fabrika/` | `fabrika lane` writes its per-checkout ledger under `.fabrika/`, and `operate`'s row points here for the fix | **bootstrap** — `status bootstrap gitignore-row` appends the row and reads it back; until then `status config` reports the row missing, and a lane run in that repo leaves one machine's state committable. |
+| The board label taxonomy — the whole set `status bootstrap label-taxonomy` creates, which is that verb's registry and is deliberately not restated here | `status board` counts its buckets, and every verb that writes a state label refuses when its own is absent (#4285) | **bootstrap** — absent labels render `unknown (label absent)`, never `0`, and `status bootstrap label-taxonomy` creates the whole set. Read the set off the verb, never off this row: a row naming a subset is what left an adopter with five of the sixteen (#5772). |
 | The issue-shape markers — `wayfinding:map`, `prototyping:spike`, `grilling:session` | `status config` reports them missing for the three skills that mint issues carrying them, and this skill is what those rows point at | **bootstrap** — `status bootstrap issue-shape-markers` creates all three; until then `map open`, `spike open` and `grill open` each exit `7` naming the label they need. |
 | A durable readout artifact — one open issue titled exactly `Governance readout` | `status readout` reads the landed-decision digest from it | **bootstrap** — `status bootstrap readout-artifact` creates it; until then the field is `absent`, which is a fact, not a failed read. |
 

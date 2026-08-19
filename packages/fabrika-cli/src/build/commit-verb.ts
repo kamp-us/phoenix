@@ -230,7 +230,7 @@ const readMessage = (
 				_tag: "Refused" as const,
 				outcome: refuse(
 					OFF_VOCABULARY,
-					`${VERB}: --message-file "${leafOf(path)}" is not a leaf in this lane's scratch directory — send the message on stdin, or write it under the path "fabrika build scratch ${number} --slug <leaf>" prints. That path is machine-local, so it is not repeated here.`,
+					`${VERB}: --message-file "${leafOf(path)}" is not a leaf in this lane's scratch directory — send the message on stdin, or write it under the path "fabrika build scratch ${number} --slug <leaf> --token <token>" prints. That path is machine-local, so it is not repeated here.`,
 					notes,
 				),
 			};

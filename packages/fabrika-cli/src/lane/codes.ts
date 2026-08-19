@@ -1,11 +1,11 @@
 /**
  * The one exit table every `lane` verb allocates from, so a code means one thing across the group.
  *
- * The four shared seats are **imported from the base, never re-typed** — the discipline
+ * The five shared seats are **imported from the base, never re-typed** — the discipline
  * `../exit-code-alignment.ts` checks. The lane verbs read a local lane directory and append to its
  * log, so the base's facts they can establish are exactly these: the target is not there, the
- * target was read but is not the shape, the write did not land, the read that would have proven any
- * of that failed. `12`+ is this group's own band.
+ * target was read but is not the shape, the write did not land, a marker landed and does not read
+ * back, the read that would have proven any of that failed. `12`+ is this group's own band.
  *
  * **A fold that could not be made never resolves to a plausible state.** An absent lane, an
  * unreadable one, and a lane whose bytes parse but contradict the machine stay distinct codes,
@@ -16,6 +16,7 @@ import {
 	BAD_SECTIONS as REPORT_BAD_SECTIONS,
 	NO_TARGET as REPORT_NO_TARGET,
 	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
 	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
 } from "../report/codes.ts";
 
@@ -33,9 +34,16 @@ export const LANE_ABSENT = REPORT_NO_TARGET;
 export const MALFORMED_RECORD = REPORT_BAD_SECTIONS;
 
 /**
- * The append did not land. The caller refuses; it never reports the event as recorded.
+ * The append did not land, or `lane claim`'s marker write did not. The caller refuses; it never
+ * reports the event as recorded, nor the claim as held.
  */
 export const APPEND_UNKNOWN = REPORT_WRITE_UNKNOWN;
+
+/**
+ * `lane claim`'s marker landed and does not read back as the token this run posted. The comment
+ * exists, so it is neither a failed write nor a lost race — it needs a human eye.
+ */
+export const MARKER_READBACK = REPORT_READBACK_MISMATCH;
 
 /**
  * The lane could not be read, or its absence could not be established. UNKNOWN, never a fresh
@@ -117,7 +125,8 @@ export const KEY_MALFORMED = 21;
  *
  * The four proof seats are **artifact-independent**: what a caller must do about "not there", "not
  * finished", "says the other thing" and "several candidates" does not change with the kind of
- * artifact, so the range arms allocate no fifth seat.
+ * artifact, so the range arms allocate no fifth seat — nor does `lane brief`, which reads a child's
+ * range off the same tree before it dispatches a reviewer at it (#6023).
  */
 export const PROOF_ABSENT = 22;
 
@@ -139,7 +148,8 @@ export const PROOF_CONTRADICTED = 24;
 /**
  * Several candidates trace to the task: several open pull requests linking its issue, or several
  * lane branches carrying an epic child's commits. Which one the lane owns is not derivable, and
- * picking one would record a DONE against another lane's work — a park, never a guess.
+ * picking one would record a DONE against another lane's work — or brief a reviewer at another
+ * lane's range — a park, never a guess.
  */
 export const PROOF_AMBIGUOUS = 25;
 
@@ -168,3 +178,23 @@ export const UNSAFE_PUSH = 29;
  * opposite remedies — push again, versus re-read before touching anything.
  */
 export const REF_NOT_MOVED = 30;
+
+/**
+ * Proven: this session does not hold the driver's claim on the lane — another driver won the race,
+ * or there is no claim to release. Its own seat rather than `build`'s `15`, which this group already
+ * spends on {@link TOPOLOGY_ABSENT}; the two prove different facts and share no remedy.
+ *
+ * Proven-unclaimed sits here too, on `build claim`'s reading: zero markers means this session does
+ * not hold the lane, which is the one fact a driver acts on. The stderr detail keeps unclaimed and
+ * foreign apart for a reader; the code does not, because the caller stops either way.
+ */
+export const CLAIM_NOT_MINE = 31;
+
+/**
+ * The token handed to `lane report` is no shell's terminal token — the map in `report.ts` holds no
+ * entry for it, so no event can be derived and the log is left unappended. Its own seat rather than
+ * {@link EVENT_REFUSED}'s because the remedy differs: pass a token from your shell skill's closed
+ * vocabulary, not a different event — silently interpreting an unknown token is the failure class
+ * this verb exists to delete (#5736).
+ */
+export const TOKEN_UNRECOGNISED = 32;
