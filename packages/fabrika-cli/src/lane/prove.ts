@@ -26,6 +26,7 @@
 
 import {issueRefsIn} from "../build/commit-message.ts";
 import {parseLaneBranch} from "../build/lane.ts";
+import type {ParentedCommit} from "../io/git.ts";
 
 /** The leaf state a builder runs in — a `DONE` out of it claims the built work exists. */
 export const BUILD_STATE = "build";
@@ -103,19 +104,46 @@ export const issueOf = (taskId: string, lane: string): number | null => {
 	return /^\d+$/.test(key) ? Number.parseInt(key, 10) : null;
 };
 
-/** One local branch, with the commits it adds over the epic branch already read off the tree. */
+/** One local branch, with the commits it adds over its own fork point already read off the tree. */
 export interface BranchFact {
 	readonly branch: string;
+	/** Where this branch left the epic branch — the near end of the range, as an object name. */
+	readonly base: string;
 	/** The branch tip as an object name — what a range read is taken against, never the ref name. */
 	readonly tip: string;
 	/** Every message the range adds, whole. Empty where the branch adds nothing. */
 	readonly messages: ReadonlyArray<string>;
 }
 
+/**
+ * The epic-side commit the merge that integrated `tip` joined it to — `null` where nothing did.
+ *
+ * A child lands on the assembly branch as `git merge --no-ff <child>` run *from* the epic branch, so
+ * the child's tip is that merge's second parent and the epic branch as it stood is the first.
+ * Reading the first parent — never merely "the parent that is not the tip" — is what keeps a branch
+ * that was cut and never built on out of this arm: its tip IS an epic commit, so it turns up as some
+ * later merge's *first* parent, and answering with that merge's second parent would hand back a
+ * sibling's fork point and dress an empty range up as work.
+ *
+ * Oldest match wins: a tip merged twice still forked once, and the first landing is where.
+ */
+export const integratedFrom = (tip: string, rows: ReadonlyArray<ParentedCommit>): string | null => {
+	let joined: string | null = null;
+	// `rows` is newest-first, so the last match is the oldest merge that took this tip in.
+	for (const row of rows) {
+		const [first, ...rest] = row.parents;
+		if (first === undefined || first === tip || !rest.includes(tip)) continue;
+		joined = first;
+	}
+	return joined;
+};
+
 export type RangeTrace =
 	| {
 			readonly _tag: "One";
 			readonly branch: string;
+			/** Where the branch forked from the epic branch — the range's near end. */
+			readonly base: string;
 			readonly tip: string;
 			/** Every commit the range adds — the artifact's size. */
 			readonly commits: number;
@@ -161,6 +189,7 @@ export const traceRange = (
 			? {
 					_tag: "One",
 					branch: first.branch,
+					base: first.base,
 					tip: first.tip,
 					commits: first.messages.length,
 					naming: first.messages.filter((message) => issueRefsIn(message).includes(issue)).length,
