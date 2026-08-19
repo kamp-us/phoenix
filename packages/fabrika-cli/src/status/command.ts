@@ -8,6 +8,8 @@
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form
  * silently opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  */
+import {homedir} from "node:os";
+import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
@@ -61,7 +63,7 @@ const repoFlag = Flag.string("repo").pipe(
 const skillsDirFlag = Flag.string("skills-dir").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		"the roster root to read (default: the installed plugin's own skills tree, else claude-plugins/fabrika/skills beneath the repo root, else the same path beneath the checkout the CLI itself runs from)",
+		"the roster root to read (default: $CLAUDE_PLUGIN_ROOT's skills tree, else a plugin the CLI runs from inside of, else claude-plugins/fabrika/skills beneath the repo root, else the same path beneath the checkout the CLI itself runs from, else the installed fabrika plugin under Claude Code's plugin cache, which is plugins/cache beneath $CLAUDE_CONFIG_DIR, or beneath .claude in the home directory when $CLAUDE_CONFIG_DIR is unset or empty)",
 	),
 );
 
@@ -69,9 +71,25 @@ const jsonFlag = Flag.boolean("json").pipe(
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
-/** The roster sources this invocation resolves against — the module's own location and the cwd. */
+/**
+ * Claude Code's plugin cache, honouring `$CLAUDE_CONFIG_DIR` — the harness's own override for where
+ * `~/.claude` lives, so a relocated config directory resolves its cache rather than the home one.
+ */
+const pluginCacheRoot = (): string | null => {
+	const configured = process.env.CLAUDE_CONFIG_DIR;
+	// An empty value reads as unset, not as the relative path `plugins/cache` a bare join would
+	// produce — a rung rooted at the cwd would answer about a directory nobody configured.
+	const root = configured === undefined || configured === "" ? null : configured;
+	const home = homedir();
+	if (root === null && home === "") return null;
+	return join(root ?? join(home, ".claude"), "plugins", "cache");
+};
+
+/** The roster sources this invocation resolves against — the world the ladder reads. */
 const rosterSources = (explicit: string | null): RosterSources => ({
 	explicit,
+	pluginRootEnv: process.env.CLAUDE_PLUGIN_ROOT ?? null,
+	pluginCache: pluginCacheRoot(),
 	moduleDir: fileURLToPath(new URL(".", import.meta.url)),
 	cwd: process.cwd(),
 });
