@@ -11,13 +11,13 @@ PR push
 .github/workflows/run-evidence.yml      (producer — runs crabbox + the adapter)
   │   crabbox run --provider local-container → run-summary JSON (on stderr) + JUnit (in a tarball)
   ▼
-@kampus/crabbox-manifest               (adapter — folds those into one manifest)
+fabrika ci evidence                    (adapter — folds those into one manifest)
   │   manifest.json + junit.xml
   ▼
 GH Actions artifact `run-evidence`      (storage — ADR 0056)
   │   fetched by PR head SHA
   ▼
-ship-it / review-code                   (consumers — assert + cite the manifest)
+fabrika ship evidence                   (consumer — asserts the manifest against the head SHA)
 ```
 
 Each stage owns one concern: the workflow knows crabbox's CLI surface, the adapter knows the manifest contract, the artifact is the transport, and the gates know how to assert/cite. A new producer (a remote runner, a different test harness) is valid the moment it emits a conforming manifest — the contract is the fields, not the producer (ADR 0054 §2).
@@ -35,15 +35,14 @@ Runs on every `pull_request`. Concurrency-grouped on the ref with `cancel-in-pro
 - **Stamps `commit`** with `github.event.pull_request.head.sha` and **fails closed on drift**: after the adapter emits `manifest.json`, the workflow asserts `manifest.commit == head SHA` and exits red if it doesn't. A crabbox or adapter failure also fails the step red — never a silent green.
 - **Uploads** `bundle/` (manifest + staged JUnit) as a GH Actions artifact named **`run-evidence`** with `if-no-files-found: error`.
 
-## Adapter — the `crabbox-manifest` tool (`packages/pipeline-cli/src/tools/crabbox-manifest/`)
+## Adapter — `fabrika ci evidence` (`packages/fabrika-cli/src/ci/`)
 
-A `@kampus/pipeline-cli` subcommand (outside `.claude`/`.github`) that maps a crabbox run to a manifest. It's a pure transform with a thin CLI: read inputs, fold, emit JSON to stdout or `--output`; persistence and the gate read are not its job.
+A `@kampus/fabrika-cli` verb that maps a crabbox run to a manifest. It's a pure transform with a thin CLI: read inputs, fold, emit JSON to stdout or `--output`; persistence and the gate read are not its job.
 
-- **`Manifest.ts`** — the domain: the manifest as `effect/Schema`.
+- **`manifest.ts`** — the domain: the manifest as `effect/Schema`.
 - **`crabbox.ts`** — the trust boundary: decodes untrusted crabbox run-summary JSON and parses the JUnit (tolerantly — a missing/garbage JUnit degrades to a zeroed `tests` block, never a crash).
 - **`adapter.ts`** — the pure `buildManifest`: folds a decoded run-summary + JUnit + the stamped commit into a `Manifest`.
-- **`commit.ts`** — a `Git` capability that resolves the head SHA when `--commit` isn't supplied (`git rev-parse HEAD`); a blank SHA is a hard error, never an empty field. (crabbox itself never surfaces the SHA — this is the #235 gap the adapter closes.)
-- **`bin.ts`** — the CLI: `--run-summary`, optional `--junit`, `--commit`, `--run-url`, `--environment`, `--output`. Malformed input or an unresolvable commit fails the process non-zero.
+- **`evidence-verb.ts`** — the IO shell: reads the inputs, resolves the head SHA through `io/git.ts` when `--commit` isn't supplied (`git rev-parse HEAD`), and emits to stdout or `--output`. A blank SHA is a hard refusal, never an empty field — crabbox itself never surfaces the SHA, which is the #235 gap this closes. Malformed input (exit 4) or an unresolvable commit (exit 11) writes nothing at all.
 
 How the fields are derived:
 
@@ -53,7 +52,7 @@ How the fields are derived:
 
 ## The manifest contract (ADR 0054 §2)
 
-One JSON manifest plus referenced artifacts. Defined as `effect/Schema` in `packages/pipeline-cli/src/tools/crabbox-manifest/Manifest.ts`:
+One JSON manifest plus referenced artifacts. Defined as `effect/Schema` in `packages/fabrika-cli/src/ci/manifest.ts`, and read back by `packages/fabrika-cli/src/ship/evidence-verb.ts`:
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -79,11 +78,10 @@ A consumer fetches it by the **PR head SHA**:
 2. Find the `run-evidence` workflow run with **that exact `head_sha`** (never just the latest run on the branch — the head-SHA filter is what binds the evidence to the commit being merged).
 3. Download the `run-evidence` artifact and read `manifest.json`.
 
-The artifact *name* is the fetch contract — renaming it breaks both consumers and ADR 0056.
+The artifact *name* is the fetch contract — renaming it breaks the consumer and ADR 0056.
 
-## Consumers
+## Consumer — `fabrika ship evidence` (`packages/fabrika-cli/src/ship/evidence-verb.ts`)
 
-Both gates inline the same `gh api` fetch rather than share a helper — minor duplication is the deliberate trade over coupling two control-plane skills at the seam (extract a helper if a third consumer appears).
+The merge gate's SHA-bound proof *behind* CI-green: it asserts `manifest.commit == head SHA` and that every `checks[]` entry passed. Additive — it does not replace the review-verdict read or the CI-green read; all of them must hold before merge.
 
-- **[`ship-it`](../claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md) Step 3.5 (guard 2)** — the SHA-bound proof *behind* CI-green. Asserts `manifest.commit == head SHA` and that every check passed. Additive: it doesn't replace the PASS-marker read or the CI-green read; all three must hold before merge.
-- **[`review-code`](../claude-plugins/kampus-pipeline/skills/review-code/SKILL.md) Step 2** — reads the bundle and cites its structured `checks[]`/`tests` numbers (counts, failing suite names) as per-criterion evidence instead of scraping logs. **Graceful degrade**: an absent/stale bundle (including `manifest.commit != head SHA`) is treated as absent — note it and fall back to current behavior, never error. The bundle is a verdict *input*, never merge authority.
+It reads the bundle as **five** states rather than two, and the distinction is load-bearing: *present*, *pending* (the producer run exists within the freshness window and has not published yet), *failed*, *absent*, *unknown*. Pending is not absent — collapsing them is what turns "the evidence has not arrived" into "there is no evidence", and a 503 on the fetch is `unknown`, never absent (#3716).

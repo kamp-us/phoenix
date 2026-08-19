@@ -90,7 +90,26 @@ describe("scanWorkspaceMembers", () => {
 			["tools/one"],
 		);
 		expect(Exit.isSuccess(exit) && exit.value.members).toEqual([
-			{dir: "tools/one", glob: "tools/one"},
+			{dir: "tools/one", glob: "tools/one", name: null},
+		]);
+	});
+
+	it("carries each member's declared package name, and null when the manifest declares none", async () => {
+		const exit = await scan(
+			{
+				files: {
+					[WORKSPACE]: workspace(["packages/*"]),
+					[`${ROOT}/packages/a/package.json`]: '{"name":"@kampus/a"}',
+					[`${ROOT}/packages/b/package.json`]: "{ not json",
+				},
+				dirs: dirs(["a", "b"]),
+				directories: [`${ROOT}/packages`, `${ROOT}/packages/a`, `${ROOT}/packages/b`],
+			},
+			["packages/*"],
+		);
+		expect(Exit.isSuccess(exit) && exit.value.members).toEqual([
+			{dir: "packages/a", glob: "packages/*", name: "@kampus/a"},
+			{dir: "packages/b", glob: "packages/*", name: null},
 		]);
 	});
 

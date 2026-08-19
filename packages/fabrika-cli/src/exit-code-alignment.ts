@@ -302,6 +302,21 @@ export const RECIPE_SEATS: SharedSeats = {
 };
 
 /**
+ * `ci`'s seats: four, and no private code at all.
+ *
+ * The group writes files and reads stdin, so unlike `guard` it claims the base's write-shaped
+ * seats too. `MALFORMED_DOCUMENT` is `review-ui`'s widening of `BAD_SECTIONS` under the same name:
+ * an entries JSON, a crabbox run-summary or an `--extra-checks` file that parsed and then violated
+ * its schema is the same fact about a whole derived document.
+ */
+export const CI_SEATS: SharedSeats = {
+	EMPTY_STDIN: "EMPTY_STDIN",
+	MALFORMED_DOCUMENT: "BAD_SECTIONS",
+	WRITE_UNKNOWN: "WRITE_UNKNOWN",
+	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
+};
+
+/**
  * `guard`'s seats: two, the narrowest claim any group makes besides `hook`'s one.
  *
  * A guard establishes almost nothing the base's table speaks about — it writes nothing, composes no
@@ -324,6 +339,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	glossary: GLOSSARY_SEATS,
 	graduate: GRADUATE_SEATS,
 	grill: GRILL_SEATS,
+	ci: CI_SEATS,
 	guard: GUARD_SEATS,
 	handoff: HANDOFF_SEATS,
 	"heal-ci": HEAL_CI_SEATS,
