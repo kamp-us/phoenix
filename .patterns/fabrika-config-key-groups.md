@@ -134,10 +134,12 @@ unit test can point the load at a scripted filesystem.
 ## A gate refuses on a config that never decoded
 
 `loadConfig` answers `Config` for a file nobody could open, a file that is not a JSON object, and a
-key whose value the decoder rejected — those arms live per key in `Resolution`, not on the `Load`,
-because a caller reading one key has no business being stopped by another key's malformity. A gate
-is the opposite case: it is about to write, and it needs *every* key it is judged against to have
-decoded.
+key whose value the decoder rejected *where that key carries no `refuseLoad`* — those arms live per
+key in `Resolution`, not on the `Load`, because a caller reading one key has no business being
+stopped by another key's malformity. The exception is the pair above: a `refuseLoad` key's own
+`Malformed` does stop the load, because a key that can un-govern the config is one every caller is
+stopped by on purpose. A gate is the opposite case: it is about to write, and it needs *every* key
+it is judged against to have decoded.
 
 So a gate never reads `load._tag === "Config"` as "it loaded". It calls `unusableReason(load)`
 (`config/unusable.ts`), which answers the one reason no value of this config may be used, or `null`.

@@ -178,6 +178,14 @@ describe("a config cannot un-govern itself", () => {
 		expect(load.reason).toContain(words);
 	});
 
+	it("refuses the load on the other refuseLoad key's malformed value too", () => {
+		const load = fromText('{"triageFacets": "garbage"}');
+		expect(load._tag).toBe("Refused");
+		if (load._tag !== "Refused") return;
+		expect(load.reason).toContain("triageFacets");
+		expect(load.reason).toContain("not an array");
+	});
+
 	it("refuses every key off a malformed-value load, the same as a too-narrow one", () => {
 		expect(
 			resolve(fromText('{"governedRoots": [], "capClearAuthors": ["@a"]}'), capClearAuthorsKey)
