@@ -28,7 +28,7 @@ makes the implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4
 | Verb | Purpose | Split test |
 |---|---|---|
 | `triage queue` | the claimable `status:needs-triage` queue, with the count it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
-| `triage claim` | take a session-scoped claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
+| `triage claim` | take one lane's claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
 | `triage provenance` | was this issue reported by an agent or hand-typed by a human | a structural marker test over a fetched body, plus a membership test over the configured operator set — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
 | `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes, with every milestone in declared focus marked `running` | the join, the open-milestone filter and reading the focus declaration are mechanical; picking which home fits, and whether an exception applies, is judgment |
 | `triage split` | create one split child, once, keyed on the parent back-reference | idempotency keyed on a durable reference is mechanical; deciding a report *is* a bundle is judgment |
@@ -364,7 +364,7 @@ $ fabrika triage queue --json
 **Invocation**
 
 ```
-fabrika triage claim 4312 [--repo <owner/name>] [--json]
+fabrika triage claim 4312 [--token <claim-token>] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -372,29 +372,42 @@ fabrika triage claim 4312 [--repo <owner/name>] [--json]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the issue number to claim |
+| `--token` | string | no | mint a new lane | the token a previous claim handed THIS lane — re-enter it rather than minting a second |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
-**Output** — machine channel. One line: `won`, or `lost\t<holder-session-id>`. **Both are proven
-answers and both exit 0**, with the discriminator in the state word — the same three-outcome shape
-`report dedup` already uses. A losing claim is something this verb *determined*, not something that
-prevented it from answering, so seating it on a non-zero code would contradict the shared rule that a
-non-zero exit is UNKNOWN and would make "another sweep holds it" indistinguishable from "the verb is
-broken".
+**Output** — machine channel. One line: `won\t<claim-token>`, or `lost\t<holder-session-id>`. **Both
+are proven answers and both exit 0**, with the discriminator in the state word — the same
+three-outcome shape `report dedup` already uses. A losing claim is something this verb *determined*,
+not something that prevented it from answering, so seating it on a non-zero code would contradict the
+shared rule that a non-zero exit is UNKNOWN and would make "another sweep holds it"
+indistinguishable from "the verb is broken".
 
-With `--json`, an object with keys `outcome` (`won` / `lost`), `session` (this session's id),
-`holder` (the winning session id, `null` on `won`), `markers` (count of live markers considered), and
-`expired` (count discarded as older than the TTL).
+With `--json`, an object with keys `outcome` (`won` / `lost`), `session` (this session's id), `token`
+(this lane's claim token), `holder` (the winning session id, `null` on `won`), `holderLane` (the
+winning lane's nonce, `null` on `won` or when the winner is a pre-#6132 marker), `markers` (count of
+live markers considered), and `expired` (count discarded as older than the TTL).
+
+**A claim names a lane, not a session.** One fan-out runs several triagers under one
+`$CLAUDE_CODE_SESSION_ID`, so a marker stamped with the session alone cannot tell two of them apart:
+on 2026-08-18 two siblings each read the other's marker back as their own, both answered `won`, and
+both wrote the issue ([#6132](https://github.com/kamp-us/phoenix/issues/6132)). The lane is a token,
+`triage:<session-id>:<uuid>` — the same shape and the same nonce rule the `build` namespace resolves
+ownership by ([#6037](https://github.com/kamp-us/phoenix/issues/6037)), in its own namespace so the
+two never collide. A run with no `--token` mints one and races under its nonce; a run that passes the
+token it was handed re-enters the lane it already holds.
 
 **The marker literal.** A claim is one issue comment whose body is exactly:
 
 ```
-<!-- fabrika-triage-claim session=<session-id> -->
+<!-- fabrika-triage-claim session=<session-id> lane=<nonce> -->
 ```
 
 One line, no surrounding prose, so a marker is matched by an exact prefix rather than by parsing
-human text. `<session-id>` is the verbatim value of `$CLAUDE_CODE_SESSION_ID`. Any comment not
-matching that prefix is not a marker and is ignored.
+human text. `<session-id>` is the verbatim value of `$CLAUDE_CODE_SESSION_ID`; `<nonce>` is the first
+8 hex of the claim token's UUID. Any comment not matching that prefix is not a marker and is ignored.
+A marker carrying no `lane=` field is a pre-#6132 claim: it is counted, it ages out on the same TTL,
+and every lane reads it as **another** claimant's — never as its own.
 
 **The ordering key is the comment's `created_at` as returned by GitHub**, never a timestamp embedded
 in the marker text: the body is caller-supplied and a caller could backdate itself into winning every
@@ -420,7 +433,9 @@ winner is this session; every unresolvable state answers `lost`, never `won`.
 **The claim binds, and every mutating verb is what makes it bind.** `split`, `enrich`, `apply`,
 `park` and `kill` each re-read the markers on their target immediately before their first write, and
 refuse on `17` when a live one names another session — the check reuses this verb's own reader and
-resolver, so there is one marker grammar. Holding **no** marker still passes: an unclaimed issue is
+resolver, so there is one marker grammar. Those five read the **session** axis only: they are handed
+no claim token, so a sibling lane of one session still passes that check, exactly as it did before
+the lane nonce existed. Holding **no** marker still passes: an unclaimed issue is
 the ordinary first-triage case, and demanding one would refuse every existing caller. The same
 re-read refuses a closed target on `7`, and a comment read that fails is `11`. Before, the protocol
 was advisory at exactly the point it needed to bite: on 2026-08-15 a session that had read `lost`
@@ -441,10 +456,11 @@ create the race it exists to resolve. Every other write verb states its idempote
 - **A failed deletion is `9`, not `0`.** The write landed, the intended end state (no marker of mine)
   is not what the issue carries, and the caller has to know a stale marker of theirs is sitting on
   the issue. Answering `lost` at exit 0 would hide it until it won a race nobody was running.
-- **A session that already holds a live marker on the issue re-reads and re-resolves rather than
-  posting a second.** A second marker from the same session cannot win anything the first did not —
-  it is strictly later — so posting it only adds litter to clean up. Re-running this verb inside one
-  session is therefore idempotent: the same marker, re-resolved.
+- **A lane that already holds a live marker on the issue re-reads and re-resolves rather than
+  posting a second.** A second marker under the same nonce cannot win anything the first did not —
+  it is strictly later — so posting it only adds litter to clean up. Re-running this verb under the
+  `--token` it was handed is therefore idempotent: the same marker, re-resolved. Re-running it
+  *without* the token is not a re-entry at all — it is a new lane, and it races like one.
 
 **Exit status**
 
@@ -465,9 +481,11 @@ rather than to this verb.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `triage claim: CLAUDE_CODE_SESSION_ID is unset — refusing to post an unattributable claim.` | 1 | refusal |
+| `triage claim: --token "<t>" is not a claim token (triage:<session-id>:<uuid>) — which lane is asking is not stated.` | 1 | refusal |
+| `triage claim: --token "<t>" carries session <s>, but this run is session <mine> — a lane names itself, never another.` | 1 | refusal |
 | `triage claim: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage claim: issue #<n> is closed — nothing to triage.` | 7 | refusal |
-| `triage claim: #<n> is held by session <holder> since <created_at> — backing off.` | 0 | notice |
+| `triage claim: #<n> is held by session <holder> [on lane <nonce>] since <created_at> — backing off.` | 0 | notice |
 | `triage claim: cannot read #<n> or its comments in <repo>: <reason> — no claim was resolved; never "won".` | 11 | refusal |
 | `triage claim: marker POST failed: <reason> — UNKNOWN whether it landed; re-run before mutating #<n>.` | 8 | refusal |
 | `triage claim: marker posted but absent on read-back — treating the claim as lost.` | 9 | refusal |
@@ -482,20 +500,29 @@ by a caller.
 
 ```
 $ fabrika triage claim 4312
-won
+won	triage:b2e1-4c07-4a99-9f30-55da1e6b7c02:5f1c9a20-4b11-4e05-8d77-c2a4f9be1234
 ```
 
 ```
 $ fabrika triage claim 4312
-triage claim: #4312 is held by session 7f3c-9a20-4b11-8e05-1d77c2a4f9be since 2026-08-02T09:14:02Z — backing off.
+triage claim: #4312 is held by session 7f3c-9a20-4b11-8e05-1d77c2a4f9be on lane 9a204b11 since 2026-08-02T09:14:02Z — backing off.
 lost	7f3c-9a20-4b11-8e05-1d77c2a4f9be
 $ echo $?
 0
 ```
 
+A sibling lane of your OWN session wins the same way, and the notice names the lane so the answer
+does not read as this lane losing to itself:
+
+```
+$ fabrika triage claim 4312
+triage claim: #4312 is held by session b2e1-4c07-4a99-9f30-55da1e6b7c02 on lane 7c3d0e91 since 2026-08-18T21:02:11Z — backing off.
+lost	b2e1-4c07-4a99-9f30-55da1e6b7c02
+```
+
 ```
 $ fabrika triage claim 4312 --json
-{"outcome":"won","session":"b2e1-4c07-4a99-9f30-55da1e6b7c02","holder":null,"markers":1,"expired":0}
+{"outcome":"won","session":"b2e1-4c07-4a99-9f30-55da1e6b7c02","token":"triage:b2e1-4c07-4a99-9f30-55da1e6b7c02:5f1c9a20-4b11-4e05-8d77-c2a4f9be1234","holder":null,"holderLane":null,"markers":1,"expired":0}
 ```
 
 **Grounding**

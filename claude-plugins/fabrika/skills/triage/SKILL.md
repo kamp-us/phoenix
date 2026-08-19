@@ -24,8 +24,11 @@ nobody named.
 fabrika triage claim $issue_number
 ```
 
-Done when it printed `won` — that means this session holds it; on anything else, move on. What
-`lost` proves, and which refusal each exit code carries, is the verb's own section
+Done when it printed `won\t<claim-token>` — that means **this lane** holds it; on anything else, move
+on. **Keep the token.** A fan-out runs several triagers under one session id, so the token is the
+only thing that tells your lane from a sibling's: pass it back as `--token` if you ever re-run the
+claim, and never re-run without it — a tokenless re-run is a new lane racing your own. What `lost`
+proves, and which refusal each exit code carries, is the verb's own section
 (`fabrika wire doc-section --heading "triage claim" < <skill-base>/contract.md`).
 
 **That rule has teeth now.** Every verb below that writes — `enrich`, `apply`, `park`, `kill`,
