@@ -32,7 +32,6 @@ export const disc = (seed: string): string => {
 	return (h >>> 0).toString(36).padStart(DISC_LEN, "0").slice(0, DISC_LEN);
 };
 
-/** Sanitize a raw test-file basename to the `[a-z0-9-]` set with no leading/trailing dash. */
 export const slugify = (base: string): string =>
 	base
 		.toLowerCase()

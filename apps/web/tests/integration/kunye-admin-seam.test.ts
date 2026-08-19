@@ -39,7 +39,6 @@ const RANDO = `${NS}-rando`;
 // `d1` is the one binding both sides share: the admin-grant write path drizzles its
 // own schema slice over it, the worker read path drizzles the full schema over it.
 let d1: D1Database;
-// Discharge `Admin.over(platform)` for a subject over the SAME D1, to an Exit.
 let discharge: (subject: string) => Promise<Exit.Exit<Grant<Admin>, Denied>>;
 
 // Seed the user row the admin-grant selector resolves against (the grant resolves the

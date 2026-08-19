@@ -10,7 +10,6 @@
 import {Context, type Effect} from "effect";
 import type {Agent} from "./Actor.ts";
 
-/** Which agent, asking for which capability tag. */
 export interface AgentAuthorityRequest {
 	readonly agent: Agent;
 	readonly capability: string;

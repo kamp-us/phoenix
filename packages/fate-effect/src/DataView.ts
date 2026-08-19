@@ -105,11 +105,6 @@ export type KernelDataView<
  */
 export type ListFieldOf<Item extends AnyRow> = DataViewOf<Item> & {kind: "list"};
 
-/**
- * The static side a `FateDataView(...)(...)` class ships: the unchanged
- * kernel view and the literal type name. Instances are meaningless — the
- * class exists to give the view a nameable exported type.
- */
 export interface FateDataViewClass<
 	Item extends AnyRow,
 	Fields extends FieldsConfigOf<Item>,
@@ -143,30 +138,14 @@ const listFieldOf = <Item extends AnyRow>(
 	options?: DataViewListOptions,
 ): ListFieldOf<Item> => list(View.view, options);
 
-/**
- * Class factory for fate data views: `FateDataView<Row>()("Name")({fields})`.
- *
- * The inner call is exactly fate's `dataView("Name")({fields})` curry; the
- * leading `()` is the Effect dummy-call that lets `Row` be explicit while the
- * name still infers as a literal (TypeScript has no partial type-argument
- * inference — the same reason `Schema.TaggedErrorClass<Self>()` takes one).
- *
- * `FateDataView.list(View, options)` declares a list relation field on a
- * sibling view class — fate's `list(view, options)` with a portable type.
- */
+/** Class factory for fate data views — see this module's header for the shape. */
 export const FateDataView = Object.assign(makeFateDataView, {list: listFieldOf});
 
-/**
- * `Entity` over a `FateDataView` class — fate's own `Entity<view, name>`
- * with both arguments read off the class, full field-map fidelity included.
- * `Replacements` passes through to fate's third parameter unchanged.
- */
 export type Entity<
 	View extends {readonly view: DataViewOf<AnyRow>; readonly typeName: string},
 	Replacements extends Record<string, unknown> = Record<never, never>,
 > = KernelEntity<View["view"], View["typeName"], Replacements>;
 
-/** Substitute `Date` for `string` within a union, preserving the rest (`null`). */
 type StringToDate<T> = T extends string ? Date : T;
 
 /** The fate wire shape — the serialized field types `Entity` derives by default. */

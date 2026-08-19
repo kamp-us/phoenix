@@ -13,11 +13,7 @@
  * in-memory database, so mutations advance both worlds in lockstep and later
  * reads prove state parity, not just response parity.
  *
- * This file's corpus covers the NAMED operation kinds end to end —
- * successes, every error class (annotated, UNAUTHORIZED, VALIDATION_ERROR,
- * NOT_FOUND, defects, `FateRequestError` passthrough with issues),
- * batching/order, dispatch-time BAD_REQUESTs, request-level
- * malformed-protocol rejections, and fate's acceptance leniency. The other
+ * This file's corpus covers the NAMED operation kinds end to end. The other
  * oracle planes live in siblings: `Interpreter.walk.test.ts` (byId + the
  * selection walk + its connection plane), `Interpreter.features.test.ts`
  * (the pano / pasaport / stats feature-shaped corpus), and

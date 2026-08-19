@@ -2,19 +2,12 @@
  * The uniform removal substrate (ADR 0096) — black-box against the deployed
  * worker `/fate` route on real remote D1 (ADR 0082 integration tier).
  *
- * Proves the two substrate guarantees end to end, per entity type
- * (definition / post / comment):
- *   - **Remove → restore round-trip.** A removed entity disappears from public
- *     reads; restoring it brings the content back (reversibility, ADR 0096 §4).
- *   - **Karma is KEPT across removal.** An up-vote bumps the author's
- *     `total_karma`; removing the voted-on content does NOT reverse it (ADR 0096
- *     §3, the pano karma-reversal deleted). The score *cache* drops to 0 (votes
- *     wiped by `Vote.clearTarget`), but the author's karma credential is stable.
+ * Proves the two substrate guarantees per entity type (definition / post / comment):
+ * remove → restore reversibility (ADR 0096 §4), and karma KEPT across removal (§3 — the
+ * score cache drops to 0 as votes are wiped, but the author's karma credential is stable).
  *
- * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
- * shared across every migrated file: every email/slug/username is prefixed with `NS` (this
- * file's deterministic `nsToken`) and karma is asserted per-author off the file's own
- * NS-username, so its rows are uniquely its own.
+ * Runs on the run-scoped SHARED stage (ADR 0104 step 7): every email/slug/username is
+ * `NS`-prefixed and karma is asserted per-author off this file's own NS-username.
  */
 import {beforeAll, describe, expect, it} from "vitest";
 import {sharedStack} from "./_integration.ts";
@@ -80,8 +73,8 @@ describe("removal substrate — definition remove → restore, karma kept", () =
 			return (res.data as ProfileNode).totalKarma;
 		};
 
-		// A distinct voter up-votes the definition → author karma 1. Promoted to yazar
-		// so it clears the #1810 "earn to vote" gate (a fresh çaylak is rejected at cast).
+		// Promoted to yazar so it clears the #1810 "earn to vote" gate (a fresh çaylak is
+		// rejected at cast).
 		const voter = await h.signUp(`${NS}-def-v@test.local`, "hunter2hunter2", "Voter");
 		await h.promoteToYazar(voter.userId);
 		const vote = await h.fate(
@@ -91,7 +84,6 @@ describe("removal substrate — definition remove → restore, karma kept", () =
 		expect(vote.ok).toBe(true);
 		expect(await karmaOf()).toBe(1);
 
-		// The term page lists the live definition.
 		const termBefore = await h.fate({
 			kind: "query",
 			name: "term",
@@ -103,14 +95,12 @@ describe("removal substrate — definition remove → restore, karma kept", () =
 			expect(definitionIds(termBefore.data)).toContain(definitionId);
 		}
 
-		// The author removes it.
 		const del = await h.fate(
 			{kind: "mutation", name: "definition.delete", input: {id: definitionId}, select: ["id"]},
 			{cookie: author.cookie},
 		);
 		expect(del.ok).toBe(true);
 
-		// Gone from the public term page…
 		const termAfter = await h.fate({
 			kind: "query",
 			name: "term",
@@ -122,10 +112,8 @@ describe("removal substrate — definition remove → restore, karma kept", () =
 			expect(definitionIds(termAfter.data)).not.toContain(definitionId);
 		}
 
-		// …but karma is KEPT (the upvote earned is not reversed by removal).
 		expect(await karmaOf()).toBe(1);
 
-		// Restore brings the definition back to the term.
 		const restored = await h.fate(
 			{kind: "mutation", name: "definition.restore", input: {id: definitionId}, select: ["id"]},
 			{cookie: author.cookie},
@@ -142,7 +130,6 @@ describe("removal substrate — definition remove → restore, karma kept", () =
 		if (termRestored.ok) {
 			expect(definitionIds(termRestored.data)).toContain(definitionId);
 		}
-		// Karma still 1 after the whole round-trip.
 		expect(await karmaOf()).toBe(1);
 	});
 });
@@ -191,16 +178,13 @@ describe("removal substrate — post remove → restore, karma kept", () => {
 		expect(vote.ok).toBe(true);
 		expect(await karmaOf()).toBe(1);
 
-		// Remove the post.
 		const del = await h.fate(
 			{kind: "mutation", name: "post.delete", input: {id: postId}, select: ["id"]},
 			{cookie: author.cookie},
 		);
 		expect(del.ok).toBe(true);
 
-		// The post is no longer publicly resolvable — a removed post reads as null
-		// on the normal path (ADR 0096 §1/§5: filtered from public reads), exactly
-		// like an unknown id (pano-read.test.ts "returns null for an unknown id").
+		// A removed post reads as null, exactly like an unknown id (ADR 0096 §1/§5).
 		const gone = await h.fate({
 			kind: "query",
 			name: "post",
@@ -210,10 +194,8 @@ describe("removal substrate — post remove → restore, karma kept", () => {
 		expect(gone.ok).toBe(true);
 		if (gone.ok) expect(gone.data).toBeNull();
 
-		// …karma KEPT.
 		expect(await karmaOf()).toBe(1);
 
-		// Restore re-resolves the post.
 		const restored = await h.fate(
 			{kind: "mutation", name: "post.restore", input: {id: postId}, select: ["id"]},
 			{cookie: author.cookie},
@@ -239,7 +221,6 @@ describe("removal substrate — comment remove → restore, karma kept", () => {
 		const author = await h.signUpYazar(`${NS}-cmt@test.local`, "hunter2hunter2", "Cmt Author");
 		await setUsername(author.cookie, authorUsername);
 
-		// A post to hang the comment on.
 		const submitted = await h.fate(
 			{
 				kind: "mutation",
@@ -299,16 +280,13 @@ describe("removal substrate — comment remove → restore, karma kept", () => {
 				select: ["comments.id"],
 			});
 			if (!res.ok) throw new Error("post read failed");
-			// `comments` is a paginated connection (`{items: [{node}]}`), not a bare
-			// array — same shape as pano-comments.test.ts.
+			// `comments` is a paginated connection (`{items: [{node}]}`), not a bare array.
 			const data = res.data as {comments?: Connection<{id: string}>} | null;
 			return (data?.comments?.items ?? []).map((e) => e.node.id);
 		};
 
-		// Live leaf comment is in the thread.
 		expect(await commentIdsOf()).toContain(commentId);
 
-		// Remove it (leaf → drops out of the thread).
 		const del = await h.fate(
 			{kind: "mutation", name: "comment.delete", input: {id: commentId}, select: ["id"]},
 			{cookie: author.cookie},
@@ -316,10 +294,8 @@ describe("removal substrate — comment remove → restore, karma kept", () => {
 		expect(del.ok).toBe(true);
 		expect(await commentIdsOf()).not.toContain(commentId);
 
-		// Karma KEPT across the comment removal.
 		expect(await karmaOf()).toBe(1);
 
-		// Restore re-appends the comment to the thread.
 		const restored = await h.fate(
 			{kind: "mutation", name: "comment.restore", input: {id: commentId}, select: ["id"]},
 			{cookie: author.cookie},

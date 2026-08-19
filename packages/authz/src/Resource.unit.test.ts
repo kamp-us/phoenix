@@ -22,11 +22,11 @@ describe("Resource", () => {
 	});
 
 	it("covers is reflexive and holds up the chain, never down", () => {
-		expect(covers(term, term)).toBe(true); // reflexive
-		expect(covers(platform, term)).toBe(true); // ancestor covers descendant
+		expect(covers(term, term)).toBe(true);
+		expect(covers(platform, term)).toBe(true);
 		expect(covers(board, term)).toBe(true);
-		expect(covers(term, platform)).toBe(false); // descendant never covers ancestor
-		expect(covers(resource("board", "pano"), term)).toBe(false); // unrelated
+		expect(covers(term, platform)).toBe(false);
+		expect(covers(resource("board", "pano"), term)).toBe(false);
 	});
 
 	it("key encodes a node as `type:id` — the one storage key both seam sides agree on", () => {

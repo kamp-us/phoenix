@@ -2,26 +2,9 @@
  * Session freshness is a TWO-AXIS invariant (ADR 0169) — black-box against the
  * deployed worker on real remote D1 (ADR 0082 integration tier).
  *
- * ADR 0169 rejects session caching because a session-perf/caching review is a
- * two-axis check, and the first #2263 `cookieCache` review scoped only axis (1) and
- * missed axis (2) — the account-deletion integration test caught the teardown hole by
- * luck, not by the review. This file encodes BOTH axes as REQUIRED, deterministic
- * invariants so the catch lives in the suite, not in one incident:
- *
- *   1. **Capability staleness.** A gated decision (role/tier/karma/ban/kefil) must read
- *      the capability FRESH from Künye on every request — never from a snapshot minted
- *      into the session at login. Proven on the "earn to vote" tier gate (#1810): a
- *      çaylak's cast is rejected, and an out-of-band promotion (no re-login, the SAME
- *      cookie) is honored on the very next cast. A session-cache of the tier would keep
- *      serving the stale çaylak snapshot and fail this. (Its `kunye-admin-seam` /
- *      `kunye-moderate-seam` siblings prove the same fresh-per-call property for the
- *      admin/moderator relation tuples.)
- *   2. **Identity-continuity teardown.** A deleted / logged-out / revoked session must
- *      stop authenticating IMMEDIATELY, never after a TTL. The DELETE path is the
- *      `account-deletion.test` exemplar ADR 0169 keeps as-is; this file covers the
- *      LOGOUT/REVOKE path — sign-out tears the session down so the very next request
- *      under the same cookie is `UNAUTHORIZED`. A `cookieCache` window would keep the
- *      torn-down identity alive for ≤TTL and fail this.
+ * The two axes — capability staleness (#1810, #2263) and identity-continuity teardown —
+ * are encoded here as REQUIRED, deterministic invariants so the catch lives in the suite,
+ * not in one incident. See ADR 0169.
  *
  * Runs on the run-scoped SHARED stage (ADR 0104 step 7). Every email/username is `NS`-
  * prefixed (this file's deterministic token) so its rows can't collide with a
@@ -56,9 +39,6 @@ beforeAll(() => {
 });
 
 describe("ADR 0169 — session freshness is a two-axis invariant", () => {
-	// Axis 1: capability staleness. The tier that gates a vote is read fresh from Künye
-	// on EVERY cast, so a capability change AFTER the cookie was minted is honored under
-	// the SAME cookie — a login-time snapshot would keep the çaylak rejection.
 	it("axis 1 — a capability change (çaylak→yazar) is read FRESH under the same session, not from a login snapshot", async () => {
 		// An eligible author owns a definition the subject can vote on (a self-vote is a
 		// distinct rejection — `SELF_VOTE_NOT_ALLOWED` — so the target must be someone else's).
@@ -87,7 +67,6 @@ describe("ADR 0169 — session freshness is a two-axis invariant", () => {
 		const subject = await h.signUp(`${NS}-subject@test.local`, "hunter2hunter2", "Subject");
 		await setUsername(subject.cookie, uname("subject"));
 
-		// çaylak cast is rejected by the live "earn to vote" tier gate (#1810).
 		const beforePromote = await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id: definitionId}, select: ["score"]},
 			{cookie: subject.cookie},
@@ -110,18 +89,13 @@ describe("ADR 0169 — session freshness is a two-axis invariant", () => {
 		if (afterPromote.ok) expect((afterPromote.data as {score: number}).score).toBe(1);
 	});
 
-	// Axis 2 (logout/revoke): sign-out tears the session down at once. The DELETE path of
-	// this axis is `account-deletion.test`'s exemplar (ADR 0169 keeps it as-is); this is
-	// its logout/revoke sibling — the same immediate-teardown invariant, different trigger.
 	it("axis 2 — sign-out tears down the session immediately; the very next request is UNAUTHORIZED", async () => {
 		const user = await h.signUp(`${NS}-logout@test.local`, "hunter2hunter2", "Logout");
 		await setUsername(user.cookie, uname("logout"));
 
-		// The session authenticates before logout.
 		const before = await me(user.cookie);
 		expect(before.ok).toBe(true);
 
-		// Log out through the real better-auth endpoint — this revokes the session row.
 		const out = await h.json("/api/auth/sign-out", {}, user.cookie);
 		expect(out.ok).toBe(true);
 
@@ -133,9 +107,8 @@ describe("ADR 0169 — session freshness is a two-axis invariant", () => {
 		if (!after.ok) expect(after.error.code).toBe("UNAUTHORIZED");
 	});
 
-	// Axis 2 (delete): the invariant stated in its dedicated home, not as a side effect of
-	// the anonymize-semantics test — the "caught by luck" gap ADR 0169 closes. The rich
-	// re-attribution semantics stay owned by `account-deletion.test` (unrelaxed).
+	// The rich re-attribution semantics stay owned by `account-deletion.test`; this pins only
+	// the teardown, in its own home rather than as a side effect of that test.
 	it("axis 2 — account deletion tears down the session immediately; the very next request is UNAUTHORIZED", async () => {
 		const user = await h.signUp(`${NS}-delete@test.local`, "hunter2hunter2", "Delete");
 		await setUsername(user.cookie, uname("delete"));

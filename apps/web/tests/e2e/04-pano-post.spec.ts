@@ -20,11 +20,9 @@ test.describe("PanoPostDetail", () => {
 	test("renders title, vote control, meta, composer, comment thread", async ({page}) => {
 		await gotoFirstPostDetail(page);
 		await expect(page.locator(".kp-pano-postpage__title")).toBeVisible();
-		// PostVoteWidget renders the .kp-pano-post__vote control
 		await expect(page.locator(".kp-pano-post__vote").first()).toBeVisible();
 		await expect(page.locator(".kp-pano-postpage__meta .author")).toBeVisible();
 		await expect(page.locator(".kp-pano-comment-composer")).toBeVisible();
-		// "N yorum" thread heading
 		await expect(page.locator(".kp-pano-postpage__thread-heading")).toBeVisible();
 	});
 
@@ -40,7 +38,6 @@ test.describe("PanoPostDetail", () => {
 		await completeBootstrap(page);
 		await gotoFirstPostDetail(page);
 		const firstUpvote = page.locator(".kp-comment__upvote").first();
-		// Some seed posts have no comments; skip in that case rather than fail.
 		if (!(await firstUpvote.isVisible().catch(() => false))) {
 			test.skip(true, "no comments on the first seeded post");
 		}

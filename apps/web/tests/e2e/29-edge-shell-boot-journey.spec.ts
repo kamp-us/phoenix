@@ -20,7 +20,6 @@ import {expect, type Page, test} from "@playwright/test";
 
 declare global {
 	interface Window {
-		// Set by the injected observer: the cumulative layout shift attributed to the shell.
 		__shellCLS?: number;
 	}
 }
@@ -70,7 +69,6 @@ const BOOT_SIGNED_IN: SeedBoot = {
  */
 const WORKER_BOOT_SCRIPT = /<script>\s*window\.__BOOT__\s*=[\s\S]*?<\/script>/gi;
 
-/** Serialize a payload into the same inline tag the edge injects (mirrors `bootScriptTag`). */
 const bootTag = (boot: SeedBoot): string =>
 	`<script>window.__BOOT__=${JSON.stringify(boot).replace(/</g, "\\u003c")}</script>`;
 
@@ -154,7 +152,6 @@ test.describe("edge-resolved shell boot", () => {
 		const mecmua = page.locator(".kp-topbar__nav a", {hasText: /^mecmua$/i});
 		await expect(mecmua).toBeVisible();
 
-		// The marker observed the edge-boot mode — `__BOOT__` was injected for this render.
 		await expect(page.locator('[data-testid="edge-shell-boot"]')).toHaveAttribute(
 			"data-active",
 			"true",
@@ -214,12 +211,9 @@ test.describe("edge-resolved shell boot", () => {
 		// absent-payload assertions below would be testing the wrong world.
 		expect(rewritten()).toBeGreaterThan(0);
 		await expect(page.locator(".kp-topbar")).toBeVisible({timeout: 10_000});
-		// The base product nav still renders — the untransformed shell is byte-identical to today.
 		await expect(page.locator(".kp-topbar__nav a", {hasText: /^sözlük$/i})).toBeVisible();
 		await expect(page.locator(".kp-topbar__nav a", {hasText: /^pano$/i})).toBeVisible();
-		// __BOOT__ absent ⇒ the client resolves through its fetch fallback, never assuming injection.
 		expect(await page.evaluate(() => window.__BOOT__)).toBeUndefined();
-		// The marker reports the inactive mode — no injection reached this render.
 		await expect(page.locator('[data-testid="edge-shell-boot"]')).toHaveAttribute(
 			"data-active",
 			"false",

@@ -1,20 +1,13 @@
 /**
- * The auth seam. `ApiKeyVerifier` resolves a presented pasaport `apiKey` to its
- * owning user id, or fails `Unauthorized` (ADR 0144 decision 4; the agent-
- * credential path of ADRs 0044/0045). It is a SEAM so the upload domain unit-tests
- * with a scripted verifier and the production wiring stays out of the pure core.
+ * The auth seam: resolve a presented pasaport `apiKey` to its owning user id
+ * (ADR 0144 decision 4; the agent-credential path of ADRs 0044/0045).
  *
- * `ApiKeyVerifierLive` is the production implementation: it verifies against the
- * SAME better-auth `apiKey` table pasaport owns, on the shared `phoenix_db` D1
- * (`worker/resources.ts` adopts it read-only). Verification is delegated to the
- * `@better-auth/api-key` plugin's own `verifyApiKey` — the doorman never re-derives
- * the key hash or the enabled/expiry rules itself (grounding the credential check
- * in the plugin, not intuition: the plugin hashes with `defaultKeyHasher` =
- * base64url(SHA-256(key)), which is an internal detail the doorman must not copy).
- *
- * Building a minimal better-auth instance (drizzle-adapter + `apiKey()` plugin)
- * bound to phoenix_db keeps depo DUMB: it borrows pasaport's credential store to
- * answer one yes/no question and owns none of pasaport's schema or migrations.
+ * It verifies against the SAME better-auth `apiKey` table pasaport owns, on the
+ * shared `phoenix_db`. Verification is delegated to the `@better-auth/api-key`
+ * plugin's own `verifyApiKey` — the doorman must never re-derive the key hash or
+ * the enabled/expiry rules itself (the plugin's `defaultKeyHasher` is an internal
+ * detail). A minimal better-auth instance over phoenix_db keeps depo dumb: it
+ * borrows pasaport's credential store and owns none of its schema or migrations.
  */
 import {apiKey} from "@better-auth/api-key";
 import type {D1Database} from "@cloudflare/workers-types";
@@ -26,7 +19,6 @@ import * as Effect from "effect/Effect";
 import {Unauthorized} from "./errors.ts";
 
 export interface AuthenticatedCaller {
-	/** The pasaport user id the key belongs to (uploads are attributed to it). */
 	readonly userId: string;
 }
 
@@ -39,14 +31,10 @@ export class ApiKeyVerifier extends Context.Service<ApiKeyVerifier, ApiKeyVerifi
 ) {}
 
 /**
- * Build the production verifier over a raw `phoenix_db` handle. A per-key
- * `auth.api.verifyApiKey` round-trip returns `{valid, key: {referenceId, enabled}}`
- * (`referenceId` is the owning entity — the pasaport user id, per the plugin's
- * default `references`); anything that is not a valid, enabled key — or any thrown
- * error below — is a flat `Unauthorized` (no detail leak to the caller). `secret`
- * is pasaport's `BETTER_AUTH_SECRET`, passed so any secret-dependent apiKey path
- * matches its issuer (the hash lookup itself is secret-independent —
- * `defaultKeyHasher`).
+ * `referenceId` is the plugin's owning entity — the pasaport user id. Anything
+ * that is not a valid, enabled key, and any thrown error, is a flat `Unauthorized`
+ * with no detail leaked to the caller. `secret` is pasaport's own, passed so any
+ * secret-dependent apiKey path matches its issuer.
  */
 export const makeApiKeyVerifier = (db: D1Database, secret: string): ApiKeyVerifierService => {
 	const auth = betterAuth({

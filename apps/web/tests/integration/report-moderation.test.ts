@@ -1,17 +1,7 @@
 /**
  * Report moderation (ADR 0098) — black-box against the deployed worker `/fate`
- * route on real remote D1 (ADR 0082 integration tier). The facts that are only
- * right against real D1 + the real substrate:
- *
- *   - **Gate.** `report.listOpen` / `report.resolve` are invisible to a
- *     non-moderator (member or anonymous) — UNAUTHORIZED, never a leak.
- *   - **Act-on-target via the 0096 substrate.** A `resolve(removed)` hides the
- *     target from normal reads (soft-delete, restorable) and stamps the report
- *     `resolved` with the audit triad; it collapses EVERY open report on the target.
- *   - **Repeat-offender count.** `report.listOpen` surfaces the distinct-reporter
- *     count free off the `content_report_target` index.
- *   - **Reopen on restore.** `report.restore` brings the content back AND reopens
- *     its reports (the bounded reopen, ADR 0096 §4 ↔ 0098 §3).
+ * route on real remote D1 (ADR 0082 integration tier). The act-on-target and
+ * bounded-reopen semantics under test are ADR 0096 §4 ↔ 0098 §3.
  *
  * Moderation authority is the `moderates` relation now (ADR 0107, `user.role`
  * retired as an authority source) — granted here via the offline mint path: a
@@ -111,8 +101,6 @@ beforeAll(async () => {
 	reporterB = await h.signUp(`${NS}-rb@test.local`, "hunter2hunter2", "rb");
 	author = await h.signUpYazar(`${NS}-author@test.local`, "hunter2hunter2", "anka");
 
-	// The grant path: mint the moderator's `moderates` tuple directly in D1 (the
-	// offline mint, no runtime endpoint), keyed by canonical `key(platform)`.
 	await h.execD1("INSERT INTO relation_tuple (subject, relation, object) VALUES (?, ?, ?)", [
 		moderator.userId,
 		"moderates",
@@ -185,10 +173,8 @@ describe("report.resolve — act-on-target via substrate + repeat-offender + reo
 		const node = rows.find((e) => e.node.targetId === postId)?.node;
 		expect(node).toBeDefined();
 		if (!node) return;
-		// The join resolved the target's author off the same content read.
 		expect(node.authorId).toBe(author.userId);
 		expect(node.authorTier).not.toBeNull();
-		// The seeded post is one live gönderi by this author — its production footprint.
 		expect(node.authorPostCount).toBeGreaterThanOrEqual(1);
 		// kefil durumu resolves to a concrete boolean (unvouched author ⇒ false).
 		expect(node.authorKefil).toBe(false);
@@ -208,14 +194,11 @@ describe("report.resolve — act-on-target via substrate + repeat-offender + reo
 		const receipt = res.data as {resolution: string; targetRemoved: boolean; collapsed: number};
 		expect(receipt.resolution).toBe("removed");
 		expect(receipt.targetRemoved).toBe(true);
-		// Both open reports on the target collapsed in one batch.
 		expect(receipt.collapsed).toBe(2);
 
-		// Target is hidden from normal reads (soft-deleted via the substrate).
 		const post = await getPost(postId);
 		expect(post.ok && post.data === null).toBe(true);
 
-		// Both report rows are now terminal with the audit triad stamped.
 		const status = await h.execD1(
 			"SELECT 1 FROM content_report WHERE target_kind='post' AND target_id=? AND status='resolved' AND resolution='removed' AND resolver_id=? AND resolved_at IS NOT NULL",
 			[postId, moderator.userId],
@@ -247,11 +230,9 @@ describe("report.resolve — act-on-target via substrate + repeat-offender + reo
 		// `collapsed` carries the reopened-report count on restore.
 		expect((restored.data as {collapsed: number}).collapsed).toBe(2);
 
-		// Content is live again.
 		const post = await getPost(postId);
 		expect(post.ok && post.data !== null).toBe(true);
 
-		// The reports are open again — the queue lists the target with its count.
 		const list = await listOpen(moderator.cookie);
 		expect(list.ok).toBe(true);
 		if (list.ok) {
@@ -287,7 +268,6 @@ describe("report.resolve — a remove that lost the transition removes nothing (
 	});
 
 	it("a dismiss stamps the report terminal first; a later remove leaves the content live", async () => {
-		// The concurrent terminal stamp lands first: the report is now `dismissed`, content present.
 		const dismissed = await resolve(
 			{targetKind: "post", targetId: racePostId, action: "dismiss"},
 			moderator.cookie,
@@ -298,8 +278,6 @@ describe("report.resolve — a remove that lost the transition removes nothing (
 		expect(dismissReceipt.resolution).toBe("dismissed");
 		expect(dismissReceipt.collapsed).toBe(1);
 
-		// The losing `remove` runs against the now-terminal report: it wins no transition, so
-		// the removal leg is skipped — nothing collapses, nothing is removed, no fan-out fires.
 		const removed = await resolve(
 			{targetKind: "post", targetId: racePostId, action: "remove"},
 			moderator.cookie,
@@ -310,7 +288,6 @@ describe("report.resolve — a remove that lost the transition removes nothing (
 		expect(removeReceipt.collapsed).toBe(0);
 		expect(removeReceipt.targetRemoved).toBe(false);
 
-		// The content is still live — NOT removed under the dismissed verdict.
 		const post = await getPost(racePostId);
 		expect(post.ok && post.data !== null).toBe(true);
 

@@ -2,14 +2,11 @@
  * fts-backfill → FTS5 MATCH loop on real D1 (#645, the integration-tier proof ADR
  * 0082 §irreducible-integration names for the write→sync→read dual-write loop).
  *
- * `@kampus/fts-backfill`'s pure core is unit-tested (`buildBackfillStatements`,
- * #534) — byte-correct statements against `SQLiteDialect`, no DB. That proves
- * what the backfill *writes*, never that a backfilled row is *findable* by a query
- * that folds the same way on D1's FTS5 (≠ `node:sqlite`'s). This test runs the REAL
- * shipped bin (`fts-backfill run --database-id <id> --account-id <acct>`) as a
- * subprocess against this file's real remote D1, then asserts `Search.ts`'s
- * `searchTerms` resolver returns the backfilled row for a Turkish-diacritic-folded
- * query — proving backfill → sync → FTS5 MATCH → bm25 end to end (ADR 0080 folding).
+ * The pure core is unit-tested (`buildBackfillStatements`, #534), which proves what
+ * the backfill *writes*, never that a backfilled row is *findable* by a query that
+ * folds the same way on D1's FTS5 (≠ `node:sqlite`'s). So this runs the real shipped
+ * bin as a subprocess against real remote D1, then reads back through `searchTerms`
+ * for a Turkish-diacritic-folded query (ADR 0080 folding).
  *
  * Spawning the bin (not library-importing `backfill()`) is deliberate: it exercises
  * the actual production entrypoint AND keeps `apps/web` from depending on
@@ -33,8 +30,7 @@ import {integrationStack} from "./_integration.ts";
 
 const execFileAsync = promisify(execFile);
 
-// The shipped bin's absolute path — `apps/web/tests/integration/` → repo root is
-// four levels up; the bin is the production CLI entrypoint, run the exact way
+// The production CLI entrypoint, run the exact way
 // `pnpm --filter @kampus/fts-backfill backfill` runs it (`node src/bin.ts run`).
 const BIN_PATH = join(import.meta.dirname, "../../../../packages/fts-backfill/src/bin.ts");
 
@@ -51,8 +47,6 @@ const FOLDED_QUERY = "sisli";
 
 beforeAll(async () => {
 	await h.signUpYazar(`${SLUG}-author@test.local`, "hunter2hunter2", "anka");
-	// Seed through the public dual-write: a real term_record row + its term_search
-	// FTS row land together.
 	await h.seedTerm({
 		slug: SLUG,
 		title: TITLE,
@@ -79,24 +73,17 @@ describe("fts-backfill → FTS5 MATCH on real D1 (#645)", () => {
 			expect(items.some((e) => e.node.slug === SLUG)).toBe(false);
 		}
 
-		// Run the REAL backfill: spawn the shipped bin against this stage's real D1,
-		// passing the resolved `{accountId, databaseId}` as flags. The bin reads
-		// `$CLOUDFLARE_API_TOKEN` from the inherited env (CI secret) — exactly how the
-		// one-time prod data-op runs. A non-zero exit throws and fails the test.
 		const {accountId, databaseId} = await h.d1Target();
 		const {stdout} = await execFileAsync(
 			process.execPath,
 			[BIN_PATH, "run", "--database-id", databaseId, "--account-id", accountId],
 			{env: process.env},
 		);
-		// The bin reports how many term rows it re-indexed; the seeded term is among
-		// them (the backfill scans the whole corpus, so assert it re-indexed ≥ 1).
+		// The backfill scans the whole corpus, so the count is ≥ 1, never exactly 1.
 		const reported = stdout.match(/re-indexed (\d+) term/);
 		expect(reported, `bin output did not report a term count:\n${stdout}`).not.toBeNull();
 		expect(Number(reported?.[1])).toBeGreaterThanOrEqual(1);
 
-		// The loop's payoff: the folded query now MATCHes the backfilled row via the
-		// live resolver — backfill → sync → FTS5 MATCH → bm25, proven on real D1.
 		const after = await h.fate({
 			kind: "list",
 			name: "searchTerms",

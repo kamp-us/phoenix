@@ -2,19 +2,6 @@ import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
 import {randomSuffix} from "./_helpers/rand";
 
-/**
- * Pano addComment end-to-end.
- *
- * Single author flow:
- *   1. sign up → bootstrap username
- *   2. submit a post → land on /pano/<id>
- *   3. add a top-level comment via the composer → it appears in the tree
- *   4. click "yanıtla" under that comment → inline reply composer appears
- *   5. submit the reply → it appears nested under the parent comment
- *
- * Page reload after submitPost dodges the Suspense double-mount race that
- * surfaced earlier in development.
- */
 test.describe("Pano addComment", () => {
 	test("submits a top-level comment, then a nested reply", async ({page}) => {
 		const suffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
@@ -25,7 +12,6 @@ test.describe("Pano addComment", () => {
 			timeout: 10_000,
 		});
 
-		// Submit a post.
 		await page.goto("/pano/yeni");
 		await expect(page.locator('[data-testid="pano-submit-title"]')).toBeVisible({timeout: 5_000});
 
@@ -35,7 +21,6 @@ test.describe("Pano addComment", () => {
 		await page.locator('[data-testid="pano-submit-tag-discuss"]').click();
 		await page.locator('[data-testid="pano-submit-submit"]').click();
 
-		// Land on /pano/<id>.
 		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
 
 		// Post-detail no longer remounts on a mutation —
@@ -49,14 +34,11 @@ test.describe("Pano addComment", () => {
 		// fallback hides the new comment).
 		await expect(page.getByRole("heading", {name: /0 yorum/i})).toBeVisible({timeout: 10_000});
 
-		// Add a top-level comment.
 		const topLevelBody = `top-level comment ${suffix}`;
 		await page.locator('[data-testid="pano-comment-input"]').fill(topLevelBody);
 		await page.locator('[data-testid="pano-comment-submit"]').click();
 
-		// New comment appears in the tree. Wait on the comment count heading
-		// flipping to "1 yorum" — that's the authoritative signal the comments
-		// query refetch landed.
+		// The count heading flipping is the authoritative signal the comments refetch landed.
 		await expect(page.getByRole("heading", {name: /1 yorum/i})).toBeVisible({timeout: 15_000});
 		await expect(page.getByText(topLevelBody, {exact: false}).first()).toBeVisible({
 			timeout: 10_000,
@@ -73,8 +55,7 @@ test.describe("Pano addComment", () => {
 			.first();
 		await expect(ownComment.getByTestId("incelemede-badge")).toBeVisible({timeout: 10_000});
 
-		// Click "yanıtla" on the top-level comment. Pick the first reply trigger
-		// — there's only one comment so this is unambiguous.
+		// `.first()` is unambiguous here: there is exactly one comment at this point.
 		const replyTrigger = page.locator('[data-testid^="pano-comment-reply-trigger-"]').first();
 		await replyTrigger.click();
 
@@ -85,7 +66,6 @@ test.describe("Pano addComment", () => {
 		await replyInput.fill(replyBody);
 		await page.locator('[data-testid^="pano-comment-reply-submit-"]').first().click();
 
-		// Reply lands and appears in the tree as a second comment row.
 		await expect(page.getByText(replyBody, {exact: false})).toBeVisible({timeout: 10_000});
 		await expect(page.getByRole("heading", {name: /2 yorum/i})).toBeVisible({timeout: 10_000});
 	});

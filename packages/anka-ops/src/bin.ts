@@ -1,18 +1,10 @@
 #!/usr/bin/env node
 /**
- * `anka-ops` — the operator CLI for anka-built apps (`effect/unstable/cli`, the same shell shape
- * as `@kampus/orphan-sweep`). The framework-tier skeleton (epic #2089, ADR 0045) grown into the
- * `auth`, `flag`, and `report` verb groups.
- *
- *   node src/bin.ts auth login              paste a scoped operator token → OS keychain
- *   node src/bin.ts auth status             report where credentials resolve from + whether they authenticate
- *   node src/bin.ts auth logout             clear the stored credentials
+ * `anka-ops` — the operator CLI for anka-built apps (ADR 0045).
  *
  * Credentials resolve keychain-first (`auth login`), falling back to $CLOUDFLARE_API_TOKEN /
- * $CLOUDFLARE_ACCOUNT_ID — the env path CI keeps using. A missing/unauthorized credential
- * surfaces a typed error on the `E` channel, rendered by `NodeRuntime.runMain` (never a raw
- * stack trace). The command tree, the verb-group registry, and the credential seam live in
- * `cli.ts`; this shell just runs them.
+ * $CLOUDFLARE_ACCOUNT_ID — the env path CI keeps using. The command tree, the verb-group
+ * registry, and the credential seam live in `cli.ts`; this shell just runs them.
  */
 import {NodeRuntime} from "@effect/platform-node";
 import {Effect} from "effect";

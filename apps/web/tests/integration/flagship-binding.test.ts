@@ -1,21 +1,10 @@
 /**
- * Flagship binding — system-tier proof (epic #488, child #507) + the Flag
- * schema-drift PUT-skip patch pin (#3049).
+ * Flagship binding — system-tier proof (#507) + the Flag schema-drift PUT-skip patch pin (#3049).
  *
- * The first describe deploys the real alchemy stack (with the `FlagshipApp`
- * resource declared and `bind()`-resolved in the worker init) to a local workerd
- * and asserts black-box over HTTP. `/api/health` drives one boolean evaluation
- * through the resolved `FlagshipClient`; the read completing at all proves the
- * binding resolved end-to-end through the worker, so the probe reports
- * `flagshipReachable: true` — the system-tier check #507 calls for. The field
- * asserts reachability of the binding, not the value of any feature flag.
+ * `flagshipReachable` asserts the binding resolved, not the value of any feature flag.
  *
- * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027) and needs no
- * namespace token: it is read-only against a deploy-time binding, seeding no data and
- * reading no per-test rows, so there is nothing to collide on the shared DB.
- *
- * The second describe is a hermetic patch pin (below) — it stands up no worker,
- * driving the patched `FlagProvider` reconcile directly against a mock HTTP client.
+ * Runs on the run-scoped SHARED stage (ADR 0104 step 7) with no namespace token: read-only against
+ * a deploy-time binding, seeding no data and reading no per-test rows, so nothing can collide.
  */
 import {fromApiToken} from "@distilled.cloud/cloudflare/Credentials";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -35,7 +24,6 @@ describe("Flagship binding — /api/health", () => {
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as {status: string; flagshipReachable: boolean};
 		expect(body.status).toBe("ok");
-		// an evaluation returned through the binding ⇒ the client resolved end-to-end
 		expect(body.flagshipReachable).toBe(true);
 	});
 });
@@ -43,17 +31,10 @@ describe("Flagship binding — /api/health", () => {
 // @patch-pin: alchemy@2.0.0-beta.59
 //
 // Pins the Flag schema-drift PUT-skip hunk of `patches/alchemy@2.0.0-beta.59.patch`
-// (`lib/Cloudflare/Flagship/Flag.js` FlagProvider reconcile, ADR 0106). The patch
-// narrows what IaC reconciles: it diffs ONLY the schema/metadata it owns
-// (`{variations, description}`); the serving config (`defaultVariation`, `rules`,
-// `enabled`) is dashboard-owned and carried forward from live, never reconciled.
-// Concretely — a serving-only drift skips the PUT (dashboard-owned serving
-// preserved); a schema drift PUTs the desired schema with live serving preserved.
+// (`lib/Cloudflare/Flagship/Flag.js` FlagProvider reconcile) — ADR 0106.
 //
-// The pin drives the real patched reconcile with a mock HTTP client, so it exercises
-// the actual code path (not a re-derived predicate). It reds if the reconcile reverts
-// to the pre-patch full-shape diff: the pre-patch code compared the whole serving
-// shape (so a serving-only drift would send a PUT) and sent `{...desired}` (so the
+// Reds if the reconcile reverts to the pre-patch full-shape diff: the pre-patch code compared the
+// whole serving shape (so a serving-only drift would send a PUT) and sent `{...desired}` (so the
 // PUT would carry desired serving, not live) — both assertions below would fail.
 
 const ACCOUNT_ID = "acct-pin";
@@ -106,9 +87,6 @@ function driveReconcile(news: Record<string, unknown>): Promise<CapturedRequest[
 		);
 	});
 
-	// The three services reconcile resolves at runtime (HTTP client, credentials,
-	// account) are independent of each other, so they merge in parallel; the provider
-	// layer sits on top via provideMerge (it declares them as requirements).
 	const layer = Cloudflare.Flagship.FlagProvider().pipe(
 		Layer.provideMerge(
 			Layer.mergeAll(
@@ -170,7 +148,6 @@ describe("Flag reconcile — dashboard-owned serving preserved (ADR 0106)", () =
 		expect(put).toBeDefined();
 		const body = put?.body ?? {};
 
-		// IaC owns the schema/metadata — the desired values are sent.
 		expect(body.variations).toEqual({off: false, on: true, maybe: "maybe"});
 		expect(body.description).toBe("desired-desc");
 

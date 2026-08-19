@@ -1,73 +1,8 @@
 /**
- * The selection walk — fate's byId plane (`executeOperation`'s byId arm →
- * `resolveSourceByIds` → `resolveNode`/`filterToViewFields`/
- * `toConnectionResult`) reimplemented as an Effect program, with every source
- * load riding `Request.Class` + `RequestResolver`.
- * This is where N+1 dies: the batch window is ONE protocol request
- * (`makeWalk` is constructed once per `FateInterpreter.handleRequest`, so the
- * resolver instance — and with it the window — never spans requests), and ids
- * are deduplicated before they reach the source.
- *
- * ## What is mirrored, byte for byte (the walk oracle enforces it)
- *
- *   - **Dispatch order**: falsy `type` → fate's `BAD_REQUEST` ("byId
- *     operations require type and ids."), then the source lookup → fate's
- *     `NOT_FOUND`, then `ids.map(String)` — numeric wire ids coerce BEFORE
- *     the source sees them.
- *   - **The selection plan** (fate's `createViewPlan`/`assignPath`): `"id"`
- *     is always selected; resolver/computed fields register at terminal
- *     segments only; a selected ref auto-selects the child view's `id`;
- *     unknown paths and empty segments are ignored.
- *   - **`resolveNode`**: resolver fields run `authorize` first (falsy →
- *     `null`, resolve skipped), `undefined` results stay absent, computed
- *     fields receive select-derived deps, relation nodes recurse into
- *     records, arrays, and already-shaped connection results.
- *   - **`filterToViewFields`**: masking emits keys in the VIEW's field
- *     declaration order — the byId plane's serialization-order mechanism
- *     (the named-operation planes get theirs from the `Protocol.ts` structs).
- *   - **`toConnectionResult`** (the connection plane, `Connection.ts`): a
- *     selected list-kind field holding a RAW array wraps via fate's
- *     `arrayToConnection`, windowed by the operation args scoped to the
- *     field's dotted path (`getScopedArgs`); an already-shaped connection
- *     envelope passes through, recursing per entry node. Pagination args
- *     decode through Effect Schema with fate's exact accept/reject boundary;
- *     a rejected bag is fate's masked internal arm on the wire.
- *   - **The error taxonomy**: a view callback throwing a `FateRequestError`
- *     passes through verbatim; any other callback throw is fate's OWN
- *     `toProtocolError` arm (`INTERNAL_ERROR` / "Internal server error.") —
- *     NOT the annotation codec's arm, because in fate these errors never pass
- *     through `encodeWireError`. Source-handler defects, by contrast, reach
- *     the operation's exit as raw causes and collapse through
- *     `encodeWireError` exactly as the v1 compiled executors do
- *     (`INTERNAL_SERVER_ERROR` / "Something went wrong."). A capability-less
- *     source (the `contributionSource` shape) is fate's internal arm, the
- *     fixed message — fate throws a plain `Error` there and masks it.
- *
- * ## The batching contract
- *
- * One `RequestResolver` per protocol request; one `Request` per byId
- * operation (`{source, ids}`). `runAll` groups entries by source entry
- * (identity), unions their ids (first-arrival order, deduplicated), and
- * mirrors fate's two executor arms:
- *
- *   - **`byIds`-capable**: ONE call with the deduplicated union. A
- *     single-operation batch completes with the source's rows verbatim
- *     (exactly fate's `resolveSourceByIds`); a merged batch completes each
- *     operation with the rows whose primary key (the definition's `id`
- *     field) is in that operation's id set, in SOURCE-RETURN order. This is
- *     byte-equal to fate whenever the source is **membership-stable** (the
- *     returned rows are a function of the id SET — every SQL `IN`-shaped
- *     loader, i.e. every phoenix source, qualifies).
- *   - **`byId`-only**: one call per UNIQUE id across the window (fate calls
- *     per id per operation, duplicates included); each operation's rows are
- *     its own ids' hits in ids order, duplicates preserved, nulls dropped —
- *     fate's `flatMap` arm exactly. A failed id fails exactly the operations
- *     that asked for it.
- *
- * Loads provide the per-request pair + captured services themselves (the
- * ONE shared provision pipeline — `provideRequestPair`, `Provision.ts`), so
- * the resolver fiber needs no ambient context. No runtime is owned here — the conversion-point rule
- * (`Executor.test.ts`) covers this module automatically.
+ * The selection walk — fate's byId plane reimplemented as an Effect program,
+ * with every source load riding `Request.Class` + `RequestResolver`. The
+ * mirrored semantics, the batching contract, the error taxonomy and the
+ * deliberate divergences are owned by `.patterns/fate-effect-interpreter.md`.
  *
  * ## Span design (deliberate)
  *
@@ -80,25 +15,6 @@
  * at the operation/source boundaries (`Fate.*` constructors, the
  * interpreter's dispatch), not inside the walk. Don't "fix" this to
  * `Effect.fn`.
- *
- * ## Deliberately NOT mirrored (documented divergences)
- *
- *   - **Source lookup**: fate populates `sourcesByType` by visiting ROOT
- *     views only; the v1 compiled server passes `roots: {}` (ADR 0016/0019),
- *     leaving its byId plane unreachable dead code. The interpreter resolves
- *     `config.sources` directly — strictly additive on the wire: fate's
- *     client CAN emit `kind: "byId"` (cache-miss node fetches, missing-field
- *     refetches, the live-payload fallback), and v1 served all of those
- *     NOT_FOUND, so the divergence is error→data — live since the v2
- *     cutover (ADR 0043), fixing a latent live-refetch breakage. Pinned
- *     loudly in the oracle suite.
- *   - fate's hidden computed-state stamping (`attachComputedState`, a
- *     module-private symbol) is unreachable for package-authored loaders —
- *     plain rows never carry it — so computed deps derive from the `select`
- *     declaration alone.
- *   - Reference-preservation bookkeeping (fate's `assignIfChanged`) is
- *     skipped: the walk always rebuilds through masking, so identity is
- *     wire-invisible.
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import {Effect, Exit, Request, RequestResolver} from "effect";
@@ -111,7 +27,6 @@ import {internalArm} from "./WireError.ts";
 
 type AnyRow = Record<string, unknown>;
 
-/** The operation-level args bag the walk threads to view callbacks. */
 type WalkArgs = {readonly [key: string]: unknown} | undefined;
 
 /** fate's `isRecord`, exactly (arrays excluded). */
@@ -247,8 +162,8 @@ const buildSelectionPlan = (view: ViewLike, select: ReadonlyArray<string>): Sele
 /**
  * fate's `toProtocolError` mask for walk-internal throws: a
  * `FateRequestError` keeps itself; anything else is fate's OWN internal arm.
- * (These errors never pass through `encodeWireError` in fate — see the
- * module doc's taxonomy.)
+ * (These errors never pass through `encodeWireError` in fate — the taxonomy
+ * is in `.patterns/fate-effect-interpreter.md`.)
  */
 const walkError = (error: unknown): FateRequestError =>
 	error instanceof FateRequestError ? error : internalArm();
@@ -270,8 +185,9 @@ const callViewFunction = (
 		: Effect.fail(internalArm());
 
 /**
- * fate's `getComputedDeps`, minus the hidden computed-state read (module-doc
- * divergence): `count` selections read `_count.<relation>` (default 0),
+ * fate's `getComputedDeps`, minus the hidden computed-state read (a divergence
+ * documented in `.patterns/fate-effect-interpreter.md`): `count` selections
+ * read `_count.<relation>` (default 0),
  * field selections read their dotted path.
  */
 const getComputedDeps = (item: AnyRow, select: unknown): AnyRow => {

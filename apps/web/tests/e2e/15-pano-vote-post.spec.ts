@@ -4,21 +4,11 @@ import {randomSuffix} from "./_helpers/rand";
 import {expectScoreConsistent} from "./_helpers/wait-for-consistency";
 
 /**
- * Pano voteOnPost end-to-end.
+ * Pano voteOnPost end-to-end. Mirrors `12-sozluk-vote.spec.ts`.
  *
- * Sign up a fresh user, complete the username bootstrap, submit a brand new
- * post, navigate to its detail page, then exercise the optimistic vote flip:
- *   1. Vote → score becomes 1, button reflects pressed state.
- *   2. Click again → retract vote → score back to 0.
- *   3. Vote again → score 1.
- *
- * The PostVoteWidget's `optimisticResponse` flips `myVote` + `score`
- * synchronously; on success the projection lands in <1s and the page reads
- * the new state on subsequent renders.
- *
- * Mirrors `12-sozluk-vote.spec.ts`. After the relay-idiom refactor
- * the page tree no longer unmounts on submitPost / vote mutations,
- * so the historical `page.reload()` Suspense workaround is gone.
+ * After the relay-idiom refactor the page tree no longer unmounts on
+ * submitPost / vote mutations, so the historical `page.reload()` Suspense
+ * workaround is gone.
  */
 test.describe("Pano voteOnPost", () => {
 	// QUARANTINED — un-quarantine blocked on #1838 (e2e can't establish yazar tier); see #1903.
@@ -30,7 +20,6 @@ test.describe("Pano voteOnPost", () => {
 	// re-vote round-trip. No vote-GATE (#1828) coverage lives here.
 	// Re-enable = revert to plain test(...).
 	test.fixme("vote → unvote → vote round-trip on a fresh post", async ({page}) => {
-		// Fresh sign-up + bootstrap so the user is fully authenticated.
 		const localPart = `vp${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});
 		const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
@@ -40,7 +29,6 @@ test.describe("Pano voteOnPost", () => {
 			timeout: 10_000,
 		});
 
-		// Submit a brand-new post and let the page navigate to /pano/<id>.
 		await page.goto("/pano/yeni");
 		await expect(page.locator('[data-testid="pano-submit-title"]')).toBeVisible({
 			timeout: 10_000,
@@ -70,17 +58,14 @@ test.describe("Pano voteOnPost", () => {
 		await expect(score).toHaveText("0");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "false");
 
-		// Cast vote — optimistic flip lands first.
 		await voteBtn.click();
 		await expectScoreConsistent(page, score, "1");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "true", {timeout: 5_000});
 
-		// Retract vote.
 		await voteBtn.click();
 		await expectScoreConsistent(page, score, "0");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "false");
 
-		// Re-vote.
 		await voteBtn.click();
 		await expectScoreConsistent(page, score, "1");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "true");

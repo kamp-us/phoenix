@@ -1,18 +1,11 @@
 /**
- * The shared differential-oracle fixture:
- * the dual-stack harness plus the ONE sozluk-shaped fixture world consumed by
- * every suite that drives a compiled or interpreted fate server.
+ * The shared differential-oracle fixture: the dual-stack harness plus the ONE
+ * sozluk-shaped world every suite that drives a fate server runs over.
  *
- * - `Executor.test.ts` pins the v1 compiled server (the oracle's baseline)
- *   directly over this world.
- * - The `Interpreter*.test.ts` oracle files run every protocol request
- *   through BOTH backends — `makeV1` (fate's own `handleRequest` over
- *   `FateExecutor.toFetchHandler`) and `makeV2` (the native interpreter) —
- *   and `assertParity` requires the raw wire output to be BYTE-EQUAL: same
- *   status, same content-type, same body text, same publishes. Each backend
- *   owns an isolated runtime over its own fresh in-memory database, so
- *   mutations advance both worlds in lockstep and later reads prove state
- *   parity, not just response parity.
+ * `assertParity` requires the raw wire output of both backends to be BYTE-EQUAL:
+ * same status, content-type, body text, publishes. Each backend owns an isolated
+ * runtime over its own fresh in-memory database, so mutations advance both worlds
+ * in lockstep and later reads prove state parity, not just response parity.
  *
  * Not a test file: the vitest glob only collects `*.test.ts`, and the
  * conversion-point enumeration sweeps non-test, non-fixture sources — the
@@ -37,7 +30,6 @@ import {FateWireCode} from "./WireError.ts";
 // observability suites reset `spanLog` and assert nesting. The oracle suites
 // never read it — the pushes are inert there.
 
-/** What the probe handlers observed: span name + parent span id. */
 export const spanLog: Array<{name: string; parent: string | undefined}> = [];
 
 export const logSpan = Effect.gen(function* () {
@@ -260,7 +252,6 @@ export interface OracleBackend {
 	readonly dispose: () => Promise<void>;
 }
 
-/** The v1 side: the compiled fate server over its own runtime + database. */
 export const makeV1 = (): OracleBackend => {
 	const runtime = ManagedRuntime.make(
 		FateServer.layer(sozlukConfig).pipe(Layer.provide(SozlukDbLive)),
@@ -271,7 +262,6 @@ export const makeV1 = (): OracleBackend => {
 	};
 };
 
-/** The v2 side: the native interpreter over its own runtime + database. */
 export const makeV2 = (): OracleBackend => {
 	const runtime = ManagedRuntime.make(
 		FateServer.layer(sozlukConfig).pipe(Layer.provide(SozlukDbLive)),
@@ -283,7 +273,6 @@ export const makeV2 = (): OracleBackend => {
 	};
 };
 
-/** One corpus step: a wire request (or raw body) plus its request context. */
 export interface OracleStep {
 	readonly label: string;
 	readonly operations?: ReadonlyArray<Record<string, unknown>>;
@@ -325,7 +314,6 @@ export const observe = async (
 	};
 };
 
-/** Run one step through both backends and assert byte-equality of the wire. */
 export const assertParity = async (
 	v1: OracleBackend,
 	v2: OracleBackend,

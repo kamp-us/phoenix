@@ -1,9 +1,7 @@
 /**
- * Stage-name invariants — the pure core of `_d1.ts`'s isolated-stage derivation,
- * asserted without a deploy. Pins the contract real remote D1 relies on: the name is
- * `[a-z0-9-]` only, no leading/trailing dash, no internal `--`, non-empty, ≤ MAX_STAGE_LEN,
- * and run-unique (two runs of the same file get distinct names so they can't collide
- * on the shared Cloudflare account).
+ * Stage-name invariants, asserted without a deploy. Names must be run-unique: two runs
+ * of the same file get distinct names so they cannot collide on the shared Cloudflare
+ * account.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {DISC_LEN, disc, MAX_STAGE_LEN, slugify, stageName} from "./_stage-name.ts";
@@ -37,7 +35,7 @@ describe("stageName", () => {
 	it("destroy-on yields a run-unique, legal, length-bounded name", () => {
 		const a = stageName("seed", false, "run-1");
 		const b = stageName("seed", false, "run-2");
-		assert.notStrictEqual(a, b); // distinct across runs
+		assert.notStrictEqual(a, b);
 		for (const name of [a, b]) {
 			assert.match(name, LEGAL);
 			assert.isAtMost(name.length, MAX_STAGE_LEN);

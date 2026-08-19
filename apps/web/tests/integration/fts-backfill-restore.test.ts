@@ -12,15 +12,8 @@
  * stage. `integrationStack` gives it an isolated D1 (ADR 0104), so the wipe is
  * scoped to this file's rows.
  *
- * What it pins beyond #645, closing #2754's acceptance criteria against the REAL
- * D1 FTS5 engine (≠ `node:sqlite`'s, so an integration-tier fact per ADR 0082):
- *   - row counts: the bin reports ≥1 term AND ≥1 post re-indexed;
- *   - exact MATCH: a full folded token finds the rebuilt term and post;
- *   - prefix MATCH: a 3–4 char prefix finds them too — proving the `prefix='2 3 4'`
- *     index (`0002_search_fts.sql`) is reconstructed from base rows, not just the
- *     full-token postings.
- * The pre-backfill empty-search assertion is the non-vacuity guard: a post-run hit
- * can only be the backfill's doing, never a surviving index row.
+ * It runs against the REAL D1 FTS5 engine, which is not `node:sqlite`'s — so every
+ * fact here is integration-tier per ADR 0082.
  */
 import {execFile} from "node:child_process";
 import {join} from "node:path";
@@ -126,7 +119,6 @@ describe("fts-backfill rebuilds the whole FTS index from restored base rows (#27
 		expect(Number(terms?.[1])).toBeGreaterThanOrEqual(1);
 		expect(Number(posts?.[1])).toBeGreaterThanOrEqual(1);
 
-		// Exact MATCH: a full folded token finds each rebuilt row.
 		expect(await searchTermSlugs(TERM_EXACT)).toContain(TERM_SLUG);
 		expect(await searchPostIds(POST_EXACT)).toContain(postId);
 

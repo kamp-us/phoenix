@@ -1,14 +1,8 @@
 /**
  * sozluk reads — system smoke against the deployed worker `/fate` route (ADR 0026–0031).
  *
- * This is the SMOKE residue after the keyset/pagination CORRECTNESS was migrated
- * down to a fate-op integration test (`worker/features/fate/sozluk-keyset.test.ts`):
- * popular/recent ordering across pages, the `Term.definitions` keyset walk, the
- * `endCursor`/`hasNext` semantics, and stale-cursor collapse are all asserted
- * there now, seeded by direct INSERT with explicit `score`/`createdAt`/`id` — no
- * votes, no `sleep`. The flake engine that lived here (HTTP sign-up + per-score
- * `definition.vote` seeding + a `sleep(1100)` to space `last_activity_at` across
- * its second-resolution) is gone with it.
+ * Keyset/pagination CORRECTNESS is not here — it lives in
+ * `worker/features/fate/sozluk-keyset.test.ts`.
  *
  * What stays here is the genuinely system-level claim that fate-op test cannot make: the
  * DEPLOYED worker serves sozluk reads end-to-end over HTTP — the `/fate` route is
@@ -151,7 +145,6 @@ describe("sozluk reads — deployed worker /fate (system smoke)", () => {
 		expect(alpha!.author).toBe(seeded[0]!.authorName);
 		expect(alpha!.authorId).toBe(seeded[0]!.authorId);
 		expect(alpha!.score).toBe(2);
-		// Anonymous viewer → myVote null.
 		expect(alpha!.myVote).toBeNull();
 	});
 });

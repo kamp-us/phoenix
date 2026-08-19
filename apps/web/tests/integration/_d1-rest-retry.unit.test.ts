@@ -241,10 +241,9 @@ describe("giving up is self-identifying, and never a silent pass", () => {
 		expect(seen[0]?.reason).toBe("max-retries");
 	});
 
-	// Round 1 said "2 attempts over 45136ms of retry budget" and left WHERE those 45s went to be
-	// re-derived by hand from the job log. The breakdown is what makes the next occurrence
-	// self-diagnosing — 2 attempts with the budget barely touched reads as a queueing problem, not
-	// a Cloudflare one, without anyone reconstructing the backoff arithmetic.
+	// Round 1 said "2 attempts over 45136ms of retry budget" and left WHERE those 45s went to
+	// be re-derived by hand from the job log. With the breakdown, 2 attempts against an
+	// untouched budget reads as a queueing problem rather than a Cloudflare one.
 	it("breaks the elapsed time down into queued / backoff / CF-facing budget spent", async () => {
 		const seen: RateLimitAttrition[] = [];
 		let clock = 0;
@@ -272,16 +271,15 @@ describe("giving up is self-identifying, and never a silent pass", () => {
 		expect(a.queuedMs).toBe(3000); // every attempt's throttle wait, deducted from the budget
 		expect(a.backoffMs).toBe(298);
 		expect(a.budgetMs).toBe(500);
-		// Wall clock far outruns the 500ms budget precisely because most of it was ours, not CF's —
-		// the discrepancy the round-1 line could not show.
+		// Wall clock far outruns the 500ms budget because most of it was ours, not CF's.
 		expect(a.elapsedMs).toBe(3598);
 		expect(budgetSpentMs(a)).toBe(598);
 	});
 
-	// The other half of deducting `queuedMs`: with queueing uncharged, the CF-facing budget alone
-	// stops bounding wall clock, and 24 attempts of deep queueing outlive vitest's 120s testTimeout
-	// — trading the named 429 back for "Hook timed out". Deep queueing must therefore end the loop
-	// on the ceiling, saying so, rather than on the untouched budget.
+	// The other half of deducting `queuedMs`: with queueing uncharged, the CF-facing budget
+	// alone stops bounding wall clock, and 24 attempts of deep queueing outlive vitest's 120s
+	// testTimeout — trading the named 429 back for "Hook timed out". So deep queueing ends the
+	// loop on the ceiling, saying so, rather than on the untouched budget.
 	it("ends on the wall-clock ceiling when queueing (not CF) is what burnt the time", async () => {
 		const seen: RateLimitAttrition[] = [];
 		let clock = 0;

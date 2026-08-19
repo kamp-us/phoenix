@@ -1,56 +1,34 @@
 /**
- * `LivePublisher` — the per-request live-publish service, the other half of
- * the server's per-request contract (`CurrentUser` is the first half).
+ * `LivePublisher` — the per-request live-publish CONTRACT only; the layer that
+ * implements it (waitUntil scheduling, error swallowing-with-log, LiveDO topic
+ * targeting) is worker-side, in
+ * `apps/web/worker/features/fate-live/live-publisher.ts`. Every publish
+ * method's error channel is `never`, so "a publish cannot fail the mutation"
+ * is a type rather than a convention.
  *
- * THIS MODULE DEFINES THE CONTRACT ONLY. The live layer — waitUntil
- * scheduling, error swallowing-with-log, the LiveDO topic targeting — is
- * worker-side (`apps/web/worker/features/fate-live/live-publisher.ts`), and
- * it lives there ONCE, so "a publish cannot fail the
- * mutation" is a type, not a convention: every publish method's error channel
- * is `never` (`Effect.Effect<void>`), which is what kills the bridge's
- * per-call-site `useIgnore` boilerplate.
- *
- * The surface mirrors the publish half of the bridge's deleted event-bus
- * (the worker implementation of this contract is `live-publisher.ts`, the
- * module named above; `event-bus.ts` survives only as a build-time throwing
- * stub): entity `update`/
- * `delete` plus the topic edge operations, targeting the existing LiveDO
- * topic role unchanged. Entity/procedure names are plain strings here — the
- * package cannot know phoenix's live entities; the worker may layer its
- * narrowing (the bridge's `TypedLiveUpdate` idea) over this service when it
- * migrates.
- *
- * Like `CurrentUser`, no worker-level layer provides this: the provision
- * pipeline (`Provision.ts`) provides it per request from the request's
- * execution context, and
+ * Entity/procedure names are plain strings: the package cannot know phoenix's
+ * live entities. Like `CurrentUser`, no worker-level layer provides this — the
+ * provision pipeline (`Provision.ts`) provides it per request, and
  * `FateServer.layer` excludes it from R (`FateServerRequirements`).
  */
 import {Context, type Effect} from "effect";
 
-/** Options for an entity `update` publish. */
 export interface LiveUpdateOptions {
 	readonly changed?: ReadonlyArray<string>;
 	readonly data?: unknown;
 	readonly eventId?: string;
 }
 
-/** Options shared by publishes that only carry an event id. */
 export interface LiveEventOptions {
 	readonly eventId?: string;
 }
 
-/** Options for a topic edge publish (`appendNode`/`prependNode`). */
 export interface LiveEdgeOptions {
 	readonly node?: unknown;
 	readonly cursor?: string;
 	readonly eventId?: string;
 }
 
-/**
- * The publish surface of one live topic (procedure + scoped args):
- * append/prepend a node, remove an edge, or invalidate. Every method is
- * `Effect<void>` — failures are swallowed (logged) inside the layer.
- */
 export interface LiveTopicPublisher {
 	readonly appendNode: (
 		nodeType: string,

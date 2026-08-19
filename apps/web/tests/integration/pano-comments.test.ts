@@ -1,36 +1,17 @@
 /**
  * pano comment lifecycle DEPTH — black-box against the deployed worker `/fate`
- * route (ADR 0026–0031).
+ * route.
  *
- * Ports the depth surface of the pre-alchemy comment suites that drove the
- * `Pano` Effect service directly inside workerd:
- *   - `pano-edit-delete-comment.test.ts` — comment ownership (non-author
- *     edit/delete → UNAUTHORIZED), unknown-id codes, leaf-delete removal,
- *     parent-with-replies soft-delete (`[silindi]` placeholder), idempotent
- *     re-delete.
- *   - `pano-vote-comment.test.ts` — comment vote idempotency, round-trip,
- *     retract-on-never-voted no-op.
- *   - `pano-comments-connection.test.ts` — reply-aware comment feed (leaf
- *     deleted is gone, parent-with-replies stays as a tombstone), stale/ghost
- *     cursor edges, the `after`-row-removed-between-pages edge.
- *   - nested-reply/placeholder bits of `pano-add-comment.test.ts`.
+ * Everything is observed over HTTP. The old service-return flags
+ * (`{deleted, hasReplies, placeholder}`, `changed`) are NOT on the wire, and the
+ * connection envelope carries no `totalCount` — behavior is re-expressed via the
+ * re-resolved entity, the comments feed, and `post(id).commentCount`.
  *
- * Everything is observed over HTTP. Author identity comes from the session
- * (`h.signUp`), so an ownership test signs up an author + an intruder, and a
- * vote-from-another-user test uses a second cookie. The old service-return
- * flags (`{deleted, hasReplies, placeholder}`, `changed`) are NOT on the wire;
- * behavior is re-expressed via the re-resolved entity + the comments feed +
- * `post(id).commentCount` over `/fate`. The connection envelope has NO
- * `totalCount`, so the old `totalCount` assertions are dropped and re-expressed
- * via the id-union of the comments feed.
- *
- * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
- * shared across every migrated file. It isolates by NAMESPACE + POST-SCOPE: every email /
- * sign-up name / post title / synthetic miss-id is prefixed with `NS` (this file's
- * deterministic `nsToken`), and every assertion reads a per-test, NS-owned post's own
- * comment thread (`post(id).comments` / `post(id).commentCount` for THIS post). The comment
- * thread is intrinsically post-scoped, so no assertion ever reads a global comment list or
- * unfiltered feed — each test owns its post and observes only its own seeded comment ids.
+ * This file runs on the run-scoped SHARED stage (ADR 0104), so its one D1 is shared
+ * across every migrated file. It isolates by NAMESPACE + POST-SCOPE: every email /
+ * sign-up name / post title / synthetic miss-id is prefixed with `NS`, and every
+ * assertion reads a per-test, NS-owned post's own comment thread. No assertion may
+ * read a global comment list or unfiltered feed.
  */
 import {beforeAll, describe, expect, it} from "vitest";
 import {sharedStack} from "./_integration.ts";
@@ -66,7 +47,6 @@ let author: {userId: string; cookie: string};
 let intruder: {userId: string; cookie: string};
 let voter: {userId: string; cookie: string};
 
-/** Submit a post under the author cookie; assert success; return its id. */
 async function seedPost(title: string): Promise<string> {
 	const r = await h.fate(
 		{
@@ -82,7 +62,6 @@ async function seedPost(title: string): Promise<string> {
 	return (r.data as PostNode).id;
 }
 
-/** Add a comment under a cookie (default author); assert success; return its id. */
 async function seedComment(
 	postId: string,
 	body: string,
@@ -102,7 +81,6 @@ async function seedComment(
 	return (r.data as CommentNode).id;
 }
 
-/** Read the comments feed for a post (large page); return the comment nodes. */
 async function readComments(postId: string): Promise<CommentNode[]> {
 	const r = await h.fate({
 		kind: "query",
@@ -115,7 +93,6 @@ async function readComments(postId: string): Promise<CommentNode[]> {
 	return (r.data as {comments: Connection<CommentNode>}).comments.items.map((e) => e.node);
 }
 
-/** Re-resolve a post's commentCount over `/fate`. */
 async function commentCount(postId: string): Promise<number> {
 	const r = await h.fate({
 		kind: "query",
@@ -157,7 +134,6 @@ describe("pano comments — ownership (edit/delete)", () => {
 		if (result.ok) return;
 		expect(result.error.code).toBe("UNAUTHORIZED");
 
-		// The body survives: re-resolve it via the comments feed.
 		const comments = await readComments(postId);
 		const row = comments.find((c) => c.id === id);
 		expect(row).toBeDefined();
@@ -176,7 +152,6 @@ describe("pano comments — ownership (edit/delete)", () => {
 		if (result.ok) return;
 		expect(result.error.code).toBe("UNAUTHORIZED");
 
-		// Still present + count unchanged.
 		expect(await commentCount(postId)).toBe(1);
 		const comments = await readComments(postId);
 		expect(comments.some((c) => c.id === id)).toBe(true);
@@ -235,7 +210,6 @@ describe("pano comments — soft-delete placeholder semantics", () => {
 		expect(post.id).toBe(postId);
 		expect(post.commentCount).toBe(1);
 
-		// The leaf row is gone from the feed; the survivor remains.
 		const comments = await readComments(postId);
 		expect(comments.some((c) => c.id === leaf)).toBe(false);
 		expect(comments).toHaveLength(1);
@@ -268,12 +242,10 @@ describe("pano comments — soft-delete placeholder semantics", () => {
 		expect((deleted.data as PostNode).commentCount).toBe(1);
 
 		const comments = await readComments(postId);
-		// Parent stays as a [silindi] tombstone with an empty authorId.
 		const parentRow = comments.find((c) => c.id === parent);
 		expect(parentRow).toBeDefined();
 		expect(parentRow!.body).toBe("[silindi]");
 		expect(parentRow!.authorId).toBe("");
-		// The reply still carries its original body + parent link.
 		const replyRow = comments.find((c) => c.id === reply);
 		expect(replyRow).toBeDefined();
 		expect(replyRow!.body).toBe("the reply that keeps the parent alive");
@@ -296,7 +268,6 @@ describe("pano comments — soft-delete placeholder semantics", () => {
 		);
 		expect(first.ok).toBe(true);
 		if (!first.ok) return;
-		// First soft-delete decrements the count (2 → 1) but keeps the tombstone.
 		expect((first.data as PostNode).commentCount).toBe(1);
 
 		// Second delete on the already-tombstoned parent is an idempotent no-op:
@@ -315,7 +286,6 @@ describe("pano comments — soft-delete placeholder semantics", () => {
 		if (!second.ok) return;
 		expect((second.data as PostNode).commentCount).toBe(1);
 
-		// Still exactly one tombstone in the feed.
 		const comments = await readComments(postId);
 		const tombstones = comments.filter((c) => c.id === parent && c.body === "[silindi]");
 		expect(tombstones).toHaveLength(1);
@@ -434,7 +404,6 @@ describe("pano comments — connection edge cases", () => {
 		const c2 = await seedComment(postId, "comment 2 — will be leaf-deleted");
 		const reply = await seedComment(postId, "child of comment 0", {parentId: c0});
 
-		// Delete a parent-with-replies (soft) and a leaf (hard).
 		await h.fate(
 			{kind: "mutation", name: "comment.delete", input: {id: c0}, select: ["id"]},
 			{cookie: author.cookie},
@@ -446,7 +415,6 @@ describe("pano comments — connection edge cases", () => {
 
 		const comments = await readComments(postId);
 		const ids = comments.map((c) => c.id);
-		// c0 stays as tombstone, c1 live, reply live; c2 (leaf) gone.
 		expect(ids).toContain(c0);
 		expect(ids).toContain(c1);
 		expect(ids).toContain(reply);
@@ -482,7 +450,6 @@ describe("pano comments — connection edge cases", () => {
 		for (let i = 0; i < 4; i++)
 			ids.push(await seedComment(postId, `comment ${i} removed-cursor test`));
 
-		// Page 1: first 2, cursor is the second id.
 		const page1 = await h.fate({
 			kind: "query",
 			name: "post",
@@ -497,13 +464,11 @@ describe("pano comments — connection edge cases", () => {
 		const cursor = conn1.pagination.nextCursor;
 		expect(cursor).toBe(ids[1]);
 
-		// Hard-delete the cursor comment (a leaf → row removed).
 		await h.fate(
 			{kind: "mutation", name: "comment.delete", input: {id: ids[1]!}, select: ["id"]},
 			{cookie: author.cookie},
 		);
 
-		// Page 2 after the now-removed cursor: the keyset finds no anchor row → empty.
 		const page2 = await h.fate({
 			kind: "query",
 			name: "post",
@@ -519,16 +484,7 @@ describe("pano comments — connection edge cases", () => {
 	});
 });
 
-// covered by pano-read.test.ts: chronological keyset paging through every comment
-//   with a stable id cursor (no skips/dupes across pages).
-// covered by pano-mutations.test.ts: comment.add top-level + commentCount bump,
-//   nested reply + commentCount bump, PARENT_NOT_FOUND (missing + cross-post),
-//   POST_NOT_FOUND, anonymous → UNAUTHORIZED, BODY_REQUIRED/BODY_TOO_LONG on add,
-//   comment.vote/retractVote happy path (myVote stamped), comment.edit happy path,
-//   comment.vote on unknown id → COMMENT_NOT_FOUND, leaf comment.delete returning
-//   the re-resolved parent Post with the decremented commentCount.
-// not portable black-box: comment_vote / user_vote row counts, total_karma
-//   read-backs, comment_record body_excerpt + deleted_at columns, the
-//   `{deleted, hasReplies, placeholder}` / `changed` service-return flags —
-//   re-expressed via the re-resolved Comment, the comments feed (tombstone body
-//   `[silindi]` + empty authorId), and `post(id).commentCount` over `/fate`.
+// Elsewhere: keyset paging over comments is in pano-read.test.ts; comment.add /
+// vote / edit happy paths and their error codes are in pano-mutations.test.ts.
+// Not reachable black-box, so untested here: comment_vote / user_vote row counts,
+// total_karma read-backs, and the comment_record body_excerpt + deleted_at columns.

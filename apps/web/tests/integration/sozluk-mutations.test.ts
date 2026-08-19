@@ -2,23 +2,10 @@
  * sozluk mutations — black-box against the deployed worker `/fate` route
  * (ADR 0026–0031).
  *
- * Ports the write surface of four pre-alchemy suites that drove the mutation
- * resolvers / `Sozluk` service directly inside workerd:
- *   - `fate-sozluk-mutations.test.ts` — add/vote/retract/edit/delete + wire-error
- *     parity (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, `UNAUTHORIZED`).
- *   - `sozluk-add-definition.test.ts` — auto-create term, title-from-slug,
- *     validation (`BODY_REQUIRED`, `BODY_TOO_LONG`), second add extends the term.
- *   - `sozluk-edit-delete-definition.test.ts` — edit happy/validation/ownership,
- *     delete decrements aggregates, ownership, idempotent re-delete.
- *   - `sozluk-vote-definition.test.ts` — vote/idempotency/retract/round-trip/
- *     not-found.
- *
  * Everything is observed over HTTP. Author identity comes from the session
  * (`h.signUp`), not explicit `authorId`/`authorName` — so the add input is
- * `{termSlug, termTitle?, body}`. Direct D1 row assertions (body_excerpt,
- * deleted_at, vote-row counts, total_karma) are dropped; behavior is re-expressed
- * by re-resolving entities over `/fate`. Ownership uses two real users: the author
- * creates, the intruder's cookie attempts edit/delete → `UNAUTHORIZED`.
+ * `{termSlug, termTitle?, body}`, and behavior is re-expressed by re-resolving
+ * entities over `/fate` rather than asserting D1 rows.
  *
  * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
  * shared across every migrated file. Isolation is by `NS` (this file's deterministic
@@ -102,7 +89,6 @@ describe("sozluk mutations — definition.add", () => {
 		expect(def.score).toBe(0);
 		expect(def.myVote).toBeNull();
 
-		// The row really landed (a read-back through the term query sees it).
 		const term = await h.fate({
 			kind: "query",
 			name: "term",
@@ -257,7 +243,6 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 		};
 
 		const beforeVote = await readUpdatedAt();
-		// The planted baseline really landed (a whole second in the past).
 		expect(beforeVote).toBe(new Date(BASELINE_EPOCH_S * 1000).toISOString());
 
 		const voted = await h.fate(
@@ -267,15 +252,9 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 		expect(voted.ok).toBe(true);
 		if (!voted.ok) return;
 		expect((voted.data as {score: number}).score).toBe(1);
-		// Persisted updatedAt is unchanged by the vote (DB round-trip) — byte-identical to the
-		// baseline — and the resolver/live-push return reports that same genuine value, not the
-		// vote instant.
 		expect(await readUpdatedAt()).toEqual(beforeVote);
 		expect((voted.data as {updatedAt: unknown}).updatedAt).toEqual(beforeVote);
 
-		// A genuine content edit still bumps updatedAt — edit detection is not disabled. Because
-		// the baseline is a constructed PAST second, the edit's real `now` is deterministically a
-		// later second, so this holds no matter how fast create+vote+edit ran (no second-straddle).
 		const edited = await h.fate(
 			{kind: "mutation", name: "definition.edit", input: {id, body: "edited body"}, select: ["id"]},
 			{cookie: author.cookie},
@@ -283,7 +262,6 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 		expect(edited.ok).toBe(true);
 		const afterEdit = await readUpdatedAt();
 		expect(afterEdit).not.toEqual(beforeVote);
-		// Not merely different — strictly forward: an edit advances updatedAt past the baseline.
 		expect(new Date(afterEdit as string).getTime()).toBeGreaterThan(
 			new Date(beforeVote as string).getTime(),
 		);
@@ -524,7 +502,6 @@ describe("sozluk mutations — definition.edit", () => {
 		if (result.ok) return;
 		expect(result.error.code).toBe("UNAUTHORIZED");
 
-		// The original body survived.
 		const term = await h.fate({
 			kind: "query",
 			name: "term",
@@ -598,11 +575,9 @@ describe("sozluk mutations — definition.delete", () => {
 		const term = deleted.data as TermNode;
 		expect(term.__typename).toBe("Term");
 		expect(term.slug).toBe(slug);
-		// One definition remains; the deleted one's score is gone.
 		expect(term.count).toBe(1);
 		expect(term.totalScore).toBe(0);
 
-		// The survivor is the only definition left.
 		const remaining = await h.fate({
 			kind: "query",
 			name: "term",
@@ -676,9 +651,6 @@ describe("sozluk mutations — definition.delete", () => {
 		if (!first.ok) return;
 		expect((first.data as TermNode).count).toBe(1);
 
-		// Re-delete: the row is already soft-deleted; the Term is still returned
-		// with the same (unchanged) count. (The old `{deleted:false}` flag is not
-		// on the wire.)
 		const second = await h.fate(
 			{kind: "mutation", name: "definition.delete", input: {id: aId}, select: ["slug", "count"]},
 			{cookie: author.cookie},

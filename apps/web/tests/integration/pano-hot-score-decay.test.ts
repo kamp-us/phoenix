@@ -1,43 +1,16 @@
 /**
  * pano sıcak/hot decay-refresh → the AC4 end-to-end guard for #2027.
  *
- * The bug (#2027): `post_record.hot_score` is a STORED, keyset-read integer written
- * only at activity sites (create/vote/comment), so the age term of the HN gravity
- * formula freezes the instant a post stops getting activity — an inactive post keeps
- * a "young, high" score forever and squats the hot feed above genuinely fresher rows.
- * The fix is `Pano.refreshHotScores` (`post-operations.ts`), driven periodically by
- * the cron trigger (`hot-score-decay-cron.ts`): re-decay the stored column for every
- * live non-draft post (WINDOWLESS since #2133), WITHOUT a read-time recompute (the
- * keyset-cursor contract + the no-`POW` SQLite constraint both need `hot_score` to stay
- * a stored, indexed column).
+ * The bug (#2027): `post_record.hot_score` is a STORED, keyset-read integer written only at
+ * activity sites, so the age term of the HN gravity formula freezes the instant a post stops
+ * getting activity — an inactive post keeps a "young, high" score forever and squats the hot
+ * feed. `Pano.refreshHotScores` re-decays the stored column for every live non-draft post
+ * (WINDOWLESS since #2133), with no read-time recompute (the keyset cursor and SQLite's
+ * missing `POW` both need `hot_score` stored and indexed).
  *
- * The pure decay core (`decayHotScores`) is unit-tested off-DB (`hotScoreDecay.unit.test.ts`).
- * This is the integration tier AC4 names (ADR 0082 §irreducible-integration): the
- * stored-column read → changed-only write-back → keyset feed re-ordering that
- * `decayHotScores`'s unit test can't reach. It:
- *   1. seeds two real posts over `/fate` under one per-file host (so the `posts(hot)`
- *      feed scopes to exactly this test's rows) — a `fresher` post voted young for a
- *      real young-high stored score, and a `stale` post;
- *   2. constructs the exact #2027 bug state on the stale post via a setup-only D1 write
- *      (`execD1`) — a higher score, a `hot_score` FROZEN at the young value, and a
- *      `created_at` aged 17 DAYS into the past (far OUTSIDE the old 72h window that used
- *      to gate the refresh — this is the #2133 case): the "advance time" + frozen-score
- *      the public seam can't set, so the OLD post outranks the fresher one #1;
- *   3. runs the REAL `Pano.refreshHotScores(now)` against this stage's REAL remote D1
- *      (the fts-backfill precedent, #645: the shipped code path over `@kampus/d1-rest`,
- *      NOT a `node:sqlite` oracle — banned by ADR 0082, and NOT a re-implementation of
- *      the query — the worker's own `createDrizzle`/`makeDrizzleAccess`/`makePostOperations`);
- *   4. asserts the stale post's hot rank drops BELOW the fresher post through the `/fate`
- *      hot feed — the re-ordering, driven by the stored column the refresh rewrote;
- *   5. asserts NO activity write was needed: the stale post's `score` / `commentCount`
- *      are unchanged (decay wrote only `hot_score`), and the refresh reports `updated >= 1`.
- *
- * There is no HTTP route to trigger the cron on a deployed worker (the scheduled
- * handler fires on Cloudflare's schedule, not on demand), so — like `fts-backfill` —
- * the test drives the real method directly against this stage's real D1 REST target
- * (`h.d1Target()` + `$CLOUDFLARE_API_TOKEN`, the same creds the integration deploy uses).
- * Per-file `integrationStack`: this file owns its own worker + D1, so the direct-D1
- * refresh and the feed reads see one isolated table.
+ * No HTTP route triggers the cron on a deployed worker, so — like `fts-backfill` (#645) —
+ * this drives the real method against this stage's real D1 REST target. Per-file
+ * `integrationStack`, so the direct-D1 refresh and the feed reads see one isolated table.
  */
 import {Effect} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
@@ -70,7 +43,6 @@ const HOUR_MS = 3_600_000;
 let author: {userId: string; cookie: string};
 let voter: {userId: string; cookie: string};
 
-/** Submit a real post under `HOST` over `/fate`; return its id. */
 async function seedPost(title: string): Promise<string> {
 	const r = await h.fate(
 		{
@@ -90,7 +62,7 @@ async function seedPost(title: string): Promise<string> {
 	return (r.data as PostNode).id;
 }
 
-/** Read this host's hot feed and return post ids in feed (rank) order. */
+/** Post ids in feed (rank) order. */
 async function hotFeedIds(): Promise<string[]> {
 	const feed = await h.fate({
 		kind: "list",
@@ -103,7 +75,6 @@ async function hotFeedIds(): Promise<string[]> {
 	return (feed.data as Connection<PostNode>).items.map((e) => e.node.id);
 }
 
-/** Re-resolve a post's activity-bearing scalars over `/fate`. */
 async function readPost(id: string): Promise<{score: number; commentCount: number}> {
 	const r = await h.fate({
 		kind: "query",
@@ -118,11 +89,9 @@ async function readPost(id: string): Promise<{score: number; commentCount: numbe
 }
 
 /**
- * Build the REAL `Pano.refreshHotScores` bound to this stage's REAL remote D1 over
- * `@kampus/d1-rest` — the shipped worker code path (`createDrizzle` → `makeDrizzleAccess`
- * → `orDieAccess` → `makeRefreshHotScores`), never a re-implementation of its window query.
- * The method reads only `run`, so `makeRefreshHotScores(run)` builds it standalone against
- * this stage's real D1 — no full `PostOperationsDeps` graph, no cast.
+ * The shipped worker code path bound to this stage's real remote D1, never a
+ * re-implementation of its query. `refreshHotScores` reads only `run`, so it builds
+ * standalone without the full `PostOperationsDeps` graph.
  */
 async function realRefreshHotScores() {
 	const target = await h.d1Target();
@@ -146,9 +115,8 @@ describe("pano sıcak/hot decay-refresh (#2027 AC4) — the stored-column read �
 		const staleId = await seedPost("stale-hot-post");
 		const fresherId = await seedPost("fresher-hot-post");
 
-		// The fresher post earns a young-high stored score by voting it while age≈0 — the
-		// live activity path, score 1 → `hot_score = computeHotScore(1, now, now)` = 287.
-		// Cast by a non-author (self-voting is blocked, #2216).
+		// Voting at age≈0 earns a young-high stored score through the live activity path:
+		// score 1 → `hot_score = computeHotScore(1, now, now)` = 287.
 		const voted = await h.fate(
 			{kind: "mutation", name: "post.vote", input: {id: fresherId}, select: ["id", "score"]},
 			{cookie: voter.cookie},
@@ -174,8 +142,6 @@ describe("pano sıcak/hot decay-refresh (#2027 AC4) — the stored-column read �
 		);
 		expect(changed).toBe(1);
 
-		// Pre-refresh: the frozen-while-young stale score keeps the OLD post ranked above the
-		// fresher one — the bug the feed exhibits (higher stored `hot_score` sorts first).
 		const before = await hotFeedIds();
 		const staleBefore = before.indexOf(staleId);
 		const fresherBefore = before.indexOf(fresherId);
@@ -183,24 +149,19 @@ describe("pano sıcak/hot decay-refresh (#2027 AC4) — the stored-column read �
 		expect(fresherBefore).toBeGreaterThanOrEqual(0);
 		expect(staleBefore).toBeLessThan(fresherBefore); // stale ranks ABOVE fresher (the bug)
 
-		// Grounding (the same formula the refresh applies, not intuition): re-decayed at 17 days the
-		// stale score collapses far below the fresher post's young score, so the refresh MUST flip
-		// the order.
+		// Grounded in the same formula the refresh applies, not intuition: re-decayed at 17 days
+		// the stale score falls below the fresher one, so the refresh MUST flip the order.
 		const staleDecayed = computeHotScore(5, staleCreatedSec * 1000, nowMs);
 		const fresherYoung = computeHotScore(1, nowMs, nowMs);
 		expect(staleDecayed).toBeLessThan(fresherYoung);
 
-		// Run the REAL refresh against real remote D1 — the shipped windowless query + write-back.
-		// The #2133 guard: the 17-day stale post is FAR outside the old 72h window, so a windowed
+		// The #2133 guard: the 17-day stale post is far outside the old 72h window, so a windowed
 		// refresh would never have selected it; the windowless pass re-decays it here.
 		const refreshHotScores = await realRefreshHotScores();
 		const result = await Effect.runPromise(refreshHotScores(new Date(nowMs)));
-		expect(result.scanned).toBeGreaterThanOrEqual(2); // every live non-draft post is scanned
-		expect(result.updated).toBeGreaterThanOrEqual(1); // the stale post's frozen score moved
+		expect(result.scanned).toBeGreaterThanOrEqual(2);
+		expect(result.updated).toBeGreaterThanOrEqual(1);
 
-		// Post-refresh: the aged stale post's re-decayed stored score has collapsed, so the
-		// fresher post now outranks it in the SAME keyset feed — driven purely by the stored
-		// column the refresh rewrote (no read-time recompute).
 		const after = await hotFeedIds();
 		const staleAfter = after.indexOf(staleId);
 		const fresherAfter = after.indexOf(fresherId);
@@ -208,9 +169,8 @@ describe("pano sıcak/hot decay-refresh (#2027 AC4) — the stored-column read �
 		expect(fresherAfter).toBeGreaterThanOrEqual(0);
 		expect(fresherAfter).toBeLessThan(staleAfter); // fresher now ranks ABOVE stale (fixed)
 
-		// No activity write was needed: decay rewrote `hot_score` alone. The stale post's
-		// activity-bearing scalars are untouched — score stays 5, commentCount stays 0. A
-		// vote/comment write (the only pre-fix way a score refreshed) would have moved these.
+		// A vote/comment write — the only pre-fix way a score refreshed — would have moved
+		// these, so unchanged scalars prove decay rewrote `hot_score` alone.
 		const stalePost = await readPost(staleId);
 		expect(stalePost.score).toBe(5);
 		expect(stalePost.commentCount).toBe(0);

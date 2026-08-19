@@ -1,17 +1,9 @@
 /**
- * Compiled HTTP surface — black-box over the deployed worker (ADR 0027 Hono-free,
- * ADR 0082 two-tier). The retired `worker/http/app.test.ts` drove the *compiled*
- * `HttpRouter.toHttpEffect(makeAppLive(...))` over a `node:sqlite` D1 fake to prove
- * the router mounts every route group. That engine is banned; the same wiring is
- * proven here against real remote D1, asserting on the real `Response`.
+ * Compiled HTTP surface — black-box over the deployed worker (ADR 0027, ADR 0082).
  *
- * Routes whose mounting is already proven black-box elsewhere are NOT duplicated
- * here: `/api/health` (`flagship-binding.test.ts`), the `/fate` seam + anonymous
- * `me` UNAUTHORIZED gate (`seam.test.ts`), the authenticated `me` round-trip
- * (`pasaport.test.ts`), and `/fate/live` 401-without-session + the subscribe
- * control path (`fate-live.test.ts`). What stays is the route wiring NO other
- * integration file exercises: the RSS feed and the server-side flag-evaluation
- * seam (#510).
+ * Scope is only the route wiring NO other integration file exercises: the RSS feed and the
+ * server-side flag-evaluation seam (#510). `/api/health`, the `/fate` seam, the `me` round-trip
+ * and `/fate/live` are proven in their own files and are deliberately not duplicated here.
  *
  * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1
  * is shared with every migrated file. It isolates by NS: the email + post title it seeds
@@ -38,7 +30,6 @@ describe("RSS feed — /rss.xml over the deployed worker", () => {
 		expect(body).toContain('<rss version="2.0"');
 		expect(body).toContain("<channel>");
 		expect(body).toContain("</channel></rss>");
-		// the atom self-link points back at the feed's own absolute URL (request origin)
 		expect(body).toContain('rel="self"');
 	});
 
@@ -66,10 +57,8 @@ describe("RSS feed — /rss.xml over the deployed worker", () => {
 
 describe("server-side flag evaluation — /api/flags/* over the deployed worker (#510)", () => {
 	it("GET /api/flags/probe reads a flag through Flags and takes the safe-off branch", async () => {
-		// The probe route reads one boolean flag via the `Flags` domain service and
-		// branches on it. No flag is declared, so the dark-ship read returns the
-		// default (`false`) and the safe/off branch is taken — the infra→service→
-		// request slice serves end-to-end over real D1.
+		// No flag is declared, so the dark-ship read returns the default (`false`) and the safe/off
+		// branch is taken.
 		const res = await h.req("/api/flags/probe");
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as {flag: string; enabled: boolean; branch: string};
@@ -78,10 +67,7 @@ describe("server-side flag evaluation — /api/flags/* over the deployed worker 
 	});
 
 	it("POST /api/flags/evaluate returns server-evaluated values per requested key", async () => {
-		// The SPA's delivery seam: the browser names keys + defaults, the worker
-		// evaluates each through `Flags` server-side and returns resolved booleans.
-		// Undeclared flags resolve to each call's own default — the safe-default
-		// contract, with the client never re-implementing eval.
+		// Undeclared flags resolve to each call's OWN default — the safe-default contract.
 		const res = await h.json("/api/flags/evaluate", {
 			keys: [
 				{key: "new-ui", default: false},

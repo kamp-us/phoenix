@@ -1,21 +1,11 @@
 /**
  * The seed core: given a `D1Database`-shaped binding, write the fixture set as
- * idempotent upserts. This is pure of *transport* — statement-building resolves
- * SQL+params off an inert `D1Database` with no engine (the unit test), and the bin
- * runs the same writes over the Cloudflare D1 REST adapter, because both satisfy
- * the same `D1Database` surface drizzle drives.
+ * idempotent upserts. Transport-free on purpose — statement-building resolves
+ * SQL+params off an inert `D1Database` with no engine (the unit test), while the
+ * bin runs the same writes over the Cloudflare D1 REST adapter.
  *
- * Idempotency (AC: "safely re-runnable"): every insert is an
- * `onConflictDoUpdate` keyed on the row's primary key, so a second run overwrites
- * the same fixed-identity rows rather than duplicate-key-crashing. The whole set
- * is one D1 `batch` — all rows land or none do.
- *
- * The seed ALSO indexes its terms/posts into the FTS5 `term_search` /
- * `post_search` tables (ADR 0080) as a delete-then-insert keyed on slug/id — the
- * same upsert shape the worker's dual-write produces — with the `norm` computed by
- * the worker's OWN `normalizeSearchText` (no fold duplicated). So a seeded term's
- * index value byte-matches what a real query normalizes to, and the search e2e can
- * deterministically query seeded titles (read-model rows alone aren't searchable, #534).
+ * Safely re-runnable: every insert is an `onConflictDoUpdate` on the row's
+ * primary key, and the whole set is one D1 `batch` — all rows land or none do.
  */
 import {normalizeSearchText} from "@kampus/web/features/search/normalize";
 import {eq} from "drizzle-orm";
@@ -40,23 +30,15 @@ export type SeedDb = ReturnType<typeof drizzle<typeof relations>>;
 
 export const makeSeedDb = (d1: D1Database): SeedDb => drizzle(d1, {relations});
 
-/** How many rows of each kind the seed wrote — surfaced by the bin for a legible CI log. */
 export interface SeedReport {
 	readonly terms: number;
 	readonly definitions: number;
 	readonly posts: number;
-	// FTS5 index rows written (ADR 0080): one per term / per post, the dual-write of
-	// the read-model rows above. Surfaced so the log reflects all five seeded tables,
-	// not just the three read-model ones.
 	readonly termsFts: number;
 	readonly postsFts: number;
 }
 
-/**
- * Build the upsert statements for `db` from the fixture set. Split out from
- * {@link seed} so the unit test can assert on the statement set without a live
- * batch, and so the batch tuple is constructed in exactly one place.
- */
+/** Split out from {@link seed} so the unit test can assert the statement set with no live batch. */
 export const buildSeedStatements = (db: SeedDb, now?: Date) => {
 	const {terms, definitions, posts} = buildFixtures(now);
 
@@ -100,7 +82,6 @@ export const buildSeedStatements = (db: SeedDb, now?: Date) => {
 	};
 };
 
-/** Write the fixtures to `d1` as one atomic, idempotent batch. Returns the row counts written. */
 export const seed = async (d1: D1Database, now?: Date): Promise<SeedReport> => {
 	const db = makeSeedDb(d1);
 	const {statements, report} = buildSeedStatements(db, now);

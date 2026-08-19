@@ -9,11 +9,6 @@ import {isCloudflarePlaceholder404} from "../integration/_edge-ready";
  * flag), so ADR-0173 flag-keyed reachability doesn't apply — this e2e is the `/lab`-convention
  * equivalent, keeping the harness reachable and unbroken as exhibits evolve.
  *
- * Route/slug are ASCII English (`/lab/atolye`) per the routes-are-English convention + founder
- * ruling. Only the brand noun stays Turkish (`atölye`); technical chrome — exhibit titles (real
- * component names like `Button`) and knob labels — is English, only in-exhibit demo copy is
- * Turkish (#3230).
- *
  * The Button exhibit (`button`) is the fixed anchor: it's the harness's worked exemplar, first in
  * the registry, with a `variant` enum knob whose value lands on `data-variant` on the rendered
  * button — a directly observable render change and a serializable URL param in one.
@@ -41,7 +36,6 @@ test("atölye smoke journey: index lists exhibits → open exhibit → change kn
 }) => {
 	test.setTimeout(SPA_READY_DEADLINE_MS + 15_000);
 
-	// 1. The index renders and lists exhibits — registry-driven, not a hardcoded route menu.
 	await gotoSpaReady(page, "/lab/atolye");
 	await expect(page.getByTestId("lab-atolye-index")).toBeVisible();
 	const cards = page.locator(".kp-atolye__item");
@@ -49,16 +43,13 @@ test("atölye smoke journey: index lists exhibits → open exhibit → change kn
 	const buttonCard = page.locator('a[href="/lab/atolye/button"]');
 	await expect(buttonCard).toBeVisible();
 
-	// 2. Opening an exhibit deep-links to its detail route and mounts the ExhibitStage.
 	await buttonCard.click();
 	await expect(page).toHaveURL(/\/lab\/atolye\/button$/);
 	await expect(page.getByTestId("lab-atolye-detail")).toBeVisible();
 	const stagedButton = page.locator('[data-testid="exhibit-stage"] .kp-btn');
 	await expect(stagedButton).toBeVisible();
-	// Default variant knob → primary.
 	await expect(stagedButton).toHaveAttribute("data-variant", "primary");
 
-	// 3. Changing the `variant` enum knob re-renders the component AND reflects into the URL.
 	await page.locator('[data-knob="variant"]').getByRole("radio", {name: "Secondary"}).click();
 	await expect(stagedButton).toHaveAttribute("data-variant", "secondary");
 	await expect(page).toHaveURL(/[?&]variant=secondary(&|$)/);
@@ -67,14 +58,12 @@ test("atölye smoke journey: index lists exhibits → open exhibit → change kn
 test("atölye knob state round-trips through the URL (deep-link ↔ live twiddle)", async ({page}) => {
 	test.setTimeout(SPA_READY_DEADLINE_MS + 15_000);
 
-	// URL → state: landing a knob param restores that exhibit state (a shareable deep-link).
 	await gotoSpaReady(page, "/lab/atolye/button?variant=danger");
 	const stagedButton = page.locator('[data-testid="exhibit-stage"] .kp-btn');
 	await expect(stagedButton).toBeVisible();
 	await expect(stagedButton).toHaveAttribute("data-variant", "danger");
 
-	// state → URL: toggling back to the schema default drops the param (a pristine exhibit's URL is
-	// param-free), closing the round-trip in both directions.
+	// Toggling back to the schema default drops the param: a pristine exhibit's URL is param-free.
 	await page.locator('[data-knob="variant"]').getByRole("radio", {name: "Primary"}).click();
 	await expect(stagedButton).toHaveAttribute("data-variant", "primary");
 	await expect(page).not.toHaveURL(/[?&]variant=/);

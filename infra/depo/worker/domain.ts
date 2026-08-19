@@ -31,7 +31,6 @@ export type AllowedExt = (typeof ALLOWED_TYPES)[AllowedContentType];
 /** ~10 MB (ADR 0144 decision 4). Bodies at or under the cap are accepted. */
 export const SIZE_CAP_BYTES = 10 * 1024 * 1024;
 
-/** The public read host — a depo URL is `https://depo.kamp.us/<sha256>.<ext>`. */
 export const PUBLIC_HOST = "https://depo.kamp.us";
 
 /**
@@ -51,13 +50,11 @@ export const allowedContentType = (
 	return Effect.fail(new UnsupportedMediaType({contentType: normalized || "<none>"}));
 };
 
-/** Refuse a body strictly over the cap; at-or-under passes. */
 export const withinSizeCap = (size: number): Effect.Effect<number, PayloadTooLarge> =>
 	size > SIZE_CAP_BYTES
 		? Effect.fail(new PayloadTooLarge({size, cap: SIZE_CAP_BYTES}))
 		: Effect.succeed(size);
 
-/** Lowercase hex of a SHA-256 digest — the content-address stem. */
 export const sha256Hex = (bytes: Uint8Array): Effect.Effect<string> =>
 	Effect.tryPromise({
 		try: () => crypto.subtle.digest("SHA-256", bytes),
@@ -73,12 +70,10 @@ export const sha256Hex = (bytes: Uint8Array): Effect.Effect<string> =>
 		),
 	);
 
-/** The R2 object key for a body of a given type: `<sha256>.<ext>`. */
 export const contentAddressKey = (
 	bytes: Uint8Array,
 	contentType: AllowedContentType,
 ): Effect.Effect<string> =>
 	sha256Hex(bytes).pipe(Effect.map((hex) => `${hex}.${ALLOWED_TYPES[contentType]}`));
 
-/** The permanent public URL for a stored key: `https://depo.kamp.us/<key>`. */
 export const publicUrl = (key: string): string => `${PUBLIC_HOST}/${key}`;

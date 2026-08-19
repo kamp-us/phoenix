@@ -61,9 +61,8 @@ describe("createCfApiThrottle", () => {
 				active--;
 			}),
 		);
-		// Let the first wave acquire slots, then release them one at a time.
 		await flush();
-		expect(active).toBe(2); // only two admitted; the other two are queued
+		expect(active).toBe(2);
 		for (const g of gates) {
 			g.resolve();
 			await flush();
@@ -83,7 +82,7 @@ describe("createCfApiThrottle", () => {
 			secondStarted = true;
 		});
 		await flush();
-		expect(secondStarted).toBe(false); // blocked behind the single slot
+		expect(secondStarted).toBe(false);
 		first.resolve();
 		await Promise.all([r1, r2]);
 		expect(secondStarted).toBe(true);
@@ -94,7 +93,7 @@ describe("createCfApiThrottle", () => {
 		let clock = 0;
 		const sleep = vi.fn(async (ms: number) => {
 			waits.push(ms);
-			clock += ms; // advance the injected clock by exactly the slept time
+			clock += ms;
 		});
 		const throttle = createCfApiThrottle({
 			maxConcurrent: 10, // cap out of the way — isolate the pacing knob
@@ -103,7 +102,6 @@ describe("createCfApiThrottle", () => {
 			now: () => clock,
 			random: () => 0.999999, // maximize jitter → widest wait, still < 2·spacing
 		});
-		// Fire three back-to-back; each reserves a start floor spaced by minSpacingMs.
 		await Promise.all([
 			throttle.run(async () => {}),
 			throttle.run(async () => {}),
@@ -138,7 +136,6 @@ describe("start-pacing does not consume the concurrency cap", () => {
 		const throttle = createCfApiThrottle({
 			maxConcurrent: 1,
 			minSpacingMs: 100,
-			// The first call's pace-sleep hangs; every later one returns immediately.
 			sleep: () => (sleeps++ === 0 ? paced : Promise.resolve()),
 			now: () => 0,
 			random: () => 0.5,
@@ -177,7 +174,7 @@ describe("start-pacing does not consume the concurrency cap", () => {
 			(ms) => queued.push(ms),
 		);
 		expect(queued).toHaveLength(2);
-		expect(queued[0]).toBe(0); // first call starts immediately
+		expect(queued[0]).toBe(0);
 		expect(queued[1]).toBe(100); // second waits one spacing — time the HARNESS imposed, not CF
 	});
 });

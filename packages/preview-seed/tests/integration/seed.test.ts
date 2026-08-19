@@ -1,22 +1,9 @@
 /**
- * Seed I/O against **real remote Cloudflare D1** (ADR 0082 integration tier) —
- * runs the production `seed(d1)` over the shipped REST transport (`makeD1Rest`,
- * the bin's path) against a per-file isolated, migrated D1 (`_d1.ts`), and asserts:
- *
- *   - the rows the unauthenticated read e2e specs sample actually land — the term
- *     row, the term page's top-definition sort, the /pano/<id> permalink target;
- *   - the FTS5 dual-write is *findable on D1's own FTS5* — exact-title MATCH, the
- *     Turkish İ/ı fold, a short prefix, and no duplicate index rows on re-seed.
- *     This is precisely why these assertions are integration, not unit: node:sqlite's
- *     FTS5 build/tokenizer/collation are NOT D1's (ADR 0082), so a fold "proven" on
- *     the deleted fake proved nothing about D1;
- *   - the seed is idempotent — a second run is a clean no-op (same report, same counts).
- *
- * Pure-logic invariants (fixture content, the REST-wire param contract) stay in the
- * unit tier (`src/*.unit.test.ts`); they need no DB.
- *
- * Locally (no Cloudflare creds) the `beforeAll` deploy stops at `Unauthorized` —
- * expected; this tier proves itself on CI's integration job.
+ * Seed I/O against real remote Cloudflare D1 (ADR 0082 integration tier). The FTS
+ * assertions have to live here, not in the unit tier: node:sqlite's FTS5
+ * build/tokenizer/collation are NOT D1's, so a Turkish fold "proven" against a fake
+ * proved nothing about D1. Locally (no Cloudflare creds) the `beforeAll` deploy stops
+ * at `Unauthorized` — expected; this tier proves itself on CI's integration job.
  */
 
 import {normalizeSearchText, toMatchExpression} from "@kampus/web/features/search/normalize";
@@ -111,8 +98,6 @@ describe("seed — FTS index on D1's own FTS5 (24-search; ADR 0080)", () => {
 	});
 
 	it("re-seeding does not duplicate FTS rows (idempotent dual-write)", async () => {
-		// Re-seed (the dual-write is delete-then-insert keyed on slug), then assert the
-		// term appears exactly once in the FTS index.
 		await seed(h.seedDb());
 		const db = makeSeedDb(h.seedDb());
 		const slugs = await matchTermSlugs(db, SEED_TERM_SLUG.replace(/-/g, " "));
@@ -122,11 +107,9 @@ describe("seed — FTS index on D1's own FTS5 (24-search; ADR 0080)", () => {
 
 describe("seed — idempotency on real D1 (safely re-runnable)", () => {
 	it("a second run does not error and does not duplicate rows", async () => {
-		const second = await seed(h.seedDb()); // must not duplicate-key-crash
+		const second = await seed(h.seedDb());
 		expect(second).toStrictEqual(report);
 
-		// Re-run wrote no extra rows: each count still equals the fixture set the first
-		// run reported.
 		const db = makeSeedDb(h.seedDb());
 		const termRows = await db.select().from(termRecord);
 		const defRows = await db.select().from(definitionRecord);

@@ -14,9 +14,8 @@ describe("Scale", () => {
 	it("gte is the ladder's whole law — monotone, reflexive", () => {
 		// a yazar passes any çaylak-floored gate (ADR 0107 §4)
 		expect(ladder.gte("yazar", "çaylak")).toBe(true);
-		expect(ladder.gte("yazar", "yazar")).toBe(true); // reflexive
+		expect(ladder.gte("yazar", "yazar")).toBe(true);
 		expect(ladder.gte("çaylak", "çaylak")).toBe(true);
-		// a çaylak does not clear a yazar floor
 		expect(ladder.gte("çaylak", "yazar")).toBe(false);
 		expect(ladder.gte("visitor", "çaylak")).toBe(false);
 	});

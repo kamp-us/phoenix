@@ -2,19 +2,12 @@
  * pano feed viewer state (`posts` list stamps `myVote`/`isSaved`) — black-box
  * against the deployed worker `/fate` route (ADR 0026–0031, ADR 0082).
  *
- * Drives #695: the main `posts` feed must reflect the signed-in viewer's own
- * vote/save state the same way the post-detail `post` query and `savedPosts`
- * already do — the resolver re-hydrates the keyset page through
- * `Pano.getPostsByIds(ids, {viewerId})` so `myVote`/`isSaved` ride one batch.
- * Everything is observed over HTTP: posts are seeded + voted + saved via `/fate`
- * mutations, then the feed is read back per viewer. Anonymous reads must stay
- * neutral (`null` state).
+ * Drives #695: the main `posts` feed must reflect the signed-in viewer's own vote/save
+ * state the way the post-detail `post` query and `savedPosts` already do.
  *
- * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027): its one D1 is
- * shared with every migrated file. It isolates by NS — every email/title/host it seeds
- * carries the deterministic `${NS}-…` prefix, and the feed read is HOST-scoped to this
- * file's own `${NS}.example.com` host, so the `posts(host)` query returns exactly this
- * file's seeded set and never another file's rows on the shared D1.
+ * On the run-scoped SHARED stage (ADR 0104 step 7, #1027), so isolation is by NS: every
+ * email/title/host carries the `${NS}-…` prefix and the feed read is HOST-scoped to this
+ * file's own `${NS}.example.com`, so `posts(host)` never returns another file's rows.
  */
 import {beforeAll, describe, expect, it} from "vitest";
 import {sharedStack} from "./_integration.ts";
@@ -42,18 +35,13 @@ const FEED_HOST = `${NS}.example.com`;
 let viewer: {userId: string; cookie: string};
 let other: {userId: string; cookie: string};
 
-/** A post the viewer votes + saves. */
 let votedSaved = "";
-/** A post the viewer only votes. */
 let votedOnly = "";
-/** A post the viewer only saves. */
 let savedOnly = "";
-/** A post the viewer neither votes nor saves. */
 let neutral = "";
 
 // Posts are authored by `other`, not the `viewer`: since #2216 blocks self-voting, the
 // viewer's fixture votes below have to land on content it did not write.
-/** Submit a post under the author (`other`) cookie on the shared feed host; return its id. */
 async function seedPost(title: string): Promise<string> {
 	const r = await h.fate(
 		{
@@ -69,7 +57,6 @@ async function seedPost(title: string): Promise<string> {
 	return (r.data as PostNode).id;
 }
 
-/** Read the host-scoped feed for a cookie (anonymous when omitted), as an id→node map. */
 async function feed(cookie?: string): Promise<Map<string, PostNode>> {
 	const r = await h.fate(
 		{
@@ -88,10 +75,8 @@ async function feed(cookie?: string): Promise<Map<string, PostNode>> {
 beforeAll(async () => {
 	viewer = await h.signUp(`${NS}-viewer@test.local`, "hunter2hunter2", "izleyen");
 	other = await h.signUp(`${NS}-other@test.local`, "hunter2hunter2", "öteki");
-	// `viewer` casts real post votes below (voted/voted-saved fixtures) on posts `other`
-	// authored — self-voting is blocked (#2216), so the caster is never the author. Since
-	// #1810's "earn to vote" gate a fresh çaylak is rejected at cast, promote the voter; and
-	// promote `other` so its authored posts are live (not sandboxed) and thus votable/feed-visible.
+	// Since #1810's "earn to vote" gate a fresh çaylak is rejected at cast, so promote the
+	// voter; promote `other` too, or its posts stay sandboxed and never reach the feed.
 	await h.promoteToYazar(viewer.userId);
 	await h.promoteToYazar(other.userId);
 
@@ -135,8 +120,6 @@ describe("pano feed — viewer state stamping (#695)", () => {
 	});
 
 	it("scopes the stamp to the reading viewer (no cross-talk)", async () => {
-		// `other` voted/saved nothing here, so every row is neutral for them — the
-		// stamp follows the cookie, not the post.
 		const rows = await feed(other.cookie);
 
 		for (const id of [votedSaved, votedOnly, savedOnly, neutral]) {

@@ -1,8 +1,7 @@
 /**
- * The `report` runner's mechanism core: catalog resolution (known/unknown, with the catalog
- * injected) and the sampling-correct SQL shaping. These are the two load-bearing guarantees of
- * #3134 — the runner resolves a product-supplied definition by name and renders it into a read that
- * weights by `_sample_interval` (ADR 0153), never `count()`. Pure transforms, no AE, no keychain.
+ * The `report` runner's two load-bearing guarantees (#3134): it resolves a product-supplied
+ * definition by name, and renders a read that weights by `_sample_interval` (ADR 0153), never
+ * `count()`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit} from "effect";

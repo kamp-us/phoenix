@@ -1,14 +1,8 @@
 /**
- * The depo doorman — the write path for depo (ADR 0144 decision 4), a standalone
- * alchemy-effect worker (ADRs 0026–0031) on its own stack (`doorman.ts`), separate
- * from `apps/web` (ADR 0057). DUMB BY MANDATE: it authenticates, guards, content-
- * addresses, writes once, and returns the URL — no transforms, no gallery, no read
- * path (reads stay zero-compute off R2 at `depo.kamp.us`, #1969).
- *
- * The single surface is `PUT /` on `up.depo.kamp.us`: raw image bytes in, a
- * `{key,url}` JSON out. The domain rules and both seams (auth, storage) live in
- * their own modules so this file is thin — bind resources, wire the seams, map the
- * one operation's typed failures to HTTP status.
+ * The depo doorman — depo's write path (ADR 0144 decision 4), a standalone
+ * alchemy-effect worker on its own stack. DUMB BY MANDATE: it authenticates,
+ * guards, content-addresses, writes once, returns the URL — no transforms, no
+ * gallery, no read path (reads stay zero-compute off R2 at `depo.kamp.us`, #1969).
  */
 
 import {RuntimeContext} from "alchemy";
@@ -30,11 +24,9 @@ import {Storage} from "./storage.ts";
 import {upload} from "./upload.ts";
 import {ApiKeyVerifier, makeApiKeyVerifier} from "./verifier.ts";
 
-/** The apiKey is presented as an `Authorization: Bearer <key>` or `x-api-key` header. */
 const apiKeyOf = (headers: Headers): string | null =>
 	headers.get("x-api-key") ?? headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
 
-/** Map a doorman failure to its HTTP response. Domain refusals are 4xx; infra is 500. */
 const toResponse = (error: {readonly _tag: string}): HttpServerResponse.HttpServerResponse => {
 	switch (error._tag) {
 		case "depo/Unauthorized":
@@ -79,7 +71,6 @@ export default Doorman.make(
 		},
 	},
 	Effect.gen(function* () {
-		// ── INIT PHASE ── bind the two adopted resources once per isolate.
 		const rwBucket = yield* Cloudflare.R2.ReadWriteBucket(DepoBucket);
 		const rawDb = yield* (yield* Cloudflare.D1.QueryDatabase(PasaportDb)).raw;
 		// The ambient RuntimeContext R2 ops carry in their `R` (ADR 0124), resolved once.
@@ -113,7 +104,6 @@ export default Doorman.make(
 			ApiKeyVerifier.of(makeApiKeyVerifier(rawDb, Redacted.value(secret))),
 		);
 
-		// ── RUNTIME PHASE ── the one route: PUT / (write-once upload).
 		const routes = HttpRouter.add(
 			"PUT",
 			"/",
@@ -141,7 +131,6 @@ export default Doorman.make(
 							contentType: "application/json",
 						}),
 					),
-					// Every typed failure maps to its HTTP status here (the one place).
 					Effect.catch((error) => Effect.succeed(toResponse(error))),
 				);
 			}),

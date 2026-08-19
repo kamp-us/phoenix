@@ -1,9 +1,6 @@
 /**
- * Unit tests for the client core (`putBytes`) with the doorman behind the
- * `DoormanClient` seam — no live worker (`.patterns/effect-testing.md` unit tier).
- * These assert the acceptance contract: the content-addressed request the client
- * SENDS, and the mapping from each doorman status to a typed outcome (a case per
- * status below).
+ * The client core with the doorman substituted behind the `DoormanClient` seam — no live worker
+ * (`.patterns/effect-testing.md` unit tier).
  */
 import {assert, describe, it} from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -16,10 +13,6 @@ const BYTES = new TextEncoder().encode("abc");
 const KEY_ABC_PNG = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.png";
 const URL_ABC_PNG = `https://depo.kamp.us/${KEY_ABC_PNG}`;
 
-/**
- * A seam stub that records the request it was sent and replies with a canned
- * response — the substitution that lets the core run end to end with no HTTP.
- */
 const stubClient = (
 	response: DoormanResponse,
 	recorder?: (req: DoormanRequest) => void,

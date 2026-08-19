@@ -530,7 +530,6 @@ describe("renderFlagTable", () => {
 		]);
 		const lines = table.split("\n");
 		assert.match(lines[0] ?? "", /FLAG\s+ENV\s+ENABLED\s+SERVES/);
-		// alpha sorts before beta
 		assert.match(lines[1] ?? "", /^alpha\s+pr-1\s+on\s+off \(default\)/);
 		assert.match(lines[2] ?? "", /^beta\s+prod\s+on\s+on@100% \(split\)/);
 	});

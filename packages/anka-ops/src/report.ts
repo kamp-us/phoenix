@@ -1,43 +1,27 @@
 /**
- * The `report` verb group's mechanism core — framework-generic, product-content-free. This module
- * is the load-bearing mechanism-vs-content seam (epic #2089, ADR 0153): it defines the shape a
- * report *definition* satisfies, resolves one by name out of an injected catalog, and renders the
- * catalog's structured query into sampling-correct AE SQL — but it names **no** concrete report and
- * bakes **no** product-specific query. The first definition (`votes-vs-reactions`) is product content
- * supplied by a separate child; the anka-ops core only carries this generic runner.
- *
- * Sampling-correctness is a MECHANISM guarantee, not left to product content: every measure a
- * definition declares is rendered as `sumIf(_sample_interval, …)` — never `count()` — so a report
- * can't accidentally bake in the count-vs-sample bug ADR 0153 warns about. The definition supplies
- * *which* features to compare (content); this module supplies *how* the read is weighted (mechanism).
+ * The `report` verb group's mechanism core — a generic runner that names no concrete report and
+ * bakes no product query (epic #2089, ADR 0153). Sampling-correctness is a mechanism guarantee:
+ * every measure renders as `sumIf(_sample_interval, …)`, never `count()`, so a product definition
+ * cannot bake in the count-vs-sample bug.
  */
 
 import {Context, Effect, Layer} from "effect";
 import * as Schema from "effect/Schema";
 
-// The fixed `app_events` positional schema from ADR 0153: one index (the sampling/grouping key)
-// holds the feature-key, and reads weight by `_sample_interval` so per-feature counts stay exact
-// under sampling. These are schema constants of the seam, not a product query.
+// The fixed `app_events` positional schema of ADR 0153 — seam constants, not a product query.
 const APP_EVENTS_DATASET = "app_events";
 const FEATURE_INDEX = "index1";
 const SAMPLE_INTERVAL = "_sample_interval";
 
-/**
- * A single measured column of a report: a named count over one feature-key, resolved against the
- * `index1` feature dimension. `feature` is the ADR-0153 feature-key (`vote`, `reaction`, …) — an
- * English/technical identifier; `name` is the output column it renders under (`votes`, `reactions`).
- */
+/** `feature` is the ADR-0153 feature-key (`vote`, …); `name` is the output column it renders under. */
 export interface FeatureMeasure {
 	readonly name: string;
 	readonly feature: string;
 }
 
 /**
- * A report's query, encoded over the fixed positional schema (never raw SQL). The mechanism renders
- * it sampling-correct; the product only declares the axes: which feature counts to compare, over how
- * many trailing days, optionally bucketed per day. This is deliberately narrow — the counts-per-
- * feature comparison ADR 0153's forcing question ("are reactions cannibalising votes") needs — and
- * grows by extension as later reports need more, never by admitting a raw `count()`.
+ * A report's query, encoded over the fixed positional schema — never raw SQL. Deliberately narrow:
+ * it grows by extension as later reports need more, never by admitting a raw `count()`.
  */
 export interface ReportQuery {
 	readonly measures: ReadonlyArray<FeatureMeasure>;
@@ -45,11 +29,7 @@ export interface ReportQuery {
 	readonly groupByDay: boolean;
 }
 
-/**
- * A named, versioned report definition — the catalog-entry interface a product supplies. `version`
- * is the definition's own revision (bump it when the query's shape changes so a cached/consuming
- * surface can tell), `id` is the `--name` handle, `description` is the one-line operator summary.
- */
+/** The catalog-entry interface a product supplies; bump `version` when the query's shape changes. */
 export interface ReportDefinition {
 	readonly id: string;
 	readonly version: number;
@@ -57,29 +37,21 @@ export interface ReportDefinition {
 	readonly query: ReportQuery;
 }
 
-/** A decoded AE result row — the positional-schema query returns named columns, values or null. */
 export type ReportRow = Record<string, string | number | null>;
 
 /**
- * The injected report catalog — the product-supplied content the runner resolves `--name` against.
- * A `Context.Service` so the anka-ops core stays query-free: the framework provides an EMPTY catalog,
- * a product wires its definitions in. The runner never imports a definition; it only reads this seam.
+ * A `Context.Service` so the anka-ops core stays query-free: the framework provides an EMPTY
+ * catalog, a product wires its definitions in. The runner never imports a definition.
  */
 export class ReportCatalog extends Context.Service<
 	ReportCatalog,
 	{readonly entries: ReadonlyArray<ReportDefinition>}
 >()("@kampus/anka-ops/ReportCatalog") {}
 
-/** Wire a concrete catalog into the runtime — the single injection point for product report content. */
 export const makeReportCatalog = (
 	entries: ReadonlyArray<ReportDefinition>,
 ): Layer.Layer<ReportCatalog> => Layer.succeed(ReportCatalog, {entries});
 
-/**
- * An unknown `--name` — fail loud, listing the known ids so the operator can correct the typo rather
- * than stare at an empty result. `knownIds` is empty when no product has wired any report yet (the
- * bare framework), which the message states explicitly instead of an inscrutable blank list.
- */
 export class ReportNotFound extends Schema.TaggedErrorClass<ReportNotFound>()(
 	"@kampus/anka-ops/ReportNotFound",
 	{
@@ -96,14 +68,9 @@ export class ReportNotFound extends Schema.TaggedErrorClass<ReportNotFound>()(
 	}
 }
 
-/** The catalog's ids, sorted — the operator-facing list `ReportNotFound` prints and `report list` uses. */
 export const knownReportIds = (catalog: ReadonlyArray<ReportDefinition>): ReadonlyArray<string> =>
 	catalog.map((entry) => entry.id).sort();
 
-/**
- * Resolve a report id against the injected catalog. Succeeds with the definition; fails
- * `ReportNotFound` (carrying the sorted known ids) on a miss — never returns an empty/blank result.
- */
 export const resolveReport = (
 	catalog: ReadonlyArray<ReportDefinition>,
 	id: string,
@@ -115,10 +82,8 @@ export const resolveReport = (
 };
 
 /**
- * Render a report's structured query into sampling-correct AE SQL. Every measure becomes a
- * `sumIf(_sample_interval, index1 = '<feature>')` weighting (ADR 0153 §"Reads are sampling-correct"
- * — never `count()`), so sampling-correctness is guaranteed by construction, not by the product
- * author remembering it. A `groupByDay` query buckets by `toStartOfDay(timestamp)` and orders by day.
+ * Every measure becomes a `sumIf(_sample_interval, …)` weighting — ADR 0153 §"Reads are
+ * sampling-correct" — so the guarantee holds by construction, not by the product author remembering.
  */
 export const renderReportSql = (query: ReportQuery): string => {
 	const measureColumns = query.measures.map(
@@ -139,16 +104,14 @@ export const renderReportSql = (query: ReportQuery): string => {
 	return lines.join("\n");
 };
 
-/** The columns a report renders, in order: the optional `day` bucket, then each measure. */
 const reportColumns = (definition: ReportDefinition): ReadonlyArray<string> => [
 	...(definition.query.groupByDay ? ["day"] : []),
 	...definition.query.measures.map((measure) => measure.name),
 ];
 
 /**
- * Render an AE result set as a headed text table — the operator-facing output of `report --name`.
- * An empty result renders the header plus an explicit `(no rows in the window)` line rather than a
- * blank, so "the report ran and found nothing" is never confused with "the report failed".
+ * An empty result renders an explicit `(no rows in the window)` line rather than a blank, so
+ * "the report ran and found nothing" is never confused with "the report failed".
  */
 export const renderReportResult = (
 	definition: ReportDefinition,

@@ -2,16 +2,6 @@
  * pano base feed / viewer overlay split (#2322, epic #2316 leg B) — black-box against
  * the deployed worker (ADR 0026–0031, ADR 0082).
  *
- * Proves the leg-B server split:
- *   1. The `GET /fate/pano/feed` base feed is served with `sort`/`host`/pagination in
- *      the URL, carries NO viewer-scoped field, and is BYTE-IDENTICAL for an anonymous
- *      request and a signed-in one — the whole point of a viewer-invariant, cacheable
- *      base. An anon GET succeeds with no session (and the response sets no cookie), so
- *      it does no session validation.
- *   2. The base feed and the per-viewer `posts` feed on `POST /fate` are separate
- *      surfaces: the `posts` feed still stamps the signed-in viewer's `myVote`/`isSaved`
- *      (the split changed nothing there).
- *
  * The base feed serves unconditionally — its leg-B dark-ship flag graduated to on@100%
  * and was retired (ADR 0136), so the split is now the source of truth.
  *
@@ -59,7 +49,6 @@ async function seedPost(title: string): Promise<string> {
 	return (r.data as {id: string}).id;
 }
 
-/** GET the base feed over the URL surface; returns the raw Response (caller asserts). */
 function getBaseFeed(query: string, cookie?: string): Promise<Response> {
 	return h.req(`/fate/pano/feed?${query}`, cookie ? {headers: {cookie}} : undefined);
 }
@@ -84,7 +73,6 @@ describe("pano base feed — GET surface + viewer-invariant base (#2322)", () =>
 		const conn = (await res.json()) as Connection<BaseNode>;
 		const titles = conn.items.map((e) => e.node.title).sort();
 		expect(titles).toEqual([`${NS}-alpha`, `${NS}-bravo`, `${NS}-charlie`]);
-		// The base carries NO viewer-scoped field.
 		for (const {node} of conn.items) {
 			expect(Object.hasOwn(node, "myVote")).toBe(false);
 			expect(Object.hasOwn(node, "isSaved")).toBe(false);
@@ -105,7 +93,6 @@ describe("pano base feed — GET surface + viewer-invariant base (#2322)", () =>
 		);
 		expect(second.status).toBe(200);
 		const page2 = (await second.json()) as Connection<BaseNode>;
-		// The three seeded posts split 2 + 1 across the cursor with no overlap.
 		expect(page2.items).toHaveLength(1);
 		const ids1 = page1.items.map((e) => e.node.id);
 		expect(ids1).not.toContain(page2.items[0]!.node.id);
@@ -117,7 +104,6 @@ describe("pano base feed — GET surface + viewer-invariant base (#2322)", () =>
 		const authed = await getBaseFeed(query, viewer.cookie);
 		expect(anon.status).toBe(200);
 		expect(authed.status).toBe(200);
-		// No session validation: the base sets no cookie for either caller.
 		expect(anon.headers.get("set-cookie")).toBeNull();
 		expect(authed.headers.get("set-cookie")).toBeNull();
 		// Byte-identical bodies — the base is viewer-invariant by construction.
@@ -127,9 +113,7 @@ describe("pano base feed — GET surface + viewer-invariant base (#2322)", () =>
 
 describe("pano base feed — the per-viewer posts feed is a separate surface (#2322)", () => {
 	it("leaves the existing POST /fate posts feed stamping myVote", async () => {
-		// Vote a seeded post as the viewer, then read the per-viewer `posts` feed on
-		// `POST /fate`: the split left that stamp untouched — myVote rides as before. (The
-		// author never self-votes; the viewer votes the author's post.)
+		// The viewer votes the AUTHOR's post — a self-vote is a distinct rejection.
 		const target = seeded[0]!;
 		const voted = await h.fate(
 			{kind: "mutation", name: "post.vote", input: {id: target}, select: ["id"]},

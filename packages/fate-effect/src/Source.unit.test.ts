@@ -1,23 +1,9 @@
 /**
  * Unit — `Fate.source` (the per-entity loader).
  *
- * The loader contract under test (the loader/resolver split):
- *
- *   1. **At least one of `byId`/`byIds` is required at the type level** — an
- *      unloadable source is unrepresentable (the `@ts-expect-error` pins).
- *   2. **Handlers' `R` is inferred and visible in the source's type**, and it
- *      threads through to composition (`Effect.provideService` discharges it).
- *   3. **Loaders are silent on absence**: `byIds` returns what exists, `byId`
- *      returns `null`; `E` is pinned `never` (a failing handler is a compile
- *      error); infra failures are defects.
- *   4. **Spans come from the constructor, not the author**: each provided
- *      handler is wrapped with `Effect.fn("<Entity>.<capability>")`, so the
- *      span name is derived from the view class and cannot drift.
- *
- * Like `DataView.unit.test.ts`, this module **exports** its source consts on
- * purpose: the package tsconfig is `composite`, so tsgo's declaration
- * nameability checks (TS2883) run over the `Fate.source` return type — the
- * permanent gate that the source surface stays portably nameable.
+ * Like `DataView.unit.test.ts`, this module **exports** its source consts on purpose: the
+ * package tsconfig is `composite`, so tsgo's declaration nameability checks (TS2883) run over
+ * the `Fate.source` return type — the permanent gate that the surface stays portably nameable.
  */
 import {createSourcePlan} from "@nkzw/fate/server";
 import {Context, Effect} from "effect";
@@ -69,7 +55,6 @@ const rows: ReadonlyArray<TermRow> = [
 	{slug: "fate", title: "fate", score: 3},
 ];
 
-/** Narrow an optional handler without a non-null assertion. */
 const required = <T>(value: T | undefined): T => {
 	if (value === undefined) {
 		throw new Error("expected the handler to be present");
@@ -83,8 +68,6 @@ describe("Fate.source — loaders are silent on absence", () => {
 		const result = await Effect.runPromise(
 			byIds(["effect", "fate", "missing-slug"]).pipe(Effect.provideService(TermStore, {rows})),
 		);
-		// Absence is not an error: two of three ids exist, the load succeeds
-		// with exactly the rows that exist.
 		expect(result).toEqual([rows[0], rows[1]]);
 	});
 
@@ -114,7 +97,6 @@ describe("Fate.source — loaders are silent on absence", () => {
 			},
 		);
 		const byIds = required(src.handlers.byIds);
-		// The error channel is `never` — infra failure is a defect, not a value.
 		expectTypeOf(byIds(["x"])).toEqualTypeOf<Effect.Effect<ReadonlyArray<TermRow>, never, never>>();
 		await expect(Effect.runPromise(byIds(["x"]))).rejects.toThrow("D1 is down");
 	});
@@ -222,8 +204,6 @@ describe("Fate.source — type-level contract", () => {
 			ReadonlyArray<TermRow>,
 			unknown
 		>;
-		// A silent handler fits the byIds slot; a failing one is rejected — the
-		// loader error channel is pinned `never`.
 		expectTypeOf<SilentHandler>().toExtend<ByIdsSlot>();
 		expectTypeOf<FailingHandler>().not.toExtend<ByIdsSlot>();
 	});
@@ -252,8 +232,6 @@ describe("Fate.source — type-level contract", () => {
 			},
 		);
 		expectTypeOf<FateSourceServices<typeof src>>().toEqualTypeOf<TermStore | Viewer>();
-		// Composition: providing the services discharges R — a forgotten layer
-		// would be a compile error at the composition site.
 		const provided = required(src.handlers.byIds)(["effect"]).pipe(
 			Effect.provideService(TermStore, {rows}),
 			Effect.provideService(Viewer, {id: "u1"}),
@@ -277,15 +255,9 @@ export const ghostSource = Fate.syntheticSource(GhostView);
 
 describe("Fate.syntheticSource — synthetic entity, no fetch path", () => {
 	it("is byte-identical to the hand-built erased entry it replaces", () => {
-		// The exact shape the first consumer (pasaport's `contributionSource`)
-		// hand-built before this constructor existed: kernel definition with
-		// the conventional `id` PK field, the view BY IDENTITY, and an EMPTY
-		// handlers bag — zero capabilities. The empty bag is the loud-failure
-		// contract: the walk's capability-less arm fails the load with fate's
-		// internal arm (`Interpreter.walk.test.ts` corpus: "a capability-less
-		// source is fate's internal arm"), and the oracle baseline adapts `{}`
-		// to an empty executor that fate masks the same way — both planes are
-		// parity-pinned over a `Fate.syntheticSource` fixture.
+		// The EMPTY handlers bag is the loud-failure contract: fate's walk fails a
+		// capability-less source through its internal arm, and the oracle baseline
+		// masks `{}` the same way. Both planes are parity-pinned over this fixture.
 		expect(ghostSource).toEqual({
 			typeName: "Ghost",
 			definition: {id: "id", view: GhostView.view},

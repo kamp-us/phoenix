@@ -89,9 +89,7 @@ export const SAFE_STALL_REPLAYS = 1;
 const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 export interface ConvergeOptions {
-	/** Total attempts at `send`, including the first (default 3). */
 	attempts?: number;
-	/** Base of the linear backoff between attempts, ms (default 400). */
 	backoffMs?: number;
 	/**
 	 * Which thrown failures the landed-probe recovers. Default: only a stall — a real error
@@ -99,7 +97,6 @@ export interface ConvergeOptions {
 	 * a duplicate write. A caller whose op is pure setup may widen it.
 	 */
 	recoverable?: (e: unknown) => boolean;
-	/** Injected for tests — real sleep by default. */
 	sleep?: (ms: number) => Promise<void>;
 }
 

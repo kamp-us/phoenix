@@ -1,14 +1,9 @@
 /**
- * `@kampus/orphan-sweep` — the orphan integration-stage sweep (part of issue #690). A
- * pure, unit-tested core (`orphan-sweep.ts`) that turns the live set of Cloudflare
- * resources + a protection set (prod, named-dev, open PRs) into a deletion plan that can
- * never touch a protected resource, plus a thin `effect/unstable/cli` bin (`bin.ts`,
- * DRY-RUN by default) that lists CF resources + open PRs behind injectable `Cloudflare`
- * / `Github` services and, with `--execute`, deletes the planned set.
+ * `@kampus/orphan-sweep` — the orphan integration-stage sweep. `bin.ts` is DRY-RUN by default
+ * and only deletes under `--execute`; the plan can never touch a protected resource.
  *
- * Bounds the unbounded leak the #689 run-unique stage names surfaced (#690): a partial
- * integration deploy's orphan `it-*` worker/D1 now accumulates on the shared CF account
- * with no upper bound; this sweep is that bound.
+ * Bounds the leak the #689 run-unique stage names surfaced (#690): a partial integration
+ * deploy's orphan `it-*` worker/D1 accumulates on the shared CF account with no upper bound.
  */
 export {Cloudflare, CloudflareLive} from "./cloudflare.ts";
 export {Github, GithubLive} from "./github.ts";
