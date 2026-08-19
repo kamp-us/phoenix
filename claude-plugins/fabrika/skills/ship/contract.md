@@ -48,6 +48,7 @@ Named because a spec that leaves the substrate open makes the implementer guess 
 | `ship threads` | every unresolved review thread, fully paginated, with per-thread class facts | pagination, count proof, and author-type classification are mechanical; nit-vs-substantive is THE retained judgment and never enters this verb |
 | `ship resolve` | the sanctioned thread-resolution write: rationale reply, resolve mutation, read-back — refusing any thread not positively bot-classed | the protocol and the bot-only structural anchor are mechanical; deciding a bot thread is a nit is the skill's |
 | `ship enqueue` | arm the queue's auto-merge at a pinned head, method-flag-free by construction, and prove the arm landed | the arm, its error discrimination, and the entry read are mechanical; whether the PR should ship was settled by the gates |
+| `ship merge` | the second landing path: land directly on a base branch no merge queue governs, with the method read off the repository, and prove the landing | reading the regime, picking a permitted method and proving `merged` + the merge commit are mechanical; whether the PR should ship was settled by the gates |
 | `ship reconcile` | the bounded post-enqueue watch: `landed` / `ejected` / `unresolved` / `parked`, each a proven answer at exit 0 | multi-signal terminal classification against timeline + base-branch evidence is mechanical; what ejection means for the lane is judgment |
 | `ship disarm` | the four-site merge-intent lifecycle (ADR 0198): `kept` / `disarmed`, read-back-verified | the site policy table and the verified write are mechanical |
 | `ship nudge` | the at-most-once dropped-trigger remedy: re-derive the zero-runs state, close→reopen, verify both legs | the precondition re-derivation and the guarded PATCH pair are mechanical; the verb refuses rather than trusting its dispatch (#4816) |
@@ -211,16 +212,17 @@ authority.
 | `5` | the **authored** text carries a machine-local path | `resolve`, `note` |
 | `6` | the **authored** text is a bare `@` path reference — not redactable | `resolve`, `note` |
 | `7` | zero scope: the target is **proven absent (404)**, or the PR is closed/draft where the verb requires an open one, or it has zero changed files — a fail-closed refusal | all except `disarm` |
-| `8` | the write, or the read that confirms it, failed — the outcome is **UNKNOWN** | `resolve`, `enqueue`, `disarm`, `nudge`, `note`, `release` |
-| `9` | the write landed but the read-back does not match | `resolve`, `note`, `release` |
+| `8` | the write, or the read that confirms it, failed — the outcome is **UNKNOWN** | `resolve`, `enqueue`, `merge`, `disarm`, `nudge`, `note`, `release` |
+| `9` | the write landed but the read-back does not match | `resolve`, `merge`, `note`, `release` |
 | `10` | a supplied classification value is off the closed vocabulary — an unknown `--require` namespace, a bad `--site` | `gate`, `disarm` |
 | `11` | a **precondition read failed** — nothing was proven and (for a write) nothing was written | all |
-| `12` | refused: the live head moved past the inspected `--sha` — a mutation formed over a tree that is no longer the PR | `enqueue`, `nudge` |
+| `12` | refused: the live head moved past the inspected `--sha` — a mutation formed over a tree that is no longer the PR | `enqueue`, `merge`, `nudge` |
 | `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page | `scope`, `cp-approval`, `gate`, `checks`, `evidence`, `threads`, `nudge`, `release`, `reconcile`, `floor` |
 | `14`, `15` | *(deliberate gaps — `review`'s ACL and append-only seats; no verb here performs either)* | — |
-| `16` | refused: the target is **proven not in the state this write acts on** — nothing was mutated | `resolve`, `nudge` |
+| `16` | refused: the target is **proven not in the state this write acts on** — nothing was mutated | `resolve`, `merge`, `nudge` |
 | `17` | refused: the nudge's close landed and the reopen is **unconfirmed — the PR may be left closed**; a human re-opens before anything else happens | `nudge` |
 | `18` | refused: the diff touches a governance root and its `governance` verdict is **not** a head-bound PASS — `absent`, `stale` or `fail`. The one red that means *a human owes this PR a verdict*, kept off `16` so a CI job can tell it from "the floor could not be resolved" | `floor` |
+| `19` | refused: the repository permits **no merge method at all** — squash, merge-commit and rebase are all disabled, so nothing can land directly. Its own seat rather than a fold into `16`, because the two route opposite ways: `16` sends the run to `ship enqueue`, `19` ends it at a human with repository-settings access (#6018) | `merge` |
 | `23` | refused: a label this run would POST is absent from the repository's taxonomy — `plan flip`'s seat, imported, because both verbs prove one fact over one board's labels (#4285) | `release` |
 | `127` | the verb never ran (unresolved binary) | all |
 
@@ -239,8 +241,9 @@ reported as "awaiting approval" (#4223), a failed file read reported as "no §CP
 (#4216), a 503 body reported as "no run-evidence bundle" (#3716).
 
 **`16` and `17` are this group's own proven refusals.** `16` is the write-side state guard: a
-nudge dispatched at a head that has runs, or a resolve aimed at a thread that is not
-positively bot-classed or is already resolved — the verb proved the state and declined, which
+nudge dispatched at a head that has runs, a resolve aimed at a thread that is not
+positively bot-classed or is already resolved, a direct merge aimed at a queue-governed base or a
+provably unmergeable PR — the verb proved the state and declined, which
 is neither `7` (the target exists) nor `11` (nothing failed). It is the #4816 fix made
 structural: the verb that mutates re-derives its own precondition and refuses without
 touching the PR. `17` exists because the nudge is the group's one two-legged mutation: v1's
@@ -288,9 +291,10 @@ fabrika ship scope 4321 [--repo <owner/name>] [--json]
 `fixes:<n>`, `part-of:<n>`, or `-` (none). Then one line per present artifact class —
 `class\t<code|doc|skill|ui>\t<file-count>` — then one line per required namespace —
 `namespace\t<review-code|review-doc|review-skill|review-ui|governance>` — then
-`cp\t<control-plane|not-control-plane|unknown>` and `files\t<scanned>`.
+`cp\t<control-plane|not-control-plane|unknown>`,
+`landing\t<queue|direct|none|unknown>\t<squash|merge|rebase|->` and `files\t<scanned>`.
 
-With `--json`: `{"outcome":"scoped","head":<40-hex>,"state":…,"issue":{"kind":"fixes"|"part-of"|"none","number":<n|null>},"classes":[{name,files}…],"namespaces":[…],"cp":…,"scanned":<n>}`.
+With `--json`: `{"outcome":"scoped","head":<40-hex>,"state":…,"issue":{"kind":"fixes"|"part-of"|"none","number":<n|null>},"classes":[{name,files}…],"namespaces":[…],"cp":…,"landing":{"path":…,"method":…},"scanned":<n>}`.
 
 **A `merged` PR is an answer, not a refusal** — the skill reports idempotent success and ends.
 `draft` and `closed` are likewise answers here; this verb reports state, the skill acts on it.
@@ -346,12 +350,26 @@ first match), else an explicit `Part of #N` (an intentional partial split — th
 without auto-close), else `-`. Which classes may ship issueless is the skill's law (ADR 0075),
 not this verb's.
 
+**The `landing` line names which of the two landing paths this base branch has**, so the shipper
+reads its route from one verb instead of composing it from two API reads nobody currently performs
+(#6018). `queue` — a merge queue governs the base, so `ship enqueue` lands it and the method is the
+queue's; `direct` — no queue and the repository permits at least one merge method, named beside the
+path, so `ship merge` lands it; `none` — no queue and no permitted method, so nothing in this
+repository can land this branch and a human owes it a settings change.
+
+`landing` is **the one field that degrades instead of refusing**: an unreadable branch-rule or
+repository read prints `unknown` with the reason on stderr, and the rest of the scope still answers.
+That is deliberate and it is not fail-open, because this line licenses nothing — `ship merge`
+re-derives the same fact from the same reads and refuses `11` exactly where this printed `unknown`.
+Refusing the whole scope here would cost a run its head, classes and §CP state over a fact only one
+downstream verb consumes, and that verb guards itself.
+
 **Exit status**
 
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404); or it has zero changed files; or its non-empty diff derives zero required namespaces — a vacuous conjunction (#2765, ADR 0092) |
-| `11` | the PR, its file list, or the §CP boundary could not be read — the scope is UNKNOWN |
+| `11` | the PR, its file list, or the §CP boundary could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
 | `13` | the changed-file enumeration is provably short (received < declared count) |
 
 **Errors**
@@ -362,6 +380,7 @@ not this verb's.
 | `ship scope: PR #<n> has zero changed files — nothing to ship (ADR 0092).` | 7 | refusal |
 | `ship scope: #<n>'s diff derives zero review namespaces — a merge gated on nothing is vacuously green (#2765); the class map has a hole, file it.` | 7 | refusal |
 | `ship scope: cannot read <what> for #<n>: <reason> — the scope is UNKNOWN.` | 11 | refusal |
+| `ship scope: cannot read <base>'s landing path: <reason> — reporting it unknown; `ship merge` refuses on the same read rather than landing.` | 0 | notice |
 | `ship scope: file list shows <k> of <m> declared files — refusing to partition a truncated read.` | 13 | refusal |
 
 **Scope** — one PR's metadata and changed-file list, paginated and count-checked, plus one
@@ -377,12 +396,13 @@ class	doc	1
 namespace	review-code
 namespace	review-doc
 cp	not-control-plane
+landing	direct	squash
 files	4
 ```
 
 ```
 $ fabrika ship scope 4321 --json
-{"outcome":"scoped","head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","state":"open","issue":{"kind":"fixes","number":4287},"classes":[{"name":"code","files":3},{"name":"doc","files":1}],"namespaces":["review-code","review-doc"],"cp":"not-control-plane","scanned":4}
+{"outcome":"scoped","head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","state":"open","issue":{"kind":"fixes","number":4287},"classes":[{"name":"code","files":3},{"name":"doc","files":1}],"namespaces":["review-code","review-doc"],"cp":"not-control-plane","landing":{"path":"direct","method":"squash"},"scanned":4}
 ```
 
 ```
@@ -1354,6 +1374,130 @@ enqueued	03135b91	queued
 - ADR 0198 — this is the only verb that arms; every other path is a disarm site.
 - #5067 clause 8 / #5144 — the pre-arm mergeability precondition and its probe: the arm is not
   refused by the platform on a conflicted PR, so the gate is load-bearing rather than redundant.
+
+---
+
+## `ship merge`
+
+**Invocation**
+
+```
+fabrika ship merge 4321 --sha 03135b91 [--repo <owner/name>] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the pull-request number |
+| `--sha` | string | yes | — | the head every gate verified; the landing binds to it |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
+
+**Output** — machine channel. One line: `merged\t<merge-commit-sha>\t<squash|merge|rebase>`.
+With `--json`: `{"outcome":"merged","sha":…,"method":…,"mergeCommit":…}`.
+
+**This is a second landing path, not a merge-method flag on the first.** `ship enqueue` argues,
+correctly, that a method flag alongside the queue arm conflicts with the queue and no-ops the
+enqueue silently at exit 0 — but that argument is entirely about a queue-governed base, and says
+nothing about a base with no queue. Where no queue exists, `ship enqueue` had nothing to arm and no
+other verb could land anything, so a lane in a consuming repo built, reviewed and gated correctly
+and then stopped one inch short of shipped (#6018, observed on the first non-phoenix lane). The
+method surface therefore lives here, on the path where the queue is **proven absent**, and
+`ship enqueue` still carries none.
+
+**The queue check is a refusal, never a fallback.** A base a merge queue governs is `ship enqueue`'s
+and this verb refuses `16` pointing there — a direct merge into a queue-governed base walks past the
+gate the queue exists to run. The regime is read off the **branch's** active rules, the same read
+`ship disarm` uses, never this PR's queue history. An unreadable regime refuses `11`: this verb never
+lands on a base whose regime it could not read, which is also what makes `ship scope`'s degraded
+`landing unknown` safe.
+
+**The method is read, never guessed.** The repository's `allow_squash_merge` /
+`allow_merge_commit` / `allow_rebase_merge` decide it, preferring squash, then the merge commit,
+then rebase. Squash leads because its default subject ends `(#<pr>)`, which is the anchor
+`ship reconcile`'s base-branch cross-check proves a landing with; a rebase landing publishes the
+branch's own subjects and that cross-check cannot see it. A repository permitting none of the three
+refuses `19` — its own seat rather than a fold into `16`, because the two route opposite ways: `16`
+sends the run onward to `ship enqueue`, `19` ends the lane at a human with repository-settings
+access.
+
+**A definite `mergeable_state` is asserted before the write**, on the same poll policy
+`ship enqueue` uses and out of the same shared read — indefinite is re-read up to 3 times, 2 seconds
+apart, and a still-indefinite value is UNKNOWN and refuses `11`. Unlike the arm, this verb also acts
+on the definite value: a definite `mergeable: false` refuses `16` rather than sending a call the
+endpoint will reject with a 405 that is indistinguishable, from the outside, from a write whose
+outcome nobody knows.
+
+**The landing is proven, not claimed.** The write hands the platform the **full** live head as its
+`sha` parameter, so the platform rejects it if the head moved — a second drift guard under the
+verb's own `12`. After the write, `merged` **and** the merge commit are read back off the PR: the
+merge call's own response is the writer's claim about its own write, and a `merged: true` with no
+commit behind it is a claim with no evidence. An unreadable read-back is `8` and never a success,
+because whether the PR landed is exactly what is UNKNOWN there.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `7` | the PR is proven absent (404), closed, or already merged (an idempotent success belongs to `ship scope`'s answer, not to a landing) |
+| `8` | the merge request, or its confirming read-back, failed — whether the PR landed is UNKNOWN; re-read the PR before stopping |
+| `9` | the merge was sent and the read-back does not show it merged at a commit — the landing is not proven |
+| `11` | the live head, the landing path or the mergeability could not be read, or the mergeability was still indefinite after the polls — nothing was merged |
+| `12` | the live head moved past `--sha` — every verdict upstream bound a tree that is gone; re-enter at step 1 |
+| `16` | proven: a merge queue governs the base (run `ship enqueue`), or the PR is definitely not mergeable — nothing was merged |
+| `19` | the repository permits no merge method at all — a human enables one in the repository settings |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `ship merge: PR #<n> not found in <repo>.` | 7 | refusal |
+| `ship merge: PR #<n> is <closed\|merged> — nothing to merge.` | 7 | refusal |
+| `ship merge: <base> is not queue-governed and <repo> permits <method> — landing directly.` | 0 | notice |
+| `ship merge: mergeable_state is <state> (mergeable: true) — a definite read; merging.` | 0 | notice |
+| `ship merge: cannot read #<n>'s live head: <reason> — nothing was merged.` | 11 | refusal |
+| `ship merge: cannot read <base>'s landing path: <reason> — nothing was merged.` | 11 | refusal |
+| `ship merge: cannot read #<n>'s mergeability: <reason> — nothing was merged.` | 11 | refusal |
+| `ship merge: #<n>'s mergeable_state is still indefinite after <k> polls — mergeability is UNKNOWN, never green; nothing was merged.` | 11 | refusal |
+| `ship merge: the live head is <live>, gates ran at <sha> — refusing to merge a tree nobody verified.` | 12 | refusal |
+| ``ship merge: a merge queue governs <base> — the queue owns the method and the landing; run `fabrika ship enqueue` instead.`` | 16 | refusal |
+| `ship merge: #<n> is not mergeable (mergeable_state: <state>) — a definite read; nothing was merged.` | 16 | refusal |
+| `ship merge: <repo> permits no merge method — squash, merge-commit and rebase are all disabled, so nothing can land on <base>; a human enables one in the repository settings.` | 19 | refusal |
+| `ship merge: the merge failed: "<error>" — whether #<n> landed is UNKNOWN; re-read the PR before stopping.` | 8 | refusal |
+| `ship merge: the merge was sent and the confirming read-back failed: <reason> — whether #<n> landed is UNKNOWN; re-read the PR before stopping.` | 8 | refusal |
+| `ship merge: the merge was sent and the read-back shows merged: <bool> at merge commit <sha\|-> — the landing is not proven.` | 9 | refusal |
+
+**Scope** — one PR's live head, its base branch's active rules, the repository's permitted merge
+methods, the PR's mergeability (re-read until definite or refused), one merge request, one
+read-back of `merged` plus the merge commit.
+
+**Examples**
+
+```
+$ fabrika ship merge 4321 --sha 03135b91
+merged	5c7d1e930a2b4f6d8e0c1a3b5d7f9e1c3a5b7d9f	squash
+```
+
+```
+$ fabrika ship merge 4321 --sha 03135b91
+ship merge: a merge queue governs main — the queue owns the method and the landing; run `fabrika ship enqueue` instead.
+$ echo $?
+16
+```
+
+**Grounding**
+
+- #6018 — the gap itself: `ship`'s only landing verb armed a queue, so a repo with
+  `allow_auto_merge: false` and `mergeQueue: null` had no verb that could land a PR, and every
+  stage before the merge was already portable.
+- `ship enqueue`'s method-flag argument, kept intact — the reason this is a second path rather
+  than a flag on the first.
+- ADR 0198 — arming is `ship enqueue`'s alone and every other path is a disarm site; a direct
+  landing arms nothing, so it opens no new disarm site.
+- The `operate` skill names `ship` the pipeline's single merge authority and the merge into the
+  default branch "the shipper's, once" — so the answer to a queueless repo is a verb here, not a
+  driver reaching for `gh pr merge`.
 
 ---
 
