@@ -183,28 +183,27 @@ describe("runCpApproval", () => {
 		expect(out.stdout).toBe(`cp-approval\tdischarge\tmember-approval:outsider@${HEAD}\n`);
 	});
 
-	it("answers n/a on a proven-absent CODEOWNERS — the repo declares no control plane", async () => {
+	it("never answers n/a on a proven-absent CODEOWNERS — an empty boundary is the `unknown` hold", async () => {
 		const out = await run([
 			[PULL, pull()],
 			[FILES, CP_FILES],
 			[OWNERS, errOut("gh: Not Found (HTTP 404)")],
 			[COMPARE, okOut("0")],
 		]);
-		expect(out.code).toBe(0);
-		expect(out.stdout).toBe("cp-approval\tn/a\tnot-control-plane\n");
+		expect(out.stdout).not.toContain("not-control-plane");
+		expect(out.stdout).toBe("cp-approval\tstop\tzero-owners\n");
 	});
 
-	it("names the waiver on stderr when the policy ships an unreadable boundary", async () => {
+	it("refuses a failed boundary read on 11 whatever the repo's config says (ADR 0220 §4)", async () => {
 		const out = await run([
 			[PULL, pull()],
 			[FILES, CP_FILES],
 			[OWNERS, errOut("gh: Bad gateway (HTTP 502)")],
-			[CONFIG, errOut("gh: Not Found (HTTP 404)")],
+			[CONFIG, okOut('{"unreadableCodeowners": "ship"}')],
 			[COMPARE, okOut("0")],
 		]);
-		expect(out.code).toBe(0);
-		expect(out.stdout).toBe("cp-approval\tn/a\tnot-control-plane\n");
-		expect(out.stderr.join("\n")).toContain("unreadableCodeowners");
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).not.toContain("not-control-plane");
 	});
 
 	it("refuses an UNREADABLE roster on 11 — never `stop`, never `awaiting approval` (#4223)", async () => {

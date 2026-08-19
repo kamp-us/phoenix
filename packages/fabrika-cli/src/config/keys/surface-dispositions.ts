@@ -19,7 +19,7 @@
  * the arm that was read, so a reader can check the claim rather than take it.
  *
  * **What is not here.** A surface whose behaviour another key already decides is that key's, not this
- * one's — zero CI workflows is `ci.noProducer`, an unreadable CODEOWNERS is `unreadableCodeowners`.
+ * one's — zero CI workflows is `ci.noProducer`.
  * A *path* key is not such a key: `roadmapFile` and `cycleDoc` say where a file lives, never what
  * happens when it is not there, so both surfaces are registered here (#6301's first review round
  * missed exactly this and the two entries were absent).
@@ -211,7 +211,7 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 	{
 		id: "codeowners",
 		disposition: "degrade",
-		note: "`.github/CODEOWNERS` carrying a control-plane row; a proven-absent file means the repo declares no control plane and the PR ships — an *unreadable* one is `unreadableCodeowners`'s question",
+		note: "`.github/CODEOWNERS` carrying a control-plane row; a proven-absent file is an empty row set and holds on `unknown`, and an *unreadable* one is the caller's `11` in every repo (ADR 0220 §4)",
 	},
 	{
 		id: "landing-path",

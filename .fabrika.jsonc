@@ -22,13 +22,10 @@
 		"/skills/triage/SKILL.md"
 	],
 
-	// What a §CP read does when `.github/CODEOWNERS` itself could not be read. The shipped default
-	// is "ship" — in a repo where CODEOWNERS is decoration, a transient read fault must not deadlock
-	// every PR. Phoenix declares the strict value, and that is the whole reason the key exists
-	// (founder ruling on #5603 comment 28): here CODEOWNERS IS the control-plane gate, so a failed
-	// read shipping a control-plane PR unreviewed is exactly the failure #4216 exists to prevent.
-	// A PROVEN-ABSENT CODEOWNERS is a different fact and not this key's business — absent means the
-	// repo declares no control plane and the PR ships, in phoenix as anywhere else.
+	// NOTHING READS THIS KEY. A §CP read that fails is the caller's exit 11 in every repo, and a
+	// proven-absent CODEOWNERS is the `unknown` hold — the founder reverted the per-repo policy on
+	// #5631, back to ADR 0220 §4. The strict value is kept declared so this repo cannot drift if the
+	// key is ever wired up again; what becomes of the key itself is the founder's to rule.
 	"unreadableCodeowners": "refuse",
 
 	// The repo's own commands that machine-read `.github/workflows/**`. `fabrika build check

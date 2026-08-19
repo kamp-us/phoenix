@@ -153,14 +153,14 @@ describe("runScope", () => {
 		expect(out.stdout).toContain("cp\tcontrol-plane");
 	});
 
-	it("is not-control-plane when the boundary is proven absent — this repo has no control plane", async () => {
+	it("holds on unknown when the boundary is proven absent — never match-everything", async () => {
 		const out = await run([
 			[PULL, pull({changedFiles: 1})],
 			[FILES, files("README.md")],
 			[OWNERS, errOut("gh: Not Found (HTTP 404)")],
 		]);
 		expect(out.code).toBe(0);
-		expect(out.stdout).toContain("cp\tnot-control-plane");
+		expect(out.stdout).toContain("cp\tunknown");
 	});
 
 	it("still holds on unknown for a boundary that reads fine and bounds nothing", async () => {
@@ -173,39 +173,26 @@ describe("runScope", () => {
 		expect(out.stdout).toContain("cp\tunknown");
 	});
 
-	it("refuses an UNREADABLE boundary on 11 when the repo declares `refuse`", async () => {
+	it("refuses an UNREADABLE boundary on 11 — a failed read is not `unknown`", async () => {
 		const out = await run([
 			[PULL, pull({changedFiles: 1})],
 			[FILES, files("README.md")],
 			[OWNERS, errOut("gh: Bad gateway (HTTP 502)")],
-			[CONFIG, okOut('{"unreadableCodeowners": "refuse"}')],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("the scope is UNKNOWN");
 	});
 
-	it("ships an UNREADABLE boundary on the shipped default, and names the waiver on stderr", async () => {
+	it("refuses a failed read whatever the repo's config says — never `not-control-plane`", async () => {
 		const out = await run([
 			[PULL, pull({changedFiles: 1})],
 			[FILES, files("README.md")],
 			[OWNERS, errOut("gh: Bad gateway (HTTP 502)")],
-			[CONFIG, errOut("gh: Not Found (HTTP 404)")],
-		]);
-		expect(out.code).toBe(0);
-		expect(out.stdout).toContain("cp\tnot-control-plane");
-		expect(out.stderr.join("\n")).toContain("unreadableCodeowners");
-	});
-
-	it("refuses on 11 when the POLICY could not be read either — nothing waives an unread gate", async () => {
-		const out = await run([
-			[PULL, pull({changedFiles: 1})],
-			[FILES, files("README.md")],
-			[OWNERS, errOut("gh: Bad gateway (HTTP 502)")],
-			[CONFIG, errOut("gh: Bad gateway (HTTP 502)")],
+			[CONFIG, okOut('{"unreadableCodeowners": "ship"}')],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stderr.at(-1)).toContain(".fabrika.jsonc");
+		expect(out.stdout).toBe("");
 	});
 
 	it("refuses zero changed files on 7", async () => {

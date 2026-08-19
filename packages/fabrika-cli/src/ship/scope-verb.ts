@@ -20,12 +20,12 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {UNREADABLE_CODEOWNERS} from "../config/keys/control-plane.ts";
 import {governedRootsOr} from "../config/paths.ts";
 import {listPullFiles} from "../io/pulls.ts";
 import {issueRefOf, partitionWithUi, renderIssueRef, shipNamespacesOf} from "../review/classes.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {CODEOWNERS_PATH, cpStateOf, readBoundary} from "./boundary.ts";
+import {readBoundary} from "./boundary.ts";
+import {classify} from "./codeowners.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {readLanding} from "./landing.ts";
 import {badNumber, NULL_TOKEN, resolvePull, resolveTargetRepo, scannedLine} from "./target.ts";
@@ -112,24 +112,14 @@ export const runScope = (
 		}
 
 		const boundary = yield* readBoundary(repo, pull.baseRef);
-		if (boundary._tag === "Refused") {
+		if (boundary._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read ${boundary.what} for #${pr}: ${boundary.reason} — the scope is UNKNOWN.`,
+				`${VERB}: cannot read the §CP boundary for #${pr}: ${boundary.reason} — the scope is UNKNOWN.`,
 				diagnostics,
 			);
 		}
-		if (boundary.boundary._tag === "Absent") {
-			diagnostics.push(
-				`${VERB}: ${CODEOWNERS_PATH} is proven absent at ${pull.baseRef} — this repo declares no control plane.`,
-			);
-		}
-		if (boundary.boundary._tag === "Waived") {
-			diagnostics.push(
-				`${VERB}: ${boundary.boundary.reason} — this repo's \`${UNREADABLE_CODEOWNERS}\` ships on an unreadable boundary.`,
-			);
-		}
-		const cp = cpStateOf(boundary.boundary, files);
+		const cp = classify(boundary.rows, files);
 		const state = lifecycleOf(pull.merged, pull.draft, pull.state);
 		const issue = issueRefOf(pull.body);
 

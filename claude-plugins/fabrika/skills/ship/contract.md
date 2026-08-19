@@ -347,18 +347,16 @@ control-plane; the required `governance` verdict floor is what stands behind an 
 covers everything — → `unknown` (a printed hold — the match-everything boundary is the #4336
 adopter incident and the #4401 trivial-pattern class).
 
-**An absent CODEOWNERS and an unreadable one are different answers.** A **proven-absent** (404)
-boundary is `not-control-plane`: this repo declares no control plane and the PR ships (founder
-ruling on #5603 comment 8, built as #6299). It used to parse to zero rows and land on the
-`unknown` hold, which gated every PR in a repo that had never declared a boundary. An
-**unreadable** boundary is the absence of a fact rather than a fact, so what happens to it is the
-repo's own `unreadableCodeowners` key in `.fabrika.jsonc`, read at the same base ref ([ADR
-0307](../../../../.decisions/0307-unreadable-codeowners-is-per-repo.md)): the shipped
-default is `"ship"` (classify `not-control-plane`, naming the waiver on stderr), and `"refuse"` is
-the `11`. **Phoenix declares `"refuse"`** — here CODEOWNERS *is* the control-plane gate, and a
+**An absent CODEOWNERS and an unreadable one are different answers, and neither is
+`not-control-plane`.** A **proven-absent** (404) boundary parses to zero rows and lands on the
+`unknown` hold. An **unreadable** boundary is the absence of a fact rather than a fact, so it is
+the `11` — unconditionally, in every repo. Here CODEOWNERS *is* the control-plane gate, and a
 transient read fault shipping a control-plane PR unreviewed is the failure #4216 exists to
-prevent. A `.fabrika.jsonc` that could not itself be read, or whose value did not decode, is `11`
-too: a policy nobody read waives nothing.
+prevent; ADR [0220](../../../../.decisions/0220-cp-surface-declared-at-standup.md) §4 names
+collapsing `unknown` → `not-control-plane` the recurring fail-open defect. A per-repo
+`unreadableCodeowners` key briefly made this configurable (#6299, ADR
+[0307](../../../../.decisions/0307-unreadable-codeowners-is-per-repo.md)); the founder reverted it
+on #5631 and nothing reads the key now.
 
 Deriving from CODEOWNERS rather than any prose or regex copy
 means this verb and the merge gate read one artifact and cannot disagree; the
@@ -389,7 +387,7 @@ downstream verb consumes, and that verb guards itself.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404); or it has zero changed files; or its non-empty diff derives zero required namespaces — a vacuous conjunction (#2765, ADR 0092) |
-| `11` | the PR, its file list, the §CP boundary (where this repo's `unreadableCodeowners` is `"refuse"`), or that key itself could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
+| `11` | the PR, its file list, or the §CP boundary could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
 | `13` | the changed-file enumeration is provably short (received < declared count) |
 
 **Errors**
@@ -494,11 +492,9 @@ platform here rather than adding a rule of its own.
 N=0 → `stop` `zero-owners` (an empty roster is a proven
 stop; an *unreadable* roster for **any** named team is the `11` refusal, never a stop — a union
 missing one arm is not a smaller union, it is an unknown one). A CODEOWNERS parse yielding
-no control-plane owner of either shape at all is N=0 — `stop` `zero-owners`. A **proven-absent**
-CODEOWNERS is not that case: it is `n/a` `not-control-plane`, the same answer `ship scope` prints
-for it. An **unreadable** one follows this repo's `unreadableCodeowners` key exactly as it does at
-`ship scope` — `"ship"` answers `n/a` and names the waiver on stderr, `"refuse"` (phoenix's declared
-value) is `11`. N=1 and the sole owner authored the PR → discharge only on the
+no control-plane owner of either shape at all is N=0 — `stop` `zero-owners`, and a **proven-absent**
+CODEOWNERS reaches that same branch through its empty row set. An **unreadable** one is `11`, the
+same answer `ship scope` gives it. N=1 and the sole owner authored the PR → discharge only on the
 sole owner's head-bound self-approval marker comment (`control-plane-self-approval @ <sha>`,
 a token deliberately outside every auto-merge namespace). N=1 non-author, or N≥2 → discharge
 only on a non-author member's APPROVED review whose `commit_id` prefix-matches `--sha`. Every
@@ -517,7 +513,7 @@ class, live in v1's approval scan).
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
-| `11` | the CODEOWNERS boundary (where this repo's `unreadableCodeowners` is `"refuse"`), that key itself, the roster, the reviews, the marker comments, or the live head could not be read — the discharge is UNKNOWN, never `stop`, never `awaiting approval` (#4223) |
+| `11` | the CODEOWNERS boundary, the roster, the reviews, the marker comments, or the live head could not be read — the discharge is UNKNOWN, never `stop`, never `awaiting approval` (#4223) |
 | `13` | the changed-file or comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page |
 
 **Errors**

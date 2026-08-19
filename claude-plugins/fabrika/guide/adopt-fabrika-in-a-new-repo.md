@@ -212,8 +212,7 @@ created those two labels on your board.
 `.fabrika.jsonc` at your repo root carries the keys the CLI reads
 ([`packages/fabrika-cli/src/repo-config.ts`](../../../packages/fabrika-cli/src/repo-config.ts)).
 Every key is fail-closed: an absent file, an absent key, an empty array and a malformed entry all
-give the narrowest behaviour, never the permissive one. `unreadableCodeowners` is the one key whose
-*shipped default* is the loose value, and the reason is below.
+give the narrowest behaviour, never the permissive one.
 
 - `capClearAuthors` — the GitHub accounts and teams that may clear one extra repair round on a pull
   request. Declare none and nobody can.
@@ -221,11 +220,9 @@ give the narrowest behaviour, never the permissive one. `unreadableCodeowners` i
   the prose leak scan. Declare none and nothing is exempt.
 - `workflowValidators` — your repo's own commands that machine-read `.github/workflows/**`. Declare
   none and that surface stands on `actionlint` alone.
-- `unreadableCodeowners` — `"ship"` or `"refuse"`: what a §CP read does when `.github/CODEOWNERS`
-  could not be read. Declare none and it ships, because in most repos CODEOWNERS is not the gate and
-  a transient read fault must not deadlock every PR. Declare `"refuse"` if CODEOWNERS *is* your
-  control-plane gate — phoenix does. An **absent** CODEOWNERS is a different fact and needs no key:
-  it means your repo declares no control plane, and every PR ships with no approval gate.
+- `unreadableCodeowners` — `"ship"` or `"refuse"`. **Nothing reads it.** A §CP read that fails is
+  exit `11` in every repo and an absent `.github/CODEOWNERS` is the `unknown` hold, whatever you
+  declare here: the founder reverted the per-repo policy on #5631, back to ADR 0220 §4.
 
 The path keys say where your repo keeps the files fabrika reads by name. **Leave a key out and you
 get phoenix's value**, which is what every repo ran on before these keys existed:

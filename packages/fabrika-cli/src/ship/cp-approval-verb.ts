@@ -17,12 +17,11 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {UNREADABLE_CODEOWNERS} from "../config/keys/control-plane.ts";
 import {listComments} from "../io/issues.ts";
 import {listPullFiles} from "../io/pulls.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {cpStateOf, readBoundary} from "./boundary.ts";
-import {controlPlaneOwnersOf, splitTeam} from "./codeowners.ts";
+import {readBoundary} from "./boundary.ts";
+import {classify, controlPlaneOwnersOf, splitTeam} from "./codeowners.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {behindBase, listReviews, listTeamMembers} from "./github.ts";
 import {
@@ -105,15 +104,10 @@ export const runCpApproval = (
 		}
 
 		const boundary = yield* readBoundary(repo, pull.baseRef);
-		if (boundary._tag === "Refused") {
-			return unknownRead(boundary.what, boundary.reason, diagnostics);
+		if (boundary._tag === "Unreadable") {
+			return unknownRead("the §CP boundary", boundary.reason, diagnostics);
 		}
-		if (boundary.boundary._tag === "Waived") {
-			diagnostics.push(
-				`${VERB}: ${boundary.boundary.reason} — this repo's \`${UNREADABLE_CODEOWNERS}\` ships on an unreadable boundary.`,
-			);
-		}
-		const rows = boundary.boundary._tag === "Rows" ? boundary.boundary.rows : [];
+		const rows = boundary.rows;
 
 		const drift = yield* behindBase(repo, pull.baseRef, bound);
 		const behind = drift._tag === "Ok" ? drift.value : 0;
@@ -131,7 +125,7 @@ export const runCpApproval = (
 					)
 				: answer(`cp-approval\t${outcome}\t${mechanism}`, diagnostics);
 
-		if (cpStateOf(boundary.boundary, files) === "not-control-plane") {
+		if (classify(rows, files) === "not-control-plane") {
 			return emit("n/a", "not-control-plane", 0);
 		}
 
