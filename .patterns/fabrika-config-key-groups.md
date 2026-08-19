@@ -92,6 +92,13 @@ cannot reconcile an issue into a shape nobody asked for (#4285). A convention co
 one, because the config is what the convention would be read from — and a check written at a call
 site is a check the next verb forgets.
 
+Declaring `refuseLoad` also makes that key's own `Malformed` a load refusal, relayed in the
+decoder's words: a value that did not decode leaves the key with nothing to check, and
+`{"governedRoots": []}` un-governs the config exactly as `{"governedRoots": [".decisions/"]}` does
+(#6314). The two document-level arms stay out of it — `Unknown` proves nothing about what the repo
+declared, and a document that is not a JSON object already resolves *every* key `Malformed`, so
+there is no weakened value to read off either one.
+
 **Two keys that answer one question are joined in one module, not read apart.** `boardVocabulary`
 says what each triage facet may *keep*; `triageFacets` says what it may *delete*. Read separately
 they drift into #4285's shape — a declared lane no facet owns is written once and never superseded.

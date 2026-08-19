@@ -166,6 +166,36 @@ describe("a config cannot un-govern itself", () => {
 	it("does not refuse on an unreadable file — that is UNKNOWN, not a bad config", () => {
 		expect(loadConfig({_tag: "Unreadable", reason: "EIO"})._tag).toBe("Config");
 	});
+
+	it.each([
+		{shape: "an empty list", text: '{"governedRoots": []}', words: "nothing would be governed"},
+		{shape: "a value that is not an array", text: '{"governedRoots": 42}', words: "not an array"},
+	])("refuses the whole load on $shape, in the decoder's words", ({text, words}) => {
+		const load = fromText(text);
+		expect(load._tag).toBe("Refused");
+		if (load._tag !== "Refused") return;
+		expect(load.reason).toContain("governedRoots");
+		expect(load.reason).toContain(words);
+	});
+
+	it("refuses every key off a malformed-value load, the same as a too-narrow one", () => {
+		expect(
+			resolve(fromText('{"governedRoots": [], "capClearAuthors": ["@a"]}'), capClearAuthorsKey)
+				._tag,
+		).toBe("Malformed");
+	});
+
+	it("does not refuse on a document that is not a JSON object — every key is already malformed", () => {
+		const load = fromText("[]");
+		expect(load._tag).toBe("Config");
+		expect(resolve(load, governedRootsKey)._tag).toBe("Malformed");
+	});
+
+	it("leaves a malformed key that raises no load refusal to its own key", () => {
+		const load = fromText('{"docLeakExempt": [7]}');
+		expect(load._tag).toBe("Config");
+		expect(resolve(load, docLeakExemptKey)._tag).toBe("Malformed");
+	});
 });
 
 describe("the registry", () => {

@@ -7,7 +7,9 @@
  * **That self-inclusion is enforced at load, not by convention.** A config can edit its own
  * governed-path list, so a config whose roots do not cover `.fabrika.jsonc` could un-govern itself —
  * the one change nobody would ever be asked to justify. {@link governedRootsKey}'s `refuseLoad`
- * refuses the whole load in that case, naming the key.
+ * refuses the whole load in that case, naming the key — and a declared value that does not decode
+ * at all refuses it too, since an unusable root list un-governs the config just as effectively
+ * (#6314).
  *
  * This module ships the key, its default and that refusal. Threading it into `review/classes.ts` and
  * `governance scope`, and the rest of the path surface, is #6296's.
