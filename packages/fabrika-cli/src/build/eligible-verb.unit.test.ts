@@ -2,20 +2,22 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {BAD_SECTIONS, BLOCKED, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {BLOCKED, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {runEligible} from "./eligible-verb.ts";
 import {issue} from "./fixtures.test-support.ts";
 
 const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
 const PARENT = /^gh api repos\/o\/r\/issues\/4312\/parent/;
-const LEDGER = /^gh api repos\/o\/r\/issues\/4300$/;
-const PRED = (n: number) => new RegExp(`^gh api repos/o/r/issues/${n}$`);
+const EDGES =
+	/^gh api --paginate repos\/o\/r\/issues\/4312\/dependencies\/blocked_by\?per_page=100$/;
+const BLOCKER = (n: number) => new RegExp(`^gh api repos/o/r/issues/${n}$`);
 
 const NOT_FOUND = errOut("gh: Not Found (HTTP 404)");
 const GATEWAY = errOut("gh: Bad gateway (HTTP 502)");
 
-const ledger = (body: string) =>
-	issue({number: 4300, body: `# Epic\n\n## Dependencies\n\n${body}\n`});
+/** The `blocked_by` payload, shaped like the endpoint's rows rather than like the parser. */
+const edges = (...numbers: ReadonlyArray<number>): ExecResult =>
+	okOut(JSON.stringify(numbers.map((number) => ({number, state: "open"}))));
 
 const options = {
 	number: 4312,
@@ -53,77 +55,84 @@ const commitLog = (...messages: ReadonlyArray<string>): ExecResult =>
 	okOut(messages.map((message, i) => `${TIP.slice(0, 39)}${i}\x1f${message}\x1e`).join(""));
 
 describe("runEligible", () => {
-	it("answers eligible for a standalone issue, with parent null", async () => {
+	it("answers eligible for a standalone issue with no edges, with parent null", async () => {
 		const out = await run([
 			[ISSUE, issue()],
 			[PARENT, NOT_FOUND],
+			[EDGES, edges()],
 		]);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({answer: "eligible", number: 4312, parent: null});
+		expect(out.stderr.at(-1)).toBe("build eligible: scanned 0 blocked_by edges; standalone.");
 	});
 
-	it("answers eligible when every named predecessor is closed", async () => {
+	it("answers eligible when every blocker the graph names is closed", async () => {
 		const out = await run([
 			[ISSUE, issue()],
 			[PARENT, okOut("4300\n")],
-			[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
-			[PRED(210), issue({number: 210, state: "closed"})],
+			[EDGES, edges(210)],
+			[BLOCKER(210), issue({number: 210, state: "closed"})],
 		]);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).parent).toBe(4300);
-		expect(out.stderr.at(-1)).toContain("scanned 1 dependency edge");
+		expect(out.stderr.at(-1)).toContain("scanned 1 blocked_by edge");
 	});
 
-	it("refuses on 16 and NAMES the open edge", async () => {
-		const out = await run([
+	/**
+	 * The migration's own case (#5913): the prose block is no longer an input, so an edge that exists
+	 * only in the graph is the whole gate. A reader still parsing `## Dependencies` would see no row
+	 * for this child and answer `eligible`.
+	 */
+	it("holds back a child blocked by a native edge no prose row names", async () => {
+		const {out, calls} = await runWatched([
 			[ISSUE, issue()],
 			[PARENT, okOut("4300\n")],
-			[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312\n- #4312 requires: #210")],
-			[PRED(210), issue({number: 210, state: "open"})],
+			[EDGES, edges(210)],
+			[BLOCKER(210), issue({number: 210, state: "open"})],
+			...RANGE_ENDPOINTS,
+			[ASSEMBLY_LOG, commitLog("chore: unrelated")],
 		]);
 		expect(out.code).toBe(BLOCKED);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toBe(
-			"build eligible: blocked by 1 open dependency edge: requires: #210.",
-		);
+		expect(out.stderr.at(-1)).toBe("build eligible: blocked by 1 open blocked_by edge: #210.");
+		// The parent ledger body is never fetched — the prose block is not an input any more.
+		expect(calls.some((line) => line === "gh api repos/o/r/issues/4300")).toBe(false);
+	});
+
+	it("gates a STANDALONE issue on its own edges — no parent ledger to derive from", async () => {
+		const out = await run([
+			[ISSUE, issue()],
+			[PARENT, NOT_FOUND],
+			[EDGES, edges(210)],
+			[BLOCKER(210), issue({number: 210, state: "open"})],
+		]);
+		expect(out.code).toBe(BLOCKED);
+		expect(out.stderr.at(-1)).toBe("build eligible: blocked by 1 open blocked_by edge: #210.");
 	});
 
 	it("names EVERY open edge, not only the first", async () => {
 		const out = await run([
 			[ISSUE, issue()],
-			[PARENT, okOut("4300\n")],
-			[LEDGER, ledger("- phase 1: #210, #211\n- phase 2: #4312")],
-			[PRED(210), issue({number: 210, state: "open"})],
-			[PRED(211), issue({number: 211, state: "open"})],
+			[PARENT, NOT_FOUND],
+			[EDGES, edges(210, 211)],
+			[BLOCKER(210), issue({number: 210, state: "open"})],
+			[BLOCKER(211), issue({number: 211, state: "open"})],
 		]);
 		expect(out.code).toBe(BLOCKED);
 		expect(out.stderr.at(-1)).toBe(
-			"build eligible: blocked by 2 open dependency edges: phase #210, phase #211.",
+			"build eligible: blocked by 2 open blocked_by edges: #210, #211.",
 		);
 	});
 
-	it("treats a ledger-local ref as an open edge — unfiled work is open work", async () => {
+	it("counts a blocker the token cannot see as open, never as discharged", async () => {
 		const out = await run([
 			[ISSUE, issue()],
-			[PARENT, okOut("4300\n")],
-			[LEDGER, ledger("- phase 1: C1\n- phase 2: #4312")],
+			[PARENT, NOT_FOUND],
+			[EDGES, edges(210)],
+			[BLOCKER(210), NOT_FOUND],
 		]);
 		expect(out.code).toBe(BLOCKED);
-		expect(out.stderr.at(-1)).toBe(
-			"build eligible: blocked by 1 open dependency edge: phase C1 (unfiled, so open).",
-		);
-	});
-
-	it("refuses an unparseable Dependencies block on 4 — never reads it as 'no edges'", async () => {
-		const out = await run([
-			[ISSUE, issue()],
-			[PARENT, okOut("4300\n")],
-			[LEDGER, ledger("- #4312 comes after the API work")],
-		]);
-		expect(out.code).toBe(BAD_SECTIONS);
-		expect(out.stderr.at(-1)).toBe(
-			'build eligible: parent #4300 has no parseable "## Dependencies" block — eligibility cannot be derived, and "no edges found" is never read as "eligible".',
-		);
+		expect(out.stderr.at(-1)).toBe("build eligible: blocked by 1 open blocked_by edge: #210.");
 	});
 
 	it("refuses a proven-absent issue on 7", async () => {
@@ -161,45 +170,53 @@ describe("runEligible", () => {
 			expect(out.stderr.at(-1)).toContain('eligibility is UNKNOWN, never "eligible"');
 		});
 
-		it("the parent ledger — never 'no dependencies'", async () => {
+		it("the edge list — never 'no edges, so not blocked'", async () => {
 			const out = await run([
 				[ISSUE, issue()],
-				[PARENT, okOut("4300\n")],
-				[LEDGER, GATEWAY],
+				[PARENT, NOT_FOUND],
+				[EDGES, GATEWAY],
 			]);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
 			expect(out.stdout).toBe("");
-			expect(out.stderr.at(-1)).toContain("cannot read parent #4300");
+			expect(out.stderr.at(-1)).toContain("cannot read the blocked_by edges of #4312");
 		});
 
-		it("a predecessor, with nothing else proven open", async () => {
+		it("a 404 on the edge list of an issue already proven open", async () => {
 			const out = await run([
 				[ISSUE, issue()],
-				[PARENT, okOut("4300\n")],
-				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
-				[PRED(210), GATEWAY],
+				[PARENT, NOT_FOUND],
+				[EDGES, NOT_FOUND],
+			]);
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stderr.at(-1)).toContain("answered 404 for an issue already proven open");
+		});
+
+		it("a blocker's state, with nothing else proven open", async () => {
+			const out = await run([
+				[ISSUE, issue()],
+				[PARENT, NOT_FOUND],
+				[EDGES, edges(210)],
+				[BLOCKER(210), GATEWAY],
 			]);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
 			expect(out.stdout).toBe("");
-			expect(out.stderr.some((line) => line.includes("cannot read phase predecessor #210"))).toBe(
-				true,
-			);
+			expect(out.stderr.some((line) => line.includes("cannot read blocker #210"))).toBe(true);
 		});
 	});
 
 	/**
-	 * The epic-run arm (#6063): inside a one-PR run every predecessor issue is open by design, so the
-	 * closed-state proxy alone makes every phase-2 child permanently blocked. Each case pins one half
-	 * of the two-source rule — and the two negatives pin that the second source only ever discharges
+	 * The epic-run arm (#6063): inside a one-PR run every blocker issue is open by design, so the
+	 * closed-state proxy alone makes every later-phase child permanently blocked. Each case pins one
+	 * half of the two-source rule — and the negatives pin that the second source only ever discharges
 	 * on evidence it actually read.
 	 */
-	describe("a predecessor is discharged by a closed issue OR by a commit on epic/<n>", () => {
-		it("discharges an OPEN predecessor whose work landed on the assembly branch", async () => {
+	describe("a blocker is discharged by a closed issue OR by a commit on epic/<n>", () => {
+		it("discharges an OPEN blocker whose work landed on the assembly branch", async () => {
 			const out = await run([
 				[ISSUE, issue()],
 				[PARENT, okOut("4300\n")],
-				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
-				[PRED(210), issue({number: 210, state: "open"})],
+				[EDGES, edges(210)],
+				[BLOCKER(210), issue({number: 210, state: "open"})],
 				...RANGE_ENDPOINTS,
 				[ASSEMBLY_LOG, commitLog("feat(guide): the front door (#210)\n\nPart of #4300")],
 			]);
@@ -208,47 +225,47 @@ describe("runEligible", () => {
 			expect(out.stderr.at(-1)).toContain("origin/main..epic/4300 adds a commit naming #210");
 		});
 
-		it("reads no branch at all when every predecessor is already closed", async () => {
+		it("reads no branch at all when every blocker is already closed", async () => {
 			const {out, calls} = await runWatched([
 				[ISSUE, issue()],
 				[PARENT, okOut("4300\n")],
-				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
-				[PRED(210), issue({number: 210, state: "closed"})],
+				[EDGES, edges(210)],
+				[BLOCKER(210), issue({number: 210, state: "closed"})],
 			]);
 			expect(out.code).toBe(0);
 			expect(calls.some((line) => line.startsWith("git"))).toBe(false);
 		});
 
-		it("reads no branch for a standalone issue", async () => {
+		it("reads no branch for a standalone issue, which has no assembly branch", async () => {
 			const {out, calls} = await runWatched([
 				[ISSUE, issue()],
 				[PARENT, NOT_FOUND],
+				[EDGES, edges(210)],
+				[BLOCKER(210), issue({number: 210, state: "open"})],
 			]);
-			expect(JSON.parse(out.stdout).parent).toBe(null);
+			expect(out.code).toBe(BLOCKED);
 			expect(calls.some((line) => line.startsWith("git"))).toBe(false);
 		});
 
-		it("stays blocked when the branch names no commit for the open predecessor", async () => {
+		it("stays blocked when the branch names no commit for the open blocker", async () => {
 			const out = await run([
 				[ISSUE, issue()],
 				[PARENT, okOut("4300\n")],
-				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
-				[PRED(210), issue({number: 210, state: "open"})],
+				[EDGES, edges(210)],
+				[BLOCKER(210), issue({number: 210, state: "open"})],
 				...RANGE_ENDPOINTS,
 				[ASSEMBLY_LOG, commitLog("feat(guide): some other child (#211)")],
 			]);
 			expect(out.code).toBe(BLOCKED);
-			expect(out.stderr.at(-1)).toBe(
-				"build eligible: blocked by 1 open dependency edge: phase #210.",
-			);
+			expect(out.stderr.at(-1)).toBe("build eligible: blocked by 1 open blocked_by edge: #210.");
 		});
 
 		it("never discharges off a branch it could not read — absent epic/<n> stays 16", async () => {
 			const out = await run([
 				[ISSUE, issue()],
 				[PARENT, okOut("4300\n")],
-				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
-				[PRED(210), issue({number: 210, state: "open"})],
+				[EDGES, edges(210)],
+				[BLOCKER(210), issue({number: 210, state: "open"})],
 				[ASSEMBLY, errOut("fatal: ambiguous argument 'epic/4300'")],
 			]);
 			expect(out.code).toBe(BLOCKED);
@@ -262,8 +279,8 @@ describe("runEligible", () => {
 			const out = await run([
 				[ISSUE, issue()],
 				[PARENT, okOut("4300\n")],
-				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
-				[PRED(210), issue({number: 210, state: "open"})],
+				[EDGES, edges(210)],
+				[BLOCKER(210), issue({number: 210, state: "open"})],
 				[ASSEMBLY, okOut(`${TIP}\n`)],
 				[TRUNK, GATEWAY],
 			]);
@@ -277,8 +294,8 @@ describe("runEligible", () => {
 			const out = await run([
 				[ISSUE, issue()],
 				[PARENT, okOut("4300\n")],
-				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
-				[PRED(210), issue({number: 210, state: "open"})],
+				[EDGES, edges(210)],
+				[BLOCKER(210), issue({number: 210, state: "open"})],
 				[ASSEMBLY, okOut(`${TIP}\n`)],
 				[TRUNK, okOut("main\n")],
 				[MERGE_BASE, errOut("fatal: refusing to merge unrelated histories")],
@@ -287,12 +304,12 @@ describe("runEligible", () => {
 			expect(out.stderr.some((line) => line.includes("no merge base with origin/main"))).toBe(true);
 		});
 
-		it("never discharges off a log that failed — an unread predecessor stays 11", async () => {
+		it("never discharges off a log that failed — an unread blocker stays 11", async () => {
 			const out = await run([
 				[ISSUE, issue()],
 				[PARENT, okOut("4300\n")],
-				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
-				[PRED(210), GATEWAY],
+				[EDGES, edges(210)],
+				[BLOCKER(210), GATEWAY],
 				...RANGE_ENDPOINTS,
 				[ASSEMBLY_LOG, errOut("fatal: bad object")],
 			]);
@@ -302,37 +319,18 @@ describe("runEligible", () => {
 				true,
 			);
 		});
-
-		it("never discharges an unfiled ledger-local ref — no commit can name one", async () => {
-			const out = await run([
-				[ISSUE, issue()],
-				[PARENT, okOut("4300\n")],
-				[LEDGER, ledger("- phase 1: C1, #210\n- phase 2: #4312")],
-				[PRED(210), issue({number: 210, state: "open"})],
-				...RANGE_ENDPOINTS,
-				[ASSEMBLY_LOG, commitLog("feat: landed (#210)")],
-			]);
-			expect(out.code).toBe(BLOCKED);
-			expect(out.stderr.at(-1)).toBe(
-				"build eligible: blocked by 1 open dependency edge: phase C1 (unfiled, so open).",
-			);
-		});
 	});
 
-	it("an unread predecessor never masks a proven-open one, and is reported beside it", async () => {
+	it("an unread blocker never masks a proven-open one, and is reported beside it", async () => {
 		const out = await run([
 			[ISSUE, issue()],
-			[PARENT, okOut("4300\n")],
-			[LEDGER, ledger("- phase 1: #210, #211\n- phase 2: #4312")],
-			[PRED(210), GATEWAY],
-			[PRED(211), issue({number: 211, state: "open"})],
+			[PARENT, NOT_FOUND],
+			[EDGES, edges(210, 211)],
+			[BLOCKER(210), GATEWAY],
+			[BLOCKER(211), issue({number: 211, state: "open"})],
 		]);
 		expect(out.code).toBe(BLOCKED);
-		expect(out.stderr.at(-1)).toBe(
-			"build eligible: blocked by 1 open dependency edge: phase #211.",
-		);
-		expect(out.stderr.some((line) => line.includes("cannot read phase predecessor #210"))).toBe(
-			true,
-		);
+		expect(out.stderr.at(-1)).toBe("build eligible: blocked by 1 open blocked_by edge: #211.");
+		expect(out.stderr.some((line) => line.includes("cannot read blocker #210"))).toBe(true);
 	});
 });

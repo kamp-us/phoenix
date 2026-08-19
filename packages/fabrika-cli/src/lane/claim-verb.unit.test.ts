@@ -6,6 +6,7 @@ import {
 	comments as buildComments,
 	issue as buildIssue,
 	LANE_UUID,
+	NO_BLOCKERS,
 	truncatedComments,
 } from "../build/fixtures.test-support.ts";
 import {fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
@@ -230,6 +231,7 @@ describe("a driver's claim and the builder it spawns", () => {
 					purpose: "build",
 					override: null,
 					overrideLane: null,
+					cites: null,
 				}),
 				fakeShell([
 					[BUILD_ISSUE, claimable],
@@ -247,6 +249,7 @@ describe("a driver's claim and the builder it spawns", () => {
 						),
 					],
 					[perm("agent"), okOut("write\n")],
+					NO_BLOCKERS,
 				]).layer,
 			).pipe(Effect.provide(fakeFs({files: {}}).layer)),
 		);

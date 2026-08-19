@@ -1,9 +1,11 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {errOut, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {runApply} from "./apply-verb.ts";
+import {COMMENTS, claimPage, EXPIRED, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
 import {
+	CLAIMED_ELSEWHERE,
 	CRITERIA_REQUIRED,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
@@ -85,7 +87,9 @@ const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
 ) =>
-	Effect.runPromise(Effect.provide(runApply({...options, ...overrides}), fakeShell(script).layer));
+	Effect.runPromise(
+		Effect.provide(runApply({...options, ...overrides}), guardedShell(script).layer),
+	);
 
 describe("runApply", () => {
 	it("stamps the whole transition and prints the tab-separated triaged line", async () => {
@@ -115,7 +119,7 @@ describe("runApply", () => {
 	});
 
 	it("homes BEFORE it labels, so the homing guard never sees a triaged un-homed issue", async () => {
-		const shell = fakeShell(happy());
+		const shell = guardedShell(happy());
 		await Effect.runPromise(Effect.provide(runApply(options), shell.layer));
 		const writes = shell.calls.filter((c) => PATCH.test(c) || REMOVE.test(c) || ADD.test(c));
 		expect(writes[0]).toBe("gh api --method PATCH repos/o/r/issues/4312 -F milestone=47");
@@ -123,7 +127,7 @@ describe("runApply", () => {
 	});
 
 	it("removes the superseded priority and never the applied one (#4285)", async () => {
-		const shell = fakeShell(happy());
+		const shell = guardedShell(happy());
 		await Effect.runPromise(Effect.provide(runApply(options), shell.layer));
 		const removes = shell.calls.filter((c) => REMOVE.test(c));
 		expect(removes).toEqual([
@@ -134,7 +138,7 @@ describe("runApply", () => {
 	});
 
 	it("leaves a label no facet owns entirely alone", async () => {
-		const shell = fakeShell([
+		const shell = guardedShell([
 			[once(ISSUE), issue(["area:pipeline", "p1"], 47)],
 			[ISSUE, issue(["area:pipeline", "type:bug", "p2", "status:triaged", "ready-for:agent"], 47)],
 			[LABELS, VOCABULARY],
@@ -148,7 +152,7 @@ describe("runApply", () => {
 	});
 
 	it("clears the milestone under --lane, because a lane-exempt issue is not homed (ADR 0208)", async () => {
-		const shell = fakeShell([
+		const shell = guardedShell([
 			[once(ISSUE), issue(["status:needs-triage"], 47)],
 			[
 				ISSUE,
@@ -191,7 +195,7 @@ describe("runApply", () => {
 		["ready-for", {readyFor: "robot"}],
 		["lane", {home: null, lane: "axis:whatever"}],
 	])("refuses an off-vocabulary --%s on 10, before any read", async (_flag, override) => {
-		const shell = fakeShell(happy());
+		const shell = guardedShell(happy());
 		const out = await Effect.runPromise(
 			Effect.provide(runApply({...options, ...override}), shell.layer),
 		);
@@ -207,7 +211,7 @@ describe("runApply", () => {
 	});
 
 	it("refuses to write a label the repo does not define — the API would mint it (#4285)", async () => {
-		const shell = fakeShell([
+		const shell = guardedShell([
 			[once(ISSUE), issue(["status:needs-triage"], null)],
 			[ISSUE, issue([], null)],
 			[LABELS, okOut(["type:bug", "p2", "status:triaged"].join("\n"))],
@@ -243,7 +247,7 @@ describe("runApply", () => {
 	});
 
 	it("separates an UNREADABLE issue from an absent one, and writes nothing", async () => {
-		const shell = fakeShell([[ISSUE, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const shell = guardedShell([[ISSUE, errOut("gh: Bad gateway (HTTP 502)")]]);
 		const out = await Effect.runPromise(Effect.provide(runApply(options), shell.layer));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("nothing was written");
@@ -335,7 +339,7 @@ describe("runApply", () => {
 	 */
 	describe("the acceptance-criteria precondition on --ready-for agent", () => {
 		const criteriaShell = (body: string) =>
-			fakeShell([
+			guardedShell([
 				[ISSUE, issue(["status:needs-triage"], null, body)],
 				[LABELS, VOCABULARY],
 				[MILESTONES, OPEN_MILESTONES],
@@ -402,9 +406,74 @@ describe("runApply", () => {
 
 	it("refuses an unresolvable repo rather than guessing one", async () => {
 		const out = await Effect.runPromise(
-			Effect.provide(runApply({...options, env: {}}), fakeShell([]).layer),
+			Effect.provide(runApply({...options, env: {}}), guardedShell([]).layer),
 		);
 		expect(out.code).toBe(1);
 		expect(out.stderr.at(-1)).toContain("cannot resolve a target repo");
+	});
+});
+
+/** #5644: the claim protocol only holds if the mutating verbs re-read it. */
+describe("runApply — the target guard", () => {
+	const MINE = "session-mine";
+	const THEIRS = "session-theirs";
+	const mine = {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: MINE} as Record<
+		string,
+		string | undefined
+	>;
+	const closed = okOut(
+		JSON.stringify({
+			number: 4312,
+			title: "t",
+			body: CRITERIA_BODY,
+			state: "closed",
+			labels: [],
+			html_url: "https://example.test/issues/4312",
+			milestone: null,
+		}),
+	);
+
+	const guard = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
+		const shell = guardedShell(script);
+		const out = await Effect.runPromise(
+			Effect.provide(runApply({...options, env: mine}), shell.layer),
+		);
+		return {out, wrote: shell.calls.some((line) => ADD.test(line) || PATCH.test(line))};
+	};
+
+	it("refuses a closed issue on 7 and writes nothing", async () => {
+		const {out, wrote} = await guard([[ISSUE, closed]]);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(wrote).toBe(false);
+	});
+
+	it("refuses a live claim held by another session on 17 and writes nothing", async () => {
+		const {out, wrote} = await guard([
+			...happy(),
+			[COMMENTS, claimPage({session: THEIRS, createdAt: LIVE})],
+		]);
+		expect(out.code).toBe(CLAIMED_ELSEWHERE);
+		expect(wrote).toBe(false);
+	});
+
+	it("applies when the live claim is this session's own", async () => {
+		const {out} = await guard([
+			...happy(),
+			[COMMENTS, claimPage({session: MINE, createdAt: LIVE})],
+		]);
+		expect(out.code).toBe(0);
+	});
+
+	it("applies over an issue nobody has claimed", async () => {
+		const {out} = await guard(happy());
+		expect(out.code).toBe(0);
+	});
+
+	it("applies when the only foreign claim has aged out", async () => {
+		const {out} = await guard([
+			...happy(),
+			[COMMENTS, claimPage({session: THEIRS, createdAt: EXPIRED})],
+		]);
+		expect(out.code).toBe(0);
 	});
 });

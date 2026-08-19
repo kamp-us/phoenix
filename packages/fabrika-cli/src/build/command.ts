@@ -23,7 +23,7 @@ import {DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runBranch} from "./branch-verb.ts";
 import {runCheck} from "./check-verb.ts";
-import {runClaim, runConfirm, runRelease} from "./claim-verb.ts";
+import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
 import {type DocumentRead, runClear} from "./clear-verb.ts";
 import {runCommit} from "./commit-verb.ts";
 import {runEligible} from "./eligible-verb.ts";
@@ -34,8 +34,11 @@ import {runPr, runPrBody} from "./pr-verb.ts";
 import {runPush} from "./push-verb.ts";
 import {
 	ADMISSION_EXIT_CODES,
+	CITATION_GRAMMAR,
 	CLAIM_PURPOSES,
+	DECISION_TYPE_LABEL,
 	DEFAULT_CLAIM_PURPOSE,
+	EPIC_TYPE_LABEL,
 	READY_FOR_AGENT,
 } from "./scope-admission.ts";
 import {runScratch} from "./scratch-verb.ts";
@@ -117,7 +120,7 @@ const pick = leafCommand(
 ).pipe(
 	Command.withShortDescription("The ranked pool of issues this lane may pick up."),
 	Command.withDescription(
-		'The ranked candidate pool: status:triaged + unassigned + admitted by the shared admission test (scope axis against the ROADMAP.md "## Focus" declaration, audience axis on ready-for:agent), then filtered by this verb\'s own acceptance-criteria axis — a body the wire reader does not answer Found on is excluded as no-acceptance-criteria, an axis the shared admission test does not carry because build claim reaches it over an epic. Every bucket paginated in full. Prints {"pool":[…],"excluded":[{"number","home","reason"}],"scanned":{"p0":n,"p1":n,"p2":n},"focus":{…}}; each excluded issue names which axis refused it, and an empty pool is a fact on exit 0, readable against the scanned counts. Exits 1 (--limit is not a positive integer), 4 (the "## Focus" declaration reads but does not parse — never read as "no focus"), 11 (any bucket read failed or came back truncated, or the declaration could not be read — the pool is UNKNOWN, never partial and never unfiltered). Example: fabrika build pick --limit 5',
+		'The ranked candidate pool: status:triaged + unassigned + admitted by the shared admission test (scope axis against the ROADMAP.md "## Focus" declaration, audience axis on ready-for:agent), then filtered by this verb\'s own acceptance-criteria axis — a body the wire reader does not answer Found on is excluded as no-acceptance-criteria, an axis the shared admission test does not carry because build claim reaches it over an epic, and finally by the native blocked_by graph (ADR 0301) — a candidate with any blocker still open is excluded as blocked, and one whose edge list could not be read is excluded as unreadable with its reason on stderr. Every bucket paginated in full. Prints {"pool":[…],"excluded":[{"number","home","reason"}],"scanned":{"p0":n,"p1":n,"p2":n},"focus":{…}}; each excluded issue names which axis refused it, and an empty pool is a fact on exit 0, readable against the scanned counts. Exits 1 (--limit is not a positive integer), 4 (the "## Focus" declaration reads but does not parse — never read as "no focus"), 11 (any bucket read failed or came back truncated, or the declaration could not be read — the pool is UNKNOWN, never partial and never unfiltered). Example: fabrika build pick --limit 5',
 	),
 );
 
@@ -130,7 +133,7 @@ const eligible = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether one issue's dependency gate is open."),
 	Command.withDescription(
-		'One issue\'s dependency gate, derived from the parent ledger\'s "## Dependencies" topology and never read off a label. Prints {"answer":"eligible","number":n,"parent":n|null}; blocked and unknown print nothing. Every predecessor is read before the answer is seated, so the verdict does not depend on the order the topology lists them in, and a predecessor that could not be read is named on stderr as its own row rather than counted closed. Exits 4 (the parent\'s "## Dependencies" block is absent or unparseable — "no parseable edges" is never "no edges"), 7 (the issue is proven absent or closed), 11 (the issue, parent or a predecessor could not be read, with nothing proven open — UNKNOWN, never "eligible"), 16 (proven blocked — EVERY open edge is named on stderr, alongside any predecessor that could not be read). Example: fabrika build eligible 4312',
+		'One issue\'s dependency gate, derived from GitHub\'s native blocked_by graph and nothing else (ADR 0301) — never off a label, and never off the epic ledger\'s prose "## Dependencies" block, which is a rendering rather than an input. Prints {"answer":"eligible","number":n,"parent":n|null}; blocked and unknown print nothing. Every blocker is read before the answer is seated, so the verdict does not depend on the order the graph lists them in, and a blocker that could not be read is named on stderr as its own row rather than counted closed. Exits 7 (the issue is proven absent or closed), 11 (the issue, its parent, its edge list or a blocker could not be read, with nothing proven open — UNKNOWN, never "eligible"), 16 (proven blocked — EVERY open edge is named on stderr, alongside any blocker that could not be read). Example: fabrika build eligible 4312',
 	),
 );
 
@@ -158,7 +161,7 @@ const claim = leafCommand(
 		override: Flag.string("override").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"claim an issue the admission test refused on either axis, naming why; requires --override-lane, and both are written into the claim marker",
+				"claim an issue the admission test refused on the scope or audience axis, naming why; requires --override-lane, and both are written into the claim marker. A type-axis refusal is not overridable — a decision cites its ruling, an epic changes its --purpose",
 			),
 		),
 		overrideLane: Flag.string("override-lane").pipe(
@@ -167,9 +170,15 @@ const claim = leafCommand(
 				"the lane an --override is taken for; required with it, refused without it",
 			),
 		),
+		cites: Flag.string("cites").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				`the founder ruling comment this build transcribes, as ${CITATION_GRAMMAR} — the type axis's one arm, and only on a ${DECISION_TYPE_LABEL}`,
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({number, token, purpose, override, overrideLane, repo}) {
+	Effect.fn(function* ({number, token, purpose, override, overrideLane, cites, repo}) {
 		yield* emit(
 			yield* runClaim({
 				number,
@@ -181,13 +190,14 @@ const claim = leafCommand(
 				purpose,
 				override: Option.getOrNull(override),
 				overrideLane: Option.getOrNull(overrideLane),
+				cites: Option.getOrNull(cites),
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Race the claim marker on an issue and win it or name the winner."),
 	Command.withDescription(
-		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated (#5175); the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used. --token makes the re-claim idempotent per LANE: handed the token this lane already holds, a number that lane already owns answers won with that same marker and writes nothing (#5782), while a same-session marker under another nonce is a sibling lane and races normally. A lost race retracts this run's own marker and exits 15, never 0 — including when the winner is another lane of THIS session, since ownership turns on the whole token and never the session id (#6037); an unset CLAUDE_CODE_SESSION_ID, a --token that is not a claim token of this session, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum), 15 (proven lost), and from the admission test: ${admissionExits}. Example: fabrika build claim 4312 --purpose gate`,
+		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated (#5175); the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. The type axis binds a build claim against an ISSUE only, so ${DECISION_TYPE_LABEL} and ${EPIC_TYPE_LABEL} refuse before any marker is written; --cites ${CITATION_GRAMMAR} opens it on a decision whose choice a founder already recorded on that issue, and the URL must name this repository and the issue being judged. It is not an override: it says the refusal does not apply, and it is never accepted for an epic. Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used and "cites" when a ruling was cited. --token makes the re-claim idempotent per LANE: handed the token this lane already holds, a number that lane already owns answers won with that same marker and writes nothing (#5782), while a same-session marker under another nonce is a sibling lane and races normally. A lost race retracts this run's own marker and exits 15, never 0 — including when the winner is another lane of THIS session, since ownership turns on the whole token and never the session id (#6037); an unset CLAUDE_CODE_SESSION_ID, a --token that is not a claim token of this session, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. After the admission test, and only against an ISSUE, a blockedness gate reads the native blocked_by graph (ADR 0301): a number with any blocker still open refuses on 16 naming every one of them, and an edge list that could not be read is 11 — never "not blocked". It is not overridable, because the remedy is waiting rather than an edit. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum), 15 (proven lost), 16 (proven blocked), and from the admission test: ${admissionExits}. Example: fabrika build claim 4312 --purpose gate`,
 	),
 );
 
@@ -337,7 +347,7 @@ const check = leafCommand(
 	{
 		surface: Flag.string("surface").pipe(
 			Flag.withDescription(
-				"code | prose | plan — the surface whose validators run; the skill names it, this verb anchors it against the diff",
+				"code | prose | plan | workflows — the surface whose validators run; the skill names it, this verb anchors it against the diff. A diff of nothing but .github/workflows/** is the workflows surface",
 			),
 		),
 		repo: repoFlag,
@@ -350,7 +360,7 @@ const check = leafCommand(
 		"Run this surface's validators here, with the build cache bypassed.",
 	),
 	Command.withDescription(
-		'Run this surface\'s validators in this tree, with the build cache BYPASSED — a cache hit from another checkout has returned another tree\'s green. Prints {"verdict":"green","surface":"…","tree":"…","ran":[…]}; red and unknown print nothing. This verb predicts; ci.yml decides, and supersedes it where they disagree. Exits 7 (the diff against the base is empty — zero scope, ADR 0092), 10 (--surface is off-enum or provably mismatches the diff), 11 (the tree root could not be read, a validator could not be executed, `.fabrika.jsonc` could not be read, or the lane\'s claim could not be read — UNKNOWN, never green), 14 (the checked-out branch is not this lane\'s), 15 (the lane\'s claim is held by another session), 18 (proven red). Example: fabrika build check --surface code',
+		'Run this surface\'s validators in this tree, with the build cache BYPASSED — a cache hit from another checkout has returned another tree\'s green. Prints {"verdict":"green","surface":"…","tree":"…","ran":[…]}; red and unknown print nothing. A workflows-only diff (.github/workflows/**) is --surface workflows: actionlint over the changed files when the tree has it, plus the commands `.fabrika.jsonc` declares under `workflowValidators` (each naming the files it `reads`); a changed workflow nothing opened is reported in `unvalidated`, and a run that opened none of them is UNKNOWN. This verb predicts; ci.yml decides, and supersedes it where they disagree. Exits 7 (the diff against the base is empty — zero scope, ADR 0092), 10 (--surface is off-enum or provably mismatches the diff), 11 (the tree root could not be read, a validator could not be executed, `.fabrika.jsonc` could not be read, or the lane\'s claim could not be read — UNKNOWN, never green), 14 (the checked-out branch is not this lane\'s), 15 (the lane\'s claim is held by another session), 18 (proven red), 22 (no surface validates any changed file). Example: fabrika build check --surface code',
 	),
 );
 
@@ -548,6 +558,42 @@ const clear = leafCommand(
 	),
 );
 
+const adopt = leafCommand(
+	"adopt",
+	{
+		number: issueArg,
+		session: Flag.string("session").pipe(
+			Flag.withDescription(
+				"the dead session whose claim this run adopts; naming this session refuses",
+			),
+		),
+		reason: Flag.string("reason").pipe(
+			Flag.withDescription("why the succession is taken — recorded on the marker, required"),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({number, session, reason, repo}) {
+		yield* emit(
+			yield* runAdopt({
+				number,
+				repo: Option.getOrNull(repo),
+				env: process.env,
+				session,
+				reason,
+				uuid: randomUUID(),
+				at: new Date().toISOString(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Record on the board that a dead session's claim passes to this one.",
+	),
+	Command.withDescription(
+		'Post the succession marker a dead session\'s stranded claim needs: build-adopt: <dead-session> by build:<this-session>:<uuid> · <ISO> · reason: <text>. It writes ONE comment and posts no claim marker — "fabrika build release <n>" then resolves that claim as this session\'s and retracts both comments (ADR 0295). The adopted claim answers mine to confirm and admits branch/note/scratch/tree, so the successor inherits the lane; build claim over it refuses on 15, because a second marker would outlive the release. Authority is the poster\'s repository permission, read at release time (ADR 0055): an adopt from an account below write is counted, reported, and never a succession. Prints {"answer":"adopted","number":n,"session":"<dead-session>","token":"…"}. Exits 1 (CLAUDE_CODE_SESSION_ID unset, an empty --session or --reason, a --session carrying whitespace or ·, a multi-line --reason, or --session naming this very session — plain release already covers that), 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN), 9 (the marker landed but does not read back). Example: fabrika build adopt 6037 --session 3672779a --reason "driver died in the 2026-08-18 API outage"',
+	),
+);
+
 export const buildCommand = Command.make("build").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
@@ -557,6 +603,7 @@ export const buildCommand = Command.make("build").pipe(
 		claim,
 		confirm,
 		release,
+		adopt,
 		issue,
 		branch,
 		scratch,

@@ -135,6 +135,24 @@ fabrika status bootstrap design-manifest <<'EOF'
 EOF
 ```
 
+<!-- anchor: MACHINE-READ-SURFACE --> **`roadmap-focus` is the exception to "draft by inference".**
+`ROADMAP.md` is read by machine — `triage homes` joins the repo's open milestones to its `## Arcs`
+and `## Campaigns` rows by the `#<number>` in each row's **second** cell, never by the title — so a
+plausible-looking draft joins nothing. The content (which arcs, which campaigns) is still yours and
+the human's; the *shape* is not. Read the grammar before drafting — it is stated in full in the same
+section the registry lives in (`fabrika wire doc-section --heading "status bootstrap" <
+<skill-base>/contract.md`) — then read the row count back off the notice:
+
+```bash
+fabrika status bootstrap roadmap-focus <<'EOF'
+…the roadmap you and the human settled on…
+EOF
+# status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 1 arc, 0 campaigns.
+```
+
+`0 arcs` is written and conformed, and it is also a roadmap nothing can join — fix it now rather
+than leaving `triage homes` to refuse over it in some later session.
+
 <!-- anchor: DESIGN-LAW-IS-REPO-CONTENT --> **The design law is repo content, never skill content.**
 phoenix's manifest is one repo's instance. Write what *this* repo's evidence supports; a pillar
 carried in from somewhere else is a foreign opinion wearing local clothes.
@@ -224,6 +242,7 @@ their own Required-repo-files section (`fabrika wire doc-section --heading "Requ
 | The `status` verb group in the installed `fabrika` CLI | it is every command on this page; the group is greenfield and not yet built | **degrade** — say no readout appeared, name what you cannot see, and answer by hand what you can. An absent front door is a stated UNKNOWN, never a clean state. |
 | A resolvable skill roster — the installed plugin's own skills tree, or `claude-plugins/fabrika/skills/` in the target repo, else that same path in the checkout the CLI itself runs from | the menu is derived from it and `status config` parses each skill's declared surfaces | **degrade** — a roster that resolves and holds nothing renders `empty` at exit `0`; only an explicitly-passed absent path refuses. A zero roster is never rendered as "no skills exist". |
 | A resolvable repo — `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote | the board and digest fields read against it | **degrade** — those two fields render `unknown` with the reason; the menu and config fields are local and still answer. The readout never fails whole because one source is unreachable. |
+| `id:gitignore-row` `.gitignore` covering `.fabrika/` | `fabrika lane` writes its per-checkout ledger under `.fabrika/`, and `operate`'s row points here for the fix | **bootstrap** — `status bootstrap gitignore-row` appends the row and reads it back; until then `status config` reports the row missing, and a lane run in that repo leaves one machine's state committable. |
 | The board label taxonomy — the whole set `status bootstrap label-taxonomy` creates, which is that verb's registry and is deliberately not restated here | `status board` counts its buckets, and every verb that writes a state label refuses when its own is absent (#4285) | **bootstrap** — absent labels render `unknown (label absent)`, never `0`, and `status bootstrap label-taxonomy` creates the whole set. Read the set off the verb, never off this row: a row naming a subset is what left an adopter with five of the sixteen (#5772). |
 | The issue-shape markers — `wayfinding:map`, `prototyping:spike`, `grilling:session` | `status config` reports them missing for the three skills that mint issues carrying them, and this skill is what those rows point at | **bootstrap** — `status bootstrap issue-shape-markers` creates all three; until then `map open`, `spike open` and `grill open` each exit `7` naming the label they need. |
 | A durable readout artifact — one open issue titled exactly `Governance readout` | `status readout` reads the landed-decision digest from it | **bootstrap** — `status bootstrap readout-artifact` creates it; until then the field is `absent`, which is a fact, not a failed read. |

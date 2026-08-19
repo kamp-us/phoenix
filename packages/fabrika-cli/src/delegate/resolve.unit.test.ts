@@ -1,4 +1,4 @@
-import {mkdtempSync, rmSync, writeFileSync} from "node:fs";
+import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {NodeServices} from "@effect/platform-node";
@@ -6,7 +6,8 @@ import {Effect, PlatformError} from "effect";
 import {describe, expect, it} from "vitest";
 import {faultingShell, signalledExitError, signalledShell} from "../fakes.test-support.ts";
 import {NO_IMPLEMENTATION} from "../verb.ts";
-import type {LocalInstall} from "./local.ts";
+import {type LocalInstall, PACKAGE_NAME, probeLocalInstall} from "./local.ts";
+import {type RepoPredicate, repoPredicate} from "./reason.ts";
 import type {CopyOrigin} from "./repository.ts";
 import {
 	foreignCheckoutRefusal,
@@ -73,12 +74,12 @@ describe("resolve", () => {
 			selfPackageRoot: GLOBAL,
 			origin: INSTALLED,
 			repoRoot: "/repo",
-			local: {_tag: "corrupt", reason: "manifest declares no version"},
+			local: {_tag: "corrupt", reason: repoPredicate`declares no version`},
 		});
 		expect(resolution).toEqual({
 			_tag: "warn-and-run-here",
 			repoRoot: "/repo",
-			reason: "manifest declares no version",
+			reason: "declares no version",
 		});
 	});
 
@@ -184,26 +185,78 @@ describe("foreignCheckoutRefusal", () => {
 });
 
 describe("globalWarning", () => {
-	it("names BOTH versions — the global's and the one the repo declared", () => {
-		const text = globalWarning({
+	/**
+	 * The reasons come off their real producers, never a literal: the defect was the *splice* between
+	 * the template and whatever each producer hands it, so a test that supplies its own clause tests
+	 * the one arrangement that was never broken (#6027).
+	 */
+	const warn = (reason: RepoPredicate, declared: string | undefined, repoRoot = "/repo") =>
+		globalWarning({repoRoot, reason, globalVersion: "0.1.0", declared});
+
+	const firstLine = (text: string) => text.split("\n")[0];
+
+	const absentReason = (): RepoPredicate => {
+		const resolution = resolve({
+			selfPackageRoot: GLOBAL,
+			origin: INSTALLED,
 			repoRoot: "/repo",
-			reason: "it has no local install",
-			globalVersion: "0.1.0",
-			declared: "^0.4.0",
+			local: {_tag: "absent"},
 		});
+		if (resolution._tag !== "warn-and-run-here") throw new Error("expected the loud branch");
+		return resolution.reason;
+	};
+
+	/**
+	 * A real repo on disk whose installed manifest is well-formed JSON but declares no `version`.
+	 *
+	 * Deliberately not unparseable JSON: Node's own resolver rejects that before the probe reads it,
+	 * so the reason would come from `node-resolve.ts` wrapping a Node error string that changes
+	 * between runtime versions. This shape reaches `local.ts`'s branch and is stable.
+	 */
+	const corruptProbe = async (): Promise<{
+		readonly reason: RepoPredicate;
+		readonly repoRoot: string;
+	}> => {
+		const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "fabrika-corrupt-")));
+		const installed = join(repoRoot, "node_modules", PACKAGE_NAME);
+		mkdirSync(installed, {recursive: true});
+		writeFileSync(join(repoRoot, "package.json"), "{}");
+		writeFileSync(join(installed, "package.json"), '{"name":"@kampus/fabrika-cli"}');
+		try {
+			const probed = await Effect.runPromise(
+				probeLocalInstall(repoRoot).pipe(Effect.provide(NodeServices.layer)),
+			);
+			if (probed._tag !== "corrupt") throw new Error(`expected corrupt, got ${probed._tag}`);
+			return {reason: probed.reason, repoRoot};
+		} finally {
+			rmSync(repoRoot, {recursive: true, force: true});
+		}
+	};
+
+	it("reads as one sentence on the absent branch, not a path with a clause jammed after it", () => {
+		expect(firstLine(warn(absentReason(), "^0.4.0"))).toBe(
+			"fabrika: running the GLOBAL install (v0.1.0) — /repo has no local install.",
+		);
+	});
+
+	it("reads as one sentence on a corrupt branch too", async () => {
+		const {reason, repoRoot} = await corruptProbe();
+		expect(firstLine(warn(reason, "^0.4.0", repoRoot))).toBe(
+			`fabrika: running the GLOBAL install (v0.1.0) — ${repoRoot} has an unusable install: ` +
+				`${join(repoRoot, "node_modules", PACKAGE_NAME, "package.json")} declares no "version".`,
+		);
+	});
+
+	it("names BOTH versions — the global's and the one the repo declared", () => {
+		const text = warn(absentReason(), "^0.4.0");
 		expect(text).toContain("v0.1.0");
 		expect(text).toContain("^0.4.0");
+		expect(text).toContain("/repo");
 		expect(text).toContain(GLOBAL_WARNING_DISABLED_ENV);
 	});
 
 	it("says so plainly when the repo declares no dependency at all", () => {
-		const text = globalWarning({
-			repoRoot: "/repo",
-			reason: "it has no local install",
-			globalVersion: "0.1.0",
-			declared: undefined,
-		});
-		expect(text).toContain("declares no @kampus/fabrika-cli dependency");
+		expect(warn(absentReason(), undefined)).toContain("declares no @kampus/fabrika-cli dependency");
 	});
 });
 

@@ -5,9 +5,12 @@
  * The property under test throughout is the three-state law: a proven negative is an exit-`0` token,
  * an unread source is `unknown`, and the two never collapse.
  */
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
+import type {ExecResult} from "../io/exec.ts";
+import {ok} from "../io/git.ts";
+import type {StdinRead} from "../io/stdin.ts";
 import {AWAITING_RELEASE, PLANNED, STATUSES} from "../labels.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
 import {DEFAULT_STALE_MINUTES} from "../lane/stale.ts";
@@ -26,14 +29,23 @@ import {ANSWER} from "../verb.ts";
 import {type BoardRead, type Bucket, boardState, runBoard} from "./board-verb.ts";
 import {
 	BUILDABLE_SURFACES,
+	FABRIKA_IGNORE_ROW,
 	findSurface,
 	ISSUE_SHAPE_MARKERS,
 	knownIds,
 	MARKER_COLOR,
+	roadmapCount,
+	runBootstrap,
 	TAXONOMY,
 } from "./bootstrap-verb.ts";
-import {NOT_BUILDABLE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {configState, countsOf, runConfig, type SurfaceRow} from "./config-verb.ts";
+import {
+	NOT_BUILDABLE,
+	PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH,
+	WRITE_UNKNOWN,
+	ZERO_SCOPE,
+} from "./codes.ts";
+import {configState, countsOf, probeRow, runConfig, type SurfaceRow} from "./config-verb.ts";
 import {noAsOf, oneLine, readNow} from "./fields.ts";
 import {runMenu} from "./menu-verb.ts";
 import {
@@ -45,7 +57,7 @@ import {
 	readoutField,
 	runOpen,
 } from "./open-verb.ts";
-import {digestComment, issueNumberOf, runReadout} from "./readout-verb.ts";
+import {ARTIFACT_TITLE, digestComment, issueNumberOf, runReadout} from "./readout-verb.ts";
 import {
 	IN_REPO_ROSTER,
 	PLUGIN_MANIFEST,
@@ -376,12 +388,12 @@ describe("status bootstrap", () => {
 	it("refuses an id outside the registry on 12, naming what IS buildable", () => {
 		expect(findSurface("merge-queue")).toBeUndefined();
 		expect(knownIds()).toBe(
-			"design-manifest, roadmap-focus, label-taxonomy, issue-shape-markers, readout-artifact",
+			"design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact",
 		);
 	});
 
-	it("carries exactly five ids", () => {
-		expect(BUILDABLE_SURFACES).toHaveLength(5);
+	it("carries exactly six ids", () => {
+		expect(BUILDABLE_SURFACES).toHaveLength(6);
 		expect(NOT_BUILDABLE).toBe(12);
 	});
 
@@ -407,6 +419,283 @@ describe("status bootstrap", () => {
 		const taxonomy = new Set(TAXONOMY.map((label) => label.name));
 		for (const label of ISSUE_SHAPE_MARKERS) expect(taxonomy.has(label.name)).toBe(false);
 		expect(TAXONOMY.every((label) => label.color === null)).toBe(true);
+	});
+});
+
+/**
+ * #5777: the row declaring `` `.gitignore` covering `.fabrika/` `` was probed by existence alone, so
+ * a repo whose `.gitignore` says nothing about `.fabrika/` scored it `present` — a false positive
+ * indistinguishable from a correct answer. The buildable surface is the other half: nothing could
+ * make the row true.
+ */
+describe("the .fabrika/ gitignore row", () => {
+	const declared = {
+		surfaceId: "gitignore-row",
+		disposition: "degrade",
+		consequence: "the verbs still work",
+		subject: {_tag: "PathContaining", path: ".gitignore", contains: ".fabrika/"},
+	} as const;
+
+	const ctx = {
+		repoRoot: "/repo",
+		labels: {_tag: "Known", labels: new Set<string>()} as const,
+		repoName: "o/r",
+		asOf: noAsOf,
+	};
+
+	const probe = (files: Record<string, string | null>, unreadable: ReadonlyArray<string> = []) =>
+		Effect.runPromise(
+			Effect.provide(probeRow("operate", declared, ctx), fakeFs({files, unreadable}).layer),
+		);
+
+	it("reads the file, so an uncovered .fabrika/ is missing and not present", async () => {
+		const row = await probe({"/repo/.gitignore": "node_modules\ndist\n"});
+		expect(row.presence).toBe("missing");
+		expect(row.detail).toBe(".gitignore does not cover .fabrika/");
+	});
+
+	it("reports present only when the row is actually there — phoenix's own answer", async () => {
+		const row = await probe({"/repo/.gitignore": "node_modules\n\n# fabrika\n/.fabrika/\n"});
+		expect(row.presence).toBe("present");
+	});
+
+	it("keeps an absent file missing and an unreadable one unknown", async () => {
+		expect((await probe({})).presence).toBe("missing");
+		expect((await probe({"/repo/.gitignore": "x"}, ["/repo/.gitignore"])).presence).toBe("unknown");
+	});
+
+	const bootstrap = (files: Record<string, string | null>) => {
+		const fs = fakeFs({files});
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "gitignore-row",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		).then((outcome) => ({outcome, written: fs.written}));
+	};
+
+	it("appends the row to an existing .gitignore and leaves every prior line intact", async () => {
+		const {outcome, written} = await bootstrap({"/repo/.gitignore": "node_modules\ndist\n"});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "gitignore-row",
+			target: ".gitignore",
+			readback: "ok",
+		});
+		const after = written.get("/repo/.gitignore") ?? "";
+		expect(after.startsWith("node_modules\ndist\n")).toBe(true);
+		expect(after).toContain(FABRIKA_IGNORE_ROW);
+	});
+
+	it("writes the row into a repo carrying no .gitignore at all", async () => {
+		const {outcome, written} = await bootstrap({});
+		expect(outcome.code).toBe(ANSWER);
+		expect(written.get("/repo/.gitignore")).toContain(FABRIKA_IGNORE_ROW);
+	});
+
+	// The collision guard is the row, not the file: a `.gitignore` is a file many tools contribute to.
+	it("is idempotent — a row already there is exists at exit 0 and nothing is written", async () => {
+		const {outcome, written} = await bootstrap({"/repo/.gitignore": "dist\n/.fabrika/\n"});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout).outcome).toBe("exists");
+		expect(written.size).toBe(0);
+	});
+
+	it("never truncates a file it could not read — an unreadable target is UNKNOWN, not empty", async () => {
+		const fs = fakeFs({files: {"/repo/.gitignore": "dist\n"}, unreadable: ["/repo/.gitignore"]});
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "gitignore-row",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * #5778: `roadmap-focus` writes a machine-read file — `triage homes` joins milestones through its
+ * `#<n>` cells — and a byte-match read-back reads the same over a roadmap that parses to nothing.
+ * The counts make an inert draft visible at the moment it is written; they gate nothing, and the
+ * other file surface's bytes do not move.
+ */
+describe("the roadmap-focus row count", () => {
+	const write = (content: string, surfaceId = "roadmap-focus") => {
+		const fs = fakeFs({files: {}});
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId,
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "Text", text: content} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		);
+	};
+
+	const PARSING = [
+		"# Roadmap",
+		"",
+		"## Arcs",
+		"",
+		"| Arc | Milestone | State |",
+		"|---|---|---|",
+		"| Geçit | #46 | active |",
+		"| Sözlük | #47 | next |",
+		"",
+		"## Campaigns",
+		"",
+		"| Campaign | Milestone | State |",
+		"|---|---|---|",
+		"| fabrika everywhere | #48 | active |",
+		"",
+	].join("\n");
+
+	// What drafting by inference produces: the milestone's TITLE where the parser wants `#<n>`.
+	const INERT = [
+		"# Roadmap",
+		"",
+		"## Arcs",
+		"",
+		"| Arc | Milestone | State |",
+		"|---|---|---|",
+		"| Geçit | Sözlük — search and discovery | active |",
+		"",
+	].join("\n");
+
+	it("reports what parsed, and a roadmap that parses to nothing is still created", async () => {
+		const outcome = await write(INERT);
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "roadmap-focus",
+			target: "ROADMAP.md",
+			readback: "ok",
+			arcs: 0,
+			campaigns: 0,
+		});
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 0 arcs, 0 campaigns.",
+		]);
+	});
+
+	it("counts the rows a parsing roadmap joins, singular at one", async () => {
+		const outcome = await write(PARSING);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({arcs: 2, campaigns: 1});
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 2 arcs, 1 campaign.",
+		]);
+		expect(roadmapCount(PARSING).clause).toBe("2 arcs, 1 campaign");
+	});
+
+	it("leaves the other file surface's bytes and notice exactly as they were", async () => {
+		const outcome = await write("# Design system manifest\n", "design-manifest");
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "design-manifest",
+			target: "design-system-manifest.md",
+			readback: "ok",
+		});
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: created design-system-manifest.md for design-manifest, read-back conformed.",
+		]);
+	});
+});
+
+/**
+ * #5776: the read-back re-scanned the eventually-consistent issues *list*, so a correct first
+ * creation reported `READBACK_MISMATCH`. Every case here scripts that list to stay empty after the
+ * write — the branch is proven only when the outcome no longer depends on it.
+ */
+describe("the readout-artifact read-back reads the created issue by number", () => {
+	const LIST = /^gh api --paginate repos\/o\/r\/issues\?state=open/;
+	const CREATE = /^gh api --method POST repos\/o\/r\/issues /;
+	const READBACK = /^gh api repos\/o\/r\/issues\/3$/;
+	const CREATED = okOut(JSON.stringify({number: 3, html_url: "https://github.com/o/r/issues/3"}));
+
+	const artifact = (overrides: Readonly<Record<string, unknown>> = {}) =>
+		okOut(
+			JSON.stringify({
+				number: 3,
+				title: ARTIFACT_TITLE,
+				body: "",
+				state: "open",
+				labels: [],
+				html_url: "https://github.com/o/r/issues/3",
+				...overrides,
+			}),
+		);
+
+	const run = (readback: ExecResult) => {
+		const shell = fakeShell([
+			[LIST, okOut("")],
+			[CREATE, CREATED],
+			[READBACK, readback],
+		]);
+		const fs = fakeFs({files: {}});
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "readout-artifact",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(shell.layer, fs.layer),
+			),
+		).then((outcome) => ({outcome, calls: shell.calls}));
+	};
+
+	it("reports created off the issue's own resource, never a second list read", async () => {
+		const {outcome, calls} = await run(artifact());
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "readout-artifact",
+			target: "o/r#3",
+			readback: "ok",
+		});
+		expect(calls.filter((line) => LIST.test(line))).toHaveLength(1);
+		expect(calls.filter((line) => READBACK.test(line))).toHaveLength(1);
+	});
+
+	it("spends READBACK_MISMATCH only on a proven 404", async () => {
+		const {outcome} = await run(errOut("gh: Not Found (HTTP 404)"));
+		expect(outcome.code).toBe(READBACK_MISMATCH);
+	});
+
+	it("reads an unreadable re-read as WRITE_UNKNOWN, never as a mismatch", async () => {
+		const {outcome} = await run(errOut("gh: Bad Gateway (HTTP 502)"));
+		expect(outcome.code).toBe(WRITE_UNKNOWN);
+	});
+
+	it("proves the artifact, not merely that the number resolves", async () => {
+		const wrongTitle = await run(artifact({title: "Something else"}));
+		expect(wrongTitle.outcome.code).toBe(READBACK_MISMATCH);
+		const closed = await run(artifact({state: "closed"}));
+		expect(closed.outcome.code).toBe(READBACK_MISMATCH);
 	});
 });
 

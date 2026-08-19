@@ -5,15 +5,22 @@
  * The filter is fail-closed on every axis, and two of them are negative tests rather than positive
  * ones:
  *
- * - **The admission test decides both the scope and audience axes**, imported from
+ * - **The admission test decides the scope, audience and type axes**, imported from
  *   [`./scope-admission.ts`](./scope-admission.ts) and re-derived nowhere (ADR 0245). An issue with
  *   no `ready-for:` label is excluded — absence is an unknown audience, never an agent audience
- *   (#4780) — and one homed outside the declared focus is excluded with its own reason.
+ *   (#4780) — and one homed outside the declared focus is excluded with its own reason. The type
+ *   set used to be this file's private constant, which is how a directly-handed `type:decision`
+ *   reached `claim` with nothing to refuse it (#5490).
  * - **Any assignee excludes.** Assignment is the one attribute that keeps a human's live document out
  *   of an agent's pool (#4764, #4693).
  * - **A body with no readable acceptance-criteria block excludes**, reported on the same
  *   excluded-with-axis channel: `ready-for:agent` over no contract is a lane that can only be
  *   discovered at the review gate, once a whole build has been spent (#6025).
+ * - **A candidate with an open `blocked_by` edge excludes**, on the same channel, read off the
+ *   native graph and nothing else (ADR 0301). It runs last because it is the only axis that costs a
+ *   network call, and an unreadable graph excludes the candidate with its reason on stderr — the
+ *   whole pool is not refused for one edge list, but a candidate whose blockedness is UNKNOWN is
+ *   never offered.
  *
  * **Either every bucket was read in full, or the answer is `11`.** v1's pool printed nothing for a
  * failed bucket and kept going, so a `gh` 5xx on the p0 bucket read as "no p0s"
@@ -27,15 +34,18 @@ import {Effect, type FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
+import {readBlockedGate} from "./blockedness.ts";
 import {BAD_SECTIONS, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {type CandidateIssue, listLabelled} from "./github.ts";
 import {
 	admissionOf,
+	BUILDABLE_TYPE_LABELS,
 	exclusionReasonOf,
 	focusReport,
 	focusScopeLine,
 	homeOf,
 	readDeclaredFocus,
+	typeAxisOf,
 } from "./scope-admission.ts";
 import {resolveTargetRepo} from "./target.ts";
 
@@ -44,9 +54,6 @@ const VERB = "build pick";
 /** The priority buckets, in the order the spine reads them. */
 const BUCKETS = ["p0", "p1", "p2"] as const;
 type Bucket = (typeof BUCKETS)[number];
-
-/** The four types an agent lane may take. `type:decision` and `type:epic` never enter. */
-const TYPES = new Set(["type:feature", "type:chore", "type:bug", "type:investigation"]);
 
 export interface PickOptions {
 	readonly repo: string | null;
@@ -73,28 +80,46 @@ interface PoolEntry {
  */
 const NO_CRITERIA = "no-acceptance-criteria";
 
+/**
+ * The word for a candidate the native `blocked_by` graph says must not start yet (ADR 0301).
+ *
+ * It is not an admission axis and does not live in `./scope-admission.ts`: that module is pure and
+ * total over facts already on an issue, while this one costs a paged network read per candidate. It
+ * is a reason on this channel rather than a silent drop because the `status:blocked` label it
+ * replaces was dropped by accident — the two-`status:`-label hygiene test above excluded those
+ * issues with no reason printed, and with the label retired that accident stops firing at all.
+ */
+const BLOCKED_REASON = "blocked";
+
 /** One issue the filter kept out, with the axis that refused it (#5013). */
 interface ExclusionEntry {
 	readonly number: number;
 	readonly home: string | null;
-	readonly reason: NonNullable<ReturnType<typeof exclusionReasonOf>> | typeof NO_CRITERIA;
+	readonly reason:
+		| NonNullable<ReturnType<typeof exclusionReasonOf>>
+		| typeof NO_CRITERIA
+		| typeof BLOCKED_REASON;
 }
 
 /**
- * The axes that are this verb's own — board hygiene, not admission.
+ * Board hygiene, plus the type axis read through the shared predicate.
  *
- * The audience axis is deliberately absent: it lives in the admission test with the scope axis, so an
- * issue it excludes can be *reported* with its reason instead of vanishing from the pool unexplained.
+ * The audience and scope axes are deliberately absent: they run below, so an issue they exclude is
+ * *reported* with its reason instead of vanishing from the pool unexplained. Type stays up here
+ * because this pool has never offered a decision or an epic at all, and reporting one as excluded
+ * would be a change to what the pool says rather than to where the rule lives.
  */
 export const isCandidate = (issue: CandidateIssue): boolean => {
 	if (issue.isPullRequest || issue.assigned) return false;
 	const status = issue.labels.filter((label) => label.startsWith("status:"));
 	if (status.length !== 1 || status[0] !== "status:triaged") return false;
-	return issue.labels.filter((label) => label.startsWith("type:")).every((t) => TYPES.has(t));
+	return typeAxisOf(issue)._tag === "Buildable";
 };
 
 const typeOf = (issue: CandidateIssue): string =>
-	issue.labels.find((label) => TYPES.has(label))?.slice("type:".length) ?? "";
+	issue.labels
+		.find((label) => BUILDABLE_TYPE_LABELS.some((buildable) => buildable === label))
+		?.slice("type:".length) ?? "";
 
 /** Milestone order inside a bucket: homed before unhomed, lower milestone first, then oldest number. */
 const rankWithinBucket = (a: PoolEntry, b: PoolEntry): number => {
@@ -137,6 +162,8 @@ export const runPick = (
 		const scanned: Record<Bucket, number> = {p0: 0, p1: 0, p2: 0};
 		const pool: PoolEntry[] = [];
 		const excluded: ExclusionEntry[] = [];
+		const blockedEdges: string[] = [];
+		const unreadableEdges: string[] = [];
 		for (const bucket of BUCKETS) {
 			const listed = yield* listLabelled(resolved.repo, ["status:triaged", bucket]);
 			if (listed._tag === "Failure") {
@@ -157,6 +184,25 @@ export const runPick = (
 					excluded.push({number: issue.number, home: homeOf(issue), reason: NO_CRITERIA});
 					continue;
 				}
+				// Last of the three, because it is the only one that costs a network call: the admission
+				// test and the criteria block are both answered off facts already in hand, so a candidate
+				// they refuse is never paid for here. An unreadable graph excludes with its reason stated
+				// rather than refusing the whole pool (ADR 0301) — the candidate is dropped, never kept.
+				const gate = yield* readBlockedGate(resolved.repo, issue.number);
+				if (gate._tag === "Unknown") {
+					unreadableEdges.push(
+						`${VERB}: cannot read the blocked_by edges of #${issue.number}: ${gate.reason} — excluded, because blockedness UNKNOWN is never "not blocked".`,
+					);
+					excluded.push({number: issue.number, home: homeOf(issue), reason: "unreadable"});
+					continue;
+				}
+				if (gate._tag === "Blocked") {
+					blockedEdges.push(
+						`${VERB}: #${issue.number} is blocked by ${gate.open.map((blocker) => `#${blocker}`).join(", ")}.`,
+					);
+					excluded.push({number: issue.number, home: homeOf(issue), reason: BLOCKED_REASON});
+					continue;
+				}
 				entries.push({
 					number: issue.number,
 					title: issue.title,
@@ -169,6 +215,7 @@ export const runPick = (
 		}
 
 		const criteriaExcluded = excluded.filter((row) => row.reason === NO_CRITERIA).length;
+		const graphExcluded = blockedEdges.length + unreadableEdges.length;
 
 		return answer(
 			JSON.stringify({
@@ -178,8 +225,10 @@ export const runPick = (
 				focus: focusReport(focus),
 			}),
 			[
-				`${VERB}: scanned p0 ${scanned.p0}, p1 ${scanned.p1}, p2 ${scanned.p2} in ${resolved.repo}; ${pool.length} candidate(s) survived the filter, ${excluded.length} excluded — ${excluded.length - criteriaExcluded} by the admission test, ${criteriaExcluded} for no acceptance-criteria block.`,
+				`${VERB}: scanned p0 ${scanned.p0}, p1 ${scanned.p1}, p2 ${scanned.p2} in ${resolved.repo}; ${pool.length} candidate(s) survived the filter, ${excluded.length} excluded — ${excluded.length - criteriaExcluded - graphExcluded} by the admission test, ${criteriaExcluded} for no acceptance-criteria block, ${graphExcluded} on the blocked_by graph.`,
 				focusScopeLine(VERB, focus),
+				...blockedEdges,
+				...unreadableEdges,
 			],
 		);
 	});

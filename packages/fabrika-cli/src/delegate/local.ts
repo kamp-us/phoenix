@@ -25,6 +25,7 @@ import {Effect, FileSystem, Path} from "effect";
 import {readFile} from "../io/fs.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {resolvePackageManifest} from "./node-resolve.ts";
+import {type RepoPredicate, repoPredicate} from "./reason.ts";
 
 /**
  * The npm name the probe resolves, and the bin key inside that package's manifest.
@@ -48,7 +49,7 @@ export interface LocalInstall {
 export type LocalProbe =
 	| {readonly _tag: "found"; readonly install: LocalInstall}
 	| {readonly _tag: "absent"}
-	| {readonly _tag: "corrupt"; readonly reason: string};
+	| {readonly _tag: "corrupt"; readonly reason: RepoPredicate};
 
 /**
  * The `version` and resolved bin path declared by a manifest, or why it cannot be trusted.
@@ -106,7 +107,10 @@ export const probeLocalInstall = (
 		const soften = Effect.catch(() => Effect.succeed(undefined));
 		const packageRoot = yield* fs.realPath(path.dirname(manifestPath)).pipe(soften);
 		if (packageRoot === undefined)
-			return {_tag: "corrupt", reason: `${manifestPath} is not on disk`} as const;
+			return {
+				_tag: "corrupt",
+				reason: repoPredicate`resolves ${manifestPath}, which is not on disk`,
+			} as const;
 		// Containment before trust, and before any corrupt verdict: a copy outside this repo is not
 		// this repo's install even when it is perfectly well-formed, so it answers `absent` rather
 		// than being reported as a broken local one.
@@ -115,15 +119,24 @@ export const probeLocalInstall = (
 
 		const text = yield* readFile(manifestPath).pipe(Effect.catch(() => Effect.succeed(undefined)));
 		if (text === undefined)
-			return {_tag: "corrupt", reason: `${manifestPath} could not be read`} as const;
+			return {
+				_tag: "corrupt",
+				reason: repoPredicate`resolves ${manifestPath}, which could not be read`,
+			} as const;
 		const manifest = readInstallManifest(path, manifestPath, text);
-		if ("corrupt" in manifest) return {_tag: "corrupt", reason: manifest.corrupt} as const;
+		// Wrapped rather than reworded at the source: `readInstallManifest`'s clause has the manifest
+		// path as its subject, and `entrypoint.ts` renders it in a slot that wants exactly that.
+		if ("corrupt" in manifest)
+			return {
+				_tag: "corrupt",
+				reason: repoPredicate`has an unusable install: ${manifest.corrupt}`,
+			} as const;
 
 		const binPath = yield* fs.realPath(manifest.bin).pipe(soften);
 		if (binPath === undefined)
 			return {
 				_tag: "corrupt",
-				reason: `${manifestPath} points at a bin that is not on disk (${manifest.bin})`,
+				reason: repoPredicate`resolves ${manifestPath}, which points at a bin that is not on disk (${manifest.bin})`,
 			} as const;
 		return {
 			_tag: "found",

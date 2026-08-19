@@ -8,11 +8,12 @@
  * fault this module genuinely cannot classify.
  */
 import {createRequire} from "node:module";
+import {type RepoPredicate, repoPredicate} from "./reason.ts";
 
 export type ResolveOutcome =
 	| {readonly _tag: "resolved"; readonly manifestPath: string}
 	| {readonly _tag: "absent"}
-	| {readonly _tag: "corrupt"; readonly reason: string};
+	| {readonly _tag: "corrupt"; readonly reason: RepoPredicate};
 
 /**
  * Where `packageName`'s manifest is, resolved from `rootManifest` the way Node itself would.
@@ -36,8 +37,11 @@ export const resolvePackageManifest = (
 		if (code === "ERR_PACKAGE_PATH_NOT_EXPORTED")
 			return {
 				_tag: "corrupt",
-				reason: `its ${packageName} install is too old to introspect (it does not export "./package.json")`,
+				reason: repoPredicate`has an ${packageName} install too old to introspect (it does not export "./package.json")`,
 			};
-		return {_tag: "corrupt", reason: `resolving ${packageName} threw: ${String(error)}`};
+		return {
+			_tag: "corrupt",
+			reason: repoPredicate`could not resolve ${packageName}: ${String(error)}`,
+		};
 	}
 };

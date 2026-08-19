@@ -2,7 +2,7 @@ import {describe, expect, it} from "vitest";
 import {read} from "../wire/acceptance-criteria.ts";
 import {renderMarker, SUMMARY_LINE} from "./enrich.ts";
 import {legacyPreserved} from "./enrich-legacy.ts";
-import {planRepair, splitAuthored} from "./repair-criteria.ts";
+import {disclosureComment, planRepair, splitAuthored} from "./repair-criteria.ts";
 
 const ITEMS = "- [ ] The verb repairs one issue\n- [x] The reader stays at level 3";
 
@@ -109,7 +109,7 @@ describe("planRepair — the bullet conversion (#6001)", () => {
 		expect(result._tag).toBe("Repaired");
 		if (result._tag !== "Repaired") return;
 		expect(result.body).toBe(enveloped(`Intro.\n\n### Acceptance criteria\n\n${CHECKED}`));
-		expect(result.repairs).toEqual([{_tag: "BulletItems", lines: [5, 6]}]);
+		expect(result.repairs).toEqual([{_tag: "BulletItems", lines: [5, 6], family: "bullet"}]);
 	});
 
 	it("leaves each item's text byte for byte — only the marker is added", () => {
@@ -201,22 +201,29 @@ describe("planRepair — the bullet conversion (#6001)", () => {
 		expect(result.reason).toContain("carrying no text");
 	});
 
-	it("refuses a non-bullet block in the list — an ordered item the reader would drop", () => {
+	it("refuses an ordered item mixed into a bullet list — the reader would drop it", () => {
 		const result = plan(
 			enveloped("### Acceptance criteria\n\n- one item\n\n1. another\n\n- a third"),
 		);
 		expect(result._tag).toBe("Refused");
 		if (result._tag !== "Refused") return;
-		expect(result.reason).toContain('is not one ("1. another")');
+		expect(result.reason).toContain("mixes plain bullets and ordered items");
 	});
 
-	it("refuses a non-bullet block sitting directly under a bullet, with no blank line to close it", () => {
+	it("refuses an ordered item sitting directly under a bullet, with no blank line to close it", () => {
 		// The refusal used to be gated on the open bullet, so this exact list converted and shipped
 		// "1. ordered" inside a block no grader reads (#6001, review round 1).
 		const result = plan(enveloped("### Acceptance criteria\n\n- one item\n1. ordered\n- a third"));
 		expect(result._tag).toBe("Refused");
 		if (result._tag !== "Refused") return;
-		expect(result.reason).toContain('is not one ("1. ordered")');
+		expect(result.reason).toContain("mixes plain bullets and ordered items");
+	});
+
+	it("refuses a blockquote sitting directly under a bullet — the family guard still runs", () => {
+		const result = plan(enveloped("### Acceptance criteria\n\n- one item\n> quoted\n- a third"));
+		expect(result._tag).toBe("Refused");
+		if (result._tag !== "Refused") return;
+		expect(result.reason).toContain('is not one ("> quoted")');
 	});
 
 	it("still folds a wrapped continuation directly under its bullet — only a block starter refuses", () => {
@@ -267,6 +274,66 @@ describe("planRepair — the bullet conversion (#6001)", () => {
 		expect(result._tag).toBe("Repaired");
 		if (result._tag !== "Repaired") return;
 		expect(result.body.endsWith(preservedBlock)).toBe(true);
+	});
+});
+
+describe("planRepair — the ordered-item conversion (#5981)", () => {
+	// #5717's and #5777's live shape: a level-3 heading over a numbered list, wrapped, which the
+	// reader answers `Malformed` on because an ordered marker can carry no checkbox at all.
+	const ordered =
+		"### Acceptance criteria\n\n1. `review-ui post` keys the upsert on the head,\n   compared prefix-tolerantly.\n2. Both carriers are keyed on the head.\n3. A re-post at the same head still upserts.";
+
+	it("rewrites `1.` items to `- [ ]`, each item's text byte for byte", () => {
+		const result = plan(enveloped(ordered));
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		expect(result.body).toContain("- [ ] `review-ui post` keys the upsert on the head,");
+		expect(result.body).toContain("- [ ] Both carriers are keyed on the head.");
+		expect(result.body).not.toContain("\n1. ");
+		expect(result.repairs).toEqual([{_tag: "BulletItems", lines: [3, 5, 6], family: "ordered"}]);
+		expect(result.criteria.map((c) => c.text)).toEqual([
+			"`review-ui post` keys the upsert on the head, compared prefix-tolerantly.",
+			"Both carriers are keyed on the head.",
+			"A re-post at the same head still upserts.",
+		]);
+	});
+
+	it("carries the ordered item's indentation, so a nested item stays nested", () => {
+		const result = plan(enveloped("### Acceptance criteria\n\n1. top\n   1. nested"));
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		expect(result.body).toContain("\n- [ ] top\n   - [ ] nested");
+	});
+
+	it("repairs a level-2 heading over an ordered list in one pass", () => {
+		const result = plan(enveloped("## Acceptance criteria\n\n1. one\n2. two"));
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		expect(result.repairs).toEqual([
+			{_tag: "HeadingLevel", line: 1, fromLevel: 2},
+			{_tag: "BulletItems", lines: [3, 4], family: "ordered"},
+		]);
+		expect(read(result.body)._tag).toBe("Found");
+	});
+
+	it("refuses a section mixing an ordered list with plain bullets", () => {
+		const result = plan(enveloped("### Acceptance criteria\n\n1. one\n\n- two"));
+		expect(result._tag).toBe("Refused");
+		if (result._tag !== "Refused") return;
+		expect(result.reason).toContain("mixes plain bullets and ordered items");
+	});
+});
+
+describe("disclosureComment — the only record an in-place body edit leaves", () => {
+	it("names every repair by line and states that no criterion's text moved", () => {
+		const result = plan(enveloped("## Acceptance criteria\n\n1. one\n2. two"));
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		const comment = disclosureComment(result.repairs, result.criteria);
+		expect(comment).toContain("- line 1: level 2 → 3");
+		expect(comment).toContain("- lines 3, 4: 2 ordered items → unchecked checkboxes");
+		expect(comment).toContain("reads back 2 criteria");
+		expect(comment).toContain("byte-for-byte");
 	});
 });
 

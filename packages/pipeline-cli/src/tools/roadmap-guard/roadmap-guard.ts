@@ -23,10 +23,11 @@
  *        (its milestone opens lazily on activation, I1). This is the campaign guard's core:
  *        it keeps ROADMAP.md's lifecycle cell and the milestone's open/closed reality from
  *        silently disagreeing.
- *   I6 — THE DECLARED FOCUS IS HONEST (#5012): the `## Focus` table carries at most one
- *        row, and that row's milestone resolves, is OPEN, and is claimed by an `active`
- *        arc or campaign row. An ABSENT or EMPTY `## Focus` section is the well-formed
- *        default — no exclusive focus is declared — and is never a violation.
+ *   I6 — THE DECLARED FOCUS IS HONEST (#5012, widened to N rows by #6005): EVERY `## Focus`
+ *        row's milestone resolves, is OPEN, and is claimed by an `active` arc or campaign
+ *        row. Row COUNT is not an invariant — a repo running several streams declares one
+ *        row each. An ABSENT or EMPTY `## Focus` section is the well-formed default — no
+ *        focus is declared — and is never a violation.
  */
 
 /** An arc is sequenced ahead (`queued`) then made current (`active`) and retired (`done`). */
@@ -51,10 +52,10 @@ export interface RoadmapRow {
 }
 
 /**
- * One parsed `## Focus` row — the milestone declared to be in exclusive focus, plus the
- * date it was declared. `milestone` is the `#N` pin resolved to its number, or `null` when
- * the cell carries no number; unlike a queued arc's deferred pin, an unresolvable focus pin
- * is always a violation (I6) — a declaration that names nothing declares nothing.
+ * One parsed `## Focus` row — a milestone declared to be in focus, plus the date it was
+ * declared. `milestone` is the `#N` pin resolved to its number, or `null` when the cell
+ * carries no number; unlike a queued arc's deferred pin, an unresolvable focus pin is always
+ * a violation (I6) — a declaration that names nothing declares nothing.
  */
 export interface FocusRow {
 	readonly milestone: number | null;
@@ -127,7 +128,7 @@ const pinMayBeAbsent = (row: RoadmapRow): boolean => row.kind === "arc" && row.s
  * all drift, not just the first.
  *
  * `focus` defaults to the empty list because that IS the declaration's well-formed default
- * (absent or empty `## Focus` ⇒ no exclusive focus declared), not a convenience.
+ * (absent or empty `## Focus` ⇒ no focus declared), not a convenience.
  */
 export const judge = (
 	arcs: ReadonlyArray<RoadmapRow>,
@@ -219,15 +220,9 @@ export const judge = (
 		}
 	}
 
-	// I6 — the declared focus is honest. Zero rows is checked by nothing: requiring an
-	// `active` claimer is what stops the focus pointing at a milestone the roadmap retired
-	// or never adopted.
-	if (focus.length > 1) {
-		violations.push({
-			code: "I6",
-			message: `expected AT MOST ONE focus row in \`## Focus\`, found ${focus.length} — exclusive focus admits exactly one milestone`,
-		});
-	}
+	// I6 — every declared focus row is honest. Zero rows is checked by nothing, and so is the
+	// count: requiring an `active` claimer per row is what stops the focus pointing at a
+	// milestone the roadmap retired or never adopted.
 	for (const row of focus) {
 		const where = row.declaredAt === "" ? "focus row" : `focus row (declared ${row.declaredAt})`;
 		if (row.milestone === null) {
@@ -274,7 +269,10 @@ export const judge = (
 /** Render the human-readable report for a verdict (ADR 0092 §1 — "emit what you scanned"). */
 export const renderReport = (verdict: RoadmapGuardVerdict): string => {
 	if (verdict.pass) {
-		const focus = verdict.focusCount === 0 ? "no exclusive focus declared" : "1 focus row declared";
+		const focus =
+			verdict.focusCount === 0
+				? "no focus declared"
+				: `${verdict.focusCount} focus row(s) declared`;
 		return (
 			`roadmap-guard: in sync — ${verdict.arcCount} arc row(s) + ${verdict.campaignCount} campaign row(s) ` +
 			`validated against ${verdict.milestoneCount} milestone(s), ${focus} (I1–I6 all green).`

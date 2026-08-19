@@ -121,6 +121,76 @@ export interface ClaimMarker {
 	readonly token: string;
 }
 
+/**
+ * The succession marker: `build-adopt: <dead-session> by <token> · <ISO> · reason: <text>`.
+ *
+ * A driver session dies and its builders' claim markers stay on the board; the successor names the
+ * dead session here and `build release` then answers `Mine` for its claim (ADR 0295). The keyword is
+ * derived from the namespace's prefix for the same reason the claim marker's is derived from its
+ * keyword — a namespace cannot ship a writer and a reader that disagree.
+ *
+ * `by <token>` is what keeps this from being a general eviction: the adopt confers ownership on the
+ * one session that token names, so a third session reading the same marker still sees `Foreign`.
+ */
+export const adoptMarkerRe = (grammar: ClaimGrammar): RegExp =>
+	new RegExp(
+		`^${grammar.prefix}-adopt:\\s*([^\\s·]+)\\s+by\\s+(${grammar.prefix}:[^\\s·]+)\\s*·\\s*[^·]*·\\s*reason:\\s*(\\S.*)$`,
+		"m",
+	);
+
+export const composeAdoptMarker = (
+	adopted: string,
+	token: string,
+	at: string,
+	reason: string,
+	grammar: ClaimGrammar = BUILD_CLAIM,
+): string => `${grammar.prefix}-adopt: ${adopted} by ${token} · ${at} · reason: ${reason}`;
+
+export interface AdoptMarker {
+	readonly commentId: number;
+	readonly author: string;
+	readonly createdAt: string;
+	/** The dead session whose claim this marker adopts. */
+	readonly adopted: string;
+	/** The adopting run's token — its session is the one that inherits the claim. */
+	readonly token: string;
+	readonly reason: string;
+}
+
+/** The adoption a comment body records, or `null` when it carries no well-formed adopt marker. */
+export const readAdoptMarker = (
+	body: string,
+	grammar: ClaimGrammar = BUILD_CLAIM,
+): {readonly adopted: string; readonly token: string; readonly reason: string} | null => {
+	const m = adoptMarkerRe(grammar).exec(body);
+	if (m?.[1] === undefined || m[2] === undefined || m[3] === undefined) return null;
+	if (parseToken(m[2], grammar.prefix) === null) return null;
+	const reason = m[3].trim();
+	return reason === "" ? null : {adopted: m[1], token: m[2], reason};
+};
+
+/** Every adopt marker of `grammar` in a comment list, oldest first, ties broken by comment id. */
+export const adoptMarkersIn = (
+	comments: ReadonlyArray<CommentRecord>,
+	grammar: ClaimGrammar = BUILD_CLAIM,
+): ReadonlyArray<AdoptMarker> => {
+	const markers: AdoptMarker[] = [];
+	for (const comment of comments) {
+		const read = readAdoptMarker(comment.body, grammar);
+		if (read !== null) {
+			markers.push({
+				commentId: comment.id,
+				author: comment.author,
+				createdAt: comment.createdAt,
+				...read,
+			});
+		}
+	}
+	return [...markers].sort((a, b) =>
+		a.createdAt === b.createdAt ? a.commentId - b.commentId : a.createdAt < b.createdAt ? -1 : 1,
+	);
+};
+
 /** Every claim marker of `grammar` in a comment list, oldest first, ties broken by comment id. */
 export const markersIn = (
 	comments: ReadonlyArray<CommentRecord>,
@@ -210,9 +280,14 @@ export const requireCallerToken = (verb: string, session: string, token: string)
 	return {_tag: "Caller", caller: laneCaller(session, nonce, trimmed)};
 };
 
-/** Who holds the claim — four outcomes, and no two of them fold. */
+/**
+ * Who holds the claim — four outcomes, and no two of them fold.
+ *
+ * `Mine` carries the adopt marker when the claim came through succession rather than directly, so
+ * `release` can retract both comments; `adopt` is `null` on the ordinary path.
+ */
 export type Ownership =
-	| {readonly _tag: "Mine"; readonly marker: ClaimMarker}
+	| {readonly _tag: "Mine"; readonly marker: ClaimMarker; readonly adopt: AdoptMarker | null}
 	| {
 			readonly _tag: "Foreign";
 			readonly marker: ClaimMarker;
@@ -222,6 +297,35 @@ export type Ownership =
 	| {readonly _tag: "Unclaimed"}
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
+type Permission =
+	| {readonly _tag: "Authorized"}
+	| {readonly _tag: "Unauthorized"}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+/** One memoized ACL reader — a repeat author costs one lookup, and a failed read is never a demotion. */
+const permissionReader = (repo: string) => {
+	const cache = new Map<string, boolean>();
+	return (
+		author: string,
+	): Effect.Effect<Permission, never, ChildProcessSpawner.ChildProcessSpawner> =>
+		Effect.gen(function* () {
+			const cached = cache.get(author);
+			if (cached !== undefined) {
+				return cached ? ({_tag: "Authorized"} as const) : ({_tag: "Unauthorized"} as const);
+			}
+			const read = yield* permissionFor(repo, author);
+			if (read._tag === "Unknown") {
+				return {
+					_tag: "Unknown" as const,
+					reason: `the repository permission of "${author}" could not be read (${read.reason})`,
+				};
+			}
+			const authorized = read._tag === "Present" && AUTHORIZED.has(read.value);
+			cache.set(author, authorized);
+			return authorized ? ({_tag: "Authorized"} as const) : ({_tag: "Unauthorized"} as const);
+		});
+};
+
 /**
  * Resolve ownership of `number` against the asking lane.
  *
@@ -229,6 +333,12 @@ export type Ownership =
  * unauthorized markers costs one lookup each and the winner is found without reading the rest.
  * `unauthorized` carries the ones that were counted but did not win, which the caller reports on
  * stderr — content is not authority, but an ignored marker should still be visible.
+ *
+ * A winning marker held by another session is `Foreign` **unless** an authorized adopt marker on the
+ * same number names that session and hands it to the asking lane (ADR 0295). An adopt is read
+ * against the same `namesCaller` test the ordinary win is, so succession confers the claim on
+ * exactly the lane its `by <token>` names and never re-widens ownership back to a whole session
+ * (#6060). The adopt is read only on that branch, so the ordinary path costs exactly what it did.
  */
 export const resolveOwnership = (
 	repo: string,
@@ -236,51 +346,91 @@ export const resolveOwnership = (
 	caller: Caller,
 	grammar: ClaimGrammar = BUILD_CLAIM,
 ): Effect.Effect<
-	{readonly ownership: Ownership; readonly unauthorized: ReadonlyArray<ClaimMarker>},
+	{
+		readonly ownership: Ownership;
+		readonly unauthorized: ReadonlyArray<ClaimMarker>;
+		readonly unauthorizedAdopts: ReadonlyArray<AdoptMarker>;
+	},
 	never,
 	ChildProcessSpawner.ChildProcessSpawner
 > =>
 	Effect.gen(function* () {
 		const listed = yield* listComments(repo, number);
 		if (listed._tag === "Failure") {
-			return {ownership: {_tag: "Unknown" as const, reason: listed.reason}, unauthorized: []};
+			return {
+				ownership: {_tag: "Unknown" as const, reason: listed.reason},
+				unauthorized: [],
+				unauthorizedAdopts: [],
+			};
 		}
-		const markers = markersIn(listed.value, grammar);
+		const authorizationOf = permissionReader(repo);
+		/** Does `token` name the asking lane — its session, and its nonce too unless the namespace opted out. */
+		const namesCaller = (token: string): boolean => {
+			const parsed = parseToken(token, grammar.prefix);
+			if (parsed === null || parsed.session !== caller.session) return false;
+			return caller._tag === "AnySession" || nonceOf(token, grammar.prefix) === caller.nonce;
+		};
 		const unauthorized: ClaimMarker[] = [];
-		const permissions = new Map<string, string | null>();
-		for (const marker of markers) {
-			let permission = permissions.get(marker.author);
-			if (permission === undefined) {
-				const read = yield* permissionFor(repo, marker.author);
-				if (read._tag === "Unknown") {
-					return {
-						ownership: {
-							_tag: "Unknown" as const,
-							reason: `the repository permission of "${marker.author}" could not be read (${read.reason})`,
-						},
-						unauthorized,
-					};
-				}
-				permission = read._tag === "Present" ? read.value : null;
-				permissions.set(marker.author, permission);
+		let winner: ClaimMarker | null = null;
+		for (const marker of markersIn(listed.value, grammar)) {
+			const permission = yield* authorizationOf(marker.author);
+			if (permission._tag === "Unknown") {
+				return {
+					ownership: {_tag: "Unknown" as const, reason: permission.reason},
+					unauthorized,
+					unauthorizedAdopts: [],
+				};
 			}
-			if (permission === null || !AUTHORIZED.has(permission)) {
+			if (permission._tag === "Unauthorized") {
 				unauthorized.push(marker);
 				continue;
 			}
-			const parsed = parseToken(marker.token, grammar.prefix);
-			const sameSession = parsed !== null && parsed.session === caller.session;
-			const mine =
-				sameSession &&
-				(caller._tag === "AnySession" || nonceOf(marker.token, grammar.prefix) === caller.nonce);
+			winner = marker;
+			break;
+		}
+		if (winner === null) {
 			return {
-				ownership: mine
-					? ({_tag: "Mine", marker} as const)
-					: ({_tag: "Foreign", marker, sameSession} as const),
+				ownership: {_tag: "Unclaimed" as const},
 				unauthorized,
+				unauthorizedAdopts: [],
 			};
 		}
-		return {ownership: {_tag: "Unclaimed" as const}, unauthorized};
+		const parsed = parseToken(winner.token, grammar.prefix);
+		const sameSession = parsed !== null && parsed.session === caller.session;
+		if (namesCaller(winner.token)) {
+			return {
+				ownership: {_tag: "Mine" as const, marker: winner, adopt: null},
+				unauthorized,
+				unauthorizedAdopts: [],
+			};
+		}
+		const unauthorizedAdopts: AdoptMarker[] = [];
+		for (const adopt of adoptMarkersIn(listed.value, grammar)) {
+			if (parsed === null || adopt.adopted !== parsed.session) continue;
+			if (!namesCaller(adopt.token)) continue;
+			const permission = yield* authorizationOf(adopt.author);
+			if (permission._tag === "Unknown") {
+				return {
+					ownership: {_tag: "Unknown" as const, reason: permission.reason},
+					unauthorized,
+					unauthorizedAdopts,
+				};
+			}
+			if (permission._tag === "Unauthorized") {
+				unauthorizedAdopts.push(adopt);
+				continue;
+			}
+			return {
+				ownership: {_tag: "Mine" as const, marker: winner, adopt},
+				unauthorized,
+				unauthorizedAdopts,
+			};
+		}
+		return {
+			ownership: {_tag: "Foreign" as const, marker: winner, sameSession},
+			unauthorized,
+			unauthorizedAdopts,
+		};
 	});
 
 export type Session =

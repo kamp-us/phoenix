@@ -20,7 +20,7 @@ import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runApply} from "./apply-verb.ts";
-import {DEFAULT_TTL_MINUTES, runClaim} from "./claim-verb.ts";
+import {runClaim} from "./claim-verb.ts";
 import {runCodes} from "./codes-verb.ts";
 import {runEnrich} from "./enrich-verb.ts";
 import {AUDIENCES, PRIORITIES, STANDING_LANES, TYPES} from "./facets.ts";
@@ -110,7 +110,7 @@ const kill = leafCommand(
 ).pipe(
 	Command.withShortDescription("Close an agent-filed issue not-planned, with a reason."),
 	Command.withDescription(
-		"Close an agent-filed issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the closed-by-triage label, then the close — and read back that it says not_planned. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close), 11 (a precondition read failed), 12 (human-filed — no agent footer and no operator author, see $FABRIKA_OPERATOR_ACCOUNTS), 13 (unconfirmed). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
+		"Close an agent-filed issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the closed-by-triage label, then the close — and read back that it says not_planned. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close), 11 (a precondition read failed, including the claim on the issue), 12 (human-filed — no agent footer and no operator author, see $FABRIKA_OPERATOR_ACCOUNTS), 13 (unconfirmed), 17 (a live claim marker on the issue names another session). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
 	),
 );
 
@@ -148,7 +148,7 @@ const split = leafCommand(
 ).pipe(
 	Command.withShortDescription("Create one child of a bundled report, exactly once."),
 	Command.withDescription(
-		'Create one child of a bundled report from the body on STDIN, exactly once, and cross-link the parent. Prints `<created|reused>\\t<number>\\t<url>`; both outcomes exit 0. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (parent absent, or the queue label does not exist), 8 (create failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed — never a silent create). Example: fabrika triage split 4312 --title "Editor loses focus after save" < child.md',
+		'Create one child of a bundled report from the body on STDIN, exactly once, and cross-link the parent. Prints `<created|reused>\\t<number>\\t<url>`; both outcomes exit 0. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (parent absent or closed, or the queue label does not exist), 8 (create failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed, including the claim on the parent — never a silent create), 17 (a live claim marker on the parent names another session). Example: fabrika triage split 4312 --title "Editor loses focus after save" < child.md',
 	),
 );
 
@@ -206,7 +206,7 @@ const apply = leafCommand(
 ).pipe(
 	Command.withShortDescription("Stamp the whole triaged transition as one reconcile."),
 	Command.withDescription(
-		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>`. Exits 7 (no such issue, or a label this run would write does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47",
+		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>`. Exits 7 (no such issue, it is closed, or a label this run would write does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed, including the claim on the issue), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47",
 	),
 );
 
@@ -227,7 +227,7 @@ const park = leafCommand(
 ).pipe(
 	Command.withShortDescription("Demote an issue to needs-info with the questions on stdin."),
 	Command.withDescription(
-		"Demote an issue to status:needs-info with the questions on STDIN, clearing every priced facet — type, priority, audience, lane and milestone. The comment is posted BEFORE the labels move. Prints `parked\\t<n>\\t<comment-url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue, or status:needs-info does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed). Example: fabrika triage park 4290 < questions.md",
+		"Demote an issue to status:needs-info with the questions on STDIN, clearing every priced facet — type, priority, audience, lane and milestone. The comment is posted BEFORE the labels move. Prints `parked\\t<n>\\t<comment-url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue, it is closed, or status:needs-info does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed, including the claim on the issue), 17 (a live claim marker on the issue names another session). Example: fabrika triage park 4290 < questions.md",
 	),
 );
 
@@ -235,20 +235,13 @@ const claim = leafCommand(
 	"claim",
 	{
 		issue: Argument.integer("issue").pipe(Argument.withDescription("the issue number to claim")),
-		ttlMinutes: Flag.integer("ttl-minutes").pipe(
-			Flag.withDefault(DEFAULT_TTL_MINUTES),
-			Flag.withDescription(
-				`how long an existing claim marker stays binding before it is treated as abandoned (default: ${DEFAULT_TTL_MINUTES})`,
-			),
-		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({issue, ttlMinutes, repo, json}) {
+	Effect.fn(function* ({issue, repo, json}) {
 		yield* emit(
 			yield* runClaim({
 				issue,
-				ttlMinutes,
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -335,7 +328,7 @@ const homes = leafCommand(
 ).pipe(
 	Command.withShortDescription("The assignable homes: open milestones and standing lanes."),
 	Command.withDescription(
-		"List the assignable homes: every OPEN milestone joined to its roadmap arc/campaign row by `#<number>`, plus the two standing lanes. First stdout line is `homes`, then one `<kind>\\t<key>\\t<label>` line per candidate; the milestone in exclusive focus carries a fourth column, `running: p0/blocker only` (a `running` field under `--json`) — that campaign is closed to new intake unless the work is p0 or blocks one of its own in-flight lanes. Exits 7 (zero open milestones, or the roadmap parsed to 0 arc rows), 11 (the milestone list or the roadmap could not be read). Example: fabrika triage homes",
+		"List the assignable homes: every OPEN milestone joined to its roadmap arc/campaign row by `#<number>`, plus the two standing lanes. First stdout line is `homes`, then one `<kind>\\t<key>\\t<label>` line per candidate; every milestone in declared focus carries a fourth column, `running: p0/blocker only` (a `running` field under `--json`) — such a campaign is closed to new intake unless the work is p0 or blocks one of its own in-flight lanes. Exits 7 (zero open milestones, or the roadmap parsed to 0 arc rows), 11 (the milestone list or the roadmap could not be read). Example: fabrika triage homes",
 	),
 );
 
@@ -371,7 +364,7 @@ const enrich = leafCommand(
 ).pipe(
 	Command.withShortDescription("Replace an issue body with the rewrite on stdin."),
 	Command.withDescription(
-		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue could not be read). Example: fabrika triage enrich 4312 < enriched.md",
+		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent or closed, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue, or the claim on it, could not be read), 17 (a live claim marker on the issue names another session). Example: fabrika triage enrich 4312 < enriched.md",
 	),
 );
 
@@ -387,14 +380,20 @@ const repairCriteria = leafCommand(
 				"repair every repairable open issue in one run instead of one issue, with a per-issue outcome line",
 			),
 		),
+		dryRun: Flag.boolean("dry-run").pipe(
+			Flag.withDescription(
+				"plan every issue and write nothing — a repairable issue answers `would-repair` with the repairs it would make, so the blast radius is reviewable before the first body is written",
+			),
+		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({issue, sweep, repo, json}) {
+	Effect.fn(function* ({issue, sweep, dryRun, repo, json}) {
 		yield* emit(
 			yield* runRepairCriteria({
 				issue: Option.getOrNull(issue),
 				sweep,
+				dryRun,
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -404,7 +403,7 @@ const repairCriteria = leafCommand(
 ).pipe(
 	Command.withShortDescription("Repair an acceptance-criteria block's shape, mechanically."),
 	Command.withDescription(
-		'Rewrite an acceptance-criteria block\'s shape: a level-drifted "## Acceptance criteria" heading to the conforming "### Acceptance criteria", and — when the block carries no checkbox at all — its plain list bullets to unchecked checkboxes, each item\'s text byte-for-byte unchanged. Authored region only, preserved originals byte-for-byte untouched, the repair pre-verified through the wire read before anything is written. One issue by number, or --sweep for every open issue with one `<repaired|conforming|no-block|refused|moved>\\t<number>` line each; a sweep re-reads each issue immediately before its write and answers `moved` instead of writing when the body changed after the board snapshot. Only a pure shape rewrite on the exact heading text is repaired; a drifted heading text, a block mixing prose or another block into the list, an empty item, a block that already carries a checkbox beside its bullets, and a converted bullet the reader counts no criterion at are all refused, never guessed — a `Repaired` plan reads back exactly one criterion per line it rewrote. Exits 7 (issue absent, closed, or a pull request), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (an issue or the open-issue list could not be read), 14 (not mechanically repairable — the refusal names what it read). Example: fabrika triage repair-criteria 5726',
+		'Rewrite an acceptance-criteria block\'s shape: a level-drifted "## Acceptance criteria" heading to the conforming "### Acceptance criteria", and — when the block carries no checkbox at all — its plain list bullets to unchecked checkboxes, each item\'s text byte-for-byte unchanged. Authored region only, preserved originals byte-for-byte untouched, the repair pre-verified through the wire read before anything is written. One issue by number, or --sweep for every open issue with one `<repaired|conforming|no-block|refused|moved|would-repair>\\t<number>` line each; a sweep re-reads each issue immediately before its write and answers `moved` instead of writing when the body changed after the board snapshot. --dry-run plans everything and writes nothing, answering `would-repair` with the repairs it would make, so the set of bodies about to be edited is reviewable first. Every repaired body gets one disclosure comment naming its repairs, posted after the read-back — an in-place edit of a filed body GitHub keeps no history of leaves no other record. Only a pure shape rewrite on the exact heading text is repaired; a drifted heading text, a block mixing prose or another block into the list, an empty item, a block that already carries a checkbox beside its bullets, and a converted bullet the reader counts no criterion at are all refused, never guessed — a `Repaired` plan reads back exactly one criterion per line it rewrote. Exits 7 (issue absent, closed, or a pull request), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (an issue or the open-issue list could not be read), 14 (not mechanically repairable — the refusal names what it read). Example: fabrika triage repair-criteria 5726',
 	),
 );
 

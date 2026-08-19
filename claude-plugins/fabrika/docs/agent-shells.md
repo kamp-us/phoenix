@@ -97,7 +97,7 @@ sets until that filing is triaged and built.
 
 For the reviewer the grant is a tool grant and nothing more: the behaviour stays in
 [`../skills/review/SKILL.md`](../skills/review/SKILL.md) §6, which makes the `governance` namespace
-**derived-required** on a `harness: true` diff — fire the `governance` skill, wait for it, and never
+**derived-required** on a `governance: required` diff — fire the `governance` skill, wait for it, and never
 emit that namespace yourself. Without a spawn tool the shell derives that requirement mid-run and
 dead-ends, leaving the PR with a governance check nothing in the run can clear. The grant only lets
 the shell obey an instruction it already carried. Founder ruling of 2026-08-14 on

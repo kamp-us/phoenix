@@ -175,6 +175,8 @@ flowchart LR
 
 One trap when you map an old name onto a fabrika one: the nouns moved. `build` is the text-construction skill and `review` is a single skill, not v1's `review-*` family (ADR [0242](./.decisions/0242-fabrika-skill-nouns-redefine-build-and-review.md)). The conventions every fabrika skill is held to live in [`claude-plugins/fabrika/docs/`](./claude-plugins/fabrika/docs/README.md).
 
+Those two surfaces are written for agents. The pages written for a person — how to adopt fabrika, how it decides things, why it is shaped this way — are in [`claude-plugins/fabrika/guide/`](./claude-plugins/fabrika/guide/README.md).
+
 ## Releasing
 
 The pipeline above lands PRs on `main`. This section is what takes `main` to npm. Two
