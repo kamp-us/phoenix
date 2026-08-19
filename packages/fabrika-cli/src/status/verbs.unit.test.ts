@@ -117,7 +117,45 @@ describe("the roster's resolution ladder", () => {
 	const FOREIGN = "/home/dev/demlik";
 	const SKILL_TEXT = "---\nname: build\ndescription: d\n---\n";
 
+	const CACHE = "/home/dev/.claude/plugins/cache";
+	const manifest = (name: string) => JSON.stringify({name});
+
 	const tree = (over: Parameters<typeof fakeFs>[0]) => fakeFs(over);
+
+	/** Every rung's inputs, so a case names only the one it is about. */
+	const sources = (over: Partial<RosterSources>): RosterSources => ({
+		explicit: null,
+		pluginRootEnv: null,
+		pluginCache: null,
+		moduleDir: MODULE_DIR,
+		cwd: FOREIGN,
+		...over,
+	});
+
+	/** One cached plugin version, as Claude Code lays the cache out: marketplace/plugin/version. */
+	const cached = (version: string, declared: string, markers: ReadonlyArray<string> = []) => {
+		const root = `${CACHE}/kampus/fabrika/${version}`;
+		return {
+			root,
+			files: {
+				[`${root}/${PLUGIN_MANIFEST}`]: manifest(declared),
+				...Object.fromEntries(markers.map((marker) => [`${root}/${marker}`, "1786000000000"])),
+			},
+			directories: [`${root}/skills`],
+		};
+	};
+
+	const cacheTree = (versions: ReadonlyArray<ReturnType<typeof cached>>, over = {}) =>
+		tree({
+			dirs: {
+				[CACHE]: ["kampus"],
+				[`${CACHE}/kampus`]: ["fabrika"],
+				[`${CACHE}/kampus/fabrika`]: versions.map((v) => v.root.split("/").pop() as string),
+			},
+			files: Object.assign({}, ...versions.map((v) => v.files)),
+			directories: versions.flatMap((v) => v.directories),
+			...over,
+		});
 
 	const resolve = (sources: RosterSources, fs: ReturnType<typeof fakeFs>) =>
 		Effect.runPromise(Effect.provide(resolveRosterPath(sources), fs.layer));
@@ -128,49 +166,177 @@ describe("the roster's resolution ladder", () => {
 	const checkoutRoster = `${CHECKOUT}/${IN_REPO_ROSTER}`;
 
 	it("resolves the CLI's own checkout when the cwd is a repo carrying no roster", async () => {
-		const resolved = await resolve(
-			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
-			tree({directories: [checkoutRoster]}),
-		);
+		const resolved = await resolve(sources({}), tree({directories: [checkoutRoster]}));
 		expect(resolved?.tier).toBe("checkout");
 		expect(resolved?.path).toBe(checkoutRoster);
 	});
 
 	/** `display` is what a session transcript keeps; an absolute path there is a machine-local leak. */
 	it("prints the checkout rung as a repo-relative path, never the absolute one", async () => {
-		const resolved = await resolve(
-			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
-			tree({directories: [checkoutRoster]}),
-		);
+		const resolved = await resolve(sources({}), tree({directories: [checkoutRoster]}));
 		expect(resolved?.display).toBe(IN_REPO_ROSTER);
 		expect(resolved?.display.startsWith("/")).toBe(false);
 	});
 
 	it("keeps the cwd's own roster ahead of the checkout's when both are there", async () => {
 		const resolved = await resolve(
-			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
+			sources({}),
 			tree({directories: [checkoutRoster, `${FOREIGN}/${IN_REPO_ROSTER}`]}),
 		);
 		expect(resolved?.tier).toBe("repo");
 		expect(resolved?.path).toBe(`${FOREIGN}/${IN_REPO_ROSTER}`);
 	});
 
-	it("keeps an installed plugin ahead of both implicit checkout rungs", async () => {
-		const installed = "/cache/kampus/fabrika/abc123";
+	/**
+	 * The `plugin` rung's one live shape: a CLI vendored *inside* a plugin tree. Neither shape
+	 * fabrika itself ships in packages it that way, so this is the consumer case the rung is kept
+	 * for, constructed here rather than left as coverage nothing exercises (#6448).
+	 */
+	it("keeps a CLI bundled inside a plugin ahead of both implicit checkout rungs", async () => {
+		const installed = "/vendored/fabrika";
 		const resolved = await resolve(
-			{explicit: null, moduleDir: `${installed}/cli/src/status`, cwd: FOREIGN},
+			sources({moduleDir: `${installed}/cli/src/status`}),
 			tree({
-				directories: [checkoutRoster, `${installed}/${PLUGIN_MANIFEST}`],
-				files: {[`${installed}/${PLUGIN_MANIFEST}`]: "{}"},
+				directories: [checkoutRoster],
+				files: {[`${installed}/${PLUGIN_MANIFEST}`]: manifest("fabrika")},
 			}),
 		);
 		expect(resolved?.tier).toBe("plugin");
 		expect(resolved?.path).toBe(`${installed}/skills`);
+		expect(resolved?.display).toBe("fabrika/skills");
+	});
+
+	/**
+	 * The marketplace shape, where the CLI is a global npm package outside the plugin cache: no walk
+	 * from the module or the cwd can reach the roster, so the cache rung is the only answer (#6448).
+	 */
+	it("resolves the installed plugin out of Claude Code's cache when no walk can reach it", async () => {
+		const live = cached("602283e56c60", "fabrika");
+		const resolved = await resolve(
+			sources({pluginCache: CACHE}),
+			cacheTree([cached("0dd9a537e17c", "fabrika", [".orphaned_at", ".in_use"]), live]),
+		);
+		expect(resolved?.tier).toBe("cache");
+		expect(resolved?.path).toBe(`${live.root}/skills`);
+	});
+
+	/** The cache path carries a content hash that changes on every update — never print one. */
+	it("prints the cache rung by the manifest's declared name, never the hashed path", async () => {
+		const resolved = await resolve(
+			sources({pluginCache: CACHE}),
+			cacheTree([cached("602283e56c60", "fabrika")]),
+		);
+		expect(resolved?.display).toBe("fabrika/skills");
+		expect(resolved?.display.includes("602283e56c60")).toBe(false);
+	});
+
+	/** A cache holds every plugin the machine has installed; only fabrika's own roster is fabrika's. */
+	it("skips a cached plugin whose manifest declares another name", async () => {
+		const resolved = await resolve(
+			sources({pluginCache: CACHE}),
+			cacheTree([cached("aaaaaaaaaaaa", "some-other-plugin")]),
+		);
+		expect(resolved).toBeNull();
+	});
+
+	/**
+	 * The cache sits below both walking rungs: a phoenix developer has an installed plugin *and* a
+	 * checkout, and reading the published roster there would render something the working tree does
+	 * not have — the dev shape #5775 was fixed to serve.
+	 */
+	it("keeps the CLI's own checkout ahead of the installed plugin's cache", async () => {
+		const resolved = await resolve(
+			sources({pluginCache: CACHE}),
+			cacheTree([cached("602283e56c60", "fabrika")], {
+				directories: [checkoutRoster, `${CACHE}/kampus/fabrika/602283e56c60/skills`],
+			}),
+		);
+		expect(resolved?.tier).toBe("checkout");
+		expect(resolved?.path).toBe(checkoutRoster);
+	});
+
+	/** `.in_use` is the tiebreak the harness itself writes; the ordering must not be the hash's. */
+	it("prefers a cached version a live session holds when two are unorphaned", async () => {
+		const held = cached("zzzzzzzzzzzz", "fabrika", [".in_use"]);
+		const resolved = await resolve(
+			sources({pluginCache: CACHE}),
+			cacheTree([cached("aaaaaaaaaaaa", "fabrika"), held]),
+		);
+		expect(resolved?.path).toBe(`${held.root}/skills`);
+	});
+
+	/** A half-written cache entry is not a roster: it must not claim one and then fail the read. */
+	it("skips a cached version carrying no skills directory", async () => {
+		const resolved = await resolve(
+			sources({pluginCache: CACHE}),
+			cacheTree([{...cached("602283e56c60", "fabrika"), directories: []}]),
+		);
+		expect(resolved).toBeNull();
+	});
+
+	/** The harness's own answer where it exists — and it does not exist for a plain Bash call. */
+	it("takes $CLAUDE_PLUGIN_ROOT ahead of the cache when the harness set one", async () => {
+		const injected = "/plugins/fabrika-head";
+		const resolved = await resolve(
+			sources({pluginRootEnv: injected, pluginCache: CACHE}),
+			cacheTree([cached("602283e56c60", "fabrika")], {
+				files: {[`${injected}/${PLUGIN_MANIFEST}`]: manifest("fabrika")},
+			}),
+		);
+		expect(resolved?.tier).toBe("env");
+		expect(resolved?.path).toBe(`${injected}/skills`);
+	});
+
+	/** A variable pointing nowhere is not an answer; the ladder below it still has to run. */
+	it("falls through when $CLAUDE_PLUGIN_ROOT names a directory holding no plugin manifest", async () => {
+		const live = cached("602283e56c60", "fabrika");
+		const resolved = await resolve(
+			sources({pluginRootEnv: "/plugins/gone", pluginCache: CACHE}),
+			cacheTree([live]),
+		);
+		expect(resolved?.tier).toBe("cache");
+		expect(resolved?.path).toBe(`${live.root}/skills`);
+	});
+
+	it("still keeps an explicitly-passed path ahead of the env rung", async () => {
+		const injected = "/plugins/fabrika-head";
+		const resolved = await resolve(
+			sources({explicit: "/mine/skills", pluginRootEnv: injected}),
+			tree({files: {[`${injected}/${PLUGIN_MANIFEST}`]: manifest("fabrika")}}),
+		);
+		expect(resolved?.tier).toBe("explicit");
+		expect(resolved?.path).toBe("/mine/skills");
+	});
+
+	/** The `menu` and `config` fields the front door exists to answer — the defect #6448 reported. */
+	it("renders the marketplace shape's roster rather than the unknown #6448 reported", async () => {
+		const live = cached("602283e56c60", "fabrika");
+		const out = await read(
+			sources({pluginCache: CACHE}),
+			cacheTree([live], {
+				dirs: {
+					[CACHE]: ["kampus"],
+					[`${CACHE}/kampus`]: ["fabrika"],
+					[`${CACHE}/kampus/fabrika`]: ["602283e56c60"],
+					[`${live.root}/skills`]: ["build"],
+				},
+				directories: [`${live.root}/skills`, `${live.root}/skills/build`],
+				files: {
+					...live.files,
+					[`${live.root}/skills/build/SKILL.md`]: SKILL_TEXT,
+				},
+			}),
+		);
+		expect(out._tag).toBe("Resolved");
+		if (out._tag !== "Resolved") return;
+		expect(out.tier).toBe("cache");
+		expect(out.skills.map((s) => s.name)).toEqual(["build"]);
+		expect(runMenu({roster: out, asOf: AS_OF, json: false}).code).toBe(ANSWER);
 	});
 
 	it("reads the checkout roster's skills rather than reporting the target repo bare", async () => {
 		const out = await read(
-			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
+			sources({}),
 			tree({
 				directories: [checkoutRoster, `${checkoutRoster}/build`],
 				dirs: {[checkoutRoster]: ["build"]},
@@ -186,7 +352,7 @@ describe("the roster's resolution ladder", () => {
 	/** A resolved roster holding nothing is a fact at exit 0 — the added rung must not change that. */
 	it("keeps a resolved-but-empty checkout roster `empty`, never unknown", async () => {
 		const out = await read(
-			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
+			sources({}),
 			tree({directories: [checkoutRoster], dirs: {[checkoutRoster]: []}}),
 		);
 		expect(out._tag).toBe("Resolved");
@@ -198,7 +364,7 @@ describe("the roster's resolution ladder", () => {
 	/** An explicit path is the caller's claim; no implicit rung may rescue it. */
 	it("still seats an explicitly-passed absent --skills-dir on AbsentExplicit", async () => {
 		const out = await read(
-			{explicit: "/nope", moduleDir: MODULE_DIR, cwd: FOREIGN},
+			sources({explicit: "/nope"}),
 			tree({directories: [checkoutRoster], dirs: {[checkoutRoster]: ["build"]}}),
 		);
 		expect(out._tag).toBe("AbsentExplicit");
@@ -206,7 +372,7 @@ describe("the roster's resolution ladder", () => {
 	});
 
 	it("still fails when no rung answers", async () => {
-		const out = await read({explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN}, tree({}));
+		const out = await read(sources({}), tree({}));
 		expect(out._tag).toBe("Failed");
 		if (out._tag !== "Failed") return;
 		expect(out.reason).toBe("no roster resolved — pass --skills-dir");

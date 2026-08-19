@@ -972,9 +972,12 @@ Three things are load-bearing:
 - **`7` and `11` are the pair.** An *implicitly* resolved roster holding zero skills is neither —
   it is `empty` at exit `0`.
 
-The roster resolves in four tiers — an explicit `--skills-dir`, the installed plugin's own skills
-tree, `claude-plugins/fabrika/skills` in-repo, then that same path in the checkout the CLI runs
-from — and prints which one served.
+The roster resolves in six tiers — an explicit `--skills-dir`, `$CLAUDE_PLUGIN_ROOT`'s skills tree,
+a plugin tree the CLI itself sits inside, `claude-plugins/fabrika/skills` in-repo, that same path in
+the checkout the CLI runs from, then the installed fabrika plugin in Claude Code's plugin cache —
+and prints which one served. The cache rung is what answers the marketplace shape, where the plugin
+and the globally-installed CLI share no path at all; it sits last so a phoenix checkout keeps
+reading its own working tree.
 
 ## The `triage` group
 

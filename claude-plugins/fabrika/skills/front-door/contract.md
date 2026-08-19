@@ -182,19 +182,33 @@ itself**, in this order, and print which tier served it on the scope line. (`boo
 this list: it builds from a fixed [registry](#buildable-surfaces) and reads no roster at all.)
 
 1. `--skills-dir <path>`, when given explicitly.
-2. The installed plugin's own skills directory, discovered from the running module's location the
-   way `packages/fabrika-cli/src/delegate/entry.ts` discovers the repo root — by resolution, never by
-   an environment variable, because interface rule 5 forbids a variable-rooted invocation and a verb
-   never requires an env var to locate itself.
-3. `claude-plugins/fabrika/skills/` beneath the repo root, which is the in-repo development case.
-4. That same `claude-plugins/fabrika/skills/` beneath the checkout the CLI itself runs from, found by
+2. `$CLAUDE_PLUGIN_ROOT`, when it is set and holds a plugin manifest — the harness's own answer for
+   which plugin is running, and the only rung that stays correct if the cache layout changes. It is
+   read by the verb, never written into a fence: interface rule 5 constrains the **command string**
+   the model runs, and ADR [0235](../../../../.decisions/0235-fences-carry-zero-expansions.md) puts
+   everything dynamic inside what the fence invokes. It cannot be the only rung, because the harness
+   sets it for plugin hooks and plugin-provided commands and **not** for an ordinary Bash call.
+3. A plugin tree the running module itself sits inside, found by walking up for the manifest. This
+   fires only where a consumer vendors the CLI into its own plugin; neither shape fabrika ships in
+   packages it that way.
+4. `claude-plugins/fabrika/skills/` beneath the repo root, which is the in-repo development case.
+5. That same `claude-plugins/fabrika/skills/` beneath the checkout the CLI itself runs from, found by
    walking up from the running module — the rung that answers when fabrika runs out of a phoenix
-   checkout against a target repo carrying no roster of its own, where tier 2 cannot fire (the CLI at
-   `packages/fabrika-cli/` has no plugin manifest above it) and tier 3 is rooted at that target repo
-   (#5775). Resolution again, never an environment variable.
+   checkout against a target repo carrying no roster of its own, where rung 3 cannot fire (the CLI at
+   `packages/fabrika-cli/` has no plugin manifest above it) and rung 4 is rooted at that target repo
+   (#5775).
+6. The installed fabrika plugin in Claude Code's plugin cache
+   (`<config>/plugins/cache/<marketplace>/<plugin>/<version>/`), matched by the **manifest's declared
+   `name`** rather than the directory, since the path carries a marketplace name and a content hash
+   that both change without the plugin changing. Versions the harness has stamped `.orphaned_at` are
+   skipped and `.in_use` breaks a tie. This is the rung that answers the marketplace shape, where the
+   plugin sits in the cache and the CLI is a separate global npm package, so no walk from either the
+   module or the cwd can reach the roster (#6448). It sits **below** rungs 4 and 5 on purpose: a
+   phoenix developer has both an installed plugin and a checkout, and reading the published roster
+   there would render skills the working tree does not have.
 
-The tier word printed on the scope line is `explicit` · `plugin` · `repo` · `checkout`, one per rung
-in that order.
+The tier word printed on the scope line is `explicit` · `env` · `plugin` · `repo` · `checkout` ·
+`cache`, one per rung in that order.
 
 **A roster that resolves and holds zero skills is `empty` at exit `0`, a fact, not a refusal.** These
 are supplying verbs, and interface convention §4 requires a supplying verb to decide once, in its
