@@ -327,8 +327,8 @@ A second, unrelated stamp lives in the same git admin dir as the `kampus-owner.j
 conflating them wastes a debugging session: `kampus-owner.json` is the **harness launcher's** stamp
 that the worktree *sweep* reads, while **`kampus-lane` is the pipeline's own** — written by
 `write-code`'s opening preflight, read by `wt_preflight` to answer "which tree is mine" and by
-`kp_branch_pin` to answer "is another lane using this branch". Both live in
-`claude-plugins/kampus-pipeline/lib/common.sh`.
+`kp_branch_pin` to answer "is another lane using this branch". Both lived in the v1 plugin's
+`lib/common.sh` (retired with the `kampus-pipeline` plugin, #5937).
 
 **A stamp that is only an identity cannot answer a liveness question.** Every sibling subagent of one
 dispatching session shares `$CLAUDE_CODE_SESSION_ID`, and nothing else in the process env

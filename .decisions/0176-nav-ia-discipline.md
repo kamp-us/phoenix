@@ -151,7 +151,7 @@ grammar (ADR 0162's mechanism):
 
 The rule **extends beyond the topbar** to the per-product Subnavs (the zone grammar governs
 both tiers). It carries its own **"Where the ADR is silent"** clause — a nav decision this ADR
-does not cover is a gap to surface to the founder via [report](../claude-plugins/kampus-pipeline/skills/report/SKILL.md),
+does not cover is a gap to surface to the founder via `report`,
 never a blank for an agent to fill — mirroring the manifest's existing silence rule so the IA
 section grows only when the founder ratifies more law.
 

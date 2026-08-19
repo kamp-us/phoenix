@@ -16,7 +16,7 @@ explicitly a **later** follow-up and out of scope; this makes the on-demand run 
 
 ## How the agentic explorer is invoked — the injected walk seam
 
-The [rite-audit explorer](../../claude-plugins/kampus-pipeline/skills/rite-audit/SKILL.md) is
+The `rite-audit explorer` is
 an **LLM driving the Playwright MCP**, not a plain function — so it cannot run as a programmatic
 call inside this TS process. It is therefore the **injected walk seam** ([`AuditWalk`](./src/run.ts)),
 exactly the shape [`@kampus/audit-stage`](../audit-stage/README.md)'s `runHook` was built as:

@@ -77,22 +77,23 @@ exists every fabrika skill's rejections live inline like these.
 - **A `resolve-repo` verb.** v1's exists only to feed hand-rolled `gh api` calls in the skill body.
   This skill has no such surface: repo resolution is a shared input on every verb below.
 
-### The name collision with v1's `triage` is live, not dormant
+### The name collision with v1's `triage` — live while v1 stood, retired with it
 
-**A skill named `triage` already exists** at `claude-plugins/kampus-pipeline/skills/triage/`, it is
-model-invoked, and its six triggers are near-identical to this one's. The `/report` contract recorded
-the analogous collision as "dormant only by configuration — `.claude/settings.json` has
-`"kampus-pipeline@kampus": false`". **That reasoning does not hold.** `.claude/skills` is a symlink to
-`claude-plugins/kampus-pipeline/skills`, so v1's skills load as *project-level* skills and the plugin
-toggle does not stop them: a live session's roster carries both `adr` and `fabrika:adr`, and both
-`report` and `fabrika:report`. Settled by [ADR 0255](../../../../.decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md)
+**A skill named `triage` existed** at `claude-plugins/kampus-pipeline/skills/triage/` until the v1
+plugin's retirement (ADR 0303, #5937); it was model-invoked, and its six triggers were
+near-identical to this one's. The `/report` contract recorded the analogous collision as "dormant
+only by configuration — `.claude/settings.json` has `"kampus-pipeline@kampus": false`". **That
+reasoning did not hold.** `.claude/skills` was a symlink to `claude-plugins/kampus-pipeline/skills`,
+so v1's skills loaded as *project-level* skills and the plugin toggle did not stop them: a live
+session's roster carried both `adr` and `fabrika:adr`, and both `report` and `fabrika:report`.
+Settled by [ADR 0255](../../../../.decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md)
 (filed as #4829); the adjacent routing-pin half is #4761.
 
-What the ADR measured sharpens this: the two never share a name — the loader namespaces plugin
-skills, so the bare `triage` is always v1's. What overlaps is the **description**, and this pair's
-overlap is the corpus's worst (same plugin-relative role, nearly identical triggers). So the stated
-mitigation is the right one, and it has to be load-bearing here. Two things follow, and neither is
-optional:
+What the ADR measured sharpens this: the two never shared a name — the loader namespaces plugin
+skills, so the bare `triage` was always v1's. What overlapped was the **description**, and this
+pair's overlap was the corpus's worst (same plugin-relative role, nearly identical triggers). So
+the stated mitigation was the right one, and it stays load-bearing as description discipline even
+with the collision gone. Two things follow, and neither is optional:
 
 - **This skill is model-invoked deliberately** (conventions §3): triage must fire when someone says
   "triage the queue" without naming a plugin, and other skills must be able to reach it. It therefore

@@ -56,10 +56,14 @@ enforces the property it gated.)
 | `unresolved-threads-guard` | Reads a PR's review threads; a `push` carries no PR number. |
 | `roadmap-guard` | Repo-wide, but its `milestone` event and weekly schedule already cover post-merge drift. |
 
-**Already carried `push: main`** (6): `adoption-lint`, `ci`, `cli-invocation-guard`,
-`deploy`, `skill-gh-lint`, `trap-status-guard`. (`cli-invocation-guard` and
-`trap-status-guard` retired in [#6098](https://github.com/kamp-us/phoenix/issues/6098);
-`skill-gh-lint` kept the trigger through its port.)
+**Already carried `push: main`** (3): `ci`, `deploy`, `skill-gh-lint`.
+(The audit named 6; `adoption-lint`, `cli-invocation-guard` and `trap-status-guard` policed
+the v1 plugin's shell and are gone with it —
+[#5937](https://github.com/kamp-us/phoenix/issues/5937) deleted the plugin, and the guard
+fleet's own migration retired `adoption-lint` in
+[#6096](https://github.com/kamp-us/phoenix/issues/6096) and the other two in
+[#6098](https://github.com/kamp-us/phoenix/issues/6098). `skill-gh-lint` kept the trigger
+through its port onto `fabrika guard`.)
 
 Workflows with no `pull_request` trigger at all (schedules, issue events, release events)
 are out of scope: `changelog`, `epic-autoclose`, `homing-guard`, `orphan-sweep`,

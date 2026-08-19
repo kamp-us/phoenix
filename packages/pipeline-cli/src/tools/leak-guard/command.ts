@@ -149,7 +149,7 @@ const scan = Command.make(
 				}
 			}
 			yield* Console.error(
-				"Use a repo-relative path (apps/web/..., claude-plugins/kampus-pipeline/skills/...). If this is a documented pattern, not a real path, add the surface to DOC_SELF_EXEMPT in packages/pipeline-cli/src/tools/leak-guard/leak-guard.ts.",
+				"Use a repo-relative path (apps/web/..., claude-plugins/fabrika/skills/...). If this is a documented pattern, not a real path, add the surface to DOC_SELF_EXEMPT in packages/pipeline-cli/src/tools/leak-guard/leak-guard.ts.",
 			);
 			// A failed effect → a non-zero exit. The report is already on stderr.
 			return yield* Effect.fail(new LeakFound({count: flagged.length}));

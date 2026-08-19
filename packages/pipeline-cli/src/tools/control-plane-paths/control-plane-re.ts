@@ -17,29 +17,10 @@
  * escapes, so `\\.` is the value `\.` and `([^/]+/)*[^/]+\\.sh$` is the value
  * `([^/]+/)*[^/]+\.sh$`.
  *
- * The skills clause is the WHOLE TREE — `^claude-plugins/kampus-pipeline/skills/`, every file
- * at any depth regardless of extension (founder ruling on #4446, implemented by #4458). It
- * replaces three narrower branches that between them left a proven zero-approval hole: an
- * ENUMERATED list of gate-skill dirs, a `([^/]+/)*[^/]+\.sh$` any-depth `.sh` clause, and an
- * exact-file clause for `gh-issue-intake-formats.md`. Because `.github/CODEOWNERS` has no `*`
- * catch-all and the `main` ruleset pairs `required_approving_review_count: 0` with
- * `require_code_owner_review: true`, a path matching NO row merges with ZERO approvals — so a
- * non-`.sh` file beside a gated script (a `README.md`, a `.env`, an extensionless helper, a
- * relocated `.md`) was proven-ordinary and auto-mergeable. The DIRECTORY is now the unit of
- * coverage, not the file type: the enumeration cannot rot as skills are added, and no naming
- * convention has to hold for the tree to stay gated. The approval-load cost — the four
- * previously-excluded operational skill dirs (`heal-ci`, `what-shipped`, `doctor`, `wayfinder`)
- * are now §CP too — was stated to the founder and accepted.
- *
- * The `lib/` clause (`^claude-plugins/kampus-pipeline/lib/`) carries the skills clause's coverage
- * to the shared shell library's new home. `shared/` was never a skill — it survived inside
- * `skills/` only because `validate-skills.sh` enumerates skills via a per-directory SKILL.md glob
- * that skips it — so #4484 moved `common.sh` out to the ordinary `bin/` + `lib/` layout. Outside
- * the skills tree the destination is proven-ordinary (zero required approvals), and this file is
- * what every extracted
- * per-skill script sources: relocating it without this branch would strip the human merge gate
- * from the highest-leverage edit surface in the extraction programme. Move and branch are atomic
- * by construction, one commit, the #4462 discipline.
+ * The kampus-pipeline plugin clauses (skills/, lib/, agents/, hooks) retired with the plugin
+ * itself (#5937 — one pipeline, fabrika; the tree is deleted, so the clauses classified paths
+ * that can no longer exist). Fabrika's control-plane story is CODEOWNERS-direct (ADR 0135):
+ * its ship gate reads `.github/CODEOWNERS`, not this regex.
  *
  * The biome-governance clauses (`^biome\.jsonc$`, `^biome-plugins/`) are §CP because
  * lint/GritQL governance config is a guard-relaxing vector: an ungated path to weaken a
@@ -106,11 +87,10 @@
  * per ADR 0187's enforcement-surface test. The trade is recorded in ADR 0218, including the three
  * modules the core imports without retaining, which `core-import-closure.unit.test.ts` pins.
  *
- * Anti-self-authorization is preserved (#981): the live merge-deciding gates still
- * re-resolve the boundary from the formats doc on `origin/main` at run time, so a
- * boundary-editing PR is classified against MAIN's boundary, not its own edit. This
- * const is the source the formats-doc line is kept in sync WITH — it does not move the
- * runtime resolution off the origin/main read.
+ * The second prose copy (the `CONTROL_PLANE_RE=` line in the v1 formats doc, which the v1
+ * gates re-resolved from `origin/main`; #981/#2761) retired with the kampus-pipeline plugin
+ * (#5937) — this const and `.github/CODEOWNERS` are the two surfaces left, and
+ * `codeowners-cp check` holds them in sync.
  */
 export const CONTROL_PLANE_RE =
-	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/|^claude-plugins/kampus-pipeline/lib/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/fabrika-cli/src/ci/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$|^biome\\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\\.lefthook)[^/]+$";
+	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^packages/ci-required/|^packages/fabrika-cli/src/ci/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$|^biome\\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\\.lefthook)[^/]+$";

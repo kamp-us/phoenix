@@ -14,7 +14,7 @@ tags: [fabrika, pipeline, cli, contracts]
 
 A fabrika skill that reads another skill's artifact reads it with a model, against prose. v1 carried
 every wire format in one 2,999-line contract
-([`claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md)),
+(`claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`),
 cited ten times by v1's triage. fabrika cites it zero times **by design** — ADR
 [0238](0238-fabrika-reimplements-v1-never-calls-it.md) rules that fabrika re-implements v1 rather
 than calling it — and fabrika's own three docs

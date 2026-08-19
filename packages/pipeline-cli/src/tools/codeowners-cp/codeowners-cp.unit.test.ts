@@ -37,10 +37,6 @@ describe("splitTopLevelBranches", () => {
 		expect(branches).toEqual([
 			"(\\.claude|\\.github)/",
 			"\\.claude-plugin/",
-			"claude-plugins/kampus-pipeline/skills/",
-			"claude-plugins/kampus-pipeline/lib/",
-			"claude-plugins/kampus-pipeline/agents/",
-			"claude-plugins/kampus-pipeline/hooks(/|\\.json$)",
 			"packages/ci-required/",
 			"packages/fabrika-cli/src/ci/",
 			"packages/pipeline-cli/src/[^/]+$",
@@ -119,11 +115,6 @@ describe("cpPaths over the live regex", () => {
 			".claude/",
 			".github/",
 			".claude-plugin/",
-			"claude-plugins/kampus-pipeline/skills/",
-			"claude-plugins/kampus-pipeline/lib/",
-			"claude-plugins/kampus-pipeline/agents/",
-			"claude-plugins/kampus-pipeline/hooks/",
-			"claude-plugins/kampus-pipeline/hooks.json",
 			"packages/ci-required/",
 			"packages/fabrika-cli/src/ci/",
 			"packages/pipeline-cli/src/*",
@@ -207,11 +198,6 @@ describe("findUncovered — the drift check", () => {
 		"/.claude/ @usirin",
 		"/.github/ @usirin",
 		"/.claude-plugin/ @usirin",
-		"/claude-plugins/kampus-pipeline/skills/ @usirin",
-		"/claude-plugins/kampus-pipeline/lib/ @usirin",
-		"/claude-plugins/kampus-pipeline/agents/ @usirin",
-		"/claude-plugins/kampus-pipeline/hooks/ @usirin",
-		"/claude-plugins/kampus-pipeline/hooks.json @usirin",
 		"/packages/ci-required/ @usirin",
 		"/packages/fabrika-cli/src/ci/ @usirin",
 		"/packages/pipeline-cli/src/* @usirin",
@@ -241,11 +227,6 @@ describe("findUncovered — the drift check", () => {
 			"/.claude/ @usirin",
 			"/.github/ @usirin",
 			"/.claude-plugin/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/ @usirin",
-			"/claude-plugins/kampus-pipeline/lib/ @usirin",
-			"/claude-plugins/kampus-pipeline/agents/ @usirin",
-			"/claude-plugins/kampus-pipeline/hooks/ @usirin",
-			"/claude-plugins/kampus-pipeline/hooks.json @usirin",
 			"/packages/ci-required/ @usirin",
 			"/packages/fabrika-cli/src/ci/ @usirin",
 			"/packages/pipeline-cli/ @usirin",
@@ -258,22 +239,17 @@ describe("findUncovered — the drift check", () => {
 	});
 
 	it("flags a §CP path the regex adds but CODEOWNERS still misses (the drift it guards)", () => {
-		// CODEOWNERS missing the hooks rows + pipeline-cli — the exact pre-#955 gap.
+		// CODEOWNERS missing the pipeline-cli rows — the exact pre-#955 gap.
 		const stale = [
 			"/.claude/ @usirin",
 			"/.github/ @usirin",
 			"/.claude-plugin/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/ @usirin",
-			"/claude-plugins/kampus-pipeline/lib/ @usirin",
-			"/claude-plugins/kampus-pipeline/agents/ @usirin",
 			"/packages/ci-required/ @usirin",
 			"/biome.jsonc @usirin",
 			"/biome-plugins/ @usirin",
 		].join("\n");
 		const uncovered = findUncovered(paths, parseCodeownersPatterns(stale)).map((p) => p.path);
 		expect(uncovered).toEqual([
-			"claude-plugins/kampus-pipeline/hooks/",
-			"claude-plugins/kampus-pipeline/hooks.json",
 			"packages/fabrika-cli/src/ci/",
 			"packages/pipeline-cli/src/*",
 			"packages/pipeline-cli/src/tools/ci-required/",
@@ -326,16 +302,13 @@ describe("renderReport", () => {
 });
 
 // Lockstep: eat our own dogfood — extract the canonical §CP line from the real
-// gh-issue-intake-formats.md on disk and assert the LIVE_RE fixture still equals it.
-// Without this, the fixture drifts silently from §CP (the review-design/agents/ gap of
-// #2343), because validate-gate-path-drift.sh's consumer set never included these unit
-// fixtures. This assertion is the drift check the fixtures were missing.
+// boundaries.md on disk (the v1 formats doc's successor, #5937) and assert the LIVE_RE
+// fixture still equals it. Without this, the fixture drifts silently from §CP (the
+// review-design/agents/ gap of #2343). This assertion is the drift check the fixtures
+// were missing.
 describe("LIVE_RE fixture stays in lockstep with §CP on disk", () => {
 	const FORMATS_PATH = fileURLToPath(
-		new URL(
-			"../../../../../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",
-			import.meta.url,
-		),
+		new URL("../control-plane-paths/boundaries.md", import.meta.url),
 	);
 
 	it("equals the canonical CONTROL_PLANE_RE extracted from the formats doc", () => {

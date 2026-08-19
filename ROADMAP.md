@@ -117,8 +117,9 @@ The milestones in **declared focus**: the campaigns an execution engine may open
 | Milestone | Declared |
 |-----------|----------|
 | #46 | 2026-08-18 |
+| #47 | 2026-08-18 |
 
-**The grammar.** Columns are `Milestone | Declared`, in that order. `Milestone` pins one focused milestone **by number** (`#N`) — the same row→milestone-by-number binding `## Arcs` and `## Campaigns` use, and the one link to the operational projection. `Declared` is the ISO date (`YYYY-MM-DD`) that row was declared. The table carries **N rows**, one per milestone in focus, and the focus is the set of them: a repo running several streams at once declares a row each (#6005). Phoenix runs one, so phoenix's table has one row. **One unreadable row makes the whole declaration unreadable** — a fence never falls back to the rows it could parse.
+**The grammar.** Columns are `Milestone | Declared`, in that order. `Milestone` pins one focused milestone **by number** (`#N`) — the same row→milestone-by-number binding `## Arcs` and `## Campaigns` use, and the one link to the operational projection. `Declared` is the ISO date (`YYYY-MM-DD`) that row was declared. The table carries **N rows**, one per milestone in focus, and the focus is the set of them: a repo running several streams at once declares a row each (#6005). Phoenix runs two — the #46 drain and the #47 start — so the table carries a row each. **One unreadable row makes the whole declaration unreadable** — a fence never falls back to the rows it could parse.
 
 **Absence and emptiness both mean no focus is declared.** A missing `## Focus` section and a present-but-empty one are the same well-formed default, and every consumer reads them the same way — nothing is out of scope, everything stays admissible. Neither is ever a refusal: a fence that refused on absence would wedge the pipeline the moment nobody had declared a focus (founder ruling on #5011 — an empty `## Focus` admits everything).
 

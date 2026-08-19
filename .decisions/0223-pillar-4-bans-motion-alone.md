@@ -119,7 +119,7 @@ transcribe half, tracked separately at [#4385](https://github.com/kamp-us/phoeni
   inherits the obligation, instead of it reaching only reviewers running one taste skill.
 - **The taste skill's row can eventually cite the law directly** rather than by analogy, once the
   manifest carries the prohibition. Until then the row stands exactly as it is — its text at
-  [`taste-animation-review/STANDARDS.md`](../claude-plugins/kampus-pipeline/skills/taste-animation-review/STANDARDS.md)
+  `taste-animation-review/STANDARDS.md`
   is byte-unchanged by this ADR, as the #4356 ruling requires.
 - **Pillar 4's list grows from four entries to five.** That is a real cost against the pillar's
   memorability, accepted knowingly — see the rejected alternative above.

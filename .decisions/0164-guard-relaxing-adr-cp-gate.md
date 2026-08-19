@@ -12,7 +12,7 @@ tags: [pipeline, ship-it, control-plane, governance, security, gates]
 
 An ADR under `.decisions/**` is **doc-class**: `review-doc` verifies it, and on a
 `review-doc: PASS` `ship-it` **auto-merges** it — `.decisions/**` is explicitly *non*-blocking
-in the control-plane set ([`gh-issue-intake-formats.md §CP`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md),
+in the control-plane set (`gh-issue-intake-formats.md §CP`,
 "Everything else — … `.decisions/**` … — is non-blocking and auto-merges through its matching
 gate on a PASS"). The canonical §CP matcher is a **path** regex; it does not — and structurally
 cannot, by path alone — distinguish a guard-relaxing ADR from an ordinary one.
@@ -74,7 +74,7 @@ for a fail-closed over-match, on purpose.
 ### Enforcement seam — `ship-it` Step 0, single-sourced in §CP, drift-locked
 
 - The predicate lives as **one canonical definition** — `GUARD_ADR_RE`, the guard-vocabulary
-  regex — in [`gh-issue-intake-formats.md §CP`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md),
+  regex — in `gh-issue-intake-formats.md §CP`,
   beside `CONTROL_PLANE_RE`. It is **not** a hard-coded copy: `ship-it` Step 0 carries only a
   fail-closed reference literal and **re-resolves the live value from `origin/main` at run time**
   (REST raw, `?ref=main`), exactly as it already does for `CONTROL_PLANE_RE` (#981) — so a stale

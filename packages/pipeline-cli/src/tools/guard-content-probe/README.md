@@ -66,9 +66,10 @@ outcomes must stay distinguishable — proven-ordinary, proven-guard, and could-
 and only the first may skip the §CP hold:
 
 ```bash
-# ship-it Step 0 / review gate: read each touched .decisions/** ADR's body at head, probe it.
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# `cp_head_sha` is §CPREAD of the skills' gh-issue-intake-formats.md: it DISCARDS gh's payload on a
+# (v1 caller idiom, retired with the kampus-pipeline plugin — #5937; kept as the worked example
+# of the state-word contract.) Read each touched .decisions/** ADR's body at head, probe it.
+PCLI="node packages/pipeline-cli/src/bin.ts"
+# `cp_head_sha` was §CPREAD of the v1 formats doc: it DISCARDS gh's payload on a
 # failed read, so an empty HEAD_SHA is a live guard rather than 120 chars of error JSON (#4216).
 cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
 [ -n "$HEAD_SHA" ] || echo "BLOCKING (head SHA unreadable ⇒ no ref to probe at ⇒ §CP, fail-closed)"

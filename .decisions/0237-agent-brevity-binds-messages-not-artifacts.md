@@ -29,10 +29,10 @@ place or die" — the same instinct applied to code comments, and itself the sub
 [0119](0119-comment-discipline-is-an-independent-review-criterion.md).
 
 Authored prose is already governed.
-[`writing-clearly-and-concisely`](../claude-plugins/kampus-pipeline/skills/writing-clearly-and-concisely/SKILL.md)
+`writing-clearly-and-concisely`
 carries Strunk plus an AI-tell catalog at
-[`references/ai-writing-tropes.md`](../claude-plugins/kampus-pipeline/skills/writing-clearly-and-concisely/references/ai-writing-tropes.md);
-[`review-doc`](../claude-plugins/kampus-pipeline/skills/review-doc/SKILL.md) scores it as a gate
+`references/ai-writing-tropes.md`;
+`review-doc` scores it as a gate
 criterion and `write-code`'s doc path reads it before generating prose. Its declared scope is
 English prose artifacts: docs, ADR and pattern bodies, PR descriptions, issue bodies, progress
 comments, commit messages. The gap is therefore narrow — the artifact half is covered and
@@ -52,7 +52,7 @@ while pointing at the skill for the artifact half.**
 
 **1. "No AI jargon" means the AI-tell vocabulary. House idioms are exempt.** The ban is scoped to
 the catalog in
-[`references/ai-writing-tropes.md`](../claude-plugins/kampus-pipeline/skills/writing-clearly-and-concisely/references/ai-writing-tropes.md)
+`references/ai-writing-tropes.md`
 — magic adverbs, `delve`/`leverage`/`utilize`, negative parallelism, empty transitions, false
 suspense — and never to coined labels generally. `§CP`, `Fixes #N`, `fail-closed`, the
 `Completed / Decisions / Gotchas / Next` headers, ADR frontmatter, and the `.glossary/` defined
