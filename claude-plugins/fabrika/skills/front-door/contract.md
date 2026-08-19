@@ -686,6 +686,12 @@ never the shipped default (`packages/fabrika-cli/src/config/document.ts`).
 **A repo with no `.fabrika.jsonc` is `resolved` at exit `0`**, every row `default`. That is the
 whole point of a shipped default, and it is the three-state law's proven-empty class, not its third.
 
+With `--json`, stdout is one object carrying `outcome` (the header's state), `path`, `keys`,
+`declared`, `unknown`, and `settings` — one entry per row with `key`, `provenance`, `value` and
+`detail`, plus `asOf`/`asOfKind`. Two fields differ from the tab form: `path` has no cell there, and
+`detail` carries the same literal `-` an empty cell prints rather than being omitted. A refusal at
+`7` or `11` emits no object, since a non-zero exit [carries no payload](#separator).
+
 **Exit status**
 
 | Code | Trigger |
@@ -715,6 +721,13 @@ setting	capClearAuthors	declared	["@usirin","@notusirin"]	-	2026-08-18T22:50:20Z
 setting	docLeakExempt	declared	["/CLAUDE.md"]	-	2026-08-18T22:50:20Z
 setting	governedRoots	default	[".decisions/",".claude/",".github/","claude-plugins/",".fabrika.jsonc"]	.fabrika.jsonc declares no `governedRoots`	2026-08-18T22:50:20Z
 setting	workflowValidators	declared	[]	-	2026-08-18T22:50:20Z
+```
+
+The same run under `--json` — the notice line stays on stderr, so stdout is the object alone:
+
+```
+$ fabrika status settings --json
+{"outcome":"resolved","path":".fabrika.jsonc","keys":4,"declared":3,"unknown":0,"settings":[{"key":"capClearAuthors","provenance":"declared","value":["@usirin","@notusirin"],"detail":"-","asOf":"2026-08-18T22:50:20Z","asOfKind":"read-now"},{"key":"docLeakExempt","provenance":"declared","value":["/CLAUDE.md"],"detail":"-","asOf":"2026-08-18T22:50:20Z","asOfKind":"read-now"},{"key":"governedRoots","provenance":"default","value":[".decisions/",".claude/",".github/","claude-plugins/",".fabrika.jsonc"],"detail":".fabrika.jsonc declares no `governedRoots`","asOf":"2026-08-18T22:50:20Z","asOfKind":"read-now"},{"key":"workflowValidators","provenance":"declared","value":[],"detail":"-","asOf":"2026-08-18T22:50:20Z","asOfKind":"read-now"}]}
 ```
 
 ```
