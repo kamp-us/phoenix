@@ -10,6 +10,7 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {resolveCi} from "../config/ci-producer.ts";
 import {governedRootsOr} from "../config/paths.ts";
 import {resolveTargetRepo, scannedLine} from "../ship/target.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -79,6 +80,7 @@ export const runSweep = (
 			);
 		}
 
+		const ci = yield* resolveCi(options.cwd);
 		const notices: string[] = [];
 		const found: Diagnosis[] = [];
 		let scanned = 0;
@@ -91,7 +93,7 @@ export const runSweep = (
 					notices,
 				);
 			}
-			const result = yield* diagnoseOne(repo, row.number, "", options, governed.roots);
+			const result = yield* diagnoseOne(repo, row.number, "", options, governed.roots, ci);
 			scanned += 1;
 			if (result._tag === "Refused") {
 				return refuse(

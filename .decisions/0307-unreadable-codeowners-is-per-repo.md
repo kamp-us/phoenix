@@ -1,12 +1,22 @@
 ---
 id: 0307
 title: An unreadable CODEOWNERS follows the repo's own declaration, whose shipped default ships
-status: accepted
+status: retired
 date: 2026-08-19
 tags: [control-plane, fabrika, config, ship]
 ---
 
 # 0307 — An unreadable CODEOWNERS follows the repo's own declaration, whose shipped default ships
+
+> **Retired — this behaviour was reverted on
+> [#5631](https://github.com/kamp-us/phoenix/issues/5631) and never shipped.** The founder ruled
+> that the code comes back to ADR [0220](0220-cp-surface-declared-at-standup.md) as written, and the
+> revert landed on the same epic that would have carried this record: `ship/boundary.ts` reads
+> CODEOWNERS as two facts again, an unreadable file is exit `11` in every repo, and no config value
+> waives it. The `unreadableCodeowners` key still resolves in `status settings` but nothing reads
+> it. **Everything below this line describes a decision that was withdrawn before it ran** — it is
+> kept as the record of what was tried and why it was pulled back, not as law. The live rule is
+> 0220 §4 and ADR [0135](0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md) §4.
 
 **What this decides:** when fabrika cannot read `.github/CODEOWNERS`, what happens next is a value
 each repo writes in its own `.fabrika.jsonc`; a repo that writes nothing gets the value that ships

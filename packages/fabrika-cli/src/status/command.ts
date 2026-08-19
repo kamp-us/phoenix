@@ -11,8 +11,9 @@
 import {fileURLToPath} from "node:url";
 import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
-import {CONFIG_PATH} from "../config/document.ts";
+import {CONFIG_PATH, type ConfigSource} from "../config/document.ts";
 import {readConfigSource} from "../config/source.ts";
+import {repoConfigSource} from "../config/working-root.ts";
 import {discoverRepoRoot} from "../delegate/root.ts";
 import {leafCommand} from "../excess-operand.ts";
 import type {Attempt} from "../io/git.ts";
@@ -89,6 +90,12 @@ const repositoryRoot: Effect.Effect<string, never, FileSystem.FileSystem | Path.
 	},
 );
 
+/** The config surface under `root` when one was declared, else the one above the cwd. */
+const configSurface = (
+	root: string | null,
+): Effect.Effect<ConfigSource, never, FileSystem.FileSystem | Path.Path> =>
+	root === null ? repoConfigSource(process.cwd()) : readConfigSource(root);
+
 const resolveTarget = (explicit: string | null) => resolveRepo(explicit, process.env);
 
 const menu = leafCommand(
@@ -116,14 +123,13 @@ const settings = leafCommand(
 		),
 		surfaces: Flag.boolean("surfaces").pipe(
 			Flag.withDescription(
-				"expand `surfaceDispositions` into one `surface` row per repo surface, each with the disposition in force here and what that surface is",
+				"expand `surfaceDispositions` into one `surface` row per repo surface, each with the disposition this repo resolves to and what that surface is",
 			),
 		),
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({root, surfaces, json}) {
-		const dir = Option.getOrNull(root) ?? (yield* repositoryRoot);
-		const source = yield* readConfigSource(dir);
+		const source = yield* configSurface(Option.getOrNull(root));
 		yield* emit(
 			runSettings({
 				source,
@@ -137,7 +143,7 @@ const settings = leafCommand(
 ).pipe(
 	Command.withShortDescription("The resolved config surface, every key with its provenance."),
 	Command.withDescription(
-		"Print every key on the config surface with its resolved value and where that value came from — the one place a skill asks what `.fabrika.jsonc` resolves to, so no document has to restate a value. First stdout line is `settings\\t<resolved|unknown>\\t<keys>\\t<declared>\\t<unknown>\\t<as-of>`, then one `setting\\t<key>\\t<declared|default|unknown>\\t<value-as-json>\\t<detail>\\t<as-of>` line each. A repo with no `.fabrika.jsonc` prints the full shipped-default set at exit 0; a key whose value could not be established makes the whole readout a refusal that names each UNKNOWN key on stderr, never the default it did not resolve to. Pass --surfaces to expand `surfaceDispositions` into one `surface\\t<id>\\t<fail-loud|degrade|bootstrap>\\t<what the surface is>` line per repo surface, appended to the same readout — the id-to-word value alone says nothing about what a surface is, and that half is what an operator relays. This verb writes nothing. Exits 7 (the config surface registers zero keys, or --surfaces was passed and no `surfaceDispositions` key is registered — ADR 0092), 11 (`.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green). Example: fabrika status settings",
+		"Print every key on the config surface with its resolved value and where that value came from — the one place a skill asks what `.fabrika.jsonc` resolves to, so no document has to restate a value. First stdout line is `settings\\t<resolved|unknown>\\t<keys>\\t<declared>\\t<unknown>\\t<as-of>`, then one `setting\\t<key>\\t<declared|default|unknown>\\t<value-as-json>\\t<detail>\\t<as-of>` line each. A repo with no `.fabrika.jsonc` prints the full shipped-default set at exit 0; a key whose value could not be established makes the whole readout a refusal that names each UNKNOWN key on stderr, never the default it did not resolve to. Pass --surfaces to expand `surfaceDispositions` into one `surface\\t<id>\\t<fail-loud|degrade|bootstrap>\\t<what the surface is>` line per repo surface, appended to the same readout — the id-to-word value alone says nothing about what a surface is, and that half is what an operator relays. This verb writes nothing. Exits 7 (the config surface registers zero keys, or --surfaces was passed and no `surfaceDispositions` key is registered — ADR 0092), 11 (the repository root could not be resolved, or `.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green). Example: fabrika status settings",
 	),
 );
 
@@ -262,7 +268,7 @@ const open = leafCommand(
 		for (const name of wanted) {
 			if (name === "menu" && roster !== null) fields.push(menuField(roster, asOf));
 			if (name === "settings") {
-				const source = yield* readConfigSource(yield* repositoryRoot);
+				const source = yield* configSurface(null);
 				fields.push(settingsField(settingRows(source), CONFIG_PATH, asOf));
 			}
 			if (name === "board") {

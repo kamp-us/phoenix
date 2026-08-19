@@ -681,7 +681,7 @@ fabrika triage homes [--roadmap <path>] [--repo <owner/name>] [--json]
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--roadmap` | string | no | `ROADMAP.md` at the repo root | the roadmap file whose `## Arcs` and `## Campaigns` tables the open milestones are joined to |
+| `--roadmap` | string | no | `roadmapFile` in `.fabrika.jsonc`, itself defaulting to `ROADMAP.md` | the roadmap file whose `## Arcs` and `## Campaigns` tables the open milestones are joined to. Unflagged, the verb resolves the declared path first; a `.fabrika.jsonc` it could not read refuses `11` rather than falling back to the shipped name |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
