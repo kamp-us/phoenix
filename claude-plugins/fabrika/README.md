@@ -65,8 +65,7 @@ directory was empty; it is harmless and can go with any later change.
 
 ## Install
 
-fabrika ships through the `kampus` marketplace, and phoenix consumes it from that same
-marketplace entry — the ship channel is the dogfood channel ([#4670](https://github.com/kamp-us/phoenix/issues/4670)).
+**External consumers** install fabrika from the `kampus` marketplace on GitHub.
 
 ```
 /plugin marketplace update kampus
@@ -79,10 +78,25 @@ it is out of date, and the same message comes back when the marketplace was neve
 the machine at all, so the refusal does not tell you which of the two you hit. Updating first
 clears the common one.
 
-Inside phoenix you type neither line: `.claude/settings.json` declares the marketplace under
-`extraKnownMarketplaces.kampus` and enables `fabrika@kampus`. A fresh clone picks both up once the
-workspace is trusted — settings-declared marketplaces are read from project settings only after
-you accept the trust prompt — so no collaborator needs a registration of their own.
+**Working inside the repo that authors the plugin**, register the checkout itself as the
+marketplace source instead, so a local or just-merged plugin change is live on the next
+`/reload-plugins` (ADR [0273](../../.decisions/0273-fabrika-ships-as-an-installed-plugin.md)'s
+2026-08-16 amendment). From the repo root, once per machine:
+
+```bash
+claude plugin marketplace add ./
+claude plugin install fabrika@kampus
+```
+
+Both lines are needed. Registering the marketplace installs nothing — verified on Claude Code
+2.1.234 against a fresh clone with no prior `kampus` registration: after the `add`,
+`claude plugin list` reported no plugins installed. Skipping the install leaves `/reload-plugins`
+with zero fabrika skills and no error naming the cause.
+
+**Already on the GitHub `kampus` marketplace?** Run the same `marketplace add ./` — on 2.1.234 it
+overwrites the existing `kampus` entry's source in place and the installed plugin survives, so no
+reinstall is needed. Do not reach for `claude plugin marketplace remove kampus` first: removing a
+marketplace also uninstalls its plugins, which is what turns a one-command switch into three.
 
 ## What is deliberately absent
 

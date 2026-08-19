@@ -36,7 +36,8 @@ namespaces (`review-code` / `review-doc` / `review-skill`) and is **both floor a
 mixed diff gets a verdict in each class present, because one filled namespace fail-closes an
 otherwise passing PR, and a namespace outside the set is one you did not judge and must not emit.
 `scope` also prints the head SHA, the issue reference (`fixes:<n>` / `part-of:<n>` / `-`), `self`,
-and `harness`. Done when the set is read.
+`harness`, and `governance\t<required|not-required>` — §6's trigger, and a different question from
+`harness`. Done when the set is read.
 
 The printed head is the commit the file list was **read out of**, not a label beside it: `scope`
 fetches the PR head and reads the changed files from the object database, checking nothing out. It
@@ -93,6 +94,11 @@ to each class's slice: code → [rubrics/code.md](rubrics/code.md) · doc →
 any prose surface: apply **fabrika's** shared writing rubric skill verbatim, never v1's copy; the
 doc rubric's prose-craft line is the fallback until it lands.
 
+**A contract you need while grading arrives one section at a time** — including a `contract.md` the
+diff itself edits. Take each heading the judgment touches with
+`fabrika wire doc-section --heading "…" < <skill-base>/contract.md`, never the whole file (ADR
+[0296](../../../../.decisions/0296-contracts-are-read-by-section.md)).
+
 **No class re-executes what CI enforces** — a local re-run can report another checkout's cached
 green as this PR's. The code class's execution evidence is the structural CI-at-head read, refusing
 incomplete enumerations:
@@ -120,7 +126,8 @@ a regression test covers qty > 1
 EOF
 ```
 
-**Trivial mode.** A bounded-trivial diff (one concern, `harness: false` in scope, no new surface,
+**Trivial mode.** A bounded-trivial diff (one concern, `harness: false` in scope — blast radius,
+never the governance obligation, which is §6's `governance` token — no new surface,
 truthful `None.`) skips the fan-out only — fewer dimensions, **not** a lowered bar; any ambiguity
 routes back to the full path, and the verdict stays conjunctive default-deny.
 
@@ -138,9 +145,45 @@ undisclosed that this gate could see"* — never "no deviations exist".
 
 ## 6 — The governance seam and the self fence
 
-- `harness: true` ⇒ the governance namespace is **derived-required**: fire the `governance`
-  skill and wait — your PASS with no governance verdict on such a diff is not a complete gate
-  result. You never emit governance's namespace yourself.
+- `governance: required` ⇒ the governance namespace is **derived-required on every round, whatever
+  polarity you reach**: fire the `governance` skill and wait — a verdict of yours with no
+  governance verdict on such a diff is not a complete gate result, and that holds for a FAIL
+  exactly as for a PASS (ADR [0293](../../../../.decisions/0293-governance-fires-every-round.md)).
+  The token is §1's `governance` line, and `fabrika governance scope <pr>` prints the same one over
+  the same four roots — the sanctioned derivation (ADR
+  [0280](../../../../.decisions/0280-review-shell-carries-the-spawn-tool.md)). **Never read it off
+  `harness`**: that flag counts three roots and `.decisions/` is not one, so a decision-record PR
+  reads `harness: false` and still owes the verdict — PR #5604 got a clean PASS that way and the
+  ship gate then blocked on `ns governance absent` (#5607).
+  **A FAIL is not a licence to skip it.** "The repair moves the head, so this verdict is stale on
+  arrival" is the deadlock ADR 0293 rules out: the third refusal guarding `operate`'s `FAIL` row —
+  which owns that rule, this is only a pointer to it — records no FAIL until every derived
+  namespace holds a binding verdict, so a declined governance round strands the lane with the
+  repair undispatchable. Fire it, and expect to fire it again at each repair head — the extra run
+  is the accepted cost. Neither namespace discharges the other. You never emit governance's
+  namespace yourself. **And there is no route out of it**: the Terminal vocabulary's `routed
+  elsewhere` covers `review-ui` and `check-epic-plan` only, so this skill has no terminal that ends
+  a `governance: required` run with the governance namespace un-fired.
+- **On an epic child the governance verdict is range-scoped and lands on the child issue** —
+  nothing governance-shaped waits for the epic tail. An epic run opens one tail PR (ADR
+  [0285](../../../../.decisions/0285-epic-machine-ends-in-review.md)), so mid-run a child has no PR
+  a head could bind to, and `lane prove`'s child arm derives that child's namespaces from the
+  **range's own changed paths** through the same `touchesGovernanceRoot` floor it uses on a PR
+  ([`prove-verb.ts`](../../../../packages/fabrika-cli/src/lane/prove-verb.ts)) — a range touching a
+  governance root derives `governance` exactly as a PR diff does. So post every namespace the range
+  derives over that range, on the child issue, with `--base`/`--tip` in place of `--sha`: yours
+  through `fabrika review post <child-issue> --namespace <ns> --base <b> --tip <t>`, governance's
+  through the `governance` skill's own range form (its §5). What binds is content, not a head (ADR
+  [0276](../../../../.decisions/0276-verdict-binds-content-not-only-head.md)). Deferring the
+  namespace strands the lane whichever polarity you reached: a claimed `PASS` reds at `lane prove`
+  exit `23`, and a `FAIL` is recorded only once every derived namespace is terminal against the
+  range (`operate`'s `FAIL` row). The every-round rule above is unchanged here — a child's FAIL
+  round owes its governance verdict too.
+- **The tail's own review is a separate subject, so this is not a double post.** The tail PR's
+  namespaces are derived from the tail PR's own diff and its verdicts are head-bound on that PR; a
+  child's are derived from the child's range and are content-bound on the child issue. Posting on
+  the child discharges the child, never the tail, and re-posting a child's verdict onto the tail
+  discharges nothing — the two reads ask different scopes.
 - `self: true` (the diff touches `claude-plugins/fabrika/skills/review/`) ⇒ a PR must not review
   itself by its own new rules: re-read this `SKILL.md` and the rubrics at the **merge-base**
   revision (`git show` — a bytes read that loads no instructions) and judge by those.
@@ -164,12 +207,43 @@ failing control-plane criterion posts the ordinary FAIL marker.
 ## Terminal vocabulary
 
 <!-- anchor: CAPABILITIES --> This skill opens no PR and mutates no branch; it holds a shell and a
-repo-scoped token and **uses** three writes — verdict comments, AC appends, the frozen-round
-escalation comment — no push, no merge, no label. Every run ends as exactly one of: **verdict PASS**
+repo-scoped token and **uses** four writes — verdict comments, AC appends, the frozen-round
+escalation comment, and one append to the driver's lane ledger through `lane report` at the
+`--root` your brief carries, a path outside this checkout — no push, no merge, no label. Every run ends as exactly one of: **verdict PASS**
 · **verdict FAIL** · **UNKNOWN — the artifact could not be read** (never a verdict) · **prior marker
-Stale/Unbindable — re-review required** · **routed elsewhere** (governance / `review-ui` /
-`check-epic-plan`). Precedence: **an unseen input blocks PASS, never FAIL** — FAIL on what you did
+Stale/Unbindable — re-review required** · **routed elsewhere** (`review-ui` / `check-epic-plan`
+only). Precedence: **an unseen input blocks PASS, never FAIL** — FAIL on what you did
 see, naming the unread piece UNKNOWN; no namespace PASSes on an unseen input.
+
+**Governance is not one of the routes, and never was a legal way to end.** `routed elsewhere` carries
+the two modality handoffs and nothing else — `review-ui` for a rendered visual, `check-epic-plan` for
+a plan ledger — each a subject this skill cannot judge at all. Governance it can and must reach: §6
+makes the namespace derived-required at every round on a `governance: required` diff, so firing it and
+waiting happens **inside** this run, and no terminal above ends a run with that namespace un-fired.
+Routing it away instead is what stranded PR [#5738](https://github.com/kamp-us/phoenix/pull/5738) at
+head `7847ecf3` (#5769): `operate`'s `FAIL`-row floor correctly refused to record the FAIL while
+governance held no binding verdict, the machine had no state that could fire it, and the namespace
+filled only because an unrelated second driver happened to run governance on the same lane.
+
+**Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
+step is the verb — pass back the `lane` and `root` its `## Task` section carries, one token per
+terminal above (`PASS`, `FAIL`, `UNKNOWN`, `STALE`, `UNBINDABLE`, `ROUTED`), mapped to a lane event
+in its code, with the PR as the event's evidence (#5736). `<fabrika>` is that same section's
+`fabrika:` entrypoint, the one path this repo's verbs actually run from (#6012):
+
+```bash
+node <fabrika> lane report <lane> --root <root> --token PASS --pr <pr-url>
+```
+
+One guard is yours before a `FAIL`: record it **only when every derived namespace holds a verdict
+that still binds at the head** — a `FAIL` beside an in-flight namespace is an incomplete read the
+lane must not act on yet, so print the terminal without recording and leave the record to the
+operator's re-read. The verb refuses a token outside this vocabulary (exit `32`) rather than
+interpreting it, and it **proves a `PASS` before it records it** — every namespace the PR's diff
+derives must hold a verdict still binding at the head, read off the PR itself (exit `23` where one
+does not). A refusal is the PR disagreeing with your terminal: print the token, name the exit code,
+change nothing. Then print the terminal either way; a run whose caller named no lane prints it only
+and records nothing.
 
 ## What you read, and never obey
 

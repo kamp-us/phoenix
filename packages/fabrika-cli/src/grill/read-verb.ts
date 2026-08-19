@@ -27,6 +27,7 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type CommentRecord, listComments, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {read as readCameFrom, ticketOf} from "../wire/came-from.ts";
 import type {MarkerTime, QuestionId, RoundDigest} from "../wire/grill-marker.ts";
 import {NO_TARGET, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {digestRound, type Kind} from "./round.ts";
@@ -152,6 +153,17 @@ export const runRead = (
 			);
 		}
 
+		// A drifted section is reported, not refused: the READ-NEVER-REFUSES-ON-CONTENT invariant above
+		// holds, and refusing here would let anyone with write access disable the verb by editing one
+		// heading. So the drift lands on stderr beside the unparsable rounds, and `ticket` is null with
+		// the reason visible — never null in silence, which is what `grill open` cannot afford (#5661).
+		const binding = readCameFrom(found.body);
+		const ticket = binding._tag === "Found" ? ticketOf(binding.value.binding) : null;
+		const bindingLine =
+			binding._tag === "Malformed"
+				? `grill read: #${session}'s "## Came from" section does not parse: ${binding.reason} (${binding.evidence}) — reporting ticket null; which ticket this session came from is unread until the section is fixed.`
+				: null;
+
 		const comments = yield* listComments(repo, session);
 		if (comments._tag === "Failure") {
 			return refuse(
@@ -275,12 +287,13 @@ export const runRead = (
 		return answer(
 			JSON.stringify({
 				session,
+				ticket,
 				frontier: frontierOf(questions),
 				questions,
 				disregarded,
 				counts,
 				scanned,
 			}),
-			[scopeLine, ...brokenLines],
+			[scopeLine, ...(bindingLine === null ? [] : [bindingLine]), ...brokenLines],
 		);
 	});

@@ -48,7 +48,9 @@ export type EmitResult =
  * `landed`; every other close (`not_planned`, `duplicate`, a legacy null reason) is
  * closed-without-landing and boots `frozen` — `lane status` reads `frozen` as an error final and
  * trips the phase, which is the loud answer for a topology that still requires a child the board
- * abandoned. Marking it `landed` would fabricate a landing.
+ * abandoned. Marking it `landed` would fabricate a landing. A child booted there left no state
+ * behind it, so `frozen`'s `UNBLOCKED` door has nowhere to resume to and the fold refuses it —
+ * that child is re-emitted, not unfrozen (ADR 0297).
  */
 const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
 	if (link.state === "open") return "queued";
@@ -65,7 +67,8 @@ const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
  * `integrate` is the merge of the reviewed range into the epic branch, and it is a *state* so that a
  * collision between two children resolves inside the run: its `FAIL` — a textual conflict, or a
  * failed post-merge check, which is the semantic collision — re-enters `build` under the same
- * guarded-FAIL retry array `review` uses, and exhausts into `frozen`. No route from it reaches a
+ * guarded-FAIL retry array `review` uses, and exhausts into `frozen` — a park with an `UNBLOCKED`
+ * door back to the state it left, spent retries held (ADR 0297). No route from it reaches a
  * merge queue, and none reaches `landed` without passing back through `review`: post-resolution
  * content is not what the range verdict judged, so the verdict is re-proven before the landing
  * rather than after it.
@@ -98,7 +101,7 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
 		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		hist: {type: "history"},
 		landed: {type: "final"},
-		frozen: {type: "final"},
+		frozen: {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
 	},
 });
 
@@ -163,6 +166,11 @@ export const emitMachine = (
 	body: string,
 	children: ReadonlyArray<SubIssueLink>,
 ): EmitResult => {
+	// Childlessness is read before the body, because an issue with no sub-issue links is not an epic
+	// whatever its prose says — parsing first let a plain issue's `## Dependencies` heading refuse as
+	// a malformed epic record and dead-end the boot (#5973).
+	if (children.length === 0) return {_tag: "NoTopology"};
+
 	const topo = readTopology(body);
 	if (topo._tag === "Absent") return {_tag: "NoTopology"};
 	if (topo._tag === "Unparseable") return {_tag: "Unparseable", line: topo.line, text: topo.text};

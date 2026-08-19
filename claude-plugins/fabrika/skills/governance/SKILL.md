@@ -37,7 +37,9 @@ alone**, over four roots — `.decisions/`, `.claude/`, `.github/`, `claude-plug
 make that checkable:
 
 - **Derived, not elected.** Nothing feeds the derivation and nothing can decline it. `review` reads
-  the same fact off its own `harness` flag and routes here; it never decides whether you were needed.
+  the same fact off the `governance` line its own `scope` prints — the same four-root derivation,
+  not its three-root `harness` flag (#5607) — and routes here; it never decides whether you were
+  needed.
 - **Fail-closed on absence.** The refusal belongs at the enqueue seam, not to a reviewer's good
   intentions: `governance` is a required namespace in `fabrika ship gate`'s conjunction, so a
   harness-touching diff carrying no current-head verdict is **named absent and refused there**. Zero
@@ -182,12 +184,49 @@ one. Re-review, never re-bind.
 **`post` also re-fires the floor check at that head.** The `governance-floor` job runs on
 `pull_request`, so it judged the PR before your verdict existed and nothing else re-fires it. The verb
 re-runs that job, which re-derives `ship floor` against your verdict — it never writes a check-run, so
-the green is the job's own. Its last stderr line says which of `refired` / `green` / `in-flight` /
-`no-run` / `unknown` happened.
+the green is the job's own. Its last stderr line says which of `refired` / `restarting` / `green` /
+`in-flight` / `no-run` / `unknown` happened.
 
 **Done when** `post` prints `posted`, its read-back conformed, and you have read the floor line — an
 `in-flight` or `unknown` floor means the check may still red at this head, and clearing it is
-`heal-ci`'s, not a human's.
+`heal-ci`'s, not a human's. `restarting` is **not** one of those: the re-fire took and the run is
+going again under its own id, GitHub simply had not published the new attempt number yet — wait and
+re-read that run, and escalating it is how three agents burned an evening on a green (#5982).
+
+### The range form — an epic child's verdict
+
+An epic run opens one tail PR (ADR [0285](../../../../.decisions/0285-epic-machine-ends-in-review.md)),
+so mid-run a child has no PR and no head to bind to. Same verb, two ends instead of a head, and the
+positional is the **child issue**. §1's `scope` takes a PR and has no range form, so on a child the
+range comes from your caller and the derivation is re-run by `post` itself over that range — the
+`14` refusal below is the same fail-closed floor, asked of the range's paths:
+
+```bash
+fabrika governance post 6007 --polarity PASS --base 4f2a91c1 --tip 9b516363 --clause "no contradiction, no weakening" <<'EOF'
+…the same verdict body…
+EOF
+```
+
+What the verb refuses here is what tells you the shape is not the PR one:
+
+- **`--base` and `--tip` come together, and both are revisions** — 7–40 lowercase hex. A branch name
+  is refused, so resolve the range's ends before you call.
+- **`--sha` does not combine with them.** A range verdict binds **content, not a head** (ADR
+  [0276](../../../../.decisions/0276-verdict-binds-content-not-only-head.md)): the two revisions
+  stop being history the moment the range merges into the epic branch, so what a later read compares
+  is the digest of `<base>...<tip>`, and `lane prove`'s child arm calls a verdict whose digest no
+  longer matches `Stale`.
+- **The positional is an open issue, not a PR.** Hand it a PR number and the verb says so and sends
+  you back to `--sha`.
+- **The requirement is re-derived from the range's own changed paths**, through the same
+  governance-root floor as the PR path — a range touching none is the same `14` refusal, so this
+  form cannot attest a scope nobody derived either.
+- **No floor line comes back.** `governance-floor` runs on `pull_request` and a child has no PR, so
+  there is nothing to re-fire; the tail PR carries that check when it opens.
+
+**Done when** `post` prints `posted` over the range you judged and its read-back conformed. Which
+namespaces a child owes at all — governance among them — is `review`'s §6, and it defers nothing to
+the tail.
 
 ## 6 — Digest time: the readout that replaced the human gate
 

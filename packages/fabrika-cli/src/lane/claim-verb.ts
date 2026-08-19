@@ -14,7 +14,13 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {composeMarker, readMarkerToken, requireSession, resolveOwnership} from "../build/claim.ts";
+import {
+	anySessionCaller,
+	composeMarker,
+	readMarkerToken,
+	requireSession,
+	resolveOwnership,
+} from "../build/claim.ts";
 import {composeToken} from "../build/lane.ts";
 import {resolveTargetRepo} from "../build/target.ts";
 import {createComment, deleteComment, getComment} from "../io/issues.ts";
@@ -119,7 +125,12 @@ export const runLaneClaim = (
 		}
 
 		// The checkpoint: posting DETECTS a race, this re-read RESOLVES it.
-		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, session, LANE_CLAIM);
+		const {ownership, unauthorized} = yield* resolveOwnership(
+			repo,
+			number,
+			anySessionCaller(session),
+			LANE_CLAIM,
+		);
 		const notes = unauthorizedNotes(CLAIM, unauthorized);
 		if (ownership._tag === "Unknown") {
 			return refuse(
@@ -163,7 +174,12 @@ export const runLaneRelease = (
 		if (ready._tag !== "Ready") return ready.outcome;
 		const {repo, session, number} = ready;
 
-		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, session, LANE_CLAIM);
+		const {ownership, unauthorized} = yield* resolveOwnership(
+			repo,
+			number,
+			anySessionCaller(session),
+			LANE_CLAIM,
+		);
 		const notes = unauthorizedNotes(RELEASE, unauthorized);
 		if (ownership._tag === "Unknown") {
 			return refuse(

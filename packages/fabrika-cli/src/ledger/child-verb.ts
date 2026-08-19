@@ -9,6 +9,10 @@
  * therefore be neither placed (`24`, dangling) nor retired (`10`, not a sub-issue) — created,
  * unusable, and unreachable by every other verb in the group.
  *
+ * **A home is required too** (#5969): a child born with neither an open milestone nor a standing lane
+ * is refused by the claim fence at exit `20`, so it can never be built — and ADR 0208 names that
+ * milestone-less-and-lane-less category as one that must not exist.
+ *
  * `--ready-for` is required and has no default (#4780); `--ready-for human` requires `--assignee`
  * (#4693) — the label is the routing signal, born-assignment is the enforced hold, and neither
  * substitutes for the other. That pair is not merely a convention: the gate's floor reds
@@ -19,9 +23,11 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {readAuthored} from "../build/authored.ts";
+import {STANDING_LANE_LABELS, type StandingLaneLabel} from "../build/scope-admission.ts";
 import {scannedLine} from "../build/target.ts";
 import {listLabels, listOpenMilestones} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {PLANNED} from "../labels.ts";
 import {listSubIssues} from "../plan/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {composeChildBody} from "./child-body.ts";
@@ -41,9 +47,6 @@ import {appendChild, loadManifest, loadRun, maskedLeakRefusal, rewriteChild} fro
 
 const VERB = "ledger child";
 
-/** The status every child is born carrying — the gate flips it, never a verb here. */
-const PLANNED = "status:planned";
-
 export const TYPES: ReadonlyArray<string> = [
 	"type:bug",
 	"type:feature",
@@ -56,6 +59,13 @@ export const TYPES: ReadonlyArray<string> = [
 export const PRIORITIES: ReadonlyArray<string> = ["p0", "p1", "p2"];
 
 export const AUDIENCES: ReadonlyArray<string> = ["human", "agent"];
+
+/**
+ * A home is a milestone **or** a standing lane, read off the one set the claim fence reads (ADR 0208)
+ * — never a second copy of it here, which is how the two seams drift into disagreeing.
+ */
+const isStandingLane = (label: string): label is StandingLaneLabel =>
+	(STANDING_LANE_LABELS as ReadonlyArray<string>).includes(label);
 
 export const MESSAGES: LedgerMessages = {
 	verb: VERB,
@@ -111,6 +121,12 @@ export const runChild = (
 			return refuse(
 				OFF_VOCABULARY,
 				`${VERB}: --priority ${options.priority} is off the closed set (${PRIORITIES.join(", ")}).`,
+			);
+		}
+		if (options.milestone === null && !options.labels.some(isStandingLane)) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (${STANDING_LANE_LABELS.join(", ")}). A homeless child is refused at the claim fence, so it can never be built (#5969).`,
 			);
 		}
 

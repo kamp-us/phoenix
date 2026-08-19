@@ -11,6 +11,9 @@
  *   (#4780) — and one homed outside the declared focus is excluded with its own reason.
  * - **Any assignee excludes.** Assignment is the one attribute that keeps a human's live document out
  *   of an agent's pool (#4764, #4693).
+ * - **A body with no readable acceptance-criteria block excludes**, reported on the same
+ *   excluded-with-axis channel: `ready-for:agent` over no contract is a lane that can only be
+ *   discovered at the review gate, once a whole build has been spent (#6025).
  *
  * **Either every bucket was read in full, or the answer is `11`.** v1's pool printed nothing for a
  * failed bucket and kept going, so a `gh` 5xx on the p0 bucket read as "no p0s"
@@ -23,6 +26,7 @@
 import {Effect, type FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {BAD_SECTIONS, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {type CandidateIssue, listLabelled} from "./github.ts";
 import {
@@ -58,11 +62,22 @@ interface PoolEntry {
 	readonly home: string | null;
 }
 
-/** One issue the admission test kept out, with the axis that refused it (#5013). */
+/**
+ * The word for a candidate whose body carries no contract to build against.
+ *
+ * It is reported on the same channel as the admission test's axes but lives here rather than in
+ * `./scope-admission.ts`, because that module is shared with the claim seam, where a `plan` or
+ * `gate` claim targets an epic — a document whose criteria arrive per child from the plan ledger,
+ * never in its own body. Reading the block there would refuse exactly the claims that are supposed
+ * to precede it (#6025).
+ */
+const NO_CRITERIA = "no-acceptance-criteria";
+
+/** One issue the filter kept out, with the axis that refused it (#5013). */
 interface ExclusionEntry {
 	readonly number: number;
 	readonly home: string | null;
-	readonly reason: NonNullable<ReturnType<typeof exclusionReasonOf>>;
+	readonly reason: NonNullable<ReturnType<typeof exclusionReasonOf>> | typeof NO_CRITERIA;
 }
 
 /**
@@ -138,6 +153,10 @@ export const runPick = (
 					excluded.push({number: issue.number, home: homeOf(issue), reason});
 					continue;
 				}
+				if (readCriteria(issue.body)._tag !== "Found") {
+					excluded.push({number: issue.number, home: homeOf(issue), reason: NO_CRITERIA});
+					continue;
+				}
 				entries.push({
 					number: issue.number,
 					title: issue.title,
@@ -149,6 +168,8 @@ export const runPick = (
 			pool.push(...entries.sort(rankWithinBucket));
 		}
 
+		const criteriaExcluded = excluded.filter((row) => row.reason === NO_CRITERIA).length;
+
 		return answer(
 			JSON.stringify({
 				pool: pool.slice(0, options.limit),
@@ -157,7 +178,7 @@ export const runPick = (
 				focus: focusReport(focus),
 			}),
 			[
-				`${VERB}: scanned p0 ${scanned.p0}, p1 ${scanned.p1}, p2 ${scanned.p2} in ${resolved.repo}; ${pool.length} candidate(s) survived the filter, ${excluded.length} excluded by the admission test.`,
+				`${VERB}: scanned p0 ${scanned.p0}, p1 ${scanned.p1}, p2 ${scanned.p2} in ${resolved.repo}; ${pool.length} candidate(s) survived the filter, ${excluded.length} excluded — ${excluded.length - criteriaExcluded} by the admission test, ${criteriaExcluded} for no acceptance-criteria block.`,
 				focusScopeLine(VERB, focus),
 			],
 		);

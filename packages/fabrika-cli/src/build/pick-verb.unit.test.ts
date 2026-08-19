@@ -4,7 +4,7 @@ import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {FAILED} from "../verb.ts";
 import {BAD_SECTIONS, PRECONDITION_UNKNOWN} from "./codes.ts";
-import {candidates, focusTable} from "./fixtures.test-support.ts";
+import {CRITERIA_BODY, candidates, focusTable} from "./fixtures.test-support.ts";
 import {runPick} from "./pick-verb.ts";
 import {DEFAULT_ROADMAP} from "./scope-admission.ts";
 
@@ -15,6 +15,9 @@ const bucket = (priority: string) =>
 
 const EMPTY = okOut("[]");
 const TRIAGED = ["status:triaged", "ready-for:agent", "type:bug"];
+
+/** A report-shaped body — prose only, no contract anywhere. kamp-us/demlik#4's shape (#6025). */
+const REPORT_BODY = "## Summary\n\nsomething is off.\n\n## Pointers\n\n- a file\n";
 
 const options = {
 	repo: null,
@@ -72,6 +75,74 @@ describe("runPick", () => {
 		]);
 		expect(pool(out)).toEqual([]);
 		expect(excluded(out)).toEqual([{number: 500, home: null, reason: "audience-not-agent"}]);
+	});
+
+	/**
+	 * The pool is where a contract-less issue is cheapest to catch: the alternative is `review
+	 * criteria` finding it after a branch, a build, a push, a PR and a CI run (#6025).
+	 */
+	it("excludes a candidate whose body carries no acceptance-criteria block, with its axis", async () => {
+		const out = await run([
+			[bucket("p0"), candidates({number: 500, labels: [...TRIAGED, "p0"], body: REPORT_BODY})],
+			[bucket("p1"), EMPTY],
+			[bucket("p2"), EMPTY],
+		]);
+		expect(out.code).toBe(0);
+		expect(pool(out)).toEqual([]);
+		expect(excluded(out)).toEqual([{number: 500, home: null, reason: "no-acceptance-criteria"}]);
+	});
+
+	it("excludes a candidate whose criteria heading has drifted — malformed is not a contract", async () => {
+		const out = await run([
+			[
+				bucket("p0"),
+				candidates({
+					number: 500,
+					labels: [...TRIAGED, "p0"],
+					body: CRITERIA_BODY.replace("### Acceptance", "## Acceptance"),
+				}),
+			],
+			[bucket("p1"), EMPTY],
+			[bucket("p2"), EMPTY],
+		]);
+		expect(excluded(out)).toEqual([{number: 500, home: null, reason: "no-acceptance-criteria"}]);
+	});
+
+	it("admits a criteria-bearing candidate — the axis excludes the contract-less one only", async () => {
+		const out = await run([
+			[
+				bucket("p0"),
+				candidates(
+					{number: 500, labels: [...TRIAGED, "p0"]},
+					{number: 501, labels: [...TRIAGED, "p0"], body: REPORT_BODY},
+				),
+			],
+			[bucket("p1"), EMPTY],
+			[bucket("p2"), EMPTY],
+		]);
+		expect(pool(out).map((row) => row.number)).toEqual([500]);
+		expect(excluded(out)).toEqual([{number: 501, home: null, reason: "no-acceptance-criteria"}]);
+	});
+
+	/**
+	 * The counts are printed so an operator can tell a working fence from a broken one, which they
+	 * cannot do if a shortened pool is attributed to an axis that did not refuse it (#6025).
+	 */
+	it("splits the excluded count by axis — the criteria axis is not the admission test's", async () => {
+		const out = await run([
+			[
+				bucket("p0"),
+				candidates(
+					{number: 500, labels: [...TRIAGED, "p0"], body: REPORT_BODY},
+					{number: 501, labels: ["status:triaged", "p0"]},
+				),
+			],
+			[bucket("p1"), EMPTY],
+			[bucket("p2"), EMPTY],
+		]);
+		expect(out.stderr.join("\n")).toContain(
+			"0 candidate(s) survived the filter, 2 excluded — 1 by the admission test, 1 for no acceptance-criteria block.",
+		);
 	});
 
 	it("excludes an assigned issue — assignment keeps a human's document out (#4764)", async () => {

@@ -58,7 +58,7 @@ const repoFlag = Flag.string("repo").pipe(
 const skillsDirFlag = Flag.string("skills-dir").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		"the roster root to read (default: the installed plugin's own skills tree, else claude-plugins/fabrika/skills beneath the repo root)",
+		"the roster root to read (default: the installed plugin's own skills tree, else claude-plugins/fabrika/skills beneath the repo root, else the same path beneath the checkout the CLI itself runs from)",
 	),
 );
 
@@ -204,7 +204,7 @@ const bootstrap = leafCommand(
 		path: Flag.string("path").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"override the write path for a file surface; must resolve inside the repository root",
+				"override the target path for a file or line surface; must resolve inside the repository root",
 			),
 		),
 		repo: repoFlag,
@@ -225,7 +225,7 @@ const bootstrap = leafCommand(
 ).pipe(
 	Command.withShortDescription("Create one missing repo surface and read it back."),
 	Command.withDescription(
-		"Create one missing repo surface from this group's own buildable-surface registry and read it back. The content of a file surface arrives on STDIN — the write, the collision guard and the read-back are this verb's; what the file says is the skill's. A target already present is `exists` at exit 0 and nothing is written. Stdout is the single line `bootstrap\\t<created|exists>\\t<surface-id>\\t<target>\\t<readback>`. Exits 3 (stdin held nothing), 5 (the content carries a machine-local path), 6 (the content is a bare @ path reference), 8 (the write failed — UNKNOWN), 9 (the read-back differs), 10 (--path resolves outside the repository root), 11 (the existence probe failed — nothing was written), 12 (the surface is not in the registry). Example: fabrika status bootstrap readout-artifact",
+		"Create one missing repo surface from this group's own buildable-surface registry and read it back. The content of a file surface arrives on STDIN — the write, the collision guard and the read-back are this verb's; what the file says is the skill's. A line surface (`gitignore-row`) instead appends its own registry row to a file the repo already owns, reads no STDIN, and rewrites nothing that is already there. A target already present is `exists` at exit 0 and nothing is written. Stdout is the single line `bootstrap\\t<created|exists>\\t<surface-id>\\t<target>\\t<readback>`. Exits 3 (stdin held nothing), 5 (the content carries a machine-local path), 6 (the content is a bare @ path reference), 8 (the write failed — UNKNOWN), 9 (the read-back differs), 10 (--path resolves outside the repository root), 11 (the existence probe failed — nothing was written), 12 (the surface is not in the registry). Example: fabrika status bootstrap readout-artifact",
 	),
 );
 

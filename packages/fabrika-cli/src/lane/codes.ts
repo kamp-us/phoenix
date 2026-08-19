@@ -125,7 +125,8 @@ export const KEY_MALFORMED = 21;
  *
  * The four proof seats are **artifact-independent**: what a caller must do about "not there", "not
  * finished", "says the other thing" and "several candidates" does not change with the kind of
- * artifact, so the range arms allocate no fifth seat.
+ * artifact, so the range arms allocate no fifth seat — nor does `lane brief`, which reads a child's
+ * range off the same tree before it dispatches a reviewer at it (#6023).
  */
 export const PROOF_ABSENT = 22;
 
@@ -147,7 +148,8 @@ export const PROOF_CONTRADICTED = 24;
 /**
  * Several candidates trace to the task: several open pull requests linking its issue, or several
  * lane branches carrying an epic child's commits. Which one the lane owns is not derivable, and
- * picking one would record a DONE against another lane's work — a park, never a guess.
+ * picking one would record a DONE against another lane's work — or brief a reviewer at another
+ * lane's range — a park, never a guess.
  */
 export const PROOF_AMBIGUOUS = 25;
 
@@ -187,3 +189,12 @@ export const REF_NOT_MOVED = 30;
  * foreign apart for a reader; the code does not, because the caller stops either way.
  */
 export const CLAIM_NOT_MINE = 31;
+
+/**
+ * The token handed to `lane report` is no shell's terminal token — the map in `report.ts` holds no
+ * entry for it, so no event can be derived and the log is left unappended. Its own seat rather than
+ * {@link EVENT_REFUSED}'s because the remedy differs: pass a token from your shell skill's closed
+ * vocabulary, not a different event — silently interpreting an unknown token is the failure class
+ * this verb exists to delete (#5736).
+ */
+export const TOKEN_UNRECOGNISED = 32;

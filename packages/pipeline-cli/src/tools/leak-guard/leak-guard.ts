@@ -50,7 +50,11 @@ const SHELL_SUFFIXES = [".sh"] as const;
 // Files whose subject IS path hygiene: they must spell the forbidden tokens out as
 // patterns, so they are exempt by path suffix. Includes the leak-guard's own source
 // (the old package AND this moved tool) and the skills that name the patterns.
-const DOC_SELF_EXEMPT = [
+//
+// Exported for the conformance test alone (fabrika-doc-leak-conformance.test.ts): `.fabrika.jsonc`
+// carries the doc-surface half of this list a second time, for a predictor that may not import this
+// module (ADR 0238/0273), and that copy is pinned against this one rather than promised in prose.
+export const DOC_SELF_EXEMPT = [
 	"/packages/leak-guard/src/leak-guard.ts",
 	"/packages/leak-guard/src/leak-guard.unit.test.ts",
 	"/packages/leak-guard/src/bin.ts",

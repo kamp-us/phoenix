@@ -8,7 +8,7 @@
  * [.patterns/effect-process-cli-shell.md](../../../.patterns/effect-process-cli-shell.md). The seam
  * a test replaces is therefore the same seam production uses.
  */
-import {Effect, FileSystem, Layer, Path, PlatformError, Sink, Stream} from "effect";
+import {Effect, FileSystem, Layer, Option, Path, PlatformError, Sink, Stream} from "effect";
 import {ChildProcessSpawner} from "effect/unstable/process";
 import type {ExecResult} from "./io/exec.ts";
 
@@ -33,6 +33,24 @@ const denied = (method: string, path: string) =>
 			pathOrDescriptor: path,
 		}),
 	);
+
+/** Only `type` is read by anything under test; the rest of `File.Info` is filler the shape demands. */
+const info = (type: "File" | "Directory"): FileSystem.File.Info => ({
+	type,
+	mtime: Option.none(),
+	atime: Option.none(),
+	birthtime: Option.none(),
+	dev: 0,
+	ino: Option.none(),
+	mode: 0,
+	nlink: Option.none(),
+	uid: Option.none(),
+	gid: Option.none(),
+	rdev: Option.none(),
+	size: FileSystem.Size(0),
+	blksize: Option.none(),
+	blocks: Option.none(),
+});
 
 export interface FakeFsOptions {
 	/** Directory path → base names. An absent or `null` entry makes the directory unreadable. */
@@ -100,6 +118,13 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 					: Effect.succeed(
 							(Object.hasOwn(files, path) && files[path] !== null) || directories.has(path),
 						),
+			stat: (path: string) => {
+				if (options.unprobeable?.includes(path) === true) return notFound("stat", path);
+				if (directories.has(path) || dirs[path] != null) return Effect.succeed(info("Directory"));
+				return Object.hasOwn(files, path) && files[path] !== null
+					? Effect.succeed(info("File"))
+					: notFound("stat", path);
+			},
 			makeDirectory: (path: string) => {
 				if (options.unwritable?.includes(path) === true) return notFound("makeDirectory", path);
 				directories.add(path);

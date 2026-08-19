@@ -10,6 +10,7 @@ import {randomUUID} from "node:crypto";
 import {fileURLToPath} from "node:url";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {resolveEntrypoint} from "../delegate/entrypoint.ts";
 import {leafCommand} from "../excess-operand.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runBrief} from "./brief-verb.ts";
@@ -22,6 +23,7 @@ import {runPrint} from "./print-verb.ts";
 import {runProve} from "./prove-verb.ts";
 import {runPush} from "./push-verb.ts";
 import {keyRefusal} from "./refusals.ts";
+import {runReport} from "./report-verb.ts";
 import {DEFAULT_STALE_MINUTES} from "./stale.ts";
 import {runStale} from "./stale-verb.ts";
 import {runStatus} from "./status-verb.ts";
@@ -104,6 +106,60 @@ const transition = leafCommand(
 	),
 );
 
+const report = leafCommand(
+	"report",
+	{
+		lane: laneArgument,
+		token: Flag.string("token").pipe(
+			Flag.withDescription(
+				"the shell's terminal token, exactly as its skill's closed vocabulary spells it",
+			),
+		),
+		root: rootFlag,
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription("the task the event addresses; omittable on a single-task lane"),
+		),
+		pr: Flag.string("pr").pipe(
+			Flag.optional,
+			Flag.withDescription("the PR URL the terminal names, recorded on the event line"),
+		),
+		comment: Flag.string("comment").pipe(
+			Flag.optional,
+			Flag.withDescription("the comment URL the terminal names, recorded on the event line"),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name the proof reads against (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, token, root, task, pr, comment, repo}) {
+		yield* emit(
+			yield* onKey(lane, root, (_key, ref) =>
+				runReport(
+					{
+						...ref,
+						token,
+						task: Option.getOrNull(task),
+						pr: Option.getOrNull(pr),
+						comment: Option.getOrNull(comment),
+						repo: Option.getOrNull(repo),
+						env: process.env,
+					},
+					runProve,
+				),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Record a shell's terminal token, mapped to one operator event."),
+	Command.withDescription(
+		"Record a spawned shell's terminal token on the lane's append-only log: the token→event map in code (report.ts) picks one of the operator's six, the mapped event is then proven exactly as `lane prove` proves it — a token is a self-report, so a DONE and a PASS reach the log only with their artifact behind them, every other event answering not-required without a board read — and only then does the append ride transition's exact path, validated against the folded state first, refused unappended otherwise. Optional --pr/--comment refs land on the event line itself, so the event names its evidence (visible via lane history). stdout is `{token, previous, event, current, taskAffected}` plus the refs. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (a lane, board or tree read failed — whether the event is proven is UNKNOWN), 12 (the mapped event is refused, log unappended), 13 (the task is not in the machine, names no issue, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 22/23/24/25 (`lane prove`'s own refusals — artifact provably absent, a namespace with no still-binding verdict, a FAIL under a claimed PASS, several candidates — log unappended, remedies unchanged), 32 (the token is no shell's terminal token — refused, never interpreted). Example: fabrika lane report 5736 --token SHIPPED-PR --pr https://github.com/kamp-us/phoenix/pull/5760",
+	),
+);
+
 const prove = leafCommand(
 	"prove",
 	{
@@ -152,7 +208,7 @@ const history = leafCommand(
 ).pipe(
 	Command.withShortDescription("The lane's append-only event log, verbatim."),
 	Command.withDescription(
-		"The lane's append-only event log, verbatim — one `{task, event, at}` per recorded event, in append order; the log IS the history, and `from`/`to` are reconstructible by folding, never stored. A lane with no events yet answers `[]`. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane could not be read), 21 (the key is not a lane key). Example: fabrika lane history 5673",
+		"The lane's append-only event log, verbatim — one `{task, event, at}` per recorded event, in append order, carrying the optional `pr`/`comment` refs where the event was recorded with one as its evidence; the log IS the history, and `from`/`to` are reconstructible by folding, never stored. A lane with no events yet answers `[]`. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane could not be read), 21 (the key is not a lane key). Example: fabrika lane history 5673",
 	),
 );
 
@@ -259,6 +315,7 @@ const brief = leafCommand(
 		),
 	},
 	Effect.fn(function* ({lane, root, task, repo}) {
+		const entrypoint = yield* resolveEntrypoint();
 		yield* emit(
 			yield* onKey(lane, root, (_key, ref) =>
 				runBrief({
@@ -266,6 +323,7 @@ const brief = leafCommand(
 					task: Option.getOrNull(task),
 					repo: Option.getOrNull(repo),
 					env: process.env,
+					entrypoint,
 				}),
 			),
 		);
@@ -273,7 +331,7 @@ const brief = leafCommand(
 ).pipe(
 	Command.withShortDescription("The spawn prompt for one task's current leaf state."),
 	Command.withDescription(
-		"Print the spawn prompt for one task's current leaf state, folded fresh from the ledger — so a driver pastes a brief rather than composing one. stdout is the `lane-brief` wire format: which lane, task, state and shell, the resolved issue and PR URLs (URLs only — the spawned shell re-reads its own ground), and the format's byte-fixed rules. On an epic lane a child's state resolves no PR at all and briefs the epic issue, the epic branch and the range to judge, while the tail task briefs the run's single PR under the same refusals (ADR 0285). Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane, the issue or its PRs could not be read — UNKNOWN), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 18 (the leaf state routes to no shell — `queued`, `blocked`, `human:*`, a final), 19 (neither the task nor the lane names an issue, or that issue is proven absent), 20 (zero open PRs where the state needs one, or several where one is required), 21 (the key is not a lane key). Example: fabrika lane brief 5680 --task issue_5729",
+		"Print the spawn prompt for one task's current leaf state, folded fresh from the ledger — so a driver pastes a brief rather than composing one. stdout is the `lane-brief` wire format: which lane, task, state and shell, this driver's lanes root resolved absolute (the shell passes it back to `lane report` as --root; a relative one would resolve against the shell's own worktree), the fabrika entrypoint resolved for this repo (repo-relative in a checkout of fabrika's own repo so each worktree runs its own copy, absolute for an installed one no worktree has a node_modules for), the resolved issue and PR URLs (URLs only — the spawned shell re-reads its own ground), and the format's byte-fixed rules. Hand the bytes to the spawn verbatim — a line appended under them is text the format's own reader calls malformed. On an epic lane a child's state resolves no PR at all and briefs the epic issue, the epic branch and the range to judge, while the tail task briefs the run's single PR under the same refusals (ADR 0285). Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane, the issue, its PRs, this fabrika's own entrypoint or — on a child `review` state — this tree's branches could not be read, UNKNOWN), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 18 (the leaf state routes to no shell — `queued`, `blocked`, `human:*`, a final), 19 (neither the task nor the lane names an issue, or that issue is proven absent), 20 (zero open PRs where the state needs one, or several where one is required), 21 (the key is not a lane key), 22 and 25 (a child `review` state's range, on the seats `lane prove` already spends on the same two facts — no local branch in this tree carries the child's commits, or several do). Example: fabrika lane brief 5680 --task issue_5729",
 	),
 );
 
@@ -368,6 +426,7 @@ export const laneCommand = Command.make("lane").pipe(
 	Command.withSubcommands([
 		status,
 		transition,
+		report,
 		prove,
 		history,
 		print,

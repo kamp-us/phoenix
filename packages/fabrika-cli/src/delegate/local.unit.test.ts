@@ -2,7 +2,7 @@ import {Effect, Path} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {takeSkipInfer} from "./entry.ts";
-import {declaredVersion, readInstallManifest} from "./local.ts";
+import {declaredVersion, isInsideRepo, readInstallManifest} from "./local.ts";
 import {SKIP_INFER_ENV, SKIP_INFER_FLAG} from "./resolve.ts";
 
 const manifest = (text: string) =>
@@ -40,6 +40,39 @@ describe("readInstallManifest", () => {
 		expect(manifest("{not json")).toMatchObject({
 			corrupt: expect.stringContaining("not valid JSON"),
 		});
+	});
+});
+
+describe("isInsideRepo — the rule that keeps a NODE_PATH hit from posing as a local install", () => {
+	const inside = (root: string, candidate: string) =>
+		Effect.runSync(
+			Effect.gen(function* () {
+				return isInsideRepo(yield* Path.Path, root, candidate);
+			}).pipe(Effect.provide(Path.layer)),
+		);
+
+	it("accepts an ordinary node_modules install", () => {
+		expect(inside("/repo", "/repo/node_modules/@kampus/fabrika-cli")).toBe(true);
+	});
+
+	it("accepts pnpm's real target — a workspace package linked into node_modules", () => {
+		expect(inside("/repo", "/repo/packages/fabrika-cli")).toBe(true);
+	});
+
+	it("accepts the repo root itself, for a repo that IS the package", () => {
+		expect(inside("/repo", "/repo")).toBe(true);
+	});
+
+	it("rejects a copy in another checkout — the NODE_PATH case", () => {
+		expect(inside("/other", "/repo/packages/fabrika-cli")).toBe(false);
+	});
+
+	it("rejects an install hoisted above the repo root", () => {
+		expect(inside("/repo/inner", "/repo/node_modules/@kampus/fabrika-cli")).toBe(false);
+	});
+
+	it("is not fooled by a sibling whose name starts with the root's", () => {
+		expect(inside("/repo", "/repo-two/node_modules/@kampus/fabrika-cli")).toBe(false);
 	});
 });
 

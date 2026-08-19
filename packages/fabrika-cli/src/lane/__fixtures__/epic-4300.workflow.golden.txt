@@ -85,7 +85,10 @@
 								"type": "final"
 							},
 							"frozen": {
-								"type": "final"
+								"type": "final",
+								"on": {
+									"ISSUE_4301.UNBLOCKED": "hist"
+								}
 							}
 						}
 					},
@@ -148,7 +151,10 @@
 								"type": "final"
 							},
 							"frozen": {
-								"type": "final"
+								"type": "final",
+								"on": {
+									"ISSUE_4302.UNBLOCKED": "hist"
+								}
 							}
 						}
 					}
@@ -225,7 +231,10 @@
 								"type": "final"
 							},
 							"frozen": {
-								"type": "final"
+								"type": "final",
+								"on": {
+									"ISSUE_4303.UNBLOCKED": "hist"
+								}
 							}
 						}
 					}

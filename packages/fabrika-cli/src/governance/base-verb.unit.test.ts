@@ -7,6 +7,7 @@ import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, STALE_HEAD, ZERO_SCOPE} from "./co
 import {
 	binding,
 	HEAD,
+	BASE as MERGE_BASE,
 	pull,
 	SHOW_AT,
 	SKILL_ROOT,
@@ -15,7 +16,6 @@ import {
 } from "./fixtures.test-support.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-const MERGE_BASE = "8b1e0c4499ad72f635e0117a9bb2d3c058e7fa16";
 
 const options = {
 	pr: 4321,
@@ -38,7 +38,6 @@ const upTo = (
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[once(PULL), pull()],
 	...binding(),
-	[/^git merge-base /, okOut(`${MERGE_BASE}\n`)],
 	[PULL, pull()],
 	[TREE_AT(MERGE_BASE), treeOf(...tree)],
 ];
@@ -115,26 +114,25 @@ describe("runBase", () => {
 
 	it("refuses on 12 when the head moved while the base was being resolved", async () => {
 		const moved = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
-		const out = await run([
-			[once(PULL), pull()],
-			...binding(),
-			[/^git merge-base /, okOut(`${MERGE_BASE}\n`)],
-			[PULL, pull({head: moved})],
-		]);
+		const out = await run([[once(PULL), pull()], ...binding(), [PULL, pull({head: moved})]]);
 		expect(out.code).toBe(STALE_HEAD);
 		expect(out.stderr.at(-1)).toBe(
 			`governance base: #4321's head moved to ${moved} while resolving — re-run.`,
 		);
 	});
 
+	// The resolve moved into the binding (#5770), so the failure arrives wearing this verb's own tail
+	// rather than `bindHead`'s — the entry precedes `binding()` because the first match wins.
 	it("refuses an unresolvable merge base on 11", async () => {
 		const out = await run([
 			[once(PULL), pull()],
-			...binding(),
 			[/^git merge-base /, errOut("fatal: no merge base")],
+			...binding(),
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stderr.at(-1)).toContain("refusing to judge by the head's");
+		expect(out.stderr.at(-1)).toContain(
+			"the merge base cannot be resolved, so the base rules are UNKNOWN.",
+		);
 	});
 
 	it("refuses an absent PR on 7 and a non-PR number on 1", async () => {

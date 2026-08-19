@@ -42,8 +42,9 @@ flowchart TD
 		camp_flag_retirement_adr_0136["Flag Retirement (ADR 0136)"]:::done
 		camp_writing_craft_import["Writing-Craft Import"]:::done
 		camp_fabrika_kampus_pipeline_v2["fabrika — kampus-pipeline v2"]:::done
-		camp_switching_to_fabrika["switching to fabrika"]:::active
+		camp_switching_to_fabrika["switching to fabrika"]:::done
 		camp_fabrika_fast_follows["fabrika fast follows"]:::active
+		camp_fabrika_everywhere["fabrika everywhere"]:::active
 	end
 	ext_3642["#3642"]:::external
 	ext_3833["#3833"]:::external
@@ -100,6 +101,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | fabrika — kampus-pipeline v2 | #44 | done |
 | switching to fabrika | #45 | done |
 | fabrika fast follows | #46 | active |
+| fabrika everywhere | #47 | active |
 
 **The table is a parsed contract.** It is the single source the campaign skill (which appends a row and flips its state) and the lifecycle guard (which reads it) both bind to, so the grammar is pinned here rather than re-derived at either end:
 

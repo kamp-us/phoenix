@@ -35,9 +35,31 @@
 # ──────────────────────────────────────────────────────────────────────────────
 name: publish
 
+# ── Why there are TWO triggers (#5718) ────────────────────────────────────────
+#   release-please creates the GitHub Release with `secrets.GITHUB_TOKEN`, and GitHub
+#   creates no workflow run for an event raised with that token — so `release: published`
+#   below never fires on a bot-cut release, and `fabrika-cli-v0.2.0`/`pipeline-cli-v0.3.0`
+#   sat unpublished until a human draft-cycled both releases by hand. `workflow_dispatch`
+#   always creates a run whatever token raised it, so release-please.yml dispatches THIS
+#   file at `ref: <tag>` for each tag it just created.
+#
+#   The dispatch carries NO inputs on purpose: the tag is the dispatched REF, so the
+#   resolve step below reads it from `github.ref_name` and the checkout is the tagged tree
+#   either way. `github.ref_name` is the short name of a BRANCH just as readily as a tag,
+#   so the grammar + version gate alone would publish a branch called `fabrika-cli-v9.9.9`
+#   — the first step of the job therefore refuses any dispatch whose `github.ref` is not
+#   `refs/tags/…`, before the checkout and before any credential is minted. What may reach
+#   npm stays what it was: a tagged tree. What this trigger widens is only what may START
+#   the run.
+#
+#   npm Trusted Publishing binds to repo + workflow FILENAME (+ optional environment), not
+#   to the event that started the run, so adding this trigger leaves the registration
+#   intact — which is also why the fix is a second trigger here rather than a second file.
+# ──────────────────────────────────────────────────────────────────────────────
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -48,11 +70,28 @@ jobs:
     name: publish the tagged @kampus package to npm
     runs-on: ubuntu-latest
     steps:
+      # ADR 0239 binds this repo to publishing only what a human merged, and npm versions
+      # are immutable, so a publish from an unmerged tree cannot be taken back. The release
+      # event reaches this job only at `refs/tags/<tag>`; a dispatch reaches it at whatever
+      # ref the dispatcher named, and the grammar gate downstream reads a name, not a ref
+      # type. This is the step that reads the type. It runs BEFORE the checkout so the
+      # refused tree is never even fetched.
+      - name: Refuse a dispatch at anything but a tag ref
+        if: ${{ github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/') }}
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          echo "::error::publish.yml was dispatched at $REF, which is not a tag ref — only a released tag may publish."
+          exit 1
+
       # A bare checkout is the TAGGED tree, not a moving branch head: GitHub's
       # events-that-trigger-workflows reference gives the `release` event GITHUB_SHA
       # "Last commit in the tagged release" and GITHUB_REF `refs/tags/<tag_name>`. That
       # matters because npm versions are immutable (ADR 0076) — a publish from a stale
-      # ref bakes its error in permanently.
+      # ref bakes its error in permanently. The dispatched path holds the same property by
+      # construction: release-please.yml dispatches at `ref: <tag>`, so GITHUB_REF is
+      # `refs/tags/<tag>` and this checkout is the same tagged tree.
       - uses: actions/checkout@v4.2.2
 
       # pnpm derives from the root `packageManager` field (pnpm@10.27.0) — pnpm 11
@@ -70,8 +109,11 @@ jobs:
       - name: Resolve the release tag to a published package
         # The tag reaches the script through the environment, never string-interpolated
         # into it — a `${{ }}` splice of an attacker-shaped tag name would execute.
+        # `github.ref_name` is the dispatched tag on `workflow_dispatch` and would be the
+        # tag on `release` too, but the release event's `tag_name` is kept first so the
+        # human-cut path reads the release it was actually raised for.
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.event.release.tag_name || github.ref_name }}
         run: |
           set -uo pipefail
           if [[ "$TAG" =~ ^pipeline-cli-v([0-9].*)$ ]]; then

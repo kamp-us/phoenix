@@ -1,5 +1,6 @@
 /**
- * `lane history` — the append-only log, verbatim: `{task, event, at}` per recorded event.
+ * `lane history` — the append-only log, verbatim: `{task, event, at}` per recorded event, plus the
+ * optional `pr`/`comment` refs a shell-recorded event carries as its evidence.
  *
  * The log IS the history; `from`/`to` are reconstructible by folding, never stored. A fresh lane
  * answers `[]` — no events yet is a well-formed empty history, not a fault.

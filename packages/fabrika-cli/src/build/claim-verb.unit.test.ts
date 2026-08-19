@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {FAILED} from "../verb.ts";
-import {runClaim, runConfirm, runRelease} from "./claim-verb.ts";
+import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
 import {
 	AUDIENCE_NOT_AGENT,
 	BAD_SECTIONS,
@@ -16,12 +16,16 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {
+	adoptMarker,
 	candidates,
 	comments,
 	focusTable,
 	issue,
+	LANE_TOKEN,
 	LANE_UUID,
 	marker,
+	SIBLING_TOKEN,
+	SIBLING_UUID,
 	truncatedComments,
 } from "./fixtures.test-support.ts";
 import {runPick} from "./pick-verb.ts";
@@ -36,6 +40,8 @@ const perm = (login: string) => new RegExp(`^gh api repos/o/r/collaborators/${lo
 
 const MINE = marker("s-9f2e", LANE_UUID);
 const THEIRS = marker("s-77aa", "9d8c7b6a-5f4e-3d2c-1b0a-998877665544");
+/** A marker of the same SESSION under another nonce — a sibling lane's, which release must NOT sweep. */
+const SIBLING_MARKER = marker("s-9f2e", SIBLING_UUID);
 
 const POSTED = okOut(JSON.stringify({id: 9001, html_url: "https://github.com/o/r/issues/4312#c"}));
 const ECHO = okOut(JSON.stringify({body: MINE}));
@@ -44,6 +50,26 @@ const labelled = (...names: ReadonlyArray<string>) => names.map((name) => ({name
 
 /** The claim path's default target: triaged, agent-ready, unhomed — admitted under an inert fence. */
 const CLAIMABLE = issue({labels: labelled("type:bug", "p1", "status:triaged", "ready-for:agent")});
+
+/**
+ * The read `claim` makes BEFORE it posts, when it was handed the token this lane already holds: this
+ * thread carries no marker of this LANE yet, so the run goes on to race.
+ *
+ * A fresh `once` per call, because the same run then re-reads the thread at the checkpoint and must
+ * see the post-state — one script entry cannot answer both reads. A claim that passes no `--token`
+ * makes no such read at all, and its script carries no entry for one.
+ */
+const unclaimed = () => [once(COMMENTS), comments()] as const;
+
+/**
+ * The thread as it reads at each successive comment list, in call order — the last state answers
+ * every read after it. The protocol reads the thread several times in one run, and a static entry
+ * cannot tell a pre-post read from the checkpoint that follows it.
+ */
+const thread = (...states: ReadonlyArray<ExecResult>) =>
+	states.map((state, i) =>
+		i === states.length - 1 ? ([COMMENTS, state] as const) : ([once(COMMENTS), state] as const),
+	);
 
 /** No `ROADMAP.md`: no focus declared, so the scope axis admits and the fence reports itself inert. */
 const NO_FOCUS = fakeFs({files: {}});
@@ -56,6 +82,7 @@ const options = {
 		string | undefined
 	>,
 	uuid: LANE_UUID,
+	token: LANE_TOKEN,
 	at: "2026-08-09T00:00:00Z",
 	purpose: "build",
 	override: null as string | null,
@@ -63,7 +90,7 @@ const options = {
 };
 
 const run = (
-	verb: typeof runClaim,
+	verb: (given: typeof options) => ReturnType<typeof runClaim>,
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
 	fs = NO_FOCUS,
@@ -79,6 +106,7 @@ describe("runClaim", () => {
 	it("wins when its own marker is the earliest authorized one", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -93,9 +121,48 @@ describe("runClaim", () => {
 		});
 	});
 
+	/**
+	 * The two-lanes-one-session race (#6037). Lane B mints `SIBLING_UUID`, posts it, and re-reads a
+	 * thread where lane A's marker is earlier. Under the session-only rule it was told `won` and handed
+	 * back a nonce that held nothing, which `build branch` then cut a branch on.
+	 *
+	 * It holds no token yet, so it names none, and the run makes no pre-post read at all.
+	 */
+	it("loses to a SIBLING LANE of its own session, and never answers won on its behalf", async () => {
+		// The loser's own comment id is 9002, distinct from the winner's 9001, so the retraction
+		// assertion below discriminates "retracted its own marker" from "deleted the winner's".
+		const siblingMarker = marker("s-9f2e", SIBLING_UUID);
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[POST, okOut(JSON.stringify({id: 9002, html_url: "https://github.com/o/r/issues/4312#c"}))],
+			[
+				/^gh api repos\/o\/r\/issues\/comments\/9002$/,
+				okOut(JSON.stringify({body: siblingMarker})),
+			],
+			[COMMENTS, comments({id: 9001, body: MINE}, {id: 9002, body: siblingMarker})],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runClaim({...options, uuid: SIBLING_UUID, token: null}),
+				Layer.merge(shell.layer, NO_FOCUS.layer),
+			),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.some((line) => line.includes(`lost to ${LANE_TOKEN}`))).toBe(true);
+		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
+			"gh api --method DELETE repos/o/r/issues/comments/9002",
+		]);
+		expect(
+			shell.calls.some((line) => /DELETE repos\/o\/r\/issues\/comments\/9001/.test(line)),
+		).toBe(false);
+	});
+
 	it("re-reads AFTER posting — the checkpoint is what resolves a staggered race", async () => {
 		const shell = fakeShell([
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -105,7 +172,7 @@ describe("runClaim", () => {
 			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
 		);
 		const posted = shell.calls.findIndex((line) => POST.test(line));
-		const swept = shell.calls.findIndex((line) => COMMENTS.test(line));
+		const swept = shell.calls.findLastIndex((line) => COMMENTS.test(line));
 		expect(posted).toBeGreaterThanOrEqual(0);
 		expect(swept).toBeGreaterThan(posted);
 	});
@@ -113,6 +180,7 @@ describe("runClaim", () => {
 	it("exits 15 on a lost race — NEVER 0 — names the winner and retracts its own marker", async () => {
 		const shell = fakeShell([
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[
@@ -140,6 +208,7 @@ describe("runClaim", () => {
 	it("never lets marker TEXT confer authority — an unauthorized earlier marker does not win", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[
@@ -156,20 +225,26 @@ describe("runClaim", () => {
 		expect(out.stderr.some((line) => line.includes("who holds no write permission"))).toBe(true);
 	});
 
-	it("refuses a failed marker write on 8 — UNKNOWN, and points at confirm", async () => {
+	it("refuses a failed marker write on 8 — UNKNOWN, and hands back a RUNNABLE recovery (#6037)", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, errOut("gh: Gateway timeout (HTTP 504)")],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
+		// `confirm` and `release` both require --token, so the minted token has to reach the operator
+		// or the lane can address neither the marker this write may have landed nor its own claim.
 		expect(out.stderr.at(-1)).toContain(
-			'run "fabrika build confirm 4312" before any further action',
+			`run "fabrika build confirm 4312 --token ${LANE_TOKEN}" before any further action`,
 		);
+		expect(out.stderr.join("\n")).toContain(`the token this run minted is ${LANE_TOKEN}`);
+		expect(out.stderr.join("\n")).toContain('Do not re-run "fabrika build claim 4312"');
 	});
 
 	it("refuses a marker that does not read back on 9", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, okOut(JSON.stringify({body: "something else"}))],
 		]);
@@ -179,6 +254,7 @@ describe("runClaim", () => {
 	it("refuses an unreadable marker set on 11 — never 'unclaimed'", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
@@ -190,6 +266,7 @@ describe("runClaim", () => {
 	it("refuses a TRUNCATED marker read on 11 and keeps its own marker — a short read is not a loss", async () => {
 		const shell = fakeShell([
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, truncatedComments({id: 9001, body: MINE})],
@@ -208,6 +285,7 @@ describe("runClaim", () => {
 	it("refuses an unreadable PERMISSION on 11 — a transient read never demotes an author", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -240,6 +318,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	const claimWith = (target: ExecResult, fs = FOCUSED, overrides: Partial<typeof options> = {}) => {
 		const shell = fakeShell([
 			[ISSUE, target],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -453,6 +532,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		const shell = fakeShell([
 			[ISSUE, pull(body)],
 			[SERVED, servedRecord],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -535,6 +615,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				ISSUE,
 				issue({milestone: {number: 44}, labels: labelled("status:triaged", "ready-for:agent")}),
 			],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -550,6 +631,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 	it("admits an unresolvable PR while no focus is declared — an inert fence refuses nothing", async () => {
 		const shell = fakeShell([
 			[ISSUE, pull("No reference at all.\n")],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -575,6 +657,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				...(servedRecord === null
 					? []
 					: ([[SERVED, servedRecord]] as ReadonlyArray<readonly [RegExp, ExecResult]>)),
+				unclaimed(),
 				[POST, POSTED],
 				[GET_COMMENT, ECHO],
 				[COMMENTS, comments({id: 9001, body: MINE})],
@@ -642,6 +725,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		it("refuses the very same issue at 21 when it is claimed directly, writing nothing", async () => {
 			const shell = fakeShell([
 				[ISSUE, issue({milestone: {number: 44}, labels: DECISION})],
+				unclaimed(),
 				[POST, POSTED],
 				[GET_COMMENT, ECHO],
 				[COMMENTS, comments({id: 9001, body: MINE})],
@@ -685,6 +769,7 @@ describe("runClaim — the purpose axis", () => {
 	const claimWith = (target: ExecResult, overrides: Partial<typeof options> = {}) => {
 		const shell = fakeShell([
 			[ISSUE, target],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -750,14 +835,30 @@ describe("runClaim — the purpose axis", () => {
 });
 
 describe("runConfirm", () => {
-	it("answers mine when this session holds the earliest authorized marker", async () => {
+	it("answers mine when this lane holds the earliest authorized marker", async () => {
 		const out = await run(runConfirm, [
 			[ISSUE, CLAIMABLE],
 			[COMMENTS, comments({id: 9001, body: MINE})],
 			[perm("agent"), okOut("write\n")],
 		]);
 		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout).answer).toBe("mine");
+		expect(JSON.parse(out.stdout)).toEqual({answer: "mine", number: 4312, token: LANE_TOKEN});
+	});
+
+	it("refuses a SIBLING LANE OF THIS SESSION on 15, naming both tokens (#6037)", async () => {
+		const out = await run(
+			runConfirm,
+			[
+				[ISSUE, CLAIMABLE],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), okOut("write\n")],
+			],
+			{token: SIBLING_TOKEN},
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.at(-1)).toBe(
+			`build confirm: #4312 is held by ${LANE_TOKEN}, not by ${SIBLING_TOKEN} — another lane of this same session.`,
+		);
 	});
 
 	it("refuses a foreign holder on 15, naming the token", async () => {
@@ -768,7 +869,9 @@ describe("runConfirm", () => {
 		]);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.at(-1)).toBe(
-			"build confirm: #4312 is held by build:s-77aa:9d8c7b6a-5f4e-3d2c-1b0a-998877665544, not this session.",
+			"build confirm: #4312 is held by build:s-77aa:9d8c7b6a-5f4e-3d2c-1b0a-998877665544, not by " +
+				LANE_TOKEN +
+				".",
 		);
 	});
 
@@ -823,7 +926,7 @@ describe("runRelease", () => {
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.at(-1)).toBe(
-			"build release: this session holds no claim on #4312 — refusing to release another lane's.",
+			"build release: this lane holds no claim on #4312 — refusing to release another lane's.",
 		);
 		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
 	});
@@ -850,5 +953,382 @@ describe("runRelease", () => {
 			[once(DELETE), errOut("gh: Gateway timeout (HTTP 504)")],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain(`run "fabrika build confirm 4312 --token ${LANE_TOKEN}"`);
+	});
+});
+
+/**
+ * The protocol's fixed point: one LANE, one marker, one token (#5782, scoped per lane by #6037).
+ *
+ * Before #5782 N claims left N markers, `claim` printed its own fresh nonce while `confirm` and
+ * `requireClaim` read the earliest one, and each `release` peeled a single marker off the stack — so
+ * `build branch --resume` cut its branch off a nonce the caller had never been shown. That fix held
+ * the fixed point per SESSION, which is the rule that told a sibling lane it owned its neighbour's
+ * claim (#6037). Each property is asserted here per lane instead, and every one of them is paired
+ * with the sibling case it must NOT swallow: idempotence short-circuits only for the lane that named
+ * its own token, and release retracts only markers carrying that token.
+ */
+describe("the claim protocol", () => {
+	const held = () => [
+		[ISSUE, CLAIMABLE] as const,
+		...thread(comments(), comments({id: 9001, body: MINE})),
+		[POST, POSTED] as const,
+		[GET_COMMENT, ECHO] as const,
+		[perm("agent"), okOut("write\n")] as const,
+	];
+
+	const on = (
+		shell: ReturnType<typeof fakeShell>,
+		verb: (given: typeof options) => ReturnType<typeof runClaim>,
+	) => Effect.runPromise(Effect.provide(verb(options), Layer.merge(shell.layer, NO_FOCUS.layer)));
+
+	it("posts no second marker on a number THIS LANE already holds", async () => {
+		const shell = fakeShell(held());
+		const first = await on(shell, runClaim);
+		const second = await on(shell, runClaim);
+		expect(shell.calls.filter((line) => POST.test(line))).toHaveLength(1);
+		expect(second.code).toBe(0);
+		expect(JSON.parse(second.stdout)).toEqual(JSON.parse(first.stdout));
+		expect(second.stderr.at(-1)).toContain("already held by this lane");
+		expect(second.stderr.at(-1)).toContain("nothing was written");
+	});
+
+	/**
+	 * The narrowing itself. Under the session-scoped short-circuit, lane B naming its own token on a
+	 * number lane A holds was answered `won` with lane A's marker — the #6037 defect, arriving through
+	 * #5782's idempotence rather than through the race.
+	 */
+	it("does NOT short-circuit for a sibling lane's marker — it races it, and loses", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			...thread(
+				comments({id: 9001, body: MINE}),
+				comments({id: 9001, body: MINE}, {id: 9002, body: SIBLING_MARKER}),
+			),
+			[POST, okOut(JSON.stringify({id: 9002, html_url: "https://github.com/o/r/issues/4312#c"}))],
+			[
+				/^gh api repos\/o\/r\/issues\/comments\/9002$/,
+				okOut(JSON.stringify({body: SIBLING_MARKER})),
+			],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runClaim({...options, uuid: SIBLING_UUID, token: SIBLING_TOKEN}),
+				Layer.merge(shell.layer, NO_FOCUS.layer),
+			),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.some((line) => line.includes(`lost to ${LANE_TOKEN}`))).toBe(true);
+		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
+			"gh api --method DELETE repos/o/r/issues/comments/9002",
+		]);
+	});
+
+	it("answers claim and confirm with the SAME token — the two can never disagree", async () => {
+		const shell = fakeShell(held());
+		const claimed = await on(shell, runClaim);
+		const confirmed = await on(shell, runConfirm);
+		expect(confirmed.code).toBe(0);
+		expect(JSON.parse(confirmed.stdout).token).toBe(JSON.parse(claimed.stdout).token);
+		expect(JSON.parse(claimed.stdout).token).toBe(LANE_TOKEN);
+	});
+
+	it("clears every duplicate of THIS LANE's token on release, and leaves a sibling's standing", async () => {
+		// 9001 and 9002 both carry this lane's token — a write that reported UNKNOWN, landed, and was
+		// re-posted. 9003 is a sibling lane's claim: retracting it is the one write this protocol must
+		// never make, so it survives the sweep and is what `confirm` then loses to.
+		const dirty = comments(
+			{id: 9001, body: MINE},
+			{id: 9002, body: MINE, createdAt: "2026-08-09T00:00:01Z"},
+			{id: 9003, body: SIBLING_MARKER, createdAt: "2026-08-09T00:00:02Z"},
+		);
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			...thread(dirty, dirty, dirty, comments({id: 9003, body: SIBLING_MARKER})),
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const claimed = await on(shell, runClaim);
+		expect(claimed.code).toBe(0);
+		expect(JSON.parse(claimed.stdout).token).toBe(LANE_TOKEN);
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+
+		const released = await on(shell, runRelease);
+		expect(released.code).toBe(0);
+		expect(shell.calls.filter((line) => DELETE.test(line)).sort()).toEqual([
+			"gh api --method DELETE repos/o/r/issues/comments/9001",
+			"gh api --method DELETE repos/o/r/issues/comments/9002",
+		]);
+
+		const confirmed = await on(shell, runConfirm);
+		expect(confirmed.code).toBe(CLAIM_NOT_MINE);
+		expect(confirmed.stderr.at(-1)).toBe(
+			`build confirm: #4312 is held by ${SIBLING_TOKEN}, not by ${LANE_TOKEN} — another lane of this same session.`,
+		);
+	});
+});
+
+/**
+ * Board-attested succession (ADR 0295): the dead session's claim becomes this session's through an
+ * adopt marker on the same number, and never through a TTL, a lease or a steal.
+ */
+describe("runAdopt / succession", () => {
+	const DEAD = "s-77aa";
+	const ADOPT = adoptMarker(DEAD, "s-9f2e", LANE_UUID);
+	const adoptOptions = {
+		number: 4312,
+		repo: null,
+		env: options.env,
+		session: DEAD,
+		reason: "the driver session died mid-flight",
+		uuid: LANE_UUID,
+		at: "2026-08-09T00:00:00Z",
+	};
+
+	const runAdoptWith = (
+		script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+		overrides: Partial<typeof adoptOptions> = {},
+	) =>
+		Effect.runPromise(
+			Effect.provide(
+				runAdopt({...adoptOptions, ...overrides}),
+				Layer.merge(fakeShell(script).layer, NO_FOCUS.layer),
+			),
+		);
+
+	it("posts the adopt marker naming the dead session and this session's token", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[POST, POSTED],
+			[GET_COMMENT, okOut(JSON.stringify({body: ADOPT}))],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runAdopt(adoptOptions), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			answer: "adopted",
+			number: 4312,
+			session: DEAD,
+			token: `build:s-9f2e:${LANE_UUID}`,
+		});
+		expect(shell.calls.filter((line) => POST.test(line))).toHaveLength(1);
+	});
+
+	it("refuses an adopt naming this very session, and writes nothing", async () => {
+		const shell = fakeShell([[ISSUE, CLAIMABLE]]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runAdopt({...adoptOptions, session: "s-9f2e"}),
+				Layer.merge(shell.layer, NO_FOCUS.layer),
+			),
+		);
+		expect(out.code).toBe(FAILED);
+		expect(out.stderr.at(-1)).toContain("already covers");
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+	});
+
+	it("refuses an empty reason before anything is read", async () => {
+		const out = await runAdoptWith([[ISSUE, CLAIMABLE]], {reason: "  "});
+		expect(out.code).toBe(FAILED);
+		expect(out.stderr.at(-1)).toContain("--reason is empty");
+	});
+
+	it("refuses a --session carrying whitespace or the field separator, before the write", async () => {
+		for (const session of ["s-77aa dead", "s-77aa·2"]) {
+			const shell = fakeShell([[ISSUE, CLAIMABLE]]);
+			const out = await Effect.runPromise(
+				Effect.provide(
+					runAdopt({...adoptOptions, session}),
+					Layer.merge(shell.layer, NO_FOCUS.layer),
+				),
+			);
+			expect(out.code).toBe(FAILED);
+			expect(out.stderr.at(-1)).toContain("no reader can read back");
+			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		}
+	});
+
+	it("refuses a multi-line --reason rather than recording its first line only", async () => {
+		const shell = fakeShell([[ISSUE, CLAIMABLE]]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runAdopt({...adoptOptions, reason: "outage\nand context loss"}),
+				Layer.merge(shell.layer, NO_FOCUS.layer),
+			),
+		);
+		expect(out.code).toBe(FAILED);
+		expect(out.stderr.at(-1)).toContain("one line");
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+	});
+
+	// A tokenless `claim` over an adopted number is the shape a real successor produces: `adopt` ran
+	// under its own nonce, this run mints another, and succession turns on the WHOLE token — so the
+	// adopt names a lane that is not this run and ownership resolves `Foreign`. The lose path retracts
+	// this run's own marker, which is what leaves no orphan behind the release (AC 9).
+	it("claim on an adopted number loses and retracts its own marker — release comes first", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[
+				COMMENTS,
+				comments(
+					{id: 8000, body: THEIRS},
+					{
+						id: 8100,
+						body: adoptMarker(DEAD, "s-9f2e", SIBLING_UUID),
+						createdAt: "2026-08-10T00:00:00Z",
+					},
+					{id: 9001, body: MINE, createdAt: "2026-08-11T00:00:00Z"},
+				),
+			],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runClaim({...options, token: null}), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.some((line) => line.includes("lost to build:s-77aa:"))).toBe(true);
+		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
+			"gh api --method DELETE repos/o/r/issues/comments/9001",
+		]);
+	});
+
+	it("claim --token over an adopted claim refuses before writing anything", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[
+				COMMENTS,
+				comments(
+					{id: 8000, body: THEIRS},
+					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
+				),
+			],
+			[perm("agent"), okOut("write\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		// The token named is the ADOPT's — the one `release` accepts — never the dead session's winner.
+		expect(out.stderr.some((line) => line.includes(`--token ${LANE_TOKEN}`))).toBe(true);
+		expect(shell.calls.some((line) => POST.test(line) || DELETE.test(line))).toBe(false);
+	});
+
+	it("release still refuses the dead session's claim while no adopt marker names it", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[COMMENTS, comments({id: 8000, body: THEIRS})],
+			[perm("agent"), okOut("write\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.some((line) => line.includes("fabrika build adopt 4312 --session"))).toBe(
+			true,
+		);
+		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
+	});
+
+	it("release retracts BOTH markers once an authorized adopt names the dead session", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[
+				COMMENTS,
+				comments(
+					{id: 8000, body: THEIRS},
+					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
+				),
+			],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({answer: "released", number: 4312, adopted: DEAD});
+		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
+			"gh api --method DELETE repos/o/r/issues/comments/8000",
+			"gh api --method DELETE repos/o/r/issues/comments/8100",
+		]);
+	});
+
+	// `confirm` is what every number-addressed mutation runs first, and what it answers is what the
+	// caller threads onward. On a succession the winning marker is the DEAD session's, whose token
+	// `requireCallerToken` refuses on `1` — so the answer is the adopt's, this lane's own.
+	it("confirm on an adopted claim answers the adopt's token, never the dead session's", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[
+				COMMENTS,
+				comments(
+					{id: 8000, body: THEIRS},
+					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
+				),
+			],
+			[perm("agent"), okOut("write\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runConfirm(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({answer: "mine", number: 4312, token: LANE_TOKEN});
+	});
+
+	it("ignores an adopt marker whose poster holds no write permission — content is not authority", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[
+				COMMENTS,
+				comments(
+					{id: 8000, body: THEIRS},
+					{id: 8100, body: ADOPT, author: "drive-by", createdAt: "2026-08-10T00:00:00Z"},
+				),
+			],
+			[perm("agent"), okOut("write\n")],
+			[perm("drive-by"), okOut("read\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.some((line) => line.includes("counted, never a succession"))).toBe(true);
+		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
+	});
+
+	// The adopt names ONE lane by its whole token, so succession confers exactly what an ordinary win
+	// confers and never re-widens ownership back to a session (#6060). A third session and a sibling
+	// lane of the successor's own session are refused by the same test, which is the point.
+	it.each([
+		["a third session", "s-3rd", `build:s-3rd:${LANE_UUID}`],
+		["a sibling lane of the successor's session", "s-9f2e", SIBLING_TOKEN],
+	])("confers the claim on the named lane only — %s reads Foreign", async (_who, session, token) => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[
+				COMMENTS,
+				comments(
+					{id: 8000, body: THEIRS},
+					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
+				),
+			],
+			[perm("agent"), okOut("write\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runRelease({...options, token, env: {...options.env, CLAUDE_CODE_SESSION_ID: session}}),
+				Layer.merge(shell.layer, NO_FOCUS.layer),
+			),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
 	});
 });

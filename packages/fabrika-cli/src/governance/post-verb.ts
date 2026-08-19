@@ -277,15 +277,15 @@ export const runPost = (
 		);
 		if (bound._tag === "Refused") return bound.outcome;
 		const head = bound.head;
-		const listed = yield* diffRangePaths(head.base, head.sha);
+		const listed = yield* diffRangePaths(head.mergeBase, head.sha);
 		if (listed._tag === "Failure") return unreadable("the changed-file list", pr, listed.reason);
 		// Taken at the SAME bound commit the requirement is re-derived at — see `review/post-verb.ts`.
-		const content = yield* contentDigestAt(head.base, head.sha);
+		const content = yield* contentDigestAt(head.mergeBase, head.sha);
 		if (content._tag === "Failure") return unreadable("the content digest", pr, content.reason);
 		const diagnostics = [
 			boundLine(VERB, head),
 			scannedLine(VERB, listed.value.length, "changed file"),
-			`${VERB}: content ${content.value} — the digest of ${head.base}...${head.sha} this verdict survives on (ADR 0276).`,
+			`${VERB}: content ${content.value} — the digest of ${head.mergeBase}...${head.sha} this verdict survives on (ADR 0276).`,
 		];
 		if (!touchesGovernanceRoot(listed.value)) {
 			return refuse(

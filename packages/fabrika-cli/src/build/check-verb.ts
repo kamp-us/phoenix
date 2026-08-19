@@ -23,7 +23,7 @@
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {execCapture} from "../io/exec.ts";
-import {scanBody} from "../report/leaks.ts";
+import {CONFIG_PATH, readDocLeakExempt} from "../repo-config.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {requireSession} from "./claim.ts";
 import {
@@ -34,6 +34,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {predecessorsOf, readTopology, renderRef, sameRef} from "./dependencies.ts";
+import {docLeaks} from "./doc-leaks.ts";
 import {changedFiles, mergeBase} from "./git.ts";
 import {defaultBranch} from "./github.ts";
 import {requireLane} from "./lane-guard.ts";
@@ -160,19 +161,24 @@ export const surfaceMismatch = (surface: Surface, files: ReadonlyArray<string>):
 	return `--surface ${surface}, but the diff changes no ${COVERS[surface].join("/")} file`;
 };
 
-/** The machine-local paths a prose file carries, as defect lines. */
-const leakDefects = (file: string, text: string): ReadonlyArray<string> =>
-	scanBody(text).leaks.map(
-		(leak) => `${file}:${leak.line} carries a machine-local path (${leak.class}): ${leak.text}`,
+/**
+ * The machine-local paths a committed prose file carries, as defect lines.
+ *
+ * The scanner is {@link docLeaks}, the committed-file one — not `report/leaks.ts`'s body scanner,
+ * which this verb used to call. That scanner guards runtime issue bodies, an ungated surface, and
+ * it is deliberately stricter than the repo's committed-file gate on three axes; asking it about a
+ * file in a diff made this predictor red on bytes CI passes clean, and the red was unclearable in
+ * the lane that inherited it (#5687). See `doc-leaks.ts` for the three divergences.
+ */
+const leakDefects = (
+	file: string,
+	text: string,
+	exempt: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+	docLeaks(file, text, exempt).map(
+		(leak) => `${file}:${leak.line} carries a machine-local path (${leak.reason}): ${leak.matched}`,
 	);
 
-/**
- * Every in-repo link target a markdown file names.
- *
- * Absolute URLs and bare fragments are skipped: a link with a scheme is not this tree's to resolve,
- * and a fragment resolves within the page. A fabrika doc cited by a relative path is covered by the
- * same rule, so there is no second reference check to drift from this one.
- */
 /** Fold `.` and `..` out of an absolute path, so a link's target is compared in one spelling. */
 export const normalizePath = (path: string): string => {
 	const out: string[] = [];
@@ -184,9 +190,94 @@ export const normalizePath = (path: string): string => {
 	return `/${out.join("/")}`;
 };
 
+/** Every byte replaced by a space, newlines kept, so masking moves no offset and no line number. */
+const blank = (text: string): string => text.replace(/[^\n]/g, " ");
+
+const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
+
+/**
+ * Blank out every code span in a fence-free region. A run of n backticks opens a span the next run
+ * of exactly n backticks closes; a run with no partner is literal text and masks nothing.
+ */
+const maskSpans = (text: string): string => {
+	let out = "";
+	let i = 0;
+	while (i < text.length) {
+		if (text[i] !== "`") {
+			out += text[i];
+			i += 1;
+			continue;
+		}
+		let open = i;
+		while (text[open] === "`") open += 1;
+		const run = open - i;
+		const closer = new RegExp(`(?<!\`)\`{${run}}(?!\`)`, "g");
+		closer.lastIndex = open;
+		const close = closer.exec(text);
+		if (close === null) {
+			out += text.slice(i, open);
+			i = open;
+			continue;
+		}
+		const end = close.index + run;
+		out += blank(text.slice(i, end));
+		i = end;
+	}
+	return out;
+};
+
+/**
+ * Blank out fenced blocks and code spans, so a markdown link written as an *illustration* is not
+ * extracted as a live one (#5639). The docs that state this repo's link convention are precisely
+ * the docs that spell a link out as an example, and they were the ones this predictor red.
+ *
+ * Masked bytes become spaces rather than being dropped: the link pattern cannot cross whitespace,
+ * so a masked example can never fuse with live text on either side of it.
+ */
+const maskCode = (text: string): string => {
+	const out: string[] = [];
+	let prose: string[] = [];
+	let fence: string | null = null;
+	const flush = () => {
+		if (prose.length > 0) out.push(maskSpans(prose.join("\n")));
+		prose = [];
+	};
+	for (const line of text.split("\n")) {
+		const marker = FENCE_RE.exec(line)?.[1];
+		if (fence !== null) {
+			out.push(blank(line));
+			if (marker !== undefined && marker[0] === fence[0] && marker.length >= fence.length) {
+				fence = null;
+			}
+			continue;
+		}
+		if (marker !== undefined) {
+			flush();
+			out.push(blank(line));
+			fence = marker;
+			continue;
+		}
+		prose.push(line);
+	}
+	flush();
+	return out.join("\n");
+};
+
+/**
+ * Every in-repo link target a markdown file names, ignoring the ones written as examples.
+ *
+ * Absolute URLs and bare fragments are skipped: a link with a scheme is not this tree's to resolve,
+ * and a fragment resolves within the page. A fabrika doc cited by a relative path is covered by the
+ * same rule, so there is no second reference check to drift from this one.
+ *
+ * The extractor stays a regex over masked text rather than moving to a markdown parser: fabrika is
+ * installed into repos it does not control (ADR 0273) on four runtime dependencies, and code-span
+ * plus fenced-block masking is the one property #2308 bought by retiring the CI gate's in-house
+ * extractor. Reference-style and HTML links stay out of scope here, as they always were.
+ */
 export const linkTargets = (text: string): ReadonlyArray<string> => {
 	const targets: string[] = [];
-	for (const match of text.matchAll(/\[[^\]]*\]\(([^)\s]+)[^)]*\)/g)) {
+	for (const match of maskCode(text).matchAll(/\[[^\]]*\]\(([^)\s]+)[^)]*\)/g)) {
 		const target = (match[1] ?? "").split("#")[0]?.trim() ?? "";
 		if (target === "" || /^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
 		targets.push(target);
@@ -259,6 +350,50 @@ const readMarkdown = (
 			Effect.succeed<MarkdownRead>(
 				error.reason._tag === "NotFound"
 					? {_tag: "Absent"}
+					: {_tag: "Unreadable", reason: error.reason._tag},
+			),
+		),
+	);
+
+/** The declared exemptions, or why there are none — `Unreadable` is the one answer a green may not absorb. */
+type ExemptScope =
+	| {readonly _tag: "Scope"; readonly paths: ReadonlyArray<string>; readonly note: string}
+	| {readonly _tag: "Unreadable"; readonly reason: string};
+
+/**
+ * Read the repo's declared leak-scan exemptions off `.fabrika.jsonc`.
+ *
+ * An absent file is a repo that declared none, which is the fail-closed answer — nothing is exempt,
+ * the scanner stays strictest. Any other read fault proves nothing, so it refuses like
+ * {@link readMarkdown}'s does.
+ */
+const readExemptScope = (
+	fs: FileSystem.FileSystem,
+	root: string,
+): Effect.Effect<ExemptScope, never> =>
+	fs.readFileString(`${root}/${CONFIG_PATH}`).pipe(
+		Effect.map((text): ExemptScope => {
+			const read = readDocLeakExempt(text);
+			return read._tag === "Paths"
+				? {
+						_tag: "Scope",
+						paths: read.paths,
+						note: `${VERB}: ${read.paths.length} leak-scan exemption(s) declared in ${CONFIG_PATH}.`,
+					}
+				: {
+						_tag: "Scope",
+						paths: [],
+						note: `${VERB}: nothing is leak-scan exempt — ${read.reason}.`,
+					};
+		}),
+		Effect.catchTag("PlatformError", (error) =>
+			Effect.succeed<ExemptScope>(
+				error.reason._tag === "NotFound"
+					? {
+							_tag: "Scope",
+							paths: [],
+							note: `${VERB}: nothing is leak-scan exempt — this repo has no ${CONFIG_PATH}.`,
+						}
 					: {_tag: "Unreadable", reason: error.reason._tag},
 			),
 		),
@@ -367,6 +502,15 @@ export const runCheck = (
 		}
 
 		const fs = yield* FileSystem.FileSystem;
+		const exempt = yield* readExemptScope(fs, lane.root);
+		if (exempt._tag === "Unreadable") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read ${CONFIG_PATH} (${exempt.reason}) — which docs are leak-scan exempt is UNKNOWN, never green.`,
+				noted,
+			);
+		}
+		const scoped = [...noted, exempt.note];
 		const defects: string[] = [];
 		for (const file of markdown) {
 			const path = `${lane.root}/${file}`;
@@ -376,10 +520,10 @@ export const runCheck = (
 				return refuse(
 					PRECONDITION_UNKNOWN,
 					`${VERB}: cannot read ${file} (${read.reason}) — it is in the diff and is not absent, so the verdict is UNKNOWN, never green.`,
-					noted,
+					scoped,
 				);
 			}
-			defects.push(...leakDefects(file, read.text));
+			defects.push(...leakDefects(file, read.text, exempt.paths));
 			const dir = path.slice(0, path.lastIndexOf("/"));
 			for (const target of linkTargets(read.text)) {
 				const absolute = normalizePath(
@@ -396,7 +540,7 @@ export const runCheck = (
 			return refuse(
 				VALIDATION_RED,
 				`${VERB}: red — the ${surface} validators failed; diagnostics above.`,
-				[...noted, ...defects],
+				[...scoped, ...defects],
 			);
 		}
 		return answer(
@@ -407,6 +551,6 @@ export const runCheck = (
 				ran: surface === "plan" ? [MARKDOWN_SCAN, PLAN_GRAMMAR] : [MARKDOWN_SCAN],
 				unvalidated,
 			}),
-			noted,
+			scoped,
 		);
 	});

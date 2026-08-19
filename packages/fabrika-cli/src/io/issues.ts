@@ -117,6 +117,52 @@ export const openIssuesWithLabel = (
 			: ok(rows);
 	});
 
+/** One issue with the bytes a body-keyed match needs. `body` is `""` when the API sent none. */
+export interface IssueDetail extends IssueRow {
+	readonly body: string;
+}
+
+/** One compact-JSON object per line, or `null` when a line is not that shape. */
+export const parseIssueDetails = (stdout: string): ReadonlyArray<IssueDetail> | null => {
+	const rows: IssueDetail[] = [];
+	for (const line of stdout.split("\n")) {
+		if (line.trim() === "") continue;
+		const parsed = parseJson(line);
+		if (!isRecord(parsed)) return null;
+		const {number, title, body} = parsed;
+		if (!Number.isInteger(number) || typeof title !== "string") return null;
+		rows.push({number: number as number, title, body: typeof body === "string" ? body : ""});
+	}
+	return rows;
+};
+
+/**
+ * Open issues carrying `label`, paged, with their bodies — the same single list call
+ * {@link openIssuesWithLabel} makes, asking the same endpoint for one more field it already returns.
+ *
+ * It exists because a match keyed on a body line cannot be made from `<number>\t<title>` rows, and
+ * re-reading each issue to get one would turn a proven answer into N reads, any of which failing
+ * would leave "does a session for this ticket exist" UNKNOWN.
+ */
+export const openIssuesWithLabelDetailed = (
+	repo: string,
+	label: string,
+): Shell<Attempt<ReadonlyArray<IssueDetail>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=100`,
+			"--jq",
+			".[] | select(.pull_request | not) | {number, title, body} | @json",
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows = parseIssueDetails(r.stdout);
+		return rows === null
+			? fail("`gh api` exited 0 but its output is not a list of issue objects")
+			: ok(rows);
+	});
+
 /**
  * Open issues in `repo` whose title is **exactly** `title`, paged, pull requests filtered out.
  *

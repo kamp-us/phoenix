@@ -86,6 +86,16 @@ dir's `commondir`, per `gitrepository-layout(5)`) and equal common dirs delegate
 repository cannot be established is treated as a different one, so the refusal is what an unreadable
 answer falls back to.
 
+Row three needs one more rule to hold, because the probe asks Node and Node answers about more than
+the repo ([#5768](https://github.com/kamp-us/phoenix/issues/5768)). After the `node_modules` walk
+fails, Node falls back to `NODE_PATH` — and the pnpm-generated global `fabrika` shim exports an
+absolute `NODE_PATH` chain rooted at the checkout it was installed from. So a repo with no install
+of its own still resolved one: the global's own copy, which read as "the repo-local install is this
+copy" and swallowed the warning row three exists for. The probe therefore requires the resolved
+install to live at or under the repo root; anything outside is `absent`, whatever Node found. The
+same rule drops a copy hoisted into a directory above the repo, which is not that repo's install
+either.
+
 The property this buys is a **repo-pinned version**. phoenix carries `@kampus/fabrika-cli` in its
 root `devDependencies`, so a bare `fabrika` anywhere in a phoenix checkout runs the version this
 repo pins — and because pnpm links the workspace package, that means the **working tree**: edit
@@ -126,9 +136,39 @@ refuse an unknown flag.
 > installed copy, which is what a real `pnpm add --global` produces. `publishConfig` is what lets
 > both halves be true at once: the manifest's `bin` stays `./src/bin.ts` for the workspace, where
 > pnpm's link resolves *outside* `node_modules` and an edit to `src/` is live on the next
-> invocation, and npm rewrites `bin`/`main`/`types`/`exports` onto the compiled `dist/` at publish
-> time. `files` is `["dist"]` and `prepublishOnly` runs the build, so a tarball can neither miss
-> `dist/` nor ship a stale one (#4784).
+> invocation, and npm rewrites `bin`/`main`/`types`/`exports`/`engines` onto the compiled `dist/` at
+> publish time. `files` is `["dist", "scripts"]` and `prepublishOnly` runs the build, so a tarball
+> can neither miss `dist/` nor ship a stale one (#4784).
+
+### The two Node floors
+
+The two entry points need different Nodes, so the manifest carries two floors and never one number
+(#5943):
+
+| Floor | Where it lives | What it is | Who reads it |
+| --- | --- | --- | --- |
+| `>=22.12` | `publishConfig.engines.node` | what the compiled `dist/` runs on | consumers, via the tarball |
+| `>=24` | top-level `engines.node` | what the `.ts` `bin` needs for type stripping | this workspace |
+
+`publishConfig.engines` is a real field replacement, not a hopeful one: packing this package with
+pnpm 10.27.0 (the `packageManager` pin `publish.yml` runs on) emits a tarball `package.json` whose
+`engines.node` is `>=22.12` and whose `publishConfig` is stripped to `{"access": "public"}` — pnpm
+copies a whitelisted field onto the manifest and deletes it from `publishConfig`, and `access` is a
+publish setting rather than a manifest field, so it stays behind. So the dev floor never reaches a
+consumer, and a Node-22 repo installs and runs with no `Unsupported engine` warning —
+including under `engine-strict=true`, where `>=24` was a hard install failure rather than noise.
+
+`>=22.12` is what the bundle was measured to need, not what it was assumed to need. Running
+`dist/bin.js` down the Node ladder: 22.12 and up is clean; 22.11 works but warns
+(`ExperimentalWarning: Importing JSON modules`, from [`src/version.ts`](./src/version.ts)'s
+`import pkg from "../package.json" with {type: "json"}` — import attributes for JSON stopped being
+experimental in 22.12); Node 20 and 18 throw, because `undici` in the dependency tree calls
+`webidl.util.markAsUncloneable`, which lands in Node 22.
+
+The dev floor stays `>=24` and is deliberately conservative — the `.ts` `bin` in fact starts on
+22.18+, where native type stripping was backported, but nothing in this repo runs below 24. It is
+also not the only home for that number: `volta.node` pins `26.2.0` here and at the root, and CI
+reads `node-version-file: package.json`.
 
 ## Quickstart
 
@@ -248,7 +288,8 @@ corpus-repair verb ([#5744](https://github.com/kamp-us/phoenix/issues/5744)).
 | Verb | Answers |
 |---|---|
 | `triage codes` | the exit taxonomy every verb in the group allocates from, one `<code>\t<meaning>` line per code |
-| `triage repair-criteria` | rewrite a level-drifted `## Acceptance criteria` heading to the conforming `###` — one issue, or `--sweep` over every open issue with a per-issue outcome line; authored region only, and anything that is not a pure level drift on the exact heading text is refused on `14`, never guessed |
+| `triage apply` | stamp type, priority, audience, status and home as one owned-facet reconcile, read back positively. `--ready-for agent` additionally asserts the issue's live body carries an acceptance-criteria block the wire reader answers `Found` on, refusing on `16` before any label is written — an absent block routes back to `enrich`, a malformed one to `repair-criteria`. `--type epic` is exempt (its criteria arrive per child from the plan ledger) and `--ready-for human` is unaffected ([#6025](https://github.com/kamp-us/phoenix/issues/6025)) |
+| `triage repair-criteria` | repair an acceptance-criteria block's shape — two repairs, composed in one pass: a level-drifted `## Acceptance criteria` heading rewritten to the conforming `###`, and, when the block carries no checkbox at all, its list items rewritten to unchecked checkboxes with each item's text byte-for-byte unchanged — plain bullets ([#6001](https://github.com/kamp-us/phoenix/issues/6001)) or an ordered `1.` list, one family per block ([#5981](https://github.com/kamp-us/phoenix/issues/5981)). One issue, or `--sweep` over every open issue with a per-issue outcome line; `--dry-run` plans everything and writes nothing, answering `would-repair` with the repairs it would make, so the set of bodies about to be edited is reviewable first. Every repaired body gets one disclosure comment naming its repairs, posted after the read-back — an in-place edit of a filed body GitHub keeps no history of leaves no other record. Authored region only, and anything that is not a pure shape rewrite is refused on `14`, never guessed — a drifted heading text, a section mixing the two list families, prose or another block standing between the list's items, an empty item, a checkbox already beside the items, or a converted item the reader counts no criterion at (the repaired block must read back exactly one criterion per line it rewrote) |
 
 Three properties of that substrate are worth knowing:
 
@@ -268,6 +309,17 @@ Three properties of that substrate are worth knowing:
   ([`src/triage/scope.ts`](./src/triage/scope.ts)). A verdict driven by a silently truncated
   read is a verdict over unknown scope; pagination fixes the reach, and printing what was
   scanned is what makes the reach checkable from outside the process.
+
+## The `build` group
+
+Everything one construction lane needs, from the candidate pool to the opened pull request. The
+group implements
+[`claude-plugins/fabrika/skills/build/contract.md`](../../claude-plugins/fabrika/skills/build/contract.md).
+
+| Verb | What it answers |
+|---|---|
+| `build pick` | the ranked candidate pool, with every excluded issue reported beside it under the axis that refused it. Four axes report: `out-of-focus` and `audience-not-agent` from the shared admission test, `unreadable`, and `no-acceptance-criteria` — a body with no block the wire reader answers `Found` on, which is a lane that could otherwise only fail at `review criteria` once a whole build was spent. The body rides the listing read the filter already performs, so the axis costs no second call ([#6025](https://github.com/kamp-us/phoenix/issues/6025)) |
+| `build issue` | the claimed issue's body and its criteria, transporting the wire read's three arms — `found` / `absent` / `malformed` — as distinct facts on exit 0. It is a read verb and refuses none of them; the refusals live at the stamp and the pick |
 
 ## The `review` group
 
@@ -1002,8 +1054,9 @@ Three things about it are load-bearing:
   is a failed read. An *implicitly* resolved roster holding zero skills is neither — it is `empty`
   at exit `0`.
 
-The roster resolves in three tiers — an explicit `--skills-dir`, the installed plugin's own skills
-tree, then `claude-plugins/fabrika/skills` in-repo — and prints which one served
+The roster resolves in four tiers — an explicit `--skills-dir`, the installed plugin's own skills
+tree, `claude-plugins/fabrika/skills` in-repo, then that same path in the checkout the CLI itself
+runs from — and prints which one served, `explicit` · `plugin` · `repo` · `checkout`
 ([`src/status/roster.ts`](./src/status/roster.ts)).
 
 ## The `ui` group
@@ -1096,9 +1149,10 @@ pnpm --filter @kampus/fabrika-cli build       # tsc -> dist/, for the published 
 **The development loop has no build step.** `bin` points at `./src/bin.ts` and Node ≥ 24 strips the
 types natively, so an edit to `src/` is live on the next invocation — which is the entire point of
 the workspace `devDependencies` line in the root `package.json`. `build` emits `dist/` for the
-published tarball and nothing else reads it; see the publish note above for why the two halves
-differ. Emit and type-check now run the same binary — the stable native `tsc` (ADR 0271) — so the
-published artifact and the gate can no longer disagree about the compiler.
+published tarball and nothing else reads it; see [the two Node floors](#the-two-node-floors) for why
+that `≥ 24` is this workspace's number and not the published package's. Emit and type-check now run
+the same binary — the stable native `tsc` (ADR 0271) — so the published artifact and the gate can no
+longer disagree about the compiler.
 
 A verb is a **pure function of its dependencies** — the `*-verb.ts` modules compute a
 `VerbOutcome` (exit code, stdout, stderr) and never write a stream or exit. The Effect CLI

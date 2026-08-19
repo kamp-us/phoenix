@@ -45,11 +45,13 @@ does not exist yet — rather than missing; check the registry before assuming a
 | `lane-brief` | [`packages/fabrika-cli/src/wire/lane-brief.ts`](../../../packages/fabrika-cli/src/wire/lane-brief.ts) | `operate` | `build`, `review`, `ship` |
 | `map-ticket` | [`packages/fabrika-cli/src/wire/map-ticket.ts`](../../../packages/fabrika-cli/src/wire/map-ticket.ts) | `map` | `map` |
 | `grill-ruling` | [`packages/fabrika-cli/src/wire/grill-ruling.ts`](../../../packages/fabrika-cli/src/wire/grill-ruling.ts) | `grilling` | `grilling` |
+| `cap-clearance` | [`packages/fabrika-cli/src/wire/cap-clearance.ts`](../../../packages/fabrika-cli/src/wire/cap-clearance.ts) | `build` | `build`, `operate` |
 | `grill-answer` | [`packages/fabrika-cli/src/wire/grill-answer.ts`](../../../packages/fabrika-cli/src/wire/grill-answer.ts) | `grilling` | `grilling` |
 | `grill-supersede` | [`packages/fabrika-cli/src/wire/grill-supersede.ts`](../../../packages/fabrika-cli/src/wire/grill-supersede.ts) | `grilling` | `grilling` |
 | `handoff-pack` | [`packages/fabrika-cli/src/wire/handoff-pack.ts`](../../../packages/fabrika-cli/src/wire/handoff-pack.ts) | `handoff` | `handoff` |
 | `governance-digest` | [`packages/fabrika-cli/src/wire/governance-digest.ts`](../../../packages/fabrika-cli/src/wire/governance-digest.ts) | `governance` | `front-door` |
 | `graduate-emitted` | [`packages/fabrika-cli/src/wire/graduate-emitted.ts`](../../../packages/fabrika-cli/src/wire/graduate-emitted.ts) | `graduate` | `graduate` |
+| `came-from` | [`packages/fabrika-cli/src/wire/came-from.ts`](../../../packages/fabrika-cli/src/wire/came-from.ts) | `grilling`, `prototyping` | `grilling`, `wayfinding` |
 <!-- fabrika:wire-index:end -->
 
 ### `acceptance-criteria`
@@ -135,7 +137,15 @@ the whole interface between the machine and the work. Written per dispatch, two 
 same state send materially different instructions, and the rule that matters most — carry the URLs,
 never a restatement, because a restated spec is a stale spec — is enforced by nothing but the
 driver's care. So the format owns the rules text byte for byte and the state → shell routing table
-with it, and `lane brief` prints what it derives instead of composing anything. `## Ground` carries
+with it, and `lane brief` prints what it derives instead of composing anything. Both the section
+set and the field set are closed, and closing only the first is a hole this format shipped with: an
+appended `## Note from the driver` read back malformed, while the same sentence written as `note: …`
+inside `## Ground` parsed, was stored, and was never looked at again (#5809). So each field belongs
+to exactly one section — `## Task` owns `lane`, `root`, `fabrika`, `task`, `state` and `shell`,
+`## Ground` owns `issue`, `pr`, `epic`, `branch` and `range` — and an unknown key, a key under the
+wrong heading, or a key set twice under its own heading is malformed. The last two are the same
+defect as the first: the sections used to fold into one map, so a `state:` under `## Ground` quietly
+beat the one the driver's fold derived and re-routed the brief to a shell `## Task` never named. `## Ground` carries
 links and no content at all: the shell re-reads its own issue, PR and verdicts through its own
 verbs. A `review` or `ship` brief with no PR is malformed rather than dispatchable, because that
 shell would have nothing to read.
@@ -143,9 +153,13 @@ shell would have nothing to read.
 Ground comes in two shapes, because an epic run is one branch and one pull request (ADR 0285). A
 child state on an epic lane has no PR to name at all: it carries the epic issue, the branch its
 worktree is cut from, and — at `review` — the commit range whose verdict lands on the child issue as
-a `range-verdict-marker`. Those briefs carry a second byte-fixed rules paragraph saying so, so a
-child brief holding only the single-issue rules — the one that would let a child push and open its
-own PR — reads back malformed. The run's tail task is the PR shape again, unchanged.
+a `range-verdict-marker`. Both of that range's endpoints are commits the driver's tree already
+resolved, never a `HEAD` the spawned shell resolves for itself: a reviewer's worktree is cut fresh
+from the driver's checkout and stands on the assembly branch, so a `HEAD`-tipped range read as empty
+and the gate judged nothing while still able to land a verdict (#6023). Those briefs carry a second
+byte-fixed rules paragraph saying so, so a child brief holding only the single-issue rules — the one
+that would let a child push and open its own PR — reads back malformed. The run's tail task is the
+PR shape again, unchanged.
 
 ### `map-ticket`
 
@@ -172,6 +186,19 @@ it answered, and the reader settles authority against repository permissions and
 authorization comment beside it. The digest is what keeps the ruling honest over time: re-word the
 question and the recomputed digest differs, so the ruling stops counting and the question is open
 again. A ruling that drifted out from under the founder must never keep reading as his.
+
+### `cap-clearance`
+
+This is the founder's grant of one extra repair round, carried on the pull request the round belongs
+to. The agreement it closes is the one the repair loop had no way to express: the round budget is
+counted off the FAIL markers and enforced again by the lane machine, and a clearance that lived only
+as prose could not reach either, so a legitimately cleared round could only land as an edit outside
+the loop. The marker names the round it clears and nothing else — deliberately no head SHA, because a
+clearance exists precisely so a *new* head can be pushed, and a head-bound grant would be void the
+moment it was used. Naming the round is also what spends it exactly once: the grant covers the round
+it names, and the next FAIL round leaves it behind. Like the ruling marker, it is not authority on
+its own — the reader settles that against the repo's configured grant-author set and a dated
+authorization comment beside it.
 
 ### `grill-answer`
 
@@ -241,6 +268,22 @@ namespace-prefix gate that returns `Absent` for a non-member, so a widening that
 constant would emit markers it could never read back — and an emission is not a verdict anyway: it
 carries no `PASS`/`FAIL` polarity, binds a spec digest rather than a head SHA, and nothing recorded
 in it can block a merge.
+
+### `came-from`
+
+This is the section saying which issue an artifact's question arrived from, and it is the only thing
+carrying a `wayfinding` frontier ticket number into a sibling skill. `spike open` writes it on a
+spike issue and `grill open` writes it on a session issue; `grill open` also *reads* it, because for
+a session the binding is the resume key. That is the whole reason it is a format rather than a
+grammar either group owns: two writers and two readers across two skills, and a reader drifting from
+a writer here is silent.
+
+`standalone` is a value rather than a blank, so an artifact opened with no ticket says so instead of
+leaving a reader to infer it from an empty section. And the `Malformed` answer is load-bearing beyond
+the usual: a session whose heading drifted, answered as "bound to nothing", would make the resume
+find no match and mint a **second** session on one ticket — the split #5661 was filed about, except
+silent, where the failure it replaced was at least a visibly duplicate topic. `grill open` refuses on
+that answer rather than resuming past it.
 
 ## Adding a format
 

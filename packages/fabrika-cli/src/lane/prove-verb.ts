@@ -10,8 +10,9 @@
  * verdict on the child issue that still binds the content it judged (ADR 0276).
  *
  * **It writes nothing.** The proof sits beside `lane transition` rather than inside it so the
- * append path stays pure, offline and byte-identical on refusal; what makes it non-optional is
- * `operate` step 3, which runs it first and records only on its exit 0.
+ * append path stays pure, offline and byte-identical on refusal; what makes it non-optional is its
+ * two callers, which each run it first and record only on its exit 0 — `operate` step 3 for the
+ * operator's own append, and `lane report` for a shell recording its own terminal token.
  *
  * Every refusal names what it looked for, and the failing readings stay on their own codes because
  * their remedies are opposite: nothing there, not finished yet, says the other thing, several
@@ -21,7 +22,6 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
-import {localBranches, rangeCommits, resolveCommit} from "../io/git.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {getPullRequest, listPullFiles, openPullsClosing, searchOpenPulls} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
@@ -31,7 +31,6 @@ import {bindHead} from "../review/head.ts";
 import {CODEOWNERS_PATH, readBoundary} from "../ship/boundary.ts";
 import {classify} from "../ship/codeowners.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {epicBranch} from "../wire/lane-brief.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
 import {
@@ -44,8 +43,6 @@ import {
 } from "./codes.ts";
 import {foldLog, resolveTask} from "./fold.ts";
 import {
-	type BranchFact,
-	childLaneBranches,
 	claimOf,
 	epicOf,
 	foldNamespaces,
@@ -58,9 +55,9 @@ import {
 	roleOf,
 	traceDiagnosis,
 	tracePulls,
-	traceRange,
 	type VerdictFact,
 } from "./prove.ts";
+import {type ChildRange, locateRange} from "./range.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
@@ -139,8 +136,8 @@ export const runProve = (
 		// A child's range lives in this tree, not on the board, so the repo is not resolved for it —
 		// a `gh`-shaped read that failed would report a range this verb never needed as UNKNOWN.
 		if (claim._tag === "RangeCommits") {
-			const located = yield* locateRange(claim.epic, issue);
-			if (located._tag === "Refused") return located.outcome;
+			const read = yield* located(claim.epic, issue);
+			if (read._tag === "Refused") return read.outcome;
 			return answer(
 				JSON.stringify(
 					{
@@ -151,16 +148,16 @@ export const runProve = (
 						evidence: {
 							kind: "range-commits",
 							epic: claim.epic,
-							branch: located.branch,
-							range: {base: located.base, tip: located.tip},
-							commits: located.commits,
-							naming: located.naming,
+							branch: read.range.branch,
+							range: {base: read.range.base, tip: read.range.tip},
+							commits: read.range.commits,
+							naming: read.range.naming,
 						},
 					},
 					null,
 					2,
 				),
-				located.notes,
+				read.notes,
 			);
 		}
 
@@ -471,7 +468,9 @@ const proveVerdicts = (
 		) {
 			const bound = yield* bindHead(VERB, repo, pr, pull.value, null);
 			const computed =
-				bound._tag === "Bound" ? yield* contentDigestAt(bound.head.base, bound.head.sha) : null;
+				bound._tag === "Bound"
+					? yield* contentDigestAt(bound.head.mergeBase, bound.head.sha)
+					: null;
 			if (computed !== null && computed._tag === "Ok") digest = computed.value;
 			if (digest === null) {
 				notes.push(
@@ -515,97 +514,27 @@ const proveVerdicts = (
 
 interface Located {
 	readonly _tag: "Located";
-	readonly branch: string;
-	/** The epic branch's own ref name, so a diagnostic names a range a human can re-run. */
-	readonly baseRef: string;
-	readonly base: string;
-	readonly tip: string;
-	readonly commits: number;
-	readonly naming: number;
+	readonly range: ChildRange;
 	readonly notes: ReadonlyArray<string>;
 }
 
 type Refused = {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
 
-/**
- * The one commit range a child built, read off this tree's refs and object database.
- *
- * Off the tree rather than off a search index because a child's work is never published: nothing on
- * GitHub knows it exists until the epic's single PR opens at the tail. The branch is nominated by
- * `build branch`'s own grammar (`../build/lane.ts`'s parser, never a second regex) and the range is
- * then the evidence — a branch is only a name until commits naming this child sit on it.
- *
- * A ref this tree cannot resolve is UNKNOWN, never "not built": an operator standing in a checkout
- * the epic run never touched would otherwise read as a proof that the run did nothing.
- */
-const locateRange = (
+/** The shared range read (`./range.ts`), seated into this verb's proof codes. */
+const located = (
 	epic: number,
 	issue: number,
 ): Effect.Effect<Located | Refused, never, ChildProcessSpawner.ChildProcessSpawner> =>
-	Effect.gen(function* () {
-		const baseRef = epicBranch(epic);
-		const base = yield* resolveCommit(baseRef, " — the epic run's assembly branch");
-		if (base._tag === "Failure") {
-			return {
-				_tag: "Refused" as const,
-				outcome: unreadable(`"${baseRef}" in this tree`, base.reason),
-			};
+	Effect.map(locateRange(VERB, epic, issue), (location) => {
+		if (location._tag === "Located") {
+			return {_tag: "Located" as const, range: location.range, notes: location.notes};
 		}
-		const branches = yield* localBranches;
-		if (branches._tag === "Failure") {
-			return {
-				_tag: "Refused" as const,
-				outcome: unreadable("this tree's local branches", branches.reason),
-			};
-		}
-		const candidates = childLaneBranches(issue, branches.value);
-		const facts: BranchFact[] = [];
-		for (const branch of candidates) {
-			const tip = yield* resolveCommit(branch);
-			if (tip._tag === "Failure") {
-				return {_tag: "Refused" as const, outcome: unreadable(`branch "${branch}"`, tip.reason)};
-			}
-			const walked = yield* rangeCommits(base.value, tip.value);
-			if (walked._tag === "Failure") {
-				return {
-					_tag: "Refused" as const,
-					outcome: unreadable(`the commits "${branch}" adds over ${baseRef}`, walked.reason),
-				};
-			}
-			facts.push({branch, tip: tip.value, messages: walked.value.map((row) => row.message)});
-		}
-
-		const notes = [
-			`${VERB}: #${issue} is a child of epic #${epic} and opens no PR of its own — looked in this tree for a lane branch of #${issue} over ${baseRef}; ${branches.value.length} local branch(es) read, ${candidates.length} candidate(s).`,
-		];
-		const trace = traceRange(issue, baseRef, facts);
-		if (trace._tag === "None") {
-			return {_tag: "Refused" as const, outcome: seat({_tag: "Absent", what: trace.why}, notes)};
-		}
-		if (trace._tag === "Many") {
-			return {
-				_tag: "Refused" as const,
-				outcome: seat(
-					{
-						_tag: "Ambiguous",
-						what: `${trace.branches.join(", ")} each carry commits naming #${issue} — which range this lane built is not derivable here`,
-					},
-					notes,
-				),
-			};
+		if (location._tag === "Unreadable") {
+			return {_tag: "Refused" as const, outcome: unreadable(location.what, location.reason)};
 		}
 		return {
-			_tag: "Located" as const,
-			branch: trace.branch,
-			baseRef,
-			base: base.value,
-			tip: trace.tip,
-			commits: trace.commits,
-			naming: trace.naming,
-			notes: [
-				...notes,
-				`${VERB}: ${baseRef}..${trace.branch} adds ${trace.commits} commit(s), ${trace.naming} of them naming #${issue}.`,
-			],
+			_tag: "Refused" as const,
+			outcome: seat({_tag: location._tag, what: location.why}, location.notes),
 		};
 	});
 
@@ -641,11 +570,11 @@ const proveRangeVerdicts = (
 	event: string,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const located = yield* locateRange(epic, issue);
-		if (located._tag === "Refused") return located.outcome;
-		const range = `${located.baseRef}..${located.branch}`;
+		const read = yield* located(epic, issue);
+		if (read._tag === "Refused") return read.outcome;
+		const range = `${read.range.baseRef}..${read.range.branch}`;
 
-		const content = yield* rangeContentAt({base: located.base, tip: located.tip});
+		const content = yield* rangeContentAt({base: read.range.base, tip: read.range.tip});
 		if (content._tag === "Failure") {
 			return unreadable(`the content ${range} changes`, content.reason);
 		}
@@ -698,7 +627,7 @@ const proveRangeVerdicts = (
 		});
 		const rows: ReadonlyArray<NamespaceRow> = judgeVerdicts(required, inForce);
 		const notes = [
-			...located.notes,
+			...read.notes,
 			`${VERB}: ${range} changes ${content.value.paths.length} path(s) at content ${content.value.digest} and derives ${required.join(", ")}; read ${commented.value.length} comment(s) on #${issue}.`,
 			...claims.map(
 				(claim) =>
@@ -722,8 +651,8 @@ const proveRangeVerdicts = (
 					evidence: {
 						kind: "range-verdicts",
 						epic,
-						branch: located.branch,
-						range: {base: located.base, tip: located.tip},
+						branch: read.range.branch,
+						range: {base: read.range.base, tip: read.range.tip},
 						content: content.value.digest,
 						namespaces: rows,
 					},

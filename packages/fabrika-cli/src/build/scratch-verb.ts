@@ -6,7 +6,9 @@
  * v1's allocator lacked**. v1 keyed on the session id alone, so two lanes — or two roles — of one
  * session shared a namespace and clobbered each other's fixed-name files (#4516, #4544, #4875, #4692),
  * and its own stamp could not separate two pid-less runs (`scratchpad.ts:26-29`). Keying on the
- * confirmed claim makes the namespace per-lane by construction rather than by convention.
+ * confirmed claim makes the namespace per-lane by construction rather than by convention — on the
+ * nonce of the token the CALLER holds, never the winning marker's, which is the same string for two
+ * lanes of one session (#6037).
  *
  * The printed path is machine-local by definition and must never reach a posted artifact — which is
  * why `build pr` and `build note` red on it (`5`).
@@ -14,9 +16,9 @@
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
-import {requireClaim, requireSession} from "./claim.ts";
-import {OFF_VOCABULARY, PRECONDITION_UNKNOWN} from "./codes.ts";
-import {isKebabSlug, nonceOf} from "./lane.ts";
+import {requireCallerToken, requireClaim, requireSession} from "./claim.ts";
+import {OFF_VOCABULARY} from "./codes.ts";
+import {isKebabSlug} from "./lane.ts";
 import {resolveTargetRepo} from "./target.ts";
 
 const VERB = "build scratch";
@@ -35,6 +37,8 @@ export const laneScratchDir = (
 export interface ScratchOptions {
 	readonly number: number;
 	readonly slug: string;
+	/** The token `build claim` handed this lane — what keys the namespace per lane (#6037). */
+	readonly token: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** The OS temp root, read by the adapter — the one machine fact this verb does not derive. */
@@ -62,18 +66,13 @@ export const runScratch = (
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 
-		const held = yield* requireClaim(VERB, resolved.repo, number, session.id);
-		if (held._tag === "Refused") return held.outcome;
-		const nonce = nonceOf(held.marker.token);
-		if (nonce === null) {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: the claim on #${number} carries the token ${held.marker.token}, which yields no lane nonce — the lane is UNKNOWN.`,
-				held.notes,
-			);
-		}
+		const asking = requireCallerToken(VERB, session.id, options.token);
+		if (asking._tag === "Refused") return asking.outcome;
 
-		const dir = laneScratchDir(options.tmpRoot, session.id, number, nonce);
+		const held = yield* requireClaim(VERB, resolved.repo, number, asking.caller);
+		if (held._tag === "Refused") return held.outcome;
+
+		const dir = laneScratchDir(options.tmpRoot, session.id, number, asking.caller.nonce);
 		const fs = yield* FileSystem.FileSystem;
 		const made: string | null = yield* fs.makeDirectory(dir, {recursive: true}).pipe(
 			Effect.as(null),

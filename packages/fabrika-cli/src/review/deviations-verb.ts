@@ -63,7 +63,7 @@ export const runDeviations = (
 		if (bound._tag === "Refused") return bound.outcome;
 		const head = bound.head;
 
-		const served = yield* diffRange(head.base, head.sha);
+		const served = yield* diffRange(head.mergeBase, head.sha);
 		if (served._tag === "Failure") {
 			return refuse(PRECONDITION_UNKNOWN, unreadable(pr, served.reason));
 		}
@@ -76,11 +76,11 @@ export const runDeviations = (
 		// prove the range is the right one, and a fault that shortens both reads alike is invisible to
 		// it. GitHub's `changed_files` is a third party's answer over its own base and its own rename
 		// detection, so it is reported in the diagnostics and never refused on (#5157).
-		const listed = yield* diffRangePaths(head.base, head.sha);
+		const listed = yield* diffRangePaths(head.mergeBase, head.sha);
 		if (listed._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the file list of the range ${head.base}...${head.sha} for #${pr}: ${listed.reason} — the disclosure state is UNKNOWN, never "none".`,
+				`${VERB}: cannot read the file list of the range ${head.mergeBase}...${head.sha} for #${pr}: ${listed.reason} — the disclosure state is UNKNOWN, never "none".`,
 			);
 		}
 		const inRange = listed.value.length;
@@ -103,7 +103,7 @@ export const runDeviations = (
 		if (seen < inRange) {
 			return refuse(
 				INCOMPLETE_SCAN,
-				`${VERB}: the scan at ${head.sha} covers ${seen} of the ${inRange} files git lists for the same range ${head.base}...${head.sha} — both counts from git, so these bytes are provably short of the range they were read from; refusing a partial Tier-M scan beside a disclosure claim.`,
+				`${VERB}: the scan at ${head.sha} covers ${seen} of the ${inRange} files git lists for the same range ${head.mergeBase}...${head.sha} — both counts from git, so these bytes are provably short of the range they were read from; refusing a partial Tier-M scan beside a disclosure claim.`,
 				diagnostics,
 			);
 		}

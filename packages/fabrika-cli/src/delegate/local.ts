@@ -9,6 +9,13 @@
  * there is **no** platform-package resolution here (turbo `main` @ `c6fbc97`,
  * `crates/turborepo-shim/local_turbo_state.rs`).
  *
+ * Node's own resolution is not *only* the `node_modules` walk, though: it falls back to `NODE_PATH`,
+ * which the pnpm-generated global `fabrika` shim exports as an absolute chain rooted at the checkout
+ * it was installed from. So the walk fails in a repo with no install and the fallback answers
+ * anyway — with the global's own copy, which `resolve` then reads as "the repo-local install is this
+ * copy" (#5768). {@link isInsideRepo} is the containment rule that closes it: an install the probe
+ * cannot place under `repoRoot` is not that repo's install, whatever Node found.
+ *
  * The probe is total over three outcomes and **none of them is a throw**: found, absent, or corrupt.
  * Corrupt is deliberately not fatal — turbo's own note at the equivalent branch is *"we can choose
  * to operate this aggressively because the _worst_ outcome is that we run global turbo"* — but it is
@@ -18,6 +25,7 @@ import {Effect, FileSystem, Path} from "effect";
 import {readFile} from "../io/fs.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {resolvePackageManifest} from "./node-resolve.ts";
+import {type RepoPredicate, repoPredicate} from "./reason.ts";
 
 /**
  * The npm name the probe resolves, and the bin key inside that package's manifest.
@@ -41,7 +49,7 @@ export interface LocalInstall {
 export type LocalProbe =
 	| {readonly _tag: "found"; readonly install: LocalInstall}
 	| {readonly _tag: "absent"}
-	| {readonly _tag: "corrupt"; readonly reason: string};
+	| {readonly _tag: "corrupt"; readonly reason: RepoPredicate};
 
 /**
  * The `version` and resolved bin path declared by a manifest, or why it cannot be trusted.
@@ -64,6 +72,18 @@ export const readInstallManifest = (
 };
 
 /**
+ * Whether `candidate` is `root` itself or lives beneath it.
+ *
+ * Both sides are expected to be canonical already — the caller resolves symlinks before asking,
+ * because pnpm's `node_modules/@kampus/fabrika-cli` link and its `.pnpm` target are one install
+ * under two names and only the target is under the repo on every layout.
+ */
+export const isInsideRepo = (path: Path.Path, root: string, candidate: string): boolean => {
+	const rel = path.relative(root, candidate);
+	return rel === "" || (!path.isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${path.sep}`));
+};
+
+/**
  * Probe `repoRoot` for an installed copy of this package.
  *
  * The `E` channel carries only failures the caller must *stop* on — a manifest that exists but
@@ -80,23 +100,43 @@ export const probeLocalInstall = (
 		if (resolved._tag !== "resolved") return resolved;
 		const {manifestPath} = resolved;
 
-		const text = yield* readFile(manifestPath).pipe(Effect.catch(() => Effect.succeed(undefined)));
-		if (text === undefined)
-			return {_tag: "corrupt", reason: `${manifestPath} could not be read`} as const;
-		const manifest = readInstallManifest(path, manifestPath, text);
-		if ("corrupt" in manifest) return {_tag: "corrupt", reason: manifest.corrupt} as const;
-
 		// Real paths on both ends of the eventual self-check: pnpm links a workspace package into
 		// `node_modules`, so the symlink and its target are one install under two names. Comparing the
 		// unresolved name against a running package root would make a repo-local copy delegate to
 		// itself forever.
 		const soften = Effect.catch(() => Effect.succeed(undefined));
 		const packageRoot = yield* fs.realPath(path.dirname(manifestPath)).pipe(soften);
-		const binPath = yield* fs.realPath(manifest.bin).pipe(soften);
-		if (packageRoot === undefined || binPath === undefined)
+		if (packageRoot === undefined)
 			return {
 				_tag: "corrupt",
-				reason: `${manifestPath} points at a bin that is not on disk (${manifest.bin})`,
+				reason: repoPredicate`resolves ${manifestPath}, which is not on disk`,
+			} as const;
+		// Containment before trust, and before any corrupt verdict: a copy outside this repo is not
+		// this repo's install even when it is perfectly well-formed, so it answers `absent` rather
+		// than being reported as a broken local one.
+		const root = (yield* fs.realPath(repoRoot).pipe(soften)) ?? path.resolve(repoRoot);
+		if (!isInsideRepo(path, root, packageRoot)) return {_tag: "absent"} as const;
+
+		const text = yield* readFile(manifestPath).pipe(Effect.catch(() => Effect.succeed(undefined)));
+		if (text === undefined)
+			return {
+				_tag: "corrupt",
+				reason: repoPredicate`resolves ${manifestPath}, which could not be read`,
+			} as const;
+		const manifest = readInstallManifest(path, manifestPath, text);
+		// Wrapped rather than reworded at the source: `readInstallManifest`'s clause has the manifest
+		// path as its subject, and `entrypoint.ts` renders it in a slot that wants exactly that.
+		if ("corrupt" in manifest)
+			return {
+				_tag: "corrupt",
+				reason: repoPredicate`has an unusable install: ${manifest.corrupt}`,
+			} as const;
+
+		const binPath = yield* fs.realPath(manifest.bin).pipe(soften);
+		if (binPath === undefined)
+			return {
+				_tag: "corrupt",
+				reason: repoPredicate`resolves ${manifestPath}, which points at a bin that is not on disk (${manifest.bin})`,
 			} as const;
 		return {
 			_tag: "found",

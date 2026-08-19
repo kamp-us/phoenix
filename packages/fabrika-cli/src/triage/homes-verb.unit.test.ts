@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import {ANSWER, FAILED} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {runHomes, STANDING_LANES} from "./homes-verb.ts";
+import {RUNNING_MARKER, runHomes, STANDING_LANES} from "./homes-verb.ts";
 
 const MILESTONES = /repos\/o\/r\/milestones/;
 
@@ -161,6 +161,60 @@ describe("runHomes", () => {
 		);
 		expect(out.code).toBe(FAILED);
 		expect(out.stderr.at(-1)).toContain("CLAUDE_PIPELINE_REPO");
+	});
+});
+
+describe("runHomes and the running-campaign marker", () => {
+	const withFocus = (milestone: string, declared = "2026-08-18") =>
+		`${ROADMAP}\n## Focus\n\n| Milestone | Declared |\n|---|---|\n| ${milestone} | ${declared} |\n`;
+
+	it("marks the in-focus milestone's row and leaves every other row exactly as today", async () => {
+		const out = await run([twoMilestones], {"ROADMAP.md": withFocus("#44")});
+		expect(out.code).toBe(ANSWER);
+		expect(out.stdout.trimEnd().split("\n")).toEqual([
+			"homes",
+			"milestone\t24\tSözlük — search and discovery",
+			`milestone\t44\tfabrika\t${RUNNING_MARKER}`,
+			"lane\twayfinder:backlog\tfog — uncharted work upstream of any arc",
+			"lane\taxis:pipeline-hardening\tthe standing pipeline and reliability lane",
+		]);
+	});
+
+	it("carries the same fact as a per-milestone --json field, absent on a not-in-focus row", async () => {
+		const out = await run([twoMilestones], {"ROADMAP.md": withFocus("#44")}, {json: true});
+		expect(JSON.parse(out.stdout).milestones).toEqual([
+			{number: 24, title: "Sözlük — search and discovery", roadmapRow: "Geçit"},
+			{number: 44, title: "fabrika", roadmapRow: "fabrika campaign", running: RUNNING_MARKER},
+		]);
+	});
+
+	it("still LISTS the in-focus milestone — the marker annotates a row, it never removes one", async () => {
+		const out = await run([twoMilestones], {"ROADMAP.md": withFocus("#44")});
+		expect(out.stdout).toContain("milestone\t44\tfabrika");
+	});
+
+	it("marks no row when no focus is declared, and answers exactly as it does today", async () => {
+		const text = await run([twoMilestones], {"ROADMAP.md": ROADMAP});
+		const machine = await run([twoMilestones], {"ROADMAP.md": ROADMAP}, {json: true});
+		expect(text.stdout).not.toContain("running");
+		expect(machine.stdout).not.toContain("running");
+		expect(text.stderr.join("\n")).toContain("focus: none declared");
+	});
+
+	it("never reads a MALFORMED focus as `no milestone is running` — it says so and marks no row", async () => {
+		const out = await run([twoMilestones], {
+			"ROADMAP.md": `${ROADMAP}\n## Focus\n\n| Milestone | Declared |\n|---|---|\n| forty-four | 2026-08-18 |\n`,
+		});
+		expect(out.code).toBe(ANSWER);
+		expect(out.stdout).not.toContain("running");
+		expect(out.stderr.join("\n")).toContain("focus: unreadable");
+	});
+
+	it("leaves every row unmarked, and does not fail, when the focus names a milestone not open", async () => {
+		const out = await run([twoMilestones], {"ROADMAP.md": withFocus("#999")});
+		expect(out.code).toBe(ANSWER);
+		expect(out.stdout).not.toContain("running");
+		expect(out.stderr.join("\n")).toContain("focus: milestone #999");
 	});
 });
 

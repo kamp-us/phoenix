@@ -220,6 +220,7 @@ authority.
 | `16` | refused: the target is **proven not in the state this write acts on** — nothing was mutated | `resolve`, `nudge` |
 | `17` | refused: the nudge's close landed and the reopen is **unconfirmed — the PR may be left closed**; a human re-opens before anything else happens | `nudge` |
 | `18` | refused: the diff touches a governance root and its `governance` verdict is **not** a head-bound PASS — `absent`, `stale` or `fail`. The one red that means *a human owes this PR a verdict*, kept off `16` so a CI job can tell it from "the floor could not be resolved" | `floor` |
+| `23` | refused: a label this run would POST is absent from the repository's taxonomy — `plan flip`'s seat, imported, because both verbs prove one fact over one board's labels (#4285) | `release` |
 | `127` | the verb never ran (unresolved binary) | all |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every
@@ -1723,6 +1724,9 @@ PR, and reading it queued a phantom release (#1257). No signal → `n/a`; a sign
 linked issue → `no-issue` (see Output — a proven answer, never `n/a`).
 The label write is read back; a failed or unconfirmed write is `8`/`9`, never `queued` —
 v1's unverified label POST could report a release queued that no human would ever find.
+The write is taxonomy-guarded first: `status:awaiting-release` absent from the repo's labels
+refuses on `23` rather than let GitHub's POST mint it (#4285, #6054), and the taxonomy is read
+only on the path that would post — `n/a` and `no-issue` read none.
 
 **Exit status**
 
@@ -1733,6 +1737,7 @@ v1's unverified label POST could report a release queued that no human would eve
 | `9` | the label write landed but the read-back does not show it |
 | `11` | the diff, body, flag registry, or linked issue could not be read — dark-ship-ness is UNKNOWN, never `n/a` |
 | `13` | the changed-file or diff enumeration is provably short — a partial diff must not read as "no flag declaration added" |
+| `23` | `status:awaiting-release` is absent from the repository's taxonomy — refused rather than let the POST mint it (#4285); guarded only on the path that would post, so `n/a` and `no-issue` read no taxonomy |
 
 **Errors**
 
@@ -1743,9 +1748,12 @@ v1's unverified label POST could report a release queued that no human would eve
 | `ship release: label write failed: <reason> — a real dark ship may be missing from the release queue; escalate.` | 8 | refusal |
 | `ship release: label read-back does not show status:awaiting-release on #<issue> — inspect it.` | 9 | refusal |
 | `ship release: received <k> of <m> declared files — refusing to scan a truncated diff for flag signals.` | 13 | refusal |
+| `ship release: label "status:awaiting-release" is absent from <repo>'s taxonomy — refusing to create it (#4285). A real dark ship is not queued; run `fabrika status bootstrap label-taxonomy` and re-run.` | 23 | refusal |
+| `ship release: cannot read <repo>'s label taxonomy: <reason> — nothing was written, and a real dark ship is not queued; escalate.` | 11 | refusal |
 
-**Scope** — one PR's diff and body, the flag registry file at the PR's base ref, one linked issue's
-labels; one label write with read-back.
+**Scope** — one PR's diff and body, the flag registry file at the PR's base ref, the repository's
+label taxonomy (read only when a write is due), one linked issue's labels; one label write with
+read-back.
 
 **Examples**
 

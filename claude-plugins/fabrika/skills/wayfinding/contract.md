@@ -962,8 +962,8 @@ does not admit is `20`.
 | `<map>` | positional integer | yes | — | the map the ticket belongs to |
 | `--digest` | string | yes | — | the body digest from `map read` |
 | `--ticket` | integer | yes | — | the `decision` ticket being routed |
-| `--session` | integer | conditional | no default; required when the ticket's kind is `decision`, and refused otherwise | the `grilling` session issue the decision now lives in |
-| `--spike` | integer | conditional | no default; required when the ticket's kind is `prototype`, and refused otherwise | the `prototyping` spike issue the empirical question now lives in |
+| `--session` | integer | conditional | no default; required when the ticket's kind is `decision`, and refused otherwise | the `grilling` session issue the decision now lives in — the number `fabrika grill open --ticket <t>` prints, never one composed here |
+| `--spike` | integer | conditional | no default; required when the ticket's kind is `prototype`, and refused otherwise | the `prototyping` spike issue the empirical question now lives in — the number `fabrika spike open --ticket <t>` prints |
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository |
 
 **Output** — machine. One JSON object:
