@@ -130,7 +130,6 @@ const verdict = leafCommand(
 				repo: Option.getOrNull(repo),
 				cwd: process.cwd(),
 				env: process.env,
-				cwd: process.cwd(),
 				stdin: Effect.sync(readStdin),
 			}),
 		);

@@ -115,8 +115,6 @@ export interface VerdictOptions {
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly stdin: Effect.Effect<StdinRead>;
-	/** Where the verb is standing — the repo whose `.fabrika.jsonc` this run resolves. */
-	readonly cwd: string;
 }
 
 export const runVerdict = (
@@ -161,15 +159,15 @@ export const runVerdict = (
 		const held = yield* requireClaim(VERB, repo, options.number, asking.caller);
 		if (held._tag === "Refused") return held.outcome;
 
+		const vocabulary = yield* readContainmentVocabulary(MESSAGES, options.cwd);
+		if (vocabulary._tag === "Refused") return vocabulary.outcome;
+
 		const cycle = yield* cycleDocOr(
 			VERB,
 			options.cwd,
 			"where the cycle doc lives is unread, so the containment class cannot be derived.",
 		);
 		if (cycle._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, cycle.message);
-
-		const vocabulary = yield* readContainmentVocabulary(MESSAGES, options.cwd);
-		if (vocabulary._tag === "Refused") return vocabulary.outcome;
 
 		const read = yield* loadLedger(MESSAGES, repo, target.issue, cycle.path, vocabulary.vocabulary);
 		if (read._tag === "Refused") return read.outcome;

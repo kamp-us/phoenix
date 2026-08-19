@@ -79,7 +79,6 @@ const options = {
 	labels: [] as ReadonlyArray<string>,
 	token: TOKEN,
 	repo: null,
-	cwd: "/repo",
 	env,
 	cwd: DIR,
 };
@@ -95,7 +94,7 @@ const run = (
 	const stdin: Effect.Effect<StdinRead> = Effect.succeed({_tag: "Text", text: body});
 	return Effect.runPromise(
 		Effect.provide(
-			runChild({...options, ...overrides, cwd: "/repo", stdin}),
+			runChild({...options, ...overrides, stdin}),
 			Layer.mergeAll(shell.layer, fs.layer),
 		),
 	).then((outcome) => ({outcome, written: fs.written, calls: shell.calls}));

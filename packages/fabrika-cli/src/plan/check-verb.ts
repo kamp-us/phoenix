@@ -45,8 +45,6 @@ export interface CheckOptions {
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
-	/** Where the verb is standing — the repo whose `.fabrika.jsonc` this run resolves. */
-	readonly cwd: string;
 }
 
 /**
@@ -83,15 +81,15 @@ export const runCheck = (
 		const target = yield* requireEpic(MESSAGES, repo, options.number);
 		if (target._tag === "Refused") return target.outcome;
 
+		const vocabulary = yield* readContainmentVocabulary(MESSAGES, options.cwd);
+		if (vocabulary._tag === "Refused") return vocabulary.outcome;
+
 		const cycle = yield* cycleDocOr(
 			VERB,
 			options.cwd,
 			"where the cycle doc lives is unread, so the containment class cannot be derived.",
 		);
 		if (cycle._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, cycle.message);
-
-		const vocabulary = yield* readContainmentVocabulary(MESSAGES, options.cwd);
-		if (vocabulary._tag === "Refused") return vocabulary.outcome;
 
 		const read = yield* loadLedger(MESSAGES, repo, target.issue, cycle.path, vocabulary.vocabulary);
 		if (read._tag === "Refused") return read.outcome;
