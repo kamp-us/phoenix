@@ -14,11 +14,11 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {requireClaim, requireSession} from "./claim.ts";
+import {requireCallerToken, requireClaim, requireSession} from "./claim.ts";
 import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {branchExists, fetchBase, setUpstream, switchTo, switchToNew} from "./git.ts";
 import {getPullHead} from "./github.ts";
-import {createBranchName, isKebabSlug, nonceOf, resumeBranchName} from "./lane.ts";
+import {createBranchName, isKebabSlug, resumeBranchName} from "./lane.ts";
 import {resolveTargetRepo} from "./target.ts";
 import {assertGround} from "./tree.ts";
 
@@ -31,6 +31,8 @@ export interface BranchOptions {
 	readonly base: string;
 	/** Resume mode: the PR whose head branch to publish back to. Exclusive with `number`. */
 	readonly resume: number | null;
+	/** The token `build claim` handed this lane — the identity it cuts the branch under (#6037). */
+	readonly token: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
@@ -69,17 +71,18 @@ export const runBranch = (
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
 
+		const asking = requireCallerToken(VERB, session.id, options.token);
+		if (asking._tag === "Refused") return asking.outcome;
+		const caller = asking.caller;
+
 		const claimed = resume ?? (number as number);
-		const held = yield* requireClaim(VERB, repo, claimed, session.id);
+		const held = yield* requireClaim(VERB, repo, claimed, caller);
 		if (held._tag === "Refused") return held.outcome;
-		const nonce = nonceOf(held.marker.token);
-		if (nonce === null) {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: the claim on #${claimed} carries the token ${held.marker.token}, which yields no lane nonce — the lane is UNKNOWN.`,
-				held.notes,
-			);
-		}
+		// Proven by the claim read above to name the lane that holds the number — the winning marker's
+		// nonce on the ordinary path, the adopt's on a succession, where the dead lane's nonce is never
+		// inherited (ADR 0295). Either way the branch cannot be named after a token that holds
+		// nothing (#6037), and a successor's branch is its own, not the dead lane's.
+		const nonce = caller.nonce;
 
 		if (resume !== null) {
 			const head = yield* getPullHead(repo, resume);

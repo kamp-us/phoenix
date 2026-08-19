@@ -73,6 +73,16 @@ export const instantOf = (iso: string): number | null => {
 	return Number.isNaN(ms) ? null : ms;
 };
 
+/**
+ * How long a marker binds before it is treated as abandoned — the only TTL in the protocol.
+ *
+ * A constant rather than a flag: `triage claim --ttl-minutes 240` posted a marker the five mutating
+ * verbs stopped honouring at 60, because they age a marker they did not place and the marker carries
+ * no TTL of its own. That is the fail-open case #5644 exists to close, so the flag went and one
+ * reading stands. Widening it means widening it here, for placer and reader alike.
+ */
+export const DEFAULT_TTL_MINUTES = 60;
+
 export type ClaimResolution =
 	| {readonly _tag: "Won"; readonly marker: Marker; readonly live: number; readonly expired: number}
 	| {
@@ -96,21 +106,30 @@ export interface ResolveInput {
 	readonly ttlMinutes: number;
 }
 
+/** The markers still binding at `now`, oldest first — or the reason the set could not be ordered. */
+export type LiveMarkers =
+	| {readonly _tag: "Live"; readonly live: ReadonlyArray<Marker>; readonly expired: number}
+	| {readonly _tag: "Unresolvable"; readonly reason: string};
+
 /**
- * Discard the markers older than the TTL, then let the earliest survivor win.
+ * Discard the markers older than the TTL and order what survives, oldest first.
  *
  * A marker whose `created_at` will not parse is **not** dropped as expired and **not** ordered
- * against: it can neither be aged out nor placed, so the race has no answer and this refuses. The
+ * against: it can neither be aged out nor placed, so the set has no answer and this refuses. The
  * tempting alternatives both break the invariant — treating it as expired discards a possibly-live
  * competitor, and treating it as newest lets an unreadable marker lose a race it was never placed
  * in.
+ *
+ * Split out of {@link resolveClaim} because two questions need it and only one of them is a race:
+ * `triage claim` asks who won, and the mutating verbs ask whether any live marker names a session
+ * other than theirs — a question `resolveClaim` cannot answer, since a caller holding no marker of
+ * its own resolves {@link ClaimResolution} to `MineAbsent` however many competitors are live (#5644).
  */
-export const resolveClaim = ({
+export const liveMarkers = ({
 	markers,
-	session,
 	now,
 	ttlMinutes,
-}: ResolveInput): ClaimResolution => {
+}: Omit<ResolveInput, "session">): LiveMarkers => {
 	const ttlMs = ttlMinutes * 60_000;
 	const live: Marker[] = [];
 	let expired = 0;
@@ -125,21 +144,33 @@ export const resolveClaim = ({
 		if (now - at > ttlMs) expired++;
 		else live.push(marker);
 	}
-
 	const ordered = [...live].sort((a, b) => {
 		const at = instantOf(a.createdAt) ?? 0;
 		const bt = instantOf(b.createdAt) ?? 0;
 		return at === bt ? a.id - b.id : at - bt;
 	});
+	return {_tag: "Live", live: ordered, expired};
+};
+
+/** Order the live markers, then let the earliest survivor win. */
+export const resolveClaim = ({
+	markers,
+	session,
+	now,
+	ttlMinutes,
+}: ResolveInput): ClaimResolution => {
+	const scanned = liveMarkers({markers, now, ttlMinutes});
+	if (scanned._tag === "Unresolvable") return scanned;
+	const {live: ordered, expired} = scanned;
 
 	const mine = ordered.find((m) => m.session === session) ?? null;
 	const earliest = ordered[0];
 	if (earliest === undefined || mine === null) {
-		return {_tag: "MineAbsent", live: live.length, expired};
+		return {_tag: "MineAbsent", live: ordered.length, expired};
 	}
 	return earliest.session === session
-		? {_tag: "Won", marker: earliest, live: live.length, expired}
-		: {_tag: "Lost", holder: earliest, mine, live: live.length, expired};
+		? {_tag: "Won", marker: earliest, live: ordered.length, expired}
+		: {_tag: "Lost", holder: earliest, mine, live: ordered.length, expired};
 };
 
 /**

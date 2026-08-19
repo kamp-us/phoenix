@@ -12,6 +12,7 @@ import {
 	listOpenMilestones,
 	openQueueIssues,
 	pagedJson,
+	parseIssueDetails,
 	parseTabRows,
 	patchIssueBody,
 	removeLabel,
@@ -461,5 +462,38 @@ describe("issueTimeline", () => {
 			),
 		);
 		expect(result._tag).toBe("Failure");
+	});
+});
+
+describe("parseIssueDetails refuses a line it cannot read rather than dropping it", () => {
+	const line = (row: unknown): string => JSON.stringify(row);
+
+	it("reads one compact-JSON object per line, blank lines skipped", () => {
+		const stdout = `${line({number: 9412, title: "a topic", body: "## Came from\n\n#5652\n"})}\n\n${line({number: 9431, title: "another", body: ""})}\n`;
+		expect(parseIssueDetails(stdout)).toEqual([
+			{number: 9412, title: "a topic", body: "## Came from\n\n#5652\n"},
+			{number: 9431, title: "another", body: ""},
+		]);
+	});
+
+	it("reads a missing or non-string body as empty, which is what the API sends for one", () => {
+		expect(parseIssueDetails(line({number: 9412, title: "a topic"}))).toEqual([
+			{number: 9412, title: "a topic", body: ""},
+		]);
+		expect(parseIssueDetails(line({number: 9412, title: "a topic", body: null}))).toEqual([
+			{number: 9412, title: "a topic", body: ""},
+		]);
+	});
+
+	it("answers null on a line that is not an issue object, never a shorter list", () => {
+		expect(parseIssueDetails("not json at all")).toBeNull();
+		expect(parseIssueDetails(line([9412, "a topic"]))).toBeNull();
+		expect(parseIssueDetails(line({number: "9412", title: "a topic"}))).toBeNull();
+		expect(parseIssueDetails(line({number: 94.5, title: "a topic"}))).toBeNull();
+		expect(parseIssueDetails(line({number: 9412, title: 5652}))).toBeNull();
+	});
+
+	it("reads no output as no issues — the ordinary empty search", () => {
+		expect(parseIssueDetails("")).toEqual([]);
 	});
 });

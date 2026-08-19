@@ -3,5 +3,24 @@
 	// on #5959: the grant-author set is repo configuration, not a compiled-in "founder" concept —
 	// GitHub usernames and teams, both `@`-prefixed as GitHub writes them. In phoenix it is the
 	// three founder accounts. One grant buys exactly one round.
-	"capClearAuthors": ["@usirin", "@notusirin", "@cansirin"]
+	"capClearAuthors": ["@usirin", "@notusirin", "@cansirin"],
+
+	// Docs whose subject IS path hygiene: they must spell the forbidden path shapes out, so
+	// `fabrika build check --surface prose` skips its leak scan on them. Repo-relative path
+	// suffixes, matched by suffix the way `pipeline-cli leak-guard scan` matches its own
+	// self-exempt list (#5687). This is phoenix's second declaration of one policy, and it is the
+	// MARKDOWN half: the gate also self-exempts shell and TypeScript files the prose surface never
+	// scans. The two are held equal by a test, not by this comment —
+	// `packages/pipeline-cli/src/tools/leak-guard/fabrika-doc-leak-conformance.test.ts` reds when
+	// either side moves (ADR 0251). A repo without these docs declares an empty list, or no key at
+	// all, and nothing is exempt.
+	"docLeakExempt": [
+		"/CLAUDE.md",
+		"/agents/triager.md",
+		"/packages/leak-guard/README.md",
+		"/packages/pipeline-cli/README.md",
+		"/skills/report/SKILL.md",
+		"/skills/review-doc/SKILL.md",
+		"/skills/triage/SKILL.md"
+	]
 }

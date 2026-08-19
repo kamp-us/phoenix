@@ -93,14 +93,14 @@ describe("invoking this checkout's bin under a NODE_PATH that reaches a @kampus/
 		expect(run.code).toBe(0);
 		expect(run.stdout).toContain("fabrika v");
 		expect(run.stderr).toContain("running the GLOBAL install");
-		expect(run.stderr).toContain("it has no local install");
+		expect(run.stderr).toContain("has no local install");
 	});
 
 	it("warns just the same when the reachable copy is a stray third one, and never runs it", () => {
 		const run = invoke(bare, strayNodeModules, "--version");
 		expect(run.stdout).not.toContain(IMPOSTER);
 		expect(run.code).toBe(0);
-		expect(run.stderr).toContain("it has no local install");
+		expect(run.stderr).toContain("has no local install");
 	});
 
 	it("leaves the foreign-checkout refusal alone — the repo's own walk outranks the fallback", () => {

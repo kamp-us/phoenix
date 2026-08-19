@@ -48,10 +48,17 @@ addressable answer: an exit-code row, a grammar table, a terminal vocabulary, on
 verb-served, so the `SKILL.md` names the invocation
 (`fabrika wire doc-section --heading <x> < <skill-base>/contract.md`, or a dedicated lookup verb),
 never a whole-file pointer. A judgment-shaped read — the reader must weigh the whole surface —
-keeps the whole-file pointer, and is never thinned to a partial read to save tokens: partial
-reading caused misses on judgment tasks in the measurements behind the ruling. `contract.md`
-itself stays what [cli-interface-convention Part 2](cli-interface-convention.md) says it is — the
-authoring spec; runtime lookup was never a role it was designed to carry.
+takes every section the judgment touches, one `doc-section` call each, and is never thinned to a
+token-saving subset: partial reading caused misses on judgment tasks in the measurements behind
+the ruling. `contract.md` itself stays what
+[cli-interface-convention Part 2](cli-interface-convention.md) says it is — the authoring spec;
+runtime lookup was never a role it was designed to carry.
+
+**Nobody reads a `contract.md` whole** (ADR
+[0296](../../../.decisions/0296-contracts-are-read-by-section.md)) — not a shell, not a reviewer,
+not an author. Every read is `fabrika wire doc-section --heading "…" < <skill-base>/contract.md`;
+the headings are the map. Skill text and spawn prompts say it that way too, and the `review`
+skill's skill rubric fails a diff that instructs otherwise.
 
 **There is no line count.** Concision is judged case by case against that split — never "how long is
 it", always "does this paragraph belong here or in the contract". A skill that has honoured the

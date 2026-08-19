@@ -147,6 +147,11 @@ describe("runCommit — the carrying path", () => {
 		expect(out.code).toBe(OFF_VOCABULARY);
 		expect(out.stdout).toBe("");
 		expect(shell.calls.some((line) => COMMIT.test(line))).toBe(false);
+		// The advice names `build scratch`, which now requires --token: an executor running the
+		// string verbatim must not land on exit 1 (#6037).
+		expect(out.stderr.at(-1)).toContain(
+			'"fabrika build scratch 4312 --slug <leaf> --token <token>" prints',
+		);
 	});
 
 	it("refuses a --message-file that could not be read on 11 — UNKNOWN, never empty", async () => {

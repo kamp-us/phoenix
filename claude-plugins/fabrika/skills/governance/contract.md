@@ -93,7 +93,9 @@ symlink to the v1 tree. The gap is already filed — [#4761](https://github.com/
 loads v1 regardless of the plugin toggle) — and is recorded in the authoring PR rather than patched
 from here, the same disposition the `review` and `ship` contracts took. Today this skill is reached
 as `/fabrika:governance`, and **from inside fabrika it is already routed**: `review`'s SKILL.md §6
-directs the model to fire it on a `harness: true` diff, and `review`'s eval set carries a
+directs the model to fire it on a `governance: required` diff — the token `review scope` prints
+from this group's own four-root derivation, never the narrower `harness` flag (#5607) — and
+`review`'s eval set carries a
 `governance-seam-derived-required` case.
 
 ## Shared conventions
@@ -196,11 +198,13 @@ verdict over text nobody judged. All four run one shared binding step
 `packages/fabrika-cli/src/review/head.ts` and importing `bindHead` from it) before any artifact read:
 
 1. An explicit `--sha` must be **the PR's head**, or the verb refuses on `12`. Malformed is `10`.
-   `governance base` takes no `--sha`: it resolves the merge base itself and re-resolves the live
-   head, and its `12` refuses when that head moved mid-resolve.
+   `governance base` takes no `--sha`: it binds against the live head and re-resolves it, and its
+   `12` refuses when that head moved mid-resolve.
 2. A configured git remote must serve the target repo, `pull/<pr>/head` must **fetch**, the commit
    must resolve in the object database, and `git rev-parse` must resolve it to *itself*. The base ref
-   must resolve too, since a diff is a range. Any of these unmet is `11`, naming what is UNKNOWN.
+   must resolve too, since a diff is a range, **and so must the merge base of that branch tip and
+   this head** — the binding carries the tip and the branch point as two separate values, and every
+   verb's `base` is the branch point (#5770). Any of these unmet is `11`, naming what is UNKNOWN.
    There is no permissive fallback to the PR-number endpoints.
 3. The artifact is then read with `git diff <base>...<head>` and `git show <head>:<path>` under flags
    that pin output to the two commits rather than to the invoking user's own git configuration
@@ -780,7 +784,7 @@ either; the bytes come from the object database.
 | ``governance base: no `*/fabrika/skills/governance/SKILL.md` at merge-base <sha> — this skill is not installed in the base revision, so there is no self fence to run.`` | 7 | refusal |
 | `governance base: <n> candidate skill roots at merge-base <sha> (<list>) — which one is this skill is UNKNOWN; refusing to guess.` | 11 | refusal |
 | `governance base: --path "<v>" is outside this skill's own directory (<resolved>) — this verb reads only this skill's own text.` | 10 | refusal |
-| `governance base: cannot resolve the merge base of #<n>: <reason> — the base rules are UNKNOWN; refusing to judge by the head's.` | 11 | refusal |
+| `governance base: cannot resolve the merge base of <baseRef> (<tip>) and <head>: <reason> — the merge base cannot be resolved, so the base rules are UNKNOWN.` | 11 | refusal |
 | `governance base: cannot read <path> at <sha>: <reason> — UNKNOWN.` | 11 | refusal |
 | `governance base: #<n>'s head moved to <live> while resolving — re-run.` | 12 | refusal |
 | `governance base: merge base of #<n> is <sha>.` | 0 | notice |

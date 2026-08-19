@@ -175,8 +175,14 @@ export interface TierMHit {
 const SUPPRESSIONS = ["biome-ignore", "@ts-expect-error", "test.skip", ".only"];
 
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
-/** What counts as an assertion for class 6. Both spellings the repo's two runners use. */
-const ASSERTION = /\b(?:expect|assert)\s*\(/;
+/**
+ * What counts as an assertion for class 6: a call on `expect`/`assert` itself (`expect(`, `assert(`)
+ * or on any member chain hanging off one (`assert.isTrue(`, `assert.deepStrictEqual(`,
+ * `expect.fail(`). Chai-style member calls are the dominant spelling in this repo's tests, and the
+ * call-paren-only pattern this replaces saw none of them (#5742). The `\b` guards keep it off an
+ * identifier that merely contains the word — `assertions.push(` is not a hit.
+ */
+const ASSERTION = /\b(?:expect|assert)\b(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*\(/;
 
 /**
  * The Tier-M scan: the §DEV classes a gate can see in the diff itself.

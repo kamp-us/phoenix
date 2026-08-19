@@ -197,7 +197,9 @@ export const runVerdicts = (
 		if (contested && found._tag === "Present") {
 			const bound = yield* bindHead(VERB, repo, pr, found.value, null);
 			const read =
-				bound._tag === "Bound" ? yield* contentDigestAt(bound.head.base, bound.head.sha) : null;
+				bound._tag === "Bound"
+					? yield* contentDigestAt(bound.head.mergeBase, bound.head.sha)
+					: null;
 			if (read !== null && read._tag === "Ok") digest = read.value;
 			else {
 				diagnostics.push(

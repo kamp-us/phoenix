@@ -214,16 +214,30 @@ Two kinds of question leave this skill, and `map fork` records where each went.
 primitive, which owns question rounds, recommended answers, and the four-clause attestation a ruling
 needs. Do not reimplement any of that here, and never write an answer onto the map in his voice.
 
+**Hand it the ticket number, and take the session number back from the verb.** `--session` is not a
+number you invent or relay by hand: `grill open --ticket <t>` binds the session to the ticket and
+prints the session, and running it again on the same ticket resumes that same session rather than
+minting a second one. That is the only mechanism carrying a ticket into a session — a topic composed
+from the ticket's title binds nothing, and the map never learns where the ruling went (#5661).
+
 ```bash
+fabrika grill open --ticket 9144 --repo kamp-us/phoenix   # → {"session":9301,…}
 fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9144 --session 9301
 ```
+
+The same pair closes the loop in step 6: `grill read 9301` reports each question's id and state, and
+`map record --ruled-on 9301 --question-id R1.2` cites the one that reads `ruled`. Nobody carries a
+number between sessions by hand — a ticket resolves to its session, and the session names its
+questions.
 
 **An empirical question is a spike's.** When the only thing that settles a question is *running
 something* — not a conversation, not a subagent reading source — the model fires the
 **`prototyping`** Skill: one throwaway spike answering ONE named question. This skill never grows
-that code itself, and the spike stays disposable.
+that code itself, and the spike stays disposable. `spike open --ticket <t>` carries the ticket the
+same way and prints the spike number `--spike` takes.
 
 ```bash
+fabrika spike open --question "…" --kind logic --ticket 9147   # → the spike number
 fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9147 --spike 9310
 ```
 

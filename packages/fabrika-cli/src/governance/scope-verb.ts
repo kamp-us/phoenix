@@ -71,7 +71,7 @@ export const runScope = (
 		if (bound._tag === "Refused") return withNotice(bound.outcome);
 		const head = bound.head;
 
-		const listed = yield* diffRangeStatuses(head.base, head.sha);
+		const listed = yield* diffRangeStatuses(head.mergeBase, head.sha);
 		if (listed._tag === "Failure") {
 			return withNotice(
 				refuse(
@@ -127,7 +127,7 @@ export const runScope = (
 					head: head.sha,
 					roots: result.roots.map((tally) => ({name: tally.name, files: tally.files})),
 					self: result.self,
-					base: head.base,
+					base: head.mergeBase,
 					records: result.records,
 					scanned: result.scanned,
 				}),

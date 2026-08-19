@@ -25,7 +25,11 @@ scar is named, the verb here designs it out; that is the only thing a rebuild in
 - `packages/fabrika-cli/src/wire/verdict-marker.ts` — the verdict-marker `read` and its
   head-binding (`bindToHead`). `build verdicts` imports both.
 - `packages/fabrika-cli/src/report/leaks.ts` — `scanBody` and `isBareAtReference`, the
-  machine-local-path predicates. `build pr` and `build note` import them.
+  machine-local-path predicates for a **body this skill posts**. `build pr` and `build note` import
+  them.
+- `packages/fabrika-cli/src/build/doc-leaks.ts` — `docLeaks`, the same question over a **committed
+  file**, which is a different answer. `build check --surface prose` imports it and nothing else
+  declares a path shape.
 - `packages/fabrika-cli/src/report/compose.ts` — `normalizeForReadback` (three steps: CRLF→LF,
   strip trailing spaces/tabs per line, strip trailing newlines — read the body, the docblock
   understates it). Both writing verbs' read-backs compare through it, never byte-for-byte:
@@ -57,8 +61,9 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build pick` | the ranked candidate pool: `status:triaged` + `ready-for:agent` + unassigned, paginated | a label/assignee filter over a paged listing — no judgment; the *choice* among candidates stays in the skill |
 | `build eligible` | one issue's dependency gate: `eligible` / blocked-by-named-edge / UNKNOWN | derivable entirely from the parent ledger's `## Dependencies`, issue states, and the commits `epic/<parent>` adds over the trunk in this tree |
 | `build claim` | race the earliest-authorized claim on an issue; win, or name the winner | a deterministic race protocol; *what to do on a loss* stays in the skill |
-| `build confirm` | re-prove this session still holds the claim before a mutation | a lookup with a defined answer |
-| `build release` | retract this session's own claim | a guarded single write |
+| `build confirm` | re-prove this LANE still holds the claim before a mutation | a lookup with a defined answer |
+| `build release` | retract this LANE's own claim | a guarded single write |
+| `build adopt` | record that a dead session's claim passes to the lane this marker names, which may then release it or carry on | a marker write with a read-back; *whether the session is really gone* is the driver's judgment |
 | `build issue` | the claimed issue's body + parsed acceptance criteria, through the content gate | fetch + parse via the wire module; *judging* the criteria stays in the skill |
 | `build branch` | cut (or resume) the lane's nonce branch off a freshly fetched base | fetch, derive, create — the nonce is a function of the claim token |
 | `build scratch` | the per-lane scratch path, allocated fail-closed | deterministic path derivation keyed session + issue + claim nonce |
@@ -66,6 +71,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build check` | run this surface's validators in this tree, cache-bypassed; green/red/unknown | command execution + tree-binding assertions; *fixing red* stays in the skill |
 | `build push` | publish the branch and independently confirm the remote ref moved | push + `ls-remote` read-back, three proven outcomes |
 | `build pr` | open the PR from a stdin body, refusing the known defect shapes, with read-back | mechanical guards over an authored body; *authoring* stays in the skill |
+| `build pr-body` | replace an open PR's body from a stdin body, under `build pr`'s guards, with read-back | the same mechanical guards as `build pr`, over a `PATCH` that moves no ref; *authoring* stays in the skill |
 | `build note` | post a progress/handoff comment, head-stamped, leak-guarded, with read-back | as `report note`, plus the head stamp |
 | `build verdicts` | the paginated, current-head, per-gate verdict fold on a PR | fetch-all + fold via the wire module; *acting on rows* stays in the skill |
 | `build clear` | record the founder's clearance of one extra repair round on a PR | a conjunctive ACL/authorization protocol with read-back; *whether to grant* is the founder's, never the verb's |
@@ -98,7 +104,7 @@ Every verb obeys these; stated once.
   construction: no verb caches content across invocations; every invocation re-fetches and
   re-gates, so a gate change is in force on the next read.
 - **Isolation preconditions are guarded identically wherever they apply.** `branch`, `commit`,
-  `check`, `push` and `pr` run the same tree assertions `tree` runs, with the same codes (`note` runs only
+  `check`, `push`, `pr` and `pr-body` run the same tree assertions `tree` runs, with the same codes (`note` runs only
   the posting guards — a stop-report must remain postable from a refused tree) — a sibling that
   took the same ground unguarded would be the split this table exists to prevent.
   Their refusal messages are `tree`'s rows with the verb-name prefix substituted; **every error
@@ -306,9 +312,12 @@ The two assertions, each proven from git state alone:
 1. **Clean at open** (`--require-clean`) — any uncommitted change is `13`. A fresh tree carrying
    an unauthored hunk is not yours to keep *or* to clean (#2666).
 2. **This lane's branch** (`--issue`) — the checked-out branch parses as a lane branch whose
-   number is `--issue` and whose nonce matches this session's confirmed claim (the lane-identity
-   rule, defined in `build branch`); a foreign, wrong-number, or nonce-less branch is `14`. No
-   stamp file exists to check: ownership is derivable, not recorded.
+   number is `--issue` and whose nonce matches the confirmed claim (the lane-identity rule, defined
+   in `build branch`); a non-lane, wrong-number, or nonce-mismatched branch is `14`. **The branch's
+   own nonce is the identity the claim is read under** — the question is whether the winning marker
+   belongs to THIS lane, not to this session (#6037) — so a claim won by a sibling lane of the same
+   session is `14` as well, and only another session's claim is `15`. No stamp file exists to check:
+   ownership is derivable, not recorded.
 
 **Exit status** (beyond the universal four)
 
@@ -316,8 +325,8 @@ The two assertions, each proven from git state alone:
 |---|---|
 | `11` | the tree root could not be read, or with `--issue` the claim state could not be read — UNKNOWN |
 | `13` | proven: uncommitted changes present at a `--require-clean` open |
-| `14` | proven: the checked-out branch does not carry this claim's nonce |
-| `15` | proven: the claim on `--issue` is foreign |
+| `14` | proven: the checked-out branch is not a lane branch, or does not carry the winning claim's nonce (including a sibling lane of this session) |
+| `15` | proven: the claim on `--issue` is held by another session |
 
 **Errors**
 
@@ -325,9 +334,10 @@ The two assertions, each proven from git state alone:
 |---|---|---|
 | `build tree: cannot read the tree root: <reason> — the ground is UNKNOWN.` | 11 | refusal |
 | `build tree: <n> uncommitted change(s) at open — refusing; an unauthored hunk is not yours to keep or clean.` | 13 | refusal |
+| `build tree: the checked-out branch "<name>" is not a lane branch — wrong lane.` | 14 | refusal |
 | `build tree: the checked-out branch "<name>" does not carry claim <token>'s nonce — wrong lane.` | 14 | refusal |
 | `build tree: cannot read the claim markers on #<n>: <reason> — the lane is UNKNOWN.` | 11 | refusal |
-| `build tree: #<n> is held by <token>, not this session.` | 15 | refusal |
+| `build tree: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
 
 **Scope** — not a judging verb: it reads this process's git state and, with `--issue`, one claim.
 
@@ -646,7 +656,7 @@ $ echo $?
 
 ---
 
-## `build claim`, `build confirm`, `build release`
+## `build claim`, `build confirm`, `build release`, `build adopt`
 
 One protocol, three verbs. The claim is a comment-marker race on the issue (the ADR 0115 shape,
 re-implemented): post a claim marker carrying the session's token, re-read the issue's markers,
@@ -655,13 +665,36 @@ is resolved against repository permissions (the ADR 0055 idiom); the marker's *t
 nothing. The token is `build:<session-id>:<uuid>` — one shape, pinned, because v1 left the token
 shape ambiguous between comment ids and session ids and callers guessed (#4428).
 
+**Ownership turns on the whole token, never the session id.** One driver session runs several
+builder lanes at once and each mints its own token, so a session id names every lane of that session
+at once: under the session-only rule the second lane read the first lane's marker as its own, was
+answered `won` with a nonce that held nothing, and both lanes ran and pushed one repair (#6037).
+`claim` therefore resolves the race against the token it just minted, and `confirm` / `release` —
+and `branch`, `scratch`, `note` — against a `--token` the caller threads through from `claim`'s
+answer. A same-session marker under a different nonce is `Foreign`: a proven loss on `15`, never
+UNKNOWN. The branch-asserting verbs (`tree --issue`, `check`, `push`, `pr`, `commit`) take no flag —
+the checked-out lane branch already carries the nonce, so **that** is the identity they ask under,
+and a same-session loss is re-mapped to `14` (wrong lane) because inside one session it names a tree
+you should not be standing in.
+
+**One LANE leaves at most one marker on a thread**, and the scope of that rule is the lane, not the
+session. Handed the token it already holds, `claim` reads ownership *before* it writes and answers
+`won` with that same marker, posting nothing — so a re-claim is idempotent instead of stacking a
+second marker that `claim` prints while `confirm` reads the earliest, and that `release` then peels
+off one at a time (#5782). `release` retracts every marker carrying **this lane's** token, not only
+the winning one, so a write that reported UNKNOWN and landed anyway leaves no residue. Both are
+keyed on the token: a same-session marker under another nonce belongs to a sibling lane, so `claim`
+does not short-circuit on it — it races it, and loses on `15` — and `release` leaves it standing,
+because retracting another lane's claim is the one write this protocol must never make (#6037).
+
 **Invocation**
 
 ```
-fabrika build claim 4312 [--repo <owner/name>] [--purpose plan|gate|build]
+fabrika build claim 4312 [--repo <owner/name>] [--purpose plan|gate|build] [--token <token>]
                          [--override <reason> --override-lane <lane>]
-fabrika build confirm 4312 [--repo <owner/name>]
-fabrika build release 4312 [--repo <owner/name>]
+fabrika build confirm 4312 --token <token> [--repo <owner/name>]
+fabrika build release 4312 --token <token> [--repo <owner/name>]
+fabrika build adopt 4312 --session <dead-session> --reason <text> [--repo <owner/name>]
 ```
 
 **Inputs** — the first two rows are identical for all three verbs; the last three are `claim`'s alone:
@@ -670,6 +703,7 @@ fabrika build release 4312 [--repo <owner/name>]
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the issue (or, in repair, the PR) the claim concerns |
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository whose markers are read and written |
+| `--token` | string | required on `confirm` / `release`, optional on `claim` | — | the token `claim` handed this lane — which lane is asking. On `claim` it is the token this lane ALREADY holds, and makes the re-claim idempotent (below); omitted, the run is a fresh lane. Not a claim token, or one carrying another session id, is `1` |
 | `--purpose` | `plan` \| `gate` \| `build` | no | `build` | why this lane claims; the audience axis binds `build` only (#5175). An off-enum value is `10`, never a fallback |
 | `--override` | string | no | — | claim an issue the admission test refused on either axis, naming why; requires `--override-lane` |
 | `--override-lane` | string | no | — | the lane the override is taken for; refused without `--override`. Lane and reason are both written into the claim marker |
@@ -723,6 +757,43 @@ plan- or gate-purpose lane gets past the audience axis, which `--purpose` now an
 run the fence at all: it governs what may *start*, so a focus row edited mid-lane can neither strand
 a running lane nor block its release.
 
+**A dead session's claim passes to a successor by an adopt marker, and by nothing else** (ADR
+[0295](../../../../.decisions/0295-board-attested-claim-succession.md)). When a driver session dies —
+an outage, a crash — its builders' claim markers stay on the board, and `release` from the successor
+is proven-foreign on `15`. `build adopt <n> --session <dead-session> --reason "<text>"` posts one
+comment:
+
+```
+build-adopt: <dead-session> by build:<my-session>:<uuid> · <ISO> · reason: <text>
+```
+
+The `by build:<my-session>:<uuid>` token is minted by `adopt` itself and printed on the answer: it is
+the lane identity the succession creates, and `release <n> --token <that token>` is what retracts
+**both** comments. The guards are the ones that keep this from being a steal: the adopt confers the
+claim on exactly the **lane** its `by <token>` names — the same whole-token test an ordinary win
+passes (#6060), so another lane of the successor's own session reads `Foreign` just as a third
+session does; its author is ACL-checked at release time, so an
+adopt from an account below `write` is counted, reported and never a succession; the reason is
+required; and an adopt naming the caller's own session is `1`, because plain `release` already covers
+a claim this session holds. There is still no TTL, no lease, and no eviction inferred from absence —
+the successor states the fact on the board and the ordinary ownership read does the rest. What the
+protocol cannot check is that the adopted session is really dead: any `write` account may adopt a
+live claim, and the guard against that is the disclosed reason plus the ACL, not a proof.
+
+**An adopt confers the whole claim on the number — under a new lane, not the dead one.** The
+ownership read is one function, so an adopted claim answers `mine` to `confirm` and admits `branch`,
+`note`, `scratch` and `tree --issue` — each under the token `adopt` printed, which is this lane's
+identity on that number. That token carries a **fresh** nonce, and those verbs key on the caller's
+nonce, so the successor gets its own branch (`build/<n>-<slug>-<its own nonce>`) and its own scratch
+dir: standing in the dead lane's branch fails `tree --issue` on `14`, and the dead lane's unpushed
+commits are recovered by hand or not at all. Inherit the number, not the working state.
+
+`claim` is the one verb an adopted claim does not admit. Handed `--token` it refuses on `15` before
+writing anything, because the winner it would otherwise answer with is the dead session's token,
+which no later verb of this session accepts. Without one it resolves `Foreign` — the post-write read
+runs under the nonce that run just minted, which no adopt names — so it retracts the marker it just
+posted and refuses on `15` too. Adopt, release, then claim.
+
 The session id arrives from the environment (`CLAUDE_CODE_SESSION_ID`, named in `--help` with its
 unset behavior: unset is a usage error, exit `1` — a claim without an identity is not a claim).
 
@@ -731,8 +802,13 @@ unset behavior: unset is a usage error, exit `1` — a claim without an identity
 - `claim` on a win: `{"answer": "won", "number": 4312, "token": "build:<sid>:<uuid>", "purpose":
   "build"}` — plus `"override": {"lane": "<lane>", "reason": "<reason>"}` when the win came through
   `--override`, so the answer records the exception as well as the marker does.
-- `confirm` when held: `{"answer": "mine", "number": 4312, "token": "..."}`.
-- `release` when released: `{"answer": "released", "number": 4312}`.
+- `confirm` when held: `{"answer": "mine", "number": 4312, "token": "..."}` — the winning marker's
+  token on the ordinary path, and on a succession the **adopt's** token, never the dead session's,
+  which every verb of this session refuses on `1`.
+- `release` when released: `{"answer": "released", "number": 4312}` — plus `"adopted":
+  "<dead-session>"` when the release came through a succession.
+- `adopt` when recorded: `{"answer": "adopted", "number": 4312, "session": "<dead-session>", "token":
+  "build:<sid>:<uuid>"}`.
 
 A loss, a foreign confirm, and a not-mine release produce no stdout — they are exit `15`, the
 winner named on stderr. **A lost race is a proven outcome on its own code, never exit 0** — v1's
@@ -747,11 +823,11 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 |---|---|
 | `4` | `claim` only: the `## Focus` declaration reads but does not parse — nothing was written |
 | `7` | the issue is proven absent (404) or closed |
-| `8` | the marker write failed — it may or may not have landed; re-run `confirm` before anything else |
+| `8` | the marker write failed — it may or may not have landed; run `confirm` with the token named on stderr before anything else, and never re-run `claim` |
 | `9` | the marker landed but the read-back does not match |
 | `10` | `claim` only: `--purpose` is off the `plan` \| `gate` \| `build` enum — a refusal, never a fallback to `build` |
 | `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the focus declaration or the issue's home could not be read — scope admission is UNKNOWN, never admitted |
-| `15` | proven: another session's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this session does not hold |
+| `15` | proven: another lane's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this lane does not hold. `claim` also refuses here over a claim this lane has *adopted* — release it first |
 | `20` | `claim` only, proven: the issue's home is outside every declared focus row — no marker was written |
 | `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written. Unreachable when the target is an open PR serving a `type:decision` issue (#5914) |
 
@@ -764,19 +840,31 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `build claim: #<n> carries <audience>, not "ready-for:agent" — refusing before any marker; pass --override "<reason>" --override-lane "<lane>" to claim it anyway.` (`<audience>` is the issue's `ready-for:` label, or the literal `no "ready-for:" label` when it carries none) | 21 | refusal |
 | `build claim: cannot read the "## Focus" declaration: <reason> — scope is UNKNOWN, never admitted; nothing was written.` | 11 | refusal |
 | `build claim: the "## Focus" declaration does not parse: <detail> — a malformed declaration is never read as "no focus"; nothing was written.` | 4 | refusal |
+| `build claim: #<n> is already held by this lane (comment <id>) — answered with the marker that owns it; nothing was written.` — beside `{"answer":"won", …}` on exit 0, when `--token` names a lane that already holds `<n>` | 0 | answer |
+| `build claim: --token "<value>" is not a claim token (build:<session-id>:<uuid>) — which lane is asking is not stated.` | 1 | usage error |
+| `build claim: --token "<value>" carries session <a>, but this run is session <b> — a lane names itself, never another.` | 1 | usage error |
 | `build claim: --override was given with an empty reason — an override is recorded or it is not one.` | 1 | usage error |
 | `build claim: --override was given without a lane — pass --override-lane "<lane>" so the escape hatch names who took it.` | 1 | usage error |
 | `build claim: --override-lane was given without --override — a lane names no override on its own.` | 1 | usage error |
 | `build claim: --purpose "<value>" is not one of plan \| gate \| build — an unrecognised purpose refuses, and never falls back to build.` | 10 | usage error |
-| `build claim: the marker write failed: <reason> — the claim state is UNKNOWN; run "fabrika build confirm <n>" before any further action.` | 8 | refusal |
+| `build claim: the marker write failed: <reason> — the claim state is UNKNOWN; run "fabrika build confirm <n> --token <minted token>" before any further action.` — preceded by `build claim: the token this run minted is <minted token> — it addresses the marker the failed write may still have landed. Do not re-run "fabrika build claim <n>": it mints a second token, and if the first marker landed the race resolves to that earlier one, leaving a claim no lane holds a token for.` | 8 | refusal |
 | `build claim: cannot read the claim markers on #<n>: <reason> — ownership is UNKNOWN, never "unclaimed".` | 11 | refusal |
 | `build claim: lost to <token> (posted <timestamp>, authorized).` | 15 | refusal |
 | `build claim: the marker landed but the read-back does not match — the claim needs a human eye.` | 9 | refusal |
-| `build confirm: #<n> is held by <token>, not this session.` | 15 | refusal |
+| `build confirm: #<n> is held by <winning token>, not by <caller token>.` — with ` — another lane of this same session` appended when the two tokens share a session id | 15 | refusal |
+| `build confirm: --token "<value>" is not a claim token (build:<session-id>:<uuid>) — which lane is asking is not stated.` | 1 | usage error |
+| `build confirm: --token "<value>" carries session <a>, but this run is session <b> — a lane names itself, never another.` | 1 | usage error |
 | `build confirm: no claim exists on #<n> — nothing to confirm; run "fabrika build claim <n>" first.` | 15 | refusal |
-| `build release: this session holds no claim on #<n> — refusing to release another lane's.` | 15 | refusal |
+| `build release: this lane holds no claim on #<n> — refusing to release another lane's.` | 15 | refusal |
+| `build release: the retraction failed: <reason> — whether the claim is still held is UNKNOWN; run "fabrika build confirm <n> --token <caller token>".` | 8 | refusal |
+| `build adopt: --session names this very session — "fabrika build release <n>" already covers a claim this session holds; nothing was written.` | 1 | usage error |
+| `build adopt: --reason is empty — a succession is recorded or it is not one.` | 1 | usage error |
+| `build adopt: --session is empty — an adoption that names no session adopts nothing.` | 1 | usage error |
+| `build adopt: --session "<value>" carries whitespace or "·" — a session id is one unbroken word, and this one would compose a marker no reader can read back; nothing was written.` | 1 | usage error |
+| `build adopt: --reason spans more than one line — the marker records one line, so the rest would be dropped silently; restate it as one line. Nothing was written.` | 1 | usage error |
+| `build claim: #<n> still carries the adopted claim <winning token> — run "fabrika build release <n> --token <the adopt's token>" to retract it and the adopt together, then claim.` | 15 | refusal |
 
-**Proven-unclaimed sits on `15` too**: zero markers means this session does not hold the claim,
+**Proven-unclaimed sits on `15` too**: zero markers means this lane does not hold the claim,
 which is the one fact every `15` consumer acts on (stop mutating; claim first). The stderr detail
 separates unclaimed from foreign for a reader; the code deliberately does not, because the caller
 action is identical. The same reading applies wherever a sibling verb's precondition says
@@ -785,7 +873,8 @@ action is identical. The same reading applies wherever a sibling verb's precondi
 **Scope** — one issue's comment markers, paginated in full, plus — for `claim` — that issue's home
 and audience against the declared focus. An unauthorized author's marker is counted and reported on
 stderr but never wins: content is not authority. `claim`'s scope line names the declaration it judged
-against (`focus: #44 (declared 2026-08-09)`, or `focus: none declared — scope fence inert`), so a
+against (`focus: milestone #44, declared 2026-08-09`, `focus: 2 milestones — #44 (declared
+2026-08-09), #46 (declared 2026-08-18)`, or `focus: none declared — scope fence inert`), so a
 run that claimed under an inert fence is readable as such afterwards.
 
 **Examples**
@@ -813,8 +902,17 @@ $ fabrika build claim 4290 --override "hotfix for the release blocker" --overrid
 ```
 
 ```
-$ fabrika build confirm 4312
-build confirm: #4312 is held by build:s-77aa:9d8c7b6a-5f4e-3d2c-1b0a-998877665544, not this session.
+$ fabrika build confirm 4312 --token build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d
+build confirm: #4312 is held by build:s-77aa:9d8c7b6a-5f4e-3d2c-1b0a-998877665544, not by build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d.
+$ echo $?
+15
+```
+
+The two-lanes-one-session shape, where the tokens differ only after the session id:
+
+```
+$ fabrika build confirm 6024 --token build:s-9f2e:763ccb6d-1f0e-4c2b-9a3d-0e1f2a3b4c5d
+build confirm: #6024 is held by build:s-9f2e:c997bbca-2d1e-4b3a-8c7f-6a5b4c3d2e1f, not by build:s-9f2e:763ccb6d-1f0e-4c2b-9a3d-0e1f2a3b4c5d — another lane of this same session.
 $ echo $?
 15
 ```
@@ -822,6 +920,8 @@ $ echo $?
 **Grounding**
 
 - ADR 0115 — detect-and-tiebreak comment claims; re-implemented, never called (ADR 0238).
+- ADR 0295 / #6068 — succession is attested on the board, never by a TTL, a lease or a steal;
+  #5752's cross-session carve-out is narrowed by exactly this one marker kind.
 - ADR 0055 — authorization from repository permissions, never from marker text.
 - #4428 — the token shape is pinned here because callers guessed between two shapes.
 - #2997 — `confirm` before every number-addressed mutation is the guard that pins the actor.
@@ -906,8 +1006,8 @@ $ fabrika build issue 4312
 **Invocation**
 
 ```
-fabrika build branch 4312 --slug editor-focus-loss [--base <ref>]
-fabrika build branch --resume 4310
+fabrika build branch 4312 --slug editor-focus-loss --token <token> [--base <ref>]
+fabrika build branch --resume 4310 --token <token>
 ```
 
 **Inputs**
@@ -918,6 +1018,8 @@ fabrika build branch --resume 4310
 | `--slug` | string | yes (create mode) | — | kebab-case, ≤5 words, must not begin with `-` |
 | `--base` | string | no | `origin/main` | the base ref, **fetched before the branch is cut** |
 | `--resume` | integer | exclusive with the positional | — | a PR number whose head branch to switch to, for repair |
+| `--token` | string | yes | — | the token `build claim` handed this lane — which lane is asking (#6037). Not a claim token, or one carrying another session id, is `1` |
+
 
 **Output** — machine. One line, the checked-out lane branch's name, newline-terminated.
 
@@ -961,19 +1063,19 @@ is the number repair mode claims.
 | `build branch: --slug "<value>" is not kebab-case (lowercase letters, digits, single hyphens, ≤5 words).` | 10 | refusal |
 | `build branch: cannot fetch <ref>: <reason> — refusing to cut a branch off a stale base.` | 11 | refusal |
 | `build branch: PR #<n> is proven closed or merged — nothing to resume.` | 7 | refusal |
-| `build branch: #<n> is held by <token>, not this session.` | 15 | refusal |
+| `build branch: #<n> is held by <winning token>, not by <caller token>.` | 15 | refusal |
 
 **Scope** — not a judging verb. It mutates only the current tree's HEAD and local refs.
 
 **Examples**
 
 ```
-$ fabrika build branch 4312 --slug editor-focus-loss
+$ fabrika build branch 4312 --slug editor-focus-loss --token <token>
 build/4312-editor-focus-loss-c1a4d6f8
 ```
 
 ```
-$ fabrika build branch 4312 --slug -rf
+$ fabrika build branch 4312 --slug -rf --token <token>
 build branch: --slug "-rf" is not kebab-case (lowercase letters, digits, single hyphens, ≤5 words).
 $ echo $?
 10
@@ -995,7 +1097,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika build scratch 4312 --slug notes
+fabrika build scratch 4312 --slug notes --token <token>
 ```
 
 **Inputs**
@@ -1004,11 +1106,14 @@ fabrika build scratch 4312 --slug notes
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the claimed issue this lane serves |
 | `--slug` | string | yes | — | the file's leaf name, kebab-case, no path separators |
+| `--token` | string | yes | — | the token `build claim` handed this lane — which lane is asking (#6037). Not a claim token, or one carrying another session id, is `1` |
+
 
 **Output** — machine. Exactly one absolute path on stdout, newline-terminated:
 `<OS temp root>/fabrika-build/<session-id>/<issue>-<claim-nonce>/<slug>` — the fixed
 `fabrika-build` segment namespaces the allocator against everything else in the temp root. The
-directory is created if absent. **The claim nonce in the key is what v1's allocator lacked**: v1 keyed on the session id
+directory is created if absent. **The claim nonce in the key is what v1's allocator lacked**, and it is `--token`'s nonce — the
+CALLER's, not the winning marker's, which is one string for every lane of a session (#6037): v1 keyed on the session id
 alone, so two lanes (or two roles) of one session shared a namespace and clobbered each other's
 fixed-name files (#4516, #4544, #4875, #4692); v1's own stamp could not separate two pid-less
 runs (`scratchpad.ts:26-29`, documented in-source). Keying on the confirmed claim makes the
@@ -1031,14 +1136,14 @@ Preconditions: a confirmed claim on `<number>` (`15` / `11`).
 | `build scratch: --slug "<value>" must be a kebab-case leaf, no path separators.` | 10 | refusal |
 | `build scratch: cannot create <dir>: <reason>` | 1 | refusal (the universal `1` — the verb failed to run) |
 | `build scratch: cannot read the claim markers on #<n>: <reason> — the lane is UNKNOWN.` | 11 | refusal |
-| `build scratch: #<n> is held by <token>, not this session.` | 15 | refusal |
+| `build scratch: #<n> is held by <winning token>, not by <caller token>.` | 15 | refusal |
 
 **Scope** — not a judging verb. Creates one directory, prints one path, writes no file content.
 
 **Example**
 
 ```
-$ fabrika build scratch 4312 --slug notes
+$ fabrika build scratch 4312 --slug notes --token <token>
 /tmp/<redacted>/s-9f2e/4312-c1a4d6f8/notes
 ```
 
@@ -1058,7 +1163,7 @@ $ fabrika build scratch 4312 --slug notes
 
 ```
 fabrika build commit < message.txt
-fabrika build commit --message-file "$(fabrika build scratch 4312 --slug commit-message)"
+fabrika build commit --message-file "$(fabrika build scratch 4312 --slug commit-message --token <token>)"
 ```
 
 **Inputs**
@@ -1137,7 +1242,7 @@ something staged (`7`).
 | `build commit: nothing is staged — there is no change to commit.` | 7 | refusal |
 | `build commit: commit <sha> was created but its message could not be read back: <reason> — what it carries is UNKNOWN.` | 8 | refusal |
 | `build commit: commit <sha> carries a message this lane did not author — amend it, then re-run. It needs a human eye.` | 9 | refusal, with both messages quoted above it |
-| `build commit: --message-file "<leaf>" is not a leaf in this lane's scratch directory — send the message on stdin, or write it under the path "fabrika build scratch <n> --slug <leaf>" prints. That path is machine-local, so it is not repeated here.` | 10 | refusal |
+| `build commit: --message-file "<leaf>" is not a leaf in this lane's scratch directory — send the message on stdin, or write it under the path "fabrika build scratch <n> --slug <leaf> --token <token>" prints. That path is machine-local, so it is not repeated here.` | 10 | refusal |
 | `build commit: cannot read the index: <reason> — nothing was committed.` | 11 | refusal |
 | `build commit: git commit ran and HEAD did not move — no commit was created: <reason>.` | 24 | refusal |
 
@@ -1216,13 +1321,39 @@ Per surface:
   returned another tree's green three times in one session (#4106) and recurred on the review
   side (#4887); bypassing is cheaper than trusting a key that has already lied.
 - **prose** — changed markdown files: every relative link resolves against this tree; no
-  machine-local path (the imported `leaks.ts` predicate); every fabrika-doc reference cited by id
-  exists.
+  machine-local path (the imported `doc-leaks.ts` predicate); every fabrika-doc reference cited by
+  id exists.
 - **plan** — everything `prose` runs, plus the changed ledger's `## Dependencies` block parsing
   under the canonical grammar (defined in `build eligible`): issue refs (`#<int>`) resolve to real
   issues, ledger-local refs (`C<int>`) resolve within the ledger, and no child is its own
   predecessor. A ledger is markdown, so the markdown validators are its baseline and the grammar is
   the specialization on top.
+
+**The prose leak scan predicts the repo's committed-file gate, and is not the body guard.** Those
+are two questions with two answers, and asking the body guard about a file in a diff made this verb
+red on bytes CI passes clean — a red the lane that inherited it could not clear (#5687). Three shapes
+separate them, each a real doc a lane writes: a fenced code block quoting a path-scanning regex (a
+segment must be name-shaped here, so a bare marker beside an alternation bar is not a path); a doc
+citing a scratch root (`/tmp/…` is a rule for a public *comment*, which has no legitimate example of
+one — a doc does); and a doc whose subject IS path hygiene and must spell the shapes out. A body
+posted to an issue keeps refusing all three, because nothing gates it.
+
+That last one is repo policy, so it is declared, not compiled in: `.fabrika.jsonc`'s `docLeakExempt`
+lists repo-relative path suffixes the leak scan skips. Every failure resolves to *nothing is exempt*
+— absent file, absent key, empty array, malformed entry — so the scanner stays strictest and a
+mis-declared exemption reads as a red rather than a silent pass. A config that exists and cannot be
+read is `11`, UNKNOWN: which docs are exempt is then unknown, and the verdict may not be green.
+Fenced code is **scanned**, deliberately — the repo's gate scans docs whole, and skipping fences here
+would make the predictor looser than what it predicts.
+
+A predictor and the gate it predicts have to carry the same path shapes, and fabrika may not import
+the gate's module (ADR 0238, ADR 0273). So the agreement is pinned rather than promised, on ADR
+0251's terms: the canonical shapes are the golden fixture
+`packages/fabrika-cli/src/build/__fixtures__/doc-leak-patterns.golden.json`, and each side asserts
+against it in a test of its own, so a drift on either side reds instead of shipping. In phoenix the
+gate's side is `packages/pipeline-cli/src/tools/leak-guard/fabrika-doc-leak-conformance.test.ts`,
+which pins the exempt declarations against each other too. `doc-leaks.ts` carries the why; this is
+the pointer to it.
 
 The surface anchor: the verb diffs the branch against its base and refuses a surface whose own file
 class the diff does not contain (`--surface prose` over a diff with no markdown is `10`) — the
@@ -1266,7 +1397,10 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | `build check: <runner> could not be executed: <reason> — the verdict is UNKNOWN, never green.` | 11 | refusal |
 | `build check: cannot read the claim markers on #<n>: <reason> — the lane is UNKNOWN.` | 11 | refusal |
 | `build check: cannot read <file> (<reason>) — it is in the diff and is not absent, so the verdict is UNKNOWN, never green.` | 11 | refusal |
-| `build check: #<n> is held by <token>, not this session.` | 15 | refusal |
+| `build check: cannot read .fabrika.jsonc (<reason>) — which docs are leak-scan exempt is UNKNOWN, never green.` | 11 | refusal |
+| `build check: <n> leak-scan exemption(s) declared in .fabrika.jsonc.` | 0 | scope note |
+| `build check: nothing is leak-scan exempt — <reason>.` | 0 | scope note |
+| `build check: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
 | `build check: --surface prose, but the diff changes no markdown file — the surface is provably wrong.` | 10 | refusal |
 | `build check: the diff against <base> is empty — nothing to validate (ADR 0092).` | 7 | refusal |
 | `build check: red — <runner> failed; diagnostics above.` | 18 | refusal |
@@ -1514,7 +1648,7 @@ posts the literal string (#4683).
 | `build pr: the PR landed (#<m>) but its body does not read back as sent — it needs a human eye.` | 9 | refusal |
 | `build pr: the body asserts a control-plane classification — that verdict is the merge gate's.` | 10 | refusal |
 | `build pr: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
-| `build pr: #<n> is held by <token>, not this session.` | 15 | refusal |
+| `build pr: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
 
 The `11`/`14` tree-precondition messages are `build tree`'s rows with the verb name substituted
 (shared conventions).
@@ -1566,12 +1700,129 @@ $ echo $?
 
 ---
 
+## `build pr-body`
+
+**Invocation**
+
+```
+fabrika build pr-body 4318 [--partial] [--repo <owner/name>] <<'EOF'
+…the authored body…
+EOF
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `<pr>` | positional integer | yes | — | the open pull request whose body is replaced |
+| `--partial` | boolean | no | `false` | the acceptance criteria are not all met: the body must say `Part of #<n>`, not `Fixes #<n>` |
+| stdin | text | yes | — | the replacement PR body |
+
+**Output** — machine. One JSON object:
+`{"answer": "updated", "number": 4318, "url": "..."}`.
+
+The verb exists because a review FAIL whose whole fix is a body edit — the recurring one is a
+`## Deviations` section the gate reads as malformed — otherwise had no guarded route at all: `build
+pr` answers `existing` and writes nothing, `build push` moves a head that did not need to move, and
+the raw `gh` call the repairer fell back to ran none of the create path's guards (#5618).
+
+The guards are `build pr`'s, in `build pr`'s order with **one step moved**: the served issue is read
+off the PR before the two guards that name it can run. Everything still happens before any write,
+which is what the ordering is for.
+
+1. **stdin non-empty** (`3`); **no machine-local path** (`5`, `6`); **no forbidden classification**
+   (`10`) — the three that need no issue number, so they refuse before a single read.
+2. **The PR is open** (`7` proven absent, closed or merged; `11` unreadable).
+3. **The served issue** is `parseLaneBranch`'d out of the PR's own head ref — `build/<issue>-<slug>-<nonce>`,
+   which is the head ref even for a resumed PR, since resume mode checks out `build/pr-<pr>-<nonce>`
+   locally and tracks the original. A head that is not a lane branch is `14`. The **body is never the
+   source**: the closing keyword is the thing being checked, so reading the issue off it would let a
+   mistargeted body validate itself.
+4. **Body shape** (`4`) against that issue — identical to `build pr`'s step 3, same `deviations` wire
+   format, same closing-keyword and `--partial` rules.
+5. **Claim confirmed and this lane addresses this PR** (`15`/`11`/`14`): the checked-out branch is a
+   lane whose claim this session holds, and it serves this PR — the resume branch names it, or the
+   create branch *is* its head ref.
+
+Then `PATCH repos/<repo>/pulls/<pr>` carrying `body` alone — no title, no base, no ref — and
+re-read the PR, comparing through `normalizeForReadback` (`9` on mismatch). The body travels as an
+argv value, never `-f body=@file` (#4683).
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `3` | stdin held nothing |
+| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts `--partial` |
+| `5` | the body carries a machine-local path |
+| `6` | the body is a bare `@` path reference |
+| `7` | the PR is proven absent, closed or merged |
+| `8` | the update failed — it may or may not have landed; re-read the PR before retrying |
+| `9` | the body was replaced but does not read back as sent |
+| `10` | the body carries a control-plane (or type/priority) classification claim |
+| `11` | a precondition read failed |
+| `14` | the PR's head is not a lane branch, or the checked-out branch does not serve this PR |
+| `15` | proven: this session does not hold the claim |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `build pr-body: stdin held nothing — the body is the input.` | 3 | refusal |
+| `build pr-body: the body's "## Deviations" section is not readable — <the wire format's reason>. State each deviation as an entry, or state "None."` | 4 | refusal |
+| `build pr-body: the body carries a closing keyword aimed at #<m> — this PR serves #<n>.` | 4 | refusal |
+| `build pr-body: the body carries a machine-local path: <first hit> — redact before posting.` | 5 | refusal |
+| `build pr-body: the body is a bare @ path reference — write the body, not a pointer to it.` | 6 | refusal |
+| `build pr-body: PR #<pr> is proven absent, closed or merged — there is no body to rewrite.` | 7 | refusal |
+| `build pr-body: the update failed: <reason> — it may or may not have landed; re-read PR #<pr> before retrying.` | 8 | refusal |
+| `build pr-body: PR #<pr>'s body was replaced but does not read back as sent — it needs a human eye.` | 9 | refusal |
+| `build pr-body: the body asserts a control-plane classification — that verdict is the merge gate's.` | 10 | refusal |
+| `build pr-body: cannot read PR #<pr>: <reason> — nothing was written.` | 11 | refusal |
+| `build pr-body: PR #<pr>'s head branch "<ref>" is not a lane branch — this verb rewrites a lane's own PR.` | 14 | refusal |
+| `build pr-body: the checked-out branch "<branch>" does not serve PR #<pr> — wrong lane.` | 14 | refusal |
+| `build pr-body: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
+
+**Scope** — one body replacement on one open PR. Nothing else about the PR moves: no commit, no
+push, no branch, no title, no base.
+
+**Examples**
+
+```
+$ fabrika build pr-body 4318 <<'EOF'
+Fixes #4312
+
+Editor focus now survives a save: the toolbar re-render no longer steals it.
+
+## Deviations
+
+- **Out-of-scope change** — **Said:** #4312 names the editor only. **Did:** also fixed the same
+  steal in the comment box. **Why:** both call the one `refocus()` helper this changes.
+  **Disposition:** stated here.
+EOF
+{"answer":"updated","number":4318,"url":"https://github.com/kamp-us/phoenix/pull/4318"}
+```
+
+```
+$ printf 'Fixes #4312\n\n## Deviations\n\n- narrowed the scope a bit.\n' | fabrika build pr-body 4318
+build pr-body: the body's "## Deviations" section is not readable — an entry carries no **Said:**, **Did:**, **Why:**, **Disposition:** — every entry states **Said:** / **Did:** / **Why:** / **Disposition:**. State each deviation as an entry, or state "None."
+$ echo $?
+4
+```
+
+**Grounding**
+
+- #5618 — no `build` verb rewrote an open PR's body, so a `deviations malformed` FAIL was repaired
+  with a raw `gh` call that ran none of the guards. PRs #5556 and #5599 both went out that way.
+- #5566 — the `deviations` shape both this verb and `review deviations` resolve against.
+
+---
+
 ## `build note`
 
 **Invocation**
 
 ```
-fabrika build note 4312 [--repo <owner/name>] <<'EOF'
+fabrika build note 4312 --token <token> [--repo <owner/name>] <<'EOF'
 …the progress / handoff note…
 EOF
 ```
@@ -1582,6 +1833,7 @@ EOF
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the issue or PR the note posts to — resolved via the REST issues endpoint, whose response carries a `pull_request` key exactly when the number is a PR; the head stamp applies only then |
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository written to |
+| `--token` | string | yes | — | the token `build claim` handed this lane — which lane is asking (#6037). Not a claim token, or one carrying another session id, is `1` |
 | stdin | text | yes | — | the note body |
 
 **Output** — machine. `{"answer": "posted", "number": 4312, "commentId": 512345, "head": "03135b91"}`.
@@ -1598,17 +1850,19 @@ exactly as in `build pr`, minus the body-shape and classification rows (`4`, `10
 unreachable: a note has no required sections and no closing keywords; a classification *claim* in
 a note is prose the reader weighs, not a label the board consumes).
 
-**Errors** — `build pr`'s rows for `3`, `5`, `6`, `8`, `9`, `11`, `15` with the verb name
-substituted (shared conventions), plus:
+**Errors** — `build pr`'s rows for `3`, `5`, `6`, `8`, `9`, `11` with the verb name substituted
+(shared conventions), plus — `15` is written out rather than inherited, because `note` names its
+lane with `--token` where `pr` reads it off the branch, so the two verbs refuse in different words:
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `build note: #<n> is proven absent or closed — nothing to post to.` | 7 | refusal |
+| `build note: #<n> is held by <winning token>, not by <caller token>.` | 15 | refusal |
 
 **Example**
 
 ```
-$ fabrika build note 4310 <<'EOF'
+$ fabrika build note 4310 --token <token> <<'EOF'
 Round 2 findings addressed: focus restore moved out of the render path.
 EOF
 {"answer":"posted","number":4310,"commentId":512346,"head":"03135b91"}
@@ -1657,9 +1911,9 @@ fabrika build verdicts --pr 4310 [--repo <owner/name>]
 appended past the freeze. **Each row's `body` is the finding's full text, passed through the
 content gate** — the repair loop consumes findings from here and never raw-fetches a comment,
 which is what keeps AC 3's one-door property over the repair path. `capReached` is
-`rounds >= CAP_ROUND + <cleared rounds>`, over the `CAP_ROUND` in `src/retry-budget.ts` — the
-package's one declared retry budget — plus what the founder cleared through `build clear`; it is
-computed here so the cap is a field read, not a number remembered.)
+`rounds >= <the cap>`, where the cap is the `CAP_ROUND` in `src/retry-budget.ts` — the package's one
+declared retry budget — raised to the round after the highest one the founder cleared through
+`build clear`; it is computed here so the cap is a field read, not a number remembered.)
 
 **Cleared rounds.** `clearances` lists every `cap-cleared` marker on the PR, judged. A row is
 `honoured` only when four clauses hold: its author is in `.fabrika.jsonc`'s `capClearAuthors` set at
@@ -1669,10 +1923,12 @@ configured set narrows the ACL, it never replaces one, ADR 0294), the round it n
 and is not itself a `cap-cleared` marker — the strict adjacency `grill rule` enforces, because
 without it a second bare marker rests on the first grant's own dated marker and every grant after
 the first is authorized by nothing. A row that misses carries the `reason` it missed and grants
-nothing; the ACL is read only for authors the configured set already names. Each
-honoured round adds one to the cap, counted by distinct round, so a re-posted grant buys one round
-and not two — and because a clearance binds the *round* rather than a head SHA, it survives the push
-it exists to permit and is spent the moment the next FAIL round lands. A read that cannot complete —
+nothing; the ACL is read only for authors the configured set already names. The cap is the round
+**after** the highest honoured round, so a grant stamped at any round buys exactly the round it
+names and a re-posted grant buys one round and not two — the old `CAP_ROUND + <grants>` tally held
+that only when the grant landed at exactly `CAP_ROUND`, and a grant past it was inert (#6137).
+Because a clearance binds the *round* rather than a head SHA, it survives the push it exists to
+permit and is spent the moment the next FAIL round lands. A read that cannot complete —
 the config file, a configured team's membership, a named author's permission — is `11`, never an
 empty set.
 
@@ -1682,13 +1938,16 @@ per gate namespace; bind each to the current head (`current: true|false` — a s
 visible *as stale*, never dropped, because "the FAIL is old" and "there is no FAIL" are different
 facts, #4105's class). **Native reviews are their own row kind**, not coerced into markers —
 whether a `CHANGES_REQUESTED` with no marker drives a repair is the open decision #4555; this
-verb reports the state honestly and pre-rules nothing. `rounds` counts distinct FAIL clusters by
-the 120-second gap rule computed over the *full* comment set (v1 counted off a truncated 100-
-comment snapshot, `stepR-round-count.sh` + `stepR1-verdicts.sh:48`; the off-by-one at the cap is
-#4570 — the count here is covered by a unit test at the boundary). **The rule, exactly:** take
-every FAIL-polarity marker comment, sorted by `created_at` ascending; a marker whose gap from
-the previous FAIL marker exceeds 120 seconds starts a new cluster, a gap of exactly 120 seconds
-or less continues the current one; `rounds` is the cluster count. `frozenCriteria` lists
+verb reports the state honestly and pre-rules nothing. `rounds` counts the distinct heads the FAIL
+markers name, computed over the *full* comment set (v1 counted off a truncated 100-comment
+snapshot, `stepR-round-count.sh` + `stepR1-verdicts.sh:48`). **The rule, exactly:** take every
+FAIL-polarity marker comment; the distinct head SHAs they name — matched by the same prefix rule
+that binds a verdict to a head, so an abbreviation and the full SHA are one head — are the rounds.
+A round is one graded head, so two gates grading one head are one round however far apart they
+post. A FAIL naming no readable head cannot join a head's round and is never dropped: those
+cluster among themselves by the inclusive 120-second gap (#4570's boundary, now the fallback's
+only home) and the clusters are added to the head count. Counting by wall clock was #6137 — gate
+latency read as repair effort and burned the cap at twice the real rate. `frozenCriteria` lists
 review-appended acceptance-criterion rows dated at or past `CAP_ROUND`.
 
 **`{"rows": [], ...}` on exit 0 is a proven "no verdicts", readable against the scope line's
@@ -1867,5 +2126,5 @@ script, another skill's prose, or the authoring session. The three hand-checks t
 lineage demands: every reachable outcome above was walked against its verb's failure modes; every
 example value is derivable from its verb's stated rules (the nonce from the claim token, the
 verdict line from the protocol); and sibling verbs guard shared preconditions identically
-(`branch`/`commit`/`check`/`push` run `tree`'s assertions; `pr`/`note` run the same posting guards on
+(`branch`/`commit`/`check`/`push` run `tree`'s assertions; `pr`/`pr-body`/`note` run the same posting guards on
 the same codes, and `commit` runs the same authored-text guards on `3`/`5`/`6`).

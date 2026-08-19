@@ -4,6 +4,7 @@ import * as report from "../report/codes.ts";
 import * as codes from "./codes.ts";
 import {
 	BARE_AT_PATH,
+	CLAIMED_ELSEWHERE,
 	CRITERIA_REQUIRED,
 	DELIBERATE_GAP,
 	EMPTY_STDIN,
@@ -96,7 +97,7 @@ describe("TRIAGE_EXIT_TABLE", () => {
 	});
 
 	it("carries every allocated code exactly once", () => {
-		expect(codes).toEqual([0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 126, 127]);
+		expect(codes).toEqual([0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 126, 127]);
 	});
 
 	it("gives every code a non-empty meaning", () => {
@@ -112,5 +113,6 @@ describe("TRIAGE_EXIT_TABLE", () => {
 		expect(meaningOf(UNREPAIRABLE)).toContain("not mechanically repairable");
 		expect(meaningOf(MALFORMED_CRITERIA)).toContain("acceptance-criteria");
 		expect(meaningOf(CRITERIA_REQUIRED)).toContain("--ready-for agent");
+		expect(meaningOf(CLAIMED_ELSEWHERE)).toContain("another session");
 	});
 });

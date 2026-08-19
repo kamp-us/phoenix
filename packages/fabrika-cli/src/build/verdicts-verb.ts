@@ -21,7 +21,7 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {capReached, effectiveCap, grantedRounds} from "../cap-clearance.ts";
+import {capNote, capReached} from "../cap-clearance.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -32,7 +32,7 @@ import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {contentOf, gate} from "./content-gate.ts";
 import {listReviews} from "./github.ts";
 import {closingTargets, proseOf} from "./pr-body.ts";
-import {countRounds} from "./rounds.ts";
+import {roundsOn} from "./rounds.ts";
 import {openPull, resolveTargetRepo} from "./target.ts";
 
 const VERB = "build verdicts";
@@ -91,14 +91,13 @@ export const runVerdicts = (
 			);
 		}
 
-		// Latest marker per gate namespace, and every FAIL's timestamp for the round count.
+		// Latest marker per gate namespace. The round count is `roundsOn`'s, so this verb and `build
+		// clear` cannot disagree about how many rounds the PR has been through (#6137).
 		const latest = new Map<string, Row>();
-		const failedAt: string[] = [];
 		for (const comment of listed.value) {
 			const parsed = readMarker(comment.body);
 			if (parsed._tag !== "Found") continue;
 			const marker = parsed.value;
-			if (marker.polarity === "FAIL") failedAt.push(comment.createdAt);
 			latest.set(marker.namespace, {
 				gate: marker.namespace,
 				polarity: marker.polarity,
@@ -123,7 +122,7 @@ export const runVerdicts = (
 			});
 		}
 
-		const rounds = countRounds(failedAt);
+		const rounds = roundsOn(listed.value);
 		const cleared = yield* clearancesOn(repo, target.pull.baseRef, listed.value);
 		if (cleared._tag === "Unknown") {
 			return refuse(
@@ -151,7 +150,7 @@ export const runVerdicts = (
 			}),
 			[
 				`${VERB}: head ${head}; scanned ${listed.value.length} comment(s) and ${reviews.value.length} review(s) on #${pr}.`,
-				`${VERB}: cap ${effectiveCap(granted)} = ${CAP_ROUND} declared + ${grantedRounds(granted)} cleared round(s), from ${cleared.rows.length} marker(s).`,
+				`${VERB}: ${capNote(granted)}, from ${cleared.rows.length} marker(s).`,
 			],
 		);
 	});

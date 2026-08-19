@@ -1,0 +1,29 @@
+{
+	"pins": "The machine-local path shapes fabrika build check --surface prose and pipeline-cli leak-guard scan must both carry, in report order. Each arm is pinned by regex source and flags only: the report reason text is each side reporting, not shared vocabulary, and is deliberately not pinned here.",
+	"patterns": [
+		{
+			"source": "(?<![A-Za-z]:)\\/Users\\/[A-Za-z0-9._-]+",
+			"flags": "g"
+		},
+		{
+			"source": "(?<![\\w.])~\\/\\.(usirin|agent)\\b",
+			"flags": "g"
+		},
+		{
+			"source": "(?<![\\w.])~\\/\\.claude(?!\\.json(?![\\w.]))(?!\\/settings\\.json(?![\\w.]))\\b",
+			"flags": "g"
+		},
+		{
+			"source": "(?<![\\w.])~\\/code\\/",
+			"flags": "g"
+		},
+		{
+			"source": "(?<![\\w.])~\\/[A-Za-z0-9._-]+\\/(?=[A-Za-z0-9-]+\\.[A-Za-z]{2,}\\/[A-Za-z0-9._-]+\\/[A-Za-z0-9._-]+)",
+			"flags": "g"
+		},
+		{
+			"source": "(?<![\\w/])\\/vault\\/",
+			"flags": "g"
+		}
+	]
+}

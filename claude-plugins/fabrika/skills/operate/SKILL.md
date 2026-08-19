@@ -142,10 +142,11 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | `build` / `review` / `ship` | dispatch through `lane brief` — below |
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
-| a task's own final — `landed`, `shipped`, `frozen` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final. `frozen` is an error final; it trips the phase at that point, and the fold is what says so |
+| a task's own final — `landed`, `shipped` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final |
+| `frozen` | park — step 4. It is an error final, so it trips the phase where it sits and the fold says so; it is also the one final with a door out (ADR [0297](../../../../.decisions/0297-frozen-is-a-park-not-an-end.md)), and walking it is a human's `UNBLOCKED`, never yours |
 | `human:*` | park — step 4 |
 | `blocked` | park — step 4 |
-| any other name | end `STOPPED` naming the state — never guess a shell for a state you do not recognise, and never a park: `LANE-PARKED` promises a fold in `blocked`/`human:*`, which an unrecognised state cannot honour (Terminal vocabulary, below) |
+| any other name | end `STOPPED` naming the state — never guess a shell for a state you do not recognise, and never a park: `LANE-PARKED` promises a fold in `blocked`/`human:*`/`frozen`, which an unrecognised state cannot honour (Terminal vocabulary, below) |
 
 **You never compose a spawn prompt.** The verb prints it:
 
@@ -333,13 +334,17 @@ nobody filed and a claim nobody can take. Three obligations, in this order:
 - **Release the claim it stranded.** `node <fabrika> build release <issue>`
   is the whole act: the spawn ran under your `CLAUDE_CODE_SESSION_ID`, so its marker resolves as
   this session's and the verb that already exists retracts it. No new verb and no widened one — the
-  ruling rejected a lease, a TTL, supersession and steal outright, and eviction by inference from
+  ruling rejected a lease, a TTL and steal outright, and eviction by inference from
   absence stays banned (ADR
   [0215](../../../../.decisions/0215-claim-identity-continuity-proof.md) §5).
 
-**A claim held by a different, gone session is not yours to release.** `build release` refuses it on
-exit `15`, proven-foreign, and that refusal is the guard rather than an obstacle to reason past.
-Name that claim in the park comment with its token and leave it to a human.
+**A claim stranded by a gone session is releasable, once you say so on the board.** `build release`
+refuses it on `15` — proven-foreign — until an adopt marker names that session as dead and this one
+as its successor: `fabrika build adopt <n> --session <its session id> --reason "<why>"`, then
+`fabrika build release <n> --token <the token adopt printed>` (ADR
+[0295](../../../../.decisions/0295-board-attested-claim-succession.md)). The adopt is disclosed on the
+issue and reversible by deleting it; a claim you are not willing to state that about stays where it
+is, named in the park comment with its token.
 
 **Every event is proven first — artifacts over self-reports.** A report is
 data; what moves the machine is the artifact behind it. The verb below is the read `lane report`
@@ -418,22 +423,28 @@ One more refusal guards a reviewer `FAIL`, and it is the one half `lane prove` c
 hands — the read enforces it mechanically for a `PASS` (exit `23`) on both paths, the shell's
 through `lane report` and yours through the verb, while a `FAIL` claims no
 artifact and so is proven by nothing: **a reviewer `FAIL` is recorded only when every derived
-namespace holds a verdict that still binds** — governance included, on a `harness: true` diff. `FAIL`
+namespace holds a verdict that still binds** — governance included, on a `governance: required` diff. `FAIL`
 routes the machine into a repair build, and a repair pushes a new head; recorded while any
 namespace is still in flight, it orphans that namespace's verdict mid-write and spends one of the
 machine's retries on a verdict set nobody finished. A reviewer report carrying a `FAIL` beside a
 namespace with no verdict that still binds is an incomplete read, not an event: re-read the
 artifact's verdicts — the PR's, or the child range's — until every derived namespace is terminal
-against what that artifact carries now, then record. No repair builder is
+against what that artifact carries now, then record. **The re-read is bounded, not a hold**: it runs
+only while the reviewer's run is still in flight, and once that run has ended with the namespace
+still empty the outcome is the `BLOCKED` the next paragraph names — never an indefinite wait on a
+state that reads as active. No repair builder is
 ever spawned while any namespace at the head is non-terminal.
 
-**Re-reading terminates, because no reviewer may decline a derived namespace on a `FAIL` round.**
-ADR [0293](../../../../.decisions/0293-governance-fires-every-round.md) rules governance
-derived-required at every round and every head on a `harness: true` diff, FAIL rounds included —
-`review` §6 states it on both arms. So a governance verdict missing at a `harness: true` head is
+**Re-reading terminates, because no reviewer may decline a derived namespace on a `FAIL` round, and
+none may route one away either.** ADR
+[0293](../../../../.decisions/0293-governance-fires-every-round.md) rules governance
+derived-required at every round and every head on a `governance: required` diff, FAIL rounds included —
+`review` §6 states it on both arms, and that skill's `routed elsewhere` terminal covers `review-ui`
+and `check-epic-plan` only, so no reviewer terminal ends a run with governance un-fired (#5769). So a
+governance verdict missing at a `governance: required` head is
 always a read still in flight or a reviewer that died mid-emit, never a licensed refusal, and the
 remedy above reaches a verdict instead of waiting on one nobody will write. The floor stays, and no
-`harness: true` FAIL round holds the old deadlock — the state where the verdict is refused by rule,
+`governance: required` FAIL round holds the old deadlock — the state where the verdict is refused by rule,
 so it can never be written and the repair can never be dispatched. A namespace still empty after the
 reviewer's run has ended is a dead spawn like any other: record `BLOCKED` per the spawn-report step
 above and let a human unblock it. Do not re-spawn the reviewer on your own read.
@@ -462,8 +473,8 @@ release you cannot prove. A `STOPPED` run releases too — a claim outliving the
 is the same lane nobody can pick up.
 
 
-**A run never ends `LANE-PARKED` while the fold reads a non-parked state.** `human:*` and
-`blocked` are already parked — the fold itself says so, and no event is owed on top of it. Any
+**A run never ends `LANE-PARKED` while the fold reads a non-parked state.** `human:*`, `blocked`
+and `frozen` are already parked — the fold itself says so, and no event is owed on top of it. Any
 park you originate — one this section names rather than a state the fold already holds — records
 the event that matches the terminal first: `lane transition $lane_key BLOCKED`, then a fresh
 `lane status`, and only when the re-fold reads `blocked` or `human:*` does the run end
@@ -477,16 +488,38 @@ block is generic — [#5820](https://github.com/kamp-us/phoenix/issues/5820) tra
 
 You cannot clear a park: post on the driven issue what is needed and from whom (the parking
 spawn's report names both; for `human:cp-approval` it is a control-plane approval at the PR's
-current head), then end `LANE-PARKED`. One park class names its owner here, not off the spawn's
+current head; for `frozen` it is a founder-cleared repair round, recorded with `build clear`, which
+re-folds the task into `build` on its own — a bare `UNBLOCKED` walks the door back into the same
+review with the budget still spent, so the next `FAIL` freezes it again). One park class names its
+owner here, not off the spawn's
 report: **a wire defect on the driven issue's own body** — an acceptance-criteria heading a
-spawned shell fail-louds on, a criteria block that reads as no shape the verbs parse. It is a park
-you originate, so the order above binds: record `BLOCKED`, re-fold and confirm the state, then
-post the park comment — the step both #5643 and #5714 skipped, leaving parks the machine could
-not resume. The fix is `triage`'s: the surface that stamped the issue agent-ready owns its
-wire shape, so the park comment names the defective section and points at the verb that owns the
-repair — `triage repair-criteria`, whose `--help` is its interface — never restating what that
-verb does, never delegating both the what and the who to the parking spawn's report, and never
-editing the body yourself (you are type-blind, and a driven issue's body is not your artifact). Clearing a park is a
+spawned shell fail-louds on, a criteria block that reads as no shape the verbs parse.
+
+**You may try the repair before you originate that park**, and it is one call:
+
+```bash
+node packages/fabrika-cli/src/bin.ts triage repair-criteria <n>
+```
+
+The verb is the driven body's sanctioned owner and it is refusal-first: it rewrites shape and
+nothing else — a drifted heading level, plain list bullets to unchecked checkboxes — and refuses
+anything that is not a pure shape rewrite. So running it never makes you the one choosing what the
+body says, which is the whole reason the prohibition below does not reach it. On `repaired`,
+re-dispatch the shell that fail-louded and record **no** `BLOCKED`: nothing parked, so there is
+nothing for a human to clear. Five M46 lanes spent a human cycle each on this park in one night
+(#5736, #5807, #5823, #5718, #5761) for a defect this verb repairs (#6001).
+
+The permission is exactly that one call and stops there. **Never edit the body yourself** — you are
+type-blind, and a driven issue's body is not your artifact — so no hand-edit, no other section, and
+no second run after a refusal. A refusal is the verb's answer, not a prompt to retry.
+
+On any refusal the park is the one this section always described, and the order above binds:
+record `BLOCKED`, re-fold and confirm the state, then post the park comment — the step both #5643
+and #5714 skipped, leaving parks the machine could not resume. The fix is then `triage`'s: the
+surface that stamped the issue agent-ready owns its wire shape, so the park comment names the
+defective section and points at the verb that owns the repair — `triage repair-criteria`, whose
+`--help` is its interface — never restating what that verb does, and never delegating both the what
+and the who to the parking spawn's report. Clearing a park is a
 human's `UNBLOCKED`, recorded through the same `lane transition` verb — you never record
 `UNBLOCKED`. One exception, and it is still not yours: on a **known** park a recipe verb owns,
 `recipe unpark` records that lane's `UNBLOCKED` itself, and only after a re-fold proves the task
@@ -501,7 +534,7 @@ fold reads (`human:novel-park` is the named park a recipe refusal folds to), and
 caller re-reads the ledger, never your summary. A resumed run that folds into a still-parked lane restates the park in one comment
 and ends `LANE-PARKED` again; the ledger, not your patience, decides when the lane moves.
 
-**A terminal fold (`status: done` — `shipped`, `frozen`, `complete`, `tripped`, and a chore's
+**A terminal fold (`status: done` — `shipped`, `complete`, `tripped`, and a chore's
 `swept`) ends the run with the transcript**, posted to the driven issue straight off the verbs:
 
 ```bash
@@ -512,6 +545,10 @@ with `lane history $lane_key` appended the same way when the event log adds anyt
 show. Name the terminal state in the comment. End `LANE-TERMINAL`. On a chore lane the pipe has no
 issue to land on: print the same two verbs and hand their bytes to your caller, who owns where a
 chore's transcript is posted.
+
+**A `tripped` fold is not automatically a terminal** — read which state its error task sits in. On
+`frozen` the run ends `LANE-PARKED` with the transcript and the need posted (the founder-cleared
+round above); every other error final has no door and ends `LANE-TERMINAL`.
 
 **Resume is a re-spawn.** There is no handoff and no memory: resuming a lane is spawning the
 operator again with the same issue number — step 1 tolerates the existing lane, and the fold says
@@ -534,17 +571,17 @@ re-spawn above ([#5897](https://github.com/kamp-us/phoenix/issues/5897)).
 ## Terminal vocabulary
 
 Every run ends as exactly one of — each naming what was recorded and what the fold reads after:
-**`LANE-TERMINAL`** (the machine folded to a final state — `shipped`, `frozen`, `complete`,
+**`LANE-TERMINAL`** (the machine folded to a final state with no door out — `shipped`, `complete`,
 `tripped`; no event recorded on top of a final fold; transcript posted on the driven issue) ·
-**`LANE-PARKED`** (the fold reads `blocked` or `human:*` — either it already did and no event was
-owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
+**`LANE-PARKED`** (the fold reads `blocked`, `human:*` or `frozen` — either it already did and no
+event was owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
 posted on the driven issue) · **`LANE-HELD`** (step 1's claim was proven lost — another driver owns
 this lane, its token named; no ledger emitted, no shell spawned, no marker retracted, nothing
 posted) · **`STOPPED`** (a verb exit UNKNOWN, a malformed record, an
 unroutable state, or a `BLOCKED` refused with exit `12` — the code or state named, nothing
 guessed, no event recorded, the fold unchanged). An unroutable state ends `STOPPED`, never
-`LANE-PARKED`: a park promises a mechanical `UNBLOCKED` resume from `blocked`/`human:*`, which a
-state this skill does not recognise cannot honour — and appending `BLOCKED` toward cells you do
+`LANE-PARKED`: a park promises a mechanical `UNBLOCKED` resume from `blocked`/`human:*`/`frozen`,
+which a state this skill does not recognise cannot honour — and appending `BLOCKED` toward cells you do
 not know is exactly the guess step 2's routing table forbids. A park reported as a
 terminal destroys the caller's routing: the two differ in exactly who acts next. Follow-up
 observations leave through `/report` the moment you see them — never through scope creep in a
@@ -565,4 +602,4 @@ fabrika skill, so one reader parses all of them. No row here dead-ends on a bare
 | The recipe verb group — `<fabrika>` routing `recipe route` plus the recipes it names (`unpark`, `rerun`), and the chore template at `packages/fabrika-cli/src/lane/templates/chore.workflow.json` | A chore drive routes and folds through `recipe route`, runs the recipe it names, and boots from that template; there is no other path to either answer | **fail-loud** — a chore drive whose routing verb cannot be executed knows neither what to run nor what an exit meant; the run ends `STOPPED` naming `packages/fabrika-cli/src/recipe/`, records no event, and points at front-door. An issue lane is unaffected. |
 | The agent shells — `claude-plugins/fabrika/agents/builder.md`, `reviewer.md`, `shipper.md` | Step 2's routing table spawns exactly these three by their bare noun names | **fail-loud** — a route whose shell does not exist cannot spawn; the run ends `STOPPED` naming the absent shell file, and no event is recorded for a spawn that never started. |
 | The `package.json` scripts `typecheck` and `lint:worktree` | An epic run's `integrate` reads the semantic collision off them — two ranges that each passed alone and fail together show up as the merged assembly failing the checks, and a clean `git merge` alone cannot see that | **degrade** — a clean merge is then the whole `DONE` answer and a semantic collision only surfaces at the epic review; say so in the transcript comment and file the gap via `/report`. An epic run still drives; a single-issue lane is unaffected. |
-| `.gitignore` covering `.fabrika/` | The ledger is a disposable machine-local artifact, regenerable from the board — committed, it would smuggle one machine's lane state into every checkout | **degrade** — the verbs still work; state the uncovered `.fabrika/` in the park or transcript comment and file the gap via `/report`. |
+| `id:gitignore-row` `.gitignore` covering `.fabrika/` | The ledger is a disposable machine-local artifact, regenerable from the board — committed, it would smuggle one machine's lane state into every checkout | **bootstrap** — `fabrika status bootstrap gitignore-row` appends the row and reads it back; until then the verbs still work, so state the uncovered `.fabrika/` in the park or transcript comment. |

@@ -24,7 +24,15 @@ nobody named.
 fabrika triage claim $issue_number
 ```
 
-Done when it printed `won` — that means this session holds it; on anything else, move on.
+Done when it printed `won` — that means this session holds it; on anything else, move on. What
+`lost` proves, and which refusal each exit code carries, is the verb's own section
+(`fabrika wire doc-section --heading "triage claim" < <skill-base>/contract.md`).
+
+**That rule has teeth now.** Every verb below that writes — `enrich`, `apply`, `park`, `kill`,
+`split` — re-reads the claim before its first write and refuses on `17` when a live marker names
+another session, so proceeding on a `lost` no longer overwrites the winner's work; it just fails.
+The same re-read refuses a closed target on `7`. Neither refusal is overridable, and a comment read
+that fails is `11` — never a pass.
 
 ## 2 — Read the issue, then read the code it is about
 
@@ -37,7 +45,9 @@ fabrika report dedup --query "sozluk definition editor loses focus after save" -
 ```
 
 Read `candidates` yourself — shared vocabulary is not a shared observation; `indeterminate` is a
-non-check, so re-query. A duplicate routes by who filed it (step 8). Done when you can state the
+non-check, so re-query. `--exclude` is this group's extension to the `report` verb, and its grammar
+is the section that adds it:
+`fabrika wire doc-section --heading "report dedup — the --exclude extension" < <skill-base>/contract.md`. A duplicate routes by who filed it (step 8). Done when you can state the
 issue from the code and the dedup outcome is read.
 
 ## 3 — Classify into exactly one of six types
@@ -108,6 +118,10 @@ fabrika triage split $issue_number --title "Editor loses focus after save" <<'EO
 EOF
 ```
 
+What the child carries over from the parent, and what it deliberately does not, is the verb's
+section (`fabrika wire doc-section --heading "triage split" < <skill-base>/contract.md`, and
+`--heading "The child this verb creates"` for the child's shape).
+
 Done when every unit is separately pickable. **A human-filed original always stays one of the
 units** — only an agent filing may be left as an empty husk and killed, because a husk parked on
 `status:needs-info` is a question nobody can answer.
@@ -122,6 +136,8 @@ approves a pitch**. Take an existing home: **triage never creates a milestone**,
 **A milestone in declared focus is closed to new intake** unless the work is `p0` or blocks one of
 that milestone's own in-flight lanes — `triage homes` marks those rows `running`, and is where you read
 which milestones they are. That is a subtraction and nothing more: home the work by fit exactly as above.
+Every row the verb prints, and what `running` is derived from, is its own section
+(`fabrika wire doc-section --heading "triage homes" < <skill-base>/contract.md`).
 
 ```bash
 fabrika triage homes
@@ -141,7 +157,9 @@ not a closed set, a `review-*` gate may append. The criteria block's grammar is 
 not this skill's ([`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts)):
 `enrich` runs that reader over the body it composed and refuses a drifted block on exit `15` before
 writing anything, naming the defect the reader found — so write the criteria and let the verb answer.
-A rewrite carrying **no** criteria block is still accepted, where none is warranted.
+A rewrite carrying **no** criteria block is still accepted, where none is warranted. The stdin
+grammar, the epic pitch's five fields and every exit the verb refuses on live in its section
+(`fabrika wire doc-section --heading "triage enrich" < <skill-base>/contract.md`).
 **No invention**: enrich from what you found, keep
 the uncertainty the original had, and mark your own reads `Triage note:`. On a **re-type, rewrite the
 body's criteria to the new type** — stale criteria under a re-scoped comment ship a misleading spec.
@@ -149,8 +167,8 @@ Done when every claim traces to something you read.
 
 ## 7 — Price it, stamp it, and say who picks it up
 
-Ask the kill question first — *if the founder never learned this ticket existed, would anything
-visibly change?* A "no" earns no home by default; it earns a kill. Then price on the work's own
+Run the value bar first — it is stated once, in step 8 on the `agent` kill route, and a ticket that
+fails it earns a kill rather than a price. Then price what survives, on the work's own
 merit: `p0` for ship-work and fires, `p1` for what you would genuinely pull next, **`p2` is the
 default** and most of a healthy backlog. A roadmap row confers no band either way.
 
@@ -160,7 +178,10 @@ fabrika triage apply $issue_number --type bug --priority p2 --ready-for agent --
 
 A standing lane takes `--lane wayfinder:backlog` (or `axis:pipeline-hardening`) **instead of**
 `--home`, never both — a lane label is not a milestone number, and putting a milestone on a
-lane-exempt issue is banned outright.
+lane-exempt issue is banned outright. Which facets this verb owns and may remove, and the label
+vocabulary it treats as a precondition, are its own sections
+(`fabrika wire doc-section --heading "triage apply" < <skill-base>/contract.md`, then
+`--heading "The owned facets — what apply may remove"`).
 
 **`--ready-for` is a different question from readiness.** `status:triaged` says the ticket is ready;
 `ready-for:` says ready *for whom*. Send it to `agent` when the work is specified well enough to
@@ -189,10 +210,14 @@ fabrika triage provenance $issue_number
 Provenance decides what may be closed, and it has **two agent signals**: the `Filed by an agent`
 footer, or an author in the operator set `$FABRIKA_OPERATOR_ACCOUNTS` names — the operator's own
 filing is agent-reported footer or not, because footer-absence there is the emitter gap, not a human
-author. Footer-absence from anyone else is still human-owned.
+author. Footer-absence from anyone else is still human-owned. How each signal is read, and what the
+verb refuses to infer, is its section
+(`fabrika wire doc-section --heading "triage provenance" < <skill-base>/contract.md`).
 
 - **`human`** you cannot act on → park it; it leaves the queue on `status:needs-info`, **never
   closed**. When in doubt treat it as human: ignoring a person costs more than a cheap agent issue.
+  The park note's stdin grammar and the facets the verb removes are its section
+  (`fabrika wire doc-section --heading "triage park" < <skill-base>/contract.md`).
 
 ```bash
 fabrika triage park $issue_number <<'EOF'
@@ -200,17 +225,38 @@ fabrika triage park $issue_number <<'EOF'
 EOF
 ```
 
-- **`agent`** and unsalvageable, duplicate, or moving nothing forward → kill it, which closes it
+- **`agent`** and unsalvageable, duplicate, or failing the value bar below → kill it, which closes it
   not-planned carrying `closed-by-triage`. **`--confirm` is you attesting that salvage was genuinely
   attempted**: a human-invoked `/report` carries the same agent footer, so footer presence alone
   never licenses a close. Killing a duplicate takes `--duplicate-of <survivor>`, which folds this
-  issue's content into that one before closing; without it the content is simply lost.
+  issue's content into that one before closing; without it the content is simply lost. What the fold
+  copies and what closing writes is the verb's section
+  (`fabrika wire doc-section --heading "triage kill" < <skill-base>/contract.md`).
 
 ```bash
 fabrika triage kill $issue_number --confirm --duplicate-of 4290 <<'EOF'
 …
 EOF
 ```
+
+**The value bar.** An issue can be correct, well-written, and still worth nothing. This is the bar
+the founder's own sweeps run on ([#4634](https://github.com/kamp-us/phoenix/issues/4634)), and it
+kills an agent-filed issue when any one of five clauses holds:
+
+- **process ceremony** — the deliverable is a record nobody then acts on, a decision written down for
+  its own sake;
+- **self-generated churn** — refactor or build work we filed against our own output with no behaviour
+  change: restated vocabulary, a duplicated list tidied, a docblock or sample-transcript nit, a doc
+  sentence that omits one clause of a check that already works;
+- **hardening with no incident** — *has this ever failed in production?* This clause is a factual
+  test, not a taste call, and a "no" kills it. A missing unit test for a refusal that already works
+  is this clause; so is nice-to-have telemetry or cost reporting for a cost nobody is paying;
+- **superseded** — something already landed, or already ruled, makes it moot;
+- **duplicate of its parent** — the parent's scope already covers it.
+
+Those examples are verdicts, not hypotheticals: a sweep on 2026-08-18 killed twelve of thirty-five
+triaged `p2`s, and every one of them landed in a clause above. The bar reaches agent-filed work only
+— **a human filing is parked, never killed**, however cleanly it fits a clause.
 
 Done when the issue has left the queue by exactly one route.
 
@@ -220,5 +266,8 @@ Done when the issue has left the queue by exactly one route.
 fabrika triage queue
 ```
 
-**Only `empty` ends a sweep** — a proven-empty queue and a failed read are different answers. Then
+**Only `empty` ends a sweep** — a proven-empty queue and a failed read are different answers, and
+which is which is the verb's section
+(`fabrika wire doc-section --heading "triage queue" < <skill-base>/contract.md`; the codes it shares
+with every verb above are `--heading "The shared exit taxonomy"`). Then
 report one line per issue: outcome, type, priority, home, audience, **repo-relative paths only**.

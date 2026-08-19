@@ -63,7 +63,6 @@ const THEIR_MARKER = comment(4002, markerBody(THEIRS), "2026-08-02T09:14:02Z");
 
 const options = {
 	issue: 4312,
-	ttlMinutes: 60,
 	repo: null,
 	json: false,
 	env: {
@@ -315,8 +314,7 @@ describe("runClaim — preconditions", () => {
 		expect(outcome.stderr.join("\n")).toContain("this session's marker 5001 is live on #4312");
 	});
 
-	it("refuses at 1 on a non-positive ttl and on a non-issue number", async () => {
-		expect((await run([], {ttlMinutes: 0})).outcome.code).toBe(1);
+	it("refuses at 1 on a non-issue number", async () => {
 		expect((await run([], {issue: 0})).outcome.code).toBe(1);
 	});
 });

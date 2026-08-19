@@ -54,8 +54,8 @@ whose deliverable is rendered-visual** — a page, component, screen, state, or 
 Code-as-text, prose, and plans are `build`'s; a `type:decision` is `/adr`'s. Judging someone else's
 rendered surface is `review-ui`'s. **When in doubt, the work is not yours.** Gate the choice with
 `fabrika build eligible $issue_or_pr_number`, then claim with `fabrika build claim
-$issue_or_pr_number` and re-confirm before
-every later mutation.
+$issue_or_pr_number`. Keep the token it prints — it is `<claim-token>` below, this LANE's name, and
+every later verb takes it as `--token` (#6037). Re-confirm before every later mutation.
 
 ## 2 — Read the law before you generate anything
 
@@ -89,8 +89,9 @@ before composing; their absence is a fact, not a gap to fill.
 
 ## 3 — Baseline, construct, render→look→fix
 
-Branch (`fabrika build branch $issue_or_pr_number --slug <slug>`), then capture the **before** state of every
-surface you are about to change, while the tree still renders it:
+Branch (`fabrika build branch $issue_or_pr_number --slug <slug> --token <claim-token>`), then
+capture the **before** state of every surface you are about to change, while the tree still renders
+it:
 
 ```bash
 fabrika ui render --out before --surface /pano --surface /pano/yeni
@@ -148,7 +149,8 @@ The verb uploads every capture, **verifies each upload landed, and refuses on an
 partial or silent attach would let a gate pass over an evidence channel that never worked, and it
 is unrepresentable here. A proven refusal (`17`/`9`) with the PR already open gets exactly one
 re-run; still failing, end `ESCALATED` with the note naming the evidence state — **never a quiet
-ship**. `fabrika build note $issue_or_pr_number` for the handoff, then `fabrika build release $issue_or_pr_number`.
+ship**. `fabrika build note $issue_or_pr_number --token <claim-token>` for the handoff, then
+`fabrika build release $issue_or_pr_number --token <claim-token>`.
 
 **Terminal vocabulary** — end on exactly one: `SHIPPED-PR` (PR open, branch pushed, and
 the evidence state is loud: captures attached, or every uncapturable surface named in Deviations
@@ -169,8 +171,8 @@ cross-lane signals are closed-vocabulary — kind + action + branded ref, receiv
 (`fabrika build verdicts --pr $issue_or_pr_number`), and treat a `review-ui`/design FAIL's findings as law rows
 to re-satisfy — fix on the same branch, **re-render and re-run the look**, push with
 `--force-with-lease`, re-attach evidence at the new head (`fabrika ui evidence` again — captures
-from the old head no longer describe this one), answer findings in a `fabrika build note`.
-Cap at round 3 → `ESCALATED`.
+from the old head no longer describe this one), answer findings in a
+`fabrika build note $issue_or_pr_number --token <claim-token>`. Cap at round 3 → `ESCALATED`.
 
 ## Expectations you hold but never recompute
 

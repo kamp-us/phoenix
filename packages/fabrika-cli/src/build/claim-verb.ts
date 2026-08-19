@@ -12,14 +12,26 @@
  * `15` is proven-foreign only, a missing session id is `1`, and an unreadable marker set is `11`.
  *
  * A loser retracts its **own** marker and nothing else — never another lane's, which is the one write
- * this protocol must never make.
+ * this protocol must never make. Which marker is its own is decided by the whole token: `claim` races
+ * under the one it just minted, and `confirm`/`release` under the `--token` that `claim` handed back,
+ * so a sibling lane of the same session is a co-racer here rather than the same claimant (#6037).
  *
- * **One session leaves at most one marker on a thread.** `claim` reads ownership before it writes and
- * short-circuits when the lane is already this session's, `release` sweeps every marker of this
- * session rather than the winning one, and both `claim` branches answer with `ownership.marker.token`
- * — the token `requireClaim` will read. Without that, N claims left N markers, `claim` printed its own
- * fresh nonce while every other verb read the earliest, and each `release` peeled one off a stack
- * (#5782) — which is how `build branch --resume` cut a branch off a nonce the caller was never shown.
+ * **One LANE leaves at most one marker on a thread** — #5782's fixed point, keyed on the lane rather
+ * than the session. `claim` takes an optional `--token`: handed the token it already holds, it reads
+ * ownership before writing and answers `won` with that same marker, posting nothing; handed none, it
+ * is a fresh lane and races. `release` sweeps every marker carrying THIS lane's token, not merely the
+ * winning one, and `claim` answers with `ownership.marker.token` — the token `requireClaim` will read.
+ * Without that, N claims left N markers, `claim` printed its own fresh nonce while every other verb
+ * read the earliest, and each `release` peeled one off a stack (#5782) — which is how
+ * `build branch --resume` cut a branch off a nonce the caller was never shown. Session-scoped, those
+ * same rules told a sibling lane it held its neighbour's claim (#6037), so the scope is the lane.
+ *
+ * The single exception to "a lane retracts only its own marker" is a succession the board attests:
+ * `adopt` records that a named session is gone and this lane inherits its claim, and `release` then
+ * retracts the claim and the adopt together (ADR 0295). No TTL, no lease, no steal — the successor
+ * writes a comment an ACL check reads, exactly like every other authority in this protocol, and the
+ * adopt names the inheriting lane by its whole token so succession does not re-widen ownership back
+ * to a session.
  *
  * **`claim` runs the admission test before it writes anything; `confirm` and `release` never run it.**
  * The fence decides what may *start* (ADR 0245), so a focus row edited mid-lane must not strand a
@@ -44,9 +56,13 @@ import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	BUILD_CLAIM,
 	type ClaimOverride,
+	composeAdoptMarker,
 	composeMarker,
+	laneCaller,
 	markersIn,
+	readAdoptMarker,
 	readMarkerToken,
+	requireCallerToken,
 	requireSession,
 	resolveOwnership,
 } from "./claim.ts";
@@ -57,7 +73,7 @@ import {
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
-import {composeToken, parseToken} from "./lane.ts";
+import {composeToken, nonceOf, parseToken} from "./lane.ts";
 import {
 	admissionOf,
 	admissionRefusal,
@@ -86,12 +102,22 @@ export interface ClaimOptions {
 	readonly override: string | null;
 	/** The lane an override is taken for — required with an override, refused without one. */
 	readonly overrideLane: string | null;
+	/**
+	 * The token this lane ALREADY holds, when it is re-claiming — `null` on a fresh claim.
+	 *
+	 * It is what makes the idempotent answer expressible per lane: without it, "already mine" could
+	 * only be asked of the session, which is exactly the question #6037 proved a lane must not ask.
+	 */
+	readonly token: string | null;
 }
 
 export type ProtocolOptions = Omit<
 	ClaimOptions,
-	"uuid" | "at" | "purpose" | "override" | "overrideLane"
->;
+	"uuid" | "at" | "purpose" | "override" | "overrideLane" | "token"
+> & {
+	/** The token `build claim` handed this lane — the identity it is asking under (#6037). */
+	readonly token: string;
+};
 
 const CLAIM = "build claim";
 
@@ -132,7 +158,7 @@ const readOverride = (reason: string | null, lane: string | null): OverrideRead 
 
 const preflight = (
 	verb: string,
-	options: ProtocolOptions,
+	options: Pick<ClaimOptions, "number" | "repo" | "env">,
 ): Effect.Effect<
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
 	| {
@@ -189,19 +215,35 @@ export const runClaim = (
 		const {repo, session} = ready;
 		const {number} = options;
 
-		// Already this session's: answer with the marker that owns the lane and write nothing. A second
-		// marker would leave `claim` printing one nonce while `confirm`/`requireClaim` read the earliest
+		// Already THIS LANE's: answer with the marker that owns it and write nothing. A second marker
+		// would leave `claim` printing one nonce while `confirm`/`requireClaim` read the earliest
 		// (#5782), and each `release` would then peel one marker off a stack instead of clearing it.
-		// The fence is not re-run for the same reason `confirm` and `release` never run it — it decides
-		// what may START, and this lane already started.
-		const prior = yield* resolveOwnership(repo, number, session);
-		if (prior.ownership._tag === "Mine") {
-			return answer(
-				JSON.stringify({answer: "won", number, token: prior.ownership.marker.token, purpose}),
-				[
-					`${CLAIM}: #${number} is already held by this session (comment ${prior.ownership.marker.commentId}) — answered with the marker that owns the lane; nothing was written.`,
-				],
-			);
+		// Only a caller that named its own token can be answered this way — a same-session marker under
+		// another nonce belongs to a sibling lane, and races below like any other (#6037). The fence is
+		// not re-run for the same reason `confirm` and `release` never run it — it decides what may
+		// START, and this lane already started.
+		if (options.token !== null) {
+			const holding = requireCallerToken(CLAIM, session, options.token);
+			if (holding._tag === "Refused") return holding.outcome;
+			const prior = yield* resolveOwnership(repo, number, holding.caller);
+			if (prior.ownership._tag === "Mine" && prior.ownership.adopt !== null) {
+				// Answering `won` here would hand back the DEAD session's token — the winner on an adopted
+				// claim — and `confirm --token` refuses that token as another session's. This is the only
+				// arm that can see it: the post-write read runs under a nonce no adopt can name, so a
+				// tokenless claim resolves `Foreign` and loses. Nothing was written, so nothing to retract.
+				return refuse(
+					CLAIM_NOT_MINE,
+					`${CLAIM}: #${number} still carries the adopted claim ${prior.ownership.marker.token} — run "fabrika build release ${number} --token ${prior.ownership.adopt.token}" to retract it and the adopt together, then claim.`,
+				);
+			}
+			if (prior.ownership._tag === "Mine") {
+				return answer(
+					JSON.stringify({answer: "won", number, token: prior.ownership.marker.token, purpose}),
+					[
+						`${CLAIM}: #${number} is already held by this lane (comment ${prior.ownership.marker.commentId}) — answered with the marker that owns it; nothing was written.`,
+					],
+				);
+			}
 		}
 
 		const read = yield* readDeclaredFocus();
@@ -248,12 +290,25 @@ export const runClaim = (
 		}
 
 		const token = composeToken(session, options.uuid);
+		const nonce = nonceOf(token);
+		if (nonce === null) {
+			return refuse(
+				FAILED,
+				`${CLAIM}: the token this run mints, ${token}, yields no lane nonce — nothing was written.`,
+			);
+		}
 		const body = composeMarker(token, options.at, override);
 		const posted = yield* createComment(repo, number, body);
 		if (posted._tag === "Failure") {
+			// The minted token is the ONLY thing that can still address a marker this write may have
+			// landed: `confirm` and `release` both require it, so a refusal that withholds it strands
+			// the lane in the one state the protocol calls UNKNOWN.
 			return refuse(
 				WRITE_UNKNOWN,
-				`${CLAIM}: the marker write failed: ${posted.reason} — the claim state is UNKNOWN; run "fabrika build confirm ${number}" before any further action.`,
+				`${CLAIM}: the marker write failed: ${posted.reason} — the claim state is UNKNOWN; run "fabrika build confirm ${number} --token ${token}" before any further action.`,
+				[
+					`${CLAIM}: the token this run minted is ${token} — it addresses the marker the failed write may still have landed. Do not re-run "fabrika build claim ${number}": it mints a second token, and if the first marker landed the race resolves to that earlier one, leaving a claim no lane holds a token for.`,
+				],
 			);
 		}
 		const back = yield* getComment(repo, posted.value.id);
@@ -265,8 +320,13 @@ export const runClaim = (
 			);
 		}
 
-		// The checkpoint: posting DETECTS a race, this re-read RESOLVES it.
-		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, session);
+		// The checkpoint: posting DETECTS a race, this re-read RESOLVES it. It resolves against the token
+		// this run just minted, so a sibling lane of the same session is a co-racer like any other.
+		const {ownership, unauthorized} = yield* resolveOwnership(
+			repo,
+			number,
+			laneCaller(session, nonce, token),
+		);
 		const notes = [
 			...lines,
 			...unauthorized.map(
@@ -281,33 +341,28 @@ export const runClaim = (
 				notes,
 			);
 		}
-		if (ownership._tag === "Mine") {
-			// The winner is this session's, but not necessarily the comment this run just posted: a
-			// marker of ours already on the thread outranks it. Retract the loser so the thread keeps
-			// one marker per session, and answer with the token every other verb will read.
-			const shadowed = ownership.marker.commentId !== posted.value.id;
-			const retracted = shadowed ? yield* deleteComment(repo, posted.value.id) : null;
-			const trailer =
-				retracted === null
-					? []
-					: retracted._tag === "Failure"
-						? [
-								`${CLAIM}: an older marker of this session already held #${number}; could not retract this run's duplicate (comment ${posted.value.id}): ${retracted.reason}.`,
-							]
-						: [
-								`${CLAIM}: an older marker of this session already held #${number} — retracted this run's duplicate (comment ${posted.value.id}).`,
-							];
+		if (ownership._tag === "Mine" && ownership.adopt === null) {
+			// The winner is the marker this run just posted: `Mine` turns on the whole token, so an older
+			// marker of this session under another nonce is a SIBLING lane and lands on the lose path
+			// below, where this run retracts its OWN marker. That is what keeps #5782's fixed point —
+			// one marker per lane on the thread — without the session-scoped retraction it shipped with.
 			return answer(
 				JSON.stringify({
 					answer: "won",
 					number,
+					// The marker's token, not the minted one: they are equal here by construction, and the
+					// one that holds the lane is the one a caller may derive a nonce from (#6037).
 					token: ownership.marker.token,
 					purpose,
 					...(override === null ? {} : {override}),
 				}),
-				[...notes, ...trailer],
+				notes,
 			);
 		}
+		// An adopted claim cannot reach here as `Mine`: succession turns on the whole token, and this
+		// read runs under the nonce this run just minted, which no adopt on the board can name. It
+		// resolves `Foreign` on the dead session's winning marker and takes the lose path below, which
+		// retracts this run's own marker — so the succession leaves no orphan either way.
 
 		// Lost, or shadowed by an unauthorized-only thread: retract this run's OWN marker, nothing else.
 		const retracted = yield* deleteComment(repo, posted.value.id);
@@ -317,7 +372,9 @@ export const runClaim = (
 						`${CLAIM}: could not retract this run's own marker (comment ${posted.value.id}): ${retracted.reason}.`,
 					]
 				: [`${CLAIM}: retracted this run's own marker (comment ${posted.value.id}).`];
-		return ownership._tag === "Foreign"
+		// Anything holding a winning marker that is not this run's is a loss, whatever resolved it —
+		// `Unclaimed` is the only remaining tag, and it means this run's OWN marker is the unauthorized one.
+		return ownership._tag !== "Unclaimed"
 			? refuse(
 					CLAIM_NOT_MINE,
 					`${CLAIM}: lost to ${ownership.marker.token} (posted ${ownership.marker.createdAt}, authorized).`,
@@ -341,7 +398,10 @@ export const runConfirm = (
 		const {repo, session} = ready;
 		const {number} = options;
 
-		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, session);
+		const asking = requireCallerToken(CONFIRM, session, options.token);
+		if (asking._tag === "Refused") return asking.outcome;
+
+		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, asking.caller);
 		const notes = unauthorized.map(
 			(marker) =>
 				`${CONFIRM}: comment ${marker.commentId} carries a claim marker from "${marker.author}", who holds no write permission — counted, never a winner.`,
@@ -362,12 +422,21 @@ export const runConfirm = (
 			case "Foreign":
 				return refuse(
 					CLAIM_NOT_MINE,
-					`${CONFIRM}: #${number} is held by ${ownership.marker.token}, not this session.`,
+					`${CONFIRM}: #${number} is held by ${ownership.marker.token}, not by ${options.token.trim()}${
+						ownership.sameSession ? " — another lane of this same session" : ""
+					}.`,
 					notes,
 				);
 			case "Mine":
+				// On a succession the winning marker is the DEAD session's, and `requireCallerToken`
+				// refuses that token on `1` for every verb of this session — so the answer is the adopt's
+				// token, which is this lane's own and is what `branch`/`scratch`/`tree --issue` key on.
 				return answer(
-					JSON.stringify({answer: "mine", number, token: ownership.marker.token}),
+					JSON.stringify({
+						answer: "mine",
+						number,
+						token: ownership.adopt?.token ?? ownership.marker.token,
+					}),
 					notes,
 				);
 		}
@@ -384,11 +453,24 @@ export const runRelease = (
 		const {repo, session} = ready;
 		const {number} = options;
 
-		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, session);
-		const notes = unauthorized.map(
-			(marker) =>
-				`${RELEASE}: comment ${marker.commentId} carries a claim marker from "${marker.author}", who holds no write permission — counted, never a winner.`,
+		const asking = requireCallerToken(RELEASE, session, options.token);
+		if (asking._tag === "Refused") return asking.outcome;
+
+		const {ownership, unauthorized, unauthorizedAdopts} = yield* resolveOwnership(
+			repo,
+			number,
+			asking.caller,
 		);
+		const notes = [
+			...unauthorized.map(
+				(marker) =>
+					`${RELEASE}: comment ${marker.commentId} carries a claim marker from "${marker.author}", who holds no write permission — counted, never a winner.`,
+			),
+			...unauthorizedAdopts.map(
+				(marker) =>
+					`${RELEASE}: comment ${marker.commentId} carries an adopt marker from "${marker.author}", who holds no write permission — counted, never a succession.`,
+			),
+		];
 		if (ownership._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -399,25 +481,39 @@ export const runRelease = (
 		if (ownership._tag !== "Mine") {
 			return refuse(
 				CLAIM_NOT_MINE,
-				`${RELEASE}: this session holds no claim on #${number} — refusing to release another lane's.`,
-				notes,
+				`${RELEASE}: this lane holds no claim on #${number} — refusing to release another lane's.`,
+				[
+					...notes,
+					...(ownership._tag === "Foreign" && !ownership.sameSession
+						? [
+								`${RELEASE}: #${number} is held by ${ownership.marker.token}; if that session is gone, adopt it first: fabrika build adopt ${number} --session <its session id> --reason <why>, then release under the token that adopt prints.`,
+							]
+						: []),
+				],
 			);
 		}
-		// Every marker of this session's, not only the winner. A thread carrying duplicates — from a
-		// build that predates #5782's fix — would otherwise hand the next `confirm` the next-oldest
-		// one, so release/confirm would have no fixed point.
+		// Every marker carrying THIS LANE's token, not only the winner. A thread carrying duplicates —
+		// a write that landed after it reported UNKNOWN, then re-posted — would otherwise hand the next
+		// `confirm` the next-oldest one, so release/confirm would have no fixed point (#5782). The
+		// filter is the lane's token, never its session: a sibling lane's marker is another lane's
+		// claim, and sweeping it is the one write this protocol must never make (#6037).
+		const lane = asking.caller;
 		const listed = yield* listComments(repo, number);
 		if (listed._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${RELEASE}: cannot re-read the markers on #${number}: ${listed.reason} — nothing was retracted; run "fabrika build release ${number}" again.`,
+				`${RELEASE}: cannot re-read the markers on #${number}: ${listed.reason} — nothing was retracted; run "fabrika build release ${number} --token ${options.token.trim()}" again.`,
 				notes,
 			);
 		}
 		const ids = new Set([
 			ownership.marker.commentId,
 			...markersIn(listed.value)
-				.filter((held) => parseToken(held.token, BUILD_CLAIM.prefix)?.session === session)
+				.filter(
+					(held) =>
+						parseToken(held.token, BUILD_CLAIM.prefix)?.session === lane.session &&
+						nonceOf(held.token, BUILD_CLAIM.prefix) === lane.nonce,
+				)
 				.map((held) => held.commentId),
 		]);
 		for (const id of ids) {
@@ -425,10 +521,114 @@ export const runRelease = (
 			if (deleted._tag === "Failure") {
 				return refuse(
 					WRITE_UNKNOWN,
-					`${RELEASE}: the retraction failed: ${deleted.reason} — whether the claim is still held is UNKNOWN; run "fabrika build confirm ${number}".`,
+					`${RELEASE}: the retraction failed: ${deleted.reason} — whether the claim is still held is UNKNOWN; run "fabrika build confirm ${number} --token ${options.token.trim()}".`,
 					notes,
 				);
 			}
 		}
-		return answer(JSON.stringify({answer: "released", number}), notes);
+		const adopt = ownership.adopt;
+		if (adopt === null) return answer(JSON.stringify({answer: "released", number}), notes);
+		// The adopt outlives nothing: it exists to authorize this release, so it goes with the claim.
+		const cleared = yield* deleteComment(repo, adopt.commentId);
+		return cleared._tag === "Failure"
+			? refuse(
+					WRITE_UNKNOWN,
+					`${RELEASE}: the claim was retracted and its adopt marker (comment ${adopt.commentId}) was not: ${cleared.reason} — delete it by hand, or a later claim on #${number} reads a succession that no longer applies.`,
+					notes,
+				)
+			: answer(JSON.stringify({answer: "released", number, adopted: adopt.adopted}), notes);
+	});
+
+const ADOPT = "build adopt";
+
+/**
+ * `adopt` takes no `--token`: it MINTS the lane identity the succession creates and prints it, which
+ * is why it is the one protocol verb not built on `ProtocolOptions`. A successor holds no token on a
+ * number whose claim it is inheriting — demanding one would be demanding the thing being conferred.
+ */
+export interface AdoptOptions extends Omit<ProtocolOptions, "token"> {
+	/** The dead session whose claim this run adopts. */
+	readonly session: string;
+	/** Why the succession is taken — required, and recorded on the marker. */
+	readonly reason: string;
+	/** A fresh UUID, supplied by the adapter so the successor token is deterministic under test. */
+	readonly uuid: string;
+	readonly at: string;
+}
+
+/**
+ * `build adopt` — the successor driver names a dead session on the board, so its stranded claim
+ * becomes releasable (ADR 0295).
+ *
+ * It writes one comment and nothing else. It takes no claim, evicts nobody, and confers ownership
+ * only on the session it names as successor: the release that follows still runs the ordinary
+ * ownership read, so an adopt posted by an account below `write` decides nothing.
+ */
+export const runAdopt = (
+	options: AdoptOptions,
+): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const adopted = options.session.trim();
+		const reason = options.reason.trim();
+		if (adopted === "") {
+			return refuse(
+				FAILED,
+				`${ADOPT}: --session is empty — an adoption that names no session adopts nothing.`,
+			);
+		}
+		if (reason === "") {
+			return refuse(
+				FAILED,
+				`${ADOPT}: --reason is empty — a succession is recorded or it is not one.`,
+			);
+		}
+		// The marker is one line with `·` as its field separator, so a value carrying either composes
+		// a comment the reader cannot read back: the post lands, the read-back refuses, and a stray
+		// comment is left behind. Refuse before the write instead.
+		if (/[\s·]/.test(adopted)) {
+			return refuse(
+				FAILED,
+				`${ADOPT}: --session "${adopted}" carries whitespace or "·" — a session id is one unbroken word, and this one would compose a marker no reader can read back; nothing was written.`,
+			);
+		}
+		if (/[\r\n]/.test(reason)) {
+			return refuse(
+				FAILED,
+				`${ADOPT}: --reason spans more than one line — the marker records one line, so the rest would be dropped silently; restate it as one line. Nothing was written.`,
+			);
+		}
+
+		const ready = yield* preflight(ADOPT, options);
+		if (ready._tag === "Refused") return ready.outcome;
+		const {repo, session} = ready;
+		const {number} = options;
+
+		if (adopted === session) {
+			return refuse(
+				FAILED,
+				`${ADOPT}: --session names this very session — "fabrika build release ${number}" already covers a claim this session holds; nothing was written.`,
+			);
+		}
+
+		const token = composeToken(session, options.uuid);
+		const body = composeAdoptMarker(adopted, token, options.at, reason);
+		const posted = yield* createComment(repo, number, body);
+		if (posted._tag === "Failure") {
+			return refuse(
+				WRITE_UNKNOWN,
+				`${ADOPT}: the adopt marker write failed: ${posted.reason} — whether the succession is recorded is UNKNOWN; re-read #${number}'s comments before releasing.`,
+			);
+		}
+		const back = yield* getComment(repo, posted.value.id);
+		const read = back._tag === "Failure" ? null : readAdoptMarker(normalizeForReadback(back.value));
+		if (read === null || read.adopted !== adopted || read.token !== token) {
+			return refuse(
+				READBACK_MISMATCH,
+				`${ADOPT}: the adopt marker landed but the read-back does not match — the succession needs a human eye.`,
+				[`${ADOPT}: comment ${posted.value.id} on #${number} is the one to inspect.`],
+			);
+		}
+		return answer(JSON.stringify({answer: "adopted", number, session: adopted, token}), [
+			`${ADOPT}: #${number}'s claim from "${adopted}" is now releasable by the lane this marker names — run "fabrika build release ${number} --token ${token}".`,
+		]);
 	});

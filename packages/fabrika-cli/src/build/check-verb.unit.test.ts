@@ -2,7 +2,14 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {classifyDiff, notCoveredBy, runCheck, SURFACES, surfaceMismatch} from "./check-verb.ts";
+import {
+	classifyDiff,
+	linkTargets,
+	notCoveredBy,
+	runCheck,
+	SURFACES,
+	surfaceMismatch,
+} from "./check-verb.ts";
 import {
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
@@ -390,6 +397,75 @@ describe("runCheck", () => {
 	});
 });
 
+// The #5687 divergence: `build check` asked `report/leaks.ts`'s ISSUE-BODY scanner about a file in a
+// diff, so it red on bytes `pipeline-cli leak-guard scan` — the gate it predicts — passes clean, and
+// the red was unclearable inside the lane that inherited it.
+describe("the prose leak scan predicts the committed-file gate, not the body guard", () => {
+	const CONFIG = "/repo/trees/lane-a/.fabrika.jsonc";
+	const LEAKY = "the Lineage bullets name ~/code/github.com/o/r on purpose\n";
+
+	it("greens a fenced regex literal quoting the home marker", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("reports/snapshot.md\n")]],
+			{surface: "prose"},
+			{
+				"/repo/trees/lane-a/reports/snapshot.md":
+					"```bash\ngrep -nE '(~/|/Users/|/home/)' -- .\n```\n",
+			},
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).verdict).toBe("green");
+	});
+
+	it("greens a doc citing a scratch root — a temp root is a comment-surface rule", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("reports/snapshot.md\n")]],
+			{surface: "prose"},
+			{"/repo/trees/lane-a/reports/snapshot.md": "scratch lands under /tmp/fabrika-build/x\n"},
+		);
+		expect(out.code).toBe(0);
+	});
+
+	it("greens a doc the repo declared exempt", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("CLAUDE.md\n")]],
+			{surface: "prose"},
+			{[CONFIG]: '{"docLeakExempt": ["/CLAUDE.md"]}', "/repo/trees/lane-a/CLAUDE.md": LEAKY},
+		);
+		expect(out.code).toBe(0);
+	});
+
+	it("reds the same bytes in a doc the list does not name", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/guide.md\n")]],
+			{surface: "prose"},
+			{[CONFIG]: '{"docLeakExempt": ["/CLAUDE.md"]}', "/repo/trees/lane-a/docs/guide.md": LEAKY},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+	});
+
+	it("exempts nothing when the repo declares no list, and says so", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("CLAUDE.md\n")]],
+			{surface: "prose"},
+			{"/repo/trees/lane-a/CLAUDE.md": LEAKY},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.some((line) => line.includes("nothing is leak-scan exempt"))).toBe(true);
+	});
+
+	it("refuses an unreadable config on 11 — which docs are exempt is UNKNOWN, never green", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/guide.md\n")]],
+			{surface: "prose"},
+			{[CONFIG]: "{}", "/repo/trees/lane-a/docs/guide.md": "fine\n"},
+			[CONFIG],
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+	});
+});
+
 // The #5301 regression, one leg per surface. `["a.ts", "README.md"]` is the repo's most common diff
 // shape, and it had no invocation that opened the markdown: `code` never reads it, `plan` runs the
 // grammar check, and `prose` refused on 10 because a code file was present. The leak scan and the
@@ -626,5 +702,84 @@ describe("the enumeration unions the untracked files with the diff", () => {
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("the verdict is UNKNOWN, never green");
+	});
+});
+
+// #5639: the extractor read a markdown link written as an *example* as a live one, so the five docs
+// that state this repo's link convention could not pass the surface that reads them.
+describe("linkTargets — an illustrated link is not a link", () => {
+	const TOOLS_MD_493 =
+		"`doc-links` validates markdown `[text](path)` links and *masks* code spans by construction.\n";
+
+	it("returns no target for the TOOLS.md line that illustrates the link grammar", () => {
+		expect(linkTargets(TOOLS_MD_493)).toEqual([]);
+	});
+
+	it("returns no target for a link inside a fenced block", () => {
+		expect(linkTargets("intro\n\n```markdown\nSee [the ADR](NNNN-slug.md).\n```\n")).toEqual([]);
+	});
+
+	it("returns no target for a link inside a tilde fence, or a fence indented up to three", () => {
+		expect(linkTargets("~~~\n[a](gone.md)\n~~~\n")).toEqual([]);
+		expect(linkTargets("   ```\n[a](gone.md)\n   ```\n")).toEqual([]);
+	});
+
+	it("returns no target for a link inside a multi-backtick span", () => {
+		expect(linkTargets("write `` [a](`x`.md) `` to show it\n")).toEqual([]);
+	});
+
+	it("still returns a real relative link", () => {
+		expect(linkTargets("see [the index](.patterns/index.md) first\n")).toEqual([
+			".patterns/index.md",
+		]);
+	});
+
+	it("still returns a real repo-rooted link", () => {
+		expect(linkTargets("see [the index](/.patterns/index.md)\n")).toEqual(["/.patterns/index.md"]);
+	});
+
+	it("still returns a link sharing its line with an unrelated code span", () => {
+		expect(linkTargets("run `pnpm dev`, then read [the guide](DEVELOPMENT.md)\n")).toEqual([
+			"DEVELOPMENT.md",
+		]);
+	});
+
+	it("still returns a link after a fence closes, and after an unpartnered backtick", () => {
+		expect(linkTargets("```\n[a](gone.md)\n```\n\n[b](DEVELOPMENT.md)\n")).toEqual([
+			"DEVELOPMENT.md",
+		]);
+		expect(linkTargets("a lone ` tick, then [b](DEVELOPMENT.md)\n")).toEqual(["DEVELOPMENT.md"]);
+	});
+
+	it("keeps skipping schemes and bare fragments, masked or not", () => {
+		expect(linkTargets("[home](https://kamp.us) and [top](#intro)\n")).toEqual([]);
+	});
+});
+
+describe("the prose link check still reds a dead link", () => {
+	const DOC = "/repo/trees/lane-a/docs/guide.md";
+
+	it("reds a genuinely dead relative link in a changed doc", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/guide.md\n")]],
+			{surface: "prose"},
+			{
+				[DOC]: "see [the plan](plan.md)\n",
+			},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.some((line) => line.includes('links to "plan.md"'))).toBe(true);
+	});
+
+	it("greens the same doc when that link is written as an example", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/guide.md\n")]],
+			{surface: "prose"},
+			{
+				[DOC]: "write `[the plan](plan.md)` to cite it\n",
+			},
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).verdict).toBe("green");
 	});
 });

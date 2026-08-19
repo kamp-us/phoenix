@@ -16,7 +16,7 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {listTreePaths, mergeBase, readFileAt} from "../io/git.ts";
+import {listTreePaths, readFileAt} from "../io/git.ts";
 import {getPullRequest} from "../io/pulls.ts";
 import {badNumber, openPull, resolveTargetRepo} from "../review/target.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -59,8 +59,8 @@ export const runBase = (
 		});
 		if (target._tag === "Refused") return target.outcome;
 
-		// This verb takes no `--sha`: it resolves the base itself, so the binding runs against the live
-		// head and the staleness check below is what pairs the two.
+		// This verb takes no `--sha`, so the binding runs against the live head and the staleness check
+		// below is what pairs the two.
 		const bound = yield* bindGovernanceHead(
 			VERB,
 			"the merge base cannot be resolved, so the base rules are UNKNOWN.",
@@ -72,16 +72,13 @@ export const runBase = (
 		if (bound._tag === "Refused") return bound.outcome;
 		const head = bound.head;
 
-		const base = yield* mergeBase(head.base, head.sha);
-		if (base._tag === "Failure") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot resolve the merge base of #${pr}: ${base.reason} — the base rules are UNKNOWN; refusing to judge by the head's.`,
-			);
-		}
+		// The binding already resolved this, and resolving it twice is how two answers to one question
+		// come to disagree (#5770). A failed resolve refuses inside `bindGovernanceHead` above, wearing
+		// this verb's own tail.
+		const base = head.mergeBase;
 
 		// A base paired with a head nobody judged is not a fence, so the head is re-read after the
-		// resolve rather than trusted from before it.
+		// binding rather than trusted from before it.
 		const after = yield* getPullRequest(repo, pr);
 		if (after._tag !== "Present") {
 			return refuse(
@@ -96,29 +93,29 @@ export const runBase = (
 			);
 		}
 
-		const tree = yield* listTreePaths(base.value);
+		const tree = yield* listTreePaths(base);
 		if (tree._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot list the tree at merge base ${base.value}: ${tree.reason} — the base rules are UNKNOWN; refusing to judge by the head's.`,
+				`${VERB}: cannot list the tree at merge base ${base}: ${tree.reason} — the base rules are UNKNOWN; refusing to judge by the head's.`,
 			);
 		}
 		const roots = resolveSkillRoots(tree.value);
 		if (roots._tag === "None") {
 			return refuse(
 				ZERO_SCOPE,
-				`${VERB}: no \`*/fabrika/skills/governance/SKILL.md\` at merge-base ${base.value} — this skill is not installed in the base revision, so there is no self fence to run.`,
+				`${VERB}: no \`*/fabrika/skills/governance/SKILL.md\` at merge-base ${base} — this skill is not installed in the base revision, so there is no self fence to run.`,
 			);
 		}
 		if (roots._tag === "Many") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: ${roots.candidates.length} candidate skill roots at merge-base ${base.value} (${roots.candidates.join(", ")}) — which one is this skill is UNKNOWN; refusing to guess.`,
+				`${VERB}: ${roots.candidates.length} candidate skill roots at merge-base ${base} (${roots.candidates.join(", ")}) — which one is this skill is UNKNOWN; refusing to guess.`,
 			);
 		}
 		const root = roots.root;
 		const diagnostics = [
-			`${VERB}: resolved this skill's own directory to ${root} at merge-base ${base.value}.`,
+			`${VERB}: resolved this skill's own directory to ${root} at merge-base ${base}.`,
 		];
 
 		const wanted =
@@ -139,11 +136,11 @@ export const runBase = (
 			// Absence is PROVEN from the tree listing, so a path that is simply not there is skipped and
 			// a path that is there and will not read is `11` — the two are different facts.
 			if (!present.has(path)) continue;
-			const bytes = yield* readFileAt(base.value, path);
+			const bytes = yield* readFileAt(base, path);
 			if (bytes._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read ${path} at ${base.value}: ${bytes.reason} — UNKNOWN.`,
+					`${VERB}: cannot read ${path} at ${base}: ${bytes.reason} — UNKNOWN.`,
 					diagnostics,
 				);
 			}
@@ -152,11 +149,11 @@ export const runBase = (
 		if (blocks.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
-				`${VERB}: none of the requested paths exist at merge-base ${base.value} — there is no base revision to judge by.`,
+				`${VERB}: none of the requested paths exist at merge-base ${base} — there is no base revision to judge by.`,
 				diagnostics,
 			);
 		}
 
-		diagnostics.push(`${VERB}: merge base of #${pr} is ${base.value}.`);
-		return answer(`base\t${base.value}\t${blocks.length}\n${blocks.join("")}`, diagnostics);
+		diagnostics.push(`${VERB}: merge base of #${pr} is ${base}.`);
+		return answer(`base\t${base}\t${blocks.length}\n${blocks.join("")}`, diagnostics);
 	});
