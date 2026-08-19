@@ -418,8 +418,12 @@ The filter, fail-closed on every axis:
 - **unassigned.** Any assignee excludes — assignment is the one attribute that keeps a human's
   document out of this pool (#4764, #4693).
 - `type:` is one of `feature` / `chore` / `bug` / `investigation`. `type:decision` and `type:epic`
-  never enter; a rendered-visual deliverable is excluded by the *skill* at reading time, not by
-  this verb, because modality is not a label.
+  never enter *this pool*, which is narrower than never being built: a decision issue carrying a
+  founder ruling comment is buildable as transcription and is entered by number at `build claim`
+  (ADR [0300](../../../../.decisions/0300-a-cited-ruling-makes-a-decision-buildable.md)), never
+  picked — a blind pick has no ruling to cite, which is why the exclusion here stands. A
+  rendered-visual deliverable is excluded by the *skill* at reading time, not by this verb, because
+  modality is not a label.
 - **a body carrying an acceptance-criteria block the wire reader answers `Found` on.** A candidate
   with no contract can only fail at `review criteria`, once a branch, a build, a push, a PR and a CI
   run are already spent, and neither the builder nor the reviewer can repair it — so the pool
@@ -734,14 +738,21 @@ it saw either way, so a claim admitted over a non-agent audience is readable as 
 **Repair of a decision PR is admitted on its own, with no flag and no override.** When `<number>` is
 an open PR and the issue it serves carries `type:decision`, the audience axis does not bind that
 claim (founder ruling on [#5866](https://github.com/kamp-us/phoenix/issues/5866), built as #5914).
-Triage routes a decision to `ready-for:human`, so `type:decision` and `ready-for:agent` are mutually
-exclusive by construction and an ADR PR's repair lane was failing a fence it could never pass — the
-only way through was `--override`, which spent a founder-authorized escape hatch on routine repair.
+Triage routes a decision to `ready-for:human` by default, so an ADR PR's repair lane was failing a
+fence it could normally never pass — the only way through was `--override`, which spent a
+founder-authorized escape hatch on routine repair. That default is not an exclusion: a decision
+issue carrying a founder ruling comment is buildable as transcription (ADR
+[0300](../../../../.decisions/0300-a-cited-ruling-makes-a-decision-buildable.md)), which is why the
+exemption is read off the target rather than off the impossibility of the pairing. This axis reads
+the `ready-for:` label the issue carries and never infers one from the type, in either direction;
+which decision issues end up carrying `ready-for:agent` is decided by triage's `--ready-for` routing
+([`triage/SKILL.md`](../triage/SKILL.md)), not by anything this verb assumes.
 The exemption is read off the **target**, not typed: there is no `--purpose repair`, because a flag
 could be passed against a bare issue and would then have to be refused, while naming a PR is already
 proof that a build is in flight. Its width is exactly one pairing — the same decision issue claimed
-directly is still `21`, an open PR serving any other type still reads the audience label, and the
-scope axis is untouched. `claim`'s purpose line names the exemption when it fires.
+directly still reads its own audience label and is `21` on a `ready-for:human`, an open PR serving
+any other type still reads the audience label, and the scope axis is untouched. `claim`'s purpose
+line names the exemption when it fires.
 
 This is the seam where the refusal has teeth. A pool filter is bypassed by an operator naming a
 number, and a number handed straight to `claim` passes through no pool — claiming is the moment work

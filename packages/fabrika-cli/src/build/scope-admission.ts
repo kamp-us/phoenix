@@ -47,8 +47,12 @@ const READY_FOR_PREFIX = "ready-for:";
 /**
  * The type whose deliverable is a recorded choice rather than a pull request — `/adr`'s lane.
  *
- * Triage routes such an issue to `ready-for:human`, so `type:decision` and `ready-for:agent` are
- * mutually exclusive by construction. That is the collision {@link RepairClaim} answers.
+ * Triage routes such an issue to `ready-for:human` by default, which is the collision
+ * {@link RepairClaim} answers: an ADR PR's repair lane would otherwise fail a fence it could not
+ * pass. The default is not an exclusion — a decision issue carrying a founder ruling comment is
+ * buildable as transcription, and triage may route that one to `ready-for:agent` instead (ADR 0300).
+ * Which ones it does is triage's per-issue judgement; this axis reads the audience label it finds
+ * and never infers one from the type, in either direction.
  */
 export const DECISION_TYPE_LABEL = "type:decision";
 
@@ -299,10 +303,11 @@ export const repairClaimOf = (pr: number, served: IssueFacts): RepairClaim =>
  * Only a build-purpose claim is bound by the audience axis (#5175), and not even that one when it
  * repairs an open PR whose served issue is a decision. Scope binds every purpose and every repair.
  *
- * The exemption is narrow on purpose: it is the one pairing where the fence can never be satisfied,
- * because a decision issue is barred from `ready-for:agent` by triage's own routing. An ordinary
- * repair still reads the audience label, so an issue re-routed to a human mid-flight still stops a
- * builder — the founder's ruling exempts decisions, not repair at large.
+ * The exemption is narrow on purpose, and it is read off the target being a PR rather than off the
+ * pairing being impossible: triage routes a decision to `ready-for:human` by default, so an ADR PR's
+ * repair lane would otherwise stall on a label nobody changes mid-flight. An ordinary repair still
+ * reads the audience label, so an issue re-routed to a human mid-flight still stops a builder — the
+ * founder's ruling exempts decisions, not repair at large.
  */
 export const audienceAxisBinds = (
 	purpose: ClaimPurpose,
