@@ -340,7 +340,7 @@ nothing, since `epic` already seats `20`–`24` over the same two `build` codes.
 | `9` | the write landed but the read-back does not match | — | — | — | ✓ |
 | `10` | a value off its closed vocabulary — a semantic refusal, never a malformed-flag usage error | ✓ | ✓ | ✓ | ✓ |
 | `11` | a required read failed — nothing was written, no outcome is proven | ✓ | ✓ | ✓ | ✓ |
-| `15` | proven: this session does not hold the epic's claim (imported from `build`) | — | — | ✓ | ✓ |
+| `15` | proven: this lane does not hold the epic's claim (imported from `build`) | — | — | ✓ | ✓ |
 | `20` | proven: the floor derived hard defects — refused as a **precondition to writing**, never as `plan check`'s own answer | — | — | ✓ | — |
 | `21` | proven: the plan moved — the recomputed digest differs from the `--digest` the caller carried | — | — | ✓ | ✓ |
 | `22` | proven: at least one child is `unchanged` — the flip did not fully apply; the observed set is on stderr | — | — | ✓ | — |
@@ -565,7 +565,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika plan flip 4300 --digest 4d90e1bb27ac
+fabrika plan flip 4300 --digest 4d90e1bb27ac --token <claim-token>
 ```
 
 **Inputs**
@@ -574,6 +574,7 @@ fabrika plan flip 4300 --digest 4d90e1bb27ac
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the epic whose planned children are flipped, and whose own audience label is flipped with them |
 | `--digest` | string, 12 lowercase hex | yes | — | the scope digest `plan check` printed; the flip refuses if the plan has moved since |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose gate` printed — which lane is asking (#6060) |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
 
 **Output** — machine. The **observed** result per child and for the epic, never the intended one:
@@ -675,7 +676,7 @@ comparable to `plan check`'s directly, and a verdict posted afterwards binds the
 | `8` | a write was attempted and no re-read could prove its outcome — UNKNOWN |
 | `10` | the issue is not a `type:epic`, or `--digest` is not 12 lowercase hex |
 | `11` | a read the flip depends on failed — **nothing is written** |
-| `15` | proven: this session does not hold the epic's claim |
+| `15` | proven: this lane does not hold the epic's claim |
 | `20` | proven: the re-gate derived hard defects — the floor is not clean, nothing is written |
 | `21` | proven: the recomputed digest differs from `--digest` — the plan moved since the check |
 | `22` | proven: at least one child is `unchanged`, or the epic did not reach `ready-for:agent` — the refs are on stderr |
@@ -691,7 +692,7 @@ comparable to `plan check`'s directly, and a verdict posted afterwards binds the
 | `plan flip: every child flipped but epic #<n> does not carry ready-for:agent alone — the epic is half-flipped and needs a human.` | 22 | refusal |
 | `plan flip: label "<name>" is absent from <repo>'s taxonomy — refusing to create it (#4285).` | 23 | refusal |
 | `plan flip: wrote <n> label change(s) and could not re-read <what> — the outcome is UNKNOWN.` | 8 | refusal |
-| `plan flip: this session does not hold #<n>'s claim.` | 15 | refusal |
+| `plan flip: #<n> is held by <token>, not by <this lane's token>.` | 15 | refusal |
 | `plan flip: --digest must be 12 lowercase hex — got "<v>".` | 10 | refusal |
 | `plan flip: #<n> is not a type:epic — refusing to flip its children.` | 10 | refusal |
 | `plan flip: #<n> has zero children — refusing to act over zero scope (ADR 0092).` | 7 | refusal |
@@ -708,12 +709,12 @@ succeeded — and with the epic still owed its label, that one write is the whol
 **Examples**
 
 ```
-$ fabrika plan flip 4300 --digest 4d90e1bb27ac
+$ fabrika plan flip 4300 --digest 4d90e1bb27ac --token <claim-token>
 {"answer":"flipped","epic":4300,"digest":"4d90e1bb27ac","terminal":"flipped-all","children":[{"number":4301,"observed":["p1","status:triaged","type:feature"],"result":"flipped"}],"flipped":1,"already":0,"audience":{"result":"flipped","observed":["ready-for:agent","type:epic"]}}
 ```
 
 ```
-$ fabrika plan flip 4300 --digest 4d90e1bb27ac
+$ fabrika plan flip 4300 --digest 4d90e1bb27ac --token <claim-token>
 plan flip: 2 of 3 children flipped; 1 unchanged (#4303) — the epic is half-flipped and needs a human.
 $ echo $?
 22
@@ -738,7 +739,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika plan verdict 4300 --digest 4d90e1bb27ac <<'EOF'
+fabrika plan verdict 4300 --digest 4d90e1bb27ac --token <claim-token> <<'EOF'
 caveat: ac-not-checkable #4302 — "works well" states no observable outcome
 EOF
 ```
@@ -750,6 +751,7 @@ EOF
 | `<number>` | positional integer | yes | — | the epic the verdict is posted on |
 | `--digest` | string, 12 lowercase hex | yes | — | the scope digest `plan check` printed; the verdict binds it and refuses if the plan has moved |
 | `--polarity` | enum: `PASS` \| `FAIL` | no | derived from the floor | an optional cross-check — when supplied and it disagrees with the floor this verb derives, the verb refuses on `10` rather than posting either. No step in [SKILL.md](SKILL.md) supplies it; it exists for an operator driving the verb by hand, and its absence from the skill is deliberate, not a missing step |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose gate` printed — which lane is asking (#6060) |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
 | stdin | markdown | no | empty | advisory caveats, one per line, each `caveat: <kind> #<ref> — <text>`; empty is an ordinary answer |
 
@@ -799,7 +801,7 @@ the only emit path; a hand-posted marker is how v1's corpus carried a fake-looki
 | `9` | the comment posted but the read-back does not match |
 | `10` | `--digest` malformed; the issue is not a `type:epic`; `--polarity` disagrees with the derived floor; a caveat kind off the closed set; a caveat naming a ref outside the scanned set |
 | `11` | a read the verdict depends on failed — nothing is posted |
-| `15` | proven: this session does not hold the epic's claim |
+| `15` | proven: this lane does not hold the epic's claim |
 | `21` | proven: the recomputed digest differs from `--digest` — the plan moved since the check |
 
 There is no `20` here. A defective floor is not a refusal for this verb — it posts the `FAIL`
@@ -823,7 +825,7 @@ which is what `10` means.
 | `plan verdict: the comment posted but does not read back — the verdict needs a human eye.` | 9 | refusal |
 | `plan verdict: #<n> has zero children — there is no scope to attest.` | 7 | refusal |
 | `plan verdict: cannot read <what>: <reason> — nothing was posted.` | 11 | refusal |
-| `plan verdict: this session does not hold #<n>'s claim.` | 15 | refusal |
+| `plan verdict: #<n> is held by <token>, not by <this lane's token>.` | 15 | refusal |
 | `plan verdict: the ledger grammar refused: <reason>` | 4 | refusal |
 
 **Scope** — one epic and **every one of its children**, because deriving the floor and recomputing
@@ -833,14 +835,14 @@ Zero children is `7`.
 **Examples**
 
 ```
-$ fabrika plan verdict 4300 --digest 4d90e1bb27ac <<'EOF'
+$ fabrika plan verdict 4300 --digest 4d90e1bb27ac --token <claim-token> <<'EOF'
 caveat: ac-not-checkable #4302 — "works well" states no observable outcome
 EOF
 {"answer":"posted","epic":4300,"polarity":"PASS","digest":"4d90e1bb27ac","skipped":[],"comment":5230661234,"caveats":1}
 ```
 
 ```
-$ fabrika plan verdict 4300 --digest 81c7a30f5e42 <<'EOF'
+$ fabrika plan verdict 4300 --digest 81c7a30f5e42 --token <claim-token> <<'EOF'
 caveat: vibes #4302 — feels thin
 EOF
 plan verdict: caveat kind "vibes" is not in the closed set (ac-not-checkable, brief-fidelity, slice-too-broad, dependency-implied-not-declared).

@@ -254,22 +254,29 @@ export type CallerRead =
 	| {readonly _tag: "Caller"; readonly caller: LaneCaller};
 
 /**
- * The asking lane, read off the `--token` it was handed by `build claim`.
+ * The asking lane, read off the `--token` its `claim` verb handed it.
  *
  * A token from another session is refused rather than trusted: the env says which session is running,
  * the flag says which lane, and a pair that disagrees is a threaded-through token from somewhere else.
+ * `grammar` is what keeps a namespace from admitting another's token — a `lane:` token handed to a
+ * `build` verb names no lane it can resolve, so it is read as unparseable rather than as an identity.
  */
-export const requireCallerToken = (verb: string, session: string, token: string): CallerRead => {
+export const requireCallerToken = (
+	verb: string,
+	session: string,
+	token: string,
+	grammar: ClaimGrammar = BUILD_CLAIM,
+): CallerRead => {
 	const usage = (message: string): CallerRead => ({
 		_tag: "Refused",
 		outcome: refuse(FAILED, `${verb}: ${message}`),
 	});
 	const trimmed = token.trim();
-	const parsed = parseToken(trimmed);
-	const nonce = nonceOf(trimmed);
+	const parsed = parseToken(trimmed, grammar.prefix);
+	const nonce = nonceOf(trimmed, grammar.prefix);
 	if (parsed === null || nonce === null) {
 		return usage(
-			`--token "${trimmed}" is not a claim token (build:<session-id>:<uuid>) — which lane is asking is not stated.`,
+			`--token "${trimmed}" is not a claim token (${grammar.prefix}:<session-id>:<uuid>) — which lane is asking is not stated.`,
 		);
 	}
 	if (parsed.session !== session) {
