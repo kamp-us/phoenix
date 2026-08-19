@@ -12,6 +12,7 @@ import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {toConnection} from "../fate/connection.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
+import {withoutInPlaceVisibility} from "../lifecycle/EntityLifecycle.ts";
 import {toPost} from "../pano/shapers.ts";
 import type {Post} from "../pano/views.ts";
 import {PostView} from "../pano/views.ts";
@@ -44,7 +45,9 @@ export const lists = {
 			// Resolve the sandbox viewer once (identity + moderator probe); search masks
 			// posts through the pano visibility seam (ADR 0113) — çaylak-sandboxed posts
 			// hidden from anyone but their author + a mod, and drafts from any non-author.
-			const sandboxViewer = yield* currentSandboxViewer;
+			// The #6423 in-place opt-in is dropped here: search is discovery, not an
+			// in-place read, so it stays exactly as wide as it is today (#6424).
+			const sandboxViewer = withoutInPlaceVisibility(yield* currentSandboxViewer);
 			const search = yield* Search;
 			const page = yield* search.searchPosts({
 				query: args.query,

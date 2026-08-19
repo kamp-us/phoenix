@@ -100,6 +100,12 @@ export const sandboxArm = (
  *   orthogonal and stays where it is. It rides `seesSandboxedInPlace`, not
  *   `canSeeSandboxed`, so the moderator backlog reads are untouched.
  * - anonymous/public (`viewerId` null) — `sandboxed_at IS NULL`: public only.
+ *
+ * Every aggregate over a masked read — a connection's `totalCount`, the hot-score
+ * ordering, `publicLiveWhere` — is built on this predicate, so widening the viewer
+ * widens the aggregates with it. That is the decision, not an oversight (#6424): a list
+ * that shows a row its own count excludes is worse than either consistent answer, so
+ * there is exactly one mask and the counts follow the viewer that produced the rows.
  */
 export const sandboxVisibleWhere = (
 	cols: SandboxColumns,

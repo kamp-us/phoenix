@@ -261,6 +261,20 @@ export const anonymousViewer: SandboxViewer = {
 };
 
 /**
+ * The same viewer with the #6423 in-place widening dropped — their identity and
+ * moderator authority survive, so they still read their own sandboxed rows and a
+ * moderator still reads everything.
+ *
+ * The in-place opt-in widens *in-place* reads (a post in its feed, a definition on its
+ * term page); a surface that is discovery rather than in-place must narrow the viewer
+ * here rather than build a second mask. Search is that surface (#6424): it ranks over a
+ * corpus, so widening it would surface sandboxed content out of context and change the
+ * bm25 ranking of everything around it.
+ */
+export const withoutInPlaceVisibility = (viewer: SandboxViewer): SandboxViewer =>
+	viewer.seesSandboxedInPlace ? {...viewer, seesSandboxedInPlace: false} : viewer;
+
+/**
  * The tag of an {@link EntityLifecycle} state — the closed discriminant both the
  * in-memory decision ({@link isVisibleTo}) and the SQL mirror
  * (`SandboxVisibility.sandboxVisibleWhere`) key their visibility rule on. Exported so
