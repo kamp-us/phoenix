@@ -383,7 +383,7 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 		expect(out.stderr.join("\n")).toContain("review-code (stale)");
 	});
 
-	it("leaves the proof UNKNOWN when the boundary cannot be read and the repo declares `refuse`", async () => {
+	it("leaves the proof UNKNOWN when the boundary itself cannot be read", async () => {
 		const shell = fakeShell([
 			[CLOSERS, closingPulls()],
 			[SEARCH, okOut("4318\n")],
@@ -391,34 +391,15 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory()})],
 			[CODEOWNERS, errOut("HTTP 502")],
-			[CONFIG, okOut('{"unreadableCodeowners": "refuse"}')],
 		]);
 
 		const out = await run(laneAt("review"), shell, "PASS");
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain(".github/CODEOWNERS");
-		expect(out.stderr.join("\n")).not.toContain(".fabrika.jsonc");
 	});
 
-	it("leaves the proof UNKNOWN when the POLICY itself cannot be read either", async () => {
-		const shell = fakeShell([
-			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
-			[PULL, pull()],
-			[FILES, codeFile],
-			[PR_COMMENTS, comments({id: 1, body: advisory()})],
-			[CODEOWNERS, errOut("HTTP 502")],
-			[CONFIG, errOut("HTTP 502")],
-		]);
-
-		const out = await run(laneAt("review"), shell, "PASS");
-
-		expect(out.code).toBe(LANE_UNREADABLE);
-		expect(out.stderr.join("\n")).toContain(".fabrika.jsonc");
-	});
-
-	it("names the waiver on stderr when the policy ships an unreadable boundary", async () => {
+	it("still refuses a failed boundary read when the repo's config says ship (ADR 0220 §4)", async () => {
 		const shell = fakeShell([
 			[CLOSERS, closingPulls()],
 			[SEARCH, okOut("4318\n")],
@@ -431,8 +412,7 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 
 		const out = await run(laneAt("review"), shell, "PASS");
 
-		expect(out.code).toBe(PROOF_IN_FLIGHT);
-		expect(out.stderr.join("\n")).toContain("unreadableCodeowners");
+		expect(out.code).toBe(LANE_UNREADABLE);
 	});
 
 	it("never reads the boundary while no comment reaches for the advisory carrier", async () => {

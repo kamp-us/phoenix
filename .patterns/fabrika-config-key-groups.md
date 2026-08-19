@@ -25,10 +25,9 @@ rather than a branch in fabrika's source (ADR 0273, epic
 | `paths.ts` | One reader per path key off the working tree — the value, where it came from, and the refusal a verb prints verbatim |
 
 A key read at a PR's **base ref** rather than the working tree opens the bytes through that
-group's own platform reader and hands `loadConfig` a `Text` or an `Absent`.
-`ship/boundary.ts` is the worked example: it reads `unreadableCodeowners` off the base ref with
-the same `readFileAtRef` it reads `.github/CODEOWNERS` with, so the policy and the artifact it
-governs are read at one ref and cannot disagree.
+group's own platform reader and hands `loadConfig` a `Text` or an `Absent`. Read the policy at the
+same ref as the artifact it governs, through the same reader, so the two cannot disagree — no key
+takes this shape today.
 
 Whoever opens the file says which of three things it found — `Absent`, `Text`, `Unreadable` — and
 hands that to `loadConfig`. A key module never sees a file, only the parsed record.
@@ -75,12 +74,12 @@ distinction that keeps this from being the failure the rule guards against is *d
 writing no config. Any key that follows it owes the same split in its own docblock.
 
 A shipped default may be **looser** than today's behaviour only on a founder ruling, and only
-paired with a declaration that holds the strict value where the guard matters.
-`unreadableCodeowners` is the one such key (ADR
-[0307](../.decisions/0307-unreadable-codeowners-is-per-repo.md)): its default ships on an unreadable CODEOWNERS, phoenix
-declares `refuse`, and a unit test reads this repo's own `.fabrika.jsonc` and reds if that
-declaration ever leaves. The pairing is the whole permission — landing the loose default without
-the declaration is the fail-open, so both land in one change or neither does.
+paired with a declaration that holds the strict value where the guard matters. No key takes that
+shape today. `unreadableCodeowners` did (ADR
+[0307](../.decisions/0307-unreadable-codeowners-is-per-repo.md)) and the founder reverted it on
+#5631: a failed CODEOWNERS read is the caller's `11` in every repo again, and nothing reads the key.
+The pairing was the whole permission — landing a loose default without the declaration is the
+fail-open, so both land in one change or neither does.
 
 **A key whose value could disable or widen a guard is refused at load.** `refuseLoad` on a
 `KeyGroup` refuses the whole load, before any key's value is used. Two keys use it, for the same
