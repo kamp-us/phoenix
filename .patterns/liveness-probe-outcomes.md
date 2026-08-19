@@ -50,8 +50,12 @@ not a probe's inability to run. Only outcome (2) may gate.
 
 **This is the liveness family, and it is the opposite of a verification guard.** A guard that
 *runs*, is the authority for a decision, and finds its input unreadable fails **closed** — the
-canonical instance is `pipeline-cli checks read --expect green`, where exit `1` is
-read-OK-but-not-green and exit `2` is UNREADABLE, deliberately distinct. Refusing there costs one
+canonical instance is `fabrika ship checks` ([`packages/fabrika-cli/src/ship/checks-verb.ts`](../packages/fabrika-cli/src/ship/checks-verb.ts)),
+which answers the rollup on exit `0` and seats an unreadable precondition on its own code
+`PRECONDITION_UNKNOWN` (`11`, from [`packages/fabrika-cli/src/report/codes.ts`](../packages/fabrika-cli/src/report/codes.ts))
+— never on `1`, which means a bad flag or a verb that failed to run, and never on `2`, which fabrika
+never allocates because it is the harness's block code
+([`packages/fabrika-cli/src/verb.ts`](../packages/fabrika-cli/src/verb.ts)). Refusing there costs one
 stalled PR. Refusing on an unrunnable liveness probe asserts a failure nobody observed. ADR
 [0250](../.decisions/0250-fabrika-hook-cannot-run-fails-open.md) is the ruling that applies this
 split to fabrika's hook surface.

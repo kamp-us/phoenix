@@ -129,3 +129,5 @@ no such refusal (it is a normal state, not an anomaly).
   describes — `review-doc`-gated, and (until the follow-up lands) human-merged because Step 1
   still refuses it for lacking a `Fixes #N`. That self-reference is the point: the seam this
   ADR settles is the one its own PR trips.
+
+> Amendment 2026-08-19: `ship-it`/`review-doc` are gone (ADR 0303). The carve-out is live in fabrika `ship` — `fabrika ship scope <pr>` prints the linked issue and treats doc/vocabulary-surface-only PRs as legitimately issueless, while `code`/`skill` classes still require `Fixes #N` (or `Part of #N`); the gate verdict now comes from `review`.

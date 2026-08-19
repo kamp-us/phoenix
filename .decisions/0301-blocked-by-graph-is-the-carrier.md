@@ -149,3 +149,5 @@ the wiring.
 ## Records
 
 no vocabulary impact
+
+> Amendment 2026-08-19: that gap is closed at head. The shared reader is `packages/fabrika-cli/src/build/blockedness.ts` (`readBlockedGate`), `build claim` refuses a blocked number (`claim-verb.ts`), `build pick` excludes one (`pick-verb.ts`), and the `status:blocked` label no longer exists on the repo.

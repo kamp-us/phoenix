@@ -120,3 +120,5 @@ is the same property: whatever #6099 puts there is covered on arrival.
 ## Records
 
 no vocabulary impact
+
+> Amendment 2026-08-19: `packages/pipeline-cli/` is deleted, and the prose copy of `CONTROL_PLANE_RE=` in its `control-plane-paths/boundaries.md` went with it (no equivalent prose file exists under `packages/fabrika-cli/`). The lockstep is now two surfaces, not three: the single-source const in `packages/fabrika-cli/src/guard/control-plane-re.ts` and the literal `.github/CODEOWNERS` row. The same-commit rule below applies to those two.

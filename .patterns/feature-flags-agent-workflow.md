@@ -1,7 +1,7 @@
 # Agent ship-behind-flag → validate → flip workflow
 
 The **containment layer** the feature-flag epic ([#488](https://github.com/kamp-us/phoenix/issues/488))
-exists for: the sanctioned procedure by which the autonomous pipeline (`write-code` / `ship-it`)
+exists for: the sanctioned procedure by which the autonomous pipeline (`build` / `ship`)
 merges a feature **dark behind a default-off flag**, rides it to `main` *without going live*, then
 **validates** and **flips** it on when ready — and **kills** it in seconds if it regresses. This is
 how flags **decouple deploy from release** so the no-eyeball autonomous-shipping model is safe: a PR
@@ -62,10 +62,10 @@ orthogonal and **both stand** — neither replaces the other:
 
 | Gate | When it acts | What it contains | Who/what enforces it |
 |---|---|---|---|
-| **Control-plane boundary** | **Merge time** | *Whether a PR may auto-merge at all.* `.claude/**` / `.github/**` PRs are blocking — a human merges them; everything else (`apps/web`, `packages`, `.decisions`, `.patterns`) is gated + auto-shippable. | `ship-it` (refuses to self-merge blocking-set PRs), the `review-*` gates. |
+| **Control-plane boundary** | **Merge time** | *Whether a PR may auto-merge at all.* `.claude/**` / `.github/**` PRs are blocking — a human merges them; everything else (`apps/web`, `packages`, `.decisions`, `.patterns`) is gated + auto-shippable. | `ship` (refuses to self-merge blocking-set PRs), the `review` / `review-ui` gates. |
 | **Feature flag** | **Runtime** | *Whether a merged feature is live to users.* A default-off flag keeps a feature dark in production after merge until an explicit flip. | The `Flags` read collapsing to the off default; the flip act. |
 
-A feature PR clears the **merge** gate the moment its `review-code` PASS lands (it's `apps/web/**`,
+A feature PR clears the **merge** gate the moment its `review` PASS lands (it's `apps/web/**`,
 not control-plane), so it auto-ships. The **flag** is what then keeps that just-merged feature *dark*
 until it's been validated — the flip is the deliberate release act, separate from the merge. The two
 gates compose: the merge boundary decides *what reaches `main` and how*; the flag decides *what reaches
@@ -76,7 +76,7 @@ way around a `.claude/**` PR needing a human merge), and the boundary is not a s
 ## Why this is the containment layer for autonomous shipping
 
 The autonomous pipeline ships a product PR on a green gate stack with **no manual eyeball** — the
-`review-*` + CI + e2e gates *are* the bar. That is fast, but a gate can pass a feature that is still
+`review` / `review-ui` + CI + e2e gates *are* the bar. That is fast, but a gate can pass a feature that is still
 wrong in a way no AC caught. **The flag is the safety margin:** a feature merged dark cannot harm users
 no matter what the gate missed, because it is *off in production* until someone deliberately turns it
 on. So the autonomous merge stays cheap and reversible — a bad autonomous merge sits dark behind its
@@ -156,8 +156,8 @@ undeclared flag.
 
 ### Step 3 — Ship it dark
 
-Open the PR the normal way (`write-code` → `review-code` → `ship-it`). The diff is `apps/web/**`, so
-it is **not** control-plane: the `review-code` PASS auto-ships it on green CI. **It reaches `main` and
+Open the PR the normal way (`build` → `review` → `ship`). The diff is `apps/web/**`, so
+it is **not** control-plane: the `review` PASS auto-ships it on green CI. **It reaches `main` and
 production off** — both because its declared default is off *and* because the read returns the safe
 default until the flag is flipped. Deploy has happened; release has not. There is no separate human
 merge gate for the feature (that's the autonomous model); the flag is what makes that safe.
@@ -172,10 +172,12 @@ not a saved view. It reuses the existing label spine, survives the PR's merge-cl
 *issue*, which the merge auto-closes but does not delete), is filterable with a one-line `gh` query,
 and adds no new artifact (ADR [0083](../.decisions/0083-agents-deploy-humans-release.md)).
 
-**Apply** — when `ship-it` merges a dark feature PR, it applies `status:awaiting-release` to the
+**Apply** — when `ship` merges a dark feature PR, it applies `status:awaiting-release` to the
 linked issue. That is the deployment boundary: the agent's work is done at merge, and the label is the
-hand-off signal to the human releaser ([#601](https://github.com/kamp-us/phoenix/issues/601) owns
-ship-it's application logic). The merge auto-closes the issue, so the label rides on a **closed**
+hand-off signal to the human releaser. The live application logic is `ship release`, the dark-ship
+seam in [`claude-plugins/fabrika/skills/ship/SKILL.md`](../claude-plugins/fabrika/skills/ship/SKILL.md),
+where the label write is fail-loud (exit `8`/`9`, never `queued`). The merge auto-closes the issue,
+so the label rides on a **closed**
 issue — include `state=all` (or `state=closed`) when you query the queue.
 
 **Consume** — an **infra-admin** (the human releaser; release authority equals infra-admins per ADR
@@ -200,8 +202,8 @@ issue — include `state=all` (or `state=closed`) when you query the queue.
 **Orthogonal to the `status:*` pickability spine.** Despite sharing the `status:` prefix,
 `status:awaiting-release` is **not** a pickability state — it is a **post-merge release state**. The
 pipeline pickability labels (`status:triaged` / `status:planned` / …) drive which *open* issues
-`write-code` may pick; `status:awaiting-release` lives on a *closed* issue and means "deployed, awaiting
-a human flip." **`write-code` never keys on it** — it has no bearing on what work is pickable, and a
+`build` may pick; `status:awaiting-release` lives on a *closed* issue and means "deployed, awaiting
+a human flip." **`build` never keys on it** — it has no bearing on what work is pickable, and a
 cycle-aware skill must not treat it as one of the pickability states. It is consumed only by the human
 releaser, off the autonomous pipeline entirely.
 
@@ -281,15 +283,15 @@ recorded **at declaration** (Step 1: owner, originating issue, removal trigger).
 
 When a flag's removal trigger has fired and the retirement isn't being done in the current session,
 **file a `type:chore` retirement issue** with the `report` skill
-(per CLAUDE.md's "Filing follow-up work"), so an agent picks it up and `write-code` drains it like any
+(per CLAUDE.md's "Filing follow-up work"), so an agent picks it up and `build` drains it like any
 other chore. `report` files the issue `status:needs-triage` and type-blind; triage classifies it
 `type:chore` (the standard retirement-chore shape below is what makes that classification obvious) and
-it then flows through the normal `status:triaged` → `write-code` → `review-code` → `ship-it` pipeline.
+it then flows through the normal `status:triaged` → `build` → `review` → `ship` pipeline.
 
 #### The standard retirement-chore issue shape
 
 A retirement chore is drainable precisely because its body is **mechanical and self-contained** — a
-`write-code` agent can execute it from the issue alone, with no design left open. State the flag, link
+`build` agent can execute it from the issue alone, with no design left open. State the flag, link
 its originating issue/PR (the metadata from Step 1), and enumerate the three deletions as the
 acceptance criteria:
 
@@ -319,17 +321,17 @@ The three deletions are the literal lifecycle steps:
 3. Inline the now-permanent new path.
 
 Because the new path has been live at 100% and the old branch is dead, this is a behavior-preserving
-cleanup — `review-code` verifies the deletions are complete and nothing still references the flag key,
+cleanup — `review` verifies the deletions are complete and nothing still references the flag key,
 not a behavior change.
 
 ## The loop, end to end
 
 ```
 declare (default off) ─▶ gate code path ─▶ ship dark (auto-merge on green gate)
-        ─▶ status:awaiting-release on the issue (the release queue; ship-it applies it)
+        ─▶ status:awaiting-release on the issue (the release queue; `ship` applies it)
         ─▶ [human releaser drains the queue] validate in prod (internal → staged rollout) ─▶ flip on (release) ─▶ clear the label
         ─▶ [regression?] kill in seconds (dashboard disable, no redeploy)
-        ─▶ stable ─▶ retire (file type:chore → write-code drains: delete flag + read + dead branch)
+        ─▶ stable ─▶ retire (file type:chore → `build` drains: delete flag + read + dead branch)
 ```
 
 At every step before the flip, the worst case of a bad autonomous merge is a feature sitting **dark**

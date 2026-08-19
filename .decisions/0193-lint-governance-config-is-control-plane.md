@@ -72,3 +72,5 @@ ruling, not a report→triage item. Ruling-driven, so there is no `Fixes #N` tra
 - Note: routing (which reviewer gate verifies) is a separate axis — `class-probe` already
   classifies these paths as `has-code` (review-code-routed). This ADR governs *who merges*
   (§CP human-merge), not *which gate verifies*.
+
+> Amendment 2026-08-19: `packages/pipeline-cli` is gone; the single-source §CP path regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (tests: `packages/fabrika-cli/src/guard/control-plane-re.pin.test.ts`, `codeowners-cp.unit.test.ts`). The ruling — `biome.jsonc` + `biome-plugins/` are §CP — is unchanged.

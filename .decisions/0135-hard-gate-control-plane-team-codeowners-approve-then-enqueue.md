@@ -152,3 +152,5 @@ actor cannot satisfy alone. The cost is real (a §CP PR can no longer be landed 
   (SHA-bound verdicts) for the human approval. Preserves [0048](0048-ship-it-merge-actor.md)
   (single-merge-authority — `ship-it` still owns the enqueue). §CP PRs now enter the
   [0132](0132-merge-queue-for-base-freshness.md) merge queue like every other PR.
+
+> Amendment 2026-08-19: the §CP path set in §2 has moved. `/packages/ci-required/` and `/packages/pipeline-cli/` no longer exist on disk — the enforcement core folded into `packages/fabrika-cli/src/ci/`, already an owned row in `.github/CODEOWNERS` (see ADRs [0299](0299-cp-fence-covers-fabrika-ci-core.md), [0218](0218-pipeline-cli-cp-enforcement-core.md) and the retirement in [0303](0303-retire-kampus-pipeline-plugin.md)). The decision here — humans-only `@kamp-us/control-plane` team + CODEOWNERS + `require_code_owner_review` + ship's approve-then-enqueue — is unchanged; read the live `.github/CODEOWNERS` for the current path set.

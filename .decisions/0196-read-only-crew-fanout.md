@@ -1,7 +1,8 @@
 ---
 id: 0196
 title: Bridges + the engine may fan an expensive read-only task to a write-tool-free ephemeral subagent (context-hygiene primitive, not an execution edge)
-status: accepted
+status: superseded by [0279](0279-v1-crew-retired-in-full.md)
+superseded_by: 0279
 date: 2026-07-18
 tags: [pipeline, pipeline-crew, crew-mcp, topology, roster]
 ---

@@ -130,3 +130,5 @@ compatibility signal it needs.
   `review-doc`-gated). The producer touches `.github/**` and the consumers touch `.claude/**`
   — both blocking per ADR [0053](0053-control-plane-boundary.md), so those implementation
   PRs stay human-merged. This decision is the record they build against; it ships no code.
+
+> Amendment 2026-08-19: the manifest producer moved out of `packages/crabbox-manifest/` into `packages/fabrika-cli/src/ci/manifest.ts` (`SCHEMA_VERSION = 1`, `schemaVersion: Schema.Number`), driven by `fabrika ci evidence` in `.github/workflows/run-evidence.yml`; the gate consumers are fabrika's `ship`/`review` skills, not the v1 `ship-it`/`review-code` (ADR 0303). Storage, transport and the versioning policy are unchanged.

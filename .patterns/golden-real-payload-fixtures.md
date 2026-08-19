@@ -42,9 +42,9 @@ the spec real.
    `loadGoldenPayload(…)` for a parsed record to assert the shape. A hand-authored payload in
    the assertion path is the anti-pattern — it re-admits the fabrication #2925 shipped.
 4. **Assert the handler against the fixture, and assert the shape.** Drive the real handler
-   (for a shell hook: `execFileSync` the script against a throwaway git repo, feeding the
-   golden payload on stdin — see
-   `create-worktree.hook.test.ts`, retired with v1 — #5937),
+   (feed the golden payload on stdin and assert what the handler emits — see
+   [`packages/fabrika-cli/src/hook/envelope.golden.test.ts`](../packages/fabrika-cli/src/hook/envelope.golden.test.ts)
+   for the direct form and `pretooluse-polarity.cli.test.ts` for the CLI-driven one),
    plus a direct shape assertion (`assert.notProperty(p, "worktree_path")`) so the captured
    contract's *absences* are guarded too. The litmus: **the test must FAIL against the old
    fabricated contract** — if it passes against both shapes it isn't guarding the real one.

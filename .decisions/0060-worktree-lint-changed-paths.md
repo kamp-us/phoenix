@@ -116,3 +116,5 @@ keeps running typecheck locally; only its lint invocation changes.
   `patches/` hashing, `fate generate` — was tracked in **#336** and decided by ADR
   [0067](0067-sparse-typecheck-bootstrap.md) (cone-mode-minus-instruction-denylist over
   expanding the allowlist), wired in **#388**.
+
+> Amendment 2026-08-19: the v1 `write-code`/`review-code` skills are retired (ADR 0303); the actors are now fabrika's `build` and `review`, and the packaged gate is `pnpm lint:worktree` (root `package.json` → `scripts/biome-worktree.mjs`). The rule itself is unchanged.

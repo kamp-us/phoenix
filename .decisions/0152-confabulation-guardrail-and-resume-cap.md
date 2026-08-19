@@ -149,3 +149,5 @@ only if the emitter ran the check in its own transcript this run; otherwise it i
 is a lightweight coinage recorded here; if it earns a fuller `.glossary/TERMS.md` treatment
 (disambiguation, cross-links) that is routed via #2052 (which lands mitigation (a)'s prose),
 not this additive ADR PR.
+
+> Amendment 2026-08-19: both named homes retired with the v1 plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)) — `claude-plugins/kampus-pipeline/agents/triager.md` and `.../skills/gh-issue-intake-formats.md` are deleted, as is the orchestrator `.claude/workflows/drive-issue.js`. Mitigation (a) still binds every gate agent and now lives in the fabrika gate contracts (`claude-plugins/fabrika/skills/triage/contract.md`, `claude-plugins/fabrika/skills/review/contract.md`). Mitigation (b), the single-subagent resume cap, has **no home today** — fabrika has no orchestrator process that resumes a subagent; re-home it if one appears.

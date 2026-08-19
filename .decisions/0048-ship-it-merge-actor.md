@@ -86,3 +86,5 @@ the **only** skill granted merge authority.
   separate (review-code verifies, ship-it merges; review-plan verifies, neither repairs).
   The self-heal hand-off target `heal-ci` is a separate proposed skill; until it exists,
   `ship-it` simply reports "checks red — not shipped."
+
+> Amendment 2026-08-19: the actor moved, the rule did not. `ship-it` retired with the kampus-pipeline plugin (ADR 0303); the single merge authority is now fabrika's `ship` (claude-plugins/fabrika/skills/ship/), and its upstream PASS producer is fabrika `review`, not `review-code` (naming per ADR 0242). Everything above about one PR per invocation, merge only on a present PASS signal, sole merge authority, and red CI handing off to `heal-ci` still binds.

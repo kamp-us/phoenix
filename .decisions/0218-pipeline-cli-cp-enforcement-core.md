@@ -246,3 +246,5 @@ the concrete reason a mechanical check beats prose here.
   re-resolution idiom (#981, `control-plane-re.ts` lines ~42-46) to `cp-cardinality` and
   `ci-required`, so a weakened local copy cannot take effect. Once that exists, even those two
   could leave §CP.
+
+> Amendment 2026-08-19: this record's three branches are dead at head. `packages/pipeline-cli/` was deleted by PR #6326, taking its §CP CODEOWNERS rows and the byte-synced prose copy of `CONTROL_PLANE_RE` in `control-plane-paths/boundaries.md` with it, and the `ship-it/SKILL.md` call site named under `cp-cardinality` retired with the v1 plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)) — the same discharge check is now made by fabrika's `ship` skill. The shape this ADR ruled — fence the enforcement *core*, never the whole package — is carried forward unchanged by ADR [0299](0299-cp-fence-covers-fabrika-ci-core.md) over `packages/fabrika-cli/src/ci/`.

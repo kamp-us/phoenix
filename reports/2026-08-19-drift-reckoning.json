@@ -1,0 +1,1924 @@
+{
+	"batch": "drift-reckoning",
+	"date": "2026-08-19",
+	"issue": "https://github.com/kamp-us/phoenix/issues/6370",
+	"approved": "Founder, 2026-08-19 ~00:50 PT, through the verdict deck: \"APPROVED: all 88\". The per-file verdicts were appended to issue #6370 as two comments; this file is those verdicts joined, with the rationale and the quoted evidence each rests on.",
+	"base": "Cut after PR #6326 merged, so `packages/pipeline-cli/` is absent from the tree this executes against.",
+	"counts": {
+		"approvedBatch": 88,
+		"total": 89,
+		"totalNote": "89 = the founder-approved 88 plus `.patterns/index.md`, which the two kills and one of the seven edits force and which is recorded as its own row rather than as an unlisted side effect.",
+		"supersede": 18,
+		"pointer": 61,
+		"kill": 2,
+		"edit": 8
+	},
+	"okExcluded": [
+		".decisions/0191-crew-claim-lifecycle.md",
+		".decisions/0246-graduate-keeps-its-name-disambiguated.md",
+		".decisions/0250-fabrika-hook-cannot-run-fails-open.md",
+		".decisions/0303-retire-kampus-pipeline-plugin.md",
+		".patterns/release-path.md",
+		".patterns/skill-derived-guards.md",
+		".patterns/skill-script-io-contract.md",
+		".patterns/subprocess-test-budget.md"
+	],
+	"alsoTouched": [
+		{
+			"file": "product-development-cycle.md",
+			"why": "Its only link to `.patterns/right-sized-fan-out-trivial-tier.md` would 404 once that doc is deleted. Repointed at ADR 0120, which carries the same shape."
+		},
+		{
+			"file": ".glossary/TERMS.md",
+			"why": "Same dangling link, in the `right-sized fan-out (trivial-diff tier)` row. Repointed at ADR 0120 and 0303."
+		}
+	],
+	"invariants": [
+		"No ADR body text is rewritten — frontmatter fields and appended dated lines only.",
+		"Every `superseded_by` target exists in `.decisions/` and actually retires the ADR it points from.",
+		"Every pattern repoint target resolves in the tree at this branch's head.",
+		"`.patterns/index.md` follows the two deletions and the seven edits, with no row left pointing at a deleted doc."
+	],
+	"entries": [
+		{
+			"file": ".decisions/0007-view-layer-outbox-workflows-d1.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Frontmatter: replace `status: accepted` with `status: superseded by [0008](0008-mutations-as-workflows.md)`, and add `superseded_by: 0008` plus `superseded_date: 2026-05-10` (matching 0008's own frontmatter shape). Then insert one line directly under the `# 0007 — …` heading, matching 0008's style:\n\n> **Superseded (2026-05-10):** the outbox + `PHOENIX_PROJECTION` workflow + materialized-view layer is retired by [ADR 0008](0008-mutations-as-workflows.md), and the whole DO/projection/workflow stack it sat on by [ADR 0009](0009-d1-direct-defer-dos-and-workflows.md) — resolvers write D1 directly, there is no `apps/web/worker/view/`, no outbox, no projection workflow.\n\nBody stays byte-identical.",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 33,
+					"text": "`env.PHOENIX_PROJECTION.create({id, params})` is the right call."
+				},
+				{
+					"line": 70,
+					"text": "- **One Workflows binding: `PHOENIX_PROJECTION`** pointing at a single"
+				},
+				{
+					"line": 78,
+					"text": "// apps/web/worker/view/drizzle/schema.ts (D1, not DO sqlite)"
+				}
+			],
+			"supersededBy": "0008"
+		},
+		{
+			"file": ".decisions/0062-repo-as-config-plugin.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Set frontmatter to:\nstatus: superseded\nsuperseded_by: 0303\n(replacing the current `status: §3 superseded by [0064](0064-epic-ledger-npm-publish-automated-release.md)` line; keep id/title/date/tags and the entire body byte-identical.)",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: Repo-as-config for the distributable plugin — target repo resolves from the working git repo (`CLAUDE_PIPELINE_REPO` override), 10/11 skills ship repo-agnostic, external doc-refs rewritten to stable URLs, in-repo discovery doubling accepted+documented; `@phoenix/epic-ledger` is the one acknow"
+				},
+				{
+					"line": 14,
+					"text": "issue-pipeline suite (`report → triage → plan-epic → review-plan → write-code →"
+				},
+				{
+					"line": 15,
+					"text": "review-code`/`review-doc` → `ship-it`, plus `heal-ci`, `adr`, `deslop-comments`) as an"
+				}
+			],
+			"supersededBy": "0303"
+		},
+		{
+			"file": ".decisions/0067-sparse-typecheck-bootstrap.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Set frontmatter to `status: superseded` and add `superseded_by: 0303` (keep id/title/date/tags and the whole body byte-identical).",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: \"`review-code`'s review worktree becomes **cone-mode minus a fixed instruction denylist** (`CLAUDE.md`/`.claude/**`/`.decisions/**`/`.patterns/**`), not the ADR-0052 non-cone product-only allowlist — so `biome.jsonc`+`biome-plugins/`, `patches/`, the catalog/lockfile, and `fate generate`'s de"
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, skills, review-code, worktree, typecheck, isolation, biome, fate]"
+				},
+				{
+					"line": 9,
+					"text": "# 0067 — review-code worktree is cone-mode-minus-instructions, not a product-only allowlist — restoring the in-worktree typecheck"
+				}
+			],
+			"supersededBy": "0303"
+		},
+		{
+			"file": ".decisions/0070-investigation-trivial-fix-collapse.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Frontmatter only, body byte-identical: set `status: superseded` and add `superseded_by: 0303`.",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: \"A `type:investigation` that resolves into a trivial, bounded fix collapses into ONE write-code PR (`Fixes #N`) instead of re-entering via fresh `report` residue — bound is a hard AND of four checks (single concern · no new behavior/surface · no control-plane change · cause established + fix "
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, write-code, triage, investigation, intake-contract]"
+				},
+				{
+					"line": 9,
+					"text": "# 0070 — An investigation that resolves into a trivial fix collapses into one PR (write-code), bounded"
+				}
+			],
+			"supersededBy": "0303"
+		},
+		{
+			"file": ".decisions/0073-review-skill-gate.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Set frontmatter to `status: superseded` and add `superseded_by: 0303` (keep id/title/date/tags and the entire body byte-identical). Everything this ADR decides — the `review-skill` gate skill, its `review-skill:` marker namespace, `ship-it` Step 0 routing of `skills/**`, the centralized blocking-set in `gh-issue-intake-formats.md` — lived only in the v1 `skills/**` tree that ADR 0303 deleted.",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: \"The review-skill gate — skills are a third artifact class with their own behavioral gate\""
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, ship-it, review-skill, skills, control-plane, gate-routing]"
+				},
+				{
+					"line": 9,
+					"text": "# 0073 — The review-skill gate — skills are a third artifact class with their own behavioral gate"
+				}
+			],
+			"supersededBy": "0303"
+		},
+		{
+			"file": ".decisions/0150-control-plane-covers-pipeline-agent-defs.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Frontmatter only, body byte-identical: set `status: superseded` and add `superseded_by: [0303]` (keep id/title/date/tags as-is).",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: The control-plane / §CP boundary covers the pipeline agent definitions (`claude-plugins/kampus-pipeline/agents/**`) — a gate/merge agent's own instructions are a self-weakening surface, so they are BLOCKING (human merge) and review-skill-routed for the verdict"
+				},
+				{
+					"line": 6,
+					"text": "tags: [control-plane, pipeline, security, ship-it]"
+				},
+				{
+					"line": 20,
+					"text": "`claude-plugins/kampus-pipeline/agents/**`."
+				}
+			],
+			"supersededBy": "0303"
+		},
+		{
+			"file": ".decisions/0172-write-code-fails-loud-when-expected-worktree-isolation-is-absent.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Set frontmatter to `status: superseded` and add `superseded_by: 0303` (keep id/title/date/tags as-is). Body stays byte-identical — no amendment line.",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: write-code fails closed LOUD when worktree isolation was expected but the harness didn't provision it — self-provision is standalone-only"
+				},
+				{
+					"line": 9,
+					"text": "# 0172 — write-code fails closed LOUD when expected worktree isolation is absent"
+				},
+				{
+					"line": 19,
+					"text": "2. `write-code`'s Step-4 preflight backstops it (`git-dir == common-dir` ⇒ primary checkout ⇒"
+				}
+			],
+			"supersededBy": "0303"
+		},
+		{
+			"file": ".decisions/0174-bare-sh-guards-control-plane-gate.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Set frontmatter to:\nstatus: superseded by `0303` (was: amended-in-part by `0227`)\nsuperseded_by: \"0303\"\nBody stays byte-identical.",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 17,
+					"text": "`claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` (line 1359, §CP) and copied"
+				},
+				{
+					"line": 18,
+					"text": "verbatim into the gate consumers; `ship-it` Step 0 resolves it from `origin/main` at run time"
+				},
+				{
+					"line": 19,
+					"text": "and classifies against it (`ship-it/SKILL.md` §Step 0, lines 190–266). Its"
+				}
+			],
+			"supersededBy": "0303"
+		},
+		{
+			"file": ".decisions/0178-worktreecreate-hook-provisioning.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Set frontmatter to `status: superseded` and add `superseded_by: 0303` (keep id/title/date/tags as-is). Body stays byte-identical — no amendment line, no edits.",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 40,
+					"text": "`claude-plugins/kampus-pipeline/hooks/create-worktree.sh`, registered in `.claude/settings.json`"
+				},
+				{
+					"line": 104,
+					"text": "(`packages/pipeline-cli/src/tools/worktree-sweep/create-worktree.hook.test.ts`) covers the"
+				},
+				{
+					"line": 108,
+					"text": "- **§CP / control-plane.** This touches `.claude/settings.json` and `packages/pipeline-cli/`,"
+				}
+			],
+			"supersededBy": "0303"
+		},
+		{
+			"file": ".decisions/0189-crew-roster-law-bridges-engines.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Set frontmatter to:\nstatus: superseded\nsuperseded_by: [0279](0279-v1-crew-retired-in-full.md)\n(keep id/title/date/tags and the entire body byte-identical, including the #3534 amendment section)",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 6,
+					"text": "tags: [pipeline, pipeline-crew, crew-mcp, topology, roster]"
+				},
+				{
+					"line": 13,
+					"text": "The crew-mcp channel substrate (`packages/pipeline-crew-mcp/`) replaced the tmux relay as"
+				},
+				{
+					"line": 16,
+					"text": "crews and making the distributable `claude-plugins/pipeline-crew/` plugin the sole crew"
+				}
+			],
+			"supersededBy": "0279"
+		},
+		{
+			"file": ".decisions/0192-standup-launcher-crew-mcp-subcommand.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Frontmatter only, body byte-identical: set `status: superseded by [0279](0279-retire-v1-crew-in-full.md)` (use 0279's actual filename as `ls .decisions/0279-*` reports it) and add `superseded_by: 0279`. Leave title, id, date, tags untouched.",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: The stand-up launcher's mechanics live as a `pipeline-crew-mcp stand-up` subcommand (Effect CLI, pure core + thin bin), invoked by a thin plugin command — not as plugin-embedded Node"
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, pipeline-crew, crew-mcp, plugin, packaging, launcher]"
+				},
+				{
+					"line": 9,
+					"text": "# 0192 — The stand-up launcher lives in `pipeline-crew-mcp`, not in the plugin"
+				}
+			],
+			"supersededBy": "0279"
+		},
+		{
+			"file": ".decisions/0195-crew-agent-def-name-collision-free-convention.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Set frontmatter: `status: superseded by [0279](0279-v1-crew-retired-in-full.md)` and add `superseded_by: 0279`. Body stays byte-identical.",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 6,
+					"text": "tags: [pipeline, pipeline-crew, crew-mcp, roster, naming]"
+				},
+				{
+					"line": 37,
+					"text": "- The four `claude-plugins/pipeline-crew/agents/` defs are named `crew-cartographer`,"
+				},
+				{
+					"line": 42,
+					"text": "`--agent crew-<role>` (grounded in `packages/pipeline-crew-mcp/src/standup/bind.ts`, `AGENT_FLAG`"
+				}
+			],
+			"supersededBy": "0279"
+		},
+		{
+			"file": ".decisions/0196-read-only-crew-fanout.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Frontmatter only, body byte-identical. Set:\nstatus: superseded by [0279](0279-v1-crew-retired-in-full.md)\nsuperseded_by: 0279\n(replacing `status: accepted`; keep id/title/date/tags unchanged.)",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 6,
+					"text": "tags: [pipeline, pipeline-crew, crew-mcp, topology, roster]"
+				},
+				{
+					"line": 35,
+					"text": "**Implementation shape — a deliberate §CP fork.** The investigator is implemented as a read-only agent def under **`claude-plugins/pipeline-crew/agents/`**, which is **outside `CONTROL_PLANE_RE`** → **NON-§CP** (auto-ships on green, per ADR 0192's verified control-plane boundary). It is explicitly *"
+				},
+				{
+					"line": 41,
+					"text": "- The implementation is tracked in follow-up issue [#3597](https://github.com/kamp-us/phoenix/issues/3597) (the `pipeline-crew/agents/` read-only investigator + the per-bridge/engine grant). It auto-ships on green (NON-§CP); a `kampus-pipeline/agents/` shape would have banked for §CP human merge."
+				}
+			],
+			"supersededBy": "0279"
+		},
+		{
+			"file": ".decisions/0197-canonical-per-repo-crew-rendezvous.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Set frontmatter to: `status: superseded by [0279](0279-v1-crew-retired-in-full.md)` (use 0279's exact filename as listed by `ls .decisions/`), add `superseded_by: 0279`. Body stays byte-identical.",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 15,
+					"text": "The crew channel substrate derives its rendezvous socket from the launch cwd. `socketPathFor` in `packages/pipeline-crew-mcp/src/tracker/server.ts` hashes a `projectRoot` string into a socket name under `$XDG_RUNTIME_DIR`:"
+				},
+				{
+					"line": 33,
+					"text": "The canonical key is the **main worktree's shared git directory**. This is the load-bearing half of the ruling, and the reason is specific: `write-code` runs in `isolation:worktree`, and every linked worktree has a distinct `--show-toplevel`. Keying on toplevel would give each worktree of one repo i"
+				}
+			],
+			"supersededBy": "0279"
+		},
+		{
+			"file": ".decisions/0221-pipeline-anywhere-ga-two-tiers.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Set frontmatter to `status: superseded` and add `superseded_by: 0303` (keep id/title/date/tags as-is). Body stays byte-identical — no amendment line, no edits.",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 59,
+					"text": "plugin's own `diataxis` skill and gated through `review-doc`, slotted between RC"
+				},
+				{
+					"line": 77,
+					"text": "workflow carries its own default CLI version (`pnpm dlx @kampus/pipeline-cli@<pin>`),"
+				},
+				{
+					"line": 79,
+					"text": "(`claude-plugins/kampus-pipeline/hooks/pin.sh`) — so an adopter's `@<ref>`"
+				}
+			],
+			"supersededBy": "0303"
+		},
+		{
+			"file": ".decisions/0230-cycle-validators-follow-the-source-edge.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Frontmatter only, body byte-identical: set `status: superseded` (was `accepted`) and add `superseded_by: 0303` after the status line.",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 21,
+					"text": "`claude-plugins/kampus-pipeline/skills/shared/lib/common.sh`'s `kp_skill_shell_surfaces` resolves as"
+				},
+				{
+					"line": 35,
+					"text": "plan-epic/scripts/cycle-doc-probe.sh review-code/scripts/cycle-doc-probe.sh \\"
+				},
+				{
+					"line": 36,
+					"text": "write-code/SKILL.md ship-it/scripts/step5b-release-queue.sh"
+				}
+			],
+			"supersededBy": "0303"
+		},
+		{
+			"file": ".decisions/0236-eval-harness-gains-a-spawning-shell.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Set frontmatter to `status: superseded` and add `superseded_by: 0303` (keep id/title/date/tags as-is). Body stays byte-identical.",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 11,
+					"text": "**What this decides:** `packages/pipeline-cli/src/tools/eval-harness/` may now start a process. The"
+				},
+				{
+					"line": 14,
+					"text": "`review-skill` review-stage spawn — never a CI job."
+				},
+				{
+					"line": 61,
+					"text": "`total_cost_usd: 0`, `modelUsage: {}` — and `pipeline-cli token-spend` reconstructs its transcript to"
+				}
+			],
+			"supersededBy": "0303"
+		},
+		{
+			"file": ".decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md",
+			"kind": "adr",
+			"verdict": "SUPERSEDE",
+			"action": "Frontmatter only, body byte-identical. Replace the status line with:\n\nstatus: superseded\nsuperseded_by: [0303](0303-kampus-pipeline-plugin-retired.md)\n\n(keep `id`, `title`, `date`, `tags` unchanged; use the real 0303 filename as `ls .decisions/` prints it). The existing \"amended-in-part by 0277 and 0281\" text can move into the body's Records section unchanged, or simply drop — the superseding pointer is what a reader needs.",
+			"rationale": "The decision governs no live surface: everything it rules lived in a tree the repo has since deleted. Its `status: accepted` row is what an agent reads off `ls .decisions/` + frontmatter, so leaving it accepted makes the corpus assert a retired mechanism as current law. Frontmatter flips; the body is history and stays.",
+			"evidence": [
+				{
+					"line": 20,
+					"text": "`.claude/settings.json` disables the plugin (`\"kampus-pipeline@kampus\": false`). That much is true"
+				},
+				{
+					"line": 45,
+					"text": "session in this repo lists bare `adr`, `plan-epic`, `report`, `triage`, `write-code`, `review-code`"
+				},
+				{
+					"line": 58,
+					"text": "symlink, and as the `kampus-pipeline@kampus` plugin — and Claude Code does no cross-scope dedupe, so"
+				}
+			],
+			"supersededBy": "0303"
+		},
+		{
+			"file": ".patterns/right-sized-fan-out-trivial-tier.md",
+			"kind": "pattern",
+			"verdict": "KILL",
+			"action": "Delete .patterns/right-sized-fan-out-trivial-tier.md and remove its row from .patterns/index.md (line 142). Nothing else references the doc — grep of CLAUDE.md and claude-plugins/fabrika returns no link to it. Nothing needs re-recording first: the *why* and bounds already live in ADR 0120 (plus 0112/0070), the retirement of the v1 skills tree is ADR 0303, and the successor ruling (\"triviality is a mode of review, not a fourth namespace / verb\") is already written into claude-plugins/fabrika/skills/review/contract.md:63-65 and build/contract.md:54 (\"v1's classifier ships dormant by design (ADR 0120); nothing here consumes it\").",
+			"rationale": "The doc's whole subject is retired. Its why already lives in the ADR corpus, so repointing it would preserve a page about a tool nobody can run.",
+			"evidence": [
+				{
+					"line": 4,
+					"text": "review gate instead of the full `review-code` / `review-doc` / `review-skill` fan-out. This is"
+				},
+				{
+					"line": 17,
+					"text": "The executor drives **one full fan-out per PR** (`write-code` → a `review-*` gate → `ship-it`)"
+				},
+				{
+					"line": 32,
+					"text": "`pipeline-cli trivial-diff classify` (`packages/pipeline-cli/src/tools/trivial-diff/`) reads a"
+				}
+			]
+		},
+		{
+			"file": ".patterns/workflow-driving-auto-resume.md",
+			"kind": "pattern",
+			"verdict": "KILL",
+			"action": "Delete .patterns/workflow-driving-auto-resume.md. Then: (1) remove its row from .patterns/index.md:143; (2) fix the dangling pointer at packages/pipeline-cli/TOOLS.md:578, which links this doc as the resume-policy tool's home — repoint it to ADR 0130 (.decisions/0130-auto-resume-main-loop-discipline.md) plus ADR 0152 for the healthy-resume cap. Nothing needs re-recording elsewhere: the why (classify-then-cap, K=2 crash cap, default-deny toward LOGIC, K=5 healthy-resume cap) already lives in ADRs 0130 and 0152, and #1760's out-of-scope note is on the issue. No reference in CLAUDE.md or claude-plugins/fabrika. Note the earlier finding's premise is wrong — packages/pipeline-cli still exists and resume-policy/, failure-classifier/, drive-issue-flow/resume-cap.ts are all present; the dead part is the driver, not the cores.",
+			"rationale": "The doc's whole subject is retired. Its why already lives in the ADR corpus, so repointing it would preserve a page about a tool nobody can run.",
+			"evidence": [
+				{
+					"line": 31,
+					"text": "The decision is a pure, unit-tested core — `pipeline-cli resume-policy decide`"
+				},
+				{
+					"line": 32,
+					"text": "(`packages/pipeline-cli/src/tools/resume-policy/`,"
+				}
+			]
+		},
+		{
+			"file": ".patterns/effect-platform-access.md",
+			"kind": "pattern",
+			"verdict": "EDIT",
+			"action": "The shape is alive; only some cited paths moved. Three of the five findings are real, two are wrong (pipeline-cli is NOT deleted — packages/pipeline-cli/ still exists and .github/workflows/workflow-contract.yml still runs `node packages/pipeline-cli/src/bin.ts workflow-contract check`).\n\nEdit spec:\n1. Line 162: `packages/pipeline-cli/src/run.ts already provides NodeServices.layer` → `packages/fabrika-cli/src/run.ts` (verified: packages/fabrika-cli/src/run.ts exists and is already the run.ts cited at line 100, so this also removes an internal contradiction).\n2. Line 183: \"`readBody` in `packages/pipeline-cli/src/tools/verdict/command.ts` is the shape (`--body-file` → `fs.readFileString`, else `readFileSync(0, \"utf8\")`)\" → repoint to the live fd-0 boundary `packages/fabrika-cli/src/io/stdin.ts` (`readStdin`, raw `node:fs` `readSync`, verified; its docblock already back-links to this pattern doc and to the same ruling). Drop or re-ground the trailing \"`leak-guard`'s `readCommentBody` and `redact-leaks`' `readBody` carry the same split\" — those are pipeline-cli-era exemplars; fabrika-cli has no second `readBody` doing the split.\n3. Line 299: `packages/pipeline-cli/src/tools/patch-guard/gate.ts` → `packages/fabrika-cli/src/guard/patch-verb.ts` (verified: `gatherMarkers` at line 71). Adjust the parenthetical \"covered by two `gate.unit.test.ts` cases\" → `patch.unit.test.ts` / `patch-verb.unit.test.ts` (confirm which carries the symlink cases before writing).\n4. Line 302: `packages/pipeline-cli/src/tools/design-token-guard/gate.ts` → `packages/fabrika-cli/src/guard/design-token-verb.ts` (verified: `walkCss` at line 67).\n5. Lines 334 and 376: LEAVE UNCHANGED. `packages/pipeline-cli/src/tools/workflow-contract/gate.ts` and `packages/pipeline-cli/src/tools/reachability-guard/gate.ts` both still exist and workflow-contract is still the pipeline-cli bin in CI. The findings' \"guard now lives on fabrika-cli\" is false for these two — fabrika-cli/src/guard has no workflow-contract or reachability file.",
+			"rationale": "The shape the doc describes is alive in the code; only its cited paths or actor names moved. The doc is repointed at the verified live homes rather than retired.",
+			"evidence": [
+				{
+					"line": 162,
+					"text": "`packages/pipeline-cli/src/run.ts` already provides `NodeServices.layer` — so the"
+				},
+				{
+					"line": 183,
+					"text": "seam. `readBody` in `packages/pipeline-cli/src/tools/verdict/command.ts` is the shape"
+				},
+				{
+					"line": 299,
+					"text": "(`packages/pipeline-cli/src/tools/patch-guard/gate.ts`, covered by two `gate.unit.test.ts` cases that"
+				}
+			]
+		},
+		{
+			"file": ".patterns/effect-process-cli-shell.md",
+			"kind": "pattern",
+			"verdict": "EDIT",
+			"action": "The shape is alive in packages/fabrika-cli (src/io/exec.ts spawns ChildProcess.make + reads stdout/stderr/exitCode concurrently; run.ts provides NodeServices.layer; fakes.test-support.ts builds a canned ChildProcessSpawner). Only the example paths and the bin name are stale. Edit spec:\n\n1. Lines 17-21 (canonical examples): replace the three pipeline-cli/flake-rate pointers with \"The canonical example is `packages/fabrika-cli/src/io/exec.ts` (the one subprocess seam: spawn, read all three channels, fold a spawn fault into the result), with `packages/fabrika-cli/src/io/git.ts` and `packages/fabrika-cli/src/io/github.ts` as its two readers (`git` refs; `gh api` REST, paged, shape-validated).\" Drop the `packages/flake-rate/src/github.ts` sentence (that package is in the approved delete batch #6346).\n\n2. Line 28-29: \"run by the `pipeline-cli` bin on Node\" → \"run by the `fabrika` bin on Node\".\n\n3. Lines 110-115: the per-tool `Command.provide(GithubLive)` + `packages/pipeline-cli/src/bin.ts` claim is doubly stale — fabrika-cli has no per-tool Github layer. Rewrite to: \"In production the spawner comes from the Node platform: the runner provides the platform union once with `Effect.provide(NodeServices.layer)` (`packages/fabrika-cli/src/run.ts`, entered from `packages/fabrika-cli/src/bin.ts`) — `ChildProcessSpawner` is a `NodeServices` member, so nothing in a verb ever names the platform.\"\n\n4. Lines 158-160 (test fakes): replace the two pipeline-cli test paths with \"the `shell`/`faultingShell` canned-spawner idioms in `packages/fabrika-cli/src/fakes.test-support.ts`, used by `packages/fabrika-cli/src/io/git.unit.test.ts` and `packages/fabrika-cli/src/io/github.unit.test.ts`.\"\n\n5. Honest-rewrite note the sweep missed: the \"Gotchas\" section's typed-error framing (GhCommandError on non-zero exit, exit code -1 sentinel) does not match fabrika-cli, where a non-zero exit and a spawn fault are both DATA (`{ok, stdout, reason}`, `E = never`) per exec.ts's docblock. When making edits 1-4, add one bullet: \"**A non-zero exit can be data, not a failure.** `exec.ts` returns `{ok, stdout, reason}` with `E = never` and folds the `PlatformError` in too; callers read `ok` before `stdout`. Raise a typed error only where the caller cannot express the failure as an outcome.\" Leave the code snippets as illustrations of the typed-error variant.\n\nAlso stale in the same pass: line 144's `CLAUDE_PIPELINE_REPO` repo-resolution example — the live equivalent is `packages/fabrika-cli/src/repo-config.ts`; repoint or drop the pipeline-cli-era env-var chain if it no longer matches that file.",
+			"rationale": "The shape the doc describes is alive in the code; only its cited paths or actor names moved. The doc is repointed at the verified live homes rather than retired.",
+			"evidence": [
+				{
+					"line": 17,
+					"text": "The canonical examples are `packages/pipeline-cli/src/tools/epic-ledger/github.ts`"
+				},
+				{
+					"line": 19,
+					"text": "`packages/pipeline-cli/src/tools/crabbox-manifest/commit.ts` (the smallest:"
+				},
+				{
+					"line": 20,
+					"text": "`git rev-parse HEAD` → one trimmed SHA). `packages/flake-rate/src/github.ts` is a"
+				}
+			]
+		},
+		{
+			"file": ".patterns/feature-flags-agent-workflow.md",
+			"kind": "pattern",
+			"verdict": "EDIT",
+			"action": "The shape is alive (Flags service, FlagGate, anka-ops flag get, ship's status:awaiting-release label all verified at head). Only the v1 skill names are dead. Rename throughout:\n- `write-code` -> `build` (claude-plugins/fabrika/skills/build) at lines 4, 159, 203, 204, 284, 287, 292, 332.\n- `ship-it` -> `ship` (claude-plugins/fabrika/skills/ship) at lines 4, 65, 159, 175, 178, 287, 329.\n- `review-code` -> `review` (claude-plugins/fabrika/skills/review) at lines 68, 159, 160, 287, 322.\n- `review-*` -> `review` / `review-ui` (both exist) at lines 65, 79.\nSpecific rewrites:\n- L4: \"...the autonomous pipeline (`build` / `ship`)\".\n- L65 table cell: \"`ship` (refuses to self-merge blocking-set PRs), the `review` / `review-ui` gates.\"\n- L79: \"The `review` / `review-ui` + CI + e2e gates *are* the bar.\"\n- L159-160: \"Open the PR the normal way (`build` -> `review` -> `ship`) ... the `review` PASS auto-ships it on green CI.\"\n- L175-178: \"when `ship` merges a dark feature PR, it applies `status:awaiting-release` to the linked issue\" and replace \"([#601](...)) owns ship-it's application logic)\" with a pointer to the live logic: claude-plugins/fabrika/skills/ship/SKILL.md (`ship release` is the dark-ship seam; the label write is fail-loud, exit 8/9) — verified present at SKILL.md:228,302, so the claim stands.\n- L287: \"flows through the normal `status:triaged` -> `build` -> `review` -> `ship` pipeline.\"\n- L329/332 diagram: \"ship applies it\" and \"file type:chore -> `build` drains\".\nAlso update .patterns/index.md:116 only if it names a skill (it does not; leave it).",
+			"rationale": "The shape the doc describes is alive in the code; only its cited paths or actor names moved. The doc is repointed at the verified live homes rather than retired.",
+			"evidence": [
+				{
+					"line": 4,
+					"text": "exists for: the sanctioned procedure by which the autonomous pipeline (`write-code` / `ship-it`)"
+				},
+				{
+					"line": 65,
+					"text": "| **Control-plane boundary** | **Merge time** | *Whether a PR may auto-merge at all.* `.claude/**` / `.github/**` PRs are blocking — a human merges them; everything else (`apps/web`, `packages`, `.decisions`, `.patterns`) is gated + auto-shippable. | `ship-it` (refuses to self-merge blocking-set PRs"
+				},
+				{
+					"line": 68,
+					"text": "A feature PR clears the **merge** gate the moment its `review-code` PASS lands (it's `apps/web/**`,"
+				}
+			]
+		},
+		{
+			"file": ".patterns/golden-real-payload-fixtures.md",
+			"kind": "pattern",
+			"verdict": "EDIT",
+			"action": "The shape is alive in fabrika-cli (verified: packages/fabrika-cli/src/golden-fixture.ts exists and is imported by packages/fabrika-cli/src/hook/envelope.golden.test.ts and .../pretooluse-polarity.cli.test.ts). Note for accuracy: packages/pipeline-cli is NOT deleted — both cited paths are still git-tracked — but they belong to the retired v1 worktree hook, so the doc still points a reader at a dead example. Edits:\n1. Line 27-28: replace the fixture example link `packages/pipeline-cli/src/tools/worktree-sweep/__fixtures__/worktree-create.payload.golden.json` with the live one: [`packages/fabrika-cli/src/hook/__fixtures__/pre-tool-use-spawn.payload.golden.json`](../packages/fabrika-cli/src/hook/__fixtures__/pre-tool-use-spawn.payload.golden.json) (verified present; siblings: session-start.payload.golden.json, pre-tool-use.payload.golden.json, pre-tool-use-spawn-unset-model.payload.golden.json).\n2. Line 36-37: repoint the shared loader link to [`packages/fabrika-cli/src/golden-fixture.ts`](../packages/fabrika-cli/src/golden-fixture.ts) (verified present; same readGoldenFixture/loadGoldenPayload API, so the surrounding sentence stands).\n3. Lines 43-44: replace the retired `create-worktree.hook.test.ts` driver example with the live one, `packages/fabrika-cli/src/hook/envelope.golden.test.ts` (and `pretooluse-polarity.cli.test.ts` for the CLI-driven variant); drop the \"retired with v1 — #5937\" aside or keep it only in the #2925 history paragraph.\n4. Keep the #2925 story (lines 9-19) as-is — it is history and cannot mislead.",
+			"rationale": "The shape the doc describes is alive in the code; only its cited paths or actor names moved. The doc is repointed at the verified live homes rather than retired.",
+			"evidence": [
+				{
+					"line": 16,
+					"text": "asserted the *fabricated* shape, so review-code + CI + control-plane approval all went green"
+				}
+			]
+		},
+		{
+			"file": ".patterns/liveness-probe-outcomes.md",
+			"kind": "pattern",
+			"verdict": "EDIT",
+			"action": "Lines 51-57 only. Replace the sentence \"the canonical instance is `pipeline-cli checks read --expect green`, where exit `1` is read-OK-but-not-green and exit `2` is UNREADABLE, deliberately distinct.\" with the live fabrika shape: \"the canonical instance is `fabrika ship checks` (packages/fabrika-cli/src/ship/checks-verb.ts), which answers the rollup on exit `0` and seats an unreadable precondition on its own code `PRECONDITION_UNKNOWN` (11, from packages/fabrika-cli/src/report/codes.ts) — never on `1`, which means bad flag or the verb failed to run, and never on `2`, which fabrika never allocates because it is the harness's block code (packages/fabrika-cli/src/verb.ts).\" Keep the rest of the paragraph (the cost argument and the ADR 0250 pointer) byte-identical. No other line in the file is stale.",
+			"rationale": "The shape the doc describes is alive in the code; only its cited paths or actor names moved. The doc is repointed at the verified live homes rather than retired.",
+			"evidence": [
+				{
+					"line": 53,
+					"text": "canonical instance is `pipeline-cli checks read --expect green`, where exit `1` is"
+				}
+			]
+		},
+		{
+			"file": ".patterns/plan-format-enrichment-proposals.md",
+			"kind": "pattern",
+			"verdict": "EDIT",
+			"action": "The proposal is alive (still linked from .patterns/index.md line 145); only tool/skill names are stale. Five edit sites:\n\n1. Line 56: `- \\`node packages/pipeline-cli/src/bin.ts readme-guard check\\` — exits 0.` → `- \\`fabrika guard readme-guard check\\` — exits 0.` (verb exists: packages/fabrika-cli/src/guard/readme-verb.ts, VERB = \"guard readme-guard check\"; the `node .../bin.ts` form violates the fabrika-binstub convention.)\n\n2. Line 114: `re-checked with \\`pipeline-cli control-plane-paths\\`` → `re-checked with \\`fabrika guard codeowners-cp check\\`` (exists: packages/fabrika-cli/src/guard/codeowners-cp-verb.ts, VERB = \"guard codeowners-cp check\"). Honest note: `pipeline-cli control-plane-paths` still exists on disk (packages/pipeline-cli/src/tools/control-plane-paths/) — pipeline-cli is NOT deleted — but the §CP boundary regex + check now live on fabrika-cli (guard/control-plane-re.ts, codeowners-cp.ts), so name the fabrika verb.\n\n3. Line 22-24: `The \\`write-code\\` executor reads … the contract \\`review-code\\` verifies` → `The \\`build\\` executor reads … the contract \\`review\\` verifies`.\n\n4. Line 73: `It also feeds \\`review-code\\` a shared boundary` → `It also feeds \\`review\\` a shared boundary`.\n\n5. Lines 117-119: `teach \\`write-code\\` to run a child's verify commands … and leave \\`review-code\\` free to append` → `teach fabrika's \\`build\\` to run a child's verify commands … and leave \\`review\\` free to append`.\n\nNo other stale surface: `plan-epic`, `gh-issue-intake-formats.md` §2, `report`, ADR 0079 all still live.",
+			"rationale": "The shape the doc describes is alive in the code; only its cited paths or actor names moved. The doc is repointed at the verified live homes rather than retired.",
+			"evidence": [
+				{
+					"line": 22,
+					"text": "`### What to build` prose spec, and a `### Acceptance criteria` checklist. The `write-code`"
+				},
+				{
+					"line": 24,
+					"text": "`review-code` verifies. Two gaps the #3371 salvage targets:"
+				},
+				{
+					"line": 56,
+					"text": "- `node packages/pipeline-cli/src/bin.ts readme-guard check` — exits 0."
+				}
+			]
+		},
+		{
+			"file": ".patterns/worktree-agent-constraints.md",
+			"kind": "pattern",
+			"verdict": "EDIT",
+			"action": "The shape (worktree hazards for isolation:worktree agents) is alive — don't KILL; .patterns/index.md row 141 links it as its only documentation. But the proposed \"repoint to fabrika-cli\" is wrong: I grepped packages/fabrika-cli/src and there is NO worktree-guard, main-sync, worktree-sweep, or ref-guard code there (only a PROVENANCE.md line that itself points back at ../../../../pipeline-cli/src/tools/worktree-sweep/__fixtures__/). On today's main all cited paths still exist (packages/pipeline-cli/src/tools/{worktree-guard,main-sync,worktree-sweep,ref-guard}/, packages/pipeline-cli/README.md) and lefthook.yml:259-268 still wires `node packages/pipeline-cli/src/bin.ts ref-guard reference-transaction`. So the honest rewrite, to apply once the pipeline-cli deletion actually lands:\n1. lines 35, 70, 103 (`packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`, `path-resolve.ts`, `reap.ts`) — the bash-pin/cwd-pin/reap mechanism has no fabrika-cli home; either name its real surviving home (verify by grepping for `WORKTREE_SEGMENT` after the deletion lands) or state plainly \"the worktree-guard package retired with pipeline-cli; the cwd-reset rule is prose-only now\" and keep the `git -C \"$WT\" …` discipline as the live rule.\n2. lines 113-121 (`pipeline-cli main-sync`, `packages/pipeline-cli/src/tools/main-sync/`, link to `packages/pipeline-cli/README.md`) — same: no main-sync in fabrika-cli. Recast the paragraph as \"retired with pipeline-cli; drive sync by hand through `git -C <primary> fetch origin main && git merge --ff-only origin/main`\" unless a surviving home is grep-proven.\n3. lines 126-134 (`pipeline-cli ref-guard`, `packages/pipeline-cli/src/tools/ref-guard/`, the `reference-transaction` lefthook leg) — per the finding, ADR 0305 retires the lefthook git-boundary legs. Replace the \"is enforced\" framing with \"the ref-transaction backstop retired (see ADR 0305); the PULLER/orchestrator ROE below is now prose-only — never `checkout -B main` / `branch -f main` / `reset` / `update-ref refs/heads/main` on the primary.\" Keep the ROE, drop the enforcement claim.\n4. lines 221-222 and 304-306 (`pnpm pipeline-cli worktree-sweep [--execute|--reclaim-refs]`) and line 292 / the ref-reclaim path (`packages/pipeline-cli/src/tools/worktree-sweep/worktree-sweep.ts`, `ref-reclaim.ts`) — no fabrika-cli sweep verb exists. If the sweep did not survive the deletion, replace the whole \"Sanctioned bulk-cleanup\" command block with a plain statement that the automated sweep retired and the operator drain is a manual, non-`--force` `git worktree remove`/`git worktree prune` (keeping the KEEP-on-uncertainty and ref-reclaim reasoning as design rationale, not as a live command).\nNote ADR 0305 is not present in .decisions/ on this checkout — verify its number before citing it in the doc.",
+			"rationale": "The shape the doc describes is alive in the code; only its cited paths or actor names moved. The doc is repointed at the verified live homes rather than retired.",
+			"evidence": [
+				{
+					"line": 5,
+					"text": "`write-code` mode runs in a git worktree the harness lands at"
+				},
+				{
+					"line": 33,
+					"text": "is NOT free: phoenix's own `@kampus/worktree-guard` hardcodes the base segment"
+				},
+				{
+					"line": 35,
+					"text": "`packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`, `path-resolve.ts`, and `reap.ts` — and"
+				}
+			]
+		},
+		{
+			"file": ".decisions/0014-drizzle-run-batch-as-service-methods.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file, body otherwise byte-identical:\n\n> Amendment 2026-08-19: the canonical test file is now `apps/web/worker/db/Drizzle.unit.test.ts` (two-tier unit/integration naming); the `Drizzle.test.ts` path named at lines 76 and 80 no longer exists.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 76,
+					"text": "- `Drizzle.run(...)` or `Drizzle.batch(...)` as static method calls (the static no longer exists; the grep returns zero hits in `apps/web/worker/features/` and `apps/web/worker/db/Drizzle.test.ts`)."
+				},
+				{
+					"line": 80,
+					"text": "**Testing:** the test layer for `Drizzle` builds a `DrizzleAccess` record over a fake `DrizzleDb` and provides it via `Layer.succeed(Drizzle, makeAccess(fakeDb))`. Tests destructure `{run, batch}` inside `Effect.gen` and exercise the wrap. See `apps/web/worker/db/Drizzle.test.ts` for the canonical s"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the canonical test file is now `apps/web/worker/db/Drizzle.unit.test.ts` (two-tier unit/integration naming); the `Drizzle.test.ts` path named at lines 76 and 80 no longer exists."
+		},
+		{
+			"file": ".decisions/0032-alchemy-beta45-and-dev-model.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (after the \"What was considered + rejected\" section), body otherwise byte-identical:\n\n> Amendment 2026-08-19: `connection-do.ts` and `topic-do.ts` no longer exist — the two DOs were merged into one `LiveDO` at `apps/web/worker/features/fate-live/live-do.ts` (see ADR [0037](0037-unified-void-aligned-live-do.md)). Read that file for the modular `.make()` form this ADR adopted.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 49,
+					"text": "had to carry (see `apps/web/worker/features/fate-live/connection-do.ts` and"
+				},
+				{
+					"line": 50,
+					"text": "`apps/web/worker/features/fate-live/topic-do.ts` headers, and the companion ADR for the"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `connection-do.ts` and `topic-do.ts` no longer exist — the two DOs were merged into one `LiveDO` at `apps/web/worker/features/fate-live/live-do.ts` (see ADR [0037](0037-unified-void-aligned-live-do.md)). Read that file for the modular `.make()` form this ADR adopted."
+		},
+		{
+			"file": ".decisions/0047-review-plan-gate.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: the gate's operable surface moved — `packages/epic-ledger` is gone; the ledger code now lives at `packages/fabrika-cli/src/ledger/` (registered as `ledgerCommand` in `packages/fabrika-cli/src/registry.ts`), run via the `fabrika ledger …` binstub, and the skill that invokes it is `/fabrika:check-epic-plan`. See ADR 0303.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: The review-plan gate — deterministic plan-epic verification"
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, plan-epic, write-code, effect, agents]"
+				},
+				{
+					"line": 9,
+					"text": "# 0047 — The review-plan gate — deterministic plan-epic verification"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the gate's operable surface moved — `packages/epic-ledger` is gone; the ledger code now lives at `packages/fabrika-cli/src/ledger/` (registered as `ledgerCommand` in `packages/fabrika-cli/src/registry.ts`), run via the `fabrika ledger …` binstub, and the skill that invokes it is `/fabrika:check-epic-plan`. See ADR 0303."
+		},
+		{
+			"file": ".decisions/0048-ship-it-merge-actor.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (frontmatter and body unchanged):\n\n> Amendment 2026-08-19: the actor moved, the rule did not. `ship-it` retired with the kampus-pipeline plugin (ADR 0303); the single merge authority is now fabrika's `ship` (claude-plugins/fabrika/skills/ship/), and its upstream PASS producer is fabrika `review`, not `review-code` (naming per ADR 0242). Everything above about one PR per invocation, merge only on a present PASS signal, sole merge authority, and red CI handing off to `heal-ci` still binds.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: ship-it — the pipeline's single merge authority closes the loop (consumes review-code's PASS marker; sole merge step)"
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, skills, ship-it, review-code, agents]"
+				},
+				{
+					"line": 9,
+					"text": "# 0048 — ship-it — the Pipeline's Single Merge Authority Closes the Loop"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the actor moved, the rule did not. `ship-it` retired with the kampus-pipeline plugin (ADR 0303); the single merge authority is now fabrika's `ship` (claude-plugins/fabrika/skills/ship/), and its upstream PASS producer is fabrika `review`, not `review-code` (naming per ADR 0242). Everything above about one PR per invocation, merge only on a present PASS signal, sole merge authority, and red CI handing off to `heal-ci` still binds."
+		},
+		{
+			"file": ".decisions/0056-bundle-storage-transport.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical, frontmatter unchanged):\n\n> Amendment 2026-08-19: the manifest producer moved out of `packages/crabbox-manifest/` into `packages/fabrika-cli/src/ci/manifest.ts` (`SCHEMA_VERSION = 1`, `schemaVersion: Schema.Number`), driven by `fabrika ci evidence` in `.github/workflows/run-evidence.yml`; the gate consumers are fabrika's `ship`/`review` skills, not the v1 `ship-it`/`review-code` (ADR 0303). Storage, transport and the versioning policy are unchanged.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 6,
+					"text": "tags: [pipeline, ci, review-code, ship-it, auto-merge, storage]"
+				},
+				{
+					"line": 15,
+					"text": "`tests`, `logs`) — and the gate's mechanical consumption of it (§3: `ship-it` asserts the"
+				},
+				{
+					"line": 17,
+					"text": "`review-code` cites its structured results). It deliberately deferred two downstream"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the manifest producer moved out of `packages/crabbox-manifest/` into `packages/fabrika-cli/src/ci/manifest.ts` (`SCHEMA_VERSION = 1`, `schemaVersion: Schema.Number`), driven by `fabrika ci evidence` in `.github/workflows/run-evidence.yml`; the gate consumers are fabrika's `ship`/`review` skills, not the v1 `ship-it`/`review-code` (ADR 0303). Storage, transport and the versioning policy are unchanged."
+		},
+		{
+			"file": ".decisions/0058-sha-bound-verdict-contract.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file:\n\n> Amendment 2026-08-19: `packages/epic-ledger` is gone — the plan gate now lives in `packages/fabrika-cli/src/plan/` (`fabrika plan check` / `plan verdict` / `plan flip`, driven by the `check-epic-plan` skill). The scope carve-out is unchanged: the plan gate's verdict rides an epic issue, not a PR head, so it stays out of the SHA-binding contract. Renamed actors: `review-code`/`review-doc` → `review`, `ship-it` → `ship`, `write-code` repair → `build` repair mode.\n\nBody above stays byte-identical; no frontmatter change.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: Gate verdicts are SHA-bound (`@ <sha>`) and one-per-gate (upsert, not append); ship-it + write-code-repair refuse any verdict not bound to the PR's current head; review-doc emits only the SHA-bound comment (no native APPROVE); review-plan/heal-ci out of scope"
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, skills, ship-it, review-code, review-doc, write-code, security, agents, concurrency]"
+				},
+				{
+					"line": 9,
+					"text": "# 0058 — Gate Verdicts Are SHA-Bound and One-Per-Gate (Upsert), and ship-it Refuses Stale-Head Verdicts"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `packages/epic-ledger` is gone — the plan gate now lives in `packages/fabrika-cli/src/plan/` (`fabrika plan check` / `plan verdict` / `plan flip`, driven by the `check-epic-plan` skill). The scope carve-out is unchanged: the plan gate's verdict rides an epic issue, not a PR head, so it stays out of the SHA-binding contract. Renamed actors: `review-code`/`review-doc` → `review`, `ship-it` → `ship`, `write-code` repair → `build` repair mode."
+		},
+		{
+			"file": ".decisions/0059-epic-plan-lock.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: `@phoenix/epic-ledger` is gone. The epic lock is live at `packages/fabrika-cli/src/ledger/preconditions.ts` (the `epic-lock` claim, still a two-write `status:planning` acquire) and the plan gate at `packages/fabrika-cli/src/plan/` (`check-verb.ts` / `flip-verb.ts`). The signature-keyed convergence loop of Decision 3 (`gate.ts` / `loop.ts`, `runConvergenceLoop`, `ledgerSignature`) no longer exists: the gate is one-shot and TOCTOU-closed by the scope digest in `packages/fabrika-cli/src/plan/digest.ts`, which every mutating verb must pass as `--digest` and recompute from a fresh read.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: The epic-plan lock — a `status:planning` label serializes plan-epic/review-plan over one epic's children (flip vs supersede), held to PASS-or-park; convergence checkpoint keys on ledger signature not defect count; detect-and-serialize not a mutex; #261 body-guard is the complementary backstop"
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, skills, plan-epic, review-plan, write-code, concurrency, agents]"
+				},
+				{
+					"line": 16,
+					"text": "- **`review-plan` owns the `status:planned → status:triaged` flip** — the *only* thing that"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `@phoenix/epic-ledger` is gone. The epic lock is live at `packages/fabrika-cli/src/ledger/preconditions.ts` (the `epic-lock` claim, still a two-write `status:planning` acquire) and the plan gate at `packages/fabrika-cli/src/plan/` (`check-verb.ts` / `flip-verb.ts`). The signature-keyed convergence loop of Decision 3 (`gate.ts` / `loop.ts`, `runConvergenceLoop`, `ledgerSignature`) no longer exists: the gate is one-shot and TOCTOU-closed by the scope digest in `packages/fabrika-cli/src/plan/digest.ts`, which every mutating verb must pass as `--digest` and recompute from a fresh read."
+		},
+		{
+			"file": ".decisions/0060-worktree-lint-changed-paths.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file: \"> Amendment 2026-08-19: the v1 `write-code`/`review-code` skills are retired (ADR 0303); the actors are now fabrika's `build` and `review`, and the packaged gate is `pnpm lint:worktree` (root `package.json` → `scripts/biome-worktree.mjs`). The rule itself is unchanged.\"",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: Worktree-isolated write-code/review-code gates lint EXPLICIT paths (changed files, else `apps packages`), never `biome check .` — bare `.` resolves to the worktree CWD under `.claude/worktrees`, matches the retained exclusion, and exits 0 without linting (false green, #236); the sparse review"
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, skills, write-code, review-code, lint, typecheck, agents, worktree]"
+				},
+				{
+					"line": 13,
+					"text": "`write-code` (Step 4) runs in a full isolated git worktree under `.claude/worktrees/<id>/`,"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the v1 `write-code`/`review-code` skills are retired (ADR 0303); the actors are now fabrika's `build` and `review`, and the packaged gate is `pnpm lint:worktree` (root `package.json` → `scripts/biome-worktree.mjs`). The rule itself is unchanged."
+		},
+		{
+			"file": ".decisions/0061-ship-it-gating-check-set.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file:\n\n> Amendment 2026-08-19: the ship-it skill retired with the v1 plugin (ADR 0303); the gate now lives in fabrika — `fabrika ship checks` (packages/fabrika-cli/src/ship/checks-verb.ts) with the known-informational denylist as `isInformational` in packages/fabrika-cli/src/review/rollup.ts, also consumed by `fabrika heal-ci`.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: ship-it gates on the gating-check set, not the full rollup; preview deploys are informational (denylist of known-informational checks, fail-safe to blocking; consistent-by-construction with the run-evidence bundle)"
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, skills, ship-it, heal-ci, ci, agents]"
+				},
+				{
+					"line": 9,
+					"text": "# 0061 — ship-it Gates on the Gating-Check Set, Not the Full Rollup; Preview Deploys Are Informational"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the ship-it skill retired with the v1 plugin (ADR 0303); the gate now lives in fabrika — `fabrika ship checks` (packages/fabrika-cli/src/ship/checks-verb.ts) with the known-informational denylist as `isInformational` in packages/fabrika-cli/src/review/rollup.ts, also consumed by `fabrika heal-ci`."
+		},
+		{
+			"file": ".decisions/0065-gate-critical-skills-are-blocking.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: the enumerated `skills/ship-it|review-code|review-doc|review-plan|gh-issue-intake-formats.md` paths retired with the v1 kampus-pipeline plugin (ADR [0303](0303-kampus-pipeline-plugin-retired.md) removed the four `claude-plugins/kampus-pipeline/*` clauses from `CONTROL_PLANE_RE` and `.github/CODEOWNERS`). The principle stands and still governs: gate/merge machinery is control plane *by nature*, blocking and human-merged. Read the live §CP set from `.github/CODEOWNERS` + the `control-plane-paths` boundary (`packages/pipeline-cli/src/tools/control-plane-paths/boundaries.md`), never from this list.\n\n(Use the actual 0303 filename from `ls .decisions/` when writing the link.)",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: \"Gate-critical skills (`ship-it`/`review-code`/`review-doc`/`review-plan`/`gh-issue-intake-formats.md`) are control-plane → BLOCKING (manual human merge); all other `skills/**` stay NON-blocking → auto-merge on a `review-code` PASS — narrows the all-skills-blocking stopgap to the 80/20: only "
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, ship-it, skills, control-plane, security]"
+				},
+				{
+					"line": 23,
+					"text": "where a `skills/*.md`-only PR was classed docs and demanded a `review-doc` PASS that the"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the enumerated `skills/ship-it|review-code|review-doc|review-plan|gh-issue-intake-formats.md` paths retired with the v1 kampus-pipeline plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md) removed the four `claude-plugins/kampus-pipeline/*` clauses from `CONTROL_PLANE_RE` and `.github/CODEOWNERS`). The principle stands and still governs: gate/merge machinery is control plane *by nature*, blocking and human-merged. Read the live §CP set from `.github/CODEOWNERS` + the single-source regex ([`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts)), never from this list."
+		},
+		{
+			"file": ".decisions/0071-enforce-control-plane-at-github.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (after the Consequences block):\n\n> Amendment 2026-08-19: the illustrative `CODEOWNERS` block above is v1-era — the `/skills/ship-it/`, `/skills/review-code/`, `/skills/review-doc/`, `/skills/review-plan/` and `/skills/gh-issue-intake-formats.md` rows no longer exist; the v1 `kampus-pipeline` plugin and its §CP clauses were retired by ADR [0303](0303-retire-kampus-pipeline-plugin.md). The decision itself still binds — read the live `.github/CODEOWNERS` (now `@kamp-us/control-plane`, per ADR 0135) as the authority on the §CP owner set, never this list.\n\nFrontmatter unchanged (status stays accepted).",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 6,
+					"text": "tags: [pipeline, ship-it, review-code, security, control-plane, ci, governance]"
+				},
+				{
+					"line": 25,
+					"text": "- `review-code`/`review-doc` emit a verdict as a **PR comment marker** (ADR"
+				},
+				{
+					"line": 28,
+					"text": "- `ship-it`'s gate (assert a SHA-bound PASS marker authored by a `write+` collaborator, ADRs"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the illustrative `CODEOWNERS` block above is v1-era — the `/skills/ship-it/`, `/skills/review-code/`, `/skills/review-doc/`, `/skills/review-plan/` and `/skills/gh-issue-intake-formats.md` rows no longer exist; the v1 `kampus-pipeline` plugin and its §CP clauses were retired by ADR [0303](0303-retire-kampus-pipeline-plugin.md). The decision itself still binds — read the live `.github/CODEOWNERS` (now `@kamp-us/control-plane`, per ADR 0135) as the authority on the §CP owner set, never this list."
+		},
+		{
+			"file": ".decisions/0075-issueless-doc-pr-merge-seam.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file:\n\n> Amendment 2026-08-19: `ship-it`/`review-doc` are gone (ADR 0303). The carve-out is live in fabrika `ship` — `fabrika ship scope <pr>` prints the linked issue and treats doc/vocabulary-surface-only PRs as legitimately issueless, while `code`/`skill` classes still require `Fixes #N` (or `Part of #N`); the gate verdict now comes from `review`.\n\nNo frontmatter change (status stays `accepted`).",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: A docs-only PR may merge with no linked issue — ship-it Step 1 carves out the doc lane"
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, ship-it, review-doc, decisions, adr, autonomy]"
+				},
+				{
+					"line": 9,
+					"text": "# 0075 — A docs-only PR may merge with no linked issue — ship-it Step 1 carves out the doc lane"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `ship-it`/`review-doc` are gone (ADR 0303). The carve-out is live in fabrika `ship` — `fabrika ship scope <pr>` prints the linked issue and treats doc/vocabulary-surface-only PRs as legitimately issueless, while `code`/`skill` classes still require `Fixes #N` (or `Part of #N`); the gate verdict now comes from `review`."
+		},
+		{
+			"file": ".decisions/0086-ship-it-foreign-repo-degradation.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (after the \"Relates to\" bullet), body otherwise byte-identical:\n\n> Amendment 2026-08-19: `ship-it` is gone with the v1 plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)); this decision still binds, now enforced by `fabrika ship evidence` in [`packages/fabrika-cli/src/ship/evidence-verb.ts`](../packages/fabrika-cli/src/ship/evidence-verb.ts) — it looks up the `run-evidence` producer workflow, refuses `unknown` on an unreadable inventory (fail-safe, §3), and degrades only on a proven-absent producer.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: ship-it degrades its run-evidence guard in a foreign repo (producer-presence, not per-PR escape)"
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, plugin-portability, ship-it, run-evidence]"
+				},
+				{
+					"line": 9,
+					"text": "# 0086 — ship-it degrades its run-evidence guard in a foreign repo (producer-presence, not per-PR escape)"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `ship-it` is gone with the v1 plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)); this decision still binds, now enforced by `fabrika ship evidence` in [`packages/fabrika-cli/src/ship/evidence-verb.ts`](../packages/fabrika-cli/src/ship/evidence-verb.ts) — it looks up the `run-evidence` producer workflow, refuses `unknown` on an unreadable inventory (fail-safe, §3), and degrades only on a proven-absent producer."
+		},
+		{
+			"file": ".decisions/0087-plugin-dedicated-subdir-source.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical, frontmatter unchanged):\n\n> Amendment 2026-08-19: the rule stands — the live instance is now `claude-plugins/fabrika/`, with `\"source\": \"./claude-plugins/fabrika\"` in the root `.claude-plugin/marketplace.json`. `claude-plugins/kampus-pipeline/` was deleted (ADR [0303](0303-kampus-pipeline-retired.md)); its catalog entry survives only as a `git-subdir` source pinned to sha `633d61e`, and `.claude/skills` no longer exists, so §2's local-discovery symlink is gone. §4's gate-path anchors now live in fabrika's own paths.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 13,
+					"text": "`.claude-plugin/marketplace.json` set the `kampus-pipeline` plugin's `source` to `\"./\"`"
+				},
+				{
+					"line": 14,
+					"text": "(the repo root). `claude plugin install kampus-pipeline@kampus` therefore copied the"
+				},
+				{
+					"line": 34,
+					"text": "3. **`source` supports a subdirectory** — a relative `\"./claude-plugins/kampus-pipeline\"`"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the rule stands — the live instance is now `claude-plugins/fabrika/`, with `\"source\": \"./claude-plugins/fabrika\"` in the root `.claude-plugin/marketplace.json`. `claude-plugins/kampus-pipeline/` was deleted (ADR [0303](0303-retire-kampus-pipeline-plugin.md)); its catalog entry survives only as a `git-subdir` source pinned to sha `633d61e`, and `.claude/skills` no longer exists, so §2's local-discovery symlink is gone. §4's gate-path anchors now live in fabrika's own paths."
+		},
+		{
+			"file": ".decisions/0099-glossary-surface-audit-skill-emits-issues.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: the `kampus-pipeline` plugin is retired (ADR [0303](0303-retire-kampus-pipeline-plugin.md)); the `glossary` skill now lives at `claude-plugins/fabrika/skills/glossary/`. No `architecture-audit` skill exists in fabrika — Decision 1 still governs if one is ever authored. Decisions 1 and 2 (issue-per-finding output, `.glossary/` as a committed surface) are unchanged.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 37,
+					"text": "and `write-code` are **per-issue**, so a single mega-audit-doc is un-triageable and"
+				},
+				{
+					"line": 57,
+					"text": "The rationale: `triage` and `write-code` are **per-issue** stages, so a single"
+				},
+				{
+					"line": 59,
+					"text": "`report → triage → plan-epic → … → ship-it` pipeline as a unit of work. Emitting **one"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the `kampus-pipeline` plugin is retired (ADR [0303](0303-retire-kampus-pipeline-plugin.md)); the `glossary` skill now lives at `claude-plugins/fabrika/skills/glossary/`. No `architecture-audit` skill exists in fabrika — Decision 1 still governs if one is ever authored. Decisions 1 and 2 (issue-per-finding output, `.glossary/` as a committed surface) are unchanged."
+		},
+		{
+			"file": ".decisions/0100-control-plane-covers-enforcement-guard-packages.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (after the 2026-06-20 amendment block): \"> Amendment 2026-08-19: the guard/verdict code this ADR fences has moved out of `packages/pipeline-cli/` — the §CP fence now covers `packages/fabrika-cli/src/ci/` (ADR [0299](0299-cp-fence-covers-fabrika-ci-core.md)), and the canonical `CONTROL_PLANE_RE` no longer lives in the retired `claude-plugins/kampus-pipeline/` skills (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). The rule — a guard is control plane wherever it lives, human merge — is unchanged; only the paths moved.\"",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: The control-plane / §CP boundary covers the enforcement-guard packages (`packages/*-guard/**` + `packages/ci-required/**`) — a guard is a self-weakening surface wherever it lives, so it is BLOCKING (human merge), not auto-merged on a `review-code` PASS"
+				},
+				{
+					"line": 4,
+					"text": "status: amended-in-part by [0218](0218-pipeline-cli-cp-enforcement-core.md)"
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, ship-it, control-plane, security, guards]"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the guard/verdict code this ADR fences has moved out of `packages/pipeline-cli/` — the §CP fence now covers `packages/fabrika-cli/src/ci/` (ADR [0299](0299-cp-fence-covers-fabrika-ci-core.md)), and the canonical `CONTROL_PLANE_RE` no longer lives in the retired `claude-plugins/kampus-pipeline/` skills (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). The rule — a guard is control plane wherever it lives, human merge — is unchanged; only the paths moved."
+		},
+		{
+			"file": ".decisions/0103-consolidate-pipeline-cli-package.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Keep frontmatter `status: accepted`, body byte-identical, and append one dated line at the end of the file:\n\n> Amendment 2026-08-19: the plugin consumption leg is dead — `claude-plugins/kampus-pipeline/` and its `SessionStart` `${CLAUDE_PLUGIN_DATA}` install hook were deleted with the v1 plugin (ADR 0303); the agent-session path is now the `fabrika` binstub over `packages/fabrika-cli/`. The one-package consolidation principle still holds for CI: `packages/pipeline-cli/` remains the router CI workflows call (`publish.yml`, `workflow-contract.yml`, `release-please.yml`), and guard tooling is consolidating into `packages/fabrika-cli/` (PR #6326) rather than re-fragmenting.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: \"Consolidate Pipeline Tooling into One `@kampus/pipeline-cli`, Consumed by Plugin + CI\""
+				},
+				{
+					"line": 9,
+					"text": "# 0103 — Consolidate Pipeline Tooling into One `@kampus/pipeline-cli`, Consumed by Plugin + CI"
+				},
+				{
+					"line": 12,
+					"text": "The kamp.us agent pipeline's executable tooling is spread across ~8 `packages/*`: skill-invoked (`epic-ledger`, `decisions-index`), agent-session hook guards (`read-guard`, `worktree-guard`, `spawn-guard`), and CI checks (`leak-guard`, `doc-links`, `ci-required`). That fragmentation is the root of a"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: both legs this ADR consolidated are gone. `claude-plugins/kampus-pipeline/` and its `SessionStart` `${CLAUDE_PLUGIN_DATA}` install hook were deleted with the v1 plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)), and `packages/pipeline-cli/` itself was deleted by PR #6326 ([#6100](https://github.com/kamp-us/phoenix/issues/6100)). The one-package principle still holds and now names a different package: `packages/fabrika-cli/` is the single router, reached by the `fabrika` binstub in agent sessions and by `node packages/fabrika-cli/src/bin.ts` in CI."
+		},
+		{
+			"file": ".decisions/0110-plugin-carries-no-version-continuous-ship.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical, frontmatter stays `status: accepted`):\n\n> Amendment 2026-08-19: kampus-pipeline is retired (ADR 0303) — only its sha-pinned marketplace entry survives. The rule now governs the fabrika plugin: `claude-plugins/fabrika/.claude-plugin/plugin.json` and fabrika's `marketplace.json` entry carry no `version` and none is to be added. The builder-facing note that lived in `claude-plugins/kampus-pipeline/README.md` now belongs in `claude-plugins/fabrika/README.md`.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: The kampus-pipeline plugin carries no `version` — continuous-ship, content-addressed by commit SHA"
+				},
+				{
+					"line": 9,
+					"text": "# 0110 — The kampus-pipeline plugin carries no `version` — continuous-ship, content-addressed by commit SHA"
+				},
+				{
+					"line": 13,
+					"text": "The plugin manifest `claude-plugins/kampus-pipeline/.claude-plugin/plugin.json`"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: kampus-pipeline is retired (ADR 0303) — only its sha-pinned marketplace entry survives. The rule now governs the fabrika plugin: `claude-plugins/fabrika/.claude-plugin/plugin.json` and fabrika's `marketplace.json` entry carry no `version` and none is to be added. The builder-facing note that lived in `claude-plugins/kampus-pipeline/README.md` now belongs in `claude-plugins/fabrika/README.md`."
+		},
+		{
+			"file": ".decisions/0112-token-measurement-no-quality-compromise-methodology.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (after the Consequences list):\n\n> Amendment 2026-08-19: `packages/pipeline-cli` is gone, so the `token-spend/session-cost.ts` citation in §2 no longer resolves. The statusline `cost.total_tokens` reader did not move — `packages/fabrika-cli/src/spend/` has no `session-cost.ts`. What survives is the offline four-component transcript reconstruction this ADR also describes, at [`packages/fabrika-cli/src/spend/token-spend.ts`](../packages/fabrika-cli/src/spend/token-spend.ts) (verbs: `fabrika spend read` / `spend rollup`). Read the method from there; the statusline meter is retired.\n\nEverything else in the ADR stays as-is.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 13,
+					"text": "The kamp.us pipeline is run by a fleet of autonomous agents (triage, write-code,"
+				},
+				{
+					"line": 79,
+					"text": "classification, same `Fixes #N` + green CI + independent `review-code: PASS` for"
+				},
+				{
+					"line": 80,
+					"text": "write-code, same verdict + same AC findings for review-code). The rubric is what turns"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `packages/pipeline-cli` is gone, so the `token-spend/session-cost.ts` citation in §2 no longer resolves. The statusline `cost.total_tokens` reader did not move — `packages/fabrika-cli/src/spend/` has no `session-cost.ts`. What survives is the offline four-component transcript reconstruction this ADR also describes, at [`packages/fabrika-cli/src/spend/token-spend.ts`](../packages/fabrika-cli/src/spend/token-spend.ts) (verbs: `fabrika spend read` / `spend rollup`). Read the method from there; the statusline meter is retired."
+		},
+		{
+			"file": ".decisions/0115-agent-distinguishable-claim-marker.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical; frontmatter unchanged — its `status: amended-in-part by [0215]` pointer is correct):\n\n> Amendment 2026-08-19: the kampus-pipeline plugin is deleted (ADR [0303](0303-kampus-pipeline-retired.md)), so §4's single source — `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` §7 — is gone. The claim primitive itself still governs: it is re-implemented (ADR [0238](0238-...)) in `packages/fabrika-cli/src/build/claim.ts` (marker grammar, `CLAUDE_CODE_SESSION_ID` token, earliest-authorized-claim tiebreak, ADR 0055 write+ trust root), with a second namespace for the driver in `packages/fabrika-cli/src/lane/claim.ts`. Ownership now turns on the whole token, not the session id alone (#6037). Identity/lifecycle rules are amended by [0215](0215-claim-identity-continuity-proof.md) → [0272](0272-lane-owns-the-claim.md) / [0295](0295-board-attested-claim-succession.md).\n\n(Fix the 0238 slug to the real filename when appending — verify with `ls .decisions/ | grep 0238`.)",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 15,
+					"text": "The root cause is precise. The issue-claim protocol (`claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` §7) is a **detect-and-tiebreak**, and its tiebreak is the **lexicographic-min assignee login**. But every draining agent in this pipeline pushes as the single git identity `usirin`"
+				},
+				{
+					"line": 17,
+					"text": "A second, independent defect compounds it: the claim happens *during* the run, not before it. `write-code` self-assigns at Step 3 — after the coder is already spawned and working — and the orchestrator (`.claude/workflows/drive-issue.js`) lets the coder claim mid-run. Between \"an agent decides to wo"
+				},
+				{
+					"line": 25,
+					"text": "- **`CLAUDE_CODE_SESSION_ID` is a per-session UUID Claude Code exposes in every (sub)agent's environment.** It is read today by the `report` skill's footer emitter, `claude-plugins/kampus-pipeline/skills/report/footer.sh`, which stamps `session ${CLAUDE_CODE_SESSION_ID}` into filed issue bodies — pr"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the kampus-pipeline plugin is deleted (ADR [0303](0303-retire-kampus-pipeline-plugin.md)), so §4's single source — `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` §7 — is gone. The claim primitive itself still governs: it is re-implemented (ADR [0238](0238-fabrika-reimplements-v1-never-calls-it.md)) in `packages/fabrika-cli/src/build/claim.ts` (marker grammar, `CLAUDE_CODE_SESSION_ID` token, earliest-authorized-claim tiebreak, ADR 0055 write+ trust root), with a second namespace for the driver in `packages/fabrika-cli/src/lane/claim.ts`. Ownership now turns on the whole token, not the session id alone (#6037). Identity/lifecycle rules are amended by [0215](0215-claim-identity-continuity-proof.md) → [0272](0272-lane-owns-the-claim.md) / [0295](0295-board-attested-claim-succession.md)."
+		},
+		{
+			"file": ".decisions/0116-spawn-guard-durable-default-pin.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (frontmatter and body byte-identical otherwise):\n\n> Amendment 2026-08-19: the v1 spawn-guard at `packages/pipeline-cli/src/tools/spawn-guard/` is deleted (ADR [0282](0282-spawn-guard-retired.md)), but this decision still binds — fabrika reimplements it (ADR [0238](0238-fabrika-reimplements-v1-never-calls-it.md)): `DEFAULT_PIN`/`ALLOWLIST`/`canonicalModel` live in [`packages/fabrika-cli/src/models.ts`](../packages/fabrika-cli/src/models.ts) and the unset-inherit vs present-but-off-allowlist split in [`packages/fabrika-cli/src/hook/spawn.ts`](../packages/fabrika-cli/src/hook/spawn.ts) (`effectivePin = configured ?? DEFAULT_PIN`).",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 13,
+					"text": "The spawn-guard (`packages/pipeline-cli/src/tools/spawn-guard/`) is a PreToolUse hook on"
+				},
+				{
+					"line": 76,
+					"text": "the §CP control-plane surface is the pipeline-cli package edit alone."
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the v1 spawn-guard at `packages/pipeline-cli/src/tools/spawn-guard/` is deleted (ADR [0282](0282-spawn-guard-retired.md)), but this decision still binds — fabrika reimplements it (ADR [0238](0238-fabrika-reimplements-v1-never-calls-it.md)): `DEFAULT_PIN`/`ALLOWLIST`/`canonicalModel` live in [`packages/fabrika-cli/src/models.ts`](../packages/fabrika-cli/src/models.ts) and the unset-inherit vs present-but-off-allowlist split in [`packages/fabrika-cli/src/hook/spawn.ts`](../packages/fabrika-cli/src/hook/spawn.ts) (`effectivePin = configured ?? DEFAULT_PIN`)."
+		},
+		{
+			"file": ".decisions/0120-stage-right-sizing-trivial-diff-lighter-gate.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the body (frontmatter unchanged, `status: accepted` stays):\n\n> Amendment 2026-08-19: the executor `.claude/workflows/drive-issue.js`, the `write-code`/`review-*`/`ship-it` fan-out skills, and the §CP source `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` named above are all gone with the kampus-pipeline plugin (ADR 0303). The lever is still unbuilt and still unadopted; if it is built, it targets fabrika's build/review/ship path and reads the live control-plane boundary from CODEOWNERS, not from the retired v1 skill file.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 6,
+					"text": "tags: [pipeline, token-economics, write-code, review, fan-out, methodology]"
+				},
+				{
+					"line": 14,
+					"text": "a `write-code` agent, then a `review-*` gate, then `ship-it`. That cost is roughly"
+				},
+				{
+					"line": 21,
+					"text": "`review-doc` + shipper fan-out."
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the executor `.claude/workflows/drive-issue.js`, the `write-code`/`review-*`/`ship-it` fan-out skills, and the §CP source `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` named above are all gone with the kampus-pipeline plugin (ADR 0303). The lever is still unbuilt and still unadopted; if it is built, it targets fabrika's build/review/ship path and reads the live control-plane boundary from CODEOWNERS, not from the retired v1 skill file."
+		},
+		{
+			"file": ".decisions/0123-ship-digest-live-axis-from-authoritative-flagship-state.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: `packages/cf-utils` is gone — its flag read/flip CLI and pure core moved into `packages/anka-ops` (the `anka-ops flag` verb group, ruling #3326). The sourcing contract is unchanged and shipped: `packages/pipeline-cli/src/tools/ship-digest/digest.ts` reads authoritative Flagship values via `anka-ops`. Read every \"`cf-utils`\" below as \"`anka-ops flag`\".",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: The ship-digest sources the live-to-users axis from authoritative Cloudflare Flagship state (read via cf-utils), not repo-declared defaults or a release-queue proxy"
+				},
+				{
+					"line": 55,
+					"text": "(the `cf-utils` CLI) provides — see the Decision."
+				},
+				{
+					"line": 60,
+					"text": "`ship-it` surfaces (ADR 0083's release queue; `product-development-cycle.md`): \"merged,"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: both named homes moved. `packages/cf-utils` is gone — its flag read/flip CLI and pure core live in `packages/anka-ops` (the `anka-ops flag` verb group, ruling #3326), so read every \"`cf-utils`\" below as \"`anka-ops flag`\". The consumer named here is gone too: `packages/pipeline-cli/src/tools/ship-digest/` was deleted with that package (PR #6326), and no digest generator exists at head. The sourcing contract — the live axis reads authoritative Flagship state, never a repo-local mirror — still governs whatever rebuilds it."
+		},
+		{
+			"file": ".decisions/0126-ambient-adr-discovery.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body above it stays byte-identical):\n\n> Amendment 2026-08-19: §Decision 3's `SessionStart` map-injection hook was reversed before it was built — discovery is the CLAUDE.md contract alone (`ls .decisions/` + frontmatter); see ADR [0129](0129-adr-discovery-is-the-claude-md-contract.md). §Decisions 1/2/4/5 stand. The on-demand `id · title · status` map is still `pipeline-cli decisions-index compact` (`packages/pipeline-cli/src/tools/decisions-index/`); the §4 number-lock check moved to `fabrika guard decisions-index validate` (`packages/fabrika-cli/src/guard/decisions-number-verb.ts`).\n\nNote on the finding: its premise \"pipeline-cli is deleted\" is wrong — `packages/pipeline-cli` is a live workspace package and `decisions-index compact` still lives there; only the `validate` leg was ported to fabrika-cli (epic #5720). There is no `fabrika adr compact` verb, so do not point at one.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 16,
+					"text": "`pipeline-cli decisions-index`) to kill the tail-conflict every concurrent ADR PR hit — but it"
+				},
+				{
+					"line": 42,
+					"text": "map — one line per ADR (`id · title · status`), emitted by a `pipeline-cli decisions-index`"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: §Decision 3's `SessionStart` map-injection hook was reversed before it was built — discovery is the CLAUDE.md contract alone (`ls .decisions/` + frontmatter); see ADR [0129](0129-adr-discovery-is-the-claude-md-contract.md). §Decisions 1/2/4/5 stand. The on-demand `id · title · status` renderer is retired with `packages/pipeline-cli/` and has no successor today (ADR [0305](0305-v1-cli-deletion-retires-three-git-boundary-guards.md)); the §4 number-lock check survives as `fabrika guard decisions-index validate` (`packages/fabrika-cli/src/guard/decisions-number-verb.ts`)."
+		},
+		{
+			"file": ".decisions/0128-glossary-concept-trigger-off-the-gate.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (frontmatter and body otherwise byte-identical):\n\n> Amendment 2026-08-19: the kampus-pipeline plugin is deleted (ADR 0303), so every `claude-plugins/kampus-pipeline/skills/...` path above is dead. `review-code` is now fabrika's `review` (`claude-plugins/fabrika/skills/review/SKILL.md`), which carries no Step 3c structural \"glossary-freshness gate\" — that per-PR structural check no longer exists anywhere, which only strengthens this ADR's ruling that concept-level glossary maintenance stays off the blocking path. Prong (c) is live in `claude-plugins/fabrika/skills/adr/SKILL.md` (coined/redefined terms route to `.glossary/TERMS.md`); prong (b), the periodic drift sweep, is still unbuilt.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 15,
+					"text": "`review-code` gate's **Step 3c — Glossary-freshness gate**"
+				},
+				{
+					"line": 16,
+					"text": "(`claude-plugins/kampus-pipeline/skills/review-code/SKILL.md`, §\"Glossary-freshness gate\")."
+				},
+				{
+					"line": 40,
+					"text": "`glossary` skill (`claude-plugins/kampus-pipeline/skills/glossary/SKILL.md`) is fully"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the kampus-pipeline plugin is deleted (ADR 0303), so every `claude-plugins/kampus-pipeline/skills/...` path above is dead. `review-code` is now fabrika's `review` (`claude-plugins/fabrika/skills/review/SKILL.md`), which carries no Step 3c structural \"glossary-freshness gate\" — that per-PR structural check no longer exists anywhere, which only strengthens this ADR's ruling that concept-level glossary maintenance stays off the blocking path. Prong (c) is live in `claude-plugins/fabrika/skills/adr/SKILL.md` (coined/redefined terms route to `.glossary/TERMS.md`); prong (b), the periodic drift sweep, is still unbuilt."
+		},
+		{
+			"file": ".decisions/0129-adr-discovery-is-the-claude-md-contract.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: the decision stands — discovery is the CLAUDE.md contract (`ls .decisions/` + each file's frontmatter), never an injected map. Only the on-demand renderer moved: `packages/pipeline-cli` is retired, and `fabrika-cli` ports only the number lock (`fabrika guard decisions-index validate`) — there is no `compact` verb today, so `ls .decisions/` + frontmatter is the whole map until one is re-added. CLAUDE.md `## Decisions` needs the same fix.\n\nVerified: `packages/fabrika-cli/src/guard/decisions-number-verb.ts` (\"ported off `pipeline-cli decisions-index validate`, epic #5720\") exists; no `compact` command exists anywhere under packages/fabrika-cli/src. CLAUDE.md:85 (and :69's mirror reference) still name `pipeline-cli decisions-index compact`.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 24,
+					"text": "row, and `pipeline-cli decisions-index compact` renders the full `id · title · status` map"
+				},
+				{
+					"line": 48,
+					"text": "- `pipeline-cli decisions-index compact` renders the full `id · title · status` map"
+				},
+				{
+					"line": 67,
+					"text": "`pipeline-cli decisions-index compact` explicitly. The map is never surfaced automatically;"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the decision stands — discovery is the CLAUDE.md contract (`ls .decisions/` + each file's frontmatter), never an injected map. Only the on-demand renderer moved: `packages/pipeline-cli` is retired, and `fabrika-cli` ports only the number lock (`fabrika guard decisions-index validate`) — there is no `compact` verb today, so `ls .decisions/` + frontmatter is the whole map until one is re-added. CLAUDE.md `## Decisions` needs the same fix."
+		},
+		{
+			"file": ".decisions/0134-clis-agent-invokable-human-only-at-invocation-layer.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical, frontmatter unchanged):\n\n> Amendment 2026-08-19: `@kampus/cf-utils` was retired (ruling #3326); the lever now lives at `anka-ops flag set --execute` (`packages/anka-ops/src/flag-command.ts`, confirm logic in `packages/anka-ops/src/flagship-core.ts`). The decision is unchanged — read \"cf-utils flag set --execute\" as \"anka-ops flag set --execute\" throughout.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 6,
+					"text": "tags: [cf-utils, release, authz, cli, security]"
+				},
+				{
+					"line": 16,
+					"text": "at the **lever** — `cf-utils flag set --execute` hard-refuses any non-TTY caller, on the reasoning"
+				},
+				{
+					"line": 40,
+					"text": "1. **Drop the TTY hard-refuse** from `cf-utils flag set --execute`. Like every other CLI in the repo,"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `@kampus/cf-utils` was retired (ruling #3326); the lever now lives at `anka-ops flag set --execute` (`packages/anka-ops/src/flag-command.ts`, confirm logic in `packages/anka-ops/src/flagship-core.ts`). The decision is unchanged — read \"cf-utils flag set --execute\" as \"anka-ops flag set --execute\" throughout."
+		},
+		{
+			"file": ".decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body above stays byte-identical):\n\n> Amendment 2026-08-19: the §CP path set in §2 has moved. `/packages/ci-required/` no longer exists on disk, and pipeline-cli's enforcement core is being folded into `packages/fabrika-cli/src/ci/` (already an owned row in `.github/CODEOWNERS`; see ADRs 0299 and 0218, and the retirement in 0303). The decision here — humans-only `@kamp-us/control-plane` team + CODEOWNERS + `require_code_owner_review` + ship's approve-then-enqueue — is unchanged; read the live `.github/CODEOWNERS` for the current path set.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: \"Hard-gate control-plane changes — the @kamp-us/control-plane team makes require_code_owner_review satisfiable; CODEOWNERS maps §CP paths → the team; ship-it ENQUEUES a §CP PR once a team member APPROVES it at the current head (amends 0053's merge model from human-hand-merge to approve-then-p"
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, ship-it, security, control-plane, governance, github]"
+				},
+				{
+					"line": 9,
+					"text": "# 0135 — Hard-gate the control plane: a control-plane team + CODEOWNERS + ship-it enqueues §CP on team approval"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the §CP path set in §2 has moved. `/packages/ci-required/` and `/packages/pipeline-cli/` no longer exist on disk — the enforcement core folded into `packages/fabrika-cli/src/ci/`, already an owned row in `.github/CODEOWNERS` (see ADRs [0299](0299-cp-fence-covers-fabrika-ci-core.md), [0218](0218-pipeline-cli-cp-enforcement-core.md) and the retirement in [0303](0303-retire-kampus-pipeline-plugin.md)). The decision here — humans-only `@kamp-us/control-plane` team + CODEOWNERS + `require_code_owner_review` + ship's approve-then-enqueue — is unchanged; read the live `.github/CODEOWNERS` for the current path set."
+		},
+		{
+			"file": ".decisions/0141-agent-automation-telos-lens.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the body:\n\n> Amendment 2026-08-19: kampus-pipeline is retired (ADR 0303) — fabrika is the one pipeline. The telos lens still governs: read every \"kampus-pipeline\" here as \"fabrika\", and keep the disposition rule (keep / adapt / build-analog / reject) when comparing fabrika to any lineage harness.\n\nNo frontmatter change.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: kampus-pipeline is an agent-automation harness forked from a human-cooperation lineage — the telos lens governs what we port"
+				},
+				{
+					"line": 13,
+					"text": "kampus-pipeline descends from a specific, battle-tested lineage: `mattpocock/skills` → `usirin/claude-skills` → kampus-pipeline. That origin is worth learning from continuously. But a naïve \"we are missing skill X that Matt has\" comparison mis-frames the relationship and produces deficit-thinking."
+				},
+				{
+					"line": 18,
+					"text": "- **kampus-pipeline is built for agent automation** — autonomous throughput, no human in the inner loop. Work flows report → triage → plan-epic → write-code → review → ship-it, with durable GitHub artifacts (labels, comments, PRs) as the seam between stages."
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: kampus-pipeline is retired (ADR 0303) — fabrika is the one pipeline. The telos lens still governs: read every \"kampus-pipeline\" here as \"fabrika\", and keep the disposition rule (keep / adapt / build-analog / reject) when comparing fabrika to any lineage harness."
+		},
+		{
+			"file": ".decisions/0145-dark-ship-release-note-artifact.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: the decision stands — a per-flag release note is still rendered on demand at flip time, never hand-authored, never wired into the merge gate. Two names moved. `ship-it` is retired with the `kampus-pipeline` plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)); the `status:awaiting-release` label is now applied by fabrika's `ship` skill, unchanged in behavior. And new pipeline tooling lands in `packages/fabrika-cli/src/` as `packages/pipeline-cli/` winds down (see the `ci-required` move), so the owed generator belongs at `packages/fabrika-cli/src/release-note/`, not `packages/pipeline-cli/src/tools/release-note/`.\n\nDo not change frontmatter: status stays `accepted`.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 15,
+					"text": "only handoff artifact is the `status:awaiting-release` label `ship-it` Step 5b applies to a"
+				},
+				{
+					"line": 16,
+					"text": "dark merge's linked issue (`claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md`, the"
+				},
+				{
+					"line": 27,
+					"text": "ADR 0083 anticipated **no** release-note artifact — its §Decision-4 has `ship-it` merely"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the decision stands — a per-flag release note is still rendered on demand at flip time, never hand-authored, never wired into the merge gate. Two names moved. `ship-it` is retired with the `kampus-pipeline` plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)); the `status:awaiting-release` label is now applied by fabrika's `ship` skill, unchanged in behavior. And `packages/pipeline-cli/` is deleted, so the owed generator belongs at `packages/fabrika-cli/src/release-note/`, not `packages/pipeline-cli/src/tools/release-note/`."
+		},
+		{
+			"file": ".decisions/0151-cp-advisory-body-sha-resolves-approval-aware-enqueue.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: the kampus-pipeline skills retired (ADR 0303). The §CP advisory resolution now lives in fabrika's merge authority — `claude-plugins/fabrika/skills/ship/SKILL.md` + `claude-plugins/fabrika/skills/ship/contract.md` (`ship gate --cp`), with the canonical `Reviewed-head:` / marker wire grammars in `packages/fabrika-cli/src/review/advisory.ts` and `packages/fabrika-cli/src/wire/verdict-marker.ts` instead of `gh-issue-intake-formats.md` §6.6. The decision itself is unchanged.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 6,
+					"text": "tags: [pipeline, ship-it, review-skill, review-doc, control-plane, security, agents]"
+				},
+				{
+					"line": 16,
+					"text": "machine gates is **enqueued by `ship-it`**, not left for a hand-merge."
+				},
+				{
+					"line": 19,
+					"text": "§CP PR, `review-skill` / `review-doc` emit the **canonical SHA-less advisory line** (§6.6) — no"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the kampus-pipeline skills retired (ADR 0303). The §CP advisory resolution now lives in fabrika's merge authority — `claude-plugins/fabrika/skills/ship/SKILL.md` + `claude-plugins/fabrika/skills/ship/contract.md` (`ship gate --cp`), with the canonical `Reviewed-head:` / marker wire grammars in `packages/fabrika-cli/src/review/advisory.ts` and `packages/fabrika-cli/src/wire/verdict-marker.ts` instead of `gh-issue-intake-formats.md` §6.6. The decision itself is unchanged."
+		},
+		{
+			"file": ".decisions/0152-confabulation-guardrail-and-resume-cap.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: both named homes retired with the v1 plugin (ADR [0303](0303-kampus-pipeline-plugin-retired.md)) — `claude-plugins/kampus-pipeline/agents/triager.md` and `.../skills/gh-issue-intake-formats.md` are deleted, as is the orchestrator `.claude/workflows/drive-issue.js`. Mitigation (a) still binds every gate agent and now lives in the fabrika gate contracts (`claude-plugins/fabrika/skills/triage/contract.md`, `claude-plugins/fabrika/skills/review/contract.md`). Mitigation (b), the single-subagent resume cap, has **no home today** — fabrika has no orchestrator process that resumes a subagent; re-home it if one appears.\n\n(Verified: `claude-plugins/kampus-pipeline/` holds no files; `.claude/workflows/` does not exist; the two fabrika contract paths exist and carry provenance/verified-claim language.)",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 79,
+					"text": "in the pipeline **agent contract** — `claude-plugins/kampus-pipeline/agents/triager.md` — and"
+				},
+				{
+					"line": 81,
+					"text": "`claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`, so every gate agent"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: both named homes retired with the v1 plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)) — `claude-plugins/kampus-pipeline/agents/triager.md` and `.../skills/gh-issue-intake-formats.md` are deleted, as is the orchestrator `.claude/workflows/drive-issue.js`. Mitigation (a) still binds every gate agent and now lives in the fabrika gate contracts (`claude-plugins/fabrika/skills/triage/contract.md`, `claude-plugins/fabrika/skills/review/contract.md`). Mitigation (b), the single-subagent resume cap, has **no home today** — fabrika has no orchestrator process that resumes a subagent; re-home it if one appears."
+		},
+		{
+			"file": ".decisions/0155-fanned-mutation-publish-guard.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: the guard moved off `pipeline-cli` to `packages/fabrika-cli/src/guard/` (`fanout.ts` pure, `fanout-verb.ts` CLI); invoke it as `fabrika guard fanout-guard check` (CI: `node packages/fabrika-cli/src/bin.ts guard fanout-guard check` in `.github/workflows/fanout-guard.yml`). The manifest, the fail-closed rule, and the §CP classification are unchanged.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 81,
+					"text": "Per CLAUDE.md's Node-over-Python rule, add an `effect/unstable/cli` guard to `pipeline-cli`"
+				},
+				{
+					"line": 116,
+					"text": "job running `pipeline-cli fanout-guard check`."
+				},
+				{
+					"line": 131,
+					"text": "Adopt option (b): a `pipeline-cli fanout-guard` CI guard backed by a declared"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the guard moved off `pipeline-cli` to `packages/fabrika-cli/src/guard/` (`fanout.ts` pure, `fanout-verb.ts` CLI); invoke it as `fabrika guard fanout-guard check` (CI: `node packages/fabrika-cli/src/bin.ts guard fanout-guard check` in `.github/workflows/fanout-guard.yml`). The manifest, the fail-closed rule, and the §CP classification are unchanged."
+		},
+		{
+			"file": ".decisions/0159-never-auto-close-signal-is-the-report-footer.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file:\n\n> Amendment 2026-08-19: the paths moved with the kampus-pipeline retirement (ADR 0303); the decision is unchanged. The footer is now emitted by the `report file` verb (`claude-plugins/fabrika/skills/report/contract.md` §footer, no `footer.sh`), the intake/footer format contract lives in `claude-plugins/fabrika/skills/report/contract.md` + `claude-plugins/fabrika/skills/graduate/contract.md` instead of `gh-issue-intake-formats.md`, and the close-eligibility path is `claude-plugins/fabrika/skills/triage/SKILL.md` (provenance section) + `triage/contract.md`. Triage now reads a second agent signal alongside the footer — an author in `$FABRIKA_OPERATOR_ACCOUNTS`.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 28,
+					"text": "(`claude-plugins/kampus-pipeline/skills/report/footer.sh`). Its **presence** means the"
+				},
+				{
+					"line": 70,
+					"text": "intake contract `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`."
+				},
+				{
+					"line": 77,
+					"text": "`claude-plugins/kampus-pipeline/skills/triage/SKILL.md` Step 5 (non-§CP)."
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the paths moved with the kampus-pipeline retirement (ADR 0303); the decision is unchanged. The footer is now emitted by the `report file` verb (`claude-plugins/fabrika/skills/report/contract.md` §footer, no `footer.sh`), the intake/footer format contract lives in `claude-plugins/fabrika/skills/report/contract.md` + `claude-plugins/fabrika/skills/graduate/contract.md` instead of `gh-issue-intake-formats.md`, and the close-eligibility path is `claude-plugins/fabrika/skills/triage/SKILL.md` (provenance section) + `triage/contract.md`. Triage now reads a second agent signal alongside the footer — an author in `$FABRIKA_OPERATOR_ACCOUNTS`."
+		},
+		{
+			"file": ".decisions/0160-ref-transaction-guard-refuses-diverging-primary-main.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the body (frontmatter and all existing prose byte-identical):\n\n> Amendment 2026-08-19: the `ref-guard reference-transaction` leg described here no longer runs — `packages/pipeline-cli/` was deleted (#6100) and the guard was removed from `lefthook.yml`; `packages/fabrika-cli/src/guard/` ships no ref guard. Nothing replaces it, so the #2143 diverging-`main` class is uncovered until the port lands ([#6341](https://github.com/kamp-us/phoenix/issues/6341)). The decision still governs the port's contract; see ADR [0305](0305-v1-cli-deletion-retires-three-git-boundary-guards.md).",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 18,
+					"text": "The existing guard — the #1571 `worktree-guard` bash-pin"
+				},
+				{
+					"line": 19,
+					"text": "(`packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`) — does **not** cover this class,"
+				},
+				{
+					"line": 31,
+					"text": "`pipeline-cli main-sync --execute`, or a git hook). A `PreToolUse` Bash hook cannot"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the `ref-guard reference-transaction` leg described here no longer runs — `packages/pipeline-cli/` was deleted (#6100) and the guard was removed from `lefthook.yml`; `packages/fabrika-cli/src/guard/` ships no ref guard. Nothing replaces it, so the #2143 diverging-`main` class is uncovered until the port lands ([#6341](https://github.com/kamp-us/phoenix/issues/6341)). The decision still governs the port's contract; see ADR [0305](0305-v1-cli-deletion-retires-three-git-boundary-guards.md)."
+		},
+		{
+			"file": ".decisions/0173-vertical-completeness-gate.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated amendment line at the end of the body (frontmatter untouched):\n\n> Amendment 2026-08-19: the conventions still bind — `@journey:<flag-key>` tags live in `apps/web/tests/e2e/` and `@reachability-exempt:` markers in `apps/web/src/flags/keys.ts` — but the named machinery moved: the flip ritual is now `anka-ops flag set … --execute` (`packages/anka-ops/`, `cf-utils` is gone), the `/release` skill and the v1 `reachability-guard` under `packages/pipeline-cli/src/tools/reachability-guard/` retire with ADR 0303, and fabrika's `plan-epic` v2 explicitly declines to emit the reachability slice (`claude-plugins/fabrika/skills/plan-epic/contract.md`). No fabrika verb enforces the gate today; re-homing it under `fabrika guard` is open work.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 16,
+					"text": "nothing in `plan-epic`, `triage`, `review-code`, `ship-it`, or `/release` ties \"this flag"
+				},
+				{
+					"line": 41,
+					"text": "the guarded ritual around it (its flip is Step 2, `cf-utils flag set … --execute`), and it"
+				},
+				{
+					"line": 55,
+					"text": "The reachability check is owned by **a single deterministic `pipeline-cli` subcommand,"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the conventions still bind — `@journey:<flag-key>` tags live in `apps/web/tests/e2e/` and `@reachability-exempt:` markers in `apps/web/src/flags/keys.ts` — but the named machinery moved: the flip ritual is now `anka-ops flag set … --execute` (`packages/anka-ops/`, `cf-utils` is gone), and the `/release` skill plus the v1 `reachability-guard` retired with the `kampus-pipeline` plugin and `packages/pipeline-cli/` (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). Fabrika's `plan-epic` v2 explicitly declines to emit the reachability slice (`claude-plugins/fabrika/skills/plan-epic/contract.md`), and no fabrika verb enforces the gate today; re-homing it under `fabrika guard` is open work."
+		},
+		{
+			"file": ".decisions/0175-cp-self-approval-cardinality-check.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the body (after \"## Vocabulary impact\"):\n\n> Amendment 2026-08-19: `kampus-pipeline/skills/ship-it` is retired (ADR 0303). The cardinality branch now lives in code — `fabrika ship cp-approval` (`packages/fabrika-cli/src/ship/cp-approval-verb.ts`): roster from the CODEOWNERS control-plane row read at the PR base ref, `stop zero-owners` for N==0, the head-bound `control-plane-self-approval @ <sha>` marker for the sole-owner arm, and a different-member current-head approval for N>=2. The \"ship-it SKILL lines 376-399\" citations above are historical.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: \"§CP self-approval gate is non-deterministic; make it a hard `gh api` team-cardinality check (branch team size 0-1-N), with a single-owner degenerate-case discharge policy that ship-it evaluates from org/team shape, not agent judgment (extends 0135)\""
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, ship-it, security, control-plane, governance, github]"
+				},
+				{
+					"line": 12,
+					"text": "> The implementing ship-it §CP gate edit is a separate, gate-critical (§CP) unit tracked as a follow-up."
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `kampus-pipeline/skills/ship-it` is retired (ADR 0303). The cardinality branch now lives in code — `fabrika ship cp-approval` (`packages/fabrika-cli/src/ship/cp-approval-verb.ts`): roster from the CODEOWNERS control-plane row read at the PR base ref, `stop zero-owners` for N==0, the head-bound `control-plane-self-approval @ <sha>` marker for the sole-owner arm, and a different-member current-head approval for N>=2. The \"ship-it SKILL lines 376-399\" citations above are historical."
+		},
+		{
+			"file": ".decisions/0181-unified-intake-dedup-one-deterministic-tool.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: the dedup tool shipped as `fabrika report dedup` in `packages/fabrika-cli/src/report/dedup.ts` (+ `dedup-verb.ts`), not `pipeline-cli`; both seams call it — the report skill (claude-plugins/fabrika/skills/report/SKILL.md) and the triage skill's intake check (claude-plugins/fabrika/skills/triage/SKILL.md, with `--exclude`). See ADR 0303.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: Unified intake dedup — one deterministic `pipeline-cli` tool wired at two seams (report + triage), not a GitHub Action"
+				},
+				{
+					"line": 28,
+					"text": "- **(c)** extracting the dedup query into a `pipeline-cli` tool (one deterministic"
+				},
+				{
+					"line": 39,
+					"text": "- **Extract the dedup query into a `pipeline-cli` dedup tool.** The \"is there already"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the dedup tool shipped as `fabrika report dedup` in `packages/fabrika-cli/src/report/dedup.ts` (+ `dedup-verb.ts`), not `pipeline-cli`; both seams call it — the report skill (claude-plugins/fabrika/skills/report/SKILL.md) and the triage skill's intake check (claude-plugins/fabrika/skills/triage/SKILL.md, with `--exclude`). See ADR 0303."
+		},
+		{
+			"file": ".decisions/0183-golden-screen-storage-depo-git-pointer.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body above stays byte-identical):\n\n> Amendment 2026-08-19: the capture machinery this ADR keys off moved out of `packages/design-capture` — `resolve.ts` / `plan.ts` / `upload.ts` now live in `packages/fabrika-cli/src/capture/` (founder ruling on #5061, moved by #5063). `packages/design-capture` still exists as phoenix's per-repo data half (`golden-pointer.json` + the `review-design` CLI); the depo-bytes / git-pointer decision is unchanged.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 43,
+					"text": "spec that `packages/design-capture` (`resolve.ts` / `plan.ts`, ADR 0165) uses (e.g. `/sozluk`,"
+				},
+				{
+					"line": 85,
+					"text": "- **`design-capture` is rewired from GitHub user-attachments to depo.** `packages/design-capture`"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the capture machinery this ADR keys off moved out of `packages/design-capture` — `resolve.ts` / `plan.ts` / `upload.ts` now live in `packages/fabrika-cli/src/capture/` (founder ruling on #5061, moved by #5063). `packages/design-capture` still exists as phoenix's per-repo data half (`golden-pointer.json` + the `review-design` CLI); the depo-bytes / git-pointer decision is unchanged."
+		},
+		{
+			"file": ".decisions/0187-crew-mcp-is-not-control-plane.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file:\n\n> Amendment 2026-08-19: the enforcement-surface test still governs, only the paths moved. The classifier regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (verified present, with `control-plane-re.pin.test.ts` beside it); `packages/pipeline-crew-mcp/` itself is gone with the v1 crew (ADR [0279](0279-retire-v1-crew.md)), and the §CP examples `packages/ci-required/` + `packages/pipeline-cli/` are retired too — the live §CP package clause is `^packages/fabrika-cli/src/ci/` (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). Read the §CP set from the live regex, never from this ADR's examples.\n\n(Fix the 0279 link filename to the real slug when writing: `ls .decisions/0279-*` — use whatever that prints.)",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: pipeline-crew-mcp is not §CP — the control-plane test is \"could an unreviewed merge weaken the pipeline's own gates\", not \"is it pipeline-adjacent\" (reverses #3072)"
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, control-plane, ship-it, process, classifier]"
+				},
+				{
+					"line": 9,
+					"text": "# 0187 — pipeline-crew-mcp is not §CP; control-plane is an enforcement-surface test, not a proximity test"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the enforcement-surface test still governs, only the paths moved. The classifier regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (verified present, with `control-plane-re.pin.test.ts` beside it); `packages/pipeline-crew-mcp/` itself is gone with the v1 crew (ADR [0279](0279-v1-crew-retired-in-full.md)), and the §CP examples `packages/ci-required/` + `packages/pipeline-cli/` are retired too — the live §CP package clause is `^packages/fabrika-cli/src/ci/` (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). Read the §CP set from the live regex, never from this ADR's examples."
+		},
+		{
+			"file": ".decisions/0193-lint-governance-config-is-control-plane.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file: \"> Amendment 2026-08-19: `packages/pipeline-cli` is gone; the single-source §CP path regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (tests: `packages/fabrika-cli/src/guard/control-plane-re.pin.test.ts`, `codeowners-cp.unit.test.ts`). The ruling — `biome.jsonc` + `biome-plugins/` are §CP — is unchanged.\" Body otherwise byte-identical.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 6,
+					"text": "tags: [pipeline, control-plane, ship-it, lint, gritql, classifier]"
+				},
+				{
+					"line": 18,
+					"text": "`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`,"
+				},
+				{
+					"line": 49,
+					"text": "- **The `CONTROL_PLANE_RE` classifier** (ship-it's soft gate) gains two anchored branches:"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `packages/pipeline-cli` is gone; the single-source §CP path regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (tests: `packages/fabrika-cli/src/guard/control-plane-re.pin.test.ts`, `codeowners-cp.unit.test.ts`). The ruling — `biome.jsonc` + `biome-plugins/` are §CP — is unchanged."
+		},
+		{
+			"file": ".decisions/0199-worktree-isolation-identity-is-derived-not-inherited.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: the `write-code` skill named in the last consequence is retired with the kampus-pipeline plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)); its Step-4 preflight is no longer the surviving layer — `fabrika operate`'s epic boot provisions and checks the isolated worktree (#6163). The derivation rule itself still binds: `resolveIsolationIdentity` still lives at `packages/pipeline-cli/src/tools/worktree-guard/isolation-identity.ts` and is still the sidecar-first precedence order.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 64,
+					"text": "This lands as `packages/pipeline-cli/src/tools/worktree-guard/isolation-identity.ts`: a pure, IO-free, unit-tested core (the caller does the sidecar read and the git probes). A probe that cannot run is **\"unknown\"** — never read as positive evidence in either direction."
+				},
+				{
+					"line": 74,
+					"text": "- **This does not make concurrent lanes safe on its own.** Two other layers are independently down: worktree provisioning can silently no-op ([#3744](https://github.com/kamp-us/phoenix/issues/3744)), and the deployed guard binary is stale because the pinned `@kampus/pipeline-cli` version was never p"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the `write-code` skill named in the last consequence is retired with the kampus-pipeline plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)); its Step-4 preflight is no longer the surviving layer — `fabrika operate`'s epic boot provisions and checks the isolated worktree (#6163). The derivation rule itself still binds, but it has no implementation at head: `resolveIsolationIdentity` went with `packages/pipeline-cli/` (PR #6326) and `packages/fabrika-cli/src/guard/` ships no worktree guard, so the sidecar-first precedence order is a contract for whatever re-implements it."
+		},
+		{
+			"file": ".decisions/0201-pipeline-tenant-phoenix-first.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file, body above untouched:\n\n> Amendment 2026-08-19: the tenant's artifact set moved. `kampus-pipeline` (the plugin) is retired and `pipeline-crew` / `pipeline-crew-mcp` are gone (ADRs 0303, 0279); the live set is `claude-plugins/fabrika` + `packages/fabrika-cli` + `packages/pipeline-cli` (still present, still published). The release-tag grammar in Decision 4 now covers `fabrika-cli-v*` alongside `pipeline-cli-v*` — see `.github/workflows/publish.yml`. Tenancy, phoenix-first priority, and publish isolation stand unchanged.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 7,
+					"text": "tags: [pipeline, pipeline-crew, distribution, publishing, governance]"
+				},
+				{
+					"line": 12,
+					"text": "**What this decides:** the agent pipeline (kampus-pipeline + pipeline-crew plugins,"
+				},
+				{
+					"line": 13,
+					"text": "pipeline-cli, pipeline-crew-mcp) is a product with external consumers — and it is"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the tenant's artifact set moved. `kampus-pipeline` (the plugin) is retired, `pipeline-crew` / `pipeline-crew-mcp` are gone (ADRs [0303](0303-retire-kampus-pipeline-plugin.md), [0279](0279-v1-crew-retired-in-full.md)), and `packages/pipeline-cli/` was deleted by PR #6326; the live set is `claude-plugins/fabrika` + `packages/fabrika-cli`. The release-tag grammar in Decision 4 now covers `fabrika-cli-v*` in place of `pipeline-cli-v*` — see `.github/workflows/publish.yml`. Tenancy, phoenix-first priority, and publish isolation stand unchanged."
+		},
+		{
+			"file": ".decisions/0207-gh-path-shim-retired.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the body:\n\n> Amendment 2026-08-19: `pipeline-cli` is retired — the GraphQL-breaking-usage lint now lives in fabrika-cli as `fabrika guard skill-lint` (`packages/fabrika-cli/src/guard/skill-lint.ts`, ported from `pipeline-cli gh-phoenix lint-skills` per epic #5720); the `gh-phoenix` router/shim core is not carried forward. The retirement ruling stands: no first-on-PATH `gh` shadowing is rebuilt, and `gh api` REST discipline plus the lint remain the guard. See ADR 0303.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 34,
+					"text": "`pipeline-cli` as the `gh-phoenix` tool — the PATH-shadowing install surface no longer exists"
+				},
+				{
+					"line": 44,
+					"text": "grep-lint (now `pipeline-cli gh-phoenix`) catches GraphQL-breaking usage in skill text. An"
+				},
+				{
+					"line": 64,
+					"text": "- The `gh-phoenix` router core lives on inside `pipeline-cli` as an explicit opt-in tool, not a"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `pipeline-cli` is retired — the GraphQL-breaking-usage lint now lives in fabrika-cli as `fabrika guard skill-lint` (`packages/fabrika-cli/src/guard/skill-lint.ts`, ported from `pipeline-cli gh-phoenix lint-skills` per epic #5720); the `gh-phoenix` router/shim core is not carried forward. The retirement ruling stands: no first-on-PATH `gh` shadowing is rebuilt, and `gh api` REST discipline plus the lint remain the guard. See ADR 0303."
+		},
+		{
+			"file": ".decisions/0209-taste-voice-per-aspect-skills.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (after the Records section):\n\n> Amendment 2026-08-19: the named gate substrate is gone — `design-capture`, `local-render` and `flake-rate` were cleared for deletion (#6346), so the \"composes with, never replaces\" clause about `agent-browser` no longer points at anything live. The per-aspect taste-skill decision still binds (the taste skills live in `claude-plugins/fabrika/skills/`, e.g. `taste-color`); the visual gate substrate needs its own re-decision.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 34,
+					"text": "`design-capture`/`local-render` + the golden/flake canon remain the gate substrate. Promoting"
+				},
+				{
+					"line": 53,
+					"text": "- `agent-browser` composes with the gate substrate (`design-capture`/`local-render` + golden/flake canon), never replaces it; new instrumented FAIL classes need their own ADR."
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the named gate substrate is gone — `design-capture`, `local-render` and `flake-rate` were cleared for deletion (#6346), so the \"composes with, never replaces\" clause about `agent-browser` no longer points at anything live. The per-aspect taste-skill decision still binds (the taste skills live in `claude-plugins/fabrika/skills/`, e.g. `taste-color`); the visual gate substrate needs its own re-decision."
+		},
+		{
+			"file": ".decisions/0212-marketplace-manifest-is-control-plane.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file:\n\n> Amendment 2026-08-19: the ruling still binds — `/.claude-plugin/ @kamp-us/control-plane` is live in `.github/CODEOWNERS` and the `^\\.claude-plugin/` branch now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (pinned by `control-plane-re.pin.test.ts`), not `packages/pipeline-cli/`. The `kampus-pipeline` clauses are history only: the plugin is deleted (ADR [0303](0303-kampus-pipeline-plugin-retired.md)) and its marketplace entry survives sha-pinned, so the deferred `claude-plugins/kampus-pipeline/.claude-plugin/plugin.json` gap is moot; fabrika is the one pipeline.\n\n(Verify the 0303 filename slug when writing the link.)",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 6,
+					"text": "tags: [pipeline, control-plane, ship-it, marketplace, plugin, classifier]"
+				},
+				{
+					"line": 18,
+					"text": "`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`,"
+				},
+				{
+					"line": 24,
+					"text": "including `kampus-pipeline`, the plugin that ships the gate-critical skills (`ship-it`,"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the ruling still binds — `/.claude-plugin/ @kamp-us/control-plane` is live in `.github/CODEOWNERS` and the `^\\.claude-plugin/` branch now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (pinned by `control-plane-re.pin.test.ts`), not `packages/pipeline-cli/`. The `kampus-pipeline` clauses are history only: the plugin is deleted (ADR [0303](0303-retire-kampus-pipeline-plugin.md)) and its marketplace entry survives sha-pinned, so the deferred `claude-plugins/kampus-pipeline/.claude-plugin/plugin.json` gap is moot; fabrika is the one pipeline."
+		},
+		{
+			"file": ".decisions/0217-lane-claim-authority.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the body (frontmatter unchanged, status stays `accepted`):\n\n> Amendment 2026-08-19: the comment claim this ADR makes authoritative now lives at `fabrika lane claim` (`packages/fabrika-cli/src/lane/claim.ts`, `claim-verb.ts`), not `pipeline-cli`; the crew-MCP tracker and `packages/pipeline-crew-mcp/` are deleted, so the advisory half is moot (ADR [0279](0279-v1-crew-retired-in-full.md)) and the v1 plugin paths cited here are gone (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). The ruling itself — the GitHub comment claim is the answer to \"is this lane taken?\" — is unchanged.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: The `pipeline-cli` comment claim is authoritative for lane exclusion; the crew-MCP tracker claim is advisory for that purpose only"
+				},
+				{
+					"line": 9,
+					"text": "# 0217 — The `pipeline-cli` comment claim is authoritative for lane exclusion; the crew-MCP tracker claim is advisory for that purpose only"
+				},
+				{
+					"line": 15,
+					"text": "Two claim systems exist and cannot see each other. The `pipeline-cli` comment claim (ADR"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the comment claim this ADR makes authoritative now lives at `fabrika lane claim` (`packages/fabrika-cli/src/lane/claim.ts`, `claim-verb.ts`), not `pipeline-cli`; the crew-MCP tracker and `packages/pipeline-crew-mcp/` are deleted, so the advisory half is moot (ADR [0279](0279-v1-crew-retired-in-full.md)) and the v1 plugin paths cited here are gone (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). The ruling itself — the GitHub comment claim is the answer to \"is this lane taken?\" — is unchanged."
+		},
+		{
+			"file": ".decisions/0218-pipeline-cli-cp-enforcement-core.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: still live — `packages/pipeline-cli/` exists on main and its nine §CP CODEOWNERS rows (`.github/CODEOWNERS:34-49`) are the enforced form of the three branches above. Two pointers moved: the byte-synced prose copy of `CONTROL_PLANE_RE` now lives in `packages/pipeline-cli/src/tools/control-plane-paths/boundaries.md`, not `gh-issue-intake-formats.md`, and the `ship-it/SKILL.md:533` call site named under `cp-cardinality` belonged to the retired v1 kampus-pipeline plugin (ADR 0303) — the same discharge check is now made by fabrika's ship skill. ADR 0299 extends the same shape (core, never whole package) to `packages/fabrika-cli/src/ci/` and explicitly does not amend this record. If PR #6326 (delete `packages/pipeline-cli`) lands, this ADR's three branches go dead and it should be superseded then.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: §CP on packages/pipeline-cli/ narrows to an enforcement core — amends ADR 0100's whole-package coverage"
+				},
+				{
+					"line": 6,
+					"text": "tags: [pipeline, control-plane, ship-it, codeowners, classifier, guards]"
+				},
+				{
+					"line": 9,
+					"text": "# 0218 — §CP on `packages/pipeline-cli/` is an enforcement core, not the whole package"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: this record's three branches are dead at head. `packages/pipeline-cli/` was deleted by PR #6326, taking its §CP CODEOWNERS rows and the byte-synced prose copy of `CONTROL_PLANE_RE` in `control-plane-paths/boundaries.md` with it, and the `ship-it/SKILL.md` call site named under `cp-cardinality` retired with the v1 plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)) — the same discharge check is now made by fabrika's `ship` skill. The shape this ADR ruled — fence the enforcement *core*, never the whole package — is carried forward unchanged by ADR [0299](0299-cp-fence-covers-fabrika-ci-core.md) over `packages/fabrika-cli/src/ci/`."
+		},
+		{
+			"file": ".decisions/0219-priority-decoupled-from-campaign-membership.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (after the Records list), body otherwise byte-identical:\n\n> Amendment 2026-08-19: the first \"Owed work\" item is discharged. The `kampus-pipeline` plugin is retired (ADR 0303); the live rubric is `claude-plugins/fabrika/skills/triage/SKILL.md`, whose priority section already prices on merit and states \"A roadmap row confers no band either way\" (line 176). No conferral text remains to rewrite.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 71,
+					"text": "- **Owed work: the triage rubric text.** `claude-plugins/kampus-pipeline/skills/triage/SKILL.md` Step 6 still teaches the conferral — its `p1` row reads \"Serves an active milestone\" and the prose above it says an active campaign \"confers a `p1` band exactly as the active arc does,\" citing ADR 0214. "
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the first \"Owed work\" item is discharged. The `kampus-pipeline` plugin is retired (ADR 0303); the live rubric is `claude-plugins/fabrika/skills/triage/SKILL.md`, whose priority section already prices on merit and states \"A roadmap row confers no band either way\" (line 176). No conferral text remains to rewrite."
+		},
+		{
+			"file": ".decisions/0222-p0-is-the-arc-pullable-frontier.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the ## Consequences section (body otherwise byte-identical):\n\n> Amendment 2026-08-19: `claude-plugins/kampus-pipeline/skills/triage/SKILL.md` is gone with the v1 plugin retirement (ADR 0303). The live rubric is `claude-plugins/fabrika/skills/triage/SKILL.md` (step 7, \"Price it\"), and the \"mint `p0` freely … the one hard bound is homing\" text no longer exists there — the owed rubric edit is moot. The two tests below still bind on that step.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 17,
+					"text": "Amends in part [0202](0202-forward-motion-doctrine-crewops.md) — §1's `p0` semantics only. This **narrows 0202's own recorded language.** That ADR ruled `p0` is \"freely minted for moves-us-forward work,\" and the triage rubric it produced (`claude-plugins/kampus-pipeline/skills/triage/SKILL.md`, the "
+				},
+				{
+					"line": 64,
+					"text": "- **Owed work: the rubric text at `claude-plugins/kampus-pipeline/skills/triage/SKILL.md`.** The Step-6 `p0` row still teaches \"mint `p0` **freely** … the one hard bound is homing,\" which this ADR narrows. Until it is rewritten, agents will keep reproducing the divergence. This ADR does not do that "
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `claude-plugins/kampus-pipeline/skills/triage/SKILL.md` is gone with the v1 plugin retirement (ADR 0303). The live rubric is `claude-plugins/fabrika/skills/triage/SKILL.md` (step 7, \"Price it\"), and the \"mint `p0` freely … the one hard bound is homing\" text no longer exists there — the owed rubric edit is moot. The two tests below still bind on that step."
+		},
+		{
+			"file": ".decisions/0226-cp-advisory-never-carries-a-failing-criterion.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (after `## Records`):\n\n> Amendment 2026-08-19: the four `claude-plugins/kampus-pipeline/skills/review-*` gates and `gh-issue-intake-formats.md` retired with the v1 plugin (ADR 0303). The rule still binds and now lives in one place: fabrika's `review` skill (`claude-plugins/fabrika/skills/review/SKILL.md`), which emits the §CP advisory via `--carrier advisory` and states the advisory is a PASS path only — a failing §CP criterion posts the ordinary FAIL marker. The consumer side is unchanged: `packages/pipeline-cli/src/tools/verdict/gate-decision.ts` and `verdict-match.ts` still carry the `advisory-not-all-pass` → `\"unverified\"` projection as the fail-closed backstop.\n\nBody above stays byte-identical.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 17,
+					"text": "`decideNamespace` in `packages/pipeline-cli/src/tools/verdict/gate-decision.ts` tests the advisory"
+				},
+				{
+					"line": 35,
+					"text": "`packages/pipeline-cli/src/tools/verdict/verdict-match.ts`, a `verdictState` helper projecting it"
+				},
+				{
+					"line": 50,
+					"text": "The gates that emit the canonical §CP advisory form are `review-code`, `review-doc`,"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the four `claude-plugins/kampus-pipeline/skills/review-*` gates and `gh-issue-intake-formats.md` retired with the v1 plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). The rule still binds and now lives in one place: fabrika's `review` skill (`claude-plugins/fabrika/skills/review/SKILL.md`), which emits the §CP advisory via `--carrier advisory` and states the advisory is a PASS path only — a failing §CP criterion posts the ordinary FAIL marker. The consumer-side backstop named below is gone: `packages/pipeline-cli/src/tools/verdict/` was deleted with that package (PR #6326), so the `advisory-not-all-pass` → `\"unverified\"` projection has no implementation at head and the producer-side rule is the whole guard."
+		},
+		{
+			"file": ".decisions/0232-agents-execute-skill-scripts-never-source-them.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: the `claude-plugins/kampus-pipeline/skills/…` path class is gone — the v1 plugin was deleted (ADR [0303](0303-kampus-pipeline-plugin-retired.md); confirm the exact filename with `ls .decisions/`), and fabrika skills call `fabrika` verbs directly instead of shipping skill scripts. The rule still binds: any script an agent runs is executed by literal path with results on stdout, never sourced at the agent's top-level command; shell that must exist anyway follows [`.patterns/skill-script-shell-shape.md`](../.patterns/skill-script-shell-shape.md).",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 11,
+					"text": "**What this decides:** When a worktree-isolated agent runs an extracted skill script, it invokes it as `bash ./claude-plugins/kampus-pipeline/skills/<skill>/scripts/<script>.sh` and reads the results off stdout — it never sources the script into its own shell, and the sourced-script class is convert"
+				},
+				{
+					"line": 28,
+					"text": "reports — hitting both halves of the pipeline (ship-it merge authority across three lanes, and"
+				},
+				{
+					"line": 29,
+					"text": "write-code preflight). The refusal set was observed context-dependent across lanes, but sourcing"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the `claude-plugins/kampus-pipeline/skills/…` path class is gone — the v1 plugin was deleted (ADR [0303](0303-retire-kampus-pipeline-plugin.md)), and fabrika skills call `fabrika` verbs directly instead of shipping skill scripts. The rule still binds: any script an agent runs is executed by literal path with results on stdout, never sourced at the agent's top-level command; shell that must exist anyway follows [`.patterns/skill-script-shell-shape.md`](../.patterns/skill-script-shell-shape.md)."
+		},
+		{
+			"file": ".decisions/0233-decision-shell-enforcement-review-skill-criterion.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (after the Records section):\n\n> Amendment 2026-08-19: the governed skill-markdown surface is now `claude-plugins/fabrika/skills/**/SKILL.md` and sibling docs — `claude-plugins/kampus-pipeline/` was deleted (ADR 0303) and the review-skill gate it names is fabrika's `review` skill. `scripts/**` is unchanged; the decision itself stands.\n\nBody otherwise byte-identical; frontmatter unchanged (status stays accepted).",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: New decision-computing shell is caught by a review-skill criterion row"
+				},
+				{
+					"line": 9,
+					"text": "# 0233 — New decision-computing shell is caught by a review-skill criterion row"
+				},
+				{
+					"line": 13,
+					"text": "review-skill gate — a reviewer applies ADR 0229's falsifiable test to every diff's new or changed"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the governed skill-markdown surface is now `claude-plugins/fabrika/skills/**/SKILL.md` and sibling docs — `claude-plugins/kampus-pipeline/` was deleted (ADR 0303) and the review-skill gate it names is fabrika's `review` skill. `scripts/**` is unchanged; the decision itself stands."
+		},
+		{
+			"file": ".decisions/0238-fabrika-reimplements-v1-never-calls-it.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: the v1 skills are deleted (ADR 0303) and the \"not removable today\" caveat is on its way out — all 34 guards now run on `packages/fabrika-cli/`, and `packages/pipeline-cli/` removal is in flight (PR #6326, founder-granted). The rule itself stands: fabrika implements its own deterministic work and calls no v1 code.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 19,
+					"text": "with v1 — `claude-plugins/kampus-pipeline/` and `packages/pipeline-cli/` — as the frozen comparison"
+				},
+				{
+					"line": 20,
+					"text": "baseline. Until now the stated posture was that fabrika **may call** `pipeline-cli` but never grows"
+				},
+				{
+					"line": 27,
+					"text": "- **The harness leaves no legal way to call it.** `cli-invocation-guard` reds a bare `pipeline-cli`"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: the caveat is discharged. The v1 skills are deleted (ADR [0303](0303-retire-kampus-pipeline-plugin.md)), all 34 guards run on `packages/fabrika-cli/`, and `packages/pipeline-cli/` was removed by PR #6326 — there is no v1 code left to call. The rule itself stands: fabrika implements its own deterministic work and calls no v1 code."
+		},
+		{
+			"file": ".decisions/0248-authoring-session-mints-the-implementation-ticket.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append dated amendment: skill-creator is retired (founder, 2026-08-19); skill authoring runs through fabrika's writing-for-agents skill. One-door principle unchanged.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 3,
+					"text": "title: The authoring session mints a fabrika contract's implementation ticket at handoff, and review-skill checks it exists"
+				},
+				{
+					"line": 9,
+					"text": "# 0248 — The authoring session mints a fabrika contract's implementation ticket at handoff, and review-skill checks it exists"
+				},
+				{
+					"line": 13,
+					"text": "handoff, and the `review-skill` gate on the skill PR asserts the ticket exists and is named.**"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `skill-creator` is retired (founder ruling, 2026-08-19); skill authoring runs through fabrika's `writing-for-agents` skill (`claude-plugins/fabrika/skills/writing-for-agents/`). The one-door principle this ADR rules is unchanged — read every `skill-creator` below as `writing-for-agents`."
+		},
+		{
+			"file": ".decisions/0249-skill-trigger-coverage-lives-in-the-eval-set.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append dated amendment: skill-creator is retired (founder, 2026-08-19); skill authoring runs through fabrika's writing-for-agents skill. One-door principle unchanged.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 21,
+					"text": "`/skill-creator`), the CLI layer (the derived contract implemented with deterministic tests), and the"
+				},
+				{
+					"line": 35,
+					"text": "The filing session ran `/skill-creator`'s description optimizer over `/report` five times, each"
+				},
+				{
+					"line": 43,
+					"text": "action** the model just performs, and `/skill-creator`'s own guidance says a one-step query may not"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `skill-creator` is retired (founder ruling, 2026-08-19); skill authoring runs through fabrika's `writing-for-agents` skill (`claude-plugins/fabrika/skills/writing-for-agents/`). The one-door principle this ADR rules is unchanged — read every `skill-creator` below as `writing-for-agents`."
+		},
+		{
+			"file": ".decisions/0251-shared-formats-are-pinned-not-reimplemented.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the \"Decision\" section (after the Banned list):\n\n> Amendment 2026-08-19: v1 is retired (ADR 0303), so the `epic-splice` conformance half of this ruling is discharged — there is no second party left to pin the fixture or to fence an import edge against. The rule itself stands: any byte-level format fabrika shares with a non-fabrika program is a wire format fabrika owns (module + registry row + golden fixture), the other side conforms by pinning that fixture, and a test asserting a fabrika property lives in `packages/fabrika-cli/`.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 22,
+					"text": "fabrika's `--epic` envelope is coupled to v1 in two ways that \"calls `pipeline-cli` nowhere\" does not"
+				},
+				{
+					"line": 32,
+					"text": "`packages/pipeline-cli/src/tools/epic-splice/epic-splice.unit.test.ts`, and it carries more than"
+				},
+				{
+					"line": 45,
+					"text": "`packages/pipeline-cli/`. `split-match.ts` is a scar read — a v1 defect fabrika designs out — and"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: v1 is retired (ADR 0303), so the `epic-splice` conformance half of this ruling is discharged — there is no second party left to pin the fixture or to fence an import edge against. The rule itself stands: any byte-level format fabrika shares with a non-fabrika program is a wire format fabrika owns (module + registry row + golden fixture), the other side conforms by pinning that fixture, and a test asserting a fabrika property lives in `packages/fabrika-cli/`."
+		},
+		{
+			"file": ".decisions/0258-report-footer-is-a-pinned-wire-format.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the file (body otherwise byte-identical):\n\n> Amendment 2026-08-19: v1 is gone — `claude-plugins/kampus-pipeline/skills/report/footer.sh` and its `packages/pipeline-cli/` conformance test retired with the plugin (ADR 0303), and that producer row plus the \"second party is outside the package\" fixture-file rationale describe a seam that no longer exists. `packages/fabrika-cli` is now the sole owner and sole producer of the footer bytes; the wire-module/one-fixture ruling still governs, and a fixture file (rather than an inline TS sample) is now a preference, not a forced choice.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 28,
+					"text": "`claude-plugins/kampus-pipeline/skills/report/footer.sh` builds the same line in bash with the same"
+				},
+				{
+					"line": 30,
+					"text": "`claude-plugins/kampus-pipeline/skills/wayfinder/SKILL.md`, does not compose the bytes in code at"
+				},
+				{
+					"line": 36,
+					"text": "`claude-plugins/kampus-pipeline/skills/triage/SKILL.md` — a model reading a skill body — so triage"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: v1 is gone — `claude-plugins/kampus-pipeline/skills/report/footer.sh` and its `packages/pipeline-cli/` conformance test retired with the plugin (ADR 0303), and that producer row plus the \"second party is outside the package\" fixture-file rationale describe a seam that no longer exists. `packages/fabrika-cli` is now the sole owner and sole producer of the footer bytes; the wire-module/one-fixture ruling still governs, and a fixture file (rather than an inline TS sample) is now a preference, not a forced choice."
+		},
+		{
+			"file": ".decisions/0274-fabrika-tree-is-not-control-plane.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the \"## Records\" section (body otherwise byte-identical):\n\n> Amendment 2026-08-19: `CONTROL_PLANE_RE` is now single-sourced in [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts); the `packages/pipeline-cli/src/tools/control-plane-paths/` copy goes with that package's deletion and the `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` byte-sync mirror no longer exists. The ruling is unchanged: no §CP coverage for `claude-plugins/fabrika/**`.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 24,
+					"text": "`claude-plugins/kampus-pipeline/skills/` directory, the directory being the unit so the boundary"
+				},
+				{
+					"line": 34,
+					"text": "[0218](0218-pipeline-cli-cp-enforcement-core.md), 0227 — rules on a *different* path set, and 0212"
+				},
+				{
+					"line": 60,
+					"text": "`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `CONTROL_PLANE_RE` is now single-sourced in [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts); the `packages/pipeline-cli/src/tools/control-plane-paths/` copy goes with that package's deletion and the `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` byte-sync mirror no longer exists. The ruling is unchanged: no §CP coverage for `claude-plugins/fabrika/**`."
+		},
+		{
+			"file": ".decisions/0299-cp-fence-covers-fabrika-ci-core.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the Decision section (body otherwise byte-identical):\n\n> Amendment 2026-08-19: `packages/pipeline-cli/` is deleted, and the prose copy of `CONTROL_PLANE_RE=` in its `control-plane-paths/boundaries.md` went with it (no equivalent prose file exists under `packages/fabrika-cli/`). The lockstep is now two surfaces, not three: the single-source const in `packages/fabrika-cli/src/guard/control-plane-re.ts` and the literal `.github/CODEOWNERS` row. The same-commit rule below applies to those two.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 19,
+					"text": "context on `main`. Today it lives in `packages/pipeline-cli/src/tools/ci-required/`, which ADR"
+				},
+				{
+					"line": 20,
+					"text": "[0218](0218-pipeline-cli-cp-enforcement-core.md) retains inside the §CP enforcement core. Child"
+				},
+				{
+					"line": 28,
+					"text": "`node packages/pipeline-cli/src/tools/ci-required/bin.ts`. When #6099 does land, the pipeline-cli"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: `packages/pipeline-cli/` is deleted, and the prose copy of `CONTROL_PLANE_RE=` in its `control-plane-paths/boundaries.md` went with it (no equivalent prose file exists under `packages/fabrika-cli/`). The lockstep is now two surfaces, not three: the single-source const in `packages/fabrika-cli/src/guard/control-plane-re.ts` and the literal `.github/CODEOWNERS` row. The same-commit rule below applies to those two."
+		},
+		{
+			"file": ".decisions/0301-blocked-by-graph-is-the-carrier.md",
+			"kind": "adr",
+			"verdict": "POINTER",
+			"action": "Append one dated line at the end of the \"## Consequences\" section (after the \"Until #5913 and #6249 land...\" paragraph, before \"## Records\"):\n\n> Amendment 2026-08-19: that gap is closed at head. The shared reader is `packages/fabrika-cli/src/build/blockedness.ts` (`readBlockedGate`), `build claim` refuses a blocked number (`claim-verb.ts`), `build pick` excludes one (`pick-verb.ts`), and the `status:blocked` label no longer exists on the repo.\n\nBody otherwise unchanged; frontmatter stays `status: accepted`.",
+			"rationale": "The principle still binds, but a path or an actor it names has moved. Rewriting the body would destroy the record, so the correction lands as one appended dated line and the original decision text stays byte-identical.",
+			"evidence": [
+				{
+					"line": 12,
+					"text": "`blocked_by` edges and nothing else. The `status:blocked` label is retired, `build claim` reads the"
+				},
+				{
+					"line": 23,
+					"text": "On 2026-08-18 a `status:blocked` label was created and applied to seven issues waiting on an"
+				},
+				{
+					"line": 49,
+					"text": "issue exactly as for an epic child. `status:blocked` is retired. `build claim` reads the graph and"
+				}
+			],
+			"appendedLine": "> Amendment 2026-08-19: that gap is closed at head. The shared reader is `packages/fabrika-cli/src/build/blockedness.ts` (`readBlockedGate`), `build claim` refuses a blocked number (`claim-verb.ts`), `build pick` excludes one (`pick-verb.ts`), and the `status:blocked` label no longer exists on the repo."
+		},
+		{
+			"file": ".patterns/index.md",
+			"kind": "pattern",
+			"verdict": "EDIT",
+			"action": "Remove the two rows for the killed docs (`right-sized-fan-out-trivial-tier.md`, `workflow-driving-auto-resume.md`), and correct the `worktree-agent-constraints.md` row, which names the retired `worktree-guard` as the live enforcer of the Bash-cwd-reset rule. The other six edited docs' rows name no retired surface and stay byte-identical.",
+			"rationale": "An index row outliving its doc is a 404 on the one surface a reader uses to find patterns at all.",
+			"evidence": [
+				{
+					"line": 132,
+					"text": "| [subprocess-test-budget.md](./subprocess-test-budget.md) | The subprocess test tier: one shared `SUBPROCESS_TEST_TIMEOUT_MS` declared at the `describe`, never a raised global `testTimeout` and never a per-test literal; the `node:child_process`-keyed guard that keeps the tier complete | Writing or "
+				},
+				{
+					"line": 141,
+					"text": "| [worktree-agent-constraints.md](./worktree-agent-constraints.md) | The `.claude/worktrees/<id>/` hazards for an `isolation:worktree` agent: the self-mod classifier's `.claude/`-substring denial + the Bash-heredoc workaround; the Bash-cwd-reset pin (`worktree-guard`); the epic assembly seat's own w"
+				},
+				{
+					"line": 142,
+					"text": "| [right-sized-fan-out-trivial-tier.md](./right-sized-fan-out-trivial-tier.md) | The trivial-diff tier (shipped-but-dormant): a trivially-classified PR routes to `review-trivial` instead of full fan-out — the deterministic classifier (`pipeline-cli trivial-diff`), the fail-closed `review-trivial` ga"
+				}
+			]
+		}
+	]
+}

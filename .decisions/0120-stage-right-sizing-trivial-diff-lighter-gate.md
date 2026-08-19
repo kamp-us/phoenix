@@ -165,3 +165,5 @@ this record does not go stale as the measured numbers are taken and refreshed.
   lever, applied to the per-PR fan-out rather than the investigation-residue intake) and is
   **governed by** ADR 0112 (its adoption gate). Bound #3 explicitly defers to ADR
   0053/0065/0100's control-plane boundary, so a control-plane change is never trivial.
+
+> Amendment 2026-08-19: the executor `.claude/workflows/drive-issue.js`, the `write-code`/`review-*`/`ship-it` fan-out skills, and the §CP source `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` named above are all gone with the kampus-pipeline plugin (ADR 0303). The lever is still unbuilt and still unadopted; if it is built, it targets fabrika's build/review/ship path and reads the live control-plane boundary from CODEOWNERS, not from the retired v1 skill file.

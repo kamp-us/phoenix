@@ -128,3 +128,5 @@ The ruling has four parts, as ruled:
 - No vocabulary impact: this decides merge authority over already-named concepts (§CP, the
   `governance` verdict, the digest readout), and coins nothing. `governance` already carries its row
   in [`.glossary/TERMS.md`](../.glossary/TERMS.md).
+
+> Amendment 2026-08-19: `CONTROL_PLANE_RE` is now single-sourced in [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts); the `packages/pipeline-cli/src/tools/control-plane-paths/` copy goes with that package's deletion and the `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` byte-sync mirror no longer exists. The ruling is unchanged: no §CP coverage for `claude-plugins/fabrika/**`.

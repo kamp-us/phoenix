@@ -147,3 +147,5 @@ gone, and **where trigger coverage lives now is not answered here**; that obliga
 forward by [#5526](https://github.com/kamp-us/phoenix/issues/5526), which also owns this record's
 status line and retirement banner. The frontmatter is left at `accepted` for that sweep rather than
 half-moved here.
+
+> Amendment 2026-08-19: `skill-creator` is retired (founder ruling, 2026-08-19); skill authoring runs through fabrika's `writing-for-agents` skill (`claude-plugins/fabrika/skills/writing-for-agents/`). The one-door principle this ADR rules is unchanged — read every `skill-creator` below as `writing-for-agents`.

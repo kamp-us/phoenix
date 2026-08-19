@@ -178,3 +178,5 @@ Grounds:
   two already-named mechanisms — the *comment claim* / *claim marker* (ADR 0115, ADR 0215) and the
   tracker's *resource claim* / *role lease* pair (ADR 0191) — using each term exactly as its defining
   ADR does. No `.glossary/TERMS.md` row is added or changed.
+
+> Amendment 2026-08-19: the comment claim this ADR makes authoritative now lives at `fabrika lane claim` (`packages/fabrika-cli/src/lane/claim.ts`, `claim-verb.ts`), not `pipeline-cli`; the crew-MCP tracker and `packages/pipeline-crew-mcp/` are deleted, so the advisory half is moot (ADR [0279](0279-v1-crew-retired-in-full.md)) and the v1 plugin paths cited here are gone (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). The ruling itself — the GitHub comment claim is the answer to "is this lane taken?" — is unchanged.
