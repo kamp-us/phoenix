@@ -50,7 +50,14 @@ export const DrizzleLive: Layer.Layer<Drizzle, never, Database> = Layer.effect(
 
 ## Hand-written SQL: the Effect-native client exists, phoenix doesn't use it
 
-The bound client also carries Effect-native statements — `prepare(...).all/first/run/raw` (plan-building is synchronous; only executors round-trip), `exec`, and `batch` ("statements execute sequentially and are rolled back on failure") — all returning Effects with `RuntimeContext` in `R` (`alchemy@2.0.0-beta.59` — `src/Cloudflare/D1/QueryDatabase.ts`). Today phoenix routes **every** query through Drizzle: the client's only consumer is `DatabaseLive` taking `raw`. Reach for the statement surface only when a query is genuinely better expressed as raw SQL; inside a Durable Object there is no D1 at all — the `LiveDO` uses the DO's own `state.storage` KV API (see [alchemy-durable-objects.md](./alchemy-durable-objects.md)).
+The bound client also carries Effect-native statements — `prepare(...).all/first/run/raw` (plan-building is synchronous; only executors round-trip), `exec`, and `batch` ("statements execute sequentially and are rolled back on failure") — all returning Effects with `RuntimeContext` in `R` (`alchemy@2.0.0-beta.59` — `src/Cloudflare/D1/QueryDatabase.ts`). Today phoenix routes **every** query through Drizzle: that client's only consumer is `DatabaseLive` taking `raw`.
+
+Where a hand-written statement may sit splits on read vs write — [ADR 0275](../.decisions/0275-d1-writes-only-through-feature-services.md) carries the why:
+
+- **Write.** A statement that inserts, updates, or deletes a D1 row runs only inside a feature service's live-layer body. Raw SQL for a write is allowed only there, through the `run((db) => db.run(sql...))` escape hatch — never at a route handler, a fate handler, or a helper one calls. See [feature-services.md](./feature-services.md) for that `run` / `batch` surface. Introducing a consumer of the alchemy client's own `prepare` / `exec` / `batch` statement surface to carry a write is banned outright; its only consumer stays `DatabaseLive` taking `raw`.
+- **Read.** A read may sit wherever it is convenient, including directly in a route handler — it does **not** have to go through a feature service (`features/mecmua/index-route.ts` and `features/mecmua/public-read-route.ts` query `Drizzle` from a route today). Reach for raw SQL on a read when the query is genuinely better expressed that way.
+
+Inside a Durable Object there is no D1 at all — the `LiveDO` uses the DO's own `state.storage` KV API (see [alchemy-durable-objects.md](./alchemy-durable-objects.md)).
 
 ## Migrations
 

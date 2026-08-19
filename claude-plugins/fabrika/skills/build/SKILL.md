@@ -48,14 +48,14 @@ lane check arms too.
 fabrika build pick
 ```
 
-The pool is `status:triaged` + `ready-for:agent` + unassigned + inside the campaign in exclusive
-focus, p0 first. **An assigned issue is not yours whatever its labels** — assignment is how humans keep
-documents out of this pool. Read the `excluded` entries beside the pool: each names why an issue was
-left out — `out-of-focus`, `audience-not-agent` or `unreadable` from the admission test, or
-`no-acceptance-criteria` and `blocked`, this verb's own two axes: a body carrying no criteria block
-to build against, and an issue whose native `blocked_by` graph still names an open blocker. `focus`
-says whether a focus is declared at all — an inert fence is a fact to report, not a shorter pool to
-explain.
+The pool is `status:triaged` + `ready-for:agent` + unassigned + homed on a milestone some
+`## Campaigns` row marks `active`, p0 first. **An assigned issue is not yours whatever its labels**
+— assignment is how humans keep documents out of this pool. Read the `excluded` entries beside the
+pool: each names why an issue was left out — `out-of-scope`, `audience-not-agent` or `unreadable`
+from the admission test, or `no-acceptance-criteria` and `blocked`, this verb's own two axes: a body
+carrying no criteria block to build against, and an issue whose native `blocked_by` graph still
+names an open blocker. `campaigns` says whether any campaign is active at all — an inert fence is a
+fact to report, not a shorter pool to explain.
 Two refusals before claiming: a `type:decision`'s deliverable is a recorded choice
 (`/adr`'s, not yours), and a rendered-visual deliverable is outside this skill's modality
 (`build-ui`'s) — **do not claim either**. The decision refusal has one arm, and a citation is the only
@@ -97,7 +97,7 @@ fabrika build claim $issue_or_pr_number
 `--token`**; a session runs several lanes at once, so without it a verb can only tell that *some*
 lane of this session holds the number, which is how two lanes both ran one repair (#6037). `lost`
 names the winner — that lane is theirs, back off, including when the winner shares your session. Exit
-`20` (out of focus) or `21` (audience not agent) means the fence refused before writing any marker,
+`20` (out of scope) or `21` (audience not agent) means the fence refused before writing any marker,
 including on a number handed straight to you: end the run naming the code, and **never override on
 your own authority**. Exit `16` is the blockedness gate that runs after those two: the issue's
 native `blocked_by` graph still names an open blocker, every one of them is on stderr, and no
@@ -387,7 +387,7 @@ fabrika skill, so one reader parses all of them. No row here dead-ends on a bare
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
 | The board label taxonomy — `status:triaged`, `ready-for:agent`, one of `type:feature`/`chore`/`bug`/`investigation`, `p0`–`p2`, plus an open milestone or a standing-lane label | `build pick` filters and ranks on exactly these, fail-closed on every axis (`fabrika wire doc-section --heading "build pick" < <skill-base>/contract.md`) | **bootstrap** — `build pick` prints an empty pool at exit `0` with its per-bucket scanned counts, never silence; the run ends `BACKED-OFF` naming the absent labels, and creating the taxonomy is front-door's. |
-| `ROADMAP.md` with a `## Focus` section | It is the declaration `build pick` and `build claim` judge campaign scope against (`fabrika wire doc-section --heading "The admission test — scope admission composed with the audience axis, one module, two seams" < <skill-base>/contract.md`) | **degrade** — an absent file and an absent or empty section are the same well-formed default: no focus is declared, the fence is inert, every issue is admitted, and both verbs print that on their scope line. A section that reads but does not parse is exit `4` and the run stops — malformed is never read as "no focus". |
+| `ROADMAP.md` with a `## Campaigns` table | It is the declaration `build pick` and `build claim` judge campaign scope against — a row's `active` state cell is the dispatch permission (ADR 0304) (`fabrika wire doc-section --heading "The admission test — scope admission composed with the audience axis, one module, two seams" < <skill-base>/contract.md`) | **degrade** — an absent file, an absent or empty table, and a table whose every row is `paused` or `done` are the same well-formed default: nothing is active, the fence is inert, every issue is admitted, and both verbs print that on their scope line. A table that reads but does not parse is exit `4` and the run stops — malformed is never read as "nothing is active". |
 | `.fabrika.jsonc` with a `codeValidators` array, or the `package.json` scripts `typecheck` and `lint:worktree` | It is the command list `build check --surface code` runs in this tree, cache bypassed; an absent file or key falls back to the shipped pair, `pnpm typecheck --force` and `pnpm lint:worktree` | **fail-loud** — a declared validator that cannot be spawned is exit `11`, UNKNOWN, never green, and so is a declared-but-empty list, which is "no validator is present" rather than "the code failed"; the run stops naming what it could not run and points at front-door. |
 | The prose placement homes — `README`, `DEVELOPMENT.md`, `.decisions/`, `.patterns/`, `reports/`, `.glossary/LANGUAGE.md` | [`references/prose.md`](references/prose.md)'s one-home rule places every prose fact in exactly one of them | **degrade** — write into the homes that exist and disclose the substituted home in the PR's `## Deviations`; a home is never invented silently |
 | `.fabrika.jsonc` with a `capClearAuthors` array | It is the set `build clear` admits a round-clearance from, and `build verdicts` honours a recorded one against | **degrade** — an absent file, an absent key or an empty array all mean nobody may clear a round: `build clear` refuses on `25` and the cap stands at its declared value, which is the pre-clearance behaviour. A read that *failed* is exit `11`, never an empty set. |

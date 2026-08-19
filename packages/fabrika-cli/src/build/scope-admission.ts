@@ -2,8 +2,8 @@
  * The admission test both `build` seams run — **two named axes composed, never one widened term**
  * (`claude-plugins/fabrika/skills/build/contract.md`, the admission test; ADR 0245).
  *
- * - **Scope admission** is campaign membership and nothing else: is the issue's home one of the
- *   milestones in declared focus? It refuses on {@link OUT_OF_FOCUS}.
+ * - **Scope admission** is campaign membership and nothing else: is the issue's home pinned by a
+ *   `## Campaigns` row whose state is `active`? It refuses on {@link OUT_OF_SCOPE}.
  * - **The audience axis** is who the work is for (`ready-for:agent`), a question older than the fence
  *   (#4780). This module *hosts* it; it does not redefine it. It refuses on {@link AUDIENCE_NOT_AGENT}.
  * - **The type axis** is whether the deliverable is a pull request at all. It refuses on
@@ -11,8 +11,8 @@
  *   browse path: a number handed straight to `claim` passes through no pool, so a type rule fenced
  *   only there is no fence (#5490).
  *
- * They are siblings with different remedies — edit the focus row, re-label the audience, or take the
- * work to the skill whose lane it is — so they stay separately named, separately seated and
+ * They are siblings with different remedies — flip the campaign's state cell, re-label the audience,
+ * or take the work to the skill whose lane it is — so they stay separately named, separately seated and
  * separately reported everywhere. A single predicate answering all three questions at once is the
  * shape the contract's repair round removed; every outcome below therefore carries **every** axis
  * verdict, so a caller can never lose one behind another.
@@ -21,7 +21,7 @@
  * *binds* this claim, and it never enters either axis's own reading (#5175).
  *
  * The core is pure and total, and this module is **imported** by the pool and claim seams rather than
- * invoked through a relaying verb (the wrapper shape ADR 0238 bans). Only {@link readDeclaredFocus}
+ * invoked through a relaying verb (the wrapper shape ADR 0238 bans). Only {@link readDispatch}
  * touches IO.
  */
 import {Effect, type FileSystem, Result} from "effect";
@@ -33,7 +33,7 @@ import {refuse, type VerbOutcome} from "../verb.ts";
 import {
 	AUDIENCE_NOT_AGENT,
 	BAD_SECTIONS,
-	OUT_OF_FOCUS,
+	OUT_OF_SCOPE,
 	PRECONDITION_UNKNOWN,
 	TYPE_NOT_BUILDABLE,
 } from "./codes.ts";
@@ -220,34 +220,45 @@ export const homeOf = (issue: IssueFacts): string | null =>
 		? String(issue.milestone)
 		: (STANDING_LANE_LABELS.find((lane) => issue.labels.includes(lane)) ?? null);
 
-/** One parsed `## Focus` data row: a milestone the fence admits, and the date it was declared. */
-export interface FocusRow {
+/**
+ * The lifecycle cell of a `## Campaigns` row.
+ *
+ * `paused` is the campaign that is alive and not being executed: its milestone is open and no lane
+ * opens against it (ADR 0304). It is what makes one cell able to answer "may a lane open here"
+ * without a second declaration surface stacked on top.
+ */
+export const CAMPAIGN_STATES = ["active", "paused", "done"] as const;
+export type CampaignState = (typeof CAMPAIGN_STATES)[number];
+
+/** One `## Campaigns` row whose state is `active` — a milestone the fence admits, and its name. */
+export interface ActiveCampaign {
 	readonly milestone: number;
-	readonly declared: string;
+	readonly name: string;
 }
 
 /**
- * The `## Focus` declaration — a **set** of milestones, one per data row (#6005).
+ * What `## Campaigns` permits — the **set** of milestones its `active` rows pin (ADR 0304).
  *
- * `None` is a **well-formed default**, not a refusal: declaring nothing is the off switch, and a fence
- * that refused on absence would wedge the board the moment nobody had declared a focus. `Malformed` is
- * the opposite — a declaration that reads but does not parse proves nothing, and is never read as "no
- * focus".
+ * `None` is a **well-formed default**, not a refusal: an absent table, a table with no rows and a
+ * table whose every row is `paused` or `done` are one answer — the fence is off, not closed — and a
+ * fence that refused on absence would wedge the board the moment nobody was running a campaign.
+ * `Malformed` is the opposite: a table that reads but does not parse proves nothing, and is never
+ * read as "nothing is active".
  *
- * `Declared` carries a non-empty tuple, so "declared, admitting nothing" — a set that refuses the whole
- * board while reporting a focus — cannot be constructed.
+ * `Active` carries a non-empty tuple, so "permitting nothing while reporting a permission" cannot be
+ * constructed.
  */
-export type Focus =
-	| {readonly _tag: "Declared"; readonly milestones: readonly [FocusRow, ...FocusRow[]]}
+export type Dispatch =
+	| {readonly _tag: "Active"; readonly campaigns: readonly [ActiveCampaign, ...ActiveCampaign[]]}
 	| {readonly _tag: "None"}
 	| {readonly _tag: "Malformed"; readonly reason: string};
 
-/** A focus that parsed — the only input the scope axis accepts, so `Malformed` cannot reach it. */
-export type ParsedFocus = Exclude<Focus, {readonly _tag: "Malformed"}>;
+/** A table that parsed — the only input the scope axis accepts, so `Malformed` cannot reach it. */
+export type ParsedDispatch = Exclude<Dispatch, {readonly _tag: "Malformed"}>;
 
-/** The milestones a parsed declaration admits — empty when the fence is inert. */
-export const declaredMilestones = (focus: ParsedFocus): ReadonlyArray<number> =>
-	focus._tag === "Declared" ? focus.milestones.map((row) => row.milestone) : [];
+/** The milestones a parsed table admits — empty when the fence is inert. */
+export const dispatchMilestones = (dispatch: ParsedDispatch): ReadonlyArray<number> =>
+	dispatch._tag === "Active" ? dispatch.campaigns.map((row) => row.milestone) : [];
 
 /** `milestone #46`, or `milestones #46, #47` — the phrase every focus-naming message shares. */
 export const milestonePhrase = (milestones: ReadonlyArray<number>): string =>
@@ -255,11 +266,10 @@ export const milestonePhrase = (milestones: ReadonlyArray<number>): string =>
 		.map((milestone) => `#${milestone}`)
 		.join(", ")}`;
 
-const HEADING = /^##\s+Focus\s*$/;
+const HEADING = /^##\s+Campaigns\s*$/;
 const ANY_HEADING = /^##\s+/;
 const SEPARATOR_CELL = /^:?-{3,}:?$/;
 const MILESTONE_CELL = /^#(\d+)$/;
-const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 const cellsOf = (line: string): ReadonlyArray<string> | null => {
 	const trimmed = line.trim();
@@ -275,32 +285,24 @@ const isSeparator = (cells: ReadonlyArray<string>): boolean =>
 	cells.every((cell) => SEPARATOR_CELL.test(cell));
 
 const isHeader = (cells: ReadonlyArray<string>): boolean =>
-	cells.length === 2 &&
-	cells[0]?.toLowerCase() === "milestone" &&
-	cells[1]?.toLowerCase() === "declared";
-
-/** Whether the date is the calendar day it spells, not merely four-two-two digits. */
-const isCalendarDate = (year: string, month: string, day: string): boolean => {
-	const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
-	return (
-		date.getUTCFullYear() === Number(year) &&
-		date.getUTCMonth() === Number(month) - 1 &&
-		date.getUTCDate() === Number(day)
-	);
-};
+	cells.length === 3 &&
+	cells[0]?.toLowerCase() === "campaign" &&
+	cells[1]?.toLowerCase() === "milestone" &&
+	cells[2]?.toLowerCase() === "state";
 
 /**
- * Read `ROADMAP.md`'s `## Focus` table into the set of milestones it declares.
+ * Read `ROADMAP.md`'s `## Campaigns` table into the set of milestones its `active` rows permit.
  *
  * The header row is recognised by its column names and the separator by its dashes, so what is left is
- * a data row **whatever it contains** — which is what makes a mistyped milestone cell malformed rather
- * than invisible. Skipping unrecognised rows instead would answer "no focus declared" for a broken
- * table, the well-formed-and-always-wrong shape that fence exists to avoid.
+ * a data row **whatever it contains** — which is what makes a mistyped state cell malformed rather than
+ * invisible. Skipping unrecognised rows instead would answer "nothing is active" for a broken table,
+ * the well-formed-and-always-wrong shape this fence exists to avoid.
  *
- * One unreadable row makes the **whole** declaration malformed rather than degrading to the rows that
- * did parse: a partial read reported as the focus is a fence quietly narrower than what was written.
+ * One unreadable row makes the **whole** table malformed rather than degrading to the rows that did
+ * parse (ADR 0298's rule, carried onto the surface that replaced it): a partial read reported as the
+ * permission is a fence quietly wider or narrower than what was written.
  */
-export const readFocus = (text: string): Focus => {
+export const readCampaigns = (text: string): Dispatch => {
 	const lines = text.split("\n");
 	const start = lines.findIndex((line) => HEADING.test(line.trim()));
 	if (start === -1) return {_tag: "None"};
@@ -314,48 +316,49 @@ export const readFocus = (text: string): Focus => {
 		rows.push(cells);
 	}
 
-	const parsed: FocusRow[] = [];
+	const active: ActiveCampaign[] = [];
 	for (const [index, row] of rows.entries()) {
-		const where = rows.length === 1 ? "the ## Focus row" : `## Focus row ${index + 1}`;
-		if (row.length !== 2) {
+		const where = `## Campaigns row ${index + 1}`;
+		if (row.length !== 3) {
 			return {
 				_tag: "Malformed",
-				reason: `${where} has ${row.length} cells, not the 2 the grammar declares (Milestone | Declared)`,
+				reason: `${where} has ${row.length} cells, not the 3 the grammar declares (Campaign | Milestone | State)`,
 			};
 		}
-		const milestone = MILESTONE_CELL.exec(row[0] ?? "");
+		const name = row[0] ?? "";
+		if (name === "") {
+			return {_tag: "Malformed", reason: `${where}'s campaign cell is empty`};
+		}
+		const milestone = MILESTONE_CELL.exec(row[1] ?? "");
 		if (milestone?.[1] === undefined) {
-			return {_tag: "Malformed", reason: `${where}'s milestone cell "${row[0]}" is not #<int>`};
+			return {_tag: "Malformed", reason: `${where}'s milestone cell "${row[1]}" is not #<int>`};
 		}
-		const date = ISO_DATE.exec(row[1] ?? "");
-		if (
-			date?.[1] === undefined ||
-			date[2] === undefined ||
-			date[3] === undefined ||
-			!isCalendarDate(date[1], date[2], date[3])
-		) {
+		const state = (row[2] ?? "").toLowerCase();
+		if (!CAMPAIGN_STATES.some((legal) => legal === state)) {
 			return {
 				_tag: "Malformed",
-				reason: `${where}'s declared cell "${row[1]}" is not an ISO YYYY-MM-DD date`,
+				reason: `${where}'s state cell "${row[2]}" is none of ${CAMPAIGN_STATES.join(" / ")}`,
 			};
 		}
-		parsed.push({milestone: Number.parseInt(milestone[1], 10), declared: row[1] ?? ""});
+		if (state === "active") {
+			active.push({milestone: Number.parseInt(milestone[1], 10), name});
+		}
 	}
-	const [first, ...rest] = parsed;
-	return first === undefined ? {_tag: "None"} : {_tag: "Declared", milestones: [first, ...rest]};
+	const [first, ...rest] = active;
+	return first === undefined ? {_tag: "None"} : {_tag: "Active", campaigns: [first, ...rest]};
 };
 
 /** Axis one — campaign membership, and nothing else. */
 export type ScopeAxis =
-	/** A focus is declared and this issue's home is one of its milestones — the member matched. */
-	| {readonly _tag: "InFocus"; readonly milestone: number}
-	/** A standing lane, admitted whatever the declaration says. */
+	/** An `active` campaign pins this issue's home — the member matched. */
+	| {readonly _tag: "InScope"; readonly milestone: number}
+	/** A standing lane, admitted whatever the table says. */
 	| {readonly _tag: "LaneExempt"; readonly lane: StandingLaneLabel}
-	/** No focus is declared — the fence is off, and says so. */
+	/** No campaign is `active` — the fence is off, and says so. */
 	| {readonly _tag: "Inert"}
 	| {
-			readonly _tag: "OutOfFocus";
-			readonly focus: ReadonlyArray<number>;
+			readonly _tag: "OutOfScope";
+			readonly active: ReadonlyArray<number>;
 			readonly home: string | null;
 	  };
 
@@ -365,13 +368,13 @@ export type AudienceAxis =
 	/** `label` is the `ready-for:` label carried, or `null` when the issue carries none. */
 	| {readonly _tag: "NotAgent"; readonly label: string | null};
 
-export const scopeAxisOf = (focus: ParsedFocus, issue: IssueFacts): ScopeAxis => {
-	if (focus._tag === "None") return {_tag: "Inert"};
-	const matched = focus.milestones.find((row) => row.milestone === issue.milestone);
-	if (matched !== undefined) return {_tag: "InFocus", milestone: matched.milestone};
+export const scopeAxisOf = (dispatch: ParsedDispatch, issue: IssueFacts): ScopeAxis => {
+	if (dispatch._tag === "None") return {_tag: "Inert"};
+	const matched = dispatch.campaigns.find((row) => row.milestone === issue.milestone);
+	if (matched !== undefined) return {_tag: "InScope", milestone: matched.milestone};
 	const lane = STANDING_LANE_LABELS.find((label) => issue.labels.includes(label));
 	if (lane !== undefined) return {_tag: "LaneExempt", lane};
-	return {_tag: "OutOfFocus", focus: declaredMilestones(focus), home: homeOf(issue)};
+	return {_tag: "OutOfScope", active: dispatchMilestones(dispatch), home: homeOf(issue)};
 };
 
 /**
@@ -482,8 +485,8 @@ export type Admission =
 			readonly citation: Citation;
 	  }
 	| {
-			readonly _tag: "OutOfFocus";
-			readonly scope: Extract<ScopeAxis, {readonly _tag: "OutOfFocus"}>;
+			readonly _tag: "OutOfScope";
+			readonly scope: Extract<ScopeAxis, {readonly _tag: "OutOfScope"}>;
 			readonly audience: AudienceAxis;
 			readonly type: TypeAxis;
 	  }
@@ -500,29 +503,29 @@ export type Admission =
 			readonly type: TypeAxis;
 	  }
 	/**
-	 * A pull request with no readable served issue, under a declared focus.
+	 * A pull request with no readable served issue, while some campaign is `active`.
 	 *
 	 * It carries no axis verdict because neither axis ever ran: the fence could not identify the
 	 * record to judge. Refusing is the fail-closed answer — admitting a PR whose ticket nobody can
-	 * name would let any lane past a declared focus by omitting one line from a body — and the
-	 * remedy is a cheap one the message states: name the issue in the PR body, or override.
+	 * name would let any lane past the fence by omitting one line from a body — and the remedy is a
+	 * cheap one the message states: name the issue in the PR body, or override.
 	 */
 	| {
 			readonly _tag: "NoServedIssue";
 			readonly pr: number;
-			readonly focus: ReadonlyArray<number>;
+			readonly active: ReadonlyArray<number>;
 			readonly reason: string;
 	  }
 	| {readonly _tag: "Unknown"; readonly code: number; readonly reason: string};
 
 export const noServedIssue = (
 	pr: number,
-	focus: ReadonlyArray<number>,
+	active: ReadonlyArray<number>,
 	reason: string,
 ): Admission => ({
 	_tag: "NoServedIssue",
 	pr,
-	focus,
+	active,
 	reason,
 });
 
@@ -530,33 +533,33 @@ export const noServedIssue = (
  * Run both axes over one issue.
  *
  * The refusals are ordered scope, then type, then audience, and the order is the operator's remedy
- * path rather than a preference. While an issue sits outside the campaign in focus, neither its type
- * nor its audience label is the thing to fix. Inside the focus, type outranks audience because a
- * decision or an epic reported as `audience-not-agent` sends an operator to re-label work that is
- * not a build lane's under any label — the misnaming #5490 was filed on. Every unreported axis is
- * still on the outcome.
+ * path rather than a preference. While an issue sits outside every active campaign, neither its type
+ * nor its audience label is the thing to fix. Inside one, type outranks audience because a decision
+ * or an epic reported as `audience-not-agent` sends an operator to re-label work that is not a build
+ * lane's under any label — the misnaming #5490 was filed on. Every unreported axis is still on the
+ * outcome.
  *
  * `purpose`, `repair` and `citation` decide only whether a refusal is *seated*; each axis's verdict
  * is read and reported either way, so a claim admitted over a non-agent audience still says so.
  */
 export const admissionOf = (
-	focus: Focus,
+	dispatch: Dispatch,
 	issue: IssueFacts,
 	purpose: ClaimPurpose = DEFAULT_CLAIM_PURPOSE,
 	repair: RepairClaim = NOT_REPAIR,
 	citation: Citation = NO_CITATION,
 ): Admission => {
-	if (focus._tag === "Malformed") {
+	if (dispatch._tag === "Malformed") {
 		return {
 			_tag: "Unknown",
 			code: BAD_SECTIONS,
-			reason: `${focus.reason} — malformed is never read as "no focus"`,
+			reason: `${dispatch.reason} — malformed is never read as "nothing is active"`,
 		};
 	}
-	const scope = scopeAxisOf(focus, issue);
+	const scope = scopeAxisOf(dispatch, issue);
 	const audience = audienceAxisOf(issue);
 	const type = typeAxisOf(issue);
-	if (scope._tag === "OutOfFocus") return {_tag: "OutOfFocus", scope, audience, type};
+	if (scope._tag === "OutOfScope") return {_tag: "OutOfScope", scope, audience, type};
 	if (
 		type._tag === "NotBuildable" &&
 		typeAxisBinds(purpose, repair) &&
@@ -573,15 +576,15 @@ export const admissionOf = (
 /** The word `build pick` reports per excluded issue; `null` for an admitted one. */
 export const exclusionReasonOf = (
 	admission: Admission,
-): "out-of-focus" | "audience-not-agent" | "type-not-buildable" | "unreadable" | null => {
+): "out-of-scope" | "audience-not-agent" | "type-not-buildable" | "unreadable" | null => {
 	switch (admission._tag) {
 		case "Admitted":
 			return null;
-		case "OutOfFocus":
+		case "OutOfScope":
 		// The pool reads issues only, so this arrives from the claim path alone; it is a scope-axis
 		// refusal there, and it is reported as one here rather than as an unreadable issue.
 		case "NoServedIssue":
-			return "out-of-focus";
+			return "out-of-scope";
 		case "AudienceNotAgent":
 			return "audience-not-agent";
 		case "TypeNotBuildable":
@@ -601,16 +604,17 @@ export const ADMISSION_EXIT_CODES: ReadonlyArray<{
 }> = [
 	{
 		code: BAD_SECTIONS,
-		condition: "the ## Focus declaration reads but does not parse — malformed, never 'no focus'",
+		condition:
+			"the ## Campaigns table reads but does not parse — malformed, never 'nothing is active'",
 	},
 	{
 		code: PRECONDITION_UNKNOWN,
-		condition: "the declaration or the issue's home could not be read — admission is UNKNOWN",
+		condition: "the campaigns table or the issue's home could not be read — admission is UNKNOWN",
 	},
 	{
-		code: OUT_OF_FOCUS,
+		code: OUT_OF_SCOPE,
 		condition:
-			"proven: not admitted on the scope axis — the issue's home is none of the declared milestones and no standing-lane label exempts it, or the target is a pull request naming no served issue to judge",
+			"proven: not admitted on the scope axis — the issue's home is pinned by no active campaign and no standing-lane label exempts it, or the target is a pull request naming no served issue to judge",
 	},
 	{
 		code: TYPE_NOT_BUILDABLE,
@@ -660,31 +664,31 @@ export const typeScopeLine = (
 };
 
 /** The scope line both seams print, so an operator sees the fence's state rather than inferring it. */
-export const focusScopeLine = (verb: string, focus: Focus): string => {
-	switch (focus._tag) {
-		case "Declared": {
-			const [only] = focus.milestones;
-			return focus.milestones.length === 1
-				? `${verb}: focus: milestone #${only.milestone}, declared ${only.declared}.`
-				: `${verb}: focus: ${focus.milestones.length} milestones — ${focus.milestones
-						.map((row) => `#${row.milestone} (declared ${row.declared})`)
+export const dispatchScopeLine = (verb: string, dispatch: Dispatch): string => {
+	switch (dispatch._tag) {
+		case "Active": {
+			const [only] = dispatch.campaigns;
+			return dispatch.campaigns.length === 1
+				? `${verb}: campaigns: 1 active — ${only.name} (#${only.milestone}).`
+				: `${verb}: campaigns: ${dispatch.campaigns.length} active — ${dispatch.campaigns
+						.map((row) => `${row.name} (#${row.milestone})`)
 						.join(", ")}.`;
 		}
 		case "None":
-			return `${verb}: focus: none declared — scope fence inert.`;
+			return `${verb}: campaigns: none active — scope fence inert.`;
 		default:
-			return `${verb}: focus: unreadable — ${focus.reason}.`;
+			return `${verb}: campaigns: unreadable — ${dispatch.reason}.`;
 	}
 };
 
-/** The `focus` field both seams report on the machine channel, beside the stderr scope line. */
-export const focusReport = (
-	focus: Focus,
+/** The `campaigns` field both seams report on the machine channel, beside the stderr scope line. */
+export const dispatchReport = (
+	dispatch: Dispatch,
 ):
-	| {readonly state: "declared"; readonly milestones: ReadonlyArray<string>}
+	| {readonly state: "active"; readonly milestones: ReadonlyArray<string>}
 	| {readonly state: "none"} =>
-	focus._tag === "Declared"
-		? {state: "declared", milestones: focus.milestones.map((row) => String(row.milestone))}
+	dispatch._tag === "Active"
+		? {state: "active", milestones: dispatch.campaigns.map((row) => String(row.milestone))}
 		: {state: "none"};
 
 /**
@@ -697,17 +701,17 @@ export const admissionRefusal = (verb: string, admission: Admission): VerbOutcom
 	switch (admission._tag) {
 		case "Admitted":
 			return null;
-		case "OutOfFocus": {
+		case "OutOfScope": {
 			const home = admission.scope.home ?? "no milestone and no standing lane";
 			return refuse(
-				OUT_OF_FOCUS,
-				`${verb}: out of focus — the declared focus is ${milestonePhrase(admission.scope.focus)} and this issue's home is ${home}; add a ## Focus row, or claim it with an explicit override.`,
+				OUT_OF_SCOPE,
+				`${verb}: out of scope — the active campaigns pin ${milestonePhrase(admission.scope.active)} and this issue's home is ${home}; flip that campaign's ## Campaigns state cell to active, or claim it with an explicit override.`,
 			);
 		}
 		case "NoServedIssue":
 			return refuse(
-				OUT_OF_FOCUS,
-				`${verb}: no served issue — the declared focus is ${milestonePhrase(admission.focus)} and PR #${admission.pr} ${admission.reason}, so there is no ticket whose home the fence can judge; name the issue in the PR body (a closing keyword or "Part of #<n>"), or claim it with an explicit override.`,
+				OUT_OF_SCOPE,
+				`${verb}: no served issue — the active campaigns pin ${milestonePhrase(admission.active)} and PR #${admission.pr} ${admission.reason}, so there is no ticket whose home the fence can judge; name the issue in the PR body (a closing keyword or "Part of #<n>"), or claim it with an explicit override.`,
 			);
 		case "TypeNotBuildable":
 			return refuse(
@@ -734,8 +738,8 @@ export const admissionRefusal = (verb: string, admission: Admission): VerbOutcom
 /**
  * An input that could not be read, lifted into the composed outcome.
  *
- * Both the declaration and an issue's home come through here, so no seam ever seats `11` for itself
- * and no read failure can be talked into an `admitted`.
+ * Both the campaigns table and an issue's home come through here, so no seam ever seats `11` for
+ * itself and no read failure can be talked into an `admitted`.
  */
 export const unknownAdmission = (reason: string): Admission => ({
 	_tag: "Unknown",
@@ -743,32 +747,32 @@ export const unknownAdmission = (reason: string): Admission => ({
 	reason,
 });
 
-/** A declaration read off disk, or the reason it could not be. */
-export type FocusRead =
-	| {readonly _tag: "Read"; readonly focus: Focus}
+/** A campaigns table read off disk, or the reason it could not be. */
+export type DispatchRead =
+	| {readonly _tag: "Read"; readonly dispatch: Dispatch}
 	| {readonly _tag: "Unreadable"; readonly reason: string};
 
-const unreadable = (path: string, failure: ReadFailed): FocusRead => ({
+const unreadable = (path: string, failure: ReadFailed): DispatchRead => ({
 	_tag: "Unreadable",
-	reason: `cannot read the focus declaration at ${path}: ${failure.reason}`,
+	reason: `cannot read the campaigns table at ${path}: ${failure.reason}`,
 });
 
 /**
- * Read the declaration.
+ * Read the campaigns table.
  *
- * An **absent file** and an absent section are the same well-formed default — no focus — while a file
- * that is there and cannot be read is UNKNOWN. The probe is separate from the read for exactly that
- * split: a probe that cannot be performed is itself UNKNOWN, never "absent".
+ * An **absent file** and an absent section are the same well-formed default — nothing active — while
+ * a file that is there and cannot be read is UNKNOWN. The probe is separate from the read for exactly
+ * that split: a probe that cannot be performed is itself UNKNOWN, never "absent".
  */
-export const readDeclaredFocus = (
+export const readDispatch = (
 	path: string = ROADMAP_FILE,
-): Effect.Effect<FocusRead, never, FileSystem.FileSystem> =>
+): Effect.Effect<DispatchRead, never, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
 		const probe = yield* Effect.result(exists(path));
 		if (Result.isFailure(probe)) return unreadable(path, probe.failure);
-		if (!probe.success) return {_tag: "Read" as const, focus: {_tag: "None" as const}};
+		if (!probe.success) return {_tag: "Read" as const, dispatch: {_tag: "None" as const}};
 		const read = yield* Effect.result(readFile(path));
 		return Result.isFailure(read)
 			? unreadable(path, read.failure)
-			: {_tag: "Read" as const, focus: readFocus(read.success)};
+			: {_tag: "Read" as const, dispatch: readCampaigns(read.success)};
 	});

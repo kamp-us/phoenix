@@ -10,6 +10,13 @@
  * A `merged`, `draft` or `closed` PR is an **answer**, not a refusal: this verb reports state and
  * the skill acts on it. The write verbs downstream refuse a non-open PR themselves — no verb trusts
  * its dispatch.
+ *
+ * The `landing` line is the one place the two landing paths are named, so a shipper reads its route
+ * here rather than composing it from a merge-queue read and a repository-settings read on two
+ * different APIs (#6018). It is the one field that **degrades instead of refusing**: an unreadable
+ * landing prints `unknown` and costs the run nothing else, because the guard that matters sits on
+ * the write — `ship merge` re-derives the same fact itself and refuses `11` where this printed
+ * `unknown`, so a degraded read here can never license a landing.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -19,6 +26,7 @@ import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {readBoundary} from "./boundary.ts";
 import {classify} from "./codeowners.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {readLanding} from "./landing.ts";
 import {badNumber, NULL_TOKEN, resolvePull, resolveTargetRepo, scannedLine} from "./target.ts";
 
 const VERB = "ship scope";
@@ -101,6 +109,14 @@ export const runScope = (
 		const state = lifecycleOf(pull.merged, pull.draft, pull.state);
 		const issue = issueRefOf(pull.body);
 
+		const read = yield* readLanding(repo, pull.baseRef);
+		if (read._tag === "Failure") {
+			diagnostics.push(
+				`${VERB}: cannot read ${pull.baseRef}'s landing path: ${read.reason} — reporting it unknown; \`ship merge\` refuses on the same read rather than landing.`,
+			);
+		}
+		const landing = read._tag === "Failure" ? {path: "unknown", method: null} : read.value;
+
 		if (json) {
 			return answer(
 				JSON.stringify({
@@ -111,6 +127,7 @@ export const runScope = (
 					classes: partition.classes,
 					namespaces,
 					cp,
+					landing,
 					scanned: partition.scanned,
 				}),
 				diagnostics,
@@ -122,6 +139,7 @@ export const runScope = (
 				...partition.classes.map((entry) => `class\t${entry.name}\t${entry.files}`),
 				...namespaces.map((namespace) => `namespace\t${namespace}`),
 				`cp\t${cp}`,
+				`landing\t${landing.path}\t${landing.method ?? NULL_TOKEN}`,
 				`files\t${partition.scanned}`,
 			].join("\n"),
 			diagnostics,

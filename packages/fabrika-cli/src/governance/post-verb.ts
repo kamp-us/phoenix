@@ -31,6 +31,7 @@ import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {GOVERNANCE_ROOTS, touchesGovernanceRoot} from "../review/classes.ts";
 import {contentDigestAt} from "../review/content-binding.ts";
+import {readRangeFlags} from "../review/range-flags.ts";
 import {runRangePost} from "../review/range-post.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
 import {latestByWriteRecency} from "../review/write-recency.ts";
@@ -175,21 +176,11 @@ export const runPost = (
 		}
 
 		// Range mode (#5935): the positional is the child issue, and content is the only binding, so
-		// --sha — a head-scoped idea — is refused rather than ignored.
-		const ranged = options.base !== null || options.tip !== null;
-		if (ranged && (options.base === null || options.tip === null)) {
-			return refuse(
-				OFF_VOCABULARY,
-				`${VERB}: --base and --tip come together — a range has two ends.`,
-			);
-		}
-		if (ranged && options.sha !== null) {
-			return refuse(
-				OFF_VOCABULARY,
-				`${VERB}: --sha does not combine with --base/--tip — a range verdict binds content, not a head (ADR 0276).`,
-			);
-		}
-		if (!ranged && options.sha === null) {
+		// --sha — a head-scoped idea — is refused rather than ignored. The shape is read through the
+		// module the two range-taking read verbs share, so all three agree on what a range is (#6064).
+		const flags = readRangeFlags(VERB, {base: options.base, tip: options.tip, sha: options.sha});
+		if (flags._tag === "Refused") return flags.outcome;
+		if (flags._tag === "Pull" && options.sha === null) {
 			return refuse(
 				OFF_VOCABULARY,
 				`${VERB}: --sha is required for a PR-scoped verdict — for a range-scoped one pass --base and --tip.`,
@@ -203,16 +194,8 @@ export const runPost = (
 		const authored = readAuthored(SURFACE, yield* options.stdin);
 		if (authored._tag === "Refused") return authored.outcome;
 
-		if (ranged) {
-			const base = headSha(options.base ?? "");
-			const tip = headSha(options.tip ?? "");
-			if (base === null || tip === null) {
-				const [flag, raw] = base === null ? ["base", options.base] : ["tip", options.tip];
-				return refuse(
-					OFF_VOCABULARY,
-					`${VERB}: --${flag} "${raw}" is not a revision — expected 7–40 lowercase hex characters.`,
-				);
-			}
+		if (flags._tag === "Ranged") {
+			const {base, tip} = flags.range;
 			return yield* runRangePost(
 				{
 					verb: VERB,

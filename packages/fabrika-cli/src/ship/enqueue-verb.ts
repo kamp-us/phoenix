@@ -22,17 +22,12 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, STALE_HEAD, WRITE_UNKNOWN} from "./codes.ts";
-import {armAutoMerge, isIndefinite, pullTimeline, readMergeability} from "./github.ts";
+import {armAutoMerge, pullTimeline} from "./github.ts";
+import {readDefiniteMergeability} from "./mergeability.ts";
 import {queueStateOf} from "./queue.ts";
 import {badNumber, inspectedSha, prefixMatch, resolvePull, resolveTargetRepo} from "./target.ts";
 
 const VERB = "ship enqueue";
-
-/** How many extra reads the indefinite value gets before it is called UNKNOWN. */
-const MERGEABILITY_POLLS = 3;
-
-/** How long to wait between those reads, giving GitHub's background computation time to land. */
-const MERGEABILITY_CADENCE_SECONDS = 2;
 
 export interface EnqueueOptions {
 	readonly pr: number;
@@ -72,22 +67,17 @@ export const runEnqueue = (
 		}
 
 		const diagnostics: string[] = [];
-		let mergeability = yield* readMergeability(repo, pr);
-		for (let poll = 1; poll <= MERGEABILITY_POLLS; poll++) {
-			if (mergeability._tag === "Failure" || !isIndefinite(mergeability.value)) break;
-			yield* Effect.sleep(`${MERGEABILITY_CADENCE_SECONDS} seconds`);
-			mergeability = yield* readMergeability(repo, pr);
-		}
-		if (mergeability._tag === "Failure") {
+		const mergeability = yield* readDefiniteMergeability(repo, pr);
+		if (mergeability._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot read #${pr}'s mergeability: ${mergeability.reason} — nothing was armed.`,
 			);
 		}
-		if (isIndefinite(mergeability.value)) {
+		if (mergeability._tag === "Indefinite") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: #${pr}'s mergeable_state is still indefinite after ${MERGEABILITY_POLLS} polls — mergeability is UNKNOWN, never green; nothing was armed.`,
+				`${VERB}: #${pr}'s mergeable_state is still indefinite after ${mergeability.polls} polls — mergeability is UNKNOWN, never green; nothing was armed.`,
 			);
 		}
 		diagnostics.push(

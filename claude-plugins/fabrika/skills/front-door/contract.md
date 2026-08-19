@@ -1162,7 +1162,12 @@ session must not need a second file open:
   separator without matching on their text.
 - **The join key is that number, never the title.** An arc named `Geçit` pins a milestone titled
   `Sözlük — search and discovery`; the two share no substring, so a title cell joins nothing.
-- The `State` column is **not read**. It is for humans; nothing filters on it.
+- The `State` column **is read on a campaign row**: `active` there is the dispatch permission,
+  so `build`'s scope fence admits a lane only under an `active` campaign (ADR
+  [0304](../../../../.decisions/0304-campaign-active-is-the-dispatch-permission.md)). A drafted
+  campaign row is therefore written `paused` — flipping it to `active` is the human's separate,
+  explicit start act, so a bootstrap never grants dispatch permission. On an arc row the column
+  is still for humans; nothing filters on it.
 
 ```markdown
 ## Arcs

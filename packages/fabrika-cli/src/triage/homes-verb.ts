@@ -12,14 +12,14 @@
  * offers only open, roadmap-joined milestones, which designs out the mismatch where a closed
  * milestone reports as a valid home.
  *
- * A row can carry a **running** marker: a campaign in declared focus is closed to new intake unless
- * the work is p0 or blocks one of that milestone's own in-flight lanes (#6080). Which milestones
- * those are, is data — `ROADMAP.md`'s `## Focus` table, the same declaration `build pick` fences on,
- * read through the same parser off the roadmap text this verb already has open. A marked row is still
+ * A row can carry a **running** marker: an `active` campaign is closed to new intake unless the work
+ * is p0 or blocks one of that milestone's own in-flight lanes (#6080). Which milestones those are, is
+ * data — `ROADMAP.md`'s `## Campaigns` table, the same permission `build pick` fences on, read
+ * through the same parser off the roadmap text this verb already has open. A marked row is still
  * offered: the two exceptions are real, and a removed row cannot carry them.
  */
 import {Effect, Result} from "effect";
-import {declaredMilestones, focusScopeLine, readFocus} from "../build/scope-admission.ts";
+import {dispatchMilestones, dispatchScopeLine, readCampaigns} from "../build/scope-admission.ts";
 import {readFile} from "../io/fs.ts";
 import {listOpenMilestones, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse} from "../verb.ts";
@@ -112,9 +112,9 @@ export const runHomes = Effect.fn("runHomes")(function* (options: HomesOptions) 
 	}
 
 	// Malformed is never read as "no milestone is running": it marks no row and says so here, and it
-	// does not refuse — a home list is still the right answer over an unreadable focus declaration.
-	const focus = readFocus(read.success);
-	const inFocus = new Set(focus._tag === "Malformed" ? [] : declaredMilestones(focus));
+	// does not refuse — a home list is still the right answer over an unreadable campaigns table.
+	const dispatch = readCampaigns(read.success);
+	const running = new Set(dispatch._tag === "Malformed" ? [] : dispatchMilestones(dispatch));
 
 	const homes = [...milestones.value]
 		.sort((a, b) => a.number - b.number)
@@ -122,11 +122,11 @@ export const runHomes = Effect.fn("runHomes")(function* (options: HomesOptions) 
 			number: milestone.number,
 			title: milestone.title,
 			roadmapRow: roadmapRowFor(rows, milestone.number),
-			// `undefined` rather than `false`: `JSON.stringify` drops the key, so a not-in-focus row
+			// `undefined` rather than `false`: `JSON.stringify` drops the key, so an unmarked row
 			// serialises byte-for-byte as it did before the marker existed.
-			running: inFocus.has(milestone.number) ? RUNNING_MARKER : undefined,
+			running: running.has(milestone.number) ? RUNNING_MARKER : undefined,
 		}));
-	const notices = [scope, focusScopeLine("triage homes", focus)];
+	const notices = [scope, dispatchScopeLine("triage homes", dispatch)];
 
 	if (json) {
 		return answer(

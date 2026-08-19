@@ -313,7 +313,7 @@ obligation (interface convention rule 3), and the alignment this group opts into
 **base-only, never pairwise** (`exit-code-alignment.ts`: `occupied = allocatedCodes(base)`).
 
 **The `20`/`21` overlap with `build`, settled ([#5107](https://github.com/kamp-us/phoenix/issues/5107)).**
-This was written when `20`+ was free; the scope-admission fence has since taken `20` `OUT_OF_FOCUS`
+This was written when `20`+ was free; the scope-admission fence has since taken `20` `OUT_OF_SCOPE`
 and `21` `AUDIENCE_NOT_AGENT`, both reachable from `fabrika build claim` — step 1 of this gate's
 skill. `21` is no longer among them: step 1 claims with `--purpose gate`, and the audience axis binds
 build-purpose claims only (#5175), so the only admission refusal this gate can meet is `20`. The

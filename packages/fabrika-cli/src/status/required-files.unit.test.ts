@@ -65,7 +65,7 @@ describe("the disposition is read by cell position, never by scanning for a bold
 
 describe("subject classification", () => {
 	it("reads a cell that OPENS with a backticked path as that path", () => {
-		expect(classifySubject("`ROADMAP.md` with a `## Focus` section")).toEqual({
+		expect(classifySubject("`ROADMAP.md` with a `## Campaigns` table")).toEqual({
 			_tag: "Path",
 			path: "ROADMAP.md",
 		});
@@ -113,7 +113,7 @@ describe("subject classification", () => {
  * #5777: `` `.gitignore` covering `.fabrika/` `` classified as the bare path `.gitignore`, so any
  * repo with any `.gitignore` scored the row `present` while `.fabrika/` went uncovered. These pin
  * the named case AND its boundary — the keyword is `covering` and nothing else, because a general
- * "path plus the next token" reading would put `## Focus` under the same demand.
+ * "path plus the next token" reading would put `## Campaigns` under the same demand.
  */
 describe("a content-qualified path cell", () => {
 	it("carries the covered token, so the probe cannot answer off mere existence", () => {
@@ -137,7 +137,7 @@ describe("a content-qualified path cell", () => {
 	});
 
 	it("does not read any other trailing token as a content demand", () => {
-		expect(classifySubject("`ROADMAP.md` with a `## Focus` section")).toEqual({
+		expect(classifySubject("`ROADMAP.md` with a `## Campaigns` table")).toEqual({
 			_tag: "Path",
 			path: "ROADMAP.md",
 		});

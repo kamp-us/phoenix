@@ -8,7 +8,7 @@
  * - **The admission test decides the scope, audience and type axes**, imported from
  *   [`./scope-admission.ts`](./scope-admission.ts) and re-derived nowhere (ADR 0245). An issue with
  *   no `ready-for:` label is excluded — absence is an unknown audience, never an agent audience
- *   (#4780) — and one homed outside the declared focus is excluded with its own reason. The type
+ *   (#4780) — and one homed outside every active campaign is excluded with its own reason. The type
  *   set used to be this file's private constant, which is how a directly-handed `type:decision`
  *   reached `claim` with nothing to refuse it (#5490).
  * - **Any assignee excludes.** Assignment is the one attribute that keeps a human's live document out
@@ -25,7 +25,7 @@
  * **Either every bucket was read in full, or the answer is `11`.** v1's pool printed nothing for a
  * failed bucket and kept going, so a `gh` 5xx on the p0 bucket read as "no p0s"
  * (`step1-candidate-pool.sh:12-13`); a bucket whose paginated output stops mid-page is the same fact
- * and lands on the same code. An unreadable focus declaration refuses the whole pool too — an
+ * and lands on the same code. An unreadable campaigns table refuses the whole pool too — an
  * unfiltered pool on a failed read is the fail-open shape the fence exists to remove. An empty pool
  * is still a fact and prints on exit 0 with the scanned counts and the per-issue exclusion reasons
  * beside it, which is what makes it auditable rather than merely plausible (ADR 0092).
@@ -41,11 +41,11 @@ import {type CandidateIssue, listLabelled} from "./github.ts";
 import {
 	admissionOf,
 	BUILDABLE_TYPE_LABELS,
+	dispatchReport,
+	dispatchScopeLine,
 	exclusionReasonOf,
-	focusReport,
-	focusScopeLine,
 	homeOf,
-	readDeclaredFocus,
+	readDispatch,
 	typeAxisOf,
 } from "./scope-admission.ts";
 import {resolveTargetRepo} from "./target.ts";
@@ -145,18 +145,18 @@ export const runPick = (
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 
-		const read = yield* readDeclaredFocus();
+		const read = yield* readDispatch();
 		if (read._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the "## Focus" declaration: ${read.reason} — the pool is UNKNOWN, never unfiltered.`,
+				`${VERB}: cannot read the "## Campaigns" table: ${read.reason} — the pool is UNKNOWN, never unfiltered.`,
 			);
 		}
-		const focus = read.focus;
-		if (focus._tag === "Malformed") {
+		const dispatch = read.dispatch;
+		if (dispatch._tag === "Malformed") {
 			return refuse(
 				BAD_SECTIONS,
-				`${VERB}: the "## Focus" declaration does not parse: ${focus.reason} — the pool is UNKNOWN, and a malformed declaration is never read as "no focus".`,
+				`${VERB}: the "## Campaigns" table does not parse: ${dispatch.reason} — the pool is UNKNOWN, and a malformed table is never read as "nothing is active".`,
 			);
 		}
 
@@ -176,7 +176,7 @@ export const runPick = (
 			scanned[bucket] = listed.value.length;
 			const entries: PoolEntry[] = [];
 			for (const issue of listed.value.filter(isCandidate)) {
-				const reason = exclusionReasonOf(admissionOf(focus, issue));
+				const reason = exclusionReasonOf(admissionOf(dispatch, issue));
 				if (reason !== null) {
 					excluded.push({number: issue.number, home: homeOf(issue), reason});
 					continue;
@@ -223,11 +223,11 @@ export const runPick = (
 				pool: pool.slice(0, options.limit),
 				excluded,
 				scanned,
-				focus: focusReport(focus),
+				campaigns: dispatchReport(dispatch),
 			}),
 			[
 				`${VERB}: scanned p0 ${scanned.p0}, p1 ${scanned.p1}, p2 ${scanned.p2} in ${resolved.repo}; ${pool.length} candidate(s) survived the filter, ${excluded.length} excluded — ${excluded.length - criteriaExcluded - graphExcluded} by the admission test, ${criteriaExcluded} for no acceptance-criteria block, ${graphExcluded} on the blocked_by graph.`,
-				focusScopeLine(VERB, focus),
+				dispatchScopeLine(VERB, dispatch),
 				...blockedEdges,
 				...unreadableEdges,
 			],

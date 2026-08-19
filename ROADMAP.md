@@ -78,7 +78,7 @@ flowchart TD
 
 ## Campaigns
 
-Campaigns are bounded, milestone-backed pushes that run *concurrently* with the active product arc, drained through the platform lane (ADR 0072 semantics; ADR 0078 engineering-led).
+Campaigns are bounded, milestone-backed pushes that run *concurrently* with the active product arc, drained through the platform lane (ADR 0072 semantics; ADR 0078 engineering-led). **A row's `State` cell is the dispatch permission**: an agent may open lanes against exactly the milestones whose row says `active` (ADR 0304). There is no second declaration surface — this cell is the whole answer.
 
 | Campaign | Milestone | State |
 |----------|-----------|-------|
@@ -92,7 +92,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Flag Graduation | #39 | done |
 | pipeline-cli Glue Consolidation | #40 | done |
 | Lint-Gate Adoption | #41 | done |
-| Taste-Skill Library | #42 | active |
+| Taste-Skill Library | #42 | paused |
 | Pipeline Anywhere | #35 | done |
 | pipeline-cli @effect/platform migration | #32 | done |
 | Agentic design-system coverage | #33 | done |
@@ -103,27 +103,16 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | fabrika fast follows | #46 | active |
 | fabrika everywhere | #47 | active |
 
-**The table is a parsed contract.** It is the single source the campaign skill (which appends a row and flips its state) and the lifecycle guard (which reads it) both bind to, so the grammar is pinned here rather than re-derived at either end:
+**The table is a parsed contract.** It is the single source whatever writes a campaign row (appending it `paused` and later flipping its state) and the lifecycle guard that reads it both bind to, so the grammar is pinned here rather than re-derived at either end:
 
 - **Columns** are `Campaign | Milestone | State`, in that order. `Campaign` is the founder-voice name; `Milestone` pins the campaign to its GitHub milestone **by number** (`#N`) — the same row→milestone-by-number binding the roadmap-guard already enforces on `## Arcs`, and that number is the one link to the operational projection. `State` is the lifecycle cell.
-- **`State ∈ {active, done}`** — the symmetric two-state lifecycle. A campaign is `active` while its milestone is draining, and flips to `done` once that milestone is fully drained (its GitHub milestone closed). There is no `queued` state: unlike an arc, a campaign is not sequenced ahead — it opens `active` when the founder starts it and ends `done`, running concurrently with whichever arc is active.
+- **`State ∈ {active, paused, done}`** — the lifecycle cell, and the dispatch permission with it. `active` means the milestone is draining *and* lanes may open against it. `paused` means the campaign is alive and nobody is executing it: the milestone stays open, and no lane opens. `done` means the milestone is fully drained (its GitHub milestone closed). There is no `queued` state: unlike an arc, a campaign is not sequenced ahead. **A newly added row is `paused`** — writing the row records the campaign, and flipping the cell to `active` is the separate, explicit act that makes it dispatchable, so no edit grants dispatch permission in the same stroke that names the campaign (ADR [0304](.decisions/0304-campaign-active-is-the-dispatch-permission.md); founder ruling on #6289, 2026-08-19). Resuming a paused campaign is that same flip.
+
+**Nothing active means the fence is off, not closed.** A missing table, an empty one, and one whose every row is `paused` or `done` are the same well-formed default: no campaign is declared, so nothing is out of scope and everything stays admissible (founder ruling on #5011, carried onto this surface by ADR 0304). Pausing every campaign is therefore not a board freeze — freezing is not what this table does. **One unreadable row makes the whole table unreadable**, though: a fence never falls back to the rows it could parse.
+
+**Guarded.** `roadmap-guard` invariants **I1–I5** keep the table honest against the milestone projection — every row pins an existing milestone by number, every open milestone is claimed, and I5's symmetry binds the state cell to the milestone's open/closed reality (`active` and `paused` need an open milestone, `done` a closed one).
 
 **Mentor Audit** — *done.* A security & architecture audit wave (the staff-mentor findings: the karma double-bump race, per-actor rate limiting, ops runbooks, `SECURITY.md`, …). Drained via the platform lane alongside Geçit.
-
-## Focus
-
-The milestones in **declared focus**: the campaigns an execution engine may open lanes against. The `## Campaigns` table above cannot answer this — campaigns run concurrently and many are `active` at once. This section can, and it is data rather than prose, so an agent reads the focus instead of waiting for a ruling to reach it.
-
-| Milestone | Declared |
-|-----------|----------|
-| #46 | 2026-08-18 |
-| #47 | 2026-08-18 |
-
-**The grammar.** Columns are `Milestone | Declared`, in that order. `Milestone` pins one focused milestone **by number** (`#N`) — the same row→milestone-by-number binding `## Arcs` and `## Campaigns` use, and the one link to the operational projection. `Declared` is the ISO date (`YYYY-MM-DD`) that row was declared. The table carries **N rows**, one per milestone in focus, and the focus is the set of them: a repo running several streams at once declares a row each (#6005). Phoenix runs two — the #46 drain and the #47 start — so the table carries a row each. **One unreadable row makes the whole declaration unreadable** — a fence never falls back to the rows it could parse.
-
-**Absence and emptiness both mean no focus is declared.** A missing `## Focus` section and a present-but-empty one are the same well-formed default, and every consumer reads them the same way — nothing is out of scope, everything stays admissible. Neither is ever a refusal: a fence that refused on absence would wedge the pipeline the moment nobody had declared a focus (founder ruling on #5011 — an empty `## Focus` admits everything).
-
-**Guarded.** `roadmap-guard` invariant **I6** keeps the declaration honest: every row's milestone resolves, is open, and is claimed by an `active` arc or campaign row above. Row count is not an invariant. Reading the declaration at the pick and claim seams is separate work (#5015, #5016); this section is the surface those read.
 
 ## Dependencies
 

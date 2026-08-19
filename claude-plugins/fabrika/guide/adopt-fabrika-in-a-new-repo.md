@@ -137,11 +137,12 @@ The file's grammar is a real parse contract, not a convention
   rather than answer over a roadmap it could not join, on the reading that an empty parse means the
   table grammar drifted.
 
-A `## Focus` section is separate, optional, and read by a different parser
-([`packages/fabrika-cli/src/build/scope-admission.ts`](../../../packages/fabrika-cli/src/build/scope-admission.ts)).
-Its columns are exactly `Milestone | Declared` in that order, one row per milestone in focus:
-`#<int>` and an ISO `YYYY-MM-DD` date. One unreadable row makes the whole declaration malformed —
-there is no fallback to the rows that parsed.
+The `## Campaigns` table is read a second time, by a stricter parser
+([`packages/fabrika-cli/src/build/scope-admission.ts`](../../../packages/fabrika-cli/src/build/scope-admission.ts)),
+because a row's `State` cell is the build fence's dispatch permission (ADR 0304). There, the columns
+are exactly `Campaign | Milestone | State`, the milestone is `#<int>`, and the state is one of
+`active` / `paused` / `done`. `build` opens lanes against the `active` rows' milestones only, and one
+unreadable row makes the whole table malformed — there is no fallback to the rows that parsed.
 
 Draft it and hand it to the verb, which reports what its own parser joined out of the bytes it wrote:
 

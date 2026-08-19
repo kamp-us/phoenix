@@ -11,7 +11,7 @@ import {
 	BLOCKED,
 	CLAIM_NOT_MINE,
 	OFF_VOCABULARY,
-	OUT_OF_FOCUS,
+	OUT_OF_SCOPE,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	TYPE_NOT_BUILDABLE,
@@ -21,9 +21,9 @@ import {
 import {
 	adoptMarker,
 	blockedBy,
+	campaignsTable,
 	candidates,
 	comments,
-	focusTable,
 	issue,
 	LANE_TOKEN,
 	LANE_UUID,
@@ -75,8 +75,8 @@ const thread = (...states: ReadonlyArray<ExecResult>) =>
 		i === states.length - 1 ? ([COMMENTS, state] as const) : ([once(COMMENTS), state] as const),
 	);
 
-/** No `ROADMAP.md`: no focus declared, so the scope axis admits and the fence reports itself inert. */
-const NO_FOCUS = fakeFs({files: {}});
+/** No `ROADMAP.md`: nothing active, so the scope axis admits and the fence reports itself inert. */
+const NO_CAMPAIGNS = fakeFs({files: {}});
 
 /**
  * `fakeShell` with every `blocked_by` edge list answering empty.
@@ -108,7 +108,7 @@ const run = (
 	verb: (given: typeof options) => ReturnType<typeof runClaim>,
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
-	fs = NO_FOCUS,
+	fs = NO_CAMPAIGNS,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
@@ -161,7 +161,7 @@ describe("runClaim", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runClaim({...options, uuid: SIBLING_UUID, token: null}),
-				Layer.merge(shell.layer, NO_FOCUS.layer),
+				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
 			),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
@@ -184,7 +184,7 @@ describe("runClaim", () => {
 			[perm("agent"), okOut("write\n")],
 		]);
 		await Effect.runPromise(
-			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		const posted = shell.calls.findIndex((line) => POST.test(line));
 		const swept = shell.calls.findLastIndex((line) => COMMENTS.test(line));
@@ -209,7 +209,7 @@ describe("runClaim", () => {
 			[DELETE, okOut("")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stdout).toBe("");
@@ -289,7 +289,7 @@ describe("runClaim", () => {
 			[DELETE, okOut("")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("page boundary");
@@ -328,9 +328,13 @@ describe("runClaim", () => {
  * that posted and then refused would leave a marker on the issue with nothing to retract it.
  */
 describe("runClaim — the admission test runs before any marker is written", () => {
-	const FOCUSED = fakeFs({files: {[ROADMAP_FILE]: focusTable(44)}});
+	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
 
-	const claimWith = (target: ExecResult, fs = FOCUSED, overrides: Partial<typeof options> = {}) => {
+	const claimWith = (
+		target: ExecResult,
+		fs = IN_SCOPE,
+		overrides: Partial<typeof options> = {},
+	) => {
 		const shell = unblocked([
 			[ISSUE, target],
 			unclaimed(),
@@ -353,31 +357,31 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		labels: labelled("type:bug", "p1", "status:triaged", "ready-for:human"),
 	});
 
-	it("refuses an out-of-focus issue on 20, and posts NOTHING", async () => {
+	it("refuses an out-of-scope issue on 20, and posts NOTHING", async () => {
 		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN);
-		expect(out.code).toBe(OUT_OF_FOCUS);
+		expect(out.code).toBe(OUT_OF_SCOPE);
 		expect(out.stdout).toBe("");
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
-		expect(out.stderr.some((line) => line.includes("out of focus"))).toBe(true);
+		expect(out.stderr.some((line) => line.includes("out of scope"))).toBe(true);
 		expect(out.stderr.at(-1)).toContain("nothing was written");
 	});
 
 	it("claims an issue homed in the SECOND declared milestone, off the same predicate (#6005)", async () => {
 		const {out} = await claimWith(
 			OUT_OF_CAMPAIGN,
-			fakeFs({files: {[ROADMAP_FILE]: focusTable([44, 39])}}),
+			fakeFs({files: {[ROADMAP_FILE]: campaignsTable([44, 39])}}),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).answer).toBe("won");
-		expect(out.stderr.some((line) => line.includes("2 milestones"))).toBe(true);
+		expect(out.stderr.some((line) => line.includes("2 active"))).toBe(true);
 	});
 
-	it("refuses an out-of-focus issue naming the whole declared set in the remedy", async () => {
+	it("refuses an out-of-scope issue naming the whole active set in the remedy", async () => {
 		const {out} = await claimWith(
 			OUT_OF_CAMPAIGN,
-			fakeFs({files: {[ROADMAP_FILE]: focusTable([44, 46])}}),
+			fakeFs({files: {[ROADMAP_FILE]: campaignsTable([44, 46])}}),
 		);
-		expect(out.code).toBe(OUT_OF_FOCUS);
+		expect(out.code).toBe(OUT_OF_SCOPE);
 		expect(out.stderr.some((line) => line.includes("milestones #44, #46"))).toBe(true);
 	});
 
@@ -398,17 +402,17 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		expect(out.stderr.at(-1)).toContain("scope is UNKNOWN, never admitted; nothing was written");
 	});
 
-	it("refuses a malformed declaration on 4 — never read as 'no focus'", async () => {
+	it("refuses a malformed campaigns table on 4 — never read as 'nothing active'", async () => {
 		const {out, shell} = await claimWith(
 			CLAIMABLE,
-			fakeFs({files: {[ROADMAP_FILE]: focusTable(44).replace("2026-08-09", "the 9th")}}),
+			fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44).replace("| active |", "| activ |")}}),
 		);
 		expect(out.code).toBe(BAD_SECTIONS);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("claims a refused issue under --override, recording the lane and reason on the marker and in the answer", async () => {
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, FOCUSED, {
+		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, IN_SCOPE, {
 			override: "hotfix for the release blocker",
 			overrideLane: "build-ui",
 		});
@@ -440,7 +444,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	});
 
 	it("refuses an empty --override reason on 1 — an override is recorded or it is not one", async () => {
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, FOCUSED, {
+		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, IN_SCOPE, {
 			override: "  ",
 			overrideLane: "build-ui",
 		});
@@ -449,7 +453,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	});
 
 	it("refuses an --override that names no lane on 1 — the escape hatch says who took it (#5175)", async () => {
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, FOCUSED, {
+		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, IN_SCOPE, {
 			override: "hotfix for the release blocker",
 		});
 		expect(out.code).toBe(FAILED);
@@ -458,7 +462,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	});
 
 	it("refuses a blank --override-lane on 1 — whitespace names no lane", async () => {
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, FOCUSED, {
+		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, IN_SCOPE, {
 			override: "hotfix for the release blocker",
 			overrideLane: "   ",
 		});
@@ -467,7 +471,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	});
 
 	it("refuses an --override-lane with no --override on 1 — a lane names no override alone", async () => {
-		const {out, shell} = await claimWith(CLAIMABLE, FOCUSED, {overrideLane: "build-ui"});
+		const {out, shell} = await claimWith(CLAIMABLE, IN_SCOPE, {overrideLane: "build-ui"});
 		expect(out.code).toBe(FAILED);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 	});
@@ -477,7 +481,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 			issue({milestone: {number: 44}, labels: labelled("status:triaged", "ready-for:agent")}),
 		);
 		expect(out.code).toBe(0);
-		expect(out.stderr).toContain("build claim: focus: milestone #44, declared 2026-08-09.");
+		expect(out.stderr).toContain("build claim: campaigns: 1 active — Campaign 44 (#44).");
 	});
 
 	it("refuses by NUMBER the very issue the pool excluded — the direct handoff is fenced too", async () => {
@@ -494,42 +498,42 @@ describe("runClaim — the admission test runs before any marker is written", ()
 						[/labels=status%3Atriaged%2Cp0/, candidates(row)],
 						[/labels=status%3Atriaged%2Cp[12]/, okOut("[]")],
 					]).layer,
-					FOCUSED.layer,
+					IN_SCOPE.layer,
 				),
 			),
 		);
 		expect(JSON.parse(picked.stdout).pool).toEqual([]);
 		expect(JSON.parse(picked.stdout).excluded).toEqual([
-			{number: 4312, home: "39", reason: "out-of-focus"},
+			{number: 4312, home: "39", reason: "out-of-scope"},
 		]);
 
 		// The same issue, handed straight to `claim` by number: the pool was bypassed, the fence is not.
 		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN);
-		expect(out.code).toBe(OUT_OF_FOCUS);
+		expect(out.code).toBe(OUT_OF_SCOPE);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 	});
 
-	it("leaves confirm and release outside the fence — a mid-lane focus edit strands no lane", async () => {
+	it("leaves confirm and release outside the fence — a mid-lane pause strands no lane", async () => {
 		const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 			[ISSUE, OUT_OF_CAMPAIGN],
 			[COMMENTS, comments({id: 9001, body: MINE})],
 			[perm("agent"), okOut("write\n")],
 			[DELETE, okOut("")],
 		];
-		const confirmed = await run(runConfirm, script, {}, FOCUSED);
+		const confirmed = await run(runConfirm, script, {}, IN_SCOPE);
 		expect(confirmed.code).toBe(0);
-		const released = await run(runRelease, script, {}, FOCUSED);
+		const released = await run(runRelease, script, {}, IN_SCOPE);
 		expect(released.code).toBe(0);
 	});
 });
 
 /**
  * Repair claims a PR number, and a PR carries no milestone and no `ready-for:` label of its own — so
- * while any focus was declared the fence refused every one of them (#5562). The subject the two axes
+ * while any campaign was active the fence refused every one of them (#5562). The subject the two axes
  * read is the issue the PR's lane serves.
  */
 describe("runClaim — a PR number is judged by the issue it serves", () => {
-	const FOCUSED = fakeFs({files: {[ROADMAP_FILE]: focusTable(44)}});
+	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
 	const SERVED = /^gh api repos\/o\/r\/issues\/5553$/;
 
 	const pull = (body: string) =>
@@ -573,11 +577,14 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			[perm("agent"), okOut("write\n")],
 		]);
 		return Effect.runPromise(
-			Effect.provide(runClaim({...options, ...overrides}), Layer.merge(shell.layer, FOCUSED.layer)),
+			Effect.provide(
+				runClaim({...options, ...overrides}),
+				Layer.merge(shell.layer, IN_SCOPE.layer),
+			),
 		).then((out) => ({out, shell}));
 	};
 
-	it("admits a PR whose served issue is in focus, with no override", async () => {
+	it("admits a PR whose served issue is in scope, with no override", async () => {
 		const {out} = await claimPull("Fixes #5553\n", served(44));
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).answer).toBe("won");
@@ -590,11 +597,11 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		expect(out.stderr.some((line) => line.includes("serves #5553 (part-of)"))).toBe(true);
 	});
 
-	it("still refuses at 20 when the served issue is genuinely out of focus, and posts NOTHING", async () => {
+	it("still refuses at 20 when the served issue is genuinely out of scope, and posts NOTHING", async () => {
 		const {out, shell} = await claimPull("Fixes #5553\n", served(39));
-		expect(out.code).toBe(OUT_OF_FOCUS);
+		expect(out.code).toBe(OUT_OF_SCOPE);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
-		expect(out.stderr.some((line) => line.includes("out of focus"))).toBe(true);
+		expect(out.stderr.some((line) => line.includes("out of scope"))).toBe(true);
 		expect(out.stderr.some((line) => line.includes("this issue's home is 39"))).toBe(true);
 	});
 
@@ -610,7 +617,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 	it("refuses a PR naming no issue at 20, saying which case fired — and stays overridable", async () => {
 		const body = "A conversation-authored ADR.\n\n## Deviations\nNone.\n";
 		const {out, shell} = await claimPull(body, served(44));
-		expect(out.code).toBe(OUT_OF_FOCUS);
+		expect(out.code).toBe(OUT_OF_SCOPE);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 		expect(out.stderr.some((line) => line.includes("no served issue"))).toBe(true);
 		const overridden = await claimPull(body, served(44), {
@@ -622,7 +629,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 
 	it("refuses at 20 when the named issue is proven absent — never on the PR's own empty home", async () => {
 		const {out} = await claimPull("Fixes #5553\n", errOut("gh: Not Found (HTTP 404)"));
-		expect(out.code).toBe(OUT_OF_FOCUS);
+		expect(out.code).toBe(OUT_OF_SCOPE);
 		expect(out.stderr.some((line) => line.includes("proven absent"))).toBe(true);
 	});
 
@@ -656,13 +663,13 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			[perm("agent"), okOut("write\n")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runClaim(options), Layer.merge(shell.layer, FOCUSED.layer)),
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, IN_SCOPE.layer)),
 		);
 		expect(out.code).toBe(0);
 		expect(out.stderr.some((line) => line.includes("serves #"))).toBe(false);
 	});
 
-	it("admits an unresolvable PR while no focus is declared — an inert fence refuses nothing", async () => {
+	it("admits an unresolvable PR while no campaign is active — an inert fence refuses nothing", async () => {
 		const shell = unblocked([
 			[ISSUE, pull("No reference at all.\n")],
 			unclaimed(),
@@ -674,17 +681,17 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runClaim({...options, purpose: "gate"}),
-				Layer.merge(shell.layer, NO_FOCUS.layer),
+				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
 			),
 		);
 		expect(out.code).toBe(0);
 	});
 
 	/**
-	 * The no-focus half, under the DEFAULT `build` purpose — the one that binds the audience axis, and
+	 * The nothing-active half, under the DEFAULT `build` purpose — the one that binds the audience axis, and
 	 * so the one that reads whichever record the resolution returned.
 	 */
-	describe("with no focus declared", () => {
+	describe("with no campaign active", () => {
 		const claimInert = (body: string, servedRecord: ExecResult | null) => {
 			const shell = unblocked([
 				[ISSUE, pull(body)],
@@ -698,7 +705,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				[perm("agent"), okOut("write\n")],
 			]);
 			return Effect.runPromise(
-				Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+				Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 			).then((out) => ({out, shell}));
 		};
 
@@ -769,7 +776,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				[perm("agent"), okOut("write\n")],
 			]);
 			const out = await Effect.runPromise(
-				Effect.provide(runClaim(options), Layer.merge(shell.layer, FOCUSED.layer)),
+				Effect.provide(runClaim(options), Layer.merge(shell.layer, IN_SCOPE.layer)),
 			);
 			expect(out.code).toBe(TYPE_NOT_BUILDABLE);
 			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
@@ -791,7 +798,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 						...options,
 						cites: "https://github.com/o/r/issues/4312#issuecomment-5335398768",
 					}),
-					Layer.merge(shell.layer, FOCUSED.layer),
+					Layer.merge(shell.layer, IN_SCOPE.layer),
 				),
 			);
 			// The DECISION fixture is `ready-for:human`, which triage re-stamps when it routes a ruled
@@ -817,7 +824,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			]);
 			const cites = "https://github.com/o/r/issues/4312#issuecomment-5335398768";
 			const out = await Effect.runPromise(
-				Effect.provide(runClaim({...options, cites}), Layer.merge(shell.layer, FOCUSED.layer)),
+				Effect.provide(runClaim({...options, cites}), Layer.merge(shell.layer, IN_SCOPE.layer)),
 			);
 			expect(out.code).toBe(0);
 			expect(JSON.parse(out.stdout).cites).toBe(cites);
@@ -839,7 +846,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 						...options,
 						cites: "https://github.com/o/r/issues/9999#issuecomment-5335398768",
 					}),
-					Layer.merge(shell.layer, FOCUSED.layer),
+					Layer.merge(shell.layer, IN_SCOPE.layer),
 				),
 			);
 			expect(out.code).toBe(1);
@@ -855,9 +862,9 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 		});
 
-		it("keeps the scope fence armed — an out-of-focus decision PR is still 20", async () => {
+		it("keeps the scope fence armed — an out-of-scope decision PR is still 20", async () => {
 			const {out, shell} = await claimPull("Fixes #5553\n", served(39, DECISION));
-			expect(out.code).toBe(OUT_OF_FOCUS);
+			expect(out.code).toBe(OUT_OF_SCOPE);
 			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 		});
 	});
@@ -871,7 +878,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
  * gated. Every case runs that one issue and varies nothing but the purpose.
  */
 describe("runClaim — the purpose axis", () => {
-	const FOCUSED = fakeFs({files: {[ROADMAP_FILE]: focusTable(44)}});
+	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
 
 	const claimWith = (target: ExecResult, overrides: Partial<typeof options> = {}) => {
 		const shell = unblocked([
@@ -883,7 +890,10 @@ describe("runClaim — the purpose axis", () => {
 			[perm("agent"), okOut("write\n")],
 		]);
 		return Effect.runPromise(
-			Effect.provide(runClaim({...options, ...overrides}), Layer.merge(shell.layer, FOCUSED.layer)),
+			Effect.provide(
+				runClaim({...options, ...overrides}),
+				Layer.merge(shell.layer, IN_SCOPE.layer),
+			),
 		).then((out) => ({out, shell}));
 	};
 
@@ -937,9 +947,9 @@ describe("runClaim — the purpose axis", () => {
 	}
 
 	for (const purpose of ["plan", "gate", "build"] as const) {
-		it(`still refuses an out-of-focus epic on 20 under --purpose ${purpose} — scope is untouched`, async () => {
+		it(`still refuses an out-of-scope epic on 20 under --purpose ${purpose} — scope is untouched`, async () => {
 			const {out, shell} = await claimWith(OUT_OF_CAMPAIGN_EPIC, {purpose});
-			expect(out.code).toBe(OUT_OF_FOCUS);
+			expect(out.code).toBe(OUT_OF_SCOPE);
 			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 		});
 	}
@@ -1024,7 +1034,7 @@ describe("runRelease", () => {
 			[DELETE, okOut("")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({answer: "released", number: 4312});
@@ -1040,7 +1050,7 @@ describe("runRelease", () => {
 			[perm("agent"), okOut("write\n")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.at(-1)).toBe(
@@ -1057,7 +1067,7 @@ describe("runRelease", () => {
 			[DELETE, okOut("")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
@@ -1098,7 +1108,8 @@ describe("the claim protocol", () => {
 	const on = (
 		shell: ReturnType<typeof fakeShell>,
 		verb: (given: typeof options) => ReturnType<typeof runClaim>,
-	) => Effect.runPromise(Effect.provide(verb(options), Layer.merge(shell.layer, NO_FOCUS.layer)));
+	) =>
+		Effect.runPromise(Effect.provide(verb(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)));
 
 	it("posts no second marker on a number THIS LANE already holds", async () => {
 		const shell = unblocked(held());
@@ -1134,7 +1145,7 @@ describe("the claim protocol", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runClaim({...options, uuid: SIBLING_UUID, token: SIBLING_TOKEN}),
-				Layer.merge(shell.layer, NO_FOCUS.layer),
+				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
 			),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
@@ -1214,7 +1225,7 @@ describe("runAdopt / succession", () => {
 		Effect.runPromise(
 			Effect.provide(
 				runAdopt({...adoptOptions, ...overrides}),
-				Layer.merge(unblocked(script).layer, NO_FOCUS.layer),
+				Layer.merge(unblocked(script).layer, NO_CAMPAIGNS.layer),
 			),
 		);
 
@@ -1225,7 +1236,7 @@ describe("runAdopt / succession", () => {
 			[GET_COMMENT, okOut(JSON.stringify({body: ADOPT}))],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runAdopt(adoptOptions), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runAdopt(adoptOptions), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({
@@ -1242,7 +1253,7 @@ describe("runAdopt / succession", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runAdopt({...adoptOptions, session: "s-9f2e"}),
-				Layer.merge(shell.layer, NO_FOCUS.layer),
+				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
 			),
 		);
 		expect(out.code).toBe(FAILED);
@@ -1262,7 +1273,7 @@ describe("runAdopt / succession", () => {
 			const out = await Effect.runPromise(
 				Effect.provide(
 					runAdopt({...adoptOptions, session}),
-					Layer.merge(shell.layer, NO_FOCUS.layer),
+					Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
 				),
 			);
 			expect(out.code).toBe(FAILED);
@@ -1276,7 +1287,7 @@ describe("runAdopt / succession", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runAdopt({...adoptOptions, reason: "outage\nand context loss"}),
-				Layer.merge(shell.layer, NO_FOCUS.layer),
+				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
 			),
 		);
 		expect(out.code).toBe(FAILED);
@@ -1309,7 +1320,10 @@ describe("runAdopt / succession", () => {
 			[DELETE, okOut("")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runClaim({...options, token: null}), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(
+				runClaim({...options, token: null}),
+				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
+			),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.some((line) => line.includes("lost to build:s-77aa:"))).toBe(true);
@@ -1331,7 +1345,7 @@ describe("runAdopt / succession", () => {
 			[perm("agent"), okOut("write\n")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		// The token named is the ADOPT's — the one `release` accepts — never the dead session's winner.
@@ -1346,7 +1360,7 @@ describe("runAdopt / succession", () => {
 			[perm("agent"), okOut("write\n")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.some((line) => line.includes("fabrika build adopt 4312 --session"))).toBe(
@@ -1369,7 +1383,7 @@ describe("runAdopt / succession", () => {
 			[DELETE, okOut("")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({answer: "released", number: 4312, adopted: DEAD});
@@ -1395,7 +1409,7 @@ describe("runAdopt / succession", () => {
 			[perm("agent"), okOut("write\n")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runConfirm(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runConfirm(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({answer: "mine", number: 4312, token: LANE_TOKEN});
@@ -1415,7 +1429,7 @@ describe("runAdopt / succession", () => {
 			[perm("drive-by"), okOut("read\n")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.some((line) => line.includes("counted, never a succession"))).toBe(true);
@@ -1443,7 +1457,7 @@ describe("runAdopt / succession", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runRelease({...options, token, env: {...options.env, CLAUDE_CODE_SESSION_ID: session}}),
-				Layer.merge(shell.layer, NO_FOCUS.layer),
+				Layer.merge(shell.layer, NO_CAMPAIGNS.layer),
 			),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
@@ -1471,7 +1485,7 @@ describe("runClaim — the blockedness gate", () => {
 			[perm("agent"), okOut("write\n")],
 		]);
 		return Effect.runPromise(
-			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		).then((out) => ({out, shell}));
 	};
 
@@ -1542,10 +1556,10 @@ describe("runClaim — the blockedness gate", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runClaim(options),
-				Layer.merge(shell.layer, fakeFs({files: {[ROADMAP_FILE]: focusTable(44)}}).layer),
+				Layer.merge(shell.layer, fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}}).layer),
 			),
 		);
-		expect(out.code).toBe(OUT_OF_FOCUS);
+		expect(out.code).toBe(OUT_OF_SCOPE);
 		expect(shell.calls.some((line) => EDGES.test(line))).toBe(false);
 	});
 });

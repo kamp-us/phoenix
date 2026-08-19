@@ -37,12 +37,6 @@ const IN_SYNC = `# Roadmap
 | Campaign | Milestone | State |
 |----------|-----------|-------|
 | Mentor Audit | #27 | active |
-
-## Focus
-
-| Milestone | Declared |
-|-----------|----------|
-| #17 | 2026-08-09 |
 `;
 
 const PROJECTION = milestones(
@@ -68,7 +62,7 @@ describe("runRoadmapGuard", () => {
 		const out = await run(roadmap(IN_SYNC), [[MILESTONES, PROJECTION]]);
 		expect(out.code).toBe(0);
 		expect(out.stdout.trim()).toBe(
-			"guard roadmap-guard check: in sync — 2 arc row(s) + 1 campaign row(s) validated against 3 milestone(s), 1 focus row declared (I1–I6 all green).",
+			"guard roadmap-guard check: in sync — 2 arc row(s) + 1 campaign row(s) validated against 3 milestone(s), 1 campaign(s) active (I1–I5 all green).",
 		);
 		expect(out.stderr).toEqual([]);
 	});
