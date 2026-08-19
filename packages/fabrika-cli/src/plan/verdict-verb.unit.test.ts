@@ -1,6 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {comments, LANE_UUID, marker} from "../build/fixtures.test-support.ts";
+import {comments, LANE_UUID, marker, LANE_TOKEN as TOKEN} from "../build/fixtures.test-support.ts";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
@@ -76,6 +76,7 @@ const run = (
 			runVerdict({
 				number: 4300,
 				digest,
+				token: TOKEN,
 				polarity: overrides.polarity ?? null,
 				repo: null,
 				env,
@@ -262,6 +263,7 @@ describe("runVerdict", () => {
 				runVerdict({
 					number: 4300,
 					digest: "4d90e1bb27ac",
+					token: TOKEN,
 					polarity: null,
 					repo: null,
 					env,
