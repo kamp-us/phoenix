@@ -8,8 +8,9 @@
  * The reads are exposed as {@link diagnoseOne} so `heal-ci sweep` classifies through this same chain
  * rather than a second one.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {governedRootsOr} from "../config/paths.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {
 	commitExists,
@@ -65,6 +66,8 @@ export interface DiagnoseOptions extends DiagnoseParams {
 	readonly sha: string;
 	readonly repo: string | null;
 	readonly json: boolean;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -125,6 +128,8 @@ export const diagnoseOne = (
 	pr: number,
 	sha: string,
 	params: DiagnoseParams,
+	/** This repo's `governedRoots`, resolved once by the caller — a sweep reads the config once. */
+	governedRoots: ReadonlyArray<string>,
 ): Effect.Effect<DiagnoseResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const notices: string[] = [];
@@ -278,7 +283,7 @@ export const diagnoseOne = (
 			return refused(PRECONDITION_UNKNOWN, unreadable("the base comparison", pr, drift.reason));
 		}
 
-		const required = shipNamespacesOf(partitionWithUi(filed.value));
+		const required = shipNamespacesOf(partitionWithUi(filed.value, governedRoots));
 		const authorized = new Map<string, boolean>();
 		const candidates: Array<{
 			readonly namespace: string;
@@ -344,7 +349,7 @@ export const diagnoseOne = (
 		for (const review of decisive)
 			if (!byAuthor.has(review.login)) byAuthor.set(review.login, review.state);
 		const changesRequested = [...byAuthor.values()].includes("CHANGES_REQUESTED");
-		const controlPlane = touchesGovernanceRoot(filed.value);
+		const controlPlane = touchesGovernanceRoot(filed.value, governedRoots);
 		const approved = [...byAuthor.values()].includes("APPROVED");
 		const humanBlocked = changesRequested || (controlPlane && !approved);
 
@@ -449,7 +454,11 @@ export const renderDiagnosis = (found: Diagnosis, json: boolean): VerbOutcome =>
 
 export const runDiagnose = (
 	options: DiagnoseOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "a pull-request number", options.pr);
 		if (bad !== null) return bad;
@@ -461,7 +470,20 @@ export const runDiagnose = (
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 
-		const result = yield* diagnoseOne(resolved.repo, options.pr, options.sha, options);
+		const governed = yield* governedRootsOr(
+			VERB,
+			options.cwd,
+			'the required namespace set and the §CP flag are UNKNOWN, never "attended".',
+		);
+		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
+
+		const result = yield* diagnoseOne(
+			resolved.repo,
+			options.pr,
+			options.sha,
+			options,
+			governed.roots,
+		);
 		if (result._tag === "Refused") return result.outcome;
 		// `Gone` is only reachable from a sweep, whose list read and classification are separated in
 		// time; a direct call resolves the PR once and a 404 there is already the `7` refusal.

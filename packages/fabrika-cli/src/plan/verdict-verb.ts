@@ -10,10 +10,11 @@
  * least once and it read as genuine for weeks.
  */
 
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {requireCallerToken, requireClaim, requireSession} from "../build/claim.ts";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
+import {cycleDocOr} from "../config/paths.ts";
 import {createComment, getComment} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
@@ -109,13 +110,19 @@ export interface VerdictOptions {
 	readonly token: string;
 	readonly polarity: string | null;
 	readonly repo: string | null;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly stdin: Effect.Effect<StdinRead>;
 }
 
 export const runVerdict = (
 	options: VerdictOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "an issue number", options.number);
 		if (bad !== null) return bad;
@@ -151,7 +158,14 @@ export const runVerdict = (
 		const held = yield* requireClaim(VERB, repo, options.number, asking.caller);
 		if (held._tag === "Refused") return held.outcome;
 
-		const read = yield* loadLedger(MESSAGES, repo, target.issue);
+		const cycle = yield* cycleDocOr(
+			VERB,
+			options.cwd,
+			"where the cycle doc lives is unread, so the containment class cannot be derived.",
+		);
+		if (cycle._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, cycle.message);
+
+		const read = yield* loadLedger(MESSAGES, repo, target.issue, cycle.path);
 		if (read._tag === "Refused") return read.outcome;
 		const ledger = read.ledger;
 		const notes = [

@@ -19,6 +19,7 @@ import {requireSession} from "../build/claim.ts";
 import {contentOf, gate} from "../build/content-gate.ts";
 import {laneScratchDir} from "../build/scratch-verb.ts";
 import {resolveTargetRepo} from "../build/target.ts";
+import {designHarnessOr} from "../config/paths.ts";
 import {createComment, currentBranch, getComment} from "../io/issues.ts";
 import {getPullRequest} from "../io/pulls.ts";
 import {normalizeForReadback} from "../report/compose.ts";
@@ -37,7 +38,7 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {atRoot, HARNESS_PATH} from "./conventions.ts";
+import {atRoot} from "./conventions.ts";
 import {parseHarness} from "./harness.ts";
 import {requireUiLane} from "./lane.ts";
 import {probe} from "./manifest-verb.ts";
@@ -235,21 +236,31 @@ export const runEvidence = (
 			);
 		}
 
-		const harnessProbe = yield* probe(lane.root, HARNESS_PATH);
+		const declared = yield* designHarnessOr(
+			VERB,
+			lane.root,
+			"where this repo declares its render path is unread — nothing was uploaded or posted.",
+		);
+		if (declared._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, declared.message, lane.notes);
+		}
+		const harnessPath = declared.path;
+
+		const harnessProbe = yield* probe(lane.root, harnessPath);
 		if (harnessProbe._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot probe ${HARNESS_PATH}: ${harnessProbe.reason} — nothing was uploaded or posted.`,
+				`${VERB}: cannot probe ${harnessPath}: ${harnessProbe.reason} — nothing was uploaded or posted.`,
 				lane.notes,
 			);
 		}
 		let store: string | null = null;
 		if (harnessProbe._tag === "Present") {
-			const raw = yield* readBytes(atRoot(lane.root, HARNESS_PATH));
+			const raw = yield* readBytes(atRoot(lane.root, harnessPath));
 			if (raw._tag === "Failed") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read ${HARNESS_PATH}: ${raw.reason} — nothing was uploaded or posted.`,
+					`${VERB}: cannot read ${harnessPath}: ${raw.reason} — nothing was uploaded or posted.`,
 					lane.notes,
 				);
 			}
@@ -257,7 +268,7 @@ export const runEvidence = (
 			if (harness._tag === "Violation") {
 				return refuse(
 					BAD_SECTIONS,
-					`${VERB}: ${HARNESS_PATH} exists but does not satisfy its schema: ${harness.violation}.`,
+					`${VERB}: ${harnessPath} exists but does not satisfy its schema: ${harness.violation}.`,
 					lane.notes,
 				);
 			}

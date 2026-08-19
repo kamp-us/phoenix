@@ -312,8 +312,9 @@ proven, so: the verb reds on `7`'s vacuous-conjunction arm below) — a merge ga
 gates is vacuously green (#2765).
 
 **`governance` is appended to that set, not mapped from a class.** A diff with at least one
-changed path under `.decisions/`, `.claude/`, `.github/` or `claude-plugins/` additionally
-derives `namespace\tgovernance`; a diff under none of those four roots derives exactly the
+changed path under one of the repo's governed roots — `governedRoots` in `.fabrika.jsonc`, shipping
+as `.decisions/`, `.claude/`, `.github/`, `claude-plugins/` and the config file — additionally
+derives `namespace\tgovernance`; a diff under none of those roots derives exactly the
 namespaces it derived before, unchanged. Those paths already carry a file class, so this is a
 second, orthogonal question about the same files rather than a fifth class — and the predicate
 is the one `governance scope` computes, shared as code so the two cannot disagree. A namespace
@@ -597,11 +598,11 @@ narrowed coverage is the defect's signature, so the assertion runs *before* the 
 believed, not after.
 
 **The `governance` requirement is the diff's floor, not the caller's option.** The verb reads the
-PR's changed-file list itself, and a diff with at least one path under `.decisions/`, `.claude/`,
-`.github/` or `claude-plugins/` gates on `governance` **whether or not `--require` named it** — the
-same predicate `ship scope` prints the namespace from, shared as code, so the two cannot disagree.
-Every other namespace stays caller-asserted; the floor only ever *adds*, so a diff under none of the
-four roots requires exactly what it required before. When the floor fires, a stderr notice names it.
+PR's changed-file list itself, and a diff with at least one path under one of the repo's governed
+roots gates on `governance` **whether or not `--require` named it** — the same predicate `ship
+scope` prints the namespace from, over the same declared list, shared as code, so the two cannot
+disagree. Every other namespace stays caller-asserted; the floor only ever *adds*, so a diff under
+none of those roots requires exactly what it required before. When the floor fires, a stderr notice names it.
 
 This is the whole ruling on #5036, and it is what a §CP row would otherwise have had to enforce.
 `claude-plugins/fabrika/**` is deliberately **not** control-plane — no CODEOWNERS row, no boundary
@@ -735,7 +736,7 @@ fabrika ship floor 4321 --sha 03135b91 [--repo <owner/name>] [--json]
 `state` and `scanned`.
 
 **`n/a` is an answer about the diff, never a discharged verdict.** It means the changed files touch
-none of the four governance roots, so the floor does not bind — and the verb says so on stderr, in
+none of this repo's governed roots, so the floor does not bind — and the verb says so on stderr, in
 those words, because "the check was green" is exactly the reading that would make this gate
 decorative for the diffs it does not cover.
 
@@ -755,7 +756,7 @@ table and the choice decides whether `gate-verb.ts` changes at all. **The caller
 - **Rejected — parse `gate\tblocked\t<sha>` in the workflow's `run:` step.** That puts the decision
   in bash, which ADR 0228 forbids: a script relays a verb's answer and never derives the decision
   itself. It would also need a second step to decide whether the floor applies at all, and that step
-  would be a second copy of `GOVERNANCE_ROOTS` that nothing reds when it drifts (#4604).
+  would be a second copy of the governed-root list that nothing reds when it drifts (#4604).
 - **Chosen — `ship floor`, a caller verb whose refusal *is* the decision.** `ship gate` is untouched
   and keeps answering; `ship floor` asks it for the one `governance` namespace, reads the row back
   and seats a non-PASS on `18`. The workflow relays an exit code and derives nothing. The verdict

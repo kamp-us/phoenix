@@ -17,11 +17,14 @@
 import {randomUUID} from "node:crypto";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {CONFIG_PATH} from "../config/document.ts";
+import {readRoadmapFile} from "../config/paths.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import type {VerbOutcome} from "../verb.ts";
+import {refuse, type VerbOutcome} from "../verb.ts";
 import {runApply} from "./apply-verb.ts";
 import {runClaim} from "./claim-verb.ts";
+import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runCodes} from "./codes-verb.ts";
 import {runEnrich} from "./enrich-verb.ts";
 import {AUDIENCES, PRIORITIES, STANDING_LANES, TYPES} from "./facets.ts";
@@ -328,16 +331,29 @@ const homes = leafCommand(
 	"homes",
 	{
 		roadmap: Flag.string("roadmap").pipe(
-			Flag.withDefault(ROADMAP_FILE),
+			Flag.optional,
 			Flag.withDescription(
-				`the roadmap file whose ## Arcs and ## Campaigns tables the open milestones join to (default: ${ROADMAP_FILE})`,
+				"the roadmap file whose ## Arcs and ## Campaigns tables the open milestones join to (default: `roadmapFile` in .fabrika.jsonc, itself defaulting to ROADMAP.md)",
 			),
 		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({roadmap, repo, json}) {
-		yield* emit(yield* runHomes({roadmap, repo: Option.getOrNull(repo), json, env: process.env}));
+		const named = Option.getOrNull(roadmap);
+		const declared = named === null ? yield* readRoadmapFile(process.cwd()) : null;
+		if (declared !== null && declared._tag === "Refused") {
+			return yield* emit(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`triage homes: ${CONFIG_PATH} is refused — ${declared.reason.replace(/\.$/, "")}, so which file carries the arc table is unread; the homes list is UNKNOWN, never short.`,
+				),
+			);
+		}
+		const path = named ?? declared?.value ?? ROADMAP_FILE;
+		yield* emit(
+			yield* runHomes({roadmap: path, repo: Option.getOrNull(repo), json, env: process.env}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("The assignable homes: open milestones and standing lanes."),

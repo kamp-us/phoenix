@@ -12,8 +12,15 @@ export const MANIFEST_PATH = "design-system-manifest.md";
 export const REGISTRY_PATH = "design-prohibitions.json";
 /** The component inventory; absent is a fact reported as `null`. */
 export const INVENTORY_PATH = "design-system-inventory.md";
-/** The render harness config; absent means this repo declares no headless render path (`19`). */
-export const HARNESS_PATH = "design-harness.json";
+/**
+ * The render harness config as this package ships it; absent means this repo declares no headless
+ * render path (`19`).
+ *
+ * Unlike its neighbours this one is a **default**, not a fixed convention: where a repo keeps it is
+ * `designHarness` in `.fabrika.jsonc` (`../config/keys/paths.ts`), which the three `ui` verbs
+ * resolve before they probe. Re-exported from that key's module so the string is written once.
+ */
+export {SHIPPED_DESIGN_HARNESS as HARNESS_PATH} from "../config/keys/paths.ts";
 /** The golden pointer, in probe order: the package-local file first, the root fallback second. */
 export const GOLDEN_POINTER_PATHS: ReadonlyArray<string> = [
 	"packages/design-capture/golden-pointer.json",

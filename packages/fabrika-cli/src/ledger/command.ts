@@ -64,7 +64,15 @@ const open = leafCommand(
 	"open",
 	{number: epicArg, token: tokenFlag, repo: repoFlag},
 	Effect.fn(function* ({number, token, repo}) {
-		yield* emit(yield* runOpen({number, token, repo: Option.getOrNull(repo), env: process.env}));
+		yield* emit(
+			yield* runOpen({
+				number,
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("Prove the ground and open the plan run for an epic."),
@@ -83,6 +91,7 @@ const draft = leafCommand(
 				bodyDigest,
 				token,
 				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
 				env: process.env,
 				stdin,
 			}),
@@ -163,6 +172,7 @@ const child = leafCommand(
 				labels: label,
 				token,
 				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
 				env: process.env,
 				stdin,
 			}),
@@ -180,7 +190,14 @@ const topology = leafCommand(
 	{number: epicArg, token: tokenFlag, repo: repoFlag},
 	Effect.fn(function* ({number, token, repo}) {
 		yield* emit(
-			yield* runTopology({number, token, repo: Option.getOrNull(repo), env: process.env, stdin}),
+			yield* runTopology({
+				number,
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+				stdin,
+			}),
 		);
 	}),
 ).pipe(
@@ -195,7 +212,14 @@ const write = leafCommand(
 	{number: epicArg, bodyDigest: bodyDigestFlag, token: tokenFlag, repo: repoFlag},
 	Effect.fn(function* ({number, bodyDigest, token, repo}) {
 		yield* emit(
-			yield* runWrite({number, bodyDigest, token, repo: Option.getOrNull(repo), env: process.env}),
+			yield* runWrite({
+				number,
+				bodyDigest,
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
 		);
 	}),
 ).pipe(
@@ -224,6 +248,7 @@ const supersede = leafCommand(
 				reason,
 				token,
 				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
 				env: process.env,
 			}),
 		);

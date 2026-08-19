@@ -250,7 +250,7 @@ fail-closed property is decoration. LANDED (#5206).**
 `packages/fabrika-cli/src/review/classes.ts:161` now declares `SHIP_NAMESPACES` as the `review-*`
 set derived from `SHIP_CLASS_NAMES` **plus** the literal `governance`, and `shipNamespacesOf`
 (`packages/fabrika-cli/src/review/classes.ts:149`) appends `governance` when the PR's changed files
-touch any of this group's four roots — the same total function `governance scope` computes, so the
+touch any of this group's governed roots — the same total function `governance scope` computes, so the
 two cannot disagree. `packages/fabrika-cli/src/ship/gate-verb.ts:158` refuses any `--require` value
 outside `SHIP_NAMESPACES` with `OFF_VOCABULARY`, so **`fabrika ship gate --require governance` is
 admitted**: the skill's "fail-closed on absence" property — a claim about `ship gate`'s conjunction —
@@ -378,7 +378,8 @@ With `--json`, an object with keys `outcome` (`required` | `not-required`), `hea
 `deleted` is in the change vocabulary because removing a decision record is itself a governance
 event — the one change to the corpus an `added`/`modified` pair cannot express at all.
 
-**The root set is a fixed path prefix list, stated here so two runs cannot disagree:**
+**The root set is a path prefix list the repo declares — `governedRoots` in `.fabrika.jsonc` — and a
+repo that declares nothing gets the shipped list stated here, so two runs cannot disagree:**
 
 | Root | Why it is governance-bearing |
 |---|---|
@@ -386,6 +387,14 @@ event — the one change to the corpus an `added`/`modified` pair cannot express
 | `.claude/` | agent and skill definitions the harness executes |
 | `.github/` | workflows, CODEOWNERS and rulesets — the enforcement layer |
 | `claude-plugins/` | every plugin's skills, contracts and rubrics, at any depth, whatever the extension |
+| `.fabrika.jsonc` | the config that declares this very list, plus every other gate's scope |
+
+**Two declarations are refused rather than honoured, and both at load.** An empty list would read as
+"nothing is governed", silently disabling the gate it drives; a list that does not cover
+`.fabrika.jsonc` would let a config un-govern itself, the one change nobody would ever be asked to
+justify. Either way `governance scope` refuses `11` — the root set is UNKNOWN, never `not-required`.
+`review scope` derives its `governance` line off the same key, so the two verbs answer one question
+once (#4730).
 
 `required` iff at least one changed path is under at least one root. **The directory is the unit of
 coverage, not the file type** — the v1 §CP definition learned this the hard way: an enumerated
@@ -1246,11 +1255,18 @@ The verb-level facts behind those rows are the `7` / `11` / `13` seats in the ma
 spec adds nothing to that table rather than restating it in a second home.
 
 Two rows bear directly on an implementer and are worth naming here, because they are the ones a
-foreign repo will hit first: a repository with no `.decisions/` at all makes `governance sweep` and
+foreign repo will hit first: a repository with no decision corpus at all makes `governance sweep` and
 `governance digest` exit `7` rather than answer `no-overlap` or `none`, and a repository holding
 fewer than ten live-`accepted` records makes every sweep `indeterminate` at exit `0`. Neither is a
 bug report; both are the fail-closed direction, and the second is why `indeterminate` is a distinct
 token rather than a quiet `no-overlap`.
+
+Where the corpus lives is `decisionsDir` in `.fabrika.jsonc`, defaulting to `.decisions`, and
+`--dir` overrides it for one run. **A repo may write `null` there to declare it keeps none.** Then
+this group runs only its weakens-a-guard half: `governance guards` reads no corpus and answers as
+always, while `governance sweep` and `governance digest` refuse on `7` naming the declined key —
+never `no-overlap`, which reads as "checked, nothing found". A verdict from such a repo is a verdict
+about guards alone, and its body says so.
 
 ## The eval-enumeration obligation (leaf rule)
 

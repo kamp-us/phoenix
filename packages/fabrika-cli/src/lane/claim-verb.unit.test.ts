@@ -1,4 +1,4 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {runClaim} from "../build/claim-verb.ts";
 import {CLAIM_NOT_MINE as BUILD_CLAIM_NOT_MINE} from "../build/codes.ts";
@@ -10,7 +10,7 @@ import {
 	SIBLING_UUID,
 	truncatedComments,
 } from "../build/fixtures.test-support.ts";
-import {fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
+import {fakeFs, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {FAILED} from "../verb.ts";
 import {runLaneClaim, runLaneRelease} from "./claim-verb.ts";
@@ -50,6 +50,7 @@ const options = {
 	lane: "5492",
 	token: null as string | null,
 	repo: null,
+	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
 		string,
 		string | undefined
@@ -63,7 +64,10 @@ const run = (
 	overrides: Partial<typeof options> = {},
 ) =>
 	Effect.runPromise(
-		Effect.provide(runLaneClaim({...options, ...overrides}), fakeShell(script).layer),
+		Effect.provide(
+			runLaneClaim({...options, ...overrides}),
+			Layer.merge(fakeShell(script).layer, unconfigured),
+		),
 	);
 
 const release = (
@@ -71,7 +75,10 @@ const release = (
 	overrides: Partial<typeof options> = {},
 ) =>
 	Effect.runPromise(
-		Effect.provide(runLaneRelease({...options, ...overrides}), fakeShell(script).layer),
+		Effect.provide(
+			runLaneRelease({...options, ...overrides}),
+			Layer.merge(fakeShell(script).layer, unconfigured),
+		),
 	);
 
 describe("runLaneClaim", () => {
@@ -409,6 +416,7 @@ describe("a driver's claim and the builder it spawns", () => {
 				runClaim({
 					number: 5492,
 					repo: null,
+					cwd: "/repo",
 					env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-b1"},
 					uuid: OTHER_UUID,
 					token: null,

@@ -91,6 +91,7 @@ const unblocked = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
 const options = {
 	number: 4312,
 	repo: null,
+	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
 		string,
 		string | undefined
@@ -492,7 +493,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		};
 		const picked = await Effect.runPromise(
 			Effect.provide(
-				runPick({repo: null, limit: 20, env: options.env}),
+				runPick({repo: null, limit: 20, cwd: "/repo", env: options.env}),
 				Layer.merge(
 					unblocked([
 						[/labels=status%3Atriaged%2Cp0/, candidates(row)],

@@ -61,6 +61,7 @@ const run = (
 					pr: extra.pr ?? null,
 					comment: extra.comment ?? null,
 					repo: "kamp-us/phoenix",
+					cwd: "/repo",
 					env: {},
 				},
 				(extra.prover ?? fakeProver()).prove,
@@ -197,6 +198,7 @@ describe("lane report — the append is proof-gated", () => {
 				event: "DONE",
 				task: "issue",
 				repo: "kamp-us/phoenix",
+				cwd: "/repo",
 				env: {},
 			},
 		]);

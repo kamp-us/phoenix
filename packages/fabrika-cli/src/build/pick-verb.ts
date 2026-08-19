@@ -30,7 +30,7 @@
  * is still a fact and prints on exit 0 with the scanned counts and the per-issue exclusion reasons
  * beside it, which is what makes it auditable rather than merely plausible (ADR 0092).
  */
-import {Effect, type FileSystem} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {TRIAGED} from "../labels.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -45,7 +45,7 @@ import {
 	dispatchScopeLine,
 	exclusionReasonOf,
 	homeOf,
-	readDispatch,
+	readDeclaredDispatch,
 	typeAxisOf,
 } from "./scope-admission.ts";
 import {resolveTargetRepo} from "./target.ts";
@@ -59,6 +59,8 @@ type Bucket = (typeof BUCKETS)[number];
 export interface PickOptions {
 	readonly repo: string | null;
 	readonly limit: number;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -136,7 +138,7 @@ export const runPick = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > =>
 	Effect.gen(function* () {
 		if (!Number.isInteger(options.limit) || options.limit <= 0) {
@@ -145,7 +147,7 @@ export const runPick = (
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 
-		const read = yield* readDispatch();
+		const read = yield* readDeclaredDispatch(options.cwd);
 		if (read._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,

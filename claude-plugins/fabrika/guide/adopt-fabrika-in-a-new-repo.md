@@ -217,6 +217,26 @@ give the narrowest behaviour, never the permissive one. `unreadableCodeowners` i
   control-plane gate — phoenix does. An **absent** CODEOWNERS is a different fact and needs no key:
   it means your repo declares no control plane, and every PR ships with no approval gate.
 
+The path keys say where your repo keeps the files fabrika reads by name. **Leave a key out and you
+get phoenix's value**, which is what every repo ran on before these keys existed:
+
+- `governedRoots` — the roots a diff derives the `governance` namespace over. Default:
+  `.decisions/`, `.claude/`, `.github/`, `claude-plugins/` and `.fabrika.jsonc` itself. An empty
+  list is refused rather than read as "nothing is governed", and a list that does not cover
+  `.fabrika.jsonc` is refused too — a config cannot un-govern itself.
+- `decisionsDir` — your decision corpus. Default `.decisions`. **Write `null` to say your repo keeps
+  none**: `adr` then refuses to write, and `governance` runs only its weakens-a-guard half
+  (`governance guards`) and says so, rather than reporting a clean contradiction check over a corpus
+  that is not there.
+- `roadmapFile` — the file whose `## Arcs` / `## Campaigns` tables the scope fence reads. Default
+  `ROADMAP.md`.
+- `cycleDoc` — the doc the containment class is gated on. Default `product-development-cycle.md`.
+- `designHarness` — your headless render config. Default `design-harness.json`.
+
+An absent key and a declined one are different answers: absent is "this repo said nothing", declined
+is "this repo has no such surface". Only `decisionsDir` can be declined; the other paths name files
+whose absence the filesystem already reports.
+
 phoenix's own file at [`.fabrika.jsonc`](../../../.fabrika.jsonc) is a worked example, with the
 reasoning for each value in comments.
 

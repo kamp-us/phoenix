@@ -608,6 +608,29 @@ describe("the roadmap-focus row count", () => {
 		expect(roadmapCount(PARSING).clause).toBe("2 arcs, 1 campaign");
 	});
 
+	// #6296: bootstrap must scaffold where the READERS look. A repo declaring `roadmapFile` and
+	// getting `ROADMAP.md` written ends up with two files, one of them inert and unremarked.
+	it("scaffolds at the path `roadmapFile` names", async () => {
+		const fs = fakeFs({
+			files: {"/repo/.fabrika.jsonc": JSON.stringify({roadmapFile: "docs/PLAN.md"})},
+		});
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "roadmap-focus",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "Text", text: PARSING} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({target: "docs/PLAN.md"});
+		expect([...fs.written.keys()]).toEqual(["/repo/docs/PLAN.md"]);
+	});
+
 	it("leaves the other file surface's bytes and notice exactly as they were", async () => {
 		const outcome = await write("# Design system manifest\n", "design-manifest");
 		expect(JSON.parse(outcome.stdout)).toEqual({

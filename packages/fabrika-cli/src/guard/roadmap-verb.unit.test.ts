@@ -174,6 +174,36 @@ describe("runRoadmapGuard", () => {
 		expect(out.stderr.join("\n")).toContain("cannot resolve a target repo");
 	});
 
+	// The guard and the scope fence must validate one file (#6296). A guard pinned to `ROADMAP.md`
+	// while `build pick` reads the declared one is a key with two answers.
+	it("validates the file `roadmapFile` names, not its own literal", async () => {
+		const out = await run(
+			{
+				files: {
+					[`${ROOT}/.fabrika.jsonc`]: JSON.stringify({roadmapFile: "docs/PLAN.md"}),
+					[`${ROOT}/docs/PLAN.md`]: IN_SYNC,
+				},
+			},
+			[[MILESTONES, PROJECTION]],
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("roadmap-guard");
+	});
+
+	it("refuses UNKNOWN on a config it cannot decode, rather than falling back to ROADMAP.md", async () => {
+		const out = await run(
+			{
+				files: {
+					[`${ROOT}/.fabrika.jsonc`]: JSON.stringify({roadmapFile: 7}),
+					[ROADMAP]: IN_SYNC,
+				},
+			},
+			[[MILESTONES, PROJECTION]],
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toContain("which file this guard validates is unread");
+	});
+
 	it("refuses UNKNOWN when no repo root is found at or above the cwd", async () => {
 		const out = await Effect.runPromise(
 			Effect.provide(

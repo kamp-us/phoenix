@@ -1,6 +1,6 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {runDiagnose} from "./diagnose-verb.ts";
@@ -48,6 +48,7 @@ const options = {
 	driftCommits: 10,
 	repo: null,
 	json: false,
+	cwd: "/repo",
 	env: ENV,
 	now: NOW,
 };
@@ -57,7 +58,10 @@ const run = (
 	overrides: Partial<typeof options> = {},
 ) =>
 	Effect.runPromise(
-		Effect.provide(runDiagnose({...options, ...overrides}), fakeShell(script).layer),
+		Effect.provide(
+			runDiagnose({...options, ...overrides}),
+			Layer.merge(fakeShell(script).layer, unconfigured),
+		),
 	);
 
 const green = (name = "ci-required") => ({name, status: "completed", conclusion: "success"});

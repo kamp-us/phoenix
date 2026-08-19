@@ -17,6 +17,7 @@ import {requireSession} from "../build/claim.ts";
 import {isKebabSlug} from "../build/lane.ts";
 import {laneScratchDir} from "../build/scratch-verb.ts";
 import {resolveTargetRepo} from "../build/target.ts";
+import {designHarnessOr} from "../config/paths.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {readBytes, writeText} from "./bytes.ts";
 import {
@@ -28,7 +29,7 @@ import {
 	RENDER_CRASHED,
 	SURFACE_UNREACHABLE,
 } from "./codes.ts";
-import {atRoot, HARNESS_PATH} from "./conventions.ts";
+import {atRoot} from "./conventions.ts";
 import {type HarnessConfig, parseHarness, surfaceSlug} from "./harness.ts";
 import {requireUiLane} from "./lane.ts";
 import {probe} from "./manifest-verb.ts";
@@ -207,26 +208,36 @@ export const runRender = (
 		);
 		if (lane._tag === "Refused") return lane.outcome;
 
-		const harnessProbe = yield* probe(lane.root, HARNESS_PATH);
+		const declared = yield* designHarnessOr(
+			VERB,
+			lane.root,
+			"where this repo declares its render path is unread — the render path is UNKNOWN, never absent.",
+		);
+		if (declared._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, declared.message, lane.notes);
+		}
+		const harnessPath = declared.path;
+
+		const harnessProbe = yield* probe(lane.root, harnessPath);
 		if (harnessProbe._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot probe ${HARNESS_PATH}: ${harnessProbe.reason} — the render path is UNKNOWN.`,
+				`${VERB}: cannot probe ${harnessPath}: ${harnessProbe.reason} — the render path is UNKNOWN.`,
 				lane.notes,
 			);
 		}
 		if (harnessProbe._tag === "Absent") {
 			return refuse(
 				NO_HARNESS,
-				`${VERB}: no ${HARNESS_PATH} at the repo root — this repo declares no headless render path; add one (see the harness config schema).`,
+				`${VERB}: no ${harnessPath} at the repo root — this repo declares no headless render path; add one (see the harness config schema).`,
 				lane.notes,
 			);
 		}
-		const raw = yield* readBytes(atRoot(lane.root, HARNESS_PATH));
+		const raw = yield* readBytes(atRoot(lane.root, harnessPath));
 		if (raw._tag === "Failed") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read ${HARNESS_PATH}: ${raw.reason} — the render path is UNKNOWN.`,
+				`${VERB}: cannot read ${harnessPath}: ${raw.reason} — the render path is UNKNOWN.`,
 				lane.notes,
 			);
 		}
@@ -234,7 +245,7 @@ export const runRender = (
 		if (harness._tag === "Violation") {
 			return refuse(
 				BAD_SECTIONS,
-				`${VERB}: ${HARNESS_PATH} exists but does not satisfy its schema: ${harness.violation}.`,
+				`${VERB}: ${harnessPath} exists but does not satisfy its schema: ${harness.violation}.`,
 				lane.notes,
 			);
 		}

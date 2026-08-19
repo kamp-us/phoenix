@@ -23,6 +23,7 @@ import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
 import {UNREADABLE_CODEOWNERS} from "../config/keys/control-plane.ts";
+import {governedRootsOr} from "../config/paths.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {getPullRequest, listPullFiles, openPullsClosing, searchOpenPulls} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
@@ -78,6 +79,8 @@ export interface ProveOptions extends LaneRef {
 	/** The task the event addresses; `null` resolves only on a single-task lane. */
 	readonly task: string | null;
 	readonly repo: string | null;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in, not the ledger root. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -165,8 +168,17 @@ export const runProve = (
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
 
+		// Only the verdict arms need it: the two arms above prove commits and states, and neither asks
+		// what namespace a diff derives.
+		const governed = yield* governedRootsOr(
+			VERB,
+			options.cwd,
+			"the required namespace set is UNKNOWN, and a set short one namespace would prove an event nobody gated.",
+		);
+		if (governed._tag === "Refused") return refuse(LANE_UNREADABLE, governed.message);
+
 		if (claim._tag === "RangeVerdict") {
-			return yield* proveRangeVerdicts(repo, claim.epic, issue, taskId, event);
+			return yield* proveRangeVerdicts(repo, claim.epic, issue, taskId, event, governed.roots);
 		}
 
 		const traced = yield* traceOpenPull(repo, issue);
@@ -218,7 +230,15 @@ export const runProve = (
 				diagnostics,
 			);
 		}
-		return yield* proveVerdicts(repo, traced.trace.pr, issue, taskId, event, diagnostics);
+		return yield* proveVerdicts(
+			repo,
+			traced.trace.pr,
+			issue,
+			taskId,
+			event,
+			diagnostics,
+			governed.roots,
+		);
 	});
 
 interface Traced {
@@ -366,6 +386,7 @@ const proveVerdicts = (
 	taskId: string,
 	event: string,
 	diagnostics: ReadonlyArray<string>,
+	roots: ReadonlyArray<string>,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const pull = yield* getPullRequest(repo, pr);
@@ -381,7 +402,7 @@ const proveVerdicts = (
 		}
 		const required = [
 			...namespacesOf(partition(files.value)),
-			...(touchesGovernanceRoot(files.value) ? ["governance"] : []),
+			...(touchesGovernanceRoot(files.value, roots) ? ["governance"] : []),
 		];
 
 		const commented = yield* listComments(repo, pr);
@@ -573,6 +594,7 @@ const proveRangeVerdicts = (
 	issue: number,
 	taskId: string,
 	event: string,
+	roots: ReadonlyArray<string>,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const read = yield* located(epic, issue);
@@ -585,7 +607,7 @@ const proveRangeVerdicts = (
 		}
 		const required = [
 			...namespacesOf(partition(content.value.paths)),
-			...(touchesGovernanceRoot(content.value.paths) ? ["governance"] : []),
+			...(touchesGovernanceRoot(content.value.paths, roots) ? ["governance"] : []),
 		];
 
 		const commented = yield* listComments(repo, issue);

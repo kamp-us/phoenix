@@ -1,7 +1,7 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {comments, LANE_UUID, marker, LANE_TOKEN as TOKEN} from "../build/fixtures.test-support.ts";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut, once, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {runCheck} from "./check-verb.ts";
 import {
@@ -76,8 +76,8 @@ const ledger = (
 const digestOf = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>): Promise<string> => {
 	const out = await Effect.runPromise(
 		Effect.provide(
-			runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}}),
-			fakeShell(script).layer,
+			runCheck({number: 4300, repo: null, cwd: "/repo", env: {CLAUDE_PIPELINE_REPO: "o/r"}}),
+			Layer.merge(fakeShell(script).layer, unconfigured),
 		),
 	);
 	return JSON.parse(out.stdout).digest as string;
@@ -93,7 +93,10 @@ const CLEAN_READ: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 const run = (digest: string, script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
 	const shell = fakeShell(script);
 	return Effect.runPromise(
-		Effect.provide(runFlip({number: 4300, digest, token: TOKEN, repo: null, env}), shell.layer),
+		Effect.provide(
+			runFlip({number: 4300, digest, token: TOKEN, repo: null, cwd: "/repo", env}),
+			Layer.merge(shell.layer, unconfigured),
+		),
 	).then((outcome) => ({outcome, calls: shell.calls}));
 };
 

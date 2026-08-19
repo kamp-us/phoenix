@@ -1,6 +1,6 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {runCheck} from "./check-verb.ts";
 import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -16,11 +16,14 @@ const CYCLE = /^gh api repos\/o\/r\/contents\/product-development-cycle\.md$/;
 const options = {
 	number: 4300,
 	repo: null,
+	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
 const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
-	Effect.runPromise(Effect.provide(runCheck(options), fakeShell(script).layer));
+	Effect.runPromise(
+		Effect.provide(runCheck(options), Layer.merge(fakeShell(script).layer, unconfigured)),
+	);
 
 /** An epic whose phase line names exactly the one child a single-child script serves. */
 const ONE_CHILD_EPIC = epic({body: epicBody({dependencies: "- phase 1: #4301"})});
@@ -141,7 +144,9 @@ describe("runCheck", () => {
 
 	it("re-runs the fetch itself — it takes no ledger from a caller", async () => {
 		const shell = fakeShell(CLEAN);
-		await Effect.runPromise(Effect.provide(runCheck(options), shell.layer));
+		await Effect.runPromise(
+			Effect.provide(runCheck(options), Layer.merge(shell.layer, unconfigured)),
+		);
 		expect(shell.calls.some((line) => /sub_issues/.test(line))).toBe(true);
 	});
 });

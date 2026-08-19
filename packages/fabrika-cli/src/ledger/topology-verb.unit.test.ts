@@ -65,7 +65,7 @@ const run = (
 	const stdin: Effect.Effect<StdinRead> = Effect.succeed({_tag: "Text", text: stdinText});
 	return Effect.runPromise(
 		Effect.provide(
-			runTopology({number: 4300, token: TOKEN, repo: null, env, stdin}),
+			runTopology({number: 4300, token: TOKEN, repo: null, cwd: "/repo", env, stdin}),
 			Layer.mergeAll(shell.layer, fs.layer),
 		),
 	).then((outcome) => ({outcome, written: fs.written}));

@@ -150,7 +150,7 @@ undisclosed that this gate could see"* — never "no deviations exist".
   governance verdict on such a diff is not a complete gate result, and that holds for a FAIL
   exactly as for a PASS (ADR [0293](../../../../.decisions/0293-governance-fires-every-round.md)).
   The token is §1's `governance` line, and `fabrika governance scope <pr>` prints the same one over
-  the same four roots — the sanctioned derivation (ADR
+  the same declared roots — the sanctioned derivation (ADR
   [0280](../../../../.decisions/0280-review-shell-carries-the-spawn-tool.md)). **Never read it off
   `harness`**: that flag counts three roots and `.decisions/` is not one, so a decision-record PR
   reads `harness: false` and still owes the verdict — PR #5604 got a clean PASS that way and the

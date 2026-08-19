@@ -27,11 +27,17 @@ bytes it scaffolds, are the verb's section
 **A non-zero exit is UNKNOWN, never "nothing reserved."** Re-run it. Falling back to the highest id
 on disk mints the same number from two lanes at once.
 
-**An empty `.decisions/` is not one of those cases — it allocates `0001` and exits 0.** A repo
+**An empty corpus is not one of those cases — it allocates `0001` and exits 0.** A repo
 adopting fabrika has no records on day one, and that is a fact the verb reports, not a read it
-failed. Only a directory it could not read at all refuses (exit 11). If `.decisions/` does not exist
+failed. Only a directory it could not read at all refuses (exit 11). If the directory does not exist
 yet, create it and re-run; a repo with no decision directory at all is a setup question for
 [front-door](../front-door/SKILL.md).
+
+**Where the corpus lives is the repo's, not this skill's.** `.fabrika.jsonc`'s `decisionsDir` names
+it and defaults to `.decisions`; `--dir` overrides it for one run. A repo that writes `null` there
+keeps no corpus at all, and then every verb of this group refuses on `22` naming the key — there is
+nothing to read and nothing to write into, and that is a settled fact no retry changes, unlike the
+`11` an unreadable directory earns.
 
 `fabrika adr next` still answers the id on its own, and `fabrika adr new 0240 <slug>` still
 scaffolds against an id you name (`fabrika wire doc-section --heading "adr next" < <skill-base>/contract.md`,

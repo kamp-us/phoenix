@@ -11,6 +11,9 @@
 
 import {Effect, type FileSystem, Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {CONFIG_PATH} from "../config/document.ts";
+import {SHIPPED_ROADMAP_FILE} from "../config/keys/paths.ts";
+import {readRoadmapFile} from "../config/paths.ts";
 import {discoverRepoRoot} from "../delegate/root.ts";
 import {type ReadFailed, readFile} from "../io/fs.ts";
 import {listMilestones, resolveRepo} from "../io/issues.ts";
@@ -27,7 +30,14 @@ import {
 	zeroScope,
 } from "./verdict.ts";
 
-const ROADMAP = "ROADMAP.md";
+/**
+ * The file this guard validates, as the shipped default.
+ *
+ * The repo names it in `.fabrika.jsonc`'s `roadmapFile`, resolved below. This constant is only the
+ * fallback the two pre-root messages need, since a `cwd` in no repository has no config to read
+ * either.
+ */
+const ROADMAP = SHIPPED_ROADMAP_FILE;
 
 export interface RoadmapGuardOptions {
 	/** An explicit repo root, or `null` to walk up from `cwd` for one. */
@@ -44,10 +54,10 @@ export interface RoadmapGuardOptions {
  * All the annotations hang on the file rather than on a line: the offending row is named in each
  * message, but a milestone that drifted out from under a correct row has no line to point at.
  */
-const drifted = (report: string, findings: ReadonlyArray<string>): GuardVerdict =>
+const drifted = (report: string, findings: ReadonlyArray<string>, roadmap: string): GuardVerdict =>
 	violation(
 		report,
-		annotationsOrNone(() => findings.map((message) => atFile("error", ROADMAP, message))),
+		annotationsOrNone(() => findings.map((message) => atFile("error", roadmap, message))),
 	);
 
 export const runRoadmapGuard = (
@@ -70,6 +80,19 @@ export const runRoadmapGuard = (
 			);
 		}
 
+		// The file the repo declares, not this guard's own literal: a guard validating `ROADMAP.md`
+		// while the fence reads `PLAN.md` is one key with two answers (#4730's shape).
+		const declared = yield* readRoadmapFile(options.cwd);
+		if (declared._tag === "Refused") {
+			return emitVerdict(
+				unknown(
+					`${VERB}: ${CONFIG_PATH} is refused — ${declared.reason.replace(/\.$/, "")}, so which file this guard validates is unread and the verdict is UNKNOWN, never clean.`,
+				),
+				options.env,
+			);
+		}
+		const roadmap = declared.value;
+
 		const resolved = yield* resolveRepo(options.repo, options.env);
 		if (resolved._tag === "Failure") {
 			return emitVerdict(
@@ -80,12 +103,12 @@ export const runRoadmapGuard = (
 			);
 		}
 
-		const md = yield* readFile(path.join(root, ROADMAP));
+		const md = yield* readFile(path.join(root, roadmap));
 		const listed = yield* listMilestones(resolved.value);
 		if (listed._tag === "Failure") {
 			return emitVerdict(
 				unknown(
-					`${VERB}: cannot read ${resolved.value}'s milestones: ${listed.reason} — ${ROADMAP} was parsed but has nothing to be validated against, so the verdict is UNKNOWN, never clean.`,
+					`${VERB}: cannot read ${resolved.value}'s milestones: ${listed.reason} — ${roadmap} was parsed but has nothing to be validated against, so the verdict is UNKNOWN, never clean.`,
 				),
 				options.env,
 			);
@@ -103,6 +126,7 @@ export const runRoadmapGuard = (
 				: drifted(
 						report,
 						verdict.violations.map((v) => `[${v.code}] ${v.message}`),
+						roadmap,
 					),
 			options.env,
 		);

@@ -63,7 +63,15 @@ const scope = leafCommand(
 	"scope",
 	{pr: prArg, repo: repoFlag, json: jsonFlag},
 	Effect.fn(function* ({pr, repo, json}) {
-		yield* emit(yield* runScope({pr, repo: Option.getOrNull(repo), json, env: process.env}));
+		yield* emit(
+			yield* runScope({
+				pr,
+				repo: Option.getOrNull(repo),
+				json,
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("A PR's head, lifecycle, linked issue, classes and CP state."),
@@ -110,7 +118,16 @@ const gate = leafCommand(
 	},
 	Effect.fn(function* ({pr, sha, require, cp, repo, json}) {
 		yield* emit(
-			yield* runGate({pr, sha, require, cp, repo: Option.getOrNull(repo), json, env: process.env}),
+			yield* runGate({
+				pr,
+				sha,
+				require,
+				cp,
+				repo: Option.getOrNull(repo),
+				json,
+				cwd: process.cwd(),
+				env: process.env,
+			}),
 		);
 	}),
 ).pipe(
@@ -124,7 +141,16 @@ const floor = leafCommand(
 	"floor",
 	{pr: prArg, sha: shaFlag, repo: repoFlag, json: jsonFlag},
 	Effect.fn(function* ({pr, sha, repo, json}) {
-		yield* emit(yield* runFloor({pr, sha, repo: Option.getOrNull(repo), json, env: process.env}));
+		yield* emit(
+			yield* runFloor({
+				pr,
+				sha,
+				repo: Option.getOrNull(repo),
+				json,
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("Whether a governance-root diff carries its governance verdict."),

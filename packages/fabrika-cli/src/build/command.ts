@@ -115,7 +115,9 @@ const pick = leafCommand(
 		),
 	},
 	Effect.fn(function* ({repo, limit}) {
-		yield* emit(yield* runPick({repo: Option.getOrNull(repo), limit, env: process.env}));
+		yield* emit(
+			yield* runPick({repo: Option.getOrNull(repo), limit, cwd: process.cwd(), env: process.env}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("The ranked pool of issues this lane may pick up."),
@@ -183,6 +185,7 @@ const claim = leafCommand(
 			yield* runClaim({
 				number,
 				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
 				env: process.env,
 				uuid: randomUUID(),
 				at: new Date().toISOString(),

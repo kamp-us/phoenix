@@ -24,11 +24,12 @@
  * invoked through a relaying verb (the wrapper shape ADR 0238 bans). Only {@link readDispatch}
  * touches IO.
  */
-import {Effect, type FileSystem, Result} from "effect";
+import {Effect, type FileSystem, type Path, Result} from "effect";
+import {CONFIG_PATH} from "../config/document.ts";
+import {readRoadmapFile} from "../config/paths.ts";
 import {exists, type ReadFailed, readFile} from "../io/fs.ts";
 import {issueRefOf} from "../review/classes.ts";
 import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
-import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {
 	AUDIENCE_NOT_AGENT,
@@ -765,7 +766,7 @@ const unreadable = (path: string, failure: ReadFailed): DispatchRead => ({
  * that split: a probe that cannot be performed is itself UNKNOWN, never "absent".
  */
 export const readDispatch = (
-	path: string = ROADMAP_FILE,
+	path: string,
 ): Effect.Effect<DispatchRead, never, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
 		const probe = yield* Effect.result(exists(path));
@@ -775,4 +776,25 @@ export const readDispatch = (
 		return Result.isFailure(read)
 			? unreadable(path, read.failure)
 			: {_tag: "Read" as const, dispatch: readCampaigns(read.success)};
+	});
+
+/**
+ * The campaigns table at the roadmap file **this repo declares**, for a verb standing in a checkout.
+ *
+ * The two fence verbs read the roadmap through here rather than through {@link readDispatch}, whose
+ * path argument they would otherwise fill from a literal. A config nobody can decode is `Unreadable`
+ * exactly like a roadmap nobody can read: in both the fence is UNKNOWN, and the one thing it must
+ * never become is "nothing is active", which admits every issue.
+ */
+export const readDeclaredDispatch = (
+	cwd: string,
+): Effect.Effect<DispatchRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const declared = yield* readRoadmapFile(cwd);
+		return declared._tag === "Refused"
+			? {
+					_tag: "Unreadable" as const,
+					reason: `${CONFIG_PATH} is refused — ${declared.reason.replace(/\.$/, "")}, so where the campaigns table lives is unread`,
+				}
+			: yield* readDispatch(declared.value);
 	});

@@ -1,6 +1,6 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell} from "../fakes.test-support.ts";
+import {errOut, fakeShell, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {
@@ -45,6 +45,7 @@ const options = {
 	driftCommits: 10,
 	repo: null,
 	json: false,
+	cwd: "/repo",
 	env: ENV,
 	now: NOW,
 };
@@ -53,7 +54,12 @@ const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
 ) =>
-	Effect.runPromise(Effect.provide(runSweep({...options, ...overrides}), fakeShell(script).layer));
+	Effect.runPromise(
+		Effect.provide(
+			runSweep({...options, ...overrides}),
+			Layer.merge(fakeShell(script).layer, unconfigured),
+		),
+	);
 
 /** One classifiable PR, reachable by any number: the per-PR reads are not keyed on it. */
 const classifiable = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
@@ -110,7 +116,9 @@ describe("runSweep reports the whole board or none of it", () => {
 			[OPEN_PULLS, openPulls({number: 4321, head: HEAD})],
 			...classifiable(),
 		]);
-		await Effect.runPromise(Effect.provide(runSweep(options), shell.layer));
+		await Effect.runPromise(
+			Effect.provide(runSweep(options), Layer.merge(shell.layer, unconfigured)),
+		);
 		expect(shell.calls.some((call) => call.includes("--method POST"))).toBe(false);
 	});
 });

@@ -76,6 +76,7 @@ const scope = leafCommand(
 				sha: Option.getOrNull(sha),
 				repo: Option.getOrNull(repo),
 				json,
+				cwd: process.cwd(),
 				env: process.env,
 			}),
 		);

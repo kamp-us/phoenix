@@ -56,6 +56,8 @@ export interface OpenOptions {
 	/** The claim token `build claim <epic> --purpose plan` handed this lane — which lane is asking. */
 	readonly token: string;
 	readonly repo: string | null;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 

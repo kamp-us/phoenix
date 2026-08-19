@@ -1,6 +1,6 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
@@ -21,13 +21,18 @@ const RULES = /^gh api repos\/o\/r\/rules\/branches\/main$/;
 const REPO = /^gh api repos\/o\/r$/;
 const CONFIG = /contents\/\.fabrika\.jsonc/;
 
-const options = {pr: 4321, repo: null, json: false, env: ENV};
+const options = {pr: 4321, repo: null, json: false, cwd: "/repo", env: ENV};
 
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
 ) =>
-	Effect.runPromise(Effect.provide(runScope({...options, ...overrides}), fakeShell(script).layer));
+	Effect.runPromise(
+		Effect.provide(
+			runScope({...options, ...overrides}),
+			Layer.merge(fakeShell(script).layer, unconfigured),
+		),
+	);
 
 describe("runScope", () => {
 	it("renders a partial split as `part-of:<n>` — the marker resolves at this seam as it does at review's", async () => {

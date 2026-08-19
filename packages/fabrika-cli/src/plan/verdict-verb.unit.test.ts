@@ -1,7 +1,7 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {comments, LANE_UUID, marker, LANE_TOKEN as TOKEN} from "../build/fixtures.test-support.ts";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {read as readMarker} from "../wire/verdict-marker.ts";
@@ -54,8 +54,8 @@ const POSTED = okOut(
 const digestOf = async (childPayload: ExecResult): Promise<string> => {
 	const out = await Effect.runPromise(
 		Effect.provide(
-			runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}}),
-			fakeShell(ledger(childPayload)).layer,
+			runCheck({number: 4300, repo: null, cwd: "/repo", env: {CLAUDE_PIPELINE_REPO: "o/r"}}),
+			Layer.merge(fakeShell(ledger(childPayload)).layer, unconfigured),
 		),
 	);
 	return JSON.parse(out.stdout).digest as string;
@@ -78,11 +78,12 @@ const run = (
 				digest,
 				token: TOKEN,
 				polarity: overrides.polarity ?? null,
+				cwd: "/repo",
 				repo: null,
 				env,
 				stdin: Effect.succeed(stdin),
 			}),
-			shell.layer,
+			Layer.merge(shell.layer, unconfigured),
 		),
 	).then((outcome) => ({outcome, calls: shell.calls}));
 };
@@ -266,10 +267,11 @@ describe("runVerdict", () => {
 					token: TOKEN,
 					polarity: null,
 					repo: null,
+					cwd: "/repo",
 					env,
 					stdin: Effect.succeed<StdinRead>({_tag: "Failed", reason: "EIO"}),
 				}),
-				fakeShell([]).layer,
+				Layer.merge(fakeShell([]).layer, unconfigured),
 			),
 		);
 		expect(outcome.code).toBe(11);
@@ -285,8 +287,8 @@ describe("runVerdict", () => {
 		] as ReadonlyArray<readonly [RegExp, ExecResult]>;
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}}),
-				fakeShell(script).layer,
+				runCheck({number: 4300, repo: null, cwd: "/repo", env: {CLAUDE_PIPELINE_REPO: "o/r"}}),
+				Layer.merge(Layer.merge(fakeShell(script).layer, unconfigured), unconfigured),
 			),
 		);
 		const digest = JSON.parse(out.stdout).digest as string;
