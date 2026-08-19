@@ -1,7 +1,14 @@
 import {Effect, FileSystem, Layer, Path, PlatformError} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
-import {AUDIENCE_NOT_AGENT, BAD_SECTIONS, OUT_OF_FOCUS, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {
+	AUDIENCE_NOT_AGENT,
+	BAD_SECTIONS,
+	OUT_OF_FOCUS,
+	PRECONDITION_UNKNOWN,
+	TYPE_NOT_BUILDABLE,
+} from "./codes.ts";
+import {isCandidate} from "./pick-verb.ts";
 import {
 	ADMISSION_EXIT_CODES,
 	type Admission,
@@ -9,18 +16,24 @@ import {
 	admissionRefusal,
 	audienceAxisBinds,
 	audienceAxisOf,
+	BUILDABLE_TYPE_LABELS,
+	type Citation,
 	CLAIM_PURPOSES,
+	citationOpens,
 	DECISION_TYPE_LABEL,
 	DEFAULT_CLAIM_PURPOSE,
 	DEFAULT_ROADMAP,
+	EPIC_TYPE_LABEL,
 	exclusionReasonOf,
 	type Focus,
 	focusReport,
 	focusScopeLine,
 	homeOf,
 	type IssueFacts,
+	NO_CITATION,
 	NOT_REPAIR,
 	noServedIssue,
+	parseCitation,
 	parseClaimPurpose,
 	purposeScopeLine,
 	readDeclaredFocus,
@@ -29,6 +42,9 @@ import {
 	STANDING_LANE_LABELS,
 	scopeAxisOf,
 	scopeSubjectOf,
+	typeAxisBinds,
+	typeAxisOf,
+	typeScopeLine,
 	unknownAdmission,
 } from "./scope-admission.ts";
 
@@ -193,10 +209,21 @@ describe("admissionOf", () => {
 
 		it("defaults to build, so an omitted purpose keeps the fence", () => {
 			expect(DEFAULT_CLAIM_PURPOSE).toBe("build");
-			expect(admissionOf(declared, unlabelled)._tag).toBe("AudienceNotAgent");
-			expect(admissionOf(declared, unlabelled, DEFAULT_CLAIM_PURPOSE)._tag).toBe(
-				"AudienceNotAgent",
-			);
+			// Both fences bind this epic under build; type is reported first (#5490), and the audience
+			// verdict it saw rides along, so neither refusal hides the other.
+			for (const out of [
+				admissionOf(declared, unlabelled),
+				admissionOf(declared, unlabelled, DEFAULT_CLAIM_PURPOSE),
+			]) {
+				expect(out._tag).toBe("TypeNotBuildable");
+				expect(out._tag === "TypeNotBuildable" && out.audience).toEqual({
+					_tag: "NotAgent",
+					label: null,
+				});
+			}
+			// And on a type the type axis admits, the audience fence is still the one that binds.
+			const bug = issue({labels: ["status:triaged", "type:bug"]});
+			expect(admissionOf(declared, bug)._tag).toBe("AudienceNotAgent");
 		});
 
 		for (const purpose of ["plan", "gate"] as const) {
@@ -261,14 +288,18 @@ describe("admissionOf", () => {
 			);
 		});
 
-		it("refuses the same decision issue at 21 with no PR serving it — the other arm", () => {
+		it("refuses the same decision issue with no PR serving it — the other arm, now on type", () => {
+			// It refused at 21 until #5490 seated the type axis: the audience axis did bind, and still
+			// does, but type is read first so the refusal names the objection an operator can act on.
+			// Re-labelling this issue `ready-for:agent` would satisfy 21 and build the wrong artifact.
 			expect(audienceAxisBinds("build", NOT_REPAIR)).toBe(true);
 			const out = admissionOf(declared, decision);
-			expect(out._tag).toBe("AudienceNotAgent");
-			expect(admissionRefusal("build claim", out)?.code).toBe(AUDIENCE_NOT_AGENT);
-			expect(purposeScopeLine("build claim", "build", audienceAxisOf(decision))).toContain(
-				"the audience axis binds",
-			);
+			expect(out._tag).toBe("TypeNotBuildable");
+			expect(admissionRefusal("build claim", out)?.code).toBe(TYPE_NOT_BUILDABLE);
+			expect(out._tag === "TypeNotBuildable" && out.audience).toEqual({
+				_tag: "NotAgent",
+				label: "ready-for:human",
+			});
 		});
 
 		it("exempts the decision type only — an ordinary repair still reads the audience label", () => {
@@ -304,6 +335,147 @@ describe("admissionOf", () => {
 		});
 	});
 
+	/**
+	 * The type axis (#5490). It lived in the pool as a private set, so a number handed straight to
+	 * `claim --purpose build` passed through no pool and met no type check at all.
+	 */
+	describe("the type axis", () => {
+		const decision = issue({
+			labels: ["status:triaged", "type:decision", "ready-for:agent", "axis:pipeline-hardening"],
+			milestone: null,
+		});
+		const epic = issue({labels: ["status:triaged", "type:epic", "ready-for:agent"]});
+		const ruling: Citation = {
+			_tag: "Cited",
+			issue: 1,
+			commentId: 5335398768,
+			url: "https://github.com/kamp-us/phoenix/issues/1#issuecomment-5335398768",
+		};
+
+		it("reads every buildable type as Buildable, and an untyped issue too", () => {
+			for (const label of BUILDABLE_TYPE_LABELS) {
+				expect(typeAxisOf(issue({labels: [label]}))).toEqual({_tag: "Buildable"});
+			}
+			// Deliberately unchanged: the pool has always admitted an untyped issue, and moving where
+			// the rule is enforced must not quietly move what it says. Its own defect, its own ticket.
+			expect(typeAxisOf(issue({labels: ["status:triaged"]}))).toEqual({_tag: "Buildable"});
+		});
+
+		it("names the barred label rather than answering a boolean", () => {
+			expect(typeAxisOf(decision)).toEqual({_tag: "NotBuildable", label: DECISION_TYPE_LABEL});
+			expect(typeAxisOf(epic)).toEqual({_tag: "NotBuildable", label: EPIC_TYPE_LABEL});
+		});
+
+		/**
+		 * #5490's decisive case, read off the live board: a `type:decision` on a standing lane carrying
+		 * `ready-for:agent`. Both older axes admit it — scope by the lane exemption, audience by the
+		 * label — so before the type axis this composed to `Admitted` and a claim marker was written.
+		 */
+		it("refuses the standing-lane decision that both other axes admit", () => {
+			expect(scopeAxisOf(declared, decision)).toEqual({
+				_tag: "LaneExempt",
+				lane: "axis:pipeline-hardening",
+			});
+			expect(audienceAxisOf(decision)).toEqual({_tag: "Agent"});
+			const out = admissionOf(declared, decision);
+			expect(out._tag).toBe("TypeNotBuildable");
+			const refusal = admissionRefusal("build claim", out);
+			expect(refusal?.code).toBe(TYPE_NOT_BUILDABLE);
+			expect(refusal?.stderr[0]).toContain("type not buildable");
+			expect(refusal?.stderr[0]).toContain("--cites");
+			expect(exclusionReasonOf(out)).toBe("type-not-buildable");
+		});
+
+		it("sends an epic to its own skill rather than asking it for a citation", () => {
+			const refusal = admissionRefusal("build claim", admissionOf(declared, epic));
+			expect(refusal?.code).toBe(TYPE_NOT_BUILDABLE);
+			expect(refusal?.stderr[0]).toContain("--purpose plan");
+			expect(refusal?.stderr[0]).not.toContain("--cites");
+		});
+
+		it("binds a fresh build only — plan and gate claims still take an epic", () => {
+			expect(typeAxisBinds("build", NOT_REPAIR)).toBe(true);
+			for (const purpose of ["plan", "gate"] as const) {
+				expect(typeAxisBinds(purpose)).toBe(false);
+				expect(admissionOf(declared, epic, purpose)._tag).toBe("Admitted");
+			}
+		});
+
+		it("does not bind a repair — the PR in flight already answered the question", () => {
+			const served = issue({labels: ["status:triaged", "type:decision", "ready-for:human"]});
+			const repair = repairClaimOf(4703, served);
+			expect(typeAxisBinds("build", repair)).toBe(false);
+			expect(admissionOf(declared, served, DEFAULT_CLAIM_PURPOSE, repair)._tag).toBe("Admitted");
+		});
+
+		it("opens the decision arm on a cited ruling, and never the epic's", () => {
+			expect(citationOpens(DECISION_TYPE_LABEL, ruling)).toBe(true);
+			expect(citationOpens(DECISION_TYPE_LABEL, NO_CITATION)).toBe(false);
+			expect(citationOpens(EPIC_TYPE_LABEL, ruling)).toBe(false);
+			const admitted = admissionOf(declared, decision, "build", NOT_REPAIR, ruling);
+			expect(admitted._tag).toBe("Admitted");
+			expect(admitted._tag === "Admitted" && admitted.citation).toEqual(ruling);
+			expect(admissionOf(declared, epic, "build", NOT_REPAIR, ruling)._tag).toBe(
+				"TypeNotBuildable",
+			);
+		});
+
+		it("prints the cited ruling, so a taken arm is read rather than inferred", () => {
+			expect(typeScopeLine("build claim", typeAxisOf(decision), ruling)).toContain(ruling.url);
+			expect(typeScopeLine("build claim", typeAxisOf(decision))).toContain(
+				"the type axis binds a build claim against an issue",
+			);
+			expect(typeScopeLine("build claim", typeAxisOf(issue()))).toBeNull();
+		});
+
+		it("reports scope before type — the focus row is the first thing to fix", () => {
+			const elsewhere = issue({milestone: 24, labels: ["status:triaged", "type:epic"]});
+			expect(admissionOf(declared, elsewhere)._tag).toBe("OutOfFocus");
+		});
+
+		it("seats 30 in the shared exit table, so a consuming verb's --help lists it", () => {
+			const seat = ADMISSION_EXIT_CODES.find((row) => row.code === TYPE_NOT_BUILDABLE);
+			expect(seat?.condition).toContain(DECISION_TYPE_LABEL);
+			expect(seat?.condition).toContain(EPIC_TYPE_LABEL);
+		});
+
+		/** The whole point of the fix: one predicate, so the two seams cannot disagree (ADR 0245). */
+		it("is the same predicate the pool filters on", () => {
+			for (const candidate of [decision, epic]) {
+				const listed = {...candidate, title: "", body: "", assigned: false, isPullRequest: false};
+				expect(isCandidate(listed)).toBe(false);
+				expect(admissionOf(declared, candidate)._tag).toBe("TypeNotBuildable");
+			}
+		});
+	});
+
+	describe("parseCitation", () => {
+		const url = "https://github.com/kamp-us/phoenix/issues/5879#issuecomment-5335398768";
+
+		it("reads a comment URL that names this repository and this issue", () => {
+			expect(parseCitation(`  ${url}  `, "kamp-us/phoenix", 5879)).toEqual({
+				_tag: "Read",
+				citation: {_tag: "Cited", issue: 5879, commentId: 5335398768, url},
+			});
+		});
+
+		it("refuses a ruling recorded on another issue or in another repository", () => {
+			expect(parseCitation(url, "kamp-us/phoenix", 5490)._tag).toBe("Malformed");
+			expect(parseCitation(url, "kamp-us/other", 5879)._tag).toBe("Malformed");
+		});
+
+		it("refuses anything that is not an issue-comment URL", () => {
+			for (const bad of [
+				"",
+				"yes",
+				"https://github.com/kamp-us/phoenix/issues/5879",
+				"https://github.com/kamp-us/phoenix/pull/5879#issuecomment-1",
+			]) {
+				expect(parseCitation(bad, "kamp-us/phoenix", 5879)._tag).toBe("Malformed");
+			}
+		});
+	});
+
 	it("resolves a malformed declaration to UNKNOWN at 4, never to admitted", () => {
 		const out = admissionOf({_tag: "Malformed", reason: "two data rows"}, issue());
 		expect(out._tag).toBe("Unknown");
@@ -323,9 +495,10 @@ describe("admissionOf", () => {
 			BAD_SECTIONS,
 			PRECONDITION_UNKNOWN,
 			OUT_OF_FOCUS,
+			TYPE_NOT_BUILDABLE,
 			AUDIENCE_NOT_AGENT,
 		]);
-		expect(new Set(ADMISSION_EXIT_CODES.map((row) => row.code)).size).toBe(4);
+		expect(new Set(ADMISSION_EXIT_CODES.map((row) => row.code)).size).toBe(5);
 		expect(ADMISSION_EXIT_CODES.every((row) => row.condition.trim() !== "")).toBe(true);
 	});
 });

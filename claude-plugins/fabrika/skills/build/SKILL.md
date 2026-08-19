@@ -83,8 +83,19 @@ names the winner — that lane is theirs, back off, including when the winner sh
 including on a number handed straight to you: end the run naming the code, and **never override on
 your own authority**. `--override "<reason>" --override-lane "<lane>"` (both flags required) is the
 operator's act, taken only when they ask for it in so many words, and the reason it records is
-theirs, not a rationale you compose. Before **every** later mutation addressed to an issue or PR
-number, re-confirm:
+theirs, not a rationale you compose.
+
+Exit `30` (type not buildable) is the third refusal, and it is the step-1 rule with teeth rather
+than a new one: the verb now reads the issue's type itself, so a `type:decision` or `type:epic`
+handed straight to you is refused before any marker, whatever labels it carries (#5490). **It is not
+overridable, and the remedy is on the refusal line.** An epic goes to `--purpose plan` or
+`--purpose gate`, which claim it exactly as before. A decision opens on
+`--cites <ruling-comment-url>` — the comment URL is checked against this repository and this issue,
+and the verb can prove no more than that, so citing a comment that does not rule anything is a lie
+the tool cannot catch and you must not tell. Passing `--cites` on a decision whose audience is still
+`ready-for:human` lands on `21`, because the citation opens the type axis and nothing else.
+
+Before **every** later mutation addressed to an issue or PR number, re-confirm:
 
 ```bash
 fabrika build confirm $issue_or_pr_number --token <claim-token>

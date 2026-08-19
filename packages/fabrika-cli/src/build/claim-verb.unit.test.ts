@@ -12,6 +12,7 @@ import {
 	OUT_OF_FOCUS,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
+	TYPE_NOT_BUILDABLE,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
@@ -87,6 +88,7 @@ const options = {
 	purpose: "build",
 	override: null as string | null,
 	overrideLane: null as string | null,
+	cites: null as string | null,
 };
 
 const run = (
@@ -722,7 +724,10 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			expect(JSON.parse(out.stdout).override).toBeUndefined();
 		});
 
-		it("refuses the very same issue at 21 when it is claimed directly, writing nothing", async () => {
+		// It refused at 21 until #5490 seated the type axis. The exemption's other arm is unchanged —
+		// the direct claim is still refused, still writes nothing — but the reason it prints is now the
+		// objection an operator can act on rather than a label they could talk past.
+		it("refuses the very same issue on type when it is claimed directly, writing nothing", async () => {
 			const shell = fakeShell([
 				[ISSUE, issue({milestone: {number: 44}, labels: DECISION})],
 				unclaimed(),
@@ -734,9 +739,79 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			const out = await Effect.runPromise(
 				Effect.provide(runClaim(options), Layer.merge(shell.layer, FOCUSED.layer)),
 			);
+			expect(out.code).toBe(TYPE_NOT_BUILDABLE);
+			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+			expect(out.stderr.some((line) => line.includes("type not buildable"))).toBe(true);
+		});
+
+		it("leaves the audience fence standing — a cited ruling opens type, and only type", async () => {
+			const shell = fakeShell([
+				[ISSUE, issue({milestone: {number: 44}, labels: DECISION})],
+				unclaimed(),
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), okOut("write\n")],
+			]);
+			const out = await Effect.runPromise(
+				Effect.provide(
+					runClaim({
+						...options,
+						cites: "https://github.com/o/r/issues/4312#issuecomment-5335398768",
+					}),
+					Layer.merge(shell.layer, FOCUSED.layer),
+				),
+			);
+			// The DECISION fixture is `ready-for:human`, which triage re-stamps when it routes a ruled
+			// decision to an agent. Until it does, the claim stops here (ADR 0300's binding constraint).
 			expect(out.code).toBe(AUDIENCE_NOT_AGENT);
 			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
-			expect(out.stderr.some((line) => line.includes("audience not agent"))).toBe(true);
+		});
+
+		it("takes the ruled decision once triage has stamped it for an agent", async () => {
+			const shell = fakeShell([
+				[
+					ISSUE,
+					issue({
+						milestone: {number: 44},
+						labels: labelled("status:triaged", "type:decision", "ready-for:agent"),
+					}),
+				],
+				unclaimed(),
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), okOut("write\n")],
+			]);
+			const cites = "https://github.com/o/r/issues/4312#issuecomment-5335398768";
+			const out = await Effect.runPromise(
+				Effect.provide(runClaim({...options, cites}), Layer.merge(shell.layer, FOCUSED.layer)),
+			);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout).cites).toBe(cites);
+			expect(out.stderr.some((line) => line.includes(cites))).toBe(true);
+		});
+
+		it("refuses a citation recorded on some other issue, before any marker", async () => {
+			const shell = fakeShell([
+				[ISSUE, issue({milestone: {number: 44}, labels: DECISION})],
+				unclaimed(),
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), okOut("write\n")],
+			]);
+			const out = await Effect.runPromise(
+				Effect.provide(
+					runClaim({
+						...options,
+						cites: "https://github.com/o/r/issues/9999#issuecomment-5335398768",
+					}),
+					Layer.merge(shell.layer, FOCUSED.layer),
+				),
+			);
+			expect(out.code).toBe(1);
+			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 		});
 
 		it("keeps the fence for every other type an open PR serves", async () => {
@@ -789,15 +864,26 @@ describe("runClaim — the purpose axis", () => {
 		labels: labelled("type:epic", "p1", "status:triaged"),
 	});
 
-	it("keeps the fence with no purpose passed — 21, and no marker written", async () => {
+	// Both fences bind this epic under build. It refused at 21 until #5490 seated the type axis; type
+	// is read first now, and an epic is refused whatever its `ready-for:` label says, which is what
+	// the audience axis alone could never prove. The `type:bug` case below keeps 21 under test.
+	it("keeps the fence with no purpose passed — 30, and no marker written", async () => {
 		const {out, shell} = await claimWith(UNLABELLED_EPIC);
-		expect(out.code).toBe(AUDIENCE_NOT_AGENT);
+		expect(out.code).toBe(TYPE_NOT_BUILDABLE);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
-		expect(out.stderr.some((line) => line.includes("audience not agent"))).toBe(true);
+		expect(out.stderr.some((line) => line.includes("type not buildable"))).toBe(true);
 	});
 
 	it("keeps the fence under an explicit --purpose build — the default is not the only path", async () => {
 		const {out, shell} = await claimWith(UNLABELLED_EPIC, {purpose: "build"});
+		expect(out.code).toBe(TYPE_NOT_BUILDABLE);
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+	});
+
+	it("still seats 21 under build on a type the type axis admits", async () => {
+		const {out, shell} = await claimWith(
+			issue({milestone: {number: 44}, labels: labelled("type:bug", "p1", "status:triaged")}),
+		);
 		expect(out.code).toBe(AUDIENCE_NOT_AGENT);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 	});

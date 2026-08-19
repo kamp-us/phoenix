@@ -230,6 +230,7 @@ describe("a driver's claim and the builder it spawns", () => {
 					purpose: "build",
 					override: null,
 					overrideLane: null,
+					cites: null,
 				}),
 				fakeShell([
 					[BUILD_ISSUE, claimable],

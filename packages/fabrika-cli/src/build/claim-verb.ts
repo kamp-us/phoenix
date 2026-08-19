@@ -78,13 +78,18 @@ import {
 	admissionOf,
 	admissionRefusal,
 	audienceAxisOf,
+	type Citation,
 	CLAIM_PURPOSES,
 	DEFAULT_CLAIM_PURPOSE,
 	focusScopeLine,
+	NO_CITATION,
 	NOT_REPAIR,
+	parseCitation,
 	parseClaimPurpose,
 	purposeScopeLine,
 	readDeclaredFocus,
+	typeAxisOf,
+	typeScopeLine,
 } from "./scope-admission.ts";
 import {openIssue, resolveAdmissionSubject, resolveTargetRepo} from "./target.ts";
 
@@ -103,6 +108,14 @@ export interface ClaimOptions {
 	/** The lane an override is taken for — required with an override, refused without one. */
 	readonly overrideLane: string | null;
 	/**
+	 * The founder ruling comment this build transcribes, or `null` — the type axis's one arm.
+	 *
+	 * It is not an override and never seats one: an override admits a refusal, while a citation says
+	 * the refusal does not apply, because the choosing this issue asked for already happened on the
+	 * board (founder ruling on #5879, comment 5335398768).
+	 */
+	readonly cites: string | null;
+	/**
 	 * The token this lane ALREADY holds, when it is re-claiming — `null` on a fresh claim.
 	 *
 	 * It is what makes the idempotent answer expressible per lane: without it, "already mine" could
@@ -113,7 +126,7 @@ export interface ClaimOptions {
 
 export type ProtocolOptions = Omit<
 	ClaimOptions,
-	"uuid" | "at" | "purpose" | "override" | "overrideLane" | "token"
+	"uuid" | "at" | "purpose" | "override" | "overrideLane" | "cites" | "token"
 > & {
 	/** The token `build claim` handed this lane — the identity it is asking under (#6037). */
 	readonly token: string;
@@ -258,13 +271,26 @@ export const runClaim = (
 		const judged = subject._tag === "Judged" ? subject.facts : ready.issue;
 		const repair = subject._tag === "Judged" ? subject.repair : NOT_REPAIR;
 		const purposeLine = purposeScopeLine(CLAIM, purpose, audienceAxisOf(judged), repair);
+		// The citation is read against the issue the fence actually judges, so a URL naming some other
+		// thread cannot open the arm. A value that does not parse refuses here, before any marker: a
+		// citation is the whole authority for building a decision, and a broken one confers nothing.
+		let citation: Citation = NO_CITATION;
+		if (options.cites !== null) {
+			const cited = parseCitation(options.cites, repo, judged.number);
+			if (cited._tag === "Malformed") {
+				return refuse(FAILED, `${CLAIM}: --cites ${cited.reason}; nothing was written.`);
+			}
+			citation = cited.citation;
+		}
 		const admission =
 			subject._tag === "Judged"
-				? admissionOf(read.focus, subject.facts, purpose, repair)
+				? admissionOf(read.focus, subject.facts, purpose, repair, citation)
 				: subject.admission;
+		const typeLine = typeScopeLine(CLAIM, typeAxisOf(judged), citation);
 		const lines = [
 			scopeLine,
 			...(subject._tag === "Judged" && subject.note !== null ? [subject.note] : []),
+			...(typeLine === null ? [] : [typeLine]),
 			purposeLine,
 		];
 		const refusal = admissionRefusal(CLAIM, admission);
@@ -355,6 +381,7 @@ export const runClaim = (
 					token: ownership.marker.token,
 					purpose,
 					...(override === null ? {} : {override}),
+					...(citation._tag === "Cited" ? {cites: citation.url} : {}),
 				}),
 				notes,
 			);
