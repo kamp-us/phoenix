@@ -145,9 +145,9 @@ blockers are done), from priority (a home confers no band, ADR 0219), and from t
 tiebreaker (ADR 0072) — the same not-this list ADR 0245 draws. Among admitted issues the ranking is
 unchanged, and a scope refusal never reads as blocked: `16` belongs to blockedness at every seam
 that answers it — `build eligible`, and the gate `build claim` and `build pick` run *after* this
-test (ADR 0301) — and no scope outcome borrows it. This section is the term ADR 0245 asks this contract to carry, at exactly
-the width the ADR gives it; the composition with the audience axis is stated here so no reader has
-to infer that the coined term swallowed a second question.
+test (ADR 0301) — and no scope outcome borrows it. This section is the term ADR 0245 asks this
+contract to carry, at exactly the width the ADR gives it; the composition with the audience axis is
+stated here so no reader has to infer that the coined term swallowed a second question.
 
 **One module, two call sites.** Both axes are evaluated in exactly one place —
 `packages/fabrika-cli/src/build/scope-admission.ts` — and that module is **imported** by `build pick`
@@ -429,9 +429,9 @@ from the answer itself rather than only from the counts. Each `excluded` entry i
 `{"number", "home", "reason"}`, where `reason` is one of `out-of-focus` / `audience-not-agent` /
 `unreadable` — the outcome set of the [admission test](#admission-test--scope-admission-and-the-audience-axis),
 one reason per outcome — or `no-acceptance-criteria` or `blocked`, this verb's own two axes (below).
-The scanned
-counts alone cannot tell a working fence from a broken one; the reasons can. `focus` is `{"state": "declared", "milestones": ["44", "46"]}` or `{"state": "none"}`, the same
-fact the stderr scope line carries.
+The scanned counts alone cannot tell a working fence from a broken one; the reasons can. `focus` is
+`{"state": "declared", "milestones": ["44", "46"]}` or `{"state": "none"}`, the same fact the stderr
+scope line carries.
 
 The filter, fail-closed on every axis:
 
