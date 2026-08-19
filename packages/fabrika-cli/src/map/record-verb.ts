@@ -9,13 +9,14 @@
  * only closes, so finishing an interrupted lockstep is the verb again — re-read the map, re-run
  * against its new digest — never a hand-close.
  *
- * <!-- anchor: RELAY-GRILLINGS-STATE-NEVER-RECOMPUTE-IT --> **A forked decision ticket's ruling is
- * read by importing the `grill` group's reader, never by re-deriving it here.** A ruling counts only
- * when four clauses hold, and those clauses are `grill read`'s to resolve; a second implementation
- * here would be a second answer to a question already enforced elsewhere, and the one that said
- * `ruled` would win by being called. So the branch calls `grill read` through `requireRuling` and
- * records only what that reader calls `ruled`: a read that did not complete is `11` and any other
- * state is `13` naming it, because UNKNOWN is never resolved to `ruled`.
+ * <!-- anchor: RELAY-GRILLINGS-STATE-NEVER-RECOMPUTE-IT --> **A cited ruling is read by importing
+ * the `grill` group's reader, never by re-deriving it here.** A ruling counts only when four clauses
+ * hold, and those clauses are `grill read`'s to resolve; a second implementation here would be a
+ * second answer to a question already enforced elsewhere, and the one that said `ruled` would win by
+ * being called. So every entry carrying a `Ruled` authority — forked ticket or not — is proven by
+ * `grill read` through `requireRuling` and records only what that reader calls `ruled`: a read that
+ * did not complete is `11` and any other state is `13` naming it, because UNKNOWN is never resolved
+ * to `ruled`.
  */
 
 import {Effect, type FileSystem} from "effect";
@@ -171,10 +172,7 @@ export const runRecord = (
 			);
 		}
 
-		let entry: DecisionEntry = {
-			text: finding,
-			authority: {_tag: "Finding", ticket: options.ticket},
-		};
+		let authority: DecisionEntry["authority"] = {_tag: "Finding", ticket: options.ticket};
 		if (ticket.state === "forked") {
 			if (ticket.kind === "decision") {
 				if (citation === null) {
@@ -183,11 +181,10 @@ export const runRecord = (
 						`${VERB}: #${ticket.number} is forked to #${ticket.session ?? 0} and --ruled-on was not given — a forked ticket's answer is the founder's, and it is recorded by citing his ruling, never by restating it.`,
 					);
 				}
-				const ruling = yield* requireRuling(VERB, repo, citation, options.env);
-				if (ruling._tag === "Refused") return ruling.outcome;
-				entry = {
-					text: finding,
-					authority: {_tag: "Ruled", session: citation.session, questionId: citation.questionId},
+				authority = {
+					_tag: "Ruled",
+					session: citation.session,
+					questionId: citation.questionId,
 				};
 			} else {
 				if (options.spike === null) {
@@ -211,11 +208,23 @@ export const runRecord = (
 				}
 			}
 		} else if (citation !== null) {
-			entry = {
-				text: finding,
-				authority: {_tag: "Ruled", session: citation.session, questionId: citation.questionId},
-			};
+			authority = {_tag: "Ruled", session: citation.session, questionId: citation.questionId};
 		}
+
+		// The proof hangs off the authority the entry will carry, not off the branch that composed it:
+		// the fork marker is a property of the ticket, while a `Ruled` row asserts the founder ruled,
+		// and that claim is the reader's to confirm on every path. Reading it here is what makes an
+		// unverified `Ruled` entry unreachable — the non-forked branch recorded one verbatim (#5584).
+		if (authority._tag === "Ruled") {
+			const ruling = yield* requireRuling(
+				VERB,
+				repo,
+				{session: authority.session, questionId: authority.questionId},
+				options.env,
+			);
+			if (ruling._tag === "Refused") return ruling.outcome;
+		}
+		const entry: DecisionEntry = {text: finding, authority};
 
 		const applied = applyRecord(found.value.body, options.ticket, entry);
 		if (applied._tag === "Refused") {

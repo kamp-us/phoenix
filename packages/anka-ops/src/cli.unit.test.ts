@@ -7,7 +7,6 @@
 import {assert, describe, it} from "@effect/vitest";
 import {ankaOps, VERB_GROUPS} from "./cli.ts";
 
-/** Flatten the wired subcommand names off the (group, commands) tree. */
 const wiredSubcommandNames = (): ReadonlyArray<string> =>
 	ankaOps.subcommands.flatMap((entry) => entry.commands.map((command) => command.name)).sort();
 

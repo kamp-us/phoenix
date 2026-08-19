@@ -8,17 +8,6 @@
  * `display_name` was written only once — at `setUsername`-time — so a later rename
  * never reached the stamped column and every byline showed a stale snapshot.
  *
- * The proof walks the full wire path a substituted seam can't reach:
- *   1. an author sets a username (stamps `display_name = user.name` at that instant),
- *   2. writes a definition,
- *   3. renames via `user.setDisplayName`,
- *   4. re-reads the definition byline (`authorDisplayName`) off its term page and
- *      asserts it is the NEW name — the live-resolve convergence.
- *
- * Fails WITHOUT the write-through: the old `authClient.updateUser` path touched only
- * `user.name`, so `authorDisplayName` would stay pinned to the setUsername-time
- * snapshot and step 4 would read the OLD name.
- *
  * Runs on the run-scoped SHARED stage (ADR 0104 step 7): every email/username/slug is
  * `NS`-prefixed (this file's `nsToken`) and every assertion scopes to this file's own
  * rows (the byline is read off the exact definition id the seed returned), so it holds
@@ -117,12 +106,10 @@ describe("user.setDisplayName — a rename reaches the stamped author byline (#2
 		if (!added.ok) return;
 		const definitionId = (added.data as {id: string}).id;
 
-		// Baseline: the byline resolves the setUsername-time display name ("Eski Ad").
 		const before = await readByline(termSlug, definitionId);
 		expect(before?.authorDisplayName).toBe("Eski Ad");
 		expect(before?.authorUsername).toBe(authorUsername);
 
-		// The görünen-ad change — the write-through under test.
 		const renamed = await h.fate(
 			{
 				kind: "mutation",
@@ -135,9 +122,6 @@ describe("user.setDisplayName — a rename reaches the stamped author byline (#2
 		expect(renamed.ok).toBe(true);
 		if (renamed.ok) expect((renamed.data as {name: string | null}).name).toBe("Yeni Ad");
 
-		// Convergence: the SAME byline now resolves the NEW display name — the stamped
-		// column was re-synced, not frozen at setUsername-time. This is the assertion
-		// that fails without the write-through.
 		const after = await readByline(termSlug, definitionId);
 		expect(after?.authorDisplayName).toBe("Yeni Ad");
 		expect(after?.authorUsername).toBe(authorUsername);

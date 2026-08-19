@@ -1,18 +1,9 @@
 /**
- * `emailDelivery.mark` / `emailDelivery.clear` / `emailDelivery.failing` WIRE-boundary
- * coverage (Child #2692, email-bounce epic #2687) — the authority + dark-ship decisions
- * that are wrong-or-right with no database (ADR 0082), driven through the real external
- * interface (`resolveWire`: decode + the `encodeWireError` class→wire-code seam), so a
- * denial's wire `code` is what a client gets.
- *
- * The load-bearing AC (#2692): mark and clear each FAIL CLOSED for a non-admin caller — a
- * non-holder of the `admin` relation and the anonymous actor both get the invisible
- * `UNAUTHORIZED` (ADR 0098 §2), and neither reaches the append (the `Pasaport` stub is
- * fail-on-contact). Plus the dark-ship: with the `phoenix-email-delivery-admin` flag OFF
- * the path is inert (fails `Denied` before any authority check or write). The mark's
- * reason floor (`EmailFailingReasonRequired`) rejects a blank note even for an admin. The
- * `emailDelivery.failing` admin roll-up read is gated the same way. The real-D1
- * append→projection round-trip is left to integration.
+ * The email-delivery admin ops' WIRE-boundary coverage (#2692, ADR 0082). The
+ * load-bearing AC: mark and clear each FAIL CLOSED for a non-admin — a non-holder and the
+ * anonymous actor both get the invisible `UNAUTHORIZED` (ADR 0098 §2), and neither reaches
+ * the append (the `Pasaport` stub is fail-on-contact). The real-D1 append→projection
+ * round-trip is integration's.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
@@ -54,7 +45,7 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 
 const agentAuthorityStub = Layer.succeed(AgentAuthority, {admits: () => Effect.succeed(false)});
 
-// A `RelationStore` where exactly `holders` hold the `admin` relation on platform.
+// Exactly `holders` hold the `admin` relation on platform.
 const adminStoreOf = (holders: ReadonlyArray<string>): Layer.Layer<RelationStore> =>
 	Layer.succeed(RelationStore, {
 		has: (tuple) => Effect.succeed(tuple.relation === "admin" && holders.includes(tuple.subject)),
@@ -100,8 +91,7 @@ const noWriteReached = Layer.mergeAll(makePasaportStub(), agentAuthorityStub);
 
 describe("emailDelivery.mark — admin authority (fail closed)", () => {
 	it.effect("an admin marks a target; the append runs, stamps the actor, reports failing", () => {
-		// Capture the actor threaded to the write (#2734): the mark must stamp the discharged
-		// admin's id (`u-admin`), never a client-supplied identity.
+		// The mark must stamp the discharged admin's id, never a client-supplied one (#2734).
 		const seen: {actorId?: string} = {};
 		return Effect.gen(function* () {
 			const receipt = yield* mark("u-target", "user reports no magic-links");

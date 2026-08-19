@@ -1,8 +1,4 @@
-/**
- * Unit coverage for `recomputeTermSummary` — the pure convergent fold that derives
- * a `term_record` row from its live definitions (ADR 0082). No Effect layer, no DB:
- * the fold is exercised directly over plain rows.
- */
+/** `recomputeTermSummary` — the pure fold deriving a `term_record` row from live definitions. */
 import {describe, expect, it} from "vitest";
 import {recomputeTermSummary, type TermSummaryDefRow} from "./Sozluk.ts";
 

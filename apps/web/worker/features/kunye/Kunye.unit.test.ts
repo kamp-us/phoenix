@@ -1,13 +1,7 @@
 /**
- * `Kunye` standing reads (ADR 0107 §4):
- *   - `tierForKarma` — the pure karma→tier derivation across every rank boundary
- *     (retired from `tierOf`, now the promotion/karma children's input).
- *   - `KunyeLive.tierOf` — reads the **stored `user.tier` column** FRESH off pasaport
- *     (a scripted `getUserById`): an account is its stored `çaylak | yazar`, a
- *     no-account principal is `visitor`. The whole point is that standing comes from
- *     D1 at the point of use, never session state.
- *   - `KunyeLive.karmaOf` — reads `total_karma` off the profile surface.
- *   - `rootOf` — the v1 humans-only identity seam.
+ * `Kunye` standing reads (ADR 0107 §4). The load-bearing one is `tierOf`: it reads the
+ * stored `user.tier` column FRESH off pasaport, so standing comes from D1 at the point
+ * of use, never from session state. A principal with no account row is `visitor`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
@@ -35,11 +29,9 @@ const userRow = (tier: StoredTier): UserRow => ({
 	tier,
 });
 
-/** Stub the karma surface (`lookupProfileById`) for the `karmaOf` reads. */
 const kunyeOverProfile = (row: ProfileRow | null): Layer.Layer<Kunye> =>
 	KunyeLive.pipe(Layer.provide(makePasaportStub({lookupProfileById: () => Effect.succeed(row)})));
 
-/** Stub the stored-tier surface (`getUserById`) for the `tierOf` reads. */
 const kunyeOverUser = (row: UserRow | null): Layer.Layer<Kunye> =>
 	KunyeLive.pipe(Layer.provide(makePasaportStub({getUserById: () => Effect.succeed(row)})));
 

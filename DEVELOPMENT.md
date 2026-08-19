@@ -111,12 +111,12 @@ Data tasks (seeding, backfills) are one-off direct-D1 scripts against the bound 
 
 ## CI guards
 
-CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the integration suite, the deploy-preview e2e) **plus** a set of narrow, fail-closed guards under [.github/workflows/](./.github/workflows/). Each guard answers "which rule did my PR break?" *before* you trip it on a red run. Most are one `pipeline-cli <name> check` invocation and **fail closed on zero scope** (a missing file / empty match reds the build, not passes it — ADR [0092](./.decisions/0092-gates-fail-closed-on-zero-scope.md)); the scan logic lives once in the tool, never re-grepped in the workflow.
+CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the integration suite, the deploy-preview e2e) **plus** a set of narrow, fail-closed guards under [.github/workflows/](./.github/workflows/). Each guard answers "which rule did my PR break?" *before* you trip it on a red run. Most are one `fabrika guard <name> check` invocation and **fail closed on zero scope** (a missing file / empty match reds the build, not passes it — ADR [0092](./.decisions/0092-gates-fail-closed-on-zero-scope.md)); the scan logic lives once in the tool, never re-grepped in the workflow.
 
 | Guard | What it checks | What trips it |
 |---|---|---|
 | [`ci`](./.github/workflows/ci.yml) | The base build: Biome lint + format, `pnpm typecheck` (Effect-patched `tsc`), the integration suite, the deploy-preview e2e. | A lint/format violation, a type error, a failing test, or a red preview e2e. |
-| [`leak-guard`](./.github/workflows/leak-guard.yml) | Changed doc **and shell** surfaces (markdown, `.decisions/`/`.patterns/`, and `.sh`) carry no machine-local/home path or operator PII (the no-local-paths rule). | A `~/`, `/Users/…`, vault, or sibling-repo path — or an operator email — in a changed doc or script. |
+| [`leak-guard`](./.github/workflows/leak-guard.yml) | Changed doc **and shell** surfaces (markdown, `.decisions/`/`.patterns/`, and `.sh`) carry no machine-local/home path or operator PII (the no-local-paths rule). | A `~/`, an absolute home path, a vault, or a sibling-repo path — or an operator email — in a changed doc or script. |
 | [`gitleaks`](./.github/workflows/gitleaks.yml) | The PR's new commits for committed secrets (API keys, tokens, private keys). | A credential committed anywhere in the diff. |
 | [`fanout-guard`](./.github/workflows/fanout-guard.yml) | Every `Fate.mutation` is classified fanned/not, and each fanned mutation's feature publishes the `/fate/live` invalidation (ADR 0155). | An unclassified mutation, or a fanned mutation whose feature omits the `WorkerLivePublisher` publish. |
 | [`readme-guard`](./.github/workflows/readme-guard.yml) | Every `packages/*` workspace member (a dir with `package.json`) carries a `README.md`. | Adding a package without a README. |
@@ -126,25 +126,29 @@ CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the in
 | [`doc-links`](./.github/workflows/doc-links.yml) | Every git-tracked `.md`'s relative/internal links resolve on disk, repo-wide (via lychee). | A dead internal link — including one orphaned by a rename outside your own diff. |
 | [`pointer-guard`](./.github/workflows/pointer-guard.yml) | Backticked repo-path pointers in `**/CLAUDE.md` resolve on disk. | A moved/renamed file behind a backticked path pointer in a CLAUDE.md. |
 | [`codeowners-cp`](./.github/workflows/codeowners-cp.yml) | Every §CP control-plane path (from the canonical regex) has a covering `.github/CODEOWNERS` row. | Adding a §CP path to the regex without a CODEOWNERS entry. |
-| [`path-filter-guard`](./.github/workflows/path-filter-guard.yml) | `deploy.yml`'s `changes.deploy` and `ci.yml`'s `changes.e2e` paths-filter lists are the same set of globs. | Editing one paths-filter list without the other. |
+| [`path-filter-guard`](./.github/workflows/path-filter-guard.yml) | `deploy.yml`'s `changes.deploy` and `ci.yml`'s `changes.e2e` paths-filter lists are the same set of globs, read against the same `(token, base)` diff basis. | Editing one paths-filter list without the other, or giving the two steps different dorny inputs. |
+| [`change-detect-guard`](./.github/workflows/change-detect-guard.yml) | `ci.yml`'s `changes` job detects changed files with a pure `git diff` — its paths-filter step pins `token: ''`. | Setting or dropping the `token:` on that step, which selects the flaky GitHub-API read. |
 | [`settings-env-guard`](./.github/workflows/settings-env-guard.yml) | No `.claude/settings.json` `env` value carries an unexpanded `${…}` token (applied verbatim, so it never resolves). | A `${VAR}` left literal in a settings env value. |
-| [`skill-gh-lint`](./.github/workflows/skill-gh-lint.yml) | The skill + agent corpus: REST-only `gh` (no GraphQL paths) and valid frontmatter YAML. | A `gh project` / GraphQL call, or malformed `---` frontmatter, in a SKILL.md / agents/*.md. |
-| [`workflow-contract`](./.github/workflows/workflow-contract.yml) | Every `.claude/workflows/*.js` conforms to the runtime load shape (`export const meta = {…}`, no `export default`). | A workflow script with a default export or a missing `meta`. |
-| [`decisions-index`](./.github/workflows/decisions-index.yml) | The `.decisions/*` ADR files carry no duplicate `id` and no filename ↔ front-matter number mismatch. | A new ADR that collides on number or mismatches its filename. |
+| [`skill-gh-lint`](./.github/workflows/skill-gh-lint.yml) | The skill + agent corpus: REST-only `gh` (no GraphQL paths), valid frontmatter YAML, no bare `git push` in a runnable block, and no `./claude-plugins/…` literal in a fence. | A `gh project` / GraphQL call, malformed `---` frontmatter, a bare push, or a repo-only path literal in a SKILL.md / agents/*.md. |
+| [`decisions-index`](./.github/workflows/decisions-index.yml) | The `.decisions/*` ADR files carry the four index fields, no duplicate `id`, and no filename ↔ front-matter number mismatch. | A new ADR that collides on number, mismatches its filename, or drops an index field. |
+| [`design-inventory-guard`](./.github/workflows/design-inventory-guard.yml) | `design-system-inventory.md` is a fresh extraction of the `components/ui` JSDoc, and the extraction path never touches the founder-authored `design-system-manifest.md` (ADR 0194). | Changing a primitive's `@component` JSDoc without regenerating the inventory. |
 
-Not every workflow is a PR gate. [`run-evidence`](./.github/workflows/run-evidence.yml) *produces* the SHA-bound run-evidence artifact the `ship` gate consumes (ADR [0054](./.decisions/0054-run-evidence-bundle.md)); [`deploy`](./.github/workflows/deploy.yml) / [`pr-cleanup`](./.github/workflows/pr-cleanup.yml) stand up and tear down per-PR preview stacks; [`changelog`](./.github/workflows/changelog.yml) / [`publish`](./.github/workflows/publish.yml) fire on a release tag; and [`epic-autoclose`](./.github/workflows/epic-autoclose.yml), [`glossary-drift`](./.github/workflows/glossary-drift.yml), and [`orphan-sweep`](./.github/workflows/orphan-sweep.yml) run on issue-close or a schedule rather than on your PR. Ground truth for the full set is `ls .github/workflows/`.
+Not every workflow is a PR gate. [`run-evidence`](./.github/workflows/run-evidence.yml) *produces* the SHA-bound run-evidence artifact the `ship` gate consumes (ADR [0054](./.decisions/0054-run-evidence-bundle.md)); [`deploy`](./.github/workflows/deploy.yml) / [`pr-cleanup`](./.github/workflows/pr-cleanup.yml) stand up and tear down per-PR preview stacks; [`changelog`](./.github/workflows/changelog.yml) / [`publish`](./.github/workflows/publish.yml) fire on a release tag; and [`epic-autoclose`](./.github/workflows/epic-autoclose.yml), [`orphan-sweep`](./.github/workflows/orphan-sweep.yml), [`glossary-drift`](./.github/workflows/glossary-drift.yml) and [`pitch-guard`](./.github/workflows/pitch-guard.yml) run on an issue event or a schedule rather than on your PR. Ground truth for the full set is `ls .github/workflows/`.
 
 ## The pipeline
 
 phoenix extends itself through an agent-operable issue-intake pipeline: an agent files what it notices, triage makes it actionable, then the work is planned, executed, reviewed, and shipped. Each stage consumes the previous stage's output and produces a signal the next stage trusts — a verification gate sits at every stage.
 
-**That pipeline is fabrika, and it is the only one phoenix runs.** fabrika ships as its own plugin, external consumers install it from the `kampus` marketplace on GitHub, and you reach a skill by its namespaced name — `fabrika:build` — never by a path into the repo (ADR [0273](./.decisions/0273-fabrika-ships-as-an-installed-plugin.md)). Working in this repo, register the checkout itself as the marketplace source instead — once per machine, from the repo root:
+**That pipeline is fabrika, and it is the only one phoenix runs.** fabrika ships as its own plugin, external consumers install it from the `kampus` marketplace on GitHub, and you reach a skill by its namespaced name — `fabrika:build` — never by a path into the repo (ADR [0273](./.decisions/0273-fabrika-ships-as-an-installed-plugin.md)). Working in this repo, register the checkout itself as the marketplace source and install from it — once per machine, from the repo root:
 
 ```bash
 claude plugin marketplace add ./
+claude plugin install fabrika@kampus
 ```
 
-Skills and agents then load straight from `claude-plugins/fabrika/` in your working tree — a merged (or even local) plugin change is live on the next `/reload-plugins`, with no `/plugin` update step (ADR 0273's 2026-08-16 amendment; the history is on [#5705](https://github.com/kamp-us/phoenix/issues/5705)). A settings-based auto-registration for fresh clones is blocked on Claude Code honoring project-scope `extraKnownMarketplaces`; until then the one-liner is the bootstrap. The table below links each skill's `SKILL.md` so you can read the source; those links are for reading, not for invoking. The roster it replaced is retired: fabrika re-implements v1's work instead of calling into it (ADR [0238](./.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)), and the two `.claude` symlinks that made v1's skills discoverable in-repo are deleted (ADR [0277](./.decisions/0277-v1-retirement-keeps-the-plugin-suppression.md)). [`claude-plugins/kampus-pipeline/`](./claude-plugins/kampus-pipeline/) still exists. Its v1 skill roster is retired and nothing loads it, but the directory is live: `.claude/settings.json` runs ten hook commands out of its `hooks/`, and `.claude/workflows/drive-issue.js` reads a file from its `skills/` — so do not delete or move it. A repo outside phoenix also installs the suite from it (ADR [0279](./.decisions/0279-v1-crew-retired-in-full.md)). Retiring those hook entries is tracked in [#5540](https://github.com/kamp-us/phoenix/issues/5540).
+Both lines are needed on a fresh clone: the `add` registers the marketplace and installs nothing, so skipping the `install` leaves `/reload-plugins` with zero fabrika skills and no error naming the cause (verified on Claude Code 2.1.234). If your machine is already on the GitHub `kampus` marketplace, run the same `marketplace add ./` — on 2.1.234 it overwrites that entry's source in place and the installed plugin survives. Do not run `claude plugin marketplace remove kampus` first: removing a marketplace also uninstalls its plugins, so you would then have to reinstall.
+
+Skills and agents then load straight from `claude-plugins/fabrika/` in your working tree — a merged (or even local) plugin change is live on the next `/reload-plugins`, with no `/plugin` update step (ADR 0273's 2026-08-16 amendment; the history is on [#5705](https://github.com/kamp-us/phoenix/issues/5705)). Nothing in `.claude/settings.json` registers the marketplace for you; every collaborator runs the two lines above on their own machine. The table below links each skill's `SKILL.md` so you can read the source; those links are for reading, not for invoking. The roster it replaced is retired: fabrika re-implements v1's work instead of calling into it (ADR [0238](./.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)), and the v1 `kampus-pipeline` plugin is deleted outright — its tree, hooks and agents, plus the `.claude` symlinks, the settings hook entries and the `drive-issue.js` workflow that read them ([#5937](https://github.com/kamp-us/phoenix/issues/5937); the retirement history is ADRs [0277](./.decisions/0277-v1-retirement-keeps-the-plugin-suppression.md)/[0279](./.decisions/0279-v1-crew-retired-in-full.md)). One trace stays on purpose: the `kampus-pipeline` entry in [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json), whose `git-subdir` source is pinned to a sha, so a repo outside phoenix that already installed the suite keeps resolving it from history rather than from this tree. fabrika is the one pipeline.
 
 Only `ship` merges, and it enqueues for the merge queue rather than merging by hand. On a control-plane PR (`.claude`/`.github`) it holds until a control-plane owner has approved the current head — ADR [0135](./.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md), which amends ADR [0053](./.decisions/0053-control-plane-boundary.md)'s hand-merge model to approve-then-enqueue.
 
@@ -170,11 +174,13 @@ flowchart LR
 
 One trap when you map an old name onto a fabrika one: the nouns moved. `build` is the text-construction skill and `review` is a single skill, not v1's `review-*` family (ADR [0242](./.decisions/0242-fabrika-skill-nouns-redefine-build-and-review.md)). The conventions every fabrika skill is held to live in [`claude-plugins/fabrika/docs/`](./claude-plugins/fabrika/docs/README.md).
 
+Those two surfaces are written for agents. The pages written for a person — how to adopt fabrika, how it decides things, why it is shaped this way — are in [`claude-plugins/fabrika/guide/`](./claude-plugins/fabrika/guide/README.md).
+
 ## Releasing
 
-The pipeline above lands PRs on `main`. This section is what takes `main` to npm. Two
-`@kampus/*` packages publish today — [`pipeline-cli`](./packages/pipeline-cli) and
-[`fabrika-cli`](./packages/fabrika-cli) — and the authoritative list is the tag-match arms in
+The pipeline above lands PRs on `main`. This section is what takes `main` to npm.
+One `@kampus/*` package publishes today — [`fabrika-cli`](./packages/fabrika-cli) — and the
+authoritative list is the tag-match arms in
 [`.github/workflows/publish.yml`](./.github/workflows/publish.yml), not this paragraph.
 
 The *why* is ADR [0239](./.decisions/0239-release-please-manifest-mode-version-derivation.md);
@@ -188,7 +194,7 @@ Nobody types a version number. Every push to `main` runs
 commits since the last release and works out each package's next version.
 
 **Routing is by changed file path, not by commit scope.** A commit is assigned to a package by
-the files it touched, so a commit written `fix(pipeline-cli): …` whose diff only touches
+the files it touched, so a commit written `fix(guards): …` whose diff only touches
 `packages/fabrika-cli/` bumps **fabrika-cli**. Your scope string is changelog prose; your diff
 is what decides. A commit touching no package root bumps nothing.
 
@@ -200,9 +206,8 @@ on every push to `main` and sits there until a human merges it. Merging it *is* 
 act; ADR [0083](./.decisions/0083-agents-deploy-humans-release.md) survives by construction,
 since only the number is automated.
 
-It covers **all** packages at once (`separate-pull-requests: false`), so one merge can cut
-several releases. [PR #4833](https://github.com/kamp-us/phoenix/pull/4833), the first real one,
-proposes `pipeline-cli 0.3.0` and `fabrika-cli 0.1.1` together.
+It covers **all** configured package roots at once (`separate-pull-requests: false`), so one
+merge can cut several releases the day a second root is configured again.
 
 **Before you merge one, check:**
 
@@ -220,7 +225,7 @@ proposes `pipeline-cli 0.3.0` and `fabrika-cli 0.1.1` together.
 ### What merging it does
 
 1. Version bumps and per-package `CHANGELOG.md` updates land on `main`.
-2. A tag `<unscoped-name>-v<version>` (e.g. `pipeline-cli-v0.3.0`) is created **per released
+2. A tag `<unscoped-name>-v<version>` (e.g. `fabrika-cli-v0.3.0`) is created **per released
    package**, each with a GitHub Release.
 3. Each `release: published` event fires [`publish.yml`](./.github/workflows/publish.yml) —
    once per tag, resolving that tag's prefix to one workspace member. It checks out the tagged
@@ -249,13 +254,11 @@ package's registration is a one-time human step on npmjs.com. A 403 means that r
 **does not match** this workflow — and it has two branches, so read which one you are in before
 hunting a regression:
 
-- **It never matched** — this is the registration's *first* use. `pipeline-cli` is past that
-  point: two green publish runs, and its published artifact carries the attestations only an
-  OIDC publish stamps. `fabrika-cli` is not. Its registration is recorded on
+- **It never matched** — this is the registration's *first* use. A package is past that point
+  once it has a green publish run and a published artifact carrying the attestations only an
+  OIDC publish stamps. `fabrika-cli`'s registration is recorded on
   [#4800](https://github.com/kamp-us/phoenix/issues/4800), which pastes npm's own confirmation
-  (this repo, workflow file `publish.yml`), but no publish run has ever fired for the package —
-  so its first release is the first exercise of that registration, and that run is the proof.
-  Expect nothing either way for it.
+  (this repo, workflow file `publish.yml`).
 - **It stopped matching** — a registration that had been working no longer does, and one of the
   two hazards below is the usual cause.
 

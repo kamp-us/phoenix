@@ -8,11 +8,13 @@
  *
  * `no-runs` is a **positively evidenced** state, not an empty read: workflows ≥ 1 and zero runs at
  * this head means Actions exist and none fired, which is the dropped-trigger state `ship nudge`
- * re-derives for itself. Zero workflows *and* zero runs is the foreign-repo case and reads
- * `pending`, never green.
+ * re-derives for itself. Zero workflows is `no-producer` — a different fact from `pending`, and no
+ * longer collapsed into it (#6298): a repo with no CI is not a repo whose CI is still running, and
+ * printing the second over the first tells an operator to wait for a run nothing will ever start.
  */
-import {Clock, Effect} from "effect";
+import {Clock, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {producerFor, resolveCi} from "../config/ci-producer.ts";
 import {commitExists} from "../io/pulls.ts";
 import {isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -35,7 +37,7 @@ import {
 
 const VERB = "ship checks";
 
-export type ChecksRollup = "green" | "red" | "pending" | "wedged" | "no-runs";
+export type ChecksRollup = "green" | "red" | "pending" | "wedged" | "no-runs" | "no-producer";
 export type Settle = "settled" | "budget-exhausted" | "head-moved";
 
 export interface ChecksOptions {
@@ -48,6 +50,8 @@ export interface ChecksOptions {
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** Where `.fabrika.jsonc` is looked for — the repo root above it, per `config/working-root.ts`. */
+	readonly cwd: string;
 }
 
 export interface Sample {
@@ -66,14 +70,19 @@ export interface Sample {
 export const rollupFor = (sample: Sample, wedged: ReadonlyArray<string>): ChecksRollup => {
 	if (wedged.length > 0) return "wedged";
 	if (sample.runs.length === 0) {
-		return sample.workflows >= 1 && sample.runCount === 0 ? "no-runs" : "pending";
+		if (sample.workflows === 0) return "no-producer";
+		return sample.runCount === 0 ? "no-runs" : "pending";
 	}
 	return rollupOf(sample.runs.filter((run) => !isInformational(run.name)));
 };
 
 export const runChecks = (
 	options: ChecksOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const {pr, json} = options;
 		const bad = badNumber(VERB, "a pull-request number", pr);
@@ -202,9 +211,34 @@ export const runChecks = (
 			);
 		};
 
+		const ci = yield* resolveCi(options.cwd);
+
+		/**
+		 * `render`, with the no-producer case routed through the repo's own declaration first.
+		 *
+		 * The rollup already knows a repo has no workflows; what a *caller* gets for that is the
+		 * repo's call, and only here is it read — so every exit of this verb, waiting or not, passes
+		 * the same door.
+		 */
+		const settled = (
+			read: Sample,
+			rollup: ChecksRollup,
+			wedged: ReadonlyArray<string>,
+			settle: Settle | null,
+		): VerbOutcome => {
+			if (rollup !== "no-producer") return render(read, rollup, wedged, settle);
+			const producer = producerFor(VERB, repo, read.workflows, ci);
+			if (producer._tag === "Unknown") return refuse(PRECONDITION_UNKNOWN, producer.reason);
+			if (producer._tag === "Refused") return refuse(ZERO_SCOPE, producer.reason, diagnostics);
+			const rendered = render(read, rollup, wedged, settle);
+			return producer._tag === "OptedOut"
+				? {...rendered, stderr: [...rendered.stderr, producer.note]}
+				: rendered;
+		};
+
 		const first = yield* sample;
 		if ("code" in first) return first;
-		if (!options.wait) return render(first, rollupFor(first, []), [], null);
+		if (!options.wait) return settled(first, rollupFor(first, []), [], null);
 
 		// The budget is WALL CLOCK, call latency included — v1 counted only its sleeps and silently
 		// overran the budget it claimed to hold.
@@ -222,9 +256,9 @@ export const runChecks = (
 				.filter(([, since]) => now - since >= options.wedgeDwellSeconds * 1000)
 				.map(([name]) => name);
 			const rollup = rollupFor(read, wedged);
-			if (rollup !== "pending") return render(read, rollup, wedged, "settled");
+			if (rollup !== "pending") return settled(read, rollup, wedged, "settled");
 			if (now - startedAt >= options.budgetSeconds * 1000) {
-				return render(read, rollup, wedged, "budget-exhausted");
+				return settled(read, rollup, wedged, "budget-exhausted");
 			}
 			yield* Effect.sleep(`${options.cadenceSeconds} seconds`);
 
@@ -234,7 +268,7 @@ export const runChecks = (
 			if (moved._tag === "Refused") return moved.outcome;
 			if (!prefixMatch(moved.pull.headSha, bound)) {
 				// The answer is about a tree the PR no longer is (#1928's secondary).
-				return render(read, rollupFor(read, wedged), wedged, "head-moved");
+				return settled(read, rollupFor(read, wedged), wedged, "head-moved");
 			}
 			const next = yield* sample;
 			if ("code" in next) return next;

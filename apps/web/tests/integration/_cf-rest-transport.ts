@@ -50,7 +50,6 @@ export const cfRestSend = (
 ): Promise<Response> =>
 	cfFetchWithRateLimitRetry((queued) => cfApiThrottle.run(send, queued), options);
 
-/** The throttled + 429-retrying `fetch` the REST transport is built on. */
 export const cfRestFetch: typeof globalThis.fetch = rateLimitRetryingFetch((input, init, queued) =>
 	cfApiThrottle.run(() => fetch(input, init), queued),
 );
@@ -65,6 +64,5 @@ export const integrationRestLayer = Layer.merge(
 	FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, cfRestFetch))),
 );
 
-/** `makeD1Rest` over {@link integrationRestLayer} — the integration analogue of `makeD1RestFromEnv`. */
 export const makeIntegrationD1Rest = (target: {accountId: string; databaseId: string}) =>
 	makeD1Rest({...target, layer: integrationRestLayer});

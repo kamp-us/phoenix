@@ -1,6 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {GIT_DIRS} from "../build/fixtures.test-support.ts";
+import {CONFIG_PATH} from "../config/document.ts";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
@@ -27,6 +28,7 @@ import {
 	epic,
 	labelSet,
 	milestones,
+	TOKEN,
 } from "./fixtures.test-support.ts";
 import {manifestPath, parseManifest, renderRunRecord, runJsonPath} from "./run.ts";
 
@@ -38,6 +40,10 @@ const LABELS = /^gh api --paginate repos\/o\/r\/labels/;
 const MILESTONES = /^gh api --paginate repos\/o\/r\/milestones/;
 
 const MINTED_LABELS = ["type:feature", "p1", "status:planned", "ready-for:agent"];
+
+/** Every child is born homed (#5969), so the shared options carry a milestone the fixture knows. */
+const HOME = "fabrika campaign";
+const LANE = "axis:pipeline-hardening";
 
 const RUN_JSON = (cycleDoc: "present" | "absent" | "unknown" = "present") =>
 	renderRunRecord({
@@ -58,7 +64,7 @@ const HAPPY: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[MILESTONES, milestones([44, "fabrika campaign"])],
 	[CREATE, CREATED],
 	[LINK, okOut("{}")],
-	[READBACK, childIssue({number: 4301, labels: MINTED_LABELS})],
+	[READBACK, childIssue({number: 4301, labels: MINTED_LABELS, milestone: HOME})],
 	[SUBS, okOut(JSON.stringify([{number: 4301, id: 90210, state: "open", state_reason: null}]))],
 ];
 
@@ -69,10 +75,12 @@ const options = {
 	priority: "p1",
 	readyFor: "agent" as string | null,
 	assignee: null as string | null,
-	milestone: null as string | null,
+	milestone: HOME as string | null,
 	labels: [] as ReadonlyArray<string>,
+	token: TOKEN,
 	repo: null,
 	env,
+	cwd: DIR,
 };
 
 const run = (
@@ -101,7 +109,7 @@ describe("runChild", () => {
 			epic: 4300,
 			child: 4301,
 			linked: true,
-			observed: {labels: [...MINTED_LABELS].sort(), assignees: [], milestone: null},
+			observed: {labels: [...MINTED_LABELS].sort(), assignees: [], milestone: HOME},
 			stories: [1, 2],
 			containment: "flag",
 		});
@@ -171,6 +179,40 @@ describe("runChild", () => {
 		);
 	});
 
+	/**
+	 * #5969: a child with neither an open milestone nor a standing lane is refused by the claim fence
+	 * at exit 20, so it can never be built. The three cases are the whole homing axis.
+	 */
+	it("refuses a homeless child before it reads anything, naming both remedies", async () => {
+		const {outcome, calls} = await run({milestone: null});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toBe(
+			"ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built (#5969).",
+		);
+		expect(calls).toEqual([]);
+	});
+
+	it("mints a milestone-homed child", async () => {
+		const {outcome, calls} = await run({milestone: HOME});
+		expect(outcome.code).toBe(0);
+		expect(calls.find((line) => CREATE.test(line)) ?? "").toContain("milestone=44");
+	});
+
+	/** ADR 0208's lane exemption holds here too — homing is never collapsed into "milestone required". */
+	it("mints a lane-homed child carrying no milestone", async () => {
+		const {outcome, calls} = await run({milestone: null, labels: [LANE]}, [
+			...HAPPY.filter(([pattern]) => pattern !== LABELS && pattern !== READBACK),
+			[LABELS, labelSet(...DEFAULT_LABELS, LANE)],
+			[READBACK, childIssue({number: 4301, labels: [...MINTED_LABELS, LANE]})],
+		]);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout).observed.milestone).toBe(null);
+		const create = calls.find((line) => CREATE.test(line)) ?? "";
+		expect(create).toContain(`labels[]=${LANE}`);
+		expect(create).not.toContain("milestone=");
+		expect(calls.some((line) => MILESTONES.test(line))).toBe(false);
+	});
+
 	it("refuses a retired priority", async () => {
 		const {outcome} = await run({priority: "p3"});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
@@ -209,6 +251,59 @@ describe("runChild", () => {
 		);
 		expect(outcome.code).toBe(BAD_SECTIONS);
 		expect(outcome.stderr.at(-1)).toContain("needs **Containment:** flag or exempt");
+	});
+
+	/**
+	 * Story 5 of #5631: phoenix's pair is the shipped default, and a repo that declares another gets
+	 * that one. The arm above is the bare-repo half — it writes no config at all.
+	 */
+	it("names the repo's own values in the refusal, off the resolved vocabulary", async () => {
+		const {outcome} = await run(
+			{},
+			HAPPY,
+			{
+				[runJsonPath(DIR)]: RUN_JSON(),
+				[`${DIR}/${CONFIG_PATH}`]:
+					'{"containmentVocabulary": {"values": ["unpublished", "exempt"]}}',
+			},
+			childBody({containment: null}),
+		);
+		expect(outcome.code).toBe(BAD_SECTIONS);
+		expect(outcome.stderr.at(-1)).toContain("needs **Containment:** unpublished or exempt");
+	});
+
+	it("admits a marker the repo's vocabulary carries and phoenix's does not", async () => {
+		const {outcome} = await run(
+			{},
+			HAPPY,
+			{
+				[runJsonPath(DIR)]: RUN_JSON(),
+				[`${DIR}/${CONFIG_PATH}`]: '{"containmentVocabulary": {"values": ["unpublished"]}}',
+			},
+			childBody({containment: "unpublished"}),
+		);
+		expect(outcome.code).toBe(0);
+	});
+
+	it("asks nothing of any child on an empty vocabulary", async () => {
+		const {outcome} = await run(
+			{},
+			HAPPY,
+			{
+				[runJsonPath(DIR)]: RUN_JSON(),
+				[`${DIR}/${CONFIG_PATH}`]: '{"containmentVocabulary": {"types": []}}',
+			},
+			childBody({containment: null}),
+		);
+		expect(outcome.code).toBe(0);
+	});
+
+	it("refuses on 11 when the config exists and its vocabulary does not decode", async () => {
+		const {outcome} = await run({}, HAPPY, {
+			[runJsonPath(DIR)]: RUN_JSON(),
+			[`${DIR}/${CONFIG_PATH}`]: '{"containmentVocabulary": {"values": ["none"]}}',
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
 	it("drops the containment line when the run's cycle-doc read is absent", async () => {

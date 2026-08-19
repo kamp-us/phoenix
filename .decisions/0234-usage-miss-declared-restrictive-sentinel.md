@@ -20,12 +20,12 @@ Two documented, deliberately fail-closed conventions pointed opposite ways on th
 and a verifier enforced one of them against scripts built to the other (#4584):
 
 - **`verify-extraction.sh` check 9**
-  ([`claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-extraction.sh`](../claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-extraction.sh),
+  (`claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-extraction.sh`,
   the block under `# 9. a usage miss is non-zero with EMPTY stdout`): a script run with no
   arguments must exit non-zero with **zero bytes on stdout**, so a could-not-run can never pose as
   an answer.
 - **`review-code`'s error-channel rule**
-  ([`claude-plugins/kampus-pipeline/skills/review-code/SKILL.md`](../claude-plugins/kampus-pipeline/skills/review-code/SKILL.md),
+  (`claude-plugins/kampus-pipeline/skills/review-code/SKILL.md`,
   the error-channel bullet): a script whose **stdout answers a safety question** prints its own
   fail-closed sentinel on stdout before every early exit, because where a caller reads absence as a
   positive answer, a silent guard exit is indistinguishable from "proven safe" (the fail-closed

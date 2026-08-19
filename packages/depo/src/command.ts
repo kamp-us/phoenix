@@ -1,13 +1,7 @@
 /**
- * The `depo put <file>` subcommand (ADR 0144 decision 5). It resolves the apiKey,
- * uploads the file via the client lib (`put`), and prints exactly the public URL
- * to stdout — so a caller can capture `$(depo put shot.png)` and embed it. Every
- * typed failure is turned into a legible stderr line + a non-zero exit; nothing
- * but the URL ever reaches stdout on success.
- *
- * The command self-contains its services (`Command.provide`) so the bin's run
- * boundary stays thin: it bakes in `DoormanClientLive` over `FetchHttpClient.layer`,
- * leaving the registered command's residual requirement at the Node platform union.
+ * The `depo put <file>` subcommand (ADR 0144 decision 5). Nothing but the public URL
+ * ever reaches stdout on success, so a caller can capture `$(depo put shot.png)` and
+ * embed it; every typed failure goes to stderr with a non-zero exit.
  */
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
@@ -26,7 +20,6 @@ import type {
 } from "./errors.ts";
 import {resolveApiKey} from "./live.ts";
 
-/** The full typed-failure union `put` (+ credential resolution) can raise. */
 type PutFailure =
 	| MissingCredential
 	| UnsupportedFile
@@ -49,18 +42,12 @@ const tokenFlag = Flag.string("token").pipe(
 	),
 );
 
-/**
- * Each typed failure → a one-line stderr message + a non-zero exit. The failure is
- * mapped here (not left to `NodeRuntime`'s stack dump) so an operator or a calling
- * skill gets a legible reason, and stdout stays clean for the URL alone.
- */
 const reportAndExit = (message: string) =>
 	Effect.gen(function* () {
 		yield* Console.error(`depo: ${message}`);
 		return yield* Effect.sync(() => process.exit(1));
 	});
 
-/** Map a typed put failure to its operator-legible one-line reason. */
 const reasonOf = (error: PutFailure): string => {
 	switch (error._tag) {
 		case "depo/MissingCredential":

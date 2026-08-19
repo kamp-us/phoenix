@@ -1,18 +1,10 @@
 /**
  * `TriageLoop` — the moderation triage-loop hero (#1703, ADR 0138): a single-item,
- * keyboard-driven review over the SAME `Moderate`-gated `report.listOpen` read the
- * grid (`Raporlar`, #1701) consumes — a MODE, not a re-fetch. One reported target is
- * central at a time; the moderator's hands stay on the keyboard (`j/k` gez, `Y`
- * yoksay, `R` kaldır + confirm, `U` geri al, `O` göster, `Tab` oda, `Esc` çık). Each
- * target carries its reputation-in-row (author standing + the pile-on's reporter
- * diversity), the #1852 actor-drawer seam threaded now.
- *
- * Verdicts wire to the existing `report.resolve` mutation (plain round-trip, no
- * optimistic UI): `Y` dismisses in one keystroke; `R` opens a confirm because remove
- * hides content. A failed resolve surfaces an error and leaves the row actionable —
- * never a silent drop. The pure focus / verdict-key / confirm / Esc-ladder / copy
- * decisions live DOM-free in `triageLoop.ts` (unit-tested); this component is the thin
- * React shell over them.
+ * keyboard-driven review over the SAME `Moderate`-gated `report.listOpen` read the grid
+ * (`Raporlar`, #1701) consumes — a MODE, not a re-fetch. Verdicts wire to the existing
+ * `report.resolve` (plain round-trip, no optimistic UI); a failed resolve leaves the row
+ * actionable rather than dropping it. The pure decisions live DOM-free in `triage-loop.ts`;
+ * this component is the thin React shell over them.
  */
 import {useCallback, useEffect, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -87,9 +79,8 @@ const OpenReportLoopView = view<OpenReport>()({
 
 const OpenReportConnectionView = {items: {node: OpenReportLoopView}} as const;
 
-// The `report.resolve` / `report.restore` acks (ADR 0098) — a client-side selection
-// over the result-only `ResolveReceipt`. The loop doesn't render the ack (plain
-// round-trip, no optimistic UI); it's requested to satisfy the mutation's view param.
+// The ack is requested only to satisfy the mutation's view param; the loop renders nothing
+// from it (plain round-trip, no optimistic UI).
 const ResolveReceiptView = view<ResolveReceipt>()({
 	id: true,
 	targetKind: true,
@@ -99,11 +90,6 @@ const ResolveReceiptView = view<ResolveReceipt>()({
 	collapsed: true,
 });
 
-/**
- * The last decision the loop can undo (`U`): a single-target verdict, or a wave-removal
- * batch (#1855). `U` restores the batch as a unit (`report.restoreWave`) when the last
- * decision was a wave, mirroring the decision feed's wave-restore.
- */
 type LastVerdict =
 	| {
 			readonly kind: "single";
@@ -128,34 +114,23 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 	const [decisionsToday, setDecisionsToday] = useState(0);
 	const [lastVerdict, setLastVerdict] = useState<LastVerdict | null>(null);
 
-	// The actor-drawer (#1852, ADR 0138): the focused item's actor, docked open by
-	// default on desktop (founder call). `chamber` is which mode it was entered from —
-	// `raporlar` here, `kefil` after a `V` hop; the hop only re-lenses the SAME actor,
-	// it never re-fetches. Desktop is a coarse pointer + wide viewport (no docked panel
-	// on a phone-sized surface).
+	// `chamber` is which mode the drawer was entered from; a hop only re-lenses the SAME actor,
+	// it never re-fetches. Desktop is a coarse pointer + wide viewport.
 	const isDesktop =
 		typeof window !== "undefined" && window.matchMedia?.("(min-width: 900px)").matches === true;
 	const [drawerOpen, setDrawerOpen] = useState(() => drawerDefaultOpen(isDesktop));
 	const [chamber, setChamber] = useState<Chamber>("raporlar");
 
-	// The resolved-target ids the loop has already acted on this session — used to
-	// present the post-collapse queue without a re-fetch (a MODE over the same read).
+	// The ids resolved this session present the post-collapse queue without a re-fetch.
 	const [resolvedIds, setResolvedIds] = useState<ReadonlyArray<string>>([]);
 	const live = items.filter(({node}) => !resolvedIds.includes(String(node.id)));
 
 	const focused = live[Math.min(index, Math.max(0, live.length - 1))] ?? null;
-	// The row's identity is its `<kind>:<id>` view id (the same key `report.resolve`
-	// takes), parsed off the ref without resolving the whole entity — the loop acts on
-	// the focused target's identity, not its rendered fields.
 	const focusedTarget = focused ? parseBacklogItemId(String(focused.node.id)) : null;
 
-	// The focused row's actor id — the join key `Shift-X` grabs a wave for (#1855). The
-	// null-tolerant `useView` subscribes to the focused ref only (the manifest's other
-	// rows load lazily behind the flag, inside `WaveManifest` when it opens).
+	// The null-tolerant `useView` subscribes to the focused ref only; the manifest's other rows
+	// load lazily inside `WaveManifest`.
 	const focusedData = useView(OpenReportLoopView, focused?.node ?? null);
-	// remove-the-wave (#1855): `Shift-X` opens the same-author batch manifest over the
-	// SAME queue read; the manifest owns the keyboard while open (the loop's own handler
-	// yields to it).
 	const [waveOpen, setWaveOpen] = useState(false);
 
 	const resolve = useCallback(
@@ -197,11 +172,8 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 		setBusy(true);
 		setError(null);
 		try {
-			// Undo is the existing restore/reopen edge (ADR 0098 §3): a removed target comes
-			// back live and its reports reopen; a dismissed group reopens the same way. A
-			// wave-removal (#1855) undoes as a UNIT — `report.restoreWave` reopens the whole
-			// batch — so `U` mirrors the decision feed's wave-restore; a lone verdict is the
-			// single-target restore. Either path rehydrates the affected rows into the queue.
+			// A wave-removal (#1855) undoes as a UNIT via `report.restoreWave`; a lone verdict is the
+			// single-target restore (ADR 0098 §3).
 			if (last.kind === "wave") {
 				const {error: callError} = await fate.mutations.report.restoreWave({
 					input: {waveId: last.waveId},
@@ -234,10 +206,8 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 		}
 	}, [fate, lastVerdict]);
 
-	// One target's batch resolve (#1855): the SAME single-target `report.resolve` the
-	// loop uses, fanned over the wave selection with the gesture's shared `waveId` so the
-	// batch reopens as a unit. Returns whether it landed so the batch can partition
-	// resolved from failed (no silent partial drop).
+	// Returns whether it landed, so the batch can partition resolved from failed — no silent
+	// partial drop.
 	const resolveTarget = useCallback(
 		async (input: WaveResolveInput, verdict: Verdict): Promise<boolean> => {
 			try {
@@ -258,9 +228,8 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 		[fate],
 	);
 
-	// A batch collapsed these keys off the queue — mirror the single-verdict bookkeeping
-	// (drop them from the live queue, count each decision) without a re-fetch, and record the
-	// wave as the last verdict so `U` undoes the whole batch as a unit (#1855).
+	// Mirror the single-verdict bookkeeping without a re-fetch, and record the wave as the last
+	// verdict so `U` undoes the whole batch as a unit.
 	const onWaveResolved = useCallback((keys: ReadonlyArray<string>, waveId: string) => {
 		if (keys.length === 0) return;
 		setResolvedIds((prev) => [...prev, ...keys]);
@@ -268,18 +237,16 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 		setLastVerdict({kind: "wave", waveId, keys});
 	}, []);
 
-	// The one keyboard listener the whole loop is driven by. The pure `keyToAction`
-	// maps the raw key; the switch runs the effect. `Tab`/`Escape` are prevented from
-	// their default so the loop owns them while it's the active surface.
+	// `Tab`/`Escape` are prevented from their default so the loop owns them while it is the
+	// active surface.
 	useEffect(() => {
 		function onKey(e: KeyboardEvent) {
 			if (busy) return;
-			// While the wave manifest is open it owns the keyboard entirely (#1855) — its
-			// own listener handles select/toggle/batch/close, so the loop stands down.
+			// While the wave manifest is open it owns the keyboard entirely; the loop stands down.
 			if (waveOpen) return;
 
-			// `Shift-X` grabs the focused target's author into the wave manifest (#1855) —
-			// only when the actor resolves (an anonymized row has no author to group).
+			// `Shift-X` grabs into the wave manifest only when the actor resolves — an anonymized
+			// row has no author to group.
 			if (pending === null) {
 				const wave = waveKeyToAction({key: e.key, code: e.code, altKey: e.altKey});
 				if (wave?.kind === "grab") {
@@ -289,10 +256,8 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 				}
 			}
 
-			// The actor-drawer bindings (#1852) take precedence over the loop's own, but
-			// only outside a confirm sheet (a sheet narrows to its own keys). `A` toggles
-			// the drawer; `V`/`M` hop between the kefil and moderation chambers on the SAME
-			// actor — a re-lens, not a re-fetch.
+			// The drawer bindings take precedence over the loop's own, but only outside a confirm sheet
+			// (a sheet narrows to its own keys).
 			if (pending === null) {
 				const drawer = drawerKeyToAction(e.key);
 				if (drawer !== null) {
@@ -313,7 +278,6 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 			const action = keyToAction(e.key);
 			if (action === null) return;
 
-			// A confirm sheet narrows the bindings: only the verdict's confirm/cancel.
 			if (pending !== null) {
 				if (action.kind === "escape") {
 					e.preventDefault();
@@ -340,7 +304,6 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 					if (focusedTarget) void resolve(focusedTarget, "dismiss");
 					break;
 				case "remove":
-					// Asymmetric weight: remove opens the confirm sheet, never commits directly.
 					if (focusedTarget) setPending(needsConfirm("remove") ? "remove" : null);
 					break;
 				case "undo":
@@ -476,14 +439,10 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 	);
 }
 
-// The remove-the-wave manifest (#1855, ADR 0138): the focused actor's open-reported
-// targets, grabbed off the SAME queue read (a MODE, never a re-fetch). It owns the
-// keyboard while open — `T` tümü, `Space` seç, `⌥R` kaldır (blast-radius confirm), `⌥Y`
-// yoksay, `j/k` gez, `Esc` çık — and fans the existing single-target `report.resolve`
-// over the selection, partitioning resolved from failed so a partial failure stays
-// actionable. Each queue row lazily resolves its actor/report projection via a
-// `WaveProbe`; the pure grouping/selection/blast-radius decisions live in
-// `remove-the-wave.ts` (unit-tested).
+// The remove-the-wave manifest (#1855, ADR 0138): the focused actor's open-reported targets
+// off the SAME queue read. It owns the keyboard while open and fans the existing
+// single-target `report.resolve` over the selection; the pure decisions live in
+// `remove-the-wave.ts`.
 function WaveManifest({
 	rows,
 	authorId,
@@ -516,10 +475,9 @@ function WaveManifest({
 
 	const manifest = buildWaveManifest(Object.values(rowsByKey), authorId);
 
-	// Selection stays "auto" (the safe-by-default auto-deselect over whatever has probed)
-	// until the mod first touches it, then it's their explicit set. This tracks
-	// incremental probe arrival correctly: a late-loading row is auto-included until a
-	// `T`/`Space` freezes the selection to the moderator's choice.
+	// Selection stays "auto" (the safe-by-default deselect over whatever has probed) until the
+	// mod first touches it, so a late-loading row is auto-included until `T`/`Space` freezes the
+	// set to their choice.
 	const [explicit, setExplicit] = useState<ReadonlyArray<string> | null>(null);
 	const selected = explicit ?? initialWaveSelection(manifest);
 
@@ -534,9 +492,8 @@ function WaveManifest({
 			if (targets.length === 0) return;
 			setBusy(true);
 			setError(null);
-			// ONE grouping id per gesture, threaded through every fanned-out resolve so the
-			// batch reopens as a unit (#1855). A target that fails to resolve simply never
-			// gets the stamp (its write didn't land), so the wave groups only the successes.
+			// ONE grouping id per gesture, threaded through every fanned resolve so the batch reopens as
+			// a unit. A target that fails never gets the stamp, so the wave groups only the successes.
 			const waveId = crypto.randomUUID();
 			const outcomes: WaveOutcome[] = [];
 			for (const input of waveResolveInputs(targets, waveId)) {
@@ -549,8 +506,7 @@ function WaveManifest({
 			setBusy(false);
 			const failLabel = waveFailureLabel(failed.length);
 			if (failLabel !== null) {
-				// No silent partial drop: keep the failed targets selected + in the manifest
-				// so they stay actionable, and name how many didn't resolve.
+				// No silent partial drop: the failed targets stay selected and in the manifest.
 				setError(failLabel);
 				setExplicit(failed);
 			} else {
@@ -590,8 +546,6 @@ function WaveManifest({
 						if (canApplyWave(selected)) void apply("dismiss");
 						break;
 					case "batchRemove":
-						// Asymmetric weight (like the single verdict): remove opens the
-						// blast-radius confirm, dismiss commits directly.
 						if (canApplyWave(selected)) setPending("remove");
 						break;
 					case "grab":
@@ -708,9 +662,8 @@ function WaveManifest({
 	);
 }
 
-// A hidden data-loader: resolves one queue row's actor/report projection off the shared
-// gated read and lifts it to the manifest, so the parent can group by author + sum the
-// blast radius without the loop pre-resolving every row.
+// A hidden data-loader: resolves one queue row's actor/report projection and lifts it to the
+// manifest, so the parent groups by author without the loop pre-resolving every row.
 function WaveProbe({
 	node,
 	onData,
@@ -731,8 +684,7 @@ function WaveProbe({
 	return null;
 }
 
-// Resolve the focused node's full `OpenReport` view (the same read the card renders off)
-// and hand its actor projection to the drawer — a MODE over the gated row, no re-fetch.
+// A MODE over the gated row — the drawer's actor projection, no re-fetch.
 function TriageActorDrawer({
 	node,
 	chamber,

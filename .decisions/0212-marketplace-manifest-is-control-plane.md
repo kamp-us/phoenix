@@ -15,9 +15,9 @@ ADR [0071](0071-enforce-control-plane-at-github.md), hard-gated per ADR
 [0135](0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)) marks the surfaces
 where an autonomous green-then-ship merge could compromise the pipeline's own guards. The concrete
 boundary is the single-source path regex in
-[`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts),
+`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`,
 its byte-synced `CONTROL_PLANE_RE=` copy in
-[`gh-issue-intake-formats.md`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md),
+`gh-issue-intake-formats.md`,
 and `.github/CODEOWNERS`.
 
 `.claude-plugin/marketplace.json` is the manifest declaring what the `kampus` marketplace serves —
@@ -110,3 +110,5 @@ this decision from silently reversing that one.
   - The same shape is on the record for `lefthook.yml` hook-wiring config (#3402 / #3643).
 - This ADR governs *who merges*, not *which gate verifies*: routing is a separate axis and is
   untouched.
+
+> Amendment 2026-08-19: the ruling still binds — `/.claude-plugin/ @kamp-us/control-plane` is live in `.github/CODEOWNERS` and the `^\.claude-plugin/` branch now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (exercised by `codeowners-cp.unit.test.ts`), not `packages/pipeline-cli/`. The `kampus-pipeline` clauses are history only: the plugin is deleted (ADR [0303](0303-retire-kampus-pipeline-plugin.md)) and its marketplace entry survives sha-pinned, so the deferred `claude-plugins/kampus-pipeline/.claude-plugin/plugin.json` gap is moot; fabrika is the one pipeline.

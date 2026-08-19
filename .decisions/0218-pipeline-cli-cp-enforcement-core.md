@@ -15,9 +15,9 @@ The control-plane boundary (ADR [0053](0053-control-plane-boundary.md), enforced
 [0135](0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)) marks the surfaces
 where an autonomous green-then-ship merge could compromise the pipeline's own guards. Its concrete
 form is the single-source `CONTROL_PLANE_RE` in
-[`control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts),
+`control-plane-re.ts`,
 its byte-synced copy in
-[`gh-issue-intake-formats.md`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md)
+`gh-issue-intake-formats.md`
 §CP, and the matching `.github/CODEOWNERS` rows.
 
 One of its branches was the blanket `^packages/pipeline-cli/`. That package now holds **68 tools**.
@@ -159,7 +159,7 @@ a path leaving §CP through which a change could reach the enforcement surface?*
 addressed by name rather than by "the guards are green."
 
 **(a) Transitive imports of the retained core.** Computed mechanically, not asserted — see
-[`core-import-closure.unit.test.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/core-import-closure.unit.test.ts).
+`core-import-closure.unit.test.ts`.
 
 > **The walk needs two non-obvious rules to mean anything.**
 >
@@ -246,3 +246,5 @@ the concrete reason a mechanical check beats prose here.
   re-resolution idiom (#981, `control-plane-re.ts` lines ~42-46) to `cp-cardinality` and
   `ci-required`, so a weakened local copy cannot take effect. Once that exists, even those two
   could leave §CP.
+
+> Amendment 2026-08-19: this record's three branches are dead at head. `packages/pipeline-cli/` was deleted by PR #6326, taking its §CP CODEOWNERS rows and the byte-synced prose copy of `CONTROL_PLANE_RE` in `control-plane-paths/boundaries.md` with it, and the `ship-it/SKILL.md` call site named under `cp-cardinality` retired with the v1 plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)) — the same discharge check is now made by fabrika's `ship` skill. The shape this ADR ruled — fence the enforcement *core*, never the whole package — is carried forward unchanged by ADR [0299](0299-cp-fence-covers-fabrika-ci-core.md) over `packages/fabrika-cli/src/ci/`.

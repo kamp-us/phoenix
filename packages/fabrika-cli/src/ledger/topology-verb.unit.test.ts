@@ -13,7 +13,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {bodyDigest} from "./digest.ts";
-import {CLAIMED, DIR, env, epic} from "./fixtures.test-support.ts";
+import {CLAIMED, DIR, env, epic, TOKEN} from "./fixtures.test-support.ts";
 import {
 	type ChildRecord,
 	manifestPath,
@@ -65,7 +65,7 @@ const run = (
 	const stdin: Effect.Effect<StdinRead> = Effect.succeed({_tag: "Text", text: stdinText});
 	return Effect.runPromise(
 		Effect.provide(
-			runTopology({number: 4300, repo: null, env, stdin}),
+			runTopology({number: 4300, token: TOKEN, repo: null, cwd: "/repo", env, stdin}),
 			Layer.mergeAll(shell.layer, fs.layer),
 		),
 	).then((outcome) => ({outcome, written: fs.written}));

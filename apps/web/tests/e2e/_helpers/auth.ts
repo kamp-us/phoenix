@@ -8,13 +8,6 @@ export interface Credentials {
 }
 
 /**
- * Sign up a fresh user via the AuthPage. The flow:
- *   1. visit /auth (which defaults to sign-in)
- *   2. flip to sign-up via the "kayıt ol" toggle button
- *   3. fill name/email/password, submit
- *   4. wait for the redirect off /auth (Layout pushes to "/" once
- *      session.data exists)
- *
  * Each call gets a unique email so tests don't collide on Better Auth's
  * unique-email constraint when re-run.
  */
@@ -30,15 +23,9 @@ function freshCredentials(opts?: Partial<Credentials>): Credentials {
 }
 
 /**
- * Sign up a fresh user by POSTing better-auth's `/api/auth/sign-up/email`
- * directly, instead of driving the AuthPage UI. With auto-sign-in on, the
- * response lands a session `Set-Cookie`; using `page.request` shares the page's
- * context, so the cookie is captured by a subsequent `storageState()` (the
- * setup's robust pattern — no nav, no form, no redirect race). This is the
- * SETUP's auth path (ADR 0085); the UI `signUp` above is kept for local specs.
- *
- * Fails loudly with the status + a trimmed body on a non-ok response: if sign-up
- * genuinely fails on the target, we see exactly why instead of a nav timeout.
+ * The SETUP's auth path (ADR 0085): POST better-auth's sign-up route instead of driving the
+ * AuthPage UI. `page.request` shares the page's context, so the session `Set-Cookie` is captured
+ * by a subsequent `storageState()` — no nav, no form, no redirect race.
  */
 export async function signUpViaApi(page: Page, opts?: Partial<Credentials>): Promise<Credentials> {
 	const creds = freshCredentials(opts);
@@ -60,8 +47,6 @@ export async function signUp(page: Page, opts?: Partial<Credentials>): Promise<C
 
 	await page.goto("/auth");
 
-	// AuthPage opens in sign-in mode; the toggle to sign-up is the
-	// "kayıt ol" button at the bottom of the card.
 	await page.getByRole("button", {name: /^kayıt ol$/i}).click();
 	await expect(page.getByRole("heading", {name: /kayıt ol/i})).toBeVisible();
 
@@ -76,30 +61,13 @@ export async function signUp(page: Page, opts?: Partial<Credentials>): Promise<C
 }
 
 /**
- * Complete the username bootstrap gate if it's up, committing the unedited
- * email-derived prefill.
+ * Complete the username bootstrap gate if it's up. A fresh Pasaport user has `username = NULL`, so
+ * the Layout replaces the page content with <UsernameBootstrap> — specs that sign up and then
+ * assert page content must clear this first or they see the form.
  *
- * A fresh Pasaport user has `username = NULL`, so the Layout's `needsBootstrap`
- * gate replaces the page content with <UsernameBootstrap> until a username is
- * set (via `setUsername` over fate). Specs that sign up and then assert page
- * content (the feed, a post) must clear this gate first, or they see the form
- * instead of the content. Submits the pre-filled value (the email local-part,
- * unique per `signUp`). No-op if the gate isn't present (already bootstrapped).
- *
- * #1888 AC4 makes the *unedited* prefill a deliberate two-step confirm: because
- * a handle is permanent, submitting the untouched email-derived value doesn't
- * commit on the first click — it only arms confirm (the submit button reads
- * "bu adı onayla" on mount, not "devam et"), and a *second* submit commits. An
- * *edited* value still commits on the first click. So this helper: (1) selects
- * the submit button by its stable class, not the varying label; (2) clicks it,
- * and if the gate heading is still up after that, clicks once more (the confirm
- * path). That is robust for both paths — an edited handle commits on click one
- * and the second click is skipped; the unedited prefill arms on click one and
- * commits on click two.
- *
- * Specs that need a *specific* handle (e.g. to navigate to `/u/<handle>`) drive
- * the gate themselves with their chosen value instead of calling this — an
- * edited value commits in one click, so they are unaffected by the confirm step.
+ * The double click is #1888 AC4: an *unedited* prefill only ARMS confirm on the first click and
+ * commits on the second, while an edited value commits on click one (so the second click is
+ * skipped). Specs that need a specific handle drive the gate themselves and are unaffected.
  */
 export async function completeBootstrap(page: Page): Promise<void> {
 	const input = page.locator("input#bootstrap-username");
@@ -124,9 +92,6 @@ export async function completeBootstrap(page: Page): Promise<void> {
 	const heading = page.getByRole("heading", {name: /kullanıcı adını seç/i});
 
 	await submit.click();
-	// The unedited prefill only ARMED confirm on click one, so the gate is still
-	// up — a second click commits. An edited value already committed on click one,
-	// so the gate is gone and this branch is skipped.
 	if (await heading.isVisible().catch(() => false)) {
 		await submit.click();
 	}
@@ -134,17 +99,14 @@ export async function completeBootstrap(page: Page): Promise<void> {
 }
 
 /**
- * Click the topbar user pill, then "çıkış" in the account popover. The pill is the
- * Popover trigger wrapping an Avatar + the user's display name; the panel's rows are
- * real links and a real button, NOT menu commands, so çıkış has the button role.
- * Best-effort — if the panel is already gone, we just no-op.
+ * Click the topbar user pill, then "çıkış" in the account popover. The panel's rows are real links
+ * and a real button, NOT menu commands, so çıkış has the button role. Best-effort — no-op if the
+ * pill is already gone.
  */
 export async function signOut(page: Page): Promise<void> {
-	// The user pill is a button containing the user's name text.
 	const pill = page.locator(".kp-topbar__user").first();
 	if (!(await pill.isVisible().catch(() => false))) return;
 	await pill.click();
 	await page.getByRole("button", {name: /çıkış/i}).click();
-	// Pill should disappear once session clears.
 	await expect(pill).toBeHidden({timeout: 5_000});
 }

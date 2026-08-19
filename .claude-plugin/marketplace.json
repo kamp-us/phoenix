@@ -6,13 +6,18 @@
 		"url": "https://github.com/kamp-us"
 	},
 	"metadata": {
-		"description": "The kamp.us self-hosted marketplace — distributes the repo-agnostic agent pipeline plugin.",
+		"description": "The kamp.us self-hosted marketplace — distributes the fabrika agent pipeline plugin.",
 		"version": "0.1.0"
 	},
 	"plugins": [
 		{
 			"name": "kampus-pipeline",
-			"source": "./claude-plugins/kampus-pipeline",
+			"source": {
+				"source": "git-subdir",
+				"url": "https://github.com/kamp-us/phoenix",
+				"path": "claude-plugins/kampus-pipeline",
+				"sha": "633d61e5913f7666178e0bb4a7fe1a89b5c206fd"
+			},
 			"description": "The kamp.us agent pipeline: report → triage → plan-epic → write-code → review → ship-it, with artifact-class review gates (code/doc/skill/plan) plus adr, heal-ci, and deslop-comments. Repo-agnostic — operates on the working git repo's issue queue (CLAUDE_PIPELINE_REPO override).",
 			"author": {
 				"name": "kamp-us",

@@ -7,6 +7,11 @@
  * rubric is a review that never saw it (#4060).
  */
 
+import {SHIPPED_GOVERNED_ROOTS} from "../config/keys/governed-roots.ts";
+import {SHIPPED_DECISIONS_DIR} from "../config/keys/paths.ts";
+
+export {SHIPPED_GOVERNED_ROOTS};
+
 /** The three artifact classes, in the fixed order the line grammar prints them. */
 export const CLASS_NAMES = ["code", "doc", "skill"] as const;
 export type ClassName = (typeof CLASS_NAMES)[number];
@@ -98,26 +103,28 @@ export const isUiSurface = (path: string): boolean =>
 	path.startsWith("apps/web/src/") && !/\.(?:test|spec)\.tsx?$/.test(path);
 
 /**
- * The four roots a diff derives the `governance` namespace over, per the root table in
- * `claude-plugins/fabrika/skills/governance/contract.md` — the source of truth for these values, so a
- * fifth root lands in both places.
+ * The decision corpus's root as this package ships it, trailing slash included so it matches as a
+ * path prefix.
  *
- * The `harness` flag's three-root list above is deliberately left alone rather than reused: these
- * four add `.decisions/`, the decision corpus, and widening `harness` to match would change what
- * `review scope` already reports about an unrelated diff. Exported so `governance scope` computes
- * the requirement from this list instead of a second copy — two derivations of one namespace are
- * two answers to one question (#4730).
+ * Where the corpus actually lives is `decisionsDir` in `.fabrika.jsonc`
+ * (`../config/keys/paths.ts`). This is the shipped value, re-exported from that one home so a
+ * prefix reader with no config load in reach still reads one list instead of a second literal.
  */
-export const GOVERNANCE_ROOTS: ReadonlyArray<string> = [
-	".decisions/",
-	".claude/",
-	".github/",
-	"claude-plugins/",
-];
+export const DECISIONS_ROOT = `${SHIPPED_DECISIONS_DIR}/`;
 
-/** The whole `governance` requirement: at least one changed path under at least one root. */
-export const touchesGovernanceRoot = (files: ReadonlyArray<string>): boolean =>
-	files.some((file) => GOVERNANCE_ROOTS.some((root) => file.startsWith(root)));
+/**
+ * The whole `governance` requirement: at least one changed path under at least one governed root.
+ *
+ * `roots` is a parameter with no default, and that is the point. The set is `governedRoots` in
+ * `.fabrika.jsonc` (`../config/keys/governed-roots.ts`); a default here would let a caller derive
+ * the namespace over phoenix's roots inside a repo that declared its own — one question with two
+ * answers, which is what #4730 closed. A caller with no config load in reach passes
+ * {@link SHIPPED_GOVERNED_ROOTS} and is visibly doing so.
+ */
+export const touchesGovernanceRoot = (
+	files: ReadonlyArray<string>,
+	roots: ReadonlyArray<string>,
+): boolean => files.some((file) => roots.some((root) => file.startsWith(root)));
 
 export interface ShipPartition {
 	/** Only the classes actually present, in {@link SHIP_CLASS_NAMES} order. */
@@ -127,12 +134,15 @@ export interface ShipPartition {
 	readonly scanned: number;
 }
 
-export const partitionWithUi = (files: ReadonlyArray<string>): ShipPartition => {
+export const partitionWithUi = (
+	files: ReadonlyArray<string>,
+	roots: ReadonlyArray<string>,
+): ShipPartition => {
 	const base = partition(files);
 	const ui = files.filter(isUiSurface).length;
 	return {
 		classes: ui === 0 ? base.classes : [...base.classes, {name: "ui" as const, files: ui}],
-		governance: touchesGovernanceRoot(files),
+		governance: touchesGovernanceRoot(files, roots),
 		scanned: base.scanned,
 	};
 };

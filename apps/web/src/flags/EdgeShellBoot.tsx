@@ -1,19 +1,12 @@
 /**
- * The boot-mode observer for the edge-resolved shell (ADR 0179, epic #2926).
- *
- * The worker-first render has no user-facing surface of its OWN — the visible shell geometry
- * rides the `__BOOT__` members (nav flags + `user`) that `App.tsx` already reads. This module
- * reports whether the edge actually injected the payload for this render, exposed as a
- * geometry-inert marker so the first-paint e2e (and future diagnostics) can observe the mode.
+ * The boot-mode observer for the edge-resolved shell (ADR 0179). It has no user-facing surface of
+ * its own: it reports whether the edge injected `__BOOT__` for this render, as a geometry-inert
+ * marker the first-paint e2e can observe.
  */
 import type {ReactElement} from "react";
 import {readBoot} from "./boot.ts";
 
-/**
- * Whether the edge injected `window.__BOOT__` for this render. Absent ⇒ the never-hang fallback
- * (ADR 0179 §4) served an untransformed asset, so the client resolves through its fetch path —
- * a first-class state, not an error.
- */
+/** Absent `__BOOT__` is a first-class state, not an error — see ADR 0179 §4. */
 export function useEdgeShellBootActive(): boolean {
 	return readBoot() !== undefined;
 }

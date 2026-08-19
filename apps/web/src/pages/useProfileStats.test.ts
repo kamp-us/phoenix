@@ -8,11 +8,7 @@ describe("toProfileStatsState", () => {
 	});
 
 	it("maps a null snapshot to ok with all-zero counts and zero karma — empty is success, not error", () => {
-		// The regression this guards (#448): a real zero-activity user resolves to a
-		// successful `ok` with zeros, so it stays distinguishable from the hook's
-		// `error` state (which only the catch branch produces). A null snapshot must
-		// NOT collapse into the same value an error would render. A zero-karma çaylak
-		// is likewise an honest 0, not a placeholder (#1208 AC).
+		// #448: a null snapshot must NOT collapse into the value an `error` would render.
 		expect(toProfileStatsState(null)).toEqual({
 			status: "ok",
 			stats: {postCount: 0, commentCount: 0, definitionCount: 0, totalKarma: 0},
@@ -20,9 +16,6 @@ describe("toProfileStatsState", () => {
 	});
 
 	it("only projects the stat scalars, dropping extra snapshot fields", () => {
-		// A snapshot carrying more than the stat scalars (here the selected `userId`)
-		// is a structural ProfileStats supertype, so it passes to the helper with no
-		// cast — and the assertion below proves the extra field is dropped.
 		const data: ProfileStats & {userId: string} = {
 			postCount: 2,
 			commentCount: 4,

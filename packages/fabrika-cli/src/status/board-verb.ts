@@ -15,6 +15,7 @@ import {scannedLine} from "../build/target.ts";
 import type {Shell} from "../io/git.ts";
 import {openPullRequests} from "../io/github.ts";
 import {listLabels, openIssuesWithLabel} from "../io/issues.ts";
+import {NEEDS_TRIAGE, TRIAGED} from "../labels.ts";
 import {PRIORITIES} from "../triage/facets.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -34,8 +35,8 @@ const labelBucket = (name: string, label: string) => ({
  * caps at 1000 results and cannot back a count.
  */
 export const BUCKETS = [
-	labelBucket("needs-triage", "status:needs-triage"),
-	labelBucket("triaged", "status:triaged"),
+	labelBucket("needs-triage", NEEDS_TRIAGE),
+	labelBucket("triaged", TRIAGED),
 	...PRIORITIES.map((priority) => labelBucket(priority, priority)),
 ] as const;
 

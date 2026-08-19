@@ -143,3 +143,5 @@ from repo-declared defaults (a) or from the release-queue label (c).
   a `.decisions/**` docs PR (review-doc gate), so it auto-ships on a review-doc PASS; the
   implementation children take their own paths.
 </content>
+
+> Amendment 2026-08-19: both named homes moved. `packages/cf-utils` is gone — its flag read/flip CLI and pure core live in `packages/anka-ops` (the `anka-ops flag` verb group, ruling #3326), so read every "`cf-utils`" below as "`anka-ops flag`". The consumer named here is gone too: `packages/pipeline-cli/src/tools/ship-digest/` was deleted with that package (PR #6326), and no digest generator exists at head. The sourcing contract — the live axis reads authoritative Flagship state, never a repo-local mirror — still governs whatever rebuilds it.

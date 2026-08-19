@@ -139,9 +139,9 @@ reads as those ids; **no line at all reads as absent** (which is what `MISSING_S
 integer anywhere in the value, so `**Stories:** 1, 3 (see #4021)` silently claimed story 4021.
 
 **`**Containment:**` (child)** — the first such line outside a fence, with the same duplicate rule
-and the same `4`. Leading keyword only, from the closed set `flag` · `exempt` · `none`. Anything
-unrecognised reads as unset, which `MISSING_CONTAINMENT` treats identically to `none`; only `flag`
-and `exempt` satisfy it.
+and the same `4`. Leading keyword only, from the set the repo's `containmentVocabulary` declares
+plus the reserved `none` (phoenix declares `flag` · `exempt`). Anything unrecognised reads as unset,
+which `MISSING_CONTAINMENT` treats identically to `none`; only a declared value satisfies it.
 
 ## The floor — thirteen defect types
 
@@ -161,7 +161,7 @@ prose — the templates are the third column.
 | 7 | `ZERO_AC` | a child's acceptance-criteria read is not `Found`, or is `Found` with zero criteria | `acceptance criteria read as <absent\|malformed\|empty>` |
 | 8 | `MISSING_STORY` | the epic declares stories and the child's `**Stories:**` line is absent or non-conforming | `no **Stories:** line` / `**Stories:** value does not conform: "<value>"` |
 | 9 | `MISSING_LABEL` | a child lacks a `type:` label, a `status:` label, or one of `p0` / `p1` / `p2` | `missing a <type:\|status:\|priority> label` |
-| 10 | `MISSING_CONTAINMENT` | `cycleDoc` is `present`, the child is `type:feature`, and its containment is unset or `none` | `type:feature with containment <none\|unset>` |
+| 10 | `MISSING_CONTAINMENT` | `cycleDoc` is `present`, the child carries a type the repo's `containmentVocabulary` asks, and its containment is off that vocabulary's values | `<asked type> with containment <keyword\|unset>` |
 | 11 | `NEEDS_TRIAGE_LABEL` | a child still carries `status:needs-triage` | `still carries status:needs-triage` |
 | 12 | `UNVERIFIABLE_ASSIGNEE` | the child payload's `assignees` key was **not observed** — an unread field is UNKNOWN, never "unassigned is fine" | `the assignees field was not observed` |
 | 13 | `HELD_CHILD_UNASSIGNED` | a child carries `ready-for:human` and its observed assignee list is empty | `ready-for:human with an empty assignee slot` |
@@ -313,7 +313,7 @@ obligation (interface convention rule 3), and the alignment this group opts into
 **base-only, never pairwise** (`exit-code-alignment.ts`: `occupied = allocatedCodes(base)`).
 
 **The `20`/`21` overlap with `build`, settled ([#5107](https://github.com/kamp-us/phoenix/issues/5107)).**
-This was written when `20`+ was free; the scope-admission fence has since taken `20` `OUT_OF_FOCUS`
+This was written when `20`+ was free; the scope-admission fence has since taken `20` `OUT_OF_SCOPE`
 and `21` `AUDIENCE_NOT_AGENT`, both reachable from `fabrika build claim` — step 1 of this gate's
 skill. `21` is no longer among them: step 1 claims with `--purpose gate`, and the audience axis binds
 build-purpose claims only (#5175), so the only admission refusal this gate can meet is `20`. The
@@ -340,7 +340,7 @@ nothing, since `epic` already seats `20`–`24` over the same two `build` codes.
 | `9` | the write landed but the read-back does not match | — | — | — | ✓ |
 | `10` | a value off its closed vocabulary — a semantic refusal, never a malformed-flag usage error | ✓ | ✓ | ✓ | ✓ |
 | `11` | a required read failed — nothing was written, no outcome is proven | ✓ | ✓ | ✓ | ✓ |
-| `15` | proven: this session does not hold the epic's claim (imported from `build`) | — | — | ✓ | ✓ |
+| `15` | proven: this lane does not hold the epic's claim (imported from `build`) | — | — | ✓ | ✓ |
 | `20` | proven: the floor derived hard defects — refused as a **precondition to writing**, never as `plan check`'s own answer | — | — | ✓ | — |
 | `21` | proven: the plan moved — the recomputed digest differs from the `--digest` the caller carried | — | — | ✓ | ✓ |
 | `22` | proven: at least one child is `unchanged` — the flip did not fully apply; the observed set is on stderr | — | — | ✓ | — |
@@ -565,7 +565,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika plan flip 4300 --digest 4d90e1bb27ac
+fabrika plan flip 4300 --digest 4d90e1bb27ac --token <claim-token>
 ```
 
 **Inputs**
@@ -574,6 +574,7 @@ fabrika plan flip 4300 --digest 4d90e1bb27ac
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the epic whose planned children are flipped, and whose own audience label is flipped with them |
 | `--digest` | string, 12 lowercase hex | yes | — | the scope digest `plan check` printed; the flip refuses if the plan has moved since |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose gate` printed — which lane is asking (#6060) |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
 
 **Output** — machine. The **observed** result per child and for the epic, never the intended one:
@@ -675,7 +676,7 @@ comparable to `plan check`'s directly, and a verdict posted afterwards binds the
 | `8` | a write was attempted and no re-read could prove its outcome — UNKNOWN |
 | `10` | the issue is not a `type:epic`, or `--digest` is not 12 lowercase hex |
 | `11` | a read the flip depends on failed — **nothing is written** |
-| `15` | proven: this session does not hold the epic's claim |
+| `15` | proven: this lane does not hold the epic's claim |
 | `20` | proven: the re-gate derived hard defects — the floor is not clean, nothing is written |
 | `21` | proven: the recomputed digest differs from `--digest` — the plan moved since the check |
 | `22` | proven: at least one child is `unchanged`, or the epic did not reach `ready-for:agent` — the refs are on stderr |
@@ -691,7 +692,7 @@ comparable to `plan check`'s directly, and a verdict posted afterwards binds the
 | `plan flip: every child flipped but epic #<n> does not carry ready-for:agent alone — the epic is half-flipped and needs a human.` | 22 | refusal |
 | `plan flip: label "<name>" is absent from <repo>'s taxonomy — refusing to create it (#4285).` | 23 | refusal |
 | `plan flip: wrote <n> label change(s) and could not re-read <what> — the outcome is UNKNOWN.` | 8 | refusal |
-| `plan flip: this session does not hold #<n>'s claim.` | 15 | refusal |
+| `plan flip: #<n> is held by <token>, not by <this lane's token>.` | 15 | refusal |
 | `plan flip: --digest must be 12 lowercase hex — got "<v>".` | 10 | refusal |
 | `plan flip: #<n> is not a type:epic — refusing to flip its children.` | 10 | refusal |
 | `plan flip: #<n> has zero children — refusing to act over zero scope (ADR 0092).` | 7 | refusal |
@@ -708,12 +709,12 @@ succeeded — and with the epic still owed its label, that one write is the whol
 **Examples**
 
 ```
-$ fabrika plan flip 4300 --digest 4d90e1bb27ac
+$ fabrika plan flip 4300 --digest 4d90e1bb27ac --token <claim-token>
 {"answer":"flipped","epic":4300,"digest":"4d90e1bb27ac","terminal":"flipped-all","children":[{"number":4301,"observed":["p1","status:triaged","type:feature"],"result":"flipped"}],"flipped":1,"already":0,"audience":{"result":"flipped","observed":["ready-for:agent","type:epic"]}}
 ```
 
 ```
-$ fabrika plan flip 4300 --digest 4d90e1bb27ac
+$ fabrika plan flip 4300 --digest 4d90e1bb27ac --token <claim-token>
 plan flip: 2 of 3 children flipped; 1 unchanged (#4303) — the epic is half-flipped and needs a human.
 $ echo $?
 22
@@ -738,7 +739,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika plan verdict 4300 --digest 4d90e1bb27ac <<'EOF'
+fabrika plan verdict 4300 --digest 4d90e1bb27ac --token <claim-token> <<'EOF'
 caveat: ac-not-checkable #4302 — "works well" states no observable outcome
 EOF
 ```
@@ -750,6 +751,7 @@ EOF
 | `<number>` | positional integer | yes | — | the epic the verdict is posted on |
 | `--digest` | string, 12 lowercase hex | yes | — | the scope digest `plan check` printed; the verdict binds it and refuses if the plan has moved |
 | `--polarity` | enum: `PASS` \| `FAIL` | no | derived from the floor | an optional cross-check — when supplied and it disagrees with the floor this verb derives, the verb refuses on `10` rather than posting either. No step in [SKILL.md](SKILL.md) supplies it; it exists for an operator driving the verb by hand, and its absence from the skill is deliberate, not a missing step |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose gate` printed — which lane is asking (#6060) |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
 | stdin | markdown | no | empty | advisory caveats, one per line, each `caveat: <kind> #<ref> — <text>`; empty is an ordinary answer |
 
@@ -799,7 +801,7 @@ the only emit path; a hand-posted marker is how v1's corpus carried a fake-looki
 | `9` | the comment posted but the read-back does not match |
 | `10` | `--digest` malformed; the issue is not a `type:epic`; `--polarity` disagrees with the derived floor; a caveat kind off the closed set; a caveat naming a ref outside the scanned set |
 | `11` | a read the verdict depends on failed — nothing is posted |
-| `15` | proven: this session does not hold the epic's claim |
+| `15` | proven: this lane does not hold the epic's claim |
 | `21` | proven: the recomputed digest differs from `--digest` — the plan moved since the check |
 
 There is no `20` here. A defective floor is not a refusal for this verb — it posts the `FAIL`
@@ -823,7 +825,7 @@ which is what `10` means.
 | `plan verdict: the comment posted but does not read back — the verdict needs a human eye.` | 9 | refusal |
 | `plan verdict: #<n> has zero children — there is no scope to attest.` | 7 | refusal |
 | `plan verdict: cannot read <what>: <reason> — nothing was posted.` | 11 | refusal |
-| `plan verdict: this session does not hold #<n>'s claim.` | 15 | refusal |
+| `plan verdict: #<n> is held by <token>, not by <this lane's token>.` | 15 | refusal |
 | `plan verdict: the ledger grammar refused: <reason>` | 4 | refusal |
 
 **Scope** — one epic and **every one of its children**, because deriving the floor and recomputing
@@ -833,14 +835,14 @@ Zero children is `7`.
 **Examples**
 
 ```
-$ fabrika plan verdict 4300 --digest 4d90e1bb27ac <<'EOF'
+$ fabrika plan verdict 4300 --digest 4d90e1bb27ac --token <claim-token> <<'EOF'
 caveat: ac-not-checkable #4302 — "works well" states no observable outcome
 EOF
 {"answer":"posted","epic":4300,"polarity":"PASS","digest":"4d90e1bb27ac","skipped":[],"comment":5230661234,"caveats":1}
 ```
 
 ```
-$ fabrika plan verdict 4300 --digest 81c7a30f5e42 <<'EOF'
+$ fabrika plan verdict 4300 --digest 81c7a30f5e42 --token <claim-token> <<'EOF'
 caveat: vibes #4302 — feels thin
 EOF
 plan verdict: caveat kind "vibes" is not in the closed set (ac-not-checkable, brief-fidelity, slice-too-broad, dependency-implied-not-declared).
@@ -862,20 +864,6 @@ $ echo $?
 
 ---
 
-## Required repo files (verb-level)
-
-The skill's own table ([SKILL.md](SKILL.md)) carries the run-level rows; these are the reads and
-writes this contract's verbs make, so an implementer sees the dependency set in one place.
-Vocabulary: **fail-loud** / **degrade** / **bootstrap** (front-door, #4952).
-
-| Must exist | Why | When missing |
-| --- | --- | --- |
-| The epic issue: `type:epic`, native sub-issue links to its children | `plan read` derives the whole ledger from it | **fail-loud** — exit `7` / `10` naming the gap. |
-| A `## Dependencies` block in the epic body | the topology the three dependency defects rest on | **fail-loud**, two ways: *absent* is defect `MISSING_DEPS_SECTION` (a `defective` floor); *unparseable or duplicated* is `plan read`'s `4`. |
-| Child issues carrying `### Acceptance criteria` blocks | the imported wire read supplies `ZERO_AC`'s input | **fail-loud** — the read's `absent` / `malformed` token becomes a defect; no criterion is invented. |
-| Labels `status:planned`, `status:triaged`, `status:needs-triage`, `ready-for:human`, `type:*`, `p0`/`p1`/`p2` | the floor reads them; the flip writes two | **fail-loud** — `plan flip` exits `23` rather than creating a label (#4285); taxonomy creation is the front door's. |
-| `product-development-cycle.md` at the repo root | gates whether `MISSING_CONTAINMENT` is derived | **degrade** — an *absent* file derives the class and evaluates it false; an *unreadable* probe puts the class in `skipped`, named on the answer and in the marker. Never silently dropped. |
-| Repository permissions readable | `build claim`'s ACL-sourced ownership resolution (ADR 0055) | **fail-loud** — as declared in [`build`'s contract](../build/contract.md); an unreadable permission is `Unknown`, never a demotion. |
 
 ---
 

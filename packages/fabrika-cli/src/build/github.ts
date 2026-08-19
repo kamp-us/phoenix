@@ -240,6 +240,32 @@ export const createPull = (
 			: fail("`gh api` exited 0 but its output is not a created pull request");
 	});
 
+/**
+ * Replace an open pull request's body, and move nothing else.
+ *
+ * A `PATCH` carrying only `body` is what lets a body-only defect — the recurring one is a
+ * `## Deviations` section the review gate reads as malformed — be repaired without a push (#5618).
+ * The body travels as an argv value for the same reason {@link createPull}'s does.
+ */
+export const updatePullBody = (repo: string, pr: number, body: string): Shell<Attempt<PullRef>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--method",
+			"PATCH",
+			`repos/${repo}/pulls/${pr}`,
+			"-f",
+			`body=${body}`,
+		]);
+		if (!r.ok) return fail(r.reason);
+		const parsed = parseJson(r.stdout);
+		return isRecord(parsed) &&
+			typeof parsed.number === "number" &&
+			typeof parsed.html_url === "string"
+			? ok({number: parsed.number, url: parsed.html_url})
+			: fail("`gh api` exited 0 but its output is not an updated pull request");
+	});
+
 /** One native review on a pull request — its own row kind, never coerced into a marker (#4555). */
 export interface ReviewRecord {
 	readonly id: number;

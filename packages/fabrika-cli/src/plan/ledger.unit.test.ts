@@ -2,7 +2,6 @@ import {describe, expect, it} from "vitest";
 import {
 	fieldLines,
 	readChildStories,
-	readContainment,
 	readEpicStories,
 	sectionCount,
 	unfencedLines,
@@ -70,6 +69,21 @@ describe("readEpicStories", () => {
 		const body = "### User stories\n\n1. one\n\n### Other\n\n2. not a story\n";
 		expect(readEpicStories(body)).toEqual({_tag: "Stories", ids: [1]});
 	});
+
+	/**
+	 * The boundary is `../build/dependencies.ts`'s, imported rather than restated, so this reader and
+	 * the topology reader cannot disagree about where a last section ends (#5816).
+	 */
+	it("stops at a thematic break, so an appended amendment adds no stories", () => {
+		const body =
+			"### User stories\n\n1. one\n\n---\n\n## Amendment — 2026-08-16\n\n2. not a story\n";
+		expect(readEpicStories(body)).toEqual({_tag: "Stories", ids: [1]});
+	});
+
+	it("stops at whichever of the break and the heading comes first", () => {
+		const heldByHeading = "### User stories\n\n1. one\n\n### Other\n\n2. no\n\n---\n\n3. no\n";
+		expect(readEpicStories(heldByHeading)).toEqual({_tag: "Stories", ids: [1]});
+	});
 });
 
 describe("readChildStories", () => {
@@ -94,21 +108,5 @@ describe("readChildStories", () => {
 			_tag: "NonConforming",
 			value: "1, 3 (see #4021)",
 		});
-	});
-});
-
-describe("readContainment", () => {
-	it.each([
-		["flag", "flag"],
-		["exempt", "exempt"],
-		["none", "none"],
-		["flag (behind kampus-plan-gate)", "flag"],
-	])("reads the leading keyword of %s", (value, expected) => {
-		expect(readContainment(value)).toBe(expected);
-	});
-
-	it("reads anything off the closed set as unset", () => {
-		expect(readContainment("probably")).toBeNull();
-		expect(readContainment(undefined)).toBeNull();
 	});
 });

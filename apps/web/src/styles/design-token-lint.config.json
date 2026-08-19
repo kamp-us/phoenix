@@ -1,5 +1,5 @@
 {
-	"$schema-note": "Config for `pipeline-cli design-token-guard check` (issue #2170, ADR 0162 / design-system-manifest.md). Read as data by the guard in packages/pipeline-cli; edited from the app side because it grounds against apps/web/src/styles/**. Three bounded, documented allow-lists — see the guard README and the PR body for the model.",
+	"$schema-note": "Config for `fabrika guard design-token-guard check` (issue #2170, ADR 0162 / design-system-manifest.md). Read as data by the guard in packages/fabrika-cli; edited from the app side because it grounds against apps/web/src/styles/**. Three bounded, documented allow-lists — see the guard README and the PR body for the model.",
 	"externalProperties": ["--swatch-color"],
 	"externalPropertiesNote": "Custom properties a var(--…) ref may resolve to that are NOT declared in any CSS file because they are injected at runtime — by our own JS inline style (Controls sets --swatch-color per theme dot). The undefined-ref check treats these as defined. Add a name here only when it is genuinely runtime-injected; a dead ref belongs in grandfatheredMissingTokens.",
 	"grandfatheredMissingTokens": [
@@ -52,5 +52,5 @@
 		"apps/web/src/components/authorship/FirstContributionOnramp.css": 1,
 		"apps/web/src/components/funnel/Funnel.css": 1
 	},
-	"rawPxCeilingsNote": "Per-file ceiling on raw px values > 2px (the 4px grid sanctions 1px & 2px for hairlines/optical nudges — ADR 0162 value #1). A ratchet: a file over its ceiling FAILS (a regression / new raw-px debt), a file NOT listed must be raw-px clean (0), and improvements pass. Regenerate after a cleanup leg with `pipeline-cli design-token-guard check --write-baseline`. This is the bounded, documented allow-list for the ~263 pre-existing raw-px sites the frontend audit catalogued — it never red-walls existing debt but blocks any new bypass of the spacing seam."
+	"rawPxCeilingsNote": "Per-file ceiling on raw px values > 2px (the 4px grid sanctions 1px & 2px for hairlines/optical nudges — ADR 0162 value #1). A ratchet: a file over its ceiling FAILS (a regression / new raw-px debt), a file NOT listed must be raw-px clean (0), and improvements pass. Regenerate after a cleanup leg with `fabrika guard design-token-guard check --write-baseline`. This is the bounded, documented allow-list for the ~263 pre-existing raw-px sites the frontend audit catalogued — it never red-walls existing debt but blocks any new bypass of the spacing seam."
 }

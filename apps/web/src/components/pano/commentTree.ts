@@ -1,7 +1,6 @@
 /**
- * Pure comment-tree derivation for the post-detail thread. Pure (no hooks/refs)
- * so it runs synchronously in the render the nodes appear in — no effect
- * round-trip, so a freshly-arrived live node is never dropped for a frame.
+ * Pure (no hooks/refs) so the tree is derived in the same render the nodes appear
+ * in — an effect round-trip would drop a freshly-arrived live node for a frame.
  */
 
 export interface CommentNode<Ref> {
@@ -18,25 +17,18 @@ export interface PlacedComment<Ref> {
 }
 
 export interface CommentTree<Ref> {
-	/** Top-level comments, in connection order. */
 	roots: Array<PlacedComment<Ref>>;
-	/** parentId → its visible children, in connection order. */
 	childrenByParent: Map<string, Array<PlacedComment<Ref>>>;
-	/** id → body, for the inline edit composer's initial value. */
 	bodyById: Map<string, string>;
-	/** id → view ref, for the inline edit composer's write-back. */
 	refById: Map<string, Ref>;
 	visibleCount: number;
 }
 
 /**
- * Build the thread tree from the flat, ordered comment nodes.
- *
- * Visibility: a comment renders iff it isn't soft-deleted, OR it has at least
- * one visible descendant (a soft-deleted parent of a live reply stays as a
- * `[silindi]` tombstone so the reply has somewhere to hang). Computed from
- * leaves upward to a fixed point. A child whose parent isn't visible (or isn't
- * in the page) is promoted to a root so it never disappears.
+ * A comment renders iff it isn't soft-deleted OR has a visible descendant — a
+ * soft-deleted parent stays as a `[silindi]` tombstone so its live reply has
+ * somewhere to hang. A child whose parent isn't visible is promoted to a root so
+ * it never disappears.
  */
 export function buildCommentTree<Ref>(nodes: ReadonlyArray<CommentNode<Ref>>): CommentTree<Ref> {
 	const bodyById = new Map<string, string>();

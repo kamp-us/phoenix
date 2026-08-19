@@ -5,9 +5,13 @@
  * The property under test throughout is the three-state law: a proven negative is an exit-`0` token,
  * an unread source is `unknown`, and the two never collapse.
  */
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs} from "../fakes.test-support.ts";
+import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
+import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
+import type {ExecResult} from "../io/exec.ts";
+import {ok} from "../io/git.ts";
+import type {StdinRead} from "../io/stdin.ts";
 import {AWAITING_RELEASE, PLANNED, STATUSES} from "../labels.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
 import {DEFAULT_STALE_MINUTES} from "../lane/stale.ts";
@@ -26,26 +30,34 @@ import {ANSWER} from "../verb.ts";
 import {type BoardRead, type Bucket, boardState, runBoard} from "./board-verb.ts";
 import {
 	BUILDABLE_SURFACES,
+	FABRIKA_IGNORE_ROW,
 	findSurface,
 	ISSUE_SHAPE_MARKERS,
 	knownIds,
 	MARKER_COLOR,
+	roadmapCount,
+	runBootstrap,
 	TAXONOMY,
 } from "./bootstrap-verb.ts";
-import {NOT_BUILDABLE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {configState, countsOf, runConfig, type SurfaceRow} from "./config-verb.ts";
+import {
+	NOT_BUILDABLE,
+	PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH,
+	WRITE_UNKNOWN,
+	ZERO_SCOPE,
+} from "./codes.ts";
 import {noAsOf, oneLine, readNow} from "./fields.ts";
 import {runMenu} from "./menu-verb.ts";
 import {
 	badFieldRefusal,
 	boardField,
-	configField,
 	lanesField,
 	menuField,
 	readoutField,
 	runOpen,
+	settingsField,
 } from "./open-verb.ts";
-import {digestComment, issueNumberOf, runReadout} from "./readout-verb.ts";
+import {ARTIFACT_TITLE, digestComment, issueNumberOf, runReadout} from "./readout-verb.ts";
 import {
 	IN_REPO_ROSTER,
 	PLUGIN_MANIFEST,
@@ -69,17 +81,6 @@ const resolvedRoster = (skills: ReadonlyArray<RosterSkill>): RosterRead => ({
 	tier: "repo",
 	skills,
 	unreadableFrontmatter: skills.filter((s) => !s.frontmatterReadable).length,
-});
-
-const surface = (over: Partial<SurfaceRow>): SurfaceRow => ({
-	skill: "build",
-	surfaceId: "-",
-	disposition: "degrade",
-	presence: "present",
-	consequence: "-",
-	detail: "ROADMAP.md",
-	asOf: AS_OF,
-	...over,
 });
 
 describe("the roster row", () => {
@@ -251,47 +252,6 @@ describe("status menu", () => {
 	});
 });
 
-describe("status config", () => {
-	it("is `gaps`, never `satisfied`, over a roster that holds zero skills", () => {
-		expect(configState([], 0)).toBe("gaps");
-	});
-
-	it("is `satisfied` only when every declared surface is proven present", () => {
-		expect(configState([surface({})], 1)).toBe("satisfied");
-		expect(configState([surface({presence: "unprobeable"})], 1)).toBe("gaps");
-		expect(configState([surface({presence: "unknown"})], 1)).toBe("gaps");
-		expect(configState([surface({disposition: "undeclared", presence: "unknown"})], 1)).toBe(
-			"gaps",
-		);
-	});
-
-	it("deduplicates the missing count by id while every declaring row still prints", () => {
-		const counts = countsOf([
-			surface({skill: "build", surfaceId: "taxonomy", presence: "missing"}),
-			surface({skill: "operate", surfaceId: "taxonomy", presence: "missing"}),
-			surface({skill: "review", surfaceId: "other", presence: "missing"}),
-		]);
-		expect(counts.missing).toBe(2);
-		expect(counts.declaredSkills).toBe(3);
-	});
-
-	it("counts a disposition off the canonical three under off-vocabulary rather than refusing", () => {
-		expect(countsOf([surface({disposition: "warn"})]).offVocabulary).toBe(1);
-	});
-
-	it("renders the header and one line per surface", () => {
-		const out = runConfig({
-			roster: resolvedRoster([skill("build", "---\nname: build\ndescription: d\n---\n")]),
-			surfaces: [surface({})],
-			json: false,
-		});
-		expect(out.code).toBe(ANSWER);
-		expect(out.stdout).toBe(
-			"config\tsatisfied\t1\t0\t0\t0\nsurface\tbuild\t-\tdegrade\tpresent\t-\tROADMAP.md\t2026-08-09T14:22:03Z\n",
-		);
-	});
-});
-
 describe("status board", () => {
 	const counted = (name: string, count: number): Bucket => ({
 		name,
@@ -376,13 +336,23 @@ describe("status bootstrap", () => {
 	it("refuses an id outside the registry on 12, naming what IS buildable", () => {
 		expect(findSurface("merge-queue")).toBeUndefined();
 		expect(knownIds()).toBe(
-			"design-manifest, roadmap-focus, label-taxonomy, issue-shape-markers, readout-artifact",
+			"design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact",
 		);
 	});
 
-	it("carries exactly five ids", () => {
-		expect(BUILDABLE_SURFACES).toHaveLength(5);
+	it("carries exactly six ids", () => {
+		expect(BUILDABLE_SURFACES).toHaveLength(6);
 		expect(NOT_BUILDABLE).toBe(12);
+	});
+
+	/**
+	 * Buildability and disposition are separate axes over the same surface, so a surface can be
+	 * buildable here and carry any disposition there — but it cannot be buildable and carry none.
+	 * `roadmap-focus` shipped exactly that way and the gap reached a review round (#6301).
+	 */
+	it("names no surface the disposition registry has never heard of", () => {
+		const registered = new Set(SURFACE_REGISTRY.map((surface) => surface.id));
+		for (const surface of BUILDABLE_SURFACES) expect(registered.has(surface.id)).toBe(true);
 	});
 
 	it("builds every issue-shape marker the ideation skills mint issues with", () => {
@@ -407,6 +377,270 @@ describe("status bootstrap", () => {
 		const taxonomy = new Set(TAXONOMY.map((label) => label.name));
 		for (const label of ISSUE_SHAPE_MARKERS) expect(taxonomy.has(label.name)).toBe(false);
 		expect(TAXONOMY.every((label) => label.color === null)).toBe(true);
+	});
+});
+
+describe("the .fabrika/ gitignore row", () => {
+	const bootstrap = (files: Record<string, string | null>) => {
+		const fs = fakeFs({files});
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "gitignore-row",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		).then((outcome) => ({outcome, written: fs.written}));
+	};
+
+	it("appends the row to an existing .gitignore and leaves every prior line intact", async () => {
+		const {outcome, written} = await bootstrap({"/repo/.gitignore": "node_modules\ndist\n"});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "gitignore-row",
+			target: ".gitignore",
+			readback: "ok",
+		});
+		const after = written.get("/repo/.gitignore") ?? "";
+		expect(after.startsWith("node_modules\ndist\n")).toBe(true);
+		expect(after).toContain(FABRIKA_IGNORE_ROW);
+	});
+
+	it("writes the row into a repo carrying no .gitignore at all", async () => {
+		const {outcome, written} = await bootstrap({});
+		expect(outcome.code).toBe(ANSWER);
+		expect(written.get("/repo/.gitignore")).toContain(FABRIKA_IGNORE_ROW);
+	});
+
+	// The collision guard is the row, not the file: a `.gitignore` is a file many tools contribute to.
+	it("is idempotent — a row already there is exists at exit 0 and nothing is written", async () => {
+		const {outcome, written} = await bootstrap({"/repo/.gitignore": "dist\n/.fabrika/\n"});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout).outcome).toBe("exists");
+		expect(written.size).toBe(0);
+	});
+
+	it("never truncates a file it could not read — an unreadable target is UNKNOWN, not empty", async () => {
+		const fs = fakeFs({files: {"/repo/.gitignore": "dist\n"}, unreadable: ["/repo/.gitignore"]});
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "gitignore-row",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * #5778: `roadmap-focus` writes a machine-read file — `triage homes` joins milestones through its
+ * `#<n>` cells — and a byte-match read-back reads the same over a roadmap that parses to nothing.
+ * The counts make an inert draft visible at the moment it is written; they gate nothing, and the
+ * other file surface's bytes do not move.
+ */
+describe("the roadmap-focus row count", () => {
+	const write = (content: string, surfaceId = "roadmap-focus") => {
+		const fs = fakeFs({files: {}});
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId,
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "Text", text: content} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		);
+	};
+
+	const PARSING = [
+		"# Roadmap",
+		"",
+		"## Arcs",
+		"",
+		"| Arc | Milestone | State |",
+		"|---|---|---|",
+		"| Geçit | #46 | active |",
+		"| Sözlük | #47 | next |",
+		"",
+		"## Campaigns",
+		"",
+		"| Campaign | Milestone | State |",
+		"|---|---|---|",
+		"| fabrika everywhere | #48 | active |",
+		"",
+	].join("\n");
+
+	// What drafting by inference produces: the milestone's TITLE where the parser wants `#<n>`.
+	const INERT = [
+		"# Roadmap",
+		"",
+		"## Arcs",
+		"",
+		"| Arc | Milestone | State |",
+		"|---|---|---|",
+		"| Geçit | Sözlük — search and discovery | active |",
+		"",
+	].join("\n");
+
+	it("reports what parsed, and a roadmap that parses to nothing is still created", async () => {
+		const outcome = await write(INERT);
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "roadmap-focus",
+			target: "ROADMAP.md",
+			readback: "ok",
+			arcs: 0,
+			campaigns: 0,
+		});
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 0 arcs, 0 campaigns.",
+		]);
+	});
+
+	it("counts the rows a parsing roadmap joins, singular at one", async () => {
+		const outcome = await write(PARSING);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({arcs: 2, campaigns: 1});
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 2 arcs, 1 campaign.",
+		]);
+		expect(roadmapCount(PARSING).clause).toBe("2 arcs, 1 campaign");
+	});
+
+	// #6296: bootstrap must scaffold where the READERS look. A repo declaring `roadmapFile` and
+	// getting `ROADMAP.md` written ends up with two files, one of them inert and unremarked.
+	it("scaffolds at the path `roadmapFile` names", async () => {
+		const fs = fakeFs({
+			files: {"/repo/.fabrika.jsonc": JSON.stringify({roadmapFile: "docs/PLAN.md"})},
+		});
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "roadmap-focus",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "Text", text: PARSING} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({target: "docs/PLAN.md"});
+		expect([...fs.written.keys()]).toEqual(["/repo/docs/PLAN.md"]);
+	});
+
+	it("leaves the other file surface's bytes and notice exactly as they were", async () => {
+		const outcome = await write("# Design system manifest\n", "design-manifest");
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "design-manifest",
+			target: "design-system-manifest.md",
+			readback: "ok",
+		});
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: created design-system-manifest.md for design-manifest, read-back conformed.",
+		]);
+	});
+});
+
+/**
+ * #5776: the read-back re-scanned the eventually-consistent issues *list*, so a correct first
+ * creation reported `READBACK_MISMATCH`. Every case here scripts that list to stay empty after the
+ * write — the branch is proven only when the outcome no longer depends on it.
+ */
+describe("the readout-artifact read-back reads the created issue by number", () => {
+	const LIST = /^gh api --paginate repos\/o\/r\/issues\?state=open/;
+	const CREATE = /^gh api --method POST repos\/o\/r\/issues /;
+	const READBACK = /^gh api repos\/o\/r\/issues\/3$/;
+	const CREATED = okOut(JSON.stringify({number: 3, html_url: "https://github.com/o/r/issues/3"}));
+
+	const artifact = (overrides: Readonly<Record<string, unknown>> = {}) =>
+		okOut(
+			JSON.stringify({
+				number: 3,
+				title: ARTIFACT_TITLE,
+				body: "",
+				state: "open",
+				labels: [],
+				html_url: "https://github.com/o/r/issues/3",
+				...overrides,
+			}),
+		);
+
+	const run = (readback: ExecResult) => {
+		const shell = fakeShell([
+			[LIST, okOut("")],
+			[CREATE, CREATED],
+			[READBACK, readback],
+		]);
+		const fs = fakeFs({files: {}});
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "readout-artifact",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(shell.layer, fs.layer),
+			),
+		).then((outcome) => ({outcome, calls: shell.calls}));
+	};
+
+	it("reports created off the issue's own resource, never a second list read", async () => {
+		const {outcome, calls} = await run(artifact());
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "readout-artifact",
+			target: "o/r#3",
+			readback: "ok",
+		});
+		expect(calls.filter((line) => LIST.test(line))).toHaveLength(1);
+		expect(calls.filter((line) => READBACK.test(line))).toHaveLength(1);
+	});
+
+	it("spends READBACK_MISMATCH only on a proven 404", async () => {
+		const {outcome} = await run(errOut("gh: Not Found (HTTP 404)"));
+		expect(outcome.code).toBe(READBACK_MISMATCH);
+	});
+
+	it("reads an unreadable re-read as WRITE_UNKNOWN, never as a mismatch", async () => {
+		const {outcome} = await run(errOut("gh: Bad Gateway (HTTP 502)"));
+		expect(outcome.code).toBe(WRITE_UNKNOWN);
+	});
+
+	it("proves the artifact, not merely that the number resolves", async () => {
+		const wrongTitle = await run(artifact({title: "Something else"}));
+		expect(wrongTitle.outcome.code).toBe(READBACK_MISMATCH);
+		const closed = await run(artifact({state: "closed"}));
+		expect(closed.outcome.code).toBe(READBACK_MISMATCH);
 	});
 });
 
@@ -467,7 +701,11 @@ describe("status open is TOTAL — every unreadable source is a field state, nev
 	it("renders five fields at exit 0 when EVERY source failed", () => {
 		const fields = [
 			menuField({_tag: "Failed", path: "/x", display: "x", reason: "EACCES"}, AS_OF),
-			configField({_tag: "Failed", path: "/x", display: "x", reason: "EACCES"}, [], AS_OF),
+			settingsField(
+				[{key: "governedRoots", provenance: "unknown", detail: "EACCES"}],
+				".fabrika.jsonc",
+				AS_OF,
+			),
 			boardField({_tag: "Failed", repo: "acme/storefront", reason: "EAI_AGAIN"}),
 			readoutField({_tag: "NoFormat"}),
 			lanesField(
@@ -483,11 +721,13 @@ describe("status open is TOTAL — every unreadable source is a field state, nev
 		for (const field of fields) expect(field.state).toBe("unknown");
 	});
 
-	it("renders a resolved-but-empty roster as `empty`/`gaps`, not `unknown` and not `satisfied`", () => {
+	it("renders a resolved-but-empty roster as `empty`, not `unknown`", () => {
 		expect(menuField(resolvedRoster([]), AS_OF).state).toBe("empty");
-		const config = configField(resolvedRoster([]), [], AS_OF);
-		expect(config.state).toBe("gaps");
-		expect(config.detail).toBe("empty roster — nothing declared, nothing proven");
+	});
+
+	// A surface registering zero keys is unread, not resolved: ADR 0092's zero-scope seat as a field.
+	it("renders a settings surface carrying no keys as `unknown`", () => {
+		expect(settingsField([], ".fabrika.jsonc", AS_OF).state).toBe("unknown");
 	});
 
 	it("has exactly one refusal seat, and it is the off-vocabulary `--field`", () => {

@@ -108,3 +108,5 @@ Coins two golden-screens terms:
 Both are routed to `.glossary/TERMS.md` via a follow-up `/glossary` pass (they want the fuller
 treatment — a "not a git-committed PNG" disambiguation and cross-links to depo/ADR 0144 — rather
 than an inline one-liner here).
+
+> Amendment 2026-08-19: the capture machinery this ADR keys off moved out of `packages/design-capture` — `resolve.ts` / `plan.ts` / `upload.ts` now live in `packages/fabrika-cli/src/capture/` (founder ruling on #5061, moved by #5063). `packages/design-capture` still exists as phoenix's per-repo data half (`golden-pointer.json` + the `review-design` CLI); the depo-bytes / git-pointer decision is unchanged.

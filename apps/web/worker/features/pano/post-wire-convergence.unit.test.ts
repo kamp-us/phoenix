@@ -1,18 +1,8 @@
 /**
- * The Pano `Post` wire shaper (`toPost`) and its two summary sources both trace to
- * the one `post-fields.ts` column→field map (#1126 AC#1, the Pano parallel of the
- * Definition slice). This pins that at the wire-shaper seam: it generalizes #1170's
- * `body`-only convergence to the WHOLE `{__typename, …}` object.
- *
- * - The by-id summary (`toPostSummaryRow`) and the keyset/feed summary
- *   (`toPostSummaryKeysetRow`) feed `toPost` and must agree, wire field for wire
- *   field, on every column the keyset projection carries — never `""` on one and
- *   `null` on the other (the #1170 class), and never a renamed/dropped field once the
- *   shaper's `PostFields` input derives from the same map as the mappers.
- *   (`updatedAt` / `isDraft` are excluded: the keyset projection selects a column
- *   subset that omits them, so they legitimately fall back to `createdAt` / `null`.)
- * - The shaper emits the canonical wire shape: exactly the `Post` key set, with the
- *   `myVote` / `isSaved` / `isDraft` viewer-scalar defaults stamped to `null`.
+ * Pins that the by-id summary and the keyset/feed summary agree wire field for wire
+ * field, so neither drifts to `""` where the other says `null` (#1170). `updatedAt` /
+ * `isDraft` are excluded because the keyset projection omits those columns and they
+ * legitimately fall back.
  */
 import {assert, describe, it} from "@effect/vitest";
 import type * as schema from "../../db/drizzle/schema.ts";
@@ -46,8 +36,7 @@ const baseRecord = (bodyExcerpt: string | null): PostRecord => ({
 	isDraft: null,
 });
 
-// The keyset path selects exactly this column subset (the `listPostsConnection`
-// fetch); project the same record onto it so both mappers read one source row.
+// The exact column subset `listPostsConnection` selects, so both mappers read one row.
 const keysetRowOf = (r: PostRecord): PostKeysetRow => ({
 	id: r.id,
 	slug: r.slug,
@@ -63,8 +52,6 @@ const keysetRowOf = (r: PostRecord): PostKeysetRow => ({
 	tags: r.tags,
 });
 
-// The wire fields the keyset projection's column subset can populate — every `Post`
-// field except the ones the subset omits (`updatedAt` / `isDraft`).
 const KEYSET_WIRE_FIELDS = [
 	"__typename",
 	"id",
@@ -120,9 +107,8 @@ describe("Pano Post wire shaper — by-id and keyset summaries converge (#1161, 
 	it("non-empty `bodyExcerpt` → rides the wire verbatim through the shaper", () => {
 		const record = baseRecord("ilk birkaç kelime…");
 
-		// Pin the literal value (not merely cross-path agreement): a mapper that
-		// mangled a non-empty excerpt identically on both paths would pass the
-		// field-agreement case yet must fail here.
+		// The literal value, not just cross-path agreement — a mapper mangling the excerpt
+		// identically on both paths would pass the agreement case.
 		assert.strictEqual(toPost(toPostSummaryRow(record)).body, "ilk birkaç kelime…");
 		assert.strictEqual(
 			toPost(toPostSummaryKeysetRow(keysetRowOf(record))).body,
@@ -157,14 +143,12 @@ describe("Pano Post wire shaper — by-id and keyset summaries converge (#1161, 
 			"url",
 		]);
 		assert.strictEqual(wire.__typename, "Post");
-		// No viewer scalars requested on a bare summary read → defaulted to `null`.
 		assert.strictEqual(wire.myVote, null);
 		assert.strictEqual(wire.isSaved, null);
 		assert.strictEqual(wire.isDraft, null);
-		// The owner-scoped in-review flag is stamped only by the read path (#2200); a
-		// bare summary shape defaults it `false`, never leaking review state.
+		// The owner-scoped in-review flag is stamped only by the read path, so a bare
+		// summary must default it `false` rather than leak review state.
 		assert.strictEqual(wire.sandboxed, false);
-		// No reactions requested on a bare summary read → the empty aggregate.
 		assert.deepStrictEqual(wire.reactions, EMPTY_REACTION_AGGREGATE);
 	});
 });

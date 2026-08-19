@@ -1,34 +1,18 @@
 /**
- * `Comment`'s one column→field map — the single structure the row mapper
- * (`toCommentRow` / `rowToCommentRow` in `Pano.ts`), the wire shaper (`toComment`
- * in `shapers.ts`), and the view field declaration (`CommentView` in `views.ts`)
- * all derive from, so a one-field change touches this map instead of three
- * hand-synced restatements (#1166, the Pano half of #1126 AC#1).
+ * `Comment`'s one column→field map — the single structure the row mapper (`toCommentRow` /
+ * `rowToCommentRow` in `Pano.ts`), the wire shaper (`toComment` in `shapers.ts`) and the view
+ * field declaration (`CommentView` in `views.ts`) all derive from, instead of three hand-synced
+ * restatements (#1166).
  *
- * The map absorbs the per-source naming divergence: the DB record calls the
- * author `authorName` and may leave the timestamps null, while the wire field is
- * `author` / a non-null `Date`. Each intrinsic reader maps a `comment_record` row
- * onto its wire value, so the divergence lives in the map, not at every call site.
- *
- * The `Removed` tombstone (`[silindi]` placeholder, author elided — ADR 0096 §5)
- * is a presentation override the map does NOT carry: `rowToCommentRow` runs this
- * map for the live shape, then substitutes the tombstone fields. `myVote` is the
- * viewer scalar — part of the view/wire field set (`commentViewFields`) but *not*
- * read from the record here: it is stamped by `stampViewerScalars` after the
- * batched `user_vote` read (#1159, `viewer-scalars.ts`).
+ * The map absorbs the per-source naming divergence (`authorName`→`author`, nullable timestamps).
+ * It does NOT carry the `Removed` tombstone override (ADR 0096 §5) or the viewer scalars — those
+ * are stamped by the callers after their batched reads.
  */
 import type * as schema from "../../db/drizzle/schema.ts";
 import type {ReactionAggregate} from "../reaction/Reaction.ts";
 
 type CommentRecord = typeof schema.commentRecord.$inferSelect;
 
-/**
- * The intrinsic (record-derived) wire fields, in `CommentView` order, each
- * mapping a `comment_record` row onto its live wire value. The keys ARE the wire
- * field names; the readers absorb the `authorName`→`author` + null-timestamp
- * divergence. `deletedAt` is the removal timestamp (`null` for a live comment);
- * the tombstone override in `rowToCommentRow` supplies it for a `Removed` row.
- */
 const intrinsicFields = {
 	id: (c) => c.id,
 	parentId: (c) => c.parentId,
@@ -44,45 +28,30 @@ const intrinsicFields = {
 type IntrinsicRow = {[K in keyof typeof intrinsicFields]: ReturnType<(typeof intrinsicFields)[K]>};
 
 /**
- * `CommentRow` — the record-derived row the comment reads share, plus the
- * `myVote` viewer scalar that `stampViewerScalars` adds downstream (`null` for an
- * anonymous viewer; `undefined` when not requested — never read from the record).
+ * `myVote` is `null` for an anonymous viewer and `undefined` when the read didn't request it —
+ * never read from the record; `stampViewerScalars` adds it downstream.
  */
 export interface CommentRow extends IntrinsicRow {
 	myVote?: boolean | null;
 	/**
-	 * The owner-scoped in-review flag (#4282, the `Comment` leg of #2200) — the twin of
-	 * `PostSummaryRow.sandboxed`: stamped by the read paths via `ownSandboxed`, so it is
-	 * `true` only for the author's own still-sandboxed comment. `undefined` when a read
-	 * doesn't stamp it; the shaper then defaults `false`.
+	 * The owner-scoped in-review flag (#4282): stamped via `ownSandboxed`, so it is `true` only
+	 * for the author's OWN still-sandboxed comment. `undefined` when unstamped; shaper defaults false.
 	 */
 	sandboxed?: boolean;
 	/**
-	 * The author's LIVE handle (`user_profile.username` / `.displayName`), stamped by
-	 * `stampAuthorIdentity` after the batched `getProfileIdentitiesByIds` read (#2139)
-	 * so the client renders the CURRENT display name via `actorLabel`, not the write-time
-	 * `authorName` snapshot (#2126's AC). `undefined` when not requested; `null` when the
-	 * author has no profile/handle (or the `Removed` tombstone blanked `authorId`) —
-	 * `actorLabel` then degrades to `@username` → fallback.
+	 * The author's LIVE handle, stamped by `stampAuthorIdentity` (#2139) so the client renders the
+	 * CURRENT display name, not the write-time `authorName` snapshot. `null` when the author has no
+	 * profile/handle (or the tombstone blanked `authorId`).
 	 */
 	authorUsername?: string | null;
 	authorDisplayName?: string | null;
-	/**
-	 * The reaction aggregate (per-emoji counts + the viewer's own reaction), stamped
-	 * by `stampReactionAggregate` after the batched `user_reaction` read (#1862) —
-	 * `undefined` when not requested; the shaper fills the empty aggregate.
-	 */
+	/** Per-emoji counts + the viewer's own reaction (#1862); the shaper fills the empty aggregate. */
 	reactions?: ReactionAggregate;
 }
 
 /**
- * `CommentFields` — the wire shaper's input (`toComment` in `shapers.ts`): the
- * intrinsic wire-named fields derived from this one column→field map so the wire
- * shaper's field set can't drift from the row mapper / `commentViewFields` (the third
- * hand-synced restatement #1126 AC#1 collapses). A fresh write/vote carries no
- * `updatedAt`, and `deletedAt` / `myVote` are stamped at the call site (the tombstone
- * override + the viewer scalar), so those ride as optional — the map stays the single
- * source for the field set.
+ * The wire shaper's input, derived from the same map so its field set can't drift. `updatedAt`,
+ * `deletedAt` and `myVote` ride optional because they are stamped at the call site.
  */
 export type CommentFields = Omit<IntrinsicRow, "updatedAt" | "deletedAt"> & {
 	updatedAt?: Date | null;
@@ -102,12 +71,8 @@ export interface CommentConnectionPage {
 }
 
 /**
- * The view/wire field selection (`{id: true, …}`) — a static literal (fate's
- * `FateDataView` reads the literal field map off this, so it can't be a
- * dynamically-built object). `satisfies Record<keyof CommentRow, true>` pins it
- * to exactly the row's fields: dropping a field here (or adding one to
- * `CommentRow` without listing it here) is a compile error, so the view stays in
- * lockstep with the row mapper.
+ * A static literal, not a built object: fate's `FateDataView` reads the literal field map off
+ * this. `satisfies Record<keyof CommentRow, true>` makes a missing field a compile error.
  */
 export const commentViewFields = {
 	id: true,
@@ -126,12 +91,6 @@ export const commentViewFields = {
 	reactions: true,
 } as const satisfies Record<keyof CommentRow, true>;
 
-/**
- * Map a live `comment_record` row onto its intrinsic `CommentRow` fields by
- * running every reader in the column→field map — the single place the live
- * record→row mapping lives. The `Removed` tombstone override and `myVote` viewer
- * scalar are applied by the callers in `Pano.ts`, not here.
- */
 export const toCommentRow = (c: CommentRecord): IntrinsicRow =>
 	Object.fromEntries(
 		(Object.keys(intrinsicFields) as Array<keyof typeof intrinsicFields>).map((f) => [

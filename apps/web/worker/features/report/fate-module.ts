@@ -12,13 +12,10 @@ import {
 import {openReportDataView, resolvedReportDataView} from "./views.ts";
 
 const roots: FateRootsRecord = {
-	// The moderation queue (ADR 0098) — a `Moderate`-capability-gated list root (the
-	// `moderates` relation tuple, ADR 0107 §4); the
-	// `report.listOpen` resolver owns the oldest-first order.
+	// Both roots are `Moderate`-capability-gated (the `moderates` relation tuple, ADR 0107 §4);
+	// each resolver owns its own order — oldest-first for the queue, newest-decision-first for
+	// the feed (ADR 0098, #1704).
 	"report.listOpen": list(openReportDataView),
-	// The shared decision feed (#1704) — a `Moderate`-gated list root over recently
-	// resolved/dismissed targets; the `report.listResolved` resolver owns the
-	// newest-decision-first order.
 	"report.listResolved": list(resolvedReportDataView),
 };
 

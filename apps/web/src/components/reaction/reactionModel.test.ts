@@ -3,17 +3,6 @@ import {REACTION_EMOJI} from "../../../worker/db/reaction-emoji";
 import type {ReactionAggregate} from "../../../worker/features/reaction/Reaction";
 import {nextReaction, REACTION_GLOSS, reactionOptimistic, reactionSlots} from "./reactionModel";
 
-/**
- * The load-bearing reaction-bar core the three surfaces ship through
- * ({@link reactionSlots} / {@link nextReaction} / {@link reactionOptimistic}) — the
- * palette-render shape, the cardinality-one tap semantics, and the optimistic
- * aggregate delta. These drive the REAL exported functions the `ReactionBar`
- * component + `useReactionBar` hook route through, so a regression in the palette
- * fill, the retract-vs-change decision, or the count math fails here rather than
- * only in an e2e — the `voteOptimistic` unit-test idiom, extended to a 6-way
- * palette.
- */
-
 describe("reactionSlots — the full curated palette, in order", () => {
 	it("renders every REACTION_EMOJI member exactly once, in palette order, at zero for an empty aggregate", () => {
 		const slots = reactionSlots({counts: [], myReaction: null});
@@ -53,7 +42,6 @@ describe("reactionSlots — the full curated palette, in order", () => {
 		expect(byEmoji.get("👍")).toBe("beğendim");
 		expect(byEmoji.get("🤔")).toBe("düşündürdü");
 		expect(byEmoji.get("🔥")).toBe("efsane");
-		// The gloss map covers every palette member exactly (no drift from the palette).
 		expect(Object.keys(REACTION_GLOSS).sort()).toEqual([...REACTION_EMOJI].sort());
 	});
 });
@@ -101,7 +89,6 @@ describe("reactionOptimistic — the instant-write aggregate after a tap", () =>
 	});
 
 	it("keeps other users' tallies intact — only the viewer's own contribution moves", () => {
-		// 👍 has 5 (incl. the viewer); a retract drops it to 4 (the other 4 stay).
 		const next = reactionOptimistic({counts: [{emoji: "👍", count: 5}], myReaction: "👍"}, "👍");
 		expect(next.counts).toEqual([{emoji: "👍", count: 4}]);
 	});
@@ -113,7 +100,6 @@ describe("reactionOptimistic — the instant-write aggregate after a tap", () =>
 	});
 
 	it("orders the optimistic counts by the palette, matching the server's canonical order", () => {
-		// react 🔥 first, then (fresh aggregate) react 👍: the result must list 👍 before 🔥.
 		const agg: ReactionAggregate = {
 			counts: [
 				{emoji: "🔥", count: 1},

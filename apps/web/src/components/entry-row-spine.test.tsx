@@ -1,22 +1,10 @@
 /**
- * The entry-row behavioral spine lock (#2406). This is the tripwire the
- * one-directional design-sync authority contract
- * (`.patterns/design-sync-authority.md`, ADR 0162 pillar 4) runs against: it
- * freezes the code-authoritative a11y/behavioral shell of the primitives the
- * entry-row composite is built from — `Button`, `MetaRow`, `CountToggle`,
- * `ToggleGroup`, `ReactionBar` — so a later visual reskin that drops the spine
- * fails here rather than silently shipping. Each axis asserts a *behavior* a
- * synced reskin must never overwrite: focus-ring presence, aria roles/labels/
- * state, keyboard order/operability, and `prefers-reduced-motion` respect.
+ * The entry-row behavioral spine lock (#2406) — the tripwire for
+ * `.patterns/design-sync-authority.md`.
  *
- * jsdom decidability: name/role/ARIA/focusability/keyboard-order are jsdom-decidable
- * and asserted per render. The focus ring and reduced-motion are CSS/media-query
- * paint facts jsdom cannot compute (no layout engine, no applied CSS) — the same
- * category the a11y harness parks as `warning` (posture.ts). So those two axes are
- * locked at their single load-bearing SOURCE site: the one shared `:focus-visible`
- * ring and the one global reduced-motion reset, both in `styles/global.css`. If
- * either is removed the entire entry-row shell loses that guarantee, so the source
- * assertion is the honest tripwire, not a false jsdom paint gate.
+ * The focus ring and reduced-motion are CSS/media-query facts jsdom cannot compute,
+ * so those two axes assert against the CSS SOURCE (`styles/global.css`) rather than
+ * a rendered node. That is deliberate: a jsdom paint assertion here would be false.
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
@@ -38,10 +26,8 @@ const ICON_CSS = readSource("./icon.css");
 const TOGGLE_GROUP_CSS = readSource("./ui/ToggleGroup.css");
 
 describe("entry-row spine — focus-ring presence", () => {
-	// The ring is painted once, globally, by the single `:focus-visible` rule over
-	// the native-focusable element set (global.css). The per-primitive contract is
-	// therefore "render a native focusable control that rule targets" — never a
-	// non-focusable div, never a hand-rolled per-component outline.
+	// One global `:focus-visible` rule paints every ring, so each primitive's contract
+	// is only "render a native focusable control" — never a hand-rolled outline.
 	it("global.css defines the shared focus-ring token and a single :focus-visible outline rule", () => {
 		expect(GLOBAL_CSS).toMatch(/--focus-ring:/);
 		expect(GLOBAL_CSS).toMatch(/:focus-visible\s*\{[^}]*outline:\s*var\(--focus-ring\)/s);
@@ -137,8 +123,6 @@ describe("entry-row spine — aria roles/labels/state", () => {
 		const {container} = render(
 			<CountToggle icon={<span data-testid="g">g</span>} aria-label="beğen" />,
 		);
-		// The accessible name is the button's own aria-label; the glyph must not
-		// invent a competing name (a reskin dropping the label breaks this).
 		expect(container.querySelector("button")!.getAttribute("aria-label")).toBe("beğen");
 	});
 
@@ -187,9 +171,8 @@ describe("entry-row spine — keyboard order & operability", () => {
 		expect(buttons.length).toBeGreaterThan(1);
 		for (const btn of buttons) {
 			expect(btn.tagName).toBe("BUTTON");
-			// A native button with no positive/removed tabindex keeps natural tab
-			// order — a reskin that sets tabindex to reorder or remove it breaks
-			// keyboard operability. tabIndex is 0 for an untouched native button.
+			// 0 is the value of an untouched native button; anything else means a reskin
+			// reordered or removed the tab stop.
 			expect(btn.tabIndex).toBe(0);
 		}
 	});
@@ -203,8 +186,8 @@ describe("entry-row spine — keyboard order & operability", () => {
 				<CountToggle aria-label="beğen" onClick={onToggle} />
 			</>,
 		);
-		// Native <button> semantics carry Enter/Space activation; a click stands in
-		// for the activation a keyboard user triggers on a focused button.
+		// A click stands in for the Enter/Space activation native <button> semantics give
+		// a keyboard user on a focused button.
 		fireEvent.click(getByText("gönder"));
 		fireEvent.click(getByLabelText("beğen"));
 		expect(onBtn).toHaveBeenCalledOnce();
@@ -247,10 +230,8 @@ describe("entry-row spine — keyboard order & operability", () => {
 });
 
 describe("entry-row spine — prefers-reduced-motion respect", () => {
-	// jsdom applies no CSS and evaluates no media query, so reduced-motion is locked
-	// at its single load-bearing SOURCE site: the one global reset that neutralizes
-	// every primitive's animation/transition (WCAG 2.3.3). Removing it strips
-	// reduced-motion handling from the whole entry-row shell — this goes red.
+	// Locked at the source rather than the render: the one global reset covers every
+	// primitive's animation/transition (WCAG 2.3.3).
 	it("global.css carries the universal prefers-reduced-motion reset over animation and transition", () => {
 		const reset = GLOBAL_CSS.match(
 			/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*?\n\}/,

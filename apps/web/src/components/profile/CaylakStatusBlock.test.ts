@@ -1,9 +1,5 @@
-/**
- * The çaylak status block's gating, copy, and one-way-glass contracts (#1291),
- * asserted DOM-free — `apps/web/src` has no jsdom, so the gate, the vouch readout,
- * and the consumed-shape key set are factored out of the component and tested as
- * pure values (the pure-extraction idiom of `flagGateChild` / `shouldShowOnramp`).
- */
+// `apps/web/src` has no jsdom, so the gate, the vouch readout, and the consumed-shape
+// key set are factored out of the component and asserted as pure values.
 import {describe, expect, it} from "vitest";
 import {
 	caylakPromotionPath,
@@ -71,7 +67,6 @@ describe("caylakPromotionPath — the unvouched-vs-vouched rendering split (#132
 	});
 
 	it("the unvouched copy communicates that a vouch (or a mod action) is required", () => {
-		// the vouch path ('kefil') and the mod alternative are both surfaced
 		expect(VOUCH_NEEDED_COPY.message).toMatch(/kefil/);
 		expect(VOUCH_NEEDED_COPY.hint).toMatch(/moderatör/);
 	});

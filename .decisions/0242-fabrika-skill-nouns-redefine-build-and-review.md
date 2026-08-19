@@ -31,7 +31,7 @@ matters most for the two names that are not additions:
 - **`review` was a family.** ADR [0079](0079-reviewer-authored-acceptance-criteria.md) says "all four
   `review-*`"; ADR [0226](0226-cp-advisory-never-carries-a-failing-criterion.md) says "the four review
   gate templates". The directory is wider still —
-  [`claude-plugins/kampus-pipeline/skills/`](../claude-plugins/kampus-pipeline/skills/) carries **six**
+  `claude-plugins/kampus-pipeline/skills/` carries **six**
   `review-*` skills. So the word names a family of four in the decision corpus and six on disk, and
   after #4904 it names one skill.
 - **`build` was the general act.** `CLAUDE.md` uses `pnpm build` as the build verb; the `platform lane`

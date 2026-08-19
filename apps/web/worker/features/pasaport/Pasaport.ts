@@ -1,12 +1,7 @@
 /**
- * Pasaport — the user identity + profile service. Validation lives inside the
- * methods as closure helpers (ADR 0013). Infrastructure failures are NOT raised:
- * every internal DB call dies on `DrizzleError` (`orDieAccess` at layer build —
- * the domain-boundary rule), so the public signatures carry domain errors only.
- *
- * The auth instance is supplied by `BetterAuthLive` (`better-auth-live.ts`); the
- * `/api/auth/*` route reads `BetterAuth.fetch` from the same Context tag, so
- * `Pasaport` no longer mounts the handler itself.
+ * Pasaport — the user identity + profile service. Every internal DB call dies on
+ * `DrizzleError` (`orDieAccess` at layer build), so the public signatures carry
+ * domain errors only. Validation lives inside the methods (ADR 0013).
  */
 import type {Auth as BetterAuth} from "better-auth";
 import {and, desc, eq, inArray, isNull, like, or, type SQL, sql} from "drizzle-orm";
@@ -62,25 +57,16 @@ import type {ProfileRow} from "./profile-fields.ts";
 import {toUserRow, type UserRow} from "./user-fields.ts";
 import {checkUsername, normalizeUsername} from "./username-rule.ts";
 
-// `UserRow`/`ProfileRow` are single-sourced in their field-map modules (#1545);
-// re-exported here so cross-feature callers keep their `./Pasaport.ts` import.
 export type {ProfileRow} from "./profile-fields.ts";
 export type {UserRow} from "./user-fields.ts";
 
-// The worker-level better-auth instance handle (NOT the per-request session — that
-// is `CurrentUser`, ADR 0042). Phoenix never specializes the better-auth options at
-// the type level, so this is the unparameterized better-auth `Auth` — matching the
-// `BetterAuth` tag's `auth` field.
+// The worker-level better-auth handle, NOT the per-request session — that is
+// `CurrentUser` (ADR 0042).
 export type BetterAuthInstance = BetterAuth;
 export type Session = NonNullable<Awaited<ReturnType<BetterAuthInstance["api"]["getSession"]>>>;
 
-/**
- * The minimal identity tuple a batched roster read needs per çaylak — the display
- * handle + karma, keyed by `userId`. A projection of {@link ProfileRow} (no counts,
- * no image) for callers that join identity onto many users in ONE read; `username` is
- * nullable here (an un-bootstrapped çaylak has no username yet). See
- * `getProfileIdentitiesByIds`.
- */
+// Identity-only projection of {@link ProfileRow} for batched roster reads;
+// `username` is null for an un-bootstrapped çaylak.
 export interface ProfileIdentityRow {
 	userId: string;
 	username: string | null;
@@ -102,13 +88,8 @@ export interface SetDisplayNameResult {
 	image: string | null;
 }
 
-// The shared discriminant + identity fields every contribution variant carries.
-// `sandboxed` is the per-item review-state flag (#1316) — `sandboxed_at IS NOT NULL`,
-// true only for a çaylak's still-in-review content (and only ever surfaced to the
-// author themselves + a moderator, since the feed filters sandboxed rows for anyone
-// else). It carries NO reviewer identity — just the item's own lifecycle state — so
-// #1291 can key an "incelemede" badge. Always `false` while the authorship loop is
-// dark (nothing is sandboxed on create when the flag is off).
+// `sandboxed` = `sandboxed_at IS NOT NULL` (#1316). It carries NO reviewer identity,
+// and the feed only ever surfaces a sandboxed row to its author + a moderator.
 interface ContributionBase {
 	id: string;
 	createdAt: Date;
@@ -116,17 +97,9 @@ interface ContributionBase {
 	sandboxed: boolean;
 }
 
-/**
- * The single source of the contribution-union's variant→fields knowledge (the
- * `Contribution` concept is *either* a definition, post, or comment). Each
- * variant lists ONLY its own fields, above {@link ContributionBase}; every other
- * shape — the discriminated {@link ContributionNode}, the flattened
- * {@link ContributionRow}, the runtime null-padding in `shapers`, and the
- * `ContributionView` field map — derives from this map so a variant (or a
- * per-variant field) is declared once (ADR 0018: fate has no union type, so the
- * variants are flattened onto one nullable row — but the membership fact lives
- * here, not spread across four sites).
- */
+// The single source of variant→fields for the contribution union: every other shape
+// (node, flat row, shaper null-padding, view field map) derives from this map, so add
+// a variant or a field here and nowhere else. See ADR 0018.
 interface ContributionVariants {
 	definition: {bodyExcerpt: string; termSlug: string; termTitle: string};
 	post: {title: string; slug: string | null; bodyExcerpt: string | null};
@@ -135,52 +108,39 @@ interface ContributionVariants {
 
 export type ContributionKind = keyof ContributionVariants;
 
-// `kind` + base + the variant's own fields, per discriminant.
 type ContributionNodeOf<K extends ContributionKind> = {kind: K} & ContributionBase &
 	ContributionVariants[K];
 
 export type ContributionNode = {[K in ContributionKind]: ContributionNodeOf<K>}[ContributionKind];
 
-// Union of every variant's field names — the columns the flat row flattens onto.
 type ContributionVariantField = {
 	[K in ContributionKind]: keyof ContributionVariants[K];
 }[ContributionKind];
 
-// Each variant field's value type, unioned across the variants that declare it
-// (and `null`, since the row nulls every field a given `kind` doesn't own).
 type ContributionVariantValue<F extends ContributionVariantField> = {
 	[K in ContributionKind]: F extends keyof ContributionVariants[K]
 		? ContributionVariants[K][F]
 		: never;
 }[ContributionKind];
 
-// The variant-field columns, all nullable — the flattened half of the row.
 type ContributionVariantColumns = {
 	[F in ContributionVariantField]: ContributionVariantValue<F> | null;
 };
 
-// Flat **discriminant** reshape of {@link ContributionNode} (ADR 0018: fate has
-// no union type). Derived from {@link ContributionVariants}: base fields plus
-// every variant's fields made nullable, populated per `kind`.
+// Flat discriminant reshape of {@link ContributionNode} — see ADR 0018 (fate has no
+// union type).
 export type ContributionRow = {kind: ContributionKind} & ContributionBase &
 	ContributionVariantColumns;
 
-/**
- * The variant→field-names manifest, the runtime witness of
- * {@link ContributionVariants}. `shapers.toContributionRow` reads it to null-pad
- * generically (every variant column starts `null`, then the node's own fields
- * overlay) — so a forgotten field is a compile-time error here, never a silent
- * wrong-shape in a hand-written `case`. The `satisfies` ties the runtime list to
- * the type-level variant map: drop or misspell a field name and it fails to
- * compile.
- */
+// Runtime witness of {@link ContributionVariants} — `shapers.toContributionRow`
+// reads it to null-pad generically. The `satisfies` makes a missed field a compile
+// error rather than a silent wrong-shape row.
 export const CONTRIBUTION_VARIANT_FIELDS = {
 	definition: ["bodyExcerpt", "termSlug", "termTitle"],
 	post: ["title", "slug", "bodyExcerpt"],
 	comment: ["bodyExcerpt", "postId", "postTitle"],
 } as const satisfies {[K in ContributionKind]: ReadonlyArray<keyof ContributionVariants[K]>};
 
-// Every variant column name, deduped — the keys the flat row nulls then overlays.
 export const CONTRIBUTION_VARIANT_FIELD_NAMES: ReadonlyArray<ContributionVariantField> = [
 	...new Set(Object.values(CONTRIBUTION_VARIANT_FIELDS).flat() as ContributionVariantField[]),
 ];
@@ -197,10 +157,8 @@ export interface ContributionConnection {
 	totalCount: number;
 }
 
-// A per-target email-delivery read/write result: the server-resolved `address` (the
-// projection's stable key + the ack's normalization key) paired with its projected
-// `state`. Returned by the mark/clear/read methods so the resolver keys its ack on the
-// address without a second user lookup (epic #2687).
+// `address` is the server-resolved projection key, returned alongside `state` so the
+// resolver keys its ack without a second user lookup (epic #2687).
 export interface EmailDeliveryResult {
 	readonly address: string;
 	readonly state: EmailDeliveryState;
@@ -216,11 +174,8 @@ export class Pasaport extends Context.Service<
 		// Single `WHERE id IN (...)`; order is not guaranteed (fate re-associates by id).
 		readonly getUsersByIds: (userIds: ReadonlyArray<string>) => Effect.Effect<UserRow[]>;
 
-		// Batched identity-only profile read (handle + karma) for many users in ONE
-		// `WHERE user_id IN (...)`; the divan roster joins it onto its grouped rows so
-		// the client never fires a per-row by-id `Profile` read (#1423). Order is not
-		// guaranteed (the caller re-associates by `userId`); users with no profile row
-		// are simply absent.
+		// Order is not guaranteed (the caller re-associates by `userId`); users with no
+		// profile row are simply absent.
 		readonly getProfileIdentitiesByIds: (
 			userIds: ReadonlyArray<string>,
 		) => Effect.Effect<ProfileIdentityRow[]>;
@@ -233,25 +188,16 @@ export class Pasaport extends Context.Service<
 			UsernameInvalid | UsernameTaken | UsernameAlreadySet | UserNotFound
 		>;
 
-		// Change the görünen ad (display name). Writes `user.name` AND
-		// `user_profile.display_name` in ONE atomic D1 batch so the two can never
-		// diverge (#2154): the better-auth field the settings surface reads and the
-		// stamped column every author byline reads are updated in lockstep. The
-		// `user_profile` upsert inserts a fresh row (`username` null) for a user who
-		// never set a username, so a byline resolves the live display name even
-		// pre-bootstrap. Unlike `setUsername`, this is re-runnable — a display name
-		// is mutable.
+		// Writes `user.name` AND `user_profile.display_name` in ONE atomic D1 batch so
+		// the two can never diverge (#2154). Unlike `setUsername`, re-runnable.
 		readonly setDisplayName: (input: {
 			userId: string;
 			value: string;
 		}) => Effect.Effect<SetDisplayNameResult, DisplayNameEmpty | UserNotFound>;
 
-		// `viewer` threads the request viewer so the profile's HEADLINE counts
-		// (`definitionCount`/`postCount`/`commentCount`) apply the #1205 sandbox filter
-		// (#1312): public/anonymous/other-member see counts of the author's LIVE content
-		// only, while the author themselves + a moderator see the full count including
-		// sandboxed. Omitted ⇒ anonymous (public-only), the fail-safe default — so the
-		// headline counts agree with the (#1309-fixed) feed for the same viewer.
+		// `viewer` applies the #1205 sandbox filter to the headline counts (#1312):
+		// only the author + a moderator see sandboxed content counted. Omitted ⇒
+		// anonymous (public-only), the fail-safe default.
 		readonly lookupProfile: (
 			username: string,
 			viewer?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
@@ -262,11 +208,8 @@ export class Pasaport extends Context.Service<
 			viewer?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
 		) => Effect.Effect<ProfileRow | null>;
 
-		// The contribution feed for a profile page. `sandboxViewer`/`viewerId` thread
-		// the request viewer so the feed applies the #1205 sandbox filter (#1309): a
-		// visitor sees only the author's LIVE content, the owner + a moderator also see
-		// the author's sandboxed content. Omitted ⇒ anonymous (public-only), the safe
-		// default.
+		// Same #1205 sandbox filter as `lookupProfile` (#1309). Omitted viewer ⇒
+		// anonymous (public-only), the safe default.
 		readonly listContributions: (input: {
 			authorId: string;
 			after?: string | null | undefined;
@@ -275,46 +218,24 @@ export class Pasaport extends Context.Service<
 			sandboxViewer?: SandboxViewer | undefined;
 		}) => Effect.Effect<ContributionConnection>;
 
-		// The count of an author's OWN content still in review — sandboxed (#1205)
-		// and not removed — the `inReviewCount` aggregate the çaylak-self standing
-		// read (#1316) exposes. A bare count over `sandboxBacklogWhere` scoped to the
-		// author; it carries no per-item or per-reviewer detail (one-way-glass).
+		// Aggregate only — no per-item or per-reviewer detail (one-way-glass, #1316).
 		readonly countInReview: (authorId: string) => Effect.Effect<number>;
 
-		// Account deletion = anonymize-to-`@[silinen]` (ADR 0097). For the calling
-		// user, in ONE atomic D1 batch: re-attribute every authored content row to
-		// the `silinen` sentinel (content stays Live, karma KEPT), tear down the
-		// identity rows (session/account/apikey/verification), and scrub the `user`
-		// row to a kept tombstone (PII nulled, `deleted_at` stamped). Idempotent
-		// for the same user (re-running re-attributes nothing and re-scrubs the
-		// already-scrubbed row). The caller is always the target — there is no
-		// "delete user X".
+		// Account deletion = anonymize-to-`@[silinen]`; see ADR 0097. Idempotent, and
+		// the caller is always the target — there is no "delete user X".
 		readonly anonymizeAccount: (input: {userId: string}) => Effect.Effect<void>;
 
-		// Promote a çaylak to yazar (#1206) — the server-side writer of the
-		// `input:false` `user.tier` column (#1203). In ONE atomic D1 batch (ADR
-		// 0014, the `anonymizeAccount` precedent): flip the tier `çaylak → yazar`
-		// AND resolve the account's sandboxed backlog (#1205) — `sandboxed_at := null`
-		// on its still-sandboxed, not-removed content, so the now-yazar's backlog goes
-		// live. Atomic, so "tier flipped but backlog half-swept" is unrepresentable;
-		// idempotent, because both writes are conditional (tier flips only from çaylak,
-		// the sweep touches only sandboxed-not-removed rows) so re-running is a no-op.
+		// Tier flip + sandbox-backlog sweep in ONE atomic D1 batch, idempotent (#1206).
 		// The AUTHORITY (a mod, or a valid vouch) is discharged at the resolver, never
-		// here — `promoted: true` iff the tier flip actually fired (the account was a
-		// çaylak), `false` on an already-yazar / unknown account.
+		// here. `promoted: true` iff the tier flip actually fired.
 		readonly promoteToYazar: (input: {userId: string}) => Effect.Effect<{promoted: boolean}>;
 
-		// The account's current ban-state, projected from the latest `user_ban_event`
-		// row (epic #968). A fresh read of the append-only log, so it reflects the
-		// authority-checked truth, never a cached session flag. Read at the session
-		// boundary (`validateSession`) and by the admin ban surface.
+		// A FRESH read of the append-only `user_ban_event` log, never a cached session
+		// flag (epic #968).
 		readonly getBanState: (userId: string) => Effect.Effect<BanState>;
 
-		// Ban an account: append a `ban` event (reason + optional expiry), stamped
-		// with the acting admin (`actorId`) and time — the audit record IS the write
-		// (ADR 0107, epic #968). Returns the resulting ban-state. `UserNotFound` on an
-		// unknown target. The AUTHORITY is discharged at the resolver (`requireAdmin`),
-		// never here — this method assumes an authorized caller.
+		// The audit record IS the write (ADR 0107, epic #968). The AUTHORITY is
+		// discharged at the resolver (`requireAdmin`), never here.
 		readonly banUser: (input: {
 			userId: string;
 			actorId: string;
@@ -322,97 +243,68 @@ export class Pasaport extends Context.Service<
 			expiresAt?: Date | null;
 		}) => Effect.Effect<BanState, UserNotFound>;
 
-		// Unban an account: append an `unban` event stamped with the acting admin and
-		// time (the reversal is itself audited). Returns the resulting ban-state
-		// (not-banned). Idempotent — unbanning a not-banned account appends a benign
-		// `unban` and still reads not-banned. `UserNotFound` on an unknown target.
+		// Idempotent — unbanning a not-banned account appends a benign `unban`.
 		readonly unbanUser: (input: {
 			userId: string;
 			actorId: string;
 		}) => Effect.Effect<BanState, UserNotFound>;
 
-		// Assign a target account's platform role (#3522, admin epic per ADR 0107):
-		// `moderator` writes the `(userId, "moderates", platform)` relation tuple,
-		// `member` deletes it — the SPA-invokable writer #969/PR #1266's offline mint
-		// never gave the console. The tuple write IS the authority change (`isModerator`
-		// / `moderatorsAmong` re-read it), and an append to `user_role_event` records the
-		// actor + new role + time. Returns the assigned role. `UserNotFound` on an unknown
-		// target. The AUTHORITY is discharged at the resolver (`requireAdmin`), never here.
+		// The `(userId, "moderates", platform)` tuple write IS the authority change
+		// (`isModerator` / `moderatorsAmong` re-read it); `user_role_event` is the audit
+		// trail. The AUTHORITY to call this is discharged at the resolver
+		// (`requireAdmin`), never here. See ADR 0107.
 		readonly setRole: (input: {
 			userId: string;
 			actorId: string;
 			role: PlatformRole;
 		}) => Effect.Effect<{readonly role: PlatformRole}, UserNotFound>;
 
-		// The target account's current email-delivery state, projected from the latest
-		// `email_delivery_event` row for its address (email-bounce epic #2687). A fresh
-		// read of the append-only log — the same projection the admin roll-up and the
-		// send-time capture feed, so "marked failing" and "reported failing" can't
-		// disagree. Returns the resolved `address` with the `state` so the ack keys on the
-		// server-resolved address. `UserNotFound` on an unknown target.
+		// A fresh read of the append-only `email_delivery_event` log — the same
+		// projection the admin roll-up and the send-time capture feed, so "marked
+		// failing" and "reported failing" can't disagree (epic #2687).
 		readonly getEmailDeliveryState: (
 			userId: string,
 		) => Effect.Effect<EmailDeliveryResult, UserNotFound>;
 
-		// Manually mark the target account's address as failing (Child #2692): append a
-		// `fail` event carrying the admin's reason and the acting admin (`actorId`, #2734),
-		// so an out-of-band bounce report an admin learns of shares the SAME log the
-		// send-time capture writes and attributes who acted. Returns the resolved address +
-		// resulting (failing) state. `UserNotFound` on an unknown target. The AUTHORITY is
-		// discharged at the resolver (`requireAdmin`), never here.
+		// An out-of-band bounce an admin learns of shares the SAME log the send-time
+		// capture writes (#2692/#2734). The AUTHORITY is discharged at the resolver
+		// (`requireAdmin`), never here.
 		readonly markEmailFailing: (input: {
 			userId: string;
 			actorId: string;
 			reason: string;
 		}) => Effect.Effect<EmailDeliveryResult, UserNotFound>;
 
-		// Manually clear the target account's failing address (Child #2692): append a
-		// `clear` event stamped with the acting admin (`actorId`, #2734), lifting the
-		// failing-state without mutating the `fail` row (full reversibility, as in unban).
-		// Returns the resolved address + resulting (deliverable) state. Idempotent —
-		// clearing a deliverable address appends a benign `clear` and still reads
-		// deliverable. `UserNotFound` on an unknown target.
+		// Appends a `clear` without mutating the `fail` row (full reversibility, as in
+		// unban). Idempotent.
 		readonly clearEmailFailing: (input: {
 			userId: string;
 			actorId: string;
 		}) => Effect.Effect<EmailDeliveryResult, UserNotFound>;
 
-		// The admin failing-address roll-up (Child #2692): every address whose latest
-		// event projects to `failing`, newest-first. Read only past `requireAdmin`; the
-		// set is derived from the log, never a stored flag.
+		// Derived from the log, never a stored flag. Read only past `requireAdmin`.
 		readonly listFailingAddresses: () => Effect.Effect<ReadonlyArray<FailingAddress>>;
 
-		// The admin user roster read (#3200): one keyset page of accounts ordered
-		// newest-first (`created_at DESC, id DESC`), optionally narrowed by a `search`
-		// substring over username/email/name. Record-derived fields only (id, username,
-		// email, tier, createdAt) — the ban-state, role, and moderator standing are joined
+		// Record-derived fields only — ban-state, role and moderator standing are joined
 		// by the resolver ({@link banStatesForAdmin} + `moderatorsAmong`), never read off
-		// the retired `user.role` column. Read only past `requireAdmin`; assumes an
-		// authorized caller. `.patterns/fate-connections.md` keyset envelope.
+		// the retired `user.role` column. Read only past `requireAdmin`. Keyset envelope:
+		// .patterns/fate-connections.md
 		readonly listUsersForAdmin: (opts: {
 			search?: string | null;
 			first?: number;
 			after?: string | null;
 		}) => Effect.Effect<KeysetPage<AdminUserRow>>;
 
-		// The BATCHED ban-state read for a roster page (#3200): the current ban-state of
-		// each id, projected from one query over the small append-only `user_ban_event` log
-		// ({@link selectBanStates}), so the roster never runs a per-row `getBanState` (an
-		// in-page N+1). A missing id reads {@link NOT_BANNED} (absent from the map). Read
-		// only past `requireAdmin`.
+		// One query for the whole roster page, so it never runs a per-row `getBanState`
+		// (an in-page N+1). A missing id is absent from the map, meaning {@link NOT_BANNED}.
 		readonly banStatesForAdmin: (
 			ids: ReadonlyArray<string>,
 		) => Effect.Effect<ReadonlyMap<string, BanState>>;
 	}
 >()("@kampus/pasaport/Pasaport") {}
 
-/**
- * The record-derived row of the admin user roster (#3200) — the `user` columns the
- * `userAdmin.list` read exposes, before the resolver joins the ban-state / role. `tier`
- * rides as the stored value; `createdAt` is the raw column (nullable — the founding cohort
- * predates it), converted to an epoch-millis wire scalar by the feature's shaper. Kept next
- * to the query that produces it, mirroring `ProfileRow`.
- */
+// `createdAt` is nullable because the founding cohort predates the column; the
+// feature's shaper converts it to an epoch-millis wire scalar.
 export interface AdminUserRow {
 	readonly id: string;
 	readonly username: string | null;
@@ -421,19 +313,14 @@ export interface AdminUserRow {
 	readonly createdAt: Date | null;
 }
 
-/**
- * The seeded `@[silinen]` sentinel's id + display name (ADR 0097). Migration
- * `0006` seeds the `user` + `user_profile` rows; account-deletion re-attributes
- * content to this id. The reserved username lives in `username-rule.ts`
- * ({@link SILINEN_USERNAME}) — the one place the rule is sourced.
- */
+// The seeded `@[silinen]` sentinel (ADR 0097); migration `0006` seeds its rows. The
+// reserved username itself is sourced in `username-rule.ts`.
 export const SILINEN_USER_ID = "silinen";
 export {SILINEN_USERNAME} from "./username-rule.ts";
 export const SILINEN_DISPLAY_NAME = "@[silinen]";
 
-// The server-authoritative gate: re-runs the shared {@link checkUsername} rule and
-// maps its code onto the typed domain error. The rule (length/charset/reserved) is
-// single-sourced in `username-rule.ts`, consumed identically by the SPA forms.
+// The server-authoritative gate. The rule itself is single-sourced in
+// `username-rule.ts`, consumed identically by the SPA forms.
 function assertUsername(normalized: string): Effect.Effect<void, UsernameInvalid> {
 	switch (checkUsername(normalized)) {
 		case "RESERVED":
@@ -457,14 +344,9 @@ function assertUsername(normalized: string): Effect.Effect<void, UsernameInvalid
 	}
 }
 
-/**
- * Cursor codec for the `(createdAt desc, id desc)` keyset (matches the fate view
- * `orderBy`; `id` is a global ULID tiebreaker). Wire format `<epochSeconds>:<id>`.
- *
- * Encodes epoch **seconds** because D1 stores `created_at` as
- * `integer({mode:"timestamp"})` — seconds is the DB's own granularity, so the
- * keyset round-trips without precision loss and cursors stay stable across deploys.
- */
+// Wire format `<epochSeconds>:<id>` for the `(createdAt desc, id desc)` keyset.
+// Epoch SECONDS, because D1 stores `created_at` as `integer({mode:"timestamp"})` —
+// matching the DB's granularity keeps the keyset lossless across deploys.
 function encodeCursor(node: {createdAt: Date; id: string}): string {
 	return `${Math.floor(node.createdAt.getTime() / 1000)}:${node.id}`;
 }
@@ -479,25 +361,16 @@ function decodeCursor(cursor: string): {createdAt: Date; id: string} | null {
 	return {createdAt: new Date(ts * 1000), id};
 }
 
-/**
- * Build the `Pasaport` Layer over an already-resolved better-auth instance. The
- * worker resolves the `BetterAuth` tag once in init and hands the instance here;
- * sharing the single auth instance with the `/api/auth/*` route keeps session
- * cookies signed and validated by the same secret.
- */
+// Takes the already-resolved better-auth instance: sharing the one instance with the
+// `/api/auth/*` route keeps session cookies signed and validated by the same secret.
 export const makePasaportLive = (auth: BetterAuthInstance) =>
 	Layer.effect(Pasaport)(
 		Effect.gen(function* () {
-			// `orDieAccess`: every DB call site dies on `DrizzleError` (infra
-			// failures are defects — the domain-boundary rule), so public signatures
-			// carry domain errors only and every method's `R` stays `never`.
 			const {run, batch} = orDieAccess(yield* Drizzle);
 
-			// The per-viewer visibility predicate a count routes through — the ONE seam
-			// (ADR 0113), never a by-path-divergent hand-written clause (#1406). The post
-			// table folds in the `post_record`-only draft arm (`postVisibleWhere`), so a
-			// non-author's count excludes the author's unpublished drafts; definition and
-			// comment have no draft dimension and route through `sandboxVisibleWhere`.
+			// The ONE seam every count routes through, never a hand-written clause that
+			// can diverge by path (ADR 0113, #1406). Only `post_record` has a draft
+			// dimension, hence the split.
 			const countVisibleWhere = (
 				table:
 					| typeof schema.definitionRecord
@@ -512,12 +385,9 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 						)
 					: sandboxVisibleWhere({sandboxedAt: table.sandboxedAt, authorId: table.authorId}, viewer);
 
-			// `COUNT(*)` of one author's non-removed rows in a contribution table.
-			// Calls `run` directly so callers keep `R = never`. A `viewer` narrows the
-			// count to that viewer's sandbox+draft-visible set via `countVisibleWhere`
-			// (#1309/#1406) — so the feed's `totalCount` matches the rows it actually
-			// returns and never leaks the COUNT of an author's sandboxed/draft content;
-			// omitted ⇒ no narrowing.
+			// A `viewer` narrows the count to that viewer's visible set, so `totalCount`
+			// matches the rows actually returned and never leaks a count of the author's
+			// sandboxed/draft content (#1309/#1406). Omitted ⇒ no narrowing.
 			const countByAuthor = (
 				table:
 					| typeof schema.definitionRecord
@@ -540,10 +410,6 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 						.then((r) => Number(r[0]?.n ?? 0)),
 				);
 
-			// `COUNT(*)` of one author's still-in-review rows in a contribution table:
-			// the `sandboxBacklogWhere` read model (#1205) scoped to the author —
-			// sandboxed AND not removed. The çaylak-self `inReviewCount` (#1316) sums
-			// this across the three tables. Aggregate-only, no per-item leak.
 			const countBacklogByAuthor = (
 				table:
 					| typeof schema.definitionRecord
@@ -594,11 +460,8 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 				);
 			});
 
-			// `viewer` is REQUIRED (always a resolved {@link SandboxViewer} — the lookup
-			// methods resolve it fail-safe before calling), so the headline counts can
-			// never skip the #1205 sandbox filter (#1312). It is passed straight to
-			// `countByAuthor`, the SAME viewer-aware count the #1309 feed uses for its
-			// `totalCount`, so the header and feed agree per-viewer.
+			// `viewer` is REQUIRED, not optional, so the headline counts can never skip
+			// the #1205 sandbox filter (#1312); callers resolve it fail-safe first.
 			const hydrateProfile = Effect.fn("Pasaport.hydrateProfile")(function* (
 				row: {
 					userId: string;
@@ -626,10 +489,9 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 				} satisfies ProfileRow;
 			});
 
-			// The account's current ban-state — a FRESH read of the latest `user_ban_event`
-			// row projected by `resolveBanState` (epic #968). The session boundary and the
-			// admin ban surface both route through this one seam, so "session refused" and
-			// "reported banned" can't disagree. `now` fresh per call so an expiry self-lifts.
+			// The session boundary and the admin ban surface both route through this one
+			// seam, so "session refused" and "reported banned" can't disagree. `now` is
+			// fresh per call so an expiry self-lifts.
 			const readBanState = (userId: string): Effect.Effect<BanState> =>
 				run((db) =>
 					db
@@ -656,11 +518,9 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 						}),
 				);
 
-			// The address's current email-delivery state — a FRESH read of the latest
-			// `email_delivery_event` row projected by `resolveEmailDeliveryState` (epic
-			// #2687). Keyed by ADDRESS (the projection's stable key, index-backed by
-			// `email_delivery_event_address_created`), so the admin mark/clear ack, the
-			// per-target read, and the roll-up all resolve the same latest-event-wins truth.
+			// Keyed by ADDRESS, not user id (index-backed by
+			// `email_delivery_event_address_created`), so the mark/clear ack, the
+			// per-target read and the roll-up all resolve the same latest-event-wins truth.
 			const readEmailDeliveryState = (address: string): Effect.Effect<EmailDeliveryState> =>
 				run((db) =>
 					db
@@ -685,13 +545,10 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 						}),
 				);
 
-			// Append one `email_delivery_event` for a target account's address, then read
-			// back its projected state. Rejects an unknown target up front so a mark/clear
-			// can't be recorded against a non-existent id (the audit log stays meaningful),
-			// and resolves the target's own `email` as the address the event is keyed by.
-			// The only caller is the admin mark/clear below, so `actorId` is always the acting
-			// admin's id (#2734) — the send-time capture writes its own actor-less rows through
-			// `EmailDeliveryLog` (`email-delivery-log.ts`), not this helper.
+			// Rejects an unknown target up front so a mark/clear can't be recorded against
+			// a non-existent id (the audit log stays meaningful). Only the admin mark/clear
+			// calls this, so `actorId` is always a real admin (#2734) — the send-time
+			// capture writes its actor-less rows through `EmailDeliveryLog` instead.
 			const appendEmailDeliveryEvent = (
 				userId: string,
 				actorId: string,
@@ -737,13 +594,11 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 							}),
 						),
 					);
-					// Enforcement at the auth boundary (epic #968): a banned account's session
-					// is REFUSED here, not merely flagged — every session-derived consumer
-					// (fate/`CurrentUser`, `CurrentActor`, the `/api/auth` guard) reads this one
-					// gate, so a banned user with a still-valid cookie is treated as anonymous
-					// on EXISTING sessions, and an unban restores access on the next request. The
-					// ban-state is read FRESH from D1 (never trusted off the session token), the
-					// fail-closed fresh-read invariant ADR 0098 §2 carries forward.
+					// A banned account's session is REFUSED here, not merely flagged — every
+					// session-derived consumer reads this one gate, so a still-valid cookie
+					// reads as anonymous and an unban restores access on the next request. The
+					// ban-state is read FRESH from D1, never trusted off the session token
+					// (the fail-closed fresh-read invariant of ADR 0098 §2).
 					if (session?.user) {
 						const banState = yield* readBanState(session.user.id);
 						if (banState.banned) return null;
@@ -859,12 +714,9 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 					}
 
 					const now = new Date();
-					// One atomic batch (the `buildPromotionStatements` precedent): `user.name`
-					// and `user_profile.display_name` move all-or-none, so the better-auth
-					// field the settings surface reads and the stamped column every byline
-					// reads can never diverge (#2154). The profile upsert inserts a fresh row
-					// for a user who never set a username (preserving a null `username`), so a
-					// byline resolves the live display name even pre-bootstrap.
+					// One atomic batch: `user.name` and `user_profile.display_name` move
+					// all-or-none, so a byline can never render a name the settings surface
+					// has already changed (#2154).
 					yield* batch((db) => buildSetDisplayNameStatements(db, userId, trimmed, now));
 
 					return {
@@ -882,10 +734,9 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 						sandboxViewer?: SandboxViewer | undefined;
 					},
 				) {
-					// Usernames are stored lowercased at write time (`setUsername`), so the
-					// read must normalize identically or a mixed-case `/u/Rasit` misses the
-					// stored `rasit` row and 404s (#2445). `normalizeUsername` is the one
-					// source read and write share, keeping every entry point case-insensitive.
+					// Usernames are stored lowercased at write time, so the read must
+					// normalize identically or a mixed-case `/u/Rasit` misses the stored
+					// `rasit` row and 404s (#2445).
 					const normalized = normalizeUsername(username);
 					const rows = yield* run((db) =>
 						db
@@ -956,19 +807,14 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 					const cursor = input.after ? decodeCursor(input.after) : null;
 					const fetchSize = first + 1;
 
-					// The #1205 sandbox filter, resolved against the request viewer (#1309):
-					// the profile feed shows the author's LIVE content to everyone, but the
-					// author's SANDBOXED content only to the author themselves + a moderator.
-					// A missing viewer resolves to anonymous, so the default is public-only.
+					// A missing viewer resolves to anonymous, so the default is public-only
+					// (#1205/#1309).
 					const viewer = resolveSandboxViewer(input);
 
-					// `after` present but undecodable is a cursor miss → empty page.
 					const cursorMissed = input.after != null && cursor === null;
 
-					// Per-table keyset for the global `(created_at desc, id desc)` merge.
-					// The predicate and the `.orderBy(…)` both derive from the per-table
-					// `contributionOrdering`; null cursor values (no `after`) collapse the
-					// predicate to undefined so only the base author/removed filter applies.
+					// Per-table keyset for the global `(created_at desc, id desc)` merge; a
+					// null cursor collapses the predicate so only the base filter applies.
 					function keysetWhere(
 						table:
 							| typeof schema.definitionRecord
@@ -1098,9 +944,9 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 						return 0;
 					});
 
-					// Each table is read with `LIMIT first+1` under the same keyset, so
-					// the merged set holds every candidate for the next `first` slots of
-					// the global order; `forwardPage` slices the probe.
+					// Each table is read with `LIMIT first+1` under the same keyset, so the
+					// merged set holds every candidate for the next `first` slots of the
+					// global order.
 					const page = forwardPage<ContributionNode>(merged, first, encodeCursor);
 
 					return {
@@ -1116,24 +962,20 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 				}) {
 					const {userId} = input;
 					const now = new Date();
-					// `verification` keys by `identifier` = the live email, which the batch
-					// is about to scrub — so capture it as a plain value BEFORE the batch
-					// (ADR 0097 §2) and delete by that literal, never a correlated subquery
-					// (D1's batch executor rejects a raw subquery member).
+					// `verification` keys by `identifier` = the live email, which the batch is
+					// about to scrub — so capture it as a plain value BEFORE the batch and
+					// delete by that literal, never a correlated subquery (D1's batch
+					// executor rejects a raw subquery member). See ADR 0097 §2.
 					const user = yield* run((db) => db.query.user.findFirst({where: {id: userId}}));
 					const email = user?.email ?? null;
-					// One atomic batch (ADR 0014/0097 §2): every statement commits or none
-					// does, so the world never sees a half-anonymized account.
 					yield* batch((db) => buildAnonymizeStatements(db, userId, email, now));
 				}),
 
 				promoteToYazar: Effect.fn("Pasaport.promoteToYazar")(function* (input: {userId: string}) {
 					const now = new Date();
-					// One atomic batch (ADR 0014, the `anonymizeAccount` precedent): the
-					// tier flip and the backlog sweep commit together or not at all, so a
-					// half-swept promotion (tier flipped, backlog still sandboxed — or the
-					// reverse) is unrepresentable. The first statement is the conditional
-					// tier UPDATE; its `changes` count is `1` iff the account was a çaylak.
+					// One atomic batch, so a half-swept promotion is unrepresentable (ADR
+					// 0014). The first statement is the conditional tier UPDATE; its
+					// `changes` count is `1` iff the account was a çaylak.
 					const result = yield* batch((db) => buildPromotionStatements(db, input.userId, now));
 					return {promoted: result[0].meta.changes > 0};
 				}),
@@ -1193,14 +1035,12 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 					actorId: string;
 					role: PlatformRole;
 				}) {
-					// Reject an unknown target up front so a role is never assigned to a
-					// non-existent id (mirrors `banUser`; the audit log stays meaningful).
+					// Reject an unknown target up front so the audit log stays meaningful.
 					const target = yield* run((db) => db.query.user.findFirst({where: {id: input.userId}}));
 					if (!target) return yield* new UserNotFound({message: "kullanıcı bulunamadı"});
 
-					// The `moderates` tuple IS the authority: `moderator` grants it (idempotent
-					// on re-grant), `member` revokes it. Encoded through kunye's `moderatorTuple`
-					// so the write can't drift from the `isModerator` / `moderatorsAmong` read.
+					// Encoded through kunye's `moderatorTuple` so this write can't drift from
+					// the `isModerator` / `moderatorsAmong` read.
 					const tuple = moderatorTuple(input.userId);
 					yield* run((db) =>
 						input.role === "moderator"
@@ -1216,8 +1056,6 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 									),
 					);
 
-					// Audit the assignment (actor, target, new role, time) on the append-only
-					// `user_role_event` log — the same audit shape ban/email-delivery use.
 					yield* run((db) =>
 						db.insert(schema.userRoleEvent).values({
 							id: crypto.randomUUID(),
@@ -1255,9 +1093,8 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 
 				listFailingAddresses: Effect.fn("Pasaport.listFailingAddresses")(function* () {
 					// The failure log is small (only send rejections + admin marks land here),
-					// so read it whole and reduce to latest-per-address in the pure projection
-					// (`selectFailingAddresses`) rather than a group-wise-latest SQL — one
-					// projection rule, unit-tested, shared with the per-address read.
+					// so read it whole and reduce in the pure projection rather than write a
+					// second group-wise-latest SQL that could drift from the per-address read.
 					const rows = yield* run((db) =>
 						db
 							.select({
@@ -1290,9 +1127,8 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 					const after = opts.after ?? null;
 					const term = opts.search?.trim().toLowerCase();
 
-					// Narrow by a case-insensitive substring over the identity fields when a
-					// search is given; SQLite `LIKE` is case-insensitive for ASCII, and the
-					// username/email columns are ASCII by rule, so no `lower()` wrap is needed.
+					// No `lower()` wrap: SQLite `LIKE` is already case-insensitive for ASCII,
+					// and these columns are ASCII by rule.
 					const searchWhere =
 						term && term.length > 0
 							? or(
@@ -1306,11 +1142,8 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 					// a `deleted_at` row is not a real account an admin manages.
 					const baseWhere = and(isNull(schema.user.deletedAt), searchWhere);
 
-					// Resolve the opaque `after` (a user id) to its keyset tuple — the DB read is
-					// the port, `resolveCursor` the pure cursor-miss decision (ADR 0082): a cursor
-					// that no longer points at a live row yields the empty page. `created_at DESC,
-					// id DESC` is the roster order; `created_at` is effectively always stamped by
-					// better-auth, so the null-column degrade in `keysetAfter` never bites.
+					// A cursor that no longer points at a live row yields the empty page; the
+					// DB read is the port, `resolveCursor` the pure decision (ADR 0082).
 					const resolvedRow = after
 						? ((yield* run((db) =>
 								db
@@ -1392,22 +1225,13 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 	);
 
 /**
- * The atomic teardown of one account (ADR 0097 §2). In order:
- *  1–3. Re-attribute the user's content (`definition_record` / `post_record` /
- *       `comment_record`): `author_id := silinen`, denormalized `author_name`
- *       overwritten. Content stays Live (`removed_at` untouched) — this is
- *       re-attribution, not removal — so its votes/scores and the karma they
- *       earned ride along untouched.
- *  4–7. Tear down the identity rows: `session` / `account` / `apikey` /
- *       `verification`. `verification` keys by `identifier` = the user's email
- *       (not a FK), so it's deleted by the literal email the caller resolved
- *       before this batch; skipped when the user has no email.
- *  8.   Scrub the `user` row to a kept tombstone: PII (email/name/image) nulled,
- *       `deleted_at` stamped. The row is KEPT so the `author_id → silinen`
- *       redirect and FKs stay coherent and the email can re-register fresh.
+ * The atomic teardown of one account — see ADR 0097 §2 for the why. Two things the
+ * code will not tell you: content is RE-ATTRIBUTED, not removed (`removed_at`
+ * untouched), so votes/scores/karma ride along; and the `user` row is KEPT as a
+ * scrubbed tombstone so the `author_id → silinen` redirect and the FKs stay coherent.
  *
- * Every statement is a query-builder statement (no raw correlated subquery) so
- * D1's `batch()` executor accepts the whole array.
+ * Every statement must be a query-builder statement (no raw correlated subquery), or
+ * D1's `batch()` executor rejects the array.
  */
 function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string | null, now: Date) {
 	const reattributeDefs = db
@@ -1451,22 +1275,11 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
 }
 
 /**
- * The atomic çaylak→yazar promotion (#1206). In order:
- *  1.   Flip `user.tier` `çaylak → yazar` and stamp `promoted_at := now` (#1590) in
- *       the SAME statement. The `tier = 'çaylak'` WHERE is the idempotency guard: an
- *       already-yazar (or unknown) account matches 0 rows, so re-running promotes
- *       nothing — and because the `promoted_at` SET rides that same guarded UPDATE, a
- *       non-promoting call stamps nothing (the timestamp is set iff the tier actually
- *       flips). It is the read of `changes` that reports `promoted`.
- *  2–4. Resolve the account's sandboxed backlog (#1205): `sandboxed_at := null` on
- *       its definitions / posts / comments that are still sandboxed and not removed.
- *       The WHERE is exactly the #1205 {@link sandboxBacklogWhere} read model scoped
- *       to this author, so the sweep flips precisely the rows the moderator queue
- *       showed — leaving live rows (already null) and removed rows (`removed_at` set)
- *       untouched, so a mixed backlog lands consistent and a re-run is a no-op.
+ * The atomic çaylak→yazar promotion (#1206). The `tier = 'çaylak'` WHERE is the
+ * idempotency guard — an already-yazar account matches 0 rows — and `promoted_at`
+ * rides that same guarded UPDATE deliberately, so a non-promoting call stamps nothing.
  *
- * Every statement is a query-builder statement (no raw correlated subquery) so D1's
- * `batch()` executor accepts the whole array (the `buildAnonymizeStatements` rule).
+ * Query-builder statements only, per `buildAnonymizeStatements`.
  */
 function buildPromotionStatements(db: DrizzleDb, userId: string, now: Date) {
 	const promoteTier = db
@@ -1496,18 +1309,12 @@ function buildPromotionStatements(db: DrizzleDb, userId: string, now: Date) {
 }
 
 /**
- * The atomic görünen-ad (display-name) write-through (#2154). Two statements:
- *  1. `user.name := <trimmed>` — the better-auth field the settings surface reads.
- *  2. `user_profile.display_name := <trimmed>` — the stamped column every author
- *     byline reads, via an upsert that INSERTS a fresh row (null `username`) for a
- *     user who never bootstrapped a username, and on conflict overwrites ONLY
- *     `display_name` + `updated_at`, preserving `username`/`image`.
+ * The atomic görünen-ad (display-name) write-through (#2154). The upsert INSERTs a
+ * fresh row for a user who never bootstrapped a username, and on conflict overwrites
+ * ONLY `display_name` + `updated_at`, preserving `username`/`image`.
  *
- * Both move in one D1 batch so `user.name` and `user_profile.display_name` are
- * lockstep — a byline can never render a stale name the settings surface has
- * already changed (the one-shot-sync defect this closes). Both are query-builder
- * statements (never a raw `db.run(sql)`, which 500s a real-D1 batch — #863) so the
- * batch executor accepts the array (the `buildPromotionStatements` rule).
+ * Query-builder statements only — a raw `db.run(sql)` member 500s a real-D1 batch
+ * (#863).
  */
 function buildSetDisplayNameStatements(
 	db: DrizzleDb,

@@ -5,8 +5,8 @@
  * the offline direct-D1 path, NOT a runtime worker route (the deleted `/api/admin/*`
  * fail-open shape, CLAUDE.md "Sözlük seed"). A `node:sqlite`-free, unit-testable core
  * (statement builders + assign/revoke/list over a `D1Database` slice) + a thin Effect
- * bin, the `@kampus/moderator-grant` idiom, here writing the tuple `@kampus/founder-seed`
- * writes for moderators.
+ * bin, the `@kampus/founder-seed` idiom, here writing the `admin` counterpart of the
+ * tuple that package writes for moderators.
  *
  * The grant is selectable by `id` OR `username` (an admin is granted by handle in
  * practice); the selector is resolved to the subject id through the `user` table, so a

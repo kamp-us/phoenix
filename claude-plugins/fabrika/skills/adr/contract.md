@@ -52,7 +52,9 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
 
 - **Answer channel: machine.** Stdout carries the answer and nothing else. Scope lines, refusal
   reasons and progress go to stderr.
-- **Common inputs.** `--dir <path>` (default `.decisions`) is the record directory. `--base <ref>`
+- **Common inputs.** `--dir <path>` is the record directory; with the flag absent it is
+  `.fabrika.jsonc`'s `decisionsDir`, itself defaulting to `.decisions`. A repo that declines that key
+  keeps no corpus, and every verb here refuses on `22` rather than reading or writing one. `--base <ref>`
   (default `origin/main`) is the base ref, **fetched before it is read** — reading a stale local ref
   is the whole defect class this contract exists to close. `--repo <owner/name>` (default: resolved
   from the `origin` remote) is the repository whose open pull requests form the in-flight set.
@@ -69,7 +71,7 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
   | `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
   | `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
   | `7` | the record the caller named is not there | | | | | ✓ | ✓ |
-  | `11` | the record directory could not be read, so the outcome is UNKNOWN | ✓ | ✓ | | ✓ | | ✓ |
+  | `11` | the record directory could not be read, so the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
   | `12` | the target path already exists — refused, never overwritten | | | ✓ | ✓ | | |
   | `13` | `--by` has no record under `--dir` | | | | | ✓ | |
   | `14` | `<id>` has no single rewritable `status:` line | | | | | ✓ | |
@@ -80,6 +82,7 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
   | `19` | a record under `--dir` has a filename with no readable id | ✓ | ✓ | | ✓ | | |
   | `20` | two records under `--dir` claim one id | | ✓ | | | | |
   | `21` | `--repo` was not given and the `origin` remote could not be read | ✓ | ✓ | | ✓ | | |
+  | `22` | `.fabrika.jsonc` declines `decisionsDir` — this repo keeps no corpus | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
   `7` and `11` are the two seats this group shares with `report`'s table, code for code, so a caller
   driving both reads one meaning: the target is not there, and the read that would have proven it
@@ -108,7 +111,7 @@ fabrika adr next [--dir <path>] [--base <ref>] [--repo <owner/name>] [--json]
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--dir` | string | no | `.decisions` | the directory of `NNNN-slug.md` decision records to scan |
+| `--dir` | string | no | `decisionsDir`, else `.decisions` | the directory of `NNNN-slug.md` decision records to scan |
 | `--base` | string | no | `origin/main` | the base ref to fetch and read the merged set from |
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository whose open pull requests form the in-flight set |
 | `--json` | boolean | no | `false` | emit the full allocation record instead of the bare id |
@@ -232,7 +235,7 @@ fabrika adr new 0240 only-landed-adrs-may-be-cited [--dir <path>] [--status <tex
 |---|---|---|---|---|
 | `<id>` | positional string | yes | — | the four-digit zero-padded id this ADR claims |
 | `<slug>` | positional string | yes | — | the kebab-case slug, at most 5 words |
-| `--dir` | string | no | `.decisions` | the directory to write the record into |
+| `--dir` | string | no | `decisionsDir`, else `.decisions` | the directory to write the record into |
 | `--status` | string | no | `accepted` | the frontmatter `status:` value |
 | `--date` | string | no | today, `YYYY-MM-DD` | the frontmatter `date:` value |
 | `--title` | string | no | the slug, de-hyphenated | the frontmatter `title:` value and the H1 |
@@ -391,7 +394,7 @@ One or more ids may be given; each produces one line, in argument order. One fet
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `<id>...` | positional string, repeatable | yes | — | the four-digit ids to resolve |
-| `--dir` | string | no | `.decisions` | the directory of decision records to resolve against |
+| `--dir` | string | no | `decisionsDir`, else `.decisions` | the directory of decision records to resolve against |
 | `--base` | string | no | `origin/main` | the base ref to fetch and resolve against |
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository whose open pull requests form the in-flight set |
 | `--json` | boolean | no | `false` | emit one object per id instead of the line grammar |
@@ -518,7 +521,7 @@ fabrika adr amend-in-part 0023 --by 0240 [--dir <path>]
 |---|---|---|---|---|
 | `<id>` | positional string | yes | — | the four-digit id of the older ADR whose status line changes |
 | `--by` | string | yes | — | the four-digit id of the ADR doing the superseding or amending |
-| `--dir` | string | no | `.decisions` | the directory both records live in |
+| `--dir` | string | no | `decisionsDir`, else `.decisions` | the directory both records live in |
 | `--json` | boolean | no | `false` | emit the edit record instead of the line grammar |
 
 **Output** — one **tab-separated** line: the path edited, then the new `status:` value. With
@@ -611,7 +614,7 @@ fabrika adr sweep --new 0240 [--dir <path>] [--limit <n>] [--json]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--new` | string | yes | — | the ADR to sweep: a four-digit id already in `--dir`, or a path to the draft file |
-| `--dir` | string | no | `.decisions` | the corpus to sweep against |
+| `--dir` | string | no | `decisionsDir`, else `.decisions` | the corpus to sweep against |
 | `--limit` | integer | no | `8` | how many shortlist entries to emit |
 | `--json` | boolean | no | `false` | emit the sweep result as one JSON object on **stdout** |
 

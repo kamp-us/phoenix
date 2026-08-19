@@ -1,15 +1,10 @@
 /**
- * `Moderate` — the platform-moderation capability (ADR 0107 §4), carrying ADR
- * 0098 §2's invisible denial forward. A `Capability.Relation` over the `moderates`
- * verb: `Moderate.over(platform)` discharges to a `Grant` iff the actor holds
- * `(actor, "moderates", platform)` (or an ancestor) in the `relation_tuple` store
- * (`RelationStoreLive`), checked fresh per call. It replaces `report/Moderator`'s
- * `user.role` read — authority is now an assigned relation tuple, never a column.
+ * `Moderate` — the platform-moderation capability (ADR 0107 §4). A
+ * `Capability.Relation` over the `moderates` verb, checked fresh per call against the
+ * `relation_tuple` store: authority is an assigned tuple, never a `user.role` column.
  *
- * Denial is the künye {@link Denied} (`UNAUTHORIZED`), so a non-moderator cannot
- * distinguish "not a moderator" from "not signed in" (the invisible-denial
- * invariant). The instance lives here — künye owns the kamp.us capability
- * instances; the vocab-free mechanism is `@kampus/authz`.
+ * Denial is the künye {@link Denied} (`UNAUTHORIZED`), so a non-moderator cannot tell
+ * "not a moderator" from "not signed in" (ADR 0098 §2's invisible denial).
  */
 import {
 	Capability,
@@ -24,16 +19,12 @@ import {UserId} from "../../lib/ids.ts";
 import {Denied} from "./errors.ts";
 
 /**
- * The `relation_tuple.relation` verb the moderator role rides on — the SINGLE source
- * every moderator read, discharge, and the `user.setRole` runtime write share, so the
- * read/discharge key and the write key can't drift (#3522).
+ * The single relation verb every moderator read, discharge, and `user.setRole` write
+ * shares, so the read/discharge key and the write key can't drift.
  */
 export const MODERATES_RELATION = "moderates";
 
-/**
- * The two platform roles the admin roster surfaces (#3200): `moderator` iff the
- * `moderates` tuple is held, else `member`. The value `user.setRole` assigns (#3522).
- */
+/** `moderator` iff the `moderates` tuple is held, else `member`. */
 export type PlatformRole = "member" | "moderator";
 
 export class Moderate extends Capability.Relation<Moderate>()("kunye/Moderate", {
@@ -41,17 +32,12 @@ export class Moderate extends Capability.Relation<Moderate>()("kunye/Moderate", 
 	deny: () => new Denied({message: "Moderation authority required"}),
 }) {}
 
-// Re-export the platform scope so a moderation surface gates with one import.
 export {platform};
 
 /**
- * The stored `relation_tuple` row for `(subject, "moderates", platform)` — the SAME
- * key {@link isModerator} / {@link moderatorsAmong} read and `Moderate.over(platform)`
- * discharges against, resolved through `@kampus/authz`'s canonical `objectKey` (as
- * `RelationStoreLive` does). The `Admin.over(platform)`-gated `user.setRole` writer
- * (#3522) inserts/deletes exactly this row, so the runtime WRITE of the moderator
- * relation can never encode the tuple differently from the read — the read-key-can't-
- * drift invariant, now extended to the write.
+ * The stored row for `(subject, "moderates", platform)` — the SAME key the reads below
+ * and `Moderate.over(platform)` resolve, so the runtime write of the moderator relation
+ * can never encode the tuple differently from the read.
  */
 export const moderatorTuple = (
 	subject: string,
@@ -62,16 +48,10 @@ export const moderatorTuple = (
 });
 
 /**
- * Is `subject` a platform moderator? The SELF-status read behind the trusted `me`
- * view's `isModerator` (#1320): the SAME `(subject, "moderates", platform)` tuple
- * `Moderate.over(platform)` discharges against, read straight off the
- * {@link RelationStore} port keyed by an account id. It takes a subject id (NOT
- * `CurrentActor`), so it answers "is THIS account a moderator" for the viewer's own
- * id and never another's — the `me` resolver passes `CurrentUser`'s id. The frontend
- * gates the divan "yazar yap" (promote) affordance on it, because a dual-role
- * yazar+moderator account reads `tier: "yazar"` and the mod axis can't ride on
- * `tier`. The encoding lives here, next to {@link Moderate}, so the read key can't
- * drift from the discharge key.
+ * Is `subject` a platform moderator? Takes a subject id (NOT `CurrentActor`), so the `me`
+ * resolver passes `CurrentUser`'s id and it can never answer for another account. The
+ * frontend gates the divan promote affordance on it, because a dual-role yazar+moderator
+ * reads `tier: "yazar"` and the mod axis can't ride on `tier`.
  */
 export const isModerator = (subject: string): Effect.Effect<boolean, never, RelationStore> =>
 	Effect.gen(function* () {
@@ -80,11 +60,8 @@ export const isModerator = (subject: string): Effect.Effect<boolean, never, Rela
 	});
 
 /**
- * The batched form of {@link isModerator}: which of `subjects` are platform
- * moderators, answered in ONE {@link RelationStore} set-membership read over the
- * `(moderates, platform)` tuple — the by-id loader's join, without the per-row
- * `has` that would make it an in-batch N+1. Same direct-tuple key as `isModerator`,
- * so the batched and single reads can't drift.
+ * The batched form of {@link isModerator}: ONE set-membership read over the
+ * `(moderates, platform)` tuple, so a by-id loader's join is not an in-batch N+1.
  */
 export const moderatorsAmong = (
 	subjects: ReadonlyArray<string>,
@@ -95,13 +72,8 @@ export const moderatorsAmong = (
 	});
 
 /**
- * EVERY platform moderator's account id — the mod-fan-out recipient set (#1699):
- * every subject holding `(subject, "moderates", platform)`, read off the same
- * direct tuple {@link isModerator} / {@link moderatorsAmong} key. Where those two
- * ANSWER membership for a known candidate, this ENUMERATES the open set a `notify
- * every moderator` emit needs — a recipient set with no candidate ids up front, so
- * neither `has` nor `hasSubjects` can produce it. The tuple key lives here next to
- * {@link Moderate} so the enumeration key can't drift from the discharge key.
+ * EVERY platform moderator's account id. Where the two reads above ANSWER membership for
+ * a known candidate, this ENUMERATES the open recipient set a mod fan-out needs.
  */
 export const allModerators = (): Effect.Effect<ReadonlySet<string>, never, RelationStore> =>
 	Effect.gen(function* () {
@@ -110,23 +82,15 @@ export const allModerators = (): Effect.Effect<ReadonlySet<string>, never, Relat
 	});
 
 /**
- * Gate `body` behind platform-moderation authority: discharge
- * `Moderate.over(platform)` (the invisible {@link Denied} on failure) and thread
- * the resulting `Grant` into `body`'s R-channel via `Grant.provide`. So `body`
- * can read `yield* Moderate` for the authority-checked moderator identity, and
- * "moderating without a `Grant`" is a compile error — the proof is required by R,
- * not a forgeable field (ADR 0107 §3).
+ * Gate `body` behind moderation authority, threading the `Grant` into its R channel — so
+ * moderating without a grant is a compile error, not a forgeable field (ADR 0107 §3).
  */
 export const requireModeration = <A, E, R>(body: Effect.Effect<A, E, Moderate | R>) =>
 	Moderate.over(platform).pipe(Effect.flatMap((grant) => body.pipe(Grant.provide(grant))));
 
 /**
- * The moderator's account id from a discharged `Moderate` grant — the
- * authority-checked identity a moderation write stamps as `resolver_id` /
- * `removed_by`, minted as the shared branded {@link UserId} (see `lib/ids.ts`). A
- * discharged grant is never anonymous (`Moderate.over` fails `Denied` on the
- * `Unauthenticated` arm before minting), so the anonymous arm is unreachable and
- * dies as the defect it would be.
+ * The moderator's account id from a discharged grant. `Moderate.over` fails `Denied` on
+ * the anonymous arm before minting, so that arm here is unreachable and dies as a defect.
  */
 export const moderatorOf = (grant: Grant<Moderate>): Effect.Effect<UserId> =>
 	matchActor(grant.actor, {

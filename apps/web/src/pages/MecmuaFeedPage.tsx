@@ -1,16 +1,7 @@
 /**
- * `/mecmua/akis` — the subscribed-author feed (#2500, epic #2467): a time-ordered list of
- * published mecmua posts from the authors the reader follows, newest-first by
- * `publishedAt`. Reads the `mecmuaFeed` fate root in one batched `useRequest` and renders
- * each post as a card linking to its reader page (`/mecmua/:slug`) — the same Card /
- * EmptyState / MetaRow shell the public index (#2512) uses, so the two mecmua surfaces read
- * as one family. On-site reading only — there is NO email/bülten path here by design (map
- * #2467/#2466).
- *
- * The whole surface ships dark behind `MECMUA_FEED` (default-off): the page self-gates
- * (off ⇒ 404), mirroring `MecmuaPostPage`, so the route is absent until a human flips the
- * flag at release (ADR 0083). The `mecmuaFeed` root also serves empty while the flag is
- * off, so no unreleased feed content leaks even if the page is reached.
+ * `/mecmua/akis` — the feed of published posts from authors the reader follows. On-site
+ * reading only: there is no email/bülten path here by design. Ships dark behind
+ * `MECMUA_FEED` (default-off; ADR 0083), and the `mecmuaFeed` root serves empty while it is.
  */
 import {Newspaper} from "lucide-react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -49,8 +40,7 @@ const feedRequest = {
 export function MecmuaFeedPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_FEED, false);
 
-	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first (the
-	// MecmuaPostPage self-gate idiom).
+	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first.
 	if (flagLoading) {
 		return (
 			<div className="kp-page">
@@ -110,8 +100,7 @@ function MecmuaFeedList() {
 
 function MecmuaFeedRow({node}: {node: ViewRef<"MecmuaPost">}) {
 	const post = useView(MecmuaFeedPostView, node);
-	// The reader page is keyed by slug or id; a draft-less feed row is always published,
-	// so `slug ?? id` always resolves to a readable `/mecmua/:key`.
+	// A feed row is always published, so `slug ?? id` always resolves to a readable page.
 	const href = `/mecmua/${encodeURIComponent(post.slug ?? String(post.id))}`;
 	const excerpt = post.body.length > 240 ? `${post.body.slice(0, 240).trimEnd()}…` : post.body;
 

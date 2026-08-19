@@ -9,9 +9,11 @@ salvage: **per-step verify commands**, **out-of-scope lists**, and **STOP condit
 enrichments to the *existing* plan format.
 
 This is a **proposal doc, not an active convention.** It does not change the plan format
-or any gate. The canonical task format is owned by two §CP (control-plane) surfaces —
-`plan-epic`'s Step 3 sub-issue template and the shared **§2 Sub-issue body format** in
-`gh-issue-intake-formats.md` — which flip a touching PR to human-merge. Landing these
+or any gate. The canonical task format is owned by `plan-epic` — its Step 3 sub-issue template
+and the child-body shape in
+[`claude-plugins/fabrika/skills/plan-epic/contract.md`](../claude-plugins/fabrika/skills/plan-epic/contract.md)
+(the v1 `gh-issue-intake-formats.md` §2 this doc was written against retired with the
+`kampus-pipeline` plugin, [ADR 0303](../.decisions/0303-retire-kampus-pipeline-plugin.md)). Landing these
 enrichments there is a deliberate control-plane change; this doc captures the shape they'd
 take so that decision can be made against a concrete proposal rather than re-derived from
 the closed #3371 thread. Out of scope: rewriting the whole plan format.
@@ -19,9 +21,9 @@ the closed #3371 thread. Out of scope: rewriting the whole plan format.
 ## Where they fit in today's format
 
 A sub-issue body today carries `**Stories:**` / `**TDD:**` / `**Containment:**` fields, a
-`### What to build` prose spec, and a `### Acceptance criteria` checklist. The `write-code`
+`### What to build` prose spec, and a `### Acceptance criteria` checklist. The `build`
 executor reads *What to build* as the scope and *Acceptance criteria* as the contract
-`review-code` verifies. Two gaps the #3371 salvage targets:
+`review` verifies. Two gaps the #3371 salvage targets:
 
 - The AC checklist says **whether** a task is done, but not **how a headless agent proves
   each box** — the executor invents a verification per criterion, and the reviewer re-invents
@@ -53,7 +55,7 @@ Proposed shape — a trailing note on the AC line, or a paired `### Verify` bloc
 
 ### Verify
 - `pnpm --filter @kampus/foo test` — the fail-closed case is green.
-- `node packages/pipeline-cli/src/bin.ts readme-guard check` — exits 0.
+- `fabrika guard readme-guard check` — exits 0.
 ```
 
 Why per-step and not one plan-wide command: a tracer-bullet child spans layers (storage →
@@ -70,7 +72,7 @@ was never in scope.
 
 This is the child-level complement of the epic plan's `### Goal / non-goals` (Step 2): the
 epic states the campaign's non-goals; the child states *this slice's* boundary against its
-siblings. It also feeds `review-code` a shared boundary — an appended AC (ADR 0079) should
+siblings. It also feeds `review` a shared boundary — an appended AC (ADR 0079) should
 not name work the child explicitly scoped out.
 
 ```markdown
@@ -110,11 +112,11 @@ load-bearing.
 
 ## If adopted — the §CP landing
 
-Adopting any of these edits the two control-plane surfaces named above, so a PR that lands
-them is human-merge (§CP), re-checked with `pipeline-cli control-plane-paths`. Suggested
+Adopting any of these edits the surfaces named above; check whether that lands a PR in the §CP set
+with `fabrika guard codeowners-cp check`. Suggested
 minimal-surface adoption: add the three sections to the `plan-epic` Step 3 child template and
-the `gh-issue-intake-formats.md` §2 shape as **optional** fields (a missing section reads as
-"none", exactly like `**Containment:**` today), teach `write-code` to run a child's verify
-commands as a self-check before opening its PR, and leave `review-code` free to append a
+its `contract.md` child-body shape as **optional** fields (a missing section reads as
+"none", exactly like `**Containment:**` today), teach `build` to run a child's verify
+commands as a self-check before opening its PR, and leave `review` free to append a
 verify command alongside an appended AC (ADR 0079). None of that is done here — this doc only
 proposes the shape.

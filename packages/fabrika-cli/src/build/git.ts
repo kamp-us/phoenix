@@ -75,6 +75,61 @@ export const switchToNew = (name: string, start: string): Shell<Attempt<void>> =
 		return r.ok ? ok(undefined) : fail(r.reason);
 	});
 
+/**
+ * Re-key an existing local branch to a new name — how a repair lane takes over an epic child's branch.
+ *
+ * Renaming rather than cutting a second branch off the first is the whole point: two branches
+ * carrying one child's commits is what `lane prove` reports as an underivable range, and that
+ * refusal is unresolvable from inside a worktree (#6386).
+ *
+ * **It does not refuse a branch another worktree has checked out**, which is the trap the caller
+ * guards with {@link worktreeCheckouts}: `git branch -m` exits 0 there and silently retargets that
+ * worktree's `HEAD` to the new name — only the `git switch` afterwards fails, by which point the
+ * rename has already landed under a lane that is not this one. Measured against git 2.40.1 rather
+ * than reasoned about (#6386, review round 1).
+ */
+export const renameBranch = (from: string, to: string): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["branch", "-m", from, to]);
+		return r.ok ? ok(undefined) : fail(r.reason);
+	});
+
+/** One worktree of this repo, and the branch it holds checked out. */
+export interface WorktreeCheckout {
+	readonly path: string;
+	readonly branch: string;
+}
+
+/**
+ * Every worktree of this repo that holds a branch, paired with the branch it holds.
+ *
+ * The proof {@link renameBranch} needs and cannot make for itself. A detached worktree contributes
+ * no row: it holds no branch name, so it can collide with none.
+ */
+export const worktreeCheckouts: Shell<Attempt<ReadonlyArray<WorktreeCheckout>>> = Effect.gen(
+	function* () {
+		const r = yield* execCapture("git", ["worktree", "list", "--porcelain"]);
+		if (!r.ok) return fail(r.reason);
+		const held: Array<WorktreeCheckout> = [];
+		let path = "";
+		for (const line of r.stdout.split("\n")) {
+			if (line.startsWith("worktree ")) path = line.slice("worktree ".length).trim();
+			else if (line.startsWith("branch refs/heads/") && path !== "") {
+				held.push({path, branch: line.slice("branch refs/heads/".length).trim()});
+			}
+		}
+		return ok(held);
+	},
+);
+
+/** The branch this tree holds, or `null` when its HEAD is detached. */
+export const currentBranch: Shell<Attempt<string | null>> = Effect.gen(function* () {
+	const r = yield* execCapture("git", ["branch", "--show-current"]);
+	if (!r.ok) return fail(r.reason);
+	const name = r.stdout.trim();
+	return ok(name === "" ? null : name);
+});
+
 /** Point a local branch's upstream at `<remote>/<ref>` — how resume mode publishes to the PR's head. */
 export const setUpstream = (name: string, remote: string, ref: string): Shell<Attempt<void>> =>
 	Effect.gen(function* () {
@@ -223,6 +278,60 @@ export const mergeBase = (base: string): Shell<Attempt<string>> =>
 		if (!r.ok) return fail(r.reason);
 		const sha = r.stdout.trim();
 		return isObjectName(sha) ? ok(sha) : fail(`git named no merge base with ${base}`);
+	});
+
+/**
+ * Which of `paths` the commit `rev` actually holds — the roster that tells a file this diff *created*
+ * from one whose read failed.
+ *
+ * Without it, `git show rev:path` answers both with a non-zero exit, and a caller reading that as
+ * "the file is new" turns an IO fault into an empty baseline, which reds a clean PR; reading it as a
+ * fault refuses every PR that adds a doc. Asking the tree first keeps the two apart.
+ *
+ * `-z` because a path with a space or a quote is quoted in the default output and would come back in
+ * a spelling that matches nothing. `--literal-pathspecs` because these operands are pathspecs: a path
+ * carrying `*`, `?`, `[` or a leading `:` would otherwise match something other than itself, and the
+ * roster would answer about a file nobody asked for.
+ *
+ * `-C root` is why the caller passes a root at all: an `ls-tree` pathspec resolves against the
+ * process cwd, and `--literal-pathspecs` also switches off the `:(top)` magic that would anchor it,
+ * so from a subdirectory every root-relative path matches nothing. That failure is exit 0 with no
+ * output — indistinguishable from "this diff created all of them", the one distinction this reader
+ * exists to keep. Pinning the cwd makes the operands and the printed names root-relative both.
+ */
+export const treePaths = (
+	root: string,
+	rev: string,
+	paths: ReadonlyArray<string>,
+): Shell<Attempt<ReadonlyArray<string>>> =>
+	Effect.gen(function* () {
+		if (paths.length === 0) return ok([]);
+		const r = yield* execCapture("git", [
+			"-C",
+			root,
+			"--literal-pathspecs",
+			"ls-tree",
+			"-r",
+			"--name-only",
+			"-z",
+			rev,
+			"--",
+			...paths,
+		]);
+		if (!r.ok) return fail(r.reason);
+		return ok(r.stdout.split("\0").filter((p) => p !== ""));
+	});
+
+/**
+ * A file's bytes as of `rev`. The caller proves the path is in that rev's tree first.
+ *
+ * `-C root` for the same reason as `treePaths`: a `<rev>:<path>` operand happens to resolve from the
+ * tree root today, and pinning the cwd makes the pair anchored by design rather than by accident.
+ */
+export const showAt = (root: string, rev: string, path: string): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["-C", root, "show", `${rev}:${path}`]);
+		return r.ok ? ok(r.stdout) : fail(r.reason);
 	});
 
 const pathLines = (stdout: string): ReadonlyArray<string> =>

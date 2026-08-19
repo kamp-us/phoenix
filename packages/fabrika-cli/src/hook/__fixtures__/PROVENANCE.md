@@ -14,9 +14,9 @@ before trusting any fixture here; a fixture with no provenance beside it is an a
 
 **Sanitization — one substitution, and only one, in every fixture here.** The operator's
 home-directory segment inside `transcript_path` is replaced with `<operator>`; nothing else is
-touched. That is the same, and the only, edit the repo's prior captured fixture carries
-([`../../../../pipeline-cli/src/tools/worktree-sweep/__fixtures__/worktree-create.payload.golden.json`](../../../../pipeline-cli/src/tools/worktree-sweep/__fixtures__/worktree-create.payload.golden.json)),
-and it is required rather than cosmetic: no committed artifact in this repo carries a home,
+touched. That is the same, and the only, edit the repo's prior captured fixture carried — v1's
+`worktree-sweep` payload, deleted with that package (#6100) — and it is required rather than
+cosmetic: no committed artifact in this repo carries a home,
 machine-local or absolute operator path. The opaque per-session values (`session_id`, `prompt_id`,
 `tool_use_id`) are the **real** captured ones and were deliberately left alone — they identify a
 throwaway capture session in a temp directory and name no person or machine.

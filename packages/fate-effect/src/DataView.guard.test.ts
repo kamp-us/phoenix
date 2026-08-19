@@ -1,30 +1,15 @@
 /**
  * Unit — the loud-fail guard for the fate field-map symbol slip (#2808).
  *
- * The guarded failure (diagnosed in #2805): when a view's `dataViewFieldsKey`
- * symbol recovery slips, fate's `ViewFieldConfig` misses its symbol branch and
- * falls to the wide `V['fields']` fallback, dropping every literal field key —
- * and the only downstream signal is a silent `never` at a far-away `view<>()`
- * call, type-indistinguishable from a genuine under-typing defect.
+ * The guarded failure (diagnosed in #2805): when a view's `dataViewFieldsKey` symbol recovery
+ * slips, fate's `ViewFieldConfig` misses its symbol branch and drops every literal field key — and
+ * the only downstream signal is a silent `never` at a far-away `view<>()` call, indistinguishable
+ * from a genuine under-typing defect. `AssertFieldMapResolved` turns that into a named brand at
+ * the entity-definition site.
  *
- * `AssertFieldMapResolved<typeof XView>` turns that silent `never` into the named
- * `FieldMapRecoveryFailed` brand at the entity-definition site. This file proves
- * both halves of the contract:
- *
- * 1. **Healthy → green.** The four #2805 comparands (`BanState`, `DivanCaylak`,
- *    `EmailDeliveryState`, `FailingAddress`) — reproduced here at their exact
- *    authoring shape — resolve to the view unchanged, and their downstream
- *    `view<>()` selection still type-checks with every field (no `never`).
- * 2. **Degraded → loud.** A synthetically-slipped view (its `.view` is a bare
- *    `DataViewOf<Row>`, exactly what fate sees after a symbol slip) resolves to
- *    the named `FieldMapRecoveryFailed` brand, and the mismatch is a real compile
- *    error (the `@ts-expect-error` below), not a silent pass.
- *
- * Like `DataView.unit.test.ts`, the view classes + aliases are **exported** on
- * purpose: the package tsconfig is `composite`, so tsgo runs the
- * declaration-nameability checks (TS2883/TS4020) over the guard's exported
- * surface — if the guard ever reintroduces a portability hazard, `pnpm typecheck`
- * fails here.
+ * Like `DataView.unit.test.ts`, the view classes + aliases are **exported** on purpose: the
+ * package tsconfig is `composite`, so tsgo runs the declaration-nameability checks (TS2883/TS4020)
+ * over the guard's exported surface.
  */
 import {view} from "@nkzw/fate";
 import {describe, expect, expectTypeOf, it} from "vitest";
@@ -99,7 +84,6 @@ export function loudFailProof(
 	healthyAssertion: AssertFieldMapResolved<typeof FailingAddressView>,
 	slippedAssertion: AssertFieldMapResolved<SlippedFailingAddressView>,
 ): void {
-	// A healthy view's assertion IS the view — assignable, no error.
 	const healthy: typeof FailingAddressView = healthyAssertion;
 	void healthy;
 	// @ts-expect-error — the slipped assertion is the `FieldMapRecoveryFailed` brand,
@@ -156,8 +140,6 @@ describe("AssertFieldMapResolved — a symbol slip resolves to the named error b
 		expectTypeOf<AssertFieldMapResolved<SlippedFailingAddressView>>().toEqualTypeOf<
 			FieldMapRecoveryFailed<"FailingAddress">
 		>();
-		// The named brand is distinguishable from both the healthy view AND a bare
-		// `never` — the whole point (a silent `never` is neither).
 		expectTypeOf<AssertFieldMapResolved<SlippedFailingAddressView>>().not.toEqualTypeOf<
 			typeof FailingAddressView
 		>();

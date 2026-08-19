@@ -125,9 +125,7 @@ test.describe("member mute (sustur) @journey:member-mute", () => {
 	}) => {
 		// No interception — the real preview resolves `member-mute` to its safe default (off).
 		await page.goto("/pano");
-		// The feed rendered…
 		await expect(page.locator(".kp-pano-post").first()).toBeVisible({timeout: 10_000});
-		// …and no flag-gated "sustur" action leaked onto any card.
 		await expect(page.locator('[data-testid^="member-mute-"]')).toHaveCount(0);
 
 		// The manage route is absent while the flag is off — it self-404s (the mecmua/bildirim idiom).
@@ -151,8 +149,7 @@ test.describe("member mute (sustur) @journey:member-mute", () => {
 
 		await page.goto("/pano");
 
-		// The flag is seeded on ⇒ the "sustur" action renders on other members' feed cards. Pick
-		// the first and derive the target member id from its testid (`member-mute-<memberId>`).
+		// The flag is seeded on ⇒ the "sustur" action renders on other members' feed cards.
 		const muteButton = page.locator('[data-testid^="member-mute-"]').first();
 		await expect(muteButton).toBeVisible({timeout: 10_000});
 		const testId = await muteButton.getAttribute("data-testid");
@@ -168,7 +165,6 @@ test.describe("member mute (sustur) @journey:member-mute", () => {
 				.catch(() => "")
 		).trim();
 
-		// Mute → the mutation stub records the member; the card unmounts (the client overlay hides it).
 		await muteButton.click();
 		if (authorLabel) {
 			const existing = muted.get(memberId);
@@ -178,18 +174,15 @@ test.describe("member mute (sustur) @journey:member-mute", () => {
 			timeout: 10_000,
 		});
 
-		// Manage screen: the muted member is listed with a per-row unmute.
 		await page.goto("/susturduklarim");
 		await expect(page.locator('[data-testid="mutes-page"]')).toBeVisible({timeout: 10_000});
 		const row = page.locator(`[data-testid="mute-row-${memberId}"]`);
 		await expect(row).toBeVisible({timeout: 10_000});
 
-		// Unmute → the mutation stub drops the member; the row is removed.
 		await page.locator(`[data-testid="mute-unmute-${memberId}"]`).click();
 		await expect(row).toHaveCount(0, {timeout: 10_000});
 		expect(muted.has(memberId)).toBe(false);
 
-		// Back on the feed the member's content is reachable again (their card + "sustur" return).
 		await page.goto("/pano");
 		await expect(page.locator(`[data-testid="member-mute-${memberId}"]`).first()).toBeVisible({
 			timeout: 10_000,

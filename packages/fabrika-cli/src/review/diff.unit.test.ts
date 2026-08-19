@@ -195,6 +195,43 @@ describe("tierMHits", () => {
 		expect(tierMHits(diff)).toEqual([]);
 	});
 
+	it("finds a removed assertion in each spelling the repo's two runners write", () => {
+		const spellings = [
+			"assert(ok);",
+			"expect(x).toBe(1);",
+			"assert.isTrue(ok);",
+			"assert.isFalse(ok);",
+			"assert.strictEqual(a, b);",
+			"assert.deepStrictEqual(a, b);",
+			'expect.fail("nope");',
+		];
+		for (const line of spellings) {
+			const diff = `diff --git a/a.test.ts b/a.test.ts\n@@ -1,2 +1,1 @@\n a\n-\t${line}\n`;
+			expect(tierMHits(diff)).toEqual([
+				{kind: "removed-assertion", file: "a.test.ts", line: 2, token: line},
+			]);
+		}
+	});
+
+	it("reports the removed assertion PR #5730 printed None. beside", () => {
+		const line = 'assert.isTrue(isSelfExempt(".claude/skills/triage/SKILL.md"));';
+		const file = "packages/demo-cli/src/tools/leak-guard/leak-guard.unit.test.ts";
+		const diff = `diff --git a/${file} b/${file}\n@@ -268,2 +268,1 @@\n \tit("exempts a skill", () => {\n-\t\t${line}\n`;
+		expect(tierMHits(diff)).toEqual([{kind: "removed-assertion", file, line: 269, token: line}]);
+	});
+
+	it("does not report a removed non-assertion line in a test file", () => {
+		const diff = `diff --git a/a.test.ts b/a.test.ts\n@@ -1,2 +1,1 @@\n a\n-\tconst rows = collect();\n`;
+		expect(tierMHits(diff)).toEqual([]);
+	});
+
+	it("does not report an identifier that merely contains expect or assert", () => {
+		for (const line of ["assertions.push(1);", "expectation(x);", "myassert(x);", "reexpect(x);"]) {
+			const diff = `diff --git a/a.test.ts b/a.test.ts\n@@ -1,2 +1,1 @@\n a\n-\t${line}\n`;
+			expect(tierMHits(diff)).toEqual([]);
+		}
+	});
+
 	it("does not report a suppression that was REMOVED — only what the diff adds", () => {
 		const diff = `diff --git a/a.ts b/a.ts\n@@ -1,2 +1,1 @@\n a\n-// biome-ignore lint: gone\n`;
 		expect(tierMHits(diff)).toEqual([]);

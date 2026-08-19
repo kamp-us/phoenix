@@ -15,9 +15,11 @@
 import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {designHarnessOr} from "../config/paths.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import type {VerbOutcome} from "../verb.ts";
+import {refuse, type VerbOutcome} from "../verb.ts";
+import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runNote} from "./note-verb.ts";
 import {runPost} from "./post-verb.ts";
 import {captureRenderLeg} from "./render-leg.ts";
@@ -118,6 +120,17 @@ const post = leafCommand(
 		repo: repoFlag,
 	},
 	Effect.fn(function* ({pr, polarity, sha, clause, evidence, carrier, repo}) {
+		// The reviewer's own checked-out tree, never the PR head — this skill never checks the PR
+		// out, so the tier choice is read where the verb is running.
+		const declared = yield* designHarnessOr(
+			"review-ui post",
+			process.cwd(),
+			"which evidence tier this verdict may use is UNKNOWN; nothing was uploaded or posted.",
+		);
+		if (declared._tag === "Refused") {
+			yield* emit(refuse(PRECONDITION_UNKNOWN, declared.message));
+			return;
+		}
 		yield* emit(
 			yield* runPost({
 				pr,
@@ -130,9 +143,7 @@ const post = leafCommand(
 				env: process.env,
 				stdin: Effect.sync(readStdin),
 				tmpRoot: tmpdir(),
-				// The reviewer's own checked-out tree, never the PR head — this skill never checks the
-				// PR out, so the tier choice is read where the verb is running.
-				harnessPath: `${process.cwd()}/design-harness.json`,
+				harnessPath: `${process.cwd()}/${declared.path}`,
 				upload: githubAttachmentUploadLeg(process.env),
 			}),
 		);

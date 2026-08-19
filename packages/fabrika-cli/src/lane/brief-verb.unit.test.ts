@@ -2,6 +2,7 @@
 import {resolve} from "node:path";
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
+import type {EntrypointRead} from "../delegate/entrypoint.ts";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {EPIC_RULES, EPIC_TAIL_RULES, RULES, read as readBrief} from "../wire/lane-brief.ts";
@@ -107,6 +108,8 @@ const locating = (
 	[REV("epic/5800"), okOut(`${EPIC_BASE}\n`)],
 	[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
 	[BRANCHES, okOut(`${branches.join("\n")}\n`)],
+	// The child is not integrated here, so its fork point is where the epic branch stands.
+	[/^git merge-base /, okOut(`${EPIC_BASE}\n`)],
 	[LOG_RANGE, logOf(...commits)],
 ];
 
@@ -139,12 +142,20 @@ const epicLane = (events: ReadonlyArray<readonly [string, string]>) => {
 	});
 };
 
+/**
+ * A non-phoenix entrypoint on purpose: every brief these tests read back is the shape a repo that
+ * *installs* fabrika gets, so a path bound back to `packages/fabrika-cli/` fails here rather than in
+ * a consuming repo's maiden run (#6012).
+ */
+const ENTRY = "/checkout/node_modules/@kampus/fabrika-cli/dist/bin.js";
+
 const options = {
 	root: ROOT,
 	lane: "5751",
 	task: null as string | null,
 	repo: null as string | null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	entrypoint: {_tag: "Entrypoint", entrypoint: ENTRY} as EntrypointRead,
 };
 
 const run = (
@@ -200,7 +211,7 @@ describe("lane brief", () => {
 		]);
 
 		expect(out.stdout).toBe(
-			`## Task\nlane: 5751\nroot: ${resolve(ROOT)}\ntask: issue\nstate: review\nshell: reviewer\n## Ground\nissue: ${ISSUE_URL}\npr: ${PR_URL}\n## Rules\n${RULES}\n`,
+			`## Task\nlane: 5751\nroot: ${resolve(ROOT)}\nfabrika: ${ENTRY}\ntask: issue\nstate: review\nshell: reviewer\n## Ground\nissue: ${ISSUE_URL}\npr: ${PR_URL}\n## Rules\n${RULES}\n`,
 		);
 	});
 
@@ -357,6 +368,27 @@ describe("lane brief", () => {
 		const out = await run(fs, []);
 
 		expect(out.code).toBe(MALFORMED_RECORD);
+	});
+
+	it("refuses when this fabrika's own entrypoint could not be resolved — UNKNOWN, never a brief", async () => {
+		const out = await run(lane("5751", ["WIP"]), [], {
+			entrypoint: {_tag: "Unresolved", reason: "this fabrika's own package root is not on disk"},
+		});
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("this fabrika's own package root is not on disk");
+	});
+
+	it("refuses a resolved entrypoint node cannot run — a binstub reaching the brief is #5679 again", async () => {
+		const binstub = "/checkout/node_modules/.bin/fabrika";
+		const out = await run(lane("5751", ["WIP"]), [], {
+			entrypoint: {_tag: "Entrypoint", entrypoint: binstub},
+		});
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain(`"${binstub}" is not node-runnable`);
 	});
 
 	it("refuses when neither the task nor the lane names an issue", async () => {

@@ -117,13 +117,12 @@ computes no second verdict on any of them.
 
 ### The name and routing situation
 
-v1's `heal-ci` remains the live project-level skill at `claude-plugins/kampus-pipeline/skills/`
-until the cutover, which is separate, later work. `DEVELOPMENT.md` routes `heal-ci` by a filesystem
-path pinned to `.claude/skills/heal-ci/SKILL.md` — the v1 copy — so **nothing on `main` routes to
-this skill**, and it is reached as `/fabrika:heal-ci`. `ship`'s SKILL.md routes red CI to `heal-ci`
-by unqualified name, which resolves ambiguously while both exist. That gap is
-[#4761](https://github.com/kamp-us/phoenix/issues/4761), already open and not re-filed here; it is
-recorded in the authoring PR rather than patched from this spec.
+At authoring time v1's `heal-ci` was still the live project-level skill at
+`claude-plugins/kampus-pipeline/skills/`, so the name resolved ambiguously while both existed
+([#4761](https://github.com/kamp-us/phoenix/issues/4761)). The cutover has since happened: the v1
+plugin tree is deleted (ADR
+[0303](../../../../.decisions/0303-retire-kampus-pipeline-plugin.md), #5937), `heal-ci` resolves
+uniquely to this skill, and it is reached as `/fabrika:heal-ci`.
 
 This spec closes the counterpart gap `ship`'s contract records: *"the skill routes red CI to
 `heal-ci`, and no fabrika counterpart exists yet"*. Once these verbs are implemented, `ship checks`

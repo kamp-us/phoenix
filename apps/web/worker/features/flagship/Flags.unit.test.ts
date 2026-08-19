@@ -1,14 +1,4 @@
-/**
- * Unit coverage for the `Flags` domain service — the boolean dark-ship
- * primitive (#508). Drives `FlagsLive` over a stubbed `Flagship` client (no
- * binding, no I/O) and asserts the two load-bearing contracts:
- *
- *   - on/off branching: a flag returning true/false surfaces that value;
- *   - safe-default fallback: a `FlagshipError` from the client collapses to the
- *     supplied default, and the public `getBoolean` error channel is `never`;
- *   - observability (#2685): the swallowed cause is LOGGED at warn before the
- *     default is returned, so a misconfigured binding is no longer silent.
- */
+/** Drives `FlagsLive` over a stubbed `Flagship` client — no binding, no I/O. */
 import {assert, describe, it} from "@effect/vitest";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Flagship as CfFlagship} from "alchemy/Cloudflare";
@@ -17,8 +7,8 @@ import {Flags, type FlagsAccess, FlagsLive, withDevOverrides} from "./Flags.ts";
 import {anonymousFlagsContext, FlagsContext} from "./FlagsContext.ts";
 import {Flagship} from "./Flagship.ts";
 
-// `RuntimeContext` is the alchemy binding's intrinsic ambient requirement
-// (discharged at worker scope in production, #507); the stub satisfies it here.
+// `RuntimeContext` is the alchemy binding's ambient requirement, discharged at worker
+// scope in production; the stub satisfies it here.
 const runtimeContext: BaseRuntimeContext = {
 	Type: "test",
 	id: "test",
@@ -32,11 +22,9 @@ const unexercised = (method: string) => () =>
 	Effect.die(`Flagship.${method} not exercised in Flags.unit.test`);
 
 /**
- * Capture warn-level log lines into `lines` for the duration of `effect` (#2685):
- * a scoped {@link Logger.layer} whose logger pushes each warn message's head
- * string, so a test can assert the swallowed cause was actually logged rather than
- * silently absorbed. The head is the first `logWarning` argument (its message
- * template); the `Cause` argument is not serialized.
+ * Capture warn-level log lines, so a test can assert a swallowed cause was actually
+ * logged. Only the message head (the first `logWarning` argument) is captured — the
+ * `Cause` argument is not serialized.
  */
 const captureWarnings = <A, E, R>(
 	effect: Effect.Effect<A, E, R>,
@@ -55,11 +43,7 @@ const captureWarnings = <A, E, R>(
 		);
 	});
 
-/**
- * A `Flagship` stub whose `getBooleanValue` is supplied by the test; every other
- * method dies so an accidental call is loud. `boolean` reads either return a
- * value or fail with a `FlagshipError` (the misconfigured-binding signal).
- */
+/** Every method but `getBooleanValue` dies, so an accidental call is loud. */
 const stubFlagship = (
 	getBooleanValue: Flagship["Service"]["getBooleanValue"],
 ): Layer.Layer<Flagship> =>
@@ -107,7 +91,6 @@ describe("Flags.getBoolean", () => {
 	it.effect("a FlagshipError collapses to the supplied default (degrade safe)", () =>
 		Effect.gen(function* () {
 			const flags = yield* Flags;
-			// default `false` is the safe/off path; an eval error must fall back to it.
 			const enabled = yield* flags
 				.getBoolean("feature-erroring", false)
 				.pipe(Effect.provideService(FlagsContext, anonymousFlagsContext));
@@ -126,8 +109,6 @@ describe("Flags.getBoolean", () => {
 	it.effect("a FlagshipError is LOGGED at warn before the default is returned (#2685)", () =>
 		Effect.gen(function* () {
 			const flags = yield* Flags;
-			// The swallow must be OBSERVABLE: the default is still returned (degrade
-			// safe), AND a warn line naming the failing key was emitted — no longer silent.
 			const {value, warnings} = yield* captureWarnings(
 				flags
 					.getBoolean("feature-erroring", false)
@@ -186,11 +167,7 @@ describe("Flags.getBoolean", () => {
 const flagshipError = () =>
 	Effect.fail(new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined}));
 
-/**
- * The typed-read analog of `stubFlagship`: the boolean read dies (these suites
- * exercise only the typed surface) and the supplied typed reads override the
- * unexercised defaults. Each surfaces a value or fails with a `FlagshipError`.
- */
+/** The typed-read analog of `stubFlagship`: the boolean read dies here. */
 const stubTypedFlagship = (overrides: {
 	getStringValue?: Flagship["Service"]["getStringValue"];
 	getNumberValue?: Flagship["Service"]["getNumberValue"];
@@ -272,8 +249,7 @@ describe("Flags.getObject", () => {
 			assert.deepStrictEqual(value, {theme: "dark"});
 		}).pipe(
 			Effect.provide(
-				// `getObjectValue` is generic (`<T extends object>`), so the stub returns the
-				// evaluated object cast to the call-site `T` — the contract this read surfaces.
+				// `getObjectValue` is generic, so the stub must cast to the call-site `T`.
 				typedFlagsOver({
 					getObjectValue: <T extends object>() => Effect.succeed({theme: "dark"} as T),
 				}),
@@ -294,9 +270,8 @@ describe("Flags.getObject", () => {
 });
 
 /**
- * A real-`Flags` stand-in for the override decorator tests: a boolean read returns
- * its supplied default and typed reads return sentinels, so a passed-through read
- * is distinguishable from a short-circuited override.
+ * The typed reads return sentinels so a passed-through read is distinguishable from a
+ * short-circuited override.
  */
 const realFlagsStub: FlagsAccess = {
 	getBoolean: (_key, defaultValue) => Effect.succeed(defaultValue),
@@ -308,7 +283,6 @@ const realFlagsStub: FlagsAccess = {
 describe("withDevOverrides (#622)", () => {
 	it.effect("returns the forced-on override instead of the real read", () =>
 		Effect.gen(function* () {
-			// default is `false` (the safe path); the override forces it on.
 			const value = yield* withDevOverrides(realFlagsStub)
 				.getBoolean("flag-a", false)
 				.pipe(Effect.provideService(FlagsContext, {overrides: {"flag-a": true}}));
@@ -330,7 +304,6 @@ describe("withDevOverrides (#622)", () => {
 			const value = yield* withDevOverrides(realFlagsStub)
 				.getBoolean("flag-b", true)
 				.pipe(Effect.provideService(FlagsContext, {overrides: {"flag-a": false}}));
-			// no override for flag-b → the real stub answers with the supplied default
 			assert.strictEqual(value, true);
 		}).pipe(Effect.provide(RuntimeContextStub)),
 	);

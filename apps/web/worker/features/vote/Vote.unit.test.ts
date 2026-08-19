@@ -1,15 +1,9 @@
 /**
  * Vote unit coverage — the decisions that are wrong-or-right with no database
- * (ADR 0082). The `Drizzle` seam is substituted directly (`Drizzle.test.ts`
- * half-A idiom): a `run`/`batch` that THROWS proves a short-circuit never
- * touched the DB, and a stubbed `run` feeds the decision its inputs without an
- * engine. Vote's real-D1 fidelity — composite-PK idempotency (score stays 1 on
- * re-cast), aggregate counters, soft-delete `VoteTargetNotFound`, the cast
- * round-trip — lives on real D1 over the fate ops in `tests/integration/`
- * (`pano-comments.test.ts` vote idempotency/round-trip, `pano-mutations.test.ts`
- * vote/retract, `pasaport.test.ts` totalKarma 0→1→0); its batch-atomicity
- * rollback is the generic `db.batch` all-or-nothing property proven in
- * `db/Drizzle.test.ts`.
+ * (ADR 0082). Throughout, a `run`/`batch` that THROWS is the proof that a
+ * short-circuit never touched the DB. Vote's real-D1 fidelity (composite-PK
+ * idempotency, aggregate counters, soft-delete, the cast round-trip) lives in
+ * `tests/integration/`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {wireCodeOfClass} from "@kampus/fate-effect";
@@ -22,10 +16,8 @@ import {Telemetry} from "../telemetry/Telemetry.ts";
 import {VOTE_ELIGIBILITY_WIRE_CODE, VOTE_REQUIRED_TIER, VoterNotEligible} from "./errors.ts";
 import {KarmaBump, type KarmaBumpInput, Vote, VoteLive, VoterStanding} from "./Vote.ts";
 
-// A recording `Telemetry` seam: `emit` pushes each event into `sink` and succeeds,
-// so a test can assert the exact `{feature, action, surface, userId}` a cast emitted
-// — and that a rejected/no-op cast emits nothing (empty sink). Substitutes the
-// `Telemetry` tag directly (`.patterns/effect-testing.md`), no real Analytics Engine.
+// Substitutes the `Telemetry` tag directly (.patterns/effect-testing.md) — an empty
+// `sink` is the proof that a rejected or no-op cast emitted nothing.
 const recordingTelemetry = (sink: TelemetryEvent[]) =>
 	Layer.succeed(Telemetry, {
 		emit: (event) =>
@@ -34,26 +26,22 @@ const recordingTelemetry = (sink: TelemetryEvent[]) =>
 			}),
 	});
 
-// A `Telemetry` whose `emit` DIES — the commit-ordering double. The real `TelemetryLive`
-// discharges the WHOLE Cause internally (`Effect.ignoreCause`, #2085) so `emit` is `Effect<void>`
-// and a defect can never surface; substituting the tag with this dying double bypasses that
-// seam, so it can only prove the cast is committed BEFORE the emit runs (the seam-level S4 proof
-// itself lives in `Telemetry.unit.test.ts`), never fed through the real containment.
+// A `Telemetry` whose `emit` DIES. Substituting the tag bypasses `TelemetryLive`'s own
+// `Effect.ignoreCause` containment (#2085), so this can only prove commit-before-emit
+// ordering — the S4 containment proof itself lives in `Telemetry.unit.test.ts`.
 const failingTelemetry = Layer.succeed(Telemetry, {
 	emit: () => Effect.die(new Error("telemetry emit blew up — off the commit path")),
 });
 
-// A `Drizzle` whose every call throws — provided so that any path which actually
-// reaches the DB seam fails the test. A guard that short-circuits before reading
-// runs to completion against it, which is exactly the "no read" proof.
+// Every call throws on purpose: any path that reaches the DB seam fails the test, so
+// running to completion against it IS the "no read" proof.
 const throwingAccess: DrizzleAccess = {
 	run: () => Effect.die(new Error("Vote read the DB on a path that must short-circuit")),
 	batch: () => Effect.die(new Error("Vote wrote a batch on a path that must short-circuit")),
 };
 
-// A `Drizzle` whose `run` replays a queued sequence of results and whose `batch`
-// throws — used to drive `cast`'s pre-batch decision (loadMeta + probe + cached
-// score) while proving the idempotent no-op never reaches `batch`.
+// `run` replays a queued sequence of results; `batch` throws, so an idempotent no-op
+// that reaches the write fails the test.
 function scriptedAccess(results: ReadonlyArray<unknown>): {access: DrizzleAccess; runs: number} {
 	const state = {i: 0};
 	const access: DrizzleAccess = {
@@ -78,9 +66,8 @@ const KarmaBumpStub = Layer.succeed(KarmaBump, {
 	},
 });
 
-// A `VoterStanding` stub with a fixed eligibility verdict. `eligible` (the default) is
-// the "voter is above the çaylak floor" case, so tests NOT exercising the tier gate see
-// their prior behaviour; `caylak` (below the floor) drives the #1810 gate rejection.
+// `eligible` (the default) is above the çaylak floor; `caylak` is below it and drives
+// the #1810 gate rejection.
 const VoterStandingStub = (aboveNewcomer: boolean) =>
 	Layer.succeed(VoterStanding, {isAboveNewcomer: () => Effect.succeed(aboveNewcomer)});
 
@@ -126,7 +113,6 @@ describe("Vote.cast — pre-write decisions (mocked Drizzle seam)", () => {
 	it.effect("a missing target raises VoteTargetNotFound before any write", () =>
 		Effect.gen(function* () {
 			const vote = yield* Vote;
-			// loadMeta's findFirst resolves to `undefined` → not-found, no batch.
 			const exit = yield* Effect.exit(
 				vote.cast({userId: "u1", targetKind: "definition", targetId: "ghost", value: true}),
 			);
@@ -136,11 +122,8 @@ describe("Vote.cast — pre-write decisions (mocked Drizzle seam)", () => {
 	);
 
 	it.effect("re-casting an already-cast vote is an idempotent no-op — no batch, no karma", () => {
-		// run #1 loadMeta → a live target row; run #2 probeExisting → already cast;
-		// run #3 readCachedScore → the cached score. The `batch` + KarmaBump stubs
-		// throw, so reaching either fails the test.
-		// loadMeta reads the row's `authorId`/`createdAt`; probeExisting + readCachedScore
-		// return a bool + number directly (the queued values ARE each `run` fn's result).
+		// The queued values ARE each `run` fn's result, in call order: loadMeta row,
+		// probeExisting bool, readCachedScore number.
 		const row = {authorId: "author-1", createdAt: new Date()};
 		const {access} = scriptedAccess([row, true, 7]);
 		return Effect.gen(function* () {
@@ -175,14 +158,11 @@ describe("Vote.cast — pre-write decisions (mocked Drizzle seam)", () => {
 	});
 });
 
-// A `Drizzle` that runs the batch builder against a stub db and records the
-// produced statement array, so we can assert clearTarget's batch SHAPE (ADR 0096
-// §3) without a real engine: exactly two statements (votes + user_vote), and —
-// since KarmaBumpStub throws if reached — no karma statement.
+// Records the statement array the batch builder produces, so clearTarget's batch SHAPE
+// (ADR 0096 §3) is assertable without an engine.
 function recordingBatchAccess(): {access: DrizzleAccess; batches: ReadonlyArray<unknown>[]} {
 	const batches: ReadonlyArray<unknown>[] = [];
-	// A db proxy whose every `.delete(...).where(...)` chain returns a marker. We
-	// only count statements, so each chained call yields a chainable stand-in.
+	// Only statement COUNT matters here, so every chained db call yields a stand-in.
 	const chainable: Record<string, (...a: unknown[]) => unknown> = {};
 	const dbProxy: unknown = new Proxy(chainable, {
 		get: () => () => dbProxy,
@@ -198,10 +178,8 @@ function recordingBatchAccess(): {access: DrizzleAccess; batches: ReadonlyArray<
 	return {access, batches};
 }
 
-// A recording write-path seam: `run` replays the pre/post-batch reads (loadMeta,
-// probe, post-batch score) and `batch` records the produced statement array against a
-// chainable db proxy, so a state-changing cast can be asserted (it reaches the write and
-// its batch carries the karma statement) without a real engine.
+// `run` replays the pre/post-batch reads and `batch` records the produced statements,
+// so a state-changing cast is assertable without an engine.
 function recordingCastAccess(reads: ReadonlyArray<unknown>): {
 	access: DrizzleAccess;
 	batches: ReadonlyArray<unknown>[];
@@ -223,11 +201,9 @@ function recordingCastAccess(reads: ReadonlyArray<unknown>): {
 	return {access, batches};
 }
 
-// A KarmaBump that RECORDS each bump's full context and returns the TWO sentinel
-// statements the real contract now emits (the `total_karma` bump + its `karma_event`
-// provenance row, #2592), so a cast's karma credit is observable: who got karma, by how
-// much, from which source, and why. `calls` keeps the recipient+delta shape prior
-// assertions read; `inputs` exposes the source/reason/timestamp the ledger row carries.
+// Returns the TWO sentinel statements the real contract emits (the `total_karma` bump
+// plus its `karma_event` provenance row, #2592). `calls` carries recipient+delta,
+// `inputs` the source/reason/timestamp the ledger row records.
 function recordingKarma(): {
 	layer: Layer.Layer<KarmaBump>;
 	calls: {userId: string; delta: number}[];
@@ -250,8 +226,8 @@ const liveMeta = {authorId: "author-1", createdAtMs: 0, sandboxed: false};
 
 describe("Vote.cast — sandbox eligibility (#1288, mocked Drizzle seam)", () => {
 	it.effect("cast REJECTS a sandboxed target with VoteTargetSandboxed before any write", () =>
-		// loadMeta → a still-sandboxed row; the eligibility guard short-circuits before the
-		// probe/batch (the throwing batch proves no write).
+		// The eligibility guard short-circuits before the probe/batch; the throwing batch
+		// proves no write.
 		Effect.gen(function* () {
 			const vote = yield* Vote;
 			const exit = yield* Effect.exit(
@@ -263,8 +239,7 @@ describe("Vote.cast — sandbox eligibility (#1288, mocked Drizzle seam)", () =>
 	);
 
 	it.effect("castOnSandboxed ACCEPTS a sandboxed target — scores + credits the author", () => {
-		// reads: loadMeta (sandboxed) → probe (not yet cast) → post-batch score. The cast
-		// reaches the atomic batch; the recording karma proves +1 credited to the AUTHOR.
+		// reads: loadMeta (sandboxed) → probe (not yet cast) → post-batch score.
 		const {access, batches} = recordingCastAccess([sandboxedMeta, false, 1]);
 		const {layer: karma, calls, inputs} = recordingKarma();
 		return Effect.gen(function* () {
@@ -288,15 +263,12 @@ describe("Vote.cast — sandbox eligibility (#1288, mocked Drizzle seam)", () =>
 				[{userId: "caylak-1", delta: 1}],
 				"karma credited to the content author, +1 (D2 global karma, D3 equal weight)",
 			);
-			// The provenance the ledger row records: source target + reason (#2592).
 			assert.deepStrictEqual(inputs[0]?.source, {kind: "definition", id: "def-sb"});
 			assert.strictEqual(inputs[0]?.reason, "vote");
 		}).pipe(
 			Effect.provide(
 				VoteLive.pipe(
 					Layer.provide(karma),
-					// Voter above the çaylak floor — the #1810 tier gate is not what these two
-					// tests exercise (divan path has it OFF; the live path is a promoted voter).
 					Layer.provide(VoterStandingStub(true)),
 					Layer.provide(recordingTelemetry([])),
 					Layer.provide(Layer.succeed(Drizzle, access)),
@@ -329,8 +301,6 @@ describe("Vote.cast — sandbox eligibility (#1288, mocked Drizzle seam)", () =>
 			Effect.provide(
 				VoteLive.pipe(
 					Layer.provide(karma),
-					// Voter above the çaylak floor — the #1810 tier gate is not what these two
-					// tests exercise (divan path has it OFF; the live path is a promoted voter).
 					Layer.provide(VoterStandingStub(true)),
 					Layer.provide(recordingTelemetry([])),
 					Layer.provide(Layer.succeed(Drizzle, access)),
@@ -341,10 +311,8 @@ describe("Vote.cast — sandbox eligibility (#1288, mocked Drizzle seam)", () =>
 });
 
 describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle seam)", () => {
-	// The three inline cast paths (pano post/comment + sözlük definition) all reach the
-	// single `Vote.castImpl` choke point via `cast`. A çaylak (below-floor) voter is
-	// rejected on EACH before any DB read — the throwing `Drizzle` proves the short-circuit
-	// runs ahead of `loadMeta`, so the gate never even looks at the target.
+	// All three inline cast paths funnel through the one `Vote.castImpl` choke point, so
+	// each is checked here; the throwing `Drizzle` proves the gate runs ahead of `loadMeta`.
 	for (const kind of TARGET_KINDS) {
 		it.effect(
 			`${kind}: a çaylak (below-floor) voter is REJECTED with VoterNotEligible — no DB read`,
@@ -359,9 +327,8 @@ describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle s
 							value: true,
 						}),
 					);
-					// `flip` surfaces the typed error as the success channel so we assert on the
-					// `VoterNotEligible` instance itself — its `need` bar comes from the single
-					// source (Vote no longer re-bakes a raw tier string, the #2021 contract).
+					// `flip` moves the typed error into the success channel so the instance
+					// itself is assertable.
 					assert.isTrue(
 						err instanceof VoterNotEligible,
 						"a çaylak cast fails with VoterNotEligible",
@@ -374,8 +341,8 @@ describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle s
 	}
 
 	it("VoterNotEligible.need + its wire code are single-sourced from VOTE_REQUIRED_TIER (#2021)", () => {
-		// The tier name and the wire code are ONE fact: the error's `need` is `VOTE_REQUIRED_TIER`
-		// and its `FateWireCode` is derived from it, so a ladder move can't drift them apart.
+		// The tier name and the wire code are ONE fact — the code is derived from `need`, so
+		// a ladder move can't drift them apart.
 		const err = new VoterNotEligible({
 			voterId: UserId.make("u1"),
 			need: VOTE_REQUIRED_TIER,
@@ -386,15 +353,13 @@ describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle s
 			VOTE_ELIGIBILITY_WIRE_CODE,
 			`VOTE_REQUIRES_${VOTE_REQUIRED_TIER.toUpperCase()}`,
 		);
-		// The annotation on the error class reads back the derived code, not a hand-typed literal.
 		assert.strictEqual(wireCodeOfClass(VoterNotEligible), VOTE_ELIGIBILITY_WIRE_CODE);
-		// With the current ladder rank the derived code is the literal the SPA copy decodes.
+		// At the current ladder rank the derived code is the literal the SPA copy decodes.
 		assert.strictEqual(VOTE_ELIGIBILITY_WIRE_CODE, "VOTE_REQUIRES_YAZAR");
 	});
 
 	it.effect("a promoted (above-floor) voter still casts normally on a live target", () => {
-		// reads: loadMeta (live) → probe (not yet cast) → post-batch score. The eligible voter
-		// clears the gate and the cast reaches the atomic batch (+1 to the author).
+		// reads: loadMeta (live) → probe (not yet cast) → post-batch score.
 		const {access, batches} = recordingCastAccess([liveMeta, false, 1]);
 		const {layer: karma, calls} = recordingKarma();
 		return Effect.gen(function* () {
@@ -423,9 +388,8 @@ describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle s
 	it.effect(
 		"a çaylak RETRACTING is not tier-gated — a retraction removes influence, never adds",
 		() => {
-			// A çaylak has no cast to retract in practice, but the gate is CAST-direction-only:
-			// `value: false` skips it. Here the retraction is an idempotent no-op (never-cast),
-			// so it returns cleanly with `changed: false` rather than raising VoterNotEligible.
+			// The tier gate is CAST-direction-only, so `value: false` skips it — a çaylak
+			// retraction returns `changed: false` rather than raising VoterNotEligible.
 			const {access} = scriptedAccess([liveMeta, false, 0]);
 			return Effect.gen(function* () {
 				const vote = yield* Vote;
@@ -443,8 +407,7 @@ describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle s
 	it.effect(
 		"the target-liveness gate still holds — an eligible voter is rejected on a sandboxed target",
 		() =>
-			// An above-floor voter clears the tier gate but the target is sandboxed, so the
-			// EXISTING VoteTargetSandboxed gate (#1288) still fires: both gates compose.
+			// Both gates compose: clearing the tier floor does not clear #1288's sandbox gate.
 			Effect.gen(function* () {
 				const vote = yield* Vote;
 				const exit = yield* Effect.exit(
@@ -463,9 +426,8 @@ describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle s
 
 describe("Vote.cast — karma provenance ledger (#2592, mocked Drizzle seam)", () => {
 	it.effect("a real retraction co-commits a -1 ledger event with reason 'retract'", () => {
-		// reads: loadMeta (live) → probe (already cast) → post-batch score. `value:false` on an
-		// existing vote is a state change, so it reaches the batch with karmaDelta -1 — and the
-		// ledger row records the negative delta as an event, never a deletion (append-only).
+		// reads: loadMeta (live) → probe (already cast) → post-batch score. The ledger records
+		// the -1 as an event, never a deletion (append-only).
 		const {access, batches} = recordingCastAccess([liveMeta, true, 0]);
 		const {layer: karma, calls, inputs} = recordingKarma();
 		return Effect.gen(function* () {
@@ -496,13 +458,9 @@ describe("Vote.cast — karma provenance ledger (#2592, mocked Drizzle seam)", (
 });
 
 describe("Vote.cast — the guarded karma pair leads the batch (#2552, mocked Drizzle seam)", () => {
-	// The double-bump fix: the karma bump + its ledger row are gated on the vote row's
-	// PRE-mutation presence, so a duplicate cast that raced the out-of-batch probe writes
-	// neither. That guard is only correct if the karma pair is evaluated BEFORE the vote-row
-	// write in the batch — so this pins the ordering. `recordingKarma` returns the two karma
-	// sentinels; the vote/score/mirror statements come from the db proxy, so the sentinels
-	// leading `batches[0]` proves karma is sequenced first, and `inputs[0].guard` proves Vote
-	// threaded the pre-mutation predicate through.
+	// The karma pair is gated on the vote row's PRE-mutation presence, which is only
+	// correct if karma is evaluated BEFORE the vote-row write in the batch. These tests pin
+	// that ordering: the karma sentinels must lead `batches[0]`.
 	it.effect(
 		"karma bump + ledger row are the first two batch statements, and carry the guard",
 		() => {
@@ -561,14 +519,8 @@ describe("Vote.clearTarget — cleanup batch shape (ADR 0096 §3, mocked Drizzle
 	}
 });
 
-// Reference instrument #1 (ADR 0153, epic #2065, #2068): `Vote.cast` emits a `vote`
-// telemetry event after a committed cast. Recording/failing `Telemetry` doubles at the
-// tag prove: the emit carries the right positional fields, fires ONLY on a committed
-// state change (never on a no-op or a rejected cast), distinguishes cast vs retract, and
-// — S4 fail-safe — can never fail the vote even when the seam itself blows up.
+// Reference instrument #1 — see ADR 0153 (epic #2065, #2068).
 describe("Vote.cast — telemetry instrument (ADR 0153, #2068, mocked Drizzle + Telemetry seams)", () => {
-	// Build a VoteLive whose Telemetry is the given double and whose write-path Drizzle is a
-	// recording cast access, so a state-changing cast reaches the emit.
 	const instrumentLayer = (access: DrizzleAccess, telemetry: Layer.Layer<Telemetry>) => {
 		const {layer: karma} = recordingKarma();
 		return VoteLive.pipe(
@@ -653,9 +605,8 @@ describe("Vote.cast — telemetry instrument (ADR 0153, #2068, mocked Drizzle + 
 	});
 
 	it.effect("a rejected cast (voter-not-eligible) emits NOTHING", () => {
-		// Below-floor voter → VoterNotEligible before any DB read, so no emit. The throwing
-		// Drizzle proves the short-circuit; the recording Telemetry proves the reject path
-		// never reaches the emit.
+		// The throwing Drizzle proves the short-circuit; the empty sink proves the reject
+		// path never reaches the emit.
 		const sink: TelemetryEvent[] = [];
 		return Effect.gen(function* () {
 			const vote = yield* Vote;
@@ -677,13 +628,10 @@ describe("Vote.cast — telemetry instrument (ADR 0153, #2068, mocked Drizzle + 
 	});
 
 	it.effect("the emit is off the commit path — the cast commits before the emit runs", () => {
-		// The `Telemetry` double's `emit` DIES. The vote batch is sequenced BEFORE the emit,
-		// so its statement is already in `batches` (the cast committed) even as the emit blows
-		// up — proving the emit is downstream of the commit, never a gate on it. Since #2085
-		// the vote emits BARE (no call-site wrap): the production fail-safe that turns a defect
-		// into a swallowed no-op lives in `TelemetryLive` (`Effect.ignoreCause`) and is pinned
-		// seam-side in `Telemetry.unit.test.ts`; this double substitutes the `Telemetry` tag so
-		// it never reaches that seam, and here we only assert the commit-before-emit ordering.
+		// The batch is already recorded even as the dying emit blows up, which is the proof
+		// that the emit is downstream of the commit. Since #2085 the vote emits BARE — the
+		// fail-safe lives in `TelemetryLive` and is pinned in `Telemetry.unit.test.ts`, so
+		// this substituted double can only show the ordering.
 		const {access, batches} = recordingCastAccess([liveMeta, false, 1]);
 		return Effect.gen(function* () {
 			const vote = yield* Vote;

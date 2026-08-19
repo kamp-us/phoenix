@@ -1,36 +1,8 @@
 /**
  * The walk's connection plane — fate's `paginationArgsSchema`,
- * `arrayToConnection`, and `getScopedArgs` (`src/server/connection.ts` +
- * `queryArgs.ts`) reimplemented on Effect Schema — removing fate's only
- * runtime zod usage from our graph.
- *
- * ## What is mirrored, byte for byte (the walk oracle enforces it)
- *
- *   - **The accept/reject boundary**: only the four pagination keys are
- *     extracted from the (scoped) args bag before the schema sees it, so
- *     feature args never trip strictness — exactly fate's
- *     `extractPaginationArgs` → `z.strictObject(...)` flow. `after`/`before`
- *     must be strings; `first`/`last` positive integers; the two refines
- *     reject `after`+`before` and `first`+`last` with fate's messages — and
- *     with fate's TRUTHY check (`!(after && before)`), so an empty-string
- *     cursor passes the refine.
- *   - **The windowing defaults**: NO pagination keys → every node, no
- *     windowing, all-false pagination (fate's empty arm); otherwise the page
- *     size is `first ?? last ?? nodes.length`, the cursor index is found IN
- *     the array (`getCursor(node) === cursor`, default `String(node.id)`),
- *     and an unknown cursor falls back to the full array (`findIndex < 0`).
- *   - **The failure arm**: in fate a pagination-args zod throw (or the
- *     `String(node.id)` TypeError on a null node) rides `executeOperation`'s
- *     catch into `toProtocolError` → `INTERNAL_ERROR` / "Internal server
- *     error.". Here both fail with that exact `FateRequestError`, which
- *     `encodeWireError` passes through verbatim — same bytes.
- *
- * fate's `resolveConnection`/`resolveSourceConnection` (the root-list keyset
- * plane, default page size 20) is deliberately NOT reimplemented: it is only
- * reachable through `createFateServer`'s `rootLists`, and phoenix configures
- * no roots (ADR 0016/0019 — lists are resolver-handled, keyset cursors owned
- * by the domain services). The interpreter's list plane is custom lists; an
- * unknown list name is `NOT_FOUND` on both backends.
+ * `arrayToConnection`, and `getScopedArgs` reimplemented on Effect Schema.
+ * What is mirrored byte for byte, and what is deliberately not reimplemented:
+ * .patterns/fate-effect-interpreter.md § "The connection plane".
  */
 import type {FateRequestError} from "@nkzw/fate/server";
 import {Effect} from "effect";
@@ -39,17 +11,13 @@ import {internalArm} from "./WireError.ts";
 
 type AnyRow = Record<string, unknown>;
 
-/** An operation args bag, as the protocol decode types it (readonly). */
 type ArgsBag = {readonly [key: string]: unknown};
 
 /** fate's `isRecord`, exactly (arrays excluded; `Walk.ts` carries its twin). */
 const isRecord = (value: unknown): value is AnyRow =>
 	Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-/**
- * fate's `getScopedArgs` (`queryArgs.ts`): narrow the operation args to the
- * slice for a selection path — `undefined` past any non-record hop or leaf.
- */
+/** fate's `getScopedArgs` (`queryArgs.ts`), mirrored exactly. */
 export const getScopedArgs = (args: ArgsBag | undefined, path: string): AnyRow | undefined => {
 	if (!args) {
 		return undefined;
@@ -75,11 +43,7 @@ const extractPaginationArgs = (args: ArgsBag | undefined): AnyRow =>
 /** zod's `z.number().int().positive()`: an integer strictly greater than 0. */
 const PositiveInt = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0));
 
-/**
- * fate's `paginationArgsSchema` as Effect Schema: every key optional
- * (`.partial()` over already-optional fields collapses to plain optionals),
- * plus the two refines with fate's messages AND fate's truthy predicates.
- */
+/** fate's `paginationArgsSchema`: the refines carry fate's messages AND fate's truthy predicates. */
 export const ConnectionPaginationArgs = Schema.Struct({
 	after: Schema.optional(Schema.String),
 	before: Schema.optional(Schema.String),
@@ -100,9 +64,8 @@ export type ConnectionPaginationArgsValue = (typeof ConnectionPaginationArgs)["T
 const decodePagination = Schema.decodeUnknownEffect(ConnectionPaginationArgs);
 
 /**
- * Decode a (scoped) args bag's pagination slice. The schema failure stays in
- * the error channel for the unit boundary tests; {@link arrayToConnection} maps
- * it onto the wire-visible internal arm.
+ * The schema failure stays in the error channel for the unit boundary tests;
+ * {@link arrayToConnection} maps it onto the wire-visible internal arm.
  */
 export const decodeConnectionPaginationArgs = (
 	args: ArgsBag | undefined,
@@ -188,9 +151,8 @@ const windowNodes = (
 };
 
 /**
- * fate's `arrayToConnection` over a raw array under a selected list-kind
- * field. Pagination args decode from the SCOPED args slice; any boundary
- * rejection (and the nullish-node TypeError) is the wire-visible internal arm.
+ * fate's `arrayToConnection`: any boundary rejection — and the nullish-node
+ * TypeError — masks onto the wire-visible internal arm.
  */
 export const arrayToConnection = (
 	nodes: ReadonlyArray<unknown>,

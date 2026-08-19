@@ -98,3 +98,5 @@ Mechanics of the ruling:
   (#4539's sourced-vs-executed doc for the partition, #4510's contract doc as the spec), and the
   partition itself is retired by this very ADR; a glossary row would duplicate a designated home
   for a distinction on its way out. Recorded outcome: no glossary entry.
+
+> Amendment 2026-08-19: the `claude-plugins/kampus-pipeline/skills/…` path class is gone — the v1 plugin was deleted (ADR [0303](0303-retire-kampus-pipeline-plugin.md)), and fabrika skills call `fabrika` verbs directly instead of shipping skill scripts. The rule still binds: any script an agent runs is executed by literal path with results on stdout, never sourced at the agent's top-level command; shell that must exist anyway follows [`.patterns/skill-script-shell-shape.md`](../.patterns/skill-script-shell-shape.md).

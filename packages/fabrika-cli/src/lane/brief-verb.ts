@@ -8,8 +8,10 @@
  *
  * The brief is a dispatch artifact, consumed in-session and never posted, so it is not leak-scanned.
  * It carries no content — only URLs the board already published, the epic branch the emitter's own
- * shape names, and the one local path a spawned shell cannot derive: this driver's lanes root,
- * resolved absolute here because the shell would resolve a relative one against its own worktree.
+ * shape names, and the two local paths a spawned shell cannot derive: this driver's lanes root,
+ * resolved absolute here because the shell would resolve a relative one against its own worktree,
+ * and the fabrika entrypoint the shell runs its verbs through, resolved off this running copy so a
+ * repo that installs fabrika is not handed phoenix's in-tree path (#6012).
  *
  * An epic lane's children are the one place where no PR is resolved at all: one run is one branch and
  * one PR, so a child builds in a worktree and its review judges a commit range, while the tail task
@@ -20,6 +22,7 @@
  */
 import {Effect, type FileSystem, Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import type {EntrypointRead} from "../delegate/entrypoint.ts";
 import {getIssue, resolveRepo} from "../io/issues.ts";
 import {openPullsClosing} from "../io/pulls.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -28,6 +31,7 @@ import {
 	artifactUrl,
 	emit as emitBrief,
 	epicBranch,
+	fabrikaEntry,
 	type LaneBrief,
 	type LaneGround,
 	lanesRoot,
@@ -58,6 +62,12 @@ export interface BriefOptions extends LaneRef {
 	readonly task: string | null;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/**
+	 * This run's own entrypoint, read at the command boundary off the real filesystem — the value the
+	 * brief's `fabrika:` field carries, so the shell runs the copy of fabrika its repo actually has
+	 * rather than phoenix's in-tree path (#6012).
+	 */
+	readonly entrypoint: EntrypointRead;
 }
 
 type UrlRead =
@@ -195,6 +205,20 @@ export const runBrief = (
 				`${VERB}: "${options.root}" does not resolve to an absolute lanes root — the shell would have nowhere to record.`,
 			);
 		}
+		// The entrypoint rides as a `## Task` field and never as text inside the rules: the format's
+		// reader recomputes those bytes from the ground alone, so an interpolated path would make
+		// every brief malformed on the next machine that read it (#6012).
+		const entry = options.entrypoint;
+		const fabrika = entry._tag === "Entrypoint" ? fabrikaEntry(entry.entrypoint) : null;
+		if (fabrika === null) {
+			const why =
+				entry._tag === "Entrypoint" ? `"${entry.entrypoint}" is not node-runnable` : entry.reason;
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot resolve this fabrika's own entrypoint (${why}) — which invocation the shell would run is UNKNOWN.`,
+			);
+		}
+
 		const loaded = yield* loadLane(options);
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
 		const fold = foldLog(loaded.lane, loaded.entries);
@@ -252,6 +276,7 @@ export const runBrief = (
 			const brief: LaneBrief = {
 				lane: options.lane,
 				root,
+				fabrika,
 				task,
 				state,
 				shell,
@@ -306,6 +331,7 @@ export const runBrief = (
 		const brief: LaneBrief = {
 			lane: options.lane,
 			root,
+			fabrika,
 			task,
 			state,
 			shell,

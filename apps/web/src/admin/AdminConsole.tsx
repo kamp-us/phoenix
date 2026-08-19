@@ -1,15 +1,3 @@
-/**
- * `AdminConsole` — the admin-console shell (#2740, epic #2711): the extensible host that
- * renders the module registry as a nav + a panel. This is the lazy-loaded admin-only
- * chunk (`AdminConsoleRoute` mounts it only past the admin probe), so no console/module
- * code reaches a non-admin's bundle.
- *
- * The shell is registry-driven, not per-module wired: it reads `consoleRegistry.list()`
- * (composed by value in `app-modules.ts`) and delegates "which panel is active" to the
- * pure `selectActiveModule`. Adding a module is one registry entry — the shell renders it
- * with zero changes. Its panel is `React.lazy`-wrapped, so a module's chunk loads only
- * when its nav entry is selected. Lowercase-Turkish copy per the design law.
- */
 import {Suspense, useState} from "react";
 import {Button} from "../components/ui/Button";
 import {consoleRegistry} from "./app-modules.ts";

@@ -6,8 +6,8 @@ name: catalog-guard
 # a second version and breaks frozen-lockfile CI downstream (the PR #535 failure mode:
 # `@distilled.cloud/cloudflare` hardcoded). The convention was written in CLAUDE.md but
 # unenforced. This job scopes to real workspace members (dirs with a package.json) plus
-# the root manifest, and fails closed if it scans zero manifests (ADR 0092). It reuses
-# pipeline-cli's `catalog-guard check` mode — the scan lives once in the tool.
+# the root manifest, and fails closed if it scans zero manifests (ADR 0092). The scan lives
+# once in `fabrika guard catalog-guard check`.
 on:
   pull_request:
   push:
@@ -39,7 +39,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Exit 1 when any workspace package.json dep pins a hardcoded version (the report
-      # is on stderr), or when zero manifests are in scope (fail-closed). See #2737.
+      # Non-zero when a dep pins a hardcoded version (12), when zero manifests are in scope
+      # (7, fail-closed) or when one could not be read (11) — report on stderr. See #2737.
       - name: "Check every package.json dep is on catalog:/workspace:"
-        run: node packages/pipeline-cli/src/bin.ts catalog-guard check
+        run: node packages/fabrika-cli/src/bin.ts guard catalog-guard check

@@ -117,6 +117,52 @@ export const openIssuesWithLabel = (
 			: ok(rows);
 	});
 
+/** One issue with the bytes a body-keyed match needs. `body` is `""` when the API sent none. */
+export interface IssueDetail extends IssueRow {
+	readonly body: string;
+}
+
+/** One compact-JSON object per line, or `null` when a line is not that shape. */
+export const parseIssueDetails = (stdout: string): ReadonlyArray<IssueDetail> | null => {
+	const rows: IssueDetail[] = [];
+	for (const line of stdout.split("\n")) {
+		if (line.trim() === "") continue;
+		const parsed = parseJson(line);
+		if (!isRecord(parsed)) return null;
+		const {number, title, body} = parsed;
+		if (!Number.isInteger(number) || typeof title !== "string") return null;
+		rows.push({number: number as number, title, body: typeof body === "string" ? body : ""});
+	}
+	return rows;
+};
+
+/**
+ * Open issues carrying `label`, paged, with their bodies — the same single list call
+ * {@link openIssuesWithLabel} makes, asking the same endpoint for one more field it already returns.
+ *
+ * It exists because a match keyed on a body line cannot be made from `<number>\t<title>` rows, and
+ * re-reading each issue to get one would turn a proven answer into N reads, any of which failing
+ * would leave "does a session for this ticket exist" UNKNOWN.
+ */
+export const openIssuesWithLabelDetailed = (
+	repo: string,
+	label: string,
+): Shell<Attempt<ReadonlyArray<IssueDetail>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=100`,
+			"--jq",
+			".[] | select(.pull_request | not) | {number, title, body} | @json",
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows = parseIssueDetails(r.stdout);
+		return rows === null
+			? fail("`gh api` exited 0 but its output is not a list of issue objects")
+			: ok(rows);
+	});
+
 /**
  * Open issues in `repo` whose title is **exactly** `title`, paged, pull requests filtered out.
  *
@@ -238,6 +284,16 @@ export interface IssueRecord {
 	 * unhomed issue's (#5562).
 	 */
 	readonly isPullRequest: boolean;
+	/**
+	 * Whether this issue hangs under a parent — a sub-issue, which inherits its epic's contract.
+	 *
+	 * Read from `parent_issue_url` AND `parent`: the sub-issues API has shipped both shapes, and a
+	 * reader that knows only `parent` resolves every sub-issue as parentless. **The list endpoints
+	 * carry neither key**, so a caller that needs this fact re-reads the issue singly; a list record
+	 * always answers `false` here, which is the fail-open direction for a scope filter and the reason
+	 * `pitch-verb.ts` never filters on a list record.
+	 */
+	readonly isSubIssue: boolean;
 }
 
 const toIssueRecord = (value: unknown): IssueRecord | null => {
@@ -263,6 +319,9 @@ const toIssueRecord = (value: unknown): IssueRecord | null => {
 		stateReason: typeof state_reason === "string" ? state_reason : null,
 		comments: typeof value.comments === "number" ? value.comments : 0,
 		isPullRequest: isRecord(value.pull_request),
+		isSubIssue:
+			(value.parent_issue_url !== undefined && value.parent_issue_url !== null) ||
+			(value.parent !== undefined && value.parent !== null),
 	};
 };
 
@@ -483,6 +542,49 @@ export const listOpenMilestones = (repo: string): Shell<Attempt<ReadonlyArray<Mi
 			return fail("`gh api` exited 0 but a milestone row does not start with a number");
 		}
 		return ok(rows.map((row, i) => ({number: numbers[i] as number, title: row[1] ?? ""})));
+	});
+
+/** One milestone in whichever state it is actually in — the projection a roadmap row is checked against. */
+export interface MilestoneState extends Milestone {
+	readonly state: "open" | "closed";
+}
+
+/**
+ * Every milestone in `repo` **in any state**, paged.
+ *
+ * `state=all` rather than {@link listOpenMilestones}'s open-only read: `roadmap-guard` has to resolve a
+ * `done` row's pin to a CLOSED milestone, and an open-only projection would report that pin as
+ * dangling — turning a correctly retired arc into a violation.
+ *
+ * A row whose state is neither `open` nor `closed` FAILS the read. GitHub has exactly those two, so a
+ * third value means the bytes are not the projection that was asked for, and interpreting them
+ * positionally is how a malformed read answers a plausible verdict.
+ */
+export const listMilestones = (repo: string): Shell<Attempt<ReadonlyArray<MilestoneState>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/milestones?state=all&per_page=100`,
+			"--jq",
+			'.[] | "\\(.number)\t\\(.state)\t\\(.title)"',
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows = parseTabRows(r.stdout, 3);
+		if (rows === null) return fail("`gh api` exited 0 but its output is not a list of milestones");
+		const numbers = leadingNumbers(rows);
+		if (numbers === null) {
+			return fail("`gh api` exited 0 but a milestone row does not start with a number");
+		}
+		const milestones: MilestoneState[] = [];
+		for (const [i, row] of rows.entries()) {
+			const state = row[1];
+			if (state !== "open" && state !== "closed") {
+				return fail(`\`gh api\` exited 0 but a milestone row's state is "${state}"`);
+			}
+			milestones.push({number: numbers[i] as number, state, title: row[2] ?? ""});
+		}
+		return ok(milestones);
 	});
 
 /**
@@ -833,12 +935,27 @@ export const openQueueIssues = (
  * over a silently short list reports issues it never looked at as never drifted.
  */
 export const listOpenIssues = (repo: string): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
+	openIssueRecords(`repos/${repo}/issues?state=open&per_page=100`);
+
+/**
+ * Every **open** issue in `repo` carrying `label`, as full records, paged, pull requests filtered
+ * out — {@link listOpenIssues} narrowed at the endpoint rather than in the caller.
+ *
+ * Its own read because a guard scoped to one label would otherwise page the entire open board to
+ * throw most of it away, and every extra page is another chance for the read to fail and leave the
+ * verdict UNKNOWN.
+ */
+export const openIssuesWithLabelRecords = (
+	repo: string,
+	label: string,
+): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
+	openIssueRecords(
+		`repos/${repo}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=100`,
+	);
+
+const openIssueRecords = (endpoint: string): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/issues?state=open&per_page=100`,
-		]);
+		const r = yield* execCapture("gh", ["api", "--paginate", endpoint]);
 		if (!r.ok) return fail(r.reason);
 		const pages = pagedJson(r.stdout);
 		if (pages._tag === "Failure") return pages;

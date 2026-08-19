@@ -58,11 +58,15 @@ fabrika build claim $epic_number --purpose plan
 fabrika build tree --require-clean
 ```
 
+The token `claim` prints is `<claim-token>` below — this LANE's name, which every later verb takes as
+`--token`. A session runs several lanes, so a verb handed only the session id cannot tell a sibling
+lane's claim from yours (#6037).
+
 `--purpose plan` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
 should pick the issue up to **build**, and an epic earns that label only *after* this skill has
 planned it and the gate has passed it — so fencing the planner on it is circular, and the fence
 binds build-purpose claims only. A `plan` claim is admitted without the
-label; the scope axis still binds, so an out-of-focus epic is still exit `20`. Never reach for
+label; the scope axis still binds, so an out-of-scope epic is still exit `20`. Never reach for
 `--override` to get past the audience axis — that is the fail-open convention the purpose exists to
 remove.
 
@@ -81,12 +85,14 @@ back to `build`: you hold no claim, and `build note` requires one.
 ## 2 — Open the run
 
 ```bash
-fabrika ledger open $epic_number
+fabrika ledger open $epic_number --token <claim-token>
 ```
 
 This proves the ground fresh against `origin/main`, allocates the run directory keyed on the
-**claim nonce** — never the session, which every sibling subagent of one run shares — and reads
-what already exists.
+**claim nonce `--token` names** — never the session, which every sibling subagent of one run shares
+— and reads what already exists. That is why every `ledger` verb takes the token: handed only a
+session id, the claim check passed for a lane that had *lost* the epic's claim and then derived the
+holder's run key, so two planning lanes wrote into one directory (#6060).
 
 Done when you hold `run`, `mode` (`fresh` or `re-plan`), `children`, `cycleDoc`, `bodyDigest`, and
 `candidates`. Carry `bodyDigest` as `--body-digest` to `ledger draft` and `ledger write`; it is how
@@ -107,7 +113,7 @@ syncing and planning again is a fresh run from step 1, not a loop inside this on
 This is your work. Write the plan block and stage it:
 
 ```bash
-fabrika ledger draft $epic_number --body-digest 8f2c1a90b4d7 <<'EOF'
+fabrika ledger draft $epic_number --body-digest 8f2c1a90b4d7 --token <claim-token> <<'EOF'
 ## Plan (plan-epic)
 
 ### Summary
@@ -133,7 +139,8 @@ cannot say which story each slice serves is telling you the split is wrong.
 
 ```bash
 fabrika ledger child $epic_number --title "queue view: fate loader" \
-  --type type:feature --priority p1 --ready-for agent --milestone "fabrika campaign" <<'EOF'
+  --type type:feature --priority p1 --ready-for agent --milestone "fabrika campaign" \
+  --token <claim-token> <<'EOF'
 **Stories:** 1, 2
 **TDD:** yes
 **Containment:** flag (default-off)
@@ -148,7 +155,9 @@ EOF
 
 **Every classification attribute lands in the one create call** — labels, milestone, and, for a
 held child, the assignee. `--ready-for` is required and has no default: a child must never inherit
-its audience by omission. A **held** child is born `ready-for:human` *and* assigned, in the
+its audience by omission. **A home is required the same way**: pass `--milestone`, or `--label` the
+child with the parent's standing lane. A child born with neither is one the claim fence refuses at
+exit `20`, so `ledger child` refuses it at mint instead of publishing an issue nobody can pick up. A **held** child is born `ready-for:human` *and* assigned, in the
 same write: the label is the routing signal, the assignment is the enforced hold, and
 neither substitutes for the other.
 
@@ -164,10 +173,12 @@ the child in the run manifest, links, then re-reads. `23` means the child **exis
 that number is what you report. Do not re-mint it.
 
 `**Containment:**` is emitted only when the run's `cycleDoc` read is `present` — `ledger child`
-takes that from the run directory, so you neither pass it nor remember it. Its leading keyword is
-`flag`, `exempt` or `none`; a trailing parenthetical is yours to write and is preserved. **On a
-`type:feature` child only `flag` or `exempt` will do** — the gate reds `none` and unset alike, so
-`ledger child` refuses both rather than letting you author a defect.
+takes that from the run directory, so you neither pass it nor remember it. Which keywords are legal
+is the repo's `containmentVocabulary` (`fabrika status settings` prints what it resolves to; in
+phoenix it is `flag` / `exempt` over `type:feature`), plus the reserved `none`, which declines. A
+trailing parenthetical is yours to write and is preserved. **On a child of an asked type only a
+legal value will do** — the gate reds `none` and unset alike, so `ledger child` refuses both rather
+than letting you author a defect.
 
 `**Stories:**` carries bare integers or `none`, and `ledger child` refuses anything else — a
 parser that harvests every digit run reads `1, 3 (see #<other>)` as claiming a story nobody wrote.
@@ -175,7 +186,7 @@ parser that harvests every digit run reads `1, 3 (see #<other>)` as claiming a s
 On a `re-plan`, a child the new plan drops is retired rather than left dangling:
 
 ```bash
-fabrika ledger supersede $epic_number --child 4288 --reason "folded into the loader slice"
+fabrika ledger supersede $epic_number --child 4288 --reason "folded into the loader slice" --token <claim-token>
 ```
 
 It journals the reason, unlinks, then closes as not-planned — in that order, so a child is never
@@ -184,7 +195,7 @@ closed while still linked. It refuses a child that is not this epic's, and one t
 ## 5 — Declare the topology
 
 ```bash
-fabrika ledger topology $epic_number <<'EOF'
+fabrika ledger topology $epic_number --token <claim-token> <<'EOF'
 #<child-a> phase 1
 #<child-b> phase 1
 #<child-c> phase 2 requires #<child-a>
@@ -202,7 +213,7 @@ file plan; you can. Sequence them, or say in `### Task-split rationale` why they
 ## 6 — Write it into the epic
 
 ```bash
-fabrika ledger write $epic_number --body-digest 8f2c1a90b4d7
+fabrika ledger write $epic_number --body-digest 8f2c1a90b4d7 --token <claim-token>
 ```
 
 The staged plan and topology go into the epic body in one PATCH, re-read and compared byte for
@@ -220,7 +231,7 @@ Release the claim, then hand off — clearing the floor and flipping children is
 `check-epic-plan`'s, and doing it yourself is the two-answers defect:
 
 ```bash
-fabrika build release $epic_number
+fabrika build release $epic_number --token <claim-token>
 ```
 
 If you find something that ought to block a plan, that is a finding about the **floor** — file it
@@ -278,11 +289,11 @@ epic — so read each code off the command that produced it and never off this l
 - `NEEDS-INPUT` — no verb refused; the run is **fully known and one human answer short**. **A
   back-off, not UNKNOWN**, which is why it is not `STOPPED`. Mint nothing rather than part of the
   set — a half-minted epic with no topology and no plan in its body is a state a human has to
-  reconcile — then state the one question and post it with `fabrika build note`.
+  reconcile — then state the one question and post it with `fabrika build note $epic_number --token <claim-token>`.
 - `BACKED-OFF` — `15` at the claim: held by another lane. Nothing read, written, or released.
 - `STOPPED` — everything else that leaves the run UNKNOWN: `3`, `11`, an unrepairable `4`/`5`/`6`/`25`, a `10` you cannot
   repair, `13` from `build tree` (no `ledger` verb seats a `13`), a `15` after the claim was won, and any `1`, `126` or `127` from any verb.
-  Post the state for a successor with `fabrika build note` **when you hold the claim**; otherwise
+  Post the state for a successor with `fabrika build note $epic_number --token <claim-token>` **when you hold the claim**; otherwise
   report the code.
 
 Any cross-lane signal is closed-vocabulary — kind + action + the branded ref, no free prose; the
@@ -299,17 +310,3 @@ envelope.
 <!-- anchor: PLANNER-NEVER-FLIPS --> **This skill writes no `status:triaged`.** Children are born
 `status:planned` and stay there until the gate flips them. A planner that flipped its own children
 would make them pickable over a ledger nothing had checked.
-
-## Required repo files
-
-fabrika installs into repos that are not phoenix. When-missing vocabulary: **fail-loud** /
-**degrade** / **bootstrap** (front-door).
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| A triaged `type:epic` issue | the subject of the plan | **fail-loud** — `ledger open` exits `7`/`10`; the run ends `EPIC-UNPLANNABLE`. |
-| A git checkout of this repo, and a reachable `origin/main` | the plan is grounded in source, and staleness is proven rather than assumed | **fail-loud** — `13` ends `STOPPED`; an unprovable freshness read is `11`, never "probably fresh". |
-| The label taxonomy: `type:*`, `p0`/`p1`/`p2`, `status:planned`, `ready-for:human`, `ready-for:agent` | every child is born carrying them; `POST .../labels` **creates** an unknown label rather than rejecting it | **fail-loud** — `ledger child` exits `10` naming the absent label rather than minting it; taxonomy creation is the front door's. |
-| An open milestone, or a standing-lane exemption | every child needs a home; where the host repo enforces homing at its own labelling seam, this skill states the expectation and computes no second answer | **degrade** — an unhomed child reds at a homing guard where the repo has one, and nowhere where it does not. Pass `--milestone` unless the child is genuinely standing-lane work. |
-| `product-development-cycle.md` at the repo root | decides whether `**Containment:**` is required on a `type:feature` child | **degrade** — absent means containment is not required; an *unreadable* probe is `11`, never "absent". |
-| Repository permissions readable for claim authorship | `build claim`'s ownership resolution is ACL-sourced | **fail-loud** — as declared for `build claim` (`fabrika wire doc-section --heading "build claim" < <build skill's base dir>/contract.md`); a failed permission read is `Unknown`, never a demotion to unclaimed. |

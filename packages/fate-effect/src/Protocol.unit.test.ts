@@ -1,24 +1,8 @@
 /**
- * `Protocol` — the v2 wire-protocol codecs.
- *
- * Three contracts under test:
- *
- *   1. **Round-trip** — the canonical codecs decode every operation kind and
- *      encode back byte-identically. The canonical schemas ARE fate's
- *      exported protocol types in Schema form.
- *   2. **fate-faithful rejection** — `decodeProtocolRequest` is fate's
- *      `assertProtocolRequest` as a staged Schema decode: malformed requests
- *      fail with fate's OWN error shape (`FateRequestError`, `BAD_REQUEST`,
- *      the exact message per stage), and fate's LENIENCY is preserved too —
- *      fields fate does not check per kind (junk `ids` on a query) pass, so
- *      the differential oracle cannot diverge on acceptance.
- *   3. **The drift pin** — type-level `satisfies`-style pins against fate's
- *      EXPORTED protocol types (`FateOperation`, `FateProtocolRequest`,
- *      `FateProtocolResponse` and the result/error members derived from
- *      them). `Wire<>` normalizes mutability only (fate types mutable arrays;
- *      Schema types ReadonlyArray — the wire cannot tell). Keys, optionality,
- *      and value types stay exact, so a fate upgrade that drifts the protocol
- *      fails `tsgo` here before any runtime test runs.
+ * `Protocol` — the v2 wire-protocol codecs: round-trips, fate-faithful
+ * rejection (including fate's leniency, so the differential oracle cannot
+ * diverge on acceptance), and the drift pin that fails `tsgo` when a fate
+ * upgrade moves the protocol.
  */
 import type {FateOperation, FateProtocolRequest, FateProtocolResponse} from "@nkzw/fate";
 import {FateRequestError} from "@nkzw/fate/server";
@@ -42,7 +26,6 @@ const encodeRequest = Schema.encodeUnknownSync(ProtocolRequest);
 const decodeResponse = Schema.decodeUnknownSync(ProtocolResponse);
 const encodeResponse = Schema.encodeUnknownSync(ProtocolResponse);
 
-/** Round-trip a wire value through decode→encode and return the JSON bytes. */
 const roundTrip = (codec: {
 	decode: (value: unknown) => unknown;
 	encode: (value: unknown) => unknown;
@@ -58,7 +41,6 @@ const opTrip = roundTrip({decode: decodeOp, encode: encodeOp});
 const expectRejection = (body: unknown, message: string): void => {
 	const error = Effect.runSync(Effect.flip(decodeProtocolRequest(body)));
 	expect(error).toBeInstanceOf(FateRequestError);
-	// fate's exact error shape: code, message, and the derived 400 status.
 	expect(error.code).toBe("BAD_REQUEST");
 	expect(error.message).toBe(message);
 	expect(error.status).toBe(400);
@@ -71,11 +53,8 @@ const requestOf = (operations: ReadonlyArray<unknown>) => ({version: 1, operatio
 describe("Protocol — canonical round-trips", () => {
 	it("round-trips every operation kind byte-identically", () => {
 		const operations = [
-			// byId: type + ids (string and numeric protocol ids).
 			{id: "1", ids: ["t-1", 2], kind: "byId", select: ["title"], type: "Term"},
-			// list: name + args.
 			{args: {first: 10}, id: "2", kind: "list", name: "terms", select: ["slug", "title"]},
-			// mutation: name + input (+ select).
 			{
 				id: "3",
 				input: {body: "tanım", term: "effect"},
@@ -83,7 +62,6 @@ describe("Protocol — canonical round-trips", () => {
 				name: "definition.add",
 				select: [],
 			},
-			// query: name + args.
 			{args: {slug: "effect", take: "2"}, id: "4", kind: "query", name: "term", select: []},
 		];
 		for (const operation of operations) {

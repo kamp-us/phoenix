@@ -1,13 +1,15 @@
-# Extracted skill scripts — the shell shape that fails closed on bash 3.2
+# Repo shell — the shape that fails closed on bash 3.2
 
-The shell under `claude-plugins/kampus-pipeline/skills/**` runs through `#!/usr/bin/env bash`,
-which on macOS is **bash 3.2** — the interpreter every local agent run gets. Every gate written
-there is trusted precisely because it is green, so the shape it is written in has to make a green
-exit *mean* something. Two of bash 3.2's status/expansion behaviours defeat the shape good
-practice recommends, so they are written down here rather than rediscovered per script
-([#4479](https://github.com/kamp-us/phoenix/issues/4479); epic
-[#4435](https://github.com/kamp-us/phoenix/issues/4435) is multiplying this corpus from 12 files
-to ~106).
+Shell that runs through `#!/usr/bin/env bash` (or `sh`) on a contributor machine gets macOS
+**bash 3.2**. A guard written in shell is trusted precisely because it is green, so the shape it
+is written in has to make a green exit *mean* something. Two of bash 3.2's status/expansion
+behaviours defeat the shape good practice recommends, so they are written down here rather than
+rediscovered per script ([#4479](https://github.com/kamp-us/phoenix/issues/4479)).
+
+The corpus this shape was measured on — the v1 `kampus-pipeline` skill scripts — retired with
+that plugin (#5937). The shape outlives it: it binds the shell this repo still carries — workflow
+`run:` blocks (see e.g. `.github/workflows/skill-gh-lint.yml`) and git-hook bodies
+(`lefthook.yml`) — and any script a future surface adds.
 
 ## The rule
 
@@ -38,22 +40,61 @@ to ~106).
    ([#4487](https://github.com/kamp-us/phoenix/issues/4487)). A genuinely empty surface still
    exits 0 — empty is a fact, a failed scan is UNKNOWN, and the two must not look alike.
 
-## Where each rule is mechanically enforced
+## The workflow-step class — a status recorded after the command that can erase it
 
-Two different rules about the `EXIT` trap, two different enforcers, two different scopes — they
-are not interchangeable, and citing one for the other's job is a live mis-authoring path
-([PR #4526](https://github.com/kamp-us/phoenix/pull/4526) did exactly that):
+A GitHub `run:` block runs under `bash -e` whatever the block says, because the `-e` is in the shell
+GitHub invokes, not in the script. Rule 1 above therefore has to be *asked for* here: `set -uo
+pipefail` does not clear an errexit that is already on, so a step that needs it off writes `set +e`
+first. Nothing in the YAML hints at this, which is why a step can read as fail-closed and behave
+fail-open.
 
-| Rule | Scope | Enforcer |
-|---|---|---|
-| Rule 1's co-occurrence: `errexit` enabled **together with** an `EXIT` trap in one runnable shell unit | every shell surface the guard resolves | `pipeline-cli trap-status-guard check` (the `trap-status-guard.yml` job), fail-closed on zero scope per surface ([ADR 0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md)) |
-| No cleanup `EXIT` trap **at all** in executable code | the extracted `scripts/*.sh` of the skill(s) the verifier is run over | [`claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-extraction.sh`](../claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-extraction.sh) check 6 ([#4476](https://github.com/kamp-us/phoenix/issues/4476), class [#4479](https://github.com/kamp-us/phoenix/issues/4479)) |
+The shape that goes wrong is a step that **records its own status into `$GITHUB_OUTPUT` after the
+command whose failure it is recording**:
 
-`trap-status-guard` reds only on the *pair*: a cleanup trap without `errexit` is fine by it, which
-is correct — that combination keeps the abort's status (see the matrix below). Check 6 is stricter
-because an extracted script that later regains `-e` would silently re-enter the fail-open, so the
-trap is banned outright in that corpus. Neither enforces the sourced class's no-options shape;
-that one survives on the header idiom below.
+```text
+- id: guard
+  continue-on-error: true
+  run: |
+    set -o pipefail
+    node … check 2>&1 | tee guard-output.txt     # red here -> errexit aborts the step
+    echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"   # never runs
+```
+
+The red aborts the step at the pipeline, so `code` is never written; `continue-on-error` then keeps
+the aborted step from failing the job, and every later step that reads `steps.guard.outputs.code` is
+deciding off an output the failure itself erased. The guard's red is the one input the guard cannot
+see. `roadmap-guard.yml` shipped exactly this and concluded **success** on a run whose own log listed
+ten violations ([#5560](https://github.com/kamp-us/phoenix/issues/5560)).
+
+Three rules, and the third is the one that makes the other two safe to get wrong:
+
+1. **`set +e` before anything else**, then `set -uo pipefail`. Now the status line always runs, on
+   the pass path and the fail path alike.
+2. **Then `continue-on-error` is dead weight — drop it.** The step no longer exits non-zero for the
+   check's red, so nothing needs excusing; and if the *instrumentation* fails (the `$GITHUB_OUTPUT`
+   write itself), the step fails and reds the job, which is the right answer.
+3. **Decide pass/fail in bash against the recorded code, not in the `if:` expression.** Read it in as
+   `env:` and pass only on a literal `0`, so an empty code — the instrumentation not having run — is
+   red like any other unreadable answer (ADR 0092). An `if:` written as `outputs.code != '0'` leans
+   on how the expression engine compares an unset output against a string, which is a question the
+   guard should not be asking at all.
+
+## Enforcement (historical)
+
+`trap-status-guard`'s remit does **not** extend to workflow `run:` blocks, and cannot: the guard
+retired with its corpus below, so there is nothing to extend. Its axis was also the wrong one — it
+read `errexit` + an `EXIT` trap in one script file, while the class above has no trap, no script
+file, and gets its `-e` from the runner. A guard for this class would be a new one, reading YAML:
+a step that writes `$GITHUB_OUTPUT` after a command that can abort it. That is worth building when
+this shape recurs; today it exists in three workflows, all fixed in #5560, and the shape binds by
+review.
+
+Both mechanical enforcers retired with their corpus (#5937): `pipeline-cli trap-status-guard
+check` (the `trap-status-guard.yml` job) redded on `errexit` enabled together with an `EXIT`
+trap in one runnable shell unit, and the plan-epic `verify-extraction.sh` check 6 banned the
+cleanup trap outright in the extracted-script corpus ([#4476](https://github.com/kamp-us/phoenix/issues/4476)).
+With no skill-script corpus left, the shape now binds by review, not by a CI job — a new shell
+corpus that grows past a handful of files should bring a guard of this class back with it.
 
 ## The two invocation classes — executed and sourced
 
@@ -64,7 +105,7 @@ The `.claude/.pipeline` prefix is a symlink the plugin's hooks plant at the live
 carry no expansion at all, so the only path that resolves both in this repo and in a marketplace
 consumer's tree is a literal the consuming repo itself provides
 ([#4605](https://github.com/kamp-us/phoenix/issues/4605); the mechanism is in the plugin's
-[README](../claude-plugins/kampus-pipeline/README.md)). **A missing link is exit 127 with empty
+`README`). **A missing link is exit 127 with empty
 stdout — UNKNOWN by the §ZS rule above, never a negative answer.**
 
 The corpus also holds a **sourced** class — the ~61 files that set *no* shell options at all. Read
@@ -72,7 +113,7 @@ them as history, not as a choice on offer:
 
 - **Recognize one by its header, and leave it alone.** The idiom is an explicit "SOURCED, never
   executed" note plus zero `set -` lines. The exemplar is
-  [`claude-plugins/kampus-pipeline/skills/ship-it/scripts/step2-verdict-gate.sh`](../claude-plugins/kampus-pipeline/skills/ship-it/scripts/step2-verdict-gate.sh),
+  `claude-plugins/kampus-pipeline/skills/ship-it/scripts/step2-verdict-gate.sh`,
   whose header states the reason: *"this file deliberately sets NO shell options — several guards
   here depend on `pipefail` being OFF."* The missing `set -uo pipefail` is the design, not an
   omission — adding it "for consistency" changes those guards' behavior.
@@ -223,7 +264,7 @@ fi
 grep -q "$needle" "${files[@]-}"
 ```
 
-## Where it is used
+## Where it was proven (retired corpus, #5937 — cited as the measurements' provenance)
 
 - `claude-plugins/kampus-pipeline/skills/validate-cycle-absence.sh` and
   `validate-cycle-presence.sh` — both carried `set -euo pipefail` + a `mktemp -d` cleanup trap;

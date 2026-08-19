@@ -81,10 +81,7 @@ export const D1_REST_MAX_DELAY_MS = 8_000;
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/**
- * Why the retry loop stopped. Round 1 of #3548 reported *that* a call gave up; it could not say
- * *where the budget went*, which is why PR #4033's ejection needed the numbers re-derived by hand.
- */
+/** Why the retry loop stopped — the variants say where the budget went (#3548). */
 export type GiveUpReason =
 	/** The CF-facing deadline ran out — CF really did stay 429 for the whole budget. */
 	| "budget-exhausted"
@@ -95,7 +92,6 @@ export type GiveUpReason =
 	/** Wall clock ran out while the CF-facing budget was still unspent — i.e. we were queueing, not rate-limited. */
 	| "wall-clock-ceiling";
 
-/** What a call spent before giving up — the payload that makes an exhausted 429 diagnosable. */
 export interface RateLimitAttrition {
 	/** Caller-supplied name of the round-trip (method + path), for the log line. */
 	readonly label: string;
@@ -114,22 +110,15 @@ export interface RateLimitAttrition {
 	readonly retryAfterMs?: number | undefined;
 }
 
-/** The CF-facing slice of the elapsed time — what {@link RateLimitAttrition.budgetMs} bounds. */
 export const budgetSpentMs = (a: RateLimitAttrition): number => a.elapsedMs - a.queuedMs;
 
-/** Human-readable attrition breakdown, shared by the warn line and {@link CfRateLimitError}. */
 const attritionSummary = (a: RateLimitAttrition): string =>
 	`${a.attempts} attempt${a.attempts === 1 ? "" : "s"} (${a.reason}) — ` +
 	`${budgetSpentMs(a)}ms of the ${a.budgetMs}ms CF-facing retry budget spent over ${a.elapsedMs}ms ` +
 	`wall clock (${a.queuedMs}ms queued in the harness's own throttle, ${a.backoffMs}ms in backoff)` +
 	(a.retryAfterMs === undefined ? "" : `; CF last asked for Retry-After ${a.retryAfterMs}ms`);
 
-/**
- * A CF REST call that stayed rate-limited for its whole budget, carrying WHICH call it was and
- * what it spent. Thrown in place of a bare "failed: 429 <body>" so the next occurrence names the
- * rate-limited round-trip and its attrition instead of being re-diagnosed from scratch (#3548,
- * the same attribution `RequestStallError` gives the worker-HTTP stall path).
- */
+/** Thrown in place of a bare "failed: 429 <body>" so the round-trip names itself (#3548). */
 export class CfRateLimitError extends Error {
 	readonly _tag = "CfRateLimit";
 	readonly method: string;
@@ -162,9 +151,7 @@ export interface RateLimitRetryOptions {
 	wallClockCeilingMs?: number;
 	/** Runaway cap on retries AFTER the first attempt (default {@link D1_REST_MAX_RETRIES}). */
 	maxRetries?: number;
-	/** Base of the exponential backoff, in ms (default 500). */
 	baseDelayMs?: number;
-	/** Ceiling on one backoff wait, in ms (default 8000). */
 	maxDelayMs?: number;
 	/** Names the round-trip in the give-up log line and any raised error. */
 	label?: string;
@@ -174,11 +161,8 @@ export interface RateLimitRetryOptions {
 	 * including one added later that forgets to pass a handler.
 	 */
 	onGiveUp?: (attrition: RateLimitAttrition) => void;
-	/** Injected for tests — real sleep by default. */
 	sleep?: (ms: number) => Promise<void>;
-	/** Injected for tests — `Math.random` by default. */
 	random?: () => number;
-	/** Injected for tests — `Date.now` by default. */
 	now?: () => number;
 }
 
@@ -279,7 +263,7 @@ export const cfFetchWithRateLimitRetry = async (
 			remaining,
 			wallRemaining,
 		);
-		await res.body?.cancel().catch(() => {}); // release the discarded 429 body before re-sending
+		await res.body?.cancel().catch(() => {});
 		await sleep(wait);
 		backoffMs += wait;
 		res = await send(queued);
@@ -327,7 +311,6 @@ export const rateLimitRetryingFetch = (
 			...options,
 		})) as typeof globalThis.fetch;
 
-/** `<METHOD> <url>` for a `fetch` call, across all three `input` shapes, for the give-up line. */
 const fetchLabel = (
 	input: Parameters<typeof globalThis.fetch>[0],
 	init?: Parameters<typeof globalThis.fetch>[1],

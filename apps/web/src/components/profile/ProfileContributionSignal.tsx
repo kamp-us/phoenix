@@ -1,21 +1,13 @@
 /**
- * The thin contribution signal on the owner's own profile (#1209): a lightweight
- * readout of the most recent few contributions so a çaylak sees their track record
- * accumulating toward promotion. Reuses the existing `Contribution` activity view
- * (`ContributionRow` + the `Profile.contributions` connection) — NOT a new query.
+ * The thin contribution signal on the owner's own profile — a capped, recent-first
+ * readout, deliberately not a feed (no in-place pagination, no analytics/streaks).
  *
- * It is intentionally thin (out of scope: a full analytics dashboard / streaks /
- * gamification): a capped, recent-first list with a "tümünü gör" link to the full
- * public feed when there's more — no in-place pagination.
+ * The `Profile.contributions` resolver keys on `authorId` with no sandbox filter, so
+ * the owner sees their OWN still-sandboxed rows here while the public cannot.
  *
- * Sandbox honesty (AC #2): the `Profile.contributions` resolver keys the feed on
- * `authorId` (the profile owner) with no sandbox filter, so the owner sees their OWN
- * still-sandboxed content here — their record stays legible to them while it is hidden
- * from the public.
- *
- * Renders under its own `<Screen>` because the owner `ProfilePage` drives fate
- * imperatively above any Suspense boundary (see `useProfileStats`); the boundary lets
- * this child suspend on its own batched `useRequest` like the public `UserProfilePage`.
+ * It mounts its own `<Screen>` because the owner `ProfilePage` drives fate
+ * imperatively above any Suspense boundary; the boundary is what lets this child
+ * suspend on its own batched `useRequest`.
  */
 import type {ReactNode} from "react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -28,17 +20,14 @@ import {ContributionRow, ContributionView} from "./ContributionRow";
 import {CONTRIBUTIONS_EMPTY, CONTRIBUTIONS_HEADING} from "./profileContributions";
 import "./ProfileContributionSignal.css";
 
-// Thin by design: just enough recent items to read as a track record, never a feed.
 const SIGNAL_SIZE = 5;
 
 const ContributionsConnectionView = {items: {node: ContributionView}} as const;
 
-// Selects the count scalars alongside `contributions` so this read is a SUPERSET
-// of `useProfileStats`'s counts-only `profile` read (#2209): the two share a
-// `profile` root queryKey (root-path args `{username}`), so once this superset
-// populates the record, the sibling counts-only read on `/profile` resolves those
-// scalars from the normalized store instead of a second wire round-trip — the
-// counts read deduped onto this fuller one. The scalars aren't rendered here.
+// The count scalars are not rendered here: they make this a SUPERSET of
+// `useProfileStats`'s counts-only `profile` read, which shares the `profile` root
+// queryKey, so that sibling read dedupes onto this one instead of a second wire
+// round-trip (#2209). Dropping them costs an extra request.
 const SignalView = view<Profile>()({
 	userId: true,
 	postCount: true,
@@ -61,12 +50,8 @@ function SignalShell({children}: {children: ReactNode}) {
 	);
 }
 
-/**
- * The Katkıların loading skeleton — shared by the `<Screen>` fallback below and the
- * eager pre-session paint above the gate (ADR 0167 / #2188), so the skeleton the
- * always-anonymous first paint shows is byte-identical to the one the settled authed
- * read shows: no visual jump as the eager tier hands off to the below-gate read.
- */
+// Shared by the `<Screen>` fallback below and the eager pre-session paint above the
+// gate so the two are byte-identical and the handoff shows no visual jump. See ADR 0167.
 export function ProfileContributionSkeleton() {
 	return (
 		<SignalShell>
@@ -78,14 +63,10 @@ export function ProfileContributionSkeleton() {
 }
 
 /**
- * The eager Katkıların skeleton the `/profile` route paints ABOVE the session gate
- * (mounted by `Layout` while `get-session` is still pending), the two-tier decoupling
- * of ADR 0167 extended to `/profile` (#2188). Unlike `/pano`'s eager tier it carries
- * NO fate client: the owner's own contributions are identity-scoped (the resolver
- * shows the owner their still-sandboxed rows), so the real read must stay on the authed
- * client below the gate — pre-session there is only a skeleton to paint, no anon data.
- * Mounting no `FateClient` is also what makes it #438-safe by construction: with no
- * client above the gate there is nothing to re-key anon→id.
+ * Painted above the session gate, and unlike `/pano`'s eager tier it mounts NO fate
+ * client on purpose: these contributions are identity-scoped, so the real read must
+ * stay on the authed client below the gate, and with no client above there is nothing
+ * to re-key anon→id (#438). See ADR 0167.
  */
 export function EagerProfileContributionSkeleton() {
 	return <ProfileContributionSkeleton />;
@@ -116,9 +97,6 @@ function SignalContent({username}: {username: string}) {
 		profile: {view: SignalView, args: {username, contributions: {first: SIGNAL_SIZE}}},
 	});
 
-	// A null profile (owner not yet bootstrapped) reads as an empty record, not an
-	// error — the honest-empty-state stance of `useProfileStats` (#448). The list
-	// hooks live in `SignalList`, mounted only with a non-null ref.
 	if (!profile) {
 		return (
 			<SignalShell>

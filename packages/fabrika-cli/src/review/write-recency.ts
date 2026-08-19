@@ -17,7 +17,7 @@
  *
  * The bytes are ADR 0058 / v1's `Verdict-written:` line, reimplemented here and never called
  * (ADR 0238) — the same relationship `./advisory.ts` has to ADR 0151's carrier. They must stay
- * byte-identical, because v1's `packages/pipeline-cli/src/tools/verdict/verdict-match.ts` is the
+ * byte-identical, because v1's `verdict-match.ts` is the
  * consumer that resolves which verdict a gate acts on; `./write-recency.unit.test.ts` pins the
  * emitted line against that consumer's own matcher so the interop cannot drift unnoticed.
  */

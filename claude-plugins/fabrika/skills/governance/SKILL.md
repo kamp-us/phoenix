@@ -1,6 +1,6 @@
 ---
 name: governance
-description: "The governance-corpus integrity gate — does this diff contradict the decision corpus, and does it quietly weaken a guard? Fire it on \"/fabrika:governance\", \"does this contradict an ADR\", \"does this weaken a gate\", \"governance verdict for PR #N\" — and unprompted whenever a diff touches `.decisions/`, `.claude/`, `.github/` or `claude-plugins/`, including a diff that edits this skill. Also produces the periodic landed-decision readout. Not acceptance criteria or editorial craft (`review`), not rendered visuals (`review-ui`), not control-plane routing (CODEOWNERS decides that)."
+description: "The governance-corpus integrity gate — does this diff contradict the decision corpus, and does it quietly weaken a guard? Fire it on \"/fabrika:governance\", \"does this contradict an ADR\", \"does this weaken a gate\", \"governance verdict for PR #N\" — and unprompted whenever a diff touches one of this repo's governed roots, including a diff that edits this skill. Also produces the periodic landed-decision readout. Not acceptance criteria or editorial craft (`review`), not rendered visuals (`review-ui`), not control-plane routing (CODEOWNERS decides that)."
 arguments: [pr_number]
 argument-hint: "[pr-number] — the pull request to judge against the decision corpus"
 ---
@@ -32,12 +32,32 @@ Never invent one nobody named.
 fabrika governance scope $pr_number
 ```
 
-<!-- anchor: DERIVED-NOT-ELECTED --> The requirement is a **total function of the changed-file list
-alone**, over four roots — `.decisions/`, `.claude/`, `.github/`, `claude-plugins/`. Four properties
-make that checkable:
+**On an epic child there is no PR, and the subject is the range instead.** An epic run opens one
+tail PR (ADR [0285](../../../../.decisions/0285-epic-machine-ends-in-review.md)), so mid-run the
+child branch is all there is. A documentation epic's children sit under a governance root by
+construction wherever this repo homes its skills, and this namespace is owed at every round on such
+a diff (ADR [0293](../../../../.decisions/0293-governance-fires-every-round.md)), so the range is the normal
+subject on a documentation epic, not an edge. Drop the positional and name the two ends your caller
+gave you; the answer is the same four fields, with `<base>..<tip>` where a head SHA would be:
 
-- **Derived, not elected.** Nothing feeds the derivation and nothing can decline it. `review` reads
-  the same fact off its own `harness` flag and routes here; it never decides whether you were needed.
+```bash
+fabrika governance scope --base 4f2a91c1 --tip 9b516363
+```
+
+Both ends or neither, both 7–40 lowercase hex, and no `--sha` beside them. The base the derivation
+reads across is `merge-base(base, tip)` — the same commit the range's own three-dot diff is taken
+from, which is the commit §4 then serves this skill's bytes at.
+
+<!-- anchor: DERIVED-NOT-ELECTED --> The requirement is a **total function of the changed-file list
+alone**, over the roots this repo declares in `.fabrika.jsonc`'s `governedRoots`. Read them off
+`fabrika status settings`, never off this page. Four properties make that checkable:
+
+- **Derived, not elected.** Nothing feeds the derivation and nothing can decline it. A repo declares
+  *which roots* it governs, never *whether* a diff under them is judged, and a list that is empty or
+  that drops `.fabrika.jsonc` is refused at load rather than honoured. `review` reads the same fact
+  off the `governance` line its own `scope` prints — the same derivation over the same list, not its
+  three compiled-in `harness` roots (#5607) — and routes here; it never decides whether you were
+  needed.
 - **Fail-closed on absence.** The refusal belongs at the enqueue seam, not to a reviewer's good
   intentions: `governance` is a required namespace in `fabrika ship gate`'s conjunction, so a
   harness-touching diff carrying no current-head verdict is **named absent and refused there**. Zero
@@ -66,7 +86,9 @@ question CODEOWNERS answers*.
 
 **Carry the printed head into every later verb** — `--sha` on `sweep` and `guards` — so the whole
 judgement is one tree. Each verb otherwise re-resolves the live head on its own, and three reads
-straddling a push produce a confident verdict over text nobody judged.
+straddling a push produce a confident verdict over text nobody judged. **On a range there is no head
+to carry, and `sweep` and `guards` have no range form yet** — §2 and §3 are read by hand on a child,
+and the verdict says which of them you ran that way.
 
 **Done when** the outcome token is read. `not-required` ends the run there.
 
@@ -152,10 +174,18 @@ diff edits this skill or its contract, and `base` serves this file's bytes at th
 fabrika governance base $pr_number
 ```
 
+On a child, hand it the same two ends §1 took — the merge base it serves at is `merge-base(base,
+tip)`, the commit §1 already read the changed files across:
+
+```bash
+fabrika governance base --base 4f2a91c1 --tip 9b516363
+```
+
 <!-- anchor: SELF-COVERING --> **Judge by those, not the head's** — a bytes read that loads no
-instructions. A PR must not wave itself through by its own new rules, and here that is not hygiene:
+instructions. A diff must not wave itself through by its own new rules, and here that is not hygiene:
 your own text is the guard under review. `self` changes which rules you judge by, never whether you
-judge.
+judge. This is the half a child had no substitute for: without the range form a child range editing
+this skill got judged by head rules, so the guard opened on exactly the diff that edits the guard.
 
 **Done when** either the verdict records `self false` and that this fence did not apply, or the rules
 you applied are the base revision's and the verdict says so.
@@ -182,12 +212,49 @@ one. Re-review, never re-bind.
 **`post` also re-fires the floor check at that head.** The `governance-floor` job runs on
 `pull_request`, so it judged the PR before your verdict existed and nothing else re-fires it. The verb
 re-runs that job, which re-derives `ship floor` against your verdict — it never writes a check-run, so
-the green is the job's own. Its last stderr line says which of `refired` / `green` / `in-flight` /
-`no-run` / `unknown` happened.
+the green is the job's own. Its last stderr line says which of `refired` / `restarting` / `green` /
+`in-flight` / `no-run` / `unknown` happened.
 
 **Done when** `post` prints `posted`, its read-back conformed, and you have read the floor line — an
 `in-flight` or `unknown` floor means the check may still red at this head, and clearing it is
-`heal-ci`'s, not a human's.
+`heal-ci`'s, not a human's. `restarting` is **not** one of those: the re-fire took and the run is
+going again under its own id, GitHub simply had not published the new attempt number yet — wait and
+re-read that run, and escalating it is how three agents burned an evening on a green (#5982).
+
+### The range form — an epic child's verdict
+
+An epic run opens one tail PR (ADR [0285](../../../../.decisions/0285-epic-machine-ends-in-review.md)),
+so mid-run a child has no PR and no head to bind to. Same verb, two ends instead of a head, and the
+positional is the **child issue**. The range is the same one §1 and §4 took, and the derivation is
+re-run by `post` itself over it — the `14` refusal below is the same fail-closed floor, asked of the
+range's paths:
+
+```bash
+fabrika governance post 6007 --polarity PASS --base 4f2a91c1 --tip 9b516363 --clause "no contradiction, no weakening" <<'EOF'
+…the same verdict body…
+EOF
+```
+
+What the verb refuses here is what tells you the shape is not the PR one:
+
+- **`--base` and `--tip` come together, and both are revisions** — 7–40 lowercase hex. A branch name
+  is refused, so resolve the range's ends before you call.
+- **`--sha` does not combine with them.** A range verdict binds **content, not a head** (ADR
+  [0276](../../../../.decisions/0276-verdict-binds-content-not-only-head.md)): the two revisions
+  stop being history the moment the range merges into the epic branch, so what a later read compares
+  is the digest of `<base>...<tip>`, and `lane prove`'s child arm calls a verdict whose digest no
+  longer matches `Stale`.
+- **The positional is an open issue, not a PR.** Hand it a PR number and the verb says so and sends
+  you back to `--sha`.
+- **The requirement is re-derived from the range's own changed paths**, through the same
+  governance-root floor as the PR path — a range touching none is the same `14` refusal, so this
+  form cannot attest a scope nobody derived either.
+- **No floor line comes back.** `governance-floor` runs on `pull_request` and a child has no PR, so
+  there is nothing to re-fire; the tail PR carries that check when it opens.
+
+**Done when** `post` prints `posted` over the range you judged and its read-back conformed. Which
+namespaces a child owes at all — governance among them — is `review`'s §6, and it defers nothing to
+the tail.
 
 ## 6 — Digest time: the readout that replaced the human gate
 
@@ -301,19 +368,3 @@ time and refuses a moved one.
 **Listed and model-invocable — no `disable-model-invocation`, no `context: fork` — both halves in
 one file.** `review` step 6 directs the model to fire this skill, and a user-only skill is
 model-unreachable and cannot join a stack; `context: fork` would stop that stack mid-review.
-
-## Required repo files
-
-fabrika installs into repos that are not phoenix, so every surface this skill leans on is declared
-here. The when-missing vocabulary is closed and shared across fabrika — **fail-loud** (stop, name
-the surface by its repo-relative path, point at front-door), **degrade** (continue with a narrower
-answer, stated), **bootstrap** (front-door creates it). No row dead-ends on a bare error.
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| `.decisions/` holding `NNNN-slug.md` records with `status:` frontmatter | the corpus half's subject: `sweep` ranks against it and `digest` lists what landed in it | **fail-loud** — `sweep` and `digest` exit `7` naming the scanned directory and its zero count; a sweep over no corpus is not a clean sweep. |
-| At least 10 live-`accepted` records in it | below the rarity floor every term scores as common and the ranking carries no information | **degrade** — the outcome is `indeterminate` at exit `0`, stated as "no information", and the domain is read by hand. Never `no-overlap`. |
-| The harness roots this repo uses — `.decisions/`, `.claude/`, `.github/`, `claude-plugins/` | `scope` derives the namespace requirement from them; they are the boundary | **degrade** — the derivation is total over the roots that exist, and `scope` names any absent root on stderr, so a narrower answer is never read as a proven `not-required`. |
-| A git remote in this checkout serving the repo under review | every read binds to a commit out of the object database, so the bytes are provably that commit's | **fail-loud** — the read verbs exit `11`; an artifact that cannot be tied to a commit shows UNKNOWN, and no unbound fallback is taken. |
-| *(nothing)* — `.github/CODEOWNERS` is **not** read by this skill | listed to close the question: no verb here reads it, `guards` deliberately carries no ownership clause, and control-plane routing is not this skill's answer to compute or to state | **not applicable** — its absence changes nothing here. |
-| A durable readout artifact — the issue the front door reads | `readout` upserts the digest there; a digest with nowhere to land is one nobody can overrule from | **bootstrap** — front-door creates it; until it does, `readout` exits `7` naming the absent target rather than posting the digest somewhere improvised. |

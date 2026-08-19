@@ -1,26 +1,5 @@
 /**
- * Unit — `Fate.query` / `Fate.list` / `Fate.mutation` (the record-entry
- * constructors).
- *
- * The resolver contract under test:
- *
- *   1. **Definitions are pure data** — Effect Schema input/args (replacing
- *      zod), the success view (class or wire string), the declared error
- *      union. The entry's `type` is the normalized wire type name, as a
- *      literal.
- *   2. **The handler's error channel is checked against the declared union
- *      at the constructor call** — failing with an undeclared error is a
- *      compile error (pinned via the `DefinitionErrors` bound below; the
- *      effect LSP plugin's TS377003 escapes `@ts-expect-error`, the
- *      recurring tsgo hazard).
- *   3. **The wrapper decodes before the handler runs**: mutation input is
- *      validated by the definition's Schema; list/query args decode wire args
- *      including absence. A decode failure is an {@link InputValidationError}
- *      — annotated, so `encodeWireError` derives the `VALIDATION_ERROR` wire
- *      code (the wrapper contract the compiler builds on).
- *   4. **Handlers are Effect-returning functions only** — the documented
- *      authoring form is `Effect.fn("<wire name>")`; raw generators do not
- *      typecheck.
+ * Unit — `Fate.query` / `Fate.list` / `Fate.mutation`.
  *
  * Like the sibling suites, this module **exports** its operation consts on
  * purpose: the package tsconfig is `composite`, so tsgo's declaration
@@ -131,7 +110,6 @@ const provideStore = Effect.provideService(TermStore, {rows});
 describe("Fate.mutation — Schema validates input before the handler", () => {
 	it("decodes valid wire input; the handler receives the DECODED value", async () => {
 		const result = await Effect.runPromise(
-			// `score` arrives as a wire string; the handler sees the number.
 			addTerm.resolve({input: {slug: "effect", score: "42"}, select: []}).pipe(provideStore),
 		);
 		expect(result).toEqual({slug: "effect", title: "Effect", score: 42});
@@ -202,8 +180,6 @@ describe("Fate.query / Fate.list — args Schema decodes wire args", () => {
 
 	it("decodes ABSENT wire args (optional-field schemas see the empty bag)", async () => {
 		const result = await Effect.runPromise(termsList.resolve({select: []}).pipe(provideStore));
-		// No wire args at all: the schema decoded `{}`, the handler used its
-		// own default page size.
 		expect(result.items.map((item) => item.node.slug)).toEqual(["effect", "fate"]);
 		expect(result.pagination).toEqual({hasNext: false, hasPrevious: false});
 	});

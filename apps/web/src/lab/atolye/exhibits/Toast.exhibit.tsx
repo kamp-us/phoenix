@@ -15,8 +15,6 @@ function ToastTrigger({durationMs}: {durationMs: number}) {
 	);
 }
 
-// The toast is imperative (a `useToast().show` call), so the exhibit wraps a
-// trigger in its own `ToastProvider`; `durationMs=0` keeps the toast until dismissed.
 function ToastDemo({durationMs}: {durationMs?: number}) {
 	return (
 		<ToastProvider>

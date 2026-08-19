@@ -11,7 +11,7 @@ tags: [pipeline, intake, triage]
 ## Context
 
 Two intake paths create issues, and only one of them dedups. The **agent path**
-(the [`report`](../claude-plugins/kampus-pipeline/skills/report/SKILL.md) skill) already runs a pre-file
+(the `report` skill) already runs a pre-file
 "is there already an open issue for this?" check before it files. The **human path**
 — an issue filed directly through the GitHub UI — runs no such check, so a
 human-filed duplicate (e.g. #2802) lands unguarded and only gets caught, if at all,
@@ -73,3 +73,5 @@ ADR. It is conversation-authored per ADR
 - **The implementation is a separate bounded §CP follow-up** (the `pipeline-cli` dedup
   tool + the two skill wirings), filed separately. This ADR records the decision only;
   it ships no code.
+
+> Amendment 2026-08-19: the dedup tool shipped as `fabrika report dedup` in `packages/fabrika-cli/src/report/dedup.ts` (+ `dedup-verb.ts`), not `pipeline-cli`; both seams call it — the report skill (claude-plugins/fabrika/skills/report/SKILL.md) and the triage skill's intake check (claude-plugins/fabrika/skills/triage/SKILL.md, with `--exclude`). See ADR 0303.

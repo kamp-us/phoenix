@@ -10,7 +10,6 @@
 import {Context, type Effect} from "effect";
 import type {Resource} from "./Resource.ts";
 
-/** A `(subject, relation, object)` ReBAC tuple — the object is a resource node. */
 export interface Relation {
 	readonly subject: string;
 	readonly relation: string;
@@ -27,22 +26,18 @@ export class RelationStore extends Context.Service<
 	{
 		readonly has: (tuple: Relation) => Effect.Effect<boolean>;
 
-		// The batched form of {@link has} over a set of subjects sharing one
-		// `(relation, object)`: returns the subset that hold the tuple, in ONE store
-		// read instead of N per-subject `has` calls. Same direct-tuple semantics as
-		// `has` (no ancestry walk), so a by-id membership join over `subjects` is a
-		// single round-trip, not an in-batch N+1.
+		// The batched form of {@link has}: ONE store read instead of N per-subject calls, so a
+		// membership join is a single round-trip, not an in-batch N+1. Same direct-tuple semantics
+		// as `has` — no ancestry walk.
 		readonly hasSubjects: (query: {
 			readonly subjects: ReadonlyArray<string>;
 			readonly relation: string;
 			readonly object: Resource;
 		}) => Effect.Effect<ReadonlySet<string>>;
 
-		// Enumerate EVERY subject holding `(relation, object)` — the open-set read the
-		// membership pair (`has`/`hasSubjects`) can't answer, because both need the
-		// candidate ids up front. A mod fan-out (`notify every moderator`, #1699) has no
-		// candidate set: the recipient set IS "who holds `(moderates, platform)`". Same
-		// direct-tuple semantics as `has` (no ancestry walk); one read returns the whole set.
+		// The open-set read `has`/`hasSubjects` can't answer, because both need candidate ids up
+		// front: a mod fan-out (#1699) has none — the recipient set IS who holds the tuple. Same
+		// direct-tuple semantics as `has` — no ancestry walk.
 		readonly subjectsOf: (query: {
 			readonly relation: string;
 			readonly object: Resource;

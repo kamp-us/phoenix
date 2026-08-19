@@ -4,7 +4,7 @@ import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import {runsAtHead, workflowRun} from "../heal-ci/fixtures.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {HEAD} from "./fixtures.test-support.ts";
-import {assertFloorAt, floorLine} from "./floor-assert.ts";
+import {assertFloorAt, floorLine, floorToken} from "./floor-assert.ts";
 
 const RUNS = /^gh api --paginate repos\/o\/r\/actions\/runs\?head_sha=/;
 const RUN = /^gh api repos\/o\/r\/actions\/runs\/\d+$/;
@@ -79,6 +79,29 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 		expect(shell.calls.some((call) => RERUN.test(call))).toBe(false);
 	});
 
+	// GitHub bumps `run_attempt` a beat after it accepts the dispatch, and calling that beat UNKNOWN
+	// sent three agents to `heal-ci` over re-fires that had taken and went green untouched (#5982).
+	it("reads a same-id run that is running again as a re-fire to wait on, not UNKNOWN", async () => {
+		const {assertion, shell} = await withCalls([
+			[RUNS, runsAtHead(1, [{id: FLOOR, name: "governance-floor"}])],
+			[once(RUN), workflowRun({id: FLOOR, attempt: 1})],
+			[RERUN, okOut("")],
+			[RUN, workflowRun({id: FLOOR, attempt: 1, status: "in_progress", conclusion: null})],
+		]);
+		expect(assertion).toEqual({_tag: "Restarting", run: FLOOR, status: "in_progress"});
+		expect(shell.calls.some((call) => RERUN.test(call))).toBe(true);
+	});
+
+	it("reads a queued same-id run the same way — the counter has simply not caught up", async () => {
+		const assertion = await assert([
+			[RUNS, runsAtHead(1, [{id: FLOOR, name: "governance-floor"}])],
+			[once(RUN), workflowRun({id: FLOOR, attempt: 1})],
+			[RERUN, okOut("")],
+			[RUN, workflowRun({id: FLOOR, attempt: 1, status: "queued", conclusion: null})],
+		]);
+		expect(assertion).toEqual({_tag: "Restarting", run: FLOOR, status: "queued"});
+	});
+
 	it("answers NoRun when the repository runs no floor at this head", async () => {
 		expect(await assert([[RUNS, runsAtHead(1, [{id: 1, name: "ci"}])]])).toEqual({_tag: "NoRun"});
 	});
@@ -103,7 +126,7 @@ describe("every unread state is UNKNOWN, never a re-fire nobody proved", () => {
 
 	// The dispatch's 2xx is an acknowledgement, not an attempt: a re-fire reported on the strength of
 	// the response would tell the caller a red is clearing itself when nothing re-ran.
-	it("refuses to call it re-fired when run_attempt did not move", async () => {
+	it("refuses to call it re-fired when the run stayed completed at the same attempt", async () => {
 		const assertion = await assert([
 			[RUNS, runsAtHead(1, [{id: FLOOR, name: "governance-floor"}])],
 			[RUN, workflowRun({id: FLOOR, attempt: 1})],
@@ -128,5 +151,17 @@ describe("floorLine says what the caller must do next", () => {
 			"may still need a re-fire",
 		);
 		expect(floorLine("governance post", {_tag: "InFlight", run: FLOOR})).toContain("re-read");
+	});
+
+	it("tells a restarting re-fire to wait on its run rather than escalate", () => {
+		const line = floorLine("governance post", {
+			_tag: "Restarting",
+			run: FLOOR,
+			status: "in_progress",
+		});
+		expect(line).toContain(String(FLOOR));
+		expect(line).toContain("wait and re-read");
+		expect(line).toContain("nothing to escalate");
+		expect(floorToken({_tag: "Restarting", run: FLOOR, status: "in_progress"})).toBe("restarting");
 	});
 });

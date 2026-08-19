@@ -1,4 +1,3 @@
-/** The shared connection pagination control: drives fate's `loadNext`. */
 import {useState} from "react";
 import {Button} from "../components/ui/Button";
 

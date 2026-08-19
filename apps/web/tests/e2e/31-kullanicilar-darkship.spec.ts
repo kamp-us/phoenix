@@ -24,9 +24,7 @@ test.describe("Kullanıcılar roster (dark-ship, phoenix-user-admin default off)
 		page,
 	}) => {
 		await page.goto("/admin");
-		// The admin console shell never mounts (the probe denies an anonymous visitor)…
 		await expect(page.locator('[data-testid="admin-console"]')).toHaveCount(0);
-		// …and the kullanıcılar panel / roster is definitively absent.
 		await expect(page.locator('[data-testid="kullanicilar-panel"]')).toHaveCount(0);
 		await expect(page.locator('[data-testid="kullanicilar-table"]')).toHaveCount(0);
 	});

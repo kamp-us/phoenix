@@ -1,62 +1,28 @@
 /**
- * The fanned-mutation manifest (ADR 0155) — the single, declared source of the
- * fanned/not-fanned decision for every `Fate.mutation` in the worker.
+ * The fanned-mutation manifest — the declared fanned/not decision for every
+ * `Fate.mutation` in the worker. See ADR 0155 for the why and
+ * `.patterns/fate-live-views.md` §Server for the publish shape.
  *
- * A mutation is **fanned** when it writes an entity that lives in a subscribed
- * `/fate/live` connection (`Post` / `Comment` / `Definition`, the entities in the
- * `posts` / `Post.comments` / `Term.definitions` topics) — so after its DB write it
- * MUST publish the invalidation through `WorkerLivePublisher`, or every other
- * client's open live view goes stale until a manual refresh
- * (`.patterns/fate-live-views.md` §Server). Omitting that publish is invisible at the
- * mutation site (the publisher's error channel is `never`, ADR 0039), which is the
- * whole reason for this manifest + the `fanout-guard` CI check.
- *
- * Every `entity.verb` mutation key MUST appear here with a `fanned` flag and a
- * one-line rationale; every `fanned: true` row MUST also declare its `topics`.
- * `pipeline-cli fanout-guard check` enforces three invariants:
- *
- *   1. Drift — the set of keys here EQUALS the set discovered in
- *      `apps/web/worker/features/*.mutations.ts`. A new mutation with no row here
- *      fails the build (the conscious fanned/not decision is forced at authoring).
- *   2. Publish — every `fanned: true` mutation's feature references a
- *      `WorkerLivePublisher` publish. A fanned mutation whose feature omits the
- *      publish fails the build.
- *   3. Topic aim — every `fanned: true` row declares the `/fate/live` target(s) it
- *      publishes to, and each declared target is reachable from the feature's
- *      `live.ts` binding. A fanned row with no `topics`, or a `topics` value the
- *      feature's `live.ts` no longer targets (a mis-aimed publish, #2554), fails the
- *      build. Invariant 2 proves a publish EXISTS; this proves it AIMS correctly.
- *
- * A `topics` value is either a connection topic (a `LiveTopic` value — `posts` /
- * `Post.comments` / `Term.definitions`) or an entity-update typename (`Post` /
- * `Comment` / `Definition` / `User`) — the two shapes a publish takes. Declare EVERY
- * target the mutation fans into (a delete that drops an edge AND touches a parent field
- * lists both). The rationale field is for the human reader (and the guard's report);
- * the guard keys on `fanned` and `topics`.
+ * Every `entity.verb` key MUST appear here with a `fanned` flag and a rationale;
+ * every `fanned: true` row MUST also declare its `topics` — a `LiveTopic` value or
+ * an entity typename, listing EVERY target the mutation fans into.
+ * `fabrika guard fanout-guard check` fails the build on a missing key, a fanned
+ * mutation whose feature omits the publish, or a `topics` value the feature's
+ * `live.ts` no longer targets (a mis-aimed publish, #2554).
  */
 
-/** One mutation's fanned classification, its publish target(s), and the rationale. */
 export interface FannedMutationEntry {
-	/** The `entity.verb` mutation key, exactly as it appears in `Fate.mutation("<key>", …)`. */
+	/** The `entity.verb` key, exactly as it appears in `Fate.mutation("<key>", …)`. */
 	readonly key: string;
-	/** True ⇒ writes a fanned entity ⇒ must publish a `/fate/live` invalidation. */
 	readonly fanned: boolean;
-	/**
-	 * The `/fate/live` target(s) a `fanned: true` mutation publishes to — a `LiveTopic`
-	 * value or an entity typename (see the module docblock). Omitted on a not-fanned row.
-	 */
+	/** Required on a `fanned: true` row; omitted otherwise. */
 	readonly topics?: ReadonlyArray<string>;
-	/** One line: WHY it does / does not fan (which subscribed connection it touches, or why none). */
+	/** One line: WHY it does / does not fan. */
 	readonly rationale: string;
 }
 
-/**
- * The manifest, grouped by feature for readability. The guard flattens it; grouping
- * is cosmetic. Keep each group in sync with its `features/<name>/mutations.ts`.
- */
+/** Grouped by feature for readability only — the guard flattens it. */
 export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
-	// pano — the post/comment feed. Membership + field changes fan into `posts` and
-	// `Post.comments`; drafts are per-user private state in no subscribed connection.
 	{
 		key: "post.submit",
 		fanned: true,
@@ -166,8 +132,6 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 			"re-appends the Comment edge into `Post.comments` and updates the parent Post's commentCount",
 	},
 
-	// sözlük — terms + definitions. Definition membership + field changes fan into
-	// `Term.definitions`.
 	{
 		key: "definition.add",
 		fanned: true,
@@ -211,17 +175,13 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 		rationale: "re-appends the Definition edge into `Term.definitions`",
 	},
 
-	// report — moderation. A remove/restore/restoreWave acts on a fanned target
-	// (post/comment/definition) and must publish the same invalidation the content
-	// features' own delete/restore paths do (#1895). A submit only writes a report row.
 	{
 		key: "report.submit",
 		fanned: false,
 		rationale: "writes a report row on the moderation queue — no subscribed content connection",
 	},
-	// report publishes THROUGH pano/sözlük's bindings (report/live.ts delegates to
-	// `panoLive`/`sozlukLive`), so its target set is their union — the moderated target
-	// may be any fanned kind. The guard resolves the delegation to reach these topics.
+	// report publishes THROUGH pano/sözlük's bindings (report/live.ts delegates), so its
+	// target set is their union and the guard must resolve the delegation to reach them.
 	{
 		key: "report.resolve",
 		fanned: true,
@@ -242,8 +202,6 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 		rationale: "re-enters every fanned entity in the restored wave into its subscribed connection",
 	},
 
-	// bildirim — per-user notifications. A read flip touches only the caller's own
-	// notification rows, which live in no cross-client subscribed connection.
 	{
 		key: "bildirim.markRead",
 		fanned: false,
@@ -256,8 +214,6 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 		rationale: "flips the caller's own unread notifications — per-user, no subscribed connection",
 	},
 
-	// divan — the sandboxed proving ground. A vote scores a SANDBOXED item that is
-	// deliberately absent from the public feed, so it fans nothing public.
 	{
 		key: "divan.vote",
 		fanned: false,
@@ -265,8 +221,6 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 			"scores a sandboxed çaylak item that is deliberately excluded from the public feed connection",
 	},
 
-	// pasaport — identity. Username/vouch/promotion/deletion mutate identity + karma,
-	// none of which is a fanned entity in a subscribed content connection.
 	{
 		key: "user.setUsername",
 		fanned: false,
@@ -329,9 +283,6 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 			"appends a `clear` event to the email-delivery log — no fanned content entity (mirrors emailDelivery.mark)",
 	},
 
-	// mecmua — long-form posts (#2497, epic #2467). mecmua Post does NOT yet live in a
-	// subscribed `/fate/live` connection (no mecmua root is wired), so neither write fans;
-	// if a mecmua mutation is later classified fanned it must publish via `WorkerLivePublisher`.
 	{
 		key: "mecmua.publish",
 		fanned: false,
@@ -356,12 +307,6 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 			"clears the caller's private reader→author subscription edge; per-viewer `mecmuaFeed` connection, same no-leak rationale as `mecmua.subscribe`",
 	},
 
-	// mute — member-mute (sustur) presence (#3112, epic #2035). A mute masks ONLY the
-	// muter's OWN reads (the read-mask is a sibling slice), so it writes no
-	// Post/Comment/Definition in a subscribed cross-client connection — and its own
-	// views (feed/thread/manage-mutes) are per-viewer, so a publish onto the login-blind
-	// shared topic would over-fan/leak to every viewer. The `post.save` / `mecmua.subscribe`
-	// per-viewer-private-relation precedent: no cross-viewer fan-out.
 	{
 		key: "mute.set",
 		fanned: false,

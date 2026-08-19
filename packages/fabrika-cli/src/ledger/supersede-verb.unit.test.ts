@@ -13,7 +13,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {bodyDigest} from "./digest.ts";
-import {CLAIMED, childIssue, DIR, env, epic, subIssues} from "./fixtures.test-support.ts";
+import {CLAIMED, childIssue, DIR, env, epic, subIssues, TOKEN} from "./fixtures.test-support.ts";
 import {
 	type ChildRecord,
 	manifestPath,
@@ -97,7 +97,9 @@ const run = (
 				number: 4300,
 				child: options.child ?? 4288,
 				reason: options.reason ?? "folded into the loader slice",
+				token: TOKEN,
 				repo: null,
+				cwd: "/repo",
 				env,
 			}),
 			Layer.mergeAll(shell.layer, fs.layer),

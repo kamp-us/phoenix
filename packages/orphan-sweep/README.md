@@ -8,7 +8,7 @@ run-unique, a later run never overwrites it — so orphan `it-*` resources **acc
 on the one shared account. This sweep is that bound.
 
 It is a `packages/` Effect CLI per the repo's Node-over-Python convention (the
-`flake-rate` / `preview-seed` idiom) — a pure, unit-tested core plus a thin
+`migrations-guard` / `preview-seed` idiom) — a pure, unit-tested core plus a thin
 `effect/unstable/cli` bin.
 
 ## The safety property (the whole point)
@@ -107,7 +107,8 @@ resource uses: list apps `GET /accounts/{acct}/flagship/apps`, list flags
   **and** the CF error body (`CfHttpError`) instead of an opaque empty error; the bearer
   token stays redacted in every error surface.
 - **`src/github.ts`** — the `gh api` boundary for the OPEN PR numbers (the previews to
-  keep). REST only (GraphQL is broken on the kamp-us org). Mirrors `@kampus/flake-rate`.
+  keep). REST only (GraphQL is broken on the kamp-us org), the process-CLI boundary
+  shape of [`.patterns/effect-process-cli-shell.md`](../../.patterns/effect-process-cli-shell.md).
 - **`src/bin.ts`** — the `effect/unstable/cli` `sweep` command. **DRY-RUN by default**:
   prints the plan and exits without touching the account; only `--execute` deletes.
 - **`src/*.unit.test.ts`** — the core's unit tests (the protection invariants, the

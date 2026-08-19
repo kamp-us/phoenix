@@ -1,13 +1,3 @@
-/**
- * The persistent product Subnav zone (#2598, placement law #2587), now composed through
- * `SubnavShell` (#2978, ADR 0182). `ProductSubnavLayout` is a pathless layout-route element
- * that renders the product's subnav above the routed Outlet; React Router keeps that layout
- * element mounted as the user moves within the product's child routes — the "persistent zone,
- * no remount" acceptance criterion, proven by DOM-node identity across a within-product nav.
- * Two further properties are asserted: the substrate renders THROUGH `SubnavShell` (spied
- * below — the shell receives the frame's `cta` as its `primaryAction` zone), and the `cta`
- * contract is preserved unchanged (it still lands in the bar's `.kp-subnav__cta` slot).
- */
 import {fireEvent, render, screen} from "@testing-library/react";
 import {Link, MemoryRouter, Route, Routes} from "react-router";
 import {beforeEach, describe, expect, it, vi} from "vitest";
@@ -73,10 +63,7 @@ describe("ProductSubnavLayout — persistent product Subnav zone (#2598)", () =>
 
 		fireEvent.click(screen.getByRole("link", {name: "detay"}));
 
-		// The routed Outlet swapped to the detail page…
 		expect(screen.getByTestId("product-detail")).toBeTruthy();
-		// …but the layout's Subnav zone is the SAME DOM node — the persistent product zone
-		// stays mounted across the product's child routes (a remount would replace the node).
 		expect(container.querySelector(".kp-subnav")).toBe(before);
 	});
 });
@@ -92,7 +79,6 @@ describe("ProductSubnavLayout — composes through SubnavShell (#2978, ADR 0182)
 				</Routes>
 			</MemoryRouter>,
 		);
-		// The bar is emitted by the shell, not by a directly-wired <Subnav>.
 		expect(subnavShellSpy).toHaveBeenCalled();
 	});
 
@@ -116,9 +102,7 @@ describe("ProductSubnavLayout — composes through SubnavShell (#2978, ADR 0182)
 				</Routes>
 			</MemoryRouter>,
 		);
-		// The frame's cta is routed to the shell's primaryAction zone (ADR 0182's one promoted verb)…
 		expect(subnavShellSpy.mock.calls[0]?.[0]?.primaryAction).toBeTruthy();
-		// …and still lands in the bar's dedicated cta slot — the pre-refactor `cta` contract, unchanged.
 		const bar = container.querySelector(".kp-subnav");
 		expect(bar?.querySelector(".kp-subnav__cta")?.contains(screen.getByTestId("cta"))).toBe(true);
 	});

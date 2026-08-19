@@ -1,19 +1,8 @@
 /**
- * The user-admin root list resolver (#3200) — `userAdmin.list`, the gated user roster the
- * `kullanıcılar` console module reads. A paginated (`first`/`after` keyset), searchable
- * (`search` substring) admin read.
- *
- * Two gates, both enforced HERE (the pasaport reads are unconditional), mirroring
- * `pasaport/lists.ts`'s `emailDelivery.failing`:
- *   1. The `PHOENIX_USER_ADMIN` dark-ship flag (default-off, ADR 0083). Off ⇒ the invisible
- *      `Denied`, so the roster never leaks before release.
- *   2. `requireAdmin` (ADR 0107) — `yield* Admin` makes the read unreachable without the
- *      discharged grant, so a non-admin gets the SAME invisible `Denied`.
- *
- * The `role`/`banned` standing is JOINED past the gate, never read off the retired
- * `user.role` column: `banned` from the batched ban-state projection
- * (`Pasaport.banStatesForAdmin`), `role` from the `moderates` relation tuple
- * (`moderatorsAmong`) — one relation read per page, never a per-row `isModerator`.
+ * The user-admin roster read (#3200). Both gates are enforced HERE, because the pasaport
+ * reads are unconditional: the `PHOENIX_USER_ADMIN` dark-ship flag (ADR 0083) and
+ * `requireAdmin` (ADR 0107), each failing with the SAME invisible `Denied`. `role`/`banned`
+ * are joined past the gate, never read off the retired `user.role` column.
  */
 import {Fate} from "@kampus/fate-effect";
 import type {ConnectionResult} from "@nkzw/fate/server";
@@ -39,15 +28,13 @@ export const UserAdminListArgs = Schema.Struct({
 
 type UserAdminListArgsType = Schema.Schema.Type<typeof UserAdminListArgs>;
 
-/** Is the #3200 user-admin dark-ship flag on for this request? Safe-default `false` (dark). */
 const userAdminOn = Effect.gen(function* () {
 	const flags = yield* Flags;
 	return yield* flags.getBoolean(PHOENIX_USER_ADMIN, false).pipe(provideRequestFlags);
 });
 
-// The post-gate roster read — `Admin`-gated in R (`requireAdmin` provides the grant).
-// `yield* Admin` requires the proof; the roster is unreachable without a discharged grant.
-// Exported so the gate + shaping can be exercised end to end in a unit test.
+// `yield* Admin` requires the proof, so the roster is unreachable without a discharged
+// grant. Exported so the gate + shaping can be exercised end to end in a unit test.
 export const userAdminListGated = Effect.fn("userAdmin.listGated")(function* (
 	args: UserAdminListArgsType,
 ) {

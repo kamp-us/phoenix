@@ -41,7 +41,7 @@ one skill, one directory.
 ### 2. v1 baseline reference — a path, and nothing more
 
 The repo-relative path of the v1 skill this one replaces, under
-[`../../kampus-pipeline/skills/`](../../kampus-pipeline/skills/) — for a skill with no v1 ancestor,
+`../../kampus-pipeline/skills/` — for a skill with no v1 ancestor,
 an explicit **none**.
 
 **It is reference, never source of truth** ([#4638
@@ -168,7 +168,7 @@ up and implements the skill directly — from a document written to boot an auth
 be built from. A brief specifies the session's inputs; it is not a build ticket.
 
 The pool predicate is mechanical
-([`step1-candidate-pool.sh`](../../kampus-pipeline/skills/write-code/scripts/step1-candidate-pool.sh)):
+(`step1-candidate-pool.sh`):
 **open**, labelled **`status:triaged`** and a priority bucket, and **`assignee == null`**. A brief
 could in principle miss the label or hold an assignee — and only one of those two survives the
 pipeline that emits it.
@@ -176,10 +176,10 @@ pipeline that emits it.
 **Label-absence does not survive, so the rule may not rest on it.** A brief is minted by `plan-epic`
 as an epic child; a child must carry a `status:` label to clear the ledger floor
 (`REQUIRED_LABEL_PREFIXES` in
-[`validate.ts`](../../../packages/pipeline-cli/src/tools/epic-ledger/validate.ts)), so it is minted
+`validate.ts`), so it is minted
 `status:planned`. `review-plan` then flips **every** `status:planned` child of a clean ledger to
 `status:triaged` — the filter is that label and nothing else (`plannedChildren` in
-[`gate.ts`](../../../packages/pipeline-cli/src/tools/epic-ledger/gate.ts)), with no per-child
+`gate.ts`), with no per-child
 exception hook, and the skill states it owns that flip exclusively. So "the planner emits the brief
 without `status:triaged`" is undone one stage later, deterministically, for every brief in the
 decomposition at once.
@@ -257,7 +257,7 @@ doc, and this example pre-commits none of `/adr`'s design.
 
 **Skill:** `adr` → `claude-plugins/fabrika/skills/adr/`
 
-**v1 baseline reference:** [`claude-plugins/kampus-pipeline/skills/adr/SKILL.md`](../../kampus-pipeline/skills/adr/SKILL.md)
+**v1 baseline reference:** `claude-plugins/kampus-pipeline/skills/adr/SKILL.md`
 (181 lines, plus `scripts/`). Reference only — read it for the problem and the scars, not for the
 shape. Do not port its scripts (#4638).
 
@@ -274,17 +274,16 @@ The last three are one class read from three angles: **ADR state was resolved ag
 was not current**, and the wrong answer was indistinguishable from a right one. #3779 is the
 allocation race the v1 skill's reservation lock narrows but does not close.
 
-**Prior art to read, not to call** (#4635 inventory; fabrika calls `pipeline-cli` nowhere — CLI
-interface convention rule 6):
+**Prior art, and where it went** (#4635 inventory). v1's `decisions-index` was deleted with its
+package (#6100), so there is no longer a second implementation to read — only what fabrika ships:
 
-- `pipeline-cli decisions-index next` — the next id, `max(id) + 1` zero-padded, parsed from
-  `.decisions/` frontmatter.
-- `pipeline-cli decisions-index compact` — the `id · title · status` map, ascending by id.
-- `pipeline-cli decisions-index validate` — reds on a duplicate id or a filename/frontmatter
-  mismatch; this is the CI backstop the number lock relies on.
+- the next id, `max(id) + 1` zero-padded, parsed from `.decisions/` frontmatter → `fabrika adr next`.
+- reds on a duplicate id or a filename/frontmatter mismatch, the CI backstop the number lock relies
+  on → `fabrika guard decisions-index validate`.
+- the `id · title · status` map, ascending by id → **nothing ships this**; #6332 tracks it.
 
-Read these for semantics and scars; specify fabrika's own. Derive nothing for work that is already
-*enforced* somewhere else — a second answer to a gated question is worse than no answer.
+Derive nothing for work that is already *enforced* somewhere else — a second answer to a gated
+question is worse than no answer.
 
 **Conventions:** `claude-plugins/fabrika/docs/skill-conventions.md` ·
 `claude-plugins/fabrika/docs/cli-interface-convention.md`

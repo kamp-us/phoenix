@@ -21,6 +21,7 @@ import {runEnqueue} from "./enqueue-verb.ts";
 import {runEvidence} from "./evidence-verb.ts";
 import {runFloor} from "./floor-verb.ts";
 import {runGate} from "./gate-verb.ts";
+import {runMerge} from "./merge-verb.ts";
 import {runNote} from "./note-verb.ts";
 import {runNudge} from "./nudge-verb.ts";
 import {runReconcile} from "./reconcile-verb.ts";
@@ -62,12 +63,20 @@ const scope = leafCommand(
 	"scope",
 	{pr: prArg, repo: repoFlag, json: jsonFlag},
 	Effect.fn(function* ({pr, repo, json}) {
-		yield* emit(yield* runScope({pr, repo: Option.getOrNull(repo), json, env: process.env}));
+		yield* emit(
+			yield* runScope({
+				pr,
+				repo: Option.getOrNull(repo),
+				json,
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("A PR's head, lifecycle, linked issue, classes and CP state."),
 	Command.withDescription(
-		"Report one PR's head, lifecycle state, linked issue, artifact classes with the review namespaces they require, and the three-state §CP classification derived from .github/CODEOWNERS at the base branch. First stdout line is `scoped\\t<head>\\t<open|draft|merged|closed>\\t<fixes:n|part-of:n|->`, then one `class\\t<name>\\t<files>` line per present class, one `namespace\\t<ns>` line per required namespace, `cp\\t<state>` and `files\\t<n>`. A merged, draft or closed PR is an ANSWER, not a refusal. Exits 7 (PR proven absent, zero changed files, or a non-empty diff deriving zero namespaces — a vacuous conjunction, #2765), 11 (the PR, its file list or the §CP boundary could not be read — the scope is UNKNOWN), 13 (the file list is provably short of the declared count). Example: fabrika ship scope 4321",
+		"Report one PR's head, lifecycle state, linked issue, artifact classes with the review namespaces they require, and the three-state §CP classification derived from .github/CODEOWNERS at the base branch. First stdout line is `scoped\\t<head>\\t<open|draft|merged|closed>\\t<fixes:n|part-of:n|->`, then one `class\\t<name>\\t<files>` line per present class, one `namespace\\t<ns>` line per required namespace, `cp\\t<state>`, `landing\\t<queue|direct|none|unknown>\\t<squash|merge|rebase|->` and `files\\t<n>`. The landing line names which of the two landing paths this base branch has — `queue` is `ship enqueue`'s, `direct` is `ship merge`'s — so a shipper does not compose it from a merge-queue read and a repository-settings read on two different APIs (#6018); it is the one field that degrades to `unknown` rather than refusing, because `ship merge` re-derives the same fact and refuses on its own read. A merged, draft or closed PR is an ANSWER, not a refusal. Exits 7 (PR proven absent, zero changed files, or a non-empty diff deriving zero namespaces — a vacuous conjunction, #2765), 11 (the PR, its file list or the §CP boundary could not be read — the scope is UNKNOWN), 13 (the file list is provably short of the declared count). Example: fabrika ship scope 4321",
 	),
 );
 
@@ -109,7 +118,16 @@ const gate = leafCommand(
 	},
 	Effect.fn(function* ({pr, sha, require, cp, repo, json}) {
 		yield* emit(
-			yield* runGate({pr, sha, require, cp, repo: Option.getOrNull(repo), json, env: process.env}),
+			yield* runGate({
+				pr,
+				sha,
+				require,
+				cp,
+				repo: Option.getOrNull(repo),
+				json,
+				cwd: process.cwd(),
+				env: process.env,
+			}),
 		);
 	}),
 ).pipe(
@@ -123,7 +141,16 @@ const floor = leafCommand(
 	"floor",
 	{pr: prArg, sha: shaFlag, repo: repoFlag, json: jsonFlag},
 	Effect.fn(function* ({pr, sha, repo, json}) {
-		yield* emit(yield* runFloor({pr, sha, repo: Option.getOrNull(repo), json, env: process.env}));
+		yield* emit(
+			yield* runFloor({
+				pr,
+				sha,
+				repo: Option.getOrNull(repo),
+				json,
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("Whether a governance-root diff carries its governance verdict."),
@@ -178,13 +205,14 @@ const checks = leafCommand(
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
+				cwd: process.cwd(),
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Roll up the head CI, latest run per context."),
 	Command.withDescription(
-		"Roll up the head CI from REST check-runs, latest-per-context. First stdout line is `checks\\t<sha>\\t<green|red|pending|wedged|no-runs>`, then `run\\t<count>`, one `<name>\\t<status>\\t<gating|informational>` line per run, and `facts\\tworkflows:<n>\\truns:<n>` — the zero-checkset discriminators. With --wait a `settle\\t<settled|budget-exhausted|head-moved>` line leads the emission. The rollup is fail-closed on the ambiguous rows and the informational carve-out is ADR 0061's denylist; a wedge is diagnosed and named, and the cancel-and-rerun lever stays an operator's (#3999). Exits 7 (PR or --sha proven absent), 11 (the check-run or workflow read failed — CI state is UNKNOWN, never green), 13 (entries received < declared). Example: fabrika ship checks 4321 --sha 03135b91 --wait",
+		"Roll up the head CI from REST check-runs, latest-per-context. First stdout line is `checks\\t<sha>\\t<green|red|pending|wedged|no-runs|no-producer>`, then `run\\t<count>`, one `<name>\\t<status>\\t<gating|informational>` line per run, and `facts\\tworkflows:<n>\\truns:<n>` — the zero-checkset discriminators. A repo with zero workflows is `no-producer`, never `pending`: no CI at all and CI that has not reported yet are different facts. That case refuses unless `.fabrika.jsonc` declares `ci.noProducer: \"degrade\"`. With --wait a `settle\\t<settled|budget-exhausted|head-moved>` line leads the emission. The rollup is fail-closed on the ambiguous rows and the informational carve-out is ADR 0061's denylist; a wedge is diagnosed and named, and the cancel-and-rerun lever stays an operator's (#3999). Exits 7 (PR or --sha proven absent, or zero workflows under the default — ADR 0092), 11 (the check-run read, the workflow read or `.fabrika.jsonc` failed — CI state is UNKNOWN, never green), 13 (entries received < declared). Example: fabrika ship checks 4321 --sha 03135b91 --wait",
 	),
 );
 
@@ -255,6 +283,19 @@ const enqueue = leafCommand(
 	Command.withShortDescription("Arm the merge queue at a pinned head and prove it landed."),
 	Command.withDescription(
 		"Arm the merge queue's auto-merge at a pinned head and prove the arm landed. Prints `enqueued\\t<sha>\\t<queued|settling>` — `settling` is the normal race, not a failure. There is NO merge-method flag by construction: the queue owns the method, and a method flag alongside the arm silently no-ops the enqueue at exit 0. `auto_merge: null` post-enqueue is expected and is never read as a jam. Before the arm, a DEFINITE `mergeable_state` is asserted: `mergeable` is computed lazily so an indefinite value is polled, and if it is still indefinite it is UNKNOWN and refuses — GitHub accepts the arm on a conflicted PR under a queue-governed base, so nothing else stands between `dirty` and a parked intent. Exits 7 (PR proven absent, closed or already merged), 8 (the arm or its confirming read-back failed — whether an intent is parked is UNKNOWN, so run `fabrika ship disarm --site refuse` before stopping), 11 (the live head or the mergeability could not be read, or mergeability stayed indefinite — nothing was armed), 12 (the live head moved past --sha — refusing to arm a tree nobody verified). Example: fabrika ship enqueue 4321 --sha 03135b91",
+	),
+);
+
+const merge = leafCommand(
+	"merge",
+	{pr: prArg, sha: shaFlag, repo: repoFlag, json: jsonFlag},
+	Effect.fn(function* ({pr, sha, repo, json}) {
+		yield* emit(yield* runMerge({pr, sha, repo: Option.getOrNull(repo), json, env: process.env}));
+	}),
+).pipe(
+	Command.withShortDescription("Land a PR on a base no merge queue governs, proof read back."),
+	Command.withDescription(
+		"Land a pull request directly on a base branch NO merge queue governs, and prove the landing. Prints `merged\\t<merge-commit-sha>\\t<squash|merge|rebase>`. This is the second landing path, not a flag on the first: `ship enqueue` stays method-free because a method alongside the queue arm no-ops the enqueue at exit 0, and that argument says nothing about a base with no queue, where nothing could land a PR at all (#6018). The method is READ off the repository's allow_squash_merge / allow_merge_commit / allow_rebase_merge, preferring squash because its subject is the `(#<pr>)` anchor `ship reconcile` proves a landing with; a repo permitting none refuses rather than guessing. A definite `mergeable_state` is asserted before the write and a definite `false` refuses. The merge call's own response is never the proof — `merged` plus the merge commit are read back off the PR after it. Exits 7 (PR proven absent, closed or already merged), 8 (the merge, or its confirming read-back, failed — whether it landed is UNKNOWN; re-read the PR), 9 (the read-back does not show it merged at a commit), 11 (the live head, the landing path or the mergeability could not be read, or mergeability stayed indefinite — nothing was merged), 12 (the live head moved past --sha), 16 (a merge queue governs the base — run `fabrika ship enqueue`; or the PR is provably not mergeable), 19 (the repository permits no merge method at all — a human enables one in the repository settings). Example: fabrika ship merge 4321 --sha 03135b91",
 	),
 );
 
@@ -373,6 +414,7 @@ export const shipCommand = Command.make("ship").pipe(
 		threads,
 		resolve,
 		enqueue,
+		merge,
 		reconcile,
 		disarm,
 		nudge,
@@ -381,6 +423,6 @@ export const shipCommand = Command.make("ship").pipe(
 	]),
 	Command.withShortDescription("Drive one pull request down the merge path."),
 	Command.withDescription(
-		"Everything the merge path needs off one pull request — scope, §CP discharge, the verdict conjunction, head CI, run evidence and review threads — plus the four writes that arm, watch, disarm and record it",
+		"Everything the merge path needs off one pull request — scope, §CP discharge, the verdict conjunction, head CI, run evidence and review threads — plus the writes that arm, land, watch, disarm and record it",
 	),
 );

@@ -171,3 +171,5 @@ and the tail is prose for a human reader.
 - **No vocabulary impact.** This ADR coins and redefines nothing: `advisory`, `§CP`, the FAIL marker
   and the `advisory-not-all-pass` variant are all already-named concepts, and the ruling re-decides
   which side emits, not what anything is called. Considered and explicitly none.
+
+> Amendment 2026-08-19: the four `claude-plugins/kampus-pipeline/skills/review-*` gates and `gh-issue-intake-formats.md` retired with the v1 plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). The rule still binds and now lives in one place: fabrika's `review` skill (`claude-plugins/fabrika/skills/review/SKILL.md`), which emits the §CP advisory via `--carrier advisory` and states the advisory is a PASS path only — a failing §CP criterion posts the ordinary FAIL marker. The consumer-side backstop named below is gone: `packages/pipeline-cli/src/tools/verdict/` was deleted with that package (PR #6326), so the `advisory-not-all-pass` → `"unverified"` projection has no implementation at head and the producer-side rule is the whole guard.

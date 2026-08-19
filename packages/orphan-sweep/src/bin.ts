@@ -2,11 +2,8 @@
 /**
  * `orphan-sweep sweep` — the operable surface for the integration-stage leak (#690).
  *
- * Lists the account's Worker + D1 + Flagship app/flag resources and the repo's open PRs
- * (behind the injectable `Cloudflare` / `Github` services so the pure core stays IO-free),
- * computes the deletion plan via `computeSweepPlan`, prints it, and — ONLY with `--execute`
- * — deletes the planned set. DRY-RUN by default: with no flag it prints what it WOULD
- * delete and exits 0 without touching the account.
+ * DRY-RUN by default: with no flag it prints what it WOULD delete and exits 0 without touching the
+ * account. Only `--execute` deletes.
  *
  * The catastrophe guard lives in the pure core (`orphan-sweep.ts`): prod, named-dev
  * (`--protect` AND the `dev`/`dev-*` shape), and open-PR resources are NEVER in the plan,
@@ -15,10 +12,6 @@
  * #2340) — across all resource kinds, the Flagship apps/flags included. Credentials
  * come from the environment at runtime (`$CLOUDFLARE_API_TOKEN` / `$CLOUDFLARE_ACCOUNT_ID`),
  * never from source.
- *
- * Wired per effect-smol's CLI guidance (mirrors `@kampus/flake-rate`): `effect/unstable/cli`
- * for typed args/flags, the live `Cloudflare` + `Github` provided over `NodeServices.layer`
- * (supplying `ChildProcessSpawner`), run via `NodeRuntime.runMain`.
  */
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Effect, Layer} from "effect";
@@ -32,7 +25,6 @@ const executeFlag = Flag.boolean("execute").pipe(
 	Flag.withDescription("actually delete the planned resources (default: dry-run, print only)"),
 );
 
-// `atLeast(0)` makes `--protect` a 0-or-more repeated flag yielding `string[]`.
 const protectFlag = Flag.string("protect").pipe(
 	Flag.atLeast(0),
 	Flag.withDescription("a named-dev stage to NEVER sweep (repeatable); prod is always protected"),
@@ -66,7 +58,6 @@ const sweep = Command.make(
 		const openPrNumbers = yield* github.openPrNumbers();
 
 		const protection: Protection = {
-			// `prod` is always protected, on top of any `--protect` named-dev stages.
 			protectedStages: ["prod", ...protect],
 			openPrNumbers,
 			sweepClosedPreviews,

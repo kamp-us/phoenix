@@ -1,18 +1,9 @@
 /**
- * `definition.react` WIRE-boundary coverage (epic #1840, #1865) — the reaction
- * mutation driven through its real external interface (`resolveWire`: input decode +
- * the `encodeWireError` class→wire-code seam), over a stub `Sozluk` + a `Flags`
- * double. Four things are wrong-or-right with no database:
- *
- *   - **flag ON delegates.** The resolver hands `{definitionId, reactorId, emoji}` to
- *     `Sozluk.reactToDefinition` and returns the fresh-aggregate `Definition`.
- *   - **flag OFF is inert (dark ship, ADR 0083).** The react never lands
- *     (`reactToDefinition` fail-on-contact); the resolver re-resolves the unchanged
- *     definition, so a merged-but-unflipped feature is invisible.
- *   - **auth-only gate.** A signed-out reactor gets the invisible `UNAUTHORIZED` —
- *     never reaching the service (no voter-tier gate; that is Vote's alone).
- *   - **palette decode.** A non-`REACTION_EMOJI` emoji fails to decode at the wire
- *     boundary, so an arbitrary emoji is structurally unrepresentable (#1865 AC#1).
+ * `definition.react` WIRE-boundary coverage (epic #1840, #1865) — the mutation driven through
+ * its real external interface (`resolveWire`: input decode + the `encodeWireError` class→wire-code
+ * seam), over a stub `Sozluk` + a `Flags` double. Four things are wrong-or-right with no database:
+ * flag-ON delegation, flag-OFF inertness (dark ship, ADR 0083), the auth-only gate (no voter-tier
+ * gate — that is Vote's alone), and palette decode at the wire boundary.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
@@ -49,9 +40,8 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 		} as unknown as typeof Flags.Service,
 	);
 
-// A `Sozluk` whose named methods are scripted; every OTHER method dies on contact, so
-// a passing test proves the resolver reached only the method its path routes to
-// (mirrors `definition-mutation.unit.test.ts`'s `sozlukStub`).
+// Named methods are scripted; every OTHER method dies on contact, so a passing test proves the
+// resolver reached only the method its path routes to.
 const sozlukProxy = (methods: Partial<typeof Sozluk.Service>): Layer.Layer<Sozluk> =>
 	Layer.succeed(
 		Sozluk,
@@ -64,8 +54,6 @@ const sozlukProxy = (methods: Partial<typeof Sozluk.Service>): Layer.Layer<Sozlu
 		}) as typeof Sozluk.Service,
 	);
 
-// A wire-shaped definition row (post-react) the stub returns; `reactions` is the fresh
-// aggregate the resolver forwards onto the `Definition`.
 const REACTED_ROW: DefinitionRow = {
 	id: "def-1",
 	body: "bir tanım",
@@ -78,12 +66,9 @@ const REACTED_ROW: DefinitionRow = {
 	reactions: {counts: [{emoji: "👍", count: 1}], myReaction: "👍"},
 };
 
-// The CURRENT (unreacted) row the inert flag-off path re-resolves: empty aggregate.
 const CURRENT_ROW: DefinitionRow = {...REACTED_ROW, reactions: EMPTY_REACTION_AGGREGATE};
 
-// A `LivePublisher` that records nothing — the flag-ON path's reaction-count publish
-// (#1868) is fire-and-forget with an error channel of `never`, so it can never fail the
-// mutation; the stub just satisfies the requirement.
+// The publish is fire-and-forget with a `never` error channel — it can never fail the mutation.
 const liveStub = Layer.succeed(LivePublisher)(
 	livePublisherFor({publish: () => Effect.void, waitUntil: () => {}}),
 );
@@ -148,7 +133,6 @@ describe("definition.react — dark-ship + delegation", () => {
 				select: ["id", "reactions"],
 			});
 			assert.strictEqual((def as {id: string}).id, "def-1");
-			// The current, unreacted aggregate — the react write never happened while dark.
 			assert.deepStrictEqual((def as {reactions: unknown}).reactions, EMPTY_REACTION_AGGREGATE);
 		}).pipe(
 			Effect.provide(

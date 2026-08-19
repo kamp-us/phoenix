@@ -1,9 +1,8 @@
 /**
- * Type-level assertion (no runtime — checked by `tsgo`, not vitest): the vote /
- * reaction id surfaces `UserId` (the voter) and `TargetId` (the polymorphic vote /
- * reaction target) are nominally distinct, so transposing a voter id and a target id
- * is a compile error (#2723 AC#3), while both stay plain strings at runtime. Mirrors
- * `../pasaport/pasaport-ids.typetest.ts`.
+ * Type-level assertion (no runtime — checked by `tsgo`, not vitest): `UserId` (the
+ * voter) and `TargetId` (the vote/reaction target) are nominally distinct, so
+ * transposing them is a compile error (#2723 AC#3) while both stay plain strings at
+ * runtime. Mirrors `../pasaport/pasaport-ids.typetest.ts`.
  */
 import {expectTypeOf} from "vitest";
 import type {TargetId, UserId} from "../../lib/ids.ts";
@@ -12,8 +11,7 @@ import type {TargetId, UserId} from "../../lib/ids.ts";
 expectTypeOf<UserId>().toMatchTypeOf<string>();
 expectTypeOf<TargetId>().toMatchTypeOf<string>();
 
-// The distinctness that makes a voterId/targetId swap unrepresentable: neither brand
-// is assignable to the other, so a vote/reaction can't be misrouted across the roles.
+// Neither brand is assignable to the other, so the two roles cannot be transposed.
 expectTypeOf<UserId>().not.toEqualTypeOf<TargetId>();
 expectTypeOf<UserId>().not.toMatchTypeOf<TargetId>();
 expectTypeOf<TargetId>().not.toMatchTypeOf<UserId>();

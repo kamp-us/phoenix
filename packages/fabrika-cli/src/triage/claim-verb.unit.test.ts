@@ -2,12 +2,20 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {markerBody} from "./claim.ts";
+import {composeClaimToken, markerBody} from "./claim.ts";
 import {runClaim} from "./claim-verb.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 
 const MINE = "b2e1-4c07-4a99-9f30-55da1e6b7c02";
 const THEIRS = "7f3c-9a20-4b11-8e05-1d77c2a4f9be";
+
+/** This lane's uuid and the nonce it confers; the sibling shares MINE's session and nothing else. */
+const MY_UUID = "aaaaaaaa-1111-4222-8333-444444444444";
+const MY_NONCE = "aaaaaaaa";
+const MY_TOKEN = composeClaimToken(MINE, MY_UUID);
+const SIBLING_UUID = "bbbbbbbb-1111-4222-8333-444444444444";
+const SIBLING_NONCE = "bbbbbbbb";
+const THEIR_NONCE = "cccccccc";
 
 const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
 const LIST = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
@@ -58,14 +66,28 @@ const posted = (id: number) =>
 	okOut(JSON.stringify({id, html_url: `https://example.test/issues/4312#issuecomment-${id}`}));
 
 const NOW = new Date("2026-08-02T10:00:00Z");
-const MY_MARKER = comment(5001, markerBody(MINE), "2026-08-02T09:50:00Z");
-const THEIR_MARKER = comment(4002, markerBody(THEIRS), "2026-08-02T09:14:02Z");
+const MY_MARKER = comment(
+	5001,
+	markerBody({session: MINE, nonce: MY_NONCE}),
+	"2026-08-02T09:50:00Z",
+);
+const SIBLING_MARKER = comment(
+	4003,
+	markerBody({session: MINE, nonce: SIBLING_NONCE}),
+	"2026-08-02T09:14:02Z",
+);
+const THEIR_MARKER = comment(
+	4002,
+	markerBody({session: THEIRS, nonce: THEIR_NONCE}),
+	"2026-08-02T09:14:02Z",
+);
 
 const options = {
 	issue: 4312,
-	ttlMinutes: 60,
 	repo: null,
 	json: false,
+	token: null as string | null,
+	uuid: MY_UUID,
 	env: {
 		CLAUDE_PIPELINE_REPO: "o/r",
 		CLAUDE_CODE_SESSION_ID: MINE,
@@ -103,8 +125,10 @@ describe("runClaim — winning", () => {
 	it("posts the exact marker literal and prints the state word `won`", async () => {
 		const {outcome, calls} = await run(winning());
 		expect(outcome.code).toBe(0);
-		expect(outcome.stdout).toBe("won\n");
-		expect(calls.find((c) => POST.test(c))).toContain(`body=${markerBody(MINE)}`);
+		expect(outcome.stdout).toBe(`won\t${MY_TOKEN}\n`);
+		expect(calls.find((c) => POST.test(c))).toContain(
+			`body=${markerBody({session: MINE, nonce: MY_NONCE})}`,
+		);
 	});
 
 	it("reports the scanned comment count on stderr — a verdict names its scope", async () => {
@@ -117,14 +141,20 @@ describe("runClaim — winning", () => {
 		expect(JSON.parse(outcome.stdout)).toEqual({
 			outcome: "won",
 			session: MINE,
+			token: MY_TOKEN,
 			holder: null,
+			holderLane: null,
 			markers: 1,
 			expired: 0,
 		});
 	});
 
 	it("wins over a marker the TTL has aged out, and counts it as expired", async () => {
-		const stale = comment(4002, markerBody(THEIRS), "2026-08-02T08:00:00Z");
+		const stale = comment(
+			4002,
+			markerBody({session: THEIRS, nonce: THEIR_NONCE}),
+			"2026-08-02T08:00:00Z",
+		);
 		const {outcome} = await run(
 			[
 				[ISSUE, issue("open")],
@@ -137,14 +167,93 @@ describe("runClaim — winning", () => {
 		expect(JSON.parse(outcome.stdout)).toMatchObject({outcome: "won", markers: 1, expired: 1});
 	});
 
-	it("re-resolves rather than posting a second marker when this session already holds one", async () => {
-		const {outcome, calls} = await run([
-			[ISSUE, issue("open")],
-			[LIST, comments(MY_MARKER)],
-		]);
-		expect(outcome.stdout).toBe("won\n");
+	it("re-resolves rather than posting a second marker when this LANE already holds one", async () => {
+		const {outcome, calls} = await run(
+			[
+				[ISSUE, issue("open")],
+				[LIST, comments(MY_MARKER)],
+			],
+			{token: MY_TOKEN},
+		);
+		expect(outcome.stdout).toBe(`won\t${MY_TOKEN}\n`);
 		expect(calls.filter((c) => POST.test(c))).toHaveLength(0);
 		expect(calls.filter((c) => LIST.test(c))).toHaveLength(1);
+	});
+});
+
+describe("runClaim — two lanes of one session", () => {
+	// The defect: both siblings share CLAUDE_CODE_SESSION_ID, so a session-only marker read each
+	// sibling's claim back as its own and both wrote the issue (#6132).
+	const race = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+		[ISSUE, issue("open")],
+		[POST, posted(5001)],
+		[once(LIST), comments(SIBLING_MARKER)],
+		[LIST, comments(SIBLING_MARKER, MY_MARKER)],
+		[DELETE, okOut("")],
+	];
+
+	it("loses to a sibling lane of its own session instead of adopting its marker", async () => {
+		const {outcome} = await run(race());
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toBe(`lost\t${MINE}\n`);
+		expect(outcome.stderr.join("\n")).toContain(
+			`#4312 is held by session ${MINE} on lane ${SIBLING_NONCE}`,
+		);
+	});
+
+	it("retracts its OWN marker on that loss, never the sibling's", async () => {
+		const {calls} = await run(race());
+		const deletes = calls.filter((c) => DELETE.test(c));
+		expect(deletes).toHaveLength(1);
+		expect(deletes[0]).toContain("issues/comments/5001");
+	});
+
+	it("posts its own marker rather than reading the sibling's as a re-entry", async () => {
+		const {calls} = await run(race());
+		expect(calls.filter((c) => POST.test(c))).toHaveLength(1);
+	});
+
+	it("wins when its own marker is the earliest — the sibling is later, not equal", async () => {
+		const later = {...SIBLING_MARKER, created_at: "2026-08-02T09:55:00Z"};
+		const {outcome} = await run([
+			[ISSUE, issue("open")],
+			[POST, posted(5001)],
+			[once(LIST), comments()],
+			[LIST, comments(MY_MARKER, later)],
+		]);
+		expect(outcome.stdout).toBe(`won\t${MY_TOKEN}\n`);
+	});
+});
+
+describe("runClaim — --token", () => {
+	it("refuses at 1 on a token that is not a triage claim token", async () => {
+		const {outcome, calls} = await run([], {token: "build:whoever:0123456789ab"});
+		expect(outcome.code).toBe(1);
+		expect(outcome.stderr.join("\n")).toContain("which lane is asking is not stated");
+		expect(calls).toHaveLength(0);
+	});
+
+	it("refuses at 1 on another session's token — a lane names itself, never another", async () => {
+		const {outcome, calls} = await run([], {token: composeClaimToken(THEIRS, SIBLING_UUID)});
+		expect(outcome.code).toBe(1);
+		expect(outcome.stderr.join("\n")).toContain(`carries session ${THEIRS}`);
+		expect(calls).toHaveLength(0);
+	});
+
+	it("re-posts under the named lane when its marker aged out, and answers with that same token", async () => {
+		const {outcome, calls} = await run(
+			[
+				[ISSUE, issue("open")],
+				[POST, posted(5001)],
+				[once(LIST), comments()],
+				[LIST, comments(MY_MARKER)],
+			],
+			{token: MY_TOKEN},
+		);
+		expect(outcome.stdout).toBe(`won\t${MY_TOKEN}\n`);
+		expect(calls.find((c) => POST.test(c))).toContain(
+			`body=${markerBody({session: MINE, nonce: MY_NONCE})}`,
+		);
 	});
 });
 
@@ -154,7 +263,7 @@ describe("runClaim — losing", () => {
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout).toBe(`lost\t${THEIRS}\n`);
 		expect(outcome.stderr.join("\n")).toContain(
-			`#4312 is held by session ${THEIRS} since 2026-08-02T09:14:02Z — backing off.`,
+			`#4312 is held by session ${THEIRS} on lane ${THEIR_NONCE} since 2026-08-02T09:14:02Z — backing off.`,
 		);
 	});
 
@@ -312,11 +421,10 @@ describe("runClaim — preconditions", () => {
 			[once(LIST), comments()],
 			[LIST, errOut("gh: Bad gateway (HTTP 502)")],
 		]);
-		expect(outcome.stderr.join("\n")).toContain("this session's marker 5001 is live on #4312");
+		expect(outcome.stderr.join("\n")).toContain("this lane's marker 5001 is live on #4312");
 	});
 
-	it("refuses at 1 on a non-positive ttl and on a non-issue number", async () => {
-		expect((await run([], {ttlMinutes: 0})).outcome.code).toBe(1);
+	it("refuses at 1 on a non-issue number", async () => {
 		expect((await run([], {issue: 0})).outcome.code).toBe(1);
 	});
 });

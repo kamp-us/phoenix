@@ -1,21 +1,11 @@
 /**
- * `Term`'s one column→field map — the single structure the row mapper
- * (`toTermSummaryRow`), the wire shaper (`toTerm` in `shapers.ts`), and the view
- * field declaration (`TermView` in `views.ts`) all derive from, so a one-field
- * change touches this map instead of three hand-synced restatements (#1544, the
- * sözlük slice of the fate-wire collapse #1332; the `Term` mirror of
- * `definition-fields.ts`).
- *
- * The map absorbs `Term`'s per-source naming divergence: the `term_record`
- * projection names the count `definitionCount` and the last-edit `lastEditAt`,
- * while the wire carries `count` (mirrored by `definitionCount`), `lastEdit`, and
- * an `id` that IS the slug (a term's client normalization key). Each intrinsic
- * field carries a reader that maps a `TermSummarySelection` row onto its wire
- * value, so the divergence lives in the map, not at every call site.
+ * `Term`'s one column→field map — the row mapper, the wire shaper, and the view field
+ * declaration all derive from it, so a one-field change lands in one place. It also
+ * absorbs the record/wire naming divergence (`definitionCount`→`count`,
+ * `lastEditAt`→`lastEdit`, and an `id` that IS the slug).
  */
 import * as schema from "../../db/drizzle/schema.ts";
 
-// Pass to `db.select(...)`; pairs with `toTermSummaryRow`.
 export const termSummaryColumns = {
 	slug: schema.termRecord.slug,
 	title: schema.termRecord.title,
@@ -40,12 +30,7 @@ export interface TermSummarySelection {
 	lastEditAt: Date | null;
 }
 
-/**
- * The intrinsic (record-derived) wire fields, in `TermView` order, each mapping a
- * `TermSummarySelection` row onto its wire value. The keys ARE the wire field
- * names; the readers absorb the `definitionCount`→`count`, `lastEditAt`→`lastEdit`,
- * and slug-as-`id` divergence.
- */
+/** The keys ARE the wire field names, in `TermView` order. */
 const intrinsicFields = {
 	id: (r) => r.slug,
 	slug: (r) => r.slug,
@@ -60,7 +45,6 @@ const intrinsicFields = {
 	lastActivityAt: (r) => r.lastActivityAt,
 } satisfies Record<string, (r: TermSummarySelection) => unknown>;
 
-/** The record-derived row: every reader's return type under its wire field name. */
 export type TermSummaryRow = {
 	[K in keyof typeof intrinsicFields]: ReturnType<(typeof intrinsicFields)[K]>;
 };
@@ -73,13 +57,9 @@ export interface TermConnectionPage {
 }
 
 /**
- * The view/wire field selection (`{id: true, …}`) — a static literal (fate's
- * `FateDataView` reads the literal field map off this, so it can't be a
- * dynamically-built object). `satisfies Record<keyof TermSummaryRow, true>` pins
- * it to exactly the row's fields: dropping a field here (or adding one to the row
- * type without listing it) is a compile error, so the view stays in lockstep with
- * the row mapper. `definitions` is the list relation, declared structurally in
- * `views.ts` (no record column to collapse from).
+ * Must stay a static literal — fate's `FateDataView` reads the field map off it, so it
+ * cannot be built dynamically. The `satisfies` pins it to exactly the row's fields, so a
+ * missing or extra field is a compile error rather than a silent wire drift.
  */
 export const termViewFields = {
 	id: true,
@@ -95,11 +75,6 @@ export const termViewFields = {
 	lastActivityAt: true,
 } as const satisfies Record<keyof TermSummaryRow, true>;
 
-/**
- * Map a `term_record` projection row onto its `TermSummaryRow` fields by running
- * every reader in the column→field map — the single place the record→row mapping
- * lives.
- */
 export const toTermSummaryRow = (r: TermSummarySelection): TermSummaryRow =>
 	Object.fromEntries(
 		(Object.keys(intrinsicFields) as Array<keyof typeof intrinsicFields>).map((f) => [

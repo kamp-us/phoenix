@@ -1,16 +1,7 @@
-/**
- * The admin-console module-registry contract (#2740, epic #2711): a module plugs in BY
- * VALUE (id + Turkish label + lazy panel), the registry composes modules in nav order and
- * rejects a duplicate id, and the pure `selectActiveModule` decides which panel renders.
- * Asserted DOM-free with fake modules — the pure-extraction idiom (`apps/web/src` has no
- * jsdom in this tier); the shell's React wiring reduces to these decisions.
- */
 import {lazy} from "react";
 import {describe, expect, it} from "vitest";
 import {type ConsoleModule, createConsoleRegistry, selectActiveModule} from "./module-registry";
 
-// A fake module: a real (never-rendered) lazy panel + a value id/label — enough to exercise
-// register/list/select without a DOM.
 function fakeModule(id: string, label = id): ConsoleModule {
 	return {id, label, panel: lazy(async () => ({default: () => null}))};
 }

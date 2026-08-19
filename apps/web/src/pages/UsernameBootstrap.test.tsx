@@ -1,16 +1,10 @@
-/**
- * The null-username bootstrap fallback (#1888 AC4). A permanent handle must never
- * commit off a reflexive "devam et" on the *unedited* email-derived prefill — that
- * reads to users as "the system chose my email as my username." So an untouched
- * prefill needs a deliberate confirm step; any edit commits directly.
- */
 import {fireEvent, render, screen, waitFor} from "@testing-library/react";
 import type {ReactNode} from "react";
 import {FateClient} from "react-fate";
 import {describe, expect, it, vi} from "vitest";
 import {UsernameBootstrap} from "./UsernameBootstrap";
 
-// `useFateClient` reads the client off `<FateClient>`'s plain context; a stubbed
+// `useFateClient` reads off `<FateClient>`'s plain context, so a stubbed
 // `mutations.user.setUsername` is all the form touches.
 function makeWrapper(setUsername: ReturnType<typeof vi.fn>) {
 	const client = {mutations: {user: {setUsername}}};
@@ -32,10 +26,9 @@ describe("UsernameBootstrap — the deliberate-confirm gate (#1888 AC4)", () => 
 	it("does NOT commit the unedited email prefill on the first submit — it asks to confirm", () => {
 		const setUsername = vi.fn(async () => ({}));
 		renderBootstrap(setUsername);
-		// The prefill for elif@kamp.us is `elif`; the button starts as a confirm ask.
+		// The prefill for elif@kamp.us is `elif`.
 		expect(screen.getByRole("button").textContent).toBe("bu adı onayla");
 		fireEvent.submit(screen.getByRole("button").closest("form")!);
-		// First submit only confirms — no mutation yet.
 		expect(setUsername).not.toHaveBeenCalled();
 	});
 
@@ -56,7 +49,6 @@ describe("UsernameBootstrap — the deliberate-confirm gate (#1888 AC4)", () => 
 		renderBootstrap(setUsername);
 		const input = screen.getByLabelText("kullanıcı adı");
 		fireEvent.change(input, {target: {value: "elif-kaya"}});
-		// An edited value is not the email prefill → the button commits, not confirms.
 		expect(screen.getByRole("button").textContent).toBe("devam et");
 		fireEvent.submit(input.closest("form")!);
 		await waitFor(() => expect(setUsername).toHaveBeenCalledTimes(1));
@@ -71,7 +63,6 @@ describe("UsernameBootstrap — the deliberate-confirm gate (#1888 AC4)", () => 
 		const input = screen.getByLabelText("kullanıcı adı");
 		fireEvent.submit(input.closest("form")!); // confirm the prefill
 		expect(screen.getByRole("button").textContent).toBe("devam et");
-		// Editing away and back to the prefill resets confirmation — no silent commit.
 		fireEvent.change(input, {target: {value: "elif-kaya"}});
 		fireEvent.change(input, {target: {value: "elif"}});
 		expect(screen.getByRole("button").textContent).toBe("bu adı onayla");

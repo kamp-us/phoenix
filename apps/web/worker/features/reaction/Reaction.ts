@@ -1,34 +1,11 @@
 /**
- * Reaction — the karma-free, ungated vote-engine twin. One canonical write
- * surface (`Reaction.react`) for the three reaction targets (`definition` |
- * `post` | `comment`), the third instance of the polymorphic per-user-presence
- * pattern (after `user_vote` / `post_bookmark`). Modeled on the pure-presence
- * {@link ../pano/Bookmark.ts Bookmark} shape rather than {@link ../vote/Vote.ts
- * Vote}: no score, no hot-score recompute, and — deliberately — no karma.
+ * Reaction — the karma-free, ungated vote-engine twin: one write surface
+ * (`Reaction.react`) over the three targets (`definition` | `post` | `comment`),
+ * with the composite PK `(user_id, target_kind, target_id)` as the one-per-user
+ * cardinality constraint, so a change is an upsert on `emoji`.
  *
- * UNGATED, deliberately (the settled divergence from Vote, #1861): a reaction is
- * a pure social signal that carries no karma, so ANY authenticated user —
- * including a çaylak newcomer — may react. There is NO `VoterStanding`/tier gate
- * (the #1810 "earn to vote" floor is Vote's alone) and NO `KarmaBump`
- * collaborator: the karma-bearing vote stays the sole karma lever, untouched.
- * A future reader must NOT "fix" this by wiring the tier gate — the ungatedness
- * is the point.
- *
- * Unlike bookmark (pure presence, no value), a reaction carries a value: the
- * chosen `emoji`, constrained to the curated `REACTION_EMOJI` palette. The
- * composite PK `(user_id, target_kind, target_id)` on `user_reaction` is the
- * cardinality-one constraint — at most one reaction per user per item — so
- * CHANGING a reaction is an upsert on the `emoji` column (`onConflictDoUpdate`).
- * `react` mirrors `Vote.cast`/`Bookmark.toggle` probe-then-write idempotency and
- * the `changed`-returning result: a new emoji replaces the prior one; re-reacting
- * the SAME emoji is a no-op (`changed: false`); a `null` emoji retracts (removes
- * the row).
- *
- * The `definition | post | comment` fan-out for the target-liveness check
- * dispatches through the shared `targetTable` descriptor seam
- * ({@link ../../db/target-table.ts}) — no re-stated per-kind switch. The
- * `user_reaction` cross-product table itself is Reaction-owned (the `user_vote`
- * twin Vote owns), so its reads/writes address `schema.userReaction` directly.
+ * Ungated and karma-free deliberately (ADR 0139): no `VoterStanding` tier gate and
+ * no `KarmaBump` — a future reader must NOT "fix" this by wiring the vote's gate in.
  */
 import {and, eq, inArray, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
@@ -42,80 +19,57 @@ import {TargetId} from "../../lib/ids.ts";
 import {Telemetry} from "../telemetry/Telemetry.ts";
 import {ReactionTargetNotFound} from "./errors.ts";
 
-// Re-exported from `db/target-kind.ts` (its source-of-truth home) for callers
-// that prefer importing it from `./Reaction`.
 export type {TargetKind};
 
 export interface ReactInput {
 	userId: string;
 	targetKind: TargetKind;
 	targetId: string;
-	/**
-	 * The reaction intent, a curated-palette member or a retract. A palette emoji
-	 * sets/changes the user's single reaction; `null` retracts it (toggle off).
-	 * The type only admits a `ReactionEmoji`, so a non-palette string is already
-	 * rejected upstream by `ReactionEmojiSchema` at the wire boundary — the
-	 * service never sees one.
-	 */
+	/** A palette emoji sets or replaces the reaction; `null` retracts it. */
 	emoji: ReactionEmoji | null;
 }
 
 export interface ReactResult {
 	targetKind: TargetKind;
 	targetId: string;
-	/** The viewer's reaction after the write — the chosen palette emoji, or `null` if none/retracted. */
 	myReaction: ReactionEmoji | null;
 	/** `false` on an idempotent no-op (state already matched intent). */
 	changed: boolean;
 }
 
-/** One palette member's tally on a target — the non-zero cell of the reaction bar. */
 export interface ReactionCount {
 	emoji: ReactionEmoji;
 	count: number;
 }
 
 /**
- * A target's reaction aggregate — the read half the fate views expose (the
- * `score`/`isSaved` twin, #1862). `counts` are the per-emoji `COUNT(*)` tallies
- * ORDERED by the curated `REACTION_EMOJI` palette (so every reader — human or
- * agent — sees the bar in one canonical order), and only palette members with a
- * non-zero tally appear (a target with no reactions has an empty `counts`).
- * `myReaction` is the viewer's own current emoji (the `readMine` value), or
- * `null` when the viewer is anonymous or has not reacted — the reaction twin of
- * `myVote`.
+ * A target's reaction aggregate. `counts` holds only palette members with a non-zero
+ * tally, ordered by the curated `REACTION_EMOJI` palette so every reader sees the bar
+ * in one canonical order; `myReaction` is `null` for an anonymous or non-reacting viewer.
  */
 export interface ReactionAggregate {
 	counts: ReadonlyArray<ReactionCount>;
 	myReaction: ReactionEmoji | null;
 }
 
-/** The empty aggregate — no reactions, no viewer reaction. The neutral fill for a target absent from a batch read. */
 export const EMPTY_REACTION_AGGREGATE: ReactionAggregate = {counts: [], myReaction: null};
 
-// Palette member → its position, so a batched aggregate row set can be sorted
-// into the one canonical `REACTION_EMOJI` order regardless of GROUP BY row order.
+// Palette member → its position, so a batched aggregate can be sorted into the one
+// canonical `REACTION_EMOJI` order regardless of GROUP BY row order.
 const PALETTE_ORDER = new Map<string, number>(REACTION_EMOJI.map((emoji, i) => [emoji, i]));
 
 export class Reaction extends Context.Service<
 	Reaction,
 	{
 		/**
-		 * Upsert the user's single reaction on a target (cardinality one-per-(user,
-		 * target)). A palette `emoji` sets or REPLACES the prior reaction; passing
-		 * the same emoji already held is an idempotent no-op (`changed: false`); a
-		 * `null` emoji RETRACTS (removes the row). Rejects a missing/removed target
-		 * with {@link ReactionTargetNotFound}. UNGATED and karma-free: no tier gate,
-		 * no karma write — anyone logged in may react.
+		 * A palette `emoji` sets or REPLACES the prior reaction; the same emoji already
+		 * held is an idempotent no-op (`changed: false`); `null` RETRACTS. Rejects a
+		 * missing/removed target with {@link ReactionTargetNotFound}.
 		 */
 		readonly react: (input: ReactInput) => Effect.Effect<ReactResult, ReactionTargetNotFound>;
 		/**
-		 * Batched presence read: for each of `targetIds` the viewer has a reaction
-		 * on, its current emoji — returned as a `Map<targetId, ReactionEmoji>` so
-		 * hydration stamps the viewer's reaction without an N+1 (the
-		 * `Vote.readMine` / `Bookmark.readMine` twin, extended to carry the emoji
-		 * value). Missing viewer or empty `targetIds` short-circuits to an empty Map
-		 * with no read.
+		 * Batched presence read: the viewer's current emoji per target, so hydration stamps
+		 * a page without an N+1. Missing viewer or empty `targetIds` reads nothing.
 		 */
 		readonly readMine: (
 			viewerId: string | null | undefined,
@@ -123,19 +77,10 @@ export class Reaction extends Context.Service<
 			targetIds: ReadonlyArray<string>,
 		) => Effect.Effect<Map<string, ReactionEmoji>>;
 		/**
-		 * Batched aggregate read: for a page of `targetIds` of one `kind`, each
-		 * target's per-emoji `COUNT(*)` tallies (ordered by `REACTION_EMOJI`) plus the
-		 * viewer's own current reaction — returned as a `Map<targetId,
-		 * ReactionAggregate>` so a whole page hydrates in ONE `GROUP BY` read + one
-		 * `readMine`, never an N+1. This is the fate-view read half (#1862): the
-		 * `score`/`isSaved` twin, exposed on the `post`/`comment`/`definition` views.
-		 * A target with no reactions is ABSENT from the map (the caller fills the empty
-		 * aggregate). Missing/empty `targetIds` short-circuits to an empty Map with no
-		 * read.
-		 *
-		 * The two reads (the `GROUP BY` tally + the viewer's `readMine`) are independent;
-		 * `options.concurrency` opts them into concurrent execution (`"unbounded"` for the
-		 * stamp-wave collapse, #2709). Absent ⇒ sequential, the unchanged default.
+		 * Batched aggregate read: one `GROUP BY` tally plus the viewer's `readMine` for a whole
+		 * page. A target with no reactions is ABSENT from the map (the caller fills the empty
+		 * aggregate). The two reads are independent; `options.concurrency` opts them into
+		 * concurrent execution — absent ⇒ sequential.
 		 */
 		readonly readAggregate: (
 			viewerId: string | null | undefined,
@@ -143,35 +88,21 @@ export class Reaction extends Context.Service<
 			targetIds: ReadonlyArray<string>,
 			options?: {readonly concurrency?: Concurrency},
 		) => Effect.Effect<Map<string, ReactionAggregate>>;
-		/**
-		 * The single reaction-cleanup home for the removal substrate (ADR 0096 §3,
-		 * the `Vote.clearTarget` twin): wipe the `user_reaction` rows for one target
-		 * in one D1 batch (ADR 0014). No score/karma cache to touch — reactions have
-		 * none — so a removed entity never carries orphan reaction rows.
-		 */
+		/** Wipes one target's `user_reaction` rows for the removal substrate (ADR 0096 §3). */
 		readonly clearTarget: (kind: TargetKind, targetId: string) => Effect.Effect<void>;
 	}
 >()("@kampus/reaction/Reaction") {}
 
 export const ReactionLive = Layer.effect(Reaction)(
 	Effect.gen(function* () {
-		// `orDieAccess`: DB failures are defects (domain-boundary rule), so the
-		// public signature carries `ReactionTargetNotFound` only and `R` stays `never`.
 		const {run, batch} = orDieAccess(yield* Drizzle);
 
-		// The product-usage telemetry seam (ADR 0153, epic #2065). Resolved once at
-		// layer build (isolate-level, discharged at the `makeFateLayer` merge) so
-		// `react` gains no per-request wiring. `emit` is fire-and-forget best-effort:
-		// its error + requirement channels are discharged inside `TelemetryLive`, so a
-		// telemetry failure can never fail the reaction it observes (ADR 0153 fail-safe).
+		// Resolved once at layer build so `react` gains no per-request wiring. `emit` is
+		// fire-and-forget: its failure is swallowed in `TelemetryLive` (ADR 0153 fail-safe).
 		const telemetry = yield* Telemetry;
 
-		// Target-liveness lookup through the shared descriptor seam — the same
-		// `definition | post | comment` fan-out Vote/Report dispatch through, so
-		// the per-kind switch lives once in `db/target-table.ts`, not here. We only
-		// need existence (a removed/missing target is `null`); the descriptor's
-		// karma/sandbox fields are Vote's concern and go unread — reactions are
-		// ungated, so a sandboxed target is reactable like any other live row.
+		// Existence only — the descriptor's karma/sandbox fields are Vote's concern and go
+		// unread, since a sandboxed target is reactable like any other live row.
 		const assertTargetLive = Effect.fn("Reaction.assertTargetLive")(function* (
 			kind: TargetKind,
 			targetId: string,
@@ -230,12 +161,9 @@ export const ReactionLive = Layer.effect(Reaction)(
 			const out = new Map<string, ReactionAggregate>();
 			if (targetIds.length === 0) return out;
 
-			// One GROUP BY over the whole page — per (target, emoji) COUNT(*), served
-			// by the `user_reaction_target` index (schema.ts). Anonymous viewer's own
-			// reaction is `null` (readMine short-circuits with no read). The two reads
-			// are independent; `Effect.all` runs them sequentially by default (effect's
-			// `concurrency ?? 1`), so `options.concurrency` is what collapses them into
-			// one wave phase for the #2709 stamp-wave — omitted ⇒ unchanged sequential.
+			// One GROUP BY over the whole page, served by the `user_reaction_target` index.
+			// `Effect.all` defaults to `concurrency: 1`, so passing one is what collapses the two
+			// reads into a single wave phase.
 			const [rows, mine] = yield* Effect.all(
 				[
 					run((db) =>
@@ -259,7 +187,6 @@ export const ReactionLive = Layer.effect(Reaction)(
 				{concurrency: options?.concurrency ?? 1},
 			);
 
-			// Fold the flat (target, emoji, count) rows into per-target count arrays.
 			const byTarget = new Map<string, ReactionCount[]>();
 			for (const row of rows) {
 				const list = byTarget.get(row.targetId) ?? [];
@@ -267,9 +194,7 @@ export const ReactionLive = Layer.effect(Reaction)(
 				byTarget.set(row.targetId, list);
 			}
 
-			// A target appears in the result iff it has reactions OR the viewer reacted
-			// on it — the union of the count keys and the viewer's own reactions, each
-			// stamped with the viewer's emoji and the palette-ordered counts.
+			// A target appears iff it has reactions OR the viewer reacted on it.
 			const targets = new Set<string>([...byTarget.keys(), ...mine.keys()]);
 			for (const targetId of targets) {
 				const counts = (byTarget.get(targetId) ?? []).sort(
@@ -288,9 +213,7 @@ export const ReactionLive = Layer.effect(Reaction)(
 
 				const existing = yield* probeExisting(input.targetKind, input.targetId, input.userId);
 
-				// State already matches intent → no write. Covers both the
-				// re-react-same-emoji no-op (existing === emoji) and the
-				// retract-when-none no-op (both null).
+				// Covers both the re-react-same-emoji and the retract-when-none no-op.
 				if (existing === input.emoji) {
 					return {
 						targetKind: input.targetKind,
@@ -315,9 +238,8 @@ export const ReactionLive = Layer.effect(Reaction)(
 									),
 							] as const)
 						: ([
-								// Upsert on the composite PK: a first react inserts, a change
-								// overwrites the `emoji` in place — exactly one row per
-								// (user, target) always holds (cardinality one).
+								// Upsert on the composite PK: a first react inserts, a change overwrites
+								// `emoji` in place, so exactly one row per (user, target) always holds.
 								db
 									.insert(schema.userReaction)
 									.values({
@@ -338,14 +260,8 @@ export const ReactionLive = Layer.effect(Reaction)(
 							] as const),
 				);
 
-				// Fire-and-forget product-usage emit, AFTER the write commits and only
-				// on a real state change — the early `changed: false` return above means
-				// a no-op re-react/retract emits nothing (ADR 0153, #2069). `action`
-				// distinguishes a set/change (`react`) from the null-emoji toggle-off
-				// (`retract`); `surface` is the target kind; `emoji` rides the trailing
-				// blob slot (retract carries none). `emit` is `Effect<void>` with its
-				// failure swallowed in `TelemetryLive`, so this can never fail or delay
-				// the reaction (ADR 0153 fail-safe, S4).
+				// After the write commits and only on a real change — the `changed: false` return
+				// above means a no-op emits nothing (ADR 0153).
 				yield* telemetry.emit({
 					feature: "reaction",
 					action: input.emoji === null ? "retract" : "react",
@@ -371,12 +287,7 @@ export const ReactionLive = Layer.effect(Reaction)(
 	}),
 );
 
-/**
- * The one statement clearing a target's reactions: the `user_reaction` rows for
- * that (kind, target). Wrapped as a batch tuple for the same all-or-nothing
- * shape as `Vote.clearTarget` (ADR 0014); there is no score/karma cache to
- * co-mutate, so it is a single-statement batch.
- */
+/** One statement, wrapped as a batch tuple for the `Vote.clearTarget` shape (ADR 0014). */
 function buildClearTargetStatements(db: DrizzleDb, kind: TargetKind, targetId: string) {
 	return [
 		db

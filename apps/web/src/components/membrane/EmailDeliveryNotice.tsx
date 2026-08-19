@@ -2,16 +2,7 @@ import {Link} from "react-router";
 import {Button} from "../ui/Button";
 import "./EmailDeliveryNotice.css";
 
-/**
- * The membrane notice a signed-in user with a failing email address sees (epic #2687, Child
- * #2693): a plain-language Turkish signal that our mail is bouncing, plus a recovery CTA into
- * the existing change-email flow. Presentational + prop-driven — the flag/failing/dismiss gate
- * lives in {@link EmailDeliveryNoticeMount}, so the render contract is testable in isolation.
- *
- * The state is carried by TEXT, never color alone (four-pillars a11y): a labelled `<section>`
- * landmark with a `role="status"` live region so it is announced when it appears, the CTA is a
- * real navigating anchor, and dismissal is a native button.
- */
+// The failing state is carried by text, never color alone — four-pillars a11y (ADR 0162).
 export function EmailDeliveryNotice({
 	recoveryHref,
 	onDismiss,

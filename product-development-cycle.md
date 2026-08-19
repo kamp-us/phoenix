@@ -50,7 +50,7 @@ containment that makes the autonomous merge safe (ADR 0083; the containment argu
 `plan-epic` stamps each child issue with a `**Containment:**` line (alongside `**Stories:**`
 and `**TDD:**`) derived from this rule; `write-code` and `review-code` read it. The marker is
 defined once in the formats contract
-([`skills/gh-issue-intake-formats.md`](claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md) §2); this
+(`skills/gh-issue-intake-formats.md` §2); this
 doc supplies the *rule* it encodes. The canonical values map directly:
 
 | This rule | Containment marker | What the executor does |
@@ -97,8 +97,9 @@ the lighter `review-trivial` gate instead of the full `review-code` / `review-do
 default-deny: anything but a positive trivial classification (and the tier being on) falls back
 to the full path. The tier is **off by default**, with adoption gated behind #1560's two-axis
 measurement (ADR [0112](.decisions/0112-token-measurement-no-quality-compromise-methodology.md)) —
-so today every PR still takes the full fan-out. How the three pieces compose is
-[.patterns/right-sized-fan-out-trivial-tier.md](.patterns/right-sized-fan-out-trivial-tier.md).
+so today every PR still takes the full fan-out. How the three pieces compose is ADR
+[0120](.decisions/0120-stage-right-sizing-trivial-diff-lighter-gate.md) itself — the pattern doc
+that shaped it retired with the v1 tree.
 
 ## The release queue: the deploy → release handoff
 

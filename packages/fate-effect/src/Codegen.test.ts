@@ -346,7 +346,6 @@ describe("InferFateAPI fidelity — codegen ≡ live", () => {
 		expectTypeOf<
 			CodegenAPI["mutations"]["definition.add"]["input"]
 		>().toEqualTypeOf<AddDefinitionWire>();
-		// No declared args Schema → no client args.
 		expectTypeOf<CodegenAPI["queries"]["health"]["input"]>().toEqualTypeOf<{
 			args?: undefined;
 			select: Array<string>;

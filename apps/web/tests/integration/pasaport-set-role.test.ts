@@ -2,20 +2,12 @@
  * `Pasaport.setRole` tuple-write fidelity against **real remote D1** (ADR 0082
  * integration tier, #3522) — the security-critical branch the unit tier can't reach.
  *
- * `role-mutation.unit.test.ts` drives the WIRE authority (fail-closed for a non-admin,
- * dark-ship inert) over a STUBBED `Pasaport`, so the domain write itself — the
- * `role === "moderator" ? insert(moderatorTuple).onConflictDoNothing() : delete(...)`
- * ternary inside `Pasaport.setRole` — never runs there, and an inverted ternary would
- * ship green (AC5). This drives the REAL `Pasaport.setRole` over the shipped D1 REST
- * transport and asserts the exact tuple the roster re-reads (`isModerator` /
- * `moderatorsAmong`): `moderator` grants the `(user, "moderates", platform)` tuple
- * (idempotently, `onConflictDoNothing`), `member` revokes it, and every change appends
- * an audited `user_role_event` row.
+ * `role-mutation.unit.test.ts` drives the wire authority over a STUBBED `Pasaport`, so the
+ * grant/revoke ternary inside `Pasaport.setRole` never runs there — an inverted ternary would
+ * ship green (AC5). This drives the REAL `setRole` over the shipped D1 REST transport.
  *
- * Mirrors `kunye-relation-store.test.ts` (the same real-D1 RelationStore primitive over
- * `makeD1Rest` + `createDrizzle`) and `pasaport-ban.test.ts` (the sibling audit-log
- * mutation). Runs on the run-scoped SHARED stage (ADR 0104); every id is `NS`-prefixed
- * (this file's deterministic token) so its rows are its own and are cleaned up after.
+ * Runs on the run-scoped SHARED stage (ADR 0104); every id is `NS`-prefixed so its rows are
+ * its own and are cleaned up after.
  */
 import type {RelationStore} from "@kampus/authz";
 import {readYourWrite} from "@kampus/d1-rest";
@@ -141,14 +133,12 @@ describe("Pasaport.setRole — the real tuple write over real D1 (#3522 AC5)", (
 		const userId = `${NS}-grant`;
 		await createUser(userId);
 
-		// Before: not a moderator.
 		expect(await isModWhen(userId, false)).toBe(false);
 
 		const first = await runSetRole(userId, "moderator");
 		expect(first.role).toBe("moderator");
 		expect(await isModWhen(userId, true)).toBe(true);
 
-		// Re-grant: `onConflictDoNothing` must neither error nor duplicate the tuple.
 		const second = await runSetRole(userId, "moderator");
 		expect(second.role).toBe("moderator");
 		expect(await isModWhen(userId, true)).toBe(true);

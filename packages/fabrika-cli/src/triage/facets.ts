@@ -15,7 +15,16 @@
  * change plan and the read-back assertion live here once and the verbs differ only in the facet table
  * they pass in.
  */
-import {NEEDS_INFO, NEEDS_TRIAGE, TRIAGED} from "../labels.ts";
+import {
+	audienceLabel,
+	type BoardVocabulary,
+	type FacetName,
+	type ResolvedBoard,
+	triageStatuses,
+	typeLabel,
+} from "../config/board.ts";
+import {type FacetVocabulary, ownsLabel} from "../config/containment.ts";
+import {DEFAULT_STATUS_NAMES} from "../labels.ts";
 
 /**
  * The two standing lanes, taking their values from the contract's `triage homes` table — the one
@@ -26,24 +35,57 @@ import {NEEDS_INFO, NEEDS_TRIAGE, TRIAGED} from "../labels.ts";
  * own `park` facet table re-enumerates the same two labels as a regex, and a second copy is precisely
  * the drift a shared engine exists to prevent.
  */
-export const STANDING_LANES = ["wayfinder:backlog", "axis:pipeline-hardening"] as const;
+export const STANDING_LANES: ReadonlyArray<string> = [
+	"wayfinder:backlog",
+	"axis:pipeline-hardening",
+];
 
-export type StandingLane = (typeof STANDING_LANES)[number];
+/**
+ * Phoenix's `--type` vocabulary, and the default of `boardVocabulary`'s `types`.
+ *
+ * Open, not closed, since #6294: a repo declares its own and the compile-time narrowing goes with
+ * it. The refusal survives as a runtime decode against the *resolved* list, which is what
+ * `decodeMember` is for.
+ */
+export const TYPES: ReadonlyArray<string> = [
+	"bug",
+	"feature",
+	"chore",
+	"decision",
+	"investigation",
+	"epic",
+];
 
-export const isStandingLane = (label: string): label is StandingLane =>
-	(STANDING_LANES as ReadonlyArray<string>).includes(label);
+export {audienceLabel, typeLabel};
 
-/** The closed `--type` vocabulary. A value off it is refused before any write, never applied. */
-export const TYPES = ["bug", "feature", "chore", "decision", "investigation", "epic"] as const;
-export type TriageType = (typeof TYPES)[number];
+/**
+ * The type whose deliverable is a ledger of children rather than one pull request.
+ *
+ * Three modules held their own copy of the string — `plan/load.ts`, `ledger/preconditions.ts` and
+ * `build/scope-admission.ts` — which is the drift shape #5772 collapsed for the status and facet
+ * vocabularies. Derived from {@link TYPES}, so the label and the vocabulary cannot disagree.
+ */
+export const EPIC_TYPE_LABEL = typeLabel("epic");
 
-/** The closed `--priority` vocabulary — the enum whose absence made `--p 1` mint a label `1`. */
-export const PRIORITIES = ["p0", "p1", "p2"] as const;
-export type TriagePriority = (typeof PRIORITIES)[number];
+/** The default `--priority` vocabulary — the enum whose absence made `--p 1` mint a label `1`. */
+export const PRIORITIES: ReadonlyArray<string> = ["p0", "p1", "p2"];
 
-/** The closed `--ready-for` vocabulary: who picks the issue up (#4780). */
-export const AUDIENCES = ["human", "agent"] as const;
-export type TriageAudience = (typeof AUDIENCES)[number];
+/** The default `--ready-for` vocabulary: who picks the issue up (#4780). */
+export const AUDIENCES: ReadonlyArray<string> = ["human", "agent"];
+
+/**
+ * Phoenix's own board — the shipped default of `boardVocabulary`.
+ *
+ * Assembled from the lists above and `../labels.ts` rather than restated, so widening `TYPES`
+ * widens what a bare repo accepts, bootstraps and reconciles in one edit.
+ */
+export const DEFAULT_BOARD_VOCABULARY: BoardVocabulary = {
+	statuses: DEFAULT_STATUS_NAMES,
+	types: TYPES,
+	priorities: PRIORITIES,
+	audiences: AUDIENCES,
+	standingLanes: STANDING_LANES,
+};
 
 export const decodeMember = <A extends string>(
 	vocabulary: ReadonlyArray<A>,
@@ -57,17 +99,63 @@ export interface Facet {
 	readonly keep: ReadonlyArray<string>;
 }
 
-const ownsType = (label: string): boolean => label.startsWith("type:");
-const ownsPriority = (label: string): boolean => /^p\d+$/.test(label);
 /**
  * The status facet owns the three statuses triage itself moves between, and no more. `status:planned`
  * and `status:awaiting-release` are written by `plan`/`ledger` and `ship`, so triage preserves them
  * rather than reconciling them away.
  */
-export const TRIAGE_STATUSES: ReadonlyArray<string> = [NEEDS_TRIAGE, TRIAGED, NEEDS_INFO];
+export const TRIAGE_STATUSES: ReadonlyArray<string> = triageStatuses(DEFAULT_STATUS_NAMES);
 
-const ownsStatus = (label: string): boolean => TRIAGE_STATUSES.includes(label);
-const ownsAudience = (label: string): boolean => label.startsWith("ready-for:");
+/**
+ * What each facet owns and every label an input can make it keep — the containment vocabulary, as
+ * data.
+ *
+ * The `owns` predicates below are *derived* from this table rather than written beside it, so the
+ * ownership a facet exercises and the ownership the containment check reads cannot drift apart. That
+ * is also what makes the check meaningful once the vocabulary is configuration: this array is the
+ * `triageFacets` key's shipped default (`../config/keys/triage-facets.ts`), so what a bare repo
+ * enforces and what a declaring repo enforces are one shape.
+ *
+ * The invariant itself lives at `../config/containment.ts`, which runs it at load.
+ */
+export const FACET_VOCABULARY: ReadonlyArray<FacetVocabulary> = [
+	{name: "type", owns: {_tag: "Pattern", source: "^type:"}, values: TYPES.map(typeLabel)},
+	{name: "priority", owns: {_tag: "Pattern", source: "^p\\d+$"}, values: [...PRIORITIES]},
+	{name: "status", owns: {_tag: "Set", labels: TRIAGE_STATUSES}, values: TRIAGE_STATUSES},
+	{
+		name: "audience",
+		owns: {_tag: "Pattern", source: "^ready-for:"},
+		values: AUDIENCES.map(audienceLabel),
+	},
+	{name: "lane", owns: {_tag: "Set", labels: STANDING_LANES}, values: [...STANDING_LANES]},
+];
+
+/**
+ * The board a verb reconciles against when nothing resolved one — phoenix's own.
+ *
+ * It is the default argument of both facet tables below rather than a fallback they compute, so a
+ * caller that has not threaded the resolved board through gets today's behaviour, never an empty
+ * table that owns nothing.
+ */
+export const DEFAULT_BOARD: ResolvedBoard = {
+	board: DEFAULT_BOARD_VOCABULARY,
+	facets: FACET_VOCABULARY,
+};
+
+/**
+ * One facet's `owns` predicate off a resolved table.
+ *
+ * An absent name answers "owns nothing" rather than throwing: a facet with no delete authority
+ * preserves labels instead of stripping them, and `../config/board.ts` is what fills all five seats
+ * on every composed table — a throw here would be a second, worse enforcement of that same rule.
+ */
+const ownsIn = (
+	vocabulary: ReadonlyArray<FacetVocabulary>,
+	name: FacetName,
+): ((label: string) => boolean) => {
+	const declared = vocabulary.find((facet) => facet.name === name);
+	return declared === undefined ? () => false : ownsLabel(declared.owns);
+};
 
 /**
  * The facet table for the triaged transition.
@@ -76,19 +164,35 @@ const ownsAudience = (label: string): boolean => label.startsWith("ready-for:");
  * values an input can produce must be a subset of what its facet owns.** `PRIORITIES` ⊂ `/^p\d+$/`,
  * `TYPES` ⊂ `type:*`, `AUDIENCES` ⊂ `ready-for:*`, `STANDING_LANES` ⊂ itself. Widening a pattern past
  * its input — which is what v1 did — is what makes a correct value look superseded.
- * `facets.unit.test.ts` re-derives the containment rather than trusting this note.
+ * `facets.unit.test.ts` re-derives the containment rather than trusting this note, and
+ * {@link FACET_VOCABULARY} is what puts the same derivation on a loaded config.
  */
-export const triagedFacets = (input: {
-	readonly type: TriageType;
-	readonly priority: TriagePriority;
-	readonly readyFor: TriageAudience;
-	readonly lane: StandingLane | null;
-}): ReadonlyArray<Facet> => [
-	{name: "type", owns: ownsType, keep: [`type:${input.type}`]},
-	{name: "priority", owns: ownsPriority, keep: [input.priority]},
-	{name: "status", owns: ownsStatus, keep: [TRIAGED]},
-	{name: "audience", owns: ownsAudience, keep: [`ready-for:${input.readyFor}`]},
-	{name: "lane", owns: isStandingLane, keep: input.lane === null ? [] : [input.lane]},
+export const triagedFacets = (
+	input: {
+		readonly type: string;
+		readonly priority: string;
+		readonly readyFor: string;
+		readonly lane: string | null;
+	},
+	resolved: ResolvedBoard = DEFAULT_BOARD,
+): ReadonlyArray<Facet> => [
+	{name: "type", owns: ownsIn(resolved.facets, "type"), keep: [typeLabel(input.type)]},
+	{name: "priority", owns: ownsIn(resolved.facets, "priority"), keep: [input.priority]},
+	{
+		name: "status",
+		owns: ownsIn(resolved.facets, "status"),
+		keep: [resolved.board.statuses.triaged],
+	},
+	{
+		name: "audience",
+		owns: ownsIn(resolved.facets, "audience"),
+		keep: [audienceLabel(input.readyFor)],
+	},
+	{
+		name: "lane",
+		owns: ownsIn(resolved.facets, "lane"),
+		keep: input.lane === null ? [] : [input.lane],
+	},
 ];
 
 /**
@@ -99,12 +203,16 @@ export const triagedFacets = (input: {
  * labels the verb wrote would certify an issue reading both `status:triaged` and `status:needs-info`,
  * which corrupts every queue read downstream.
  */
-export const parkedFacets = (): ReadonlyArray<Facet> => [
-	{name: "type", owns: ownsType, keep: []},
-	{name: "priority", owns: ownsPriority, keep: []},
-	{name: "status", owns: ownsStatus, keep: [NEEDS_INFO]},
-	{name: "audience", owns: ownsAudience, keep: []},
-	{name: "lane", owns: isStandingLane, keep: []},
+export const parkedFacets = (resolved: ResolvedBoard = DEFAULT_BOARD): ReadonlyArray<Facet> => [
+	{name: "type", owns: ownsIn(resolved.facets, "type"), keep: []},
+	{name: "priority", owns: ownsIn(resolved.facets, "priority"), keep: []},
+	{
+		name: "status",
+		owns: ownsIn(resolved.facets, "status"),
+		keep: [resolved.board.statuses.needsInfo],
+	},
+	{name: "audience", owns: ownsIn(resolved.facets, "audience"), keep: []},
+	{name: "lane", owns: ownsIn(resolved.facets, "lane"), keep: []},
 ];
 
 /** One atomic write the plan will issue. `AddLabels` is one change because it is one API call. */

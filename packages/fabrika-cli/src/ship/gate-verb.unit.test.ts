@@ -1,7 +1,8 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {SHIPPED_GOVERNED_ROOTS} from "../review/classes.ts";
 import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
 	comments,
@@ -36,6 +37,7 @@ const options = {
 	cp: false,
 	repo: null,
 	json: false,
+	cwd: "/repo",
 	env: ENV,
 };
 
@@ -48,7 +50,10 @@ const run = (
 	overrides: Partial<typeof options> = {},
 ) =>
 	Effect.runPromise(
-		Effect.provide(runGate({...options, ...overrides}), fakeShell([...script, ORDINARY]).layer),
+		Effect.provide(
+			runGate({...options, ...overrides}),
+			Layer.merge(fakeShell([...script, ORDINARY]).layer, unconfigured),
+		),
 	);
 
 const marker = (namespace: string, polarity: string, sha: string): string =>
@@ -388,19 +393,28 @@ describe("requiredWithFloor", () => {
 		const result = requiredWithFloor(
 			["review-skill"],
 			["claude-plugins/fabrika/skills/ship/SKILL.md"],
+			SHIPPED_GOVERNED_ROOTS,
 		);
 		expect(result.required).toEqual(["review-skill", "governance"]);
 		expect(result.floored).toEqual(["governance"]);
 	});
 
 	it("adds nothing when the caller already asked for it — the floor never duplicates", () => {
-		const result = requiredWithFloor(["governance"], [".decisions/0001-a.md"]);
+		const result = requiredWithFloor(
+			["governance"],
+			[".decisions/0001-a.md"],
+			SHIPPED_GOVERNED_ROOTS,
+		);
 		expect(result.required).toEqual(["governance"]);
 		expect(result.floored).toEqual([]);
 	});
 
 	it("leaves an ordinary diff's required set untouched", () => {
-		const result = requiredWithFloor(["review-code"], ["apps/web/src/a.ts"]);
+		const result = requiredWithFloor(
+			["review-code"],
+			["apps/web/src/a.ts"],
+			SHIPPED_GOVERNED_ROOTS,
+		);
 		expect(result.required).toEqual(["review-code"]);
 		expect(result.floored).toEqual([]);
 	});
@@ -418,6 +432,8 @@ describe("requiredWithFloor", () => {
  */
 describe("runGate — staleness is the content question", () => {
 	const BASE = "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736";
+	/** Ahead of {@link BASE}, so the digest is proven to be taken over the branch point (#5770). */
+	const BASE_TIP = "5a4b3c2d1e0f98877665544332211000ffeeddcc";
 	/** The digest of RAW below, written out so the fixture cannot agree with the code by calling it. */
 	const DIGEST = "65ebe421b3c0";
 	const RAW = `:100644 100644 ${"a".repeat(40)} ${"b".repeat(40)} M\0apps/web/src/a.ts\0`;
@@ -431,8 +447,9 @@ describe("runGate — staleness is the content question", () => {
 		[new RegExp(`^git rev-parse --verify --quiet ${HEAD}\\^\\{commit\\}$`), okOut(`${HEAD}\n`)],
 		[/^git remote$/, okOut("origin\n")],
 		[/^git fetch --quiet origin main$/, okOut("")],
-		[/^git rev-parse --verify --quiet origin\/main\^\{commit\}$/, okOut(`${BASE}\n`)],
-		[/^git diff .* --raw --abbrev=40 -z /, raw],
+		[/^git rev-parse --verify --quiet origin\/main\^\{commit\}$/, okOut(`${BASE_TIP}\n`)],
+		[new RegExp(`^git merge-base ${BASE_TIP} ${HEAD}$`), okOut(`${BASE}\n`)],
+		[new RegExp(`^git diff .* --raw --abbrev=40 -z ${BASE}\\.\\.\\.${HEAD}$`), raw],
 	];
 
 	const bindingMarker = (sha: string, content: string | null): string =>
@@ -470,7 +487,9 @@ describe("runGate — staleness is the content question", () => {
 			[ACL, okOut("write")],
 			ORDINARY,
 		]);
-		const out = await Effect.runPromise(Effect.provide(runGate(options), shell.layer));
+		const out = await Effect.runPromise(
+			Effect.provide(runGate(options), Layer.merge(shell.layer, unconfigured)),
+		);
 		expect(out.stdout).toContain("ns\treview-code\tstale\tmarker");
 		expect(shell.calls.some((call) => call.startsWith("git "))).toBe(false);
 	});
@@ -490,7 +509,9 @@ describe("runGate — staleness is the content question", () => {
 			[ACL, okOut("write")],
 			ORDINARY,
 		]);
-		const out = await Effect.runPromise(Effect.provide(runGate(options), shell.layer));
+		const out = await Effect.runPromise(
+			Effect.provide(runGate(options), Layer.merge(shell.layer, unconfigured)),
+		);
 		expect(out.stdout).toContain("ns\treview-code\tpass\tmarker");
 		expect(shell.calls.some((call) => call.startsWith("git "))).toBe(false);
 	});

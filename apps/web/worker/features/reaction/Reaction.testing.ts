@@ -1,13 +1,8 @@
 /**
- * `ReactionStub` — a no-reactions `Reaction` service double for the unit tests that
- * build `PanoLive` / `SozlukLive` over a substituted `Drizzle` seam. Those services
- * now stamp the reaction aggregate on their reads (`Reaction.readAggregate`, #1862),
- * so a test that provides only `Vote`/`Bookmark`/`Drizzle` leaves `Reaction`
- * unsatisfied in `R`. This stub discharges it: `readAggregate` / `readMine` return
- * empty (no reactions), so the aggregate field degrades to the empty aggregate and no
- * extra DB read happens through the reaction service — the react/change/retract write
- * paths are the domain tests' concern (`Reaction.unit.test.ts`), never these
- * connection/validation tests, so they die if reached.
+ * A no-reactions `Reaction` double, discharging the `R` requirement that `PanoLive` /
+ * `SozlukLive` reads pick up from stamping the reaction aggregate (#1862). The write
+ * paths die if reached — they belong to `Reaction.unit.test.ts`, not to the
+ * connection/validation tests this serves.
  */
 import {Effect, Layer} from "effect";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";

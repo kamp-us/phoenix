@@ -39,7 +39,9 @@ A hand-typed classification is indistinguishable from a triaged one, so a guess 
 corrupts the signal triage runs on. One observation, one issue — two things you noticed are two
 filings.
 
-You are done here when all six sections carry content, except the last, which may be empty.
+You are done here when all six sections carry content, except the last, which may be empty. The
+section names the verb checks for, and how it decides a section is empty, are its own section
+(`fabrika wire doc-section --heading "report file" < <skill-base>/contract.md`).
 
 ## 2 — Check whether it is already filed
 
@@ -51,7 +53,9 @@ creating stays small:
 fabrika report dedup --query "http worker aborted request downstream plain timeout reason"
 ```
 
-Three outcomes, and only one of them is about your observation:
+Which sources it reads and how the cap is applied are the verb's section
+(`fabrika wire doc-section --heading "report dedup" < <skill-base>/contract.md`). Three outcomes, and
+only one of them is about your observation:
 
 - **`candidates`** — open each and judge it yourself. Shared vocabulary is not a shared observation.
   The list is capped, and the verb says on stderr when it truncated.
@@ -86,7 +90,11 @@ section, a machine-local path in the body, a body that never reached stdin, a ti
 — and each is a thing to correct. **A refusal is never a signal to post some other way.** Retrying a
 blocked command through a form that passes the body as a *file path* posts the path text instead of
 the file's contents, which is how a machine-local path reaches a public artifact while the poster
-reads success.
+reads success — the rule and its reasoning are one section
+(`fabrika wire doc-section --heading "The body is a value, never a path" < <skill-base>/contract.md`).
+Which exit carries which refusal is
+`--heading "The shared exit taxonomy for the two writing verbs"`, and what counts as a leak is
+`--heading "The body-surface leak predicate"`.
 
 Use `--redact` when a machine-local path is genuinely part of the evidence — reporting a leak
 incident is the case it exists for. It masks each path down to its class and says so; it never
@@ -105,7 +113,9 @@ fabrika report note --issue 4312 <<'EOF'
 EOF
 ```
 
-Done when the verb exits 0 and prints the comment id and URL.
+Done when the verb exits 0 and prints the comment id and URL. It runs the same guards as `file` over
+a comment body, and its section says which
+(`fabrika wire doc-section --heading "report note" < <skill-base>/contract.md`).
 
 ## 5 — Report and return
 

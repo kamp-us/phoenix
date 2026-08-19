@@ -18,7 +18,6 @@ export interface ButtonProps
 	block?: boolean;
 	/** Phoenix compatibility alias for Manti's `leadingIcon`. */
 	icon?: React.ReactNode;
-	/** Optional toggle state for button-shaped app actions. */
 	pressed?: boolean;
 }
 

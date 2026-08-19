@@ -1,19 +1,3 @@
-/**
- * `FlagsPanel` — the flags console module (#2742, epic #2711), the first real tenant of the
- * admin-console shell (#2740). Its ONLY job is to write the `phoenix_flag_overrides` cookie
- * client-side: it lists every declared flag (`src/flags/keys.ts`) with its default + current local
- * override, and a per-flag aç/kapat/temizle toggle writes the cookie via `document.cookie`.
- *
- * No worker route, no `/api` call, no fate mutation, no `useFlag` shim — the panel only writes the
- * cookie; the worker's un-gated #622 read-wrapper (#2741) honors it so `useFlag` reflects the flip
- * natively on the next read. The effect is per-browser only. Render decisions live DOM-free in
- * `flag-overrides.ts` (unit-tested); this is the thin shell. Lowercase-Turkish copy per the design law.
- *
- * a11y: a labelled region; each flag is a `role="group"`; the toggles are shared `Button`s — the
- * 36px hit-area floor + focus ring come from the shared `.kp-btn` styles (`min-height`/`min-width:
- * var(--tap-min)`, #3791), with `aria-pressed` marking the active state; the outcome is text in a
- * `role="status"` live region, never color.
- */
 import {useState} from "react";
 import {Alert} from "../../components/ui/Alert";
 import {Button} from "../../components/ui/Button";
@@ -36,7 +20,6 @@ import {
 
 const TOGGLE_STATES: readonly OverrideState[] = ["on", "off", "clear"];
 
-/** Read the current override map straight off `document.cookie` (SSR-safe: no document ⇒ empty). */
 function readOverrides(): FlagOverrides {
 	if (typeof document === "undefined") return {};
 	return parseOverridesFromCookie(document.cookie);

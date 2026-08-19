@@ -41,8 +41,7 @@ describe("MecmuaIndexPage — write-CTA de-dup (#2603)", () => {
 		flags.read = true;
 		flags.write = true;
 		meTier = "yazar";
-		// A published post so the page renders its list (not the empty state) — isolates the
-		// header CTA as the single in-page write affordance under test.
+		// One published post, so the page renders its list rather than the empty state.
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(
@@ -60,7 +59,6 @@ describe("MecmuaIndexPage — write-CTA de-dup (#2603)", () => {
 
 	it("the in-page write CTA is suppressed — the single CTA lives in the Subnav", async () => {
 		renderPage();
-		// The list still renders (proves we got past the flag gate), but no in-page CTA remains.
 		expect(await screen.findByText("mecmua")).toBeTruthy();
 		expect(screen.queryByTestId("mecmua-write-cta")).toBeNull();
 	});

@@ -1,10 +1,7 @@
 /**
- * Report wire-entity shaper. `ReportReceipt` is returned inline by the
- * `report.submit` mutation (no re-resolution through a source), so the interpreter
- * never stamps `__typename` for it — the handler must. This is the one and only
- * spelling of the `{__typename, …}` literal, so the receipt carries the same
- * discriminant every other fate entity does and the client can normalize it by
- * `__typename` (`.patterns/fate-effect-operations.md`).
+ * `ReportReceipt` is returned inline by `report.submit`, so the interpreter never stamps
+ * `__typename` for it — the handler must. This is the one and only spelling of that
+ * literal (`.patterns/fate-effect-operations.md`).
  */
 
 import {type TargetKind, targetKey} from "../../db/target-kind.ts";
@@ -23,12 +20,8 @@ export const toReportReceipt = (r: ReportResult): ReportReceipt => ({
 	created: r.created,
 });
 
-// `context` is the reported target's in-situ enrichment (#1702), resolved in the
-// `Moderate`-gated `report.listOpen` path; absent (`undefined`) for a target whose
-// content couldn't be read, in which case the `target*` fields are null. `reputation`
-// is the #1703 künye-join cluster (author standing + reporter diversity); it always
-// carries a `distinctReporters` (falling back to the group's report count upstream)
-// and null author fields when the author is unresolved.
+// `context` is absent for a target whose content couldn't be read, in which case the
+// `target*` fields are null (#1702).
 export const toOpenReport = (
 	g: OpenReportGroup,
 	context: ReportTargetContext | undefined,
@@ -56,11 +49,8 @@ export const toOpenReport = (
 	authorReportedTargets: reputation.authorReportedTargets,
 });
 
-// `context` is the decided target's in-situ enrichment, resolved in the
-// `Moderate`-gated `report.listResolved` path; absent (`undefined`) for a target whose
-// content couldn't be read (removed/sandboxed), in which case the `target*` fields are
-// null. `resolverHandle` is the resolver's display handle joined from the same gated
-// read; null when the identity couldn't be resolved.
+// As above: `context` is absent when the target's content couldn't be read
+// (removed/sandboxed), and the `target*` fields are then null.
 export const toResolvedReport = (
 	g: ResolvedReportGroup,
 	context: ReportTargetContext | undefined,

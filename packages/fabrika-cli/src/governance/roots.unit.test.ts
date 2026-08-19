@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {GOVERNANCE_ROOTS} from "../review/classes.ts";
+import {SHIPPED_GOVERNED_ROOTS as GOVERNANCE_ROOTS} from "../review/classes.ts";
 import {changeOf, deriveScope, recordsIn} from "./roots.ts";
 
 const changed = (...rows: ReadonlyArray<readonly [string, string]>) =>
@@ -47,6 +47,7 @@ describe("deriveScope", () => {
 				["M", "src/a.ts"],
 			),
 			[],
+			GOVERNANCE_ROOTS,
 		);
 		expect(result.required).toBe(true);
 		expect(result.roots).toEqual([
@@ -57,34 +58,45 @@ describe("deriveScope", () => {
 	});
 
 	it("does not require it for a diff under no root", () => {
-		expect(deriveScope(changed(["M", "src/a.ts"]), []).required).toBe(false);
+		expect(deriveScope(changed(["M", "src/a.ts"]), [], GOVERNANCE_ROOTS).required).toBe(false);
 	});
 
 	it("reads the root list from `review/classes.ts` rather than a second copy", () => {
 		const each = GOVERNANCE_ROOTS.map(
-			(root) => deriveScope(changed(["M", `${root}x`]), []).required,
+			(root) => deriveScope(changed(["M", `${root}x`]), [], GOVERNANCE_ROOTS).required,
 		);
 		expect(each).toEqual(GOVERNANCE_ROOTS.map(() => true));
 	});
 
 	it("sets `self` when a changed path is under the resolved skill root", () => {
 		const root = "claude-plugins/fabrika/skills/governance/";
-		expect(deriveScope(changed(["M", `${root}SKILL.md`]), [root]).self).toBe(true);
+		expect(deriveScope(changed(["M", `${root}SKILL.md`]), [root], GOVERNANCE_ROOTS).self).toBe(
+			true,
+		);
 		expect(
-			deriveScope(changed(["M", "claude-plugins/fabrika/skills/review/SKILL.md"]), [root]).self,
+			deriveScope(
+				changed(["M", "claude-plugins/fabrika/skills/review/SKILL.md"]),
+				[root],
+				GOVERNANCE_ROOTS,
+			).self,
 		).toBe(false);
 	});
 
 	it("flags `self` under an AMBIGUOUS install rather than skipping the fence", () => {
 		const roots = ["a/fabrika/skills/governance/", "b/fabrika/skills/governance/"];
-		expect(deriveScope(changed(["M", "b/fabrika/skills/governance/SKILL.md"]), roots).self).toBe(
-			true,
-		);
+		expect(
+			deriveScope(changed(["M", "b/fabrika/skills/governance/SKILL.md"]), roots, GOVERNANCE_ROOTS)
+				.self,
+		).toBe(true);
 	});
 
 	it("leaves `self` false when no install resolved — there is nothing to be under", () => {
 		expect(
-			deriveScope(changed(["M", "claude-plugins/fabrika/skills/governance/SKILL.md"]), []).self,
+			deriveScope(
+				changed(["M", "claude-plugins/fabrika/skills/governance/SKILL.md"]),
+				[],
+				GOVERNANCE_ROOTS,
+			).self,
 		).toBe(false);
 	});
 });

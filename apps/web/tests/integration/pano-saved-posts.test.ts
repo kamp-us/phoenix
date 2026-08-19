@@ -4,13 +4,10 @@
  *
  * Drives the `savedPosts` keyset connection #676 adds: a `Bookmark`-driven page
  * over `post_record`, `CurrentUser`-scoped, ordered by save time
- * (`post_bookmark.created_at DESC, post_id DESC`). Everything is observed over
- * HTTP — saves are made through `post.save`, the list is read back per viewer.
- * The keyset *predicate shape* + cursor-miss/envelope *decision* are pure and
- * unit-tested (`worker/db/keyset.unit.test.ts`); what stays here is the
- * irreducible real-D1 core (ADR 0082): how the engine executes the bookmark
- * keyset across page boundaries, per-viewer scoping, the `isSaved` stamp, and
- * the anonymous empty page.
+ * (`post_bookmark.created_at DESC, post_id DESC`). The keyset predicate shape and
+ * the cursor-miss/envelope decision are pure and unit-tested in
+ * `worker/db/keyset.unit.test.ts`; what stays here is the irreducible real-D1 core
+ * (ADR 0082).
  *
  * Save order is the keyset lead column: saves are stamped `new Date()` in the
  * service, so saving in sequence builds an ascending `created_at` and the list
@@ -47,7 +44,6 @@ type Connection<N> = {
 let saver: {userId: string; cookie: string};
 let other: {userId: string; cookie: string};
 
-/** Submit a post under the saver cookie; return its id. */
 async function seedPost(title: string): Promise<string> {
 	const r = await h.fate(
 		{
@@ -63,7 +59,6 @@ async function seedPost(title: string): Promise<string> {
 	return (r.data as PostNode).id;
 }
 
-/** Save a post under a cookie; assert the toggle landed. */
 async function save(id: string, cookie: string): Promise<void> {
 	const r = await h.fate(
 		{kind: "mutation", name: "post.save", input: {id}, select: ["id", "isSaved"]},
@@ -72,7 +67,7 @@ async function save(id: string, cookie: string): Promise<void> {
 	expect(r.ok).toBe(true);
 }
 
-/** Read a page of the saved-posts list for a cookie (anonymous when omitted). */
+/** Anonymous when `cookie` is omitted. */
 async function savedPage(
 	cookie: string | undefined,
 	args: {first?: number; after?: string} = {},
@@ -111,12 +106,10 @@ describe("pano savedPosts — viewer-scoped saved list", () => {
 		const conn = await savedPage(saver.cookie, {first: 50});
 		const seen = conn.items.map((e) => e.node).filter((n) => mineIds.has(n.id) || n.id === theirs);
 
-		// The saver sees mine1 + mine2, never `theirs` (which `other` saved).
 		expect(seen.map((n) => n.id).sort()).toEqual([mine1, mine2].sort());
 		expect(seen.every((n) => n.isSaved === true)).toBe(true);
 		expect(seen.some((n) => n.id === theirs)).toBe(false);
 
-		// `other` sees the mirror image: `theirs`, never mine1/mine2.
 		const otherConn = await savedPage(other.cookie, {first: 50});
 		const otherSeen = otherConn.items
 			.map((e) => e.node)
@@ -146,7 +139,6 @@ describe("pano savedPosts — viewer-scoped saved list", () => {
 });
 
 describe("pano savedPosts — keyset ordering + pagination on real D1", () => {
-	// Save four fresh posts in sequence; the list returns them newest-save-first.
 	const ORDER_TITLES = [0, 1, 2, 3].map((i) => `${NS} order ${i}`);
 	const orderIds: string[] = [];
 
@@ -166,7 +158,7 @@ describe("pano savedPosts — keyset ordering + pagination on real D1", () => {
 		// Saved 0→1→2→3, so the list leads with 3, 2, 1, 0 among our rows.
 		expect(seen.map((e) => e.node.id)).toEqual([...orderIds].reverse());
 		for (const e of seen) {
-			expect(e.cursor).toBe(e.node.id); // cursor IS the post-id keyset
+			expect(e.cursor).toBe(e.node.id);
 		}
 	});
 
@@ -184,7 +176,6 @@ describe("pano savedPosts — keyset ordering + pagination on real D1", () => {
 			after = conn.pagination.nextCursor;
 			expect(after).toBeDefined();
 		}
-		// Every saved post seen exactly once, in newest-save-first order.
 		expect(seen).toEqual([...orderIds].reverse());
 		expect(new Set(seen).size).toBe(orderIds.length);
 	});

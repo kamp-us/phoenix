@@ -1,11 +1,8 @@
 /**
- * Decision-feed enrichment merge — the T1 worker-seam unit (#1704), no engine. The
- * decisions asserted: each resolved group is folded with its `<kind>:<id>`-keyed target
- * context onto the right `target*` fields; the resolver id joins to its display handle
- * (the resolver is first-class); a group with no context keeps null context (never
- * dropped); and an unresolved resolver handle folds to null. The batched content /
- * identity READS live in the `Moderate`-gated `report.listResolved` resolver — what's
- * wrong-or-right without D1 is this pure fold.
+ * The decision-feed enrichment fold (#1704). Load-bearing: a group whose context or
+ * resolver handle won't resolve keeps nulls and is NEVER dropped — the decision itself
+ * always survives. The batched reads it folds over live in the gated
+ * `report.listResolved` resolver.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {enrichResolvedReports, type ReportTargetContext} from "./enrich.ts";
@@ -80,7 +77,6 @@ describe("enrichResolvedReports — fold decisions with target context + resolve
 		assert.strictEqual(rows[0]?.targetExcerpt, null);
 		assert.strictEqual(rows[0]?.targetAuthor, null);
 		assert.strictEqual(rows[0]?.targetRef, null);
-		// The decision itself still resolves — the resolver stays first-class.
 		assert.strictEqual(rows[0]?.resolverHandle, "founder");
 	});
 

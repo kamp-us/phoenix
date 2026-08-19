@@ -3,11 +3,11 @@
  *
  * The bypass is the design, not an option. A cache hit from another checkout returned another tree's
  * green three times in one session (#4106) and recurred on the review side (#4887); re-running is
- * cheaper than trusting a key that has already lied. And the command set is the verb's, not the
- * agent's memory: v1 mandated the exact CI commands in prose with nothing enforcing it
- * (`SKILL.md:895-935`).
+ * cheaper than trusting a key that has already lied. And the command set is the repo's declaration
+ * read by the verb, not the agent's memory: v1 mandated the exact CI commands in prose with nothing
+ * enforcing it (`SKILL.md:895-935`).
  *
- * **This verb predicts; the gate decides.** `ci.yml` owns redness, and where the two disagree the
+ * **This verb predicts; the gate decides.** The repo's CI gate owns redness, and where they disagree the
  * gate's answer supersedes this one (interface convention rule 6). Nothing here re-reads CI.
  *
  * `--surface` is an **anchor, not a second classifier**: naming the surface is a judgement the skill
@@ -16,14 +16,32 @@
  * provably contradicts.
  *
  * **Green means "the validators ran and passed", never "I could not tell."** See {@link classifyDiff}
- * for the third file class that keeps that distinction representable (#5229), and
+ * for the unvalidatable file class that keeps that distinction representable (#5229), and
  * {@link notCoveredBy} for the per-surface coverage the green's `unvalidated` list reports (#5288),
  * and {@link readMarkdown} for the file the verb could not open (#5304).
+ *
+ * **A prose red must be this diff's.** The leak scan is baselined against the merge base, so a file
+ * that merely enters a diff no longer hands its author every defect line it already carried; the
+ * shape and its deliberate limits live in `prose-baseline.ts` (#5755).
  */
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {execCapture} from "../io/exec.ts";
-import {scanBody} from "../report/leaks.ts";
+import type {Resolution} from "../config/key-group.ts";
+import {type CiSurface, ciKey} from "../config/keys/ci.ts";
+import {
+	CODE_VALIDATORS,
+	type CodeValidator,
+	codeValidatorsKey,
+} from "../config/keys/code-validators.ts";
+import {loadConfig, resolve} from "../config/load.ts";
+import {readConfigSource} from "../config/source.ts";
+import {execStatus} from "../io/exec.ts";
+import {
+	CONFIG_PATH,
+	readDocLeakExempt,
+	readWorkflowValidators,
+	type WorkflowValidator,
+} from "../repo-config.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {requireSession} from "./claim.ts";
 import {
@@ -34,25 +52,36 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {predecessorsOf, readTopology, renderRef, sameRef} from "./dependencies.ts";
-import {changedFiles, mergeBase} from "./git.ts";
+import {docLeaks} from "./doc-leaks.ts";
+import {changedFiles, mergeBase, showAt, treePaths} from "./git.ts";
 import {defaultBranch} from "./github.ts";
 import {requireLane} from "./lane-guard.ts";
+import {introducedLeaks} from "./prose-baseline.ts";
 import {resolveTargetRepo} from "./target.ts";
 
 const VERB = "build check";
 
-export const SURFACES = ["code", "prose", "plan"] as const;
+export const SURFACES = ["code", "prose", "plan", "workflows"] as const;
 export type Surface = (typeof SURFACES)[number];
 
 const CODE_RE = /\.(ts|tsx|js|jsx|mjs|cjs|json)$/;
 const MARKDOWN_RE = /\.mdx?$/;
+/** GitHub reads workflows from this directory and no deeper, so neither does the class. */
+const WORKFLOW_RE = /^\.github\/workflows\/[^/]+\.ya?ml$/;
 
-/** The exact CI commands, cache-bypassed. `--force` is turbo's; `lint:worktree` has no cache to hit. */
-const CODE_RUNNERS: ReadonlyArray<{readonly label: string; readonly argv: ReadonlyArray<string>}> =
-	[
-		{label: "pnpm typecheck --force", argv: ["typecheck", "--force"]},
-		{label: "pnpm lint:worktree", argv: ["lint:worktree"]},
-	];
+/** The workflow linter, run over the changed workflow files when the tree has one. */
+const ACTIONLINT = "actionlint";
+
+/**
+ * The name of the workflow whose job supersedes this verb on workflow syntax, as the repo declares
+ * it under `ci.gateWorkflow` — phoenix's `ci.yml` when it declares nothing (#6026, #6298).
+ *
+ * A name, never an inspection: nothing here opens the file or matches a job inside it.
+ */
+const gateWorkflowName = (
+	root: string,
+): Effect.Effect<Resolution<CiSurface>, never, FileSystem.FileSystem> =>
+	Effect.map(readConfigSource(root), (source) => resolve(loadConfig(source), ciKey));
 
 export interface CheckOptions {
 	readonly surface: string;
@@ -61,12 +90,16 @@ export interface CheckOptions {
 }
 
 /**
- * The changed files split three ways, with `unvalidatable` the file class **no** surface validates.
+ * The changed files split by class, with `unvalidatable` the file class **no** surface validates.
  *
- * That third bucket is the point. Filtering with the two regexes and reading nothing off what fell
- * out of both made "matched neither" an absence, and an absence cannot be refused: a `.yml`/`.sh`
- * diff produced an empty markdown list, zero validator iterations and a green that had opened no
- * file (#5229). Named, it is a state the verb can act on.
+ * That last bucket is the point. Filtering with the extension patterns and reading nothing off what
+ * fell out of all of them made "matched none" an absence, and an absence cannot be refused: a
+ * `.yml`/`.sh` diff produced an empty markdown list, zero validator iterations and a green that had
+ * opened no file (#5229). Named, it is a state the verb can act on.
+ *
+ * `workflows` was carved out of it later (#5991): the files under `.github/workflows/` are where the
+ * repo's own gates live, they *do* have validators, and leaving them unvalidatable left a
+ * workflows-only lane with no invocation that could go green at all.
  *
  * `unvalidatable` is a property of the **tree** — no surface covers these files. Whether *this* run
  * covered a file is a narrower question, and {@link notCoveredBy} is the one that answers it; the two
@@ -76,13 +109,26 @@ export interface CheckOptions {
 export interface DiffClasses {
 	readonly code: ReadonlyArray<string>;
 	readonly markdown: ReadonlyArray<string>;
+	readonly workflows: ReadonlyArray<string>;
 	readonly unvalidatable: ReadonlyArray<string>;
 }
 
+/**
+ * Workflow YAML is its own class, not a widening of `code`: `pnpm typecheck` does not read it, and a
+ * class is only sound while every validator its surface claims actually opens it (#5229, #5991).
+ */
+const classOf = (file: string): keyof DiffClasses => {
+	if (WORKFLOW_RE.test(file)) return "workflows";
+	if (CODE_RE.test(file)) return "code";
+	if (MARKDOWN_RE.test(file)) return "markdown";
+	return "unvalidatable";
+};
+
 export const classifyDiff = (files: ReadonlyArray<string>): DiffClasses => ({
-	code: files.filter((f) => CODE_RE.test(f)),
-	markdown: files.filter((f) => MARKDOWN_RE.test(f)),
-	unvalidatable: files.filter((f) => !CODE_RE.test(f) && !MARKDOWN_RE.test(f)),
+	code: files.filter((f) => classOf(f) === "code"),
+	markdown: files.filter((f) => classOf(f) === "markdown"),
+	workflows: files.filter((f) => classOf(f) === "workflows"),
+	unvalidatable: files.filter((f) => classOf(f) === "unvalidatable"),
 });
 
 /**
@@ -99,6 +145,7 @@ const COVERS: Record<Surface, ReadonlyArray<keyof DiffClasses>> = {
 	code: ["code"],
 	prose: ["markdown"],
 	plan: ["markdown"],
+	workflows: ["workflows"],
 };
 
 /** Every markdown file gets these, under either markdown surface. */
@@ -135,8 +182,8 @@ export const notCoveredBy = (
  * sentence pointing at the wrong remedy (it invites `--surface prose`, the branch that greened).
  */
 export const unvalidatableDiff = (files: ReadonlyArray<string>): string | null => {
-	const {code, markdown, unvalidatable} = classifyDiff(files);
-	if (code.length > 0 || markdown.length > 0) return null;
+	const {code, markdown, workflows, unvalidatable} = classifyDiff(files);
+	if (code.length > 0 || markdown.length > 0 || workflows.length > 0) return null;
 	const shown = unvalidatable.slice(0, 5).join(", ");
 	const rest = unvalidatable.length > 5 ? `, +${unvalidatable.length - 5} more` : "";
 	return `no surface validates any of the ${unvalidatable.length} changed file(s) (${shown}${rest})`;
@@ -145,7 +192,7 @@ export const unvalidatableDiff = (files: ReadonlyArray<string>): string | null =
 /**
  * Why `--surface` provably contradicts the diff, or `null`.
  *
- * One rule for all three surfaces, read straight off {@link COVERS}: a surface is refused when the
+ * One rule for every surface, read straight off {@link COVERS}: a surface is refused when the
  * diff holds **none** of the file classes its validators open. `prose` used to refuse on the
  * *presence* of a code file instead, and that asymmetry left the repo's most common diff shape — one
  * `.ts` plus one `.md` — with no invocation that opened the markdown at all: `code` never reads it,
@@ -160,19 +207,33 @@ export const surfaceMismatch = (surface: Surface, files: ReadonlyArray<string>):
 	return `--surface ${surface}, but the diff changes no ${COVERS[surface].join("/")} file`;
 };
 
-/** The machine-local paths a prose file carries, as defect lines. */
-const leakDefects = (file: string, text: string): ReadonlyArray<string> =>
-	scanBody(text).leaks.map(
-		(leak) => `${file}:${leak.line} carries a machine-local path (${leak.class}): ${leak.text}`,
+/**
+ * The machine-local paths **this diff introduced** into a committed prose file, as defect lines.
+ *
+ * The scanner is {@link docLeaks}, the committed-file one — not `report/leaks.ts`'s body scanner,
+ * which this verb used to call. That scanner guards runtime issue bodies, an ungated surface, and
+ * it is deliberately stricter than the repo's committed-file gate on three axes; asking it about a
+ * file in a diff made this predictor red on bytes CI passes clean, and the red was unclearable in
+ * the lane that inherited it (#5687). See `doc-leaks.ts` for the three divergences.
+ *
+ * `baseText` is the file as of the merge base, or `null` for a file this diff creates. Subtracting
+ * the base's own leaks is what stops a one-paragraph edit inheriting every defect line already in
+ * the file — see `prose-baseline.ts` for why the shape is a baseline, the same one #4250 reached in
+ * `cli-invocation-guard`, and for why only the leak scan is baselined (#5755).
+ */
+const leakDefects = (
+	file: string,
+	text: string,
+	baseText: string | null,
+	exempt: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+	introducedLeaks(
+		baseText === null ? [] : docLeaks(file, baseText, exempt),
+		docLeaks(file, text, exempt),
+	).map(
+		(leak) => `${file}:${leak.line} carries a machine-local path (${leak.reason}): ${leak.matched}`,
 	);
 
-/**
- * Every in-repo link target a markdown file names.
- *
- * Absolute URLs and bare fragments are skipped: a link with a scheme is not this tree's to resolve,
- * and a fragment resolves within the page. A fabrika doc cited by a relative path is covered by the
- * same rule, so there is no second reference check to drift from this one.
- */
 /** Fold `.` and `..` out of an absolute path, so a link's target is compared in one spelling. */
 export const normalizePath = (path: string): string => {
 	const out: string[] = [];
@@ -184,9 +245,94 @@ export const normalizePath = (path: string): string => {
 	return `/${out.join("/")}`;
 };
 
+/** Every byte replaced by a space, newlines kept, so masking moves no offset and no line number. */
+const blank = (text: string): string => text.replace(/[^\n]/g, " ");
+
+const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
+
+/**
+ * Blank out every code span in a fence-free region. A run of n backticks opens a span the next run
+ * of exactly n backticks closes; a run with no partner is literal text and masks nothing.
+ */
+const maskSpans = (text: string): string => {
+	let out = "";
+	let i = 0;
+	while (i < text.length) {
+		if (text[i] !== "`") {
+			out += text[i];
+			i += 1;
+			continue;
+		}
+		let open = i;
+		while (text[open] === "`") open += 1;
+		const run = open - i;
+		const closer = new RegExp(`(?<!\`)\`{${run}}(?!\`)`, "g");
+		closer.lastIndex = open;
+		const close = closer.exec(text);
+		if (close === null) {
+			out += text.slice(i, open);
+			i = open;
+			continue;
+		}
+		const end = close.index + run;
+		out += blank(text.slice(i, end));
+		i = end;
+	}
+	return out;
+};
+
+/**
+ * Blank out fenced blocks and code spans, so a markdown link written as an *illustration* is not
+ * extracted as a live one (#5639). The docs that state this repo's link convention are precisely
+ * the docs that spell a link out as an example, and they were the ones this predictor red.
+ *
+ * Masked bytes become spaces rather than being dropped: the link pattern cannot cross whitespace,
+ * so a masked example can never fuse with live text on either side of it.
+ */
+const maskCode = (text: string): string => {
+	const out: string[] = [];
+	let prose: string[] = [];
+	let fence: string | null = null;
+	const flush = () => {
+		if (prose.length > 0) out.push(maskSpans(prose.join("\n")));
+		prose = [];
+	};
+	for (const line of text.split("\n")) {
+		const marker = FENCE_RE.exec(line)?.[1];
+		if (fence !== null) {
+			out.push(blank(line));
+			if (marker !== undefined && marker[0] === fence[0] && marker.length >= fence.length) {
+				fence = null;
+			}
+			continue;
+		}
+		if (marker !== undefined) {
+			flush();
+			out.push(blank(line));
+			fence = marker;
+			continue;
+		}
+		prose.push(line);
+	}
+	flush();
+	return out.join("\n");
+};
+
+/**
+ * Every in-repo link target a markdown file names, ignoring the ones written as examples.
+ *
+ * Absolute URLs and bare fragments are skipped: a link with a scheme is not this tree's to resolve,
+ * and a fragment resolves within the page. A fabrika doc cited by a relative path is covered by the
+ * same rule, so there is no second reference check to drift from this one.
+ *
+ * The extractor stays a regex over masked text rather than moving to a markdown parser: fabrika is
+ * installed into repos it does not control (ADR 0273) on four runtime dependencies, and code-span
+ * plus fenced-block masking is the one property #2308 bought by retiring the CI gate's in-house
+ * extractor. Reference-style and HTML links stay out of scope here, as they always were.
+ */
 export const linkTargets = (text: string): ReadonlyArray<string> => {
 	const targets: string[] = [];
-	for (const match of text.matchAll(/\[[^\]]*\]\(([^)\s]+)[^)]*\)/g)) {
+	for (const match of maskCode(text).matchAll(/\[[^\]]*\]\(([^)\s]+)[^)]*\)/g)) {
 		const target = (match[1] ?? "").split("#")[0]?.trim() ?? "";
 		if (target === "" || /^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
 		targets.push(target);
@@ -263,6 +409,321 @@ const readMarkdown = (
 			),
 		),
 	);
+
+/** The declared exemptions, or why there are none — `Unreadable` is the one answer a green may not absorb. */
+type ExemptScope =
+	| {readonly _tag: "Scope"; readonly paths: ReadonlyArray<string>; readonly note: string}
+	| {readonly _tag: "Unreadable"; readonly reason: string};
+
+/**
+ * Read the repo's declared leak-scan exemptions off `.fabrika.jsonc`.
+ *
+ * An absent file is a repo that declared none, which is the fail-closed answer — nothing is exempt,
+ * the scanner stays strictest. Any other read fault proves nothing, so it refuses like
+ * {@link readMarkdown}'s does.
+ */
+const readExemptScope = (
+	fs: FileSystem.FileSystem,
+	root: string,
+): Effect.Effect<ExemptScope, never> =>
+	fs.readFileString(`${root}/${CONFIG_PATH}`).pipe(
+		Effect.map((text): ExemptScope => {
+			const read = readDocLeakExempt(text);
+			return read._tag === "Paths"
+				? {
+						_tag: "Scope",
+						paths: read.paths,
+						note: `${VERB}: ${read.paths.length} leak-scan exemption(s) declared in ${CONFIG_PATH}.`,
+					}
+				: {
+						_tag: "Scope",
+						paths: [],
+						note: `${VERB}: nothing is leak-scan exempt — ${read.reason}.`,
+					};
+		}),
+		Effect.catchTag("PlatformError", (error) =>
+			Effect.succeed<ExemptScope>(
+				error.reason._tag === "NotFound"
+					? {
+							_tag: "Scope",
+							paths: [],
+							note: `${VERB}: nothing is leak-scan exempt — this repo has no ${CONFIG_PATH}.`,
+						}
+					: {_tag: "Unreadable", reason: error.reason._tag},
+			),
+		),
+	);
+
+/**
+ * A failed validator's captured output as refusal lines, bounded so one runaway linter cannot bury
+ * the verdict it belongs to. The truncation says so rather than trailing off silently.
+ */
+const DIAGNOSTIC_LINES = 40;
+
+const diagnostics = (output: string): ReadonlyArray<string> => {
+	const lines = output.split("\n").filter((line) => line.trim() !== "");
+	return lines.length <= DIAGNOSTIC_LINES
+		? lines
+		: [
+				...lines.slice(0, DIAGNOSTIC_LINES),
+				`… ${lines.length - DIAGNOSTIC_LINES} more line(s); re-run the command itself for the rest.`,
+			];
+};
+
+/** The code validators to run, or why the answer is UNKNOWN. */
+type CodeScope =
+	| {
+			readonly _tag: "Scope";
+			readonly validators: ReadonlyArray<CodeValidator>;
+			readonly note: string;
+	  }
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+const readCodeScope = (root: string): Effect.Effect<CodeScope, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const resolved = resolve(loadConfig(yield* readConfigSource(root)), codeValidatorsKey);
+		switch (resolved._tag) {
+			case "Unknown":
+			case "Malformed":
+				return {_tag: "Unknown", reason: resolved.reason};
+			case "Declared":
+				return {
+					_tag: "Scope",
+					validators: resolved.value,
+					note: `${VERB}: ${resolved.value.length} code validator(s) declared in ${CONFIG_PATH}.`,
+				};
+			case "Default":
+				return {
+					_tag: "Scope",
+					validators: resolved.value,
+					note: `${VERB}: ${resolved.value.length} shipped code validator(s) — ${resolved.reason}.`,
+				};
+		}
+	});
+
+/**
+ * The `code` surface: the validators the repo **declares**, run in this tree with its own
+ * cache-bypass flags, or the shipped pair when it declares none.
+ *
+ * The three outcomes stay apart, and keeping them apart is the whole point (#6015, #6297). A
+ * validator that ran and failed is `VALIDATION_RED`. A validator that could not be spawned proves
+ * nothing about the code and refuses UNKNOWN naming it. A repo that declares an explicitly empty
+ * list has nothing to run at all, which is neither a red nor a green: reporting "no validator is
+ * present" as red says the code is broken, and reporting it as green says it was checked.
+ */
+const runCodeSurface = (
+	root: string,
+	unvalidated: ReadonlyArray<string>,
+	noted: ReadonlyArray<string>,
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+> =>
+	Effect.gen(function* () {
+		const declared = yield* readCodeScope(root);
+		if (declared._tag === "Unknown") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read \`${CODE_VALIDATORS}\` from ${CONFIG_PATH} (${declared.reason}) — which commands validate this repo's code is UNKNOWN, never green.`,
+				noted,
+			);
+		}
+		const scoped = [...noted, declared.note];
+		if (declared.validators.length === 0) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${CONFIG_PATH} declares an empty \`${CODE_VALIDATORS}\` — no code validator is present here, so nothing ran and the verdict is UNKNOWN, never green and never red.`,
+				scoped,
+			);
+		}
+		const ran: string[] = [];
+		for (const {argv} of declared.validators) {
+			const label = argv.join(" ");
+			const result = yield* execStatus(argv[0], argv.slice(1));
+			if (result._tag === "Unstartable") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: ${label} could not be executed: ${result.reason} — the verdict is UNKNOWN, never green.`,
+					scoped,
+				);
+			}
+			ran.push(label);
+			if (!result.ok) {
+				return refuse(VALIDATION_RED, `${VERB}: red — ${label} failed; diagnostics above.`, [
+					...scoped,
+					...diagnostics(result.output),
+				]);
+			}
+		}
+		return answer(
+			JSON.stringify({verdict: "green", surface: "code", tree: root, ran, unvalidated}),
+			scoped,
+		);
+	});
+
+/** The declared workflow validators, or why there are none — `Unreadable` is the one UNKNOWN answer. */
+type ValidatorScope =
+	| {
+			readonly _tag: "Scope";
+			readonly validators: ReadonlyArray<WorkflowValidator>;
+			readonly note: string;
+	  }
+	| {readonly _tag: "Unreadable"; readonly reason: string};
+
+const readValidatorScope = (
+	fs: FileSystem.FileSystem,
+	root: string,
+): Effect.Effect<ValidatorScope, never> =>
+	fs.readFileString(`${root}/${CONFIG_PATH}`).pipe(
+		Effect.map((text): ValidatorScope => {
+			const read = readWorkflowValidators(text);
+			return read._tag === "Validators"
+				? {
+						_tag: "Scope",
+						validators: read.validators,
+						note: `${VERB}: ${read.validators.length} workflow validator(s) declared in ${CONFIG_PATH}.`,
+					}
+				: {
+						_tag: "Scope",
+						validators: [],
+						note: `${VERB}: no repo workflow validator is declared — ${read.reason}.`,
+					};
+		}),
+		Effect.catchTag("PlatformError", (error) =>
+			Effect.succeed<ValidatorScope>(
+				error.reason._tag === "NotFound"
+					? {
+							_tag: "Scope",
+							validators: [],
+							note: `${VERB}: no repo workflow validator is declared — this repo has no ${CONFIG_PATH}.`,
+						}
+					: {_tag: "Unreadable", reason: error.reason._tag},
+			),
+		),
+	);
+
+/**
+ * The `workflows` surface: `actionlint` over the changed workflow files, plus the repo's own
+ * declared workflow commands. A green requires that at least one changed workflow was actually
+ * opened, which is not the same as at least one validator having run.
+ *
+ * `actionlint` is not a repo dependency anywhere — in phoenix CI installs a pinned tarball at job
+ * time — so a tree that lacks it is the ordinary case, not a broken one. It is therefore run when
+ * present and **disclosed** when absent, which is the "degrade, stated" answer `SKILL.md`'s
+ * missing-surface table gives for an absent superseding authority: the gate workflow's `actionlint` job still
+ * decides. A declared validator is the other row of that table — it ships with the repo, so one that
+ * cannot be spawned is fail-loud, UNKNOWN, never green.
+ *
+ * What holds both readings honest is per-file coverage, not a count of validators that ran. Only
+ * `actionlint` is handed the changed paths; a declared guard reads the fixed set it names in `reads`.
+ * So a changed workflow file counts as opened only when `actionlint` ran over it or a passing
+ * declared validator names it; every other changed workflow is reported in `unvalidated`, and a run
+ * that opened **none** of them refuses UNKNOWN — that green would be the unread-tree green the
+ * named file class was introduced to make refusable (#5229, #5991).
+ */
+const runWorkflowSurface = (
+	fs: FileSystem.FileSystem,
+	root: string,
+	workflows: ReadonlyArray<string>,
+	unvalidated: ReadonlyArray<string>,
+	noted: ReadonlyArray<string>,
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+> =>
+	Effect.gen(function* () {
+		const declared = yield* readValidatorScope(fs, root);
+		if (declared._tag === "Unreadable") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read ${CONFIG_PATH} (${declared.reason}) — which commands validate this repo's workflows is UNKNOWN, never green.`,
+				noted,
+			);
+		}
+		const gate = yield* gateWorkflowName(root);
+		if (gate._tag === "Malformed" || gate._tag === "Unknown") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read \`ci\` from ${CONFIG_PATH} (${gate.reason}) — which workflow supersedes this verdict is UNKNOWN, never green.`,
+				noted,
+			);
+		}
+		const ciWorkflow = gate.value.gateWorkflow;
+		const scoped = [...noted, declared.note];
+		const ran: string[] = [];
+		const opened = new Set<string>();
+		const lint = yield* execStatus(ACTIONLINT, workflows);
+		const notInstalled = lint._tag === "Unstartable" ? lint.reason : null;
+		if (lint._tag === "Ran") {
+			if (!lint.ok) {
+				return refuse(VALIDATION_RED, `${VERB}: red — ${ACTIONLINT} failed; diagnostics above.`, [
+					...scoped,
+					...diagnostics(lint.output),
+				]);
+			}
+			ran.push(ACTIONLINT);
+			for (const file of workflows) opened.add(file);
+		}
+		for (const {argv, reads} of declared.validators) {
+			const label = argv.join(" ");
+			const result = yield* execStatus(argv[0], argv.slice(1));
+			if (result._tag === "Unstartable") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: ${label} could not be executed: ${result.reason} — the verdict is UNKNOWN, never green.`,
+					scoped,
+				);
+			}
+			if (!result.ok) {
+				return refuse(VALIDATION_RED, `${VERB}: red — ${label} failed; diagnostics above.`, [
+					...scoped,
+					...diagnostics(result.output),
+				]);
+			}
+			ran.push(label);
+			for (const file of workflows) if (reads.includes(file)) opened.add(file);
+		}
+		if (ran.length === 0) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: no workflow validator could be executed — ${ACTIONLINT} is not installed here (${notInstalled}) and this repo declares none — so no file was opened and the verdict is UNKNOWN, never green.`,
+				scoped,
+			);
+		}
+		const unopened = workflows.filter((file) => !opened.has(file));
+		if (opened.size === 0) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${ran.length} workflow validator(s) ran, but none of them opened any of the ${workflows.length} changed workflow file(s) (${unopened.join(", ")}) — ${ACTIONLINT} did not run here (${notInstalled}) and no declared validator reads them, so the verdict is UNKNOWN, never green.`,
+				scoped,
+			);
+		}
+		const disclosed = [
+			...scoped,
+			...(notInstalled === null
+				? []
+				: [
+						`${VERB}: ${ACTIONLINT} did NOT run (${notInstalled}) — ${ciWorkflow}'s actionlint job supersedes this verdict on workflow syntax.`,
+					]),
+			...(unopened.length === 0
+				? []
+				: [
+						`${VERB}: no validator that ran opens ${unopened.join(", ")} — reported in \`unvalidated\`, so this green claims nothing about ${unopened.length === 1 ? "it" : "them"}.`,
+					]),
+		];
+		return answer(
+			JSON.stringify({
+				verdict: "green",
+				surface: "workflows",
+				tree: root,
+				ran,
+				unvalidated: [...unvalidated, ...unopened],
+			}),
+			disclosed,
+		);
+	});
 
 export const runCheck = (
 	options: CheckOptions,
@@ -347,26 +808,39 @@ export const runCheck = (
 						`${VERB}: ${unvalidated.length} changed file(s) --surface ${surface} does not validate — NOT covered by this verdict: ${unvalidated.join(", ")}.`,
 					];
 
+		const fs = yield* FileSystem.FileSystem;
 		if (surface === "code") {
-			const ran: string[] = [];
-			for (const runner of CODE_RUNNERS) {
-				const result = yield* execCapture("pnpm", runner.argv);
-				ran.push(runner.label);
-				if (!result.ok) {
-					return refuse(
-						VALIDATION_RED,
-						`${VERB}: red — ${runner.label} failed; diagnostics above.`,
-						[...noted, result.reason],
-					);
-				}
-			}
-			return answer(
-				JSON.stringify({verdict: "green", surface, tree: lane.root, ran, unvalidated}),
+			return yield* runCodeSurface(lane.root, unvalidated, noted);
+		}
+
+		if (surface === "workflows") {
+			return yield* runWorkflowSurface(
+				fs,
+				lane.root,
+				classifyDiff(files).workflows,
+				unvalidated,
 				noted,
 			);
 		}
 
-		const fs = yield* FileSystem.FileSystem;
+		const exempt = yield* readExemptScope(fs, lane.root);
+		if (exempt._tag === "Unreadable") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read ${CONFIG_PATH} (${exempt.reason}) — which docs are leak-scan exempt is UNKNOWN, never green.`,
+				noted,
+			);
+		}
+		const scoped = [...noted, exempt.note];
+		const atBase = yield* treePaths(lane.root, merged.value, markdown);
+		if (atBase._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot list the changed markdown at the merge base ${merged.value} (${atBase.reason}) — which defects predate this diff is UNKNOWN, never green.`,
+				scoped,
+			);
+		}
+		const inBase = new Set(atBase.value);
 		const defects: string[] = [];
 		for (const file of markdown) {
 			const path = `${lane.root}/${file}`;
@@ -376,10 +850,22 @@ export const runCheck = (
 				return refuse(
 					PRECONDITION_UNKNOWN,
 					`${VERB}: cannot read ${file} (${read.reason}) — it is in the diff and is not absent, so the verdict is UNKNOWN, never green.`,
-					noted,
+					scoped,
 				);
 			}
-			defects.push(...leakDefects(file, read.text));
+			let baseText: string | null = null;
+			if (inBase.has(file)) {
+				const before = yield* showAt(lane.root, merged.value, file);
+				if (before._tag === "Failure") {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot read ${file} at the merge base ${merged.value} (${before.reason}) — which of its defects predate this diff is UNKNOWN, never green.`,
+						scoped,
+					);
+				}
+				baseText = before.value;
+			}
+			defects.push(...leakDefects(file, read.text, baseText, exempt.paths));
 			const dir = path.slice(0, path.lastIndexOf("/"));
 			for (const target of linkTargets(read.text)) {
 				const absolute = normalizePath(
@@ -396,7 +882,7 @@ export const runCheck = (
 			return refuse(
 				VALIDATION_RED,
 				`${VERB}: red — the ${surface} validators failed; diagnostics above.`,
-				[...noted, ...defects],
+				[...scoped, ...defects],
 			);
 		}
 		return answer(
@@ -407,6 +893,6 @@ export const runCheck = (
 				ran: surface === "plan" ? [MARKDOWN_SCAN, PLAN_GRAMMAR] : [MARKDOWN_SCAN],
 				unvalidated,
 			}),
-			noted,
+			scoped,
 		);
 	});

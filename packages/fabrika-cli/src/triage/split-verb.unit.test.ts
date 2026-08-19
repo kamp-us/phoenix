@@ -1,10 +1,12 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {renderFooter} from "../report/compose.ts";
+import {COMMENTS, claimPage, EXPIRED, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
 import {
+	CLAIMED_ELSEWHERE,
 	EMPTY_STDIN,
 	LEAKED_PATH,
 	PRECONDITION_UNKNOWN,
@@ -85,7 +87,7 @@ const run = (
 	steps: ReadonlyArray<readonly [RegExp, ExecResult]> = base,
 	over: Partial<typeof options> = {},
 ) => {
-	const shell = fakeShell(steps);
+	const shell = guardedShell(steps);
 	return Effect.runPromise(Effect.provide(runSplit({...options, ...over}), shell.layer)).then(
 		(outcome) => ({outcome, calls: shell.calls}),
 	);
@@ -313,5 +315,56 @@ describe("runSplit — the authored-text guard", () => {
 		const {outcome, calls} = await run(base, {parent: 0});
 		expect(outcome.code).toBe(1);
 		expect(calls).toEqual([]);
+	});
+});
+
+/** #5644: the guard reads the PARENT — the issue this verb mutates by cross-linking it. */
+describe("runSplit — the parent guard", () => {
+	const MINE = "session-mine";
+	const THEIRS = "session-theirs";
+	const mine = {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: MINE} as Record<
+		string,
+		string | undefined
+	>;
+
+	// The composed child body carries the session in its footer, so a run under a session id cannot
+	// match COMPOSED's read-back. What the guard decides is whether the create was reached at all.
+	const guard = async (steps: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
+		const {outcome, calls} = await run(steps, {env: mine});
+		return {outcome, created: calls.some((line) => CREATE.test(line))};
+	};
+
+	it("refuses a closed parent on 7 and creates nothing", async () => {
+		const {outcome, created} = await guard(
+			script([PARENT, issue({number: 4312, title: "Two unrelated bugs", state: "closed"})]),
+		);
+		expect(outcome.code).toBe(ZERO_SCOPE);
+		expect(outcome.stderr.at(-1)).toContain("parent #4312 is already closed.");
+		expect(created).toBe(false);
+	});
+
+	it("refuses a live claim held by another session on 17 and creates nothing", async () => {
+		const {outcome, created} = await guard(
+			script([COMMENTS, claimPage({session: THEIRS, createdAt: LIVE})]),
+		);
+		expect(outcome.code).toBe(CLAIMED_ELSEWHERE);
+		expect(created).toBe(false);
+	});
+
+	it("creates when the live claim is this session's own", async () => {
+		const {created} = await guard(script([COMMENTS, claimPage({session: MINE, createdAt: LIVE})]));
+		expect(created).toBe(true);
+	});
+
+	it("creates over a parent nobody has claimed", async () => {
+		const {created} = await guard(base);
+		expect(created).toBe(true);
+	});
+
+	it("creates when the only foreign claim has aged out", async () => {
+		const {created} = await guard(
+			script([COMMENTS, claimPage({session: THEIRS, createdAt: EXPIRED})]),
+		);
+		expect(created).toBe(true);
 	});
 });

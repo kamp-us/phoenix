@@ -5,8 +5,8 @@
  * The overlap with `report` is **re-exported, never re-typed** — the discipline `ui/codes.ts` and
  * `build/codes.ts` state in full: an aligning group imports the base's constant, so a drift is
  * unrepresentable rather than merely detectable. This group shares nine seats over `3`-`11` and
- * adds `12`-`18` for facts about a recorded ruling: who invoked, which question, which round text,
- * and whether an authorization was quoted.
+ * adds `12`-`19` for facts about a recorded ruling — who invoked, which question, which round text,
+ * and whether an authorization was quoted — and about a session's own binding.
  *
  * Seat `10` is the one seat this group deliberately leaves empty. The base seats it for a title or
  * label carrying a type or priority classification; no `grill` verb accepts a label flag, none
@@ -43,7 +43,10 @@ export const BAD_SECTIONS = REPORT_BAD_SECTIONS;
 export const LEAKED_PATH = REPORT_LEAKED_PATH;
 /** The text is a bare `@` path reference — not redactable, so a second code. */
 export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
-/** Proven: the session issue, or the `grilling:session` label, does not exist. */
+/**
+ * Proven: the session issue, the `grilling:session` label, or the issue `grill open --ticket` names,
+ * does not exist.
+ */
 export const NO_TARGET = REPORT_NO_TARGET;
 /** A write was attempted and its outcome could not be proven — UNKNOWN, deliberately not `1`. */
 export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
@@ -83,3 +86,12 @@ export const SESSION_AMBIGUOUS = 16;
 export const KIND_MISMATCH = 17;
 /** Proven: the target question was retired by a later round, so it is not the one to record against. */
 export const QUESTION_RETIRED = 18;
+/**
+ * Proven: a session's `## Came from` section is present and does not conform, so which ticket that
+ * session is bound to is undecidable.
+ *
+ * Deliberately not {@link PRECONDITION_UNKNOWN}, whose remedy is "re-run": re-running reads the same
+ * drifted bytes forever. The remedy here is a human fixing the section on the session this refusal
+ * names, so it is a proven fact about an artifact rather than a read that did not complete.
+ */
+export const BINDING_MALFORMED = 19;

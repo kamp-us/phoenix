@@ -29,11 +29,11 @@ shell files to **208** (measured 2026-07-30 at this ADR's merge base; the figure
 extracted across the epic's children over a handful of merged PRs. The test now has a corpus. Two
 findings from reading it:
 
-**The test discriminates.** [`skills/ship-it/scripts/step2-verdict-gate.sh`](../claude-plugins/kampus-pipeline/skills/ship-it/scripts/step2-verdict-gate.sh)
+**The test discriminates.** `skills/ship-it/scripts/step2-verdict-gate.sh`
 is an unambiguous relay: it calls `class-probe classify --namespaces`, checks that call's status,
 refuses when it refuses, refuses again when it names zero namespaces, and hands the result to
 `verdict gate`. Every decision-bearing branch consults a verb; the script routes.
-[`skills/ship-it/scripts/step0-classify.sh`](../claude-plugins/kampus-pipeline/skills/ship-it/scripts/step0-classify.sh)
+`skills/ship-it/scripts/step0-classify.sh`
 is the opposite pole and is *correctly* named by 0228: it `grep`s the changed-file list in shell to
 derive the §CP answer — boundary-regex matching, explicitly on 0228's banned list. That residue is
 not a violation today; phase 1 was ruled a mechanical byte-move, and #1929 owns retiring it. The
@@ -93,20 +93,20 @@ scoping to *executed* is load-bearing, not a hedge: a script **sourced into the 
 options in *that* shell, so a sourced script may deliberately set none — and the corpus does exactly
 this. Of the 208 `.sh` files under `claude-plugins/`, 61 set no options at all, and 60 of those 61
 say why in their own headers. Two of them matter here:
-[`step2-verdict-gate.sh`](../claude-plugins/kampus-pipeline/skills/ship-it/scripts/step2-verdict-gate.sh),
+`step2-verdict-gate.sh`,
 this ADR's relay exemplar above, records that several of its guards depend on `pipefail` being
-**off**; [`shared/scripts/cp-guard-adr.sh`](../claude-plugins/kampus-pipeline/skills/shared/scripts/cp-guard-adr.sh)
+**off**; `shared/scripts/cp-guard-adr.sh`
 records the same. Stated universally the constraint would condemn its own good example, so it is
 stated with its scope.
 
 Enforcement of the two halves lives in **two different places**, and neither is a general
 `set -uo pipefail` check.
-[`trap-status-guard`](../packages/pipeline-cli/src/tools/trap-status-guard/trap-status-guard.ts)
+`trap-status-guard` (retired with v1, #5937)
 reds on exactly one banned co-occurrence — `errexit` enabled together with an `EXIT` trap inside one
 runnable unit; `set -uo pipefail` *with* a cleanup trap is measured fail-closed and therefore
 permitted ([`.patterns/skill-script-shell-shape.md`](../.patterns/skill-script-shell-shape.md)'s
 matrix). The no-`EXIT`-trap norm for extracted scripts is enforced by
-[`verify-extraction.sh`](../claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-extraction.sh)
+`verify-extraction.sh`
 check 6. Both are the fail-closed-on-zero-scope shape of ADR
 [0092](0092-gates-fail-closed-on-zero-scope.md).
 
@@ -129,10 +129,10 @@ was cost plus near-zero detection power; the six-path fail-safe trace was the en
 not the ratio. What this hatch licenses is therefore the trace, not the duplication.
 
 The worked boundary case, already ruled by a review gate:
-[`packages/pipeline-cli/src/skill-shell-surface.ts`](../packages/pipeline-cli/src/skill-shell-surface.ts)
+`packages/pipeline-cli/src/skill-shell-surface.ts`
 takes a markdown heading slice and returns that section's shell surface *as text*, appending the
 content of each script the slice sources; `kp_skill_shell_surfaces` in
-[`lib/common.sh`](../claude-plugins/kampus-pipeline/lib/common.sh)
+`lib/common.sh`
 takes a skill directory and returns its *file paths*, sorted. No input is accepted by both, so
 neither can contradict the other — different questions, not duplication. The same file carries the
 positive case: `sourcedScriptNames` is deliberately the *same* matcher `adoption-lint`'s claim pins

@@ -18,7 +18,7 @@ close — and taught the doc lane's guards to carve that state out rather than h
 `.patterns/**` / prose PR with no `Fixes #N` still earns a `review-doc: PASS`.
 
 `review-code` never got the matching carve-out. Its **Step 1**
-([review-code/SKILL.md](../claude-plugins/kampus-pipeline/skills/review-code/SKILL.md),
+(`review-code/SKILL.md`,
 "Resolve the PR and its linked issue") treats a missing linked issue as **"a fail you can't
 even start"**: it comments that there's no linked issue to verify against and stops, because
 without the linked issue there are no `### Acceptance criteria` to gate. That premise is

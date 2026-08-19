@@ -1,15 +1,8 @@
 /**
- * `ActorDrawer` — the künye actor-drawer (#1852, ADR 0138), the epic-#1665 keystone: a
- * docked side-panel that renders the focused report's ACTOR — the join key across the
- * two divan modes. It surfaces the actor's künye (tier, karma, üretim counts, the two
- * trust tells `kaldırılan`/`bildirilen`, `kefil durumu`, and the "bu aktör"
- * reported-target count) off the SAME `Moderate`-gated `report.listOpen` row the triage
- * loop consumes — a MODE/enrichment, never a re-fetch.
- *
- * The `chamber` prop is which mode the drawer was entered from. In `kefil` mode the
- * moderation record is shown but NEVER auto-verdicts the rite (ADR 0138 §3,
- * `modRecordVerdicts`): it informs the human, it does not gate the vouch. All render +
- * hop decisions live DOM-free in `actor-drawer.ts` (unit-tested); this is the thin shell.
+ * `ActorDrawer` — the künye actor-drawer (#1852, ADR 0138): a docked side-panel rendering
+ * the focused report's actor off the SAME `Moderate`-gated `report.listOpen` row the triage
+ * loop consumes, never a re-fetch. The render + hop decisions live DOM-free in
+ * `actor-drawer.ts`; this is the thin shell.
  */
 import type {OpenReport} from "../../../worker/features/report/views";
 import {FlagGate} from "../../flags/FlagGate";
@@ -29,7 +22,6 @@ import {
 	uretimLabel,
 } from "./actor-drawer";
 
-/** The actor projection off the gated row — the fields the drawer renders. */
 function standingOf(data: OpenReport): ActorStanding {
 	return {
 		tier: data.authorTier,
@@ -61,7 +53,6 @@ export function ActorDrawer({
 	const kaldirilan = kaldirilanLabel(standing.priorRemovals);
 	const kefilDurumu = kefilDurumuLabel(standing.kefil);
 	const buAktor = buAktorLabel(standing.reportedTargets);
-	// The kefil chamber shows the mod record as evidence but never verdicts on it.
 	const recordVerdicts = modRecordVerdicts(chamber);
 
 	return (

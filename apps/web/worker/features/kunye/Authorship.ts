@@ -1,25 +1,17 @@
 /**
- * `Authorship` — the earned-ladder capability-per-right instances (ADR 0107
- * §2-3): `OpenTerm` (floor `yazar`) and `AddEntry` (floor `çaylak`). Each is a
- * single `Capability.Level` class — the tag IS the right, yielding the proof
- * tag, its `Grant` type, `.require`, and `.provide` from one name — that floors
- * the GLOBAL account-level standing read from {@link Kunye} against the
- * {@link authorshipLadder} and denies with {@link RequiresLevel} (`FORBIDDEN`).
- *
- * #1203 makes the floored standing a server-managed `user.tier` column (read via
- * {@link Kunye.tierOf}); wiring these capabilities into the sözlük term/entry create
- * paths is a separate follow-up child. This module is the capability definitions only.
+ * The earned-ladder capability-per-right instances (ADR 0107 §2-3). Each is one
+ * `Capability.Level` class whose tag IS the right, floored against the account-level
+ * standing {@link Kunye} reads. Definitions only — wiring them into the sözlük create
+ * paths happens elsewhere.
  */
 import {Capability, type Principal} from "@kampus/authz";
 import {Effect} from "effect";
 import {RequiresLevel} from "./errors.ts";
 import {authorshipLadder, Kunye} from "./Kunye.ts";
 
-/** Read a principal's global account-level rank off the {@link Kunye} standing service. */
 const standingOf = (principal: Principal) =>
 	Effect.flatMap(Kunye, (kunye) => kunye.tierOf(principal.id));
 
-/** Open a new sözlük başlık — requires `yazar` earned standing. */
 export class OpenTerm extends Capability.Level<OpenTerm>()("kunye/OpenTerm", {
 	scale: authorshipLadder,
 	min: "yazar",
@@ -27,7 +19,6 @@ export class OpenTerm extends Capability.Level<OpenTerm>()("kunye/OpenTerm", {
 	deny: () => new RequiresLevel({message: "Başlık açmak için yazar olmalısın.", need: "yazar"}),
 }) {}
 
-/** Add an entry under a başlık — requires `çaylak`+ earned standing. */
 export class AddEntry extends Capability.Level<AddEntry>()("kunye/AddEntry", {
 	scale: authorshipLadder,
 	min: "çaylak",

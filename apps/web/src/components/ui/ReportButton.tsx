@@ -1,19 +1,10 @@
 import * as React from "react";
 import {Button} from "./Button";
 
-/**
- * Shared `bildir` (report) button — presentation + inline confirmation only.
- * The page passes `onReport`, which performs the actual `report.submit` (plus the
- * signed-out auth redirect) and returns the outcome; the button owns the in-flight
- * lock and the visible "bildirildi" / "zaten bildirildi" feedback. Reused by every
- * report surface (pano post/comment, sözlük definition), so no page-specific report
- * logic lives in the shared content components.
- */
-
 export type ReportOutcome = "reported" | "already" | "redirected" | "error";
 
 export interface ReportButtonProps {
-	/** Performs the report and returns the outcome; the button never calls the mutation itself. */
+	/** The button never calls the report mutation itself; the page's callback does. */
 	onReport: () => Promise<ReportOutcome>;
 	testId?: string;
 	className?: string;

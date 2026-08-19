@@ -1,19 +1,7 @@
 /**
- * Feed-snapshot module contract (#2319, epic #2316). Two tiers of coverage:
- *
- *   1. The pure persistence layer (read/write/hydrate/save + throttle/installer) against
- *      a fake client + in-memory storage — round-trip fidelity and the four tolerance
- *      paths (corrupt, quota, oversized, scope/version mismatch), each degrading to a
- *      clean no-snapshot boot with no throw.
- *   2. A REAL `@nkzw/fate` client round-trip (the `optimisticCommentAdd.realstore`
- *      idiom): populate a client's store, dehydrate → persist → hydrate into a fresh
- *      client, and assert the fresh client re-dehydrates to an equal state — proving the
- *      persist layer carries fate's dehydrated cache (records + list/pagination state)
- *      without loss, and that fate rejects a scope-mismatched snapshot (which we catch).
- *
- * The "paints without a skeleton" experience is a flag-on behavior the verification
- * child (#2326) measures on a deployed stage — the unit tier proves the module contract
- * the epic's testing strategy scopes here.
+ * Feed-snapshot module contract (#2319): the pure persistence layer against a fake
+ * client, plus a REAL `@nkzw/fate` client round-trip. The "paints without a skeleton"
+ * experience is flag-on behavior measured on a deployed stage instead (#2326).
  */
 import {createClient, type FateDehydratedState} from "@nkzw/fate";
 import {describe, expect, it, vi} from "vitest";
@@ -33,8 +21,7 @@ import {
 	writeSnapshot,
 } from "./snapshot";
 
-/** In-memory `localStorage` stand-in; optionally throws on `setItem`/`getItem` to model
- *  quota-exceeded and access-denied (Safari private mode). */
+/** The throwing modes stand in for quota-exceeded and Safari private mode. */
 function memoryStorage(
 	opts: {throwOnSet?: boolean; throwOnGet?: boolean} = {},
 ): KeyValueStorage & {map: Map<string, string>} {
@@ -57,7 +44,6 @@ function memoryStorage(
 
 const KEY = snapshotKey("v1", ANON_IDENTITY);
 
-/** A fake client returning a fixed dehydrated state and recording hydrate calls. */
 function fakeClient(
 	state: FateDehydratedState,
 ): SnapshotClient & {hydrated: FateDehydratedState[]} {
@@ -72,9 +58,8 @@ function fakeClient(
 }
 
 const sampleState: FateDehydratedState = {
-	// A representative payload carrying list/pagination + connection-identity shaped
-	// fields (the `?sort`/`host` connection args live inside `data`) — the round-trip
-	// must preserve them byte-for-byte.
+	// Carries connection-identity args (`?sort`/`host`) inside `data` on purpose — the
+	// round-trip must preserve them byte-for-byte.
 	data: {
 		rootLists: [["posts", ["Post:1", "Post:2"]]],
 		lists: {
@@ -285,11 +270,8 @@ describe("installSnapshotPersistence — event-driven, throttled, not per-render
 	});
 });
 
-/**
- * Real `@nkzw/fate` client round-trip — the `optimisticCommentAdd.realstore` idiom: a
- * minimal client with a never-invoked transport, driven through the REAL dehydrate /
- * hydrate the persistence layer wraps.
- */
+/** Drives the REAL dehydrate/hydrate through a minimal client whose transport is never
+ *  invoked (the `optimisticCommentAdd.realstore` idiom). */
 function realClient(hydrationScope = "test-scope") {
 	return createClient({
 		hydrationScope,
@@ -324,8 +306,6 @@ describe("real fate client round-trip", () => {
 		const restored = realClient();
 		expect(hydrateFromSnapshot(restored, storage)).toBe(true);
 
-		// A fresh client that re-dehydrates to the same state proves the persist layer
-		// lost nothing fate had encoded (records, lists, coverage, root lists).
 		expect(restored.dehydrate()).toEqual(source.dehydrate());
 	});
 
@@ -342,13 +322,10 @@ describe("real fate client round-trip", () => {
 });
 
 /**
- * The identity-keyed authed tier (#2321): the authed snapshot embeds the viewer's private
- * `myVote`/`isSaved` overlay, so its storage key must be scoped per user id — a snapshot
- * written under user A must NEVER hydrate under user B or under anon (both directions), and
- * an identity's snapshot must be torn down when its session ends (sign-out / identity switch
- * / account deletion). These pin the pure key-scoping + teardown contract the browser-bound
- * `hydrateAuthedClient` / `installAuthedSnapshotPersistence` / `teardownAuthedSnapshot`
- * wrappers (flag-gated, `window`-bound — untested here, as the anon siblings are) delegate to.
+ * The identity-keyed authed tier (#2321). The authed snapshot embeds the viewer's private
+ * `myVote`/`isSaved` overlay, so A's snapshot must NEVER hydrate under B or under anon,
+ * and must be torn down when A's session ends. The browser-bound wrappers are flag-gated
+ * and `window`-bound, so only the pure key-scoping + teardown contract is pinned here.
  */
 describe("authedIdentity — per-user key scoping, disjoint from anon", () => {
 	it("namespaces the identity under `user:` so it cannot collide with anon or another id", () => {
@@ -363,7 +340,6 @@ describe("authedIdentity — per-user key scoping, disjoint from anon", () => {
 describe("authed snapshot — cross-identity hydration is rejected (both directions, #2321 AC2)", () => {
 	it("a snapshot written under user A does NOT hydrate under user B", () => {
 		const storage = memoryStorage();
-		// A's snapshot carries A's private overlay.
 		saveSnapshot(fakeClient(sampleState), storage, {identity: authedIdentity("A")});
 
 		const asB = fakeClient(sampleState);
@@ -399,9 +375,8 @@ describe("authed snapshot — cross-identity hydration is rejected (both directi
 	});
 
 	it("restores the deep-linked subfeed (?sort/host connection state) for the authed tier (AC5)", () => {
-		// `sampleState.data` carries the `posts(sort:hot,host:example.com)` list identity — the
-		// `?sort=…` / `/pano/site/:host` subfeed. Through the authed key it round-trips intact,
-		// so a deep-linked subfeed restores instantly for a signed-in viewer too.
+		// `sampleState.data` carries the `posts(sort:hot,host:example.com)` list identity —
+		// the `?sort=…` / `/pano/site/:host` subfeed.
 		const storage = memoryStorage();
 		saveSnapshot(fakeClient(sampleState), storage, {identity: authedIdentity("A")});
 		const restored = readSnapshot(storage, snapshotKey("v1", authedIdentity("A")));
@@ -416,10 +391,8 @@ describe("authed snapshot teardown — the sign-out / identity-change / deletion
 		saveSnapshot(fakeClient(sampleState), storage, {identity: authedIdentity("B")});
 		saveSnapshot(fakeClient(sampleState), storage, {identity: ANON_IDENTITY});
 
-		// Tear down A (sign-out / switch away from A / A's account deletion).
 		clearSnapshot(storage, {identity: authedIdentity("A")});
 
-		// A is gone; B and anon survive — teardown is strictly identity-scoped.
 		expect(readSnapshot(storage, snapshotKey("v1", authedIdentity("A")))).toBeNull();
 		expect(readSnapshot(storage, snapshotKey("v1", authedIdentity("B")))).not.toBeNull();
 		expect(readSnapshot(storage, snapshotKey("v1", ANON_IDENTITY))).not.toBeNull();

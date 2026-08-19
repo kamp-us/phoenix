@@ -1,9 +1,8 @@
 import type * as React from "react";
 
 /**
- * Bare-bones inline markdown — `code`, **strong** only, intentionally simple. A
- * real markdown renderer (react-markdown + sanitizer) replaces this when content
- * gets richer. Shared by sözlük definition bodies and pano post/comment bodies.
+ * Bare-bones inline markdown — `code` and **strong** only, deliberately. A real
+ * renderer (react-markdown + sanitizer) replaces this when content gets richer.
  */
 export function renderMarkdownInline(src: string): React.ReactNode[] {
 	const out: React.ReactNode[] = [];
@@ -43,11 +42,6 @@ export function renderMarkdownInline(src: string): React.ReactNode[] {
 
 export type MarkdownBlock = {kind: "text"; text: string} | {kind: "code"; text: string};
 
-/**
- * Splits markdown into paragraphs and fenced code blocks. Used for definition
- * bodies on the sözlük term page; pano comment bodies use only the inline
- * helper above (no fenced blocks expected mid-thread).
- */
 export function splitMarkdownBlocks(src: string): MarkdownBlock[] {
 	const blocks: MarkdownBlock[] = [];
 	const fence = /```([\s\S]*?)```/g;

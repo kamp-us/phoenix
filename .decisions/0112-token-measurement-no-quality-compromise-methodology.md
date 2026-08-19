@@ -59,7 +59,7 @@ is the standing rule that gates every lever:
    `cost.total_cost_usd` aggregate, exactly what the existing
    [`spawn-guard`](0282-spawn-guard-retired.md) statusline reader (since retired; its cost
    core survives in
-   [`token-spend/session-cost.ts`](../packages/pipeline-cli/src/tools/token-spend/session-cost.ts)) already
+   `token-spend/session-cost.ts`) already
    prints — reuse that meter read-only, never mint a new one. Because that aggregate is not
    persisted into a transcript, an **offline reconstruction** reproduces it from a stage
    sub-agent's own transcript
@@ -113,3 +113,5 @@ This methodology is the reusable standard for future pipeline cost work: reuse t
   stay the place a future agent reads to run the apparatus. Per-lever numbers stay on their
   lever children — this record deliberately carries none, so it doesn't go stale as the
   pattern docs' measured numbers are refreshed.
+
+> Amendment 2026-08-19: `packages/pipeline-cli` is gone, so the `token-spend/session-cost.ts` citation in §2 no longer resolves. The statusline `cost.total_tokens` reader did not move — `packages/fabrika-cli/src/spend/` has no `session-cost.ts`. What survives is the offline four-component transcript reconstruction this ADR also describes, at [`packages/fabrika-cli/src/spend/token-spend.ts`](../packages/fabrika-cli/src/spend/token-spend.ts) (verbs: `fabrika spend read` / `spend rollup`). Read the method from there; the statusline meter is retired.

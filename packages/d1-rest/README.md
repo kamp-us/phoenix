@@ -8,11 +8,11 @@ drives — `prepare` / `bind` / `all` / `run` / `raw` / `first` and `batch`.
 ## Why this package exists
 
 Before it, three packages each hand-maintained their **own copy** of the same transport —
-`packages/preview-seed/src/d1-rest.ts`, `packages/fts-backfill/src/d1-rest.ts`, and
-`packages/moderator-grant/src/d1-rest.ts`. Nothing coupled the copies, so a transport bug
-had to be found and fixed **three times**: the latent `meta.changes` defect (`run()`
+`packages/preview-seed/src/d1-rest.ts`, `packages/fts-backfill/src/d1-rest.ts`, and a
+third in the since-deleted `moderator-grant`. Nothing coupled the copies, so a transport
+bug had to be found and fixed **three times**: the latent `meta.changes` defect (`run()`
 hardcoded `meta: {}`, dropping D1's row-change count) existed in triplicate and only bit
-when a consumer finally read it — moderator-grant's `setRole`, which uses the count to tell
+when a consumer finally read it — that package's `setRole`, which used the count to tell
 a real flip (1) from a no-such-user miss (0) (issues #937 / #940). The copies had even
 drifted incidentally — one rendered `null` params differently from the other two.
 
@@ -52,8 +52,6 @@ acyclic.
 - `@kampus/preview-seed` — runs `seed(d1)` over this transport (bin + integration tier).
 - `@kampus/fts-backfill` — runs the FTS5 re-index batch over it; its bin uses
   `makeD1RestFromEnv`.
-- `@kampus/moderator-grant` — runs `setRole` / `listModerators` over it; relies on the
-  `meta.changes` mapping carried here.
 
 ## Tests
 

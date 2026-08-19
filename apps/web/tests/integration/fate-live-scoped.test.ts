@@ -44,10 +44,6 @@ describe("live views — /fate/live (args-scoped)", () => {
 	});
 
 	it("subscribe → definition.add → appendNode arrives — the LivePublisher path end-to-end", async () => {
-		// `definition.add` is a `Fate.mutation`: its publish goes through the
-		// per-request `LivePublisher` value (worker `livePublisherFor`) — this case
-		// proves that surface reaches a subscribed connection through the deployed
-		// DO fan-out.
 		const slug = `${NS}-term-${Date.now()}`;
 		const connectionId = `${NS}-sozluk-${Date.now()}`;
 		const connect = await h.openSse(connectionId, user.cookie);
@@ -59,8 +55,6 @@ describe("live views — /fate/live (args-scoped)", () => {
 		const connected = await readFrame(reader, decoder, buffer);
 		expect(connected).toContain("connected");
 
-		// Subscribe to the ARGS-scoped `Term.definitions` connection for this slug —
-		// the exact topic the mutation's `live.topic(..., {id: slug})` publishes to.
 		const sub = await h.liveControl(
 			connectionId,
 			[

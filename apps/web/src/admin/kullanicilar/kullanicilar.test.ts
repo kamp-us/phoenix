@@ -1,7 +1,3 @@
-/**
- * `kullanicilar` pure-logic coverage (#3200) — the roster cell labels, DOM-free (the
- * `email-delivery.ts` idiom). Turkish user-facing copy; English technical wire values.
- */
 import {describe, expect, it} from "vitest";
 import {banLabel, createdAtLabel, roleLabel, usernameLabel} from "./kullanicilar";
 

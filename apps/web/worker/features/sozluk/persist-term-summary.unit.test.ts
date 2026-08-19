@@ -1,17 +1,11 @@
 /**
- * Coverage for the `recomputeTermSummary` → row-write coupling (#1337) — the seam
- * the fold-only `recompute-term-summary.unit.test.ts` leaves untested. The pure
- * fold is proven in isolation there; what THIS file proves is that the fold's
- * output is wired into the `term_record` upsert (and its `term_search` FTS
- * dual-write) in the one convergent call-site every term write funnels through
- * (`persistTermSummary`, module-private).
+ * Coverage for the `recomputeTermSummary` → row-write coupling (#1337). The pure fold
+ * is proven in `recompute-term-summary.unit.test.ts`; what this proves is that its
+ * output reaches the `term_record` upsert and the `term_search` dual-write.
  *
- * Driven THROUGH the public mutation (`editDefinition`) against a scripted
- * `Drizzle` double whose `batch` renders each statement's `.toSQL()` — the
- * `contributions-sandbox.unit.test.ts` / `VouchLedger.unit.test.ts` idiom (no
- * engine, ADR 0082/0104/0105: no revived `node:sqlite` fake, no `runFateOp`). The
- * batch is captured, not executed, so the row/column LANDING is unit-reachable;
- * row-level behavior on real D1 stays the integration tier's job.
+ * The scripted `Drizzle` double renders each batched statement's `.toSQL()` rather
+ * than executing it, so the row/column landing is unit-reachable with no engine (ADR
+ * 0082/0104/0105); real-D1 behavior stays the integration tier's job.
  */
 import {describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -49,16 +43,13 @@ const noopD1 = {
 } as unknown as D1Database;
 const renderDb = drizzle(noopD1, {relations});
 
-// editDefinition doesn't touch Vote (it's consulted on the vote/aggregate paths),
-// so an inert instance satisfies the layer dependency without an implementation.
+// `editDefinition` never touches Vote, so an inert instance satisfies the dependency.
 const inertVote = Layer.succeed(Vote, {} as Context.Service.Shape<typeof Vote>);
 
 type Rendered = {sql: string; params: unknown[]};
 
-// Replays `run` results in call order; captures every `batch` statement's `.toSQL()`.
-// editDefinition's run order: (0) findFirst definition, (1) update body,
-// (2) persistTermSummary's live-defs SELECT — then ONE batch (term_record upsert +
-// the two `term_search` FTS statements).
+// Replays `run` results in call order, so the script depends on `editDefinition`'s
+// order: findFirst definition, update body, then the live-defs SELECT.
 function scriptedAccess(runResults: ReadonlyArray<unknown>): {
 	access: DrizzleAccess;
 	batched: Rendered[];
@@ -90,8 +81,7 @@ const SLUG = "kelime";
 const TITLE = "Kelime";
 const OWNER = UserId.make("u1");
 
-// The definition `editDefinition` resolves first (its findFirst result) — author
-// matches the actor so the mutation proceeds to the summary recompute.
+// The author matches the actor, so the mutation proceeds to the summary recompute.
 const editedDefinition = {
 	id: "def_1",
 	authorId: OWNER,
@@ -102,8 +92,7 @@ const editedDefinition = {
 	createdAt: new Date("2024-01-01T00:00:00.000Z"),
 };
 
-// The live-definition slice the summary fold reads (term-page order: score desc).
-// Distinctive values so each landed column is unambiguous in the rendered params.
+// Distinctive values, so each landed column is unambiguous in the rendered params.
 const def = (over: Partial<TermSummaryDefRow> & {id: string}): TermSummaryDefRow => ({
 	body: "body",
 	bodyExcerpt: "excerpt",
@@ -117,7 +106,6 @@ const liveDefs: TermSummaryDefRow[] = [
 	def({id: "runner-up", score: 7, bodyExcerpt: "runner"}),
 ];
 
-// Run editDefinition through the scripted seam and hand back the captured batch.
 const renderUpsert = () =>
 	Effect.gen(function* () {
 		const {access, batched} = scriptedAccess([editedDefinition, {}, liveDefs]);
@@ -139,8 +127,7 @@ describe("persistTermSummary — the recomputeTermSummary → term_record row-wr
 			Effect.gen(function* () {
 				const batched = yield* renderUpsert();
 
-				// One batch: the summary upsert + the two `term_search` FTS statements,
-				// all-or-none (ADR 0080 lockstep).
+				// One batch, so the upsert and the FTS writes land all-or-none (ADR 0080).
 				assert.strictEqual(
 					batched.length,
 					3,
@@ -155,9 +142,7 @@ describe("persistTermSummary — the recomputeTermSummary → term_record row-wr
 					"the FTS dual-write to term_search rides the same batch",
 				);
 
-				// recomputeTermSummary([top score 10, runner score 7], "kelime", "Kelime") ⇒
-				// count 2, totalScore 17, top "top-def", excerpt "the winning excerpt",
-				// firstLetter "k" — each must appear in the rendered upsert params.
+				// The fold over the two live defs yields count 2 and totalScore 17.
 				const p = upsert.params;
 				assert.include(p, SLUG, "slug column");
 				assert.include(p, TITLE, "title column");

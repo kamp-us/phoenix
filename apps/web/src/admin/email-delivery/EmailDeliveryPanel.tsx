@@ -1,20 +1,7 @@
 /**
- * `EmailDeliveryPanel` — the email-delivery admin console module (#2732, email-bounce epic
- * #2687), the React consumer of the worker admin surface #2731 landed. It lists the
- * currently-failing addresses off the `emailDelivery.failing` roll-up and drives the
- * `emailDelivery.mark` / `emailDelivery.clear` admin mutations.
- *
- * Gated behind the default-off `phoenix-email-delivery-admin` flag via `FlagGate` (the
- * ban-controls stance): with it off nothing renders and no roll-up request fires, so the
- * surface ships dark until a human flips the flag (ADR 0083) — the client half of the
- * two-gate contract whose worker half fails the invisible `Denied`. The mutations are
- * account-keyed (`userId`), so a failing address with no resolved account (`userId: null`)
- * shows in the roll-up but carries no clear affordance — there is no account to target.
- *
- * Render decisions live DOM-free in `email-delivery.ts` (unit-tested); this is the thin
- * shell. a11y: a labelled region + table; the mark form is a real `<form>` with a required
- * `gerekçe`; outcomes are text in a `role="status"` live region, never color; lowercase
- * Turkish copy per the design law.
+ * The `FlagGate` is load-bearing, not cosmetic: with the default-off flag off, nothing renders
+ * and no roll-up request fires, so this surface ships dark until a human flips it (ADR 0083).
+ * It is the client half of a two-gate contract — the worker half fails the invisible `Denied`.
  */
 import {Suspense, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -94,7 +81,6 @@ function EmailDeliveryAdmin() {
 	);
 }
 
-/** The manual mark form — target a user by id + a required reason (mirrors the ban form). */
 function MarkForm({
 	onResult,
 }: {

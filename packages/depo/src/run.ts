@@ -1,13 +1,9 @@
 /**
- * The `depo` CLI run boundary — wires the root command and runs it over the Node
- * platform (mirrors `@kampus/anka-ops` / the `epic-ledger` idiom):
- * `effect/unstable/cli` for the typed subcommands, the Node platform, run via
- * `NodeRuntime.runMain`. The `DoormanClient` seam is discharged here with
- * `DoormanClientLive` over `FetchHttpClient.layer` — the one place the real
- * network layer is provided, so `command.ts` stays transport-agnostic.
+ * The `depo` CLI run boundary. This is the ONE place the real network layer is
+ * provided, so `command.ts` stays transport-agnostic.
  *
- * Loaded via a dynamic `import()` from `bin.ts` so an unlinked `catalog:` dep on a
- * fresh checkout surfaces as an actionable message, not a raw module-not-found.
+ * `bin.ts` reaches this through a dynamic `import()` so an unlinked `catalog:` dep on
+ * a fresh checkout surfaces as an actionable message, not a raw module-not-found.
  */
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Effect, Layer} from "effect";

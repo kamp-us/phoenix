@@ -1,17 +1,5 @@
-/**
- * #3840 regression — the `+ yeni tanım` create dialog must survive an ancestor unmount.
- *
- * #3600 pinned the closer: with `open` in the CTA's local `useState`, an ancestor unmount
- * (the shape of `FateProvider`'s `key={userId}` re-key or `LayoutContent`'s `needsBootstrap`
- * Outlet swap) silently reset it to `false`, reproducing the CI artifact — dialog gone, no
- * backdrop, no dismiss reason, still on `/sozluk`. NO `onOpenChange` reason fires on that path
- * (React destroys the state, it is not dismissed), which is exactly how the closer is named:
- * absent reason ⇒ ancestor unmount, not `outside-press`/`escape`.
- *
- * The harness below is that unmount: a `key`-flipping boundary between the hoist provider and
- * the CTA forces a real unmount + remount of the CTA subtree. The two tests pin the artifact
- * (without the hoist) and its fix (with it).
- */
+// #3840 regression — the create dialog must survive an ancestor unmount; see
+// `SozlukCreateDialogState` for the why.
 import {act, fireEvent, render, screen} from "@testing-library/react";
 import * as React from "react";
 import {MemoryRouter} from "react-router";
@@ -60,8 +48,6 @@ describe("SozlukSubnavCta — #3840 open-state survives an ancestor unmount", ()
 
 		remountSubtree();
 
-		// The local `useState` was destroyed with the unmounted subtree — the dialog is gone,
-		// exactly the silent close #3600 pinned.
 		expect(screen.queryByLabelText(/Terim/)).toBeNull();
 	});
 
@@ -72,8 +58,6 @@ describe("SozlukSubnavCta — #3840 open-state survives an ancestor unmount", ()
 
 		remountSubtree();
 
-		// `open` lives in the provider above the boundary, so the remounted CTA re-reads a
-		// surviving `true` — the dialog re-appears instead of vanishing.
 		expect(await screen.findByLabelText(/Terim/)).toBeTruthy();
 	});
 });

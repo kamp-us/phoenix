@@ -3,17 +3,8 @@ import {signUp} from "./_helpers/auth";
 import {randomSuffix} from "./_helpers/rand";
 
 /**
- * Profile page (T14) — `/u/<username>` route + GraphQL `profile(username)`
- * query + interleaved contributions feed.
- *
- * Single author flow:
- *   1. sign up + bootstrap username
- *   2. submit a post → land on /pano/<id>
- *   3. add a comment on the post
- *   4. add a definition on a fresh sozluk slug
- *   5. visit /u/<username> → header counters reflect 1/1/1, three
- *      contribution rows in the feed
- *   6. visit /u/<bogus-username> → 404 page renders
+ * Profile page (T14) — `/u/<username>` route + `profile(username)` query + the interleaved
+ * contributions feed, driven by one author contributing one of each kind.
  */
 test.describe("Profile page", () => {
 	test("aggregates 1 definition + 1 post + 1 comment on /u/<username>", async ({page}) => {
@@ -26,7 +17,6 @@ test.describe("Profile page", () => {
 			timeout: 10_000,
 		});
 
-		// 1) Submit a post.
 		await page.goto("/pano/yeni");
 		await expect(page.locator('[data-testid="pano-submit-title"]')).toBeVisible({timeout: 5_000});
 
@@ -45,13 +35,11 @@ test.describe("Profile page", () => {
 		});
 		await expect(page.getByRole("heading", {name: /0 yorum/i})).toBeVisible({timeout: 10_000});
 
-		// 2) Add a comment.
 		const commentBody = `profile test yorum ${suffix}`;
 		await page.locator('[data-testid="pano-comment-input"]').fill(commentBody);
 		await page.locator('[data-testid="pano-comment-submit"]').click();
 		await expect(page.getByRole("heading", {name: /1 yorum/i})).toBeVisible({timeout: 15_000});
 
-		// 3) Add a definition on a fresh slug.
 		const slug = `profile-${suffix}`;
 		await page.goto(`/sozluk/${slug}`);
 		const composerBody = page.locator('[data-testid="sozluk-composer-body"]');
@@ -73,25 +61,21 @@ test.describe("Profile page", () => {
 			timeout: 10_000,
 		});
 
-		// 4) Visit the public profile page.
 		await page.goto(`/u/${handle}`);
 		await expect(page.getByTestId("user-profile-page")).toBeVisible({timeout: 15_000});
 		await expect(page.getByTestId("user-profile-handle")).toContainText(`@${handle}`);
 
-		// Header counters: 1 definition, 1 post, 1 comment. The `profile(username)`
-		// aggregation joins across the pano + sozluk projections, which can lag the
-		// just-completed mutations, so poll each counter rather than reading it
-		// point-in-time.
+		// The `profile(username)` aggregation joins across the pano + sozluk projections, which
+		// can lag the just-completed mutations, so poll rather than read point-in-time.
 		await expect(page.getByTestId("stat-definitions")).toContainText("1", {timeout: 10_000});
 		await expect(page.getByTestId("stat-posts")).toContainText("1", {timeout: 10_000});
 		await expect(page.getByTestId("stat-comments")).toContainText("1", {timeout: 10_000});
 
-		// Feed: three rows, one of each kind. Same aggregation lag — poll each row.
+		// Same aggregation lag — poll each row.
 		await expect(page.getByTestId("contribution-definition")).toHaveCount(1, {timeout: 10_000});
 		await expect(page.getByTestId("contribution-post")).toHaveCount(1, {timeout: 10_000});
 		await expect(page.getByTestId("contribution-comment")).toHaveCount(1, {timeout: 10_000});
 
-		// Each row links to its source.
 		await expect(
 			page.getByTestId("contribution-definition").locator(`a[href="/sozluk/${slug}"]`),
 		).toBeVisible();

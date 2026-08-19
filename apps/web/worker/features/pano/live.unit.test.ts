@@ -1,10 +1,7 @@
 /**
- * `panoLive` — the pano publish seam (ADR 0155). AC#2 of #2324 (ADR 0170): every
- * fanned pano publish method fires the base-feed edge-cache purge ALONGSIDE its
- * `/fate/live` publish, the cache-side twin of the live fan-out. This pins that
- * one write drives BOTH invalidations at the seam, mirroring the live-publisher tests.
- *
- * Unit tier (ADR 0082): stubs at the publisher + purger seam, zero storage.
+ * `panoLive` — the pano publish seam. Pins that every fanned publish method fires the
+ * base-feed edge-cache purge ALONGSIDE its `/fate/live` publish, so one write drives both
+ * invalidations (ADR 0155 / ADR 0170).
  */
 import {assert, it} from "@effect/vitest";
 import {Effect} from "effect";
@@ -13,12 +10,10 @@ import {alwaysLive} from "../kunye/sandbox.ts";
 import type {WorkerPanoFeedCache} from "./feed-cache.ts";
 import {panoLive} from "./live.ts";
 
-/** A real (typed) publisher whose delivery is a no-op — only the purge count matters here. */
 function recordingPublisher() {
 	return livePublisherFor({publish: () => Effect.void, waitUntil: () => {}});
 }
 
-/** A purger that counts `purge()` invocations. */
 function countingFeedCache() {
 	let purges = 0;
 	const feedCache: WorkerPanoFeedCache = {

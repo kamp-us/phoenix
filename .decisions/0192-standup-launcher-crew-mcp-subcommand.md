@@ -1,7 +1,8 @@
 ---
 id: 0192
 title: The stand-up launcher's mechanics live as a `pipeline-crew-mcp stand-up` subcommand (Effect CLI, pure core + thin bin), invoked by a thin plugin command — not as plugin-embedded Node
-status: accepted
+status: superseded by [0279](0279-v1-crew-retired-in-full.md)
+superseded_by: 0279
 date: 2026-07-16
 tags: [pipeline, pipeline-crew, crew-mcp, plugin, packaging, launcher]
 ---
@@ -40,7 +41,7 @@ Three grounded facts settle it:
    Per the plugin spec, audited in the crew's own personalization seam
    (`claude-plugins/pipeline-crew/PERSONALIZATION.md`, grounded in the
    [Plugins reference](https://docs.claude.com/en/docs/claude-code/plugins-reference), the same
-   source ADR [0171](0171-kampus-pipeline-plugin-spec-conformance.md) audited), plugin content
+   source ADR `0171` audited), plugin content
    is `agents/` / `commands/` / `skills/` / `hooks/` — the *same bytes* for every operator. A
    plugin `commands/` entry is a prompt surface, not a unit-testable core; there is no vitest
    seam inside plugin content. Embedding process-spawning / bind-construction Node there strands
@@ -115,7 +116,7 @@ as ordinary work that auto-ships on green:
   ruling; the control-plane regex matches `claude-plugins/kampus-pipeline/{skills,agents,hooks}`
   and `packages/{ci-required,pipeline-cli}`, and matches **neither** crew path — verified
   against
-  [`control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts)).
+  `control-plane-re.ts`).
 
 Downstream children inherit this: launcher PRs go through the review-code gate and auto-ship,
 they do not bank for a §CP human merge.

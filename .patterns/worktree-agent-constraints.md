@@ -30,14 +30,12 @@ the Bash-write workaround below — not a setting.
 flip.** Claude Code supports a `WorktreeCreate` hook that replaces the default
 worktree-creation logic and can land worktrees outside `.claude/` (a base path with
 no `.claude/` substring would dodge the protected-path guard entirely). Adopting it
-is NOT free: phoenix's own `@kampus/worktree-guard` hardcodes the base segment
-`WORKTREE_SEGMENT = "/.claude/worktrees/"` in three places —
-`packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`, `path-resolve.ts`, and `reap.ts` — and
-the biome config + [ADR 0060](../.decisions/0060-worktree-lint-changed-paths.md)
-key on the same string; all would have to track the new base in lockstep, or the
-cwd-pin, path-resolve, and reap logic stop recognizing managed worktrees. That is a
-control-plane (`.claude/settings.json` hook) + guard-package change to scope and
-review deliberately, tracked under #801 — do not flip it blindly.
+is NOT free: the biome config and [ADR 0060](../.decisions/0060-worktree-lint-changed-paths.md)
+key on the literal base segment `/.claude/worktrees/`, so both would have to track a new base in
+lockstep. That is a control-plane (`.claude/settings.json` hook) change to scope and review
+deliberately, tracked under #801 — do not flip it blindly. (The `@kampus/worktree-guard` package
+that pinned the same segment in code retired with `packages/pipeline-cli/`, so nothing enforces the
+lockstep today.)
 
 ## Workaround: write through Bash when `Edit`/`Write` is denied
 
@@ -65,10 +63,11 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
 - **Bash cwd resets to the MAIN checkout between calls.** A worktree agent's Bash
   tool does not stay `cd`'d into the worktree; each call starts in the primary
   checkout. A bare `git`/edit command therefore hits the *primary* tree (and a
-  `git switch`/`checkout` mis-branches it). `@kampus/worktree-guard`'s `pre-bash`
-  hook auto-prepends `cd "$WORKTREE_ROOT" && …` to commands with no leading `cd`
-  (`packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`), but confirm `pwd` before any git
-  mutation regardless. See [ADR 0060](../.decisions/0060-worktree-lint-changed-paths.md)
+  `git switch`/`checkout` mis-branches it). The `@kampus/worktree-guard` `pre-bash`
+  hook that used to auto-prepend `cd "$WORKTREE_ROOT" && …` retired with
+  `packages/pipeline-cli/`, so **the cwd-reset rule is prose-only now** — pass `git -C "$WT" …`
+  explicitly and confirm `pwd` before any git
+  mutation. See [ADR 0060](../.decisions/0060-worktree-lint-changed-paths.md)
   for the related lint-path footgun (bare `biome check .` resolves to the worktree
   CWD and silently matches the `!**/.claude/worktrees` exclusion → false green).
 
@@ -98,9 +97,10 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
     `git -C "$WT" rev-parse --show-toplevel` must equal `$WT`, never the primary — exactly
     as the Step-4 fail-closed preflight asserts.
 
-  **The guard route is enforced — belt *and* braces.** The prose rule above is the belt; the
-  guard is the braces. `@kampus/worktree-guard`'s `pre-bash` core
-  (`packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`, `pinBash`) returns a `refuse`
+  **The guard route retired; the rule is prose-only.** `@kampus/worktree-guard`'s `pre-bash` core
+  (`pinBash`) went with `packages/pipeline-cli/`, and `packages/fabrika-cli/src/guard/` ships no
+  worktree guard. What it *did*, recorded here because the rule it enforced still binds: return a
+  `refuse`
   decision — surfaced as a `permissionDecision: "deny"` — for a bare HEAD-moving git op that is
   **not** scoped to the agent's worktree. The refusal is **scoped to guarded agents**: it fires
   only when `$WORKTREE_ROOT` names a managed worktree, so the orchestrator's own shell (no
@@ -110,28 +110,24 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   worktree-scoped and **allowed**. The prose-only rule alone did not hold (the detach recurred
   after it shipped), which is why the mechanical guard route was taken (#1571).
 
-  **Defense-in-depth behind the guard: `pipeline-cli main-sync`
-  (`packages/pipeline-cli/src/tools/main-sync/`).** The driving session runs it **before/after a
-  drain** instead of a hand-run `git fetch origin main && git merge --ff-only origin/main`. If it
-  finds the primary HEAD already detached (a stray detach the guard didn't catch), it
-  **auto-reattaches to `main`** before the merge — but **only on a clean tree**; a dirty off-`main`
-  HEAD is detect-and-surface (refuse, report the dirt), never a blind `checkout` that discards
-  work. Dry-run by default; `--execute` runs the plan. See
-  [`packages/pipeline-cli/README.md`](../packages/pipeline-cli/README.md) (the `main-sync`
-  section) for the full contract.
+  **Keeping the primary current, by hand.** `pipeline-cli main-sync` retired with that package and
+  has no fabrika successor, so the driving session drives sync itself:
+  `git -C <primary> fetch origin main && git -C <primary> merge --ff-only origin/main`. Keep the
+  contract that tool held — if the primary HEAD is detached, reattach to `main` **only on a clean
+  tree**; a dirty off-`main` HEAD is detect-and-surface (stop, report the dirt), never a blind
+  `checkout` that discards work.
 
   **The ref-force-move sibling (the caller-agnostic backstop, [ADR 0160](../.decisions/0160-ref-transaction-guard-refuses-diverging-primary-main.md)):**
   a force-move of the primary's `main` **ref** (`branch -f main` / `checkout -B main` /
   `update-ref refs/heads/main`) happens **outside the agent Bash path entirely**, so neither the
-  bash-pin nor a `PreToolUse` hook can reach it. `pipeline-cli ref-guard`
-  (`packages/pipeline-cli/src/tools/ref-guard/`), wired via `lefthook.yml` as git's own
-  **`reference-transaction`** hook, fires for **every** ref update regardless of caller and
-  **refuses any `refs/heads/main` update that would make local `main` a non-fast-forward of
-  `origin/main`** — a diverging force-move aborts at the ref boundary, while a
-  `merge --ff-only origin/main` and a reattach `checkout main` both pass. **The PULLER/orchestrator
-  ROE, enforced by this guard: drive sync ONLY through the `main-sync` fetch-inspect-`ff-only`
-  seam — never a bare `checkout -B main` / `branch -f main` / `reset` / `update-ref
-  refs/heads/main` on the primary checkout.**
+  bash-pin nor a `PreToolUse` hook can reach it. The `ref-guard reference-transaction` backstop
+  that covered this — a `lefthook.yml` leg refusing any `refs/heads/main` update that would make
+  local `main` a non-fast-forward of `origin/main` — **retired with `packages/pipeline-cli/`** and
+  is not replaced (ADR [0305](../.decisions/0305-v1-cli-deletion-retires-three-git-boundary-guards.md);
+  the port is tracked as [#6341](https://github.com/kamp-us/phoenix/issues/6341)). **The
+  PULLER/orchestrator ROE therefore stands on prose alone: drive sync ONLY through the
+  fetch-inspect-`ff-only` seam — never a bare `checkout -B main` / `branch -f main` / `reset` /
+  `update-ref refs/heads/main` on the primary checkout.**
 
 - **Run root `pnpm` scripts as `pnpm -w <script>` (or from the worktree root),
   never from a subdir.** A root-level script (`pnpm lint`, `pnpm typecheck`, …) run
@@ -215,22 +211,21 @@ correct provision; the symlink is a correctness bug, not an optimization.
 
 The harness does not auto-remove a worktree that made commits, so agent worktrees
 under `.claude/worktrees/` accumulate without bound (hundreds), bloating disk and
-slowing every git op (issue #1243). The sanctioned drain is:
+slowing every git op (issue #1243). The automated `worktree-sweep` retired with
+`packages/pipeline-cli/` and has no fabrika successor, so **the drain is a manual operator act**:
+inspect with `git worktree list`, remove with `git worktree remove <path>` — **never `--force`**, so
+git itself refuses any tree it judges unsafe — then `git worktree prune`.
 
-```bash
-pnpm pipeline-cli worktree-sweep            # dry-run: print the keep/remove plan
-pnpm pipeline-cli worktree-sweep --execute  # remove the clean+merged ones
-```
-
-It sweeps **two leaked classes** (#2785):
+The classification the sweep encoded is kept below as the reasoning that drain should follow, not as
+a live command. It sorted **two leaked classes** (#2785):
 
 - **Build worktrees** under `.claude/worktrees/` — a harness-provisioned agent tree
   carrying a real branch and possibly unpushed work. Removed **only** when it is CLEAN
   **and** its HEAD is already reachable from `origin/main` (its branch merged, or it
   sits detached at a merged commit — the squash case #1328 included). A **dirty** tree
   or an **unmerged** branch — e.g. a sibling agent's live, in-flight PR branch — is **KEPT**.
-- **Review-head worktrees** — the `$TMPDIR`-rooted `review-head-*` / `review-doc-head-*`
-  / `review-skill-head-*` DETACHED checkouts the `review-*` gates materialize from a PR
+- **Review-head worktrees** — the `$TMPDIR`-rooted `review-head-*` DETACHED
+  checkouts the `review` / `review-ui` gates materialize from a PR
   head. These carry no branch and no unpushed work, so there is **no merge gate**: a leaked
   one is reclaimed once it is CLEAN + idle + unlocked (an unmerged PR head is still reclaimed,
   which the merge gate would strand for the PR's whole open life). Before this class they were
@@ -284,31 +279,19 @@ gone-dir `prunable` class still drains. That is the safe direction,
 but it means the worktree pileup (#3887) will not bend from this gate; draining the pile needs a
 separate, liveness-keyed operator-confirmed path (#3892).
 
-It runs `git worktree
+The rule that survives the tool: run `git worktree
 remove` **without `--force`**, so git itself refuses any tree it judges unsafe and that refusal is
-reported as kept, never escalated (mirrors the `@kampus/worktree-guard` reaper's rule, MEMORY
-"Safe worktree prune"). Draining the pile is the operator's explicit call; the command never
-force-discards unpushed work. The pure classifier
-(`packages/pipeline-cli/src/tools/worktree-sweep/worktree-sweep.ts`) is unit-tested branch-by-branch,
-and `command.hook.test.ts` proves both classes through the real-git command boundary.
+read as kept, never escalated. Draining the pile is the operator's explicit call; nothing here
+force-discards unpushed work.
 
 ### Reclaiming the branch REF is a separate, stricter decision than reclaiming the tree
 
 Neither `git worktree remove` nor `git worktree prune` deletes the branch a tree was on — it is only
 un-checked-out — so before #4190 every reclaimed worktree leaked its ref forever (2059 `worktree-*`
-refs against 263 registered trees on the crew host, 54% of all local branches). Both reclaimers now
-run a **ref pass** over the shared predicate in
-`packages/pipeline-cli/src/tools/worktree-sweep/ref-reclaim.ts`:
-
-```bash
-pnpm pipeline-cli worktree-sweep                        # dry-run: tree plan + the refs it would delete
-pnpm pipeline-cli worktree-sweep --reclaim-refs         # dry-run over the WHOLE refs/heads/worktree-* pile
-pnpm pipeline-cli worktree-sweep --reclaim-refs --execute   # the deliberate one-time retro cleanup
-```
-
-Without `--reclaim-refs` the pass is scoped to the refs of the trees **that run** reclaimed, so the
-unattended `SessionStart --execute` hook closes the lifecycle going forward without ever touching the
-historical pile — clearing that pile stays an explicit operator act.
+refs against 263 registered trees on the crew host, 54% of all local branches). The automated ref
+pass retired with `packages/pipeline-cli/`; reclaiming a ref is now a deliberate `git branch -d`
+(never `-D`) over the refs of the trees you just removed. Clearing the historical
+`refs/heads/worktree-*` pile stays an explicit operator act, separate from removing the trees.
 
 **The predicate is inverted relative to a tree's**, and that asymmetry is the whole point: a worktree
 is a replaceable container, but a ref is the *only* thing keeping unpushed commits reachable, and a
@@ -327,8 +310,8 @@ A second, unrelated stamp lives in the same git admin dir as the `kampus-owner.j
 conflating them wastes a debugging session: `kampus-owner.json` is the **harness launcher's** stamp
 that the worktree *sweep* reads, while **`kampus-lane` is the pipeline's own** — written by
 `write-code`'s opening preflight, read by `wt_preflight` to answer "which tree is mine" and by
-`kp_branch_pin` to answer "is another lane using this branch". Both live in
-`claude-plugins/kampus-pipeline/lib/common.sh`.
+`kp_branch_pin` to answer "is another lane using this branch". Both lived in the v1 plugin's
+`lib/common.sh` (retired with the `kampus-pipeline` plugin, #5937).
 
 **A stamp that is only an identity cannot answer a liveness question.** Every sibling subagent of one
 dispatching session shares `$CLAUDE_CODE_SESSION_ID`, and nothing else in the process env
@@ -376,6 +359,48 @@ refusing agent could perform neither: `wt_preflight` fails closed on a sibling t
 written once never went stale. A fail-closed stop with no reachable way forward is what pushes agents
 into improvising past the guard (the detached-HEAD repair of #4826), so treat "the remedy is
 executable by whoever reads it" as part of the guard, not as message polish.
+
+## Not every worktree is an agent's — the epic assembly seat has one too
+
+`fabrika`'s `operate` runs an epic's assembly branch (`epic/<n>`) in a worktree of
+its own at `<main>/.claude/worktrees/epic-<n>`, placed and removed by
+`fabrika lane assembly <n>`. Nothing about it is a subagent: it is the driver's own
+seat for merging children and pushing the run's single branch. It exists because the
+old boot ran `git switch --create epic/<n>` in whatever checkout invoked the skill —
+which parked a human's working tree on the epic branch for hours and left a second
+concurrent epic no tree to assemble in
+([#6163](https://github.com/kamp-us/phoenix/issues/6163)).
+
+**How a verb proves a git write is not landing in the main working tree.** Compare
+git's own two directory pointers in the tree the process is standing in:
+
+```bash
+git rev-parse --path-format=absolute --git-dir --git-common-dir
+```
+
+They are the same path in the main working tree and differ in every linked one
+(`<common>/worktrees/<name>` versus `<common>`). `--path-format` is git 2.31+.
+
+Two things this deliberately is **not**:
+
+- **Not a path comparison against `git worktree list`.** That list prints paths as
+  recorded, while `git rev-parse --show-toplevel` resolves symlinks, so the two
+  disagree on a symlinked prefix (`/var` versus `/private/var` on macOS) and the
+  guard would refuse the legal path.
+- **Not a boolean with a default.** A read fault is UNKNOWN and refuses; it never
+  falls back to "linked", which would wave the write through unproven.
+
+`git worktree list --porcelain` is still the right read for *which* tree holds a
+branch — its first record is always the main working tree, which is what makes "the
+primary checkout" nameable at all
+([`packages/fabrika-cli/src/lane/assembly.ts`](../packages/fabrika-cli/src/lane/assembly.ts)).
+Read the whole record, though, not just its path and branch: a tree whose directory
+was deleted without `git worktree prune` still gets a record, marked with a
+`prunable` line. Drop that line and the listing says a branch is held by a tree
+nothing can run in. Git also refuses to place a new worktree over the leftover
+registration (`fatal: '<path>' is a missing but already registered worktree`), so
+the record has to be cleared — `git worktree remove <path>` exits 0 on one — before
+the branch can be placed again.
 
 ## Why these constraints exist (and where the real fix lives)
 

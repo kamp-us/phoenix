@@ -1,8 +1,3 @@
-/**
- * `role-controls` pure-logic coverage (#3523) — the toggle target, its label, and the
- * outcome-message mapping, DOM-free (the `ban-controls.ts` idiom). Turkish user-facing
- * copy; English technical wire values.
- */
 import {describe, expect, it} from "vitest";
 import {nextRole, roleActionLabel, roleOutcomeMessage} from "./role-controls";
 

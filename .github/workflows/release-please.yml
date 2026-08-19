@@ -14,19 +14,20 @@
 #
 # The `<component>-v<version>` tag grammar is what `publish.yml` guards and what
 # `publish-isolation-guard` machine-reads out of that workflow to derive its own scope,
-# so the components below must stay `pipeline-cli` / `fabrika-cli` (ADR 0239 §4).
+# so the component below must stay `fabrika-cli` (ADR 0239 §4).
 #
 # Two hazards this file is wired against, both from ADR 0239 §5:
 #
 #   `releases_created` is REPO-WIDE — true when ANY configured path released, silent
 #   about which. It is NOT "always true" (release-please-action v4.4.1/v5.0.0 set it to
 #   `releases.length > 0` in `outputReleases`), which makes it worse, not better: it
-#   looks trustworthy and would gate a pipeline-cli action on a fabrika-cli release.
-#   Every condition here keys on the per-path `<path>--release_created` output instead.
+#   looks trustworthy and would gate one package's action on another's release. Every
+#   condition here keys on the per-path `<path>--release_created` output instead, which
+#   is what keeps this file correct the day a second package root is configured again.
 #
 #   The history boundary lives in `release-please-config.json` as `last-release-sha`
-#   (with `bootstrap-sha` at the same commit for the never-released fabrika-cli leaf).
-#   Without it the first run has no stopping point and folds ~94 commits of pipeline-cli
+#   (with `bootstrap-sha` at the same commit for the then-never-released fabrika-cli
+#   leaf). Without it the first run has no stopping point and folds ~94 commits of
 #   backlog into one bump. npm versions are immutable, so the first Release PR
 #   is read before it is merged, never after.
 #
@@ -102,11 +103,11 @@ jobs:
             exit 0
           fi
 
-          node packages/pipeline-cli/src/bin.ts release-pr-body sanitize \
+          node packages/fabrika-cli/src/bin.ts ci pr-body \
             < "$RUNNER_TEMP/body.md" > "$RUNNER_TEMP/repaired.md"
           status=$?
           if [ "$status" -ne 0 ]; then
-            echo "::error::release-pr-body sanitize exited $status — refusing to guess at the body."
+            echo "::error::ci pr-body exited $status — refusing to guess at the body."
             exit "$status"
           fi
 
@@ -143,7 +144,7 @@ jobs:
       #
       # `publish.yml` fires on `release: published`, and the releases above are created with
       # `secrets.GITHUB_TOKEN`, so that event starts no run and the tag sits unpublished
-      # (`fabrika-cli-v0.2.0` / `pipeline-cli-v0.3.0`, until a human draft-cycled both).
+      # (`fabrika-cli-v0.2.0`, until a human draft-cycled the release by hand).
       # Dispatching at `ref: <tag>` reaches publish.yml's own tag-ref + grammar + version
       # gate with the tagged tree checked out, so nothing about what may publish is widened
       # — only what may START the run.
@@ -152,10 +153,9 @@ jobs:
       # repo-wide `releases_created` would dispatch a publish for a package that did not
       # release.
       - name: Dispatch the npm publish for each tag this push released
-        if: ${{ steps.release.outputs['packages/pipeline-cli--release_created'] == 'true' || steps.release.outputs['packages/fabrika-cli--release_created'] == 'true' }}
+        if: ${{ steps.release.outputs['packages/fabrika-cli--release_created'] == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PIPELINE_CLI_TAG: ${{ steps.release.outputs['packages/pipeline-cli--tag_name'] }}
           FABRIKA_CLI_TAG: ${{ steps.release.outputs['packages/fabrika-cli--tag_name'] }}
         run: |
           # `-e` spelled out because the runner sets it for us: a `run:` block with no
@@ -165,12 +165,14 @@ jobs:
           # scripts and not workflow steps.
           set -euo pipefail
 
+          # An `x && y` list whose test FAILS is a failing statement under the `-e` above, so
+          # each tag is appended from inside an `if` — the accumulate-then-check shape stays
+          # because the set is one package today and more the day another root is configured.
           tags=()
-          [ -n "${PIPELINE_CLI_TAG:-}" ] && tags+=("$PIPELINE_CLI_TAG")
-          [ -n "${FABRIKA_CLI_TAG:-}" ] && tags+=("$FABRIKA_CLI_TAG")
+          if [ -n "${FABRIKA_CLI_TAG:-}" ]; then tags+=("$FABRIKA_CLI_TAG"); fi
 
           if [ "${#tags[@]}" -eq 0 ]; then
-            echo "::error::a per-path release_created output was true but neither tag_name is set — refusing to leave a release unpublished with nothing said about it"
+            echo "::error::a per-path release_created output was true but no tag_name is set — refusing to leave a release unpublished with nothing said about it"
             exit 1
           fi
 
@@ -253,10 +255,9 @@ jobs:
       # The one gate in this file, keyed on the PER-PATH outputs. `releases_created`
       # appears nowhere.
       - name: Summarize which packages this push released
-        if: ${{ steps.release.outputs['packages/pipeline-cli--release_created'] == 'true' || steps.release.outputs['packages/fabrika-cli--release_created'] == 'true' }}
+        if: ${{ steps.release.outputs['packages/fabrika-cli--release_created'] == 'true' }}
         env:
           PATHS_RELEASED: ${{ steps.release.outputs.paths_released }}
-          PIPELINE_CLI_TAG: ${{ steps.release.outputs['packages/pipeline-cli--tag_name'] }}
           FABRIKA_CLI_TAG: ${{ steps.release.outputs['packages/fabrika-cli--tag_name'] }}
         run: |
           set -uo pipefail
@@ -279,7 +280,7 @@ jobs:
             # shellcheck disable=SC2016
             printf -- '- `%s`\n' "${released[@]}"
             echo
-            echo "Tags: \`${PIPELINE_CLI_TAG:-none}\` / \`${FABRIKA_CLI_TAG:-none}\`"
+            echo "Tags: \`${FABRIKA_CLI_TAG:-none}\`"
             echo
             echo "Publishing is \`publish.yml\`, dispatched by this run at each tag above (ADR 0292)."
             echo "A human-cut release reaches the same workflow on the \`release: published\` event instead."
@@ -293,8 +294,8 @@ jobs:
   #
   # It is a SEPARATE job that checks nothing out, installs nothing, and runs no repo
   # code — deliberately, and this is the whole point of the job boundary. The job above
-  # now needs `actions/checkout` and `pnpm install --frozen-lockfile` before it can run
-  # `pipeline-cli`, so an alarm living inside it dies with the very failures it exists
+  # now needs `actions/checkout` and `pnpm install --frozen-lockfile` before it can run a
+  # repo verb, so an alarm living inside it dies with the very failures it exists
   # to report: a bad lockfile on `main` reds the install and takes the alarm down with
   # it, leaving the run red and silent again. Nothing here depends on the repo, so the
   # alarm survives every failure class of the job it watches, including one that leaves

@@ -1,7 +1,7 @@
 ---
 id: 0160
 title: "A git reference-transaction guard refuses a diverging refs/heads/main ref-move on the shared primary checkout — caller-agnostic and fail-closed, where the #1571 PreToolUse Bash hook cannot reach"
-status: accepted
+status: amended-in-part by [0305](0305-v1-cli-deletion-retires-three-git-boundary-guards.md)
 date: 2026-07-05
 tags: [pipeline, git, worktree, primary-checkout, gates, control-plane]
 ---
@@ -138,3 +138,5 @@ install` (run once from the primary, ADR 0109 / #1243) arms it for all of them; 
 freshly-cloned checkout that has not yet run `lefthook install` is unguarded until it does —
 the same install-dependency every lefthook-managed hook (the `pre-commit` leak-guard) already
 carries, and CI remains the unbypassable backstop for what CI gates.
+
+> Amendment 2026-08-19: the `ref-guard reference-transaction` leg described here no longer runs — `packages/pipeline-cli/` was deleted (#6100) and the guard was removed from `lefthook.yml`; `packages/fabrika-cli/src/guard/` ships no ref guard. Nothing replaces it, so the #2143 diverging-`main` class is uncovered until the port lands ([#6341](https://github.com/kamp-us/phoenix/issues/6341)). The decision still governs the port's contract; see ADR [0305](0305-v1-cli-deletion-retires-three-git-boundary-guards.md).

@@ -1,8 +1,6 @@
 /**
  * The dark-ship default-=-safe-state invariant for the failing-email membrane notice
- * (#2693, epic #2687). Inspected off the exported `EMAIL_DELIVERY_NOTICE_FLAG` record
- * (the same object the factory spreads into `FlagshipFlag`), so no alchemy resource is
- * constructed — mirrors `email-delivery-admin.invariant.test.ts`.
+ * (#2693). Inspected off the exported record, so no alchemy resource is constructed.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {PHOENIX_EMAIL_DELIVERY_NOTICE} from "../../../src/flags/keys.ts";

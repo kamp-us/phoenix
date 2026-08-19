@@ -13,7 +13,7 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {bodyDigest} from "./digest.ts";
-import {CLAIMED, DIR, env, epic} from "./fixtures.test-support.ts";
+import {CLAIMED, DIR, env, epic, TOKEN} from "./fixtures.test-support.ts";
 import {planPath, renderRunRecord, runJsonPath, topologyPath} from "./run.ts";
 import {runWrite} from "./write-verb.ts";
 
@@ -64,7 +64,7 @@ const run = (
 	const fs = fakeFs({files});
 	return Effect.runPromise(
 		Effect.provide(
-			runWrite({number: 4300, bodyDigest: digest, repo: null, env}),
+			runWrite({number: 4300, bodyDigest: digest, token: TOKEN, repo: null, cwd: "/repo", env}),
 			Layer.mergeAll(shell.layer, fs.layer),
 		),
 	).then((outcome) => ({outcome, calls: shell.calls}));

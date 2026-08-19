@@ -167,3 +167,5 @@ Adopt option (b): a `pipeline-cli fanout-guard` CI guard backed by a declared
 - **Not retrofitting every feature here.** Per #1898's scope, this ADR + PR land the seam and
   prove it on the already-publishing adopters; the Phase-2 children (#1893–#1896) did the
   per-feature publish retrofits.
+
+> Amendment 2026-08-19: the guard moved off `pipeline-cli` to `packages/fabrika-cli/src/guard/` (`fanout.ts` pure, `fanout-verb.ts` CLI); invoke it as `fabrika guard fanout-guard check` (CI: `node packages/fabrika-cli/src/bin.ts guard fanout-guard check` in `.github/workflows/fanout-guard.yml`). The manifest, the fail-closed rule, and the §CP classification are unchanged.

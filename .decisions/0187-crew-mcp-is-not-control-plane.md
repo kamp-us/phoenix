@@ -15,7 +15,7 @@ per ADR [0071](0071-enforce-control-plane-at-github.md)) marks the surfaces wher
 autonomous green-then-ship merge could compromise the pipeline's own guards, so those PRs
 bank for a human control-plane (§CP) merge instead of auto-shipping. The concrete boundary
 is a path regex in
-[`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts),
+`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`,
 its byte-synced copy, `.github/CODEOWNERS`, and the classifier tests.
 
 Decision #3072 ADDED `packages/pipeline-crew-mcp/` to that regex, reasoning that a new
@@ -60,3 +60,5 @@ ordinary work.
   unreviewed merge of it could weaken a gate.
 - The 20 remaining §CP clauses (true gate machinery) are unchanged; this narrows the
   boundary by exactly one over-broad clause, it does not loosen it elsewhere.
+
+> Amendment 2026-08-19: the enforcement-surface test still governs, only the paths moved. The classifier regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (no dedicated pin test; `codeowners-cp.unit.test.ts` exercises it); `packages/pipeline-crew-mcp/` itself is gone with the v1 crew (ADR [0279](0279-v1-crew-retired-in-full.md)), and the §CP examples `packages/ci-required/` + `packages/pipeline-cli/` are retired too — the live §CP package clause is `^packages/fabrika-cli/src/ci/` (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). Read the §CP set from the live regex, never from this ADR's examples.

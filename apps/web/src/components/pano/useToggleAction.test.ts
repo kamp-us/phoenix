@@ -7,10 +7,8 @@ import {
 } from "./useToggleAction";
 
 /**
- * A controllable harness modelling the hook's refs + a fate dispatch that
- * settles only when we tell it to — so a test can interleave a "supersede"
- * toggle while a dispatch is still in flight, reproducing the #818 / #825 race
- * deterministically (no timers, no DOM).
+ * A dispatch that settles only when the test says so, so the #818 / #825 race can be
+ * interleaved deterministically — no timers, no DOM.
  */
 function harness(initialOn: boolean) {
 	let on = initialOn;
@@ -29,7 +27,6 @@ function harness(initialOn: boolean) {
 				new Promise<void>((resolve) => {
 					calls.push(action);
 					pending = () => {
-						// The optimistic write + server reconcile lands the on-state.
 						on = action === "set";
 						pending = null;
 						resolve();
@@ -43,7 +40,6 @@ function harness(initialOn: boolean) {
 		setDesired: (v: boolean) => {
 			desired = v;
 		},
-		/** Settle the currently in-flight dispatch. */
 		settle: () => {
 			if (!pending) throw new Error("no dispatch in flight to settle");
 			pending();
@@ -70,22 +66,19 @@ describe("runToggleLoop — the #818 / #825 race", () => {
 	it("does NOT drop an unset issued while the set mutation is still in flight", async () => {
 		const h = harness(false);
 
-		// Click 1: set. Starts the loop; first dispatch is now in flight.
 		h.setDesired(true);
 		const loop = h.run();
 		await tick();
 		expect(h.calls).toEqual(["set"]);
 		expect(h.hasPending()).toBe(true);
 
-		// Click 2 lands INSIDE the in-flight window (the bug's exact timing) —
-		// supersede the desired end-state back to "off".
+		// Click 2 lands INSIDE the in-flight window — the bug's exact timing.
 		h.setDesired(false);
 
-		// The set POST resolves only now (its ~370ms round-trip).
 		h.settle();
 		await tick();
 
-		// The unset MUST fire — under the old `if (inFlight) return;` it never did.
+		// Under the old `if (inFlight) return;` guard this unset never fired.
 		expect(h.calls).toEqual(["set", "unset"]);
 		expect(h.hasPending()).toBe(true);
 		h.settle();
@@ -101,8 +94,8 @@ describe("runToggleLoop — the #818 / #825 race", () => {
 		await tick();
 		expect(h.calls).toEqual(["set"]);
 
-		// Two more clicks while in flight: off then on → desired ends at true,
-		// which the in-flight set already achieves, so no corrective dispatch.
+		// off then on → desired ends where the in-flight set already lands it, so no
+		// corrective dispatch.
 		h.setDesired(false);
 		h.setDesired(true);
 
@@ -116,7 +109,6 @@ describe("runToggleLoop — the #818 / #825 race", () => {
 		h.setDesired(true);
 		const loop = h.run();
 		await tick();
-		// A second click while the first is pending must NOT start a parallel POST.
 		h.setDesired(false);
 		await tick();
 		expect(h.calls).toEqual(["set"]); // still just the first, second is queued

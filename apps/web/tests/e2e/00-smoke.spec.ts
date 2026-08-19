@@ -24,13 +24,10 @@ const SPA_READY_POLL_MS = 1_500;
 
 async function gotoSpaReady(page: Page, route: string): Promise<void> {
 	const deadline = Date.now() + SPA_READY_DEADLINE_MS;
-	// Poll until the served page is not the typed CF placeholder-404, or the budget lapses — then
-	// leave the last navigation in place so the caller's assertion reports the truth (a genuinely
-	// cold edge past the budget still reds).
 	while (Date.now() < deadline) {
 		const res = await page.goto(route);
-		if (!res || res.status() !== 404) return; // 200 SPA shell, or a non-404 the caller must judge
-		if (!isCloudflarePlaceholder404(res.status(), await res.text())) return; // real worker JSON 404
+		if (!res || res.status() !== 404) return;
+		if (!isCloudflarePlaceholder404(res.status(), await res.text())) return;
 		await page.waitForTimeout(SPA_READY_POLL_MS);
 	}
 }

@@ -51,6 +51,7 @@ does not exist yet — rather than missing; check the registry before assuming a
 | `handoff-pack` | [`packages/fabrika-cli/src/wire/handoff-pack.ts`](../../../packages/fabrika-cli/src/wire/handoff-pack.ts) | `handoff` | `handoff` |
 | `governance-digest` | [`packages/fabrika-cli/src/wire/governance-digest.ts`](../../../packages/fabrika-cli/src/wire/governance-digest.ts) | `governance` | `front-door` |
 | `graduate-emitted` | [`packages/fabrika-cli/src/wire/graduate-emitted.ts`](../../../packages/fabrika-cli/src/wire/graduate-emitted.ts) | `graduate` | `graduate` |
+| `came-from` | [`packages/fabrika-cli/src/wire/came-from.ts`](../../../packages/fabrika-cli/src/wire/came-from.ts) | `grilling`, `prototyping` | `grilling`, `wayfinding` |
 <!-- fabrika:wire-index:end -->
 
 ### `acceptance-criteria`
@@ -136,7 +137,15 @@ the whole interface between the machine and the work. Written per dispatch, two 
 same state send materially different instructions, and the rule that matters most — carry the URLs,
 never a restatement, because a restated spec is a stale spec — is enforced by nothing but the
 driver's care. So the format owns the rules text byte for byte and the state → shell routing table
-with it, and `lane brief` prints what it derives instead of composing anything. `## Ground` carries
+with it, and `lane brief` prints what it derives instead of composing anything. Both the section
+set and the field set are closed, and closing only the first is a hole this format shipped with: an
+appended `## Note from the driver` read back malformed, while the same sentence written as `note: …`
+inside `## Ground` parsed, was stored, and was never looked at again (#5809). So each field belongs
+to exactly one section — `## Task` owns `lane`, `root`, `fabrika`, `task`, `state` and `shell`,
+`## Ground` owns `issue`, `pr`, `epic`, `branch` and `range` — and an unknown key, a key under the
+wrong heading, or a key set twice under its own heading is malformed. The last two are the same
+defect as the first: the sections used to fold into one map, so a `state:` under `## Ground` quietly
+beat the one the driver's fold derived and re-routed the brief to a shell `## Task` never named. `## Ground` carries
 links and no content at all: the shell re-reads its own issue, PR and verdicts through its own
 verbs. A `review` or `ship` brief with no PR is malformed rather than dispatchable, because that
 shell would have nothing to read.
@@ -259,6 +268,22 @@ namespace-prefix gate that returns `Absent` for a non-member, so a widening that
 constant would emit markers it could never read back — and an emission is not a verdict anyway: it
 carries no `PASS`/`FAIL` polarity, binds a spec digest rather than a head SHA, and nothing recorded
 in it can block a merge.
+
+### `came-from`
+
+This is the section saying which issue an artifact's question arrived from, and it is the only thing
+carrying a `wayfinding` frontier ticket number into a sibling skill. `spike open` writes it on a
+spike issue and `grill open` writes it on a session issue; `grill open` also *reads* it, because for
+a session the binding is the resume key. That is the whole reason it is a format rather than a
+grammar either group owns: two writers and two readers across two skills, and a reader drifting from
+a writer here is silent.
+
+`standalone` is a value rather than a blank, so an artifact opened with no ticket says so instead of
+leaving a reader to infer it from an empty section. And the `Malformed` answer is load-bearing beyond
+the usual: a session whose heading drifted, answered as "bound to nothing", would make the resume
+find no match and mint a **second** session on one ticket — the split #5661 was filed about, except
+silent, where the failure it replaced was at least a visibly duplicate topic. `grill open` refuses on
+that answer rather than resuming past it.
 
 ## Adding a format
 

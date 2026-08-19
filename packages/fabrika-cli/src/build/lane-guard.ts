@@ -2,21 +2,22 @@
  * "This tree, on this branch, is my lane" — the precondition `tree --issue`, `check`, `push` and `pr`
  * share, guarded identically so a sibling verb cannot take the same ground on weaker evidence.
  *
- * Three facts in one order, and each is proven before the next is asked: a branch whose **name**
- * parses as a lane (`14`), a claim on that lane's number this session holds (`15` / `11`), and a nonce
- * in the branch that matches the token that claim carries (`14`).
+ * Two facts in one order, each proven before the next is asked: a branch whose **name** parses as a
+ * lane (`14`), and a claim on that lane's number held by *the lane the branch names* (`15` / `11`).
  *
- * The last step is the one that makes the others worth having. A branch that merely *looks* like a
- * lane proves nothing; the branch name and the live claim have to agree on the same UUID, which is
- * what a second run of the same session on a different issue cannot fake.
+ * The second is the one that makes the first worth having. A branch that merely *looks* like a lane
+ * proves nothing; the branch's nonce is passed in as the asking lane's identity, so the branch name and
+ * the live claim have to agree on the same UUID — which is what a second lane of the same session
+ * cannot fake. When the winner is another lane of this same session the refusal is re-mapped to `14`:
+ * inside one session that is a wrong tree to be standing in, not a wrong session (#6037).
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {currentBranch} from "../io/issues.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
-import {type ClaimMarker, requireClaim} from "./claim.ts";
+import {type ClaimMarker, laneCaller, requireClaim} from "./claim.ts";
 import {WRONG_LANE} from "./codes.ts";
-import {type LaneBranch, laneNumber, nonceOf, parseLaneBranch} from "./lane.ts";
+import {type LaneBranch, laneNumber, parseLaneBranch} from "./lane.ts";
 import {assertGround} from "./tree.ts";
 
 export type Lane =
@@ -72,16 +73,18 @@ export const requireLane = (
 			};
 		}
 
-		const held = yield* requireClaim(verb, repo, number, session);
-		if (held._tag === "Refused") return held;
-		if (nonceOf(held.marker.token) !== lane.nonce) {
+		const held = yield* requireClaim(verb, repo, number, laneCaller(session, lane.nonce));
+		if (held._tag === "Refused") {
 			return {
 				_tag: "Refused" as const,
-				outcome: refuse(
-					WRONG_LANE,
-					`${verb}: the checked-out branch "${branch}" does not carry claim ${held.marker.token}'s nonce — wrong lane.`,
-					held.notes,
-				),
+				outcome:
+					held.ownership._tag === "Foreign" && held.ownership.sameSession
+						? refuse(
+								WRONG_LANE,
+								`${verb}: the checked-out branch "${branch}" does not carry claim ${held.ownership.marker.token}'s nonce — wrong lane.`,
+								held.notes,
+							)
+						: held.outcome,
 			};
 		}
 		return {

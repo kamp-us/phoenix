@@ -1,10 +1,4 @@
-/**
- * Landing page (`/`) — the public front door. Stats + the two lists ("panoda son
- * 24 saat", "sözlüğe son eklenenler") all read live through fate, batched into one
- * per-screen `useRequest({landingStats, landingPosts, landingTerms})` under a single
- * `Screen` (ADR 0021). Server types are the source of truth (ADR 0022) — the rows
- * read the `Post`/`Term` views directly, no hand-written shadow shapes.
- */
+/** Landing page (`/`) — one batched `useRequest` under one `Screen`; see ADR 0021, ADR 0022. */
 import {ArrowRight} from "lucide-react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
@@ -20,7 +14,6 @@ import "./LandingPage.css";
 
 const LANDING_LIST_SIZE = 5;
 
-/** `LandingStats` is a singleton entity (constant `id`), served by `queries.landingStats`. */
 const LandingStatsView = view<LandingStats>()({
 	id: true,
 	totalDefinitions: true,
@@ -63,16 +56,11 @@ const landingRequest = {
 
 function formatStat(n: number): string {
 	if (n < 1000) return String(n);
-	// Turkish convention: thousands separator is `.` (e.g. 1.247).
 	return n.toLocaleString("tr-TR");
 }
 
 export function LandingPage() {
-	// Auth-gate the join CTA + rite framing on the SAME signal the topbar reads —
-	// `useMe` over `useSession` (#1784) — so the landing and the topbar can never
-	// disagree about auth state. The three-valued phase suppresses the CTA while
-	// auth is still resolving so it never flashes in/out (#448); the pure decision
-	// lives in `landingGating` (DOM-free, unit-tested).
+	// Gating rules (and why the phase is three-valued) live in `landingGating`.
 	const session = useSession();
 	const {status} = useMe();
 	const phase = landingCtaPhase(session.isPending, status);

@@ -1,7 +1,7 @@
 ---
 id: 0245
 title: A campaign-scope refusal binds at both fabrika seams, from one shared predicate, fabrika-only
-status: accepted
+status: amended-in-part by [0298](0298-declared-focus-is-a-set-of-milestones.md), [0304](0304-campaign-active-is-the-dispatch-permission.md)
 date: 2026-08-09
 tags: [fabrika, pipeline, roadmap, process]
 ---

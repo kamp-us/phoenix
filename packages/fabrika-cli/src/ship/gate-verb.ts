@@ -25,8 +25,9 @@
  *
  * `governance` is the one namespace the caller cannot decline: see {@link requiredWithFloor}.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {governedRootsOr} from "../config/paths.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {listPullFiles, permissionFor} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
@@ -69,6 +70,8 @@ export interface GateOptions {
 	readonly cp: boolean;
 	readonly repo: string | null;
 	readonly json: boolean;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -133,9 +136,11 @@ const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
 export const requiredWithFloor = (
 	requested: ReadonlyArray<string>,
 	files: ReadonlyArray<string>,
+	roots: ReadonlyArray<string>,
 ): {readonly required: ReadonlyArray<string>; readonly floored: ReadonlyArray<string>} => {
 	const distinct = new Set(requested);
-	const floored = touchesGovernanceRoot(files) && !distinct.has("governance") ? ["governance"] : [];
+	const floored =
+		touchesGovernanceRoot(files, roots) && !distinct.has("governance") ? ["governance"] : [];
 	return {required: [...distinct, ...floored], floored};
 };
 
@@ -181,13 +186,24 @@ const foldedReview = (reviews: ReadonlyArray<ReviewRecord>, sha: string): Candid
 
 export const runGate = (
 	options: GateOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const {pr, json, cp} = options;
 		const bad = badNumber(VERB, "a pull-request number", pr);
 		if (bad !== null) return bad;
 		const bound = inspectedSha(VERB, options.sha);
 		if (typeof bound !== "string") return bound;
+
+		const governed = yield* governedRootsOr(
+			VERB,
+			options.cwd,
+			"the floor cannot be raised and the conjunction is UNKNOWN, never satisfied.",
+		);
+		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
 
 		const requested = [...new Set(options.require)];
 		if (requested.length === 0) {
@@ -239,7 +255,7 @@ export const runGate = (
 				diagnostics,
 			);
 		}
-		const {required, floored} = requiredWithFloor(requested, listed.value);
+		const {required, floored} = requiredWithFloor(requested, listed.value, governed.roots);
 		if (floored.length > 0) {
 			diagnostics.push(
 				`${VERB}: #${pr}'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option (#5036).`,
@@ -334,7 +350,7 @@ export const runGate = (
 		if (contested) {
 			const head = yield* bindHead(VERB, repo, pr, pull, options.sha);
 			const digest =
-				head._tag === "Bound" ? yield* contentDigestAt(head.head.base, head.head.sha) : null;
+				head._tag === "Bound" ? yield* contentDigestAt(head.head.mergeBase, head.head.sha) : null;
 			if (digest !== null && digest._tag === "Ok") headDigest = digest.value;
 			else {
 				diagnostics.push(

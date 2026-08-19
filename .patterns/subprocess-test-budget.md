@@ -17,7 +17,7 @@ agent can't tell "my diff broke something" from "the box was busy."
 ## The rule
 
 - One constant per package, in that package's `src/test-budget.ts` (`SUBPROCESS_TEST_TIMEOUT_MS`),
-  all on the same 60s ceiling. [`packages/pipeline-cli/src/test-budget.ts`](../packages/pipeline-cli/src/test-budget.ts)
+  all on the same 60s ceiling. [`packages/fabrika-cli/src/test-budget.ts`](../packages/fabrika-cli/src/test-budget.ts)
   is the canonical one and states the *why* once; the others point at it. It is one module per
   package rather than one for the workspace because these members have no dependency edge between
   them — a test importing another package's source would invent one. The guard below makes the
@@ -28,7 +28,7 @@ agent can't tell "my diff broke something" from "the box was busy."
   ```ts
   import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts"; // your own package's
 
-  describe("worktree-sweep --execute — against a REAL git repo", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
+  describe("fabrika build check — against a REAL git repo", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
   	it("removes a clean, idle, unlocked orphan", async () => { … }); // no per-test timeout
   });
   ```
@@ -43,23 +43,28 @@ agent can't tell "my diff broke something" from "the box was busy."
 A generous ceiling is not a weakened assertion: a timeout is an upper bound, not a delay. 60s
 still fails decisively on a genuinely hung child while leaving a >60x margin for load.
 
-## The guard
+## The guard — currently absent (#6321)
 
-[`packages/pipeline-cli/src/subprocess-budget.test.ts`](../packages/pipeline-cli/src/subprocess-budget.test.ts)
-derives its scope from the workspace members declared in `pnpm-workspace.yaml`, keeps the members
-the `packages unit tests` job actually runs, walks every `*.test.ts` in them, treats an **import of
-`node:child_process`** as tier membership, and reds on a suite without the budget, a per-test
-timeout literal, a locally re-declared constant, or a package budget off the canonical value. So a
-new spawning suite joins the tier by being written, not by being remembered — in any package, not
-just its own.
+The drift guard lived in the v1 verb package as `subprocess-budget.test.ts` and was deleted with it
+(#6100). Nothing pins the ceiling today, so the rule above is convention until the guard is ported;
+[#6321](https://github.com/kamp-us/phoenix/issues/6321) tracks that. Stated here rather than left
+implied, because a pattern doc describing a guard that does not run is worse than one that admits
+the gap.
 
-It fails closed on an empty scope and on a **collapsed** one
+What it did, and what a port must keep: it derived its scope from the workspace members declared in
+`pnpm-workspace.yaml`, kept the members the `packages unit tests` job actually runs, walked every
+`*.test.ts` in them, treated an **import of `node:child_process`** as tier membership, and redded on
+a suite without the budget, a per-test timeout literal, a locally re-declared constant, or a package
+budget off the canonical value. So a new spawning suite joined the tier by being written, not by
+being remembered — in any package, not just its own.
+
+It also failed closed on an empty scope and on a **collapsed** one
 ([ADR 0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md)). Both matter, because the guard
 spent its first life rooted at its own package directory: it ran, it passed, and it had never looked
-outside `packages/pipeline-cli/`, where three suites elsewhere had no budget at all (#4858). A guard
-that passes because its scope is empty reads exactly like one that passes because the code is clean,
-so "the tier spans more than one member" and "every guarded root contributed members" are asserted
-directly rather than left implied.
+outside that package, where three suites elsewhere had no budget at all (#4858). A guard that passes
+because its scope is empty reads exactly like one that passes because the code is clean, so "the
+tier spans more than one member" and "every guarded root contributed members" were asserted directly
+rather than left implied.
 
 `apps/*` is out of tier by construction, not by omission: the only `apps/web` project whose tests
 spawn is `integration`, and `apps/web/vitest.config.ts` sets its `testTimeout` at the project level.

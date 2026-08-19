@@ -1,9 +1,7 @@
 /**
- * Phoenix D1 schema (binding `PHOENIX_DB`). Canonical store for every product
- * domain — ADR 0009 (d1-direct): there is no derivation step, the D1 shape *is*
- * the shape. The auth tables (`user`, `session`, `account`, `verification`,
- * `apikey`) are owned by better-auth via its drizzle adapter; everything else by
- * the relevant feature module (sozluk, pano, vote, pasaport).
+ * Phoenix D1 schema (binding `PHOENIX_DB`), D1-direct per ADR 0009. The auth tables
+ * (`user`, `session`, `account`, `verification`, `apikey`) are owned by better-auth
+ * through its drizzle adapter, not by us.
  */
 import {sql} from "drizzle-orm";
 import {index, integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-core";
@@ -14,13 +12,9 @@ import {KARMA_EVENT_REASONS} from "../karma-event.ts";
 import {REACTION_EMOJI} from "../reaction-emoji.ts";
 import {TARGET_KINDS} from "../target-kind.ts";
 
-// The shared read-model tables (`term_record` / `definition_record` /
-// `post_record` / `comment_record`) live in the `@kampus/db-schema` leaf so the
-// worker, preview-seed, and fts-backfill all import ONE declaration — a column
-// rename is one edit there, caught by typecheck, not three hand-mirrored copies
-// that drift (ADR 0096 `removed_at`, ADR 0093 `is_draft`; issues #859/#903).
-// drizzle-kit reads this module for migration generation, so re-exporting feeds
-// migrations exactly as a local declaration would.
+// The shared read-model tables live in `@kampus/db-schema` so worker, preview-seed,
+// and fts-backfill import ONE declaration. drizzle-kit reads this module for migration
+// generation, so re-exporting feeds migrations exactly as a local declaration would.
 export {commentRecord, definitionRecord, postRecord, termRecord} from "@kampus/db-schema";
 
 const timestamp = (name: string) => integer(name, {mode: "timestamp"});
@@ -34,39 +28,26 @@ export const user = sqliteTable("user", {
 	name: text("name"),
 	email: text("email").notNull(),
 	image: text("image"),
-	// `system` is the reserved discriminant of the seeded `@[silinen]` sentinel
-	// user (ADR 0097) — a real row that is neither a human nor a bot; it carries
-	// re-attributed content from deleted accounts. Seeded by migration, never
-	// creatable at runtime.
+	// `system` is the seeded `@[silinen]` sentinel that carries re-attributed content
+	// from deleted accounts (ADR 0097). Seeded by migration, never creatable at runtime.
 	type: text("type", {enum: ["human", "bot", "system"]})
 		.notNull()
 		.default("human"),
-	// Vestigial moderation role (was ADR 0098's authority source). ADR 0107 §4 moved
-	// moderation authority off this column onto the `moderates` relation tuple — read
-	// at the point of use via the `Moderate` capability (`RelationStore`), never
-	// `role`. Declared `input:false` to better-auth (`better-auth-live.ts`), so no
-	// client write can reach it; retained for back-compat, not read as authority.
+	// Vestigial. Moderation authority moved onto the `moderates` relation tuple (ADR
+	// 0107 §4) — never read this column as authority. `input:false` to better-auth.
 	role: text("role", {enum: ["member", "moderator"]})
 		.notNull()
 		.default("member"),
-	// Server-managed authorship tier (ADR 0107 §4) — the GLOBAL account-level
-	// earned standing on the `visitor < çaylak < yazar` ladder. The column holds
-	// only `çaylak | yazar` (an account is always ≥ çaylak; `visitor` is the
-	// no-account read, never stored). Born `çaylak`; promoted to `yazar` only by
-	// the server promotion path (#1206) / founding seed — declared `input:false`
-	// to better-auth (`better-auth-live.ts`), so no client/session write can set
-	// or escalate it. Read at the point of use via `Kunye.tierOf` (through
-	// Pasaport), never trusted from session state.
+	// Server-managed authorship tier (ADR 0107 §4). `visitor` is never stored — it is
+	// the no-account read. Only the server promotion path writes it; `input:false` to
+	// better-auth so no client write can escalate. Read via `Kunye.tierOf`, never from
+	// session state.
 	tier: text("tier", {enum: [...STORED_TIERS]})
 		.notNull()
 		.default("çaylak"),
-	// When the account was promoted `çaylak → yazar` (#1590). Null = never promoted,
-	// or promoted before this column existed (the founding cohort predates it — v1
-	// measures time-to-promotion forward only, no backfill). Stamped atomically inside
-	// `Pasaport.promoteToYazar` in the same batch as the `tier` flip (ADR 0013/0014),
-	// so it can only be set on the exact write that flips the tier — server-only, never
-	// client-writable (declared `input:false` + `returned:false` to better-auth,
-	// `better-auth-live.ts`). A thin nullable signal, NOT an analytics/event stream.
+	// Null = never promoted, OR promoted before this column existed (no backfill — the
+	// founding cohort predates it). Stamped in the same batch as the `tier` flip, so it
+	// can only be set on the write that flips the tier. `input:false`+`returned:false`.
 	promotedAt: timestamp("promoted_at"),
 	emailVerified: integer("email_verified", {mode: "boolean"}),
 	// Public handle: 3–30 chars, lowercase ASCII + digits + `-`, no leading/
@@ -74,11 +55,9 @@ export const user = sqliteTable("user", {
 	username: text("username").unique(),
 	createdAt: timestamp("created_at"),
 	updatedAt: timestamp("updated_at"),
-	// Account-deletion tombstone (ADR 0097). Null = a live account; set ⇒ the row
-	// was scrubbed by `account.delete` (email/name/image nulled) but KEPT so the
+	// Account-deletion tombstone (ADR 0097). Set ⇒ the row was scrubbed but KEPT, so the
 	// `author_id → silinen` redirect and the FKs stay coherent and the email can
-	// re-register fresh. Identity rows (session/account/apikey/verification) are
-	// torn down; this stamp marks the surviving tombstone.
+	// re-register fresh.
 	deletedAt: timestamp("deleted_at"),
 });
 
@@ -124,13 +103,10 @@ export const verification = sqliteTable("verification", {
 
 export const apikey = sqliteTable("apiKey", {
 	id: text("id").primaryKey(),
-	// `configId` + `referenceId` are the property names the pinned @better-auth/api-key
-	// plugin resolves against (its declared `apikey` schema names them, with no
-	// `fieldName` override) — the drizzle adapter's `checkMissingFields` indexes the
-	// table object by those exact keys on every create, so a mismatch 500s the mint
-	// (#108). `referenceId` keeps the SQL column `user_id`: with the plugin's default
-	// user-references config the reference IS the user id, so the column name stays
-	// accurate and no destructive column-rename migration is needed.
+	// `configId` + `referenceId` are the exact property names the pinned
+	// @better-auth/api-key plugin indexes this table object by on every create; a
+	// mismatch 500s the mint (#108). `referenceId` keeps the SQL column `user_id`
+	// because the reference IS the user id — no rename migration needed.
 	configId: text("config_id").notNull().default("default"),
 	name: text("name"),
 	start: text("start"),
@@ -157,19 +133,10 @@ export const apikey = sqliteTable("apiKey", {
 });
 
 /**
- * Append-only ban/unban event log — the SINGLE source of both the audit trail and
- * the current ban-state (ADR 0107 admin-gated moderation, epic #968). Ban-state is
- * NOT a mutable flag on `user` (the never-migrated better-auth `banned`/`banReason`/
- * `banExpires` columns are deliberately not resurrected): it is a projection of the
- * latest event for a user (see `features/pasaport/ban.ts` `resolveBanState`), so
- * "current state diverged from history" is unrepresentable — every ban and every
- * unban is one immutable row carrying its actor, reason, expiry, and time.
- *
- * Enforcement reads the latest row per request at the session boundary
- * (`Pasaport.validateSession`), so a banned user's EXISTING session is refused, not
- * just a flag toggled. The `(user_id, created_at DESC)` index is that hot read's
- * key. `onDelete: cascade` ties the log to the account row (account-deletion is a
- * kept tombstone, ADR 0097, so the row — and this history — survive a deletion).
+ * Append-only ban/unban log. Ban-state is NOT a flag on `user` — it is a projection of
+ * the latest event here (`resolveBanState`), so state can never diverge from history.
+ * `Pasaport.validateSession` reads it per request, so a banned user's EXISTING session
+ * is refused rather than just a flag toggled.
  */
 export const userBanEvent = sqliteTable(
 	"user_ban_event",
@@ -178,16 +145,11 @@ export const userBanEvent = sqliteTable(
 		userId: text("user_id")
 			.notNull()
 			.references(() => user.id, {onDelete: "cascade"}),
-		// The event kind: a `ban` opens/refreshes a ban, an `unban` lifts it. The
-		// projection reads only the latest row, so an `unban` after a `ban` restores
-		// access without mutating or deleting the ban row — full reversibility.
 		action: text("action", {enum: ["ban", "unban"]}).notNull(),
-		// The admin who performed the action (a discharged `Admin` grant's account id).
 		actorId: text("actor_id").notNull(),
-		// Ban reason (required at the mutation boundary for a `ban`); null for an `unban`.
 		reason: text("reason"),
-		// Optional ban expiry; null = permanent (or an `unban`). A past `expiresAt`
-		// projects to not-banned (see `resolveBanState`), so an expired ban self-lifts.
+		// Null = permanent (or an `unban`). A past `expiresAt` projects to not-banned, so
+		// an expired ban self-lifts with no sweep.
 		expiresAt: timestamp("expires_at"),
 		createdAt: timestamp("created_at").notNull(),
 	},
@@ -195,18 +157,10 @@ export const userBanEvent = sqliteTable(
 );
 
 /**
- * Append-only transactional-email delivery-failure log — the SINGLE source of both
- * the audit trail and the current per-address failing-state (email-bounce epic #2687).
- * Failing-state is a projection of the latest event for an address (see
- * `features/pasaport/email-delivery.ts` `resolveEmailDeliveryState`), mirroring
- * {@link userBanEvent}: latest-event-wins, so a stale "bouncing flag" is
- * unrepresentable. Every feed appends here — the send-time capture (Child #2691), the
- * admin mark/clear (Child #2692), and the CF async ingestion (Child #2694).
- *
- * The recipient is keyed by `address` (always known from the send), with `userId` a
- * nullable FK when the address resolves to an account — a send can target an address
- * with no `user` row. `onDelete: set null` keeps the delivery history when the account
- * is deleted (the address remains the stable key).
+ * Append-only email delivery-failure log, latest-event-wins like {@link userBanEvent}
+ * (`resolveEmailDeliveryState`). Keyed by `address`, not user: a send can target an
+ * address with no `user` row, so `userId` is a nullable `set null` FK and the address
+ * stays the stable key across an account deletion.
  */
 export const emailDeliveryEvent = sqliteTable(
 	"email_delivery_event",
@@ -214,17 +168,10 @@ export const emailDeliveryEvent = sqliteTable(
 		id: text("id").primaryKey(),
 		userId: text("user_id").references(() => user.id, {onDelete: "set null"}),
 		address: text("address").notNull(),
-		// A `fail` opens/refreshes a failing-state, a `clear` lifts it. The projection
-		// reads only the latest row, so a `clear` after a `fail` restores deliverability
-		// without mutating or deleting the fail row — full reversibility, as in ban.
 		action: text("action", {enum: ["fail", "clear"]}).notNull(),
-		// The admin who performed a manual mark/clear (the discharged `Admin` grant's account
-		// id, #2734), mirroring {@link userBanEvent}'s `actorId`. NULLABLE, unlike ban's
-		// NOT NULL: this log is multi-writer — the send-time `SendEmailError` capture (#2691)
-		// and the CF async ingestion (#2694) are non-admin appenders with no actor, and
-		// pre-#2734 rows carry none. Only the admin mark/clear stamps it.
+		// NULLABLE, unlike ban's NOT NULL: this log is multi-writer, and the send-time
+		// capture and the CF async ingestion are non-admin appenders with no actor.
 		actorId: text("actor_id"),
-		// The failure detail (a `SendEmailError` message, or an admin note); null for a `clear`.
 		reason: text("reason"),
 		createdAt: timestamp("created_at").notNull(),
 	},
@@ -235,18 +182,9 @@ export const emailDeliveryEvent = sqliteTable(
 );
 
 /**
- * Append-only platform-role assignment log (#3522, admin epic per ADR 0107). The
- * audit trail for the `Admin.over(platform)`-gated `user.setRole` mutation — the
- * SPA-invokable writer for the `moderates` relation tuple that #969/PR #1266's
- * offline mint never gave the console. Same append-only, latest-event-wins shape as
- * {@link userBanEvent}: the newest event's `role` is the current assignment, so the
- * log can never drift from the authoritative `relation_tuple` write the mutation
- * commits alongside it. `role` is the NEW role the action set — `moderator` grants
- * the `(user, "moderates", "platform")` tuple, `member` revokes it — so actor,
- * target, new role, and time are all captured for the audit AC. The `(user_id,
- * created_at DESC)` index serves the per-account latest-event read; `onDelete:
- * cascade` ties the history to the account row (a kept tombstone survives account
- * deletion, ADR 0097).
+ * Append-only platform-role assignment log, latest-event-wins like
+ * {@link userBanEvent}. Written alongside the authoritative `relation_tuple` write in
+ * the same mutation, so the audit trail cannot drift from the grant.
  */
 export const userRoleEvent = sqliteTable(
 	"user_role_event",
@@ -256,10 +194,8 @@ export const userRoleEvent = sqliteTable(
 			.notNull()
 			.references(() => user.id, {onDelete: "cascade"}),
 		// The role this action assigned: `moderator` writes the `moderates` tuple,
-		// `member` clears it. The latest row projects to the account's current role.
+		// `member` clears it.
 		role: text("role", {enum: ["member", "moderator"]}).notNull(),
-		// The admin who performed the action (a discharged `Admin` grant's account id),
-		// mirroring {@link userBanEvent}'s `actorId`.
 		actorId: text("actor_id").notNull(),
 		createdAt: timestamp("created_at").notNull(),
 	},
@@ -268,8 +204,8 @@ export const userRoleEvent = sqliteTable(
 
 /**
  * Per-(definition, voter) up-vote presence row. `user_vote` and
- * `definition_record.score` (COUNT(*) under `WHERE definition_id = ?`) are both
- * denormalized off this, recomputed inline in the same D1 batch as the vote write.
+ * `definition_record.score` are denormalized off this, recomputed inline in the same
+ * D1 batch as the vote write.
  */
 export const definitionVote = sqliteTable(
 	"definition_vote",
@@ -284,10 +220,7 @@ export const definitionVote = sqliteTable(
 	],
 );
 
-/**
- * Single-row stats table for the landing page (id = 1 is the only row).
- * Maintained inline by `recomputeSozlukStats` (D1-direct, see ADR 0009).
- */
+/** Single-row stats table (id = 1 is the only row), maintained by `recomputeSozlukStats`. */
 export const sozlukStats = sqliteTable("sozluk_stats", {
 	id: integer("id").primaryKey().default(1),
 	totalDefinitions: integer("total_definitions").notNull().default(0),
@@ -296,7 +229,6 @@ export const sozlukStats = sqliteTable("sozluk_stats", {
 	updatedAt: timestamp("updated_at").notNull(),
 });
 
-/** Per-(post, voter) up-vote presence row. Mirrors `definitionVote`. */
 export const postVote = sqliteTable(
 	"post_vote",
 	{
@@ -307,13 +239,7 @@ export const postVote = sqliteTable(
 	(t) => [primaryKey({columns: [t.postId, t.voterId]}), index("post_vote_post").on(t.postId)],
 );
 
-/**
- * Per-(post, user) bookmark ("kaydet") presence row. Pure presence — a row
- * means saved, its absence means not; no score or value column (the structural
- * difference from `postVote`, which the score cache reads). The `(user_id,
- * created_at DESC)` index serves a future newest-first saved-posts list, the
- * same `sql` DESC-fragment idiom as `post_record_author_created`.
- */
+/** Per-(post, user) bookmark ("kaydet"). Pure presence — no score or value column. */
 export const postBookmark = sqliteTable(
 	"post_bookmark",
 	{
@@ -327,7 +253,6 @@ export const postBookmark = sqliteTable(
 	],
 );
 
-/** Per-(comment, voter) up-vote presence row. Mirrors `postVote` and `definitionVote`. */
 export const commentVote = sqliteTable(
 	"comment_vote",
 	{
@@ -341,10 +266,7 @@ export const commentVote = sqliteTable(
 	],
 );
 
-/**
- * Single-row stats for the landing page. Maintained inline by
- * `recomputePanoStats` / `makePersistPanoStats` (D1-direct, see ADR 0009).
- */
+/** Single-row stats table, maintained by `recomputePanoStats` / `makePersistPanoStats`. */
 export const panoStats = sqliteTable("pano_stats", {
 	id: integer("id").primaryKey().default(1),
 	totalPosts: integer("total_posts").notNull().default(0),
@@ -354,10 +276,8 @@ export const panoStats = sqliteTable("pano_stats", {
 });
 
 /**
- * Per-user-per-target vote presence table powering the `myVote` view field.
- * Up-only in the MVP — presence of a row means voted, absence means not; there
- * is no `value` column. Maintained inline by `Vote.cast`'s atomic batch (insert
- * on vote, delete on retract; D1-direct, see ADR 0009).
+ * Per-user-per-target vote presence, powering `myVote`. Up-only — a row means voted,
+ * so there is no `value` column and a retract is a delete.
  */
 export const userVote = sqliteTable(
 	"user_vote",
@@ -375,22 +295,11 @@ export const userVote = sqliteTable(
 );
 
 /**
- * Per-(user, target) reaction presence row — the third instance of the
- * polymorphic per-user-presence pattern (after `user_vote` / `post_bookmark`),
- * modeled on the karma-free / ungated `post_bookmark` shape, polymorphic over
- * the same three targets Vote spans (`definition` | `post` | `comment`, the
- * shared `TARGET_KINDS` taxonomy). Social-only and UNGATED: a logged-in çaylak
- * may react — no karma column, no tier gate (the deliberate divergence from
- * Vote). Unlike bookmark (pure presence), a reaction carries a value: the
- * chosen `emoji`, constrained to the curated `REACTION_EMOJI` palette.
- *
- * The composite PK `(user_id, target_kind, target_id)` is the cardinality-one
- * constraint — at most one reaction per user per item, so changing a reaction
- * is an upsert on the `emoji` column (`onConflictDoUpdate`), mirroring the
- * `user_vote` cross-product PK shape. Aggregation is a `COUNT(*)` GROUP BY emoji
- * read (the display child owns the read path) — no per-(target, emoji) count
- * cache row is added here; the count is computed on read, so there is no cache
- * to keep coherent on every react.
+ * Per-(user, target) reaction. Social-only and UNGATED — a logged-in çaylak may react;
+ * no karma, no tier gate, the deliberate divergence from Vote. The composite PK caps it
+ * at one reaction per user per item, so a change is an upsert on `emoji`. Counts are
+ * computed on read (`COUNT(*)` GROUP BY emoji) — deliberately no count-cache row to
+ * keep coherent.
  */
 export const userReaction = sqliteTable(
 	"user_reaction",
@@ -409,13 +318,9 @@ export const userReaction = sqliteTable(
 );
 
 /**
- * One-directional member mute ("sustur") presence row: a row `(muter_id,
- * muted_id)` means muter has muted muted, its absence means not. Pure presence in
- * the `post_bookmark` shape — no value column — but keyed on two users rather than
- * (user, target). The composite PK `(muter_id, muted_id)` is the cardinality-one
- * constraint; the `muted_id` reverse index serves the batched viewer-side presence
- * read (`Mute.readMutedIds`) so read-masking stamps without an N+1. Maintained
- * inline by `Mute.set` (insert on mute, delete on un-mute; D1-direct, see ADR 0009).
+ * One-directional member mute ("sustur"): a row means muter has muted muted. The
+ * `muted_id` reverse index serves the batched `Mute.readMutedIds` read, so read-masking
+ * stamps without an N+1.
  */
 export const userMute = sqliteTable(
 	"user_mute",
@@ -428,10 +333,9 @@ export const userMute = sqliteTable(
 );
 
 /**
- * Per-user denormalized profile row. `total_karma` is the running sum of upvotes
- * received across all of this user's contributions, maintained inline by
- * `Vote.cast`'s atomic batch (D1-direct, see ADR 0009). Its provenance — one row
- * per bump — lives in {@link karmaEvent}, co-committed in that same batch (#2592).
+ * Per-user denormalized profile row. `total_karma` is an accumulator maintained in
+ * `Vote.cast`'s batch; its per-bump provenance lives in {@link karmaEvent}, co-committed
+ * in that same batch.
  */
 export const userProfile = sqliteTable(
 	"user_profile",
@@ -452,16 +356,10 @@ export const userProfile = sqliteTable(
 );
 
 /**
- * Append-only provenance ledger for `user_profile.total_karma` (#2592) — one row
- * per karma bump, co-committed in `Vote.cast`'s atomic batch (via the `KarmaBump`
- * contract's pasaport implementation, `features/pasaport/karma.ts`), so a delta
- * can never land without its event nor an event without its delta. The same
- * append-only-log shape as {@link userBanEvent}: a retraction is a NEGATIVE-`delta`
- * row, never a mutation or deletion of a prior one, so `SUM(delta)` per `user_id`
- * reconstructs the accumulator exactly. `reason` distinguishes the event kind
- * (`vote` cast / `retract`); `(source_kind, source_id)` names the vote target the
- * delta came from. `onDelete: cascade` ties the ledger to the account row (an
- * account deletion is a kept tombstone, ADR 0097, so this history survives it).
+ * Append-only provenance ledger for `user_profile.total_karma`, co-committed in
+ * `Vote.cast`'s batch so a delta can never land without its event. A retraction is a
+ * NEGATIVE-`delta` row, never a mutation or delete, so `SUM(delta)` per user
+ * reconstructs the accumulator exactly.
  */
 export const karmaEvent = sqliteTable(
 	"karma_event",
@@ -480,17 +378,9 @@ export const karmaEvent = sqliteTable(
 );
 
 /**
- * Per-(reporter, target) content-report presence row, polymorphic over the same
- * three targets Vote spans (`post` | `comment` | `definition`). The composite PK
- * `(reporter_id, target_kind, target_id)` makes a re-report by the same user an
- * idempotent no-op (`onConflictDoNothing`), mirroring `user_vote`.
- *
- * `status` is the resolution state machine (ADR 0098): born `'open'`, terminal
- * at `'resolved'` | `'dismissed'`. A terminal transition is the only writer of
- * the audit triad (`resolverId`/`resolvedAt`/`resolution`) — a resolved row is
- * uninhabitable without all three, so "resolved but we don't know who/what" is
- * unrepresentable. No live view publishes off this — a report is private
- * moderation state, not a client-cached entity.
+ * Per-(reporter, target) content report. The composite PK makes a re-report by the same
+ * user an idempotent no-op. `status` is the ADR 0098 resolution machine. No live view
+ * publishes off this — a report is private moderation state, not a client-cached entity.
  */
 export const contentReport = sqliteTable(
 	"content_report",
@@ -499,48 +389,32 @@ export const contentReport = sqliteTable(
 		reporterId: text("reporter_id").notNull(),
 		targetKind: text("target_kind", {enum: [...TARGET_KINDS]}).notNull(),
 		targetId: text("target_id").notNull(),
-		// Optional free-text reason supplied by the reporter.
 		reason: text("reason"),
-		// Status + resolution enums source from the ADR 0098 machine's tuples
-		// (`features/report/resolution.ts`) so the column can't drift from it.
+		// Status + resolution enums source from `features/report/resolution.ts` so the
+		// columns cannot drift from the machine.
 		status: text("status", {enum: [...REPORT_STATUSES]})
 			.notNull()
 			.default("open"),
 		createdAt: timestamp("created_at").notNull(),
-		// Audit triad — written only on a terminal transition, NULL while open.
+		// Audit triad — written only on a terminal transition, all three NULL while open.
 		resolverId: text("resolver_id"),
 		resolvedAt: timestamp("resolved_at"),
-		// The decision the resolver made: 'removed' (target soft-deleted via the
-		// substrate) | 'dismissed' (report unfounded, no action).
 		resolution: text("resolution", {enum: [...RESOLUTIONS]}),
-		// The wave-remove grouping identity (#1855, ADR 0138): ONE shared id stamped
-		// across every target resolved in a single wave gesture, so the batch reopens
-		// as a unit (#1704's restore primitive). NULL on a single-target resolve — a
-		// wave groups a batch, a lone resolve has none.
+		// ONE shared id stamped across every target resolved in a single wave gesture, so
+		// the batch reopens as a unit (ADR 0138). NULL on a single-target resolve.
 		waveId: text("wave_id"),
 	},
 	(t) => [
 		primaryKey({columns: [t.reporterId, t.targetKind, t.targetId]}),
-		// Reverse lookup: reports against a given target (moderation read path +
-		// free repeat-offender count, ADR 0098 §5).
 		index("content_report_target").on(t.targetKind, t.targetId),
-		// Reopen-by-wave lookup: the rows sharing a `wave_id` the restore reopens as a
-		// unit (#1855).
 		index("content_report_wave").on(t.waveId),
 	],
 );
 
 /**
- * ReBAC relation-tuple store (ADR 0107) — the `(subject, relation, object)` triples
- * that back the `Relation` capability axis (`moderates`, `admin`). A tuple's presence
- * IS the grant: `RelationStore` reads the existence check `(subject, relation, object)`,
- * served directly by the composite primary key. There is **no runtime write path** —
- * tuples are minted offline (the founder seed mints the `role='moderator'` cohort as
- * `(id, "moderates", "platform")`), the same fail-closed shape `user.role` has
- * (CLAUDE.md "Sözlük seed"; the deleted `/api/admin/*` fail-open routes). The
- * `(object, relation)` reverse index serves the "subjects holding relation R on object
- * O" listing read (e.g. the platform's moderators), mirroring the reverse-lookup index
- * on `content_report` / `user_vote`.
+ * ReBAC relation-tuple store (ADR 0107). A tuple's presence IS the grant. There is
+ * **no runtime write path** — tuples are minted offline, deliberately fail-closed;
+ * do not add one (CLAUDE.md "Sözlük seed", the deleted fail-open `/api/admin/*`).
  */
 export const relationTuple = sqliteTable(
 	"relation_tuple",
@@ -556,18 +430,10 @@ export const relationTuple = sqliteTable(
 );
 
 /**
- * Authorship-vouch ledger (ADR 0107, #1206) — the recorded act of a `yazar`
- * vouching for a `çaylak`'s promotion. A vouch is a durable record, not a
- * relation_tuple: relation_tuple has NO runtime write path (offline-minted only),
- * whereas a vouch IS a runtime write by a signed-in yazar, so it gets its own
- * table with the vouching actor preserved.
- *
- * The composite PK `(voucher_id, candidate_id)` makes a re-vouch by the same yazar
- * for the same çaylak an idempotent no-op (`onConflictDoNothing`) — and makes
- * "a vouch with no voucher" or "a vouch with no candidate" unrepresentable (both
- * NOT NULL). The `candidate_id` reverse index serves the "who vouched for this
- * çaylak" read. There is no FK to `user` so a later account-anonymize doesn't
- * cascade-erase the historical vouching act (the actor id is kept verbatim).
+ * Authorship-vouch ledger (ADR 0107). Its own table rather than a `relation_tuple`
+ * because a vouch IS a runtime write by a signed-in yazar and that table has no runtime
+ * write path. No FK to `user` — an account anonymize must not cascade-erase the
+ * historical vouching act.
  */
 export const authorshipVouch = sqliteTable(
 	"authorship_vouch",
@@ -583,19 +449,11 @@ export const authorshipVouch = sqliteTable(
 );
 
 /**
- * Per-recipient notification row (#1694, epic #1666) — the bildirim spine's one
- * table. `kind` is a plain text discriminant deliberately WITHOUT a D1 enum: the
- * spine mints no notifications; each sibling emitter (#1695–#1699) introduces its
- * own kinds without a migration. `target_kind`/`target_id` reference the notified
- * entity polymorphically (the `content_report` idiom, widened by `user` — see
- * `features/bildirim/target.ts`); the target may be removed later, so the read
- * path resolves liveness at list time (tombstone), never an FK.
- *
- * Read state is the nullable `read_at` stamp — "read but we don't know when" is
- * unrepresentable. `count` is the aggregate slot ("3 yeni oy", #1698): the spine
- * writes 1, an aggregating emitter bumps it + `updated_at` in place. `actor_id`
- * is kept verbatim with NO FK (the `authorship_vouch` choice) so an account
- * deletion never cascade-erases a recipient's history.
+ * The bildirim spine's one table. `kind` is deliberately WITHOUT a D1 enum, so each
+ * emitter adds its own kinds with no migration. The target may be removed later, so the
+ * read path resolves liveness at list time rather than through an FK. `count` is the
+ * aggregate slot ("3 yeni oy") an aggregating emitter bumps in place. `actor_id` carries
+ * no FK, so an account deletion never cascade-erases a recipient's history.
  */
 export const notification = sqliteTable(
 	"notification",
@@ -612,33 +470,22 @@ export const notification = sqliteTable(
 		updatedAt: timestamp("updated_at").notNull(),
 	},
 	(t) => [
-		// WHERE recipient_id = ? AND read_at IS NULL (the unread-count badge).
 		index("notification_recipient_read").on(t.recipientId, t.readAt),
-		// WHERE recipient_id = ? ORDER BY created_at DESC (the center's keyset list).
 		index("notification_recipient_created").on(t.recipientId, sql`${t.createdAt} DESC`),
 	],
 );
 
 /**
- * One row per mecmua post — mecmua's OWN worker-private long-form authoring store
- * (epic #2467, #2463), NOT a reuse of pano `post_record`. mecmua is markdown
- * long-form authoring, so it carries none of pano's link-sharing columns
- * (`url`/`host`/`score`/`hot_score`/`comment_count`/`tags`) and no çaylak sandbox
- * marker.
- *
- * `published_at` IS the draft/publish lifecycle: null ⇒ an unpublished draft
- * (masked from public reads by `features/mecmua/MecmuaPostVisibility`), non-null ⇒
- * published at that instant. Multiple drafts per author are allowed — the
- * deliberate divergence from pano's one-draft-per-author partial unique index, so
- * there is none here. Worker-private, so it lives in this schema and not the shared
- * `@kampus/db-schema` leaf.
+ * mecmua's own long-form authoring store, deliberately NOT a reuse of pano
+ * `post_record`. `published_at` IS the draft/publish lifecycle: null ⇒ an unpublished
+ * draft, masked from public reads by `MecmuaPostVisibility`. Multiple drafts per author
+ * are allowed — the deliberate divergence from pano, so no partial unique index here.
  */
 export const mecmuaPost = sqliteTable(
 	"mecmua_post",
 	{
 		id: text("id").primaryKey(),
 		title: text("title").notNull(),
-		// Canonical long-form markdown body under D1-direct (ADR 0009).
 		body: text("body").notNull().default(""),
 		slug: text("slug"),
 		authorId: text("author_id").notNull(),
@@ -646,21 +493,12 @@ export const mecmuaPost = sqliteTable(
 		createdAt: timestamp("created_at").notNull(),
 		updatedAt: timestamp("updated_at").notNull(),
 	},
-	(t) => [
-		// WHERE author_id = ? ORDER BY created_at DESC (an author's own posts + drafts).
-		index("mecmua_post_author_created").on(t.authorId, sql`${t.createdAt} DESC`),
-	],
+	(t) => [index("mecmua_post_author_created").on(t.authorId, sql`${t.createdAt} DESC`)],
 );
 
 /**
- * The mecmua subscribed-author edge (#2500, epic #2467) — the reader→author
- * follow relation the subscribed-author time feed reads to select authors. One row
- * per (subscriber, author) pair: `subscriber_id` follows `author_id`. Deliberately
- * MINIMAL (v1) — no display name, no notification prefs, no named-publication scope;
- * just the edge the feed keysets over. A dedicated table (not the generic
- * `relation_tuple`, which has no runtime write path) so the feed join is a plain
- * index read and the subscribe/unsubscribe writes are ordinary D1-direct mutations.
- * Worker-private, so it lives here and not the shared `@kampus/db-schema` leaf.
+ * The mecmua reader→author follow edge. A dedicated table rather than the generic
+ * `relation_tuple`, which has no runtime write path.
  */
 export const mecmuaSubscription = sqliteTable(
 	"mecmua_subscription",
@@ -670,10 +508,8 @@ export const mecmuaSubscription = sqliteTable(
 		createdAt: timestamp("created_at").notNull(),
 	},
 	(t) => [
-		// The edge identity — one subscription per (subscriber, author); a re-subscribe is
-		// an idempotent no-op, not a duplicate row.
+		// One subscription per (subscriber, author) — a re-subscribe is an idempotent no-op.
 		primaryKey({columns: [t.subscriberId, t.authorId]}),
-		// WHERE subscriber_id = ? — the feed's "which authors does this reader follow" read.
 		index("mecmua_subscription_subscriber").on(t.subscriberId, sql`${t.createdAt} DESC`),
 	],
 );

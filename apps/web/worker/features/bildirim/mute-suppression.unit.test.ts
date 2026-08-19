@@ -1,14 +1,8 @@
 /**
- * Bildirim mute-suppression seam (#3238, ADR 0188) — the decisions that are
- * wrong-or-right with no database (ADR 0082 T1/T2): the flag gate (default-off ⇒ no
- * suppression), the null-actor short-circuit (a system moment suppresses nobody), and
- * the viewer-scoped membership test (`recipient` = the muter, suppress iff the
- * recipient muted the actor). Row-level EXCLUSION against real D1 (a muted member's
- * interaction actually raising no bildirim end-to-end) is the integration tier's job,
- * like the content read-mask.
- *
- * The `Mute` stub either returns a fixed set or DIES on contact, so a path that must
- * short-circuit before the read (null actor / flag off) proves it never reaches `Mute`.
+ * Bildirim mute-suppression seam (#3238, ADR 0188) with no database (ADR 0082): the flag gate,
+ * the null-actor short-circuit, and the viewer-scoped membership test (`recipient` = the muter,
+ * suppress iff the recipient muted the actor). Row-level EXCLUSION against real D1 is the
+ * integration tier's job, like the content read-mask.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser} from "@kampus/fate-effect";
@@ -35,8 +29,8 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 		getObject: () => Effect.die("getObject not exercised"),
 	} as typeof Flags.Service);
 
-// A `Mute` whose `readMutedIds` returns a fixed set — or dies on contact, proving a
-// path that must short-circuit before the read (null actor / flag off) never reaches it.
+// `readMutedIds` returns a fixed set — or dies on contact, so a path that must short-circuit
+// before the read proves it never reaches `Mute`.
 const muteStub = (
 	readMutedIds?: (viewerId: string | null | undefined) => Effect.Effect<Set<string>>,
 ) =>

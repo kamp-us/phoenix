@@ -1,11 +1,11 @@
 /**
  * The governance-namespace derivation, as a pure function of one bound commit's changed paths.
  *
- * The root set is **not declared here**. `GOVERNANCE_ROOTS` and `touchesGovernanceRoot` live in
- * `../review/classes.ts`, where `ship scope` and `ship gate`'s required-set floor already read them,
- * and this module imports both — one derivation, three readers. Two derivations of one namespace are
- * two answers to one question (#4730), and the two would disagree the first time a fifth root landed
- * in only one of them.
+ * The root set is **not declared here**. It is `governedRoots` in `.fabrika.jsonc`, resolved by the
+ * verb and handed in, and the membership test is `touchesGovernanceRoot` in `../review/classes.ts`,
+ * which `ship scope` and `ship gate`'s required-set floor read too — one derivation, three readers.
+ * Two derivations of one namespace are two answers to one question (#4730), and the two would
+ * disagree the first time a repo declared a fifth root.
  *
  * The directory is the unit of coverage, not the file type: an enumerated skill-dir list plus an
  * any-depth `*.sh` clause is what left a non-`.sh` file beside a gated script proven-ordinary in v1.
@@ -13,7 +13,7 @@
 
 import {idFromFile, isFourDigitId} from "../adr/records.ts";
 import type {ChangedPath} from "../io/git.ts";
-import {GOVERNANCE_ROOTS, touchesGovernanceRoot} from "../review/classes.ts";
+import {touchesGovernanceRoot} from "../review/classes.ts";
 
 /** One root and how many of the diff's paths sit under it. Only roots the diff touches are reported. */
 export interface RootTally {
@@ -76,14 +76,17 @@ export const recordsIn = (changed: ReadonlyArray<ChangedPath>): ReadonlyArray<Re
 export const deriveScope = (
 	changed: ReadonlyArray<ChangedPath>,
 	skillRoots: ReadonlyArray<string>,
+	governedRoots: ReadonlyArray<string>,
 ): ScopeResult => {
 	const paths = changed.map((entry) => entry.path);
 	return {
-		required: touchesGovernanceRoot(paths),
-		roots: GOVERNANCE_ROOTS.map((name) => ({
-			name,
-			files: paths.filter((path) => path.startsWith(name)).length,
-		})).filter((tally) => tally.files > 0),
+		required: touchesGovernanceRoot(paths, governedRoots),
+		roots: governedRoots
+			.map((name) => ({
+				name,
+				files: paths.filter((path) => path.startsWith(name)).length,
+			}))
+			.filter((tally) => tally.files > 0),
 		self: paths.some((path) => skillRoots.some((root) => path.startsWith(root))),
 		records: recordsIn(changed),
 		scanned: paths.length,

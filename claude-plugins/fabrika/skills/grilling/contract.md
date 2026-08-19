@@ -282,10 +282,11 @@ triggers. `0`, `1`, `126` and `127` are stated **here and only here**, and every
 | `16` | `SESSION_AMBIGUOUS` — more than one open session matches the topic | ✓ | — | — | — | — |
 | `17` | `KIND_MISMATCH` — the question's kind does not admit this verb | — | — | ✓ | ✓ | — |
 | `18` | `QUESTION_RETIRED` — the target question was superseded by a later round | — | ✓ | ✓ | ✓ | — |
+| `19` | `BINDING_MALFORMED` — a scanned session's `came-from` binding does not conform | ✓ | — | — | — | — |
 
 **`3`–`11` are imported from
 [`src/report/codes.ts`](../../../../packages/fabrika-cli/src/report/codes.ts)**, not restated as
-numerals, so a drift is unrepresentable rather than merely detectable. `12`–`18` are the group's own
+numerals, so a drift is unrepresentable rather than merely detectable. `12`–`19` are the group's own
 and clear the base's occupied seats; they carry **no** cross-group uniqueness obligation, so
 `review`'s `12` and this group's `12` are two namespaces rather than a collision.
 
@@ -313,7 +314,7 @@ restated beside them. Every **non-zero** code seats on exactly one terminal.
 | `FACTS-PENDING` | `0` from `grill read`, frontier `facts-pending` | nothing awaits him, but the caller's own fact work is unfinished |
 | `FRONTIER-CLEAR` | `0` from `grill read`, frontier `clear` | every decision question reads `ruled`; the trail is ready for `graduate` |
 | `INPUT-REFUSED` | `3`, `4`, `5`, `6` | an input the caller supplied is **proven** malformed — the round, the finding, the authorization, or the `--topic` — and nothing was written. Fix and re-run; this is not UNKNOWN |
-| `SESSION-UNRESOLVED` | `7`, `16` | the session could not be named — absent, unlabelled, or ambiguous. Nothing was written |
+| `SESSION-UNRESOLVED` | `7`, `16`, `19` | the session could not be named — absent, unlabelled, ambiguous, or carrying a binding that does not conform. Nothing was written |
 | `RECORD-REFUSED` | `12`, `13`, `14`, `15`, `17`, `18` | a writing verb refused on a clause. Nothing was recorded and every question stays exactly as it was — the seam working, not an error to route around |
 | `WRITE-UNPROVEN` | `8`, `9` | a write may or may not have landed. Re-read before re-writing |
 | `STOPPED` | `1`, `11`, `126`, `127` | the run is UNKNOWN with nothing written |
@@ -348,14 +349,15 @@ exactly the drift the import exists to stop.
 **Invocation**
 
 ```
-fabrika grill open --topic "sozluk moderation model" [--repo <owner/name>]
+fabrika grill open (--topic "sozluk moderation model" | --ticket <n>) [--repo <owner/name>]
 ```
 
 **Inputs**
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--topic` | string | yes | — | the subject of the session; becomes the issue title and is matched against open `grilling:session` titles to resume rather than mint a duplicate |
+| `--topic` | string | one of the two | the `--ticket`'s title | the subject of the session; becomes the issue title and, with no `--ticket`, is matched against open `grilling:session` titles to resume rather than mint a duplicate |
+| `--ticket` | integer | one of the two | — | the issue this session's questions came from — a `wayfinding` frontier ticket in the ordinary case. Recorded on the session body and used as the resume key |
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository the session lives in |
 
 **Behaviour.** Searches open issues carrying `grilling:session`. On exactly one match it resumes
@@ -363,6 +365,22 @@ that issue and writes nothing. On no match it creates the issue titled `--topic`
 applies the `grilling:session` label to it** — the label is what makes the session findable, so a
 created-but-unlabelled issue is the state this verb exists to prevent, and the label write is part
 of the create rather than a caller's follow-up.
+
+**`--ticket` swaps the resume key from the title to the ticket, and nothing else.** A session opened
+for a ticket records it on its body in the `came-from` wire format — the same one `spike open`
+writes, owned by
+[`packages/fabrika-cli/src/wire/came-from.ts`](../../../../packages/fabrika-cli/src/wire/came-from.ts)
+— and later runs match on *that*: the same ticket resumes the same session however either title was
+edited afterwards. Without it a caller can only key on a title it invented from the ticket, and one
+rename mints a duplicate session, splitting the record the map is waiting on (#5661). The ticket is
+read for its title and its existence and for nothing else; **it is provenance, never instruction**,
+and a session carrying one is otherwise an ordinary session. With no `--ticket`, every byte of this
+verb's behaviour is what it was.
+
+**A scanned session whose own binding does not parse stops the run on `19`.** That read is total —
+found, absent, or malformed — and a malformed body is neither a match nor a non-match: reading it as
+"not this ticket" is exactly how the resume mints the duplicate it exists to prevent. The refusal
+names the session to fix, because re-running reads the same bytes forever.
 
 **Topic matching is exact under a stated normalization**, never fuzzy: both sides are compared after
 Unicode NFC normalization, case folding, trimming, and collapsing every internal whitespace run to a
@@ -372,13 +390,14 @@ judgment living inside a verb, and it would make `16` fire on titles a human rea
 **Output** — machine. One JSON object; every key below is always present:
 
 ```json
-{"session":9412,"topic":"sozluk moderation model","created":false,"url":"https://github.com/kamp-us/phoenix/issues/9412"}
+{"session":9412,"topic":"sozluk moderation model","ticket":null,"created":false,"url":"https://github.com/kamp-us/phoenix/issues/9412"}
 ```
 
 | Key | Type | Meaning |
 |---|---|---|
 | `session` | integer | the issue number, minted or resumed |
-| `topic` | string | `--topic` verbatim, as given |
+| `topic` | string | `--topic` verbatim, or the ticket's title when it supplied one |
+| `ticket` | integer or `null` | `--ticket` as given, `null` when the session is bound to nothing |
 | `created` | boolean | `true` when this call minted the issue, `false` when it resumed one |
 | `url` | string | the issue's HTML URL |
 
@@ -389,14 +408,19 @@ absence.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `grill open: --topic carries a machine-local path: <path> — refusing to open a session titled with it.` | 5 | refusal |
-| `grill open: --topic is a bare @ path reference — not redactable, refusing to open a session titled with it.` | 6 | refusal |
+| `grill open: neither --topic nor --ticket was given — a session needs a subject, or a ticket to take one from.` | 1 | refusal |
+| `grill open: <--topic \| #<t>'s title> is empty — a session needs a subject.` | 1 | refusal |
+| `grill open: <--topic \| #<t>'s title> carries a machine-local path: <path> — refusing to open a session titled with it.` | 5 | refusal |
+| `grill open: <--topic \| #<t>'s title> is a bare @ path reference — not redactable, refusing to open a session titled with it.` | 6 | refusal |
 | `grill open: label "grilling:session" does not exist in <repo> — refusing to open a session no later run can find. Run the front-door bootstrap: fabrika status bootstrap issue-shape-markers.` | 7 | refusal |
+| `grill open: #<t> does not exist in <repo> — refusing to bind a session to an issue no later run will read.` | 7 | refusal |
+| `grill open: cannot read #<t> in <repo>: <reason> — whether the ticket exists is UNKNOWN. Nothing was created.` | 11 | refusal |
 | `grill open: the create failed, so whether a session issue exists is UNKNOWN — check <repo> before re-running.` | 8 | refusal |
 | `grill open: created #<n> but the read-back does not match what was sent.` | 9 | refusal |
 | `grill open: the label write on #<n> failed, so the session may exist unlabelled and unfindable — check #<n> before re-running.` | 8 | refusal |
 | `grill open: cannot search <repo> for open sessions: <reason> — whether a session already exists is UNKNOWN, never "none". Re-run; do not mint a second one.` | 11 | refusal |
-| `grill open: <n> open sessions match topic "<topic>": #<a>, #<b> — refusing to guess which one is live.` | 16 | refusal |
+| `grill open: <n> open sessions match <topic "<topic>" \| ticket #<t>>: #<a>, #<b> — refusing to guess which one is live.` | 16 | refusal |
+| `grill open: session #<n>'s "## Came from" section does not parse: <reason> — whether it is the session for #<t> is undecidable, so nothing was created. Fix the section on #<n>.` | 19 | refusal |
 
 **Scope** — every **open** issue in `--repo` carrying `grilling:session`, paginated. Zero matches is
 a **fact**, not a failed read: no session existing is the ordinary first-run state, and the verb
@@ -407,7 +431,7 @@ failed search as "none" opens a second session and splits the record.
 
 ```
 $ fabrika grill open --topic "sozluk moderation model"
-{"session":9412,"topic":"sozluk moderation model","created":true,"url":"https://github.com/kamp-us/phoenix/issues/9412"}
+{"session":9412,"topic":"sozluk moderation model","ticket":null,"created":true,"url":"https://github.com/kamp-us/phoenix/issues/9412"}
 ```
 
 ```
@@ -721,8 +745,16 @@ fabrika grill read 9412 [--repo <owner/name>]
 **Output** — machine. One JSON object:
 
 ```json
-{"session":9412,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do sellers set their own return windows?","state":"ruled","proof":"acl+authorization","author":"acme-founder","ruledAt":"2026-08-09T18:36:48Z"},{"id":"R1.2","kind":"decision","round":1,"text":"Does a partial return follow the same path?","state":"stale","boundDigest":"a1b2c3d4e5f6","currentDigest":"9f8e7d6c5b4a"},{"id":"R2.1","kind":"fact","round":2,"text":"Does the vote table carry a weight column?","state":"answered"},{"id":"R2.2","kind":"decision","round":2,"text":"Do vouched-in yazars inherit weight?","state":"open"}],"disregarded":[{"comment":5234567899,"reason":"malformed","detail":"marker naming R2.2 does not parse: digest field is not 12 lowercase hex"}],"counts":{"open":1,"stale":1,"answered":1,"ruled":1,"unattested":0,"superseded":0},"scanned":{"comments":14,"rounds":2,"authorsResolved":2}}
+{"session":9412,"ticket":null,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do sellers set their own return windows?","state":"ruled","proof":"acl+authorization","author":"acme-founder","ruledAt":"2026-08-09T18:36:48Z"},{"id":"R1.2","kind":"decision","round":1,"text":"Does a partial return follow the same path?","state":"stale","boundDigest":"a1b2c3d4e5f6","currentDigest":"9f8e7d6c5b4a"},{"id":"R2.1","kind":"fact","round":2,"text":"Does the vote table carry a weight column?","state":"answered"},{"id":"R2.2","kind":"decision","round":2,"text":"Do vouched-in yazars inherit weight?","state":"open"}],"disregarded":[{"comment":5234567899,"reason":"malformed","detail":"marker naming R2.2 does not parse: digest field is not 12 lowercase hex"}],"counts":{"open":1,"stale":1,"answered":1,"ruled":1,"unattested":0,"superseded":0},"scanned":{"comments":14,"rounds":2,"authorsResolved":2}}
 ```
+
+**`ticket`** is the issue the session was opened on, read back from its body's `came-from` binding,
+or `null` when the body records none. A body that reaches for the binding and does not conform is
+**reported, not refused** — the drift lands on stderr naming the section to fix, `ticket` reads
+`null`, and the exit stays `0`. That is this verb's standing posture on content it could not parse,
+and it is the same reason a malformed marker becomes a `disregarded` row rather than a refusal:
+refusing would let anyone with write access disable the verb by editing one heading. `grill open` is
+where the same drift is fatal, because there it decides whether to mint.
 
 **Question row keys.** `id`, `kind`, `round`, `text` and `state` are present on **every** row.
 `text` is the question prose as it currently reads, so a caller can name the open questions to the
@@ -836,7 +868,7 @@ pagination is load-bearing rather than hygiene.
 
 ```
 $ fabrika grill read 9412
-{"session":9412,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do vouched-in yazars inherit weight?","state":"open"}],"disregarded":[],"counts":{"open":1,"stale":0,"answered":0,"ruled":0,"unattested":0,"superseded":0},"scanned":{"comments":3,"rounds":1,"authorsResolved":0}}
+{"session":9412,"ticket":null,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do vouched-in yazars inherit weight?","state":"open"}],"disregarded":[],"counts":{"open":1,"stale":0,"answered":0,"ruled":0,"unattested":0,"superseded":0},"scanned":{"comments":3,"rounds":1,"authorsResolved":0}}
 $ echo $?
 0
 ```
@@ -877,22 +909,6 @@ $ echo $?
 
 ---
 
-## Required repo files (verb-level)
-
-fabrika installs into repos that are not phoenix. The **when-missing** vocabulary is closed and is
-the same in every fabrika skill, so one reader parses all of them: **fail-loud** (stop, name the
-surface by its repo-relative path, point at front-door), **degrade** (continue with a narrower
-answer, stated), **bootstrap** (front-door creates it — [#4952](https://github.com/kamp-us/phoenix/issues/4952)).
-
-| Must exist | Why | When missing |
-| --- | --- | --- |
-| `gh` authenticated to `--repo` with `issues: write` | every verb reads or writes an issue or comment over REST | **fail-loud** — `11` before any write, `8` after one; never a silent empty answer |
-| The `grilling:session` label | `grill open` applies it on mint and resumes on it | **bootstrap** — `fabrika status bootstrap issue-shape-markers`; until it is run, `grill open` exits `7` naming the label |
-| `repos/<repo>/collaborators/<login>/permission` readable | clause 1 of every ruling (ADR 0055) | **fail-loud** — `11`, and every question's state is UNKNOWN: never `open`, never `ruled`. The load-bearing row — a degrade here would silently license the exact failure the skill exists to prevent |
-
-Nothing else. No `.decisions/`, no `.patterns/`, no CODEOWNERS, no merge-queue configuration, no
-design manifest: this group opens no pull request and gates no merge. Stated explicitly, because an
-absent row reads as nobody checked.
 
 ## Completeness self-test
 

@@ -1,11 +1,8 @@
 /**
- * `Admin` capability coverage (ADR 0107 §4, carrying ADR 0098 §2 forward) — the
- * `admin` twin of `moderate.unit.test.ts`: a holder of the `admin` relation
- * discharges `Admin.over(platform)` to a `Grant`; a non-holder and the anonymous
- * actor both fail the SAME invisible `Denied` (`UNAUTHORIZED`), so a non-admin
- * cannot tell itself apart from anonymous. The three ports are scripted
- * (`RelationStore` the tuple set, `AgentAuthority` fail-closed, `CurrentActor` the
- * actor) — no DB; the real-D1 write→read seam lives in
+ * `Admin` capability coverage (ADR 0107 §4, ADR 0098 §2) — the `admin` twin of
+ * `moderate.unit.test.ts`: a non-holder and the anonymous actor must fail the SAME
+ * invisible `Denied`, so a non-admin cannot tell itself apart from anonymous. Ports are
+ * scripted, no DB; the real-D1 seam is
  * `apps/web/tests/integration/kunye-admin-seam.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
@@ -24,8 +21,6 @@ import {Effect, Exit} from "effect";
 import {Admin, adminOf} from "./admin.ts";
 import {Denied} from "./errors.ts";
 
-// Provide the three ports off a fixture (the holder set the `admin` tuple proves
-// membership against) and run `Admin.over(platform)` to an Exit.
 const discharge = (actor: Actor, holders: ReadonlyArray<string>): Exit.Exit<Grant<Admin>, Denied> =>
 	Effect.runSyncExit(
 		Admin.over(platform).pipe(

@@ -1,28 +1,15 @@
 /**
- * Ban session-refusal enforcement — black-box against the deployed worker `/fate`
- * route over **real remote D1** (ADR 0026–0031 / ADR 0082 integration tier), the
- * security core of #970 (admin epic #968).
+ * Ban session-refusal enforcement — black-box against the deployed worker over real remote D1
+ * (ADR 0082 integration tier), the security core of #970. The load-bearing AC: a ban refuses the
+ * banned user's EXISTING session at the auth boundary, because `Pasaport.validateSession` reads
+ * ban-state fresh from D1 per request.
  *
- * The load-bearing AC (#970): a ban actually **refuses the banned user's existing
- * session at the auth boundary** — not a cosmetic flag. So the round-trip is asserted
- * end to end: sign up → `me` resolves (access) → append a `ban` event → `me` is
- * REFUSED as if signed-out (`UNAUTHORIZED`) even with the SAME valid cookie → append
- * an `unban` event → `me` resolves again (access restored). The enforcement lives in
- * `Pasaport.validateSession`, which reads the ban-state FRESH from D1 per request, so
- * an EXISTING session flips the moment the ban row lands — the whole point.
+ * The ban rows are written DIRECTLY to D1, not through the `user.banUser` mutation: that write
+ * path is dark behind the default-off `phoenix-user-ban` flag (ADR 0083), so this drives the
+ * enforcement read the way a released ban would. The mutation authority is the `unit` tier
+ * (`worker/features/pasaport/ban-mutation.unit.test.ts`), as is the projection (`ban.unit.test.ts`).
  *
- * The ban rows are written DIRECTLY to D1 here (not through the flag-gated
- * `user.banUser` mutation): the write path is dark behind `phoenix-user-ban`
- * (default-off, ADR 0083), so this test drives the enforcement read the way a
- * released ban would, and simultaneously asserts the audit row the enforcement reads
- * carries the actor/target/reason/expiry/time (AC #970). The mutation authority
- * (fail-closed for a non-admin) is the `unit` tier
- * (`worker/features/pasaport/ban-mutation.unit.test.ts`); the projection is
- * `worker/features/pasaport/ban.unit.test.ts`.
- *
- * Runs on the run-scoped SHARED stage (ADR 0104); every id/email is `NS`-prefixed
- * (this file's deterministic token) so its rows are its own, and each user's ban
- * events are cleaned up after the suite.
+ * Runs on the run-scoped SHARED stage (ADR 0104), `NS`-prefixed so its rows are its own.
  */
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {makeIntegrationD1Rest} from "./_cf-rest-transport.ts";
@@ -76,10 +63,8 @@ const insertBanEvent = (row: {
 		.run();
 };
 
-// `me` under a cookie: is the session honored (resolves the User) or refused
-// (UNAUTHORIZED, i.e. treated as anonymous)? D1 read-replica lag means a just-landed
-// ban row can take a beat to be visible to the worker's read, so poll to the expected
-// outcome under a bounded budget rather than assert once and flake.
+// D1 read-replica lag means a just-landed ban row can take a beat to reach the worker's read,
+// so poll to the expected outcome under a bounded budget rather than assert once and flake.
 const meIsHonored = async (cookie: string): Promise<boolean> => {
 	const result = await h.fate({kind: "query", name: "me", select: ["id"]}, {cookie});
 	return result.ok;
@@ -114,10 +99,8 @@ describe("ban enforcement — session refused at the auth boundary (real D1)", (
 		const user = await h.signUp(`${NS}-roundtrip@test.local`, "hunter2hunter2", "Round Trip");
 		userIds.push(user.userId);
 
-		// Before any ban: the session is honored.
 		expect(await meIsHonored(user.cookie)).toBe(true);
 
-		// Ban → the SAME cookie's session is now refused (treated as anonymous).
 		const banAt = nowSec();
 		await insertBanEvent({
 			userId: user.userId,
@@ -129,7 +112,6 @@ describe("ban enforcement — session refused at the auth boundary (real D1)", (
 		});
 		expect(await waitForHonored(user.cookie, false)).toBe(true);
 
-		// Unban (a later event) → access restored on the next request, no re-login.
 		await insertBanEvent({
 			userId: user.userId,
 			action: "unban",
@@ -145,7 +127,6 @@ describe("ban enforcement — session refused at the auth boundary (real D1)", (
 		const user = await h.signUp(`${NS}-expired@test.local`, "hunter2hunter2", "Expired Ban");
 		userIds.push(user.userId);
 
-		// A ban whose `expires_at` is already in the past projects to not-banned.
 		await insertBanEvent({
 			userId: user.userId,
 			action: "ban",
@@ -154,7 +135,6 @@ describe("ban enforcement — session refused at the auth boundary (real D1)", (
 			expiresAtSec: nowSec() - 3600,
 			createdAtSec: nowSec(),
 		});
-		// It never refuses — poll a few times to be sure it doesn't flip late.
 		expect(await waitForHonored(user.cookie, true)).toBe(true);
 	});
 

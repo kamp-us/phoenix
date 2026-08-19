@@ -19,7 +19,6 @@ export interface PropKnobsProps {
 	readonly onChange: (key: string, value: KnobValue) => void;
 }
 
-/** The prop-knobs panel — one labelled control per knob, controlled by the caller's values. */
 export function PropKnobs({schema, values, onChange}: PropKnobsProps) {
 	const entries = Object.entries(schema);
 	if (entries.length === 0) {

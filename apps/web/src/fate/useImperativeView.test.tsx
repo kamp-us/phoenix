@@ -1,12 +1,3 @@
-/**
- * Drives `useImperativeView` through its real React interface on the `client`
- * jsdom seam (#1419) — the component/hook-level coverage #1420 wanted but fell back
- * to a pure-core unit test for when the fork OOM'd (#1470). `useImperativeView.unit.test.ts`
- * still covers the pure `readImperativeView` read; this pins the *hook*: the
- * mount effect fires the read, and the discriminated `idle | loading | ok | error`
- * state transitions are observed through `renderHook` against a stubbed `FateClient`.
- */
-
 import {renderHook, waitFor} from "@testing-library/react";
 import type {ReactNode} from "react";
 import {FateClient, view} from "react-fate";
@@ -29,7 +20,6 @@ function makeWrapper(client: ImperativeViewClient) {
 }
 
 describe("useImperativeView — the hook over its React interface", () => {
-	// The error path logs via console.error; silence it so the run stays clean.
 	beforeEach(() => {
 		vi.spyOn(console, "error").mockImplementation(() => {});
 	});

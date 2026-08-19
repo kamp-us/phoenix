@@ -12,7 +12,6 @@ import {
 	wasSnapshotHydrated,
 } from "./feedPerf";
 
-/** A recording fake of the `performance` slice this module drives. */
 function fakePerformance(now = 812): PerformanceLike & {
 	marks: Array<{name: string; detail: unknown}>;
 	measures: Array<{name: string; start?: number; end?: number; detail: unknown}>;

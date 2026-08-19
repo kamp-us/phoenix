@@ -1,27 +1,9 @@
 /**
- * `LiveDO` — the unified live fan-out Durable Object (ADR 0037), a void-aligned
- * rewrite of the split `ConnectionDO`/`TopicDO` pair onto ONE class that plays
- * both roles, distinguished by instance-name prefix (mirrors void's
- * `VoidLiveStreamDurableObject`).
- *
- * An instance is named either `connection:<connectionId>` (owns one client's
- * held SSE stream + its subscription list) or `topic:<topicKey>` (owns that
- * topic's durable subscriber registry + publish fan-out + reap alarm).
- * {@link resolveRole} reads `state.id.name` to pick the role at request time;
- * instances are addressed ONLY via {@link connectionOf}/{@link topicOf}.
- *
- * Cross-role calls go through the DO's OWN namespace, resolved once in the outer
- * (per-instance) init and held in the closure. Same class referencing its own
- * namespace = no sibling cycle, so the Layer requires only `Worker` (ADR 0124 —
- * the beta.59 self-namespace resolution). The RPC methods' `R` is `RuntimeContext`
- * (beta.59 colored DO storage + cross-role stubs), discharged at the worker call
- * seam and, in unit tests, via `RuntimeContext.phantom`.
- *
- * Storage is `state.storage`'s flat KV API (no SQLite), void-faithful. The
- * void-faithful stale model rides two counters: per-connection `generation`
- * (bumped on each (re)connect, survives eviction) and per-subscription
- * `revision`. The reap alarm deletes ALL a connection's rows on the FIRST
- * failed probe — no consecutive-miss counter.
+ * `LiveDO` — the unified live fan-out Durable Object. One class plays both roles,
+ * picked from the instance name: `connection:<id>` (one client's held SSE stream)
+ * or `topic:<key>` (subscriber registry + publish fan-out + reap alarm). Address
+ * instances only via {@link connectionOf}/{@link topicOf}. See ADR 0037 (unified
+ * DO, storage/stale model) and ADR 0124 (self-namespace resolution).
  */
 import type {RuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -34,37 +16,23 @@ import {defaultLiveLimits, encodeFrame, SSE_HEADERS} from "./protocol.ts";
 
 const GENERATION_KEY = "connection:generation";
 
-/**
- * Connection-role: the persisted owner user id. Bound on the first open and read by
- * {@link openStream} to fence a foreign re-open (#2563) — persisted (like
- * `generation`) so the owner-isolation guard survives eviction, not only while the
- * held stream pins the DO warm.
- */
+// Persisted (not just closure-held) so the foreign-re-open fence in `openStream`
+// survives eviction (#2563).
 const OWNER_KEY = "connection:owner";
 
-/** Topic-role: the monotonic per-topic publish ordinal backing the replay buffer. */
 const BUFFER_SEQ_KEY = "topic:buffer:seq";
 
 const PRUNE_ALARM_DELAY_MS = 60_000;
 
-/**
- * KV key under which the topic role stamps the probe timeout the request path
- * threaded. The platform-fired `alarm()` has no worker call to thread `LiveLimits`
- * through, so the most recent `register` persists `deliveryAttemptTimeoutMs` here for
- * the alarm to read back — closing the decision-2B hole ("the DO never invents its
- * own", see {@link LiveLimits}) at the alarm seam instead of duplicating the
- * literal. See ADR 0037.
- */
+// The platform-fired `alarm()` has no worker call to thread `LiveLimits` through, so
+// the last `register` persists its probe budget here rather than the DO inventing one.
+// See ADR 0037.
 const REAP_PROBE_TIMEOUT_KEY = "topic:reap:probe-timeout-ms";
 
 type DurableObjectStateValue = Cloudflare.DurableObjectState["Service"];
 
-/**
- * The slice of `DurableObjectState` the instance builder touches: `id.name` +
- * the KV `storage`. Typed against this slice (not the whole `DurableObjectState`)
- * so the node-pool fake (`do-state.testing.ts`) satisfies it structurally with no
- * cast, while the real superset value still flows in unchanged.
- */
+// A slice, not the whole `DurableObjectState`, so the node-pool fake
+// (`do-state.testing.ts`) satisfies it structurally with no cast.
 export type LiveDoState = Pick<DurableObjectStateValue, "id" | "storage">;
 
 interface DeliverInput {
@@ -78,21 +46,9 @@ interface DeliverResult {
 	readonly stale: boolean;
 }
 
-/**
- * The unified LiveDO RPC surface — both roles' typed methods plus the SSE
- * `fetch`. Each method belongs to one role: connection-role (`openStream`/`fetch`,
- * `subscribe`, `unsubscribe`, `deliver`, `check`) vs topic-role (`register`,
- * `unregister`, `publish`, `alarm`). A misrouted call returns the method's no-op
- * shape WITHOUT mutating storage — and this holds *uniformly*: the topic-role
- * methods early-return on `role.kind !== "topic"`, `openStream`/`subscribe`/
- * `unsubscribe` on `role.kind !== "connection"`, and `deliver`/`check` on the
- * absent connection queue (only a connection's `openStream` sets `framesQueue`).
- * The real invariant is addressing-correctness: production reaches an instance
- * only via {@link connectionOf}/{@link topicOf}, which always target the matching
- * role, so a misroute is unreachable in practice — the role guards make the
- * documented no-op total and refactor-proof rather than convention-only. See
- * ADR 0037.
- */
+// Both roles' methods on one surface. Every method no-ops without touching storage
+// when called against the wrong role — unreachable in production (addressing always
+// matches), kept total so a refactor cannot break it. See ADR 0037.
 export interface LiveRpcSurface {
 	readonly subscribe: (input: {
 		readonly subId: string;
@@ -112,10 +68,8 @@ export interface LiveRpcSurface {
 		readonly row: SubscriberRow;
 		readonly limits: LiveLimits;
 		readonly subscribedAt: number;
-		// Connection-DO internal state (NOT a persisted row/frame field): the instant
-		// the subscribing connection's current epoch began. It is the authoritative replay
-		// floor, fencing pre-epoch frames (#1072/#1903). Optional so a direct `register`
-		// (tests) that doesn't model an epoch falls back to the `subscribedAt` bound.
+		// The replay floor, fencing pre-epoch frames (#1072/#1903). Optional so a direct
+		// `register` (tests) with no epoch falls back to the `subscribedAt` bound.
 		readonly epochStartedAt?: number;
 		readonly lastEventId?: string;
 	}) => Effect.Effect<{readonly ok: boolean}, never, RuntimeContext>;
@@ -141,24 +95,14 @@ type Role =
 const CONNECTION_PREFIX = "connection:";
 const TOPIC_PREFIX = "topic:";
 
-/**
- * Build a connection-role instance name. Production code never calls the name
- * builders directly — addressing goes through {@link connectionOf}/{@link topicOf},
- * so "always address via those, never hand-roll a name" is a greppable convention,
- * NOT a compiler guarantee: `getByName` accepts any string, and a malformed name
- * is what {@link resolveRole} maps to `unknown` (a silently no-op RPC). Exported
- * for `do.test.ts`'s platform fake.
- */
+// Never call the name builders directly — address via `connectionOf`/`topicOf`. That
+// is a convention, not a compiler guarantee: `getByName` takes any string, and a
+// malformed name resolves to the `unknown` role (a silently no-op RPC).
 export const makeConnectionName = (connectionId: string): `connection:${string}` =>
 	`${CONNECTION_PREFIX}${connectionId}`;
 
 export const makeTopicName = (topicKey: string): `topic:${string}` => `${TOPIC_PREFIX}${topicKey}`;
 
-/**
- * Address a connection-role instance: name grammar + `getByName` in one step.
- * Generic over the namespace's structural shape, so the worker namespace, the
- * DO's own scope handle, and the test fake all use the same addressing seam.
- */
 export const connectionOf = <T>(
 	live: {readonly getByName: (name: string) => T},
 	connectionId: string,
@@ -192,21 +136,14 @@ function bufferPrefix(topicKey: string): string {
 	return `frame:${topicKey}:`;
 }
 
-/**
- * The replay-buffer key for one published frame. `seq` is zero-padded so the KV
- * `list({prefix})` lexical order matches publish order (the store sorts by key
- * string, not by the numeric `seq` field) — replay must hand frames back in the
- * order they were published.
- */
+// `seq` is zero-padded because KV `list({prefix})` sorts by key string, not by the
+// numeric `seq` — replay must hand frames back in publish order.
 function bufferKey(topicKey: string, seq: number): string {
 	return `${bufferPrefix(topicKey)}${seq.toString().padStart(20, "0")}`;
 }
 
-/**
- * Build the unified LiveDO's per-instance methods. The builder takes `state` and
- * the DO's own namespace `live` (for cross-role addressing) as plain args so the
- * same algorithm is unit-testable without workerd.
- */
+// `state` and the DO's own namespace come in as plain args so the algorithm is
+// unit-testable without workerd.
 export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 	const encoder = new TextEncoder();
 	const CONNECTED_FRAME = encoder.encode(": connected\n\n");
@@ -214,16 +151,13 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 
 	const role = resolveRole(state.id.name);
 
-	// Connection-role per-instance state, closure-held; the open SSE stream pins
-	// this DO in memory. `subscriptions` tracks each live subscription's revision
-	// + active flag so deliver/check detect staleness without reaching back.
+	// Closure-held connection-role state; the open SSE stream pins this DO in memory.
 	let framesQueue: Queue.Queue<Uint8Array> | undefined;
 	let ownerId: string | undefined;
 	let generation: number | undefined;
-	// Wall-clock instant this connection's CURRENT epoch began (set when `openStream`
-	// bumps `generation`). The authoritative replay floor: a frame published before the
-	// epoch — already in a cursorless reconnect's query result — can't leak onto the new
-	// stream and clobber it. See {@link replayBuffer} (#1072/#1903).
+	// Instant this connection's current epoch began. The replay floor: a pre-epoch frame
+	// is already in a cursorless reconnect's query result, so replaying it would clobber
+	// the fresh value. See {@link replayBuffer} (#1072/#1903).
 	let epochStartedAt: number | undefined;
 	const subscriptions = new Map<
 		string,
@@ -237,8 +171,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 		return generation;
 	});
 
-	// The bound owner, read from storage on first miss so the open-time fence (#2563)
-	// holds after eviction — the closure var is undefined on a fresh wake.
+	// Read from storage on first miss: the closure var is undefined on a fresh wake, and
+	// the open-time fence (#2563) must still hold after eviction.
 	const loadOwner = Effect.gen(function* () {
 		if (ownerId === undefined) {
 			ownerId = yield* state.storage.get<string>(OWNER_KEY);
@@ -262,23 +196,16 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			if (role.kind !== "connection") {
 				return HttpServerResponse.empty({status: 404});
 			}
-			// Owner-isolation fence on OPEN (#2563): a re-open whose session user
-			// differs from the connection's bound owner is refused WITHOUT disturbing
-			// the prior holder — no generation bump, no owner overwrite, no
-			// subscription clear, no stream teardown. `subscribe` already enforces this
-			// invariant (:owner check below), but it compared against whatever the
-			// latest open wrote, so a hostile re-open reset the holder before any
-			// subscribe ran. The fence lives here at the DO seam because the DO must not
-			// trust the caller-supplied `ownerId` to self-authorize a takeover; a first
-			// open (no bound owner) and a same-owner reconnect both pass through.
+			// Owner fence on OPEN (#2563): refuse a foreign re-open before touching
+			// anything — no generation bump, no owner overwrite, no subscription clear, no
+			// teardown. `subscribe`'s owner check runs too late; a hostile re-open had
+			// already reset the holder by then.
 			const boundOwner = yield* loadOwner;
 			if (boundOwner !== undefined && boundOwner !== input.ownerId) {
 				return HttpServerResponse.empty({status: 403});
 			}
-			// A (re)connect bumps the persisted generation so any subscriber row a
-			// topic DO still holds from the prior stream is detected stale on the next
-			// deliver/check. The counter survives eviction, so a reconnect after
-			// eviction still lands strictly higher than any stale row.
+			// Persisted, so a reconnect after eviction still lands strictly higher than any
+			// subscriber row a topic DO still holds from the prior stream.
 			const next = (yield* loadGeneration) + 1;
 			generation = next;
 			epochStartedAt = Date.now();
@@ -290,10 +217,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			subscriptions.clear();
 			yield* closeStream;
 
-			// DROPPING strategy (not bounded): `Queue.offer` returns false the moment
-			// it's full instead of blocking the producer, and `deliver` reads that
-			// false to close the connection + report the row stale (void's 410 on queue
-			// full). The connected frame counts against the cap.
+			// Dropping, not bounded: `offer` must return false instead of blocking the
+			// producer, so `deliver` can close the connection and report the row stale.
 			const queue = yield* Queue.dropping<Uint8Array>(input.maxQueuedEventsPerConnection);
 			framesQueue = queue;
 			yield* Queue.offer(queue, CONNECTED_FRAME);
@@ -310,7 +235,6 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			return HttpServerResponse.stream(merged, {headers: SSE_HEADERS});
 		});
 
-	/** Is a topic-held subscriber row stale relative to this connection's state? */
 	const isStale = (row: SubscriberRow): boolean => {
 		if (generation === undefined || row.generation !== generation) {
 			return true;
@@ -321,10 +245,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 
 	const subscribe: LiveRpcSurface["subscribe"] = (input) =>
 		Effect.gen(function* () {
-			// The intent timestamp that bounds replay: only frames published at/after
-			// this instant catch up (the register-race window of #714), never the
-			// topic's prior history. One reading for the whole call, shared across all
-			// its topics. See {@link replayBuffer}.
+			// One reading shared across all this call's topics: it bounds replay to the
+			// register-race window (#714), never the topic's prior history.
 			const subscribedAt = Date.now();
 			// A control message cannot subscribe on another user's behalf.
 			if (ownerId !== input.ownerId) {
@@ -360,11 +282,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 							revision,
 							updatedAt: Date.now(),
 						};
-						// Thread `subscribedAt` (the primary replay bound), `epochStartedAt`
-						// (raises the floor to this connection's current epoch, fencing
-						// pre-epoch frames — #1072), and `lastEventId` (an additional
-						// tightening on a cursored resubscribe) so the topic replays only
-						// frames from this subscriber's current-epoch intent forward (#714).
+						// The three replay bounds the topic needs; see {@link replayBuffer}.
 						yield* topicOf(live, topicKey).register({
 							row,
 							limits: input.limits,
@@ -386,8 +304,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			}
 			sub.active = false;
 			subscriptions.delete(input.subId);
-			// Failure here is swallowed best-effort — the reap alarm catches what an
-			// unreachable topic instance misses.
+			// Failure is swallowed on purpose: the reap alarm catches what an unreachable
+			// topic instance misses.
 			const gen = yield* loadGeneration;
 			yield* Effect.forEach(
 				sub.topics,
@@ -424,8 +342,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 				// Oversized event: drop it (not stale — the subscription is fine).
 				return {delivered: false, stale: false};
 			}
-			// `offer` returns false when the dropping queue is full: close the stream
-			// and treat the row as stale (void's 410 on queue full).
+			// A full dropping queue means the client fell behind: tear the stream down and
+			// report the row stale.
 			const accepted = yield* Queue.offer(queue, encoded);
 			if (!accepted) {
 				yield* closeStream;
@@ -438,7 +356,6 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 		Effect.gen(function* () {
 			yield* loadGeneration;
 			if (framesQueue === undefined) {
-				// No open stream — every probed row is stale.
 				return {stale: input.subscriptions.map((_, index) => index)};
 			}
 			const stale: Array<number> = [];
@@ -467,9 +384,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 
 	const ensureAlarm = (limits: LiveLimits) =>
 		Effect.gen(function* () {
-			// Stamp the threaded probe budget so the platform-fired `alarm()` reaps on the
-			// same `deliveryAttemptTimeoutMs` the request path uses (decision 2B), never a
-			// DO-invented literal — see {@link REAP_PROBE_TIMEOUT_KEY}.
+			// See {@link REAP_PROBE_TIMEOUT_KEY}.
 			yield* state.storage.put(REAP_PROBE_TIMEOUT_KEY, limits.deliveryAttemptTimeoutMs);
 			const existing = yield* state.storage.getAlarm();
 			if (existing == null) {
@@ -482,12 +397,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			...map,
 		]);
 
-	/**
-	 * Drop buffer entries past the TTL or beyond the count cap, returning the
-	 * surviving window (newest-last). Called on every publish and register so the ring
-	 * stays bounded by both dimensions with no background sweep. `now` is passed so a
-	 * caller's clock reading is the single source of truth across prune+append.
-	 */
+	// Runs on every publish and register, so the ring stays bounded with no background
+	// sweep. `now` is passed in so one clock reading covers prune + append.
 	const pruneBuffer = (
 		entries: ReadonlyArray<readonly [string, BufferedFrame]>,
 		limits: LiveLimits,
@@ -495,8 +406,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 	) =>
 		Effect.gen(function* () {
 			const unexpired = entries.filter(([, value]) => now - value.at <= limits.bufferedFrameTtlMs);
-			// `entries` is lexically ordered (zero-padded seq), so the newest are the
-			// tail; drop the oldest overflow past the count cap.
+			// `entries` is lexically ordered (zero-padded seq), so the newest are the tail.
 			const overCap = Math.max(0, unexpired.length - limits.maxBufferedFramesPerTopic);
 			const expired = entries.filter(([, value]) => now - value.at > limits.bufferedFrameTtlMs);
 			const dropKeys = [
@@ -509,20 +419,15 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			return unexpired.slice(overCap);
 		});
 
-	/** Allocate the next monotonic per-topic publish ordinal (persisted). */
 	const nextSeq = Effect.gen(function* () {
 		const seq = ((yield* state.storage.get<number>(BUFFER_SEQ_KEY)) ?? 0) + 1;
 		yield* state.storage.put(BUFFER_SEQ_KEY, seq);
 		return seq;
 	});
 
-	/**
-	 * Append an already-seq-stamped frame to the ring buffer (after a prune). The
-	 * caller allocated the `seq` (via {@link nextSeq}) and stamped it onto the frame's
-	 * `eventId` BEFORE fan-out, so the live-delivered frame, the buffered frame, and
-	 * its `BufferedFrame.eventId` all carry the SAME ordinal — replay resumes against
-	 * the exact id the client already saw on the wire.
-	 */
+	// The frame arrives already seq-stamped: the caller stamped `eventId` before fan-out,
+	// so the buffered copy carries the same ordinal the client saw on the wire and replay
+	// resumes against it exactly.
 	const appendToBuffer = (
 		topicKey: string,
 		frame: DeliverFrame,
@@ -574,22 +479,13 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			const now = Date.now();
 			const entries = yield* loadBuffer(row.topicKey);
 			const window = yield* pruneBuffer(entries, limits, now);
-			// The replay floor is the CAUSAL epoch boundary, not a wall-clock guess: a #714
-			// register-race frame is published after `openStream` (`at >= epochStartedAt`, KEEP);
-			// a stale pre-vote frame published before the subscribe intent is pre-epoch
-			// (`at < epochStartedAt`, DROP). Production always sets `epochStartedAt` (openStream);
-			// the `subscribedAt` fallback is only the epoch-absent direct-`register` (test) path.
-			// No wall-clock grace: it once absorbed cross-DO skew, but `epochStartedAt` and
-			// `subscribedAt` are the SAME connection-DO clock, so there is no skew to absorb — and
-			// that grace was itself the #1903 leak (it admitted the pre-vote frame the epoch fence
-			// now drops). See #1903.
+			// No wall-clock grace here: `epochStartedAt` and `subscribedAt` come off the same
+			// connection-DO clock, so there is no skew to absorb — and the grace was itself
+			// the #1903 leak.
 			const floor = epochStartedAt ?? subscribedAt;
-			// The cursor is the last per-topic `seq` the subscriber saw (every delivered frame
-			// now carries `eventId === String(seq)`, primary fan-out and replay alike). Compare
-			// numerically against `buffered.seq` and replay only STRICTLY-newer frames — robust
-			// even when the cursor frame itself has aged out of the window (a string-equality
-			// scan would never find it and wrongly drop everything newer). A non-numeric/absent
-			// cursor leaves the whole at/after-intent window eligible (#714/#731).
+			// Compare the cursor numerically against `buffered.seq` and replay only strictly
+			// newer frames. A string-equality scan would never find a cursor frame that had
+			// aged out of the window, and would then wrongly drop everything newer (#731).
 			const cursorSeq = lastEventId === undefined ? undefined : Number(lastEventId);
 			const sinceSeq =
 				cursorSeq !== undefined && Number.isFinite(cursorSeq) ? cursorSeq : undefined;
@@ -622,8 +518,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			}
 			const row = input.row;
 			const entries = yield* loadRows(row.topicKey);
-			// Supersede this connection's older rows (lower generation) and the
-			// prior-revision row for this exact subscription — void's register prune.
+			// Supersede this connection's older-generation rows and the prior-revision row
+			// for this exact subscription.
 			const stale: Array<string> = [];
 			for (const [key, value] of entries) {
 				if (value.connectionId === row.connectionId && value.generation < row.generation) {
@@ -635,8 +531,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 				}
 			}
 			const survivors = entries.filter(([key]) => !stale.includes(key));
-			// Topic subscription cap (void returns 409 "topic full"; here a no-op
-			// `{ok: false}` is the equivalent rejection — the connection records it).
+			// Topic full: `{ok: false}` is the rejection, and the connection records it.
 			if (survivors.length >= input.limits.maxSubscriptionsPerTopic) {
 				return {ok: false};
 			}
@@ -645,9 +540,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			}
 			yield* state.storage.put(subscriberKey(row), row);
 			yield* ensureAlarm(input.limits);
-			// Catch up the just-registered connection on frames a publish that beat this
-			// register would have missed it on (#714). Replay reaches ONLY this
-			// connection, which fan-out could not have — see {@link replayBuffer}.
+			// Catch up on frames a publish that beat this register would have missed
+			// (#714) — see {@link replayBuffer}.
 			yield* replayBuffer(
 				row,
 				input.limits,
@@ -672,18 +566,14 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			if (role.kind !== "topic") {
 				return {delivered: 0};
 			}
-			// Stamp the topic's monotonic ordinal as this frame's `eventId` BEFORE fan-out,
-			// so the live-delivered frame, the buffered copy, and every replay all carry the
-			// SAME per-topic-monotonic SSE `id:` — the client only ever sees in-order,
-			// non-stale frames and its last-frame-wins apply is correct (#731). The topic owns
-			// the id (overriding any inbound `frame.eventId`): per-topic monotonicity is the
-			// invariant, and in production nothing upstream sets one.
+			// Stamp the ordinal BEFORE fan-out so the live frame, the buffered copy, and
+			// every replay carry the same SSE `id:` and last-frame-wins stays correct
+			// (#731). The topic owns the id and overrides any inbound one.
 			const seq = yield* nextSeq;
 			const frame: DeliverFrame = {...input.frame, eventId: String(seq)};
 			const entries = yield* loadRows(input.topicKey);
-			// Fan out per-connection deliver passes concurrently (connections are
-			// independent). The inner per-row loop stays sequential because it
-			// short-circuits on the first unreachable item.
+			// Connections fan out concurrently; the inner per-row loop stays sequential
+			// because it short-circuits on the first unreachable item.
 			const grouped = groupByConnection(entries);
 			const perConnection = yield* Effect.forEach(
 				grouped,
@@ -694,9 +584,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 						let reachable = true;
 						let delivered = 0;
 						for (const item of items) {
-							// Any failure/defect/timeout on the cross-role deliver = "couldn't
-							// reach" → reap the whole group (void deletes ALL a connection's
-							// rows on a 410/404/no response). First failure flips `reachable`.
+							// Any failure, defect or timeout counts as unreachable and reaps ALL
+							// that connection's rows, not just this one.
 							const result = yield* connection
 								.deliver({
 									frame: {...frame, id: item.row.subId},
@@ -727,9 +616,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 					}),
 				{concurrency: "unbounded"},
 			);
-			// Retain the SAME seq-stamped frame for a subscriber whose register lands after
-			// this publish (#714). After fan-out, so the ring reflects what already went out
-			// live — buffered `eventId` === the live wire `id:`, so replay resumes exactly.
+			// After fan-out, and the same seq-stamped frame, so a subscriber whose register
+			// lands later replays exactly what went out live (#714).
 			yield* appendToBuffer(input.topicKey, frame, seq, input.limits, Date.now());
 			return {delivered: perConnection.reduce((sum, n) => sum + n, 0)};
 		});
@@ -741,9 +629,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			}
 			const entries = yield* loadRows(role.topicKey);
 			const grouped = groupByConnection(entries);
-			// The probe budget the last `register` threaded (decision 2B); the shared
-			// `defaultLiveLimits` is the fallback when no row has armed the alarm yet —
-			// never a DO-invented literal. See {@link REAP_PROBE_TIMEOUT_KEY}.
+			// See {@link REAP_PROBE_TIMEOUT_KEY}; the shared default covers the case where no
+			// row has armed the alarm yet.
 			const probeTimeout =
 				(yield* state.storage.get<number>(REAP_PROBE_TIMEOUT_KEY)) ??
 				defaultLiveLimits.deliveryAttemptTimeoutMs;
@@ -751,9 +638,9 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 				grouped,
 				([connectionId, items]) =>
 					Effect.gen(function* () {
-						// First failed probe → reap ALL that connection's rows (void-faithful:
-						// no consecutive-miss counter). A reachable connection reports which
-						// of its rows are stale; we reap exactly those.
+						// One failed probe reaps ALL that connection's rows — no
+						// consecutive-miss counter. A reachable connection instead names its
+						// own stale rows, and only those go.
 						const result = yield* connectionOf(live, connectionId)
 							.check({subscriptions: items.map((item) => item.row)})
 							.pipe(
@@ -781,8 +668,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			if (staleKeys.length > 0) {
 				yield* state.storage.delete(staleKeys);
 			}
-			// Reschedule while rows remain so an evicted connection's orphans are
-			// eventually reaped even with no publish traffic.
+			// Reschedule while rows remain, so an evicted connection's orphans are reaped
+			// even with no publish traffic.
 			const remaining = yield* loadRows(role.topicKey);
 			if (remaining.length > 0) {
 				yield* state.storage.setAlarm(Date.now() + PRUNE_ALARM_DELAY_MS);
@@ -802,33 +689,15 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 	};
 };
 
-/**
- * The `LiveDO` implementation Layer (ADR 0028). The DO's OWN namespace is
- * resolved once in the outer (per-instance) init for cross-role addressing —
- * void's `this.env[binding]` pattern — via `Cloudflare.DurableObject`, the
- * beta.59 self-namespace yield (ADR 0124, superseding ADR 0037's removed
- * `DurableObjectNamespaceScope`). The requirement is discharged at the yield
- * site (see below), so the Layer stays `Layer<LiveDO, never, Worker>`; the RPC
- * methods themselves are `RuntimeContext`-colored (beta.59) and discharged at
- * the worker call seam / in tests via `RuntimeContext.phantom`.
- */
+// See ADR 0028 (the DO model) and ADR 0124 (self-namespace resolution).
 export const LiveDOLive = LiveDO.make(
 	Effect.gen(function* () {
-		// Resolve the DO's OWN namespace once (outer, per-instance init — runs on the
-		// platform when the DO boots, NOT at stack build), for cross-role addressing.
-		// Must be the OUTER init, not a handler: `.make` provides `DurableObjectScope`
-		// to the constructor (alchemy DurableObject.js:640), and the bridge runs the
-		// constructor per-instance but does NOT thread the scope into the inner
-		// handlers, so a handler-level yield would die at runtime. NOT
-		// `LiveDO.from(Self)`: it needs the host `Worker`, reintroducing the worker↔DO
-		// cycle this scope avoids. The cast discharges the phantom `Req`: `.make<Req>`
-		// leaves the self-scope in `Req` (it's not a `DurableObjectServices` member)
-		// even though it's provided at runtime, so we narrow the whole Effect to
-		// `Effect<LiveNamespace>` (success widened to this DO's namespace, `R` narrowed
-		// to `never`), grounded in that runtime provision (ADR 0124). `DurableObjectClass`
-		// and `Effect` don't structurally overlap, so a lone `as` won't convert — the
-		// double cast is the only spelling, and it's laundering a KNOWN-provided service,
-		// not an unverified value.
+		// Must be the OUTER init, not a handler: `.make` provides `DurableObjectScope` to
+		// the constructor (alchemy DurableObject.js:640) but does not thread it into the
+		// inner handlers, so a handler-level yield dies at runtime. Not `LiveDO.from(Self)`
+		// either — that needs the host `Worker` and reintroduces the worker↔DO cycle. The
+		// double cast is the only spelling that discharges the phantom `Req`, since
+		// `DurableObjectClass` and `Effect` do not structurally overlap.
 		// biome-ignore lint/plugin: discharges the self-scope `Req` that `.make` provides at runtime (alchemy DurableObject.js:640) but leaves in the type — the beta.59 typing gap ADR 0124 records; no value is fabricated, the runtime yield is unchanged.
 		const live = yield* Cloudflare.DurableObject as unknown as Effect.Effect<LiveNamespace>;
 		// The shared-init gen RETURNS the per-instance Effect (run once per instance
@@ -838,12 +707,9 @@ export const LiveDOLive = LiveDO.make(
 			const state = yield* Cloudflare.DurableObjectState;
 			const instance = makeLiveInstance(state, live);
 			return {
-				// The SSE upgrade stays a `fetch` (request-shaped).
 				fetch: Effect.gen(function* () {
 					const raw = yield* Cloudflare.Request;
 					const url = new URL(raw.url);
-					// The route threads the per-request queue cap on the URL; fall back to
-					// a safe default if the param is missing/unparseable.
 					const capParam = Number(url.searchParams.get("maxQueuedEventsPerConnection"));
 					const maxQueuedEventsPerConnection =
 						Number.isInteger(capParam) && capParam > 0

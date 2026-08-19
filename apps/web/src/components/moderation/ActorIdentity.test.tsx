@@ -1,10 +1,3 @@
-/**
- * `ActorIdentity` — the shared moderation actor-row (ADR 0147). Renders an actor's
- * handle + karma-on-others through the same reusable `<Karma>` atom (#1208), with the
- * consuming surface's own CSS namespace + test-id prefix supplied as props. These
- * asserts pin the render contract every mod/admin surface reuses (divan's roster and
- * detail today via `CaylakIdentity`, the admin user-list #968 next).
- */
 import {render, screen} from "@testing-library/react";
 import {describe, expect, it} from "vitest";
 import {ActorIdentity} from "./ActorIdentity";
@@ -25,7 +18,6 @@ describe("ActorIdentity — the shared actor row", () => {
 			/>,
 		);
 		expect(screen.getByText("Ada Lovelace")).toBeTruthy();
-		// the karma atom rides the surface's test-id prefix + the actor id
 		const karma = screen.getByTestId("divan-karma-a1");
 		expect(karma.textContent).toContain("42");
 	});

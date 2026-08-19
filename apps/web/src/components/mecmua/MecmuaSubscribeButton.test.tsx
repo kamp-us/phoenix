@@ -1,9 +1,3 @@
-/**
- * The mecmua subscribe toggle's label contract (#2527): not-following ⇒ "abone ol";
- * following ⇒ "takip ediliyor", swapping to "bırak" on hover/focus so the unsubscribe
- * intent reads honestly. Tests the pure `mecmuaSubscribeLabel` core (DOM-free), the way
- * `mecmuaPublishAffordance` is tested.
- */
 import {describe, expect, it} from "vitest";
 import {mecmuaSubscribeLabel} from "./MecmuaSubscribeButton";
 

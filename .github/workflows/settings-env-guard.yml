@@ -5,15 +5,15 @@ name: settings-env-guard
 # ${VAR} in them (settings docs; verified on desktop + web) — so such a value never
 # resolves: it is consumed literally, creating a stray literal-token directory at the
 # repo root and clobbering PATH. This is the same silent-drift class the other
-# fail-closed guards cover. Reuses pipeline-cli's `settings-env-guard check` mode —
-# the scan lives once in the tool.
+# fail-closed guards cover. The scan lives once in
+# `fabrika guard settings-env-guard check`.
 on:
   pull_request:
   push:
     branches: [main]
 
 # Least-privilege GITHUB_TOKEN: the only job checks out + runs a read-only node CLI
-# (pipeline-cli settings-env-guard check), no writes — so read on contents suffices.
+# (fabrika guard settings-env-guard check), no writes — so read on contents suffices.
 permissions:
   contents: read
 
@@ -37,7 +37,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Exit 1 when an env value carries an unexpanded ${...} (the report is on
-      # stderr), or when settings.json is missing/unparseable (fail-closed). See #2495.
+      # Non-zero when an env value carries an unexpanded ${...} (12; report on stderr), when
+      # settings.json is missing (7) or when it does not parse (11) — fail-closed. See #2495.
       - name: Check no env value carries an unexpanded ${...}
-        run: node packages/pipeline-cli/src/bin.ts settings-env-guard check
+        run: node packages/fabrika-cli/src/bin.ts guard settings-env-guard check

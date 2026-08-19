@@ -15,7 +15,7 @@ per ADR [0071](0071-enforce-control-plane-at-github.md)) marks the surfaces wher
 autonomous green-then-ship merge could compromise the pipeline's own guards, so those PRs
 bank for a human control-plane (§CP) merge instead of auto-shipping. The concrete boundary
 is the single-source path regex in
-[`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts),
+`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`,
 its byte-synced `CONTROL_PLANE_RE=` copy in `gh-issue-intake-formats.md`,
 `.github/CODEOWNERS`, and the classifier tests.
 
@@ -72,3 +72,5 @@ ruling, not a report→triage item. Ruling-driven, so there is no `Fixes #N` tra
 - Note: routing (which reviewer gate verifies) is a separate axis — `class-probe` already
   classifies these paths as `has-code` (review-code-routed). This ADR governs *who merges*
   (§CP human-merge), not *which gate verifies*.
+
+> Amendment 2026-08-19: `packages/pipeline-cli` is gone; the single-source §CP path regex now lives at [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts) (tests: `packages/fabrika-cli/src/guard/codeowners-cp.unit.test.ts`, `codeowners-cp-verb.unit.test.ts`). The ruling — `biome.jsonc` + `biome-plugins/` are §CP — is unchanged.

@@ -59,9 +59,6 @@ export type DefinitionData = {
 	id: string;
 	body: React.ReactNode;
 	author: string;
-	// Live identity (#2139): the current `{username, displayName}` so the label resolves
-	// via `actorLabel` and the profile link targets the handle; both optional so an
-	// unstamped caller falls back to the `author` snapshot.
 	authorUsername?: string | null;
 	authorDisplayName?: string | null;
 	agoLabel: string;
@@ -128,20 +125,8 @@ const ALPHABET = [
 	"z",
 ];
 
-/**
- * The A-Z index as real navigable links to `/sozluk?harf=<letter>` (issue #693):
- * each letter is a shareable URL, back-button-correct and middle-clickable. The
- * active letter links back to bare `/sozluk` so it still toggles its filter off.
- * Empty letters stay inert `<span>`s — no destination to navigate to.
- *
- * ARIA (#2169): the `<nav aria-label="Harf">` names the index as a landmark. Each
- * populated letter is a link whose accessible name spells out the letter ("A
- * harfi") — a bare "a" reads ambiguously to a screen reader that spells single
- * chars. Empty letters are inert spans (not announced as links) carrying a
- * visually-hidden "(… harfi, terim yok)" suffix, so an AT user hears the
- * populated/empty distinction the muted color conveys visually. The active letter
- * keeps `aria-current="page"`.
- */
+// A letter's accessible name spells it out ("A harfi") — a bare "a" reads
+// ambiguously to a screen reader that spells single chars.
 export function SozlukAlphabet({
 	value,
 	emptyLetters = [],
@@ -163,11 +148,9 @@ export function SozlukAlphabet({
 					.join(" ");
 				const letterName = `${l.toLocaleUpperCase("tr")} harfi`;
 				if (isEmpty) {
-					// Inert letter — a plain span (no interactive role) so it isn't announced as
-					// a link. The visible glyph reads as the letter; a visually-hidden suffix
-					// spells the name + "(terim yok)" so an AT user hears the empty distinction the
-					// muted color conveys visually. (aria-label/aria-disabled aren't valid on a
-					// generic span; the hidden text carries the semantics instead.)
+					// A plain span so it isn't announced as a link. aria-label/aria-disabled aren't
+					// valid on a generic span, so the visually-hidden suffix carries the "no terms"
+					// distinction the muted color conveys visually.
 					return (
 						<span key={l} className={cls}>
 							{l}

@@ -1,21 +1,9 @@
 /**
- * Unit tests for the FTS dual-write sync (ADR 0080) — no workerd. Pins three
- * invariants the live write→sync→read loop depends on:
- *
- *  1. The symmetric write/query fold: the `norm` text written into the FTS row
- *     folds the SAME way `normalizeSearchText` folds the resolver's query string,
- *     so a write and a later query meet on one token form.
- *  2. The statement shape: each sync is a delete-then-insert upsert (FTS5 has no
- *     `ON CONFLICT`), keyed by slug/id.
- *  3. Batch-safety against drizzle's REAL d1 batch builder (#863): the sync items
- *     must `_prepare()` to a `D1PreparedQuery` carrying a bound `.stmt`, so D1's
- *     `session.batch()` (`preparedQuery.stmt.bind(...params)`) builds them without
- *     throwing. The earlier `db.run(sql\`…\`)` shape yields a `SQLiteRaw` with no
- *     `.stmt`, which 500s the whole batch on real D1 — the prior unit fake (a
- *     recording `db.run`) never reached that builder path, so it sailed past. This
- *     test drives the real drizzle-d1 `batch()` over a recording D1 *client* (no
- *     SQL engine — ADR 0082), so a regression to a non-batchable item shape fails
- *     here, not only in remote integration.
+ * FTS dual-write sync coverage (ADR 0080) — the write/query fold symmetry, the
+ * delete-then-insert upsert shape, and batch-safety against drizzle's REAL d1 batch
+ * builder. That last one matters because a sync item that prepares without a bound
+ * `.stmt` 500s the whole batch on real D1, and a recording-`db.run` fake never reaches
+ * the builder path where that shows up (#863).
  */
 
 import {SQLiteDialect} from "drizzle-orm/sqlite-core";
@@ -28,15 +16,10 @@ const dialect = new SQLiteDialect();
 const renderStmt = (stmt: {getSQL: () => never}) => dialect.sqlToQuery(stmt.getSQL());
 
 /**
- * A recording D1 *client* — NOT a SQL engine, so this stays a unit test under ADR
- * 0082's "no faked engine" rule: it executes no SQL and asserts no FTS5/tokenizer/
- * collation behavior (those remain integration-tier facts). It records only the
- * statements drizzle's real d1 `batch()` builder *prepares and binds*, which is the
- * exact seam the #863 regression broke: a batch item must `_prepare()` to a
- * `D1PreparedQuery` whose `.stmt` the builder binds params onto. A query-builder
- * item has that `.stmt`; a `db.run(sql\`…\`)` `SQLiteRaw` does not, so the builder
- * throws before recording. The earlier recording-`db.run` fake never reached this
- * driver path, which is why the break sailed past unit and only 500'd on real D1.
+ * A recording D1 *client*, NOT a SQL engine — it executes nothing and asserts no
+ * FTS5/tokenizer/collation behavior, so this stays a unit test under ADR 0082. It
+ * records what drizzle's real `batch()` builder prepares and binds, which is the seam
+ * the #863 regression broke.
  */
 const recordingD1 = () => {
 	const built: {sql: string; params: unknown[]}[] = [];
@@ -66,7 +49,6 @@ describe("syncTermSearch / syncPostSearch — symmetric write/query fold", () =>
 		const [, insert] = syncTermSearch(db as DrizzleDb, "istanbul-sisli", title);
 		const {sql, params} = renderStmt(insert as never);
 		expect(sql).toBe('insert into "term_search" ("slug", "norm") values (?, ?)');
-		// the indexed text === what the resolver's query fold produces for the same input
 		expect(params).toEqual(["istanbul-sisli", normalizeSearchText(title)]);
 		expect(params[1]).toBe("istanbul sisli");
 	});
@@ -96,11 +78,8 @@ describe("syncTermSearch / syncPostSearch — symmetric write/query fold", () =>
 describe("ftsBatchItems shape — batch-safe against D1's real batch builder (#863)", () => {
 	it("composes the term sync into a single all-or-none D1 batch WITHOUT throwing", async () => {
 		const {db, built} = recordingD1();
-		// Build the batch tuple the way Sozluk/Pano now do (no `db.run(sql)` items),
-		// run through the REAL drizzle-d1 `batch()` (which binds params onto `.stmt`).
 		const items = syncTermSearch(db as DrizzleDb, "t", "Başlık");
 		await expect(db.batch([items[0], items[1]] as never)).resolves.toBeDefined();
-		// the FTS delete+insert reached D1's batch (params bound, not dropped)
 		expect(built).toHaveLength(2);
 		expect(built[0]?.sql).toBe('delete from "term_search" where "term_search"."slug" = ?');
 		expect(built[0]?.params).toEqual(["t"]);
@@ -111,11 +90,9 @@ describe("ftsBatchItems shape — batch-safe against D1's real batch builder (#8
 	it("a parametrized db.run(sql) item is batch-safe under drizzle rc.4 (the #863 rc.3 defect, fixed upstream)", async () => {
 		const {db, built} = recordingD1();
 		const {sql} = await import("drizzle-orm");
-		// #863 was an rc.3 defect: `db.run(sql)`'s SQLiteRaw prepared WITHOUT a `.stmt`,
-		// so D1's batch builder threw on `preparedQuery.stmt.bind(...)` for a parametrized
-		// item (a 500 on real D1). rc.4's `d1/session.ts` `prepareQuery` ALWAYS prepares
-		// `stmt = client.prepare(query.sql)`, so the raw now carries a real `.stmt` and
-		// binds in `batch()` like any query-builder item — the hazard is fixed upstream.
+		// The rc.3 defect: `db.run(sql)` prepared without a `.stmt`, so the batch builder
+		// threw on a parametrized item. rc.4's `prepareQuery` always prepares one, so this
+		// pins the upstream fix we now depend on.
 		const raw = db.run(sql`INSERT INTO term_search (slug, norm) VALUES (${"t"}, ${"n"})`);
 		await expect(db.batch([raw] as never)).resolves.toBeDefined();
 		expect(built).toHaveLength(1);
@@ -129,7 +106,6 @@ describe("ftsBatchItems shape — batch-safe against D1's real batch builder (#8
 		expect(built).toHaveLength(1);
 		expect(built[0]?.sql).toBe('delete from "post_search" where "post_search"."id" = ?');
 		expect(built[0]?.params).toEqual(["post_1"]);
-		// removeTermSearch mirrors it for the term side
 		expect(renderStmt(removeTermSearch(db as DrizzleDb, "t") as never).sql).toBe(
 			'delete from "term_search" where "term_search"."slug" = ?',
 		);

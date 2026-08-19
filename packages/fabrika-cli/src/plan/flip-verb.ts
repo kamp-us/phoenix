@@ -27,10 +27,11 @@
  *    reported as pickable.
  */
 
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {requireClaim, requireSession} from "../build/claim.ts";
+import {requireCallerToken, requireClaim, requireSession} from "../build/claim.ts";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
+import {cycleDocOr} from "../config/paths.ts";
 import {addLabels, getIssue, listLabels, removeLabel} from "../io/issues.ts";
 import {PLANNED, TRIAGED} from "../labels.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -50,6 +51,7 @@ import {
 	FAN_OUT,
 	loadLedger,
 	type PlanMessages,
+	readContainmentVocabulary,
 	requireEpic,
 	scannedChildren,
 } from "./load.ts";
@@ -92,7 +94,11 @@ export const audienceSettled = (observed: ReadonlyArray<string>): boolean =>
 export interface FlipOptions {
 	readonly number: number;
 	readonly digest: string;
+	/** The claim token `build claim <epic> --purpose gate` handed this lane — which lane is asking. */
+	readonly token: string;
 	readonly repo: string | null;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -107,7 +113,11 @@ export const classify = (
 
 export const runFlip = (
 	options: FlipOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "an issue number", options.number);
 		if (bad !== null) return bad;
@@ -128,10 +138,23 @@ export const runFlip = (
 		const target = yield* requireEpic(MESSAGES, repo, options.number);
 		if (target._tag === "Refused") return target.outcome;
 
-		const held = yield* requireClaim(VERB, repo, options.number, session.id);
+		const asking = requireCallerToken(VERB, session.id, options.token);
+		if (asking._tag === "Refused") return asking.outcome;
+
+		const held = yield* requireClaim(VERB, repo, options.number, asking.caller);
 		if (held._tag === "Refused") return held.outcome;
 
-		const read = yield* loadLedger(MESSAGES, repo, target.issue);
+		const vocabulary = yield* readContainmentVocabulary(MESSAGES, options.cwd);
+		if (vocabulary._tag === "Refused") return vocabulary.outcome;
+
+		const cycle = yield* cycleDocOr(
+			VERB,
+			options.cwd,
+			"where the cycle doc lives is unread, so the containment class cannot be derived.",
+		);
+		if (cycle._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, cycle.message);
+
+		const read = yield* loadLedger(MESSAGES, repo, target.issue, cycle.path, vocabulary.vocabulary);
 		if (read._tag === "Refused") return read.outcome;
 		const ledger = read.ledger;
 		const scanned = scannedChildren(
@@ -140,7 +163,7 @@ export const runFlip = (
 		);
 		const notes = [...held.notes, scanned];
 
-		const derived = yield* deriveFloorFor(MESSAGES, repo, ledger);
+		const derived = yield* deriveFloorFor(MESSAGES, repo, ledger, vocabulary.vocabulary);
 		if (derived._tag === "Refused") return derived.outcome;
 		if (derived.floor.defects.length > 0) {
 			return refuse(

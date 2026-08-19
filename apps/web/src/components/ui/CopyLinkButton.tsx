@@ -1,19 +1,6 @@
 import * as React from "react";
 import {Button} from "./Button";
 
-/**
- * Shared `paylaş` (share/copy-link) button — presentation + inline confirmation only.
- * The page passes the item's canonical **path** (`/pano/:id`, `/sozluk/:slug`, or a
- * comment-anchor `/pano/:id#comment-<id>`); the button resolves it to an absolute URL
- * and copies it to the clipboard, locking into visible "kopyalandı" feedback (or
- * "kopyalanamadı" when the clipboard write is denied — insecure context, permission).
- * The native share sheet is used only on a coarse-pointer surface (mobile/PWA), where
- * it is the better affordance; every desktop browser — including Safari macOS, which
- * *implements* the Web Share API on desktop — copies to the clipboard (#1635). Reused
- * by every share surface (pano post/comment, sözlük definition), so no page-specific
- * link logic lives in the shared content components.
- */
-
 export type ShareOutcome = "shared" | "copied" | "error";
 
 function absoluteUrl(path: string): string {
@@ -25,7 +12,6 @@ function absoluteUrl(path: string): string {
  * native branch fires only on a **coarse-pointer** surface (mobile/PWA) that *also*
  * has a usable Web Share API — never on mere API presence, because Safari macOS
  * desktop implements the API yet must copy like every other desktop browser (#1635).
- * Pure over its inputs, so the branch selection is unit-tested without a DOM.
  */
 export function shouldUseNativeShare(input: {
 	hasShare: boolean;
@@ -67,12 +53,6 @@ async function shareOrCopy(url: string): Promise<ShareOutcome> {
 	}
 }
 
-/**
- * The label a {@link CopyLinkButton} shows for each transient feedback state. A
- * `null` outcome (idle) and a `"shared"` (the OS sheet is its own feedback) both
- * fall through to the caller's resting `label`. Pure, so the state→copy mapping is
- * unit-tested without a DOM.
- */
 export function shareFeedbackLabel(
 	outcome: "copied" | "error" | null,
 	restingLabel: string,
@@ -90,7 +70,6 @@ export function shareFeedbackLabel(
 export interface CopyLinkButtonProps {
 	/** Canonical path of the item, e.g. `/pano/:id` or `/pano/:id#comment-<id>`. */
 	path: string;
-	/** Resting label; defaults to `paylaş`. Feedback states replace it transiently. */
 	label?: string;
 	testId?: string;
 	className?: string;
@@ -118,9 +97,7 @@ export function CopyLinkButton({path, label = "paylaş", testId, className}: Cop
 
 	async function onClick() {
 		const outcome = await shareOrCopy(absoluteUrl(path));
-		// A native share leaves the label as-is (the OS sheet is its own feedback); a
-		// clipboard write flashes its outcome — "kopyalandı" on success, "kopyalanamadı"
-		// on a denied/absent clipboard — for two seconds, then resets.
+		// A native share leaves the label as-is: the OS sheet is its own feedback.
 		if (outcome === "shared") return;
 		setFeedback(outcome === "copied" ? "copied" : "error");
 		if (timer.current) clearTimeout(timer.current);

@@ -64,12 +64,6 @@ import {UsernameBootstrap} from "./pages/UsernameBootstrap";
 import {UserProfilePage} from "./pages/UserProfilePage";
 import {useProfileStats} from "./pages/useProfileStats";
 
-/**
- * The fate-dependent topbar chips, computed below the session gate and read by the
- * always-painting shell frame above it. `null` is the pre-settle default — the frame
- * paints its static structure immediately with these absent, and they fill in once
- * `FateProvider` commits and `LayoutContent` publishes them. See #2160.
- */
 type TopbarChips = {
 	userProps: {user?: {name: string; username: string | null}};
 	karma: number | undefined;
@@ -77,13 +71,8 @@ type TopbarChips = {
 	bildirim: {to: string; unread: number} | undefined;
 };
 
-/**
- * The bridge that carries the fate-dependent chips UP from `LayoutContent` (below the
- * session gate, where fate lives) to the always-painting shell frame (above it). The
- * frame owns the chip state and passes the setter down through this context; the
- * gated content sets it once fate settles. This lets the frame render once — no
- * remount of the shell on settle, only the chips fill in (#2160).
- */
+// Carries the chips UP from `LayoutContent` (below the session gate) to the shell frame
+// above it, so the frame renders once and only the chips fill in on settle (#2160).
 const SetTopbarChipsContext = createContext<((chips: TopbarChips | null) => void) | null>(null);
 
 /**
@@ -101,38 +90,22 @@ function Layout() {
 	const location = useLocation();
 	const {choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const [chips, setChips] = useState<TopbarChips | null>(null);
-	// mecmua-public-read (#2512) — the same seam the reader/index gate on; off ⇒ mecmua absent.
-	// As a shell-key-manifest member the unified `useFlag` resolves it SYNCHRONOUSLY from
-	// `window.__BOOT__` on the first render (loading:false, no fetch, no repaint), so the nav
-	// paints its final geometry at first paint, killing the false→true pop-in this gate used to
-	// cost every load (#2828). Absent `__BOOT__` (flag off / the #2931 never-hang fallback) ⇒ the
-	// fetch fallback, exactly today's behavior. See ADR 0179.
+	// mecmua-public-read (#2512) resolves synchronously from `window.__BOOT__` so the nav paints
+	// its final geometry on the first frame; absent `__BOOT__` it falls back to the fetch. See ADR 0179.
 	const {value: mecmuaOn} = useFlag(MECMUA_PUBLIC_READ, false);
 
-	// The two-tier fate provider's public first paint (ADR 0167). While `get-session`
-	// is still in flight the authed `FateProvider` gate below returns null, so the
-	// routed `/pano` feed can't paint. So for the anon-capable pano feed routes ONLY,
-	// render an eager copy over the PUBLIC (always-anonymous) fate client above the gate
-	// — it paints in parallel with `get-session` instead of serialized behind it. The
-	// instant the session settles the gate commits, the authed feed (with live +
-	// mutations) takes over, and this eager tier unmounts. This preserves #438 verbatim:
-	// the router-bearing authed subtree still mounts only once, on the resolved identity
-	// — the public client is a distinct, never-re-keyed instance, so there is no
-	// anon→userId re-key remount of the authed tree.
+	// Eager public-tier pano feed above the session gate — see ADR 0167. The public client is a
+	// distinct, never-re-keyed instance, so the authed tree still mounts exactly once (#438).
 	const panoMatch = useMatch("/pano");
 	const panoSiteMatch = useMatch("/pano/site/:host");
 	const eagerPanoHost = panoSiteMatch?.params.host;
 	const showEagerPanoFeed = session.isPending && (panoMatch != null || panoSiteMatch != null);
 
-	// The same two-tier decoupling (ADR 0167) extended to `/profile` (#2188): paint the
-	// Katkıların skeleton above the gate while `get-session` resolves. Why it is a
-	// skeleton (not anon data) and how it stays #438-safe with no fate client lives on
-	// `EagerProfileContributionSkeleton`.
+	// The same two-tier decoupling for `/profile` (#2188) — see ADR 0167; why it is a skeleton
+	// rather than anon data lives on `EagerProfileContributionSkeleton`.
 	const profileMatch = useMatch("/profile");
 	const showEagerProfileSkeleton = session.isPending && profileMatch != null;
 
-	// Echo the active query in the header input, but only on the results page — off
-	// `/search` the box keeps its empty `ara…` placeholder (#2199).
 	const searchQuery =
 		location.pathname === "/search" ? (new URLSearchParams(location.search).get("q") ?? "") : "";
 
@@ -149,12 +122,8 @@ function Layout() {
 	}
 
 	const isSignedIn = !!session.data;
-	// First-paint identity rides the edge-resolved `__BOOT__.user` (ADR 0185, superseding #2933's
-	// presence-only `signedIn` bit): the full user is known synchronously — before `useSession`
-	// settles — so the account cluster both exists AND carries its name/handle from the first
-	// frame, killing the giriş-yap↔user-cluster swap and the name content pop-in. Absent `__BOOT__`
-	// (flag off / the #2931 never-hang fallback) ⇒ `readBootUser()` is null ⇒ the session-gated
-	// `isSignedIn` governs, exactly today's behavior.
+	// First-paint identity rides the edge-resolved `__BOOT__.user` — see ADR 0185. Absent
+	// `__BOOT__` this is null and the session-gated `isSignedIn` governs.
 	const bootUser = readBootUser();
 	const bootSignedIn = bootUser != null;
 	const signedInAtFirstPaint = bootSignedIn || isSignedIn;
@@ -162,10 +131,6 @@ function Layout() {
 	// definitively signed-out session — so an absent `__BOOT__` never reserves (today's render)
 	// and a boot/session divergence collapses cleanly rather than stranding a phantom slot.
 	const reserveSignedInSlots = bootSignedIn && (session.isPending || isSignedIn);
-	// Seed the topbar identity synchronously from `__BOOT__.user` so the name/handle render on the
-	// first frame, before `FateProvider`/`LayoutContent` publish the fate-derived chips below. Once
-	// those chips arrive (session settled) they take over — the same resolved value, so no visible
-	// swap. Absent `__BOOT__` ⇒ `{}` ⇒ the chips-only path, exactly today's render.
 	const bootUserProps = bootUser
 		? {
 				user: {
@@ -212,10 +177,8 @@ function Layout() {
 							onThemeChange={setThemeChoice}
 							onLogout={onSignOut}
 							actions={
-								// giriş-yap rides the first-paint presence bit, not the settling session:
-								// `__BOOT__.user != null` (via signedInAtFirstPaint) suppresses the CTA for a
-								// signed-in user from the first frame, so it never flashes then swaps out
-								// (#2933, ADR 0185). Absent `__BOOT__` ⇒ this reduces to `isSignedIn`, today's split.
+								// Suppressed from the first frame for a signed-in user so the CTA never flashes
+								// then swaps out (#2933) — see ADR 0185.
 								!signedInAtFirstPaint ? (
 									<Button
 										type="button"
@@ -232,19 +195,12 @@ function Layout() {
 							}
 						/>
 						<Main>
-							{/* PUBLIC tier (ADR 0167): the anon-capable pano feed paints over the
-						    always-anonymous public client while `get-session` resolves, then
-						    hands off to the authed feed once the gate below commits. */}
 							{showEagerPanoFeed ? (
 								<PublicFateProvider>
 									<PanoFeed {...(eagerPanoHost ? {host: eagerPanoHost} : {})} />
 								</PublicFateProvider>
 							) : null}
 							{showEagerProfileSkeleton ? <EagerProfileContributionSkeleton /> : null}
-							{/* The routed content + fate-dependent chips live below the session
-						    gate — FateProvider keeps its #438 remount guard (first & only key
-						    is the resolved identity), while the shell frame above already
-						    painted. */}
 							<FateProvider>
 								<SetTopbarChipsContext.Provider value={setChips}>
 									<LayoutContent />
@@ -259,20 +215,14 @@ function Layout() {
 	);
 }
 
-/**
- * Runs below `FateProvider` (so `useMe`/`useProfileStats`/`useDivanAccess`/
- * `useBildirimUnread` have a fate client): computes the auth-dependent topbar chips,
- * publishes them up to the shell frame via the chip-state bridge, and renders the
- * routed `Outlet`. Because `FateProvider` only commits once the session is settled,
- * this never mounts under an "anon" key (#438 preserved).
- */
+// Runs below `FateProvider`, which commits only once the session is settled — so this never
+// mounts under an "anon" key (#438).
 function LayoutContent() {
 	const session = useSession();
 	const {me, refetch} = useMe();
 	const navigate = useNavigate();
 	const location = useLocation();
 	const setChips = useContext(SetTopbarChipsContext);
-	// Ambient self-karma in the topbar (#1208).
 	const karmaState = useProfileStats(me?.username ?? null);
 	const selfKarma = karmaState.status === "ok" ? karmaState.stats.totalKarma : undefined;
 	// The yazar/mod-only divan entry (#1290). `useDivanAccess` probes the server's
@@ -281,9 +231,6 @@ function LayoutContent() {
 	// çaylak/non-mod skips the guaranteed-`UNAUTHORIZED` probe; the ambiguous case
 	// still probes.
 	const showDivan = useDivanAccess(me);
-	// The bildirim entry + unread chip (#1694), dark behind the `phoenix-bildirim`
-	// flag. Gating the fetch on flag+session keeps the flag-off path exactly as
-	// today: disabled ⇒ the read never touches the wire and reports 0.
 	const {value: bildirimOn} = useFlag(PHOENIX_BILDIRIM, false);
 	const bildirimUnread = useBildirimUnread(bildirimOn && !!session.data, me?.id ?? null);
 	// #1888: hold the off-/auth redirect while a chosen-username signup is still
@@ -297,18 +244,12 @@ function LayoutContent() {
 		if (!session.data) return;
 		if (location.pathname !== "/auth") return;
 		if (usernamePending) return;
-		// AuthPage sets `?returnTo=<path>` when redirected from a signed-out
-		// write affordance (T17). Honor it (sanitized to same-origin) so the
-		// user lands back on the page that triggered the auth flow.
 		const params = new URLSearchParams(location.search);
 		const target = safeReturnTo(params.get("returnTo"));
 		navigate(target, {replace: true});
 	}, [session.data, location.pathname, location.search, navigate, usernamePending]);
 
 	const sessionUser = session.data?.user;
-	// The topbar identity, routed through the shared actor-label rule (#2126):
-	// display name, falling back to the @username, never the email local-part the
-	// old `email.split("@")[0]` leaked into the visible name.
 	const username = me?.username ?? null;
 	const isSignedIn = !!session.data;
 	const needsBootstrap = isSignedIn && me !== null && !me.username && location.pathname !== "/auth";
@@ -330,8 +271,6 @@ function LayoutContent() {
 		[sessionUser, me?.name, username, selfKarma, showDivan, bildirimOn, isSignedIn, bildirimUnread],
 	);
 
-	// Publish the computed chips up to the shell frame; clear them on unmount (the
-	// signed-out/re-key transition) so the frame falls back to anonymous affordances.
 	useEffect(() => {
 		setChips?.(chips);
 		return () => setChips?.(null);
@@ -339,8 +278,6 @@ function LayoutContent() {
 
 	return (
 		<>
-			{/* Membrane notice for a signed-in user whose email is failing (epic #2687, #2693) —
-			    dark behind its flag, inert until the worker exposes the failing signal on `me`. */}
 			<EmailDeliveryNoticeMount me={me} />
 			{needsBootstrap && sessionUser ? (
 				<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
@@ -377,8 +314,6 @@ function ComposerRouteFallback() {
 }
 
 export function App() {
-	// Each product's routes mount under a pathless layout route rendering its persistent
-	// Subnav zone (#2598, epic #2596).
 	const panoRoutes = [
 		<Route key="pano" path="/pano" element={<PanoFeed />} />,
 		<Route key="pano-yeni" path="/pano/yeni" element={<PanoSubmitPage />} />,
@@ -425,8 +360,6 @@ export function App() {
 		<Route key="sozluk" path="/sozluk" element={<SozlukHome />} />,
 		<Route key="sozluk-slug" path="/sozluk/:slug" element={<SozlukTermPage />} />,
 	];
-	// The divan reviewer workspace (#1290) — access is server-authoritative (the gated
-	// `divan.roster` read denies a çaylak/visitor the invisible `UNAUTHORIZED`).
 	const divanRoutes = [<Route key="divan" path="/divan" element={<DivanPage />} />];
 	return (
 		<ThemeProvider>
@@ -434,38 +367,21 @@ export function App() {
 				<Routes>
 					<Route element={<Layout />}>
 						<Route path="/" element={<LandingPage />} />
-						{/* pano's zone hosts feed-scoped filters/meta + the site-filter crumb
-						    (published up from the routed feed) and its primary-action CTA, so it
-						    wraps under its own `PanoSubnavLayout` rather than the generic empty/
-						    cta-only frame (#2601). */}
 						<Route key="pano-zone" element={<PanoSubnavLayout />}>
 							{panoRoutes}
 						</Route>
-						{/* mecmua's zone hosts flag-composed destinations + a primary-action CTA,
-						    so it wraps under its own `MecmuaSubnavLayout` (which composes both)
-						    rather than the generic empty/cta-only frame (#2603). */}
 						<Route key="mecmua-zone" element={<MecmuaSubnavLayout />}>
 							{mecmuaRoutes}
 						</Route>
-						{/* sözlük's zone hosts its persistent go-to-or-create box (the Subnav input
-						    slot) + the URL-driven alphabet filter row, so it wraps under its own
-						    `SozlukSubnavLayout` rather than the generic empty/cta-only frame (#2602). */}
 						<Route key="sozluk-zone" element={<SozlukSubnavLayout />}>
 							{sozlukRoutes}
 						</Route>
-						{/* divan's zone hosts the çaylaklar ↔ raporlar section switch, published up from
-						    the routed page as Subnav filters, so it wraps under its own `DivanSubnavLayout`
-						    rather than the generic empty/cta-only frame (#2604). */}
 						<Route key="divan-zone" element={<DivanSubnavLayout />}>
 							{divanRoutes}
 						</Route>
 						<Route path="/search" element={<SearchPage />} />
 						<Route path="/auth" element={<AuthPage />} />
-						{/* The founder/mod conversion readout (#1589) — access is server-authoritative
-					    (the gated funnel.summary read denies a non-mod), so the route stays mod-only. */}
 						<Route path="/funnel" element={<FunnelPage />} />
-						{/* The notification center (#1694) — the page self-gates on the
-					    phoenix-bildirim flag (off ⇒ 404), so the route is dark by default. */}
 						<Route path="/bildirimler" element={<BildirimlerPage />} />
 						{/* /lab/composer — throwaway tiptap spike (#2465), reachable by URL only,
 						    no nav entry; deletable when the rich-composer phase begins. */}
@@ -477,14 +393,7 @@ export function App() {
 								</Suspense>
 							}
 						/>
-						{/* /lab/atolye — public index of atölye, the museum of craft (epic #2473, #3092).
-						    ASCII route slug (routes-are-English); reachable by URL only, no nav entry,
-						    matching the /lab/composer precedent. */}
 						<Route path="/lab/atolye" element={<AtolyeIndexPage />} />
-						{/* /lab/atolye/:exhibit — the exhibit detail route (#3093): resolves the slug
-						    against the registry, renders it through the knobs harness with knob state
-						    deep-linked into the URL, and self-renders an atölye-scoped not-found on an
-						    unknown slug (never the global 404). ASCII route slug. */}
 						<Route path="/lab/atolye/:exhibit" element={<AtolyeExhibitPage />} />
 						<Route path="/profile" element={<ProfilePage />} />
 						<Route path="/susturduklarim" element={<MutesPage />} />

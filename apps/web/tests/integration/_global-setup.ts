@@ -3,12 +3,8 @@
  * that deploys the real phoenix `Stack` ONCE per run and `provide`s its handle to forked
  * integration files via `inject` (`_integration.ts`'s `sharedStack()`).
  *
- * This is the deploy-once counterpart to the per-file `integrationStack`: the per-file path
- * stands up ~24 ephemeral stages per run (one `beforeAll(deploy)` each); this stands up ONE
- * and hands every migrated file the same worker URL + D1 coordinates. The two paths share
- * ONE copy of the deploy hardening — `ensureIntegrationEnv` / `runTokenFromEnv` /
- * `deployTransientRetry` / `awaitWorkerReady` / `warmLiveDO` all live in `_integration.ts`
- * and are imported here, never re-implemented.
+ * The deploy hardening is shared with the per-file `integrationStack` path — it lives in
+ * `_integration.ts` and is imported here, never re-implemented.
  *
  * Gated: globalSetup is root-level config, so it runs for ANY invocation of this vitest
  * config — including `test:unit` (`vitest --project unit`), which must deploy nothing. When
@@ -33,9 +29,8 @@ import {
 } from "./_integration.ts";
 import {sharedStageName} from "./_stage-name.ts";
 
-// The injected-context keys the shared stage provides — typed so `inject(...)` in
-// `_integration.ts`'s `sharedStack()` is checked, not `any`. All values are plain
-// strings / a POJO, so `provide`'s `structuredClone` serializability check passes.
+// Every value here must stay a plain string / POJO — `provide` runs a `structuredClone`
+// serializability check on it.
 declare module "vitest" {
 	interface ProvidedContext {
 		integrationWorkerUrl: string;
@@ -63,14 +58,8 @@ export default async function setup(project: TestProject): Promise<() => Promise
 	ensureIntegrationEnv();
 	const stage = sharedStageName(runTokenFromEnv());
 
-	// Deploy ONCE through `Core.run` — the alchemy test runtime (`toEffect`) that
-	// `Test/Vitest.ts` wraps `deploy` with, which provides the full layer stack the per-file
-	// `beforeAll(deploy(...))` runs under (AlchemyContext, state). The readiness probes now ride
-	// the shared `awaitEdgeReady` over a bare `fetch` (ADR 0127), so they need no `HttpClient`
-	// from the runtime. Same hardening the per-file path applies:
-	// `deployTransientRetry`, then `awaitWorkerReady` + `warmLiveDO`. No scope: CI is non-dev,
-	// so there is no workerd sidecar to keep alive (the scope in `Test/Vitest.ts` exists only
-	// for `alchemy dev`).
+	// No scope: CI is non-dev, so there is no workerd sidecar to keep alive (the scope in
+	// `Test/Vitest.ts` exists only for `alchemy dev`).
 	//
 	// The readiness gate proves BOTH the health route AND the auth-provisioning route are past the
 	// CF edge placeholder before `project.provide` releases the URL: edge propagation is per-route,

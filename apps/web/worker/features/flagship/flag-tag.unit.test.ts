@@ -1,8 +1,7 @@
 /**
- * Pins the shared Sentry flag-attribution naming contract (#1821): a resolved flag maps to
- * `flag.<key>` = `on`/`off`, so the #1822 graduation query is `flag.<key>:on`. One definition
- * feeds both the SPA tagger (`src/lib/sentry.ts`) and the worker tagger (`worker/lib/sentry.ts`),
- * so this is the single place the shape is proven — both tiers inherit it and cannot drift.
+ * Pins the Sentry flag-attribution naming contract: `flag.<key>` = `on`/`off`, so the
+ * graduation query is `flag.<key>:on`. One definition feeds both the SPA and worker
+ * taggers, so proving it here is what stops the two drifting.
  */
 import {describe, expect, it} from "vitest";
 import {FLAG_TAG_PREFIX, flagTag} from "./flag-tag.ts";

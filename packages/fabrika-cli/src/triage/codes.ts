@@ -132,6 +132,38 @@ export const MALFORMED_CRITERIA = 15;
  * answer about a body already on the board, where `Absent` is the case it exists to refuse.
  */
 export const CRITERIA_REQUIRED = 16;
+/**
+ * Refused: a live claim marker on the target names a session other than this one.
+ *
+ * The claim protocol was advisory at exactly the point it needed to bite — `triage claim` resolved
+ * the race and no verb after it re-read the answer, so a session that read `lost` could still
+ * overwrite the winner's authored body (#5644, on #5642). Every mutating verb now re-reads it, and
+ * this is what they refuse on.
+ *
+ * Its own seat rather than {@link ZERO_SCOPE}'s: a closed target and a contested one need opposite
+ * responses — the first says this issue is finished, the second says wait or take the next one — and
+ * a caller cannot route on a code that fuses them. Holding **no** marker is not this refusal: an
+ * unclaimed issue is the ordinary first-triage case and stays mutable.
+ */
+export const CLAIMED_ELSEWHERE = 17;
+/**
+ * Refused: no value of `.fabrika.jsonc` may be used, so nothing is written.
+ *
+ * The seat covers every way a config fails to yield one — a key's load-time check refusing it, a
+ * file that could not be read, a document that is not a JSON object, a key no decoder accepted —
+ * because from a write path they are one answer: this repo has no usable config, and every label the
+ * reconcile would judge is judged against it. `../config/unusable.ts` is where that set is decided.
+ *
+ * The load-time check that reaches triage is the containment invariant
+ * (`../config/containment.ts`): a facet is delete authority, so a config declaring a value its facet
+ * does not own — or an enumerated facet owning a label no value produces — reconciles an issue into
+ * a shape nobody asked for. #4285 is the incident, and it printed a success line while it happened.
+ *
+ * Its own seat rather than {@link OFF_VOCABULARY}'s: that one is a bad *argument*, fixed by re-running
+ * the verb with another value, and this one is a bad *repository*, fixed by editing a file — a caller
+ * that retried this code would loop forever.
+ */
+export const CONFIG_REFUSED = 18;
 
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
@@ -186,6 +218,15 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 		code: CRITERIA_REQUIRED,
 		meaning:
 			"refused: --ready-for agent over a body carrying no acceptance-criteria block the wire reader answers Found on",
+	},
+	{
+		code: CLAIMED_ELSEWHERE,
+		meaning: "refused: a live claim marker on the target names another session",
+	},
+	{
+		code: CONFIG_REFUSED,
+		meaning:
+			"refused: no value of .fabrika.jsonc may be used — a key's load-time check refused it, it could not be read, or it did not decode",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

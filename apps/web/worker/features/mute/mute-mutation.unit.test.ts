@@ -1,20 +1,7 @@
 /**
- * `mute.set` / `mute.remove` WIRE-boundary coverage (#3112, epic #2035) — the
- * decisions that are wrong-or-right with no database (ADR 0082), driven through the
- * real external interface (`resolveWire`: decode + the `encodeWireError`
- * class→wire-code seam), so a denial's wire `code` is what a client gets.
- *
- * The load-bearing ACs:
- *   - gated on `CurrentUser`: an anonymous caller is rejected the invisible
- *     `UNAUTHORIZED` before any read (the `Mute` stub is fail-on-contact);
- *   - dark-ship: with the `member-mute` flag OFF both fail `MUTE_DISABLED` before the
- *     write, so an unreleased mute never runs;
- *   - with the flag ON an authed muter's set/remove reaches `Mute.set` and the receipt
- *     carries the post-write presence; a self-mute surfaces `SELF_MUTE_REJECTED`.
- *
- * The real-D1 presence idempotency + set/readMutedIds round-trip live in
- * `Mute.unit.test.ts` (the domain seam) and the integration tier once the read-mask +
- * manage UI siblings wire an HTTP/fate surface to drive Mute black-box over.
+ * `mute.set` / `mute.remove` WIRE-boundary coverage (#3112, ADR 0082), driven through
+ * `resolveWire` so a denial's wire `code` is what a client gets. The domain round-trip
+ * lives in `Mute.unit.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser} from "@kampus/fate-effect";
@@ -45,8 +32,8 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 		getObject: () => Effect.die("getObject not exercised"),
 	} as typeof Flags.Service);
 
-// A `Mute` whose `set` runs `impl` (or dies on contact) — so a denied path that must
-// short-circuit before the write proves it by failing the fail-on-contact default.
+// Fail-on-contact by default, so a denied path that must short-circuit before the write
+// proves it by dying.
 const muteStub = (impl?: (input: MuteSetInput) => Effect.Effect<MuteSetResult, SelfMuteRejected>) =>
 	Layer.succeed(Mute, {
 		set: impl ?? (() => Effect.die("Mute.set reached on a path that must short-circuit")),

@@ -1,18 +1,10 @@
 /**
- * `useBildirimUnread` — the topbar badge's LIVE unread-count read (#1694 read,
- * #1700 live). The count lives on the per-recipient `NotificationChannel` entity
- * (keyed by the viewer's user id); recording a notification republishes that
- * entity over `/fate/live` (`Notification.publishChannel`), so the badge moves the
- * moment a notification lands — no page refresh, no nav.
+ * `useBildirimUnread` — the topbar badge's live unread-count read (#1694, #1700).
  *
  * The badge renders in the `Layout` shell ABOVE any `<Screen>` Suspense boundary,
- * so it can't call react-fate's suspending `useLiveView`. This drives the live
- * read itself, the shape of `useGlobalLivePin` + `useView`'s reactive core: seed
- * the channel ref with one imperative request, subscribe the entity live (which
- * keeps the shared SSE warm and merges every published frame into the cache), and
- * re-read the merged count reactively via `useSyncExternalStore` over the store's
- * per-entity subscription. Disabled (flag off / signed out) reports 0, so the
- * badge simply doesn't render — the safe/off path.
+ * so it can't call react-fate's suspending `useLiveView`. It drives the live read
+ * itself instead: seed the channel ref with one imperative request, subscribe the
+ * entity live, and re-read the merged count via `useSyncExternalStore`.
  */
 import {useCallback, useEffect, useState, useSyncExternalStore} from "react";
 import {useFateClient, view} from "react-fate";
@@ -61,10 +53,8 @@ export function useBildirimUnread(enabled: boolean, userId: string | null): numb
 	// (the seed's own hydrate fires before any store subscriber exists).
 	const [seeded, setSeeded] = useState(0);
 
-	// Seed the channel entity into the cache, then hold the live subscription open
-	// while the badge is enabled: it keeps the shared native SSE warm and merges
-	// each published `NotificationChannel` frame into the store, which the reactive
-	// read below picks up. Torn down when the badge disables (flag off / sign-out).
+	// Holding the subscription open keeps the shared SSE warm and merges each published
+	// `NotificationChannel` frame into the store, which the reactive read below picks up.
 	useEffect(() => {
 		if (!canRead || userId == null) return;
 		let unsubscribe: (() => void) | undefined;
@@ -89,10 +79,6 @@ export function useBildirimUnread(enabled: boolean, userId: string | null): numb
 		};
 	}, [client, canRead, userId]);
 
-	// The reactive read: subscribe the store for every entity the channel snapshot
-	// covers and re-read the merged `unreadCount` on each change — `useView`'s
-	// coverage-driven subscription, hoisted above Suspense (synchronous read; a
-	// not-yet-loaded ref reads 0).
 	const getSnapshot = useCallback(
 		() => (canRead && userId != null ? readChannel(client, userId, seeded > 0) : null),
 		[client, canRead, userId, seeded],

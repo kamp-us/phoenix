@@ -1,17 +1,7 @@
 /**
- * Username bootstrap form — `fate.mutations.user.setUsername`. The FALLBACK for
- * users who skipped the username field at signup (and pre-existing null-username
- * accounts): mounted by the layout when the signed-in user has `username === null`.
- * Client-side pre-flight runs the single-source rule (`checkUsername`,
- * `worker/features/pasaport/username-rule.ts`) that `assertUsername` enforces
- * server-side; the prefill is derived from the email local-part (`+tag` stripped).
- * Because a handle is permanent, the *unedited* email-derived prefill can't commit
- * on a reflexive "devam et": it needs a deliberate confirm step (#1888 AC4). Any
- * edit moves off the prefill and commits normally.
- *
- * Error routing: phoenix codes classify as boundary, so the mutation **throws**
- * for some failures and returns `{error}` for others — we handle BOTH, keying the
- * inline message off the wire `code`. See `.patterns/fate-mutations-client.md`.
+ * Username bootstrap form — the fallback the layout mounts when a signed-in user still
+ * has `username === null`. The mutation THROWS for some failures and returns `{error}`
+ * for others, so both paths are handled below — see `.patterns/fate-mutations-client.md`.
  */
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
@@ -22,7 +12,6 @@ import {codeOf} from "../fate/wire";
 import {localRuleMessage, messageForCode} from "./usernameMessages";
 import "./AuthPage.css";
 
-/** The `User` write-back selection for the `setUsername` result. */
 const SetUsernameView = view<User>()({
 	id: true,
 	email: true,
@@ -43,17 +32,11 @@ export function UsernameBootstrap({
 	onComplete: () => Promise<void> | void;
 }) {
 	const fate = useFateClient();
-	// The email-derived prefill, captured once. A submit whose value still equals
-	// this untouched prefill is an *email-derived* handle — permanent once set, so
-	// it must not commit on a reflexive "devam et" (#1888 AC4); it needs a
-	// deliberate confirm step. Any edit moves the value away from this and commits
-	// normally.
 	const prefill = deriveUsernameFromEmail(email);
 	const [value, setValue] = useState(() => prefill);
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
-	// Set once the user has explicitly confirmed committing the unedited email
-	// prefill. Reset the moment they edit the field back away from a confirm.
+	// Resets on any edit, so editing back to the prefill re-arms the confirm step.
 	const [confirmed, setConfirmed] = useState(false);
 
 	const normalized = value.trim().toLowerCase();

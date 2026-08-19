@@ -84,5 +84,4 @@ const mutations = {
 
 const config = FateServer.config({queries, lists, mutations, sources: [termSource]});
 
-/** What `schema.ts` exports for the fate Vite plugin's `runnerImport`. */
 export const fateServer = FateExecutor.toCodegenServer(config);

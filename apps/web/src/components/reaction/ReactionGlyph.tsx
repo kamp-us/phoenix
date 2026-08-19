@@ -1,34 +1,13 @@
-/**
- * The on-brand, OS-invariant glyphs for the curated reaction palette (#2165,
- * pillar cohesiveness; epic #2168). ADR 0139 fixes the reaction SET — the six
- * `REACTION_EMOJI` members and their Turkish glosses — and that membership is
- * SETTLED; this module does not re-open it. What it replaces is the *rendering*:
- * the bar used to paint each member as its raw OS emoji glyph, which (a) renders
- * differently on every OS and (b) drops a full-color glyph into the
- * monochrome-plus-accent palette. Instead every member is drawn as a controlled
- * inline SVG line-icon that strokes/fills in `currentColor`, so it inherits the
- * button's own token (text by default, accent when the viewer's reaction is
- * active) and looks identical everywhere.
- *
- * The icons are the same affective symbols ADR 0139 chose — 👍 beğendim,
- * ❤️ sevdim, 😂 güldüm, 🤔 düşündürdü, 😢 üzüldüm, 🔥 efsane — redrawn as
- * monochrome line-art, not a different reaction set. The palette emoji stays the
- * canonical identity/key everywhere else (wire, storage, ARIA gloss); this is a
- * presentation layer keyed BY that emoji.
- *
- * Kept a pure keyed lookup with no color/size literals of its own: the SVG uses
- * `currentColor` and scales to the button's glyph box, so color + size are driven
- * by ReactionBar.css tokens, never hardcoded here.
- */
+// Rendering only — ADR 0139 fixes the reaction SET and this does not re-open it; the emoji
+// stays the canonical key on the wire, in storage, and in the ARIA gloss.
+//
+// No color or size literals belong here: the SVG paints in `currentColor` and scales to the
+// button's glyph box, so ReactionBar.css tokens drive both.
 import type {ReactNode} from "react";
 import type {ReactionEmoji} from "../../../worker/db/reaction-emoji";
 
-/**
- * Shared per-icon SVG frame: a 24×24 viewBox line-icon that fills the button's
- * glyph box and paints in `currentColor`. `aria-hidden` — the accessible name
- * lives on the parent button's `aria-label` (the ADR-0139 gloss), so the glyph
- * itself is decorative.
- */
+// `aria-hidden` because the accessible name is the parent button's ADR-0139 gloss; naming
+// the glyph too would announce it twice.
 function Glyph({children}: {children: ReactNode}) {
 	return (
 		<svg
@@ -116,7 +95,6 @@ const GLYPHS: Record<ReactionEmoji, () => ReactNode> = {
 	"🔥": Flame,
 };
 
-/** Render the on-brand monochrome line-icon for a palette emoji (keyed by the ADR-0139 member). */
 export function ReactionGlyph({emoji}: {emoji: ReactionEmoji}) {
 	const Icon = GLYPHS[emoji];
 	return <Icon />;

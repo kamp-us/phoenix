@@ -92,6 +92,15 @@ const FENCE = /^ {0,3}(```|~~~)/;
 const CHECKBOX_ITEM = /^[ \t]*[-*][ \t]+\[([ xX])\][ \t]*(.*)$/;
 
 /**
+ * Is this line already a checkbox item?
+ *
+ * Exported for `triage repair-criteria`'s bullet conversion, which must leave untouched exactly the
+ * lines this reader counts as criteria. A second regex over there would be a second definition of
+ * "checkbox item", and the two would drift.
+ */
+export const isCheckboxItem = (line: string): boolean => CHECKBOX_ITEM.test(line);
+
+/**
  * A `<details>` block's own opening and closing lines.
  *
  * Whole-line and nothing else: an envelope writes its opener on a line of its own, so matching only
@@ -225,8 +234,14 @@ const driftReason = (heading: Heading): string => {
  * A `<details>` opener ends the section for the same reason {@link scanHeadings} skips inside one:
  * the collapsed block is an appendix. Without it, a preserved original that opens on checkbox lines
  * before its first heading has them read back as criteria the author never wrote (#5852).
+ *
+ * Exported for `triage repair-criteria`, which rewrites item shape inside exactly the extent this
+ * reader grades — the same reason {@link scanHeadings} is exported.
  */
-const sectionOf = (lines: ReadonlyArray<string>, heading: Heading): ReadonlyArray<string> => {
+export const sectionOf = (
+	lines: ReadonlyArray<string>,
+	heading: Heading,
+): ReadonlyArray<string> => {
 	const body: string[] = [];
 	let openFence: string | null = null;
 	for (const line of lines.slice(heading.line)) {

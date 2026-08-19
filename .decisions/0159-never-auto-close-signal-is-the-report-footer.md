@@ -97,3 +97,5 @@ This convention is encoded in two surfaces:
 *No vocabulary impact* — this ADR re-decides the mechanics of an existing protection
 (the never-auto-close rule) over already-named concepts (the report footer / the
 `Filed by an agent` marker); it coins no new term and redefines none.
+
+> Amendment 2026-08-19: the paths moved with the kampus-pipeline retirement (ADR 0303); the decision is unchanged. The footer is now emitted by the `report file` verb (`claude-plugins/fabrika/skills/report/contract.md` §footer, no `footer.sh`), the intake/footer format contract lives in `claude-plugins/fabrika/skills/report/contract.md` + `claude-plugins/fabrika/skills/graduate/contract.md` instead of `gh-issue-intake-formats.md`, and the close-eligibility path is `claude-plugins/fabrika/skills/triage/SKILL.md` (provenance section) + `triage/contract.md`. Triage now reads a second agent signal alongside the footer — an author in `$FABRIKA_OPERATOR_ACCOUNTS`.

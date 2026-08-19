@@ -1,7 +1,7 @@
 ---
 id: 0227
 title: the whole kampus-pipeline skills tree is §CP — the directory is the unit of coverage, not the file type
-status: accepted
+status: amended-in-part by [0303](0303-retire-kampus-pipeline-plugin.md)
 date: 2026-07-29
 tags: [pipeline, control-plane, ship-it, skills, codeowners, classifier]
 ---
@@ -14,9 +14,9 @@ The §CP boundary (ADR [0053](0053-control-plane-boundary.md), enforced at GitHu
 [0071](0071-enforce-control-plane-at-github.md), hard-gated per ADR
 [0135](0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)) is a single-source
 path regex in
-[`control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts),
+`control-plane-re.ts`,
 byte-synced to the `CONTROL_PLANE_RE=` line in
-[`gh-issue-intake-formats.md`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md)
+`gh-issue-intake-formats.md`
 and to `.github/CODEOWNERS`.
 
 Its coverage of the `kampus-pipeline` skills tree was, until now, **three narrow clauses**: an

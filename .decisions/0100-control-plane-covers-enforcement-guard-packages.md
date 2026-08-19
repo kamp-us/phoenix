@@ -119,3 +119,5 @@ consolidated package as well:
   harmless and future-proof (they match nothing once the packages are gone).
 - The clause was added byte-identically to all five §CP copies (the canonical +
   `ship-it`/`review-code`/`review-doc`/`review-skill`); `validate-gate-path-drift.sh` PASSES.
+
+> Amendment 2026-08-19: the guard/verdict code this ADR fences has moved out of `packages/pipeline-cli/` — the §CP fence now covers `packages/fabrika-cli/src/ci/` (ADR [0299](0299-cp-fence-covers-fabrika-ci-core.md)), and the canonical `CONTROL_PLANE_RE` no longer lives in the retired `claude-plugins/kampus-pipeline/` skills (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). The rule — a guard is control plane wherever it lives, human merge — is unchanged; only the paths moved.

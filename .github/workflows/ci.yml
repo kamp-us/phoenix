@@ -53,7 +53,7 @@ jobs:
       # skip. The `backend`/`e2e` filters list `pnpm-lock.yaml` (a worker-dep bump
       # needs integration) and `paths-filter` can't attribute a lockfile delta to a
       # package, so it ran integration on EVERY lockfile change — and a packages-only
-      # PR (the #994 pipeline-cli reorg) edits the lockfile, paying the tier + the
+      # PR (the #994 CLI reorg) edits the lockfile, paying the tier + the
       # #1010/#813 stage-leak flake for nothing. The `@kampus/worker-relevance`
       # classifier (run in the `worker-relevance` step below) attributes the lockfile
       # delta and FAILS SAFE TO RUNNING. Default `'true'`: the step runs on `pull_request`
@@ -252,7 +252,8 @@ jobs:
       # `merge_group`/`push` paths never used the API (they always git-diff via
       # `getChangedFilesFromGit`, no token consumed) and are unaffected. A GENUINE git/detection
       # error still hard-fails this step (fail-closed) — only the API-HTML transient is removed,
-      # never the real gate signal. `pipeline-cli change-detect-guard check` (change-detect-guard.yml)
+      # never the real gate signal. `fabrika guard change-detect-guard check`
+      # (change-detect-guard.yml)
       # fails closed if this `token: ''` ever regresses back to the API mode.
       - uses: dorny/paths-filter@v3.0.2
         id: filter
@@ -275,11 +276,9 @@ jobs:
               - 'infra/**'
               - 'apps/**/vitest.config.ts'
               - 'apps/**/package.json'
-              # preview-seed's + moderator-grant's real-remote-D1 `integration` tiers
-              # (ADR 0082, #672 / #930) run in the `integration` job below, so a change to
-              # either must trip this gate.
+              # preview-seed's real-remote-D1 `integration` tier (ADR 0082, #672) runs in
+              # the `integration` job below, so a change to it must trip this gate.
               - 'packages/preview-seed/**'
-              - 'packages/moderator-grant/**'
               - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
             # Paths the full e2e suite (#525) actually exercises: the SPA and its
@@ -296,7 +295,7 @@ jobs:
             # 10-min preview-comment poll time out and wedge `ci-required`. An edit to
             # THIS list MUST be mirrored into deploy.yml's `deploy:` filter (and vice
             # versa) — keep the two path sets identical. ENFORCED MECHANICALLY (issue
-            # #2372) by `pipeline-cli path-filter-guard check` (the path-filter-guard.yml
+            # #2372) by `fabrika guard path-filter-guard check` (the path-filter-guard.yml
             # job), which fails the build if this `e2e:` set and deploy.yml's `deploy:`
             # set drift apart — this comment documents the invariant; the guard defends it.
             #
@@ -346,13 +345,6 @@ jobs:
             # skips (→ green, non-blocking). Narrower than `code`: an apps/web/src
             # change runs `unit` but legitimately not-applicable-skips `packages-tests`.
             #
-            # Hook scripts (`claude-plugins/kampus-pipeline/hooks/**`) are listed so a
-            # hook-only edit RUNS the golden real-payload handler tests that guard them
-            # (create-worktree.hook.test.ts / command.hook.test.ts in packages-tests) —
-            # ADR 0180. Without this, a change to a hook script skips `packages`, so the
-            # blocking handler test never runs, and a broken hook ships green: exactly
-            # the #2925 gap (a hook built to a fabricated payload passed every gate).
-            #
             # `claude-plugins/fabrika/docs/**` is listed so a DOC-ONLY edit runs the
             # wire-formats index law (index-doc.unit.test.ts), which reconciles that
             # doc against `packages/fabrika-cli/src/wire/registry.ts` — #4968. The doc
@@ -360,8 +352,8 @@ jobs:
             # unregistered format, a hand-edited generated region), so a law homed only
             # under `packages/**` would be half-blind in the direction it is most
             # needed: the registry-side edit runs it, the doc-side edit skips it.
-            # `claude-plugins/fabrika/hooks.json` is listed for the same reason as the v1
-            # hooks dir above: the fabrika hook surface's golden test reads that file and
+            # `claude-plugins/fabrika/hooks.json` is listed because the fabrika hook
+            # surface's golden test reads that file and
             # runs the argv it declares (envelope.golden.test.ts). Without it, an edit to
             # the declaration — the one place a hook command can stop being a plain
             # literal, or start naming something outside fabrika — skips the only gate
@@ -369,7 +361,6 @@ jobs:
             packages:
               - 'packages/**'
               - 'infra/**'
-              - 'claude-plugins/kampus-pipeline/hooks/**'
               - 'claude-plugins/fabrika/docs/**'
               - 'claude-plugins/fabrika/hooks.json'
               - 'pnpm-workspace.yaml'
@@ -504,14 +495,14 @@ jobs:
 
       # tsc has no `--reporter=github` equivalent, so the same inline-annotation win the biome
       # step gets above is done by mapping its `path(line,col): error TSxxxx:` diagnostics onto
-      # `::error` workflow commands (#3873). `tsc-annotate map` is a pass-through: it re-prints
+      # `::error` workflow commands (#3873). `ci annotate` is a pass-through: it re-prints
       # stdin verbatim (the log reads exactly as before) and always exits 0, so `pipefail` is
       # what keeps the step red — the pipeline's status is `pnpm typecheck`'s own exit code.
       # Local `pnpm typecheck` is untouched; the mapping lives here, like the biome reporter.
       - name: typecheck
         run: |
           set -o pipefail
-          pnpm typecheck | node packages/pipeline-cli/src/bin.ts tsc-annotate map
+          pnpm typecheck | node packages/fabrika-cli/src/bin.ts ci annotate
 
   unit:
     name: unit + client tests
@@ -569,8 +560,8 @@ jobs:
       - run: pnpm --filter './apps/**' test:client
 
   # The `packages/**` vitest suites (#760). Every workspace tooling/guard package
-  # ships a `test` script (pipeline-cli — now the single home for the consolidated
-  # guard/tooling logic — plus ci-required, …) but CI ran only `@kampus/web`'s — so a
+  # ships a `test` script (fabrika-cli — the single home for the consolidated guard/tooling
+  # logic — plus ci-required, …) but CI ran only `@kampus/web`'s — so a
   # regression in any gate guard's logic (incl. the #786 ci-required verdict
   # helper that runs HERE) shipped uncaught. This runs them as a REQUIRED gate.
   #
@@ -607,136 +598,54 @@ jobs:
       - run: pnpm --filter './packages/**' --filter @kampus/infra run test
 
   skills:
+    # The check name is a required status check on `main`, so it keeps its historical name
+    # ("validate skill frontmatter") while the v1 skill validators it ran retired with the
+    # kampus-pipeline plugin (ADR: one pipeline, fabrika — #5937). Fabrika skill frontmatter
+    # is linted by skill-gh-lint.yml over the whole claude-plugins tree; what remains here is
+    # the marketplace manifest guard (#5605), inlined now that its former home is gone.
     name: validate skill frontmatter
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
 
-      # pnpm + node so validate-gate-path-drift.sh can read the §CP CONTROL_PLANE_RE from
-      # its single-source const via `pipeline-cli control-plane-paths` (#2761) — this job
-      # runs UNCONDITIONALLY (no path filter), so the const↔formats-doc drift check fires
-      # on a formats-doc-only edit too, closing the merge_group-only gap that ejected #2673.
-      - uses: pnpm/action-setup@v4.1.0
-
-      - uses: actions/setup-node@v4.4.0
-        with:
-          node-version-file: package.json
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      # Pure-bash guard, no toolchain: every claude-plugins/kampus-pipeline/skills/*/SKILL.md must carry
-      # valid frontmatter (name + description, name == dir) or a skill silently
-      # stops routing. Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/validate-skills.sh`.
-      - run: bash claude-plugins/kampus-pipeline/skills/validate-skills.sh
-
-      # Portability safety net (ADR 0062 / 0083): assert every cycle-aware skill
-      # (plan-epic/write-code/review-code/ship-it) no-ops gracefully with no
-      # product-development-cycle.md — each cites the one canonical absence-probe
-      # and an absent⇒no-op branch, and a hermetic doc-absent walkthrough holds.
-      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/validate-cycle-absence.sh`.
-      - run: bash claude-plugins/kampus-pipeline/skills/validate-cycle-absence.sh
-
-      # Present-path twin (issue #750, ADR 0091/0092): the absence script only ever
-      # exercises the foreign-repo absent branch. This asserts phoenix's PRESENT path —
-      # the cycle doc resolves `present` and each skill's present-branch action is wired
-      # (plan-epic stamps, write-code ships dark, review-code gates, ship-it queues) — and
-      # FAILS CLOSED on zero scope (missing doc ⇒ FAIL, never a silent no-op; ADR 0092).
-      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/validate-cycle-presence.sh`.
-      - run: bash claude-plugins/kampus-pipeline/skills/validate-cycle-presence.sh
-
-      # Executable pin for the shared surface resolver both cycle validators consume: a
-      # partially-failing `find` must not hand them a silently narrowed — but non-empty —
-      # surface that their zero-scope guard reads as complete (#4487).
-      # The lib sits beside `bin/`, outside the skills tree, and was already invoked at its real
-      # path back when the rest of this job still hopped the `.claude/skills` symlink (#4484).
-      # Same script runs locally: `bash claude-plugins/kampus-pipeline/lib/common-test.sh`.
-      - run: bash claude-plugins/kampus-pipeline/lib/common-test.sh
-
-      # The lane-lifecycle cases above are only worth their runtime if they can FAIL. #4868 was a
-      # check whose positive branch could never be false, and a suite can carry that same defect —
-      # so this reintroduces each blindness into a copy of the lib and requires the suite to go red
-      # for its own named reason. Hermetic: temp repos only, no network.
-      # Same script runs locally: `bash claude-plugins/kampus-pipeline/lib/verify-lane-lifecycle-mutants.sh`.
-      - run: bash claude-plugins/kampus-pipeline/lib/verify-lane-lifecycle-mutants.sh
-
-      # Executable pin for ship-it's sourced chain (#4547): every function a step script
-      # calls must be defined in-chain, and Step 2's §CP seam must pass the caller's
-      # $CP_FLAG through to `verdict gate`. The extraction dropped three source lines and
-      # hardcoded the seam empty, and nothing in the repo noticed for a week — ship-it is
-      # the single merge authority (ADR 0048/0135), so its chain not running as written
-      # is a merge-path defect. Hermetic: gh and the CLI shim are stubbed, no network.
-      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/ship-it/scripts/verify-chain-resolves.sh`.
-      - run: bash claude-plugins/kampus-pipeline/skills/ship-it/scripts/verify-chain-resolves.sh
-
-      # Executable pin for Step 0's class parity (#4744): the printed class set must EQUAL
-      # `class-probe classify`'s. The harness landed with #4730's fix and then ran nowhere for a
-      # week — read by four static-lint corpora, executed by none — so it read as coverage while
-      # being unable to fail. Its own falsifiability is asserted in-file (three mutants, each
-      # required to red for its intended reason) and its scope is counted, so a deleted case reds
-      # rather than printing a vacuous OK. Hermetic: gh is stubbed, no network.
-      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/ship-it/scripts/verify-step0-class-parity.sh`.
-      - run: bash claude-plugins/kampus-pipeline/skills/ship-it/scripts/verify-step0-class-parity.sh
-
-      # Executable pin for Step 3z's precondition (#4830): the one ship-it step that mutates a live
-      # PR — close→reopen — must fire ONLY in the dropped-trigger state and refuse without touching
-      # the PR otherwise, including on an unreadable count. The precondition used to live in the
-      # caller's prose, and a mis-read branch close→reopened a green PR (#4816). The harness carries
-      # its own mutant, so an assertion that stopped having teeth reds here rather than passing
-      # quietly. Hermetic: gh and the CLI shim are stubbed, no network.
-      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/ship-it/scripts/verify-step3z-precondition.sh`.
-      - run: bash claude-plugins/kampus-pipeline/skills/ship-it/scripts/verify-step3z-precondition.sh
-
-      # Executable pin for plan-epic's round-trip race detector (#4596): a CLEAN splice whose
-      # `## Dependencies` block is the body's last section — the standard first-time layout —
-      # must exit 0, while ANY in-block difference must still exit 1 with the racer verdict. The
-      # pre-fix diff reported "a racer clobbered it" on every clean deps-last write, so both
-      # directions are pinned; greening the false alarm by loosening the block-level byte-exactness
-      # would trade it for a silent miss. Hermetic: gh is stubbed, no network.
-      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-roundtrip-diff.sh`.
-      - run: bash claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-roundtrip-diff.sh
-
-      # Positive pin for review-code's glossary-freshness detector (3) — a new public export on an
-      # existing package entry point (#4700). It shipped born-dead: the awk regex would not compile,
-      # its exit status was never tested, and the gate printed a clean `not applicable` skip for six
-      # weeks. A born-dead detector is invisible to any suite that only asserts the happy skip, so
-      # this harness asserts a MATCH, and carries eight mutants — one per claim the fix rests on — so
-      # an assertion that stopped having teeth reds here rather than passing quietly. It also pins the
-      # sibling class (#4986): three reads whose failure or empty result used to reach a clean skip,
-      # each driven by the could-not-see state that produced it. Hermetic: gh, git and the CLI shim
-      # are stubbed, no network.
-      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/review-code/scripts/verify-glossary-detector-fires.sh`.
-      - run: bash claude-plugins/kampus-pipeline/skills/review-code/scripts/verify-glossary-detector-fires.sh
-
-      # Executable pin for triage's apply-triage wrapper (#4936): every argument it is given reaches
-      # the verb, or it refuses non-zero having spawned the verb zero times. The wrapper took `-ge 3`
-      # and forwarded only `$1 $2 $3`, so the documented `--status needs-info` was accepted, dropped,
-      # and exited 0 having stamped `status:triaged` — the pickable label — on an issue a triager was
-      # deliberately holding. The assertions are on the verb's ARGV, not on a clean exit, because a
-      # clean exit is what the defect already produced; five mutants keep them from going toothless.
-      # Hermetic: the verb is a stub, no network, no issue mutated.
-      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/triage/scripts/verify-apply-triage-args.sh`.
-      - run: bash claude-plugins/kampus-pipeline/skills/triage/scripts/verify-apply-triage-args.sh
-
-      # Gate-path drift guard (issue #720): read the §CP CONTROL_PLANE_RE from its
-      # single-source const via `pipeline-cli control-plane-paths` (#2761) and diff it
-      # against the ONE un-importable copy left — the CONTROL_PLANE_RE= line in
-      # gh-issue-intake-formats.md the live gates re-resolve from origin/main (#981);
-      # the gate skills carry no copy of their own. The same const-vs-copy compare then
-      # runs over the ten other gate boundaries (#4401). A drifted copy otherwise
-      # silently breaks all gate checks with no build-time failure. Its second invariant — the
-      # `.claude/skills` symlink agreeing with marketplace.json — went with the symlink
-      # when v1 retired (ADR 0277); its incidental source-resolution coverage moved to
-      # validate-marketplace-sources.sh below (#5605).
-      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/validate-gate-path-drift.sh`.
-      - run: bash claude-plugins/kampus-pipeline/skills/validate-gate-path-drift.sh
-
       # Marketplace manifest guard (#5605): every `source` in .claude-plugin/marketplace.json
-      # resolves to a real plugin directory. The retired invariant 2 asserted this only as a
-      # side effect and only for the first entry, so a typo'd or renamed source in any later
-      # entry shipped a plugin nobody can install with nothing red.
-      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/validate-marketplace-sources.sh`.
-      - run: bash claude-plugins/kampus-pipeline/skills/validate-marketplace-sources.sh
+      # resolves to a real plugin directory carrying its own .claude-plugin/plugin.json — a
+      # typo'd or renamed source ships a plugin nobody can install with nothing red. Fails
+      # closed on zero entries and on zero in-tree sources (ADR 0092).
+      - name: Check every marketplace source resolves to a real plugin
+        run: |
+          set -uo pipefail
+          # The single quotes are the intent: JS template literals, not shell expansion.
+          # shellcheck disable=SC2016
+          node -e '
+            const fs = require("node:fs");
+            const manifest = JSON.parse(fs.readFileSync(".claude-plugin/marketplace.json", "utf8"));
+            const plugins = manifest.plugins ?? [];
+            if (plugins.length === 0) {
+              console.error("marketplace-sources: FAIL — zero plugin entries (zero-scope fail-closed, ADR 0092).");
+              process.exit(3);
+            }
+            let bad = 0;
+            let checked = 0;
+            for (const p of plugins) {
+              // An object source (git-subdir pinned to a sha) names a plugin in another tree at
+              // another commit — there is no path in THIS checkout to resolve, so it is valid by
+              // construction. Only a string source is a repo-relative path this guard can check.
+              if (typeof p?.source !== "string" || p.source === "") continue;
+              checked++;
+              const manifestPath = `${p.source}/.claude-plugin/plugin.json`;
+              if (!fs.existsSync(manifestPath)) {
+                console.error(`marketplace-sources: FAIL — plugin "${p.name}" source "${p.source}" has no ${manifestPath}.`);
+                bad++;
+              }
+            }
+            if (checked === 0) {
+              console.error("marketplace-sources: FAIL — no in-tree plugin source to check (zero-scope fail-closed, ADR 0092).");
+              process.exit(3);
+            }
+            if (bad > 0) process.exit(1);
+            console.log(`marketplace-sources: OK — ${checked} in-tree plugin source(s) resolve.`);
+          '
 
   # Reproducible workflow-YAML lint (issue #568). `.github/workflows/**` is the most
   # control-plane-sensitive, human-merged file class (ADR 0053), yet was validated
@@ -864,18 +773,6 @@ jobs:
       # `test` (now unit-only), so this creds-bearing job is its only home.
       - name: Integration tests (preview-seed)
         run: pnpm --filter @kampus/preview-seed test:integration
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
-
-      # moderator-grant's `integration` tier (ADR 0082, #930) is the same real-remote-D1
-      # `Test.make` shape as preview-seed's above — its `node:sqlite` fake is gone (the
-      # ban's last survivor), so it needs the same Cloudflare creds. The no-creds
-      # `packages-tests` job runs only its `test` (now unit-only), so this creds-bearing
-      # job is its only home.
-      - name: Integration tests (moderator-grant)
-        run: pnpm --filter @kampus/moderator-grant test:integration
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -1170,15 +1067,16 @@ jobs:
   # per job is EMITTED to the log (ADR 0092 §1 "emit what you scanned"), so a quietly
   # -skipped required job is visible in the run, not only in the exit code.
   #
-  # The verdict logic is the PURE, UNIT-TESTED `ci-required` core, inlined into
-  # pipeline-cli (#3802) — `node packages/pipeline-cli/src/tools/ci-required/bin.ts`
-  # reads the `needs.*` env below and exits 0/1. It is a ZERO-RUNTIME-DEPENDENCY plain-Node
-  # module (node strips the TS types natively), so this gate job runs only
-  # checkout + setup-node + node — NO `pnpm install` — keeping the always-on
-  # aggregator fast. Its full matrix (the 4 integration scenarios, the packages-tests
-  # required/legit-skip/fail cases, the fork skip, a genuine failure, and the
-  # changes-job-itself-failed fail-closed case) lives in ci-required.unit.test.ts,
-  # run by the `packages-tests` lane (which gates all `packages/**` suites, #760).
+  # The verdict logic is the PURE, UNIT-TESTED core in fabrika-cli (#6099) —
+  # `node packages/fabrika-cli/src/ci/required-bin.ts` reads the `env:` below and exits 0/1.
+  # That path is a ZERO-RUNTIME-DEPENDENCY plain-Node module (node strips the TS types
+  # natively) and imports no `effect`, so this gate job runs only checkout + setup-node +
+  # node — NO `pnpm install` — keeping the always-on aggregator fast. That constraint is why
+  # it is a bare bin rather than a `fabrika ci …` verb. Its full matrix (the 4 integration
+  # scenarios, the packages-tests required/legit-skip/fail cases, a genuine failure, the
+  # changes-job-itself-failed case and the unreadable-scope case) lives in
+  # packages/fabrika-cli/src/ci/required.unit.test.ts, run by the `packages-tests` lane
+  # (which gates all `packages/**` suites, #760).
   ci-required:
     name: ci-required
     needs: [changes, check, unit, packages-tests, actionlint, integration, e2e]
@@ -1193,19 +1091,25 @@ jobs:
 
       - name: Require should-have-run gating jobs to have passed (skip is legit only when not required)
         env:
-          # `check` and `unit` share the single-sourced `check_required`; integration
-          # and e2e read their own. Pair each job's should-run with its result so the
-          # helper reads required-ness and run-ness from ONE source per job.
+          # CI_REQUIRED_JOBS is the single declaration of the covered set — it must name exactly
+          # the `needs:` above minus `changes`, and the helper derives every row from it (#6099).
+          # Each job pairs `<NAME>_REQUIRED` (its single-sourced `changes` output, the SAME
+          # expression that gates the job's own `if:`) with `<NAME>_RESULT`, so required-ness and
+          # run-ness cannot drift. `check` and `unit` are two jobs behind one `check_required`
+          # output, which is why they carry two keys reading the one source. A declared job whose
+          # keys are absent reds rather than reading as not-required.
+          CI_REQUIRED_JOBS: check unit packages-tests actionlint integration e2e
           CHANGES_RESULT: ${{ needs.changes.result }}
           CHECK_REQUIRED: ${{ needs.changes.outputs.check_required }}
+          UNIT_REQUIRED: ${{ needs.changes.outputs.check_required }}
+          PACKAGES_TESTS_REQUIRED: ${{ needs.changes.outputs.packages_required }}
+          ACTIONLINT_REQUIRED: ${{ needs.changes.outputs.workflows_required }}
           INTEGRATION_REQUIRED: ${{ needs.changes.outputs.integration_required }}
           E2E_REQUIRED: ${{ needs.changes.outputs.e2e_required }}
-          PACKAGES_REQUIRED: ${{ needs.changes.outputs.packages_required }}
-          WORKFLOWS_REQUIRED: ${{ needs.changes.outputs.workflows_required }}
           CHECK_RESULT: ${{ needs.check.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
-          PACKAGES_RESULT: ${{ needs.packages-tests.result }}
+          PACKAGES_TESTS_RESULT: ${{ needs.packages-tests.result }}
           ACTIONLINT_RESULT: ${{ needs.actionlint.result }}
           INTEGRATION_RESULT: ${{ needs.integration.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
-        run: node packages/pipeline-cli/src/tools/ci-required/bin.ts
+        run: node packages/fabrika-cli/src/ci/required-bin.ts

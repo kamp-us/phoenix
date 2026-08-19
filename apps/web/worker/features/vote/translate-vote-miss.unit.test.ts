@@ -1,9 +1,8 @@
 /**
- * `translateVoteMiss` unit pins — the inline voter's "a Vote miss is this
- * caller's not-found" rule has one home now (extracted from the byte-identical
- * `catchTags` blocks in Sozluk/Pano). These prove both Vote miss tags collapse
- * to the supplied not-found, a fresh error is raised per failure, and success
- * passes through untouched — the no-behavior-change contract.
+ * The "a Vote miss is this caller's not-found" rule, extracted from byte-identical
+ * `catchTags` blocks in Sozluk/Pano. Both miss tags must collapse to the supplied
+ * not-found, each failure must raise a FRESH error, and success must pass through
+ * untouched.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";

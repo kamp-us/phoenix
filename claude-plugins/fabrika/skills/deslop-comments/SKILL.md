@@ -96,10 +96,3 @@ prose. That keeps it a pointer you go and read for yourself, so the words that e
 the ones you judged at the line, never a subagent's summary of somebody's comment relayed into a
 committed decision doc. Scale the group count up rather than the group size; a long-running agent
 gets killed for no progress before a short one does.
-
-## Required repo files
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| `.decisions/` and `.patterns/` | The homes a COLLAPSE points at and a REHOME writes into | **degrade** — with no home to point at, an orphaned why stays inline as a KEEP; say so in the report rather than cutting it |
-| A typecheck script and a formatter the repo already runs | The evidence that a comments-only pass really was comments-only | **degrade** — read the diff back by hand and say in the report that no tool confirmed it |

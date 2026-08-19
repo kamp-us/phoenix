@@ -1,14 +1,8 @@
 /**
- * Report — the polymorphic content-report service. One canonical write surface
- * (`Report.submit`) for the three report targets: `definition`, `post`,
- * `comment`. Structurally mirrors {@link ../vote/Vote.ts | Vote} (a shared
- * low-level service over the same three targets, reached only through the
- * `Drizzle` seam, dying on infra errors via `orDieAccess`) minus the
- * `KarmaBump` contract — a report has no karma side-effect.
- *
- * Idempotency lives in the table: `content_report`'s composite PK
- * `(reporter_id, target_kind, target_id)` + `onConflictDoNothing` makes a
- * re-report by the same user a no-op success (the `user_vote` precedent). No
+ * Report — the polymorphic content-report service over the three targets
+ * (`definition` / `post` / `comment`). Idempotency lives in the table:
+ * `content_report`'s composite PK `(reporter_id, target_kind, target_id)` +
+ * `onConflictDoNothing` makes a re-report by the same user a no-op success. No
  * live view publishes off a write — a report is private moderation state.
  */
 import {and, eq, inArray, isNotNull, isNull, sql} from "drizzle-orm";
@@ -21,15 +15,12 @@ import {TargetId} from "../../lib/ids.ts";
 import {ReportTargetNotFound} from "./errors.ts";
 import * as Resolution from "./resolution.ts";
 
-// Re-exported from `db/target-kind.ts` (its source-of-truth home) for callers
-// that prefer importing it from `./Report`.
 export type {TargetKind};
 
 export interface ReportInput {
 	reporterId: string;
 	targetKind: TargetKind;
 	targetId: string;
-	/** Optional free-text reason. */
 	reason?: string | null;
 }
 
@@ -40,12 +31,7 @@ export interface ReportResult {
 	created: boolean;
 }
 
-/**
- * One row of the moderation queue (ADR 0098 §5): an open-reported target grouped
- * by `(targetKind, targetId)`, with the distinct-reporter count — the
- * repeat-offender / pile-on signal that comes free off the `content_report_target`
- * index. `reportCount` doubles as the count of open reports the resolve collapses.
- */
+/** One row of the moderation queue — open reports grouped by target. See ADR 0098 §5. */
 export interface OpenReportGroup {
 	targetKind: TargetKind;
 	targetId: string;
@@ -53,38 +39,22 @@ export interface OpenReportGroup {
 	reportCount: number;
 	/** The earliest open report's reason (representative free-text), or null. */
 	reason: string | null;
-	/** When the first open report on this target landed (oldest-first queue order). */
 	firstReportedAt: Date;
 }
 
 /**
- * One row of the shared decision feed (#1704, the two-person team-ledger): a
- * resolved/dismissed target grouped by `(targetKind, targetId)`, carrying the audit
- * triad `content_report` stamps on a terminal transition — the decision
- * (`removed`/`dismissed`), the **resolver** (which moderator), and when. Because
- * `resolveTarget` stamps every open row on a target with one uniform triad (and
- * `reopenForTarget` clears it), a target's terminal rows share a single decision, so
- * the group carries one resolver/resolution/resolvedAt. `resolvedAt` is the group's
- * most-recent terminal stamp — the decision feed's newest-first order.
+ * One row of the shared decision feed: a resolved/dismissed target with the audit
+ * triad. A target's terminal rows share one uniform triad (`resolveTarget` stamps
+ * them together), so the group carries a single resolver/resolution/waveId.
  */
 export interface ResolvedReportGroup {
 	targetKind: TargetKind;
 	targetId: string;
-	/** The decision the resolver made — `removed` (content soft-deleted) | `dismissed`. */
 	resolution: Resolution.Resolution;
-	/** The moderator who decided — first-class in the two-person ledger, never a footnote. */
 	resolverId: string;
-	/** When the decision landed (most-recent terminal stamp; newest-first feed order). */
 	resolvedAt: Date;
-	/** How many reports the decision collapsed on this target. */
 	reportCount: number;
-	/**
-	 * The wave grouping id (#1855, ADR 0138) shared across a batch's targets, or `null`
-	 * on a lone removal. A target's terminal rows share one `waveId` (`resolveTarget`
-	 * stamps them together), so the group carries the single value — the decision feed's
-	 * restore-as-a-unit key (rows sharing a `waveId` render as one entry whose restore
-	 * calls `reopenForWave`).
-	 */
+	/** Shared across a wave's targets, `null` on a lone removal — the restore-as-a-unit key (ADR 0138). */
 	waveId: string | null;
 }
 
@@ -99,12 +69,7 @@ export interface ResolveTargetInput {
 	/** The moderator's chosen action; the state machine derives the persisted outcome. */
 	action: Resolution.ResolveAction;
 	resolvedAt: Date;
-	/**
-	 * The wave-remove grouping identity (#1855, ADR 0138): the shared id stamped on
-	 * this resolve when it is one target of a wave gesture, so the batch reopens as a
-	 * unit (`reopenForWave`). Omitted/`null` on a single-target resolve — a wave
-	 * groups a batch, a lone resolve has none.
-	 */
+	/** The shared wave-grouping id when this resolve is one target of a wave gesture (ADR 0138). */
 	waveId?: string | null;
 }
 
@@ -126,142 +91,79 @@ export class Report extends Context.Service<
 	Report,
 	{
 		readonly submit: (input: ReportInput) => Effect.Effect<ReportResult, ReportTargetNotFound>;
-		/**
-		 * Batched presence read: the subset of `targetIds` the viewer already has a
-		 * `content_report` row for, of the given `kind`, in one `IN (...)` read so
-		 * callers stamp "already reported" without an N+1. Missing viewer or empty
-		 * `targetIds` short-circuits to an empty Set with no read.
-		 */
+		/** Which of `targetIds` the viewer already reported, in one batched read (no N+1). */
 		readonly readByReporter: (
 			viewerId: string | null | undefined,
 			kind: TargetKind,
 			targetIds: ReadonlyArray<string>,
 		) => Effect.Effect<Set<string>>;
 
-		/**
-		 * The moderation queue (ADR 0098 §5): open reports grouped by target,
-		 * oldest-first, each carrying its distinct-reporter (repeat-offender) count.
-		 * Private moderation state — the resolver gates it behind the `Moderate`
-		 * capability (`requireModeration`, ADR 0107 §4).
-		 */
+		/** Moderation queue: open reports grouped by target, oldest-first. Gated behind `Moderate` in the resolver (ADR 0098 §5, ADR 0107 §4). */
 		readonly listOpen: (opts?: {limit?: number}) => Effect.Effect<ReadonlyArray<OpenReportGroup>>;
 
-		/**
-		 * The shared decision feed (#1704): recently resolved/dismissed targets grouped
-		 * by target, newest-decision-first, each carrying the audit triad (decision,
-		 * resolver, resolved-at). Bounded single-page like {@link listOpen} (no cursor).
-		 * Private moderation state — the resolver gates it behind `Moderate`.
-		 */
+		/** Decision feed: resolved/dismissed targets, newest-first. Bounded single page, no cursor. */
 		readonly listResolved: (opts?: {
 			limit?: number;
 		}) => Effect.Effect<ReadonlyArray<ResolvedReportGroup>>;
 
 		/**
-		 * Terminal transition (ADR 0098 §3/§4): collapse EVERY open report on
-		 * `(targetKind, targetId)` to the decided terminal status in one batch,
-		 * stamping the audit triad (`resolverId`/`resolvedAt`/`resolution`) on each.
-		 * Idempotent: zero open reports ⇒ `collapsed: 0`, no write. The author-side
-		 * authority check lives in the resolver (`requireModeration` discharging the
-		 * `Moderate` capability), not here.
+		 * Collapse EVERY open report on the target to its terminal status in one batch,
+		 * stamping the audit triad. Idempotent. The authority check lives in the
+		 * resolver, not here. See ADR 0098 §3/§4.
 		 */
 		readonly resolveTarget: (input: ResolveTargetInput) => Effect.Effect<ResolveTargetResult>;
 
-		/**
-		 * Reopen (ADR 0098 §3): flip every resolved/dismissed report on the target
-		 * back to `open`, clearing its audit triad — the restore-reopens-its-report
-		 * edge (ADR 0096 §4). Returns how many reports were reopened.
-		 */
+		/** Flip every terminal report on the target back to `open`, clearing its audit triad (ADR 0098 §3, ADR 0096 §4). */
 		readonly reopenForTarget: (input: {
 			targetKind: TargetKind;
 			targetId: string;
 		}) => Effect.Effect<{reopened: number}>;
 
-		/**
-		 * Reopen a whole wave as a unit (#1855, ADR 0138): flip every resolved/dismissed
-		 * report sharing `waveId` back to `open`, clearing its audit triad + the wave
-		 * grouping — the restore-as-a-unit primitive #1704's restore mutation calls. One
-		 * shared id, so the batch reopens together and nothing outside it is touched.
-		 * Returns how many reports were reopened.
-		 */
+		/** Reopen every terminal report sharing `waveId` as a unit, clearing the grouping (ADR 0138). */
 		readonly reopenForWave: (waveId: string) => Effect.Effect<{reopened: number}>;
 
-		/**
-		 * The distinct terminal targets sharing `waveId` (#1855, ADR 0138): every
-		 * `(targetKind, targetId)` a wave gesture removed, still resolved/dismissed. The
-		 * restore-as-a-unit mutation reads this to bring each target's content back live
-		 * before `reopenForWave` flips the reports — one shared id, so the batch is exactly
-		 * the wave and nothing outside it. Empty when the wave has already been reopened.
-		 */
+		/** The distinct still-terminal targets sharing `waveId`; empty once the wave has been reopened (ADR 0138). */
 		readonly waveTargets: (
 			waveId: string,
 		) => Effect.Effect<ReadonlyArray<{targetKind: TargetKind; targetId: string}>>;
 
-		/**
-		 * Resolve a single report id to its `(targetKind, targetId)` — so the resolve
-		 * mutation accepts a `reportId` and acts on its whole target group (ADR 0098).
-		 * `null` when no such report exists.
-		 */
+		/** The `(targetKind, targetId)` behind a report id, so a resolve keyed on one report acts on its whole target group (ADR 0098). */
 		readonly lookupReportTarget: (
 			reportId: string,
 		) => Effect.Effect<{targetKind: TargetKind; targetId: string} | null>;
 
-		/**
-		 * The earliest OPEN report id on a target — the representative report the
-		 * `Moderated({reportId})` removal reason links to, so a later restore reopens
-		 * the whole group. `null` when no open report exists on the target.
-		 */
+		/** The earliest OPEN report id — the one a `Moderated({reportId})` removal links to, so a later restore reopens the whole group. */
 		readonly firstOpenReportId: (
 			targetKind: TargetKind,
 			targetId: string,
 		) => Effect.Effect<string | null>;
 
-		/**
-		 * The moderation-queue reputation join (#1703, ADR 0138): for each author id,
-		 * how many of their content targets a moderator has previously removed
-		 * (`removed_by IS NOT NULL` across the post/comment/definition record tables).
-		 * One batched read over the page's authors, keyed by author id — the
-		 * repeat-offender signal the triage row surfaces. Absent authors carry 0.
-		 */
+		/** Per author, how many of their targets a moderator previously removed. Absent authors carry 0 (ADR 0138). */
 		readonly countRemovalsByAuthors: (
 			authorIds: ReadonlyArray<string>,
 		) => Effect.Effect<ReadonlyMap<string, number>>;
 
 		/**
-		 * The pile-on's reporter-diversity numerator (#1703): per target, the total open
-		 * reports and the DISTINCT reporters behind them, keyed by `<kind>:<id>`. The
-		 * composite report PK collapses them for content targets today (one reporter,
-		 * one target), so the counts equal — the shape is threaded now for #1855's
-		 * remove-the-wave, which distinguishes a real wave from a grudge-reporter.
+		 * Per target, open reports + DISTINCT reporters, keyed `<kind>:<id>`. The composite
+		 * report PK makes the two equal today; both are read so the shape is honest for the
+		 * wave-vs-grudge-reporter slice (ADR 0138).
 		 */
 		readonly reporterDiversity: (
 			targets: ReadonlyArray<{targetKind: TargetKind; targetId: string}>,
 		) => Effect.Effect<ReadonlyMap<string, {reportCount: number; distinctReporters: number}>>;
 
-		/**
-		 * The actor-drawer's üretim counts (#1852, ADR 0138): per author, how many
-		 * definition / post / comment records they authored (`removed_at IS NULL` — live
-		 * production only). One grouped read per kind over the page's authors, keyed by
-		 * author id; absent authors carry a zeroed triple. The künye-join actor-drawer
-		 * renders these as the actor's content footprint alongside their standing.
-		 */
+		/** Per author, live (`removed_at IS NULL`) definition/post/comment counts; absent authors carry a zeroed triple. */
 		readonly productionCountsByAuthors: (
 			authorIds: ReadonlyArray<string>,
 		) => Effect.Effect<ReadonlyMap<string, ProductionCounts>>;
 
-		/**
-		 * The actor-drawer's "bu aktör" tell (#1852, ADR 0138): per author, how many
-		 * DISTINCT of their targets carry an open report — the count behind "this actor
-		 * has N reported targets", the entry point #1855's remove-the-wave grows from.
-		 * Joined via the author id the content read captured; one grouped read per kind
-		 * over the page's authors. Absent authors carry 0.
-		 */
+		/** Per author, how many DISTINCT of their targets carry an open report. Absent authors carry 0. */
 		readonly countOpenReportedTargetsByAuthors: (
 			authorIds: ReadonlyArray<string>,
 		) => Effect.Effect<ReadonlyMap<string, number>>;
 	}
 >()("@kampus/report/Report") {}
 
-/** The actor's live content footprint (#1852) — per-kind production counts. */
 export interface ProductionCounts {
 	definitionCount: number;
 	postCount: number;
@@ -270,13 +172,9 @@ export interface ProductionCounts {
 
 export const ReportLive = Layer.effect(Report)(
 	Effect.gen(function* () {
-		// `orDieAccess`: every internal DB call site dies on `DrizzleError` (infra
-		// failures are defects), so public signatures carry domain errors only and
-		// `R` stays `never`. See ADR 0013/0014, `.patterns/feature-services.md`.
+		// `orDieAccess`: infra failures are defects. See ADR 0013/0014, `.patterns/feature-services.md`.
 		const {run} = orDieAccess(yield* Drizzle);
 
-		// Validate the target exists and is not soft-deleted. Surfaces
-		// `ReportTargetNotFound` rather than letting the insert fail FK-shaped.
 		const assertTargetLive = Effect.fn("Report.assertTargetLive")(function* (
 			kind: TargetKind,
 			targetId: string,
@@ -336,8 +234,7 @@ export const ReportLive = Layer.effect(Report)(
 						targetId: r.targetId,
 						reportCount: Number(r.reportCount),
 						reason: r.reason ?? null,
-						// D1 stores `created_at` as integer seconds (timestamp mode); MIN
-						// returns that raw value, so reconstruct the Date from seconds.
+						// D1 timestamp mode stores integer seconds; MIN returns the raw value.
 						firstReportedAt: new Date(Number(r.firstReportedAt) * 1000),
 					}) satisfies OpenReportGroup,
 			);
@@ -352,13 +249,10 @@ export const ReportLive = Layer.effect(Report)(
 						targetId: schema.contentReport.targetId,
 						reportCount: sql<number>`COUNT(*)`,
 						resolvedAt: sql<number>`MAX(${schema.contentReport.resolvedAt})`,
-						// A target's terminal rows share one uniform triad (resolveTarget stamps
-						// them together), so MIN over the group returns that single value.
+						// A target's terminal rows share one uniform triad + waveId, so MIN over
+						// the group returns that single value.
 						resolverId: sql<string>`MIN(${schema.contentReport.resolverId})`,
 						resolution: sql<Resolution.Resolution>`MIN(${schema.contentReport.resolution})`,
-						// A target's terminal rows share one waveId (resolveTarget stamps them
-						// together), so MIN over the group returns that single value (null on a
-						// lone removal).
 						waveId: sql<string | null>`MIN(${schema.contentReport.waveId})`,
 					})
 					.from(schema.contentReport)
@@ -374,8 +268,7 @@ export const ReportLive = Layer.effect(Report)(
 						targetId: r.targetId,
 						resolution: r.resolution as Resolution.Resolution,
 						resolverId: r.resolverId,
-						// D1 stores `resolved_at` as integer seconds (timestamp mode); MAX
-						// returns that raw value, so reconstruct the Date from seconds.
+						// D1 timestamp mode stores integer seconds; MAX returns the raw value.
 						resolvedAt: new Date(Number(r.resolvedAt) * 1000),
 						reportCount: Number(r.reportCount),
 						waveId: r.waveId ?? null,
@@ -384,15 +277,9 @@ export const ReportLive = Layer.effect(Report)(
 		});
 
 		const resolveTarget = Effect.fn("Report.resolveTarget")(function* (input: ResolveTargetInput) {
-			// The terminal status AND the persisted outcome are decided by the state
-			// machine (open → resolved/removed | dismissed/dismissed); the `status='open'`
-			// WHERE guard below is the SQL-level counterpart that makes the transition
-			// apply only to open rows.
-			// The machine now returns the transition as a typed `Result` so a bad source
-			// status surfaces in the type, never a bare throw/defect-500 (#2560). Here the
-			// source is the hardcoded-legal `"open"`, so the `Result` is always a success;
-			// `orDie` discharges the impossible `IllegalTransition` as a defect — it can only
-			// fire if this `"open"` literal is ever changed to a non-open source.
+			// The `"open"` source is hardcoded-legal, so the `Result` is always a success;
+			// `orDie` discharges the impossible `IllegalTransition` — reachable only if this
+			// literal is later changed to a non-open source (#2560).
 			const {status, resolution} = yield* Effect.orDie(
 				Effect.fromResult(Resolution.resolve("open", input.action)),
 			);
@@ -404,9 +291,7 @@ export const ReportLive = Layer.effect(Report)(
 						resolverId: input.resolverId,
 						resolvedAt: input.resolvedAt,
 						resolution,
-						// A wave gesture stamps ONE shared id across its targets (#1855); a
-						// single-target resolve leaves it null. Always set explicitly so a
-						// re-resolve never inherits a stale wave grouping.
+						// Always set explicitly so a re-resolve never inherits a stale wave grouping.
 						waveId: input.waveId ?? null,
 					})
 					.where(
@@ -426,18 +311,14 @@ export const ReportLive = Layer.effect(Report)(
 			targetKind: TargetKind;
 			targetId: string;
 		}) {
-			// The target status AND the terminal-source guard are decided by the state
-			// machine (terminal → open); the SQL guard below is the counterpart that
-			// applies the reopen only to terminal rows. The machine returns a typed `Result`
-			// (#2560); the hardcoded-terminal `"resolved"` source is always legal, so `orDie`
-			// discharges the impossible `IllegalTransition` — reachable only if this literal
-			// is later changed to a non-terminal source.
+			// The hardcoded-terminal `"resolved"` source is always legal, so `orDie` discharges
+			// the impossible `IllegalTransition` — reachable only if this literal is later
+			// changed to a non-terminal source (#2560).
 			const status = yield* Effect.orDie(Effect.fromResult(Resolution.reopen("resolved")));
 			const result = yield* run((db) =>
 				db
 					.update(schema.contentReport)
-					// Clearing `waveId` too keeps the invariant: an OPEN report never carries
-					// a stale wave grouping (#1855).
+					// Clearing `waveId` too holds the invariant: an OPEN report never carries a wave grouping.
 					.set({
 						status,
 						resolverId: null,
@@ -458,9 +339,8 @@ export const ReportLive = Layer.effect(Report)(
 		});
 
 		const reopenForWave = Effect.fn("Report.reopenForWave")(function* (waveId: string) {
-			// Reopen is a machine transition (terminal → open). The machine returns a typed
-			// `Result` (#2560); the hardcoded-terminal `"resolved"` source is always legal, so
-			// `orDie` discharges the impossible `IllegalTransition` (see `reopenForTarget`).
+			// Hardcoded-legal source; `orDie` discharges the impossible `IllegalTransition`
+			// (see `reopenForTarget`).
 			const status = yield* Effect.orDie(Effect.fromResult(Resolution.reopen("resolved")));
 			const result = yield* run((db) =>
 				db
@@ -539,9 +419,6 @@ export const ReportLive = Layer.effect(Report)(
 			return row?.id ?? null;
 		});
 
-		// Per-author moderator-removal count across the three content record tables
-		// (`removed_by IS NOT NULL`). One grouped read per kind over the page's authors,
-		// summed into a single author→count map. Empty input short-circuits with no read.
 		const countRemovalsByAuthors = Effect.fn("Report.countRemovalsByAuthors")(function* (
 			authorIds: ReadonlyArray<string>,
 		) {
@@ -562,10 +439,6 @@ export const ReportLive = Layer.effect(Report)(
 			return counts;
 		});
 
-		// Per-target open-report total + distinct-reporter count, keyed `<kind>:<id>`.
-		// The composite report PK makes `COUNT(*)` and `COUNT(DISTINCT reporter_id)`
-		// equal for content targets, but both are read so the shape is honest for the
-		// #1855 wave slice. One grouped read over the page's targets.
 		const reporterDiversity = Effect.fn("Report.reporterDiversity")(function* (
 			targets: ReadonlyArray<{targetKind: TargetKind; targetId: string}>,
 		) {
@@ -598,9 +471,6 @@ export const ReportLive = Layer.effect(Report)(
 			return diversity;
 		});
 
-		// Per-author live production counts across the three record tables
-		// (`removed_at IS NULL`). One grouped read per kind; each table maps to its
-		// `ProductionCounts` field. Empty input short-circuits with no read.
 		const productionCountsByAuthors = Effect.fn("Report.productionCountsByAuthors")(function* (
 			authorIds: ReadonlyArray<string>,
 		) {
@@ -632,10 +502,6 @@ export const ReportLive = Layer.effect(Report)(
 			return counts;
 		});
 
-		// The "bu aktör" count (#1852): per author, how many DISTINCT of their targets
-		// carry an open report. Joins `content_report` (open) to each record table by
-		// target id per kind, groups by author. One read per kind over the page's
-		// authors; a target's kind decides which record table carries its author.
 		const countOpenReportedTargetsByAuthors = Effect.fn("Report.countOpenReportedTargetsByAuthors")(
 			function* (authorIds: ReadonlyArray<string>) {
 				const counts = new Map<string, number>();
@@ -689,9 +555,7 @@ export const ReportLive = Layer.effect(Report)(
 			submit: Effect.fn("Report.submit")(function* (input: ReportInput) {
 				yield* assertTargetLive(input.targetKind, input.targetId);
 
-				// Idempotent on the composite PK: a re-report by the same reporter on
-				// the same target is a no-op success (`changes === 0`). A fresh `id`
-				// on a conflicting insert never lands, so it's harmless.
+				// Idempotent on the composite PK; the fresh `id` on a conflicting insert never lands.
 				const result = yield* run((db) =>
 					db
 						.insert(schema.contentReport)

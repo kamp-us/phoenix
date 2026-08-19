@@ -1,8 +1,6 @@
 /**
- * The dark-ship default-=-safe-state invariant for the reactions (emoji tepki)
- * feature (#1863, epic #1840). Inspected off the exported `REACTIONS_FLAG` record
- * (the same object the factory spreads into `FlagshipFlag`), so no alchemy resource
- * is constructed — mirrors `mod-queue.invariant.test.ts` (#1701).
+ * The dark-ship default-is-safe-state invariant for reactions. Inspected off the exported
+ * `REACTIONS_FLAG` record, so no alchemy resource is constructed.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {PHOENIX_REACTIONS} from "../../../src/flags/keys.ts";

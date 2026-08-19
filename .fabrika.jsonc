@@ -3,5 +3,39 @@
 	// on #5959: the grant-author set is repo configuration, not a compiled-in "founder" concept —
 	// GitHub usernames and teams, both `@`-prefixed as GitHub writes them. In phoenix it is the
 	// three founder accounts. One grant buys exactly one round.
-	"capClearAuthors": ["@usirin", "@notusirin", "@cansirin"]
+	"capClearAuthors": ["@usirin", "@notusirin", "@cansirin"],
+
+	// Docs whose subject IS path hygiene: they must spell the forbidden path shapes out, so
+	// `fabrika build check --surface prose` skips its leak scan on them. Repo-relative path
+	// suffixes, matched by suffix the way `fabrika guard leak-guard scan` matches its own
+	// self-exempt list (#5687). This is phoenix's second declaration of one policy, and it is the
+	// MARKDOWN half: the gate also self-exempts shell and TypeScript files the prose surface never
+	// scans. The two are held equal by a test, not by this comment —
+	// `packages/fabrika-cli/src/guard/leak.golden.test.ts` reds when either side moves (ADR 0251).
+	// A repo without these docs declares an empty list, or no key at all, and nothing is exempt.
+	"docLeakExempt": [
+		"/CLAUDE.md",
+		"/agents/triager.md",
+		"/packages/leak-guard/README.md",
+		"/skills/report/SKILL.md",
+		"/skills/review-doc/SKILL.md",
+		"/skills/triage/SKILL.md"
+	],
+
+	// NOTHING READS THIS KEY. A §CP read that fails is the caller's exit 11 in every repo, and a
+	// proven-absent CODEOWNERS is the `unknown` hold — the founder reverted the per-repo policy on
+	// #5631, back to ADR 0220 §4. The strict value is kept declared so this repo cannot drift if the
+	// key is ever wired up again; what becomes of the key itself is the founder's to rule.
+	"unreadableCodeowners": "refuse",
+
+	// The repo's own commands that machine-read `.github/workflows/**`. `fabrika build check
+	// --surface workflows` runs each one over a workflows-touching diff, on top of `actionlint` when
+	// the tree has one (#5991), and `reads` names the exact workflow files that command opens — the
+	// only thing that tells the verb WHICH changed workflow a passing run actually covers.
+	//
+	// Phoenix declares none, and the empty list is the ruling rather than a gap: founder ruling on
+	// #5991, 2026-08-18 — the surface stands on `actionlint` alone. So a local tree without
+	// `actionlint` opens no workflow file and `--surface workflows` refuses `11`, UNKNOWN — never
+	// green — and `ci.yml`'s own jobs stay the deciding authority on these files.
+	"workflowValidators": []
 }

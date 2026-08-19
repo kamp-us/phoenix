@@ -7,9 +7,9 @@ import {currentLocationReturnTo, useGatedToggle, useVoteToggle} from "./useVoteT
 import "./PanoPost.css";
 
 /**
- * Presentational vote control; the parent owns the mutation + auth gate. `own`
- * marks the viewer's own content: the control remains visible for stable feed
- * geometry, but is disabled because self-voting is blocked (#2216).
+ * Presentational only — the parent owns the mutation + auth gate. On the viewer's
+ * own content the control stays visible (stable feed geometry) but disabled: self
+ * voting is blocked (#2216).
  */
 export function VoteControl({
 	count,
@@ -52,13 +52,8 @@ export function VoteControl({
 	);
 }
 
-/**
- * Triangle vote button for a single post. Dispatches
- * `fate.mutations.post.{vote,retractVote}` with an optimistic `score`/`myVote`
- * flip written back through `PostVoteView` keyed by `id`, so every card
- * referencing this post (feed + detail) re-renders instantly. The button has no
- * inline error slot, so we surface only `UNAUTHORIZED` (→ auth redirect) and
- * stay silent otherwise — see `.patterns/fate-mutations-client.md`.
+/** Optimistic writes go through `PostVoteView` keyed by `id` so every card referencing
+ * this post re-renders. See `.patterns/fate-mutations-client.md`.
  */
 export function PostVoteWidget({
 	postId,
@@ -69,7 +64,7 @@ export function PostVoteWidget({
 	postId: string;
 	score: number;
 	myVote: boolean | null;
-	/** The viewer authored this post — keep the vote visible but disabled (#2216). */
+	/** Viewer authored this post — visible but disabled (#2216). */
 	own?: boolean;
 }) {
 	const fate = useFateClient();
@@ -99,23 +94,13 @@ export function PostVoteWidget({
 	);
 }
 
-/**
- * Bookmark toggle for a single post — the save twin of `PostVoteWidget`.
- * Dispatches `fate.mutations.post.{save,unsave}` with an optimistic `isSaved`
- * flip written back through `PostSaveView` keyed by `id`, so every card and the
- * detail header referencing this post re-render instantly (and the server's
- * `live.update("Post", id, {changed:["isSaved"]})` reconciles every other open
- * view). Like the vote widget it has no inline error slot, so it surfaces only
- * `UNAUTHORIZED` (→ auth redirect) and stays silent otherwise — see
- * `.patterns/fate-mutations-client.md`.
- */
 export function PostSaveButton({postId, isSaved}: {postId: string; isSaved: boolean | null}) {
 	const fate = useFateClient();
 
 	const saved = isSaved === true;
 
-	// The save delta is a plain `isSaved` flip (no score floor), so it drives the
-	// shared gate directly rather than through the vote specialization.
+	// A plain `isSaved` flip (no score floor), so it drives the shared gate directly
+	// rather than the vote specialization.
 	const onToggle = useGatedToggle({
 		on: saved,
 		returnTo: currentLocationReturnTo,

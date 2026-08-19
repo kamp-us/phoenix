@@ -15,7 +15,7 @@ import {
 } from "./codes.ts";
 import {bodyDigest} from "./digest.ts";
 import {runDraft} from "./draft-verb.ts";
-import {CLAIMED, DIR, env, epic, planBlock} from "./fixtures.test-support.ts";
+import {CLAIMED, DIR, env, epic, planBlock, TOKEN} from "./fixtures.test-support.ts";
 import {planPath, renderRunRecord, runJsonPath} from "./run.ts";
 
 const EPIC_BODY = "An epic brief about the moderation queue.\n";
@@ -53,7 +53,9 @@ const run = (
 			runDraft({
 				number: 4300,
 				bodyDigest: options.digest ?? DIGEST,
+				token: TOKEN,
 				repo: null,
+				cwd: "/repo",
 				env,
 				stdin,
 			}),

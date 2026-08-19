@@ -1,12 +1,7 @@
 /**
- * Throwaway sanity test for the run-scoped SHARED stage (ADR 0104 step 7, #1027, PR A).
- *
- * Proves the deploy-once + provide/inject substrate works end-to-end in CI: `_global-setup.ts`
- * deploys ONE stage in vitest `globalSetup`, this file builds the black-box harness over the
- * injected handle via `sharedStack()` (no per-file deploy), and asserts the injected worker
- * URL is a real workers.dev host serving healthy JSON. It migrates nothing — it is the ONLY
- * file on the shared stage in this PR; later PRs move the irreducible real-D1/DO files onto it.
- * Delete (or fold into a real migrated file) once the migration lands.
+ * Throwaway sanity test for the run-scoped SHARED stage (ADR 0104 step 7, #1027): it proves the
+ * deploy-once + inject substrate works in CI and migrates nothing. Delete it (or fold it into a
+ * real migrated file) once the migration lands.
  */
 import {describe, expect, it} from "vitest";
 import {sharedStack} from "./_integration.ts";

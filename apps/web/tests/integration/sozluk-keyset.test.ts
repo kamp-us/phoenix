@@ -1,14 +1,11 @@
 /**
  * sözlük keyset EXECUTION verticals on real remote Cloudflare D1 (ADR 0082).
  *
- * The keyset *predicate shape* and the cursor-miss/page-envelope *decision* are
- * pure and unit-tested (`worker/db/keyset.unit.test.ts`: `keysetAfter`,
- * `resolveCursor`, `forwardPage`) — those are deletions from the retired
- * `node:sqlite` fate-op suite, not re-proven here. What stays at `integration`
- * is the irreducible real-D1 core (ADR 0082 "Irreducible integration core"): how
- * the real engine *executes* the keyset — ordering and tie-breaks across page
- * boundaries — plus read-row shaping, the denormalized term_record counters,
- * and the write→read re-resolve loop.
+ * The keyset predicate shape and the cursor-miss/page-envelope decision are pure
+ * and unit-tested in `worker/db/keyset.unit.test.ts`, not re-proven here. What
+ * stays is the irreducible real-D1 core (ADR 0082): how the real engine executes
+ * the keyset across page boundaries, read-row shaping, the denormalized
+ * term_record counters, and the write→read re-resolve loop.
  *
  * Seeded through the PUBLIC fate seam (`h.seedTerm` → `definition.add` +
  * `definition.vote`), so `score` (vote-derived) and `slug` (caller-chosen) are
@@ -88,16 +85,8 @@ const POP: Array<[slug: string, score: number]> = [
 // `keysetAfter` shape, unit-tested).
 const DEFS_SLUG = `${NS}-defs`;
 
-// `terms(recent)` keyset is `(last_activity_at desc, slug asc)`. `last_activity_at`
-// is server-stamped (`recomputeTermSummary` writes `floor(now/1000)`) and never
-// settable through the public seam — so the prior fixture seeded four terms and then
-// raced two back-to-back touches hoping they'd land in the SAME wall-clock second to
-// build the date tie. Against real remote D1 the round-trip latency separates those
-// two writes' seconds far more often than not, so that race lost ~deterministically
-// and reddened unrelated PRs (#643). Instead, seed the four terms and stamp each row's
-// `last_activity_at` to an EXACT whole-second epoch directly (`h.setLastActivityAt`):
-// the activity order is CONSTRUCTED, the 2/3 tie is an identical injected second, and
-// nothing depends on wall-clock alignment.
+// `terms(recent)` keyset is `(last_activity_at desc, slug asc)`; the activity order
+// is stamped directly rather than touched — see the file docblock (#643).
 const R = `${NS}-r`; // recent-fixture slug prefix
 const REC_SLUGS = [`${R}1`, `${R}2`, `${R}3`, `${R}4`] as const;
 
@@ -106,10 +95,10 @@ const REC_SLUGS = [`${R}1`, `${R}2`, `${R}3`, `${R}4`] as const;
 // a prior run's rows, and spaced by 10s so the strict steps can't collapse.
 const REC_BASE_SEC = Math.floor(STAMP / 1000);
 const REC_ACTIVITY_SEC: Record<string, number> = {
-	[`${R}1`]: REC_BASE_SEC, // oldest
-	[`${R}2`]: REC_BASE_SEC + 10, // tie with 3
-	[`${R}3`]: REC_BASE_SEC + 10, // tie with 2
-	[`${R}4`]: REC_BASE_SEC + 20, // newest
+	[`${R}1`]: REC_BASE_SEC,
+	[`${R}2`]: REC_BASE_SEC + 10,
+	[`${R}3`]: REC_BASE_SEC + 10,
+	[`${R}4`]: REC_BASE_SEC + 20,
 };
 
 beforeAll(async () => {
@@ -130,9 +119,6 @@ beforeAll(async () => {
 		],
 	});
 
-	// Seed the four recent-fixture terms, then stamp each one's `last_activity_at` to
-	// its fixed second — no touch, no clock, no race. The 2/3 pair gets an IDENTICAL
-	// second, so the only thing that can order them is the engine's slug-asc tiebreak.
 	for (const slug of REC_SLUGS) {
 		await h.seedTerm({
 			slug,
@@ -166,7 +152,7 @@ describe("sözlük keyset execution — real D1 (terms popular)", () => {
 			// THESE rows' relative order.
 			for (const e of conn.items.filter((x) => x.node.slug.startsWith(P))) {
 				seen.push(e.node.slug);
-				expect(e.cursor).toBe(e.node.slug); // cursor IS the slug keyset
+				expect(e.cursor).toBe(e.node.slug);
 			}
 			if (!conn.pagination.hasNext) break;
 			after = conn.pagination.nextCursor;
@@ -177,7 +163,6 @@ describe("sözlük keyset execution — real D1 (terms popular)", () => {
 	});
 
 	it("holds the (total_score) tie at a page boundary by slug asc", async () => {
-		// Walk straight to the c/d tie pair and assert slug-asc orders them.
 		const all = await h.fate({
 			kind: "list",
 			name: "terms",
@@ -197,8 +182,6 @@ describe("sözlük keyset execution — real D1 (terms popular)", () => {
 });
 
 describe("sözlük keyset execution — real D1 (terms recent)", () => {
-	// Pull THIS fixture's rows (prefix-scoped) from a recent page, preserving the
-	// engine's order, with the `last_activity_at` D1 recorded.
 	const recentOurs = async (
 		args: {first: number; after?: string} = {first: 100},
 	): Promise<{slugs: string[]; rows: TermNode[]; conn: Connection<TermNode>}> => {
@@ -217,8 +200,8 @@ describe("sözlük keyset execution — real D1 (terms recent)", () => {
 
 	it("orders recent by (last_activity_at desc, slug asc) — strict steps + a same-second tie", async () => {
 		const {slugs, rows} = await recentOurs();
-		expect(new Set(slugs)).toEqual(new Set(REC_SLUGS)); // all four present
-		expect(new Set(slugs).size).toBe(REC_SLUGS.length); // no dupes
+		expect(new Set(slugs)).toEqual(new Set(REC_SLUGS));
+		expect(new Set(slugs).size).toBe(REC_SLUGS.length);
 
 		// The engine's order must honor the keyset over whatever timestamps D1
 		// recorded: `last_activity_at` non-increasing, and any same-second run broken
@@ -230,15 +213,13 @@ describe("sözlük keyset execution — real D1 (terms recent)", () => {
 		for (let i = 1; i < rows.length; i++) {
 			const prev = rows[i - 1]!;
 			const cur = rows[i]!;
-			expect(sec(prev)).toBeGreaterThanOrEqual(sec(cur)); // last_activity_at desc
+			expect(sec(prev)).toBeGreaterThanOrEqual(sec(cur));
 			if (sec(prev) === sec(cur)) {
-				expect(prev.slug < cur.slug).toBe(true); // tie → slug asc
+				expect(prev.slug < cur.slug).toBe(true);
 			}
 		}
 
-		// The injected activity seconds (1 oldest | 2 == 3 tie | 4 newest) pin a concrete
-		// expected order on top of the invariant: 4 (newest) → 2 → 3 (the same-second
-		// pair, slug asc) → 1 (oldest).
+		// The injected seconds pin a concrete order on top of the invariant above.
 		expect(slugs).toEqual([`${R}4`, `${R}2`, `${R}3`, `${R}1`]);
 
 		// The 2/3 pair is the date TIE — assert it really shares a second (so the
@@ -249,11 +230,8 @@ describe("sözlük keyset execution — real D1 (terms recent)", () => {
 	});
 
 	it("walks recent across the tie boundary with no skips/dupes (cursor = slug)", async () => {
-		// Walk the whole recent list in pages of 2, collecting THIS fixture's rows in
-		// engine order. Page-prefix-scoped (other terms in D1 may interleave on a
-		// NO_DESTROY re-run); the claim is these four rows' relative order + that the
-		// 2/3 same-second tie survives whatever page boundary it lands on, resolved
-		// slug-asc across the cursor round-trip.
+		// The claim: the 2/3 same-second tie survives whatever page boundary it lands
+		// on, resolved slug-asc across the cursor round-trip.
 		const seen: string[] = [];
 		let after: string | undefined;
 		let safety = 0;
@@ -261,14 +239,14 @@ describe("sözlük keyset execution — real D1 (terms recent)", () => {
 			const {conn} = await recentOurs(after ? {first: 2, after} : {first: 2});
 			for (const e of conn.items.filter((x) => x.node.slug.startsWith(R))) {
 				seen.push(e.node.slug);
-				expect(e.cursor).toBe(e.node.slug); // cursor IS the slug keyset
+				expect(e.cursor).toBe(e.node.slug);
 			}
 			if (seen.length >= REC_SLUGS.length || !conn.pagination.hasNext) break;
 			after = conn.pagination.nextCursor;
 			expect(after).toBeDefined();
 		}
 		expect(seen).toEqual([`${R}4`, `${R}2`, `${R}3`, `${R}1`]);
-		expect(new Set(seen).size).toBe(REC_SLUGS.length); // no skips/dupes across boundaries
+		expect(new Set(seen).size).toBe(REC_SLUGS.length);
 	});
 });
 
@@ -313,7 +291,7 @@ describe("sözlük keyset execution — real D1 (Term.definitions)", () => {
 		expect(d2.pagination.hasNext).toBe(false);
 
 		const all = [...d1.items, ...d2.items].map((e) => e.node.id);
-		expect(new Set(all).size).toBe(3); // no dupes across the boundary
+		expect(new Set(all).size).toBe(3);
 	});
 });
 
@@ -390,9 +368,9 @@ describe("sözlük write→read re-resolve — real D1", () => {
 		expect(t2.ok).toBe(true);
 		if (!t2.ok) return;
 		const term2 = t2.data as {count: number; definitions: Connection<DefNode>};
-		expect(term2.count).toBe(firstCount + 1); // counter re-resolved off the new write
+		expect(term2.count).toBe(firstCount + 1);
 		const ids = term2.definitions.items.map((e) => e.node.id);
-		expect(ids).toContain(created); // the first write still resolves
+		expect(ids).toContain(created);
 		expect(term2.definitions.items.some((e) => e.node.body === "second definition")).toBe(true);
 	});
 });

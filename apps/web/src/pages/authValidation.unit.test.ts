@@ -27,7 +27,6 @@ describe("authValidation — Turkish field messages", () => {
 		expect(validatePassword("", "sign-up")).toBe("parola gerekli");
 		expect(validatePassword("short", "sign-up")).toBe("parola en az 8 karakter olmalı");
 		expect(validatePassword("hunter2hunter2", "sign-up")).toBeNull();
-		// Sign-in requires only a non-empty value — the length floor is the server's business.
 		expect(validatePassword("", "sign-in")).toBe("parola gerekli");
 		expect(validatePassword("short", "sign-in")).toBeNull();
 	});

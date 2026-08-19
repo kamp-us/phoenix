@@ -9,14 +9,8 @@ import {
 } from "./optimisticCommentAdd";
 
 /**
- * Covers the load-bearing optimistic `comment.add` membership core (ADR 0125, A1,
- * #1678): the temp-node payload shape (server-mirrored initial row), the pure
- * append-into-nested-connection edge (idempotent, so a re-run never doubles vs the
- * later live `appendNode`), and the store-driving membership helper's append +
- * rollback. Inspected off the REAL exported functions the call site routes through.
- * fate's own reconcile (`resolveOptimisticEntity` temp→server dedup) + record
- * rollback are exercised at the integration/e2e tier; this pins the client-owned
- * membership half hook-free.
+ * Pins the client-owned membership half of optimistic `comment.add` (ADR 0125, A1).
+ * fate's own reconcile + record rollback are covered at the integration/e2e tier.
  */
 const fixedNow = new Date("2026-07-02T12:00:00.000Z");
 
@@ -40,18 +34,15 @@ describe("optimisticCommentRecord — the temp node payload", () => {
 			// server initial: score 0, no self-vote (else a phantom self-upvote flash, #707)
 			score: 0,
 			myVote: null,
-			// a yazar's comment is live on arrival — no `incelemede` badge
 			sandboxed: false,
 			createdAt: fixedNow,
 			updatedAt: fixedNow,
-			// live node, not a [silindi] tombstone
 			deletedAt: null,
 		});
 	});
 
-	// The false-publish this whole change exists to close (#4282): without the flag the
-	// çaylak's own node renders identically to a published one for the entire optimistic
-	// window, and the reconciled server row then flips it — a visible lie, then a flicker.
+	// Without the flag a çaylak's own node renders as published for the whole optimistic
+	// window, then flips when the server row reconciles (#4282).
 	it("carries sandboxed for a çaylak author so the temp node never poses as published", () => {
 		const record = optimisticCommentRecord({
 			postId: "post_1",
@@ -121,7 +112,6 @@ describe("connectionKey — resolves the fate metadata key", () => {
 	});
 });
 
-/** A minimal in-memory `CommentListStore` over lists + records for the membership helper. */
 function fakeStore(
 	initial?: List,
 	records?: Record<string, Record<string, unknown>>,

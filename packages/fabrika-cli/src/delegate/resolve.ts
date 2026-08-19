@@ -19,6 +19,7 @@ import {Effect} from "effect";
 import {ChildProcess, type ChildProcessSpawner} from "effect/unstable/process";
 import {NO_IMPLEMENTATION} from "../verb.ts";
 import type {LocalInstall, LocalProbe} from "./local.ts";
+import {type RepoPredicate, repoPredicate} from "./reason.ts";
 import type {CopyOrigin} from "./repository.ts";
 
 /**
@@ -43,7 +44,8 @@ export type Resolution =
 	| {
 			readonly _tag: "warn-and-run-here";
 			readonly repoRoot: string;
-			readonly reason: string;
+			/** Reads as a predicate of {@link repoRoot} — the two are spliced into one sentence. */
+			readonly reason: RepoPredicate;
 	  }
 	| {
 			readonly _tag: "refuse-foreign-checkout";
@@ -69,7 +71,7 @@ export interface ResolveInput {
 export const resolve = ({selfPackageRoot, origin, repoRoot, local}: ResolveInput): Resolution => {
 	if (repoRoot === undefined) return {_tag: "run-here", why: "the cwd is not inside a repo"};
 	if (local === undefined || local._tag === "absent")
-		return {_tag: "warn-and-run-here", repoRoot, reason: "it has no local install"};
+		return {_tag: "warn-and-run-here", repoRoot, reason: repoPredicate`has no local install`};
 	if (local._tag === "corrupt") return {_tag: "warn-and-run-here", repoRoot, reason: local.reason};
 	if (local.install.packageRoot === selfPackageRoot)
 		return {_tag: "run-here", why: "the repo-local install is this copy"};
@@ -114,7 +116,8 @@ export const foreignCheckoutRefusal = ({
 
 export interface WarningInput {
 	readonly repoRoot: string;
-	readonly reason: string;
+	/** Spliced straight after {@link repoRoot}, so it must be a predicate of it — see `reason.ts`. */
+	readonly reason: RepoPredicate;
 	readonly globalVersion: string;
 	readonly declared: string | undefined;
 }
@@ -147,7 +150,7 @@ export const traceLine = (selfPackageRoot: string, resolution: Resolution): stri
 		case "delegate":
 			return `fabrika: global at ${selfPackageRoot} — delegating to the repo-local install at ${resolution.to.packageRoot} (${resolution.to.binPath}, v${resolution.to.version})`;
 		case "warn-and-run-here":
-			return `fabrika: running here, at ${selfPackageRoot} — repo root ${resolution.repoRoot}, but ${resolution.reason}`;
+			return `fabrika: running here, at ${selfPackageRoot} — repo root ${resolution.repoRoot} ${resolution.reason}`;
 		case "refuse-foreign-checkout":
 			return `fabrika: refusing — ${selfPackageRoot} is in checkout ${resolution.selfCheckout}, a different repository from the cwd's ${resolution.repoRoot}`;
 		case "run-here":

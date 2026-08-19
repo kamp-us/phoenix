@@ -1,9 +1,7 @@
 /**
- * EntityLifecycle unit coverage (ADR 0082 unit tier — pure, no DB): the removal
- * substrate's type transitions, the column↔lifecycle projection round-trip, the
- * reason codec, and the `Match.tagsExhaustive` reason handlers. The make-invalid-
- * states-unrepresentable guarantees (`Removed` needs its triad; `restore` only on
- * `Removed`) are enforced at compile time — asserted here with `expectTypeOf`.
+ * EntityLifecycle unit coverage. The make-invalid-states-unrepresentable guarantees
+ * (`Removed` needs its triad; `restore` only on `Removed`) are compile-time, so they
+ * are asserted here with `expectTypeOf` rather than at runtime.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {expectTypeOf} from "vitest";
@@ -52,10 +50,8 @@ describe("EntityLifecycle — type transitions", () => {
 		L.restore(L.Live());
 	});
 
-	// The çaylak sandbox-escape fix (#1811): a restore is sandbox-faithful — content
-	// that was sandboxed before removal returns to Sandboxed, NOT Live, so a
-	// delete→restore round-trip can never self-escape a çaylak's content to the
-	// always-Live broadcast without a mod's promotion.
+	// A restore is sandbox-faithful, so a delete→restore round-trip can never
+	// self-escape a çaylak's content to the always-Live broadcast (#1811).
 	it("restore : Removed → Sandboxed for content sandboxed before removal (#1811)", () => {
 		const removed = L.remove({
 			removedAt: fixedNow,
@@ -151,9 +147,8 @@ describe("EntityLifecycle — column projection round-trip", () => {
 		});
 	});
 
-	// #1811: a sandboxed-then-removed row PRESERVES its `sandboxedAt` through the
-	// Removed columns (so restore can round-trip it), and restore persists it back as
-	// a Sandboxed row — never a Live row with the marker cleared.
+	// A sandboxed-then-removed row must PRESERVE `sandboxedAt` through the Removed
+	// columns, or restore silently produces a Live row (#1811).
 	it("toColumns(remove(...)) preserves the pre-removal sandboxedAt column (#1811)", () => {
 		const removed = L.remove({
 			removedAt: fixedNow,
@@ -217,8 +212,7 @@ describe("EntityLifecycle — sandbox (#1205)", () => {
 		});
 		// A removed-AND-sandboxed row reads as Removed (the removal is the live fact)…
 		assert.isTrue(L.isRemoved(lifecycle));
-		// …but the pre-removal sandbox marker is carried, not dropped — so restore
-		// round-trips it back to the sandbox (the çaylak-escape fix).
+		// …but the pre-removal sandbox marker is carried, not dropped.
 		if (L.isRemoved(lifecycle)) assert.strictEqual(lifecycle.sandboxedAt, fixedNow);
 	});
 

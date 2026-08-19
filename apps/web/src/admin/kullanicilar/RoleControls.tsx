@@ -1,24 +1,7 @@
 /**
- * `RoleControls` — the per-row platform-role affordance for the kullanıcılar roster
- * (#3523, split from #3203). One toggle that grants/revokes the moderatör role via the
- * `Admin.over(platform)`-gated `user.setRole` mutation (#3522), which writes the
- * `moderates` relation tuple. The server is the sole authority: a non-admin call comes
- * back the invisible `Denied` and shows the no-authority line, minting nothing.
- *
- * The panel renders this only when BOTH the roster flag `PHOENIX_USER_ADMIN` (the panel's
- * `FlagGate`) and the role-assign dark-ship flag `PHOENIX_USER_ROLE_ASSIGN` (the roster's
- * per-column `useFlag`) are on — the client half of the two-gate ship-dark contract whose
- * worker half fails the invisible `Denied` (ADR 0083).
- *
- * After a successful assignment `onRoleChanged` re-reads the roster through the gated
- * view so the row's derived `role` cell reflects the new value (the `moderates` tuple is
- * re-joined server-side; a `RoleState` write does not update the `UserAdmin` entity in the
- * client store). Render decisions are DOM-free in `role-controls.ts` (unit-tested).
- *
- * a11y: the `Button` primitive carries the focus ring + the 36px hit-area floor from the
- * shared styles (`.kp-btn` now floors `min-height`/`min-width` at `--tap-min`, #3791); the
- * outcome is a `role="status" aria-live="polite"` text region (state as words, never
- * color); copy is lowercase Turkish.
+ * The server is the sole authority here: the `user.setRole` mutation is `Admin.over(platform)`-
+ * gated, so a non-admin call comes back the invisible `Denied` and shows the no-authority line,
+ * minting nothing. The panel renders this only when both dark-ship flags are on (ADR 0083).
  */
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";

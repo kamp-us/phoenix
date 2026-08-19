@@ -1,7 +1,7 @@
 ---
 id: 0171
 title: kampus-pipeline is audited spec-conformant against the official Claude Code plugin spec — the `$schema` URL is corrected, every remaining shape is a documented-intentional deviation
-status: accepted
+status: amended-in-part by [0303](0303-retire-kampus-pipeline-plugin.md)
 date: 2026-07-07
 tags: [plugin-portability, packaging, distribution, pipeline]
 ---
@@ -92,7 +92,7 @@ against `https://json.schemastore.org/claude-code-marketplace.json` (already cor
    ADR [0087](0087-plugin-dedicated-subdir-source.md) §2 / ADR
    [0062](0062-repo-as-config-plugin.md) §5 arrangement; the full rationale (and the
    accepted in-repo discovery doubling, ADR 0062 §5) is documented in
-   [`claude-plugins/kampus-pipeline/README.md`](../claude-plugins/kampus-pipeline/README.md).
+   `claude-plugins/kampus-pipeline/README.md`.
 
 6. **The marketplace catalog entry keeps its dedicated-subdir `source`** —
    `"./claude-plugins/kampus-pipeline"` — so an install receives only that subtree, not the

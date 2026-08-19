@@ -1,9 +1,3 @@
-/**
- * The Subnav CTA slot (#2598, placement law #2587) — the dedicated primary-action
- * position. A passed `cta` node renders in `.kp-subnav__cta`; absent, nothing renders. The
- * slot positions only — it never wraps the node in the utility filter/tab treatment
- * (`.kp-subnav__filter`), per the #2586 taxonomy / #2590 IA rule.
- */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {render, screen} from "@testing-library/react";
@@ -29,8 +23,6 @@ describe("Subnav CTA slot (#2598)", () => {
 		const slot = container.querySelector(".kp-subnav__cta");
 		expect(slot).toBeTruthy();
 		expect(screen.getByTestId("cta-btn")).toBeTruthy();
-		// The CTA is NOT styled as a utility filter/tab — the slot carries no filter class,
-		// and the substrate paints no filter treatment anywhere on a CTA-only Subnav.
 		expect(slot?.querySelector(".kp-subnav__filter")).toBeNull();
 		expect(container.querySelector(".kp-subnav__filter")).toBeNull();
 	});

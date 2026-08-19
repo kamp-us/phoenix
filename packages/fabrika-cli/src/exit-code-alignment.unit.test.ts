@@ -5,6 +5,7 @@ import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import * as adr from "./adr/codes.ts";
 import * as build from "./build/codes.ts";
+import * as ci from "./ci/codes.ts";
 import {
 	ALIGNED_GROUPS,
 	ALIGNMENT_BASE,
@@ -22,6 +23,7 @@ import * as glossary from "./glossary/codes.ts";
 import * as governance from "./governance/codes.ts";
 import * as graduate from "./graduate/codes.ts";
 import * as grill from "./grill/codes.ts";
+import * as guard from "./guard/codes.ts";
 import * as handoff from "./handoff/codes.ts";
 import * as healCi from "./heal-ci/codes.ts";
 import * as hook from "./hook/codes.ts";
@@ -54,10 +56,12 @@ const SRC_DIR = fileURLToPath(new URL(".", import.meta.url));
 const TABLES: Readonly<Record<string, CodeTable>> = {
 	adr,
 	build,
+	ci,
 	glossary,
 	governance,
 	graduate,
 	grill,
+	guard,
 	handoff,
 	"heal-ci": healCi,
 	hook,

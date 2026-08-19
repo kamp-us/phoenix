@@ -1,35 +1,12 @@
 /**
  * pano reads — black-box against the deployed worker `/fate` route (ADR 0026–0031).
  *
- * Ports the read surface of three pre-alchemy suites that drove the `Pano`
- * Effect service / `/fate` route directly inside workerd:
- *   - `fate-pano-read.test.ts` — `posts(sort, host)`, `post(idOrSlug)` detail +
- *     tags, the `Post.comments` keyset, and the `Comment` scalar surface over
- *     `/fate`.
- *   - `pano-post.test.ts` — submit a post and read it back (detail + feed); unknown
- *     id → null; host filter narrows to the requested host.
- *   - `pano-post-connection.test.ts` — `posts` connection paging (every row once,
- *     `new` ordering, ghost cursor).
+ * There is no admin route to inject pano data, so posts + comments are seeded via `/fate`
+ * mutations under a signed-up cookie, and the author of a seeded row is that user.
  *
- * Everything is observed over HTTP: there is no admin route to inject pano data,
- * so posts + comments are seeded via `/fate` mutations under a signed-up cookie
- * (`post.submit`, `comment.add`). The author of a seeded post/comment is the
- * signed-up user's name. Distinct comment authors come from distinct sign-ups.
- *
- * The connection envelope has NO `totalCount` (`{items:[{cursor,node}],
- * pagination:{hasNext, hasPrevious:false, nextCursor?}}`), so the old `totalCount`
- * assertions are dropped and "every row once" is re-expressed by walking
- * `nextCursor` and asserting the union of node ids has the expected size, no dupes.
- * D1 row-shape assertions (post_record / comment_record columns, body_excerpt,
- * the (author_id, created_at) index probe) are not black-box and are dropped;
- * behavior is re-expressed by re-resolving entities over `/fate`.
- *
- * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
- * shared across every migrated file: every host/email is prefixed with `NS` (this file's
- * deterministic `nsToken`). The ordered-feed assertions are scoped by HOST — each seeds its
- * posts under a per-test `${NS}-…` host so the `posts(host)` query filters to exactly this
- * file's (and this test's) rows. The host-scoping IS the namespace: no ordered assertion
- * reads a feed unfiltered by an NS-host.
+ * On the run-scoped SHARED stage (ADR 0104 step 7, #1027), so every host/email is
+ * `NS`-prefixed and every ordered-feed assertion is scoped by HOST: the host-scoping IS the
+ * namespace, and no ordered assertion reads a feed unfiltered by an NS-host.
  */
 import {randomBytes} from "node:crypto";
 import {beforeAll, describe, expect, it} from "vitest";
@@ -74,10 +51,8 @@ let author: {userId: string; cookie: string};
 // is observable per row.
 const commenters: Array<{userId: string; cookie: string}> = [];
 
-// The single seeded read fixture: one post under a unique host, with five
-// chronological comments. The comment ids are forge ULIDs (monotonic with
-// creation order), so the keyset `(created_at asc, id asc)` order equals
-// insertion order.
+// The comment ids are forge ULIDs (monotonic with creation order), so the keyset
+// `(created_at asc, id asc)` order equals insertion order.
 const READ_HOST = `${NS}.example.com`;
 let postId = "";
 const commentIds: string[] = [];
@@ -108,8 +83,6 @@ beforeAll(async () => {
 	if (!submitted.ok) throw new Error("seed post.submit failed");
 	postId = (submitted.data as PostNode).id;
 
-	// Five chronological comments, each from a distinct author. comment.add
-	// returns the re-resolved Comment carrying its id.
 	for (let i = 0; i < 5; i++) {
 		const added = await h.fate(
 			{
@@ -166,8 +139,8 @@ describe("pano reads — /fate", () => {
 			kind: "query",
 			name: "post",
 			args: {idOrSlug: postId},
-			// `tags` is a scalar embedded array (`{kind, label}[]`), selected as a
-			// whole field (no `tags.kind`/`tags.label` relation paths).
+			// `tags` is a scalar embedded array selected as a whole field — there are no
+			// `tags.kind`/`tags.label` relation paths.
 			select: ["id", "title", "url", "host", "score", "commentCount", "tags"],
 		});
 		expect(result.ok).toBe(true);
@@ -194,7 +167,6 @@ describe("pano reads — /fate", () => {
 	});
 
 	it("Post.comments paginates by DB keyset with no skips/dupes across pages", async () => {
-		// Page 1: first 2 in chronological-asc order.
 		const page1 = await h.fate({
 			kind: "query",
 			name: "post",
@@ -209,7 +181,6 @@ describe("pano reads — /fate", () => {
 		const cursor = d1.comments.pagination.nextCursor;
 		expect(cursor).toBe(commentIds[1]); // cursor is the last node id
 
-		// Page 2: after the page-1 cursor.
 		const page2 = await h.fate({
 			kind: "query",
 			name: "post",
@@ -222,7 +193,6 @@ describe("pano reads — /fate", () => {
 		expect(d2.comments.items.map((e) => e.node.id)).toEqual(commentIds.slice(2, 4));
 		expect(d2.comments.pagination.hasNext).toBe(true);
 
-		// Page 3: the last comment, no more.
 		const page3 = await h.fate({
 			kind: "query",
 			name: "post",
@@ -235,7 +205,6 @@ describe("pano reads — /fate", () => {
 		expect(d3.comments.items.map((e) => e.node.id)).toEqual([commentIds[4]]);
 		expect(d3.comments.pagination.hasNext).toBe(false);
 
-		// No skips/dupes: the union of all page ids is exactly the 5 seeded.
 		const allIds = [
 			...d1.comments.items.map((e) => e.node.id),
 			...d2.comments.items.map((e) => e.node.id),
@@ -265,7 +234,6 @@ describe("pano reads — /fate", () => {
 		expect(node.author).toBe("commenter 0");
 		expect(node.authorId).toBe(commenters[0]!.userId);
 		expect(node.score).toBe(0);
-		// Anonymous viewer → myVote null (no cookie on this read).
 		expect(node.myVote).toBeNull();
 	});
 
@@ -309,7 +277,6 @@ describe("pano reads — /fate", () => {
 		expect(post.tags).toHaveLength(1);
 		expect(post.tags[0]!.kind).toBe("göster");
 
-		// Read it back through the feed (filtered to its own host so the row is found).
 		const feed = await h.fate({
 			kind: "list",
 			name: "posts",
@@ -395,7 +362,6 @@ describe("posts connection — keyset walk", () => {
 		const collected: string[] = [];
 		let after: string | undefined;
 		let pages = 0;
-		// Walk the host-scoped connection two at a time until exhausted.
 		for (;;) {
 			const page = await h.fate({
 				kind: "list",
@@ -407,7 +373,6 @@ describe("posts connection — keyset walk", () => {
 			if (!page.ok) return;
 			const conn = page.data as Connection<PostNode>;
 			const ids = conn.items.map((e) => e.node.id);
-			// Each non-empty page's last cursor is the last node id.
 			if (ids.length > 0) {
 				expect(conn.items[ids.length - 1]!.cursor).toBe(ids[ids.length - 1]);
 			}
@@ -418,7 +383,6 @@ describe("posts connection — keyset walk", () => {
 			if (pages > 10) throw new Error("connection walk did not terminate");
 		}
 
-		// Every seeded row appears exactly once, no dupes.
 		expect(new Set(collected).size).toBe(5);
 		expect([...collected].sort()).toEqual([...seededIds].sort());
 		// `sort:new` returns newest-first, i.e. reverse insertion order.
@@ -451,10 +415,3 @@ describe("posts connection — keyset walk", () => {
 		expect(conn.pagination.hasNext).toBe(false);
 	});
 });
-
-// not portable black-box: pano-post-connection.test.ts `totalCount` assertions —
-// the connection envelope has no `totalCount`; "every row once" is re-expressed
-// above by walking `nextCursor` and asserting the union of ids (size 5, no dupes).
-// not portable black-box: pano-submit-post.test.ts D1 row-shape assertions
-// (post_record columns, body_excerpt, tags CSV) and the (author_id, created_at)
-// index probe — re-expressed by re-resolving the Post over `/fate`.

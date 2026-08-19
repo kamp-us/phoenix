@@ -100,3 +100,5 @@ gate-critical set can be revisited (e.g. auto-merge on a trusted `review-skill` 
   `require_code_owner_review`, so a control-plane merge of a gate-critical skill needs a human
   approval that — per 0071's resolution of the ADR-0055 wrinkle — an agent's ACL-sourced
   approval cannot satisfy.
+
+> Amendment 2026-08-19: the enumerated `skills/ship-it|review-code|review-doc|review-plan|gh-issue-intake-formats.md` paths retired with the v1 kampus-pipeline plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md) removed the four `claude-plugins/kampus-pipeline/*` clauses from `CONTROL_PLANE_RE` and `.github/CODEOWNERS`). The principle stands and still governs: gate/merge machinery is control plane *by nature*, blocking and human-merged. Read the live §CP set from `.github/CODEOWNERS` + the single-source regex ([`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts)), never from this list.

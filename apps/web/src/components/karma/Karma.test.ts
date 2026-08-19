@@ -1,8 +1,3 @@
-/**
- * The Karma atom's accessible-name contract (#1208). `karmaAriaLabel` is the
- * atom's labeling decision factored DOM-free, asserted here — the pure-extraction
- * idiom of `flagGateChild` (`apps/web/src` has no jsdom/testing-library).
- */
 import {describe, expect, it} from "vitest";
 import {karmaAriaLabel} from "./Karma";
 
@@ -12,8 +7,6 @@ describe("karmaAriaLabel — the Karma atom's accessible name", () => {
 	});
 
 	it("reads a zero-karma çaylak honestly as 0, not a placeholder", () => {
-		// AC #1208: a zero-karma çaylak shows the real number, never a "yeni üye"
-		// stand-in that contradicts it.
 		expect(karmaAriaLabel(0, undefined, "karma")).toBe("karma: 0");
 	});
 

@@ -1,16 +1,12 @@
 /**
- * Vote feature-boundary pins — `Vote` is consumed by both Sozluk and Pano, so
- * it sits below the feature directories and must import none of them. The karma
- * counter lives in pasaport's tables and the voter tier lives in künye's, but Vote
- * OWNS both the `KarmaBump` and `VoterStanding` contracts and pasaport/künye PROVIDE
- * the implementations at composition (`fate/layers.ts`); these type-level pins keep
- * those arrows inverted by asserting what `VoteLive` REQUIRES (its `R` channel) and
- * the shape of each contract surface — the boundary's actual requirement,
- * refactor-proof. A re-imported sibling implementation would widen `R` and fail the
- * pin; nothing sibling-shaped is nameable through either contract.
+ * Vote feature-boundary pins — `Vote` is consumed by both Sozluk and Pano, so it sits
+ * below the feature directories and must import none of them. Vote OWNS the `KarmaBump`
+ * and `VoterStanding` contracts; pasaport/künye PROVIDE the implementations at
+ * composition. Asserting what `VoteLive` REQUIRES is what keeps those arrows inverted:
+ * a re-imported sibling implementation would widen `R` and fail the pin.
  *
- * Type pins use expectTypeOf, not `@ts-expect-error` — the effect LSP plugin's
- * TS377003 escapes the directive (recurring finding).
+ * Pins use `expectTypeOf`, not `@ts-expect-error` — the effect LSP plugin's TS377003
+ * escapes the directive.
  */
 import type {Effect, Layer} from "effect";
 import {describe, expectTypeOf, it} from "vitest";
@@ -21,32 +17,25 @@ import type {KarmaBump, KarmaBumpInput, Vote, VoteLive, VoterStanding} from "./V
 describe("Vote's public surface is feature-clean (type pins)", () => {
 	it("VoteLive requires the db seam + Vote's own KarmaBump + VoterStanding + the shared Telemetry seam", () => {
 		// A re-imported pasaport/künye implementation would bake the dep in and drop
-		// `KarmaBump`/`VoterStanding` from R, failing this pin. `Telemetry` is the ONE shared
-		// cross-cutting seam Vote depends on directly (ADR 0153, #2068 reference instrument):
-		// a low-level service every instrument emits through — not a peer feature, and it
-		// imports nothing from vote — so it rides `R` un-inverted, discharged by the same
-		// `makeFateLayer` merge. A drift that dropped it (an un-instrumented cast) or widened
-		// R with a sibling feature fails this pin.
+		// `KarmaBump`/`VoterStanding` from R, failing this pin. `Telemetry` rides `R`
+		// un-inverted on purpose: it is a low-level seam, not a peer feature (ADR 0153).
 		expectTypeOf<typeof VoteLive>().toEqualTypeOf<
 			Layer.Layer<Vote, never, Drizzle | KarmaBump | VoterStanding | Telemetry>
 		>();
 	});
 
 	it("the KarmaBump contract names only db primitives (DrizzleDb + KarmaBumpInput in, Stmt pair out)", () => {
-		// Nothing pasaport-shaped is nameable through the contract: `KarmaBumpInput` names only
-		// db-level primitives (`TargetKind`/`KarmaEventReason` from `db/`, not a pasaport type),
-		// and the output is the bump + its ledger row as a `[Stmt, Stmt]` pair (#2592). Also
-		// künye's swap point — a DO-backed bump replaces the provided value in `fate/layers.ts`,
-		// never Vote's internals.
+		// Nothing pasaport-shaped is nameable through the contract — only db-level primitives
+		// in, a `[Stmt, Stmt]` bump + ledger pair out (#2592). Also künye's swap point: a
+		// DO-backed bump replaces the provided value at composition, never Vote's internals.
 		expectTypeOf<typeof KarmaBump.Service>().toEqualTypeOf<{
 			readonly statements: (db: DrizzleDb, input: KarmaBumpInput) => readonly [Stmt, Stmt];
 		}>();
 	});
 
 	it("the VoterStanding contract names only a voter id → boolean predicate (no tier vocabulary)", () => {
-		// Nothing künye-shaped (no `Tier`, no ladder) is nameable through the contract —
-		// the "above the çaylak floor" comparison lives at the künye seam (`fate/layers.ts`),
-		// so the ladder can move without touching Vote. #1810.
+		// Nothing künye-shaped (no `Tier`, no ladder) is nameable here: the "above the çaylak
+		// floor" comparison lives at the künye seam, so the ladder can move without Vote (#1810).
 		expectTypeOf<typeof VoterStanding.Service>().toEqualTypeOf<{
 			readonly isAboveNewcomer: (voterId: string) => Effect.Effect<boolean>;
 		}>();

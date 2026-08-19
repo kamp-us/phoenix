@@ -30,7 +30,7 @@ permissions:
 jobs:
   # Job-level change-detection gating ONLY the `deploy` job (issue #2366): a
   # docs/canon/pipeline-only PR (`.decisions/`, `.patterns/`, `.glossary/`, `*.md`,
-  # `.claude/`, `claude-plugins/`, `packages/pipeline-cli/`, …) mints no preview stack
+  # `.claude/`, `claude-plugins/`, `packages/fabrika-cli/`, …) mints no preview stack
   # — no worker, no D1, no DOs, no Flagship app that nothing ever requests.
   #
   # Why JOB-level and not a workflow-level `paths:`/`paths-ignore:` filter: a
@@ -112,7 +112,7 @@ jobs:
             # Keep this list byte-for-byte in sync with the `e2e:` block in
             # .github/workflows/ci.yml — the queue-safe invariant above (deploy-run ⊇
             # e2e-run) requires equal path sets, so an edit to one MUST edit the other.
-            # ENFORCED MECHANICALLY (issue #2372) by `pipeline-cli path-filter-guard check`
+            # ENFORCED MECHANICALLY (issue #2372) by `fabrika guard path-filter-guard check`
             # (the path-filter-guard.yml job): it fails the build if this `deploy:` set and
             # ci.yml's `e2e:` set drift apart — this comment documents it, the guard defends it.
             # The guard also compares the two steps' `token`/`base` inputs, because equal

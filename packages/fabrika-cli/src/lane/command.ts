@@ -10,8 +10,10 @@ import {randomUUID} from "node:crypto";
 import {fileURLToPath} from "node:url";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {resolveEntrypoint} from "../delegate/entrypoint.ts";
 import {leafCommand} from "../excess-operand.ts";
 import type {VerbOutcome} from "../verb.ts";
+import {runAssembly} from "./assembly-verb.ts";
 import {runBrief} from "./brief-verb.ts";
 import {runLaneClaim, runLaneRelease} from "./claim-verb.ts";
 import {runEmit} from "./emit-verb.ts";
@@ -146,6 +148,7 @@ const report = leafCommand(
 						pr: Option.getOrNull(pr),
 						comment: Option.getOrNull(comment),
 						repo: Option.getOrNull(repo),
+						cwd: process.cwd(),
 						env: process.env,
 					},
 					runProve,
@@ -187,6 +190,7 @@ const prove = leafCommand(
 					event,
 					task: Option.getOrNull(task),
 					repo: Option.getOrNull(repo),
+					cwd: process.cwd(),
 					env: process.env,
 				}),
 			),
@@ -274,6 +278,34 @@ const emitLane = leafCommand(
 	),
 );
 
+const assembly = leafCommand(
+	"assembly",
+	{
+		epic: Argument.integer("epic").pipe(
+			Argument.withDescription("the epic issue whose run owns the assembly worktree"),
+		),
+		remove: Flag.boolean("remove").pipe(
+			Flag.withDescription("remove the run's assembly worktree instead of placing it"),
+		),
+		root: rootFlag,
+	},
+	Effect.fn(function* ({epic, remove, root}) {
+		yield* emit(
+			yield* runAssembly({
+				epic,
+				remove,
+				root: Option.getOrNull(root) ?? DEFAULT_LANES_ROOT,
+				lane: String(epic),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Place, resume or remove an epic run's assembly worktree."),
+	Command.withDescription(
+		"Place the working tree an epic run assembles in — `epic/<n>` checked out at `.claude/worktrees/epic-<n>`, both derived from the epic number and never taken from the caller — and print its absolute path on stdout. The invoking checkout is NEVER switched: `operate`'s boot used to `git switch --create` the assembly branch in whatever tree ran it, which parked a human's working tree on `epic/<n>` for the whole run and left a second concurrent epic no tree to integrate in (#6163). Idempotent in both directions: a worktree already holding the branch is resumed and its path answered with nothing written, and a branch that outlived its worktree — the state `--remove` at a terminal leaves behind — is checked out again as it stands, never re-cut off a fresh base. A worktree whose directory is gone but whose record git still carries (`prunable`) is that same state: the registration is cleared and the branch placed again, never answered as a live path. `--remove` is the lane's terminal step and never forces — a dirty assembly tree is unlanded work, so git's refusal is the answer. Every mode reads the outcome back off `git worktree list` before answering. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (the placement or removal ran and did not read back — UNKNOWN), 11 (the working trees or origin could not be read — nothing was placed or removed), 33 (`epic/<n>` is checked out in the main working tree — switch that tree off it first). Examples: fabrika lane assembly 5680 · fabrika lane assembly 5680 --remove",
+	),
+);
+
 const pushLane = leafCommand(
 	"push",
 	{
@@ -315,6 +347,7 @@ const brief = leafCommand(
 		),
 	},
 	Effect.fn(function* ({lane, root, task, repo}) {
+		const entrypoint = yield* resolveEntrypoint();
 		yield* emit(
 			yield* onKey(lane, root, (_key, ref) =>
 				runBrief({
@@ -322,6 +355,7 @@ const brief = leafCommand(
 					task: Option.getOrNull(task),
 					repo: Option.getOrNull(repo),
 					env: process.env,
+					entrypoint,
 				}),
 			),
 		);
@@ -329,14 +363,20 @@ const brief = leafCommand(
 ).pipe(
 	Command.withShortDescription("The spawn prompt for one task's current leaf state."),
 	Command.withDescription(
-		"Print the spawn prompt for one task's current leaf state, folded fresh from the ledger — so a driver pastes a brief rather than composing one. stdout is the `lane-brief` wire format: which lane, task, state and shell, this driver's lanes root resolved absolute (the shell passes it back to `lane report` as --root; a relative one would resolve against the shell's own worktree), the resolved issue and PR URLs (URLs only — the spawned shell re-reads its own ground), and the format's byte-fixed rules. Hand the bytes to the spawn verbatim — a line appended under them is text the format's own reader calls malformed. On an epic lane a child's state resolves no PR at all and briefs the epic issue, the epic branch and the range to judge, while the tail task briefs the run's single PR under the same refusals (ADR 0285). Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane, the issue, its PRs or — on a child `review` state — this tree's branches could not be read, UNKNOWN), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 18 (the leaf state routes to no shell — `queued`, `blocked`, `human:*`, a final), 19 (neither the task nor the lane names an issue, or that issue is proven absent), 20 (zero open PRs where the state needs one, or several where one is required), 21 (the key is not a lane key), 22 and 25 (a child `review` state's range, on the seats `lane prove` already spends on the same two facts — no local branch in this tree carries the child's commits, or several do). Example: fabrika lane brief 5680 --task issue_5729",
+		"Print the spawn prompt for one task's current leaf state, folded fresh from the ledger — so a driver pastes a brief rather than composing one. stdout is the `lane-brief` wire format: which lane, task, state and shell, this driver's lanes root resolved absolute (the shell passes it back to `lane report` as --root; a relative one would resolve against the shell's own worktree), the fabrika entrypoint resolved for this repo (repo-relative in a checkout of fabrika's own repo so each worktree runs its own copy, absolute for an installed one no worktree has a node_modules for), the resolved issue and PR URLs (URLs only — the spawned shell re-reads its own ground), and the format's byte-fixed rules. Hand the bytes to the spawn verbatim — a line appended under them is text the format's own reader calls malformed. On an epic lane a child's state resolves no PR at all and briefs the epic issue, the epic branch and the range to judge, while the tail task briefs the run's single PR under the same refusals (ADR 0285). Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane, the issue, its PRs, this fabrika's own entrypoint or — on a child `review` state — this tree's branches could not be read, UNKNOWN), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 18 (the leaf state routes to no shell — `queued`, `blocked`, `human:*`, a final), 19 (neither the task nor the lane names an issue, or that issue is proven absent), 20 (zero open PRs where the state needs one, or several where one is required), 21 (the key is not a lane key), 22 and 25 (a child `review` state's range, on the seats `lane prove` already spends on the same two facts — no local branch in this tree carries the child's commits, or several do). Example: fabrika lane brief 5680 --task issue_5729",
 	),
+);
+
+const laneTokenFlag = Flag.string("token").pipe(
+	Flag.optional,
+	Flag.withDescription("the lane-claim token `lane claim` handed this driver — its identity"),
 );
 
 const claim = leafCommand(
 	"claim",
 	{
 		lane: laneArgument,
+		token: laneTokenFlag,
 		repo: Flag.string("repo").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -344,12 +384,13 @@ const claim = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({lane, repo}) {
+	Effect.fn(function* ({lane, token, repo}) {
 		yield* emit(
 			yield* onKey(lane, Option.none(), (key) =>
 				runLaneClaim({
 					key,
 					lane,
+					token: Option.getOrNull(token),
 					repo: Option.getOrNull(repo),
 					env: process.env,
 					uuid: randomUUID(),
@@ -361,7 +402,7 @@ const claim = leafCommand(
 ).pipe(
 	Command.withShortDescription("Race the driver's claim on a lane and win it or name the winner."),
 	Command.withDescription(
-		'Race the earliest AUTHORIZED lane-claim marker on the issue a lane drives: post this driver\'s token (lane:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Two drivers over one lane used to be invisible until the builders they spawned collided one level down (#5761). The namespace is the driver\'s own — `lane-claim:`/`lane:`, never `build-claim:`/`build:` — so the builder this driver spawns claims the same issue and wins; the two races never see each other. Authorization is the author\'s repository permission (ADR 0055); marker text confers nothing. No admission test runs here — the fence is the spawned builder\'s. Prints {"answer":"won","lane":"…","number":n,"token":"…"}. A `chore:<name>` lane, or any key that is not a board number, has no thread to race on and answers {"answer":"unclaimable","lane":"…","why":"…"} at exit 0 with nothing written. A lost race retracts this run\'s own marker and exits 31, never 0; an unset CLAUDE_CODE_SESSION_ID is 1. Exits 8 (the marker write failed — UNKNOWN, never a claim), 9 (the marker landed and does not read back), 11 (the marker set could not be read — UNKNOWN, never "unclaimed"), 21 (the key is not a lane key), 31 (proven lost). Example: fabrika lane claim 5492',
+		'Race the earliest AUTHORIZED lane-claim marker on the issue a lane drives: post this driver\'s token (lane:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Two drivers over one lane used to be invisible until the builders they spawned collided one level down (#5761). The namespace is the driver\'s own — `lane-claim:`/`lane:`, never `build-claim:`/`build:` — so the builder this driver spawns claims the same issue and wins; the two races never see each other. Authorization is the author\'s repository permission (ADR 0055); marker text confers nothing. No admission test runs here — the fence is the spawned builder\'s. Prints {"answer":"won","lane":"…","number":n,"token":"…"}. --token makes the re-claim idempotent per DRIVER: handed the token this driver already holds, a lane it already owns answers won with that same marker and writes nothing, so N claims can never leave N markers for a later release to peel off one at a time (#6087); a same-session marker under another nonce is a sibling driver and races normally. A `chore:<name>` lane, or any key that is not a board number, has no thread to race on and answers {"answer":"unclaimable","lane":"…","why":"…"} at exit 0 with nothing written. A lost race retracts this run\'s own marker and exits 31, never 0 — including when the winner is another driver of THIS session, since ownership turns on the whole token and never the session id (#6060); an unset CLAUDE_CODE_SESSION_ID, or a --token that is not a lane-claim token of this session, is 1. Exits 8 (the marker write failed — UNKNOWN, never a claim), 9 (the marker landed and does not read back), 11 (the marker set could not be read — UNKNOWN, never "unclaimed"; this run\'s own marker is retracted first), 21 (the key is not a lane key), 31 (proven lost). Example: fabrika lane claim 5492',
 	),
 );
 
@@ -369,6 +410,7 @@ const release = leafCommand(
 	"release",
 	{
 		lane: laneArgument,
+		token: laneTokenFlag,
 		repo: Flag.string("repo").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -376,17 +418,23 @@ const release = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({lane, repo}) {
+	Effect.fn(function* ({lane, token, repo}) {
 		yield* emit(
 			yield* onKey(lane, Option.none(), (key) =>
-				runLaneRelease({key, lane, repo: Option.getOrNull(repo), env: process.env}),
+				runLaneRelease({
+					key,
+					lane,
+					token: Option.getOrNull(token),
+					repo: Option.getOrNull(repo),
+					env: process.env,
+				}),
 			),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Retract this driver's own lane-claim marker."),
 	Command.withDescription(
-		'Retract this driver\'s own lane-claim marker, so the lane is drivable again — run at both ends of the loop, the terminal fold and the park. It refuses to delete a marker this session does not hold: a driver never retracts another driver\'s claim. Prints {"answer":"released","lane":"…","number":n}. A `chore:<name>` lane, or any key that is not a board number, was never claimable and answers {"answer":"inert","lane":"…","why":"…"} at exit 0. Exits 1 (CLAUDE_CODE_SESSION_ID unset), 8 (the retraction failed — whether the claim is still held is UNKNOWN), 11 (the marker set could not be read), 21 (the key is not a lane key), 31 (proven: held by another driver, or no claim exists). Example: fabrika lane release 5492',
+		'Retract this DRIVER\'s OWN lane-claim marker, and only its own, so the lane is drivable again — run at both ends of the loop, the terminal fold and the park. --token says which driver that is: ownership turns on the whole token, so a sibling driver of one session is a foreign holder here and its marker is never swept (#6060). Every marker carrying this driver\'s token goes, not merely the winning one, so a duplicate a re-claim left behind cannot outlive the release (#6087). Prints {"answer":"released","lane":"…","number":n}. A `chore:<name>` lane, or any key that is not a board number, was never claimable and answers {"answer":"inert","lane":"…","why":"…"} at exit 0 — and needs no token, having never been handed one. Exits 1 (CLAUDE_CODE_SESSION_ID unset, --token omitted on a board number, or a --token that is not a lane-claim token of this session), 8 (the retraction failed — whether the claim is still held is UNKNOWN), 11 (the marker set could not be read), 21 (the key is not a lane key), 31 (proven: held by another driver, or no claim exists). Example: fabrika lane release 5492 --token lane:s-9f2e:c1a4d6f8-…',
 	),
 );
 
@@ -459,6 +507,7 @@ export const laneCommand = Command.make("lane").pipe(
 		open,
 		emitLane,
 		brief,
+		assembly,
 		pushLane,
 		stale,
 		claim,

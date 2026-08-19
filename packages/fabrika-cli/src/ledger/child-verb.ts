@@ -9,6 +9,10 @@
  * therefore be neither placed (`24`, dangling) nor retired (`10`, not a sub-issue) — created,
  * unusable, and unreachable by every other verb in the group.
  *
+ * **A home is required too** (#5969): a child born with neither an open milestone nor a standing lane
+ * is refused by the claim fence at exit `20`, so it can never be built — and ADR 0208 names that
+ * milestone-less-and-lane-less category as one that must not exist.
+ *
  * `--ready-for` is required and has no default (#4780); `--ready-for human` requires `--assignee`
  * (#4693) — the label is the routing signal, born-assignment is the enforced hold, and neither
  * substitutes for the other. That pair is not merely a convention: the gate's floor reds
@@ -19,7 +23,15 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {readAuthored} from "../build/authored.ts";
+import {STANDING_LANE_LABELS, type StandingLaneLabel} from "../build/scope-admission.ts";
 import {scannedLine} from "../build/target.ts";
+import {CONFIG_PATH} from "../config/document.ts";
+import {
+	CONTAINMENT_VOCABULARY,
+	containmentVocabularyKey,
+} from "../config/keys/containment-vocabulary.ts";
+import {resolve} from "../config/load.ts";
+import {loadRepoConfig} from "../config/working-root.ts";
 import {listLabels, listOpenMilestones} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {PLANNED} from "../labels.ts";
@@ -55,6 +67,13 @@ export const PRIORITIES: ReadonlyArray<string> = ["p0", "p1", "p2"];
 
 export const AUDIENCES: ReadonlyArray<string> = ["human", "agent"];
 
+/**
+ * A home is a milestone **or** a standing lane, read off the one set the claim fence reads (ADR 0208)
+ * — never a second copy of it here, which is how the two seams drift into disagreeing.
+ */
+const isStandingLane = (label: string): label is StandingLaneLabel =>
+	(STANDING_LANE_LABELS as ReadonlyArray<string>).includes(label);
+
 export const MESSAGES: LedgerMessages = {
 	verb: VERB,
 	notAnEpic: (epic) => `${VERB}: #${epic} is not a type:epic — refusing to mint a child of it.`,
@@ -70,6 +89,8 @@ export interface ChildOptions extends OpenOptions {
 	readonly assignee: string | null;
 	readonly milestone: string | null;
 	readonly labels: ReadonlyArray<string>;
+	/** Where the verb is standing — the repo whose `.fabrika.jsonc` this run resolves. */
+	readonly cwd: string;
 	readonly stdin: Effect.Effect<StdinRead>;
 }
 
@@ -111,6 +132,12 @@ export const runChild = (
 				`${VERB}: --priority ${options.priority} is off the closed set (${PRIORITIES.join(", ")}).`,
 			);
 		}
+		if (options.milestone === null && !options.labels.some(isStandingLane)) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (${STANDING_LANE_LABELS.join(", ")}). A homeless child is refused at the claim fence, so it can never be built (#5969).`,
+			);
+		}
 
 		const authored = readAuthored(
 			{
@@ -129,10 +156,20 @@ export const runChild = (
 		const run = yield* loadRun(MESSAGES, dir, notes);
 		if (run._tag === "Refused") return run.outcome;
 
+		const vocabulary = resolve(yield* loadRepoConfig(options.cwd), containmentVocabularyKey);
+		if (vocabulary._tag === "Malformed" || vocabulary._tag === "Unknown") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				MESSAGES.unreadable(`${CONFIG_PATH}'s \`${CONTAINMENT_VOCABULARY}\``, vocabulary.reason),
+				notes,
+			);
+		}
+
 		const composed = composeChildBody({
 			text: authored.text,
 			cycleDoc: run.value.cycleDoc,
 			type: options.type,
+			vocabulary: vocabulary.value,
 		});
 		if (composed._tag === "Bad") return refuse(BAD_SECTIONS, `${VERB}: ${composed.reason}`, notes);
 

@@ -5,9 +5,9 @@
  * FAIL at head, PASS on another head, PASS from an author without write+, a marker in a neighbouring
  * namespace — and asserts each one still reds.
  */
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	GOVERNANCE_FLOOR_UNMET,
@@ -30,14 +30,17 @@ const FABRIKA_TREE = [
 	files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/web/src/b.ts"),
 ] as const;
 
-const options = {pr: 4321, sha: HEAD, repo: null, json: false, env: ENV};
+const options = {pr: 4321, sha: HEAD, repo: null, json: false, cwd: "/repo", env: ENV};
 
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
 ) =>
 	Effect.runPromise(
-		Effect.provide(runFloor({...options, ...overrides}), fakeShell([...script]).layer),
+		Effect.provide(
+			runFloor({...options, ...overrides}),
+			Layer.merge(fakeShell([...script]).layer, unconfigured),
+		),
 	);
 
 const marker = (namespace: string, polarity: string, sha: string): string =>

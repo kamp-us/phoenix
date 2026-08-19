@@ -9,7 +9,6 @@ import {
 	parseTestImportedPackages,
 } from "./worker-relevance.ts";
 
-/** A classify input with no lockfile change unless explicitly supplied. */
 const input = (over: Partial<ClassifyInput>): ClassifyInput => ({
 	changedFiles: [],
 	lockfileChanged: false,
@@ -45,11 +44,10 @@ const importerAddDiff = (pkgPath: string): string =>
 	].join("\n");
 
 describe("the grounded worker-import closure (issue #1014)", () => {
-	it("worker's two import deps + the two own-D1-tier packages are integration-relevant", () => {
+	it("worker's two import deps + the own-D1-tier package are integration-relevant", () => {
 		assert.isTrue(INTEGRATION_RELEVANT_PACKAGES.has("db-schema"));
 		assert.isTrue(INTEGRATION_RELEVANT_PACKAGES.has("fate-effect"));
 		assert.isTrue(INTEGRATION_RELEVANT_PACKAGES.has("preview-seed"));
-		assert.isTrue(INTEGRATION_RELEVANT_PACKAGES.has("moderator-grant"));
 	});
 
 	it("d1-rest is NOT worker-relevant — the issue guessed wrong; grounded on source", () => {
@@ -57,28 +55,28 @@ describe("the grounded worker-import closure (issue #1014)", () => {
 	});
 
 	it("dev-tooling packages are not integration-relevant", () => {
-		for (const pkg of ["pipeline-cli", "epic-ledger", "decisions-index", "ci-required"]) {
+		for (const pkg of ["demo-cli", "epic-ledger", "decisions-index", "ci-required"]) {
 			assert.isFalse(INTEGRATION_RELEVANT_PACKAGES.has(pkg));
 		}
 	});
 });
 
 describe("AC scenarios (issue #1014) — the four the PR body sanity-checks", () => {
-	it("(a) packages/pipeline-cli/** only → irrelevant (integration SKIPPED)", () => {
+	it("(a) packages/demo-cli/** only → irrelevant (integration SKIPPED)", () => {
 		const r = classify(
 			input({
-				changedFiles: ["packages/pipeline-cli/src/router.ts", "packages/pipeline-cli/package.json"],
+				changedFiles: ["packages/demo-cli/src/router.ts", "packages/demo-cli/package.json"],
 			}),
 		);
 		assert.strictEqual(r.verdict, "irrelevant");
 	});
 
-	it("(a') pipeline-cli scaffold + a catalog-confined lockfile delta → irrelevant (the #1012 shape)", () => {
+	it("(a') demo-cli scaffold + a catalog-confined lockfile delta → irrelevant (the #1012 shape)", () => {
 		const r = classify(
 			input({
-				changedFiles: ["packages/pipeline-cli/src/router.ts", "pnpm-lock.yaml"],
+				changedFiles: ["packages/demo-cli/src/router.ts", "pnpm-lock.yaml"],
 				lockfileChanged: true,
-				lockfileDiff: importerAddDiff("packages/pipeline-cli"),
+				lockfileDiff: importerAddDiff("packages/demo-cli"),
 			}),
 		);
 		assert.strictEqual(r.verdict, "irrelevant");
@@ -98,7 +96,7 @@ describe("AC scenarios (issue #1014) — the four the PR body sanity-checks", ()
 	it("(d) mixed tooling-pkg + worker path → relevant (integration RUNS)", () => {
 		const r = classify(
 			input({
-				changedFiles: ["packages/pipeline-cli/src/router.ts", "apps/web/worker/index.ts"],
+				changedFiles: ["packages/demo-cli/src/router.ts", "apps/web/worker/index.ts"],
 			}),
 		);
 		assert.strictEqual(r.verdict, "relevant");
@@ -106,14 +104,9 @@ describe("AC scenarios (issue #1014) — the four the PR body sanity-checks", ()
 	});
 });
 
-describe("own-D1-tier packages keep tripping (AC: preview-seed/moderator-grant)", () => {
+describe("own-D1-tier packages keep tripping (AC: preview-seed)", () => {
 	it("packages/preview-seed/** → relevant", () => {
 		const r = classify(input({changedFiles: ["packages/preview-seed/src/seed.ts"]}));
-		assert.strictEqual(r.verdict, "relevant");
-	});
-
-	it("packages/moderator-grant/** → relevant", () => {
-		const r = classify(input({changedFiles: ["packages/moderator-grant/src/bin.ts"]}));
 		assert.strictEqual(r.verdict, "relevant");
 	});
 });
@@ -143,10 +136,7 @@ describe("fail-safe to running (the load-bearing invariant)", () => {
 	});
 
 	it("a bare `packages/foo` with no trailing slash → relevant (can't attribute to a dir)", () => {
-		assert.strictEqual(
-			classify(input({changedFiles: ["packages/pipeline-cli"]})).verdict,
-			"relevant",
-		);
+		assert.strictEqual(classify(input({changedFiles: ["packages/demo-cli"]})).verdict, "relevant");
 	});
 
 	it("lockfileChanged=true but empty diff → relevant (can't prove confinement)", () => {
@@ -278,14 +268,11 @@ describe("parseChangedFiles + inputFromEnv", () => {
 
 	it("inputFromEnv derives lockfileChanged from the CHANGED_FILES list", () => {
 		const i = inputFromEnv({
-			CHANGED_FILES: "packages/pipeline-cli/src/x.ts\npnpm-lock.yaml",
-			LOCKFILE_DIFF: importerAddDiff("packages/pipeline-cli"),
+			CHANGED_FILES: "packages/demo-cli/src/x.ts\npnpm-lock.yaml",
+			LOCKFILE_DIFF: importerAddDiff("packages/demo-cli"),
 		});
 		assert.isTrue(i.lockfileChanged);
-		assert.deepStrictEqual(
-			[...i.changedFiles],
-			["packages/pipeline-cli/src/x.ts", "pnpm-lock.yaml"],
-		);
+		assert.deepStrictEqual([...i.changedFiles], ["packages/demo-cli/src/x.ts", "pnpm-lock.yaml"]);
 	});
 
 	it("inputFromEnv: no lockfile in the list ⇒ lockfileChanged=false", () => {
@@ -296,8 +283,8 @@ describe("parseChangedFiles + inputFromEnv", () => {
 	it("end-to-end via env: the #1012 shape classifies irrelevant", () => {
 		const r = classify(
 			inputFromEnv({
-				CHANGED_FILES: "packages/pipeline-cli/src/router.ts\npnpm-lock.yaml",
-				LOCKFILE_DIFF: importerAddDiff("packages/pipeline-cli"),
+				CHANGED_FILES: "packages/demo-cli/src/router.ts\npnpm-lock.yaml",
+				LOCKFILE_DIFF: importerAddDiff("packages/demo-cli"),
 			}),
 		);
 		assert.strictEqual(r.verdict, "irrelevant");
@@ -340,7 +327,7 @@ describe("test-import closure (ADR 0114) — the #1352 hole closes", () => {
 	it("a genuinely-isolated package (in NEITHER closure) stays irrelevant — the skip optimization is preserved", () => {
 		const r = classify(
 			input({
-				changedFiles: ["packages/pipeline-cli/src/router.ts"],
+				changedFiles: ["packages/demo-cli/src/router.ts"],
 				testImportedPackages: testClosure,
 			}),
 		);

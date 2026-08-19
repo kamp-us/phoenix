@@ -68,3 +68,5 @@ traceable to its authorizing instruction.
   `Allow`, and the unit tests invert accordingly.
 - The general rule this sets for the repo: **do not weld human-only into a tool via a structural
   block. Make the tool agent-invokable; gate human-only at the skill/command that fronts it.**
+
+> Amendment 2026-08-19: `@kampus/cf-utils` was retired (ruling #3326); the lever now lives at `anka-ops flag set --execute` (`packages/anka-ops/src/flag-command.ts`, confirm logic in `packages/anka-ops/src/flagship-core.ts`). The decision is unchanged — read "cf-utils flag set --execute" as "anka-ops flag set --execute" throughout.

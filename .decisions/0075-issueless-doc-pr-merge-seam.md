@@ -10,7 +10,7 @@ tags: [pipeline, ship-it, review-doc, decisions, adr, autonomy]
 
 ## Context
 
-`ship-it` Step 1 ([ship-it/SKILL.md](../claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md), "Resolve the PR and its
+`ship-it` Step 1 (`ship-it/SKILL.md`, "Resolve the PR and its
 linked issue") reads the linked issue from the PR body's `Fixes #N` / `Closes #N` and treats
 a **missing** link as a **hard stop** (`no linked issue`). Its stated premise: in this
 pipeline `write-code` always writes `Fixes #N`, so a missing link is *a broken seam, not a
@@ -19,7 +19,7 @@ work (the rationale traces to ADR [0048](0048-ship-it-merge-actor.md) §1, "a li
 expected, not optional").
 
 That premise holds for the **code lane** and fails for the **doc lane**. A decision-of-record
-can be authored straight from a conversation via [`/adr`](../claude-plugins/kampus-pipeline/skills/adr/SKILL.md): it produces
+can be authored straight from a conversation via `/adr`: it produces
 a file under `.decisions/**` (or `.patterns/**`, or prose `*.md`) with **no originating
 issue** — nothing for a `Fixes #N` to close, because the work *is* the recording of a settled
 choice, not the closing of a tracked task. Such a PR can never carry a real `Fixes #N`, so it
@@ -129,3 +129,5 @@ no such refusal (it is a normal state, not an anomaly).
   describes — `review-doc`-gated, and (until the follow-up lands) human-merged because Step 1
   still refuses it for lacking a `Fixes #N`. That self-reference is the point: the seam this
   ADR settles is the one its own PR trips.
+
+> Amendment 2026-08-19: `ship-it`/`review-doc` are gone (ADR 0303). The carve-out is live in fabrika `ship` — `fabrika ship scope <pr>` prints the linked issue and treats doc/vocabulary-surface-only PRs as legitimately issueless, while `code`/`skill` classes still require `Fixes #N` (or `Part of #N`); the gate verdict now comes from `review`.

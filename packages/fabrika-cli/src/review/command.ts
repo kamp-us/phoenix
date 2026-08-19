@@ -76,14 +76,15 @@ const scope = leafCommand(
 				sha: Option.getOrNull(sha),
 				repo: Option.getOrNull(repo),
 				json,
+				cwd: process.cwd(),
 				env: process.env,
 			}),
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("A PR's artifact classes, head, linked issue and flags."),
+	Command.withShortDescription("A PR's artifact classes, head, issue, flags and governance need."),
 	Command.withDescription(
-		"Partition a PR's changed files into the code / doc / skill artifact classes and report its head SHA, linked issue and self / harness flags. The file list is read out of the object database at the bound commit, so the printed head and the partitioned files are the same tree. First stdout line is `scoped\\t<head-sha>\\t<fixes:n|part-of:n|->` — the same issue-reference token `ship scope` prints, so a `Part of #N` partial split reads as linked here too. Then one `class\\t<name>\\t<files>` line per present class and the two flag lines; the bound commit and the scanned count are on stderr. Exits 7 (PR absent, closed, or zero changed files — ADR 0092, #4060), 10 (--sha is not a head SHA), 11 (the PR could not be read, or the commit could not be bound — the scope is UNKNOWN), 12 (--sha is not the PR's head — re-scope, never re-bind), 13 (the commit carries fewer files than the PR declares). Example: fabrika review scope 4321 --sha 03135b91",
+		"Partition a PR's changed files into the code / doc / skill artifact classes and report its head SHA, linked issue, self / harness flags and whether the diff requires the governance namespace. The file list is read out of the object database at the bound commit, so the printed head and the partitioned files are the same tree. First stdout line is `scoped\\t<head-sha>\\t<fixes:n|part-of:n|->` — the same issue-reference token `ship scope` prints, so a `Part of #N` partial split reads as linked here too. Then one `class\\t<name>\\t<files>` line per present class, the two flag lines, and `governance\\t<required|not-required>` — the same four-root derivation `governance scope` prints, over `.decisions/` as well as the three `harness` roots, so the governance obligation is never inferred from `harness` (#5607); the bound commit and the scanned count are on stderr. Exits 7 (PR absent, closed, or zero changed files — ADR 0092, #4060), 10 (--sha is not a head SHA), 11 (the PR could not be read, or the commit could not be bound — the scope is UNKNOWN), 12 (--sha is not the PR's head — re-scope, never re-bind), 13 (the commit carries fewer files than the PR declares). Example: fabrika review scope 4321 --sha 03135b91",
 	),
 );
 
@@ -147,13 +148,14 @@ const ci = leafCommand(
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
+				cwd: process.cwd(),
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Roll up the live check runs at a head, fail-closed."),
 	Command.withDescription(
-		"Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. First stdout line is `ci\\t<sha>\\t<rollup>`, then `check\\t<count>` and one `<name>\\t<status>` line per run. Exits 7 (PR or --sha proven absent, or zero check runs declared — ADR 0092), 11 (the enumeration failed — CI state is UNKNOWN, never green), 13 (received fewer runs than declared — #3999). Example: fabrika review ci 4321 --sha 03135b91",
+		'Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. First stdout line is `ci\\t<sha>\\t<rollup>`, then `check\\t<count>` and one `<name>\\t<status>` line per run. An empty enumeration asks whether the repo produces CI at all: with zero workflows it refuses, unless `.fabrika.jsonc` declares `ci.noProducer: "degrade"`, which rolls up `no-producer` — never green. Exits 7 (PR or --sha proven absent, zero check runs declared, or zero workflows — ADR 0092), 11 (the enumeration, the workflow inventory or `.fabrika.jsonc` could not be read — CI state is UNKNOWN, never green), 13 (received fewer runs than declared — #3999). Example: fabrika review ci 4321 --sha 03135b91',
 	),
 );
 

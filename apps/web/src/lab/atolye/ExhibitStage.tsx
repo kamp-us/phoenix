@@ -13,18 +13,9 @@ const styles = {
 
 export interface ExhibitStageProps {
 	readonly exhibit: AnyExhibit;
-	/**
-	 * Controlled knob state. Omit for a self-contained stage (its own in-memory knobs); the
-	 * detail route passes a URL-backed state (`useUrlKnobs`) so knob twiddling deep-links (#3093).
-	 */
 	readonly knobs?: KnobState;
 }
 
-/**
- * The render harness: mounts an exhibit's component beside its prop-knobs and wires the two
- * so a knob change re-renders the component with the new prop. The knob-value → props seam is
- * a single spread — `{...fixedProps, ...values}` — over the current knob state.
- */
 export function ExhibitStage({exhibit, knobs}: ExhibitStageProps) {
 	// The uncontrolled fallback is always instantiated (hooks run unconditionally) but goes
 	// unused when a controlled `knobs` state is supplied.

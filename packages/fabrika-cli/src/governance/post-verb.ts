@@ -22,15 +22,17 @@
  * #5935): the positional is the child issue, the marker is `../wire/range-verdict-marker.ts`'s, and
  * the same harness-touching rule is asked of the range's own changed paths.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {governedRootsOr} from "../config/paths.ts";
 import {diffRangePaths} from "../io/git.ts";
 import {createComment, getComment, listComments} from "../io/issues.ts";
 import {patchComment, viewerLogin} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
-import {GOVERNANCE_ROOTS, touchesGovernanceRoot} from "../review/classes.ts";
+import {touchesGovernanceRoot} from "../review/classes.ts";
 import {contentDigestAt} from "../review/content-binding.ts";
+import {readRangeFlags} from "../review/range-flags.ts";
 import {runRangePost} from "../review/range-post.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
 import {latestByWriteRecency} from "../review/write-recency.ts";
@@ -82,6 +84,8 @@ export interface PostOptions {
 	readonly tip: string | null;
 	readonly repo: string | null;
 	readonly json: boolean;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly stdin: Effect.Effect<StdinRead>;
 }
@@ -153,11 +157,23 @@ const unreadable = (what: string, pr: number, reason: string): VerbOutcome =>
 
 export const runPost = (
 	options: PostOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const {pr, json} = options;
 		const bad = badNumber(VERB, "a pull-request number", pr);
 		if (bad !== null) return bad;
+
+		const governed = yield* governedRootsOr(
+			VERB,
+			options.cwd,
+			"whether this diff is even in the namespace is UNKNOWN. Nothing was posted.",
+		);
+		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
+		const governedRoots = governed.roots;
 
 		const polarity = options.polarity.toUpperCase();
 		if (polarity !== "PASS" && polarity !== "FAIL") {
@@ -175,21 +191,11 @@ export const runPost = (
 		}
 
 		// Range mode (#5935): the positional is the child issue, and content is the only binding, so
-		// --sha — a head-scoped idea — is refused rather than ignored.
-		const ranged = options.base !== null || options.tip !== null;
-		if (ranged && (options.base === null || options.tip === null)) {
-			return refuse(
-				OFF_VOCABULARY,
-				`${VERB}: --base and --tip come together — a range has two ends.`,
-			);
-		}
-		if (ranged && options.sha !== null) {
-			return refuse(
-				OFF_VOCABULARY,
-				`${VERB}: --sha does not combine with --base/--tip — a range verdict binds content, not a head (ADR 0276).`,
-			);
-		}
-		if (!ranged && options.sha === null) {
+		// --sha — a head-scoped idea — is refused rather than ignored. The shape is read through the
+		// module the two range-taking read verbs share, so all three agree on what a range is (#6064).
+		const flags = readRangeFlags(VERB, {base: options.base, tip: options.tip, sha: options.sha});
+		if (flags._tag === "Refused") return flags.outcome;
+		if (flags._tag === "Pull" && options.sha === null) {
 			return refuse(
 				OFF_VOCABULARY,
 				`${VERB}: --sha is required for a PR-scoped verdict — for a range-scoped one pass --base and --tip.`,
@@ -203,25 +209,17 @@ export const runPost = (
 		const authored = readAuthored(SURFACE, yield* options.stdin);
 		if (authored._tag === "Refused") return authored.outcome;
 
-		if (ranged) {
-			const base = headSha(options.base ?? "");
-			const tip = headSha(options.tip ?? "");
-			if (base === null || tip === null) {
-				const [flag, raw] = base === null ? ["base", options.base] : ["tip", options.tip];
-				return refuse(
-					OFF_VOCABULARY,
-					`${VERB}: --${flag} "${raw}" is not a revision — expected 7–40 lowercase hex characters.`,
-				);
-			}
+		if (flags._tag === "Ranged") {
+			const {base, tip} = flags.range;
 			return yield* runRangePost(
 				{
 					verb: VERB,
 					admit: (paths, diagnostics) =>
-						touchesGovernanceRoot(paths)
+						touchesGovernanceRoot(paths, governedRoots)
 							? null
 							: refuse(
 									NOT_HARNESS_TOUCHING,
-									`${VERB}: ${base}..${tip} touches no governance root (${GOVERNANCE_ROOTS.join(", ")}) — the namespace is not required here, and a verdict in it would attest a scope nobody derived.`,
+									`${VERB}: ${base}..${tip} touches no governance root (${governedRoots.join(", ")}) — the namespace is not required here, and a verdict in it would attest a scope nobody derived.`,
 									diagnostics,
 								),
 					leak: (composed) => leakRefusal(SURFACE, composed),
@@ -277,20 +275,20 @@ export const runPost = (
 		);
 		if (bound._tag === "Refused") return bound.outcome;
 		const head = bound.head;
-		const listed = yield* diffRangePaths(head.base, head.sha);
+		const listed = yield* diffRangePaths(head.mergeBase, head.sha);
 		if (listed._tag === "Failure") return unreadable("the changed-file list", pr, listed.reason);
 		// Taken at the SAME bound commit the requirement is re-derived at — see `review/post-verb.ts`.
-		const content = yield* contentDigestAt(head.base, head.sha);
+		const content = yield* contentDigestAt(head.mergeBase, head.sha);
 		if (content._tag === "Failure") return unreadable("the content digest", pr, content.reason);
 		const diagnostics = [
 			boundLine(VERB, head),
 			scannedLine(VERB, listed.value.length, "changed file"),
-			`${VERB}: content ${content.value} — the digest of ${head.base}...${head.sha} this verdict survives on (ADR 0276).`,
+			`${VERB}: content ${content.value} — the digest of ${head.mergeBase}...${head.sha} this verdict survives on (ADR 0276).`,
 		];
-		if (!touchesGovernanceRoot(listed.value)) {
+		if (!touchesGovernanceRoot(listed.value, governedRoots)) {
 			return refuse(
 				NOT_HARNESS_TOUCHING,
-				`${VERB}: #${pr}'s diff touches no governance root (${GOVERNANCE_ROOTS.join(", ")}) — the namespace is not required here, and a verdict in it would attest a scope nobody derived.`,
+				`${VERB}: #${pr}'s diff touches no governance root (${governedRoots.join(", ")}) — the namespace is not required here, and a verdict in it would attest a scope nobody derived.`,
 				diagnostics,
 			);
 		}

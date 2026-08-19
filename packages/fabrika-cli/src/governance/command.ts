@@ -15,12 +15,14 @@
  * than emit the parser's generic message.
  */
 
-import {Effect, Option} from "effect";
+import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {decisionsDirOr} from "../config/paths.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import type {VerbOutcome} from "../verb.ts";
+import {refuse, type VerbOutcome} from "../verb.ts";
 import {runBase} from "./base-verb.ts";
+import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {runDigest} from "./digest-verb.ts";
 import {runGuards} from "./guards-verb.ts";
 import {runPost} from "./post-verb.ts";
@@ -55,30 +57,97 @@ const jsonFlag = Flag.boolean("json").pipe(
 );
 
 const dirFlag = Flag.string("dir").pipe(
-	Flag.withDefault(".decisions"),
-	Flag.withDescription("the decision-record corpus to read"),
+	Flag.optional,
+	Flag.withDescription(
+		"the decision-record corpus to read (default: `decisionsDir` in .fabrika.jsonc, itself defaulting to .decisions)",
+	),
 );
+
+/**
+ * The corpus the two contradiction-half verbs read, or the refusal that ends the run.
+ *
+ * A repo that declines `decisionsDir` keeps no decision corpus, so there is no contradiction check
+ * to run over it — and this half must never answer `no-overlap` there, because that word reads as
+ * "checked, nothing found" (R11.1 on #5603). The verdict such a repo can still earn comes from
+ * `governance guards`, the weakens-a-guard half, which reads no corpus at all; the refusal says so.
+ */
+const corpusFor = (
+	verb: string,
+	declared: Option.Option<string>,
+): Effect.Effect<
+	| {readonly _tag: "Dir"; readonly dir: string}
+	| {readonly _tag: "Stop"; readonly outcome: VerbOutcome},
+	never,
+	FileSystem.FileSystem | Path.Path
+> =>
+	Effect.gen(function* () {
+		const read = yield* decisionsDirOr(
+			verb,
+			process.cwd(),
+			Option.getOrNull(declared),
+			"there is no contradiction check to run and this verb will not answer no-overlap over a corpus that does not exist — `governance guards`, the weakens-a-guard half, is the whole of what this repo's governance run can derive.",
+		);
+		switch (read._tag) {
+			case "Dir":
+				return {_tag: "Dir" as const, dir: read.dir};
+			case "Declined":
+				return {_tag: "Stop" as const, outcome: refuse(ZERO_SCOPE, read.message)};
+			case "Refused":
+				return {_tag: "Stop" as const, outcome: refuse(PRECONDITION_UNKNOWN, read.message)};
+		}
+	});
 
 const prArgument = Argument.integer("pr").pipe(Argument.withDescription("the pull-request number"));
 
+/**
+ * The positional the two read verbs take, optional because a range names its own subject: an epic
+ * child has no pull request to give (#6064), and requiring a number there would mean inventing one.
+ */
+const subjectArgument = Argument.integer("pr").pipe(
+	Argument.optional,
+	Argument.withDescription("the pull-request number; omitted when --base/--tip scope a range"),
+);
+
+const rangeBaseFlag = Flag.string("base").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"with --tip: read a range <base>..<tip> instead of a pull request — the epic-child form (#6064)",
+	),
+);
+
+const rangeTipFlag = Flag.string("tip").pipe(
+	Flag.optional,
+	Flag.withDescription("the range's tip revision — the other half of --base"),
+);
+
 const scope = leafCommand(
 	"scope",
-	{pr: prArgument, sha: shaFlag, repo: repoFlag, json: jsonFlag},
-	Effect.fn(function* ({pr, sha, repo, json}) {
+	{
+		pr: subjectArgument,
+		sha: shaFlag,
+		base: rangeBaseFlag,
+		tip: rangeTipFlag,
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({pr, sha, base, tip, repo, json}) {
 		yield* emit(
 			yield* runScope({
-				pr,
+				pr: Option.getOrNull(pr),
 				sha: Option.getOrNull(sha),
+				base: Option.getOrNull(base),
+				tip: Option.getOrNull(tip),
 				repo: Option.getOrNull(repo),
 				json,
+				cwd: process.cwd(),
 				env: process.env,
 			}),
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Whether this PR's diff requires the governance namespace."),
+	Command.withShortDescription("Whether a diff requires the governance namespace."),
 	Command.withDescription(
-		"Derive whether this PR's diff requires the governance namespace, over which of the four harness roots, at the bound head. Prints `governance\\t<required|not-required>\\t<head>`, then a `root` line per touched root, `self`, and a `record` line per decision record in the diff. This is NOT a §CP classification — §CP is CODEOWNERS' answer, and the verb says so on stderr every run. Exits 7 (the PR is absent, closed, or has zero changed files), 10 (--sha is not a head SHA), 11 (the PR or the commit binding could not be read — the derivation is UNKNOWN, never not-required), 12 (--sha is not the PR's head), 13 (the changed-file enumeration is provably short). Example: fabrika governance scope 4321",
+		"Derive whether a diff requires the governance namespace, over which of the four harness roots, at the bound head. Prints `governance\\t<required|not-required>\\t<head>`, then a `root` line per touched root, `self`, and a `record` line per decision record in the diff. With --base and --tip the subject is a RANGE instead of a pull request (#6064) — the epic-child form, where the third field is `<base>..<tip>`, the tree is read at the tip and the base is `merge-base(base, tip)`; the positional is dropped in that mode and --sha is refused. This is NOT a §CP classification — §CP is CODEOWNERS' answer, and the verb says so on stderr every run. Exits 7 (the PR is absent, closed, or has zero changed files; or the range changes no path), 10 (--sha is not a head SHA, a lone --base/--tip, a range end that is not a revision, --sha or a positional beside a range, or neither a positional nor a range), 11 (the PR, the commit binding, or the range's merge base could not be read — the derivation is UNKNOWN, never not-required), 12 (--sha is not the PR's head), 13 (the changed-file enumeration is provably short). Examples: fabrika governance scope 4321; fabrika governance scope --base 9f2c1ab --tip 03135b9",
 	),
 );
 
@@ -111,13 +180,15 @@ const sweep = leafCommand(
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({pr, record, landed, sha, dir, limit, repo, json}) {
+		const corpus = yield* corpusFor("governance sweep", dir);
+		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
 		yield* emit(
 			yield* runSweep({
 				pr: Option.getOrNull(pr),
 				record: Option.getOrNull(record),
 				landed: Option.getOrNull(landed),
 				sha: Option.getOrNull(sha),
-				dir,
+				dir: corpus.dir,
 				limit,
 				repo: Option.getOrNull(repo),
 				json,
@@ -156,22 +227,33 @@ const guards = leafCommand(
 const base = leafCommand(
 	"base",
 	{
-		pr: prArgument,
+		pr: subjectArgument,
 		path: Flag.string("path").pipe(
 			Flag.atLeast(0),
 			Flag.withDescription(
 				"a repo-relative path inside this skill's own resolved directory to read at the merge base; repeatable, defaults to SKILL.md and contract.md",
 			),
 		),
+		base: rangeBaseFlag,
+		tip: rangeTipFlag,
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({pr, path, repo}) {
-		yield* emit(yield* runBase({pr, path, repo: Option.getOrNull(repo), env: process.env}));
+	Effect.fn(function* ({pr, path, base: rangeBase, tip, repo}) {
+		yield* emit(
+			yield* runBase({
+				pr: Option.getOrNull(pr),
+				path,
+				base: Option.getOrNull(rangeBase),
+				tip: Option.getOrNull(tip),
+				repo: Option.getOrNull(repo),
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
-	Command.withShortDescription("This skill's own text at a PR's merge base."),
+	Command.withShortDescription("This skill's own text at a diff's merge base."),
 	Command.withDescription(
-		"Read this skill's own text at the merge base of a PR that edits it — the self fence's bytes, as a pasteable literal. Prints `base\\t<merge-base>\\t<file-count>` then a `file\\t<path>\\t<byte-count>` header and that file's bytes per path; the byte count is the delimiter, there is no separator line. Exits 7 (the PR is absent or closed, the skill root resolved to zero matches, or every --path is absent at the merge base), 10 (a --path outside the resolved skill root), 11 (the merge base or a path could not be read, or the skill root resolved to more than one candidate), 12 (the head moved while the base was being resolved). Example: fabrika governance base 4321",
+		"Read this skill's own text at the merge base of a diff that edits it — the self fence's bytes, as a pasteable literal. Prints `base\\t<merge-base>\\t<file-count>` then a `file\\t<path>\\t<byte-count>` header and that file's bytes per path; the byte count is the delimiter, there is no separator line. With --base and --tip the subject is a RANGE instead of a pull request (#6064) — the epic-child form, whose merge base is `merge-base(base, tip)`, the same commit the range's own three-dot diff is taken from; the positional is dropped in that mode. Exits 7 (the PR is absent or closed, the skill root resolved to zero matches, or every --path is absent at the merge base), 10 (a --path outside the resolved skill root, a lone --base/--tip, a range end that is not a revision, a positional beside a range, or neither a positional nor a range), 11 (the merge base or a path could not be read, or the skill root resolved to more than one candidate), 12 (the head moved while the base was being resolved). Examples: fabrika governance base 4321; fabrika governance base --base 9f2c1ab --tip 03135b9",
 	),
 );
 
@@ -218,6 +300,7 @@ const post = leafCommand(
 				base: Option.getOrNull(base),
 				tip: Option.getOrNull(tip),
 				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
 				json,
 				env: process.env,
 				stdin: Effect.sync(readStdin),
@@ -249,11 +332,13 @@ const digest = leafCommand(
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({since, until, dir, base: ref, json}) {
+		const corpus = yield* corpusFor("governance digest", dir);
+		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
 		yield* emit(
 			yield* runDigest({
 				since,
 				until: Option.getOrNull(until),
-				dir,
+				dir: corpus.dir,
 				base: ref,
 				json,
 				now: Effect.sync(() => Date.now()),

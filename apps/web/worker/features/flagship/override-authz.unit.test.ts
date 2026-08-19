@@ -1,18 +1,11 @@
 /**
  * `overridesAuthorized` — the per-request gate that un-gates the #622 local-override
- * read-wrapper to production for an admin (#2741, epic #2711). Proven here with NO
- * binding / NO I/O: a `CurrentActor` stub and a `RelationStore` stub whose `has` fixes the
- * `(actor, "admin", platform)` verdict `Admin.over` reads.
+ * wrapper to production for an admin (#2741). Proven with NO binding and NO I/O.
  *
- * The truth table the load-bearing prod fail-closed invariant rests on:
- *   - `development` — always authorized (the #622 dev convenience, unchanged).
- *   - prod, admin     — authorized (the admin-on-prod path).
- *   - prod, non-admin — NOT authorized (an attacker cookie stays inert).
- *   - prod, anonymous — NOT authorized (`Admin.over` denies the anon arm).
- *
- * The second block proves the verdict is consumed: `makeRequestFlagsContext` populates
- * `overrides` from the cookie ONLY when the verdict is `true` — so on prod a non-admin's
- * `phoenix_flag_overrides` cookie yields no overrides at all.
+ * The prod fail-closed invariant: development is always authorized; on production only
+ * an admin is, so a non-admin's or an anonymous visitor's `phoenix_flag_overrides`
+ * cookie stays inert. The second block proves the verdict is actually consumed by
+ * `makeRequestFlagsContext`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {

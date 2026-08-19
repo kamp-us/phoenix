@@ -1,16 +1,9 @@
 /**
- * Report root list resolver — `report.listOpen`, the moderation queue (ADR 0098
- * §5). Gated behind the `Moderate` capability (`requireModeration`): a
- * non-moderator (or anonymous) caller gets the invisible `Denied` (`UNAUTHORIZED`)
- * and the queue is invisible to them. The queue is a bounded, private read (no live
- * view, no cursor pagination — the service caps it), so the `ConnectionResult` is
- * single-page (`hasNext: false`).
+ * The moderation queue's root list resolvers (ADR 0098 §5). The queue is a bounded,
+ * private read — the service caps it, so the `ConnectionResult` is single-page.
  *
- * Each row is enriched (#1702) with the reported target's in-situ context —
- * excerpt/title, author, and a routing ref — resolved by dispatching to the owning
- * content service per `targetKind` (the `moderateRemove` dispatch shape in
- * `mutations.ts`). The enrichment stays INSIDE this `Moderate`-gated path, so no
- * new public read exposes reported-target aggregation.
+ * All target-context enrichment stays INSIDE the `Moderate`-gated path, so no new
+ * public read exposes reported-target aggregation.
  */
 import {Fate} from "@kampus/fate-effect";
 import type {ConnectionResult} from "@nkzw/fate/server";
@@ -69,10 +62,8 @@ export const lists = {
 	),
 };
 
-// The post-gate queue read — `Moderate`-gated in R (`requireModeration` provides
-// the grant). `yield* Moderate` requires the proof; the read is a private surface
-// unreachable without a discharged grant. The target-context enrichment dispatches
-// to Pano/Sozluk under the same gate.
+// `yield* Moderate` puts the grant in R, so this read is unreachable without a
+// discharged proof — that is the gate, not a branch in the body.
 const listOpenGated = Effect.fn("report.listOpenGated")(function* (args: typeof ListOpenArgs.Type) {
 	yield* Moderate;
 	const report = yield* Report;
@@ -88,11 +79,6 @@ const listOpenGated = Effect.fn("report.listOpenGated")(function* (args: typeof 
 	} satisfies ConnectionResult<OpenReport>;
 });
 
-// The decision-feed read (#1704) — `Moderate`-gated like the open queue. `yield* Moderate`
-// requires the proof; the read is a private surface unreachable without a discharged
-// grant. Each decided target is enriched with the SAME target-context dispatch the open
-// queue uses, plus the resolver's display handle joined from pasaport — so the resolver
-// is first-class, not a bare id.
 const listResolvedGated = Effect.fn("report.listResolvedGated")(function* (
 	args: typeof ListResolvedArgs.Type,
 ) {
@@ -112,9 +98,8 @@ const listResolvedGated = Effect.fn("report.listResolvedGated")(function* (
 	} satisfies ConnectionResult<ResolvedReport>;
 });
 
-// Join each decision's resolver id to its display handle in ONE batched identity read
-// (pasaport), keyed by resolver id. An unresolved id simply has no entry — the merge
-// then renders that row with a null handle (the client falls back to the raw id).
+// An unresolved id simply has no entry — the merge then renders that row with a null
+// handle, never drops it.
 const resolveResolverHandles = Effect.fn("report.resolveResolverHandles")(function* (
 	groups: ReadonlyArray<ResolvedReportGroup>,
 ) {
@@ -129,11 +114,8 @@ const resolveResolverHandles = Effect.fn("report.resolveResolverHandles")(functi
 	return handles;
 });
 
-// Resolve each group's reported-target context by dispatching a batched read to the
-// content service that owns the kind, keyed by `<kind>:<id>`. A target the batched
-// read doesn't return (missing / sandbox-hidden) simply has no entry — the merge
-// then renders that row with null context (never dropped). Kind/id-structural so both
-// the open queue and the decision feed (#1704) share one dispatch.
+// A target the batched read doesn't return (missing / sandbox-hidden) simply has no
+// entry — the merge renders that row with null context, never drops it.
 const resolveTargetContexts = Effect.fn("report.resolveTargetContexts")(function* (
 	groups: ReadonlyArray<{targetKind: TargetKind; targetId: string}>,
 ) {
@@ -151,7 +133,6 @@ const resolveTargetContexts = Effect.fn("report.resolveTargetContexts")(function
 	if (idsByKind.post.length > 0) {
 		const rows = yield* pano.getPostsByIds(idsByKind.post);
 		for (const r of rows) {
-			// A post links to its own detail page (`/pano/<id>`); its title is the excerpt.
 			contexts.set(contextKeyOf("post", r.id), {
 				excerpt: r.title,
 				author: r.author,
@@ -164,7 +145,7 @@ const resolveTargetContexts = Effect.fn("report.resolveTargetContexts")(function
 	if (idsByKind.comment.length > 0) {
 		const rows = yield* pano.getCommentsByIds(idsByKind.comment);
 		for (const r of rows) {
-			// A comment links to its PARENT post detail; resolve the post id per row.
+			// A comment routes to its PARENT post's detail page.
 			const postId = yield* pano.lookupCommentPostId(r.id);
 			if (postId === null) continue;
 			contexts.set(contextKeyOf("comment", r.id), {
@@ -179,7 +160,7 @@ const resolveTargetContexts = Effect.fn("report.resolveTargetContexts")(function
 	if (idsByKind.definition.length > 0) {
 		const rows = yield* sozluk.getDefinitionsByIds(idsByKind.definition);
 		for (const r of rows) {
-			// A definition links to its term page (`/sozluk/<slug>`); resolve the slug per row.
+			// A definition routes to its term page, keyed by slug.
 			const slug = yield* sozluk.lookupDefinitionTermSlug(r.id);
 			if (slug === null) continue;
 			contexts.set(contextKeyOf("definition", r.id), {
@@ -194,14 +175,8 @@ const resolveTargetContexts = Effect.fn("report.resolveTargetContexts")(function
 	return contexts;
 });
 
-// Join each group's reputation + actor cluster (#1703/#1852, ADR 0138) INSIDE the gated
-// read: the reported target author's künye standing (tier + karma), prior removals, and
-// — for the actor-drawer — their live production footprint, kefil (vouch) status, and
-// "bu aktör" open-reported-target count, plus the pile-on's distinct-reporter count.
-// Author fields are keyed by the `authorId` the context resolution captured; a group
-// whose author is unresolved folds to a null author cluster. Every per-page aggregate
-// is one batched read (removals / production / reported-targets / diversity), so the
-// join stays a MODE over the same gated surface, never a per-row waterfall.
+// A group whose author is unresolved folds to a null author cluster. Every per-page
+// aggregate must stay ONE batched read, never a per-row waterfall (ADR 0138).
 const resolveRowReputations = Effect.fn("report.resolveRowReputations")(function* (
 	groups: ReadonlyArray<OpenReportGroup>,
 	contexts: ReadonlyMap<string, ReportTargetContext>,
@@ -218,15 +193,14 @@ const resolveRowReputations = Effect.fn("report.resolveRowReputations")(function
 		),
 	];
 
-	// The per-page batched aggregates — one read each, all bounded by the page size.
 	const priorRemovals = yield* report.countRemovalsByAuthors(authorIds);
 	const production = yield* report.productionCountsByAuthors(authorIds);
 	const reportedTargets = yield* report.countOpenReportedTargetsByAuthors(authorIds);
 	const diversity = yield* report.reporterDiversity(
 		groups.map((g) => ({targetKind: g.targetKind, targetId: g.targetId})),
 	);
-	// Kefil status is a per-author lookup (no batched read on the ledger yet); resolved
-	// once per distinct author, not per row, so the page stays a bounded fan-out.
+	// No batched read on the ledger yet, so this is per-author — resolved once per
+	// DISTINCT author, not per row, to keep the fan-out bounded.
 	const kefilByAuthor = new Map<string, boolean>();
 	for (const id of authorIds) kefilByAuthor.set(id, yield* vouches.hasActiveFor(id));
 

@@ -73,7 +73,7 @@ structurally unmintable.
   and closes with the caveat that continuous-ship is "not a model to copy blindly for a plugin with
   external consumers". This ADR settles the *criterion*: it does not touch cadence, it says the
   artifact must work outside its home repo before it counts as shipped.
-- ADR [0171](0171-kampus-pipeline-plugin-spec-conformance.md) audits the v1 plugin's **manifest and
+- ADR `0171` audits the v1 plugin's **manifest and
   layout** against the official plugin spec and records each deviation as documented-intentional.
   Spec conformance is a static property of the packaging; this ADR is about a runtime property of the
   installed thing — a plugin can be perfectly spec-conformant and still exit 127 in every consumer,
@@ -127,9 +127,10 @@ part of the campaign, not adjacent to it."*
 **Binding constraints.**
 - Every input a fabrika skill, contract, or verb requires is obtainable by opening the repository it
   is installed into.
-- Each skill declares that input set in its `## Required repo files` section, in the three-column
-  shape the front-door contract parses, with each row's disposition drawn from the closed set
-  **`fail-loud` · `degrade` · `bootstrap`**.
+- That input set is declared in the `surfaceDispositions` key group, one entry per surface, each
+  disposition drawn from the closed set **`fail-loud` · `degrade` · `bootstrap`**. (Superseded shape:
+  this was a `## Required repo files` section in every skill until the 2026-08-19 amendment below
+  removed the tables and their reader.)
 - A declared disposition states what the skill **already does**. A row that contradicts the code is
   worse than no row.
 - A `fail-loud` row names the absent surface and points at the front door; it never dead-ends in a
@@ -158,8 +159,9 @@ fabrika's scope.
 is answerable by reading the skill and the repo — no judgement call about what counts as "specific":
 
 1. An input it requires cannot be satisfied by a repo that is not this one, opening only itself.
-2. It has no `## Required repo files` section. Undeclared is not satisfied — the front-door reader
-   emits a single `undeclared` row with presence `unknown`, never zero rows and never counted clean.
+2. A surface it reads has no entry on `surfaceDispositions` in `.fabrika.jsonc`. Undeclared is not
+   satisfied. (This item named each skill's own `## Required repo files` section until the
+   2026-08-19 amendment below moved the declaration to the config key; the property is unchanged.)
 3. A declared row's disposition is not one of `fail-loud` / `degrade` / `bootstrap`, or contradicts
    what the code does on the missing-surface path.
 4. A runnable fence or a command example names a specific repository.
@@ -167,8 +169,9 @@ is answerable by reading the skill and the repo — no judgement call about what
 
 **What a reviewer looks for**, concretely, in this order: enumerate the skill's inputs from its
 `SKILL.md` and its contract; for each, ask whether a repo that is not this one could obtain it by
-opening itself; check that the `## Required repo files` table lists exactly that set with a
-closed-set disposition per row; walk each `fail-loud` path and confirm it names the missing surface
+opening itself; check that `surfaceDispositions` carries exactly that set with a
+closed-set disposition per entry (the 2026-08-19 amendment below, which replaced the per-skill
+table this sentence used to name); walk each `fail-loud` path and confirm it names the missing surface
 rather than erroring bare; grep the runnable fences and examples for a repository literal. The
 enumeration is the review — a portability claim with no input list behind it is not one.
 
@@ -231,6 +234,23 @@ Vocabulary impact: this ADR adopts **repo-resident** as the operative portabilit
 skill can obtain by opening the repository it is installed into, and nothing else. It is not
 "non-phoenix-specific" (the phrasing it replaces), not repo-*agnostic* targeting (ADR
 [0062](0062-repo-as-config-plugin.md), which is about *which* repo a skill acts on), and not spec
-conformance (ADR [0171](0171-kampus-pipeline-plugin-spec-conformance.md)). It needs that "not …"
+conformance (ADR `0171`). It needs that "not …"
 disambiguation, so it is routed to [`.glossary/TERMS.md`](../.glossary/TERMS.md) through the glossary
 skill rather than added inline here.
+
+## Amendment (2026-08-19) — the declaration surface moved to the config file
+
+Founder ruling R10.1, recorded on [#5603](https://github.com/kamp-us/phoenix/issues/5603) comment 39
+and built as [#6301](https://github.com/kamp-us/phoenix/issues/6301): *"rule a, because we make it as
+deterministic as possible this way, right?"* The per-skill `## Required repo files` table was two
+mechanisms answering "what does this repo have", which R6.1 rules against. The tables and their
+reader are removed; the disposition each row carried lives on the `surfaceDispositions` key in
+`.fabrika.jsonc`, one entry per surface fabrika reads, printed by `fabrika status settings`.
+
+**What this ADR still rules, unchanged:** every input a fabrika skill needs is obtainable by opening
+the repo it is installed into; a disposition states what the code already does; a `fail-loud` path
+names the absent surface and never dead-ends bare. **What moved:** the declaration is one config key
+rather than thirty-two tables, so the checkable violations above read against
+`surfaceDispositions` — a surface fabrika reads with no entry there, or an entry that contradicts
+what its verb does — rather than against a skill's own section. The `undeclared` row and the reader
+that emitted it are gone with the tables.

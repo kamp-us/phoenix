@@ -1,12 +1,7 @@
 /**
- * The sözlük `Definition` wire shaper (`toDefinition`) takes the map-derived
- * `DefinitionRow` from the one `definition-fields.ts` column→field map (#1126
- * AC#1; the sözlük mirror of pano's #1161 collapse in PR #1265, the last #1161
- * remainder — #1268). This pins that seam: the record → `toDefinitionRow` →
- * `toDefinition` path yields the byte-identical canonical `{__typename, …}` wire
- * object, with the `myVote` viewer-scalar default stamped to `null` — so
- * divergence between the map and the wire shaper is unrepresentable, generalizing
- * #1170 from one field to the whole object.
+ * Pins the sözlük `Definition` seam: record → `toDefinitionRow` → `toDefinition` yields the
+ * byte-identical canonical wire object, so divergence between the one `definition-fields.ts`
+ * column→field map and the wire shaper is unrepresentable (#1268, the sözlük mirror of #1265).
  */
 import {assert, describe, it} from "@effect/vitest";
 import type * as schema from "../../db/drizzle/schema.ts";
@@ -44,15 +39,13 @@ describe("Sözlük Definition wire shaper — derived from the one column→fiel
 			score: 5,
 			author: "umut",
 			authorId: "user-1",
-			// No live identity stamped on a bare row read (`stampAuthorIdentity` runs on the
-			// service read path, #2139) → both default to null; the client `actorLabel` degrades.
+			// `stampAuthorIdentity` runs on the service read path (#2139), not on a bare row read.
 			authorUsername: null,
 			authorDisplayName: null,
 			createdAt: new Date(1000),
 			updatedAt: new Date(2000),
 			myVote: null,
-			// Owner-scoped in-review flag (#2200): stamped only by the read path, so a bare
-			// row shape defaults it `false` and never leaks review state to another viewer.
+			// Owner-scoped in-review flag (#2200): defaults `false` so a bare row never leaks review state.
 			sandboxed: false,
 			reactions: EMPTY_REACTION_AGGREGATE,
 		});
@@ -77,11 +70,8 @@ describe("Sözlük Definition wire shaper — derived from the one column→fiel
 			"updatedAt",
 		]);
 		assert.strictEqual(wire.__typename, "Definition");
-		// No viewer scalar stamped on a bare row read → defaulted to `null`.
 		assert.strictEqual(wire.myVote, null);
-		// Owner-scoped in-review flag defaults `false` on a bare row shape (#2200).
 		assert.strictEqual(wire.sandboxed, false);
-		// No reactions stamped on a bare row read → the empty aggregate.
 		assert.deepStrictEqual(wire.reactions, EMPTY_REACTION_AGGREGATE);
 	});
 

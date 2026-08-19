@@ -4,8 +4,8 @@
  *
  * **Every seat this group shares is imported, never re-typed as a numeral.** `3`, `5`, `6`, `7`,
  * `8`, `9`, `10` and `11` come from `../report/codes.ts` and `../triage/codes.ts`; `12` and `13`
- * come from `../review/codes.ts`, whose meanings this group holds unchanged. A restated numeral is
- * a second source that can drift silently; an import cannot.
+ * come from `../review/codes.ts` and `23` from `../plan/codes.ts`, whose meanings this group holds
+ * unchanged. A restated numeral is a second source that can drift silently; an import cannot.
  *
  * `16` and `17` are this group's own proven refusals, and they sit above `review`'s private band on
  * purpose — `14`/`15` are `review`'s ACL and append-only seats, meanings no verb here performs, so a
@@ -14,6 +14,7 @@
  * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
  */
 
+import {LABEL_ABSENT as PLAN_LABEL_ABSENT} from "../plan/codes.ts";
 import {
 	BARE_AT_PATH as REPORT_BARE_AT_PATH,
 	EMPTY_STDIN as REPORT_EMPTY_STDIN,
@@ -81,6 +82,31 @@ export const NUDGE_REOPEN_UNCONFIRMED = 17;
  * non-zero from that job means the floor could not be resolved at all.
  */
 export const GOVERNANCE_FLOOR_UNMET = 18;
+
+/**
+ * Refused: the repository permits **no** merge method at all — `ship merge` has nothing to land with.
+ *
+ * Its own seat rather than a fold into {@link PROVEN_NOT_IN_STATE}, which `ship merge` already
+ * spends on the queue-governed base: those two refusals route opposite ways. A queue-governed base
+ * sends the run onward to `ship enqueue`; a repository with squash, merge-commit and rebase all
+ * disabled sends it to a human with repository-settings access and ends the lane there. One code
+ * carrying both would make the caller parse a message to know which (#6018).
+ */
+export const NO_LANDING_METHOD = 19;
+
+/**
+ * Refused: a label this run would POST is absent from the repository's taxonomy (#4285).
+ *
+ * `plan`'s seat, imported, under `plan`'s own rule — *import a code when two groups prove the same
+ * fact*. `plan flip` and `ship release` prove one fact here, on one board, over the same taxonomy:
+ * the label the write is about to create does not exist, so the write would mint it. The operator
+ * drives both in one sweep, and two verbs proving one fact on two codes is the collision that bites.
+ *
+ * Not {@link ZERO_SCOPE}, which `triage apply`/`park` reach for the same refusal: this group
+ * documents `7` as the **target** proven absent, and the target here — the PR, the linked issue —
+ * exists. Folding an absent label into it would make `7` two facts in one group.
+ */
+export const LABEL_ABSENT = PLAN_LABEL_ABSENT;
 
 /**
  * The unallocated codes. `4` is `report file`'s body-section seat and `14`/`15` are `review`'s ACL

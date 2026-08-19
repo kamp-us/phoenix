@@ -1,6 +1,3 @@
-// Turkish date / relative-time helpers. Formatters are cached at module scope
-// to avoid reconstructing an `Intl` formatter per call site.
-
 const dateFmt = new Intl.DateTimeFormat("tr-TR", {
 	day: "numeric",
 	month: "short",
@@ -19,8 +16,7 @@ const dateTimeFmt = new Intl.DateTimeFormat("tr-TR", {
 // edit — defends against sub-second server-side updatedAt drift after insert.
 export const EDITED_GRACE_MS = 60 * 1000;
 
-/* numeric: 'auto' lets the formatter say "şimdi" / "dün" instead of
-   "0 saniye önce" / "1 gün önce" where the locale supports it. */
+// numeric: 'auto' lets the formatter say "şimdi" / "dün" instead of "0 saniye önce".
 const relFmt = new Intl.RelativeTimeFormat("tr-TR", {numeric: "auto"});
 
 const UNITS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
@@ -44,8 +40,6 @@ export function formatAgoTR(iso: string | null | undefined): string {
 	const t = new Date(iso).getTime();
 	if (Number.isNaN(t)) return "";
 
-	/* Negative for past, positive for future — RelativeTimeFormat
-	   handles both directions ("3 saat önce" vs "3 saat sonra"). */
 	const diff = t - Date.now();
 	for (const [unit, ms] of UNITS) {
 		if (Math.abs(diff) >= ms || unit === "second") {
@@ -62,11 +56,6 @@ export function formatEditedTooltipTR(iso: string | null | undefined): string {
 	return dateTimeFmt.format(d);
 }
 
-/**
- * `true` when `updatedAt` is more than `EDITED_GRACE_MS` after `createdAt` —
- * backs the "düzenlendi" indicator. Defensively `false` on missing / invalid
- * inputs so the indicator stays hidden when timestamps are unavailable.
- */
 export function editedAfter(
 	createdAt: string | null | undefined,
 	updatedAt: string | null | undefined,

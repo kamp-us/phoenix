@@ -75,14 +75,14 @@ export const VALIDATION_RED = 18;
 /** Refused: the requested push is unsafe (detached HEAD, or non-fast-forward without a lease). */
 export const UNSAFE_PUSH = 19;
 /**
- * Proven: not admitted on the **scope axis** — out of focus (ADR 0245).
+ * Proven: not admitted on the **scope axis** — out of scope (ADR 0245, repointed by ADR 0304).
  *
  * Campaign membership and nothing else. It is a sibling of {@link AUDIENCE_NOT_AGENT}, not the same
  * question: the two have different remedies, so they never collapse onto one code. Nor does either
  * borrow {@link BLOCKED} — a scope refusal is not blockedness — or {@link PRECONDITION_UNKNOWN}: `20`
  * and `21` are *proven* refusals, while a read that failed has proven nothing.
  */
-export const OUT_OF_FOCUS = 20;
+export const OUT_OF_SCOPE = 20;
 /** Proven: not admitted on the **audience axis** — the `ready-for:` label is not agent, or absent (#4780). */
 export const AUDIENCE_NOT_AGENT = 21;
 /**
@@ -143,3 +143,30 @@ export const AUTHORIZATION_VOID = 26;
  * `29` — a group never re-uses a number the base already spoke for.
  */
 export const LOCAL_LANE_UNWRITTEN = 29;
+/**
+ * Proven: not admitted on the **type axis** — the deliverable is not a pull request a build lane
+ * produces (#5490).
+ *
+ * The third sibling of {@link OUT_OF_SCOPE} and {@link AUDIENCE_NOT_AGENT}, and seated apart from
+ * both for the reason they are seated apart from each other: the remedy is unlike either. `20` says
+ * flip the campaign state cell, `21` says re-label the audience, and this one says the work belongs to another
+ * skill's lane — `/adr` for a decision, `plan-epic` for an epic — or, on a decision whose choice a
+ * founder already recorded, that the claim must cite that ruling comment. Borrowing `21` is what the
+ * code did before there was a fence at all, and it named the wrong objection: an operator sent to
+ * re-label a decision `ready-for:agent` would satisfy `21` and still be building the wrong artifact.
+ */
+export const TYPE_NOT_BUILDABLE = 30;
+/**
+ * Proven: the claim's mode and the child's standing range verdict disagree (#6386).
+ *
+ * Two directions, one seat, because one fact is established either way — *this number's build state
+ * is not what the claim says it is* — and the remedy is the same act in both: re-run the claim in the
+ * mode the board already recorded, adding `--resume` on a child holding a `FAIL`, dropping it on one
+ * holding none. That is unlike every neighbouring seat: `20`/`21`/`30` are about whether an issue
+ * may be built at all, and this one is about whether it has been built already.
+ *
+ * Never {@link PRECONDITION_UNKNOWN}: the comments were read in full and the standing verdicts folded,
+ * so the refusal is a fact about the child. A read that *failed* stays `11`, and a fence that could
+ * not read its input must never resolve to "no prior build".
+ */
+export const PRIOR_BUILD_MISMATCH = 31;

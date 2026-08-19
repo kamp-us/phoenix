@@ -1,10 +1,21 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {errOut, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
+	COMMENTS,
+	CWD,
+	claimPage,
+	EXPIRED,
+	guardedShell,
+	LIVE,
+	triageContext,
+} from "./claim-fixtures.test-support.ts";
+import {
 	BARE_AT_PATH,
+	CLAIMED_ELSEWHERE,
+	CONFIG_REFUSED,
 	EMPTY_STDIN,
 	LEAKED_PATH,
 	PRECONDITION_UNKNOWN,
@@ -53,6 +64,7 @@ const options = {
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: QUESTIONS}),
+	cwd: CWD,
 };
 
 /** Observed: a fully priced issue. Read back: nothing but the parked status. */
@@ -70,7 +82,50 @@ const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
 ) =>
-	Effect.runPromise(Effect.provide(runPark({...options, ...overrides}), fakeShell(script).layer));
+	Effect.runPromise(
+		Effect.provide(runPark({...options, ...overrides}), triageContext(guardedShell(script))),
+	);
+
+/** A standing-lane facet owning a label no declared value produces — pure delete authority. */
+const VIOLATING_CONFIG = JSON.stringify({
+	triageFacets: [
+		{name: "lane", ownsLabels: ["wayfinder:backlog", "axis:dead"], values: ["wayfinder:backlog"]},
+	],
+});
+
+describe("runPark under a refused config", () => {
+	it("refuses on CONFIG_REFUSED, naming the facet and both sets", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(runPark(options), triageContext(guardedShell(happy()), VIOLATING_CONFIG)),
+		);
+		expect(out.code).toBe(CONFIG_REFUSED);
+		expect(out.stderr.join(" ")).toContain("facet `lane`");
+		expect(out.stderr.join(" ")).toContain("axis:dead");
+	});
+
+	it("writes no label and posts no comment", async () => {
+		const shell = guardedShell(happy());
+		await Effect.runPromise(
+			Effect.provide(runPark(options), triageContext(shell, VIOLATING_CONFIG)),
+		);
+		expect(shell.calls).toEqual([]);
+	});
+
+	/** The same three non-decoding arms `apply` refuses — one guard, so one set of cases. */
+	it.each([
+		["a file that is there and denied", {unreadable: true} as const, "could not be read"],
+		["a document that is not a JSON object", "[1, 2]", "not a JSON object"],
+		["a key no decoder accepted", '{"triageFacets": "garbage"}', "`triageFacets` is not an array"],
+	])("refuses %s, and posts nothing", async (_case, config, expected) => {
+		const shell = guardedShell(happy());
+		const out = await Effect.runPromise(
+			Effect.provide(runPark(options), triageContext(shell, config)),
+		);
+		expect(out.code).toBe(CONFIG_REFUSED);
+		expect(out.stderr.join(" ")).toContain(expected);
+		expect(shell.calls).toEqual([]);
+	});
+});
 
 describe("runPark", () => {
 	it("parks the issue and prints the tab-separated parked line", async () => {
@@ -97,8 +152,8 @@ describe("runPark", () => {
 	});
 
 	it("posts the questions BEFORE it touches a label", async () => {
-		const shell = fakeShell(happy());
-		await Effect.runPromise(Effect.provide(runPark(options), shell.layer));
+		const shell = guardedShell(happy());
+		await Effect.runPromise(Effect.provide(runPark(options), triageContext(shell)));
 		const writes = shell.calls.filter(
 			(c) => COMMENT.test(c) || PATCH.test(c) || REMOVE.test(c) || ADD.test(c),
 		);
@@ -107,8 +162,8 @@ describe("runPark", () => {
 	});
 
 	it("clears every priced facet, milestone included", async () => {
-		const shell = fakeShell(happy());
-		await Effect.runPromise(Effect.provide(runPark(options), shell.layer));
+		const shell = guardedShell(happy());
+		await Effect.runPromise(Effect.provide(runPark(options), triageContext(shell)));
 		expect(shell.calls).toContain("gh api --method PATCH repos/o/r/issues/4290 -F milestone=null");
 		expect(shell.calls.filter((c) => REMOVE.test(c))).toEqual([
 			"gh api --method DELETE repos/o/r/issues/4290/labels/type%3Abug",
@@ -120,7 +175,7 @@ describe("runPark", () => {
 	});
 
 	it("leaves a label no facet owns alone across a park", async () => {
-		const shell = fakeShell([
+		const shell = guardedShell([
 			[once(ISSUE), issue(["area:pipeline", "status:needs-triage"], null)],
 			[ISSUE, issue(["area:pipeline", "status:needs-info"], null)],
 			[LABELS, VOCABULARY],
@@ -128,7 +183,7 @@ describe("runPark", () => {
 			[REMOVE, okOut("[]")],
 			[ADD, okOut("[]")],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runPark(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runPark(options), triageContext(shell)));
 		expect(out.code).toBe(0);
 		expect(shell.calls.some((c) => c.includes("area%3Apipeline"))).toBe(false);
 	});
@@ -207,14 +262,14 @@ describe("runPark", () => {
 	});
 
 	it("writes nothing at all on any stdin refusal", async () => {
-		const shell = fakeShell(happy());
+		const shell = guardedShell(happy());
 		await Effect.runPromise(
 			Effect.provide(
 				runPark({
 					...options,
 					stdin: Effect.succeed({_tag: "Text", text: ""} satisfies StdinRead),
 				}),
-				shell.layer,
+				triageContext(shell),
 			),
 		);
 		expect(shell.calls).toEqual([]);
@@ -227,19 +282,19 @@ describe("runPark", () => {
 	});
 
 	it("separates an UNREADABLE issue from an absent one, and posts nothing", async () => {
-		const shell = fakeShell([[ISSUE, errOut("gh: Bad gateway (HTTP 502)")]]);
-		const out = await Effect.runPromise(Effect.provide(runPark(options), shell.layer));
+		const shell = guardedShell([[ISSUE, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const out = await Effect.runPromise(Effect.provide(runPark(options), triageContext(shell)));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(shell.calls.some((c) => COMMENT.test(c))).toBe(false);
 	});
 
 	it("refuses to write status:needs-info when the repo does not define it (#4285)", async () => {
-		const shell = fakeShell([
+		const shell = guardedShell([
 			[ISSUE, issue(["status:needs-triage"], null)],
 			[LABELS, okOut(["type:bug", "status:needs-triage"].join("\n"))],
 			[COMMENT, POSTED],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runPark(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runPark(options), triageContext(shell)));
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain("label status:needs-info does not exist");
 		expect(shell.calls.some((c) => COMMENT.test(c))).toBe(false);
@@ -255,12 +310,12 @@ describe("runPark", () => {
 	});
 
 	it("reports a failed comment as UNKNOWN, and says nothing was labelled", async () => {
-		const shell = fakeShell([
+		const shell = guardedShell([
 			[ISSUE, issue(["status:needs-triage"], null)],
 			[LABELS, VOCABULARY],
 			[COMMENT, errOut("gh: timeout")],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runPark(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runPark(options), triageContext(shell)));
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("nothing was labelled");
@@ -340,9 +395,74 @@ describe("runPark", () => {
 
 	it("refuses an unresolvable repo rather than guessing one", async () => {
 		const out = await Effect.runPromise(
-			Effect.provide(runPark({...options, env: {}}), fakeShell([]).layer),
+			Effect.provide(runPark({...options, env: {}}), triageContext(guardedShell([]))),
 		);
 		expect(out.code).toBe(1);
 		expect(out.stderr.at(-1)).toContain("cannot resolve a target repo");
+	});
+});
+
+/** #5644: the claim protocol only holds if the mutating verbs re-read it. */
+describe("runPark — the target guard", () => {
+	const MINE = "session-mine";
+	const THEIRS = "session-theirs";
+	const mine = {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: MINE} as Record<
+		string,
+		string | undefined
+	>;
+	const closed = okOut(
+		JSON.stringify({
+			number: 4290,
+			title: "t",
+			body: "b",
+			state: "closed",
+			labels: [],
+			html_url: "https://example.test/issues/4290",
+			milestone: null,
+		}),
+	);
+
+	const guard = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
+		const shell = guardedShell(script);
+		const out = await Effect.runPromise(
+			Effect.provide(runPark({...options, env: mine}), triageContext(shell)),
+		);
+		return {out, wrote: shell.calls.some((line) => COMMENT.test(line) || ADD.test(line))};
+	};
+
+	it("refuses a closed issue on 7 and writes nothing", async () => {
+		const {out, wrote} = await guard([[ISSUE, closed]]);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(wrote).toBe(false);
+	});
+
+	it("refuses a live claim held by another session on 17 and writes nothing", async () => {
+		const {out, wrote} = await guard([
+			...happy(),
+			[COMMENTS, claimPage({session: THEIRS, createdAt: LIVE})],
+		]);
+		expect(out.code).toBe(CLAIMED_ELSEWHERE);
+		expect(wrote).toBe(false);
+	});
+
+	it("parks when the live claim is this session's own", async () => {
+		const {out} = await guard([
+			...happy(),
+			[COMMENTS, claimPage({session: MINE, createdAt: LIVE})],
+		]);
+		expect(out.code).toBe(0);
+	});
+
+	it("parks an issue nobody has claimed", async () => {
+		const {out} = await guard(happy());
+		expect(out.code).toBe(0);
+	});
+
+	it("parks when the only foreign claim has aged out", async () => {
+		const {out} = await guard([
+			...happy(),
+			[COMMENTS, claimPage({session: THEIRS, createdAt: EXPIRED})],
+		]);
+		expect(out.code).toBe(0);
 	});
 });

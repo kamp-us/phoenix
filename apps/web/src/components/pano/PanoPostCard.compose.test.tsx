@@ -1,10 +1,6 @@
 /**
- * Base + overlay composition on the card (#2323, leg B). Pins the two client-composition
- * ACs at the component level: (1) with compose on, the base row paints while the viewer
- * scalars stay neutral until the overlay lands under the confirmed identity, then patch in
- * place; (2) a signed-in viewer never sees another/stale identity's overlay during the
- * compose window. The leaf vote/save widgets are stubbed to surface the scalars the card
- * feeds them — the pure identity guard is covered separately in `panoFeedOverlay.test.ts`.
+ * Base + overlay composition on the card (#2323). The pure identity guard is covered
+ * separately in `panoFeedOverlay.test.ts`.
  */
 import {render} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
@@ -14,8 +10,7 @@ import {PanoPostCard} from "./PanoPostCard";
 
 type SessionResult = ReturnType<typeof useSessionType>;
 
-// The row `useLiveView` resolves for the post ref, and the session state, both swappable
-// per test through these holders (a live `Post` carrying identity A's own scalars).
+// Holders so a test can swap the resolved row and the session state per case.
 let rowData: Record<string, unknown>;
 let sessionState: SessionResult;
 
@@ -28,8 +23,8 @@ vi.mock("../../auth/client", () => ({
 	useSession: () => sessionState,
 }));
 
-// Stub the mutation-bearing leaf widgets to render the exact scalar the card feeds them,
-// so the assertion reads what the card composed — not the widget's own behavior.
+// The leaf widgets are stubbed to echo the scalar they receive, so an assertion reads
+// what the CARD composed rather than the widget's own behavior.
 vi.mock("./PanoPost", () => ({
 	PostVoteWidget: ({myVote}: {myVote: boolean | null}) => (
 		<span data-testid="vote">{String(myVote)}</span>
@@ -86,7 +81,6 @@ describe("PanoPostCard — base + overlay composition (compose on)", () => {
 				<PanoPostCard post={ref} compose />
 			</MemoryRouter>,
 		);
-		// The base row is on screen (title), but the viewer scalars are held neutral.
 		expect(container.textContent).toContain("başlık");
 		expect(scalars(container)).toEqual({vote: "null", save: "null"});
 	});

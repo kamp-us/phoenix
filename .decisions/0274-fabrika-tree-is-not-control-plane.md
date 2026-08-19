@@ -20,7 +20,7 @@ gate-critical tree — its `ship`, `governance` and `review` skills — decides 
 equivalent v1 tree is control-plane (§CP). ADR [0065](0065-gate-critical-skills-are-blocking.md)
 established the principle (a gate that can auto-merge a weakening of *itself* is the one catastrophic
 case a content review cannot catch) and ADR
-[0227](0227-kampus-pipeline-skills-tree-is-control-plane.md) took it to the whole
+`0227` took it to the whole
 `claude-plugins/kampus-pipeline/skills/` directory, the directory being the unit so the boundary
 cannot rot as skills are added. Both are scoped to the **v1** tree by path; neither says anything
 about `claude-plugins/fabrika/**`, and the boundary is path-based (ADR
@@ -57,9 +57,9 @@ The ruling has four parts, as ruled:
 
 1. **No §CP coverage for the fabrika tree.** No CODEOWNERS rows are added for it and
    `CONTROL_PLANE_RE` is not widened to cover it. The regex — single-sourced in
-   [`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts)
+   `packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`
    and byte-synced into
-   [`claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md)
+   `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`
    — anchors its plugin clauses at `^claude-plugins/kampus-pipeline/` (`skills/`, `lib/`, `agents/`,
    `hooks`) and at a root-anchored `^\.claude-plugin/`. Nothing in it reaches
    `claude-plugins/fabrika/`. **That non-coverage is this decision, not an oversight**, and it is not
@@ -128,3 +128,5 @@ The ruling has four parts, as ruled:
 - No vocabulary impact: this decides merge authority over already-named concepts (§CP, the
   `governance` verdict, the digest readout), and coins nothing. `governance` already carries its row
   in [`.glossary/TERMS.md`](../.glossary/TERMS.md).
+
+> Amendment 2026-08-19: `CONTROL_PLANE_RE` is now single-sourced in [`packages/fabrika-cli/src/guard/control-plane-re.ts`](../packages/fabrika-cli/src/guard/control-plane-re.ts); the `packages/pipeline-cli/src/tools/control-plane-paths/` copy goes with that package's deletion and the `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` byte-sync mirror no longer exists. The ruling is unchanged: no §CP coverage for `claude-plugins/fabrika/**`.

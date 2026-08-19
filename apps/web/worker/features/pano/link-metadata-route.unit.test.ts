@@ -1,21 +1,15 @@
 /**
- * The SSRF-safe redirect loop of the pano link-metadata route (#1642). The
- * initial-URL guard (`isSafeFetchUrl`) is unit-tested in
- * `link-metadata.unit.test.ts`; this file covers the OTHER SSRF surface — a
- * public URL that 3xx-redirects to a private/metadata target. `fetch` is
- * injected, so the manual-redirect loop is exercised offline: a redirect to a
- * private IP is refused, a chain past {@link MAX_REDIRECT_HOPS} is refused, and
- * a single normal public redirect still resolves.
+ * The SSRF surface the initial-URL guard does NOT cover: a public URL that
+ * 3xx-redirects to a private/metadata target. (`isSafeFetchUrl` itself is covered in
+ * `link-metadata.unit.test.ts`.) `fetch` is injected so the loop runs offline.
  */
 import {describe, expect, it, vi} from "vitest";
 import {MAX_REDIRECT_HOPS} from "./link-metadata.ts";
 import {fetchFollowingSafeRedirects} from "./link-metadata-route.ts";
 
-/** A 3xx redirect Response carrying a `Location` header. */
 const redirectTo = (location: string, status = 302): Response =>
 	new Response(null, {status, headers: {location}});
 
-/** A terminal 200 HTML Response. */
 const ok = (body = "<title>ok</title>"): Response =>
 	new Response(body, {status: 200, headers: {"content-type": "text/html"}});
 

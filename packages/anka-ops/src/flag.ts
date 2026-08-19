@@ -37,10 +37,6 @@ export type GraduateDecision =
 	| {readonly _tag: "Eligible"; readonly key: string}
 	| {readonly _tag: "Ineligible"; readonly key: string; readonly reason: string};
 
-/**
- * Decide graduation from the flag's per-env rows (the `selectStatesForKey` slice of `flag list`).
- * Eligible only when the prod row exists and its effective serving is a full (100%) no-match split.
- */
 export const decideGraduate = (input: {
 	readonly key: string;
 	readonly states: ReadonlyArray<FlagState>;
@@ -69,10 +65,8 @@ export const decideGraduate = (input: {
 };
 
 /**
- * The retirement chore's title + body, filed via the `report` skill idiom (`status:needs-triage`,
- * type-blind — triage classifies it `type:chore`). The body names the concrete removal work the
- * cycle's §Retirement + step 7 of the feature-flags workflow prescribe, so `write-code` can drain
- * it: delete the declaration, the `getBoolean` read + dead `else`, and inline the now-permanent path.
+ * Filed via the `report` skill idiom: `status:needs-triage` and type-blind, because triage is
+ * what classifies it `type:chore`.
  */
 export const renderRetirementChore = (
 	key: string,

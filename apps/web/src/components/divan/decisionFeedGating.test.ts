@@ -1,9 +1,3 @@
-/**
- * Decision-feed render-decision units (#1704) — DOM-free, the `divanGating.test.ts`
- * idiom. The gates asserted: the decision copy maps the closed resolution set, the
- * resolver byline is first-class (handle → `@handle`, unresolved → generic "moderatör",
- * never a raw id), and only a `removed` decision is restorable.
- */
 import {describe, expect, it} from "vitest";
 import {
 	decisionLabel,

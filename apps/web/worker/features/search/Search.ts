@@ -1,19 +1,11 @@
 /**
- * Search — the lexical site-search service (ADR 0080). Owns the FTS5 read path:
- * a bm25-ranked, keyset-paginated MATCH over the `term_search` / `post_search`
- * virtual tables, joined back to `term_record` / `post_record` for the row
- * shape the existing `Term` / `Post` views already render.
+ * Search — the lexical site-search service (ADR 0080). A bm25-ranked,
+ * keyset-paginated MATCH over the `term_search` / `post_search` virtual tables,
+ * joined back to `term_record` / `post_record`. The write-side FTS sync lives in
+ * `fts-sync.ts` (dual-write from the mutation handlers, not triggers).
  *
- * Scope v1 is term titles + post titles (ADR 0080); definition/comment bodies and
- * users are deferred. The write-side sync that keeps the FTS tables current lives
- * in `fts-sync.ts`, called from the Sozluk/Pano mutation handlers (dual-write, not
- * triggers).
- *
- * Pagination keyset: `(bm25 rank asc, key asc)` — bm25 returns more-negative for a
- * better match, so ascending rank IS relevance-first (ADR 0019 keyset shape, with
- * the FTS rank as the lead column and the slug/id as the stable tiebreaker). The
- * cursor is the row key; an `after` whose key no longer matches the query is a
- * cursor miss → empty page (the shared connection semantic).
+ * Keyset is `(bm25 rank asc, key asc)`: bm25 returns more-negative for a better
+ * match, so ASCENDING rank is relevance-first.
  */
 
 import {and, isNull, type SQL, sql} from "drizzle-orm";
@@ -58,11 +50,9 @@ export interface SearchOpts {
 }
 
 /**
- * `searchPosts` carries a {@link SandboxViewer} so the FTS read masks posts through
- * the pano visibility seam (ADR 0113) the same way every other pano read does —
- * sandboxed and draft posts excluded per viewer. Omitted reads as the least-privileged
- * {@link anonymousViewer} (public-only), the fail-safe default. Terms have no sandbox
- * or draft dimension, so `searchTerms` needs no viewer.
+ * Omitting `viewer` reads as the least-privileged {@link anonymousViewer}
+ * (public-only) — the fail-safe default. Terms have no sandbox or draft dimension,
+ * so `searchTerms` needs no viewer.
  */
 export interface SearchPostsOpts extends SearchOpts {
 	viewer?: SandboxViewer | undefined;
@@ -71,25 +61,15 @@ export interface SearchPostsOpts extends SearchOpts {
 export class Search extends Context.Service<
 	Search,
 	{
-		/**
-		 * bm25-ranked keyset page of term-title matches. Returns full
-		 * `TermSummaryRow`s so the resolver reuses the `Term` shaper. A query below
-		 * the min length (or matching nothing) yields an empty connection.
-		 */
 		readonly searchTerms: (opts: SearchOpts) => Effect.Effect<TermSearchPage>;
 
-		/**
-		 * bm25-ranked keyset page of post-title matches (full `PostSummaryRow`s),
-		 * masked to the viewer's visible set via the pano seam — see {@link SearchPostsOpts}.
-		 */
 		readonly searchPosts: (opts: SearchPostsOpts) => Effect.Effect<PostSearchPage>;
 	}
 >()("@kampus/search/Search") {}
 
 /**
- * Resolve the cursor row's bm25 rank for the same MATCH (bm25 is stable for a
- * given doc + query), so the keyset predicate selects rows strictly after it. A
- * key that no longer matches is a cursor miss → `null` (caller returns empty).
+ * The cursor row's bm25 rank for the same MATCH (bm25 is stable for a given doc +
+ * query). A key that no longer matches is a cursor miss → `null`.
  */
 const resolveCursorRank = async (
 	db: DrizzleDb,
@@ -109,10 +89,8 @@ const resolveCursorRank = async (
 };
 
 /**
- * The shared FTS read: count matches, resolve the cursor (if any), then fetch the
- * keyed page ordered `(bm25 asc, key asc)`. Returns the ranked list of keys + the
- * `hasNextPage`/`endCursor` envelope; the caller hydrates rows from the summary
- * table (keeping summary-row shaping in one place per domain).
+ * The shared FTS read: count, resolve the cursor, fetch the keyed page ordered
+ * `(bm25 asc, key asc)`. Returns keys only; the caller hydrates rows.
  */
 const ftsKeysetKeys = async (
 	db: DrizzleDb,
@@ -126,11 +104,9 @@ const ftsKeysetKeys = async (
 	totalCount: number;
 }> => {
 	const {match, first, after, visibleFilter} = opts;
-	// The viewer's visibility predicate rides EVERY query over the FTS table — count,
-	// cursor-rank, and the keyed fetch — not just the hydrate. Masking the hydrate
-	// alone would leave `totalCount` and the keyset counting/slotting rows the viewer
-	// can't see (the #1312 count/pagination leak); applied here, count, cursor, keys,
-	// and rows all reflect the same visible set (#1358).
+	// The viewer's visibility predicate must ride EVERY query over the FTS table — count,
+	// cursor-rank and the keyed fetch — not just the hydrate. Masking the hydrate alone
+	// left `totalCount` and the keyset counting rows the viewer cannot see (#1312/#1358).
 	const visible = visibleFilter ? sql` AND ${visibleFilter}` : sql``;
 
 	const totalCount = await db
@@ -139,8 +115,8 @@ const ftsKeysetKeys = async (
 		)
 		.then((r) => Number((r.results[0] as {n: number} | undefined)?.n ?? 0));
 
-	// The DB read (resolveCursorRank) is the port; `resolveCursor` is the pure
-	// cursor-miss decision (ADR 0082). bm25 rank `0` is a valid hit, not a miss.
+	// `resolveCursor` is the pure cursor-miss decision (ADR 0082). A bm25 rank of `0` is
+	// a valid hit, not a miss.
 	const cursor = resolveCursor<number>(
 		after,
 		after ? await resolveCursorRank(db, ftsTable, keyColumn, match, after, visibleFilter) : null,
@@ -150,8 +126,7 @@ const ftsKeysetKeys = async (
 	}
 	const cursorRank = cursor.kind === "hit" ? cursor.row : null;
 
-	// `(rank asc, key asc)` strictly-after predicate. bm25() can't be referenced by
-	// its SELECT alias in WHERE, so it's re-spelled inline.
+	// bm25() cannot be referenced by its SELECT alias in WHERE, so it is re-spelled inline.
 	const rankExpr = sql`bm25(${sql.raw(ftsTable)})`;
 	const after_ =
 		cursorRank !== null
@@ -169,14 +144,10 @@ const ftsKeysetKeys = async (
 };
 
 /**
- * The viewer's post read-mask as an FTS-query predicate: the post id must be in the
- * set of non-removed, visible posts for this viewer. `post_search` holds only
- * `id`/`norm` (no lifecycle columns), so the mask is expressed as `id IN (<visible
- * post ids>)` joining back to `post_record`. The visibility predicate is sourced from
- * the one pano seam — {@link postVisibleWhere} (ADR 0113): the shared sandbox arm AND
- * the author-only draft arm, so a çaylak's sandboxed post and another author's draft
- * are both excluded unless the viewer is its author (sandbox: or a moderator). The
- * caller keeps the orthogonal `removed_at IS NULL` removal guard (ADR 0096) beside it.
+ * The viewer's post read-mask as an FTS-query predicate. `post_search` holds only
+ * `id`/`norm` (no lifecycle columns), so the mask joins back to `post_record` as
+ * `id IN (<visible post ids>)`, sourced from the one pano seam {@link postVisibleWhere}
+ * (ADR 0113). The orthogonal `removed_at IS NULL` removal guard stays with the caller.
  */
 const postVisibleFilter = (db: DrizzleDb, viewer: SandboxViewer): SQL => {
 	const visibleIds = db
@@ -216,8 +187,7 @@ export const SearchLive = Layer.effect(Search)(
 				return {rows: [], hasNextPage, endCursor, totalCount} satisfies TermSearchPage;
 			}
 
-			// Hydrate summary rows, then re-order to the FTS rank order (a keyed
-			// `IN (...)` read returns no guaranteed order).
+			// Re-order to the FTS rank order: a keyed `IN (...)` read returns no guaranteed order.
 			const summaries = yield* run((db) =>
 				db
 					.select(termSummaryColumns)
@@ -253,14 +223,10 @@ export const SearchLive = Layer.effect(Search)(
 				return {rows: [], hasNextPage, endCursor, totalCount} satisfies PostSearchPage;
 			}
 
-			// Hydrate only live (non-deleted) posts through the SHARED pano mapper
-			// (`toPostSummaryKeysetRow`) so post_record→PostSummaryRow — including the
-			// `tags` CSV parse via `tagLabel` — is the single mapping the feed and
-			// keyset already cross (#2015). The local shaping drifted: it rendered the
-			// raw tag value (`show`) where the shared mapper resolves the legacy alias
-			// to the canonical Turkish label (`göster`). The select is the exact
-			// `PostKeysetRow` column subset the mapper reads. `removed_at` is the WHERE
-			// guard only (ADR 0096), spelled against the table — not a hydrated field.
+			// Hydrate through the SHARED pano mapper (`toPostSummaryKeysetRow`) — the local
+			// shaping had drifted, rendering the raw tag value where the shared mapper resolves
+			// the legacy alias to the canonical Turkish label (#2015). The select is exactly the
+			// `PostKeysetRow` column subset it reads; `removed_at` is a WHERE guard only.
 			const summaries = yield* run((db) =>
 				db
 					.select({

@@ -4,15 +4,8 @@
  * serving-plan math is re-implemented here: the operator-verb → lever mapping is the only new logic
  * and lives in the pure `./flag.ts` adapter.
  *
- *   anka-ops flag list                            enumerate every flag × env and its serving state
- *   anka-ops flag get <key> [--env <env>]         read a flag's live serving state
- *   anka-ops flag open <key> --env <env>          release on (100% no-match split; --percent N to ramp)
- *   anka-ops flag close <key> --env <env>         kill (clear the split + default off)
- *   anka-ops flag graduate <key>                  verify fully open in prod, file the retirement chore
- *
- * `open`/`close` dry-run by default; the live flip happens only under `--execute`, and a TTY human
- * is confirmed first (the ADR 0134 posture, `posture.ts`). `graduate` never flips — it verifies the
- * flag is fully open and files a `report`-idiom chore (dry-run by default, `--execute` to file).
+ * Every verb dry-runs by default: the live flip happens only under `--execute`, and a TTY human is
+ * confirmed first (the ADR 0134 posture, `posture.ts`). `graduate` never flips.
  */
 
 import {execFileSync} from "node:child_process";
@@ -64,7 +57,6 @@ const executeFlag = Flag.boolean("execute").pipe(
 	),
 );
 
-/** Resolve the Flagship app for `env`, or fail `FlagEnvNotFound` listing the envs that DO resolve. */
 const resolveEnvApp = (env: string) =>
 	Effect.gen(function* () {
 		const read = yield* FlagshipRead;
@@ -142,11 +134,6 @@ const confirmFlip = (key: string, env: string) =>
 		}
 	});
 
-/**
- * The shared open/close release body: read-before-plan, render the `current → target` diff, and
- * (only under `--execute` on a changed plan, after the confirm) apply the resolved `ServeTarget`.
- * `open` and `close` differ only in the target they resolve — the plan/write/confirm are identical.
- */
 const applyServing = (key: string, env: string, target: ServeTarget, execute: boolean) =>
 	Effect.gen(function* () {
 		const app = yield* resolveEnvApp(env);
@@ -176,7 +163,6 @@ const open = Command.make(
 	"open",
 	{key: keyArg, env: envFlag, percent: percentFlag, execute: executeFlag},
 	Effect.fn(function* ({key, env, percent, execute}) {
-		// Full 100% open by default (the adapter's `open` lever); `--percent N` ramps the split.
 		if (percent._tag === "Some" && (percent.value < 0 || percent.value > 100)) {
 			return yield* new FlagSetTargetInvalid({
 				reason: `--percent ${percent.value} is outside 0–100`,

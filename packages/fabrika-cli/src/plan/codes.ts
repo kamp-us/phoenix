@@ -12,7 +12,7 @@
  *   both in one sweep must read one meaning for it.
  * - `20`–`23` are this group's own.
  *
- * **Why `20`/`21` overlapping `build`'s `OUT_OF_FOCUS`/`AUDIENCE_NOT_AGENT` is safe (#5107).** The
+ * **Why `20`/`21` overlapping `build`'s `OUT_OF_SCOPE`/`AUDIENCE_NOT_AGENT` is safe (#5107).** The
  * contract seated these when `20`+ was free; the scope-admission fence has since taken both, and both
  * are reachable from `fabrika build claim`, which is step 1 of the skill that drives these verbs. The
  * `15` import argued that one code must carry one meaning across a sweep, so the question is fair —

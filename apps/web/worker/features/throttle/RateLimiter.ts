@@ -1,10 +1,9 @@
 /**
  * `RateLimiter` — the per-actor mutation-volume throttle (ADR 0177). It owns the
- * token-bucket algorithm ({@link TokenBucket}) and the actor→budget-key mapping;
- * the state's home and RMW atomicity are the {@link RateLimitStore} port's job
- * (the DO-vs-in-isolate swap point). Wired once at the fate composition root
- * (`fate/layers.ts`) over the merged mutations record, so it bounds every
- * feature's mutation path without touching a single feature.
+ * token-bucket algorithm and the actor→budget-key mapping; the state's home and RMW
+ * atomicity belong to the {@link RateLimitStore} port. Wired once at the fate
+ * composition root over the merged mutations record, so it bounds every feature's
+ * mutation path without touching a single feature.
  */
 import {type Actor, matchActor} from "@kampus/authz";
 import {Clock, Context, Effect, Layer, Option} from "effect";
@@ -13,22 +12,15 @@ import {RateLimitStore} from "./RateLimitStore.ts";
 import {type TokenBucketPolicy, tokenBucketPolicy, tryConsume} from "./TokenBucket.ts";
 
 /**
- * The per-actor mutation budget: one default class covers every mutation — 60
- * tokens of burst refilling 1/s (≈60 writes/minute sustained). Chosen well clear
- * of a human's real write cadence (a fast reader voting/reacting rarely nears
- * one write/second sustained) yet tight enough to bound a scripted flood — the
- * abuse the audit named (sandbox floods, report spam, reaction churn). ADR 0177
- * records why a single aggregate bucket (not per-mutation-class sub-buckets) is
- * the v1 shape and where per-class values would slot in.
+ * One aggregate bucket covers every mutation — 60 tokens of burst refilling 1/s.
+ * ADR 0177 records why that beats per-mutation-class sub-buckets for v1.
  */
 export const DEFAULT_MUTATION_POLICY: TokenBucketPolicy = tokenBucketPolicy(60, 1);
 
 export interface RateLimiterAccess {
 	/**
-	 * Spend one token of the actor's mutation budget; fail with
-	 * {@link RateLimitExceeded} when the bucket is empty. Anonymous actors carry
-	 * no budget key — their writes are refused by each mutation's own auth gate —
-	 * so they pass through untouched.
+	 * Anonymous actors carry no budget key and pass through untouched — their writes
+	 * are refused by each mutation's own auth gate.
 	 */
 	readonly check: (actor: Actor) => Effect.Effect<void, RateLimitExceeded>;
 }
@@ -37,7 +29,6 @@ export class RateLimiter extends Context.Service<RateLimiter, RateLimiterAccess>
 	"@kampus/throttle/RateLimiter",
 ) {}
 
-/** The per-actor budget key; `None` for anonymous traffic (not throttled here). */
 const actorKey = (actor: Actor): Option.Option<string> =>
 	matchActor(actor, {
 		onUnauthenticated: () => Option.none(),

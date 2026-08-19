@@ -11,6 +11,16 @@
  * a question for the caller, not a filter here.
  */
 
+/**
+ * The declaration file's **shipped default**, relative to the repository root.
+ *
+ * #6291 put one home under the name and said a key would follow; #6296 is that key —
+ * `roadmapFile` in `.fabrika.jsonc` (`../config/keys/paths.ts`), which `build pick`, `build claim`
+ * and `triage homes` resolve before they read. This re-export keeps the string written once, for
+ * the callers that scaffold the file rather than read a repo's declared one.
+ */
+export {SHIPPED_ROADMAP_FILE as ROADMAP_FILE} from "../config/keys/paths.ts";
+
 /** One roadmap row: the first column, and the milestone its second column pins. */
 export interface RoadmapRow {
 	readonly name: string;

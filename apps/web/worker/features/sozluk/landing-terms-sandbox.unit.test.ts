@@ -1,15 +1,11 @@
 /**
- * `Sozluk.getLandingTerms` sandbox-visibility wiring (#1424) — the security fix for
- * the public landing "sözlüğe son eklenenler" column. The read ranks terms by their
- * most recent LIVE definition, so the `definition_record` arm MUST carry the #1205
- * mask (`removed_at IS NULL AND sandboxed_at IS NULL`) beside the public `landingStats`
- * counts (#1391): a çaylak's sandbox-only term — whose `term_record` summary row can
- * persist with a zero live count — must never surface on the anonymous front door.
+ * Sandbox-visibility wiring for the public landing column (#1424). The read ranks
+ * terms by their most recent LIVE definition, so the `definition_record` arm must
+ * carry the sandbox mask: a sandbox-only term, whose summary row can persist with a
+ * zero live count, must never surface on the anonymous front door.
  *
- * Unit-tier per ADR 0082: row-level filtering is integration's job; what THIS proves is
- * that the read WIRES the sandbox clause into the recency query. The compiled SQL is
- * captured off a substituted `Drizzle` seam that renders each builder's `.toSQL()`
- * (the `Sozluk.connection.unit.test.ts` scripted-access idiom).
+ * Row-level filtering is integration's job; what this proves is that the read WIRES
+ * the clause in. The compiled SQL is captured off a substituted `Drizzle` seam.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -84,7 +80,7 @@ const sozlukLayer = (access: DrizzleAccess) =>
 describe("Sozluk.getLandingTerms — public landing terms exclude sandbox-only terms (#1424)", () => {
 	it.effect("the recency query masks removed_at AND sandboxed_at on the definition arm", () =>
 		Effect.gen(function* () {
-			// run #1: the grouped recency scan over definition_record; run #2: the summary fetch.
+			// Run 1 is the grouped recency scan; run 2 is the summary fetch.
 			const {access, queries} = scriptedAccess([[{termSlug: "race-condition"}], []]);
 			yield* Effect.gen(function* () {
 				const sozluk = yield* Sozluk;
@@ -96,7 +92,7 @@ describe("Sozluk.getLandingTerms — public landing terms exclude sandbox-only t
 			const sql = (recency as {sql: string}).sql.toLowerCase();
 			assert.match(sql, /"definition_record"\."removed_at" is null/, "removed_at guard present");
 			assert.match(sql, /"definition_record"\."sandboxed_at" is null/, "sandboxed_at mask present");
-			// Never the inverted mask — that would drop the live terms the column is meant to show.
+			// The inverted mask would drop the live terms the column exists to show.
 			assert.notMatch(sql, /sandboxed_at" is not null/, "mask is IS NULL, never IS NOT NULL");
 			assert.match(sql, /group by "definition_record"\."term_slug"/, "grouped by term");
 		}),

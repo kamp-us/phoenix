@@ -1,12 +1,4 @@
-/**
- * The property-based a11y promotion loop over the `ui/` primitives (#2175, ADR
- * 0162 pillar 4). For every classified primitive, `fast-check` generates
- * randomized VALID prop combinations, each rendered in jsdom and asserted against
- * the pillar-4 invariants — but only the invariants whose posture is `enforced`
- * (`posture.ts`) fail the gate; `warning`-posture invariants (contrast,
- * tap-target — jsdom cannot compute them) are reported, not enforced. Promoting a
- * warning to enforced is a one-line edit to `posture.ts`, the promotion loop.
- */
+/** The property-based a11y suite — see `.patterns/property-based-a11y.md`. */
 import {render} from "@testing-library/react";
 import fc from "fast-check";
 import {describe, expect, it} from "vitest";
@@ -15,7 +7,6 @@ import {runEnforcedInvariants} from "./check.ts";
 import {POSTURE, postureOf} from "./posture.ts";
 import {type PrimitiveSpec, REGISTRY} from "./registry.tsx";
 
-/** How many randomized prop combinations to generate per primitive. */
 const RUNS_PER_PRIMITIVE = 20;
 
 const testable = (spec: PrimitiveSpec): spec is Exclude<PrimitiveSpec, {kind: "deferred"}> =>
@@ -61,8 +52,6 @@ describe("enforced-invariant teeth (the gate is not vacuous)", () => {
 for (const [name, spec] of Object.entries(REGISTRY)) {
 	if (!testable(spec)) continue;
 	describe(`${name} — property-based a11y (${spec.kind})`, () => {
-		// The warning-posture invariants jsdom cannot decide — surfaced once per
-		// primitive so the warning rung is visible, not silently dropped.
 		const warned = Object.values(POSTURE)
 			.filter((m) => m.posture === "warning")
 			.map((m) => m.id);

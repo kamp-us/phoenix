@@ -1,28 +1,14 @@
 /**
- * `worker-relevance` classify bin — the CI-callable surface for issue #1014, extended
- * with the test-import closure of ADR 0114.
+ * `worker-relevance` classify bin — the IO shell around the pure core, run by
+ * ci.yml's `changes` job (issue #1014, ADR 0114). Exits 0 always: a classifier,
+ * not a gate.
  *
- * Reads the PR's changed-file list + the lockfile diff from `process.env` (set by the
- * `changes` job's classify step in ci.yml), COMPUTES the test-import closure by
- * scanning the real imports under the integration/e2e test trees, runs the pure
- * `classify` core over the union of the worker-import and test-import closures, emits
- * the verdict to the log (ADR 0092 §1 "emit what you scanned"), and writes a
- * `worker_relevant=true|false` line to `$GITHUB_OUTPUT` so the job's
- * `integration_required`/`e2e_required` expressions can AND it in. Exits 0 always —
- * this is a classifier, not a gate; the workflow decides what to do with the verdict.
+ * ZERO runtime dependencies on purpose: the `changes` job runs this with only
+ * checkout + setup-node + node — no `pnpm install`, hence plain Node, no Effect.
  *
- * ZERO runtime dependencies on purpose (the `ci-required` idiom): the
- * `changes` job runs this with only checkout + setup-node + node — no `pnpm install`
- * — so the always-on changed-area detector stays fast. Plain Node (no Effect import)
- * for the same reason. The pure core (`classify` + `inputFromEnv` + the import
- * extractor) is the unit-tested module; this bin is the IO shell — walk the test
- * trees, read env, print, write output.
- *
- * FAIL-SAFE TO RUNNING (ADR 0114): the closure is computed from real imports so it
- * cannot drift, but a scan that THROWS (a tree became unreadable, a resolution error)
- * must not silently yield an empty closure and skip a test-consumed package. On any
- * scan error the bin short-circuits to `worker_relevant=true` — running is the safe
- * verdict when the test-import closure can't be proven.
+ * FAIL-SAFE TO RUNNING (ADR 0114): a scan that THROWS must not silently yield an
+ * empty closure and skip a test-consumed package, so any scan error
+ * short-circuits to `worker_relevant=true`.
  */
 import {appendFileSync, type Dirent, readdirSync, readFileSync} from "node:fs";
 import {dirname, join, resolve} from "node:path";
@@ -30,16 +16,12 @@ import {fileURLToPath} from "node:url";
 
 import {classify, extractKampusPackages, inputFromEnv} from "./worker-relevance.ts";
 
-/** Repo root, derived from this file's location (`packages/worker-relevance/src/bin.ts`). */
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
-/** The integration/e2e test trees whose real imports form the test-import closure (ADR 0114). */
 const TEST_TREES = ["apps/web/tests/integration", "apps/web/tests/e2e"] as const;
 
-/** Extensions the import scanner reads — the TS/JS source shapes a test tree carries. */
 const SOURCE_EXT = /\.(?:[cm]?ts|[cm]?js|tsx|jsx)$/;
 
-/** Recursively collect source-file paths under `dir`; a missing tree yields none. */
 const walkSourceFiles = (dir: string): string[] => {
 	let entries: Dirent[];
 	try {
@@ -59,7 +41,6 @@ const walkSourceFiles = (dir: string): string[] => {
 	return files;
 };
 
-/** Does `packages/<name>` exist as a workspace package named `@kampus/<name>`? */
 const isWorkspacePackage = (name: string): boolean => {
 	try {
 		const pkg = readFileSync(join(REPO_ROOT, "packages", name, "package.json"), "utf8");
@@ -73,12 +54,9 @@ const isWorkspacePackage = (name: string): boolean => {
 };
 
 /**
- * The test-import closure: `packages/<name>` dir-names imported under the two test
- * trees, computed from real imports (ADR 0114). Each `@kampus/<name>` specifier is
- * resolved to a `packages/**` member by confirming `packages/<name>` is a real
- * workspace package; a specifier that resolves to no such dir (an app-level alias, a
- * non-package scope member) is dropped, so the closure is exactly the set of
- * test-consumed `packages/**` members.
+ * The test-import closure (ADR 0114). A specifier resolving to no `packages/<name>`
+ * dir (an app-level alias, a non-package scope member) is dropped, so the closure
+ * is exactly the test-consumed `packages/**` members.
  */
 const computeTestImportedPackages = (): ReadonlySet<string> => {
 	const candidates = new Set<string>();

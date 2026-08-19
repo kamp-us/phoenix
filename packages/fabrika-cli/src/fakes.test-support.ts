@@ -202,10 +202,17 @@ const pipedInput = (stdin: unknown): Effect.Effect<string> => {
  * The script speaks in {@link ExecResult}s because that is what a caller reads; the spawner maps
  * `ok: false` onto a non-zero exit with the reason on stderr, which is the shape `execCapture`
  * lowers back into the same record.
+ *
+ * `unstartable` is the third answer, and it is not expressible as an `ExecResult`: a binary absent
+ * from `PATH` never runs at all, and the spawn fails with a `PlatformError` where a child that runs
+ * and exits non-zero does not. A caller that tells a red from an UNKNOWN reads exactly that
+ * difference, so a test over it needs the two scripted apart ({@link faultingShell} fails every
+ * spawn, which cannot express "`git` works and `actionlint` is not installed").
  */
 export const fakeShell = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	fallback: ExecResult = {ok: false, stdout: "", reason: "unscripted command"},
+	unstartable: ReadonlyArray<RegExp> = [],
 ): FakeShell => {
 	const calls: string[] = [];
 	const inputs: string[] = [];
@@ -220,6 +227,15 @@ export const fakeShell = (
 				inputs.push(
 					yield* pipedInput(cmd._tag === "StandardCommand" ? cmd.options.stdin : undefined),
 				);
+				if (unstartable.some((pattern) => pattern.test(line))) {
+					return yield* Effect.fail(
+						PlatformError.badArgument({
+							module: "ChildProcess",
+							method: "spawn",
+							description: `spawn ${cmd._tag === "StandardCommand" ? cmd.command : line} ENOENT`,
+						}),
+					);
+				}
 				const result = script.find(([pattern]) => pattern.test(line))?.[1] ?? fallback;
 				return ChildProcessSpawner.makeHandle({
 					pid: ChildProcessSpawner.ProcessId(1),
@@ -329,6 +345,15 @@ export const once = (source: RegExp): RegExp => {
 export const okOut = (stdout: string): ExecResult => ({ok: true, stdout, reason: ""});
 
 export const errOut = (reason: string): ExecResult => ({ok: false, stdout: "", reason});
+
+/**
+ * A tree with no `.fabrika.jsonc` in it — every config key resolves to its shipped default.
+ *
+ * The layer a verb needs once it reads the path surface (#6296) and the test is not about the
+ * config. It is `fakeFs`'s empty case rather than a second noop layer so a test that later *does*
+ * declare a config swaps this for a `fakeFs({files: {…}})` and nothing else changes.
+ */
+export const unconfigured: Layer.Layer<FileSystem.FileSystem | Path.Path> = fakeFs({}).layer;
 
 /** `git ls-tree --name-only` output: one name per line. */
 export const tree = (...names: ReadonlyArray<string>): string => names.join("\n");

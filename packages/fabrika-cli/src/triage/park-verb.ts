@@ -12,17 +12,18 @@
  *
  * The demotion itself runs through the reconcile in `./facets.ts`, shared with `triage apply`.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {createComment, getIssue, listLabels, resolveRepo} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {NEEDS_INFO, NEEDS_TRIAGE} from "../labels.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {guardConfig} from "./config-guard.ts";
 import {applyChanges} from "./facet-writes.ts";
 import {parkedFacets, planReconcile, renderShape, shapeViolations} from "./facets.ts";
 import {scannedLine} from "./scope.ts";
+import {guardTarget} from "./target-guard.ts";
 
 const SURFACE: AuthoredSurface = {
 	verb: "triage park",
@@ -36,6 +37,8 @@ export interface ParkOptions {
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly stdin: Effect.Effect<StdinRead>;
+	/** Where the run stands. The repo root above it is where `.fabrika.jsonc` is read. */
+	readonly cwd: string;
 }
 
 const unreadable = (what: string, repo: string, reason: string): VerbOutcome =>
@@ -46,13 +49,22 @@ const unreadable = (what: string, repo: string, reason: string): VerbOutcome =>
 
 export const runPark = (
 	options: ParkOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const {issue, json} = options;
 
 		if (!Number.isInteger(issue) || issue <= 0) {
 			return refuse(FAILED, `triage park: ${issue} is not an issue number.`);
 		}
+
+		const gate = yield* guardConfig("triage park", options.cwd);
+		if (gate._tag === "Refused") return gate.outcome;
+		const resolved = gate.resolved;
+		const needsInfo = resolved.board.statuses.needsInfo;
 
 		const repoAttempt = yield* resolveRepo(options.repo, options.env);
 		if (repoAttempt._tag === "Failure") {
@@ -77,13 +89,22 @@ export const runPark = (
 		}
 		if (target._tag === "Unknown") return unreadable(`issue #${issue}`, repo, target.reason);
 
+		const guarded = yield* guardTarget({
+			verb: "triage park",
+			repo,
+			issue,
+			target: target.value,
+			env: options.env,
+		});
+		if (guarded !== null) return guarded;
+
 		const vocabulary = yield* listLabels(repo);
 		if (vocabulary._tag === "Failure") return unreadable("the label set", repo, vocabulary.reason);
 		const diagnostics = [scannedLine("triage park", repo, vocabulary.value.length, "label")];
-		if (!vocabulary.value.includes(NEEDS_INFO)) {
+		if (!vocabulary.value.includes(needsInfo)) {
 			return refuse(
 				ZERO_SCOPE,
-				`triage park: label ${NEEDS_INFO} does not exist in ${repo} — refusing to write, because the API would create it (#4285).`,
+				`triage park: label ${needsInfo} does not exist in ${repo} — refusing to write, because the API would create it (#4285).`,
 				diagnostics,
 			);
 		}
@@ -97,7 +118,7 @@ export const runPark = (
 			);
 		}
 
-		const facets = parkedFacets();
+		const facets = parkedFacets(resolved);
 		const plan = planReconcile(
 			{labels: target.value.labels, milestone: target.value.milestone},
 			facets,
@@ -112,7 +133,7 @@ export const runPark = (
 			);
 		}
 
-		const expected = `expected ${NEEDS_INFO} present and ${NEEDS_TRIAGE} absent`;
+		const expected = `expected ${needsInfo} present and ${resolved.board.statuses.needsTriage} absent`;
 		const back = yield* getIssue(repo, issue);
 		if (back._tag !== "Present") {
 			return refuse(

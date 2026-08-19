@@ -1,11 +1,8 @@
 /**
- * The ADR 0134 non-TTY posture as a pure decision core — the framework primitive every
- * anka-ops write verb reuses so the humans-release boundary (ADR 0083) lives at the audit
- * trail, not as a structural TTY refuse. A non-interactive caller (agent/CI, no TTY) PROCEEDS
- * without a prompt (the action is logged for the audit record); an interactive human is asked
- * to confirm and only an affirmative answer proceeds. Keeping the decision IO-free is what
- * lets it be exhaustively unit-tested without a real terminal (mirrors the flag lever's
- * `decideLeverGuard` in `flagship-core.ts`).
+ * The ADR 0134 non-TTY posture as a pure decision core. A non-interactive
+ * caller (agent/CI, no TTY) PROCEEDS without a prompt — deliberate, not a
+ * hole: the humans-release boundary (ADR 0083) lives at the audit trail, not
+ * as a structural TTY refuse. IO-free so it unit-tests without a terminal.
  */
 
 export interface ConfirmInput {
@@ -20,11 +17,6 @@ export type ConfirmDecision =
 
 const AFFIRMATIVE = new Set(["y", "yes"]);
 
-/**
- * Decide whether a confirmation-guarded write proceeds. Non-TTY ⇒ always Proceed
- * (`interactive: false`, the caller logs the action); TTY ⇒ Proceed only on an affirmative
- * `y`/`yes`, else Refuse (a bare Enter, EOF, or any other answer is a decline).
- */
 export const decideConfirm = (input: ConfirmInput): ConfirmDecision => {
 	if (!input.isTTY) {
 		return {_tag: "Proceed", interactive: false};

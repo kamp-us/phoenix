@@ -54,7 +54,9 @@ suggestion list**, never a work order.
 
 **A non-zero exit is UNKNOWN, never "nothing drifted."** Re-run it — a shallow clone with no
 history for the register reads as "never committed", and acting on that regenerates a populated
-file wholesale.
+file wholesale. Which surfaces it scans, and the suppression rules that thin the candidate list, are
+the verb's section
+(`fabrika wire doc-section --heading "glossary drift" < <skill-base>/contract.md`).
 
 ## 2 — Ask what is already declared
 
@@ -73,7 +75,9 @@ as one manufactures false duplicates. Judge each collision: **redefine** the exi
 genuinely distinct term.
 
 Comparison folds case, whitespace and hyphens, so `front-door` and `front door` are one key. It does
-not fold parentheses, slashes or commas.
+not fold parentheses, slashes or commas. The normalization is one function every verb shares:
+`fabrika wire doc-section --heading "Term normalization — one function, used by every verb" < <skill-base>/contract.md`.
+How a collision span is computed is `--heading "glossary lookup"` against the same file.
 
 ## 3 — Judge the term
 
@@ -128,8 +132,12 @@ yet exist, and it is why a fresh repo is not a dead end:
 fabrika glossary init --register terms
 ```
 
+What `init` seeds into an empty register is its section
+(`fabrika wire doc-section --heading "glossary init" < <skill-base>/contract.md`).
+
 A register's sections are **data, not a fixed enum** — they grow as the repo does, so read them
-rather than recalling them, and pass `--create-section` when a term's right home is genuinely new:
+rather than recalling them, and pass `--create-section` when a term's right home is genuinely new
+(`fabrika wire doc-section --heading "glossary sections" < <skill-base>/contract.md`):
 
 ```bash
 fabrika glossary sections --register terms
@@ -142,7 +150,9 @@ fabrika glossary add "front door" --register terms --section "fabrika skill noun
 Reads the definition on stdin, inserts the row in that section's alphabetical place, and re-reads the
 file to prove what landed. It refuses to touch a byte outside the row it wrote — a re-sort or a
 reflow of an untouched section aborts the write rather than landing quietly. Rewriting an existing
-row is the same verb with `--replace`, under the read-first rule in step 3.
+row is the same verb with `--replace`, under the read-first rule in step 3. The row grammar, the
+insertion rule and every write the verb refuses are its section
+(`fabrika wire doc-section --heading "glossary add" < <skill-base>/contract.md`).
 
 **Land the row only after the decision that coins it is on `main`.** An ADR number is not stable
 before merge — concurrent lanes derive the same one — so a row citing an unmerged decision is a
@@ -162,7 +172,9 @@ fabrika glossary check --register both
 ```
 
 Answers `clean`, `defects` or `bootstrap` on exit 0, enumerating row-shape breaks, duplicate keys,
-out-of-order rows and citations that no longer resolve live.
+out-of-order rows and citations that no longer resolve live — each defect class, and what it takes to
+clear it, is the verb's section
+(`fabrika wire doc-section --heading "glossary check" < <skill-base>/contract.md`).
 
 **Two things it deliberately does not answer, because something else already does.** Machine-local
 paths in a changed markdown file, and dead internal links, are each decided by a merge-blocking gate
@@ -186,17 +198,3 @@ are left in the working tree for the surrounding lane to carry.
 - **`STOPPED-UNKNOWN`** — a verb answered UNKNOWN and nothing was written; working tree untouched.
 
 Name the terms and the register. Do not restate the definitions you just wrote.
-
-## Required repo files
-
-Dispositions are **fail-loud** (stop, naming the error), **degrade** (continue with less, and
-disclose it in the report), or **bootstrap** (absent is day one — create it and carry on). A missing
-file is never a silent wrong answer. Where a row points at setup, that is
-[front-door](../front-door/SKILL.md)'s lane.
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| `.glossary/TERMS.md` | the domain-noun register this skill maintains and the corpus every lookup resolves against | **bootstrap** — absent or empty is day one in an adopting repo, not a failed read: `drift` and `check` answer `bootstrap` on exit `0`, and `glossary init` writes the file. |
-| `.glossary/LANGUAGE.md` | the architecture-vocabulary register, and the other half of the routing judgement in step 3 | **bootstrap** — `glossary init --register language` creates it. Until it exists, `--register both` reports the absent register as `bootstrap` beside the present one's answer rather than failing, and the run discloses that it ran single-register. |
-| `.decisions/` | resolves the citations a row carries, so `check` can tell a live decision from a superseded one | **degrade** — `check` reports `citations-unverified` beside its other findings instead of `clean`, so an unchecked corpus never reads as a checked one. |
-| A merge-blocking leak gate and dead-link gate over changed markdown | step 5's two carve-outs defer to them, so their absence is what makes the carve-outs unsafe | **degrade** — the carve-outs still hold (this skill does not recompute a gate's verdict), and the report names the two unchecked classes explicitly so nobody reads silence as coverage. |

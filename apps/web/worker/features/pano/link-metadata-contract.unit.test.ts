@@ -1,9 +1,7 @@
 /**
- * The client-side safe-default parse of the `/api/pano/link-metadata` response
- * (#1642) — tested without a DOM, the same pure-core idiom as
- * `evaluate-contract.unit.test.ts`. `parseLinkMetadataResponse` is what
- * enforces "a flaky page can only ever leave the form untouched": a non-string,
- * empty, or absent field must parse to absent so it is never prefilled.
+ * `parseLinkMetadataResponse` is what enforces "a flaky page can only ever leave the
+ * form untouched" (#1642): a non-string, empty, or absent field must parse to absent
+ * so it is never prefilled.
  */
 import {describe, expect, it} from "vitest";
 import {parseLinkMetadataResponse} from "./link-metadata-contract.ts";

@@ -48,10 +48,17 @@ addressable answer: an exit-code row, a grammar table, a terminal vocabulary, on
 verb-served, so the `SKILL.md` names the invocation
 (`fabrika wire doc-section --heading <x> < <skill-base>/contract.md`, or a dedicated lookup verb),
 never a whole-file pointer. A judgment-shaped read — the reader must weigh the whole surface —
-keeps the whole-file pointer, and is never thinned to a partial read to save tokens: partial
-reading caused misses on judgment tasks in the measurements behind the ruling. `contract.md`
-itself stays what [cli-interface-convention Part 2](cli-interface-convention.md) says it is — the
-authoring spec; runtime lookup was never a role it was designed to carry.
+takes every section the judgment touches, one `doc-section` call each, and is never thinned to a
+token-saving subset: partial reading caused misses on judgment tasks in the measurements behind
+the ruling. `contract.md` itself stays what
+[cli-interface-convention Part 2](cli-interface-convention.md) says it is — the authoring spec;
+runtime lookup was never a role it was designed to carry.
+
+**Nobody reads a `contract.md` whole** (ADR
+[0296](../../../.decisions/0296-contracts-are-read-by-section.md)) — not a shell, not a reviewer,
+not an author. Every read is `fabrika wire doc-section --heading "…" < <skill-base>/contract.md`;
+the headings are the map. Skill text and spawn prompts say it that way too, and the `review`
+skill's skill rubric fails a diff that instructs otherwise.
 
 **There is no line count.** Concision is judged case by case against that split — never "how long is
 it", always "does this paragraph belong here or in the contract". A skill that has honoured the
@@ -332,12 +339,12 @@ every copy can drift from while each author assumes some other copy is authorita
 
 **Where it is enforced today — stated so nobody assumes coverage it does not have.** The
 `skill-gh-lint` job ([`.github/workflows/skill-gh-lint.yml`](../../../.github/workflows/skill-gh-lint.yml),
-matchers in [`lint.ts`](../../../packages/pipeline-cli/src/tools/gh-phoenix/lint.ts)) reds on a
+matchers in [`skill-lint.ts`](../../../packages/fabrika-cli/src/guard/skill-lint.ts)) reds on a
 GraphQL-path `gh` invocation anywhere in the corpus it walks and fails closed on zero scope
-([ADR 0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). That walk is rooted at
-`claude-plugins/kampus-pipeline/`, so **fabrika's own corpus is outside its scope** — here the rule
-is prose held by review, not machine-checked. Extending the walk is its own change; this doc does
-not assume it.
+([ADR 0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). The walk roots at
+`claude-plugins/`, every plugin dir under it, and reds if any of them contributed no scanned file
+([#5004](https://github.com/kamp-us/phoenix/issues/5004)) — so **fabrika's own corpus is inside its
+scope**, and the rule is machine-checked here rather than held by review.
 
 > Source: the org's Projects-classic constraint, carried through v1 as a per-skill standing
 > invariant. Five fabrika contracts each restated it before this section existed

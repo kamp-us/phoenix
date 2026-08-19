@@ -34,9 +34,6 @@ export {
 	type RelationConfig,
 } from "./Capability.ts";
 export {CurrentActor} from "./CurrentActor.ts";
-// The `Grant` type + the `Grant.provide` discharge verb + `isGrant` escape; `mint`
-// does NOT — the seal. `Grant` is a merged type+value: `Grant<M>` types the proof,
-// `Grant.provide(grant)` discharges it.
 export {Grant, type GrantScope, isGrant} from "./Grant.ts";
 export {Scale} from "./Level.ts";
 export {type Relation, RelationStore} from "./Relation.ts";

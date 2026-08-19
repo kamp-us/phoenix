@@ -29,7 +29,7 @@ confirmed it against the contract). For a PR in the **control-plane / blocking s
 `review-skill` and `review-doc` intentionally emit the SHA-less advisory line and suppress the
 canonical `PASS @ <sha> — merge-ready` marker (ADR
 [0073](0073-review-skill-gate.md) §5 converged all three gates on this one advisory shape; the
-contract states it in [`gh-issue-intake-formats.md`](https://github.com/kamp-us/phoenix/blob/main/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md)
+contract states it in `gh-issue-intake-formats.md`
 §6.6). The reason is structural: the advisory line **carries no first-line `@ <sha>` on
 purpose** so the verdict never enters `ship-it`'s `PASS @ <sha> — merge-ready` namespace — which
 is exactly what makes `ship-it` refuse to auto-merge a control-plane PR (ADR

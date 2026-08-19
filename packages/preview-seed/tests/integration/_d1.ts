@@ -1,25 +1,11 @@
 /**
- * Per-file real-D1 substrate for the seed's integration tier — the alchemy
- * `Test.make` idiom of ADR 0082 / `.patterns/alchemy-test-harness.md`, scoped to
- * a **D1-only stack** (this package has no worker; the seed talks to D1 directly).
+ * Per-file real-D1 substrate for the seed's integration tier — the alchemy `Test.make` idiom of
+ * ADR 0082 / `.patterns/alchemy-test-harness.md`, scoped to a D1-only stack (this package has no
+ * worker; the seed talks to D1 directly).
  *
- * Each integration test file calls `seedD1(import.meta.url)` once at module top
- * level. It stands up a per-file `Test.make`, deploys a stack declaring ONLY the
- * phoenix D1 resource under an isolated stage — migrated by the **same** worker
- * migrations dir the production deploy applies (`worker/db/drizzle/migrations`),
- * so the seeded tables (incl. the `0002_search_fts.sql` FTS5 virtual tables) exist
- * exactly as in prod, one migration path — and returns a `seedDb()` accessor that
- * builds a `D1Database` over the production REST transport (`makeD1Rest`) pointed
- * at that stage's real D1. The seed then runs the SAME `seed(d1)` path the bin
- * ships; assertions read back over the same REST seam.
- *
- * Real remote D1 + a shared Cloudflare account are stage-keyed, so two CI runs (or
- * a rerun) must never collide on a stage name — the same isolated-stage derivation
- * apps/web uses (`_stage-name`'s run-unique `it-<readable>-<disc>`). Creds
- * (`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` / `ALCHEMY_PASSWORD`) come from
- * the environment — CI secrets; an alchemy/wrangler profile locally. Without them
- * the deploy fails at `Unauthorized` (expected off-CI; the suite proves itself on
- * CI's integration job).
+ * Creds (`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` / `ALCHEMY_PASSWORD`) come from the
+ * environment; without them the deploy fails at `Unauthorized` — expected off-CI, the suite proves
+ * itself on CI's integration job.
  */
 import {join} from "node:path";
 import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
@@ -33,9 +19,8 @@ import * as Layer from "effect/Layer";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {slugify, stageName} from "./_stage-name.ts";
 
-// The worker's canonical migrations dir — the SAME one `apps/web`'s D1 resource
-// applies on deploy (ADR 0082's "one migration path"). Resolved from this file:
-// `packages/preview-seed/tests/integration/` → repo root is four levels up.
+// The SAME migrations dir `apps/web`'s D1 resource applies on deploy — ADR 0082's one migration
+// path, so the seeded tables exist exactly as in prod.
 const MIGRATIONS_DIR = join(
 	import.meta.dirname,
 	"../../../../apps/web/worker/db/drizzle/migrations",
@@ -59,8 +44,6 @@ const phoenixD1Stack = (stage: string) =>
 
 type StackOutput = {databaseId: string; accountId: string};
 
-// Credentials (CLOUDFLARE_API_TOKEN) + an HTTP client — what `queryDatabase` (the
-// REST transport inside makeD1Rest) needs. The same layer the bin assembles.
 const restLayer = Layer.merge(CredentialsFromEnv, FetchHttpClient.layer);
 
 // `afterAll(destroy)` is skipped when `NO_DESTROY` is set, so a local iteration loop
@@ -86,17 +69,14 @@ const stageFor = (metaUrl: string): string => {
 };
 
 export interface SeedD1 {
-	/** A `D1Database` over this stage's real D1 (the production REST transport). */
 	seedDb(): D1Database;
-	/** This stage's real D1 coordinates, for an assertion that needs the raw REST seam. */
 	target(): {accountId: string; databaseId: string};
 }
 
 /**
- * Stand up this file's per-file `Test.make` D1-only deploy and return a `seedDb()`
- * accessor over its real D1. Call once at module top level. The deploy resolves in
- * a vitest `beforeAll` (so the D1 exists + is migrated before any `it` body runs);
- * its `{accountId, databaseId}` is stashed in a holder the synchronous accessors read.
+ * Call once at module top level: the deploy resolves in a vitest `beforeAll`, so the D1 exists and
+ * is migrated before any `it` body runs, and its coordinates are stashed in a holder the
+ * synchronous accessors read.
  */
 export function seedD1(metaUrl: string): SeedD1 {
 	const stage = stageFor(metaUrl);

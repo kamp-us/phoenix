@@ -1,9 +1,6 @@
 import {MetaRow} from "../../../components/ui/MetaRow";
 import {defineExhibit} from "../exhibit";
 
-// A composed row (author · time · count) so the shared child treatment and the
-// `MetaRow.Dot` separator are shown together; MetaRow's own props are all layout
-// (`as`) or ReactNode children, so there are no knobs — the row is fixed content.
 function MetaRowDemo() {
 	return (
 		<MetaRow>

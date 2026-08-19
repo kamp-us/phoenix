@@ -1,18 +1,12 @@
 /**
- * `Post`'s one column→field map — the single structure the row mappers
- * (`rowToPostPage` + the by-id summary projection in `Pano.ts`), the wire shaper
- * (`toPost` in `shapers.ts`), and the view field declaration (`PostView` in
- * `views.ts`) all derive from, so a one-field change touches this map instead of
- * three hand-synced restatements (#1166, the Pano half of #1126 AC#1).
+ * `Post`'s one column→field map. The row mappers, the wire shaper and the view
+ * field declaration all derive from it, so a one-field change lands here instead of
+ * in three hand-synced restatements (#1166).
  *
- * Post diverges more than `Definition`: it has two record sources — the detail
- * `PostPage` reads the canonical `body`, the feed summary reads `bodyExcerpt`
- * (the `bodySource` knob is the only field that varies). `myVote` / `isSaved` are
- * viewer scalars — part of the view/wire field set (`postViewFields`) but *not*
- * read from the record here: they are stamped by `stampViewerScalars` after the
- * batched `user_vote` / `post_bookmark` reads (#1159, `viewer-scalars.ts`).
- * `isDraft`, by contrast, IS a record column (the taslak marker), so it rides the
- * intrinsic map.
+ * Two things to know: the detail page reads the canonical `body` while the feed
+ * summary reads `bodyExcerpt` (the `bodySource` knob), and the viewer scalars
+ * (`myVote` / `isSaved`) are stamped downstream from batched reads, never read from
+ * the record here.
  */
 
 import {tagLabel} from "../../../src/lib/panoTags.ts";
@@ -29,7 +23,6 @@ export interface PostTagRow {
 /** Empty body collapses to `null` so every path yields the same wire shape. */
 const normalizeBody = (raw: string | null): string | null => (raw && raw.length > 0 ? raw : null);
 
-/** Parse the comma-separated `post_record.tags` CSV into `{kind, label}` scalars. */
 export const parseTags = (csv: string): PostTagRow[] => {
 	if (!csv) return [];
 	return csv
@@ -39,14 +32,8 @@ export const parseTags = (csv: string): PostTagRow[] => {
 		.map((kind) => ({kind, label: tagLabel(kind)}));
 };
 
-/**
- * The intrinsic (record-derived) wire fields, in `PostView` order, each mapping a
- * `post_record` row onto its wire value. The keys ARE the wire field names; the
- * readers absorb the `authorName`→`author` rename, the null-timestamp fallback,
- * the `tags` CSV parse, and the `body` vs `bodyExcerpt` source split (the one
- * divergence between the detail-page and feed-summary mappers, selected by
- * `bodySource`).
- */
+// The keys ARE the wire field names, so the readers absorb the `authorName`→`author`
+// rename, the null-timestamp fallback, the CSV parse and the body-source split.
 const intrinsicFields = {
 	id: (p) => p.id,
 	slug: (p) => p.slug,
@@ -70,44 +57,21 @@ type IntrinsicRow = {
 	[K in keyof typeof intrinsicFields]: ReturnType<(typeof intrinsicFields)[K]>;
 };
 
-/**
- * `PostSummaryRow` — the feed/keyset row: the record-derived intrinsic fields
- * plus the `myVote` / `isSaved` viewer scalars that `stampViewerScalars` adds
- * downstream. `updatedAt` and `isDraft` are optional here: the keyset projection
- * (`listPostsKeyset`) and the search projection select a column subset that omits
- * them, while the by-id read (`toPostSummaryRow`) supplies both. The viewer
- * scalars are `undefined` when not requested — never read from the record.
- */
+// `updatedAt` and `isDraft` are optional because the keyset and search projections
+// select a column subset that omits them; the by-id read supplies both.
 export interface PostSummaryRow extends Omit<IntrinsicRow, "updatedAt" | "isDraft"> {
 	updatedAt?: Date;
-	/** Draft (taslak) marker; stamped from `post_record.is_draft` (null = published). */
 	isDraft?: boolean | null;
-	/** Viewer's upvote presence (`true` voted); `undefined`/`null` when not requested or anonymous. */
 	myVote?: boolean | null;
-	/** Viewer's bookmark presence; `undefined` (unset) for reads that don't request it. */
 	isSaved?: boolean | null;
-	/**
-	 * The owner-scoped in-review flag (#2200): `true` iff this post is still sandboxed
-	 * (#1205) AND the viewer is its author, stamped by the read paths via `ownSandboxed`.
-	 * Owner-only by construction, so it never leaks review state to another viewer; a
-	 * read that doesn't stamp it leaves it `undefined` → the shaper defaults `false`.
-	 */
+	// Owner-scoped in-review flag (#2200): true only when the viewer is the author, so
+	// it never leaks review state to anyone else. Unstamped reads leave it `undefined`
+	// and the shaper defaults it false.
 	sandboxed?: boolean;
-	/**
-	 * The author's LIVE handle (`user_profile.username` / `.displayName`), stamped by
-	 * `stampAuthorIdentity` after the batched `getProfileIdentitiesByIds` read (#2139)
-	 * so the client renders the CURRENT display name via `actorLabel`, not the write-time
-	 * `authorName` snapshot (#2126's AC). `undefined` when not requested; `null` when the
-	 * author has no profile/handle — `actorLabel` then degrades to `@username` → fallback.
-	 */
+	// The author's LIVE handle, stamped from a batched profile read so the client shows
+	// the current display name rather than the write-time `authorName` snapshot (#2139).
 	authorUsername?: string | null;
 	authorDisplayName?: string | null;
-	/**
-	 * The reaction aggregate (per-emoji counts + the viewer's own reaction), stamped
-	 * by `stampReactionAggregate` after the batched `user_reaction` read (#1862) —
-	 * `undefined` for reads that don't request it; the shaper fills the empty
-	 * aggregate so the wire field is always present.
-	 */
 	reactions?: ReactionAggregate;
 }
 
@@ -118,23 +82,10 @@ export interface PostConnectionPage {
 	totalCount: number;
 }
 
-/**
- * `PostPage` — the detail-page shape: the intrinsic fields read from the
- * canonical `body`, minus `isDraft` and the viewer scalars (a page read threads
- * `myVote` / `isSaved` in separately at the call site). `updatedAt` is required.
- */
 export type PostPage = Omit<IntrinsicRow, "isDraft">;
 
-/**
- * `PostFields` — the wire shaper's input (`toPost` in `shapers.ts`): the intrinsic
- * wire-named fields a shaper call supplies, derived from this one column→field map
- * so the wire shaper's field set can't drift from the row mappers / `postViewFields`
- * (the third hand-synced restatement #1126 AC#1 collapses). The shaper tolerates the
- * looser write/vote nullability — a fresh write/vote carries no `updatedAt`, and
- * `isDraft` + the `myVote` / `isSaved` viewer scalars are stamped late — so those ride
- * as optional; `tags` widens to a `ReadonlyArray`. The map stays the single source:
- * rename a column reader here and `PostFields` follows, no fourth restatement to sync.
- */
+// The wire shaper's input. Nullability is looser than the row's because a fresh
+// write or vote carries no `updatedAt` and the late-stamped fields are not there yet.
 export type PostFields = Omit<IntrinsicRow, "updatedAt" | "isDraft" | "tags"> & {
 	updatedAt?: Date | null;
 	isDraft?: boolean | null;
@@ -147,16 +98,10 @@ export type PostFields = Omit<IntrinsicRow, "updatedAt" | "isDraft" | "tags"> & 
 	tags: ReadonlyArray<PostTagRow>;
 };
 
-/**
- * The view/wire field selection (`{id: true, …}`) — a static literal (fate's
- * `FateDataView` reads the literal field map off this, so it can't be a
- * dynamically-built object). `satisfies Record<keyof PostSummaryRow, true>` pins
- * the scalar fields to exactly the row's fields: dropping one here (or adding one
- * to `PostSummaryRow` without listing it) is a compile error, so the view stays
- * in lockstep with the row mapper. `tags` and `comments` are non-scalar (`tags`
- * is an embedded-scalar array, `comments` a list relation); the `Omit` over them
- * lets `views.ts` declare those two structurally while pinning the rest.
- */
+// Must stay a static literal — fate's `FateDataView` reads the field map off it, so a
+// dynamically-built object won't do. The `satisfies` is what keeps the view in lockstep
+// with the row: dropping a field here, or adding one to `PostSummaryRow` without
+// listing it, is a compile error.
 export const postViewFields = {
 	id: true,
 	slug: true,
@@ -184,29 +129,14 @@ const fieldKeys = Object.keys(intrinsicFields) as Array<keyof typeof intrinsicFi
 const toRow = (p: PostRecord, bodySource: BodySource): IntrinsicRow =>
 	Object.fromEntries(fieldKeys.map((f) => [f, intrinsicFields[f](p, bodySource)])) as IntrinsicRow;
 
-/**
- * Map a `post_record` row onto the detail `PostPage` (canonical `body`) — the
- * single record→page mapping, shared by `getPost` and the delete-refresh.
- */
 export const toPostPage = (p: PostRecord): PostPage => toRow(p, "body");
 
-/**
- * Map a `post_record` row onto the feed `PostSummaryRow` (feed `bodyExcerpt`) —
- * the single record→summary mapping. `myVote` / `isSaved` are stamped by
- * `stampViewerScalars`, not here.
- */
 export const toPostSummaryRow = (p: PostRecord): PostSummaryRow => toRow(p, "bodyExcerpt");
 
-/**
- * The keyset/feed projection (`listPostsConnection`) selects a column SUBSET of
- * `post_record` — it omits `body`, `updatedAt`, `isDraft` — yet the summary row
- * it builds must agree with the by-id path field-for-field: `body` collapses to
- * `null` for an empty excerpt, not `""` (#1170). The subset is exactly the
- * `bodyExcerpt`-source intrinsic columns, so this routes it through the SAME
- * `intrinsicFields` map (the by-id path's `toPostSummaryRow`), instead of letting
- * the projection hand-sync its own divergent `body`. `updatedAt`/`isDraft` ride
- * as `undefined` — the optional `PostSummaryRow` fields the subset omits.
- */
+// The keyset projection selects a column subset, yet its rows must agree with the
+// by-id path field-for-field — an empty excerpt has to collapse to `null`, not `""`
+// (#1170). So it runs through the same `intrinsicFields` map instead of hand-syncing
+// its own body handling.
 export type PostKeysetRow = Pick<
 	PostRecord,
 	| "id"

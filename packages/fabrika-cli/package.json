@@ -28,6 +28,9 @@
 	},
 	"publishConfig": {
 		"access": "public",
+		"engines": {
+			"node": ">=22.12"
+		},
 		"bin": {
 			"fabrika": "./dist/bin.js"
 		},
@@ -57,7 +60,9 @@
 		"@demlik/tea": "catalog:",
 		"@effect/platform-node": "catalog:",
 		"@playwright/test": "catalog:",
-		"effect": "catalog:"
+		"effect": "catalog:",
+		"fast-xml-parser": "catalog:",
+		"yaml": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",

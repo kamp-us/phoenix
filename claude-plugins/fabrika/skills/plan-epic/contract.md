@@ -208,21 +208,26 @@ bullet**; criteria are `- [ ] ` checkbox rows; a single trailing newline.
 or a comma-separated integer list. The refusal is worth having because **v1** harvested every digit
 run in the value, so `1, 3 (see #4021)` silently claimed a story 4021 no epic declared. The
 downstream gate does not repeat that: it reads a non-conforming value as *absent* and reports it in
-`detail`. Refusing at authoring time is what keeps the two from disagreeing. `**Containment:**`'s **leading keyword** is one of `flag` / `exempt` / `none`, a trailing
+`detail`. Refusing at authoring time is what keeps the two from disagreeing. `**Containment:**`'s **leading keyword** is one the repo's `containmentVocabulary` declares,
+or the reserved `none` (phoenix's set is `flag` / `exempt`); a trailing
 parenthetical is preserved verbatim (`flag (default-off)` is the ordinary form), and the field is
 emitted **only** when the cycle-doc probe reads `present` — v1's documented spec template omitted
 the field entirely while its skill body required it, so an author following the template dropped
 it on every child and the tolerant read made "forgot" indistinguishable from "no cycle doc".
 
-**`## Dependencies` — the rendered block.** Exactly the two line forms `readTopology` parses, and
+**`## Dependencies` — the rendered block.** It is a picture of the plan's shape for a human reader
+and **nothing gates on it**: blockedness sits behind GitHub's native `blocked_by` edges alone
+(#5387, ADR 0301), and `build eligible` stopped parsing this block in #5913. Exactly the two line
+forms `readTopology` parses, and
 nothing else: one `- phase <n>: #<ref>[, #<ref>…]` row per phase, phases ascending and members
 ascending within a row, then one `- #<ref> requires: #<ref>[, #<ref>…]` row per child that declares
-a prerequisite, ascending by subject. There is no `###` heading inside the section, no label column
-and no parenthesized clause — `readTopology` breaks at the first heading of any level
-(`ANY_HEADING_RE`, `packages/fabrika-cli/src/build/dependencies.ts:47,84`), so a `### Phase <n>`
-line would end the scan on the line after `## Dependencies` and the block would read back as zero
-edges: a well-formed, plausible, always-wrong answer the gate then reads as an epic every one of
-whose children is orphaned. The block ends with a trailing blank line so a later heading stays
+a prerequisite, ascending by subject. There is no `###` heading inside the section, no label column,
+no parenthesized clause and no `---` rule — `readTopology` breaks at the first heading of any level
+**or** the first thematic break (`packages/fabrika-cli/src/build/dependencies.ts`), so a `### Phase
+<n>` line would end the scan on the line after `## Dependencies` and the block would read back as
+zero edges: a well-formed, plausible, always-wrong answer the gate then reads as an epic every one
+of whose children is orphaned. The thematic break is the same boundary an appended amendment's
+separator draws, which is why one below the block leaves the block itself intact (#5816). The block ends with a trailing blank line so a later heading stays
 separated. The illustrated block above is the round trip this grammar buys — pasted into
 `readTopology` it parses to the three edges it depicts (`phase 1: #4301, #4302`, `phase 2: #4303`,
 `#4303 requires: #4301`), never the empty set, which is what lets `ledger topology` stage instead of
@@ -368,7 +373,7 @@ carrying `build`'s meanings and are **never reached here** — this skill declar
 `--require-clean` flag, holds no lane branch, pushes nothing, runs no validation, and derives no
 readiness verdict — but carrying them keeps those seats occupied so a later verb here cannot
 re-seat one. **`build`'s `20` and `21` are deliberately NOT re-exported**: this group allocates its
-own `20`–`25`, and re-exporting `OUT_OF_FOCUS`/`AUDIENCE_NOT_AGENT` alongside them would put two
+own `20`–`25`, and re-exporting `OUT_OF_SCOPE`/`AUDIENCE_NOT_AGENT` alongside them would put two
 names on one code in one module, which `allocatedCodes` (`exit-code-alignment.ts:96-105`) reports
 as drift.
 
@@ -393,7 +398,7 @@ it, and the alignment checker is base-only by design (`occupied = allocatedCodes
 | `10` | a value off its closed vocabulary — a semantic refusal, never a malformed-flag usage error | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `11` | a required read failed — nothing was written, no outcome is proven | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `13` | proven: the tree was dirty at a `--require-clean` open (`build`'s meaning, reserved — no `ledger` verb declares that flag) | — | — | — | — | — | — |
-| `15` | proven: this session does not hold the epic's claim (imported from `build`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `15` | proven: this lane does not hold the epic's claim (imported from `build`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `20` | proven: the tree's base is behind `origin/main` | ✓ | — | — | — | — | — |
 | `21` | proven: the epic body moved — the recomputed digest differs from `--body-digest` | — | ✓ | — | — | ✓ | — |
 | `22` | proven: the plan region is unresolvable — a duplicated anchor, or a mode the body contradicts | ✓ | — | — | — | ✓ | — |
@@ -427,7 +432,7 @@ opposite repairs.
 **Invocation**
 
 ```
-fabrika ledger open 4300 [--repo <owner/name>]
+fabrika ledger open 4300 --token <claim-token> [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -435,6 +440,7 @@ fabrika ledger open 4300 [--repo <owner/name>]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the epic being planned |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from (#6060) |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository read |
 
 **Output** — machine. One JSON object:
@@ -487,7 +493,7 @@ call site (#4167) — so the tree is stale by default until shown otherwise.
 | `7` | the epic is proven absent (404) or closed |
 | `10` | the issue is not a `type:epic` |
 | `11` | the epic, its sub-issue list, the backlog read, the cycle-doc probe, or the freshness probe could not be read |
-| `15` | this session does not hold the epic's claim |
+| `15` | this lane does not hold the epic's claim |
 | `20` | the tree's base is proven behind `origin/main` |
 | `22` | the body carries two or more `## Plan (plan-epic)` headings — the run's mode cannot be decided |
 
@@ -498,7 +504,7 @@ call site (#4167) — so the tree is stale by default until shown otherwise.
 | `ledger open: issue #<n> is proven absent or closed.` | 7 | refusal |
 | `ledger open: #<n> is not a type:epic — refusing to plan it.` | 10 | refusal |
 | `ledger open: cannot read <what>: <reason> — the ground is UNKNOWN.` | 11 | refusal |
-| `ledger open: this session does not hold #<n>'s claim.` | 15 | refusal |
+| `ledger open: this lane does not hold #<n>'s claim.` | 15 | refusal |
 | `ledger open: base is <k> commit(s) behind origin/main — a plan derived here is derived on stale ground (#3330).` | 20 | refusal |
 | `ledger open: #<n>'s body carries <k> "## Plan (plan-epic)" headings — the plan mode has no single meaning.` | 22 | refusal |
 
@@ -511,12 +517,12 @@ which is why `outcome: "none"` is an answer and only an unreachable index is `in
 **Examples**
 
 ```
-$ fabrika ledger open 4300
+$ fabrika ledger open 4300 --token <claim-token>
 {"answer":"opened","epic":4300,"run":"4300-7f31a2","mode":"fresh","bodyDigest":"8f2c1a90b4d7","dir":"/w/.fabrika-plan/4300-7f31a2","children":[],"cycleDoc":"present","candidates":{"outcome":"none","items":[]}}
 ```
 
 ```
-$ fabrika ledger open 4300
+$ fabrika ledger open 4300 --token <claim-token>
 ledger open: base is 47 commit(s) behind origin/main — a plan derived here is derived on stale ground (#3330).
 $ echo $?
 20
@@ -542,7 +548,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika ledger draft 4300 --body-digest 8f2c1a90b4d7 <<'EOF'
+fabrika ledger draft 4300 --body-digest 8f2c1a90b4d7 --token <claim-token> <<'EOF'
 ## Plan (plan-epic)
 
 ### Summary
@@ -556,6 +562,7 @@ EOF
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the epic whose plan is staged |
 | `--body-digest` | string, 12 lowercase hex | yes | — | the digest `ledger open` printed; the draft refuses if the epic body has moved since |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from (#6060) |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository read |
 | stdin | markdown | yes | — | the plan block, opening with `## Plan (plan-epic)` |
 
@@ -591,7 +598,7 @@ splices.
 | `7` | the epic is proven absent or closed |
 | `10` | the issue is not a `type:epic`, or `--body-digest` is not 12 lowercase hex |
 | `11` | the epic body or the run directory could not be read |
-| `15` | this session does not hold the epic's claim |
+| `15` | this lane does not hold the epic's claim |
 | `21` | the recomputed body digest differs from `--body-digest` |
 
 **Errors**
@@ -611,7 +618,7 @@ splices.
 | `ledger draft: --body-digest must be 12 lowercase hex — got "<v>".` | 10 | refusal |
 | `ledger draft: #<n> is not a type:epic — refusing to stage a plan for it.` | 10 | refusal |
 | `ledger draft: cannot read <what>: <reason> — nothing was staged.` | 11 | refusal |
-| `ledger draft: this session does not hold #<n>'s claim.` | 15 | refusal |
+| `ledger draft: this lane does not hold #<n>'s claim.` | 15 | refusal |
 | `ledger draft: the epic body moved since open (digest <a> → <b>) — re-open before staging.` | 21 | refusal |
 
 **Scope** — one document on stdin and one epic body read. Zero scope is unreachable: stdin is
@@ -620,12 +627,12 @@ required, and an empty one is `3`.
 **Examples**
 
 ```
-$ fabrika ledger draft 4300 --body-digest 8f2c1a90b4d7 < plan.md
+$ fabrika ledger draft 4300 --body-digest 8f2c1a90b4d7 --token <claim-token> < plan.md
 {"answer":"staged","epic":4300,"document":"plan","sections":10,"stories":[1,2,3],"bytes":4187}
 ```
 
 ```
-$ fabrika ledger draft 4300 --body-digest 8f2c1a90b4d7 < plan.md
+$ fabrika ledger draft 4300 --body-digest 8f2c1a90b4d7 --token <claim-token> < plan.md
 ledger draft: user stories are numbered 1, 2, 4 — a story list must run from 1 with no gaps or repeats.
 $ echo $?
 4
@@ -648,7 +655,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika ledger child 4300 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent [--assignee <login>] [--milestone <title>] [--label <name>]… <<'EOF'
+fabrika ledger child 4300 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent [--assignee <login>] --milestone <title> [--label <name>]… --token <claim-token> <<'EOF'
 **Stories:** 1, 2
 **TDD:** yes
 **Containment:** flag (default-off)
@@ -671,8 +678,9 @@ EOF
 | `--priority` | string, one of `p0`/`p1`/`p2` | yes | — | the child's priority label; `p3` is retired, not admitted |
 | `--ready-for` | string, one of `human`/`agent` | **optional at the parser, refused in the body** | none | the child's audience; an absent value is refused on `10`, never defaulted |
 | `--assignee` | string (login) | no | none | required when `--ready-for human`; born-assignment is the enforced hold |
-| `--milestone` | string (open milestone title) | no | none | the child's home; absent mints an unhomed child the repo's homing guard will red |
+| `--milestone` | string (open milestone title) | **required unless a `--label` carries a standing lane** | none | the child's home; a call naming neither is refused on `10` before any read (#5969) |
 | `--label` | string, repeatable | no | none | any further label, applied in the same create call |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from (#6060) |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
 | stdin | markdown | yes | — | the child body's fields and sections |
 
@@ -693,6 +701,12 @@ applied by a follow-up PATCH — and a follow-up PATCH opens a window in which t
 reads as a permissive default rather than an unknown. v1's own sibling script knows the hazard by
 name and warns that patching a fresh child "reopens the label-less-orphan window".
 
+**A home is required and is never defaulted** (#5969): the call names an open milestone, or a
+`--label` from the claim fence's standing-lane set (`STANDING_LANE_LABELS`, ADR 0208) — a child
+carrying neither is what the fence refuses at exit `20`, so the refusal moves to the mint, where
+nothing has been written yet. The lane set is *imported* from `build/scope-admission.ts`, never
+re-listed here in code: two copies is how the two seams drift into disagreeing about what a home is.
+
 **`--ready-for` is required and has no default** (#4780): a child must never inherit its audience
 by omission. **`--ready-for human` requires `--assignee`** (#4693): the label is the routing
 signal, born-assignment is the enforced hold, and neither substitutes for the other — a label
@@ -708,9 +722,10 @@ link, deliberately** — see step 5.
    `readContainment`, criteria through the imported acceptance-criteria reader — the same readers
    the gate uses, so a body that composes here cannot fail the gate on grammar. A `Malformed` or
    zero-criteria read is `4`. `**Containment:**` is emitted **only** when `run.json`'s `cycleDoc` is
-   `present`; a `type:feature` child whose containment is missing, unset **or `none`** while `cycleDoc` is
-   `present` is `4` — the gate's `MISSING_CONTAINMENT` treats `none` exactly as unset, so admitting
-   it here would author a defect the floor then reds.
+   `present`; a child of a type the repo's `containmentVocabulary` asks, whose containment is off
+   that vocabulary's values — including the reserved `none` — while `cycleDoc` is `present` is `4`.
+   The gate's `MISSING_CONTAINMENT` derives from the same key, so admitting one here would author a
+   defect the floor then reds.
 3. **Vocabulary precondition.** Confirm every label and the milestone exist in the repository.
    `POST .../labels` **creates** an unknown label rather than rejecting it (#4285), and a closed
    milestone is off-vocabulary; refuse on `10` rather than minting taxonomy.
@@ -747,7 +762,7 @@ link, deliberately** — see step 5.
 | Code | Trigger |
 |---|---|
 | `3` | stdin was read and held nothing |
-| `4` | the composed body's fields or sections do not parse: a field line present more than once, a malformed `**Stories:**` value, an absent or malformed `### Acceptance criteria`, zero criteria, or a `type:feature` child whose `**Containment:**` is missing, unset or `none` while `cycleDoc` is `present` |
+| `4` | the composed body's fields or sections do not parse: a field line present more than once, a malformed `**Stories:**` value, an absent or malformed `### Acceptance criteria`, zero criteria, or a child of an asked type whose `**Containment:**` is off the resolved `containmentVocabulary` while `cycleDoc` is `present` |
 | `5` | the composed body carries a machine-local path |
 | `6` | the composed body is a bare `@` path reference |
 | `7` | the epic is proven absent or closed |
@@ -755,7 +770,7 @@ link, deliberately** — see step 5.
 | `9` | the child was created and the re-read does not match what was sent |
 | `10` | a label, `--type`, `--priority`, `--milestone` or `--ready-for` value off its closed vocabulary; `--ready-for` absent; `--ready-for human` without `--assignee`; or the issue is not a `type:epic` |
 | `11` | a precondition read failed — **nothing was created** |
-| `15` | this session does not hold the epic's claim |
+| `15` | this lane does not hold the epic's claim |
 | `23` | the child was created and its sub-issue link could not be proven |
 | `26` | the child was created and the run manifest could not be written — the child exists and this run has no record of it |
 
@@ -767,7 +782,7 @@ link, deliberately** — see step 5.
 | `ledger child: **<field>:** appears <k> times — a child field line has one value, and the gate refuses a duplicate.` | 4 | refusal |
 | `ledger child: **Stories:** value does not conform: "<v>" — bare integers or "none".` | 4 | refusal |
 | `ledger child: acceptance criteria read as <absent\|malformed> — a child with no checkable criteria is not buildable.` | 4 | refusal |
-| `ledger child: type:feature child needs **Containment:** flag or exempt — got "<v>", and the cycle doc is present.` | 4 | refusal |
+| `ledger child: <asked type> child needs **Containment:** <the resolved legal values> — got "<v>", and the cycle doc is present.` | 4 | refusal |
 | `ledger child: the child body carries a machine-local path (<masked>).` | 5 | refusal |
 | `ledger child: the child body carries a bare @ path reference — it cannot be redacted.` | 6 | refusal |
 | `ledger child: issue #<n> is proven absent or closed.` | 7 | refusal |
@@ -777,9 +792,10 @@ link, deliberately** — see step 5.
 | `ledger child: --ready-for human requires --assignee — a held child is born assigned (#4693).` | 10 | refusal |
 | `ledger child: label "<name>" is absent from <repo>'s taxonomy — refusing to create it (#4285).` | 10 | refusal |
 | `ledger child: milestone "<title>" is not an open milestone of <repo>.` | 10 | refusal |
+| `ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built (#5969).` | 10 | refusal |
 | `ledger child: --priority <v> is off the closed set (p0, p1, p2).` | 10 | refusal |
 | `ledger child: cannot read <what>: <reason> — nothing was created.` | 11 | refusal |
-| `ledger child: this session does not hold #<n>'s claim.` | 15 | refusal |
+| `ledger child: this lane does not hold #<n>'s claim.` | 15 | refusal |
 | `ledger child: created #<c> and could not prove the sub-issue link — the child exists, is recorded in the run manifest as linked:false, and is unlinked on GitHub.` | 23 | refusal |
 | `ledger child: created #<c> and could not write the run manifest: <reason> — the child exists and this run holds no record of it.` | 26 | refusal |
 
@@ -790,12 +806,12 @@ scope is unreachable: the verb writes exactly one child or refuses.
 **Examples**
 
 ```
-$ fabrika ledger child 4300 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent --milestone "fabrika campaign" < child.md
+$ fabrika ledger child 4300 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent --milestone "fabrika campaign" --token <claim-token> < child.md
 {"answer":"minted","epic":4300,"child":4301,"linked":true,"observed":{"labels":["p1","ready-for:agent","status:planned","type:feature"],"assignees":[],"milestone":"fabrika campaign"},"stories":[1,2],"containment":"flag"}
 ```
 
 ```
-$ fabrika ledger child 4300 --title "moderation queue triage rules" --type type:feature --priority p1 --ready-for human < child.md
+$ fabrika ledger child 4300 --title "moderation queue triage rules" --type type:feature --priority p1 --ready-for human --token <claim-token> < child.md
 ledger child: --ready-for human requires --assignee — a held child is born assigned (#4693).
 $ echo $?
 10
@@ -824,7 +840,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika ledger topology 4300 <<'EOF'
+fabrika ledger topology 4300 --token <claim-token> <<'EOF'
 #4301 phase 1
 #4302 phase 1
 #4303 phase 2 requires #4301
@@ -836,6 +852,7 @@ EOF
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the epic whose topology is declared |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from (#6060) |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository read |
 | stdin | line grammar | yes | — | one line per child: `#<ref> phase <n> [requires #<a>[, #<b>]…]` |
 
@@ -872,7 +889,7 @@ skill carries (#3709), and the verb does not pretend otherwise.
 | `7` | zero scope: the epic is proven absent or closed, **or the run manifest holds zero children** |
 | `10` | the issue is not a `type:epic`, or a phase number is not a positive integer |
 | `11` | the run manifest or the epic could not be read |
-| `15` | this session does not hold the epic's claim |
+| `15` | this lane does not hold the epic's claim |
 | `24` | the topology is proven invalid: a cycle, a reference to a non-child, a manifest child placed nowhere, or a rendered block that does not parse back to the declared edges |
 
 **Errors**
@@ -891,7 +908,7 @@ skill carries (#3709), and the verb does not pretend otherwise.
 | `ledger topology: #<n> is not a type:epic — refusing to declare a topology for it.` | 10 | refusal |
 | `ledger topology: phase "<v>" is not a positive integer.` | 10 | refusal |
 | `ledger topology: cannot read <what>: <reason> — nothing was staged.` | 11 | refusal |
-| `ledger topology: this session does not hold #<n>'s claim.` | 15 | refusal |
+| `ledger topology: this lane does not hold #<n>'s claim.` | 15 | refusal |
 
 **Scope** — the run manifest's whole child set and every declared line, plus one read of the epic for the shared preconditions. It writes nothing. **Zero scope reds on `7`**:
 an empty manifest means the epic has no children at all — none retained by the seed and none minted since — and rendering a topology over no children
@@ -903,12 +920,12 @@ of calling it defect number one (ADR 0092).
 **Examples**
 
 ```
-$ fabrika ledger topology 4300 < topo.txt
+$ fabrika ledger topology 4300 --token <claim-token> < topo.txt
 {"answer":"staged","epic":4300,"document":"topology","phases":2,"children":3,"edges":[["#4303","#4301"]],"bytes":214}
 ```
 
 ```
-$ fabrika ledger topology 4300 < topo.txt
+$ fabrika ledger topology 4300 --token <claim-token> < topo.txt
 ledger topology: child #4302 is placed in no phase.
 $ echo $?
 24
@@ -931,7 +948,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika ledger write 4300 --body-digest 8f2c1a90b4d7
+fabrika ledger write 4300 --body-digest 8f2c1a90b4d7 --token <claim-token>
 ```
 
 **Inputs**
@@ -940,6 +957,7 @@ fabrika ledger write 4300 --body-digest 8f2c1a90b4d7
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the epic whose body is written |
 | `--body-digest` | string, 12 lowercase hex | yes | — | the digest `ledger open` printed; the write refuses if the body has moved since |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from (#6060) |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
 
 **Output** — machine.
@@ -989,7 +1007,7 @@ every byte outside it.
 | `9` | the body was written and does not read back as composed |
 | `10` | the issue is not a `type:epic`, or `--body-digest` is not 12 lowercase hex |
 | `11` | the epic body or the run directory could not be read — **nothing was written** |
-| `15` | this session does not hold the epic's claim |
+| `15` | this lane does not hold the epic's claim |
 | `21` | the recomputed body digest differs from `--body-digest` |
 | `22` | the plan region is unresolvable: a duplicated anchor, or a mode the body contradicts |
 | `25` | `plan.md` or `topology.md` was never staged in this run |
@@ -1008,7 +1026,7 @@ every byte outside it.
 | `ledger write: #<n> is not a type:epic — refusing to write a plan into it.` | 10 | refusal |
 | `ledger write: issue #<n> is proven absent or closed.` | 7 | refusal |
 | `ledger write: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
-| `ledger write: this session does not hold #<n>'s claim.` | 15 | refusal |
+| `ledger write: this lane does not hold #<n>'s claim.` | 15 | refusal |
 
 **Scope** — one epic body read, one PATCH, one confirming read. Zero scope is unreachable: the
 staged documents are required and their absence is `25`.
@@ -1016,12 +1034,12 @@ staged documents are required and their absence is `25`.
 **Examples**
 
 ```
-$ fabrika ledger write 4300 --body-digest 8f2c1a90b4d7
+$ fabrika ledger write 4300 --body-digest 8f2c1a90b4d7 --token <claim-token>
 {"answer":"written","epic":4300,"mode":"fresh","bodyDigest":"8f2c1a90b4d7","newDigest":"c41b7e0a91f6","planBytes":4187,"topologyBytes":214,"verified":true}
 ```
 
 ```
-$ fabrika ledger write 4300 --body-digest 8f2c1a90b4d7
+$ fabrika ledger write 4300 --body-digest 8f2c1a90b4d7 --token <claim-token>
 ledger write: topology.md was never staged in this run — stage it before writing.
 $ echo $?
 25
@@ -1051,7 +1069,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika ledger supersede 4300 --child 4288 --reason "folded into the loader slice"
+fabrika ledger supersede 4300 --child 4288 --reason "folded into the loader slice" --token <claim-token>
 ```
 
 **Inputs**
@@ -1061,6 +1079,7 @@ fabrika ledger supersede 4300 --child 4288 --reason "folded into the loader slic
 | `<number>` | positional integer | yes | — | the parent epic |
 | `--child` | integer | yes | — | the child being retired |
 | `--reason` | string | yes | — | why it is retired; posted as the journal comment |
+| `--token` | string | yes | — | the claim token `build claim <epic> --purpose plan` printed — which lane is asking, and the nonce the run key is derived from (#6060) |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
 
 **Output** — machine.
@@ -1099,7 +1118,7 @@ exists for, so the refusal narrows to the minted set rather than the whole manif
 | `9` | the legs landed and the child does not read back closed and unlinked |
 | `10` | the issue is not a `type:epic`; `--child` is not a sub-issue of it; or `--child`'s manifest line carries `"mintedThisRun":true` |
 | `11` | a precondition read failed — **nothing was written** |
-| `15` | this session does not hold the epic's claim |
+| `15` | this lane does not hold the epic's claim |
 
 **Errors**
 
@@ -1114,7 +1133,7 @@ exists for, so the refusal narrows to the minted set rather than the whole manif
 | `ledger supersede: #<c> was minted by this run — refusing to supersede a child of the current plan.` | 10 | refusal |
 | `ledger supersede: #<n> is not a type:epic.` | 10 | refusal |
 | `ledger supersede: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
-| `ledger supersede: this session does not hold #<n>'s claim.` | 15 | refusal |
+| `ledger supersede: this lane does not hold #<n>'s claim.` | 15 | refusal |
 
 **Scope** — one child: one comment, one unlink, one close, one confirming read. Zero scope is
 unreachable: `--child` is required.
@@ -1122,12 +1141,12 @@ unreachable: `--child` is required.
 **Examples**
 
 ```
-$ fabrika ledger supersede 4300 --child 4288 --reason "folded into the loader slice"
+$ fabrika ledger supersede 4300 --child 4288 --reason "folded into the loader slice" --token <claim-token>
 {"answer":"superseded","epic":4300,"child":4288,"comment":5230661234,"unlinked":true,"state":"closed"}
 ```
 
 ```
-$ fabrika ledger supersede 4300 --child 4301 --reason "no longer needed"
+$ fabrika ledger supersede 4300 --child 4301 --reason "no longer needed" --token <claim-token>
 ledger supersede: #4301 was minted by this run — refusing to supersede a child of the current plan.
 $ echo $?
 10
@@ -1145,21 +1164,6 @@ $ echo $?
 
 ---
 
-## Required repo files (verb-level)
-
-The skill's own table ([SKILL.md](SKILL.md)) carries the run-level rows; these are the reads and
-writes this contract's verbs make, so an implementer sees the dependency set in one place.
-Vocabulary: **fail-loud** / **degrade** / **bootstrap** (front-door, #4952).
-
-| Must exist | Why | When missing |
-| --- | --- | --- |
-| A `type:epic` issue, open | every verb's subject | **fail-loud** — exit `7` / `10` naming the gap. |
-| A git checkout with a reachable `origin/main` | the run directory lives in it, and `ledger open` proves freshness there | **fail-loud** — `11` at any `ledger` verb whose tree root will not read, and `13` from `build tree` at step 1; an unprovable freshness read is `11`, never `20`. |
-| Labels `status:planned`, `ready-for:human`, `ready-for:agent`, `type:*`, `p0`/`p1`/`p2` | every child is born carrying them | **fail-loud** — `ledger child` exits `10` rather than creating a label (#4285); taxonomy creation is the front door's. |
-| At least one open milestone, or a standing-lane exemption | `--milestone` is validated against the open set | **degrade** — a child is minted unhomed; the repo's own homing guard reds it at the labelling seam. This contract computes no second answer. |
-| `product-development-cycle.md` at the repo root | decides whether `**Containment:**` is required | **degrade** — *absent* means containment is not required; an *unreadable* probe is `11`. Never silently dropped. |
-| The `<!-- fabrika:enriched … -->` marker on the epic body | `ledger write` resolves the plan region by it | **degrade** — a body with no marker is treated as `fresh` and the plan is appended; the marker is what makes a *re-plan* resolvable, and its absence on a re-plan is `22`. |
-| Repository permissions readable | `build claim`'s ACL-sourced ownership resolution (ADR 0055) | **fail-loud** — as declared in [`build`'s contract](../build/contract.md); an unreadable permission is `Unknown`, never a demotion. |
 
 ---
 

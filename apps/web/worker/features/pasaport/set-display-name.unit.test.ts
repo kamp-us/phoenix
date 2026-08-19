@@ -1,20 +1,11 @@
 /**
- * `Pasaport.setDisplayName` — the görünen-ad write-through (#2154). The load-bearing
- * correctness concern is LOCKSTEP: the better-auth field the settings surface reads
- * (`user.name`) and the stamped column every author byline reads
- * (`user_profile.display_name`) move in ONE atomic D1 batch, so they can never
- * diverge — the one-shot-sync defect this closes (display_name was written only at
- * `setUsername`-time and never re-synced).
+ * `Pasaport.setDisplayName` — the görünen-ad write-through. The load-bearing concern is
+ * LOCKSTEP: the better-auth field the settings surface reads (`user.name`) and the stamped
+ * column every author byline reads (`user_profile.display_name`) move in ONE atomic D1
+ * batch, so they can never diverge — the one-shot-sync defect this closes.
  *
- * Proven by rendering the batch's `.toSQL()` over a no-op D1 (the
- * `promotion-sweep.unit.test.ts` idiom) — no engine, so this is a unit test; the
- * execute-and-read-back byline convergence over real D1 is the integration tier
- * (`tests/integration/pasaport.test.ts`).
- *
- * This test fails WITHOUT the write-through: with no `setDisplayName` the service
- * shape doesn't compile, and a write that touched only `user.name` (the old
- * `authClient.updateUser` path) would emit a single statement, never the
- * `user_profile.display_name` write this pins.
+ * Proven by rendering the batch's `.toSQL()` over a no-op D1; the execute-and-read-back
+ * convergence over real D1 is the integration tier.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -29,8 +20,7 @@ import {
 import {DisplayNameEmpty} from "./errors.ts";
 import {type BetterAuthInstance, makePasaportLive, Pasaport} from "./Pasaport.ts";
 
-// A real drizzle client over a no-op D1 — used ONLY to render the batch statements'
-// `.toSQL()`; it never executes (the `promotion-sweep.unit.test.ts` renderer).
+// A real drizzle client over a no-op D1, used ONLY to render `.toSQL()`; it never executes.
 // biome-ignore lint/plugin: `D1Database` is a host binding that can't be structurally constructed in a fake; nothing here executes against it.
 const noopD1 = {
 	prepare: () => ({
@@ -58,9 +48,8 @@ const renderDb = drizzle(noopD1, {relations});
 
 const inertAuth = {} as BetterAuthInstance;
 
-// A `run` that replays the single `user.findFirst` read the method makes before the
-// batch, and a `batch` that captures the rendered statements. `existingUser` scripts
-// the pre-read (null ⇒ the UserNotFound path, which never reaches the batch).
+// Replays the single pre-batch `user.findFirst` read and captures the rendered batch
+// statements. `existingUser` scripts that read (null ⇒ the UserNotFound path, no batch).
 function capturing(
 	existingUser: {id: string; username: string | null; image: string | null} | null,
 ): {
@@ -113,9 +102,8 @@ describe("Pasaport.setDisplayName — lockstep display-name write-through (#2154
 			assert.match(u, /"name"\s*=\s*\?/);
 			assert.include(userUpdate.params as unknown[], "Yeni Ad");
 
-			// Statement 1: the STAMPED column every author byline reads — the write that
-			// was missing before this fix. An upsert (insert…on conflict) so a user with
-			// no profile row still gets a populated display_name.
+			// Statement 1: the STAMPED column every author byline reads — the write that was missing
+			// before this fix. An upsert, so a user with no profile row still gets a display_name.
 			const p = profileUpsert.sql.toLowerCase();
 			assert.match(p, /insert\s+into\s+"user_profile"/);
 			assert.match(p, /on\s+conflict/);

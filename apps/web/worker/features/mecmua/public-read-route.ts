@@ -1,16 +1,10 @@
 /**
- * `GET /fate/mecmua/post/:slug` (#2498, epic #2467) — the PUBLIC read of a single
- * published mecmua post, by slug or id. A raw `HttpRouter.add` route following the
- * anonymous-read idiom of `features/pano/base-feed-route.ts`: it never validates a
- * session and never reads `CurrentUser`, so an anon GET does zero identity work. It
- * reads the `anonymousMecmuaViewer` and applies `mecmuaPostVisibleWhere` (#2496), so a
- * draft (null `published_at`) is masked from the public — only published posts are
- * readable, no auth required. See `.patterns/alchemy-http-router.md`.
+ * `GET /fate/mecmua/post/:slug` (#2498) — the PUBLIC read of a single published mecmua
+ * post, by slug or id. It never validates a session and never reads `CurrentUser`, so an
+ * anon GET does zero identity work; a draft is masked by `mecmuaPostVisibleWhere` (#2496).
+ * See `.patterns/alchemy-http-router.md`.
  *
- * Dark behind `MECMUA_PUBLIC_READ` (default-off): with the flag off the route 404s, so
- * the whole surface ships dark until a human flips the flag at release (ADR 0083). The
- * flag is read under the anonymous flags context (no identity), so the gate itself does
- * no session work either.
+ * Dark behind `MECMUA_PUBLIC_READ` (default-off, ADR 0083): flag off ⇒ 404.
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import {and, eq, or, type SQL} from "drizzle-orm";
@@ -30,10 +24,8 @@ import {anonymousMecmuaViewer, mecmuaPostVisibleWhere} from "./MecmuaPostVisibil
 import {type MecmuaPostRow, toMecmuaPostRow} from "./post-fields.ts";
 
 /**
- * The WHERE for the public read: match the requested key against slug OR id, gated by
- * the `mecmuaPostVisibleWhere` anonymous-visibility clause (#2496) — `published_at is
- * not null`, with NO `author_id = :viewer` ownership escape (there is no viewer). So a
- * draft is never disclosed publicly, whichever key names it.
+ * Deliberately NO `author_id = :viewer` ownership escape — there is no viewer here, so a
+ * draft is never disclosed publicly whichever key names it (#2496).
  */
 export const mecmuaPublicReadWhere = (key: string): SQL | undefined =>
 	and(
@@ -44,11 +36,7 @@ export const mecmuaPublicReadWhere = (key: string): SQL | undefined =>
 		),
 	);
 
-/**
- * Read the single published mecmua post named by `key` (slug or id), or null when no
- * published post matches (a draft, or a genuine miss — both mask to null, which the
- * route renders as a 404).
- */
+/** A draft and a genuine miss both mask to null, which the route renders as a 404. */
 export const readPublishedMecmuaPost = (
 	run: DrizzleAccessOrDie["run"],
 	key: string,
@@ -60,10 +48,8 @@ export const readPublishedMecmuaPost = (
 export const handleMecmuaPublicRead = Effect.gen(function* () {
 	const raw = yield* Cloudflare.Request;
 
-	// The dark-ship gate, evaluated under the ANONYMOUS flags context so it reads no
-	// session — an anon GET does zero identity work even to decide the flag. Off ⇒ 404,
-	// the shipped-dark default; in local dev the `phoenix_flag_overrides` cookie can
-	// force it on (#622).
+	// Evaluated under the ANONYMOUS flags context, so an anon GET does zero identity work
+	// even to decide the flag.
 	const flags = yield* Flags;
 	const flagsContext = yield* makeRequestFlagsContext(
 		anonymousFlagsContext,

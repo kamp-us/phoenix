@@ -1,9 +1,4 @@
-/**
- * `CurrentActorLive` derivation (ADR 0107 §5): anonymous session → `Unauthenticated`,
- * a signed-in account → `Human` keyed by its id, NEVER an `Agent` (v1 humans-only).
- * `currentActorContext` packages that actor into the per-request `CurrentActor`
- * value the fate-effect seam fulfills.
- */
+/** `CurrentActorLive` derivation (ADR 0107 §5). Never an `Agent` — v1 is humans-only. */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentActor} from "@kampus/authz";
 import type {CurrentUserInfo} from "@kampus/fate-effect";

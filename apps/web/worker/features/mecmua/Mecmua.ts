@@ -1,22 +1,11 @@
 /**
- * `Mecmua` — the mecmua long-form write service (#2497, epic #2467, #2463). The
- * domain-object home for the two write acts, reached only through the `Drizzle` seam
- * and dying on infra errors via `orDieAccess` (the `Report`/`Pano` service idiom):
- * validation + the DB write live here, never in the fate resolver (ADR 0013).
+ * `Mecmua` — the mecmua long-form write service (epic #2467). Validation + the DB write
+ * live here, never in the fate resolver (ADR 0013).
  *
- * Two acts:
- *   - {@link MecmuaService.saveDraft} — insert a NEW draft row (`publishedAt = null`).
- *     Multiple drafts per author are allowed (the deliberate divergence from pano's
- *     one-draft-per-author partial-unique index, #2463), so this always inserts a
- *     fresh id — never a probe-then-upsert.
- *   - {@link MecmuaService.publish} — stamp `publishedAt` on the caller's own draft
- *     (the yazar-floored act, gated at the mutation by `PublishMecmua`). The write is
- *     scoped `where id = ? AND author_id = ?`, so a yazar can only publish their OWN
- *     draft; a miss is {@link MecmuaPostNotFound}.
- *
- * There is no `authorName` column — the byline is the LIVE identity resolved from
- * `authorId` at read time (#2463), so a publish stamps only `publishedAt`; the byline
- * follows the author's current identity, never a snapshot.
+ * Multiple drafts per author are allowed — the deliberate divergence from pano's
+ * one-draft-per-author unique index (#2463) — so `saveDraft` always inserts a fresh id.
+ * There is no `authorName` column either: the byline is the LIVE identity resolved from
+ * `authorId` at read time, never a snapshot.
  */
 
 import {id} from "@usirin/forge";
@@ -40,9 +29,7 @@ import {anonymousMecmuaViewer, mecmuaPostVisibleWhere} from "./MecmuaPostVisibil
 import {MECMUA_FEED_ORDERING, MECMUA_MINE_ORDERING} from "./ordering.ts";
 import {type MecmuaPostRow, toMecmuaPostRow} from "./post-fields.ts";
 
-// The write-path input ids carry their brands (MecmuaPostId / UserId) so a
-// transposed `{id, authorId}` is a compile error at the resolver call site — the
-// brands are type-only, so the DB where/values still see plain strings (#2700).
+// Branded ids so a transposed `{id, authorId}` is a compile error at the call site (#2700).
 export interface SaveMecmuaDraftInput {
 	authorId: UserId;
 	/** Optional on a draft — a half-filled form persists (empty ⇒ stored as ""). */
@@ -52,7 +39,6 @@ export interface SaveMecmuaDraftInput {
 }
 
 export interface PublishMecmuaInput {
-	/** The draft to publish. */
 	id: MecmuaPostId;
 	/** The caller — the write is scoped to their OWN draft. */
 	authorId: UserId;
@@ -60,30 +46,24 @@ export interface PublishMecmuaInput {
 
 /** One reader→author subscription edge (#2500). */
 export interface MecmuaSubscriptionInput {
-	/** The reader who follows. */
 	subscriberId: UserId;
-	/** The author followed. */
 	authorId: UserId;
 }
 
-/** The subscribed-author feed page request — `subscriberId` + forward keyset window. */
 export interface MecmuaFeedInput {
 	subscriberId: string;
 	first?: number;
 	after?: string | null;
 }
 
-/** The author's own-posts page request (#2544) — `authorId` + forward keyset window. */
 export interface MecmuaOwnPostsInput {
 	authorId: string;
 	first?: number;
 	after?: string | null;
 }
 
-/** A forward page of the subscribed-author feed — plain `MecmuaPostRow`s, keyset-ordered. */
 export type MecmuaFeedPage = KeysetPage<MecmuaPostRow>;
 
-/** The feed page size default + clamp bound (mirrors the pano feed clamp). */
 const FEED_DEFAULT_FIRST = 20;
 const FEED_MAX_FIRST = 100;
 
@@ -95,34 +75,28 @@ export class Mecmua extends Context.Service<
 			input: PublishMecmuaInput,
 		) => Effect.Effect<MecmuaPostRow, MecmuaPostNotFound | MecmuaTitleRequired>;
 
-		/** Follow an author (#2500). Idempotent — a re-subscribe is a no-op, never a dup row. */
+		/** Idempotent — a re-subscribe is a no-op, never a dup row. */
 		readonly subscribe: (input: MecmuaSubscriptionInput) => Effect.Effect<void>;
 
-		/** Unfollow an author (#2500). A miss is a no-op. */
+		/** A miss is a no-op. */
 		readonly unsubscribe: (input: MecmuaSubscriptionInput) => Effect.Effect<void>;
 
-		/** The author ids a reader is subscribed to — the feed's author-selection edge read. */
 		readonly listSubscribedAuthorIds: (
 			subscriberId: string,
 		) => Effect.Effect<ReadonlyArray<string>>;
 
-		/** Whether `subscriberId` follows `authorId` — the subscribe-affordance state read (#2527). */
 		readonly isSubscribed: (subscriberId: UserId, authorId: UserId) => Effect.Effect<boolean>;
 
 		/**
-		 * The subscribed-author time feed (#2500): a forward keyset page of PUBLISHED
-		 * mecmua posts from the reader's subscribed authors, ordered `publishedAt desc, id
-		 * desc` (newest-first). Drafts never appear (the `MecmuaPostVisibility` published
-		 * mask); a reader with no subscriptions gets an empty page.
+		 * The subscribed-author time feed (#2500), newest-first. Drafts never appear; a
+		 * reader with no subscriptions gets an empty page.
 		 */
 		readonly listFeedConnection: (input: MecmuaFeedInput) => Effect.Effect<MecmuaFeedPage>;
 
 		/**
-		 * The author's OWN posts (#2544): a forward keyset page of the caller's posts —
-		 * BOTH drafts (`publishedAt is null`) and published — ordered `createdAt desc, id
-		 * desc` (newest-started first). This is the PRIVATE complement of the draft-masked
-		 * public reads: it is scoped `where author_id = ?`, so only the caller's own rows
-		 * ever resolve and no other author's drafts are exposed.
+		 * The author's OWN posts (#2544), drafts included — the PRIVATE complement of the
+		 * draft-masked public reads. Scoped `where author_id = ?`, so no other author's
+		 * drafts are ever exposed.
 		 */
 		readonly listOwnPostsConnection: (input: MecmuaOwnPostsInput) => Effect.Effect<MecmuaFeedPage>;
 	}
@@ -130,8 +104,7 @@ export class Mecmua extends Context.Service<
 
 export const MecmuaLive = Layer.effect(Mecmua)(
 	Effect.gen(function* () {
-		// `orDieAccess`: every internal DB call dies on `DrizzleError` (infra failures are
-		// defects, `.patterns/effect-errors.md`), so method signatures carry domain errors only.
+		// `orDieAccess`: see .patterns/effect-errors.md.
 		const {run} = orDieAccess(yield* Drizzle);
 
 		const saveDraft = Effect.fn("Mecmua.saveDraft")(function* (input: SaveMecmuaDraftInput) {
@@ -152,8 +125,8 @@ export const MecmuaLive = Layer.effect(Mecmua)(
 		});
 
 		const publish = Effect.fn("Mecmua.publish")(function* (input: PublishMecmuaInput) {
-			// Ownership-scoped read: only the caller's OWN row resolves, so a yazar can't
-			// publish another author's draft (a foreign/absent id is MECMUA_POST_NOT_FOUND).
+			// Ownership-scoped: a foreign or absent id is `MecmuaPostNotFound`, so a yazar
+			// can't publish another author's draft.
 			const existing = yield* run((db) =>
 				db.query.mecmuaPost.findFirst({
 					where: {id: input.id, authorId: input.authorId},
@@ -180,8 +153,7 @@ export const MecmuaLive = Layer.effect(Mecmua)(
 		});
 
 		const subscribe = Effect.fn("Mecmua.subscribe")(function* (input: MecmuaSubscriptionInput) {
-			// Idempotent: the (subscriber, author) primary key makes a re-subscribe a no-op
-			// rather than a duplicate-key failure — one follow edge, at most.
+			// The (subscriber, author) primary key makes a re-subscribe a no-op.
 			yield* run((db) =>
 				db
 					.insert(schema.mecmuaSubscription)
@@ -245,20 +217,19 @@ export const MecmuaLive = Layer.effect(Mecmua)(
 			const after = input.after ?? null;
 
 			const authorIds = yield* listSubscribedAuthorIds(input.subscriberId);
-			// No subscriptions ⇒ no feed. Short-circuit before any post read (and avoid an
-			// empty `IN ()`), returning the shared empty page.
+			// Short-circuit before any post read, and avoid an empty `IN ()`.
 			if (authorIds.length === 0) return emptyKeysetPage satisfies MecmuaFeedPage;
 
-			// The published mask (drafts excluded for everyone, author included) reused from
-			// `MecmuaPostVisibility` against the anonymous viewer — a feed is a reading surface.
+			// The anonymous viewer even for the subscriber: a feed is a reading surface, so
+			// drafts are excluded for everyone including their own author.
 			const publishedWhere = mecmuaPostVisibleWhere(
 				{publishedAt: schema.mecmuaPost.publishedAt, authorId: schema.mecmuaPost.authorId},
 				anonymousMecmuaViewer,
 			);
 			const baseWhere = and(inArray(schema.mecmuaPost.authorId, authorIds), publishedWhere);
 
-			// Resolve the `after` cursor to its `publishedAt` anchor, gated by the SAME
-			// published mask so a cursor naming a now-draft/absent row misses → empty page.
+			// Gated by the SAME published mask, so a cursor naming a now-draft or absent row
+			// misses → empty page.
 			const resolvedRow = after
 				? ((yield* run((db) =>
 						db
@@ -272,8 +243,8 @@ export const MecmuaLive = Layer.effect(Mecmua)(
 			if (cursor.kind === "miss") return emptyKeysetPage satisfies MecmuaFeedPage;
 			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
 
-			// Predicate + `orderBy` both derive from `MECMUA_FEED_ORDERING`; the opaque `id`
-			// cursor value is the `after` string (the anchor row carries only `publishedAt`).
+			// The opaque `id` cursor value is the `after` string — the anchor row carries
+			// only `publishedAt`.
 			const cursorPredicate = keysetAfter(
 				keysetKeys(MECMUA_FEED_ORDERING, (field) =>
 					field === "id" ? after : (cursorRow?.publishedAt ?? null),
@@ -289,9 +260,8 @@ export const MecmuaLive = Layer.effect(Mecmua)(
 					.limit(first + 1),
 			);
 
-			// The published-mask + ordering are enforced authoritatively in JS here (the SQL
-			// above mirrors them for an index-friendly pre-filter), so the feed's two ACs hold
-			// on the served path, not only in the query planner — see `feed-selection.ts`.
+			// The mask + ordering are enforced authoritatively here, not in the query planner;
+			// the SQL above only mirrors them as an index-friendly pre-filter.
 			const selected = selectMecmuaFeed(fetched.map(toMecmuaPostRow), new Set(authorIds));
 			return forwardPage(selected, first, (r) => r.id) satisfies MecmuaFeedPage;
 		});
@@ -302,14 +272,11 @@ export const MecmuaLive = Layer.effect(Mecmua)(
 			const first = Math.max(1, Math.min(input.first ?? FEED_DEFAULT_FIRST, FEED_MAX_FIRST));
 			const after = input.after ?? null;
 
-			// Own posts only — `author_id = ?` includes drafts (null `publishedAt`), so no
-			// visibility mask is applied: the author always sees their own rows, and the
-			// scoping guarantees another author's rows never resolve (rides the
-			// `mecmua_post_author_created` index).
+			// No visibility mask deliberately: the author scope is what keeps other authors'
+			// rows out, and drafts (null `publishedAt`) must stay in.
 			const baseWhere = eq(schema.mecmuaPost.authorId, input.authorId);
 
-			// Resolve the `after` cursor to its `createdAt` anchor, gated by the SAME author
-			// scope so a cursor naming a foreign/absent row misses → empty page.
+			// Gated by the SAME author scope, so a cursor naming a foreign row misses.
 			const resolvedRow = after
 				? ((yield* run((db) =>
 						db

@@ -28,9 +28,9 @@ makes the implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4
 | Verb | Purpose | Split test |
 |---|---|---|
 | `triage queue` | the claimable `status:needs-triage` queue, with the count it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
-| `triage claim` | take a session-scoped claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
+| `triage claim` | take one lane's claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
 | `triage provenance` | was this issue reported by an agent or hand-typed by a human | a structural marker test over a fetched body, plus a membership test over the configured operator set — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
-| `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes | the join and the open-milestone filter are mechanical; picking which home fits is judgment |
+| `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes, with every `active` campaign's milestone marked `running` | the join, the open-milestone filter and reading the campaigns table are mechanical; picking which home fits, and whether an exception applies, is judgment |
 | `triage split` | create one split child, once, keyed on the parent back-reference | idempotency keyed on a durable reference is mechanical; deciding a report *is* a bundle is judgment |
 | `triage enrich` | replace the body with your rewrite — or, for an epic, your pitch — over a preserved, leak-redacted original | envelope assembly, redaction and read-back are mechanical; what the rewrite says is judgment |
 | `triage apply` | apply the whole triaged transition — type, priority, audience, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
@@ -77,22 +77,23 @@ exists every fabrika skill's rejections live inline like these.
 - **A `resolve-repo` verb.** v1's exists only to feed hand-rolled `gh api` calls in the skill body.
   This skill has no such surface: repo resolution is a shared input on every verb below.
 
-### The name collision with v1's `triage` is live, not dormant
+### The name collision with v1's `triage` — live while v1 stood, retired with it
 
-**A skill named `triage` already exists** at `claude-plugins/kampus-pipeline/skills/triage/`, it is
-model-invoked, and its six triggers are near-identical to this one's. The `/report` contract recorded
-the analogous collision as "dormant only by configuration — `.claude/settings.json` has
-`"kampus-pipeline@kampus": false`". **That reasoning does not hold.** `.claude/skills` is a symlink to
-`claude-plugins/kampus-pipeline/skills`, so v1's skills load as *project-level* skills and the plugin
-toggle does not stop them: a live session's roster carries both `adr` and `fabrika:adr`, and both
-`report` and `fabrika:report`. Settled by [ADR 0255](../../../../.decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md)
+**A skill named `triage` existed** at `claude-plugins/kampus-pipeline/skills/triage/` until the v1
+plugin's retirement (ADR 0303, #5937); it was model-invoked, and its six triggers were
+near-identical to this one's. The `/report` contract recorded the analogous collision as "dormant
+only by configuration — `.claude/settings.json` has `"kampus-pipeline@kampus": false`". **That
+reasoning did not hold.** `.claude/skills` was a symlink to `claude-plugins/kampus-pipeline/skills`,
+so v1's skills loaded as *project-level* skills and the plugin toggle did not stop them: a live
+session's roster carried both `adr` and `fabrika:adr`, and both `report` and `fabrika:report`.
+Settled by [ADR 0255](../../../../.decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md)
 (filed as #4829); the adjacent routing-pin half is #4761.
 
-What the ADR measured sharpens this: the two never share a name — the loader namespaces plugin
-skills, so the bare `triage` is always v1's. What overlaps is the **description**, and this pair's
-overlap is the corpus's worst (same plugin-relative role, nearly identical triggers). So the stated
-mitigation is the right one, and it has to be load-bearing here. Two things follow, and neither is
-optional:
+What the ADR measured sharpens this: the two never shared a name — the loader namespaces plugin
+skills, so the bare `triage` was always v1's. What overlapped was the **description**, and this
+pair's overlap was the corpus's worst (same plugin-relative role, nearly identical triggers). So
+the stated mitigation was the right one, and it stays load-bearing as description discipline even
+with the collision gone. Two things follow, and neither is optional:
 
 - **This skill is model-invoked deliberately** (conventions §3): triage must fire when someone says
   "triage the queue" without naming a plugin, and other skills must be able to reach it. It therefore
@@ -160,6 +161,8 @@ or the search index could not be read
 | `13` | refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ |
 | `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — |
 | `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — |
+| `17` | refused: a live claim marker on the target names a session other than this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -362,7 +365,7 @@ $ fabrika triage queue --json
 **Invocation**
 
 ```
-fabrika triage claim 4312 [--ttl-minutes <n>] [--repo <owner/name>] [--json]
+fabrika triage claim 4312 [--token <claim-token>] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -370,35 +373,53 @@ fabrika triage claim 4312 [--ttl-minutes <n>] [--repo <owner/name>] [--json]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the issue number to claim |
-| `--ttl-minutes` | integer | no | `60` | how long an existing claim marker stays binding before it is treated as abandoned |
+| `--token` | string | no | mint a new lane | the token a previous claim handed THIS lane — re-enter it rather than minting a second |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
-**Output** — machine channel. One line: `won`, or `lost\t<holder-session-id>`. **Both are proven
-answers and both exit 0**, with the discriminator in the state word — the same three-outcome shape
-`report dedup` already uses. A losing claim is something this verb *determined*, not something that
-prevented it from answering, so seating it on a non-zero code would contradict the shared rule that a
-non-zero exit is UNKNOWN and would make "another sweep holds it" indistinguishable from "the verb is
-broken".
+**Output** — machine channel. One line: `won\t<claim-token>`, or `lost\t<holder-session-id>`. **Both
+are proven answers and both exit 0**, with the discriminator in the state word — the same
+three-outcome shape `report dedup` already uses. A losing claim is something this verb *determined*,
+not something that prevented it from answering, so seating it on a non-zero code would contradict the
+shared rule that a non-zero exit is UNKNOWN and would make "another sweep holds it"
+indistinguishable from "the verb is broken".
 
-With `--json`, an object with keys `outcome` (`won` / `lost`), `session` (this session's id),
-`holder` (the winning session id, `null` on `won`), `markers` (count of live markers considered), and
-`expired` (count discarded as older than the TTL).
+With `--json`, an object with keys `outcome` (`won` / `lost`), `session` (this session's id), `token`
+(this lane's claim token), `holder` (the winning session id, `null` on `won`), `holderLane` (the
+winning lane's nonce, `null` on `won` or when the winner is a pre-#6132 marker), `markers` (count of
+live markers considered), and `expired` (count discarded as older than the TTL).
+
+**A claim names a lane, not a session.** One fan-out runs several triagers under one
+`$CLAUDE_CODE_SESSION_ID`, so a marker stamped with the session alone cannot tell two of them apart:
+on 2026-08-18 two siblings each read the other's marker back as their own, both answered `won`, and
+both wrote the issue ([#6132](https://github.com/kamp-us/phoenix/issues/6132)). The lane is a token,
+`triage:<session-id>:<uuid>` — the same shape and the same nonce rule the `build` namespace resolves
+ownership by ([#6037](https://github.com/kamp-us/phoenix/issues/6037)), in its own namespace so the
+two never collide. A run with no `--token` mints one and races under its nonce; a run that passes the
+token it was handed re-enters the lane it already holds.
 
 **The marker literal.** A claim is one issue comment whose body is exactly:
 
 ```
-<!-- fabrika-triage-claim session=<session-id> -->
+<!-- fabrika-triage-claim session=<session-id> lane=<nonce> -->
 ```
 
 One line, no surrounding prose, so a marker is matched by an exact prefix rather than by parsing
-human text. `<session-id>` is the verbatim value of `$CLAUDE_CODE_SESSION_ID`. Any comment not
-matching that prefix is not a marker and is ignored.
+human text. `<session-id>` is the verbatim value of `$CLAUDE_CODE_SESSION_ID`; `<nonce>` is the first
+8 hex of the claim token's UUID. Any comment not matching that prefix is not a marker and is ignored.
+A marker carrying no `lane=` field is a pre-#6132 claim: it is counted, it ages out on the same TTL,
+and every lane reads it as **another** claimant's — never as its own.
 
 **The ordering key is the comment's `created_at` as returned by GitHub**, never a timestamp embedded
 in the marker text: the body is caller-supplied and a caller could backdate itself into winning every
-race. "Older than `--ttl-minutes`" is measured against that same `created_at`. Earliest surviving
-marker wins.
+race. "Older than the TTL" is measured against that same `created_at`. Earliest surviving marker
+wins.
+
+**The TTL is a fixed 60 minutes and there is no flag for it.** A marker carries no TTL of its own, so
+the session that ages it out is never the session that placed it: `--ttl-minutes 240` posted a claim
+its placer thought bound for four hours and the five mutating verbs stopped honouring at one — the
+fail-open direction the guard exists to close. One constant is the only reading, for placer and
+reader alike; widening the window means changing that constant.
 
 **The claim is a session-stamped comment, never the assignee.** Every agent authenticates as the same
 login, so the assignee field cannot discriminate two concurrent sweeps — it is a shared availability
@@ -407,8 +428,22 @@ login, so the assignee is one shared slot"*). The session id comes from `$CLAUDE
 unset the verb exits `1` rather than posting an unattributable marker.
 
 **Resolution.** Post this session's marker, re-read all markers on the issue, discard any older than
-`--ttl-minutes`, and the **earliest surviving marker wins**. `won` requires a positive proof that the
+the TTL, and the **earliest surviving marker wins**. `won` requires a positive proof that the
 winner is this session; every unresolvable state answers `lost`, never `won`.
+
+**The claim binds, and every mutating verb is what makes it bind.** `split`, `enrich`, `apply`,
+`park` and `kill` each re-read the markers on their target immediately before their first write, and
+refuse on `17` when a live one names another session — the check reuses this verb's own reader and
+resolver, so there is one marker grammar. Those five read the **session** axis only: they are handed
+no claim token, so a sibling lane of one session still passes that check, exactly as it did before
+the lane nonce existed. Holding **no** marker still passes: an unclaimed issue is
+the ordinary first-triage case, and demanding one would refuse every existing caller. The same
+re-read refuses a closed target on `7`, and a comment read that fails is `11`. Before, the protocol
+was advisory at exactly the point it needed to bite: on 2026-08-15 a session that had read `lost`
+ran `enrich` anyway and replaced the winner's authored body
+([#5644](https://github.com/kamp-us/phoenix/issues/5644), on
+[#5642](https://github.com/kamp-us/phoenix/issues/5642)). There is no override flag — nothing in that
+incident needed one, and a flag added before a real need is a flag agents learn to pass reflexively.
 
 **The marker has a lifecycle, and both ends of it are specified.** This is the one verb here that
 *is* a race protocol, so leaving either end to an implementer's judgment would let the protocol
@@ -422,10 +457,11 @@ create the race it exists to resolve. Every other write verb states its idempote
 - **A failed deletion is `9`, not `0`.** The write landed, the intended end state (no marker of mine)
   is not what the issue carries, and the caller has to know a stale marker of theirs is sitting on
   the issue. Answering `lost` at exit 0 would hide it until it won a race nobody was running.
-- **A session that already holds a live marker on the issue re-reads and re-resolves rather than
-  posting a second.** A second marker from the same session cannot win anything the first did not —
-  it is strictly later — so posting it only adds litter to clean up. Re-running this verb inside one
-  session is therefore idempotent: the same marker, re-resolved.
+- **A lane that already holds a live marker on the issue re-reads and re-resolves rather than
+  posting a second.** A second marker under the same nonce cannot win anything the first did not —
+  it is strictly later — so posting it only adds litter to clean up. Re-running this verb under the
+  `--token` it was handed is therefore idempotent: the same marker, re-resolved. Re-running it
+  *without* the token is not a re-entry at all — it is a new lane, and it races like one.
 
 **Exit status**
 
@@ -446,9 +482,11 @@ rather than to this verb.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `triage claim: CLAUDE_CODE_SESSION_ID is unset — refusing to post an unattributable claim.` | 1 | refusal |
+| `triage claim: --token "<t>" is not a claim token (triage:<session-id>:<uuid>) — which lane is asking is not stated.` | 1 | refusal |
+| `triage claim: --token "<t>" carries session <s>, but this run is session <mine> — a lane names itself, never another.` | 1 | refusal |
 | `triage claim: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage claim: issue #<n> is closed — nothing to triage.` | 7 | refusal |
-| `triage claim: #<n> is held by session <holder> since <created_at> — backing off.` | 0 | notice |
+| `triage claim: #<n> is held by session <holder> [on lane <nonce>] since <created_at> — backing off.` | 0 | notice |
 | `triage claim: cannot read #<n> or its comments in <repo>: <reason> — no claim was resolved; never "won".` | 11 | refusal |
 | `triage claim: marker POST failed: <reason> — UNKNOWN whether it landed; re-run before mutating #<n>.` | 8 | refusal |
 | `triage claim: marker posted but absent on read-back — treating the claim as lost.` | 9 | refusal |
@@ -463,20 +501,29 @@ by a caller.
 
 ```
 $ fabrika triage claim 4312
-won
+won	triage:b2e1-4c07-4a99-9f30-55da1e6b7c02:5f1c9a20-4b11-4e05-8d77-c2a4f9be1234
 ```
 
 ```
 $ fabrika triage claim 4312
-triage claim: #4312 is held by session 7f3c-9a20-4b11-8e05-1d77c2a4f9be since 2026-08-02T09:14:02Z — backing off.
+triage claim: #4312 is held by session 7f3c-9a20-4b11-8e05-1d77c2a4f9be on lane 9a204b11 since 2026-08-02T09:14:02Z — backing off.
 lost	7f3c-9a20-4b11-8e05-1d77c2a4f9be
 $ echo $?
 0
 ```
 
+A sibling lane of your OWN session wins the same way, and the notice names the lane so the answer
+does not read as this lane losing to itself:
+
+```
+$ fabrika triage claim 4312
+triage claim: #4312 is held by session b2e1-4c07-4a99-9f30-55da1e6b7c02 on lane 7c3d0e91 since 2026-08-18T21:02:11Z — backing off.
+lost	b2e1-4c07-4a99-9f30-55da1e6b7c02
+```
+
 ```
 $ fabrika triage claim 4312 --json
-{"outcome":"won","session":"b2e1-4c07-4a99-9f30-55da1e6b7c02","holder":null,"markers":1,"expired":0}
+{"outcome":"won","session":"b2e1-4c07-4a99-9f30-55da1e6b7c02","token":"triage:b2e1-4c07-4a99-9f30-55da1e6b7c02:5f1c9a20-4b11-4e05-8d77-c2a4f9be1234","holder":null,"holderLane":null,"markers":1,"expired":0}
 ```
 
 **Grounding**
@@ -634,7 +681,7 @@ fabrika triage homes [--roadmap <path>] [--repo <owner/name>] [--json]
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--roadmap` | string | no | `ROADMAP.md` at the repo root | the roadmap file whose `## Arcs` and `## Campaigns` tables the open milestones are joined to |
+| `--roadmap` | string | no | `roadmapFile` in `.fabrika.jsonc`, itself defaulting to `ROADMAP.md` | the roadmap file whose `## Arcs` and `## Campaigns` tables the open milestones are joined to. Unflagged, the verb resolves the declared path first; a `.fabrika.jsonc` it could not read refuses `11` rather than falling back to the shipped name |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -661,6 +708,31 @@ machine-channel answer.
 With `--json`, an object with keys `outcome`, `milestones` (array of `{number, title, roadmapRow}`),
 `lanes` (array of `{label, meaning}`), and `scanned`.
 
+**Every `active` campaign's milestone is marked `running`.** That campaign is closed to new intake
+unless the work is `p0` or blocks one of that milestone's own in-flight lanes, so its row carries a
+fourth tab-separated column, verbatim `running: p0/blocker only`, and its `--json` object carries
+`"running": "p0/blocker only"` as a fourth key. Every other row is unchanged on both channels — no
+fourth column, and no `running` key — so a reader written against the pre-marker shape still parses.
+A marked milestone is still listed: the two exceptions are real work, and a removed row cannot
+carry them. This verb states the subtraction and stops; where excluded work goes instead is the
+caller's by-fit judgement, and no output here names a destination.
+
+**Which milestone is running is data, never a literal in this spec or in the verb.** It is the
+`State` column of `ROADMAP.md`'s `## Campaigns` table — the same permission `build pick` fences on
+(ADR 0304), read through the same parser, off the roadmap text this verb has already read for the arc
+join. Moving to the next campaign is a `ROADMAP.md` edit and never a code or skill edit; `--roadmap`
+moves both reads together. The table's three states are the ones the fence already reads:
+
+| `## Campaigns` | Rows marked | stderr |
+|---|---|---|
+| one or more rows are `active` | every `active` campaign's milestone row, if it is open | `triage homes: campaigns: 1 active — <name> (#<n>).` — or, for N > 1, `triage homes: campaigns: <n> active — <name> (#<a>), <name> (#<b>).` |
+| absent, empty, or every row `paused`/`done` | none — the answer is exactly the pre-marker one | `triage homes: campaigns: none active — scope fence inert.` |
+| reads but does not parse | none | `triage homes: campaigns: unreadable — <reason>.` |
+
+A malformed table is **never** rendered as "no milestone is running", and it does not refuse: a home
+list is still the right answer, and the stderr line is where the defect is named. An `active` campaign
+pinning a milestone that is closed or absent from the open set marks no row and passes.
+
 **Only open milestones appear, and each is joined to its roadmap arc/campaign row.** `roadmapRow` is
 `null` for an open milestone no roadmap row pins, which is itself a signal worth seeing rather than a
 row to hide. The two standing lanes are fixed and are not read from the repo. There is no third, and
@@ -685,11 +757,16 @@ milestone titled `Sözlük — search and discovery`, and the two share no subst
 | `7` | the repository has zero open milestones, **or the roadmap parsed to zero arc rows** — zero scope |
 | `11` | the milestone list or the roadmap file could not be read — the outcome is UNKNOWN |
 
+A malformed `## Campaigns` table is not on this table: it marks no row and names itself on stderr.
+The marker is an annotation on an answer this verb can give without it, so refusing over one would
+withhold the home list a triager needs.
+
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `triage homes: cannot read milestones in <repo>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
+| `triage homes: cannot probe the roadmap at <path>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
 | `triage homes: cannot read the roadmap at <path>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
 | `triage homes: <repo> has 0 open milestones — refusing to answer, since "no home exists" routes to a kill (ADR 0092).` | 7 | refusal |
 | `triage homes: the roadmap at <path> parsed to 0 arc rows — the table grammar changed or the file is truncated; refusing to answer over an unjoinable roadmap.` | 7 | refusal |
@@ -703,6 +780,21 @@ look" will route work irreversibly on the second one.
 The grammar is a table this verb does not own, so a grammar change silently empties the join; reading
 that as "no homes exist" would route work to a kill. Zero *campaign* rows is a legitimate state and
 passes.
+
+**An ABSENT roadmap is an answer, not either refusal (#5773).** A file that is proven not to exist is
+a proven negative — the join is simply empty — so every open milestone lists with `roadmapRow: null`,
+the standing lanes list beside them, and stderr carries
+`triage homes: no roadmap at <path> — every milestone lists with no arc name.` The campaigns fence
+reads the absent file as the empty document, so its scope line says `campaigns: none active — scope
+fence inert.` The zero-arc-rows refusal above is reached only by a roadmap that *exists*, so the
+grammar-drift guard keeps its teeth. This is the degrade disposition the rest of the corpus already
+declares for `ROADMAP.md`; `homes` was the one reader treating it fail-loud.
+
+**Absent and unreadable are separated by a filesystem probe, never by the text of a read failure.**
+The verb asks `exists(<path>)` first: a probe that could not be *performed* refuses `11`, `false`
+takes the absent path above, and only on `true` does it read — a read that then fails is the `11`
+row. The `ReadFailed` this package raises flattens `NotFound` and `EACCES` into one `reason` string,
+so matching on that string would be a guess dressed as a discrimination.
 
 **Scope** — every open milestone in `--repo`, paginated, joined to the `## Arcs` and `## Campaigns`
 tables of the roadmap file, read from the repo root the delivery layer already sets as the process
@@ -721,14 +813,14 @@ hands a byte-reading caller two rows and no token.
 $ fabrika triage homes
 homes
 milestone	47	Sözlük — search and discovery
-milestone	52	Merge-Gate Reliability
+milestone	52	Merge-Gate Reliability	running: p0/blocker only
 lane	wayfinder:backlog	fog — uncharted work upstream of any arc
 lane	axis:pipeline-hardening	the standing pipeline and reliability lane
 ```
 
 ```
 $ fabrika triage homes --json
-{"outcome":"homes","milestones":[{"number":47,"title":"Sözlük — search and discovery","roadmapRow":"Geçit"},{"number":52,"title":"Merge-Gate Reliability","roadmapRow":null}],"lanes":[{"label":"wayfinder:backlog","meaning":"fog — uncharted work upstream of any arc"},{"label":"axis:pipeline-hardening","meaning":"the standing pipeline and reliability lane"}],"scanned":2}
+{"outcome":"homes","milestones":[{"number":47,"title":"Sözlük — search and discovery","roadmapRow":"Geçit"},{"number":52,"title":"Merge-Gate Reliability","roadmapRow":null,"running":"p0/blocker only"}],"lanes":[{"label":"wayfinder:backlog","meaning":"fog — uncharted work upstream of any arc"},{"label":"axis:pipeline-hardening","meaning":"the standing pipeline and reliability lane"}],"scanned":2}
 ```
 
 **Grounding**
@@ -742,6 +834,10 @@ $ fabrika triage homes --json
   on-roadmap, so a closed milestone reports as a valid home. Offering only open, roadmap-joined
   milestones designs that mismatch out at the point of assignment rather than detecting it later.
 - ADR 0072 §3 — curating the milestone set is a human roadmap act, so no verb here creates one.
+- #6080 — a closing campaign kept taking every lane's follow-ups because nothing in this verb's
+  output said which milestone was running, so triagers homed by title match. The marker is only a
+  subtraction; enforcement is deliberately absent, since both exceptions are judgements a verb cannot
+  check and a guard blind to them would refuse exactly the work the rule allows.
 
 ---
 
@@ -837,10 +933,11 @@ a silent lost split, in the one direction v1's own module says it refuses.
 | `3` | stdin was read and held nothing |
 | `5` | the composed child body carries a machine-local path |
 | `6` | the child body is a bare `@` path reference — the body never arrived |
-| `7` | the parent is proven absent (404), or `status:needs-triage` does not exist in the repository |
+| `7` | the parent is proven absent (404), is closed, or `status:needs-triage` does not exist in the repository |
 | `8` | the create failed — UNKNOWN whether a child landed |
 | `9` | the child was created but the read-back does not match |
-| `11` | a precondition read failed — the parent, the queue, the timeline, or a candidate's body |
+| `11` | a precondition read failed — the parent, its comments, the claim on it, the queue, the timeline, or a candidate's body |
+| `17` | a live claim marker on the parent names another session |
 
 **Errors**
 
@@ -848,6 +945,10 @@ a silent lost split, in the one direction v1's own module says it refuses.
 |---|---|---|
 | `triage split: no body on stdin — pipe the child body in.` | 3 | refusal |
 | `triage split: parent #<n> not found in <repo>.` | 7 | refusal |
+| `triage split: parent #<n> is already closed.` | 7 | refusal |
+| `triage split: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
+| `triage split: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
+| `triage split: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage split: label status:needs-triage does not exist in <repo> — refusing to create a child over a queue that would scan nothing (ADR 0092).` | 7 | refusal |
 | `triage split: the child body carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage split: the child body is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
@@ -1251,10 +1352,11 @@ criteria block; a verb that demanded one would be a different verb.
 | `3` | stdin was read and held nothing — the rewrite, or the pitch with `--epic` |
 | `5` | the **authored** text carries a machine-local path — the rewrite, or the pitch with `--epic` |
 | `6` | the **authored** text is a bare `@` path reference — the rewrite, or the pitch with `--epic` |
-| `7` | the issue is proven absent (404), or it was read and its body is empty — a read that succeeded over nothing |
+| `7` | the issue is proven absent (404), is closed, or it was read and its body is empty — a read that succeeded over nothing |
 | `8` | the `PATCH` failed — UNKNOWN whether the body changed |
 | `9` | the body was written but the read-back does not match |
-| `11` | the issue body could not be read — there is no original to preserve |
+| `11` | the issue body could not be read, so there is no original to preserve — or its comments, or the claim on them, could not be read |
+| `17` | a live claim marker on the issue names another session |
 | `15` | the composed body's **authored region** carries an acceptance-criteria block the wire reader classifies `Malformed` |
 
 **Errors**
@@ -1263,6 +1365,10 @@ criteria block; a verb that demanded one would be a different verb.
 |---|---|---|
 | `triage enrich: no body on stdin — pipe the rewritten body in (with --epic, the pitch's five fields).` | 3 | refusal |
 | `triage enrich: issue #<n> not found in <repo>.` | 7 | refusal |
+| `triage enrich: issue #<n> is already closed.` | 7 | refusal |
+| `triage enrich: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
+| `triage enrich: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
+| `triage enrich: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage enrich: #<n> has an empty body — there is no original to preserve, and an empty one must never be preserved as though it were the record.` | 7 | refusal |
 | `triage enrich: cannot read #<n> in <repo>: <reason> — refusing to write an envelope over an original that was never read.` | 11 | refusal |
 | `triage enrich: the text you sent on stdin carries a machine-local path at line <k> (<class>) — rewrite it repo-relative. The preserved original is redacted automatically; this refusal is about the text you wrote.` | 5 | refusal |
@@ -1457,12 +1563,14 @@ for drift, not because they are currently absent.)
 
 | Code | Trigger |
 |---|---|
-| `7` | a label this invocation would write does not exist in the repository |
+| `7` | a label this invocation would write does not exist in the repository, or the issue is closed |
 | `8` | a label or milestone write failed — UNKNOWN which changes landed |
 | `9` | the writes landed but the read-back does not show the required end state |
 | `10` | an off-vocabulary enum value, or `--home` names a milestone that is not open |
-| `11` | the issue, the repository's label set, or its milestone set could not be read |
+| `11` | the issue, its comments, the claim on it, the repository's label set, or its milestone set could not be read |
+| `17` | a live claim marker on the issue names another session |
 | `16` | `--ready-for agent` over a live body the wire reader does not answer `Found` on — every type but `epic`; nothing was written |
+| `18` | `.fabrika.jsonc` yielded no usable value — a key's load-time check refused it (the containment invariant is one such check), the file could not be read, or a key did not decode; refused at load, before the issue is even read |
 
 The issue being proven absent is `7` as well — the same zero-scope seat, since there is no issue to
 stamp.
@@ -1479,6 +1587,11 @@ stamp.
 | `triage apply: give exactly one of --home or --lane; an issue cannot be both homed and lane-exempt.` | 1 | usage error |
 | `triage apply: label <name> does not exist in <repo> — refusing to write, because the API would create it (#4285).` | 7 | refusal |
 | `triage apply: issue #<n> not found in <repo>.` | 7 | refusal |
+| `triage apply: issue #<n> is already closed.` | 7 | refusal |
+| `triage apply: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
+| `triage apply: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
+| `triage apply: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage apply: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage apply: cannot read <what> in <repo>: <reason> — nothing was written; the transition is UNKNOWN.` | 11 | refusal |
 | `triage apply: write failed after <k> of <m> changes: <reason> — #<n> may be partially labelled; re-run this verb, which is idempotent.` | 8 | refusal |
 | `triage apply: read-back shows <observed> — expected exactly one type, one priority, status:triaged, one ready-for, and <the milestone / no milestone>.` | 9 | refusal |
@@ -1618,10 +1731,12 @@ it.
 | `3` | stdin was read and held nothing — a park with no questions is not a park |
 | `5` | the questions carry a machine-local path |
 | `6` | the questions are a bare `@` path reference — they never arrived |
-| `7` | the issue is proven absent (404), or `status:needs-info` does not exist in the repository |
+| `7` | the issue is proven absent (404), is closed, or `status:needs-info` does not exist in the repository |
 | `8` | the comment or the label swap failed — UNKNOWN which landed |
 | `9` | the writes landed but the read-back does not match |
-| `11` | the issue or the repository's label set could not be read |
+| `11` | the issue, its comments, the claim on it, or the repository's label set could not be read |
+| `17` | a live claim marker on the issue names another session |
+| `18` | `.fabrika.jsonc` yielded no usable value — a key's load-time check refused it (the containment invariant is one such check), the file could not be read, or a key did not decode; refused at load, before the comment is posted |
 
 **Errors**
 
@@ -1629,6 +1744,11 @@ it.
 |---|---|---|
 | `triage park: no body on stdin — a parked issue must say what would unblock it: pipe the questions in.` | 3 | refusal |
 | `triage park: issue #<n> not found in <repo>.` | 7 | refusal |
+| `triage park: issue #<n> is already closed.` | 7 | refusal |
+| `triage park: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
+| `triage park: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
+| `triage park: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage park: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage park: the questions text carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage park: the questions text is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
 | `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it (#4285).` | 7 | refusal |
@@ -1735,7 +1855,8 @@ location, with the leak matcher literally named for comments.
 | `7` | the issue is proven absent or already closed; `--duplicate-of` is proven absent or closed; or `closed-by-triage` does not exist in the repository |
 | `8` | one of the four writes failed — the message names what did and did not land |
 | `9` | the writes landed but the read-back does not show a not-planned close |
-| `11` | the issue body, the duplicate, or the label set could not be read — no kill was attempted |
+| `11` | the issue body, its comments, the claim on it, the duplicate, or the label set could not be read — no kill was attempted |
+| `17` | a live claim marker on the issue names another session |
 | `12` | refused: the issue is human-filed — no agent footer and no operator author |
 | `13` | refused: agent-filed and close-eligible, but `--confirm` was absent (ADR 0159) |
 
@@ -1751,6 +1872,9 @@ location, with the leak matcher literally named for comments.
 | `triage kill: the reason is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
 | `triage kill: label closed-by-triage does not exist in <repo> — refusing a kill that would be invisible to the audit.` | 7 | refusal |
 | `triage kill: cannot read #<n> in <repo>: <reason> — the provenance test has no evidence; refusing to close on a body that was never read.` | 11 | refusal |
+| `triage kill: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
+| `triage kill: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
+| `triage kill: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
 | `triage kill: #<n> is human-filed — refusing to close it. Park it with questions instead.` | 12 | refusal |
 | `triage kill: #<n> is agent-filed and close-eligible, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.` | 13 | refusal |
 | `triage kill: the fold comment on #<m> failed: <reason> — #<n> is NOT closed, carries no reason and no label; nothing was lost. Re-run.` | 8 | refusal |

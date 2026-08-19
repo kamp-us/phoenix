@@ -8,8 +8,12 @@
  * The reads are exposed as {@link diagnoseOne} so `heal-ci sweep` classifies through this same chain
  * rather than a second one.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {type Producer, producerFor, resolveCi} from "../config/ci-producer.ts";
+import type {Resolution} from "../config/key-group.ts";
+import type {CiSurface} from "../config/keys/ci.ts";
+import {governedRootsOr} from "../config/paths.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {
 	commitExists,
@@ -65,6 +69,8 @@ export interface DiagnoseOptions extends DiagnoseParams {
 	readonly sha: string;
 	readonly repo: string | null;
 	readonly json: boolean;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -99,19 +105,26 @@ const unreadable = (what: string, forPr: number, reason: string): string =>
 const short = (received: number, declared: number, noun: string): string =>
 	`${VERB}: received ${received} of ${declared} declared ${noun} — refusing to classify over a truncated read.`;
 
-/** The CI token, with the two zero-signal states kept apart as the distinct facts they are. */
+/**
+ * The CI token, with the two zero-signal states kept apart as the distinct facts they are.
+ *
+ * The zero-workflow reading is `../config/ci-producer.ts`'s, not this module's: `review ci` and
+ * `ship checks` both route the producer question through `producerFor`, and a third compiled-in
+ * answer here would hand a repo that never declared `ci.noProducer` the opt-out those two verbs
+ * make it declare. `none` is the degrade token, so it is emitted only where the repo asked for it;
+ * the two producer arms that are not an answer come back as a refusal for the caller to carry.
+ */
 const ciTokenOf = (
 	runs: ReadonlyArray<ShipCheckRun>,
-	workflows: number,
+	producer: Producer,
 	runCount: number,
 	wedged: boolean,
-): CiToken => {
+): CiToken | {readonly refusal: Extract<Producer, {readonly reason: string}>} => {
 	if (wedged) return "wedged";
-	if (runs.length === 0) {
-		if (workflows === 0) return "none";
-		return runCount === 0 ? "no-runs" : "pending";
-	}
-	return rollupOf(runs);
+	if (runs.length > 0) return rollupOf(runs);
+	if (producer._tag === "OptedOut") return "none";
+	if (producer._tag === "Present") return runCount === 0 ? "no-runs" : "pending";
+	return {refusal: producer};
 };
 
 /**
@@ -125,6 +138,10 @@ export const diagnoseOne = (
 	pr: number,
 	sha: string,
 	params: DiagnoseParams,
+	/** This repo's `governedRoots`, resolved once by the caller — a sweep reads the config once. */
+	governedRoots: ReadonlyArray<string>,
+	/** This repo's `ci`, resolved once by the caller for the same reason. */
+	ci: Resolution<CiSurface>,
 ): Effect.Effect<DiagnoseResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const notices: string[] = [];
@@ -278,7 +295,7 @@ export const diagnoseOne = (
 			return refused(PRECONDITION_UNKNOWN, unreadable("the base comparison", pr, drift.reason));
 		}
 
-		const required = shipNamespacesOf(partitionWithUi(filed.value));
+		const required = shipNamespacesOf(partitionWithUi(filed.value, governedRoots));
 		const authorized = new Map<string, boolean>();
 		const candidates: Array<{
 			readonly namespace: string;
@@ -344,7 +361,7 @@ export const diagnoseOne = (
 		for (const review of decisive)
 			if (!byAuthor.has(review.login)) byAuthor.set(review.login, review.state);
 		const changesRequested = [...byAuthor.values()].includes("CHANGES_REQUESTED");
-		const controlPlane = touchesGovernanceRoot(filed.value);
+		const controlPlane = touchesGovernanceRoot(filed.value, governedRoots);
 		const approved = [...byAuthor.values()].includes("APPROVED");
 		const humanBlocked = changesRequested || (controlPlane && !approved);
 
@@ -357,9 +374,20 @@ export const diagnoseOne = (
 				? null
 				: strandAgeMinutes(null, lastActivityAt, params.now);
 
-		const ci = ciTokenOf(gating, workflows.value, runCount.value, wedged);
+		const token = ciTokenOf(
+			gating,
+			producerFor(VERB, repo, workflows.value, ci),
+			runCount.value,
+			wedged,
+		);
+		if (typeof token !== "string") {
+			return refused(
+				token.refusal._tag === "Unknown" ? PRECONDITION_UNKNOWN : ZERO_SCOPE,
+				token.refusal.reason,
+			);
+		}
 		const failingOrStranded =
-			ci === "wedged"
+			token === "wedged"
 				? stranded.length
 				: gating.filter((run) => run.status === "completed" && statusOf(run) !== "success").length;
 
@@ -368,7 +396,7 @@ export const diagnoseOne = (
 			open: pull.state === "open" && !pull.draft && !pull.merged,
 			wedged,
 			surfaceGap,
-			ci,
+			ci: token,
 			linkageRefused,
 			humanBlocked,
 			hasOwner: owner !== null,
@@ -404,7 +432,7 @@ export const diagnoseOne = (
 					pass: passes,
 					required: required.length,
 				},
-				ci: {rollup: ci, contexts: failingOrStranded},
+				ci: {rollup: token, contexts: failingOrStranded},
 				queue,
 				link,
 				scanned: {comments: commented.value.length, checks: gating.length},
@@ -449,7 +477,11 @@ export const renderDiagnosis = (found: Diagnosis, json: boolean): VerbOutcome =>
 
 export const runDiagnose = (
 	options: DiagnoseOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "a pull-request number", options.pr);
 		if (bad !== null) return bad;
@@ -461,7 +493,21 @@ export const runDiagnose = (
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 
-		const result = yield* diagnoseOne(resolved.repo, options.pr, options.sha, options);
+		const governed = yield* governedRootsOr(
+			VERB,
+			options.cwd,
+			'the required namespace set and the §CP flag are UNKNOWN, never "attended".',
+		);
+		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
+
+		const result = yield* diagnoseOne(
+			resolved.repo,
+			options.pr,
+			options.sha,
+			options,
+			governed.roots,
+			yield* resolveCi(options.cwd),
+		);
 		if (result._tag === "Refused") return result.outcome;
 		// `Gone` is only reachable from a sweep, whose list read and classification are separated in
 		// time; a direct call resolves the PR once and a 404 there is already the `7` refusal.

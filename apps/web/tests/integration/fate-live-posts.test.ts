@@ -48,8 +48,6 @@ describe("live views — /fate/live (global topic:posts)", () => {
 		const connected = await readFrame(reader, decoder, buffer);
 		expect(connected).toContain("connected");
 
-		// Subscribe the connection to the global `posts` connection feed. The first
-		// subscribe hits a cold topic-role DO; the worker seam absorbs the warm window.
 		const sub = await h.liveControl(
 			connectionId,
 			[
@@ -65,7 +63,6 @@ describe("live views — /fate/live (global topic:posts)", () => {
 		);
 		expect(sub.status).toBe(200);
 
-		// A new post publishes a prependNode frame to the `posts` connection topic.
 		const submitted = await h.fate(
 			{
 				kind: "mutation",
@@ -77,14 +74,8 @@ describe("live views — /fate/live (global topic:posts)", () => {
 		);
 		expect(submitted.ok).toBe(true);
 
-		// Read until THIS case's own frame arrives. Both cases publish to the ONE global
-		// `posts` topic DO on this shared dedicated stage, so a buffered cross-epoch frame
-		// (a prior run/epoch's prependNode) can be the next frame — the worker does not
-		// epoch-fence old-epoch frames for real clients (the deeper correctness question is
-		// #1072, which stays open). Asserting the very NEXT frame is `live post` is fragile
-		// against such a buffered foreign frame; instead drain frames until we see our OWN
-		// `live post` prependNode, mirroring the reconnect case below. Bounded: a stream that
-		// never delivers `live post` still fails.
+		// Drain to our OWN frame, never the next one: a buffered cross-epoch frame can arrive
+		// first (file header, #1072). Bounded — a stream that never delivers still fails.
 		let payload: {kind: string; event: {type: string; edge: {node: {title: string}}}} | undefined;
 		for (let i = 0; i < 10 && payload?.event.edge.node.title !== "live post"; i++) {
 			const frame = await readEvent(reader, decoder, buffer);
@@ -103,12 +94,11 @@ describe("live views — /fate/live (global topic:posts)", () => {
 	it("reconnect on the same connectionId bumps epoch — frames go to the reconnected stream", async () => {
 		const connectionId = `live-regen-${Date.now()}`;
 
-		// First stream + subscription.
 		const first = await h.openSse(connectionId, user.cookie);
 		const firstReader = first.body!.getReader();
 		const decoder = new TextDecoder();
 		const firstBuf = {value: ""};
-		await readFrame(firstReader, decoder, firstBuf); // : connected
+		await readFrame(firstReader, decoder, firstBuf);
 		await h.liveControl(
 			connectionId,
 			[{kind: "subscribeConnection", id: "sub-a", type: "Post", procedure: "posts", select: []}],
@@ -120,14 +110,13 @@ describe("live views — /fate/live (global topic:posts)", () => {
 		const second = await h.openSse(connectionId, user.cookie);
 		const secondReader = second.body!.getReader();
 		const secondBuf = {value: ""};
-		await readFrame(secondReader, decoder, secondBuf); // : connected
+		await readFrame(secondReader, decoder, secondBuf);
 		await h.liveControl(
 			connectionId,
 			[{kind: "subscribeConnection", id: "sub-b", type: "Post", procedure: "posts", select: []}],
 			user.cookie,
 		);
 
-		// Publish — the reconnected (current-epoch) stream must receive it.
 		const submitted = await h.fate(
 			{
 				kind: "mutation",
@@ -139,14 +128,8 @@ describe("live views — /fate/live (global topic:posts)", () => {
 		);
 		expect(submitted.ok).toBe(true);
 
-		// Read until THIS case's own frame arrives. Both cases publish to the ONE global
-		// `posts` topic DO on this shared dedicated stage, so the prior `post.submit` case's
-		// `live post` prependNode can still be buffered on this stream — the worker does not
-		// epoch-fence old-epoch frames for real clients (the deeper correctness question is
-		// #1072, which stays open). Asserting the very NEXT frame would read that stale frame;
-		// instead drain prior-title frames until we see `regen post`, which preserves the
-		// intent — the reconnected (current-epoch) stream DOES deliver the new frame — without
-		// reading a leaked one. Bounded: a stream that never delivers `regen post` still fails.
+		// Drain to our OWN frame, never the next one: the prior case's `live post` can still be
+		// buffered here (file header, #1072). Bounded — a stream that never delivers still fails.
 		let title: string | undefined;
 		for (let i = 0; i < 10 && title !== "regen post"; i++) {
 			const frame = await readEvent(secondReader, decoder, secondBuf);

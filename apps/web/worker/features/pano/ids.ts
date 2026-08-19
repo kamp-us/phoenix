@@ -1,11 +1,8 @@
 /**
- * Pano's feature-local branded id schemas (epic #2700). `PostId` / `CommentId`
- * are nominal string tags minted from the shared `brandedId` factory, so a
- * `postId`/`commentId` transposition at a write call site is a compile error
- * while wire and D1 bytes stay identical (the brand is type-only — see
- * `../../lib/ids.ts`). They live here, beside the pano feature, because only
- * pano references them; the cross-feature `UserId` is imported read-only from
- * the shared module. Idiom + tracer precedent: `features/sozluk` (#2712).
+ * Pano's feature-local branded id schemas: `PostId` / `CommentId` from the shared `brandedId`
+ * factory, so a transposition at a write call site is a compile error while wire and D1 bytes
+ * stay identical. They live here because only pano references them; the cross-feature
+ * `UserId` is imported from `../../lib/ids.ts`.
  */
 import {brandedId} from "../../lib/ids.ts";
 

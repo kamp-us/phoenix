@@ -1,38 +1,11 @@
 /**
- * `CaylakStatusBlock` — the çaylak's own "yazarlığa giden yol" (path-to-authorship)
- * status block on their OWN profile (#1291, epic #1202). Reads the aggregate-only
- * `myAuthorshipStanding` (#1316): karma vs the promotion bar, whether a vouch
- * exists (a bare boolean — NEVER who vouched), and the count of entries in review.
+ * `CaylakStatusBlock` — the çaylak's own "yazarlığa giden yol" status block on their
+ * OWN profile, off the aggregate-only `myAuthorshipStanding` read.
  *
- * ONE-WAY GLASS — the load-bearing divan privacy invariant: the consumed shape is
- * aggregate-only and carries NO reviewer / voter / voucher identity. The field is
- * structurally absent on the backend `AuthorshipStanding` type (#1316), and this
- * surface selects only the four aggregate scalars ({@link STANDING_FIELDS}), so a
- * leak is unrepresentable at the API boundary AND here — never merely unrendered.
- *
- * Two gates, both required ({@link shouldShowCaylakStatus}): the trusted tier read
- * off `useMe().me.tier` (#1297) being `çaylak`, AND the viewer looking at their OWN
- * profile (`me.id === profileUserId`). A yazar/mod, a visitor, or another user's
- * profile is a clean no-op. A null standing renders nothing — so the block never
- * queries off the safe path.
- *
- * Honest promotion-path framing ({@link caylakPromotionPath}, #1323): an UNVOUCHED
- * çaylak does NOT see a karma progress bar — the unassisted bar is 100 but no amount
- * of karma promotes without a vouch (`resolveTandem` short-circuits on the vouch
- * half), so a 100-karma goal would depict a path that doesn't exist. The unvouched
- * state surfaces the vouch-needed framing instead; once `vouchExists` is true the
- * block draws the real reduced bar (15), the already-honest path.
- *
- * Imperative fetch (`request` + `readView`), not the suspending `useRequest`: the
- * block sits inside the header and must NOT suspend the whole header on a secondary
- * read, and must NOT query unless the three gates pass — the same reasoning as
- * `useMe`. `myAuthorshipStanding` throws `UNAUTHORIZED` for an anonymous viewer, so
- * gating on `me`/own-profile keeps a signed-out viewer off the wire.
- *
- * a11y: a labelled `<section>` region (`aria-labelledby` → its own heading) with a
- * real `<h2>`; vouch state is carried by words ("var"/"yok"), never color; the Karma
- * atom carries its own AA-contrast, reduced-motion-safe progress bar; no animation of
- * its own. Copy is lowercase Turkish (karma is a brand noun).
+ * Fetched imperatively rather than through the suspending `useRequest`: the block
+ * sits inside the header and must not suspend it on a secondary read, and must not
+ * touch the wire at all unless the gates pass — `myAuthorshipStanding` throws
+ * `UNAUTHORIZED` for an anonymous viewer.
  */
 import {useId} from "react";
 import {view} from "react-fate";
@@ -43,48 +16,25 @@ import {useImperativeView} from "../../fate/useImperativeView";
 import {Karma} from "../karma/Karma";
 import "./CaylakStatusBlock.css";
 
-/**
- * The block's gating decision, factored DOM-free so the contract — show iff the
- * viewer is a çaylak AND they are looking at their OWN profile — is unit-testable
- * without a DOM (the pure-extraction idiom of `flagGateChild` / `shouldShowOnramp`).
- * Reused to gate the per-item "incelemede" badge in the contributions feed, so the
- * badge and the block share one gate.
- */
 export function shouldShowCaylakStatus(tier: Tier | undefined, isOwnProfile: boolean): boolean {
 	return tier === "çaylak" && isOwnProfile;
 }
 
-/** The vouch-exists readout — a bare yes/no, NEVER who vouched (one-way glass). */
 export function vouchExistsLabel(vouchExists: boolean): string {
 	return vouchExists ? "var" : "yok";
 }
 
-/**
- * The unvouched çaylak's path-to-yazar copy. Karma is necessary-but-not-sufficient:
- * `resolveTandem` short-circuits on the vouch half (`if (!hasActiveFor) return …`),
- * so an unvouched çaylak's karma is never even read and NO amount of karma promotes
- * them — the only routes are a yazar's vouch (then the reduced 15-bar) or a mod
- * action. Surfacing the unassisted 100-bar here would depict a goal that maps to no
- * live promotion trigger (#1323), so the unvouched state shows this framing instead.
- * Lowercase Turkish; karma is a brand noun.
- */
 export const VOUCH_NEEDED_COPY = {
 	message: "bir yazar sana kefil olmalı",
 	hint: "ya da bir moderatör seni doğrudan yükseltebilir",
 } as const;
 
 /**
- * The çaylak status block's promotion-path rendering split, factored DOM-free so the
- * unvouched-vs-vouched contract is unit-testable without a DOM (the pure-extraction
- * idiom of {@link shouldShowCaylakStatus}). The shape makes the invalid state
- * unrepresentable: the karma bar carries no copy, and the vouch-needed framing only
- * exists where there is no honest bar to draw.
- *
- * - **Unvouched** (`vouchExists === false`): no karma bar — the unassisted 100-bar
- *   would imply karma alone promotes, which it does not (#1323). Show the
- *   vouch-needed framing.
- * - **Vouched** (`vouchExists === true`): the real reduced bar (`standing.bar` is
- *   `VOUCH_PROMOTION_KARMA_BAR` = 15), the already-honest path — unchanged.
+ * An unvouched çaylak deliberately gets NO karma bar: `resolveTandem` short-circuits
+ * on the vouch half, so no amount of karma promotes them and the unassisted 100-bar
+ * would depict a goal that maps to no live promotion trigger (#1323). Only once a
+ * vouch exists is there an honest bar to draw (the reduced `VOUCH_PROMOTION_KARMA_BAR`
+ * = 15).
  */
 export type CaylakPromotionPath =
 	| {readonly kind: "karma-bar"}
@@ -97,11 +47,10 @@ export function caylakPromotionPath(vouchExists: boolean): CaylakPromotionPath {
 }
 
 /**
- * The aggregate-only wire selection: the client normalization key `id` plus the
- * four aggregate scalars. There is deliberately NO reviewer / voter / voucher
- * identity key — the one-way-glass invariant is structural on the backend type
- * (#1316) and mirrored here, so a leak can't be reintroduced by widening the
- * selection.
+ * One-way glass: the `id` normalization key plus the four aggregate scalars, and
+ * deliberately NO reviewer / voter / voucher identity key. The invariant is
+ * structural on the backend type (#1316) and mirrored here, so widening this
+ * selection is what would reintroduce the leak.
  */
 export const STANDING_FIELDS = {
 	id: true,
@@ -113,28 +62,17 @@ export const STANDING_FIELDS = {
 
 const StandingView = view<AuthorshipStanding>()(STANDING_FIELDS);
 
-/**
- * The aggregate-only standing shape, derived from the codegen'd
- * `AuthorshipStanding` Entity (ADR 0022) — a `Pick` over the four aggregate
- * scalars, never a hand-restated interface. The one-way-glass invariant is
- * structural on the backend type (#1316): there is no reviewer/voter/voucher
- * identity field to pick, so a leak stays unrepresentable.
- */
+// See ADR 0022
 type Standing = Pick<AuthorshipStanding, "karma" | "bar" | "vouchExists" | "inReviewCount">;
 
-/**
- * Fetches `myAuthorshipStanding` imperatively, but only when `enabled` (the three
- * gates passed). Disabled ⇒ never touches the wire and reports `null`. Any failure
- * resolves to `null` — the safe/off path, exactly like `useFlag`'s default — so a
- * read error degrades to "no block", never a thrown header.
- */
+// A failed read resolves to `null` on purpose — the safe/off path, so an error
+// degrades to "no block" rather than throwing the whole header.
 function useAuthorshipStanding(enabled: boolean): Standing | null {
 	const {state} = useImperativeView("myAuthorshipStanding", StandingView, {enabled});
 	return state.status === "ok" ? state.data : null;
 }
 
 export interface CaylakStatusBlockProps {
-	/** The profile being viewed — own-profile is `me.id === profileUserId`. */
 	readonly profileUserId: string;
 }
 

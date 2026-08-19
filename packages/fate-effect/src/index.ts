@@ -1,14 +1,9 @@
 /**
- * `@kampus/fate-effect` — phoenix's Effect-native fate integration: fate's
- * record shapes with Effect semantics. Ships the views, the wire-error
- * codec, the `Fate.*` entry constructors, the `FateServer`
- * tag/config/layer, and the v2 native plane that serves `/fate` (ADR 0043);
- * the v1 compile step (`FateExecutor`) survives as the differential
- * oracle's baseline and the build-time codegen surface.
+ * `@kampus/fate-effect` — phoenix's Effect-native fate integration (ADR 0043).
  *
- * Exports stay flat (every supporting type a consumer's exported value can
- * surface must be nameable through this barrel); the `Fate` namespace is the
- * authoring surface layered over the same flat members.
+ * Exports stay flat: every supporting type a consumer's exported value can surface must be
+ * nameable through this barrel. The `Fate` namespace is the authoring surface layered over
+ * the same flat members.
  */
 import {toCodegenServer} from "./Codegen.ts";
 import {compile, toFetchHandler} from "./Executor.ts";
@@ -144,14 +139,10 @@ export {
 } from "./WireError.ts";
 
 /**
- * The compile-step namespace: `compile`/`toFetchHandler` — the differential
- * oracle's baseline (`Executor.ts`, test-harness-only since ADR 0043) — and
- * `toCodegenServer` — the build-time codegen surface (`Codegen.ts`, what
- * `schema.ts` exports for Vite codegen). Assembled HERE so the frozen
- * oracle-baseline module and the production codegen module never import
- * each other (they share internals through `Compiled.ts` only), while the
- * public spelling (`FateExecutor.toCodegenServer` in `schema.ts`) stays
- * exactly what it was before the split.
+ * Assembled HERE so the frozen oracle-baseline module (`Executor.ts`, test-harness-only since
+ * ADR 0043) and the production codegen module (`Codegen.ts`) never import each other — they
+ * share internals through `Compiled.ts` only — while `FateExecutor.toCodegenServer` keeps the
+ * spelling it had before the split.
  */
 export const FateExecutor = {
 	compile,

@@ -20,19 +20,28 @@ One call allocates the id and scaffolds the record, and that is why it is one ca
 freshly fetched merged set with the ids open ADR PRs already claim, so a checkout sitting at `0150`
 while origin is at `0151` cannot mint a duplicate — **and an id you allocate now and write later is
 already stale**, which is how 0284 landed on two pull requests at once (#5841). The slug is
-kebab-case, at most 5 words; it prints the path written.
+kebab-case, at most 5 words; it prints the path written. How the union is computed, and the exact
+bytes it scaffolds, are the verb's section
+(`fabrika wire doc-section --heading "adr mint" < <skill-base>/contract.md`).
 
 **A non-zero exit is UNKNOWN, never "nothing reserved."** Re-run it. Falling back to the highest id
 on disk mints the same number from two lanes at once.
 
-**An empty `.decisions/` is not one of those cases — it allocates `0001` and exits 0.** A repo
+**An empty corpus is not one of those cases — it allocates `0001` and exits 0.** A repo
 adopting fabrika has no records on day one, and that is a fact the verb reports, not a read it
-failed. Only a directory it could not read at all refuses (exit 11). If `.decisions/` does not exist
+failed. Only a directory it could not read at all refuses (exit 11). If the directory does not exist
 yet, create it and re-run; a repo with no decision directory at all is a setup question for
 [front-door](../front-door/SKILL.md).
 
+**Where the corpus lives is the repo's, not this skill's.** `.fabrika.jsonc`'s `decisionsDir` names
+it and defaults to `.decisions`; `--dir` overrides it for one run. A repo that writes `null` there
+keeps no corpus at all, and then every verb of this group refuses on `22` naming the key — there is
+nothing to read and nothing to write into, and that is a settled fact no retry changes, unlike the
+`11` an unreadable directory earns.
+
 `fabrika adr next` still answers the id on its own, and `fabrika adr new 0240 <slug>` still
-scaffolds against an id you name. Reach for the pair only when you genuinely need the id before the
+scaffolds against an id you name (`fabrika wire doc-section --heading "adr next" < <skill-base>/contract.md`,
+then `--heading "adr new"`). Reach for the pair only when you genuinely need the id before the
 file — the gap between them is the race, so do not re-open it out of habit. Whichever route, the
 minted file is not a reservation: nothing outside this checkout sees the id until the pull request
 opens, and step 6 is where you find out whether someone got there first.
@@ -60,7 +69,9 @@ for a question you cannot phrase. Then rank the uncited live-accepted ADRs your 
 fabrika adr sweep --new 0240
 ```
 
-None of its three outcomes is a clearance:
+How the ranking is computed, and why it caps where it does, are the verb's section
+(`fabrika wire doc-section --heading "adr sweep" < <skill-base>/contract.md`). None of its three
+outcomes is a clearance:
 
 - **`shortlist`** — open the entries and judge each once. It ranks lexical adjacency, caps at 8, and
   **re-ranks as you add citations**, so the tail refills and chasing a clean result is the trap.
@@ -89,7 +100,9 @@ the real filename. Pass every citation, supersede link and amend target in one c
 **Cite only `live`.** `landed` means present but `proposed`, `superseded` or `retired`, and citing
 one as settled law applies a decision that was already withdrawn. `in-flight` may never merge, so a
 citation to one can pass every gate and still be dead on arrival. **A non-zero exit is UNKNOWN,
-never `absent`.** **Use the filename it prints** — a remembered slug is usually the wrong one.
+never `absent`.** **Use the filename it prints** — a remembered slug is usually the wrong one. How
+each state is proven against the fetched base is the verb's section
+(`fabrika wire doc-section --heading "adr resolve" < <skill-base>/contract.md`).
 
 ```bash
 fabrika adr supersede 0126 --by 0240
@@ -97,7 +110,9 @@ fabrika adr supersede 0126 --by 0240
 
 Where the rest of that ADR still stands, `fabrika adr amend-in-part 0023 --by 0240` instead.
 Either verb touches the `status:` line and nothing else — an accepted ADR's decision text is
-immutable, so name the relationship in your own `## Context` rather than editing theirs.
+immutable, so name the relationship in your own `## Context` rather than editing theirs. Which line
+each rewrites, and what each refuses, is their shared section:
+`fabrika wire doc-section --heading "adr supersede and adr amend-in-part" < <skill-base>/contract.md`.
 
 ## 5 — Record the vocabulary impact
 
