@@ -231,7 +231,7 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 	{
 		id: "code-validators",
 		disposition: "fail-loud",
-		note: "a command `codeValidators` names that can actually be spawned here; `build check --surface code` refuses UNKNOWN on an empty list or a validator it cannot run — never green, never red",
+		note: "a command `codeValidators` names that can actually be spawned here; `build check --surface code` refuses UNKNOWN on a repo that declares none, an empty list, or a validator it cannot run — never green, never red",
 	},
 	{
 		id: "readout-artifact",

@@ -1474,10 +1474,11 @@ Per surface:
   this tree **with the build cache bypassed**. The cache bypass is the design — a cache hit from
   another checkout returned another tree's green three times in one session (#4106) and recurred on
   the review side (#4887) — but the flag expressing it is the repo's, since turbo's `--force` is a
-  hard error to a bare `tsc` (#6015). A repo declaring nothing gets the shipped pair, `pnpm
-  typecheck --force` and `pnpm lint:worktree`. A declared list that is **empty** has nothing to run,
-  which refuses `11`, UNKNOWN — never green, and never the `VALIDATION_RED` that says the code
-  failed.
+  hard error to a bare `tsc` (#6015). Nothing is compiled in for a repo to inherit: phoenix declares
+  `pnpm typecheck --force` and `pnpm lint:worktree` in its own `.fabrika.jsonc` like anyone else. A
+  repo with no list — declared empty, or never declared at all — has nothing to run, which refuses
+  `11`, UNKNOWN naming which of the two it was — never green, and never the `VALIDATION_RED` that
+  says the code failed.
 - **prose** — changed markdown files: every relative link resolves against this tree; no
   machine-local path (the imported `doc-leaks.ts` predicate); every fabrika-doc reference cited by
   id exists.
@@ -1666,7 +1667,7 @@ $ fabrika build check --surface code
 ```
 
 `ran` echoes whatever `codeValidators` resolved to, one `argv.join(" ")` per validator; the two
-above are **phoenix's** shipped pair, not a contract.
+above are what **phoenix's** `.fabrika.jsonc` declares, not a contract.
 
 **Grounding**
 

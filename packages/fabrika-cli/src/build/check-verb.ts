@@ -476,6 +476,8 @@ type CodeScope =
 			readonly _tag: "Scope";
 			readonly validators: ReadonlyArray<CodeValidator>;
 			readonly note: string;
+			/** How an empty list reads back to whoever has to fix it. */
+			readonly absence: string;
 	  }
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
@@ -491,25 +493,28 @@ const readCodeScope = (root: string): Effect.Effect<CodeScope, never, FileSystem
 					_tag: "Scope",
 					validators: resolved.value,
 					note: `${VERB}: ${resolved.value.length} code validator(s) declared in ${CONFIG_PATH}.`,
+					absence: `${CONFIG_PATH} declares an empty \`${CODE_VALIDATORS}\``,
 				};
 			case "Default":
 				return {
 					_tag: "Scope",
 					validators: resolved.value,
-					note: `${VERB}: ${resolved.value.length} shipped code validator(s) — ${resolved.reason}.`,
+					note: `${VERB}: ${resolved.value.length} code validator(s) — ${resolved.reason}.`,
+					absence: resolved.reason,
 				};
 		}
 	});
 
 /**
  * The `code` surface: the validators the repo **declares**, run in this tree with its own
- * cache-bypass flags, or the shipped pair when it declares none.
+ * cache-bypass flags. There is no shipped pair to fall back on — phoenix declares its own.
  *
  * The three outcomes stay apart, and keeping them apart is the whole point (#6015, #6297). A
  * validator that ran and failed is `VALIDATION_RED`. A validator that could not be spawned proves
- * nothing about the code and refuses UNKNOWN naming it. A repo that declares an explicitly empty
- * list has nothing to run at all, which is neither a red nor a green: reporting "no validator is
- * present" as red says the code is broken, and reporting it as green says it was checked.
+ * nothing about the code and refuses UNKNOWN naming it. A repo with no list at all — declared
+ * empty, or never declared — has nothing to run, which is neither a red nor a green: reporting "no
+ * validator is present" as red says the code is broken, and reporting it as green says it was
+ * checked.
  */
 const runCodeSurface = (
 	root: string,
@@ -533,7 +538,7 @@ const runCodeSurface = (
 		if (declared.validators.length === 0) {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: ${CONFIG_PATH} declares an empty \`${CODE_VALIDATORS}\` — no code validator is present here, so nothing ran and the verdict is UNKNOWN, never green and never red.`,
+				`${VERB}: ${declared.absence} — no code validator is present here, so nothing ran and the verdict is UNKNOWN, never green and never red.`,
 				scoped,
 			);
 		}

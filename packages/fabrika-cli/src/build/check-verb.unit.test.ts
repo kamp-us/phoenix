@@ -55,6 +55,19 @@ const LS_TREE = new RegExp(
 const TYPECHECK = /^pnpm typecheck --force$/;
 const LINT = /^pnpm lint:worktree$/;
 
+/** The config path every read of this lane's declarations resolves to. */
+const CONFIG_FILE = `${ROOT}/.fabrika.jsonc`;
+
+/**
+ * The code validators these tests declare — phoenix's own pair, read off a config file the way any
+ * repo's is. The CLI ships no pair to fall back on, so a code-surface test that declared nothing
+ * would be exercising the "no validator is present" refusal rather than the runner (#6015).
+ */
+const CODE_CONFIG: Record<string, string> = {
+	[CONFIG_FILE]:
+		'{"codeValidators": [{"command": ["pnpm", "typecheck", "--force"]}, {"command": ["pnpm", "lint:worktree"]}]}',
+};
+
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
 
 /** A scripted untracked-file list. Placed ahead of `LANE_OK`, whose default is an empty one. */
@@ -109,7 +122,10 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			runCheck({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, fakeFs({files, unreadable}).layer),
+			Layer.merge(
+				fakeShell(script).layer,
+				fakeFs({files: {...CODE_CONFIG, ...files}, unreadable}).layer,
+			),
 		),
 	);
 
@@ -212,7 +228,10 @@ describe("runCheck", () => {
 			[LINT, okOut("")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runCheck(options), Layer.merge(shell.layer, fakeFs({}).layer)),
+			Effect.provide(
+				runCheck(options),
+				Layer.merge(shell.layer, fakeFs({files: CODE_CONFIG}).layer),
+			),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({
@@ -758,7 +777,10 @@ describe("the enumeration unions the untracked files with the diff", () => {
 			[LINT, okOut("")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runCheck(options), Layer.merge(shell.layer, fakeFs({}).layer)),
+			Effect.provide(
+				runCheck(options),
+				Layer.merge(shell.layer, fakeFs({files: CODE_CONFIG}).layer),
+			),
 		);
 		expect(out.code).toBe(0);
 		expect(shell.calls).toContain(UNTRACKED_ARGV);
@@ -1219,17 +1241,26 @@ describe("--surface code reads its validators from the config", () => {
 		expect(calls).not.toContain("pnpm typecheck --force");
 	});
 
-	it("falls back to the shipped pair when the file declares no `codeValidators`", async () => {
-		const {out, calls} = await codeRun(
-			[
-				[TYPECHECK, okOut("")],
-				[LINT, okOut("")],
-			],
-			"{}",
+	// The demlik reproduction on #6015: a repo that never declared these ran phoenix's script names
+	// and got a red, which says its code is broken. Nothing is compiled in for it to inherit.
+	it("refuses UNKNOWN when the file declares no `codeValidators`", async () => {
+		const {out, calls} = await codeRun([], "{}");
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"build check: .fabrika.jsonc declares no `codeValidators` — no code validator is present here, so nothing ran and the verdict is UNKNOWN, never green and never red.",
 		);
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout).ran).toEqual(["pnpm typecheck --force", "pnpm lint:worktree"]);
-		expect(calls).toContain("pnpm lint:worktree");
+		expect(calls).not.toContain("pnpm typecheck --force");
+		expect(calls).not.toContain("pnpm lint:worktree");
+	});
+
+	it("refuses UNKNOWN when the repo has no config file at all", async () => {
+		const {out, calls} = await codeRun([], null);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toBe(
+			"build check: this repo has no .fabrika.jsonc — no code validator is present here, so nothing ran and the verdict is UNKNOWN, never green and never red.",
+		);
+		expect(calls).not.toContain("pnpm typecheck --force");
 	});
 
 	it("refuses UNKNOWN on an explicitly empty list — never green, never red", async () => {
