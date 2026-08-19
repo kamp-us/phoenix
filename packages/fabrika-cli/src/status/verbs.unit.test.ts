@@ -5,9 +5,12 @@
  * The property under test throughout is the three-state law: a proven negative is an exit-`0` token,
  * an unread source is `unknown`, and the two never collapse.
  */
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
+import type {ExecResult} from "../io/exec.ts";
+import {ok} from "../io/git.ts";
+import type {StdinRead} from "../io/stdin.ts";
 import {AWAITING_RELEASE, PLANNED, STATUSES} from "../labels.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
 import {DEFAULT_STALE_MINUTES} from "../lane/stale.ts";
@@ -30,9 +33,16 @@ import {
 	ISSUE_SHAPE_MARKERS,
 	knownIds,
 	MARKER_COLOR,
+	runBootstrap,
 	TAXONOMY,
 } from "./bootstrap-verb.ts";
-import {NOT_BUILDABLE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {
+	NOT_BUILDABLE,
+	PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH,
+	WRITE_UNKNOWN,
+	ZERO_SCOPE,
+} from "./codes.ts";
 import {configState, countsOf, runConfig, type SurfaceRow} from "./config-verb.ts";
 import {noAsOf, oneLine, readNow} from "./fields.ts";
 import {runMenu} from "./menu-verb.ts";
@@ -45,7 +55,7 @@ import {
 	readoutField,
 	runOpen,
 } from "./open-verb.ts";
-import {digestComment, issueNumberOf, runReadout} from "./readout-verb.ts";
+import {ARTIFACT_TITLE, digestComment, issueNumberOf, runReadout} from "./readout-verb.ts";
 import {
 	IN_REPO_ROSTER,
 	PLUGIN_MANIFEST,
@@ -407,6 +417,83 @@ describe("status bootstrap", () => {
 		const taxonomy = new Set(TAXONOMY.map((label) => label.name));
 		for (const label of ISSUE_SHAPE_MARKERS) expect(taxonomy.has(label.name)).toBe(false);
 		expect(TAXONOMY.every((label) => label.color === null)).toBe(true);
+	});
+});
+
+/**
+ * #5776: the read-back re-scanned the eventually-consistent issues *list*, so a correct first
+ * creation reported `READBACK_MISMATCH`. Every case here scripts that list to stay empty after the
+ * write — the branch is proven only when the outcome no longer depends on it.
+ */
+describe("the readout-artifact read-back reads the created issue by number", () => {
+	const LIST = /^gh api --paginate repos\/o\/r\/issues\?state=open/;
+	const CREATE = /^gh api --method POST repos\/o\/r\/issues /;
+	const READBACK = /^gh api repos\/o\/r\/issues\/3$/;
+	const CREATED = okOut(JSON.stringify({number: 3, html_url: "https://github.com/o/r/issues/3"}));
+
+	const artifact = (overrides: Readonly<Record<string, unknown>> = {}) =>
+		okOut(
+			JSON.stringify({
+				number: 3,
+				title: ARTIFACT_TITLE,
+				body: "",
+				state: "open",
+				labels: [],
+				html_url: "https://github.com/o/r/issues/3",
+				...overrides,
+			}),
+		);
+
+	const run = (readback: ExecResult) => {
+		const shell = fakeShell([
+			[LIST, okOut("")],
+			[CREATE, CREATED],
+			[READBACK, readback],
+		]);
+		const fs = fakeFs({files: {}});
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "readout-artifact",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(shell.layer, fs.layer),
+			),
+		).then((outcome) => ({outcome, calls: shell.calls}));
+	};
+
+	it("reports created off the issue's own resource, never a second list read", async () => {
+		const {outcome, calls} = await run(artifact());
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "readout-artifact",
+			target: "o/r#3",
+			readback: "ok",
+		});
+		expect(calls.filter((line) => LIST.test(line))).toHaveLength(1);
+		expect(calls.filter((line) => READBACK.test(line))).toHaveLength(1);
+	});
+
+	it("spends READBACK_MISMATCH only on a proven 404", async () => {
+		const {outcome} = await run(errOut("gh: Not Found (HTTP 404)"));
+		expect(outcome.code).toBe(READBACK_MISMATCH);
+	});
+
+	it("reads an unreadable re-read as WRITE_UNKNOWN, never as a mismatch", async () => {
+		const {outcome} = await run(errOut("gh: Bad Gateway (HTTP 502)"));
+		expect(outcome.code).toBe(WRITE_UNKNOWN);
+	});
+
+	it("proves the artifact, not merely that the number resolves", async () => {
+		const wrongTitle = await run(artifact({title: "Something else"}));
+		expect(wrongTitle.outcome.code).toBe(READBACK_MISMATCH);
+		const closed = await run(artifact({state: "closed"}));
+		expect(closed.outcome.code).toBe(READBACK_MISMATCH);
 	});
 });
 
