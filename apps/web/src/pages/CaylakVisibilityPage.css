@@ -1,0 +1,48 @@
+/* /caylak-gorunurlugu — the yazar's çaylak in-place visibility setting (#6426).
+   Role tokens only — no color literal. Mirrors the /susturduklarim page geometry. */
+
+.kp-caylak-visibility {
+	padding: var(--s-4) 0;
+}
+
+.kp-caylak-visibility__inner {
+	max-width: calc(var(--s-8) * 16);
+	margin: 0 auto;
+	padding: 0 var(--s-4);
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-4);
+}
+
+.kp-caylak-visibility__masthead {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-caylak-visibility__title {
+	font: var(--t-h-page);
+	color: var(--text-primary);
+	margin: 0;
+}
+
+.kp-caylak-visibility__lede {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.kp-caylak-visibility__note {
+	font: var(--t-body);
+	color: var(--text-secondary);
+	margin: 0;
+}
+
+.kp-caylak-visibility__loading {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+}
+
+.kp-caylak-visibility__error {
+	font: var(--t-body-sm);
+}
