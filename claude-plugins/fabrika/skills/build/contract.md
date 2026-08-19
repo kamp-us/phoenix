@@ -741,13 +741,15 @@ founder-authorized escape hatch on routine repair. That default is not an exclus
 issue carrying a founder ruling comment is buildable as transcription (ADR
 [0300](../../../../.decisions/0300-a-cited-ruling-makes-a-decision-buildable.md)), which is why the
 exemption is read off the target rather than off the impossibility of the pairing. This axis reads
-the `ready-for:` label the issue carries and never infers one from the type, so which decision issues
-end up carrying `ready-for:agent` is triage's judgement, not a behaviour this verb assumes.
+the `ready-for:` label the issue carries and never infers one from the type, in either direction;
+which decision issues end up carrying `ready-for:agent` is decided by triage's `--ready-for` routing
+([`triage/SKILL.md`](../triage/SKILL.md)), not by anything this verb assumes.
 The exemption is read off the **target**, not typed: there is no `--purpose repair`, because a flag
 could be passed against a bare issue and would then have to be refused, while naming a PR is already
 proof that a build is in flight. Its width is exactly one pairing — the same decision issue claimed
 directly still reads its own audience label and is `21` on a `ready-for:human`, an open PR serving
-any other type still reads the audience label, and the scope axis is untouched. `claim`'s purpose line names the exemption when it fires.
+any other type still reads the audience label, and the scope axis is untouched. `claim`'s purpose
+line names the exemption when it fires.
 
 This is the seam where the refusal has teeth. A pool filter is bypassed by an operator naming a
 number, and a number handed straight to `claim` passes through no pool — claiming is the moment work

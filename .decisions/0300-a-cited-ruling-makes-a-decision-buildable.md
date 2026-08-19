@@ -51,16 +51,23 @@ whether the question is settled.
   no verb serves free body prose, so a URL that lives only there is readable by no gate.
 - The builder transcribes only what the ruling says. Filling a gap the ruling left open is deciding,
   and it goes back to the founder.
+- Triage routes a decision issue carrying such a comment to `ready-for:agent`; every other decision
+  issue keeps the `ready-for:human` default. That stamp is what makes the arm reachable — the
+  audience axis is a separate fence and the citation does not lift it.
 - `build pick`'s type exclusion is unchanged: this route is entered by number, never picked.
 
 ## Consequences
 
 A ruled decision now costs one agent lane instead of one founder round-trip, which is the whole
-point — the ruling was already the expensive part.
+point — the ruling was already the expensive part. That saving needs both halves of the path, so
+both are written here: `triage` routes a decision carrying a ruling comment to `ready-for:agent`
+instead of the `human` default, and `build`'s refusal opens on the citation. With only the second
+half the arm is unreachable, because `build claim`'s audience axis refuses a `ready-for:human` issue
+at exit `21` and the builder may not override that on its own authority.
 
 The cost is that the fence is prose the builder reads, not a check anything runs. `build claim`'s
-audience axis already admits a `type:decision` issue that triage stamped `ready-for:agent`, so the
-refusal and its arm both live in the skill.
+audience axis reads the label it finds and infers nothing from the type, so the refusal and its arm
+both live in the skills.
 
 **Nothing catches an uncited transcription today.** Putting the URL in the artifact means a reviewer
 who opens the diff can see it, because the diff is served by a verb — but no gate looks for it, and

@@ -189,6 +189,15 @@ execute cold; to `human` when the deliverable is a judgment — a `type:decision
 anything resting on a product call nobody has made. Get it wrong and a document written for a human
 lands in a builder's candidate pool.
 
+**A `type:decision` goes to `agent` when the choice is already recorded on it.** Send it there when
+the issue carries a founder ruling comment that made the call: the deliverable is then transcription
+— write that ruling into the ADR or amendment it names — and transcription executes cold (ADR
+[0300](../../../../.decisions/0300-a-cited-ruling-makes-a-decision-buildable.md)). This is the stamp
+`build`'s citation arm reads; without it the arm is unreachable and the ruling costs another human
+round-trip. No such comment, and the default above stands: `human`. You cite the comment rather than
+judging the question settled yourself, and a ruling that left a gap open is still a judgment, so it
+stays `human`.
+
 **`--ready-for agent` requires a criteria block on every type but `epic`.** The verb reads the live
 body through the same wire reader every grader downstream reads, and refuses on `16` — writing no
 label — when the block is absent or malformed: that label promises a builder can pick the issue up

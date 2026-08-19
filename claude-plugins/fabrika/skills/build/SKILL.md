@@ -68,6 +68,12 @@ record (ADR [0300](../../../../.decisions/0300-a-cited-ruling-makes-a-decision-b
 **With no citable ruling comment the refusal stands exactly as it reads above.** You never judge a
 decision settled yourself: "this looks settled" is not a citation, a converged thread is not a
 citation, and a gap the ruling left open goes back to the founder rather than getting filled here.
+**The arm opens this refusal and nothing else** — the audience fence at step 2 is a separate gate the
+citation does not lift, so the issue still has to carry `ready-for:agent`, which triage stamps on a
+ruled decision issue — its [`--ready-for` routing](../triage/SKILL.md) owns that call, not this
+skill. On `ready-for:human` the claim is exit `21` and
+step 2's rule holds unchanged: end the run naming the code and say the issue needs re-stamping by
+triage — never override on your own authority, however good the citation.
 This skill is not a router: on its own text surfaces
 it executes the whole loop itself. In pick mode neither the argument nor your caller gave you a
 number, so the one `pick` returned stands in its place everywhere below. Then gate your choice:
