@@ -89,6 +89,37 @@ The error tags appear in the method's `E` channel, the resolver maps them to wir
 
 Reach for `Schema.decodeUnknown` *inside* a service method only when the validation is genuinely complex enough to be tedious as if/else — nested shape validation, conditional fields, branded primitives. Even then, the schema lives inside the service's closure as an implementation detail, not at the method signature.
 
+## A repo-authored config file: whole-file refusal with pinned wording
+
+`packages/fabrika-cli/src/ui/harness.ts` is the worked example — `design-harness.json` is untrusted
+text a consuming repo wrote, and every failure has to come back as one human-readable line a verb
+interpolates into its refusal. Three rules make that work with `Schema` rather than hand predicates:
+
+**The native `JSON.parse` stays outside the schema.** Parsing an untrusted string needs a native
+`try/catch`, which the repo bans in any file importing `effect` (#2736, enforced by a biome plugin).
+So the boundary lives in `io/json.ts` — which imports no `effect` on purpose — and returns
+`{_tag: "Parsed" | "Failed"}`; `Schema` starts at the already-parsed `unknown`.
+
+**Unknown keys refuse the file.** Pass `{onExcessProperty: "error"}` to the decoder, and annotate the
+struct with `messageUnexpectedKey`. That check runs before any property is read, so an unknown key is
+always the reported violation.
+
+**One message per field, however that field fails.** A missing key, a wrong type and a failed check
+should read the same, so the wording goes in three places for one field: `.annotate({message})` on
+the base schema (the wrong-type leaf), the check's own `{message}` option, and
+`.annotateKey({messageMissingKey})` (the absent key). Annotate the *base* schema before `.check(...)`
+— annotating the checked schema leaves the wrong-type leaf on the default `"Expected string, got 3"`.
+
+Read the first violation back with `SchemaIssue.makeFormatterStandardSchemaV1`, which yields
+`{message, path}` per issue; with the default `errors: "first"`, `issues[0]` is the one to report. A
+message that has to name a key the schema cannot know statically (the unexpected one) carries a
+placeholder the formatter fills from `path`.
+
+Defaults and normalisation ride the declaration too: `Schema.withDecodingDefaultTypeKey` for an
+absent key's value, `Schema.decode({decode: SchemaGetter.transform(...)})` for a normalisation like
+stripping a trailing slash. `HarnessConfig` is then `typeof Harness.Type` — one declaration, not an
+interface kept in sync beside it.
+
 ## Schema for tagged errors that cross boundaries
 
 [effect-errors.md](./effect-errors.md) covers this briefly. If an error needs to round-trip through JSON (RPC, persisted error log, message queue), use `Schema.TaggedErrorClass`:
