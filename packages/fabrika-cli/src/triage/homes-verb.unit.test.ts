@@ -17,7 +17,7 @@ const ROADMAP = `## Arcs
 
 | Campaign | Milestone | State |
 |----------|-----------|-------|
-| fabrika campaign | #44 | active |
+| fabrika campaign | #44 | paused |
 `;
 
 const options = {
@@ -165,11 +165,11 @@ describe("runHomes", () => {
 });
 
 describe("runHomes and the running-campaign marker", () => {
-	const withFocus = (milestone: string, declared = "2026-08-18") =>
-		`${ROADMAP}\n## Focus\n\n| Milestone | Declared |\n|---|---|\n| ${milestone} | ${declared} |\n`;
+	const withActive = (milestone: string) =>
+		ROADMAP.replace("| #44 | paused |", `| ${milestone} | active |`);
 
-	it("marks the in-focus milestone's row and leaves every other row exactly as today", async () => {
-		const out = await run([twoMilestones], {"ROADMAP.md": withFocus("#44")});
+	it("marks the active campaign's milestone row and leaves every other row exactly as today", async () => {
+		const out = await run([twoMilestones], {"ROADMAP.md": withActive("#44")});
 		expect(out.code).toBe(ANSWER);
 		expect(out.stdout.trimEnd().split("\n")).toEqual([
 			"homes",
@@ -180,41 +180,41 @@ describe("runHomes and the running-campaign marker", () => {
 		]);
 	});
 
-	it("carries the same fact as a per-milestone --json field, absent on a not-in-focus row", async () => {
-		const out = await run([twoMilestones], {"ROADMAP.md": withFocus("#44")}, {json: true});
+	it("carries the same fact as a per-milestone --json field, absent on an unmarked row", async () => {
+		const out = await run([twoMilestones], {"ROADMAP.md": withActive("#44")}, {json: true});
 		expect(JSON.parse(out.stdout).milestones).toEqual([
 			{number: 24, title: "Sözlük — search and discovery", roadmapRow: "Geçit"},
 			{number: 44, title: "fabrika", roadmapRow: "fabrika campaign", running: RUNNING_MARKER},
 		]);
 	});
 
-	it("still LISTS the in-focus milestone — the marker annotates a row, it never removes one", async () => {
-		const out = await run([twoMilestones], {"ROADMAP.md": withFocus("#44")});
+	it("still LISTS the active campaign's milestone — the marker annotates a row, it never removes one", async () => {
+		const out = await run([twoMilestones], {"ROADMAP.md": withActive("#44")});
 		expect(out.stdout).toContain("milestone\t44\tfabrika");
 	});
 
-	it("marks no row when no focus is declared, and answers exactly as it does today", async () => {
+	it("marks no row when no campaign is active, and answers exactly as it does today", async () => {
 		const text = await run([twoMilestones], {"ROADMAP.md": ROADMAP});
 		const machine = await run([twoMilestones], {"ROADMAP.md": ROADMAP}, {json: true});
 		expect(text.stdout).not.toContain("running");
 		expect(machine.stdout).not.toContain("running");
-		expect(text.stderr.join("\n")).toContain("focus: none declared");
+		expect(text.stderr.join("\n")).toContain("campaigns: none active");
 	});
 
-	it("never reads a MALFORMED focus as `no milestone is running` — it says so and marks no row", async () => {
+	it("never reads a MALFORMED campaigns table as `no milestone is running` — it says so and marks no row", async () => {
 		const out = await run([twoMilestones], {
-			"ROADMAP.md": `${ROADMAP}\n## Focus\n\n| Milestone | Declared |\n|---|---|\n| forty-four | 2026-08-18 |\n`,
+			"ROADMAP.md": ROADMAP.replace("| #44 | paused |", "| forty-four | active |"),
 		});
 		expect(out.code).toBe(ANSWER);
 		expect(out.stdout).not.toContain("running");
-		expect(out.stderr.join("\n")).toContain("focus: unreadable");
+		expect(out.stderr.join("\n")).toContain("campaigns: unreadable");
 	});
 
-	it("leaves every row unmarked, and does not fail, when the focus names a milestone not open", async () => {
-		const out = await run([twoMilestones], {"ROADMAP.md": withFocus("#999")});
+	it("leaves every row unmarked, and does not fail, when the active campaign names a milestone not open", async () => {
+		const out = await run([twoMilestones], {"ROADMAP.md": withActive("#999")});
 		expect(out.code).toBe(ANSWER);
 		expect(out.stdout).not.toContain("running");
-		expect(out.stderr.join("\n")).toContain("focus: milestone #999");
+		expect(out.stderr.join("\n")).toContain("fabrika campaign (#999)");
 	});
 });
 

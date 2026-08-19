@@ -126,7 +126,7 @@ Every verb obeys these; stated once.
 **Two axes, composed — not one widened term.** What both seams run is an **admission test** built
 from two separate questions, computed together and answered together:
 
-- **Scope admission** — is the issue inside one of the campaigns in **declared focus**? This is the term
+- **Scope admission** — is the issue's home pinned by an `active` campaign? This is the term
   [ADR 0245](../../../../.decisions/0245-campaign-scope-fence-binds-both-seams.md) coins, and it
   names campaign membership and nothing else. Refusal is `20`.
 - **The audience axis** — is the issue's `ready-for:` label `ready-for:agent`? This axis is older
@@ -195,33 +195,36 @@ nothing else: the issue still has to carry `ready-for:agent`, which triage stamp
 
 **The inputs, and where each is read.**
 
-- **The declared focus** — the `## Focus` section of the repository's root `ROADMAP.md`. Its grammar
-  is canonical here, so an implementer needs no other document:
+- **The active campaigns** — the `## Campaigns` section of the repository's root `ROADMAP.md`. Its
+  grammar is canonical here, so an implementer needs no other document:
 
   ```
-  | Milestone | Declared   |
-  |-----------|------------|
-  | #44       | 2026-08-09 |
-  | #46       | 2026-08-18 |
+  | Campaign             | Milestone | State  |
+  |----------------------|-----------|--------|
+  | fabrika fast follows | #46       | active |
+  | Taste-Skill Library  | #42       | paused |
+  | switching to fabrika | #45       | done   |
   ```
 
-  The table carries **N** data rows and the declared focus is the **set** of the milestones they
-  name — a repo running several streams at once declares a row each (ADR 0298). `Milestone` is
-  `#<int>`, one focused milestone; `Declared` is the ISO `YYYY-MM-DD` date that row was declared. A
-  **missing section and a present-but-empty table are the same well-formed default** — no focus is
-  declared. A milestone cell that is not `#<int>`, a date that is not ISO, or a row without exactly
-  two cells is **malformed** (`4`) **for the whole declaration** — never a partial read of the rows
-  that parsed — and malformed is never read as "no focus".
+  The fence reads the **set** of milestones the `active` rows pin — campaigns run concurrently, so
+  several may be active at once. `Campaign` is a non-empty name, `Milestone` is `#<int>`, and `State`
+  is one of `active` / `paused` / `done`: a campaign's state cell **is** the dispatch permission
+  (ADR [0304](../../../../.decisions/0304-campaign-active-is-the-dispatch-permission.md), which
+  retired the separate `## Focus` surface ADR 0298 governed). A **missing section, an empty table,
+  and a table whose every row is `paused` or `done` are the same well-formed default** — nothing is
+  active, the fence is off. A milestone cell that is not `#<int>`, a state outside the three, an
+  empty name, or a row without exactly three cells is **malformed** (`4`) **for the whole table** —
+  never a partial read of the rows that parsed — and malformed is never read as "nothing is active".
 - **The subject** — *which* record the two axes read. An issue is its own subject. A **pull request
   is not**: it carries no milestone and no `ready-for:` label, so a test reading the PR's own record
-  refused every repair claim while any focus was declared ([#5562](https://github.com/kamp-us/phoenix/issues/5562)).
+  refused every repair claim while any campaign was active ([#5562](https://github.com/kamp-us/phoenix/issues/5562)).
   A PR resolves to the issue its lane serves — the first closing keyword in its body, else `Part of
   #<n>`, the same reference `review scope` reads — and **both** axes then read that issue. A PR whose
-  body names no readable issue is `refused: no-served-issue` under a declared focus (`20`, and
+  body names no readable issue is `refused: no-served-issue` while any campaign is active (`20`, and
   overridable like any scope refusal): the fence cannot judge a ticket nobody named, and admitting it
-  would let a lane past the focus by omitting one line from a body. **The resolution runs whether or
-  not a focus is declared** — the audience axis reads the served issue either way — and only the
-  scope refusal is gated on a declaration: while the fence is inert a PR naming no readable issue
+  would let a lane past the fence by omitting one line from a body. **The resolution runs whether or
+  not a campaign is active** — the audience axis reads the served issue either way — and only the
+  scope refusal is gated on one: while the fence is inert a PR naming no readable issue
   falls back to its own record instead of refusing. A served issue that **cannot be read** is
   `unknown` at either setting (`11`, and not overridable), which is the `unknown` row below.
 - **The issue's home** — the number of the open milestone the issue is homed in, as a string; or, for
@@ -233,31 +236,31 @@ both axes, and every refusal carries its reason and names which axis refused:
 
 | Outcome | Trigger | Seat |
 |---|---|---|
-| `admitted` | a focus is declared and the issue's home is one of its milestones; or the issue carries a standing-lane label; or no focus is declared | kept in the pool · the claim proceeds |
-| `refused: out-of-focus` | a focus is declared, the issue's home is a milestone outside the set or no milestone, and no standing-lane label exempts it | `20` |
-| `refused: no-served-issue` | a focus is declared and the target is a pull request whose body names no readable issue — neither a closing keyword nor `Part of #<n>`, or one naming an issue proven absent | `20` |
+| `admitted` | an `active` campaign pins the issue's home; or the issue carries a standing-lane label; or no campaign is active | kept in the pool · the claim proceeds |
+| `refused: out-of-scope` | some campaign is active, the issue's home is a milestone none of them pins or no milestone, and no standing-lane label exempts it | `20` |
+| `refused: no-served-issue` | some campaign is active and the target is a pull request whose body names no readable issue — neither a closing keyword nor `Part of #<n>`, or one naming an issue proven absent | `20` |
 | `refused: audience-not-agent` | the issue carries a `ready-for:` label other than `ready-for:agent`, or carries none at all — absence is an unknown audience, never an agent audience (#4780) | `21` |
-| `unknown` | the declaration or the issue's home could not be read (`11`), or any of its rows is malformed (`4`) | `11` / `4` |
+| `unknown` | the campaigns table or the issue's home could not be read (`11`), or any of its rows is malformed (`4`) | `11` / `4` |
 
 **The two refusals are separately named and separately seated**, never one collapsed "refused": they
-come from the two different axes, they have different remedies (edit the focus row, or re-label the
-audience), and the per-issue exclusion reason `build pick` reports is derivable only if the outcome
+come from the two different axes, they have different remedies (flip the campaign's state cell, or
+re-label the audience), and the per-issue exclusion reason `build pick` reports is derivable only if the outcome
 set keeps them apart.
 
 **The standing-lane exemption, named.** Exactly two labels — `wayfinder:backlog` and
-`axis:pipeline-hardening` (ADR 0208) — are **admitted on the scope axis whatever the declaration
-says**, and carrying no milestone is not an exclusion for them. A standing lane is milestone-less by
+`axis:pipeline-hardening` (ADR 0208) — are **admitted on the scope axis whatever the table says**, and carrying no milestone is not an exclusion for them. A standing lane is milestone-less by
 design, so a fence keyed on milestone-presence alone would starve it. The exemption is the label
 match and nothing else: bare milestone-absence never confers it, and no third label inherits it
 without a founder ruling. The audience axis still applies to a standing-lane issue.
 
-**No declaration ⇒ inert and visible, never a refusal.** With no focus declared, every issue is
-admitted on the scope axis and **both seams say so on their scope line**: `focus: none declared —
-scope fence inert`. Declaring nothing is the off switch; a fence that refused on absence would wedge
-the pipeline the moment nobody had declared a focus, and an operator must be able to see from the
-run that the fence is off rather than infer it from an unshortened pool.
+**Nothing active ⇒ inert and visible, never a refusal.** With no campaign `active`, every issue is
+admitted on the scope axis and **both seams say so on their scope line**: `campaigns: none active —
+scope fence inert`. Running no campaign is the off switch, and pausing every one of them is not a
+board freeze; a fence that refused on absence would wedge the pipeline the moment nobody was running
+a campaign, and an operator must be able to see from the run that the fence is off rather than infer
+it from an unshortened pool.
 
-**Unreadable ⇒ UNKNOWN, never admitted.** A declaration that cannot be read, and an issue whose home
+**Unreadable ⇒ UNKNOWN, never admitted.** A table that cannot be read, and an issue whose home
 cannot be resolved, are `11`; a declaration that reads but does not parse is `4`. Neither ever
 resolves `admitted`, and neither borrows `20`/`21` — a fence that could not read its input has proven
 nothing, while `20` and `21` are proven refusals. Nor does a scope refusal borrow `11`. No new code
@@ -270,8 +273,8 @@ lane and the reason — into the claim marker it posts, so the escape hatch cost
 and names who took it; a silent or unattributed override is not one. The two flags are required
 together (the `claim` block below): either one alone is a usage error, not a claim. **`build
 pick` takes no override**: the pool is the browse path, and an operator who means to work an
-out-of-focus issue names its number and overrides where the lane actually opens. **`build confirm`
-and `build release` never run the fence** — it decides what may *start*, so a focus row edited
+out-of-scope issue names its number and overrides where the lane actually opens. **`build confirm`
+and `build release` never run the fence** — it decides what may *start*, so a campaign paused
 mid-lane must never strand a lane already running, and a release must never be gated on it.
 
 ### The shared exit matrix
@@ -311,7 +314,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `17` | proven: the push completed but the remote ref did not move |
 | `18` | proven: this tree's validation is red |
 | `19` | refused: the requested push is unsafe (detached HEAD, or a non-fast-forward without `--force-with-lease`) |
-| `20` | proven: not admitted on the scope axis, out of focus — the issue's home is none of the declared milestones and no standing-lane label exempts it |
+| `20` | proven: not admitted on the scope axis, out of scope — the issue's home is pinned by no `active` campaign and no standing-lane label exempts it |
 | `21` | proven: not admitted on the audience axis, audience not agent — the issue's `ready-for:` label is not `ready-for:agent`, or is absent |
 | `22` | proven: every changed file falls outside every surface's validators — there is nothing to run, so the verdict is a refusal, never a green |
 | `23` | proven: the local head does not contain the published remote head — the push would drop its commits |
@@ -420,7 +423,7 @@ fabrika build pick [--repo <owner/name>] [--limit <n>]
 | `--limit` | integer | no | `20` | maximum candidates to emit, after ranking |
 
 **Output** — machine. One JSON object:
-`{"pool": [...], "excluded": [...], "scanned": {"p0": n, "p1": n, "p2": n}, "focus": {...}}`.
+`{"pool": [...], "excluded": [...], "scanned": {"p0": n, "p1": n, "p2": n}, "campaigns": {...}}`.
 Each pool entry: `{"number", "title", "priority", "type", "home"}` — `home` is the open
 milestone's number as a string, or the standing-lane label (`wayfinder:backlog` /
 `axis:pipeline-hardening`) for a lane-exempt issue. Ranked `p0` → `p1` → `p2`, milestone order
@@ -430,10 +433,10 @@ convention rule 2).
 
 **Each excluded issue is reported with its reason**, so a shortened or empty pool is auditable
 from the answer itself rather than only from the counts. Each `excluded` entry is
-`{"number", "home", "reason"}`, where `reason` is one of `out-of-focus` / `audience-not-agent` /
+`{"number", "home", "reason"}`, where `reason` is one of `out-of-scope` / `audience-not-agent` /
 `unreadable` — the outcome set of the [admission test](#admission-test--scope-admission-and-the-audience-axis),
 one reason per outcome — or `no-acceptance-criteria` or `blocked`, this verb's own two axes (below).
-The scanned counts alone cannot tell a working fence from a broken one; the reasons can. `focus` is
+The scanned counts alone cannot tell a working fence from a broken one; the reasons can. `campaigns` is
 `{"state": "declared", "milestones": ["44", "46"]}` or `{"state": "none"}`, the same fact the stderr
 scope line carries.
 
@@ -442,14 +445,14 @@ The filter, fail-closed on every axis:
 - `status:triaged` present, `status:` nothing-else;
 - **admitted by the shared admission test** imported from
   `packages/fabrika-cli/src/build/scope-admission.ts` — this verb re-derives nothing. The test
-  composes two axes: **scope admission** (an issue whose home is outside the declared focus is
+  composes two axes: **scope admission** (an issue whose home no `active` campaign pins is
   excluded, with the two standing-lane labels — `wayfinder:backlog` and `axis:pipeline-hardening` —
   admitted whatever the declaration says, because a standing lane is milestone-less by design and a
   milestone-presence fence would starve it) and the pre-existing **audience axis** (`ready-for:agent`
   present; an issue with no `ready-for:` label is excluded, since absence is an unknown audience,
   never an agent audience — #4780, the negative test the brief's acceptance criterion names). With
-  **no focus declared** the scope axis admits everything and the fence is reported inert on the scope line and
-  in `focus`; a **failed read of the declaration** makes the whole pool `11`, never an unfiltered
+  **no campaign active** the scope axis admits everything and the fence is reported inert on the scope line and
+  in `campaigns`; a **failed read of the table** makes the whole pool `11`, never an unfiltered
   pool — an unfiltered pool on a failed read is the fail-open shape the fence exists to remove. An
   individual issue whose home the listing named but the repository does not resolve is excluded with
   reason `unreadable`, never admitted. This verb takes **no override**: overriding happens at
@@ -492,8 +495,8 @@ half). Here either every bucket was read in full or the answer is `11`.
 
 | Code | Trigger |
 |---|---|
-| `4` | the `## Focus` declaration reads but does not parse — a non-`#<int>` milestone, a non-ISO date, or a row without two cells; the pool is UNKNOWN, never unfiltered |
-| `11` | any bucket read failed or came back truncated, or the focus declaration could not be read — the pool is UNKNOWN, never partial and never unfiltered |
+| `4` | the `## Campaigns` table reads but does not parse — a non-`#<int>` milestone, a state outside `active`/`paused`/`done`, an empty name, or a row without three cells; the pool is UNKNOWN, never unfiltered |
+| `11` | any bucket read failed or came back truncated, or the campaigns table could not be read — the pool is UNKNOWN, never partial and never unfiltered |
 
 A malformed `--limit` is a plain usage error: `1`, per the reserved table. `20` and `21` are **not**
 reachable here: a scope refusal on the browse path is an exclusion with a reason, not the verb's
@@ -504,20 +507,20 @@ verdict — the pool still answers on `0`. Those two codes are the claim seam's.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `build pick: cannot read the <bucket> bucket: <reason> — the pool is UNKNOWN, never partial.` | 11 | refusal |
-| `build pick: cannot read the "## Focus" declaration: <reason> — the pool is UNKNOWN, never unfiltered.` | 11 | refusal |
-| `build pick: the "## Focus" declaration does not parse: <detail> — the pool is UNKNOWN, and a malformed declaration is never read as "no focus".` | 4 | refusal |
+| `build pick: cannot read the "## Campaigns" table: <reason> — the pool is UNKNOWN, never unfiltered.` | 11 | refusal |
+| `build pick: the "## Campaigns" table does not parse: <detail> — the pool is UNKNOWN, and a malformed table is never read as "nothing is active".` | 4 | refusal |
 | `build pick: --limit "<value>" is not a positive integer.` | 1 | usage error |
 
 **Scope** — every open issue in `--repo` carrying `status:triaged`, read via paginated REST, judged
-against the declared focus. The scope line on stderr names the per-bucket counts scanned **and the
-declaration** — `focus: milestone #44, declared 2026-08-09`, `focus: 2 milestones — #44 (declared 2026-08-09), #46 (declared 2026-08-18)`, or `focus: none declared — scope fence inert` —
+against the active campaigns. The scope line on stderr names the per-bucket counts scanned **and the
+table's state** — `campaigns: 1 active — fabrika fast follows (#46)`, `campaigns: 2 active — fabrika fast follows (#46), fabrika everywhere (#47)`, or `campaigns: none active — scope fence inert` —
 so an empty pool is auditable and a fence that is off is visible as off rather than inferred.
 
 **Examples**
 
 ```
 $ fabrika build pick
-{"pool":[{"number":4312,"title":"Editor loses focus after save","priority":"p1","type":"bug","home":"44"},{"number":4488,"title":"Prune the dead lane stamps","priority":"p2","type":"chore","home":"axis:pipeline-hardening"}],"excluded":[{"number":4290,"home":"39","reason":"out-of-focus"},{"number":4301,"home":"44","reason":"audience-not-agent"}],"scanned":{"p0":0,"p1":3,"p2":41},"focus":{"state":"declared","milestones":["44"]}}
+{"pool":[{"number":4312,"title":"Editor loses focus after save","priority":"p1","type":"bug","home":"44"},{"number":4488,"title":"Prune the dead lane stamps","priority":"p2","type":"chore","home":"axis:pipeline-hardening"}],"excluded":[{"number":4290,"home":"39","reason":"out-of-scope"},{"number":4301,"home":"44","reason":"audience-not-agent"}],"scanned":{"p0":0,"p1":3,"p2":41},"campaigns":{"state":"active","milestones":["44"]}}
 ```
 
 The standing-lane row is the exemption at work: #4488 carries no milestone and is admitted anyway,
@@ -526,8 +529,8 @@ the answer and the scope line say so:
 
 ```
 $ fabrika build pick
-build pick: scanned p0=0 p1=3 p2=41 · focus: none declared — scope fence inert
-{"pool":[{"number":4290,"title":"Retire the legacy importer","priority":"p2","type":"chore","home":"39"}],"excluded":[],"scanned":{"p0":0,"p1":3,"p2":41},"focus":{"state":"none"}}
+build pick: scanned p0=0 p1=3 p2=41 · campaigns: none active — scope fence inert
+{"pool":[{"number":4290,"title":"Retire the legacy importer","priority":"p2","type":"chore","home":"39"}],"excluded":[],"scanned":{"p0":0,"p1":3,"p2":41},"campaigns":{"state":"none"}}
 ```
 
 ```
@@ -767,7 +770,7 @@ any marker is posted**, `claim` puts `<number>` through the
 [admission test](#admission-test--scope-admission-and-the-audience-axis) — the same imported
 module `build pick` filters on, both axes, never a second derivation. In repair, `<number>` is a PR,
 and the test judges the issue that PR serves rather than the PR's own empty home — a PR naming no
-readable issue is `refused: no-served-issue` at `20`. A `refused: out-of-focus` is
+readable issue is `refused: no-served-issue` at `20`. A `refused: out-of-scope` is
 `20` and a
 `refused: audience-not-agent` is `21`, each named on stderr; an unreadable declaration or home is
 `11` and a malformed declaration is `4`, and neither ever proceeds. Nothing is written on any of the
@@ -828,7 +831,7 @@ indistinguishable from routine use — which is how a fail-closed fence rots fai
 (#5175). The override is for a *proven* refusal an operator means to take; it is not the way a
 plan- or gate-purpose lane gets past the audience axis, which `--purpose` now answers directly.
 `confirm` and `release` do not
-run the fence at all: it governs what may *start*, so a focus row edited mid-lane can neither strand
+run the fence at all: it governs what may *start*, so a campaign paused mid-lane can neither strand
 a running lane nor block its release.
 
 **A dead session's claim passes to a successor by an adopt marker, and by nothing else** (ADR
@@ -895,15 +898,15 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 
 | Code | Trigger |
 |---|---|
-| `4` | `claim` only: the `## Focus` declaration reads but does not parse — nothing was written |
+| `4` | `claim` only: the `## Campaigns` table reads but does not parse — nothing was written |
 | `7` | the issue is proven absent (404) or closed |
 | `8` | the marker write failed — it may or may not have landed; run `confirm` with the token named on stderr before anything else, and never re-run `claim` |
 | `9` | the marker landed but the read-back does not match |
 | `10` | `claim` only: `--purpose` is off the `plan` \| `gate` \| `build` enum — a refusal, never a fallback to `build` |
-| `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the focus declaration or the issue's home could not be read — scope admission is UNKNOWN, never admitted; or, `claim` against an issue only, its `blocked_by` list or a blocker's own state could not be read — blockedness is UNKNOWN, never "not blocked" |
+| `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the campaigns table or the issue's home could not be read — scope admission is UNKNOWN, never admitted; or, `claim` against an issue only, its `blocked_by` list or a blocker's own state could not be read — blockedness is UNKNOWN, never "not blocked" |
 | `15` | proven: another lane's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this lane does not hold. `claim` also refuses here over a claim this lane has *adopted* — release it first |
 | `16` | `claim` against an **issue** only, proven: a `blocked_by` blocker is still open — every one is named on stderr, and no marker was written. Not overridable: the remedy is waiting, and the edge clears when the blocker closes |
-| `20` | `claim` only, proven: the issue's home is outside every declared focus row — no marker was written |
+| `20` | `claim` only, proven: the issue's home is pinned by no `active` campaign row — no marker was written |
 | `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written. Unreachable when the target is an open PR serving a `type:decision` issue (#5914) |
 | `30` | `claim --purpose build` against an **issue** only, proven: the issue is `type:decision` or `type:epic` — no marker was written. Not overridable: a decision opens it with `--cites <ruling-comment-url>`, an epic with `--purpose plan` or `--purpose gate` |
 
@@ -912,14 +915,14 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `build claim: issue #<n> is proven absent or closed.` | 7 | refusal |
-| `build claim: #<n> is homed in milestone <home>, outside the declared focus <milestones> — refusing before any marker; pass --override "<reason>" --override-lane "<lane>" to claim it anyway.` | 20 | refusal |
+| `build claim: out of scope — the active campaigns pin <milestones> and this issue's home is <home>; flip that campaign's ## Campaigns state cell to active, or claim it with an explicit override.` | 20 | refusal |
 | `build claim: #<n> carries <audience>, not "ready-for:agent" — refusing before any marker; pass --override "<reason>" --override-lane "<lane>" to claim it anyway.` (`<audience>` is the issue's `ready-for:` label, or the literal `no "ready-for:" label` when it carries none) | 21 | refusal |
 | `build claim: type not buildable — this issue carries <label>, whose deliverable is not a pull request an agent build lane produces; <remedy>.` (`<remedy>` names `--cites` for a decision and `--purpose plan`/`--purpose gate` for an epic) | 30 | refusal |
 | `build claim: --cites <detail>; nothing was written.` — the URL is not an issue-comment URL, or names another repository or another issue | 1 | refusal |
-| `build claim: cannot read the "## Focus" declaration: <reason> — scope is UNKNOWN, never admitted; nothing was written.` | 11 | refusal |
+| `build claim: cannot read the "## Campaigns" table: <reason> — scope is UNKNOWN, never admitted; nothing was written.` | 11 | refusal |
 | `build claim: blocked by <n> open blocked_by edges: #<a>, #<b> — there is no unblock act, so the edge clears when the blocker closes; nothing was written.` — preceded by `build claim: scanned <n> blocked_by edges.` | 16 | refusal |
 | `build claim: cannot read the blocked_by edges of #<n>: <reason> — blockedness is UNKNOWN, never "not blocked"; nothing was written.` | 11 | refusal |
-| `build claim: the "## Focus" declaration does not parse: <detail> — a malformed declaration is never read as "no focus"; nothing was written.` | 4 | refusal |
+| `build claim: the "## Campaigns" table does not parse: <detail> — a malformed table is never read as "nothing is active"; nothing was written.` | 4 | refusal |
 | `build claim: #<n> is already held by this lane (comment <id>) — answered with the marker that owns it; nothing was written.` — beside `{"answer":"won", …}` on exit 0, when `--token` names a lane that already holds `<n>` | 0 | answer |
 | `build claim: --token "<value>" is not a claim token (build:<session-id>:<uuid>) — which lane is asking is not stated.` | 1 | usage error |
 | `build claim: --token "<value>" carries session <a>, but this run is session <b> — a lane names itself, never another.` | 1 | usage error |
@@ -951,10 +954,10 @@ action is identical. The same reading applies wherever a sibling verb's precondi
 "claim confirmed (`15`/`11`)": an unclaimed target refuses on `15` with the no-claim message.
 
 **Scope** — one issue's comment markers, paginated in full, plus — for `claim` — that issue's home
-and audience against the declared focus, and its `blocked_by` edges with each blocker's state. An unauthorized author's marker is counted and reported on
+and audience against the active campaigns, and its `blocked_by` edges with each blocker's state. An unauthorized author's marker is counted and reported on
 stderr but never wins: content is not authority. `claim`'s scope line names the declaration it judged
-against (`focus: milestone #44, declared 2026-08-09`, `focus: 2 milestones — #44 (declared
-2026-08-09), #46 (declared 2026-08-18)`, or `focus: none declared — scope fence inert`), so a
+against (`campaigns: 1 active — fabrika fast follows (#46)`, `campaigns: 2 active — fabrika fast
+follows (#46), fabrika everywhere (#47)`, or `campaigns: none active — scope fence inert`), so a
 run that claimed under an inert fence is readable as such afterwards.
 
 **Examples**
@@ -971,7 +974,7 @@ $ fabrika build claim 4300 --purpose gate
 
 ```
 $ fabrika build claim 4290
-build claim: #4290 is homed in milestone 39, outside the declared focus #44 — refusing before any marker; pass --override "<reason>" --override-lane "<lane>" to claim it anyway.
+build claim: out of scope — the active campaigns pin milestone #44 and this issue's home is 39; flip that campaign's ## Campaigns state cell to active, or claim it with an explicit override.
 $ echo $?
 20
 ```
