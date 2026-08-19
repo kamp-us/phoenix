@@ -18,6 +18,11 @@
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {audienceLabel, type BoardVocabulary, statusList, typeLabel} from "../config/board.ts";
+import {CONFIG_PATH} from "../config/document.ts";
+import {loadConfig} from "../config/load.ts";
+import {resolveBoard} from "../config/resolve-board.ts";
+import {readConfigSource} from "../config/source.ts";
 import {appendText, exists, readFile, writeFile} from "../io/fs.ts";
 import type {Attempt} from "../io/git.ts";
 import {
@@ -28,10 +33,9 @@ import {
 	openIssuesTitled,
 } from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {STATUSES} from "../labels.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
-import {AUDIENCES, PRIORITIES, TYPES} from "../triage/facets.ts";
+import {DEFAULT_BOARD_VOCABULARY, FACET_VOCABULARY} from "../triage/facets.ts";
 import {parseRoadmap, ROADMAP_FILE} from "../triage/roadmap.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -62,18 +66,23 @@ export const LABEL_DESCRIPTION = "created by fabrika status bootstrap label-taxo
 /**
  * The board label taxonomy this verb creates, in the order it reports it.
  *
- * **Every name is derived, never restated.** v1 listed the two statuses and `PRIORITIES` and stopped,
- * so a repo that ran the whole documented bootstrap still could not `triage apply`, `triage park`,
- * `plan flip` or `ship release` — each refuses a label the repo lacks (#4285), correctly, over a gap
- * this list left (#5772). Deriving from `STATUSES`, `TYPES` and `AUDIENCES` is what makes a seventh
- * `TYPES` member widen the bootstrap with no second edit here.
+ * **Every name is derived, never restated.** v1 listed the two statuses and the priorities and
+ * stopped, so a repo that ran the whole documented bootstrap still could not `triage apply`,
+ * `triage park`, `plan flip` or `ship release` — each refuses a label the repo lacks (#4285),
+ * correctly, over a gap that list left (#5772). Deriving it from the board vocabulary is what makes
+ * a seventh type widen the bootstrap with no second edit here — and what makes a repo that declared
+ * its own vocabulary get *its* labels rather than phoenix's (#6294).
  */
-export const TAXONOMY: ReadonlyArray<LabelSpec> = [
-	...STATUSES,
-	...PRIORITIES,
-	...TYPES.map((type) => `type:${type}`),
-	...AUDIENCES.map((audience) => `ready-for:${audience}`),
-].map((name) => ({name, description: LABEL_DESCRIPTION, color: null}));
+export const taxonomy = (board: BoardVocabulary): ReadonlyArray<LabelSpec> =>
+	[
+		...statusList(board.statuses),
+		...board.priorities,
+		...board.types.map(typeLabel),
+		...board.audiences.map(audienceLabel),
+	].map((name) => ({name, description: LABEL_DESCRIPTION, color: null}));
+
+/** The taxonomy a repo that declared no vocabulary gets — phoenix's own. */
+export const TAXONOMY: ReadonlyArray<LabelSpec> = taxonomy(DEFAULT_BOARD_VOCABULARY);
 
 /**
  * The colour every issue-shape marker carries. Fixed here rather than left to GitHub's random
@@ -165,7 +174,16 @@ export type BuildableSurface =
 			/** The substring that decides `exists`, and the whole of the read-back. */
 			readonly marker: string;
 	  }
-	| {readonly id: string; readonly kind: "labels"; readonly labels: ReadonlyArray<LabelSpec>}
+	| {
+			readonly id: string;
+			readonly kind: "labels";
+			/**
+			 * Derived from the resolved board rather than fixed, so a repo that declared its own
+			 * vocabulary is bootstrapped into *its* taxonomy. The markers ignore the argument: what an
+			 * issue *is* is fabrika's vocabulary, not the host repo's.
+			 */
+			readonly labels: (board: BoardVocabulary) => ReadonlyArray<LabelSpec>;
+	  }
 	| {readonly id: string; readonly kind: "issue"};
 
 /** The `.gitignore` row that keeps `fabrika lane`'s per-checkout state out of shared history. */
@@ -186,8 +204,8 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 		block: FABRIKA_IGNORE_BLOCK,
 		marker: FABRIKA_IGNORE_ROW,
 	},
-	{id: "label-taxonomy", kind: "labels", labels: TAXONOMY},
-	{id: "issue-shape-markers", kind: "labels", labels: ISSUE_SHAPE_MARKERS},
+	{id: "label-taxonomy", kind: "labels", labels: taxonomy},
+	{id: "issue-shape-markers", kind: "labels", labels: () => ISSUE_SHAPE_MARKERS},
 	{id: "readout-artifact", kind: "issue"},
 ];
 
@@ -426,7 +444,20 @@ const buildLabels = (
 	Effect.gen(function* () {
 		if (input.repo._tag === "Failure") return UNRESOLVED_REPO;
 		const repo = input.repo.value;
-		const wanted = surface.labels;
+
+		// Read at `repoRoot` rather than through `loadRepoConfig`, which discovers the root by
+		// running git: the root is already known here, and a bootstrap must not depend on a checkout.
+		const board = resolveBoard(
+			loadConfig(yield* readConfigSource(input.repoRoot)),
+			FACET_VOCABULARY,
+		);
+		if (board._tag === "Refused") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${CONFIG_PATH} is refused — ${board.reason.replace(/\.$/, "")}. Nothing was written; what taxonomy this repo runs on is unread, never the shipped default.`,
+			);
+		}
+		const wanted = surface.labels(board.resolved.board);
 		const names = wanted.map((label) => label.name);
 
 		const before = yield* listLabels(repo);

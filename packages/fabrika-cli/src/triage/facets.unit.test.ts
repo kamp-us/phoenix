@@ -3,7 +3,6 @@ import {
 	AUDIENCES,
 	type Change,
 	decodeMember,
-	isStandingLane,
 	PRIORITIES,
 	parkedFacets,
 	planReconcile,
@@ -90,10 +89,13 @@ describe("decodeMember", () => {
 		expect(decodeMember(AUDIENCES, "")).toBeNull();
 	});
 
-	it("recognises exactly the two standing lanes", () => {
-		expect(isStandingLane("wayfinder:backlog")).toBe(true);
-		expect(isStandingLane("axis:pipeline-hardening")).toBe(true);
-		expect(isStandingLane("wayfinder:backlog ")).toBe(false);
+	// The lanes are an open set once they are configuration (#6294), so the refusal is this decode
+	// against the resolved list rather than a compile-time narrowing.
+	it("recognises exactly the lanes it is handed, and nothing adjacent", () => {
+		expect(decodeMember(STANDING_LANES, "wayfinder:backlog")).toBe("wayfinder:backlog");
+		expect(decodeMember(STANDING_LANES, "axis:pipeline-hardening")).toBe("axis:pipeline-hardening");
+		expect(decodeMember(STANDING_LANES, "wayfinder:backlog ")).toBeNull();
+		expect(decodeMember(["team:infra"], "wayfinder:backlog")).toBeNull();
 	});
 });
 

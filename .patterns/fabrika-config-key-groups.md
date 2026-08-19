@@ -19,6 +19,8 @@ rather than a branch in fabrika's source (ADR 0273, epic
 | `source.ts` | `readConfigSource(dir)` — opens the file off a directory and reports which of the three arms it found |
 | `working-root.ts` | `loadRepoConfig(cwd)` — the working-tree opener, for a verb running against the checkout it stands in |
 | `containment.ts` | The triage-facet containment invariant, checked over declared data |
+| `board.ts` | The board vocabulary's shape (`BoardVocabulary`, `StatusNames`) and how a facet's delete authority is composed from it — pure, so `triage/facets.ts` can build the shipped default off it |
+| `resolve-board.ts` | `resolveBoard(load, shipped)` — joins `boardVocabulary` and `triageFacets` into one table and re-runs containment over the join |
 
 Whoever opens the file says which of three things it found — `Absent`, `Text`, `Unreadable` — and
 hands that to `loadConfig`. A key module never sees a file, only the parsed record.
@@ -64,6 +66,20 @@ un-govern itself; and `triageFacets`, so a config declaring a facet value the fa
 cannot reconcile an issue into a shape nobody asked for (#4285). A convention could not hold either
 one, because the config is what the convention would be read from — and a check written at a call
 site is a check the next verb forgets.
+
+**Two keys that answer one question are joined in one module, not read apart.** `boardVocabulary`
+says what each triage facet may *keep*; `triageFacets` says what it may *delete*. Read separately
+they drift into #4285's shape — a declared lane no facet owns is written once and never superseded.
+So `config/resolve-board.ts` composes them (ownership from `triageFacets` where a repo declared it,
+else the shipped pattern if it still contains the declared values, else a set over exactly those
+values) and re-runs the containment check over the join. Whoever adds a key that constrains another
+key's values does the same: the join is the seat for a cross-key rule, because `refuseLoad` only
+sees its own key.
+
+**Roles, not positions.** `boardVocabulary`'s `statuses` is a record keyed by role
+(`needsTriage`/`triaged`/…), not a five-entry array: a repo renaming `status:triaged` has to say
+which status it renamed, and positional meaning is exactly the invalid state this package refuses to
+represent. Lists are for facets where nothing needs to know which member is which.
 
 **A key whose decoded shape is not the file's shape carries a `render`.** `status settings` answers
 what a key resolves to so no skill document has to restate it, and a readout printing
