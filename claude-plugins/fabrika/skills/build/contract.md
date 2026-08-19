@@ -928,6 +928,15 @@ graded, which is the fact this gate exists for. The read runs **after** the pure
 blockedness gate, so an issue those already refused pays for no comment page, and an unreadable page
 is `11` — never "no prior build".
 
+**The gate has three answers, not two, and the third is `11`.** A comment whose first line opens with
+a gate namespace and then fails to parse as a range marker is a verdict that *cannot be read*, and it
+is refused on the same code an unreachable comment page is, in both directions — with `--resume` and
+without. Counting the break on stderr and admitting the claim anyway would resolve unreadable to "no
+prior build", which is the failure this whole gate exists to stop, wearing a log line: a `FAIL`
+posted in a broken format is still a reviewer saying no. Only a gate-namespace first line can reach
+this arm (`packages/fabrika-cli/src/wire/marker-line.ts`), so ordinary discussion on a child never
+trips it, and the remedy is to repost or delete the comment.
+
 `--resume` is the other side, and it is **checked, not trusted**: it admits a claim over a standing
 `FAIL` and refuses on `31` over a child holding none. Repair is otherwise derived from the target
 being an open PR and never typed (founder ruling on #5866, #5914); the objection there was that a
@@ -960,6 +969,7 @@ the word is admitted here exactly because the seam checks the fact it asserts. T
 | `build claim: #<n> already carries a build a reviewer failed — <gate> FAIL over <base>..<tip> (comment <id>). A fresh build would re-implement it; run "fabrika build claim <n> --resume" to take the repair lane instead, then "fabrika build branch <n> --resume-lane --token <token>" to stand on the branch that build left. Nothing was written.` | 31 | refusal |
 | `build claim: --resume says #<n> holds a build to repair, and no gate holds a standing FAIL over it — drop --resume and claim it as the fresh build it is. Nothing was written.` | 31 | refusal |
 | `build claim: cannot read the comments on #<n>: <reason> — whether it already carries a graded build is UNKNOWN, never "no"; nothing was written.` | 11 | refusal |
+| `build claim: <n> comment(s) on #<n> reach for a verdict marker and are not readable range ones — <#id: why>; …. A verdict that cannot be read is UNKNOWN, never "no prior build"; repost or delete the comment(s), then claim again. Nothing was written.` | 11 | refusal |
 | `build claim: lost to <token> (posted <timestamp>, authorized).` | 15 | refusal |
 | `build claim: the marker landed but the read-back does not match — the claim needs a human eye.` | 9 | refusal |
 | `build confirm: #<n> is held by <winning token>, not by <caller token>.` — with ` — another lane of this same session` appended when the two tokens share a session id | 15 | refusal |
@@ -1167,9 +1177,16 @@ never published. A re-run under the same nonce resolves the same name and re-key
 
 Renaming rather than cutting a second branch is the whole point: two branches carrying one child's
 commits is the range `lane prove` reports as underivable, and that refusal cannot be cleared from
-inside a worktree, because `git branch -D` refuses a branch another worktree holds (#6386). When the
-re-key itself hits that — the prior lane's tree is still standing on the branch — it is `11` naming
-git's own reason, which is the operator's to release.
+inside a worktree, because `git branch -D` refuses a branch another worktree holds (#6386).
+
+**The re-key is proven safe before it runs, because `git branch -m` will not refuse for it.** Unlike
+`-D`, a rename of a branch a second worktree has checked out **succeeds** — git exits 0 and retargets
+that worktree's `HEAD` to the new name; only the `git switch` afterwards fails, by which point the
+prior lane is silently standing on a branch keyed to this one. So the verb reads
+`git worktree list --porcelain` first and refuses on `11` naming the worktree that holds the branch,
+which is the operator's to release. If a switch fails after a rename did land, the refusal says the
+rename stands rather than "nothing was changed" — that phrase is reserved for a tree that was not
+touched. Measured against git 2.40.1 rather than reasoned about.
 
 Preconditions, guarded identically to `build tree`: a readable tree root (`11`), a confirmed claim
 (`15` / `11`) — in create and child-repair mode on `<number>`, in resume mode on the `--resume` PR's
@@ -1179,9 +1196,9 @@ number, which is the number repair mode claims.
 
 | Code | Trigger |
 |---|---|
-| `7` | `--resume`'s PR is proven absent, closed, or merged; or `--resume-lane` found no local branch cut for `<number>` |
+| `7` | `--resume`'s PR is proven absent, closed, or merged; or `--resume-lane` found no branch anywhere in this clone's refs cut for `<number>` |
 | `10` | `--slug` is not kebab-case, exceeds 5 words, or is flag-shaped; or `--resume-lane` was given beside `--resume` or `--slug` |
-| `11` | the fetch failed, the claim state could not be read, or `--resume-lane` could not read this tree's branches, found several candidates, or could not re-key the one it found |
+| `11` | the fetch failed, the claim state could not be read, or `--resume-lane` could not read this clone's branches or its worktrees, found several candidates, proved another worktree holds the branch, or could not re-key or check out the one it found |
 | `15` | proven: the claim on `<number>` is foreign |
 
 **Errors**
@@ -1193,9 +1210,12 @@ number, which is the number repair mode claims.
 | `build branch: PR #<n> is proven closed or merged — nothing to resume.` | 7 | refusal |
 | `build branch: --resume-lane takes over the local branch of an epic child, which has no PR — it cannot be combined with --resume <pr>.` | 10 | refusal |
 | `build branch: --resume-lane reads the slug off the branch it takes over — drop --slug "<value>".` | 10 | refusal |
-| `build branch: no local branch in this tree was cut for #<n> — the build to resume is not here. …` | 7 | refusal |
+| `build branch: no branch anywhere in this clone's refs was cut for #<n> — the build to resume is gone. …` | 7 | refusal |
 | `build branch: <a>, <b> were all cut for #<n> — which one this lane resumes is not derivable here; retire the superseded branches, then re-run.` | 11 | refusal |
-| `build branch: cannot re-key <old> to <new>: <reason> — the prior lane's worktree is likely still standing on it, and only an operator can release that; nothing was changed.` | 11 | refusal |
+| `build branch: <branch> is checked out in the worktree <path>, so re-keying it here would rename the branch out from under that lane rather than fail — retiring or releasing that worktree is an operator's act, not this lane's. Nothing was changed.` | 11 | refusal |
+| `build branch: cannot read which worktree holds <branch>: <reason> — re-keying it could silently retarget another lane's HEAD, so whether the take-over is safe is UNKNOWN; nothing was changed.` | 11 | refusal |
+| `build branch: cannot re-key <old> to <new>: <reason> — nothing was changed.` | 11 | refusal |
+| `build branch: cannot check out <new>: <reason> — <old> WAS re-keyed to <new> and that rename stands; this tree is still on the branch it started on, so re-run once <new> is free, or rename it back.` | 11 | refusal |
 | `build branch: #<n> is held by <winning token>, not by <caller token>.` | 15 | refusal |
 
 **Scope** — not a judging verb. It mutates only the current tree's HEAD and local refs.

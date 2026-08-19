@@ -16,8 +16,12 @@
  * "has this child been built and reviewed at all" is what a *fresh* claim asks, and a stale `FAIL`
  * answers that one yes.
  *
- * A comment reaching for the range format and missing it is counted, never dropped: a verdict posted
- * in a broken format is the one failure that would otherwise present as "the reviewer never ran".
+ * A comment reaching for the range format and missing it is reported separately, never dropped and
+ * never folded into `standing`: a verdict posted in a broken format is the one failure that would
+ * otherwise present as "the reviewer never ran". Reporting it is all this module does — the claim
+ * path refuses on it (`./claim-verb.ts`), because a gate that counted the break and then admitted
+ * the claim anyway would resolve unreadable to "no prior build", which is that same failure wearing
+ * a stderr line.
  */
 
 import type {CommentRecord} from "../io/issues.ts";

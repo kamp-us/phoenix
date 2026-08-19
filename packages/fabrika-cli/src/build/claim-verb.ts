@@ -213,6 +213,10 @@ type PriorBuildRead =
  * over a graded artifact, the other would try to resume a branch no reviewer has ruled on. Neither
  * refusal is overridable by `--override`, which admits an issue the *scope* fence barred; this is
  * not a question about whether the issue is in scope.
+ *
+ * Three answers, then, not two: `FAIL`, no `FAIL`, and **unreadable** — an unreachable comment page
+ * and a marker that reaches for the range format and misses it both land in the third, refuse on
+ * `11`, and are never folded into the second.
  */
 const readPriorBuild = (
 	repo: string,
@@ -240,11 +244,25 @@ const readPriorBuild = (
 					? ""
 					: `: ${read.standing.map((v) => `${v.namespace} ${v.polarity}`).join(", ")}`
 			}.`,
-			...read.malformed.map(
-				(reason) =>
-					`${CLAIM}: a comment on #${number} reaches for a verdict marker and is not a range one — ${reason}`,
-			),
 		];
+		// Fail-closed on the same axis as an unreadable comment page above, and for the same reason: a
+		// FAIL posted in a broken format is exactly the verdict this gate exists to see, and counting
+		// it on stderr while admitting the claim resolves "unreadable" to "no prior build" — the one
+		// reading the module's docblock names as the failure to avoid. Only a comment whose first line
+		// opens with a gate namespace can land here (`../wire/marker-line.ts`), so ordinary discussion
+		// on a child never trips it.
+		if (read.malformed.length > 0) {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${CLAIM}: ${read.malformed.length} comment(s) on #${number} reach for a verdict marker and are not readable range ones — ${read.malformed.join(
+						"; ",
+					)}. A verdict that cannot be read is UNKNOWN, never "no prior build"; repost or delete the comment(s), then claim again. Nothing was written.`,
+					[...lines, ...notes],
+				),
+			};
+		}
 		if (failed.length > 0 && !resume) {
 			return {
 				_tag: "Refused" as const,

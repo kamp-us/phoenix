@@ -644,6 +644,20 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 	});
 
+	/**
+	 * The prior-build gate asks "has this child been built and graded", which a repair lane has
+	 * already answered by naming a PR — `build verdicts` folds that PR's own verdicts. So the gate
+	 * must not fire here: it would cost a comment page for nothing, and a PR thread carrying a range
+	 * marker or a broken one would refuse the very repair it was written to route to (#6386).
+	 */
+	it("never runs the prior-build gate on a PR target — repair has already answered its question", async () => {
+		const {out, shell} = await claimPull("Fixes #5553\n", served(44));
+		expect(out.code).toBe(0);
+		expect(out.stderr.join("\n")).not.toContain("standing range verdict");
+		// Two comment reads on the admitting path: the existing-claim scan, and the marker read-back.
+		expect(shell.calls.filter((line) => COMMENTS.test(line))).toHaveLength(2);
+	});
+
 	it("judges the audience on the served issue too, so a repair lane is not refused at 21", async () => {
 		const {out} = await claimPull(
 			"Fixes #5553\n",
@@ -1661,6 +1675,54 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain('UNKNOWN, never "no"');
+	});
+
+	it("refuses on 11 when a comment reaches for a verdict marker and misses — never 'no prior build'", async () => {
+		const out = await run(runClaim, [
+			[ISSUE, CLAIMABLE],
+			unclaimed(),
+			[
+				COMMENTS,
+				comments({
+					id: 8802,
+					body: `review-code: FAIL range:${RANGE} — the child's range`,
+				}),
+			],
+		]);
+		// A FAIL missing its content binding is still a reviewer saying no. Counting it and admitting
+		// the claim anyway would read a broken verdict as "the reviewer never ran" (#6386, criterion 6).
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toContain('UNKNOWN, never "no prior build"');
+		expect(out.stderr.join("\n")).toContain("#8802");
+	});
+
+	it("refuses a malformed marker under --resume too — the flag cannot read what the gate cannot", async () => {
+		const out = await run(
+			runClaim,
+			[
+				[ISSUE, CLAIMABLE],
+				unclaimed(),
+				[
+					COMMENTS,
+					comments({id: 8803, body: "review-code: SHIPPED range:x..y content:2f1a9c4e0b7d — ?"}),
+				],
+			],
+			{resume: true},
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+	});
+
+	it("leaves ordinary discussion alone — only a gate-namespace first line can be malformed", async () => {
+		const out = await run(runClaim, [
+			[ISSUE, CLAIMABLE],
+			unclaimed(),
+			[once(COMMENTS), comments({id: 8804, body: "note: this range looks wrong to me"})],
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+		]);
+		expect(out.code).toBe(0);
 	});
 
 	it("does not run for a plan-purpose claim — an epic is not a child", async () => {

@@ -386,10 +386,12 @@ fabrika build branch $issue_or_pr_number --resume-lane --token <claim-token>
 refuses on `31` too, so the flag can never be typed past the fence. `--resume-lane` **re-keys** the
 branch the prior lane built on to this claim's nonce instead of cutting a second one — two branches
 carrying one child's commits is the range `lane prove` calls underivable, and that refusal cannot be
-cleared from inside a worktree. It refuses on `7` when no such branch is in this tree (the prior
-lane's is, and only a lane standing there can resume it) and on `11` when the re-key fails because
-another worktree still holds the branch — that one is an operator's to release, so end `STOPPED`
-naming the code. From there the loop is the ordinary one minus the publishing half: fix, `build
+cleared from inside a worktree. It refuses on `7` when no branch in this clone's refs was cut for the
+number — refs are shared across every worktree, so that means the branch is gone, not that you are
+standing in the wrong tree — and on `11` when another worktree still holds the branch, which it
+proves **before** re-keying: `git branch -m` does not refuse there, it renames the branch out from
+under that lane. Releasing that worktree is an operator's act, so end `STOPPED` naming the code. From
+there the loop is the ordinary one minus the publishing half: fix, `build
 check`, `build commit`, no push and no PR, then the `build-deviations` comment and `BUILT-NO-PR`.
 There is no cap clearance on this path — a grant is recorded against a PR's base branch — so a child
 at its cap escalates to the operator.

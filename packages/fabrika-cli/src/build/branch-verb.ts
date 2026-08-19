@@ -22,7 +22,16 @@ import {localBranches} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {requireCallerToken, requireClaim, requireSession} from "./claim.ts";
 import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {branchExists, fetchBase, renameBranch, setUpstream, switchTo, switchToNew} from "./git.ts";
+import {
+	branchExists,
+	currentBranch,
+	fetchBase,
+	renameBranch,
+	setUpstream,
+	switchTo,
+	switchToNew,
+	worktreeCheckouts,
+} from "./git.ts";
 import {getPullHead} from "./github.ts";
 import {
 	childLaneBranches,
@@ -165,7 +174,7 @@ export const runBranch = (
 			if (branches._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read this tree's local branches: ${branches.reason} — which branch carries #${issue}'s build is UNKNOWN; nothing was changed.`,
+					`${VERB}: cannot read this clone's local branches: ${branches.reason} — which branch carries #${issue}'s build is UNKNOWN; nothing was changed.`,
 					held.notes,
 				);
 			}
@@ -174,7 +183,7 @@ export const runBranch = (
 			if (only === undefined) {
 				return refuse(
 					ZERO_SCOPE,
-					`${VERB}: no local branch in this tree was cut for #${issue} — the build to resume is not here. A child's branch is never pushed (ADR 0285), so it exists only in the tree that built it; resume from that tree, or claim #${issue} without --resume once its FAIL is retracted.`,
+					`${VERB}: no branch anywhere in this clone's refs was cut for #${issue} — the build to resume is gone. Refs are shared across every worktree of a clone, so no other tree here holds one either; a child's branch is never pushed (ADR 0285), so it survives only in the clone that built it. Resume from that clone, or claim #${issue} without --resume once its FAIL is retracted.`,
 					held.notes,
 				);
 			}
@@ -197,12 +206,44 @@ export const runBranch = (
 			// Re-keyed in place rather than cut off `only`, so exactly one branch keeps naming this
 			// child — two is the underivable range `lane prove` refuses on, and an idempotent re-run
 			// under the same nonce resolves the same name and has nothing to rename.
-			if (name !== only) {
+			const rekeying = name !== only;
+			if (rekeying) {
+				// The rename is proven safe BEFORE it runs, because `git branch -m` does not refuse a
+				// branch another worktree holds — it renames it and retargets that worktree's HEAD, and
+				// only the switch below then fails (#6386, review round 1). Asking git afterwards would
+				// mean reporting a mutation that already landed under someone else's lane.
+				const checkouts = yield* worktreeCheckouts;
+				if (checkouts._tag === "Failure") {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot read which worktree holds ${only}: ${checkouts.reason} — re-keying it could silently retarget another lane's HEAD, so whether the take-over is safe is UNKNOWN; nothing was changed.`,
+						held.notes,
+					);
+				}
+				const mine = yield* currentBranch;
+				if (mine._tag === "Failure") {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot read which branch this tree holds: ${mine.reason} — whether ${only} is held here or by another lane is UNKNOWN; nothing was changed.`,
+						held.notes,
+					);
+				}
+				const holder =
+					mine.value === only
+						? undefined
+						: checkouts.value.find((checkout) => checkout.branch === only);
+				if (holder !== undefined) {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: ${only} is checked out in the worktree ${holder.path}, so re-keying it here would rename the branch out from under that lane rather than fail — retiring or releasing that worktree is an operator's act, not this lane's. Nothing was changed.`,
+						held.notes,
+					);
+				}
 				const renamed = yield* renameBranch(only, name);
 				if (renamed._tag === "Failure") {
 					return refuse(
 						PRECONDITION_UNKNOWN,
-						`${VERB}: cannot re-key ${only} to ${name}: ${renamed.reason} — the prior lane's worktree is likely still standing on it, and only an operator can release that; nothing was changed.`,
+						`${VERB}: cannot re-key ${only} to ${name}: ${renamed.reason} — nothing was changed.`,
 						held.notes,
 					);
 				}
@@ -211,7 +252,11 @@ export const runBranch = (
 			return switched._tag === "Failure"
 				? refuse(
 						PRECONDITION_UNKNOWN,
-						`${VERB}: cannot check out ${name}: ${switched.reason} — nothing was changed.`,
+						`${VERB}: cannot check out ${name}: ${switched.reason} — ${
+							rekeying
+								? `${only} WAS re-keyed to ${name} and that rename stands; this tree is still on the branch it started on, so re-run once ${name} is free, or rename it back`
+								: "nothing was changed"
+						}.`,
 						held.notes,
 					)
 				: answer(name, [
