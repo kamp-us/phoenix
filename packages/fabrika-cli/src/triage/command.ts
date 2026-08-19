@@ -169,13 +169,17 @@ const apply = leafCommand(
 	{
 		issue: issueArg,
 		type: Flag.string("type").pipe(
-			Flag.withDescription(`the issue's type: one of ${TYPES.join(", ")}`),
+			Flag.withDescription(
+				`the issue's type; the default vocabulary is ${TYPES.join(", ")}, and boardVocabulary replaces it`,
+			),
 		),
 		priority: Flag.string("priority").pipe(
-			Flag.withDescription(`the priority bucket: one of ${PRIORITIES.join(", ")}`),
+			Flag.withDescription(
+				`the priority bucket; the default vocabulary is ${PRIORITIES.join(", ")}`,
+			),
 		),
 		readyFor: Flag.string("ready-for").pipe(
-			Flag.withDescription(`who picks it up: ${AUDIENCES.join(" or ")}`),
+			Flag.withDescription(`who picks it up; the default vocabulary is ${AUDIENCES.join(" or ")}`),
 		),
 		home: Flag.integer("home").pipe(
 			Flag.optional,
@@ -184,7 +188,7 @@ const apply = leafCommand(
 		lane: Flag.string("lane").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				`a standing lane instead of a milestone: ${STANDING_LANES.join(" or ")}`,
+				`a standing lane instead of a milestone; this repo's own set, defaulting to ${STANDING_LANES.join(" or ")}`,
 			),
 		),
 		repo: repoFlag,

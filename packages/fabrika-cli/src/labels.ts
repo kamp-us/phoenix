@@ -11,6 +11,8 @@
  * holds only the names that are labels and nothing else.
  */
 
+import {type StatusNames, statusList} from "./config/board.ts";
+
 export const NEEDS_TRIAGE = "status:needs-triage";
 export const TRIAGED = "status:triaged";
 export const NEEDS_INFO = "status:needs-info";
@@ -22,14 +24,21 @@ export const PLANNED = "status:planned";
 export const AWAITING_RELEASE = "status:awaiting-release";
 
 /**
+ * The five by role — the shipped default of `boardVocabulary`'s `statuses`, and the shape a repo
+ * renaming one of them writes. A role record rather than a list, because "which status is the
+ * triaged one" has to survive the rename.
+ */
+export const DEFAULT_STATUS_NAMES: StatusNames = {
+	needsTriage: NEEDS_TRIAGE,
+	triaged: TRIAGED,
+	needsInfo: NEEDS_INFO,
+	planned: PLANNED,
+	awaitingRelease: AWAITING_RELEASE,
+};
+
+/**
  * The five in the order the bootstrap reports them. Membership here is the contract
  * `bootstrap-verb.ts` derives its taxonomy from: a status label a verb writes and this list omits is
  * a label the bootstrap will not create.
  */
-export const STATUSES: ReadonlyArray<string> = [
-	NEEDS_TRIAGE,
-	TRIAGED,
-	NEEDS_INFO,
-	PLANNED,
-	AWAITING_RELEASE,
-];
+export const STATUSES: ReadonlyArray<string> = statusList(DEFAULT_STATUS_NAMES);
