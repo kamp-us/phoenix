@@ -5,80 +5,101 @@
  * URL and the readiness probe are the repo's own declaration, so the render leg needs no knowledge of
  * any particular stack. Validated whole-file, the same rule the registry gets.
  */
+import {Effect, Result, Schema, SchemaGetter, SchemaIssue} from "effect";
+import {parseJsonOrReason} from "../io/json.ts";
 
 /** The capture viewport in CSS px, when the harness does not name one. */
 export const DEFAULT_VIEWPORT = {width: 1280, height: 900} as const;
 /** The readiness bound: a harness that has not answered 200 by here leaves every surface UNKNOWN. */
 export const READY_TIMEOUT_MS = 60_000;
 
-export interface HarnessConfig {
-	readonly command: string;
-	readonly url: string;
-	readonly readyPath: string;
-	readonly viewport: {readonly width: number; readonly height: number};
-	readonly evidenceStore: string | null;
-}
+/**
+ * The refusal wording, one string per field however that field fails — a missing key, a wrong type
+ * and a failed check all read the same. Callers interpolate these into user-facing refusals
+ * (`render-verb.ts`, `evidence-verb.ts`) and `harness.unit.test.ts` pins them, so they are the
+ * schema's contract rather than incidental text.
+ */
+const VIOLATION = {
+	topLevel: "the top level is not an object",
+	/** The unexpected key is only known to the formatter, which fills the placeholder from the path. */
+	unknownKey: 'unknown key "%key%"',
+	command: '"command" is missing or not a non-empty string',
+	url: '"url" is missing or is not an http(s) base URL',
+	readyPath: '"readyPath" is not a path beginning with "/"',
+	viewport: '"viewport" is not an object',
+	width: '"viewport.width" is not a positive integer',
+	height: '"viewport.height" is not a positive integer',
+	evidenceStore: '"evidenceStore" is not a string',
+} as const;
+
+const KEY_PLACEHOLDER = "%key%";
+
+const positiveInt = (message: string) =>
+	Schema.Number.annotate({message})
+		.check(Schema.isInt({message}).abort(), Schema.isGreaterThan(0, {message}))
+		.annotateKey({messageMissingKey: message});
+
+const Viewport = Schema.Struct({
+	width: positiveInt(VIOLATION.width),
+	height: positiveInt(VIOLATION.height),
+})
+	.annotate({message: VIOLATION.viewport, messageUnexpectedKey: VIOLATION.unknownKey})
+	.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed({...DEFAULT_VIEWPORT})));
+
+const Harness = Schema.Struct({
+	command: Schema.String.annotate({message: VIOLATION.command})
+		.check(Schema.makeFilter((value) => value.trim() !== "", {message: VIOLATION.command}))
+		.annotateKey({messageMissingKey: VIOLATION.command}),
+	url: Schema.String.annotate({message: VIOLATION.url})
+		.check(Schema.isPattern(/^https?:\/\//, {message: VIOLATION.url}))
+		.annotateKey({messageMissingKey: VIOLATION.url})
+		.pipe(
+			Schema.decode({
+				decode: SchemaGetter.transform((url: string) => url.replace(/\/+$/, "")),
+				encode: SchemaGetter.passthrough(),
+			}),
+		),
+	readyPath: Schema.String.annotate({message: VIOLATION.readyPath})
+		.check(Schema.isStartsWith("/", {message: VIOLATION.readyPath}))
+		.pipe(Schema.withDecodingDefaultKey(Effect.succeed("/"))),
+	viewport: Viewport,
+	evidenceStore: Schema.NullOr(Schema.String)
+		.annotate({message: VIOLATION.evidenceStore})
+		.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+}).annotate({message: VIOLATION.topLevel, messageUnexpectedKey: VIOLATION.unknownKey});
+
+export type HarnessConfig = typeof Harness.Type;
 
 export type HarnessParse =
 	| {readonly _tag: "Config"; readonly config: HarnessConfig}
 	| {readonly _tag: "Violation"; readonly violation: string};
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value);
+const decodeHarness = Schema.decodeUnknownResult(Harness, {onExcessProperty: "error"});
 
-const KNOWN = ["command", "url", "readyPath", "viewport", "evidenceStore"];
+const formatIssues = SchemaIssue.makeFormatterStandardSchemaV1({
+	leafHook: SchemaIssue.defaultLeafHook,
+	checkHook: SchemaIssue.defaultCheckHook,
+});
 
-const viewportOf = (raw: unknown): {width: number; height: number} | string => {
-	if (raw === undefined) return {...DEFAULT_VIEWPORT};
-	if (!isRecord(raw)) return '"viewport" is not an object';
-	const {width, height} = raw;
-	if (typeof width !== "number" || !Number.isInteger(width) || width <= 0) {
-		return '"viewport.width" is not a positive integer';
-	}
-	if (typeof height !== "number" || !Number.isInteger(height) || height <= 0) {
-		return '"viewport.height" is not a positive integer';
-	}
-	return {width, height};
+const violationOf = (error: Schema.SchemaError): string => {
+	const [first] = formatIssues(error.issue).issues;
+	if (first === undefined) return VIOLATION.topLevel;
+	const segment = first.path?.at(-1);
+	return first.message.replace(
+		KEY_PLACEHOLDER,
+		String(typeof segment === "object" ? segment.key : segment),
+	);
 };
 
 export const parseHarness = (text: string): HarnessParse => {
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(text);
-	} catch (err) {
-		return {_tag: "Violation", violation: `the file is not JSON (${(err as Error).message})`};
+	const parsed = parseJsonOrReason(text);
+	if (parsed._tag === "Failed") {
+		return {_tag: "Violation", violation: `the file is not JSON (${parsed.reason})`};
 	}
-	if (!isRecord(parsed)) return {_tag: "Violation", violation: "the top level is not an object"};
-	const extra = Object.keys(parsed).filter((key) => !KNOWN.includes(key));
-	if (extra[0] !== undefined) {
-		return {_tag: "Violation", violation: `unknown key "${extra[0]}"`};
-	}
-	if (typeof parsed.command !== "string" || parsed.command.trim() === "") {
-		return {_tag: "Violation", violation: '"command" is missing or not a non-empty string'};
-	}
-	if (typeof parsed.url !== "string" || !/^https?:\/\//.test(parsed.url)) {
-		return {_tag: "Violation", violation: '"url" is missing or is not an http(s) base URL'};
-	}
-	const readyPath = parsed.readyPath ?? "/";
-	if (typeof readyPath !== "string" || !readyPath.startsWith("/")) {
-		return {_tag: "Violation", violation: '"readyPath" is not a path beginning with "/"'};
-	}
-	const viewport = viewportOf(parsed.viewport);
-	if (typeof viewport === "string") return {_tag: "Violation", violation: viewport};
-	const evidenceStore = parsed.evidenceStore;
-	if (evidenceStore !== undefined && typeof evidenceStore !== "string") {
-		return {_tag: "Violation", violation: '"evidenceStore" is not a string'};
-	}
-	return {
-		_tag: "Config",
-		config: {
-			command: parsed.command,
-			url: parsed.url.replace(/\/+$/, ""),
-			readyPath,
-			viewport,
-			evidenceStore: evidenceStore ?? null,
-		},
-	};
+	const decoded = decodeHarness(parsed.value);
+	return Result.isSuccess(decoded)
+		? {_tag: "Config", config: decoded.success}
+		: {_tag: "Violation", violation: violationOf(decoded.failure)};
 };
 
 /** `/` → `root`; every other route becomes its slug (`/pano/yeni` → `pano-yeni`). */
