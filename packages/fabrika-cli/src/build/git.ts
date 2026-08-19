@@ -225,6 +225,43 @@ export const mergeBase = (base: string): Shell<Attempt<string>> =>
 		return isObjectName(sha) ? ok(sha) : fail(`git named no merge base with ${base}`);
 	});
 
+/**
+ * Which of `paths` the commit `rev` actually holds — the roster that tells a file this diff *created*
+ * from one whose read failed.
+ *
+ * Without it, `git show rev:path` answers both with a non-zero exit, and a caller reading that as
+ * "the file is new" turns an IO fault into an empty baseline, which reds a clean PR; reading it as a
+ * fault refuses every PR that adds a doc. Asking the tree first keeps the two apart.
+ *
+ * `-z` because a path with a space or a quote is quoted in the default output and would come back in
+ * a spelling that matches nothing.
+ */
+export const treePaths = (
+	rev: string,
+	paths: ReadonlyArray<string>,
+): Shell<Attempt<ReadonlyArray<string>>> =>
+	Effect.gen(function* () {
+		if (paths.length === 0) return ok([]);
+		const r = yield* execCapture("git", [
+			"ls-tree",
+			"-r",
+			"--name-only",
+			"-z",
+			rev,
+			"--",
+			...paths,
+		]);
+		if (!r.ok) return fail(r.reason);
+		return ok(r.stdout.split("\0").filter((p) => p !== ""));
+	});
+
+/** A file's bytes as of `rev`. The caller proves the path is in that rev's tree first. */
+export const showAt = (rev: string, path: string): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["show", `${rev}:${path}`]);
+		return r.ok ? ok(r.stdout) : fail(r.reason);
+	});
+
 const pathLines = (stdout: string): ReadonlyArray<string> =>
 	stdout
 		.split("\n")

@@ -30,6 +30,10 @@ scar is named, the verb here designs it out; that is the only thing a rebuild in
 - `packages/fabrika-cli/src/build/doc-leaks.ts` — `docLeaks`, the same question over a **committed
   file**, which is a different answer. `build check --surface prose` imports it and nothing else
   declares a path shape.
+- `packages/fabrika-cli/src/build/prose-baseline.ts` — `introducedLeaks`, the multiset difference
+  that leaves a changed file's *pre-existing* leaks with the author who wrote them. `build check
+  --surface prose` imports it; the docblock carries why the shape is a baseline and not #4250's
+  added-line attribution.
 - `packages/fabrika-cli/src/report/compose.ts` — `normalizeForReadback` (three steps: CRLF→LF,
   strip trailing spaces/tabs per line, strip trailing newlines — read the body, the docblock
   understates it). Both writing verbs' read-backs compare through it, never byte-for-byte:
@@ -1342,6 +1346,26 @@ read is `11`, UNKNOWN: which docs are exempt is then unknown, and the verdict ma
 Fenced code is **scanned**, deliberately — the repo's gate scans docs whole, and skipping fences here
 would make the predictor looser than what it predicts.
 
+**A prose red must be this diff's, so the leak scan is baselined against the merge base.** The scan
+used to read the whole text of every changed markdown file, so a PR that edited one paragraph
+inherited every defect line already in it — content the author never wrote and must not change, which
+made a correct one-line doc fix unmergeable (#5755). The verb now scans the file at the merge base as
+well and reports only what this diff added. Two consequences worth knowing before reading a red:
+
+- Identity is the pattern's reason plus the matched bytes, never the line number, because an
+  insertion above a leak shifts it. Byte-identical leaks are therefore told apart by **count**: the
+  base's copies are a budget the head's occurrences spend, so adding a third copy of a leak the base
+  held twice still reds.
+- A file the diff creates has no base text, so its whole content is this diff's.
+
+The shape is a merge-base baseline and not the added-line attribution `cli-invocation-guard` took for
+the same class of problem in #4250. Markdown is edited by rewriting prose, and a moved paragraph, a
+re-wrapped line or a rename presents every carried line as added, so attribution would reproduce the
+false red on the most ordinary doc edit there is. **Only the leak scan is baselined.** A leak is
+decided entirely by the bytes of its own line; a link's resolvability is a property of the tree, and
+the same untouched line goes dead the moment the diff moves its target — baselining the link resolver
+would green the PR that broke every link in the repo.
+
 A predictor and the gate it predicts have to carry the same path shapes, and fabrika may not import
 the gate's module (ADR 0238, ADR 0273). So the agreement is pinned rather than promised, on ADR
 0251's terms: the canonical shapes are the golden fixture
@@ -1394,6 +1418,8 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | `build check: cannot read the claim markers on #<n>: <reason> — the lane is UNKNOWN.` | 11 | refusal |
 | `build check: cannot read <file> (<reason>) — it is in the diff and is not absent, so the verdict is UNKNOWN, never green.` | 11 | refusal |
 | `build check: cannot read .fabrika.jsonc (<reason>) — which docs are leak-scan exempt is UNKNOWN, never green.` | 11 | refusal |
+| `build check: cannot list the changed markdown at <base> (<reason>) — which defects predate this diff is UNKNOWN, never green.` | 11 | refusal |
+| `build check: cannot read <file> at <base> (<reason>) — which of its defects predate this diff is UNKNOWN, never green.` | 11 | refusal |
 | `build check: <n> leak-scan exemption(s) declared in .fabrika.jsonc.` | 0 | scope note |
 | `build check: nothing is leak-scan exempt — <reason>.` | 0 | scope note |
 | `build check: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |

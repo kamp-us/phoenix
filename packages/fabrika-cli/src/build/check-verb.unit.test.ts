@@ -38,6 +38,7 @@ const MERGE_BASE = /^git merge-base HEAD origin\/main$/;
 const DIFF = /^git diff --name-only /;
 const UNTRACKED_ARGV = "git ls-files --others --exclude-standard --full-name -- :/";
 const UNTRACKED = /^git ls-files --others --exclude-standard --full-name -- :\/$/;
+const LS_TREE = /^git ls-tree -r --name-only -z /;
 const TYPECHECK = /^pnpm typecheck --force$/;
 const LINT = /^pnpm lint:worktree$/;
 
@@ -45,6 +46,22 @@ const LANE = `build/4312-editor-focus-loss-${NONCE}`;
 
 /** A scripted untracked-file list. Placed ahead of `LANE_OK`, whose default is an empty one. */
 const untracked = (stdout: string): readonly [RegExp, ExecResult] => [UNTRACKED, okOut(stdout)];
+
+/**
+ * The markdown the merge base already held, plus each file's bytes there.
+ *
+ * Placed ahead of `LANE_OK`, whose default is an empty base tree — i.e. every changed markdown file
+ * is new, so its whole text is this diff's and the leak baseline subtracts nothing.
+ */
+const atBase = (
+	files: Readonly<Record<string, string>>,
+): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+	[LS_TREE, okOut(`${Object.keys(files).join("\0")}\0`)],
+	...Object.entries(files).map(
+		([path, text]) =>
+			[new RegExp(`^git show ${HEAD}:${path.replace(/[.]/g, "\\.")}$`), okOut(text)] as const,
+	),
+];
 
 const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[REV_PARSE, GIT_DIRS],
@@ -55,6 +72,7 @@ const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[REPO_META, okOut("main\n")],
 	[MERGE_BASE, okOut(`${HEAD}\n`)],
 	untracked(""),
+	[LS_TREE, okOut("")],
 ];
 
 const options = {
@@ -781,5 +799,91 @@ describe("the prose link check still reds a dead link", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).verdict).toBe("green");
+	});
+});
+
+// #5755: the scan read the whole file, so a one-paragraph edit inherited every defect line already
+// in it. The blocked case was a doc whose subject IS path hygiene, spelling the leak shapes out.
+describe("the leak scan reds this diff's leaks, not the file's", () => {
+	const FILE = "docs/guide.md";
+	const PATH = `/repo/trees/lane-a/${FILE}`;
+	const TAXONOMY = "an absolute home root reads /Users/account on macOS\n";
+
+	it("greens a defect line the merge base already carried unchanged", async () => {
+		const out = await run(
+			[...atBase({[FILE]: TAXONOMY}), ...LANE_OK, [DIFF, okOut(`${FILE}\n`)]],
+			{surface: "prose"},
+			{[PATH]: `a new opening paragraph\n\n${TAXONOMY}`},
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).verdict).toBe("green");
+	});
+
+	it("reds a leak this diff introduced into a file that already carried another", async () => {
+		const out = await run(
+			[...atBase({[FILE]: TAXONOMY}), ...LANE_OK, [DIFF, okOut(`${FILE}\n`)]],
+			{surface: "prose"},
+			{[PATH]: `${TAXONOMY}the fork lives at ~/code/github.com/o/r\n`},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.some((line) => line.includes("~/code/"))).toBe(true);
+		expect(out.stderr.some((line) => line.includes("/Users/"))).toBe(false);
+	});
+
+	it("reds an added copy of a leak the base already held, counting occurrences", async () => {
+		const out = await run(
+			[...atBase({[FILE]: TAXONOMY}), ...LANE_OK, [DIFF, okOut(`${FILE}\n`)]],
+			{surface: "prose"},
+			{[PATH]: `${TAXONOMY}${TAXONOMY}`},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.some((line) => line.includes(`${FILE}:2`))).toBe(true);
+	});
+
+	it("reds the whole text of a doc this diff creates — nothing predates a new file", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut(`${FILE}\n`)]],
+			{surface: "prose"},
+			{[PATH]: TAXONOMY},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+	});
+
+	it("refuses on 11 when the base tree cannot be listed — what predates the diff is UNKNOWN", async () => {
+		const out = await run(
+			[[LS_TREE, errOut("fatal: not a tree object")], ...LANE_OK, [DIFF, okOut(`${FILE}\n`)]],
+			{surface: "prose"},
+			{[PATH]: TAXONOMY},
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+	});
+
+	it("refuses on 11 when a file in the base tree cannot be read there", async () => {
+		const out = await run(
+			[
+				[LS_TREE, okOut(`${FILE}\0`)],
+				[/^git show /, errOut("fatal: bad object")],
+				...LANE_OK,
+				[DIFF, okOut(`${FILE}\n`)],
+			],
+			{surface: "prose"},
+			{[PATH]: TAXONOMY},
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+	});
+
+	// The link resolver is deliberately NOT baselined: a link's resolvability is a property of the
+	// tree, so an untouched line goes dead the moment the diff moves its target.
+	it("still reds a dead link on a line the merge base carried unchanged", async () => {
+		const DEAD = "see [the plan](plan.md)\n";
+		const out = await run(
+			[...atBase({[FILE]: DEAD}), ...LANE_OK, [DIFF, okOut(`${FILE}\n`)]],
+			{surface: "prose"},
+			{[PATH]: DEAD},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.some((line) => line.includes('links to "plan.md"'))).toBe(true);
 	});
 });
