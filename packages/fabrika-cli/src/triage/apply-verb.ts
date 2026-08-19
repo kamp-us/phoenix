@@ -9,7 +9,7 @@
  * The reconcile itself — which labels are owned, what is removed, what is preserved, and the shape
  * the read-back asserts — lives in `./facets.ts` and is shared with `triage park`.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {getIssue, listLabels, listOpenMilestones, resolveRepo} from "../io/issues.ts";
 import {TRIAGED} from "../labels.ts";
@@ -23,6 +23,7 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
+import {configRefusal} from "./config-guard.ts";
 import {applyChanges} from "./facet-writes.ts";
 import {
 	AUDIENCES,
@@ -51,6 +52,8 @@ export interface ApplyOptions {
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** Where the run stands. The repo root above it is where `.fabrika.jsonc` is read. */
+	readonly cwd: string;
 }
 
 const unreadable = (what: string, repo: string, reason: string): VerbOutcome =>
@@ -90,13 +93,21 @@ const criteriaRefusal = (
 
 export const runApply = (
 	options: ApplyOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const {issue, json} = options;
 
 		if (!Number.isInteger(issue) || issue <= 0) {
 			return refuse(FAILED, `triage apply: ${issue} is not an issue number.`);
 		}
+
+		const badConfig = yield* configRefusal("triage apply", options.cwd);
+		if (badConfig !== null) return badConfig;
+
 		if ((options.home === null) === (options.lane === null)) {
 			return refuse(
 				FAILED,

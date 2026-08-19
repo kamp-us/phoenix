@@ -162,6 +162,7 @@ or the search index could not be read
 | `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — |
 | `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — |
 | `17` | refused: a live claim marker on the target names a session other than this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -1553,6 +1554,7 @@ for drift, not because they are currently absent.)
 | `11` | the issue, its comments, the claim on it, the repository's label set, or its milestone set could not be read |
 | `17` | a live claim marker on the issue names another session |
 | `16` | `--ready-for agent` over a live body the wire reader does not answer `Found` on — every type but `epic`; nothing was written |
+| `18` | `.fabrika.jsonc` yielded no usable value — a key's load-time check refused it (the containment invariant is one such check), the file could not be read, or a key did not decode; refused at load, before the issue is even read |
 
 The issue being proven absent is `7` as well — the same zero-scope seat, since there is no issue to
 stamp.
@@ -1573,6 +1575,7 @@ stamp.
 | `triage apply: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
 | `triage apply: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
 | `triage apply: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage apply: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage apply: cannot read <what> in <repo>: <reason> — nothing was written; the transition is UNKNOWN.` | 11 | refusal |
 | `triage apply: write failed after <k> of <m> changes: <reason> — #<n> may be partially labelled; re-run this verb, which is idempotent.` | 8 | refusal |
 | `triage apply: read-back shows <observed> — expected exactly one type, one priority, status:triaged, one ready-for, and <the milestone / no milestone>.` | 9 | refusal |
@@ -1717,6 +1720,7 @@ it.
 | `9` | the writes landed but the read-back does not match |
 | `11` | the issue, its comments, the claim on it, or the repository's label set could not be read |
 | `17` | a live claim marker on the issue names another session |
+| `18` | `.fabrika.jsonc` yielded no usable value — a key's load-time check refused it (the containment invariant is one such check), the file could not be read, or a key did not decode; refused at load, before the comment is posted |
 
 **Errors**
 
@@ -1728,6 +1732,7 @@ it.
 | `triage park: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
 | `triage park: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
 | `triage park: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage park: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage park: the questions text carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage park: the questions text is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
 | `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it (#4285).` | 7 | refusal |

@@ -17,6 +17,8 @@ rather than a branch in fabrika's source (ADR 0273, epic
 | `registry.ts` | One `register(...)` line per key group |
 | `load.ts` | `loadConfig(source)` → a document every key resolves against, or a refusal; `resolveAll` for a reader over the whole registry |
 | `source.ts` | `readConfigSource(dir)` — opens the file off a directory and reports which of the three arms it found |
+| `working-root.ts` | `loadRepoConfig(cwd)` — the working-tree opener, for a verb running against the checkout it stands in |
+| `containment.ts` | The triage-facet containment invariant, checked over declared data |
 
 Whoever opens the file says which of three things it found — `Absent`, `Text`, `Unreadable` — and
 hands that to `loadConfig`. A key module never sees a file, only the parsed record.
@@ -55,10 +57,13 @@ where empty would disable something. The widen-only keys are the exception and s
 docblocks: for `capClearAuthors`, `docLeakExempt` and `workflowValidators`, empty **is** the strict
 answer.
 
-**A key that can weaken the config's own governance is refused at load.** `refuseLoad` on a
-`KeyGroup` refuses the whole load, before any key's value is used — `governedRoots` uses it so a
-config whose roots do not cover `.fabrika.jsonc` cannot un-govern itself. A convention could not
-hold that, because the config is what the convention would be read from.
+**A key whose value could disable or widen a guard is refused at load.** `refuseLoad` on a
+`KeyGroup` refuses the whole load, before any key's value is used. Two keys use it, for the same
+reason in two shapes: `governedRoots`, so a config whose roots do not cover `.fabrika.jsonc` cannot
+un-govern itself; and `triageFacets`, so a config declaring a facet value the facet does not own
+cannot reconcile an issue into a shape nobody asked for (#4285). A convention could not hold either
+one, because the config is what the convention would be read from — and a check written at a call
+site is a check the next verb forgets.
 
 **A key whose decoded shape is not the file's shape carries a `render`.** `status settings` answers
 what a key resolves to so no skill document has to restate it, and a readout printing
@@ -66,3 +71,26 @@ what a key resolves to so no skill document has to restate it, and a readout pri
 leaves the reader to reverse it. `render` is display only: `Registration.readout` applies it,
 `Registration.resolve` does not, so a caller computing with a value never gets the display form.
 `capClearAuthors` and `workflowValidators` carry one; a plain string array needs none.
+
+## Reading a key at the working tree
+
+A verb running against a base ref opens the bytes itself (`git show`) and hands `loadConfig` a
+`Text`. A verb running against the checkout it stands in calls `loadRepoConfig(cwd)`, which finds the
+repo root **above** `cwd` first: a config read only at the top level would resolve to the shipped
+defaults for every run from a subdirectory, which is a silent widening nothing reports. Take the
+`cwd` as an option off `command.ts` (`cwd: process.cwd()`) rather than reading it in the verb, so a
+unit test can point the load at a scripted filesystem.
+
+## A gate refuses on a config that never decoded
+
+`loadConfig` answers `Config` for a file nobody could open, a file that is not a JSON object, and a
+key whose value the decoder rejected — those arms live per key in `Resolution`, not on the `Load`,
+because a caller reading one key has no business being stopped by another key's malformity. A gate
+is the opposite case: it is about to write, and it needs *every* key it is judged against to have
+decoded.
+
+So a gate never reads `load._tag === "Config"` as "it loaded". It calls `unusableReason(load)`
+(`config/unusable.ts`), which answers the one reason no value of this config may be used, or `null`.
+Keying on the refusal alone is fail-open on exactly the inputs the surface exists to separate: the
+first round of `triage`'s guard let an unreadable and a malformed config straight through to the
+label write, with the containment check never run (#6292).

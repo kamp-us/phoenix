@@ -3,9 +3,18 @@ import {describe, expect, it} from "vitest";
 import {errOut, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {runApply} from "./apply-verb.ts";
-import {COMMENTS, claimPage, EXPIRED, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
+import {
+	COMMENTS,
+	CWD,
+	claimPage,
+	EXPIRED,
+	guardedShell,
+	LIVE,
+	triageContext,
+} from "./claim-fixtures.test-support.ts";
 import {
 	CLAIMED_ELSEWHERE,
+	CONFIG_REFUSED,
 	CRITERIA_REQUIRED,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
@@ -70,6 +79,7 @@ const options = {
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	cwd: CWD,
 };
 
 /** Observed: needs-triage on `p1` and unhomed. Read back: the whole triaged shape. */
@@ -88,8 +98,62 @@ const run = (
 	overrides: Partial<typeof options> = {},
 ) =>
 	Effect.runPromise(
-		Effect.provide(runApply({...options, ...overrides}), guardedShell(script).layer),
+		Effect.provide(runApply({...options, ...overrides}), triageContext(guardedShell(script))),
 	);
+
+/** A config whose priority facet declares a value `/^p\d+$/` cannot own — #4285's shape, as data. */
+const VIOLATING_CONFIG = JSON.stringify({
+	triageFacets: [{name: "priority", owns: "^p\\d+$", values: ["p0", "p1", "urgent"]}],
+});
+
+describe("runApply under a refused config", () => {
+	it("refuses on CONFIG_REFUSED, naming the facet and both sets", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(runApply(options), triageContext(guardedShell(happy()), VIOLATING_CONFIG)),
+		);
+		expect(out.code).toBe(CONFIG_REFUSED);
+		expect(out.stderr.join(" ")).toContain("facet `priority`");
+		expect(out.stderr.join(" ")).toContain("values=[p0, p1, urgent]");
+	});
+
+	it("writes no label, and does not even read the issue", async () => {
+		const shell = guardedShell(happy());
+		await Effect.runPromise(
+			Effect.provide(runApply(options), triageContext(shell, VIOLATING_CONFIG)),
+		);
+		expect(shell.calls).toEqual([]);
+	});
+
+	it("still runs on a config that declares nothing about the facets", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runApply(options),
+				triageContext(guardedShell(happy()), '{"docLeakExempt": []}'),
+			),
+		);
+		expect(out.code).toBe(0);
+	});
+
+	/**
+	 * A config that never decoded is a config with no containment answer, and the first round of
+	 * this guard let all three arms through to the write because it keyed on the load's refusal
+	 * alone. Each asserts the refusal AND the empty call list, since "nothing was written" is the
+	 * claim, not "the exit code was 18".
+	 */
+	it.each([
+		["a file that is there and denied", {unreadable: true} as const, "could not be read"],
+		["a document that is not a JSON object", "[1, 2]", "not a JSON object"],
+		["a key no decoder accepted", '{"triageFacets": "garbage"}', "`triageFacets` is not an array"],
+	])("refuses %s, and reads nothing", async (_case, config, expected) => {
+		const shell = guardedShell(happy());
+		const out = await Effect.runPromise(
+			Effect.provide(runApply(options), triageContext(shell, config)),
+		);
+		expect(out.code).toBe(CONFIG_REFUSED);
+		expect(out.stderr.join(" ")).toContain(expected);
+		expect(shell.calls).toEqual([]);
+	});
+});
 
 describe("runApply", () => {
 	it("stamps the whole transition and prints the tab-separated triaged line", async () => {
@@ -120,7 +184,7 @@ describe("runApply", () => {
 
 	it("homes BEFORE it labels, so the homing guard never sees a triaged un-homed issue", async () => {
 		const shell = guardedShell(happy());
-		await Effect.runPromise(Effect.provide(runApply(options), shell.layer));
+		await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
 		const writes = shell.calls.filter((c) => PATCH.test(c) || REMOVE.test(c) || ADD.test(c));
 		expect(writes[0]).toBe("gh api --method PATCH repos/o/r/issues/4312 -F milestone=47");
 		expect(writes.at(-1)).toContain("--method POST");
@@ -128,7 +192,7 @@ describe("runApply", () => {
 
 	it("removes the superseded priority and never the applied one (#4285)", async () => {
 		const shell = guardedShell(happy());
-		await Effect.runPromise(Effect.provide(runApply(options), shell.layer));
+		await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
 		const removes = shell.calls.filter((c) => REMOVE.test(c));
 		expect(removes).toEqual([
 			"gh api --method DELETE repos/o/r/issues/4312/labels/status%3Aneeds-triage",
@@ -146,7 +210,7 @@ describe("runApply", () => {
 			[REMOVE, okOut("[]")],
 			[ADD, okOut("[]")],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runApply(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
 		expect(out.code).toBe(0);
 		expect(shell.calls.some((c) => c.includes("area%3Apipeline"))).toBe(false);
 	});
@@ -164,7 +228,10 @@ describe("runApply", () => {
 			[ADD, okOut("[]")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runApply({...options, home: null, lane: "wayfinder:backlog"}), shell.layer),
+			Effect.provide(
+				runApply({...options, home: null, lane: "wayfinder:backlog"}),
+				triageContext(shell),
+			),
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("triaged\t4312\tbug\tp2\tagent\twayfinder:backlog\n");
@@ -197,7 +264,7 @@ describe("runApply", () => {
 	])("refuses an off-vocabulary --%s on 10, before any read", async (_flag, override) => {
 		const shell = guardedShell(happy());
 		const out = await Effect.runPromise(
-			Effect.provide(runApply({...options, ...override}), shell.layer),
+			Effect.provide(runApply({...options, ...override}), triageContext(shell)),
 		);
 		expect(out.code).toBe(OFF_VOCABULARY);
 		expect(out.stdout).toBe("");
@@ -220,7 +287,7 @@ describe("runApply", () => {
 			[REMOVE, okOut("[]")],
 			[ADD, okOut("[]")],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runApply(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain("label ready-for:agent does not exist");
 		expect(shell.calls.some((c) => ADD.test(c) || PATCH.test(c))).toBe(false);
@@ -248,7 +315,7 @@ describe("runApply", () => {
 
 	it("separates an UNREADABLE issue from an absent one, and writes nothing", async () => {
 		const shell = guardedShell([[ISSUE, errOut("gh: Bad gateway (HTTP 502)")]]);
-		const out = await Effect.runPromise(Effect.provide(runApply(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("nothing was written");
 		expect(shell.calls.some((c) => PATCH.test(c) || ADD.test(c))).toBe(false);
@@ -350,7 +417,7 @@ describe("runApply", () => {
 
 		it("refuses an absent block, points at enrich, and writes NO label", async () => {
 			const shell = criteriaShell(NO_CRITERIA_BODY);
-			const out = await Effect.runPromise(Effect.provide(runApply(options), shell.layer));
+			const out = await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
 			expect(out.code).toBe(CRITERIA_REQUIRED);
 			expect(out.stdout).toBe("");
 			expect(out.stderr.at(-1)).toContain("carries no acceptance-criteria block");
@@ -360,7 +427,7 @@ describe("runApply", () => {
 
 		it("refuses a malformed block on the same code, naming the drift and repair-criteria", async () => {
 			const shell = criteriaShell(CRITERIA_BODY.replace("### Acceptance", "## Acceptance"));
-			const out = await Effect.runPromise(Effect.provide(runApply(options), shell.layer));
+			const out = await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
 			expect(out.code).toBe(CRITERIA_REQUIRED);
 			expect(out.stderr.at(-1)).toContain("is malformed");
 			expect(out.stderr.at(-1)).toContain("heading level 2, expected 3");
@@ -406,7 +473,7 @@ describe("runApply", () => {
 
 	it("refuses an unresolvable repo rather than guessing one", async () => {
 		const out = await Effect.runPromise(
-			Effect.provide(runApply({...options, env: {}}), guardedShell([]).layer),
+			Effect.provide(runApply({...options, env: {}}), triageContext(guardedShell([]))),
 		);
 		expect(out.code).toBe(1);
 		expect(out.stderr.at(-1)).toContain("cannot resolve a target repo");
@@ -436,7 +503,7 @@ describe("runApply — the target guard", () => {
 	const guard = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
 		const shell = guardedShell(script);
 		const out = await Effect.runPromise(
-			Effect.provide(runApply({...options, env: mine}), shell.layer),
+			Effect.provide(runApply({...options, env: mine}), triageContext(shell)),
 		);
 		return {out, wrote: shell.calls.some((line) => ADD.test(line) || PATCH.test(line))};
 	};
