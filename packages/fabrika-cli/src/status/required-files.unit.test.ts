@@ -108,3 +108,46 @@ describe("subject classification", () => {
 		expect(classifySubject("A merge queue enabled on the base branch")._tag).toBe("Unprobeable");
 	});
 });
+
+/**
+ * #5777: `` `.gitignore` covering `.fabrika/` `` classified as the bare path `.gitignore`, so any
+ * repo with any `.gitignore` scored the row `present` while `.fabrika/` went uncovered. These pin
+ * the named case AND its boundary — the keyword is `covering` and nothing else, because a general
+ * "path plus the next token" reading would put `## Focus` under the same demand.
+ */
+describe("a content-qualified path cell", () => {
+	it("carries the covered token, so the probe cannot answer off mere existence", () => {
+		expect(classifySubject("`.gitignore` covering `.fabrika/`")).toEqual({
+			_tag: "PathContaining",
+			path: ".gitignore",
+			contains: ".fabrika/",
+		});
+	});
+
+	it("keeps its id token out of the subject", () => {
+		const rows = parseRequiredFiles(
+			table("| `id:gitignore-row` `.gitignore` covering `.fabrika/` | why | **degrade** — n |"),
+		);
+		expect(rows?.[0]?.surfaceId).toBe("gitignore-row");
+		expect(rows?.[0]?.subject).toEqual({
+			_tag: "PathContaining",
+			path: ".gitignore",
+			contains: ".fabrika/",
+		});
+	});
+
+	it("does not read any other trailing token as a content demand", () => {
+		expect(classifySubject("`ROADMAP.md` with a `## Focus` section")).toEqual({
+			_tag: "Path",
+			path: "ROADMAP.md",
+		});
+		expect(classifySubject("`.fabrika.jsonc` with a `capClearAuthors` array")).toEqual({
+			_tag: "Path",
+			path: ".fabrika.jsonc",
+		});
+	});
+
+	it("stays label-first — a labels cell is never re-read as a covered path", () => {
+		expect(classifySubject("`status:triaged` covering `type:feature`")._tag).toBe("Labels");
+	});
+});

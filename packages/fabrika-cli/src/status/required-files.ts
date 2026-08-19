@@ -28,6 +28,8 @@ export const SECTION_HEADING = "## Required repo files";
  */
 export type Subject =
 	| {readonly _tag: "Path"; readonly path: string}
+	/** A path whose mere existence does not satisfy the row — it must contain {@link contains}. */
+	| {readonly _tag: "PathContaining"; readonly path: string; readonly contains: string}
 	| {readonly _tag: "Labels"; readonly labels: ReadonlyArray<string>}
 	| {readonly _tag: "Unprobeable"; readonly reason: string};
 
@@ -54,6 +56,8 @@ const LABEL_TOKEN =
 	/^(?:(?:status|type|ready-for|wayfinding|prototyping|grilling):[a-z0-9._-]+|p\d+)$/;
 const PATH_TOKEN = /^[A-Za-z0-9._][A-Za-z0-9._/-]*$/;
 const SEPARATOR_CELL = /^:?-{3,}:?$/;
+/** The one keyword that qualifies an opening path by its content. See {@link classifySubject}. */
+const COVERING = /^`([^`]+)`\s+covering\s+`([^`]+)`/;
 
 const isPathToken = (token: string): boolean =>
 	PATH_TOKEN.test(token) && (token.includes("/") || /\.[A-Za-z0-9]+$/.test(token));
@@ -69,16 +73,29 @@ export const rowCells = (line: string): ReadonlyArray<string> => {
  * What the first cell declares.
  *
  * The rule is positional and stated so two implementers cannot ship two answers: a cell naming any
- * **label-shaped** token declares labels; otherwise a cell that *opens* with a backticked path
- * declares that path; everything else is unprobeable. A path named mid-sentence is a qualifier on
- * some other subject — *"the `package.json` scripts …"*, *"a dev server … `design-harness.json`'s
- * `command`"* — and probing it would answer a question the row did not ask.
+ * **label-shaped** token declares labels; otherwise a cell of the form *"`<path>` covering
+ * `<token>`"* declares a content-qualified path; otherwise a cell that *opens* with a backticked
+ * path declares that path; everything else is unprobeable. A path named mid-sentence is a qualifier
+ * on some other subject — *"the `package.json` scripts …"*, *"a dev server …
+ * `design-harness.json`'s `command`"* — and probing it would answer a question the row did not ask.
+ *
+ * **`covering` is a named case, not the regex reaching one token further.** The content-qualified
+ * form is the only one where the words after the opening path are part of what the row requires,
+ * so it is closed on that single keyword: read as "a path plus whatever token follows it",
+ * *"`ROADMAP.md` with a `## Focus` section"* would demand a substring nobody declared. Without the
+ * case, *"`.gitignore` covering `.fabrika/`"* rendered `present` off the existence of any
+ * `.gitignore` at all (#5777) — `Unprobeable`'s own false positive, arriving through the branch
+ * that does probe.
  */
 export const classifySubject = (cell: string): Subject => {
 	const withoutId = cell.replace(ID_TOKEN, "").trim();
 	const tokens = [...withoutId.matchAll(BACKTICKED)].map((m) => m[1] ?? "");
 	const labels = tokens.filter((token) => LABEL_TOKEN.test(token));
 	if (labels.length > 0) return {_tag: "Labels", labels};
+	const covering = COVERING.exec(withoutId);
+	if (covering?.[1] !== undefined && covering[2] !== undefined && isPathToken(covering[1])) {
+		return {_tag: "PathContaining", path: covering[1], contains: covering[2]};
+	}
 	const opening = /^`([^`]+)`/.exec(withoutId);
 	if (opening?.[1] !== undefined && isPathToken(opening[1])) {
 		return {_tag: "Path", path: opening[1]};
