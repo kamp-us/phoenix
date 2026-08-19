@@ -131,8 +131,8 @@ inert.
 
 An absent roadmap no longer stops you: `triage homes` degrades on it
 ([#5773](https://github.com/kamp-us/phoenix/issues/5773)). A file proven not to exist is a proven
-negative, so every open milestone lists with no arc name, the standing lanes list beside them, and
-stderr says so:
+negative, so every open milestone lists with no arc name, any standing lane your board carries lists
+beside them, and stderr says so:
 
 ```
 triage homes: no roadmap at ROADMAP.md — every milestone lists with no arc name.
@@ -195,26 +195,34 @@ fabrika triage homes
 Your milestone should appear as a `milestone` row. If it does not, the roadmap row's second cell does
 not match `^#(\d+)$`.
 
-## 8. Ignore the two `lane` rows
+## 8. The `lane` rows, if you get any
 
-`triage homes` will also print these, in your repo, whatever your board looks like:
+`triage homes` also prints a `lane` row per **standing lane** — a label that is a home in its own
+right, for work no milestone owns. You get one only where your repo both declares the lane and
+carries its label. A fresh repo declares both — phoenix's pair is the shipped default — but carries
+neither label, so you get none, and stderr says so:
 
 ```
-lane	wayfinder:backlog	fog — uncharted work upstream of any arc
-lane	axis:pipeline-hardening	the standing pipeline and reliability lane
+triage homes: standing lanes: 0 of 2 declared carry a label in you/your-repo — not offered: wayfinder:backlog, axis:pipeline-hardening.
 ```
 
-Those are phoenix's own standing lanes, compiled into
-[`packages/fabrika-cli/src/triage/homes-verb.ts`](../../../packages/fabrika-cli/src/triage/homes-verb.ts)
-and printed unconditionally. Taking either at its word fails one step later at a different verb
-citing a different missing label.
+That is the correct answer, not a gap to fix. Home everything to a milestone and skip `--lane`.
 
-[ADR 0286](../../../.decisions/0286-standing-lanes-come-from-config.md) ruled that lanes come from
-your repo's own `.fabrika.jsonc` under a `lanes` key, and that a repo declaring none has none. **That
-key is not read yet** — the literal still has three copies in the CLI
-([#5785](https://github.com/kamp-us/phoenix/issues/5785)). Today: treat the two `lane` rows as noise,
-home everything to a milestone, and do not pass `--lane` to `triage apply` unless you have actually
-created those two labels on your board.
+If you do want a standing lane: create the label on your board, then declare it under
+`boardVocabulary.standingLanes` in `.fabrika.jsonc` (next section). Both halves are required — a
+declared lane whose label does not exist is not offered, which is what stops `triage apply --lane`
+from failing a write at the end of a full triage run.
+
+If you want none at all, say so: `"standingLanes": []` under `boardVocabulary`. Then `triage homes`
+reads no labels, offers no lane, and prints `standing lanes: this repo declares none.` — every issue
+homes on a milestone, and `triage apply --lane` refuses. Leaving the key out is a different answer:
+it falls to phoenix's pair, which then gets filtered against your board.
+
+[ADR 0286](../../../.decisions/0286-standing-lanes-come-from-config.md) rules that lanes come from
+your repo, never from a CLI literal. `boardVocabulary.standingLanes` still ships phoenix's pair as
+the default for an absent key, which 0286 says it should not; evicting that default is
+[#6469](https://github.com/kamp-us/phoenix/issues/6469). Until then the default reaches no board that
+has not created the labels, and the empty declaration is how you opt out of it entirely.
 
 ## 9. Add the config file
 

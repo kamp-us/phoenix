@@ -30,7 +30,7 @@ makes the implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4
 | `triage queue` | the claimable `status:needs-triage` queue, with the count it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
 | `triage claim` | take one lane's claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
 | `triage provenance` | was this issue reported by an agent or hand-typed by a human | a structural marker test over a fetched body, plus a membership test over the configured operator set — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
-| `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes, with every `active` campaign's milestone marked `running` | the join, the open-milestone filter and reading the campaigns table are mechanical; picking which home fits, and whether an exception applies, is judgment |
+| `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes this repo declares AND carries the labels for, with every `active` campaign's milestone marked `running` | the join, the open-milestone filter and reading the campaigns table are mechanical; picking which home fits, and whether an exception applies, is judgment |
 | `triage split` | create one split child, once, keyed on the parent back-reference | idempotency keyed on a durable reference is mechanical; deciding a report *is* a bundle is judgment |
 | `triage enrich` | replace the body with your rewrite — or, for an epic, your pitch — over a preserved, leak-redacted original | envelope assembly, redaction and read-back are mechanical; what the rewrite says is judgment |
 | `triage apply` | apply the whole triaged transition — type, priority, audience, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
@@ -685,25 +685,27 @@ fabrika triage homes [--roadmap <path>] [--repo <owner/name>] [--json]
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
+There is no lane flag: the lane set is `boardVocabulary.standingLanes` in `.fabrika.jsonc`, and a
+config that could not be read or decoded refuses `11` on the same terms as `roadmapFile`.
+
 **Output** — machine channel. The first line is the outcome token `homes`. Then one tab-separated
 line per candidate — `<kind>`, `<key>`, `<label-or-title>` — where `<kind>` is `milestone` or `lane`.
 A `milestone` row's `<key>` is its **number** (the value `triage apply --home` takes) and its third
 column is the milestone title; a `lane` row's `<key>` is its label name and its third column is a
-fixed string, exactly one of:
+fixed meaning string:
 
 | Lane | Third column, verbatim |
 |---|---|
 | `wayfinder:backlog` | `fog — uncharted work upstream of any arc` |
 | `axis:pipeline-hardening` | `the standing pipeline and reliability lane` |
+| any other declared lane | `a standing lane this repo declares` |
 
-**This table is the only place in this spec that enumerates the standing lanes.** `triage apply`'s
-`--lane` takes its vocabulary from here rather than restating it; the two labels appear again only as
-bytes the verb itself emits (the facet pattern and the refusal message), never as a second list a
-reader could find drifted from this one.
+**This table is the only place in this spec that enumerates a lane meaning.** The strings are
+constants here rather than the repo's live label descriptions, so a description edit cannot change a
+machine-channel answer — and no source this verb reads can gloss a lane some other repo declared, so
+the third row says that instead of inventing one.
 
-Milestone rows come first, ordered by number, then the two lanes. The lane strings are constants in
-this spec rather than the repo's live label descriptions, so a description edit cannot change a
-machine-channel answer.
+Milestone rows come first, ordered by number, then the lanes in the order the config declares them.
 
 With `--json`, an object with keys `outcome`, `milestones` (array of `{number, title, roadmapRow}`),
 `lanes` (array of `{label, meaning}`), and `scanned`.
@@ -735,8 +737,49 @@ pinning a milestone that is closed or absent from the open set marks no row and 
 
 **Only open milestones appear, and each is joined to its roadmap arc/campaign row.** `roadmapRow` is
 `null` for an open milestone no roadmap row pins, which is itself a signal worth seeing rather than a
-row to hide. The two standing lanes are fixed and are not read from the repo. There is no third, and
-this verb never invents one.
+row to hide.
+
+**A lane row is offered only where this repo BOTH declares the lane and carries its label.** The
+declared set is `boardVocabulary.standingLanes` in `.fabrika.jsonc`, whose shipped default is
+phoenix's pair; the verb then reads the repo's own label set and drops every declared lane the board
+does not carry. Both halves are load-bearing. The declaration alone is a claim about a board — in
+`kamp-us/demlik`, where neither label exists, the pair printed as assignable homes and a triager took
+one, classified the whole issue, and only then hit a failed label write naming a label rather than
+the real cause (#6440). So the presence read is the same evidence the later `triage apply --lane`
+write depends on, taken before the menu is printed rather than after the work is done.
+
+**A repo declares no lanes by writing `"standingLanes": []`**, and then reads no labels at all —
+there is nothing to filter — and prints no lane row. The empty list is the one explicitly-empty
+`boardVocabulary` sub-key that decodes rather than refusing: the other four turn a gate off, while
+zero lanes turns nothing off and says every issue homes on a milestone. An **absent** key is not the
+same declaration — it falls to the shipped pair. `triage apply --lane` refuses over an empty set on
+`10`, naming the empty key rather than enumerating nothing.
+
+Neither case is a refusal: a home list over milestones alone is the right answer, and stderr carries
+which lanes were declared and which of them the board carries:
+
+| Declared set | stderr |
+|---|---|
+| empty | `triage homes: standing lanes: this repo declares none.` |
+| all present | `triage homes: standing lanes: 2 of 2 declared carry a label in <repo>.` |
+| some absent | `triage homes: standing lanes: 0 of 2 declared carry a label in <repo> — not offered: wayfinder:backlog, axis:pipeline-hardening.` |
+
+The dropped labels are named, not merely counted: the gap between what the config asserts and what
+the board carries is the defect, and a bare `0 of 2` sends the reader back to the config to find out
+which names it meant.
+
+**An unreadable label list is `11`, never "this repo has no lanes."** That reading silently shortens
+the menu, which is the failure this whole surface is built against — a caller cannot tell a repo with
+no lanes from a repo it could not look at.
+
+This follows ADR 0286's ruling that lanes come from the repo, with one departure it names: 0286 puts
+them under a `lanes` key with **no** shipped default, and the key that exists today is
+`boardVocabulary.standingLanes`, which defaults to phoenix's pair on an absent key. Evicting that
+default is [#6469](https://github.com/kamp-us/phoenix/issues/6469), which owns the whole move —
+0286's `lanes` key, the compiled-in label/meaning enumeration, and the readers that go with the set.
+Until it lands, two things contain the default: the presence filter, so it asserts nothing about a
+board that never created the labels, and the empty declaration, so a repo can say outright that it
+runs none.
 
 **The join, stated rather than left to the implementer** — this is the verb's whole split test, so it
 is the one thing that must not be inferred. `ROADMAP.md`'s `## Arcs` and `## Campaigns` tables are
@@ -755,7 +798,7 @@ milestone titled `Sözlük — search and discovery`, and the two share no subst
 | Code | Trigger |
 |---|---|
 | `7` | the repository has zero open milestones, **or the roadmap parsed to zero arc rows** — zero scope |
-| `11` | the milestone list or the roadmap file could not be read — the outcome is UNKNOWN |
+| `11` | the milestone list, the repo's label set, the roadmap file or `.fabrika.jsonc` could not be read — the outcome is UNKNOWN |
 
 A malformed `## Campaigns` table is not on this table: it marks no row and names itself on stderr.
 The marker is an annotation on an answer this verb can give without it, so refusing over one would
@@ -766,6 +809,8 @@ withhold the home list a triager needs.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `triage homes: cannot read milestones in <repo>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
+| `triage homes: cannot read the labels in <repo>: <reason> — which standing lanes this board accepts is UNKNOWN, never none.` | 11 | refusal |
+| `triage homes: .fabrika.jsonc is refused — <reason>, so which standing lanes this repo runs is unread; the homes list is UNKNOWN, never short.` | 11 | refusal |
 | `triage homes: cannot probe the roadmap at <path>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
 | `triage homes: cannot read the roadmap at <path>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
 | `triage homes: <repo> has 0 open milestones — refusing to answer, since "no home exists" routes to a kill (ADR 0092).` | 7 | refusal |
@@ -783,7 +828,7 @@ passes.
 
 **An ABSENT roadmap is an answer, not either refusal (#5773).** A file that is proven not to exist is
 a proven negative — the join is simply empty — so every open milestone lists with `roadmapRow: null`,
-the standing lanes list beside them, and stderr carries
+any standing lane the board carries lists beside them, and stderr carries
 `triage homes: no roadmap at <path> — every milestone lists with no arc name.` The campaigns fence
 reads the absent file as the empty document, so its scope line says `campaigns: none active — scope
 fence inert.` The zero-arc-rows refusal above is reached only by a roadmap that *exists*, so the
@@ -802,8 +847,8 @@ cwd (see the CLI convention's Delivery section) unless `--roadmap` overrides it.
 milestones is a refusal, not an answer**: an empty candidate list routes the skill toward a standing
 lane or a kill, and a kill driven by a failed read is irreversible.
 
-**On a `7` refusal stdout is empty and `--json` emits nothing** — the two lane constants go to stderr
-with the refusal message. An earlier draft printed the lanes on stdout while withholding the outcome
+**On a `7` refusal stdout is empty and `--json` emits nothing** — the offered lanes go to stderr with
+the refusal message, which is why the label read runs ahead of the milestone read. An earlier draft printed the lanes on stdout while withholding the outcome
 token; that is a partial answer at a non-zero exit, which the shared conventions forbid and which
 hands a byte-reading caller two rows and no token.
 
@@ -1451,7 +1496,7 @@ fabrika triage apply 4312 --type chore --priority p2 --ready-for agent --lane ax
 | `--priority` | enum | yes | — | one of `p0`, `p1`, `p2` |
 | `--ready-for` | enum | yes | — | who picks it up: `human` or `agent` |
 | `--home` | integer | one of | — | the **number** of an open milestone to home the issue in |
-| `--lane` | enum | one of | — | a standing lane, taking its two values from the `lane` rows `triage homes` prints |
+| `--lane` | enum | one of | — | a standing lane, taking its values from the `lane` rows `triage homes` prints |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 

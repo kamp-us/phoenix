@@ -6,11 +6,17 @@
  * rather than restated here, so a repo with no `.fabrika.jsonc` reconciles and bootstraps exactly as
  * phoenix does today.
  *
- * **Every sub-key is independently optional, and an explicitly-empty one is refused.** A repo that
- * renames only its lanes declares only `standingLanes`; the other four fall to their defaults like
- * any undeclared key. But `"types": []` would leave `triage apply --type` with nothing to accept and
- * `status bootstrap` with nothing to create — a gate turned off by a settings file, which is the one
- * thing this surface refuses whole.
+ * **Every sub-key is independently optional, and an explicitly-empty one is refused — except
+ * `standingLanes`.** A repo that renames only its lanes declares only `standingLanes`; the other
+ * four fall to their defaults like any undeclared key. But `"types": []` would leave
+ * `triage apply --type` with nothing to accept and `status bootstrap` with nothing to create — a
+ * gate turned off by a settings file, which is the one thing this surface refuses whole.
+ *
+ * `"standingLanes": []` turns nothing off. It says every issue homes on a milestone, which is a
+ * board shape a repo may genuinely have — ADR 0286 rules an absent key and an empty list both mean
+ * zero lanes. Refusing it left `triage homes`'s "this repo declares none" answer unreachable from
+ * any configuration: a documented state no operator could produce (#6440). An **absent** key still
+ * falls to the shipped pair; that departure from 0286 is #6469's.
  *
  * **A sub-key this module does not know is refused too.** `"standingLane": [...]` would otherwise be
  * a declaration the operator believes is configured and is not.
@@ -30,6 +36,9 @@ const STATUS_ROLES = ["needsTriage", "triaged", "needsInfo", "planned", "awaitin
 const LIST_KEYS = ["types", "priorities", "audiences", "standingLanes"] as const;
 
 type ListKey = (typeof LIST_KEYS)[number];
+
+/** The one list key whose empty declaration is an answer rather than a disabled gate — see above. */
+const EMPTY_DECLARABLE: ReadonlyArray<ListKey> = ["standingLanes"];
 
 interface Bad {
 	readonly reason: string;
@@ -54,7 +63,7 @@ const decodeList = (raw: unknown, key: ListKey): ReadonlyArray<string> | Bad => 
 		}
 		values.push(entry.trim());
 	}
-	if (values.length === 0) {
+	if (values.length === 0 && !EMPTY_DECLARABLE.includes(key)) {
 		return {reason: `${named(key)} is empty — a facet with no vocabulary accepts nothing`};
 	}
 	const duplicate = values.find((value, i) => values.indexOf(value) !== i);
