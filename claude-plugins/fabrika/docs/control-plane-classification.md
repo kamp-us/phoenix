@@ -9,8 +9,15 @@ spec or a verb implementer can cite a file instead of a comment
 ## The model
 
 1. **CODEOWNERS is the single source of truth.** A change is control-plane **iff** it touches paths
-   owned by the control-plane team in [`.github/CODEOWNERS`](../../../.github/CODEOWNERS). There is
-   no second source.
+   owned by a control-plane owner in [`.github/CODEOWNERS`](../../../.github/CODEOWNERS). There is
+   no second source. **An owner is either an `@org/team` or an individual `@login`, and the two count
+   the same** — founder ruling on
+   [#5603](https://github.com/kamp-us/phoenix/issues/5603) comment 16, built as
+   [#6299](https://github.com/kamp-us/phoenix/issues/6299). A team-only reading deadlocked every PR
+   in a repo whose boundary names people rather than a team, and sent `cp-approval` to a team-roster
+   endpoint a personal repo has no org for. An owner that is neither shape — a bare email — names no
+   account an approval resolves against, so it bounds nothing. In this repo nothing moves: every
+   CODEOWNERS row here names `@kamp-us/control-plane`.
 2. **A verb computes it, from two inputs and nothing else** — the CODEOWNERS file and the diff's
    changed paths. **No agent judgement, and no content regex.** A skill may state the expectation;
    it never asserts the answer.
@@ -18,14 +25,37 @@ spec or a verb implementer can cite a file instead of a comment
 
    | value | means |
    |---|---|
-   | `§CP` | a changed path is owned by the control-plane team |
-   | `not-§CP` | CODEOWNERS was read, and no changed path is owned |
-   | `UNKNOWN` | the classification could not be made — unreadable/unparseable CODEOWNERS, empty path set |
+   | `§CP` | a changed path is owned by a control-plane owner |
+   | `not-§CP` | CODEOWNERS was read, and no changed path is owned — **including a CODEOWNERS proven absent**, since a repo that declares no boundary has none |
+   | `UNKNOWN` | the classification could not be made over a boundary that *was* read — a file that parses to no usable row, an empty path set |
+
+   **Three reads of the file are three different facts, and they do not fold** (the split
+   [#6299](https://github.com/kamp-us/phoenix/issues/6299) built, off the #5603 comment-8 ruling).
+   *Proven absent* (a 404) is `not-§CP`: there is no control plane to be inside of. *Present* is
+   parsed and classified, and a file that reads fine but bounds nobody is still the `UNKNOWN` hold —
+   a declared-but-useless boundary is not the same fact as no boundary. *Unreadable* is neither, and
+   §4 says what happens to it.
 
 4. **`UNKNOWN` is treated as §CP — fail closed.** A read that failed and a change that is genuinely
    ordinary are different facts, and collapsing them is this repo's dominant defect class (a check
    that cannot see its subject answering confidently instead of erroring). A false §CP costs one
    approval; a false ordinary reaches `main` with none.
+
+   **An unreadable CODEOWNERS is not that `UNKNOWN`. It is a per-repo declaration** — the
+   `unreadableCodeowners` key in `.fabrika.jsonc`, read at the same base ref
+   ([#6299](https://github.com/kamp-us/phoenix/issues/6299), off the #5603 comment-28 ruling; see ADR
+   [0307](../../../.decisions/0307-unreadable-codeowners-is-per-repo.md)). Its two
+   values are `"refuse"` — exit `11`, the fail-closed behaviour above — and `"ship"`, which classifies
+   `not-§CP` and prints the waiver. **The shipped default is `"ship"`**, so in a repo that declares
+   nothing, a transient read failure ships rather than stranding every lane. The fail-closed
+   guarantee is therefore a property each repo declares, not a property of fabrika.
+
+   **Phoenix declares `"refuse"`**, in its own
+   [`.fabrika.jsonc`](../../../.fabrika.jsonc), because here CODEOWNERS *is* the gate and a failed
+   read shipping a §CP change unreviewed is the failure #4216 exists to prevent. A unit test reads
+   this repo's real config and reds if that declaration ever leaves. A config that itself could not
+   be read, or whose value is off the two-word vocabulary, is exit `11` whatever the boundary said —
+   a policy nobody read cannot waive a gate.
 5. **Enforcement is GitHub's, not the verb's.** The block is the native code-owner review
    requirement on the `main` ruleset (ADR
    [0135](../../../.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md),

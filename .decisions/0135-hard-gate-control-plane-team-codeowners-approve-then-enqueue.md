@@ -1,7 +1,7 @@
 ---
 id: 0135
 title: "Hard-gate control-plane changes — the @kamp-us/control-plane team makes require_code_owner_review satisfiable; CODEOWNERS maps §CP paths → the team; ship-it ENQUEUES a §CP PR once a team member APPROVES it at the current head (amends 0053's merge model from human-hand-merge to approve-then-pipeline-enqueue)"
-status: accepted
+status: amended-in-part by [0307](0307-unreadable-codeowners-is-per-repo.md)
 date: 2026-07-03
 tags: [pipeline, ship-it, security, control-plane, governance, github]
 ---

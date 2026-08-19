@@ -22,14 +22,14 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
+import {UNREADABLE_CODEOWNERS} from "../config/keys/control-plane.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {getPullRequest, listPullFiles, openPullsClosing, searchOpenPulls} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
 import {issueRefOf, namespacesOf, partition, touchesGovernanceRoot} from "../review/classes.ts";
 import {bindRange, contentDigestAt, rangeContentAt} from "../review/content-binding.ts";
 import {bindHead} from "../review/head.ts";
-import {CODEOWNERS_PATH, readBoundary} from "../ship/boundary.ts";
-import {classify} from "../ship/codeowners.ts";
+import {CODEOWNERS_PATH, cpStateOf, readBoundary} from "../ship/boundary.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
@@ -356,7 +356,7 @@ const proveNoPull = (
  * `absent` and hold the lane at `PROOF_IN_FLIGHT` forever. The advisory is read exactly as
  * `ship gate`'s `candidateOf` reads it: head-bound with no content binding (ADR 0276), a `[FAIL]`
  * row treated as fail (an invalid emission, reported) — and admitted only after the diff itself
- * classifies control-plane through the shipped `classify` over CODEOWNERS at the PR's base ref,
+ * classifies control-plane through the shipped `cpStateOf` over CODEOWNERS at the PR's base ref,
  * never a caller assertion. On any other PR a marker-less comment stays no verdict.
  */
 const proveVerdicts = (
@@ -432,10 +432,15 @@ const proveVerdicts = (
 		const notes = [...diagnostics];
 		if (advisories.length > 0) {
 			const boundary = yield* readBoundary(repo, pull.value.baseRef);
-			if (boundary._tag === "Unreadable") {
-				return unreadable(`${CODEOWNERS_PATH} at ${pull.value.baseRef}`, boundary.reason);
+			if (boundary._tag === "Refused") {
+				return unreadable(boundary.what, boundary.reason);
 			}
-			const cp = classify(boundary.rows, files.value);
+			if (boundary.boundary._tag === "Waived") {
+				notes.push(
+					`${VERB}: ${boundary.boundary.reason} — this repo's \`${UNREADABLE_CODEOWNERS}\` ships on an unreadable boundary.`,
+				);
+			}
+			const cp = cpStateOf(boundary.boundary, files.value);
 			if (cp === "control-plane") {
 				for (const {claim, stamp} of advisories) {
 					if (claim.polarity === "FAIL") {

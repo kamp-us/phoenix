@@ -5,6 +5,11 @@
  * (#2435). The case table ended that, and this verb **is** that table: roster cardinality in, one of
  * `discharge` / `stop` / `n/a` out, every signal bound to `--sha`.
  *
+ * The roster is the union of every owner the boundary's control-plane rows name — GitHub's own
+ * any-listed-owner semantics. A team is expanded through the members endpoint; an individual
+ * `@login` owner is already a roster entry and no roster is read for it, which is what lets a repo
+ * with no org behind it discharge the gate at all (#6299).
+ *
  * The two collapses this verb refuses to make are the ones v1 shipped. A failed read is never
  * `stop` and never "awaiting approval" (#4223) — it is `11`. And head-binding is checked here,
  * always, rather than delegated to the ruleset's `dismiss_stale_reviews_on_push`: #3769 is a live
@@ -12,11 +17,12 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {UNREADABLE_CODEOWNERS} from "../config/keys/control-plane.ts";
 import {listComments} from "../io/issues.ts";
 import {listPullFiles} from "../io/pulls.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {readBoundary} from "./boundary.ts";
-import {classify, splitTeam, teamOwnersOf} from "./codeowners.ts";
+import {cpStateOf, readBoundary} from "./boundary.ts";
+import {controlPlaneOwnersOf, splitTeam} from "./codeowners.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {behindBase, listReviews, listTeamMembers} from "./github.ts";
 import {
@@ -99,9 +105,15 @@ export const runCpApproval = (
 		}
 
 		const boundary = yield* readBoundary(repo, pull.baseRef);
-		if (boundary._tag === "Unreadable") {
-			return unknownRead("the §CP boundary", boundary.reason, diagnostics);
+		if (boundary._tag === "Refused") {
+			return unknownRead(boundary.what, boundary.reason, diagnostics);
 		}
+		if (boundary.boundary._tag === "Waived") {
+			diagnostics.push(
+				`${VERB}: ${boundary.boundary.reason} — this repo's \`${UNREADABLE_CODEOWNERS}\` ships on an unreadable boundary.`,
+			);
+		}
+		const rows = boundary.boundary._tag === "Rows" ? boundary.boundary.rows : [];
 
 		const drift = yield* behindBase(repo, pull.baseRef, bound);
 		const behind = drift._tag === "Ok" ? drift.value : 0;
@@ -119,15 +131,19 @@ export const runCpApproval = (
 					)
 				: answer(`cp-approval\t${outcome}\t${mechanism}`, diagnostics);
 
-		if (classify(boundary.rows, files) === "not-control-plane") {
+		if (cpStateOf(boundary.boundary, files) === "not-control-plane") {
 			return emit("n/a", "not-control-plane", 0);
 		}
 
-		const teams = teamOwnersOf(boundary.rows);
+		// An individual `@login` owner IS a roster entry, so it is added directly. Only a team needs
+		// the members endpoint — which a personal repo has no org to serve at all (#6299).
 		const roster = new Set<string>();
-		for (const owner of teams) {
+		for (const owner of controlPlaneOwnersOf(rows)) {
 			const split = splitTeam(owner);
-			if (split === null) continue;
+			if (split === null) {
+				roster.add(owner.slice(1));
+				continue;
+			}
 			const members = yield* listTeamMembers(split.org, split.team);
 			if (members._tag === "Unknown") {
 				return unknownRead(`the ${owner} roster`, members.reason, diagnostics);

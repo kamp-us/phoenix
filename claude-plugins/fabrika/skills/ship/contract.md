@@ -332,15 +332,34 @@ Naming a trunk branch literally was the bug: the base ref *is* that branch in th
 the honest generalization in an adopter repo whose trunk is called something else. The #981
 property — a PR must not reclassify itself — holds unchanged, because the base ref is never the
 PR's head. A changed path
-covered by a CODEOWNERS row whose owner is a control-plane team (the `@<org>/<team>` owners
-those rows carry — `@kamp-us/control-plane` in this repo, parsed, never hardcoded) is
-`control-plane`; a change set with no owned-path match — including one entirely under
+covered by a CODEOWNERS row whose owner is a control-plane owner is `control-plane`. A
+control-plane owner is `@<org>/<team>` **or** an individual `@<login>` — both parsed off the file,
+never hardcoded (`@kamp-us/control-plane` in this repo). Individual owners count exactly as team
+owners do (founder ruling on #5603 "rule a", built as #6299): GitHub discharges a row when any
+listed owner approves, and counting only team-shaped owners made every PR in a personal repo
+`unknown` — the HOLD state — so nothing in it could ever ship. A bare email owner is not one:
+it names no account a roster or an approval resolves against.
+A change set with no owned-path match — including one entirely under
 `.decisions/**` — is `not-control-plane` (founder ruling, 2026-08-15 on #5531: ADRs are not
 control-plane; the required `governance` verdict floor is what stands behind an ADR PR, per ADR
-0274 §2). A CODEOWNERS that reads fine but is **trivial** — zero team-owned rows, or a row set that
+0274 §2). A CODEOWNERS that reads fine but is **trivial** — zero owned rows, or a row set that
 covers everything — → `unknown` (a printed hold — the match-everything boundary is the #4336
-adopter incident and the #4401 trivial-pattern class). An **unreadable** CODEOWNERS is not
-`unknown`: a failed read is the `11` refusal, the group's own law. Deriving from CODEOWNERS rather than any prose or regex copy
+adopter incident and the #4401 trivial-pattern class).
+
+**An absent CODEOWNERS and an unreadable one are different answers.** A **proven-absent** (404)
+boundary is `not-control-plane`: this repo declares no control plane and the PR ships (founder
+ruling on #5603 comment 8, built as #6299). It used to parse to zero rows and land on the
+`unknown` hold, which gated every PR in a repo that had never declared a boundary. An
+**unreadable** boundary is the absence of a fact rather than a fact, so what happens to it is the
+repo's own `unreadableCodeowners` key in `.fabrika.jsonc`, read at the same base ref ([ADR
+0307](../../../../.decisions/0307-unreadable-codeowners-is-per-repo.md)): the shipped
+default is `"ship"` (classify `not-control-plane`, naming the waiver on stderr), and `"refuse"` is
+the `11`. **Phoenix declares `"refuse"`** — here CODEOWNERS *is* the control-plane gate, and a
+transient read fault shipping a control-plane PR unreviewed is the failure #4216 exists to
+prevent. A `.fabrika.jsonc` that could not itself be read, or whose value did not decode, is `11`
+too: a policy nobody read waives nothing.
+
+Deriving from CODEOWNERS rather than any prose or regex copy
 means this verb and the merge gate read one artifact and cannot disagree; the
 `codeowners-cp.yml` CI gate keeps that artifact in sync with the rest of the governance
 surface. `unknown` is the one HOLD state, and the skill treats it as §CP until proven otherwise.
@@ -369,7 +388,7 @@ downstream verb consumes, and that verb guards itself.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404); or it has zero changed files; or its non-empty diff derives zero required namespaces — a vacuous conjunction (#2765, ADR 0092) |
-| `11` | the PR, its file list, or the §CP boundary could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
+| `11` | the PR, its file list, the §CP boundary (where this repo's `unreadableCodeowners` is `"refuse"`), or that key itself could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
 | `13` | the changed-file enumeration is provably short (received < declared count) |
 
 **Errors**
@@ -384,7 +403,8 @@ downstream verb consumes, and that verb guards itself.
 | `ship scope: file list shows <k> of <m> declared files — refusing to partition a truncated read.` | 13 | refusal |
 
 **Scope** — one PR's metadata and changed-file list, paginated and count-checked, plus one
-boundary read from the PR's base ref. The partition is total over what was read.
+boundary read from the PR's base ref, and — only when that read failed — one `.fabrika.jsonc`
+read from the same ref. The partition is total over what was read.
 
 **Examples**
 
@@ -457,12 +477,14 @@ approval is never spent on a head that must move (#4477).
 
 With `--json`: `{"outcome":…,"mechanism":…,"sha":…,"roster":<n>,"baseDrift":<k|0>}`.
 
-**The decision is the ADR 0175 cardinality table, verbatim:** roster = **the union of the members
-of every team the CODEOWNERS control-plane rows name**, read fresh via the REST team-members
-endpoint (`/orgs/<org>/teams/<team>/members`, paginated) once per named team, where each
-`<org>/<team>` is an owner parsed from `.github/CODEOWNERS`' control-plane rows — the same
+**The decision is the ADR 0175 cardinality table, verbatim:** roster = **the union of every owner
+the CODEOWNERS control-plane rows name**, over both owner shapes. An `@<org>/<team>` owner is
+expanded through the REST team-members endpoint (`/orgs/<org>/teams/<team>/members`, paginated),
+read fresh once per named team. An individual `@<login>` owner **is** a roster entry and no roster
+is read for it — that endpoint needs an org a personal repo does not have, which is why counting
+only teams left such a repo unable to discharge the gate at all (#6299). The owner set is the same
 derivation `ship scope` uses, one shared module, so the roster this verb consults is the set the
-merge gate actually asks (`@kamp-us/control-plane` is the only such team in this repo, never
+merge gate actually asks (`@kamp-us/control-plane` is the only team in this repo, never
 hardcoded). **The union is not a fabrika policy — it is GitHub's own any-listed-owner semantics**
 ([ruled on #5067](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233188966),
 founder-direct): GitHub discharges a CODEOWNERS row when *any* listed owner approves, so a roster
@@ -471,8 +493,11 @@ platform here rather than adding a rule of its own.
 N=0 → `stop` `zero-owners` (an empty roster is a proven
 stop; an *unreadable* roster for **any** named team is the `11` refusal, never a stop — a union
 missing one arm is not a smaller union, it is an unknown one). A CODEOWNERS parse yielding
-no control-plane team owner at all is N=0 — `stop` `zero-owners`, the
-adopter-repo-without-a-team case — while an unreadable CODEOWNERS is `11`. N=1 and the sole owner authored the PR → discharge only on the
+no control-plane owner of either shape at all is N=0 — `stop` `zero-owners`. A **proven-absent**
+CODEOWNERS is not that case: it is `n/a` `not-control-plane`, the same answer `ship scope` prints
+for it. An **unreadable** one follows this repo's `unreadableCodeowners` key exactly as it does at
+`ship scope` — `"ship"` answers `n/a` and names the waiver on stderr, `"refuse"` (phoenix's declared
+value) is `11`. N=1 and the sole owner authored the PR → discharge only on the
 sole owner's head-bound self-approval marker comment (`control-plane-self-approval @ <sha>`,
 a token deliberately outside every auto-merge namespace). N=1 non-author, or N≥2 → discharge
 only on a non-author member's APPROVED review whose `commit_id` prefix-matches `--sha`. Every
@@ -491,7 +516,7 @@ class, live in v1's approval scan).
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
-| `11` | the CODEOWNERS boundary, the roster, the reviews, the marker comments, or the live head could not be read — the discharge is UNKNOWN, never `stop`, never `awaiting approval` (#4223) |
+| `11` | the CODEOWNERS boundary (where this repo's `unreadableCodeowners` is `"refuse"`), that key itself, the roster, the reviews, the marker comments, or the live head could not be read — the discharge is UNKNOWN, never `stop`, never `awaiting approval` (#4223) |
 | `13` | the changed-file or comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page |
 
 **Errors**
@@ -505,7 +530,7 @@ class, live in v1's approval scan).
 | `ship cp-approval: received <k> of <m> comments — refusing the partial sweep.` | 13 | refusal |
 | `ship cp-approval: the review read never reached a terminal page — pagination is unexhausted, so an approval could sit on a page nobody read; refusing the partial sweep.` | 13 | refusal |
 
-**Scope** — the control-plane team roster (the union over every named team), the PR's changed
+**Scope** — the control-plane roster (the union over every named team and every individual owner), the PR's changed
 files and comments (paginated, count-checked) and its reviews (paginated to exhaustion), and the
 live head. `n/a` is a proven answer computed from the same `cp`
 derivation `ship scope` prints (one shared module).

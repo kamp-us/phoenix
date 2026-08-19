@@ -306,6 +306,8 @@ describe("lane prove — the union of the two nomination reads", () => {
 describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 	const CODEOWNERS =
 		/^gh api -H Accept: application\/vnd\.github\.raw repos\/o\/r\/contents\/\.github\/CODEOWNERS\?ref=main$/;
+	const CONFIG =
+		/^gh api -H Accept: application\/vnd\.github\.raw repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
 	const advisory = (rows = ""): string =>
 		`review-code: advisory — merge stays human-gated\n${rows}\nReviewed-head: @ ${HEAD}\n`;
 	const codeFile = okOut(JSON.stringify([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]));
@@ -380,7 +382,7 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 		expect(out.stderr.join("\n")).toContain("review-code (stale)");
 	});
 
-	it("leaves the proof UNKNOWN when the boundary itself cannot be read", async () => {
+	it("leaves the proof UNKNOWN when the boundary cannot be read and the repo declares `refuse`", async () => {
 		const shell = fakeShell([
 			[CLOSERS, closingPulls()],
 			[SEARCH, okOut("4318\n")],
@@ -388,12 +390,48 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory()})],
 			[CODEOWNERS, errOut("HTTP 502")],
+			[CONFIG, okOut('{"unreadableCodeowners": "refuse"}')],
 		]);
 
 		const out = await run(laneAt("review"), shell, "PASS");
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain(".github/CODEOWNERS");
+		expect(out.stderr.join("\n")).not.toContain(".fabrika.jsonc");
+	});
+
+	it("leaves the proof UNKNOWN when the POLICY itself cannot be read either", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, codeFile],
+			[PR_COMMENTS, comments({id: 1, body: advisory()})],
+			[CODEOWNERS, errOut("HTTP 502")],
+			[CONFIG, errOut("HTTP 502")],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stderr.join("\n")).toContain(".fabrika.jsonc");
+	});
+
+	it("names the waiver on stderr when the policy ships an unreadable boundary", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, codeFile],
+			[PR_COMMENTS, comments({id: 1, body: advisory()})],
+			[CODEOWNERS, errOut("HTTP 502")],
+			[CONFIG, okOut('{"unreadableCodeowners": "ship"}')],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.stderr.join("\n")).toContain("unreadableCodeowners");
 	});
 
 	it("never reads the boundary while no comment reaches for the advisory carrier", async () => {
