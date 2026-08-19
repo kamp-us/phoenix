@@ -7,7 +7,7 @@
  * The same ruling keeps the repo-specific DATA per-repo, and that boundary is what
  * decides where a module lives. Anything naming a *host* or a *credential* — the depo
  * store/fetch of golden bytes, the pointer file, the harness config — is the consuming
- * repo's and is NOT here; phoenix keeps its half in `packages/design-capture/` (ADR 0183).
+ * repo's and is NOT here (ADR 0183).
  * That is not only a taste call: this package is published, so a dependency on a private
  * `@kampus/*` package could not resolve from a clean registry (ADR 0201 §3, enforced by
  * `publish-isolation-guard`). Storing bytes is therefore an injected `StoreLeg` here — the

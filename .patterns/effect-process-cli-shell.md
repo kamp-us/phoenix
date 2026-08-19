@@ -14,11 +14,11 @@ moment it does.
 > `Command`/`CommandExecutor`. The v3 `Command.make(...).pipe(Command.string)` idiom
 > most training data shows does not apply here.
 
-The canonical examples are `packages/pipeline-cli/src/tools/epic-ledger/github.ts`
-(the richest: read + mutate, repo resolution, Schema-decoded JSON) and
-`packages/pipeline-cli/src/tools/crabbox-manifest/commit.ts` (the smallest:
-`git rev-parse HEAD` → one trimmed SHA). `packages/flake-rate/src/github.ts` is a
-third, read-only, deliberately mirroring `epic-ledger`.
+The canonical examples are `packages/orphan-sweep/src/cloudflare.ts` (the richest:
+`curl` over the CF REST API, credential resolution, Schema-decoded JSON, typed
+per-fault errors with the bearer token redacted) and
+`packages/orphan-sweep/src/github.ts` (the smallest: read-only `gh api` REST for the
+open PR numbers, repo resolution deferred to first use).
 
 ## When to use it
 

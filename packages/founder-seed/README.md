@@ -36,7 +36,7 @@ The `object` key is `@kampus/authz`'s canonical `key(platform)` (`"platform:plat
 discharges `Moderate.over(platform)` end to end (the write→read seam).
 
 It's authored as Node tooling — an Effect CLI (`effect/unstable/cli`), mirroring
-`@kampus/moderator-grant` — not Python, not an ad-hoc script.
+`@kampus/admin-grant` — not Python, not an ad-hoc script.
 
 ## What it does
 

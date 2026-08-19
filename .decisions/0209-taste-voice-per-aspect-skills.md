@@ -31,7 +31,7 @@ Constraints that shaped the ruling:
   attribution (its embedded course plug stripped); repo-grown manifest-grounded seeds cover the
   aspects it doesn't (color, layout/spacing, iconography, forms, copywriting).
 - **The loop's interactive eye** is `vercel-labs/agent-browser` — compose, don't replace:
-  `design-capture`/`local-render` + the golden/flake canon remain the gate substrate. Promoting
+  `fabrika-cli`'s `capture`/`ui` verbs + the golden/flake canon remain the gate substrate. Promoting
   instrumented measurements into `review-design` FAIL classes is a future, separate ADR.
 
 Founder-ruled 2026-07-24 on wayfinder:map #3227 (sub-issue #3910) — a conversation-authored
@@ -50,7 +50,7 @@ can never fight its own gate.
 - Grounding is exclusively the design law: manifest ([0162](0162-four-pillars-design-law.md)) + descriptive inventory ([0194](0194-design-law-jsdoc-firewall.md)) + blessed goldens ([0183](0183-golden-screen-storage-depo-git-pointer.md)) — no fourth artifact.
 - Skills consult the law, never mint it — the 0194 firewall holds; law changes flow through ADR-ratify→transcribe.
 - Delivery is skill-loading into existing generalist spawns — no persona agent, no new agent def.
-- `agent-browser` composes with the gate substrate (`design-capture`/`local-render` + golden/flake canon), never replaces it; new instrumented FAIL classes need their own ADR.
+- `agent-browser` composes with the gate substrate (`fabrika-cli`'s `capture`/`ui` verbs + golden/flake canon), never replaces it; new instrumented FAIL classes need their own ADR.
 - Adopted seeds carry attribution (`emilkowalski/skills`, MIT), with the embedded course plug stripped.
 
 **Rejected alternatives.**

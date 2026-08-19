@@ -1,7 +1,7 @@
 /**
  * `Cloudflare` over a fake `ChildProcessSpawner` — the credential-redaction regression
  * for #1141 (the leak round-1 review-code FAILed PR #1142 on). The `mockSpawner` idiom
- * mirrors `@kampus/flake-rate`'s `github-service.unit.test.ts`: drive `CloudflareLive`
+ * is the process-CLI unit shape of `.patterns/effect-process-cli-shell.md`: drive `CloudflareLive`
  * over a canned spawner so the REAL `runCurl` / `parseJson` error paths — the ones that
  * capture the curl argv (which includes `Authorization: Bearer <token>`) into
  * `CfCommandError` / `CfParseError` — run without the network.

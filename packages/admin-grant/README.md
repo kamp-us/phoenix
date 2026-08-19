@@ -14,8 +14,8 @@ It is granted only by a **server-side direct-D1 script, never a runtime worker
 route** — per CLAUDE.md's "Sözlük seed" section, the admin mutation routes were
 deleted as a fail-open hole, so the tuple is written by an operator who holds the
 D1 write token. There is no in-product way to make someone an admin; this package
-is that path. It is the `admin` twin of `@kampus/moderator-grant` (which grants
-the `moderates` relation), authored as Node tooling — an Effect CLI
+is that path. It is the `admin` twin of `@kampus/founder-seed` (which writes the
+`moderates` relation), authored as Node tooling — an Effect CLI
 (`effect/unstable/cli`) — not Python, not an ad-hoc script.
 
 ## What it does

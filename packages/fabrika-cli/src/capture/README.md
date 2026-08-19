@@ -27,9 +27,10 @@ the skills call. One release train, fabrika's.
 anything naming a *host* or a *credential* belongs to the consuming repo — the blessed golden
 bytes, the store they are PUT to and GET from, the pointer that names them
 (`packages/design-capture/golden-pointer.json` in phoenix, path unchanged), and the harness
-config. phoenix keeps its half in [`@kampus/design-capture`](../../../design-capture/README.md),
-including the depo store/fetch boundary and the CLI the v1 gate drives. Machinery is shared;
-goldens are a repo's own taste.
+config. phoenix never blessed a surface, so it carries no store half today — its
+`@kampus/design-capture` package held one and was deleted unused
+([#6346](https://github.com/kamp-us/phoenix/issues/6346)); the pointer path above is still what
+this package probes for. Machinery is shared; goldens are a repo's own taste.
 
 That split is also load-bearing for *installability*, not only taste: this package is published,
 and a published artifact may depend only on what a clean registry resolves (ADR
@@ -146,8 +147,8 @@ import {
   blessSurface,         // move the git pointer to an approved sha (immutably)
   loadGoldenPointer,
 } from "@kampus/fabrika-cli/capture";
-// the store half is the consuming repo's — phoenix's is @kampus/design-capture
-import {resolveGoldenBytes, storeGolden} from "@kampus/design-capture";
+// the store half is the consuming repo's own package, not this one
+import {resolveGoldenBytes, storeGolden} from "<consuming repo's golden store>";
 
 // store (bless-time): PUT the approved bytes, get the sha the pointer records
 const {sha256, url} = yield* storeGolden({apiKey, pngBytes});   // needs DoormanClient
@@ -164,8 +165,7 @@ const result = diffRasters(goldenRaster, candidateRaster, {
 ```
 
 - `storeGolden` / `resolveGoldenUrl` / `resolveGoldenBytes` are the **consuming repo's**, not
-  this package's — they name a store host and a credential. phoenix's live in
-  [`@kampus/design-capture`](../../../design-capture/README.md); an adopter supplies its own and
+  this package's — they name a store host and a credential. An adopter supplies its own and
   passes the write half in as the injected `StoreLeg` below. What this package owns is the
   *shape*: `StoredGolden` is `{sha256, url}`, and an **unblessed surface resolves to `null`**
   (nothing to compare against yet), never an error.
@@ -187,6 +187,10 @@ const result = diffRasters(goldenRaster, candidateRaster, {
   unit-tested per `.patterns/effect-testing.md`.
 
 ### Re-bless via the CLI (the audited pointer move)
+
+The `bin.ts` invocations below were phoenix's v1 `design-capture` CLI, deleted unused in
+[#6346](https://github.com/kamp-us/phoenix/issues/6346). They stay here as the worked shape of
+each operation — the argv a consuming repo's own bin has to reproduce over these cores.
 
 ```bash
 # after the founder approves a surface's candidate in the PR gallery comment,

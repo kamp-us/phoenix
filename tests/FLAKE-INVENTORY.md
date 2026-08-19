@@ -93,11 +93,10 @@ must be able to tell a **bounded** flake (`root-cause-filed`, `fixed`) from an
   `operations.size >= 1` for the app's lifetime, so the `EventSource` is never
   torn down mid-churn. The earlier per-view keep-alive band-aids were retired in
   the same PR. Kept as a record so a regression is recognized, not rediscovered.
-- **Budget note:** the [`flake-rate`](../packages/flake-rate) budget may still
-  report this run as a rerun-to-green (reading "BUDGET BLOWN") until the last
-  pre-#711 flaky run ages out of the trailing-50-run window. That alarm is a
-  trailing-window artifact of an already-cured flake, **not** a live regression —
-  it does not warrant a new determinism child issue.
+- **Budget note:** the flake-rate budget report (a hand-run CLI, deleted in #6346)
+  read this run as a rerun-to-green ("BUDGET BLOWN") until the last pre-#711 flaky
+  run aged out of its trailing-50-run window. That alarm was a trailing-window
+  artifact of an already-cured flake, **not** a live regression.
 
 ### report.submit D1 read-after-write staleness
 

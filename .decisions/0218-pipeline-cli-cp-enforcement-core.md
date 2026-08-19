@@ -150,7 +150,8 @@ literal CODEOWNERS row of the same name — placed **after** the owner-less
 `/packages/pipeline-cli/src/tools/` row, so last-match-wins re-owns it.
 
 `^packages/ci-required/` is a **separate, independent** branch and is byte-unchanged, as are its
-CODEOWNERS row and everything else in the regex.
+CODEOWNERS row and everything else in the regex. (That package no longer exists — it was an
+empty shell by the time of the #6346 sweep. The branch is recorded here as it stood.)
 
 ## Closure — what leaves, and why that is or is not argued safe
 
