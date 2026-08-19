@@ -100,6 +100,8 @@ jobs:
           CANDIDATES="$(jq -r '.candidates[] | "- `\(.phrase)` — \(.hits) hit(s), first seen in \(.firstSurface)"' drift.json)"
           SINCE="$(jq -r '.sinceCommit' drift.json)"
           SCANNED="$(jq -r '.scannedCommits' drift.json)"
+          # The backticks in the printf format below are markdown code spans, not command substitution.
+          # shellcheck disable=SC2016
           gh issue create --repo "$GITHUB_REPOSITORY" \
             --title "glossary-drift: candidate coinages in the surfaces that moved" \
             --label "status:needs-triage" \
