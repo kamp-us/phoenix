@@ -22,6 +22,7 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
+import {UNREADABLE_CODEOWNERS} from "../config/keys/control-plane.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {getPullRequest, listPullFiles, openPullsClosing, searchOpenPulls} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
@@ -433,6 +434,11 @@ const proveVerdicts = (
 			const boundary = yield* readBoundary(repo, pull.value.baseRef);
 			if (boundary._tag === "Refused") {
 				return unreadable(boundary.what, boundary.reason);
+			}
+			if (boundary.boundary._tag === "Waived") {
+				notes.push(
+					`${VERB}: ${boundary.boundary.reason} — this repo's \`${UNREADABLE_CODEOWNERS}\` ships on an unreadable boundary.`,
+				);
 			}
 			const cp = cpStateOf(boundary.boundary, files.value);
 			if (cp === "control-plane") {

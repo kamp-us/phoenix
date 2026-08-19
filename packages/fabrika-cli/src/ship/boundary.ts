@@ -32,7 +32,11 @@ export const CODEOWNERS_PATH = ".github/CODEOWNERS";
 export type Boundary =
 	/** Proven absent at the base ref: this repo declares no control plane. */
 	| {readonly _tag: "Absent"}
-	/** Unreadable, and this repo's declared policy ships anyway. The reason still prints. */
+	/**
+	 * Unreadable, and this repo's declared policy ships anyway. Every caller prints the reason —
+	 * `ship scope`, `ship cp-approval` and `lane prove` alike. A gate waived with no trace in the
+	 * verb's own output is the one thing this arm exists to prevent (#6299).
+	 */
 	| {readonly _tag: "Waived"; readonly reason: string}
 	| {readonly _tag: "Rows"; readonly rows: ReadonlyArray<OwnerRow>};
 

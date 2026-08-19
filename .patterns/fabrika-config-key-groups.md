@@ -68,7 +68,8 @@ answer.
 
 A shipped default may be **looser** than today's behaviour only on a founder ruling, and only
 paired with a declaration that holds the strict value where the guard matters.
-`unreadableCodeowners` is the one such key: its default ships on an unreadable CODEOWNERS, phoenix
+`unreadableCodeowners` is the one such key (ADR
+[0307](../.decisions/0307-unreadable-codeowners-is-per-repo.md)): its default ships on an unreadable CODEOWNERS, phoenix
 declares `refuse`, and a unit test reads this repo's own `.fabrika.jsonc` and reds if that
 declaration ever leaves. The pairing is the whole permission — landing the loose default without
 the declaration is the fail-open, so both land in one change or neither does.

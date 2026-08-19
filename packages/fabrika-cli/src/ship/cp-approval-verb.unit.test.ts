@@ -19,6 +19,7 @@ import {
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
 const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
 const OWNERS = /contents\/\.github\/CODEOWNERS/;
+const CONFIG = /contents\/\.fabrika\.jsonc/;
 const COMPARE = /^gh api repos\/o\/r\/compare\//;
 const ROSTER = /^gh api --paginate orgs\/kamp-us\/teams\/control-plane\/members/;
 const REVIEWS = /^gh api -i repos\/o\/r\/pulls\/4321\/reviews/;
@@ -191,6 +192,19 @@ describe("runCpApproval", () => {
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("cp-approval\tn/a\tnot-control-plane\n");
+	});
+
+	it("names the waiver on stderr when the policy ships an unreadable boundary", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[FILES, CP_FILES],
+			[OWNERS, errOut("gh: Bad gateway (HTTP 502)")],
+			[CONFIG, errOut("gh: Not Found (HTTP 404)")],
+			[COMPARE, okOut("0")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("cp-approval\tn/a\tnot-control-plane\n");
+		expect(out.stderr.join("\n")).toContain("unreadableCodeowners");
 	});
 
 	it("refuses an UNREADABLE roster on 11 — never `stop`, never `awaiting approval` (#4223)", async () => {

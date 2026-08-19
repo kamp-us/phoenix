@@ -351,7 +351,8 @@ boundary is `not-control-plane`: this repo declares no control plane and the PR 
 ruling on #5603 comment 8, built as #6299). It used to parse to zero rows and land on the
 `unknown` hold, which gated every PR in a repo that had never declared a boundary. An
 **unreadable** boundary is the absence of a fact rather than a fact, so what happens to it is the
-repo's own `unreadableCodeowners` key in `.fabrika.jsonc`, read at the same base ref: the shipped
+repo's own `unreadableCodeowners` key in `.fabrika.jsonc`, read at the same base ref ([ADR
+0307](../../../../.decisions/0307-unreadable-codeowners-is-per-repo.md)): the shipped
 default is `"ship"` (classify `not-control-plane`, naming the waiver on stderr), and `"refuse"` is
 the `11`. **Phoenix declares `"refuse"`** — here CODEOWNERS *is* the control-plane gate, and a
 transient read fault shipping a control-plane PR unreviewed is the failure #4216 exists to
@@ -495,7 +496,8 @@ missing one arm is not a smaller union, it is an unknown one). A CODEOWNERS pars
 no control-plane owner of either shape at all is N=0 — `stop` `zero-owners`. A **proven-absent**
 CODEOWNERS is not that case: it is `n/a` `not-control-plane`, the same answer `ship scope` prints
 for it. An **unreadable** one follows this repo's `unreadableCodeowners` key exactly as it does at
-`ship scope` — `"ship"` answers `n/a`, `"refuse"` (phoenix's declared value) is `11`. N=1 and the sole owner authored the PR → discharge only on the
+`ship scope` — `"ship"` answers `n/a` and names the waiver on stderr, `"refuse"` (phoenix's declared
+value) is `11`. N=1 and the sole owner authored the PR → discharge only on the
 sole owner's head-bound self-approval marker comment (`control-plane-self-approval @ <sha>`,
 a token deliberately outside every auto-merge namespace). N=1 non-author, or N≥2 → discharge
 only on a non-author member's APPROVED review whose `commit_id` prefix-matches `--sha`. Every

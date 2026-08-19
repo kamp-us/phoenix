@@ -17,6 +17,7 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {UNREADABLE_CODEOWNERS} from "../config/keys/control-plane.ts";
 import {listComments} from "../io/issues.ts";
 import {listPullFiles} from "../io/pulls.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -106,6 +107,11 @@ export const runCpApproval = (
 		const boundary = yield* readBoundary(repo, pull.baseRef);
 		if (boundary._tag === "Refused") {
 			return unknownRead(boundary.what, boundary.reason, diagnostics);
+		}
+		if (boundary.boundary._tag === "Waived") {
+			diagnostics.push(
+				`${VERB}: ${boundary.boundary.reason} — this repo's \`${UNREADABLE_CODEOWNERS}\` ships on an unreadable boundary.`,
+			);
 		}
 		const rows = boundary.boundary._tag === "Rows" ? boundary.boundary.rows : [];
 

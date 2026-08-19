@@ -1,7 +1,8 @@
 /**
  * The control-plane key group: what a repo does when `.github/CODEOWNERS` cannot be read.
  *
- * Founder-ruled on #5603 (comment 28) and built as #6299: the answer is repo configuration, not one
+ * Founder-ruled on #5603 (comment 28), built as #6299, recorded as ADR 0307: the answer is repo
+ * configuration, not one
  * compiled-in reading, because the two repos that hold fabrika want opposite answers. In a repo
  * where CODEOWNERS is decoration, a transient read fault must not deadlock every PR. In phoenix
  * CODEOWNERS **is** the control-plane gate, so shipping a control-plane PR unreviewed on a failed
