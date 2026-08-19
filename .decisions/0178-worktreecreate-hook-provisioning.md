@@ -1,7 +1,8 @@
 ---
 id: 0178
 title: A WorktreeCreate Hook Provisions isolation:worktree, Giving the Deps Install a 600s Budget Instead of Racing the Default-Path Timeout
-status: accepted
+status: superseded by [0303](0303-retire-kampus-pipeline-plugin.md)
+superseded_by: 0303
 date: 2026-07-12
 tags: [pipeline, worktree, tooling, harness]
 ---

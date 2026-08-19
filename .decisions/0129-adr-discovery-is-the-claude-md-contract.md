@@ -69,3 +69,5 @@ issue behind the *choice*; #1728 carries the doc changes.
 - **CLAUDE.md `## Decisions` is the single statement of the contract.** It drops the
   `SessionStart`-hook language and states the `ls` + frontmatter + on-demand-`compact` contract,
   pointing here for the why (#1728).
+
+> Amendment 2026-08-19: the decision stands — discovery is the CLAUDE.md contract (`ls .decisions/` + each file's frontmatter), never an injected map. Only the on-demand renderer moved: `packages/pipeline-cli` is retired, and `fabrika-cli` ports only the number lock (`fabrika guard decisions-index validate`) — there is no `compact` verb today, so `ls .decisions/` + frontmatter is the whole map until one is re-added. CLAUDE.md `## Decisions` needs the same fix.

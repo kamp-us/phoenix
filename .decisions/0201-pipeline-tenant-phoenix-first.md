@@ -59,3 +59,5 @@ invariant instead of a hope.
   than re-litigate silently.
 - Support and feature asks from external consumers enter the same intake as
   everything else and are prioritized under the phoenix-first rule.
+
+> Amendment 2026-08-19: the tenant's artifact set moved. `kampus-pipeline` (the plugin) is retired, `pipeline-crew` / `pipeline-crew-mcp` are gone (ADRs [0303](0303-retire-kampus-pipeline-plugin.md), [0279](0279-v1-crew-retired-in-full.md)), and `packages/pipeline-cli/` was deleted by PR #6326; the live set is `claude-plugins/fabrika` + `packages/fabrika-cli`. The release-tag grammar in Decision 4 now covers `fabrika-cli-v*` in place of `pipeline-cli-v*` — see `.github/workflows/publish.yml`. Tenancy, phoenix-first priority, and publish isolation stand unchanged.

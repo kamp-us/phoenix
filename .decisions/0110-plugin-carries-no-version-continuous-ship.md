@@ -70,3 +70,5 @@ install by git commit SHA, and every commit is the new "version".
 - **Relates to:** ADR [0062](0062-repo-as-config-plugin.md) (repo-as-config / continuous-ship
   posture), ADR [0087](0087-plugin-dedicated-subdir-source.md) (git-subdir plugin source), and #945
   (the version-pin cache-freeze incident this decision exists to prevent recurring).
+
+> Amendment 2026-08-19: kampus-pipeline is retired (ADR 0303) — only its sha-pinned marketplace entry survives. The rule now governs the fabrika plugin: `claude-plugins/fabrika/.claude-plugin/plugin.json` and fabrika's `marketplace.json` entry carry no `version` and none is to be added. The builder-facing note that lived in `claude-plugins/kampus-pipeline/README.md` now belongs in `claude-plugins/fabrika/README.md`.

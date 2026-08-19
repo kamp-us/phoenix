@@ -1,7 +1,8 @@
 ---
 id: 0221
 title: "Pipeline Anywhere GA: two tiers, staged gates, hybrid guard surface"
-status: accepted
+status: superseded by [0303](0303-retire-kampus-pipeline-plugin.md)
+superseded_by: 0303
 date: 2026-07-26
 tags: [pipeline, distribution, workflows, guards, ga]
 ---

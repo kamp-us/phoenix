@@ -140,3 +140,5 @@ skills, a small authoring cost paid at the point the concept is already in hand.
 **What is now banned.** Extending the fail-closed `review-code` Step 3c gate with
 judgment-based new-noun / lever / term detection. The gate keeps its structural signals only;
 concept-level detection is off the per-PR blocking path by decision, not by omission.
+
+> Amendment 2026-08-19: the kampus-pipeline plugin is deleted (ADR 0303), so every `claude-plugins/kampus-pipeline/skills/...` path above is dead. `review-code` is now fabrika's `review` (`claude-plugins/fabrika/skills/review/SKILL.md`), which carries no Step 3c structural "glossary-freshness gate" — that per-PR structural check no longer exists anywhere, which only strengthens this ADR's ruling that concept-level glossary maintenance stays off the blocking path. Prong (c) is live in `claude-plugins/fabrika/skills/adr/SKILL.md` (coined/redefined terms route to `.glossary/TERMS.md`); prong (b), the periodic drift sweep, is still unbuilt.

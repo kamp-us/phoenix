@@ -73,3 +73,5 @@ ADR. It is conversation-authored per ADR
 - **The implementation is a separate bounded §CP follow-up** (the `pipeline-cli` dedup
   tool + the two skill wirings), filed separately. This ADR records the decision only;
   it ships no code.
+
+> Amendment 2026-08-19: the dedup tool shipped as `fabrika report dedup` in `packages/fabrika-cli/src/report/dedup.ts` (+ `dedup-verb.ts`), not `pipeline-cli`; both seams call it — the report skill (claude-plugins/fabrika/skills/report/SKILL.md) and the triage skill's intake check (claude-plugins/fabrika/skills/triage/SKILL.md, with `--exclude`). See ADR 0303.

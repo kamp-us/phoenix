@@ -77,3 +77,5 @@ can never fight its own gate.
   #3926, #3930, #3932; emitted build epic #3946.
 - Vocabulary impact: coins **taste skill** (and **the taste voice** as the primitive's name) —
   routed to `.glossary/TERMS.md` (Design coverage section) in this PR.
+
+> Amendment 2026-08-19: the named gate substrate is gone — `design-capture`, `local-render` and `flake-rate` were cleared for deletion (#6346), so the "composes with, never replaces" clause about `agent-browser` no longer points at anything live. The per-aspect taste-skill decision still binds (the taste skills live in `claude-plugins/fabrika/skills/`, e.g. `taste-color`); the visual gate substrate needs its own re-decision.

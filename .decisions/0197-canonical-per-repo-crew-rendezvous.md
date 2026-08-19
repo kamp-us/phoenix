@@ -1,7 +1,8 @@
 ---
 id: 0197
 title: The crew rendezvous is per-repo canonical, keyed on the main checkout's shared git dir — never cwd, never a worktree toplevel
-status: accepted
+status: superseded by [0279](0279-v1-crew-retired-in-full.md)
+superseded_by: 0279
 date: 2026-07-20
 tags: [pipeline, crew, rendezvous, worktree, addressing]
 ---
