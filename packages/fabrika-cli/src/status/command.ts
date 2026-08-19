@@ -63,7 +63,7 @@ const repoFlag = Flag.string("repo").pipe(
 const skillsDirFlag = Flag.string("skills-dir").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		"the roster root to read (default: $CLAUDE_PLUGIN_ROOT's skills tree, else a plugin the CLI runs from inside of, else the installed fabrika plugin in Claude Code's plugin cache, else claude-plugins/fabrika/skills beneath the repo root, else the same path beneath the checkout the CLI itself runs from)",
+		"the roster root to read (default: $CLAUDE_PLUGIN_ROOT's skills tree, else a plugin the CLI runs from inside of, else claude-plugins/fabrika/skills beneath the repo root, else the same path beneath the checkout the CLI itself runs from, else the installed fabrika plugin under Claude Code's plugin cache at $CLAUDE_CONFIG_DIR/plugins/cache, which is ~/.claude/plugins/cache when $CLAUDE_CONFIG_DIR is unset or empty)",
 	),
 );
 
@@ -77,9 +77,12 @@ const jsonFlag = Flag.boolean("json").pipe(
  */
 const pluginCacheRoot = (): string | null => {
 	const configured = process.env.CLAUDE_CONFIG_DIR;
+	// An empty value reads as unset, not as the relative path `plugins/cache` a bare join would
+	// produce — a rung rooted at the cwd would answer about a directory nobody configured.
+	const root = configured === undefined || configured === "" ? null : configured;
 	const home = homedir();
-	if (configured === undefined && home === "") return null;
-	return join(configured ?? join(home, ".claude"), "plugins", "cache");
+	if (root === null && home === "") return null;
+	return join(root ?? join(home, ".claude"), "plugins", "cache");
 };
 
 /** The roster sources this invocation resolves against — the world the ladder reads. */

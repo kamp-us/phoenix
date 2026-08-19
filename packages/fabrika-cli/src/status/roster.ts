@@ -16,7 +16,7 @@ import {exists, isDirectory, readDir, readFile} from "../io/fs.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 
 /** Which of the six tiers served the roster. Printed, never assumed. */
-export type RosterTier = "explicit" | "env" | "plugin" | "cache" | "repo" | "checkout";
+export type RosterTier = "explicit" | "env" | "plugin" | "repo" | "checkout" | "cache";
 
 /** Who can reach a skill — the one routing fact a reader cannot infer from a description. */
 export type InvocationAxis = "model" | "user";
