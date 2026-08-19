@@ -728,16 +728,17 @@ put four fail-closed decisions where no test could reach them and made a local r
 
 The contract is
 [`claude-plugins/fabrika/skills/governance/contract.md`](../../claude-plugins/fabrika/skills/governance/contract.md).
-The **governance namespace** is derived from a PR's diff — required when any changed path sits under
+The **governance namespace** is derived from a diff, named either by a PR or by a `--base`/`--tip`
+commit range (an epic child has no PR mid-run) — required when any changed path sits under
 one of four harness roots (`.decisions/`, `.claude/`, `.github/`, `claude-plugins/`) — and this group
 answers the mechanical half of the judgment a governance verdict rests on.
 
 | Verb | Answers |
 |---|---|
-| `governance scope` | whether the diff derives the namespace, over which roots, with the bound head, the `self` flag and the records in the diff |
+| `governance scope` | whether the diff derives the namespace, over which roots, with the bound head or the named range, the `self` flag and the records in the diff |
 | `governance sweep` | the uncited live-`accepted` records whose domain a subject touches, ranked, for a subject in a bound commit or in the corpus |
 | `governance guards` | the anchored invariants the bound diff removes or modifies, and the guard-bearing files it touches |
-| `governance base` | this skill's own text at a PR's merge base — the self fence's bytes |
+| `governance base` | this skill's own text at the subject's merge base, whether the subject is a PR or a range — the self fence's bytes |
 | `governance post` | the single sanctioned emit of the `governance` namespace verdict |
 | `governance digest` | the decision records that landed in a window, with each landing commit and its anchor delta |
 | `governance readout` | the digest-publishing protocol: compose, upsert, read back |

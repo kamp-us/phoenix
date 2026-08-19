@@ -29,9 +29,18 @@ const DIFF_FLAGS = "--no-ext-diff --no-color --find-renames --src-prefix=a/ --ds
 export const STATUS_AT = (base: string = BASE, head: string = HEAD): RegExp =>
 	new RegExp(`^git diff ${DIFF_FLAGS} --name-status -z ${base}\\.\\.\\.${head}$`);
 
-/** `--name-status -z` output: a status field then a path field, both NUL-terminated. */
-export const statuses = (...rows: ReadonlyArray<readonly [string, string]>): ExecResult =>
-	okOut(rows.map(([status, path]) => `${status}\0${path}\0`).join(""));
+/**
+ * One `--name-status -z` record: the status field, then its path fields.
+ *
+ * A rename or copy carries two paths — source then destination — where every other change carries
+ * one, which is the three-field shape `parseNameStatus` walks statefully. A row type fixed at two
+ * fields cannot express it, so no test could reach that walk (#6064).
+ */
+export type StatusRow = readonly [status: string, ...paths: string[]];
+
+/** `--name-status -z` output: every field of every record, each NUL-terminated. */
+export const statuses = (...rows: ReadonlyArray<StatusRow>): ExecResult =>
+	okOut(rows.map((row) => row.map((field) => `${field}\0`).join("")).join(""));
 
 /** The recursive tree read this group resolves a skill root and root presence from. */
 export const TREE_AT = (sha: string = HEAD): RegExp =>

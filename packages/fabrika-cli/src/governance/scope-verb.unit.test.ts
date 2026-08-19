@@ -25,6 +25,7 @@ import {
 	RANGE_TIP,
 	SKILL_ROOT,
 	STATUS_AT,
+	type StatusRow,
 	statuses,
 	TREE_AT,
 	treeOf,
@@ -194,11 +195,12 @@ describe("runScope", () => {
 const ranged = {pr: null, base: RANGE_BASE, tip: RANGE_TIP};
 
 const overRange = (
-	...rows: ReadonlyArray<readonly [string, string]>
+	...rows: ReadonlyArray<StatusRow>
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[MERGE_BASE_OF(), okOut(`${RANGE_MERGE_BASE}\n`)],
 	[STATUS_AT(RANGE_BASE, RANGE_TIP), statuses(...rows)],
-	[PATHS_AT(RANGE_BASE, RANGE_TIP), paths(...rows.map(([, path]) => path))],
+	// `--name-only` gives a rename its destination alone, which is a record's last field either way.
+	[PATHS_AT(RANGE_BASE, RANGE_TIP), paths(...rows.map((row) => row[row.length - 1] as string))],
 	[TREE_AT(RANGE_TIP), treeOf(...FULL_TREE)],
 ];
 
@@ -217,6 +219,30 @@ describe("runScope over a range", () => {
 				`governance\trequired\t${RANGE_BASE}..${RANGE_TIP}`,
 				"root\t.decisions/\t1",
 				"root\tclaude-plugins/\t1",
+				"self\tfalse",
+				"record\t0240\tadded\t.decisions/0240-only-landed-adrs-may-be-cited.md",
+				"",
+			].join("\n"),
+		);
+	});
+
+	// A rename is the single record `--name-status` writes with three fields where `--name-only`
+	// writes one path, and `rangeSubject`'s short-read check counts one stream against the other.
+	// Both reads counting it once is what keeps a rename-carrying child off a `13` refusal. Verified
+	// against real git: `R098\0old\0new` on the status read, the destination alone on the path read.
+	it("derives over a rename, counting it once in both reads instead of refusing on 13", async () => {
+		const out = await run(
+			overRange(
+				["R098", ".decisions/0240-old-slug.md", ".decisions/0240-only-landed-adrs-may-be-cited.md"],
+				["M", "src/cart.ts"],
+			),
+			ranged,
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(
+			[
+				`governance\trequired\t${RANGE_BASE}..${RANGE_TIP}`,
+				"root\t.decisions/\t1",
 				"self\tfalse",
 				"record\t0240\tadded\t.decisions/0240-only-landed-adrs-may-be-cited.md",
 				"",
