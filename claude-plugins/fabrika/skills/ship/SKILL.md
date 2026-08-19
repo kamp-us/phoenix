@@ -8,9 +8,11 @@ argument-hint: "[pr-number] — the verified pull request to merge"
 # ship
 
 You are the merge authority: one PR in, one terminal token out. The checkout you stand in is not
-this PR — **read-only, no local git, ever**. Success is **enqueued + green** — the queue owns the
-async merge, so "QUEUED" is your victory condition and "merged" is something you *confirm*, never
-assert.
+this PR — **read-only, no local git, ever**. Where a merge queue governs the base, success is
+**enqueued + green** — the queue owns the async merge, so "QUEUED" is your victory condition and
+"merged" is something you *confirm*, never assert. Where no queue governs it, you land the PR
+yourself with `ship merge` and success is the **proven** landing. Which of the two you are on is a
+fact `ship scope` prints; it is never a guess.
 
 <!-- anchor: DISARM-LIFECYCLE --> **Every run that does not enqueue disarms the merge intent.**
 First act: `fabrika ship disarm $pr_number --site preflight` — a parked `--auto` from an interrupted run
@@ -40,7 +42,16 @@ The verb prints the head SHA, the class set with its **required namespaces** (yo
 all of them), the control-plane state, and the linked issue: `code`/`skill` classes require
 `Fixes #N` or an explicit `Part of #N` (partial split — merge without auto-close);
 doc/vocabulary-surface-only PRs are legitimately issueless. Carry the printed head into every later
-`--sha`; a verb refusing `12` means the head moved — start over at 1. How each class maps to a
+`--sha`; a verb refusing `12` means the head moved — start over at 1.
+
+It also prints `landing`, which is **your route at step 7 and the only place you read it**:
+`queue` → `ship enqueue`; `direct` → `ship merge`, with the method it names; `none` → the repository
+permits no way to land this branch, so stop and escalate to a human with settings access. `unknown`
+means the read failed — do not infer a path from it; take the `queue` route, because `ship merge`
+refuses on that same read anyway. Never compose this yourself from a merge-queue check and a
+repository-settings check: two reads a shipper does by hand are two reads a shipper can get wrong.
+
+How each class maps to a
 required namespace, and how the control-plane state is derived, is the verb's section
 (`fabrika wire doc-section --heading "ship scope" < <skill-base>/contract.md`).
 
@@ -160,7 +171,22 @@ EOF
 In doubt, substantive: a false route-back costs one cycle; a false resolve silently discards a
 real objection.
 
-## 7 — Enqueue, then reconcile honestly
+## 7 — Land it, by the route step 1 printed
+
+**`landing direct` — no queue governs the base.** One verb lands it and proves the landing:
+
+```bash
+fabrika ship merge $pr_number --sha 03135b91
+```
+
+`merged\t<commit>\t<method>` at exit 0 is a landing proven by reading `merged` plus the merge
+commit back — go to step 8. `16` is a proven refusal: either a queue governs the base after all
+(run the queue route below) or the PR is not mergeable (disarm, note, route to repair). `19` means
+the repository permits no merge method — stop and escalate to a human with settings access; no verb
+can fix it. `8` means whether it landed is **UNKNOWN**: re-read the PR before you say anything, and
+never report a landing you did not read.
+
+**`landing queue` — enqueue, then reconcile honestly.**
 
 ```bash
 fabrika ship enqueue $pr_number --sha 03135b91
@@ -178,9 +204,9 @@ repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue
 neither a landing nor a failure, and **"auto-merges on green" is not a thing you say**. `parked` →
 the enqueue never took effect: run `fabrika ship disarm $pr_number --site post-enqueue` (reconcile is a
 read and disarms nothing), note, and stop. The `mergeable_state` assertion and each terminal's proof
-are the two verbs' sections
+are the verbs' sections
 (`fabrika wire doc-section --heading "ship enqueue" < <skill-base>/contract.md`, then
-`--heading "ship reconcile"`).
+`--heading "ship reconcile"`, and `--heading "ship merge"` for the direct route).
 
 ## 8 — Release queue (dark ships only)
 
@@ -197,13 +223,16 @@ verb's section (`fabrika wire doc-section --heading "ship release" < <skill-base
 ## Terminal vocabulary
 
 <!-- anchor: CAPABILITIES --> Capability set: a shell and a repo-scoped token; writes used —
-merge-queue enqueue/disarm, PR comments (`note`, thread rationale), thread resolution, the
+merge-queue enqueue/disarm, the direct merge on an unqueued base (`ship merge`, and only through
+that verb), PR comments (`note`, thread rationale), thread resolution, the
 close→reopen nudge, one label (`status:awaiting-release`), and one append to the driver's lane
 ledger through `lane report` at the `--root` your brief carries, a path outside this checkout. No
 push, no local git mutation, no
 implementation, no review verdict, no flag flip. Every run ends as exactly one of:
 **already-merged (idempotent success)** · **QUEUED — enqueued, awaiting the queue** (success
-without a merge observed) · **landed** · **refused — <reason>** (a successful decline: disarmed,
+without a merge observed, the queue route's victory) · **landed** (the direct route's, and
+`reconcile`'s — either way it is a landing you *read back*, never one you infer) ·
+**refused — <reason>** (a successful decline: disarmed,
 noted, nothing mutated beyond the note) · **awaiting control-plane approval** · **routed to
 repair** · **routed to heal-ci** · **routed to review** · **UNRESOLVED at horizon** ·
 **EJECTED — routed to repair** ·
@@ -267,7 +296,7 @@ every fabrika skill, so one reader parses all of them. No row here dead-ends on 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
 | `.github/CODEOWNERS`, carrying a control-plane team row | `ship scope`'s control-plane classification and `ship cp-approval`'s roster both derive from it, read at the PR's base ref — the branch the PR targets, never a literal trunk name | **fail-loud** — an unreadable boundary is exit `11`, never "ordinary"; a trivial or empty one is the printed `unknown` hold, and a zero-member roster is `stop zero-owners`. The run names `.github/CODEOWNERS` and points at front-door. |
-| A merge queue enabled on the PR's base branch | `ship enqueue` arms the queue's auto-merge; the queue, never this skill, performs the merge | **fail-loud** — a base with no queue has no arm to enter, so refuse before `ship enqueue` and end `refused — no merge queue on <base>`; `reconcile`'s `parked` covers only a queue-governed base. The run names the base branch and points at front-door. |
+| A landing path on the PR's base branch — either a merge queue, or a repository permitting at least one merge method | Step 7 lands the PR through one of exactly two verbs, and `ship scope`'s `landing` line says which (`fabrika wire doc-section --heading "ship merge" < <skill-base>/contract.md`) | **degrade** — a base with no queue is not a missing surface, it is the other path: `ship merge` lands it and `reconcile`'s `parked` never applies. Only a repository permitting *no* merge method has nothing at all, and that ends the run `refused — no landing path on <base>` naming the base branch, because no verb can grant one. |
 | `.github/workflows/ci.yml`, gating the `merge_group` ref | `ship checks` reads its result at the head, and the queue awaits that context on `merge_group` before it merges | **fail-loud** — with no workflows at the head `ship checks` reports `facts workflows:0 runs:0` at rollup `pending` and never green, so the run stops rather than enqueue behind no gate; it names `.github/workflows/ci.yml` and points at front-door. |
 | `.github/workflows/governance-floor.yml`, running `fabrika ship floor` on every PR | it is what makes step 3's governance floor bind on a machine rather than on this prose | **degrade** — the skill still refuses a `blocked` governance namespace itself, so the run is correct without the job; what is lost is enforcement against a run that never happened. Say so, name `.github/workflows/governance-floor.yml`, and point at front-door. |
 | The `status:awaiting-release` label | `ship release` is the dark-ship seam and the label is the whole action | **fail-loud** — a label write or its read-back failing is exit `8`/`9`, never `queued`; the run escalates that a real dark ship may be missing from the release queue, names the `status:awaiting-release` label, and points at front-door. |

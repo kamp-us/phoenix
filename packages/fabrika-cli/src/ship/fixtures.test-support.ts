@@ -203,4 +203,27 @@ export const issue = (labels: ReadonlyArray<string> = []): ExecResult =>
 		}),
 	);
 
+/** The branch's active rules. `[]` is the answer for a branch nothing governs, not a failure. */
+export const branchRules = (...types: ReadonlyArray<string>): ExecResult =>
+	okOut(JSON.stringify(types.map((type) => ({type}))));
+
+/** The repository's permitted merge methods. An omitted flag reads `false`. */
+export const repository = (
+	allowed: {squash?: boolean; merge?: boolean; rebase?: boolean} = {},
+): ExecResult =>
+	okOut(
+		JSON.stringify({
+			full_name: "o/r",
+			allow_squash_merge: allowed.squash ?? true,
+			allow_merge_commit: allowed.merge ?? true,
+			allow_rebase_merge: allowed.rebase ?? true,
+		}),
+	);
+
+/** The landing read-back projection: `merged` beside the commit that proves it. */
+export const mergeProof = (shape: {merged?: boolean; commit?: string} = {}): ExecResult =>
+	okOut(JSON.stringify({merged: shape.merged ?? true, commit: shape.commit ?? MERGE_COMMIT}));
+
+export const MERGE_COMMIT = "5c7d1e930a2b4f6d8e0c1a3b5d7f9e1c3a5b7d9f";
+
 export const ENV = {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>;
