@@ -1,14 +1,18 @@
 name: codeowners-cp
 
 # CI gate for #955: the §CP control-plane set lives as one anchored regex
-# (CONTROL_PLANE_RE in gh-issue-intake-formats.md), but .github/CODEOWNERS enumerates
-# the same paths literally. The two drift silently — a §CP path added to the regex
-# without a CODEOWNERS row is control-plane-by-regex yet outside
-# require_code_owner_review (under-protected; #934/#953). This job reads the §CP set
-# FROM the canonical regex and fails the PR when any §CP path lacks a covering
-# CODEOWNERS row. It reuses pipeline-cli's `codeowners-cp check` mode — the scan lives
-# once in the tool. Fail-closed (ADR 0092): an unparseable source or a zero-scope
-# regex also reds the build.
+# (CONTROL_PLANE_RE, the const in fabrika-cli's guard group), but .github/CODEOWNERS
+# enumerates the same paths literally. The two drift silently — a §CP path added to the
+# regex without a CODEOWNERS row is control-plane-by-regex yet outside
+# require_code_owner_review (under-protected; #934/#953), and because the `main` ruleset
+# pairs required_approving_review_count: 0 with require_code_owner_review: true, a path
+# matching NO row merges with ZERO approvals. This job reads the §CP set FROM the const
+# and fails the PR when any §CP path lacks a covering CODEOWNERS row. The scan lives once
+# in fabrika-cli's `guard` group (#6093). Fail-closed (ADR 0092): a missing CODEOWNERS, a
+# CODEOWNERS with no owned rows, or a boundary resolving to no paths also reds the build.
+#
+# The const↔prose drift check is NOT here: ci.yml's unconditional `skills` job runs
+# validate-gate-path-drift.sh, which compares the const against the one un-importable copy.
 on:
   pull_request:
   push:
@@ -37,7 +41,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Exit 1 when a §CP path has no covering CODEOWNERS owner (the path → reason
-      # report is on stderr); any other non-zero means the run could not complete. #955.
+      # Non-zero on three distinct seats, so a red says which thing happened: 12 a §CP path
+      # has no covering owner row, 7 zero scope (no CODEOWNERS, no owned row, or a boundary
+      # resolving to no paths — fail-closed, ADR 0092), 11 CODEOWNERS could not be read so
+      # the verdict is UNKNOWN. The report is on stderr, with ::error annotations beside it.
+      # Reproduce locally with the same verb. See #955.
       - name: Check §CP CONTROL_PLANE_RE ↔ CODEOWNERS are in sync
-        run: node packages/pipeline-cli/src/bin.ts codeowners-cp check
+        run: node packages/fabrika-cli/src/bin.ts guard codeowners-cp check

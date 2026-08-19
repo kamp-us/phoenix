@@ -7,9 +7,12 @@ name: path-filter-guard
 # polls deploy.yml's sticky `<!-- preview-deploy -->` comment on a 10-minute deadline, so
 # a PR that trips e2e but skips its deploy times the poll out and wedges `ci-required`.
 # The two lists were guarded ONLY by a reciprocal human comment; this runs
-# `pipeline-cli path-filter-guard check` so a drifting edit to either list cannot merge.
-# It fails closed on zero scope — a missing file/job/step/key or an empty list (ADR 0092).
-# The scan lives once in the tool.
+# `fabrika guard path-filter-guard check` so a drifting edit to either list cannot merge.
+# It also compares the two steps' `(token, base)` diff basis: equal globs read against
+# different changed-file sets still disagree, which permanently redded a defect-free PR
+# under a guard that compared only the lists (#3722, PR #3713). It fails closed on zero
+# scope — a missing file/job/step/key or an empty list (ADR 0092). The scan lives once in
+# fabrika-cli's `guard` group (#6093), which every ported guard shares.
 on:
   pull_request:
   push:
@@ -41,7 +44,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Exit 1 when the two path-filter sets drift apart, or zero scope (a missing
-      # file/job/step/key or an empty list, fail-closed). Report on stderr. See #2372.
+      # Non-zero on three distinct seats, so a red says which thing happened: 12 the globs or
+      # the diff basis drifted, 7 zero scope (a missing file/job/step/key or an empty list,
+      # fail-closed, ADR 0092), 11 a workflow could not be read so the verdict is UNKNOWN. The
+      # report is on stderr, with ::error annotations beside it. Reproduce locally with the
+      # same verb. See #2372/#3722.
       - name: Check the ci.yml/deploy.yml path-filter sync invariant
-        run: node packages/pipeline-cli/src/bin.ts path-filter-guard check
+        run: node packages/fabrika-cli/src/bin.ts guard path-filter-guard check

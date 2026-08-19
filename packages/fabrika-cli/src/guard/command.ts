@@ -17,10 +17,16 @@ import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runCatalogGuard} from "./catalog-verb.ts";
+import {runChangeDetectGuard} from "./change-detect-verb.ts";
+import {runCodeownersCpGuard} from "./codeowners-cp-verb.ts";
+import {runDecisionsIndexGuard} from "./decisions-number-verb.ts";
+import {runDesignInventoryCheck, runDesignInventoryGenerate} from "./design-inventory-verb.ts";
+import {runDesignTokenGuard} from "./design-token-verb.ts";
 import {runFanoutGuard} from "./fanout-verb.ts";
 import {runHomingGuard} from "./homing-verb.ts";
 import {runLeakGuard} from "./leak-verb.ts";
 import {runPatchGuard} from "./patch-verb.ts";
+import {runPathFilterGuard} from "./path-filter-verb.ts";
 import {runPointerGuard} from "./pointer-verb.ts";
 import {runPublishIsolationGuard} from "./publish-isolation-verb.ts";
 import {runReadmeGuard} from "./readme-verb.ts";
@@ -389,6 +395,195 @@ const leakGuard = Command.make("leak-guard").pipe(
 	),
 );
 
+const pathFilterCheck = leafCommand(
+	"check",
+	{root: rootFlag},
+	Effect.fn(function* ({root}) {
+		yield* emit(
+			yield* runPathFilterGuard({
+				root: Option.getOrNull(root),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Red when ci.yml's e2e filter and deploy.yml's deploy filter drift.",
+	),
+	Command.withDescription(
+		"ci.yml's `changes.e2e` and deploy.yml's `changes.deploy` dorny/paths-filter steps must classify a PR's diff identically — the same globs AND the same `(token, base)` diff basis. deploy's RUN-set must be a superset of e2e's, because ci.yml's `e2e` job polls deploy.yml's sticky preview-deploy comment on a 10-minute deadline: a PR that trips e2e while its deploy skips times that poll out and wedges the required `ci-required` check (#2372). Equal globs are not enough — the two steps' `token`/`base` inputs decide WHICH changed-file set the globs are applied to, and they drifted while the lists stayed byte-identical, permanently redding a defect-free PR (#3722, PR #3713). Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on both workflows under Actions. Exits 7 (zero scope: a missing file/job/step/key or an empty list — fail-closed, ADR 0092), 11 (a workflow could not be read, so the verdict is UNKNOWN), 12 (the globs or the diff basis drifted). Example: fabrika guard path-filter-guard check",
+	),
+);
+
+const pathFilterGuard = Command.make("path-filter-guard").pipe(
+	Command.withSubcommands([pathFilterCheck]),
+	Command.withShortDescription("deploy's run-set stays a superset of e2e's."),
+	Command.withDescription(
+		"A PR that trips e2e but skips its deploy leaves e2e polling ten minutes for a preview that never arrives, and the required aggregate reds on a defect-free change. The invariant was pinned by two reciprocal human comments and nothing else.",
+	),
+);
+
+const changeDetectCheck = leafCommand(
+	"check",
+	{root: rootFlag},
+	Effect.fn(function* ({root}) {
+		yield* emit(
+			yield* runChangeDetectGuard({
+				root: Option.getOrNull(root),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Red when ci.yml's change detection reads the GitHub API."),
+	Command.withDescription(
+		"ci.yml's `changes` job must detect changed files with a pure `git diff`, never the GitHub API. dorny/paths-filter calls `pulls.listFiles` whenever a `token` is set and falls back to `git diff` only when it is empty — and the action DEFAULTS the token, so an absent `token:` selects API mode too. That live API read is the job's only flake surface: a transient API-HTML blip (`invalid character '<'`) hard-failed the step and redded the `ci-required` aggregate on a defect-free docs-only PR (#3244/#3245). Prints the one-line all-clear on stdout; a red puts the report on stderr, with a GitHub ::error annotation on ci.yml under Actions. Exits 7 (zero scope: no changes job, no paths-filter step, or no `with:` block — fail-closed, ADR 0092), 11 (ci.yml could not be read, so the verdict is UNKNOWN), 12 (the step is in API mode). Example: fabrika guard change-detect-guard check",
+	),
+);
+
+const changeDetectGuard = Command.make("change-detect-guard").pipe(
+	Command.withSubcommands([changeDetectCheck]),
+	Command.withShortDescription("Change detection stays API-free git mode."),
+	Command.withDescription(
+		"The one input that decides whether CI's change detection reads the GitHub API is a `token:` the action silently defaults. Losing the empty pin reopens a flake that reds green PRs, and nothing about the diff would say so.",
+	),
+);
+
+const codeownersCpCheck = leafCommand(
+	"check",
+	{root: rootFlag},
+	Effect.fn(function* ({root}) {
+		yield* emit(
+			yield* runCodeownersCpGuard({
+				root: Option.getOrNull(root),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Red on a §CP control-plane path with no CODEOWNERS owner."),
+	Command.withDescription(
+		"Every path the §CP boundary regex marks control-plane must have a covering `.github/CODEOWNERS` row. The boundary is one anchored regex and CODEOWNERS enumerates the same paths literally, so the two drift silently — and the `main` ruleset pairs `required_approving_review_count: 0` with `require_code_owner_review: true`, which means a path matching NO row merges with ZERO approvals (#934/#953/#955). The §CP set is derived FROM the boundary const, never a re-hardcoded copy. Prints the one-line all-clear on stdout; a red names every uncovered path on stderr, with GitHub ::error annotations on CODEOWNERS under Actions. Exits 7 (zero scope: no CODEOWNERS, no owned rows, or a boundary resolving to no paths — fail-closed, ADR 0092), 11 (CODEOWNERS could not be read, so the verdict is UNKNOWN), 12 (a §CP path is unowned). Example: fabrika guard codeowners-cp check",
+	),
+);
+
+const codeownersCpGuard = Command.make("codeowners-cp").pipe(
+	Command.withSubcommands([codeownersCpCheck]),
+	Command.withShortDescription("Every §CP path is owned in CODEOWNERS."),
+	Command.withDescription(
+		"A pattern set and a literal enumeration of the same paths drift silently, and here the drift is one-directional in the dangerous way: a §CP path added to the boundary without a CODEOWNERS row is control-plane by law and auto-mergeable in fact.",
+	),
+);
+
+const decisionsIndexValidate = leafCommand(
+	"validate",
+	{root: rootFlag},
+	Effect.fn(function* ({root}) {
+		yield* emit(
+			yield* runDecisionsIndexGuard({
+				root: Option.getOrNull(root),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Red on a duplicate ADR id or a filename/frontmatter mismatch."),
+	Command.withDescription(
+		"The ADR number lock (ADR 0074): every `.decisions/` record carries the four index fields, its filename number and its frontmatter `id` name the same ADR, and no two records claim one id. The two halves compose — the duplicate check only sees a filename collision because the prefix↔id lock forces both axes to agree — which is what catches the #1471 class, two branches each minting the same number, green apart and colliding once both land. Prints the one-line all-clear on stdout; a red names every defect on stderr, with GitHub ::error annotations on each record under Actions. Exits 7 (zero scope: no `.decisions/` or no records in it — fail-closed, ADR 0092), 11 (a record could not be read, so the verdict is UNKNOWN), 12 (a defect). Example: fabrika guard decisions-index validate",
+	),
+);
+
+const decisionsIndexGuard = Command.make("decisions-index").pipe(
+	Command.withSubcommands([decisionsIndexValidate]),
+	Command.withShortDescription("The ADR corpus holds no colliding or mismatched number."),
+	Command.withDescription(
+		"ADR discovery is ambient — the `NNNN-slug` filenames are the map (ADR 0126/0129) — so a number that means two things breaks every citation of it at once, and neither branch that minted it could have seen the other.",
+	),
+);
+
+const designTokenCheck = leafCommand(
+	"check",
+	{
+		root: rootFlag,
+		"write-baseline": Flag.boolean("write-baseline").pipe(
+			Flag.withDescription("re-snapshot the raw-px ceilings from this tree instead of judging it"),
+		),
+	},
+	Effect.fn(function* ({root, "write-baseline": writeBaseline}) {
+		yield* emit(
+			yield* runDesignTokenGuard({
+				root: Option.getOrNull(root),
+				cwd: process.cwd(),
+				env: process.env,
+				writeBaseline,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Red on a dead token ref, a raw hex, or an off-grid px."),
+	Command.withDescription(
+		"The first deterministic rung of the four-pillars design law (ADR 0162, design-system-manifest.md): a component CSS file must consume the design-token seam. Three rules — every `var(--…)` resolves to a declared, runtime-injected or grandfathered property (the Toast dead-ref class, #2167, which renders unstyled with nothing failing), no hex literal outside the raw-scale layer `tokens.css` (Pillar 2), and no raw `px` > 2px beyond each file's grandfathered ceiling (the 4px grid sanctions only 1px and 2px). The bounded allow-lists in `apps/web/src/styles/design-token-lint.config.json` grandfather the catalogued debt so the gate is green on main while still redding any NEW bypass; `--write-baseline` re-snapshots the ceilings after a real cleanup leg. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on each offending line under Actions. Exits 7 (zero scope: no CSS file discovered, or a malformed allow-list config — fail-closed, ADR 0092), 11 (a file could not be read, so the verdict is UNKNOWN), 12 (the seam is broken). Example: fabrika guard design-token-guard check",
+	),
+);
+
+const designTokenGuard = Command.make("design-token-guard").pipe(
+	Command.withSubcommands([designTokenCheck]),
+	Command.withShortDescription("Component CSS consumes the design-token seam."),
+	Command.withDescription(
+		"Every failure this catches is silent in the browser: a dead token ref renders unstyled, a raw hex renders the wrong colour in one theme, an off-grid px renders slightly wrong everywhere. None of them throws, so none of them is caught by anything but a gate.",
+	),
+);
+
+const designInventoryCheck = leafCommand(
+	"check",
+	{root: rootFlag},
+	Effect.fn(function* ({root}) {
+		yield* emit(
+			yield* runDesignInventoryCheck({
+				root: Option.getOrNull(root),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Red when the committed component inventory has gone stale."),
+	Command.withDescription(
+		"Re-extract the descriptive component inventory from the JSDoc on the annotated `apps/web/src/components/ui` primitives and red when the committed `design-system-inventory.md` no longer matches it (ADR 0194). The inventory is what an agent reads to pick a primitive, so a stale one silently routes every reader to a component contract that is not what ships. Prints the one-line all-clear on stdout; a red puts the report on stderr, with a GitHub ::error annotation on the artifact under Actions. Exits 7 (zero scope: no annotated primitive discovered — fail-closed, ADR 0092), 11 (a source could not be read, so the verdict is UNKNOWN), 12 (the inventory is stale or missing). Example: fabrika guard design-inventory check",
+	),
+);
+
+const designInventoryGenerate = leafCommand(
+	"generate",
+	{root: rootFlag},
+	Effect.fn(function* ({root}) {
+		yield* emit(
+			yield* runDesignInventoryGenerate({
+				root: Option.getOrNull(root),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Rewrite the descriptive component inventory from the JSDoc."),
+	Command.withDescription(
+		"Regenerate `design-system-inventory.md` from the annotated primitives — the one write in this group, and the only command whose output `design-inventory check` compares against. The write routes through the descriptive/normative firewall (ADR 0194), which admits the inventory artifact and nothing else: the founder-authored `design-system-manifest.md` — the four pillars, the prohibitions, the role-token values — has no path here, so normative law can only ever change by a human's hand. Exits 7 (zero scope: no annotated primitive — fail-closed, ADR 0092), 11 (a source could not be read, or the write did not land). Example: fabrika guard design-inventory generate",
+	),
+);
+
+const designInventoryGuard = Command.make("design-inventory").pipe(
+	Command.withSubcommands([designInventoryCheck, designInventoryGenerate]),
+	Command.withShortDescription("The descriptive component inventory stays fresh and descriptive."),
+	Command.withDescription(
+		"The descriptive/normative firewall (ADR 0194): the component inventory is machine-extracted and must stay current, while the design law beside it is founder-authored and must never be machine-written. The two commands travel together — a `generate` that no longer matches `check` reds CI on a file no command can fix.",
+	),
+);
+
 /** The registered guards. One appended row per port; the order is the `--help` order. */
 const guards = [
 	readmeGuard,
@@ -403,6 +598,12 @@ const guards = [
 	pointerGuard,
 	publishIsolationGuard,
 	leakGuard,
+	pathFilterGuard,
+	changeDetectGuard,
+	codeownersCpGuard,
+	decisionsIndexGuard,
+	designTokenGuard,
+	designInventoryGuard,
 ];
 
 export const guardCommand = Command.make("guard").pipe(
