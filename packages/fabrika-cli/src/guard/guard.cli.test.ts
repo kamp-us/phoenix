@@ -113,4 +113,33 @@ describe("fabrika guard, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () 
 		expect(run.code).toBe(0);
 		expect(run.stdout).toContain(marker);
 	});
+
+	// The #5720 CI-shape and canon/design batch. Two of these leaves are NOT named `check`, which
+	// is the whole reason to spawn them: a leaf mis-registered under the wrong name is invisible to
+	// every in-process test and shows up only as an unknown-subcommand refusal in CI.
+	it.each([
+		["path-filter-guard", "check", "#2372"],
+		["change-detect-guard", "check", "#3245"],
+		["codeowners-cp", "check", "#955"],
+		["decisions-index", "validate", "ADR 0074"],
+		["design-token-guard", "check", "ADR 0162"],
+		["design-inventory", "check", "ADR 0194"],
+		["design-inventory", "generate", "ADR 0194"],
+	])("reaches %s's %s leaf by its registration alone", (guard, leaf, marker) => {
+		const run = fabrika(["guard", guard, leaf, "--help"]);
+		expect(run.code).toBe(0);
+		expect(run.stdout).toContain(marker);
+	});
+
+	it("reds a duplicate ADR id through the real decisions-index leaf", () => {
+		const root = mkdtempSync(join(tmpdir(), "fabrika-decisions-"));
+		mkdirSync(join(root, ".decisions"), {recursive: true});
+		const record = "---\nid: 0284\ntitle: A title\nstatus: accepted\ndate: 2026-08-18\n---\n";
+		writeFileSync(join(root, ".decisions", "0284-one.md"), record, "utf8");
+		writeFileSync(join(root, ".decisions", "0284-two.md"), record, "utf8");
+		const run = fabrika(["guard", "decisions-index", "validate", "--root", root]);
+		expect(run.code).toBe(VIOLATION);
+		expect(run.stdout).toBe("");
+		expect(run.stderr).toContain("duplicate ADR id 0284");
+	});
 });
