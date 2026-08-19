@@ -37,6 +37,7 @@ import {
 	deriveFloorFor,
 	loadLedger,
 	type PlanMessages,
+	readContainmentVocabulary,
 	requireEpic,
 	scannedChildren,
 } from "./load.ts";
@@ -114,6 +115,8 @@ export interface VerdictOptions {
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly stdin: Effect.Effect<StdinRead>;
+	/** Where the verb is standing — the repo whose `.fabrika.jsonc` this run resolves. */
+	readonly cwd: string;
 }
 
 export const runVerdict = (
@@ -165,7 +168,10 @@ export const runVerdict = (
 		);
 		if (cycle._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, cycle.message);
 
-		const read = yield* loadLedger(MESSAGES, repo, target.issue, cycle.path);
+		const vocabulary = yield* readContainmentVocabulary(MESSAGES, options.cwd);
+		if (vocabulary._tag === "Refused") return vocabulary.outcome;
+
+		const read = yield* loadLedger(MESSAGES, repo, target.issue, cycle.path, vocabulary.vocabulary);
 		if (read._tag === "Refused") return read.outcome;
 		const ledger = read.ledger;
 		const notes = [
@@ -176,7 +182,7 @@ export const runVerdict = (
 			),
 		];
 
-		const derived = yield* deriveFloorFor(MESSAGES, repo, ledger);
+		const derived = yield* deriveFloorFor(MESSAGES, repo, ledger, vocabulary.vocabulary);
 		if (derived._tag === "Refused") return derived.outcome;
 		const floor = derived.floor;
 

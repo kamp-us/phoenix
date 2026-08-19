@@ -1,10 +1,18 @@
-import {Effect, Layer} from "effect";
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {runCheck} from "./check-verb.ts";
 import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {child, childBody, epic, epicBody, subIssues} from "./fixtures.test-support.ts";
+import {
+	CWD,
+	child,
+	childBody,
+	epic,
+	epicBody,
+	planContext,
+	subIssues,
+} from "./fixtures.test-support.ts";
 
 const EPIC = /^gh api repos\/o\/r\/issues\/4300$/;
 const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
@@ -16,14 +24,12 @@ const CYCLE = /^gh api repos\/o\/r\/contents\/product-development-cycle\.md$/;
 const options = {
 	number: 4300,
 	repo: null,
-	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	cwd: CWD,
 };
 
 const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
-	Effect.runPromise(
-		Effect.provide(runCheck(options), Layer.merge(fakeShell(script).layer, unconfigured)),
-	);
+	Effect.runPromise(Effect.provide(runCheck(options), planContext(fakeShell(script))));
 
 /** An epic whose phase line names exactly the one child a single-child script serves. */
 const ONE_CHILD_EPIC = epic({body: epicBody({dependencies: "- phase 1: #4301"})});
@@ -144,9 +150,66 @@ describe("runCheck", () => {
 
 	it("re-runs the fetch itself — it takes no ledger from a caller", async () => {
 		const shell = fakeShell(CLEAN);
-		await Effect.runPromise(
-			Effect.provide(runCheck(options), Layer.merge(shell.layer, unconfigured)),
-		);
+		await Effect.runPromise(Effect.provide(runCheck(options), planContext(shell)));
 		expect(shell.calls.some((line) => /sub_issues/.test(line))).toBe(true);
+	});
+});
+
+/**
+ * Story 1 and story 5 of #5631 together: the bare repo gets phoenix's behaviour off the shipped
+ * vocabulary, and a repo that declares its own gets that one instead. Every other test in this file
+ * is the bare-repo arm — none of them writes a config — so these two only have to move the config.
+ */
+describe("the containment vocabulary, resolved", () => {
+	const withConfig = (config: string | {readonly unreadable: true}) =>
+		Effect.runPromise(Effect.provide(runCheck(options), planContext(fakeShell(CLEAN), config)));
+
+	it("reds a phoenix-legal marker a foreign vocabulary does not carry", async () => {
+		const out = await withConfig(
+			'{"containmentVocabulary": {"values": ["unpublished", "exempt"]}}',
+		);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			answer: "defective",
+			defects: expect.arrayContaining([
+				expect.objectContaining({
+					type: "MISSING_CONTAINMENT",
+					detail: "type:feature with containment unset",
+				}),
+			]),
+		});
+	});
+
+	it("asks no child for a marker on an empty vocabulary", async () => {
+		const unmarked: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+			[EPIC, epic()],
+			[SUBS, subIssues(4301, 4302)],
+			[CHILD_1, child({number: 4301, body: childBody({containment: null})})],
+			[CHILD_2, child({number: 4302, body: childBody({stories: "2", containment: null})})],
+			[CYCLE, okOut("{}")],
+		];
+		const off = await Effect.runPromise(
+			Effect.provide(
+				runCheck(options),
+				planContext(fakeShell(unmarked), '{"containmentVocabulary": {"types": []}}'),
+			),
+		);
+		const bare = await run(unmarked);
+		expect(JSON.parse(off.stdout).answer).toBe("clean");
+		expect(JSON.parse(bare.stdout).defects.map((defect: {type: string}) => defect.type)).toContain(
+			"MISSING_CONTAINMENT",
+		);
+	});
+
+	it("leaves the floor UNKNOWN when the config exists and cannot be read", async () => {
+		const out = await withConfig({unreadable: true});
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("the floor is UNKNOWN, not clean");
+	});
+
+	it("refuses a config whose vocabulary does not decode", async () => {
+		const out = await withConfig('{"containmentVocabulary": {"values": ["none"]}}');
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
 	});
 });

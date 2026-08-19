@@ -174,20 +174,3 @@ export const readChildStories = (value: string | undefined): ChildStories => {
 		ids: text.split(",").map((part) => Number.parseInt(part.trim(), 10)),
 	};
 };
-
-export type Containment = "flag" | "exempt" | "none";
-
-/**
- * A child's containment, leading keyword only, from the closed set.
- *
- * Anything unrecognised reads as unset — `null` — which `MISSING_CONTAINMENT` treats identically to
- * `none`; only `flag` and `exempt` satisfy it.
- */
-export const readContainment = (value: string | undefined): Containment | null => {
-	const keyword =
-		(value ?? "")
-			.trim()
-			.split(/[\s(,.]/)[0]
-			?.toLowerCase() ?? "";
-	return keyword === "flag" || keyword === "exempt" || keyword === "none" ? keyword : null;
-};

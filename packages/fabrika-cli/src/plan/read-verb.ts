@@ -13,7 +13,13 @@ import {badNumber, resolveTargetRepo} from "../build/target.ts";
 import {cycleDocOr} from "../config/paths.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
-import {loadLedger, type PlanMessages, requireEpic, scannedChildren} from "./load.ts";
+import {
+	loadLedger,
+	type PlanMessages,
+	readContainmentVocabulary,
+	requireEpic,
+	scannedChildren,
+} from "./load.ts";
 import {renderTopology} from "./model.ts";
 
 const VERB = "plan read";
@@ -33,6 +39,8 @@ export interface ReadOptions {
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** Where the verb is standing — the repo whose `.fabrika.jsonc` this run resolves. */
+	readonly cwd: string;
 }
 
 export const runRead = (
@@ -60,7 +68,10 @@ export const runRead = (
 		);
 		if (cycle._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, cycle.message);
 
-		const read = yield* loadLedger(MESSAGES, repo, target.issue, cycle.path);
+		const vocabulary = yield* readContainmentVocabulary(MESSAGES, options.cwd);
+		if (vocabulary._tag === "Refused") return vocabulary.outcome;
+
+		const read = yield* loadLedger(MESSAGES, repo, target.issue, cycle.path, vocabulary.vocabulary);
 		if (read._tag === "Refused") return read.outcome;
 		const ledger = read.ledger;
 

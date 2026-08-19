@@ -67,6 +67,13 @@ where empty would disable something. The widen-only keys are the exception and s
 docblocks: for `capClearAuthors`, `docLeakExempt` and `workflowValidators`, empty **is** the strict
 answer.
 
+`containmentVocabulary` is the other exception, and it is one on purpose: an explicitly-empty half
+turns the containment marker off, because a repo with no deployment story has nothing to contain and
+must be able to say so (R14.1, [#6300](https://github.com/kamp-us/phoenix/issues/6300)). The
+distinction that keeps this from being the failure the rule guards against is *declared* versus
+*absent* — an absent file or key still resolves to the shipped pair, so nobody turns the gate off by
+writing no config. Any key that follows it owes the same split in its own docblock.
+
 A shipped default may be **looser** than today's behaviour only on a founder ruling, and only
 paired with a declaration that holds the strict value where the guard matters.
 `unreadableCodeowners` is the one such key (ADR

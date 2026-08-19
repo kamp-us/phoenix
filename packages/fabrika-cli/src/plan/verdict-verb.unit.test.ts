@@ -1,7 +1,7 @@
-import {Effect, Layer} from "effect";
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {comments, LANE_UUID, marker, LANE_TOKEN as TOKEN} from "../build/fixtures.test-support.ts";
-import {errOut, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {read as readMarker} from "../wire/verdict-marker.ts";
@@ -14,7 +14,16 @@ import {
 	PLAN_MOVED,
 	READBACK_MISMATCH,
 } from "./codes.ts";
-import {child, childBody, epic, epicBody, SESSION, subIssues} from "./fixtures.test-support.ts";
+import {
+	CWD,
+	child,
+	childBody,
+	epic,
+	epicBody,
+	planContext,
+	SESSION,
+	subIssues,
+} from "./fixtures.test-support.ts";
 import {runVerdict} from "./verdict-verb.ts";
 
 const EPIC = /^gh api repos\/o\/r\/issues\/4300$/;
@@ -54,8 +63,8 @@ const POSTED = okOut(
 const digestOf = async (childPayload: ExecResult): Promise<string> => {
 	const out = await Effect.runPromise(
 		Effect.provide(
-			runCheck({number: 4300, repo: null, cwd: "/repo", env: {CLAUDE_PIPELINE_REPO: "o/r"}}),
-			Layer.merge(fakeShell(ledger(childPayload)).layer, unconfigured),
+			runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}, cwd: CWD}),
+			planContext(fakeShell(ledger(childPayload))),
 		),
 	);
 	return JSON.parse(out.stdout).digest as string;
@@ -78,12 +87,12 @@ const run = (
 				digest,
 				token: TOKEN,
 				polarity: overrides.polarity ?? null,
-				cwd: "/repo",
 				repo: null,
 				env,
+				cwd: CWD,
 				stdin: Effect.succeed(stdin),
 			}),
-			Layer.merge(shell.layer, unconfigured),
+			planContext(shell),
 		),
 	).then((outcome) => ({outcome, calls: shell.calls}));
 };
@@ -267,11 +276,11 @@ describe("runVerdict", () => {
 					token: TOKEN,
 					polarity: null,
 					repo: null,
-					cwd: "/repo",
 					env,
+					cwd: CWD,
 					stdin: Effect.succeed<StdinRead>({_tag: "Failed", reason: "EIO"}),
 				}),
-				Layer.merge(fakeShell([]).layer, unconfigured),
+				planContext(fakeShell([])),
 			),
 		);
 		expect(outcome.code).toBe(11);
@@ -287,8 +296,8 @@ describe("runVerdict", () => {
 		] as ReadonlyArray<readonly [RegExp, ExecResult]>;
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runCheck({number: 4300, repo: null, cwd: "/repo", env: {CLAUDE_PIPELINE_REPO: "o/r"}}),
-				Layer.merge(Layer.merge(fakeShell(script).layer, unconfigured), unconfigured),
+				runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}, cwd: CWD}),
+				planContext(fakeShell(script)),
 			),
 		);
 		const digest = JSON.parse(out.stdout).digest as string;

@@ -1,9 +1,15 @@
 import {describe, expect, it} from "vitest";
+import {SHIPPED_CONTAINMENT_VOCABULARY} from "../config/keys/containment-vocabulary.ts";
 import {composeChildBody, normalizeChildBody} from "./child-body.ts";
 import {childBody} from "./fixtures.test-support.ts";
 
 const compose = (text: string, cycleDoc: "present" | "absent" | "unknown" = "present") =>
-	composeChildBody({text, cycleDoc, type: "type:feature"});
+	composeChildBody({
+		text,
+		cycleDoc,
+		type: "type:feature",
+		vocabulary: SHIPPED_CONTAINMENT_VOCABULARY,
+	});
 
 describe("normalizeChildBody", () => {
 	it("makes the three field lines consecutive", () => {
@@ -95,6 +101,7 @@ describe("composeChildBody", () => {
 		expect(
 			composeChildBody({
 				text: childBody({containment: null}),
+				vocabulary: SHIPPED_CONTAINMENT_VOCABULARY,
 				cycleDoc: "present",
 				type: "type:chore",
 			}),

@@ -11,8 +11,6 @@
  *   block and a `malformed` one stay distinguishable after the read.
  */
 
-import type {Containment} from "./ledger.ts";
-
 /** The acceptance-criteria read's arm, carried through and never flattened. */
 export type CriteriaToken = "found" | "absent" | "malformed";
 
@@ -28,7 +26,8 @@ export interface ChildLedger {
 	readonly stories: ReadonlyArray<number> | null;
 	/** The non-conforming value, quoted by `MISSING_STORY`'s detail; `null` when there was none. */
 	readonly storiesValue: string | null;
-	readonly containment: Containment | null;
+	/** The declared containment keyword, off the resolved vocabulary; `null` when there is none. */
+	readonly containment: string | null;
 }
 
 /** The cycle-doc probe, three-valued: only `unknown` puts `MISSING_CONTAINMENT` in `skipped`. */

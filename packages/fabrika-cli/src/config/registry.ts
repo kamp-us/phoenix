@@ -11,6 +11,7 @@ import {boardVocabularyKey} from "./keys/board-vocabulary.ts";
 import {capClearAuthorsKey} from "./keys/cap-clear-authors.ts";
 import {ciKey} from "./keys/ci.ts";
 import {codeValidatorsKey} from "./keys/code-validators.ts";
+import {containmentVocabularyKey} from "./keys/containment-vocabulary.ts";
 import {unreadableCodeownersKey} from "./keys/control-plane.ts";
 import {docLeakExemptKey} from "./keys/doc-leak-exempt.ts";
 import {governedRootsKey} from "./keys/governed-roots.ts";
@@ -23,6 +24,7 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(capClearAuthorsKey),
 	register(ciKey),
 	register(codeValidatorsKey),
+	register(containmentVocabularyKey),
 	register(cycleDocKey),
 	register(decisionsDirKey),
 	register(designHarnessKey),
