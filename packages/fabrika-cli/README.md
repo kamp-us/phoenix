@@ -619,6 +619,36 @@ Five properties are worth knowing before you call them:
 This group reaches no network and touches no GitHub artifact: every read is the local tree. It gates
 no merge and emits no verdict, so it registers in no verdict namespace and no wire format.
 
+## The `ci` group
+
+The workflow plumbing, migrated here from `pipeline-cli` alongside the guards
+([#6099](https://github.com/kamp-us/phoenix/issues/6099)). These are **not** guards: they are the
+release path and the build path, where a mistake breaks cutting a release or breaks the evidence a
+merge gate reads, rather than breaking a check.
+
+| Verb | Answers |
+|---|---|
+| `ci changelog` | one Keep-a-Changelog release section derived from a range's closed-issue/merged-PR metadata (ADR [0069](../../.decisions/0069-derived-changelog-from-shipped-work.md)) |
+| `ci pr-body` | a standing Release PR body with every stray HTML tag neutralized, so release-please can parse its own PR back ([#5946](https://github.com/kamp-us/phoenix/issues/5946)) |
+| `ci annotate` | a typecheck's output echoed through unchanged, with each tsc diagnostic re-emitted as a `::error` workflow command ([#3873](https://github.com/kamp-us/phoenix/issues/3873)) |
+| `ci evidence` | the ADR [0054](../../.decisions/0054-run-evidence-bundle.md) §2 run-evidence manifest for a crabbox run, which `ship evidence` reads back and binds to the head SHA |
+
+Two things in the group do not follow the ordinary verb shape, and both are forced:
+
+- **`ci annotate` writes its own streams** instead of returning a `VerbOutcome`. The outcome shape
+  buffers stdout until the verb finishes, and the whole point of a pass-through filter is that the
+  CI log stays live while the typecheck runs. It also always exits `0` — it is a reporter, and the
+  typecheck's redness rides on the producer's exit code through `set -o pipefail`, so a non-zero
+  exit here would only ever mask which side of the pipe actually failed.
+- **`ci-required` is a bare bin, not a verb** —
+  [`src/ci/required-bin.ts`](./src/ci/required-bin.ts), the aggregator that decides whether every
+  should-have-run gating job actually ran (ADR
+  [0092](../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). Its gate job runs on every PR
+  and installs no dependencies, so nothing on its entry path may import `effect`; a registered
+  `Command` would put the whole CLI dependency tree on the always-on aggregator's critical path. The
+  job set it covers is declared once, in `ci.yml`'s `CI_REQUIRED_JOBS`, beside the `needs:` list it
+  must match — a declared job whose `env:` keys are absent reds rather than reading as not-required.
+
 ## The `guard` group
 
 The repo's fail-closed CI gates, migrating here from `pipeline-cli` (epic
