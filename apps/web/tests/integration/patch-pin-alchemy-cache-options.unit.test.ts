@@ -1,28 +1,15 @@
 // @patch-pin: alchemy@2.0.0-beta.59
 /**
  * Behavior-pin for the Workers-cache hunk of `patches/alchemy@2.0.0-beta.59.patch`
- * (ADR 0038 + ADR 0170). beta.59 predates alchemy's native per-Worker cache knob,
- * so the patch adds a `cache?: { enabled?: boolean }` prop to `WorkerProps`
- * (`lib/Cloudflare/Workers/Worker.d.ts`) and threads it through `WorkerProvider`
- * (`lib/Cloudflare/Workers/WorkerProvider.js`) as the script-upload metadata's
- * `cache_options` field via the mapping `cache_options: news.cache` — sent only
- * when set, so an unpatched-shaped resource (no `cache`) emits no `cache_options`.
+ * (ADR 0038 + ADR 0170) — beta.59 predates alchemy's native per-Worker cache knob.
  *
- * The provider mapping lives deep inside `LiveWorkerProvider`'s `Effect.gen`
- * closure (the metadata object at construction time), not a pure export, so it is
- * unreachable for a pure characterization call. This pin therefore does two things:
+ * The patched mapping lives inside `LiveWorkerProvider`'s `Effect.gen` closure, not
+ * a pure export, so it can't be called directly. Hence two halves: GROUND reads the
+ * installed artifact's text so a `pnpm install` that drops or rewrites the hunk
+ * reds (the pin's teeth), and CONTRACT models the same mapping to assert both
+ * branches.
  *
- *   1. GROUND — read the real patched artifact off the installed `alchemy` package
- *      and assert the `cache_options: news.cache` threading and the `cache?` prop
- *      are present. If a future `pnpm install` drops or rewrites the hunk (a lost
- *      patch, a native-knob upgrade), these reds — the pin's teeth.
- *   2. CONTRACT — model the `news.cache -> cache_options` mapping the artifact
- *      encodes and assert the prop-threading contract on both branches: `cache`
- *      set threads through, `cache` unset leaves `cache_options` undefined and
- *      drops off the wire under JSON serialization (no accidental emission).
- *
- * Retire this file when a future alchemy release ships the field natively and the
- * patch hunk is removed.
+ * Retire this file when an alchemy release ships the field natively.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -40,8 +27,6 @@ const propsDts = fs.readFileSync(path.join(workersDir, "Worker.d.ts"), "utf8");
 describe("patch-pin: alchemy cache.enabled -> cache_options (ADR 0170)", () => {
 	describe("grounding — the installed artifact carries the hunk", () => {
 		it("WorkerProvider threads the resource `cache` prop as `cache_options`", () => {
-			// The exact mapping the upload metadata carries. Reds if the threading
-			// line is removed or renamed — acceptance criterion #3.
 			expect(providerSrc).toContain("cache_options: news.cache");
 		});
 
@@ -51,9 +36,8 @@ describe("patch-pin: alchemy cache.enabled -> cache_options (ADR 0170)", () => {
 	});
 
 	describe("contract — the news.cache -> cache_options mapping", () => {
-		// A faithful model of the artifact's single threading line
-		// (`cache_options: news.cache`): the upload metadata's `cache_options`
-		// field IS the resource's `cache` prop, verbatim, whatever its shape.
+		// A faithful model of the artifact's single threading line,
+		// `cache_options: news.cache` — verbatim, whatever the prop's shape.
 		const threadCacheOptions = (news: {cache?: {enabled?: boolean}}) => ({
 			cache_options: news.cache,
 		});

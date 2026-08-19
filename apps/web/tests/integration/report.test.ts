@@ -2,17 +2,12 @@
  * report.submit DEPTH — black-box against the deployed worker `/fate` route
  * (ADR 0026–0031), the real-D1 integration coverage #610 / ADR 0082 call for.
  *
- * The report engine's irreducible real-D1 facts — composite-PK idempotency
- * (`(reporter_id, target_kind, target_id)` + `onConflictDoNothing` ⇒
- * `meta.changes === 0` ⇒ `created === false` on a re-report) and `deletedAt IS
- * NULL` soft-delete rejection — are only otherwise asserted through a `node:sqlite`
- * mock (#581); this suite exercises them over real D1, mirroring
- * `pano-comments.test.ts`'s vote-idempotency shape.
+ * Composite-PK idempotency (`onConflictDoNothing` ⇒ `created === false` on a re-report) and
+ * `deletedAt IS NULL` soft-delete rejection are otherwise asserted only through a
+ * `node:sqlite` mock (#581); this suite exercises them over real D1.
  *
- * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one
- * D1 is shared across every migrated file: every title/email/target id it seeds is
- * prefixed with `NS` (this file's deterministic `nsToken`) so its rows are uniquely
- * its own and every assertion scopes to them.
+ * On the run-scoped SHARED stage (ADR 0104 step 7, #1027), so every title/email/target id it
+ * seeds is `NS`-prefixed and every assertion scopes to those rows.
  */
 import {beforeAll, describe, expect, it} from "vitest";
 import {sharedStack} from "./_integration.ts";

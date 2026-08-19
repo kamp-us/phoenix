@@ -1,10 +1,8 @@
 /**
- * kamp.us's first report-catalog entry (ADR 0153) — product content, not framework mechanism.
- * It answers ADR 0153's forcing question: are reactions (ungated, karma-free) cannibalising votes
- * (the karma-bearing ranking signal)? Compared on the `feature` axis — the one exact-under-sampling
- * dimension (`index1`) — over the `app_events` seam, bucketed per day across a 30-day window. This
- * only declares the axes; the generic runner (report.ts) renders them sampling-correct (`sumIf` over
- * `_sample_interval`, never `count()`). It is the canonical query ADR 0153 names verbatim.
+ * The canonical query ADR 0153 names verbatim. `feature` is the one exact-under-sampling
+ * dimension (`index1`); this file only declares the axes, and the generic runner
+ * (report.ts) renders them sampling-correct (`sumIf` over `_sample_interval`, never
+ * `count()`).
  */
 
 import type {ReportDefinition} from "../report.ts";

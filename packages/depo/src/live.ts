@@ -20,15 +20,12 @@ import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import {DoormanClient} from "./client.ts";
 import {MissingCredential, UploadFailed} from "./errors.ts";
 
-/** The doorman's write host — the single `PUT /` surface (ADR 0144 decision 4). */
 export const DOORMAN_URL = "https://up.depo.kamp.us/";
 
 /**
- * `DoormanClientLive` — the seam over `HttpClient`. It sends the one `PUT` with
- * the apiKey + content-type headers and the raw body, and lowers any transport
- * fault into `UploadFailed` (status `null`); every HTTP *status* is handed back
- * verbatim for the core to map. It reads `HttpClient` from context, so the bin
- * provides `FetchHttpClient.layer` at the run boundary.
+ * Only a TRANSPORT fault lowers into `UploadFailed` (status `null`); every HTTP *status*
+ * is handed back verbatim for the core to map. `HttpClient` comes from context, so the
+ * bin provides `FetchHttpClient.layer` at the run boundary.
  */
 export const DoormanClientLive = Layer.effect(DoormanClient)(
 	Effect.gen(function* () {
@@ -65,15 +62,12 @@ export const DoormanClientLive = Layer.effect(DoormanClient)(
 	}),
 );
 
-/** The stored-credential path (ADR 0045 decision 3): `~/.config/kampus/token`. */
 const storedCredentialPath = (): string =>
 	join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "kampus", "token");
 
 /**
- * Resolve the pasaport apiKey in ADR 0045's precedence: an explicit value first,
- * then `KAMPUS_TOKEN`, then the stored `~/.config/kampus/token` credential. A
- * blank result at every rung fails `MissingCredential` — the CLI never sends an
- * empty bearer the doorman would 401.
+ * Resolve the pasaport apiKey in ADR 0045's precedence. A blank result at every rung
+ * fails `MissingCredential` — the CLI never sends an empty bearer the doorman would 401.
  */
 export const resolveApiKey = (
 	explicit?: string | undefined,

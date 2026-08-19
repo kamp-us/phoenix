@@ -36,11 +36,6 @@ describe("PasaportFromTag — inert RuntimeContext stub guard (real D1)", () => 
 	});
 
 	it("a session round-trips through PasaportFromTag with only the inert stub", async () => {
-		// `me` is the authenticated identity read: it flows through
-		// `Pasaport.validateSession`, which the deployed worker resolves via
-		// `PasaportFromTag` discharging `betterAuth.auth`'s RuntimeContext requirement
-		// with ONLY the inert stub baked into `layers.ts`. A non-null result proves the
-		// stub was sufficient to resolve auth end-to-end against real remote D1.
 		const me = await h.fate(
 			{kind: "query", name: "me", select: ["id", "email"]},
 			{cookie: session.cookie},

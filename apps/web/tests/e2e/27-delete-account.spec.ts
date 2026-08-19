@@ -26,26 +26,22 @@ test.describe("Delete account (/profile tehlikeli alan)", () => {
 		await bootstrapUsername(page);
 		await page.goto("/profile");
 
-		// 1) A single click only opens the dialog — no destructive call yet.
 		await page.getByTestId("delete-account-btn").click();
 		const confirmBtn = page.getByTestId("delete-account-confirm-btn");
 		await expect(confirmBtn).toBeVisible();
 		await expect(confirmBtn).toBeDisabled();
 
-		// 2) A wrong phrase keeps the confirm action unreachable.
 		const input = page.getByTestId("delete-account-confirm-input");
 		await input.fill("yanlış ifade");
 		await expect(confirmBtn).toBeDisabled();
 
-		// 3) The exact phrase unlocks it.
 		await input.fill(CONFIRMATION);
 		await expect(confirmBtn).toBeEnabled();
 
-		// 4) Confirm → account.delete → session torn down → redirect to /auth.
 		await confirmBtn.click();
 		await expect(page).toHaveURL(/\/auth$/, {timeout: 15_000});
 
-		// 5) The session is genuinely gone: /profile bounces back to /auth.
+		// The session is genuinely gone: /profile bounces back to /auth.
 		await page.goto("/profile");
 		await expect(page).toHaveURL(/\/auth$/, {timeout: 10_000});
 	});
@@ -59,7 +55,6 @@ test.describe("Delete account (/profile tehlikeli alan)", () => {
 		await expect(page.getByTestId("delete-account-confirm-btn")).toBeVisible();
 		await page.getByRole("button", {name: /^vazgeç$/i}).click();
 
-		// Still on the profile page, still signed in.
 		await expect(page.getByTestId("delete-account-btn")).toBeVisible();
 		await page.goto("/profile");
 		await expect(page).toHaveURL(/\/profile$/);

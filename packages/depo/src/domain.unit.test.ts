@@ -1,10 +1,7 @@
 /**
- * Unit tests for depo's client-side domain — content-type resolution and the
- * `<sha256>.<ext>` content address. No engine, no I/O (`.patterns/effect-testing.md`
- * unit tier): these rules could be wrong even if the doorman behaved perfectly.
- *
- * The content-address digest is asserted against a known-answer SHA-256 vector so
- * the key the client computes is provably the key the doorman stores.
+ * Unit tests for depo's client-side domain — content-type resolution and the `<sha256>.<ext>`
+ * content address. The digest is asserted against a known-answer SHA-256 vector, so the key the
+ * client computes is provably the key the doorman stores.
  */
 import {assert, describe, it} from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -52,7 +49,6 @@ describe("contentTypeForFile", () => {
 describe("sha256Hex (known-answer vector)", () => {
 	it.effect("hashes the empty input to the canonical digest", () =>
 		Effect.gen(function* () {
-			// The SHA-256 of the empty byte string — a fixed vector.
 			assert.strictEqual(
 				yield* sha256Hex(new Uint8Array(0)),
 				"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

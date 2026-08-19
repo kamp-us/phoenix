@@ -1,52 +1,10 @@
 /**
  * `FateServer` — the package-owned service tag, `config`, and `layer`.
  *
- * fate has exactly one composite — the server — so it is the one Effect
- * service (the `HttpRouter` idiom: the package owns the tag, no user-defined
- * class). Composition is ordinary layer
- * algebra:
- *
- *   - **`FateServer.config({queries, lists, mutations, sources, live})`**
- *     mirrors `createFateServer`'s options shape. Record values are
- *     `Fate.query`/`Fate.list`/`Fate.mutation` entries; `sources` is the
- *     package's array of `Fate.source` entries (fate's own `sources` option
- *     is the derived `{getSource, registry}` resolver, which the compile
- *     step builds — the definition objects here are held BY IDENTITY for
- *     fate's identity-keyed registry). Every entry is constructor-built.
- *     `config` is pure data capture: full entry types are preserved on the
- *     value (the codegen surface's `InferFateAPI` fidelity rides on them);
- *     validation happens at layer construction.
- *
- *   - **`FateServer.layer(config)`** returns `Layer<FateServer>` whose R is
- *     the union of handler/source requirements
- *     ({@link FateConfigServices}) MINUS the per-request pair —
- *     `CurrentUser` and `LivePublisher` are the server's documented
- *     per-request contract, provided onto each handler per request by the
- *     provision pipeline (`provideRequestPair`, `Provision.ts` — the
- *     interpreter's serving path since ADR 0043), never by a worker-level
- *     layer
- *     ({@link FateServerRequirements}). Domain layers discharge R with
- *     ordinary `Layer.provide`; a forgotten domain layer is a compile error
- *     at the composition site.
- *
- *   - **Init-time validation**: duplicate wire names across
- *     the category records (both owners named), duplicate sources per
- *     entity, and view-reachable entities without a source (entity + where
- *     it was reached from) fail layer construction with a
- *     {@link FateServerConfigError} defect — composition mistakes are
- *     programmer errors, so they die (E stays `never`) and surface at worker
- *     init in dev, not at request time. Within ONE record, spread collapses
- *     duplicate keys before any code can see them (fate's own
- *     shape) — the check covers collisions ACROSS the
- *     spread category records, exactly what the manifest would otherwise
- *     merge silently.
- *
- * The layer captures the build-time services (`Effect.context()`) into the
- * service value: the per-request provision pipeline (`provideRequestPair`,
- * `Provision.ts`) provides that captured context plus the per-request pair
- * onto each entry's `resolve` — on the request fiber via the interpreter
- * (the serving path since ADR 0043); the compile step applies the same
- * pipeline only as the differential oracle's baseline.
+ * `config` is pure data capture; `layer` validates it and dies on a bad config. The
+ * per-request pair (`CurrentUser`/`LivePublisher`) never comes from a worker-level layer —
+ * `Provision.ts` provides it onto each handler per request. See ADR 0042/0043, and ADR
+ * 0107 §7 for the extra app-registered per-request services.
  */
 import type {ConnectionResult, LiveEventBus} from "@nkzw/fate/server";
 import {Context, Effect, Layer} from "effect";
@@ -67,14 +25,8 @@ import type {FateSourceServices, SourceConnectionInput} from "./Source.ts";
 import {FateWireCode, INTERNAL_WIRE_CODE, wireCodeOfClass} from "./WireError.ts";
 
 /**
- * Any `Fate.query` entry, type-erased: the supertype every
- * `FateQuery<D, A, E, R>` is assignable to (handler parameters at `never`,
- * channels at `unknown`). `resolve` keeps its CONCRETE raw-wire parameter
- * ({@link RawArgsInput} / {@link RawMutationInput}) so the compile step
- * (`Executor.ts`) can call it without recovering the precise entry type. The
- * config record constraints and the stored {@link FateServerService} records
- * are typed in these — the precise entry types live on the
- * {@link FateServerConfig} value itself.
+ * Any `Fate.query` entry, type-erased. `resolve` keeps its CONCRETE raw-wire parameter so
+ * the compile step (`Executor.ts`) can call it without recovering the precise entry type.
  */
 export interface AnyFateQuery {
 	readonly kind: "query";
@@ -84,11 +36,6 @@ export interface AnyFateQuery {
 	readonly resolve: (input: RawArgsInput) => Effect.Effect<unknown, unknown, unknown>;
 }
 
-/**
- * Any `Fate.list` entry, type-erased (see {@link AnyFateQuery}). The success
- * channel keeps fate's `ConnectionResult` envelope (item type erased) — the
- * compiled fate list resolver promises that shape.
- */
 export interface AnyFateList {
 	readonly kind: "list";
 	readonly definition: ListDefinition;
@@ -99,7 +46,6 @@ export interface AnyFateList {
 	) => Effect.Effect<ConnectionResult<unknown>, unknown, unknown>;
 }
 
-/** Any `Fate.mutation` entry, type-erased (see {@link AnyFateQuery}). */
 export interface AnyFateMutation {
 	readonly kind: "mutation";
 	readonly definition: MutationDefinition;
@@ -108,29 +54,16 @@ export interface AnyFateMutation {
 	readonly resolve: (input: RawMutationInput) => Effect.Effect<unknown, unknown, unknown>;
 }
 
-/**
- * The structural shape of a runtime data view this module can walk for the
- * source-completeness check: fate's `DataView` carries plain `typeName` +
- * `fields`, and nested relation views appear as field values of the same
- * shape (fate's own `isDataViewField` checks `"fields" in field`).
- */
 export interface DataViewLike {
 	readonly typeName: string;
 	readonly fields: Record<string, unknown>;
 }
 
-/** A kernel `SourceDefinition` through portable names (id field + view). */
 export interface SourceDefinitionLike {
 	readonly id: string;
 	readonly view: DataViewLike;
 }
 
-/**
- * Any `Fate.source` handlers bag, type-erased. Row types erase to the plain
- * record (`Item` is covariant in the success channel), so the compile step
- * can adapt these to fate's row-typed `SourceExecutor` without recovering
- * the precise source type.
- */
 export interface AnyFateSourceHandlers {
 	readonly byId?: (id: string) => Effect.Effect<Record<string, unknown> | null, never, unknown>;
 	readonly byIds?: (
@@ -141,44 +74,27 @@ export interface AnyFateSourceHandlers {
 	) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, never, unknown>;
 }
 
-/**
- * Any `Fate.source` entry, type-erased: the supertype every
- * `FateSource<Item, Name, R>` is assignable to.
- */
 export interface AnyFateSourceEntry {
 	readonly typeName: string;
 	readonly definition: SourceDefinitionLike;
 	readonly handlers: AnyFateSourceHandlers;
 }
 
-/** What `config.queries` accepts: `Fate.query` entries. */
 export type FateQueriesRecord = Record<string, AnyFateQuery>;
 
-/** What `config.lists` accepts: `Fate.list` entries. */
 export type FateListsRecord = Record<string, AnyFateList>;
 
-/** What `config.mutations` accepts: `Fate.mutation` entries. */
 export type FateMutationsRecord = Record<string, AnyFateMutation>;
 
-/** What `config.sources` accepts: `Fate.source` entries (a capability-less
- * entry — `handlers: {}` — is the registered-but-unfetchable escape hatch). */
+/** A capability-less entry — `handlers: {}` — is the registered-but-unfetchable escape hatch. */
 export type FateSourcesList = ReadonlyArray<AnyFateSourceEntry>;
 
-/**
- * What `config.live` accepts — fate's `live` option through portable names:
- * a `LiveEventBus` (phoenix's publish-only bus), the `{bus, maxQueueSize}`
- * form, or `false`. Passed through to `createFateServer` unchanged.
- */
 export type FateLiveOption =
 	| false
 	| LiveEventBus
 	| {readonly bus: LiveEventBus; readonly maxQueueSize?: number};
 
-/**
- * A validated-shape (not yet validated-content) `FateServer` config: the
- * value `FateServer.config` returns, with full entry types preserved — the
- * compile step and the codegen surface both read them.
- */
+/** Shape-valid, not yet content-valid: `FateServer.layer` runs the content checks. */
 export interface FateServerConfig<
 	Q extends FateQueriesRecord,
 	L extends FateListsRecord,
@@ -192,7 +108,6 @@ export interface FateServerConfig<
 	readonly live: FateLiveOption | undefined;
 }
 
-/** Any config, type-erased — the bound `FateServer.layer` accepts. */
 export interface AnyFateServerConfig {
 	readonly queries: FateQueriesRecord;
 	readonly lists: FateListsRecord;
@@ -201,31 +116,17 @@ export interface AnyFateServerConfig {
 	readonly live: FateLiveOption | undefined;
 }
 
-/** The union of `FateOperationServices` across one record's entries. */
 export type FateRecordServices<Ops> = {[K in keyof Ops]: FateOperationServices<Ops[K]>}[keyof Ops];
 
-/**
- * Everything a config requires: handler requirements (including Schema
- * decoding services) across the three operation records, plus source
- * handler requirements.
- */
 export type FateConfigServices<C extends AnyFateServerConfig> =
 	| FateRecordServices<C["queries"]>
 	| FateRecordServices<C["lists"]>
 	| FateRecordServices<C["mutations"]>
 	| FateSourceServices<C["sources"][number]>;
 
-/**
- * The service identifier a `Context.Key` registers (its R-channel tag) —
- * `typeof CurrentActor` ↦ `CurrentActor`. The provision seam reads it off the
- * keys {@link FateServer.layer} takes, never naming the app's service.
- */
+/** Read off the keys {@link FateServer.layer} takes, so the package never names the app's service. */
 export type RequestServiceId<K> = K extends Context.Key<infer Id, infer _S> ? Id : never;
 
-/**
- * The union of service identifiers a list of per-request `Context.Key`s
- * registers, driving the extra exclusion in {@link FateServerRequirements}.
- */
 export type RegisteredRequestServices<Keys extends ReadonlyArray<unknown>> = {
 	[Index in keyof Keys]: RequestServiceId<Keys[Index]>;
 }[number];
@@ -286,10 +187,8 @@ const viewOfTypeRef = (ref: TypeRef | undefined): DataViewLike | undefined => {
 };
 
 /**
- * Collect every config problem — all of them at once, names attached. Shared
- * by `FateServer.layer` (dies at worker init) and
- * `FateExecutor.toCodegenServer` (throws at build time): the SAME composition
- * mistakes surface at both edges, with the same wording.
+ * Shared by `FateServer.layer` (dies at worker init) and `FateExecutor.toCodegenServer`
+ * (throws at build time) so the same mistake reads the same at both edges.
  */
 export const collectConfigIssues = (config: AnyFateServerConfig): Array<string> => {
 	const issues: Array<string> = [];
@@ -299,8 +198,8 @@ export const collectConfigIssues = (config: AnyFateServerConfig): Array<string> 
 		["mutations", config.mutations],
 	] as const;
 
-	// Duplicate wire names across the spread category records. (Within one
-	// record the spread already collapsed duplicates — fate's own shape.)
+	// Only collisions ACROSS the category records are visible here: within one record the
+	// spread collapsed duplicate keys before this code could see them.
 	const owners = new Map<string, Array<string>>();
 	for (const [category, record] of categories) {
 		for (const name of Object.keys(record)) {
@@ -327,9 +226,8 @@ export const collectConfigIssues = (config: AnyFateServerConfig): Array<string> 
 		}
 	}
 
-	// Duplicate sources per entity: fate resolves a view to ONE definition by
-	// type name, so a second source for the same entity is a silent override
-	// waiting to happen.
+	// fate resolves a view to ONE definition by type name, so a second source for the same
+	// entity is a silent override waiting to happen.
 	const sourceCounts = new Map<string, number>();
 	for (const entry of config.sources) {
 		const name = entry.definition.view.typeName;
@@ -341,9 +239,6 @@ export const collectConfigIssues = (config: AnyFateServerConfig): Array<string> 
 		}
 	}
 
-	// Source completeness: every entity reachable through a view object —
-	// operation success views and nested relation views, recursively — must
-	// have a source.
 	const reachable = new Map<string, string>();
 	const walk = (view: DataViewLike, origin: string): void => {
 		if (reachable.has(view.typeName)) {
@@ -377,12 +272,9 @@ export const collectConfigIssues = (config: AnyFateServerConfig): Array<string> 
 };
 
 /**
- * Collect every `FateWireCode` annotation reachable from one Schema AST node:
- * the node's own annotation plus (for a union) each member's. Structural
- * guards throughout — the walk must not assume AST internals beyond what it
- * reads (the same defensive shape as `wireCodeOfClass`); the package's
- * AST-drift canary (`Server.unit.test.ts`) fails loudly if effect moves
- * either anchor (`ast.annotations`, union members on `ast.types`).
+ * Structural guards throughout: the walk must not assume AST internals beyond what it reads.
+ * The AST-drift canary (`Server.unit.test.ts`) fails loudly if effect moves either anchor
+ * (`ast.annotations`, union members on `ast.types`).
  */
 const collectWireCodes = (ast: unknown, out: Set<string>): void => {
 	if (Predicate.hasProperty(ast, "annotations")) {
@@ -399,23 +291,11 @@ const collectWireCodes = (ast: unknown, out: Set<string>): void => {
 };
 
 /**
- * Every wire code this config can emit through the annotation codec
- * (`encodeWireError`): each operation's DECLARED error union, walked via its
- * Schema AST (annotations land on each class's AST, so the registered config
- * is the single source), plus the two codes the package can always emit
- * independent of any declaration — {@link INTERNAL_WIRE_CODE} for
- * defects/un-annotated failures and `InputValidationError`'s annotated code
- * for Schema rejections.
- *
- * Sources are excluded by construction: loaders have `E = never` (the
- * loader/resolver split), so they declare no errors to walk. fate's own
- * walk-internal arm (`internalArm`: `INTERNAL_ERROR`) is the byId plane's
- * taxonomy, not part of this operation-plane vocabulary.
- *
- * This is the canonical walker a client-coverage guard consumes (the worker's
- * `wireCodes.unit.test.ts`: "the SPA list covers every code the server can
- * emit") — exported so no consumer re-rolls the AST walk against
- * package-private knowledge.
+ * Every wire code this config can emit: each operation's declared error union plus the two
+ * the package always can — {@link INTERNAL_WIRE_CODE} and `InputValidationError`'s code.
+ * Sources are excluded by construction (loaders have `E = never`, so no errors to walk).
+ * The canonical walker the client-coverage guard consumes (`wireCodes.unit.test.ts`) —
+ * exported so no consumer re-rolls the AST walk.
  */
 export const declaredWireCodes = (config: AnyFateServerConfig): ReadonlySet<string> => {
 	const codes = new Set<string>([INTERNAL_WIRE_CODE]);
@@ -430,31 +310,13 @@ export const declaredWireCodes = (config: AnyFateServerConfig): ReadonlySet<stri
 	return codes;
 };
 
-/**
- * What the `FateServer` service holds: the (validated) config records,
- * type-erased, plus the services captured when the layer was built. The
- * provision pipeline (`Provision.ts`) reads both — it provides `services` +
- * the per-request pair onto each entry's `resolve`, on the request fiber via
- * the interpreter (the serving path) and through the worker ManagedRuntime
- * on the oracle's compile step.
- */
 export interface FateServerService extends AnyFateServerConfig {
 	readonly services: Context.Context<never>;
 }
 
-/**
- * The fate server as the one Effect service (package-owned tag — the
- * `HttpRouter` idiom). Use the statics: `FateServer.config(...)` to declare,
- * `FateServer.layer(config)` to compose.
- */
 export class FateServer extends Context.Service<FateServer, FateServerService>()(
 	"fate-effect/FateServer",
 ) {
-	/**
-	 * Capture a server config — `createFateServer`'s options shape with
-	 * `Fate.*` record values. Pure data: entry types are
-	 * preserved on the value; validation runs in {@link FateServer.layer}.
-	 */
 	static config<
 		Q extends FateQueriesRecord = Record<never, never>,
 		L extends FateListsRecord = Record<never, never>,
@@ -483,22 +345,12 @@ export class FateServer extends Context.Service<FateServer, FateServerService>()
 		};
 	}
 
-	/**
-	 * Build the server layer from a config. R is
-	 * {@link FateServerRequirements}: handler/source requirements minus the
-	 * per-request pair — discharge it with ordinary `Layer.provide`. Invalid
-	 * configs (duplicate wire names, missing sources) DIE here with a
-	 * {@link FateServerConfigError} naming the offenders.
-	 */
 	static layer<C extends AnyFateServerConfig>(
 		config: C,
 	): Layer.Layer<FateServer, never, FateServerRequirements<C>>;
 	/**
-	 * The generic per-request provision overload (ADR 0107 §7). Pass the extra
-	 * per-request service KEYS the app fills per request (e.g. `[CurrentActor]`)
-	 * and they drop out of R alongside the pair. The keys are a TYPE-LEVEL witness
-	 * only — they widen {@link FateServerRequirements}; the layer never reads them
-	 * at runtime (hence `_requestServices`), and the app fills their VALUES via
+	 * ADR 0107 §7. The keys are a TYPE-LEVEL witness only — the layer never reads them at
+	 * runtime (hence `_requestServices`); the app fills their VALUES via
 	 * `FateRequestContext.requestServices`.
 	 */
 	static layer<
@@ -519,8 +371,6 @@ export class FateServer extends Context.Service<FateServer, FateServerService>()
 				if (issues.length > 0) {
 					return yield* Effect.die(new FateServerConfigError(issues));
 				}
-				// Capture the build-time services: the provision pipeline provides
-				// them (plus the per-request pair) onto each handler at the fate edge.
 				const services = yield* Effect.context();
 				return {
 					queries: config.queries,

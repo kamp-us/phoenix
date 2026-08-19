@@ -1,10 +1,7 @@
 /**
  * The read client's flag-state decode over a STUBBED transport — no real CF in the unit
- * tier (ADR 0082), mirroring `orphan-sweep/src/cloudflare.unit.test.ts`. A canned
- * `HttpClient` replays flagship JSON envelopes per URL, so the REAL SDK decode +
- * `listFlagStates` env-enumeration path runs off-network: apps are enumerated, each
- * phoenix app's stage decodes to its env, a foreign app is skipped, and each flag reduces
- * to its `key × env` default-state row.
+ * tier (ADR 0082). A canned `HttpClient` replays flagship JSON envelopes per URL, so the
+ * REAL SDK decode + `listFlagStates` env-enumeration path runs off-network.
  */
 
 import {fromApiToken} from "@distilled.cloud/cloudflare/Credentials";
@@ -155,7 +152,6 @@ describe("FlagshipRead.listFlagStates — decode flags × env over a stubbed tra
 		const pr9NewNav = rows.find((r) => r.env === "pr-9");
 		assert.strictEqual(pr9NewNav?.key, "new-nav");
 
-		// No row ever came from the foreign app.
 		assert.isUndefined(rows.find((r) => r.env === undefined));
 	});
 });
@@ -240,7 +236,6 @@ const runFlagStatesWith = (
 describe("FlagshipRead.listFlagStates — an inaccessible owned app is skipped, not fatal", () => {
 	it("returns the accessible app's rows and skips the FlagshipAppNotFound app without aborting (#1645)", async () => {
 		const exit = await runFlagStatesWith(partialDeps);
-		// The single inaccessible owned app must NOT fail the whole enumeration.
 		assert.strictEqual(exit._tag, "Success");
 		if (exit._tag !== "Success") return;
 		const rows = exit.value as ReadonlyArray<{key: string; env: string}>;
@@ -327,7 +322,6 @@ describe("FlagshipRead.getAppFlag — single-flag resolution over a stubbed tran
 		const exit = await runGetAppFlag("ghost");
 		assert.strictEqual(exit._tag, "Failure");
 		if (exit._tag !== "Failure") return;
-		// The typed not-found rides the E channel — assert its tag surfaced, not a raw throw.
 		const rendered = JSON.stringify(exit.cause);
 		assert.match(rendered, /FlagshipFlagNotFound/);
 	});
@@ -418,7 +412,6 @@ describe("FlagshipWrite.setServing — release/kill over a stubbed transport", (
 		assert.strictEqual(capturedPut?.body.enabled, true);
 		assert.deepStrictEqual(capturedPut?.body.variations, {off: false, on: true});
 
-		// The returned flag decodes to the confirmed effective serving.
 		const updated = exit.value as {defaultVariation: string; rules: ReadonlyArray<unknown>};
 		assert.strictEqual(updated.defaultVariation, "off");
 		assert.strictEqual(updated.rules.length, 1);

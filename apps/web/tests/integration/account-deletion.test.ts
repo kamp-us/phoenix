@@ -2,16 +2,7 @@
  * Account deletion = anonymize-to-`@[silinen]` (ADR 0097) — black-box against the
  * deployed worker `/fate` route on real remote D1 (ADR 0082 integration tier).
  *
- * Proves the end-to-end anonymize semantics a substituted seam can't reach:
- *   - **Content stays Live, re-attributed to `silinen`.** A deleted user's
- *     definition still lists on its term page after deletion (NOT removed); the
- *     `@[silinen]` profile's counters absorb the re-attributed content.
- *   - **Karma is KEPT.** The up-vote that scored the content is not reversed — the
- *     content keeps its score after the author's account is anonymized.
- *   - **Identity rows are gone.** The author's session no longer authenticates: a
- *     `me` read with the pre-deletion cookie returns `UNAUTHORIZED`.
- *   - **The typed confirmation gates the op.** A wrong/absent confirmation never
- *     deletes (the input fails validation); only the exact phrase fires it.
+ * Proves the end-to-end anonymize semantics a substituted seam can't reach.
  *
  * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1
  * is shared across every migrated file. Every email/slug/username this file seeds is `NS`-
@@ -62,7 +53,6 @@ describe("account.delete — anonymize-to-@[silinen]", () => {
 		const author = await h.signUpYazar(`${NS}-author@test.local`, "hunter2hunter2", "Author");
 		await setUsername(author.cookie, authorUsername);
 
-		// The author writes a definition; a distinct voter up-votes it (author karma → 1).
 		const termSlug = `${NS}-term`;
 		const added = await h.fate(
 			{
@@ -87,20 +77,18 @@ describe("account.delete — anonymize-to-@[silinen]", () => {
 		if (!vote.ok) return;
 		expect((vote.data as {score: number}).score).toBe(1);
 
-		// A wrong confirmation never deletes (input validation rejects it).
 		const wrong = await h.fate(
 			{kind: "mutation", name: "account.delete", input: {confirmation: "sil"}, select: ["deleted"]},
 			{cookie: author.cookie, retry: true},
 		);
 		expect(wrong.ok).toBe(false);
-		// The session is still alive after the rejected attempt — nothing was torn down.
+		// A rejected confirmation must tear nothing down: the session is still alive.
 		const stillMe = await h.fate(
 			{kind: "query", name: "me", select: ["id"]},
 			{cookie: author.cookie},
 		);
 		expect(stillMe.ok).toBe(true);
 
-		// The exact phrase fires the anonymization.
 		const del = await h.fate(
 			{
 				kind: "mutation",
@@ -113,7 +101,6 @@ describe("account.delete — anonymize-to-@[silinen]", () => {
 		expect(del.ok).toBe(true);
 		if (del.ok) expect((del.data as {deleted: boolean}).deleted).toBe(true);
 
-		// Identity torn down: the author's pre-deletion session no longer authenticates.
 		const goneMe = await h.fate(
 			{kind: "query", name: "me", select: ["id"]},
 			{cookie: author.cookie},
@@ -141,8 +128,6 @@ describe("account.delete — anonymize-to-@[silinen]", () => {
 			}
 		}
 
-		// The sentinel profile's live definition counter absorbed the re-attributed
-		// content (it now authors at least this one definition).
 		const silinenAfter = await h.fate({
 			kind: "query",
 			name: "profile",

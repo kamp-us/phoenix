@@ -1,39 +1,10 @@
 /**
- * `FateExecutor` — the v1 compiler: config → pure `createFateServer` +
- * `toFetchHandler`.
+ * `FateExecutor` — the v1 compiler, exercised end to end over the wire on the
+ * shared sozluk fixture world (`Oracle.fixture.ts`).
  *
- * The contract under test, end to end over the wire (fate's own
- * `handleRequest`), driven over the shared sozluk fixture world
- * (`Oracle.fixture.ts` — the same world the differential oracle runs):
- *
- *   1. **A full operation round-trips** — wire request in → Schema decode →
- *      handler (yielding a domain service from the runtime + the captured
- *      build-time services) → wire result out. The domain service is a
- *      mutable in-memory database, and a mutation's write is visible to a
- *      later read through the same runtime.
- *   2. **Failures map through the `FateWireCode` codec** — a declared
- *      annotated error produces its wire code; an undeclared defect produces
- *      `INTERNAL_SERVER_ERROR` with the fixed message (no detail leak).
- *   3. **The per-request pair are ordinary services** — handlers `yield*`
- *      `CurrentUser` / `LivePublisher`; two CONCURRENT requests observe their
- *      own values (a barrier holds both in flight at once).
- *   4. **Oracle-baseline role** — since the v2 cutover (ADR 0043) this
- *      compiled path serves nothing; it exists as the differential oracle's
- *      v1 baseline (the `Interpreter*.test.ts` suites), so this suite keeps pinning its
- *      behavior.
- *   5. **Spans nest under the runtime's request span** (ADR 0041): the
- *      runtime carries `Tracer.ParentSpan`; a handler's `Effect.fn` span —
- *      operation AND source — parents to it, not to a detached root.
- *   6. **One conversion point** — no static `Effect.run*` anywhere in the
- *      package's non-test, non-fixture sources; the ManagedRuntime promise
- *      runner appears exactly once, inside `Executor.ts` (the LLMS.md
- *      integration idiom). Since the v2 cutover the PRODUCTION conversion
- *      point is the platform layer's boundary (alchemy's worker bridge runs
- *      the request fiber) — the package-side runner exists only because
- *      fate's compiled `(args) => Promise` resolvers (the oracle baseline)
- *      demand one. Test-support `*.fixture.ts` modules sit outside the pin:
- *      the oracle harness's v2 backend runs the interpreter on a
- *      harness-owned runtime, standing in for the platform layer.
+ * Since the v2 cutover (ADR 0043) this compiled path serves nothing: it exists as
+ * the differential oracle's v1 baseline (the `Interpreter*.test.ts` suites), which
+ * is why this suite keeps pinning its behavior.
  */
 import {readdir, readFile} from "node:fs/promises";
 import {dirname, join} from "node:path";
@@ -107,7 +78,6 @@ class BarrierRejected extends Schema.TaggedErrorClass<BarrierRejected>()("test/B
 	cause: Schema.Unknown,
 }) {}
 
-/** Resolve once `count` callers have arrived — holds requests concurrently in flight. */
 const makeBarrier = (count: number): {arrive: () => Promise<void>} => {
 	const waiters: Array<() => void> = [];
 	return {
@@ -210,7 +180,6 @@ describe("FateExecutor.toFetchHandler — round-trip", () => {
 				ok: true,
 				data: {id: "def-1", body: "bir efekt sistemi", term: "effect", author: "umut", votes: 0},
 			});
-			// The live publish went through the per-request LivePublisher value.
 			expect(calls).toEqual(['append Term.definitions({"term":"effect"}) Definition:def-1']);
 
 			const read = await harness.handle(
@@ -374,10 +343,7 @@ describe("FateExecutor — per-request services", () => {
 			{type: "Session"},
 			Effect.fn("whoami")(function* () {
 				const {user: sessionUser} = yield* CurrentUser;
-				// Hold until BOTH requests are in flight — the two resolutions overlap. The
-				// barrier never rejects, and the query declares no errors (E = never), so a
-				// rejection is a defect (orDie) — the faithful object-notation form of the old
-				// `Effect.promise` (#2736).
+				// Hold until BOTH requests are in flight — the two resolutions overlap.
 				yield* Effect.tryPromise({
 					try: () => barrier.arrive(),
 					catch: (cause) => new BarrierRejected({cause}),
@@ -408,7 +374,6 @@ describe("FateExecutor — per-request services", () => {
 			const [resultB] = await resultsOf(resB);
 			expect(resultA?.data).toEqual({id: "user-a"});
 			expect(resultB?.data).toEqual({id: "user-b"});
-			// Each request's publishes landed on ITS publisher value, not the other's.
 			expect(a.calls).toEqual(["update Session:user-a"]);
 			expect(b.calls).toEqual(["update Session:user-b"]);
 		} finally {
@@ -427,12 +392,9 @@ describe("FateExecutor — observability", () => {
 				makeContext(),
 			);
 			expect((await resultsOf(res))[0]?.ok).toBe(true);
-			// The handler's wire-name span (`Effect.fn("term")`) parented to the
-			// runtime's ambient request span — not a detached root (F4/ADR 0041).
+			// Parented to the runtime's ambient span, not a detached root (ADR 0041).
 			expect(spanLog).toEqual([{name: "term", parent: "req-span"}]);
 
-			// The SOURCE handler's constructor-owned span (`Term.byIds`) nests the
-			// same way when its adapted executor runs through the runtime.
 			spanLog.length = 0;
 			const sources = await compiledSourcesOf(harness);
 			const executor = executorOf(sources, termSource.definition);
@@ -457,11 +419,8 @@ describe("compileFateSources", () => {
 		});
 		try {
 			const sources = await compiledSourcesOf(harness);
-			// The registry key IS the entry's definition object (fate's identity
-			// requirement); each entry's adapted executor lands in the Map.
 			expect(executorOf(sources, termSource.definition)).toBeDefined();
 			expect(executorOf(sources, definitionSource.definition)).toBeDefined();
-			// getSource resolves a view OR a definition to the SAME object.
 			expect(sources.getSource(termSource.definition.view)).toBe(termSource.definition);
 			expect(sources.getSource(termSource.definition)).toBe(termSource.definition);
 			expect(() => sources.getSource(definitionSource.definition.view)).not.toThrow();
@@ -549,9 +508,8 @@ describe("the single conversion point", () => {
 			expect(source, name).not.toMatch(/Effect\.run(Promise|Sync|Fork|Callback)/);
 			const conversions = source.match(/\.runPromise(Exit)?\(/g) ?? [];
 			if (name === "Executor.ts") {
-				// Exactly one conversion point — the compiler's runtime promise
-				// runner (oracle-baseline-only since the v2 cutover: the serving
-				// path's conversion is the platform layer's, outside the package).
+				// The compiler's runtime promise runner, oracle-baseline-only since
+				// the v2 cutover — the serving path converts in the platform layer.
 				expect(conversions, name).toHaveLength(1);
 			} else {
 				expect(conversions, name).toHaveLength(0);

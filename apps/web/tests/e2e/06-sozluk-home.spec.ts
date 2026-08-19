@@ -10,9 +10,8 @@ test.describe("SozlukHome (/sozluk)", () => {
 
 	test("masthead title + create CTA + alphabet visible", async ({page}) => {
 		await expect(page.locator(".kp-sozluk-home__title")).toContainText("sözlük");
-		// The local go-to search box is gone — folded into the global ⌘K `ara` (#2995). The
-		// `+ yeni tanım` create CTA and the alphabet both live in sözlük's persistent Subnav
-		// zone (#2602), not the masthead — the page paints neither a second time.
+		// The CTA and the alphabet live in sözlük's persistent Subnav zone (#2602), not the
+		// masthead — the page paints neither a second time.
 		await expect(page.getByRole("button", {name: /yeni tanım/i})).toBeVisible();
 		await expect(page.locator(".kp-sozluk-alphabet")).toBeVisible();
 		// Each non-empty letter is a navigable link to `/sozluk?harf=<letter>` (#693):
@@ -22,30 +21,23 @@ test.describe("SozlukHome (/sozluk)", () => {
 	});
 
 	test("recent and popular columns render rows", async ({page}) => {
-		// At least one term row in "son eklenenler"
 		await expect(page.locator(".kp-sozluk-term-row").first()).toBeVisible({timeout: 10_000});
-		// Popular list with rank + score format
 		const popular = page.locator(".kp-sozluk-popular__row");
 		expect(await popular.count()).toBeGreaterThan(0);
 		await expect(popular.first().locator(".kp-sozluk-popular__rank")).toBeVisible();
 		await expect(popular.first().locator(".kp-sozluk-popular__meta")).toBeVisible();
 	});
 
-	// The in-page real-time typed-query filter was removed by design (#2995): the
-	// "go to a term" search folded into the global ⌘K `ara` → `/search` (covered by
-	// 24-search.spec.ts), leaving only the URL-driven alphabet letter filter below.
+	// There is no typed-query filter test: that search folded into the global ⌘K `ara`
+	// (#2995, covered by 24-search.spec.ts), leaving only the letter filter below.
 
 	test("clicking an alphabet letter navigates to ?harf= and filters the recent column", async ({
 		page,
 	}) => {
-		// Letters are navigable links now (#693): clicking pushes `/sozluk?harf=<letter>`,
-		// and the recent column filters client-side off that URL param.
 		const firstLetter = page.locator('.kp-sozluk-alphabet__letter[href*="harf="]').first();
 		const letter = (await firstLetter.textContent())?.trim().toLowerCase() ?? "";
 		await firstLetter.click();
-		// The click is a real navigation: the active letter is reflected in the URL…
 		await expect(page).toHaveURL(new RegExp(`[?&]harf=${encodeURIComponent(letter)}(&|$)`));
-		// …and marked active (aria-current + .is-active) rather than a transient toggle.
 		const activeLetter = page.locator(".kp-sozluk-alphabet__letter.is-active");
 		await expect(activeLetter).toHaveAttribute("aria-current", "page");
 		await expect(activeLetter).toHaveText(letter);
@@ -58,14 +50,9 @@ test.describe("SozlukHome (/sozluk)", () => {
 });
 
 /**
- * The create-flow #440/#97: the old go-to-or-create box's search half folded into the
- * global ⌘K `ara` (#2995), leaving the create half as the `+ yeni tanım` CTA
- * (`SozlukSubnavCta`). It opens a dialog that slugifies the typed term and routes to the
- * fresh-slug composer at `/sozluk/<slugifyTerm(term)>` — the same target the old box
- * reached. A signed-in user lands on `NewTermComposer` (the `.kp-sozluk-term__head` +
- * composer body), so the test signs up first to assert it genuinely reaches the composer
- * view, not the signed-out 404. The term is per-run unique to keep the slug brand-new (a
- * composer, not an existing term page).
+ * The create-flow (#440/#97). Signs up first because a signed-out fresh slug renders a 404,
+ * not the composer. The term is per-run unique to keep the slug brand-new — an existing slug
+ * would render the term page instead.
  */
 test.describe("SozlukHome create-flow (+ yeni tanım → composer)", () => {
 	test.beforeEach(async ({page}) => {
@@ -84,20 +71,13 @@ test.describe("SozlukHome create-flow (+ yeni tanım → composer)", () => {
 
 		await page.getByRole("button", {name: /yeni tanım/i}).click();
 
-		// The reopen-retry workaround is retired (#3840): #3600 pinned the silent closer as an
-		// ancestor unmount resetting the CTA's local `open` useState, and #3840 hoisted that
-		// state above the unmounting boundary — so the dialog no longer vanishes on an idle
-		// `/sozluk`, and the flow is a straight open → fill → submit → navigate.
-		// The Manti migration made Dialog a straight re-export, so the old `.kp-dialog__popup`
-		// BEM class is emitted by nothing; the role is the stable contract either way.
+		// Matched by role, not a BEM class: the Manti migration made Dialog a straight
+		// re-export, so nothing emits the old `.kp-dialog__popup`.
 		const dialog = page.getByRole("dialog");
 		await expect(dialog).toBeVisible();
-		// The dialog collects the term name (the composer is slug-addressed).
 		await page.getByLabel("Terim").fill(term);
 		await page.getByRole("button", {name: /^oluştur$/i}).click();
-		// The dialog slugifies + navigates to the fresh-slug composer route.
 		await expect(page).toHaveURL(new RegExp(`/sozluk/${slug}$`));
-		// Signed-in fresh slug → NewTermComposer: term head + composer body.
 		await expect(page.locator(".kp-sozluk-term__head")).toBeVisible({timeout: 10_000});
 		await expect(page.locator('[data-testid="sozluk-composer-body"]')).toBeVisible();
 	});

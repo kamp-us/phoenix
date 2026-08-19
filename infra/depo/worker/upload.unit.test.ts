@@ -1,9 +1,6 @@
 /**
- * Unit tests for the upload orchestrator (`upload.ts`) — the whole write path with
- * both seams substituted (no live D1 / R2), per `.patterns/effect-testing.md`. This
- * is where the issue's acceptance rules are proven at the unit tier: the auth gate,
- * the allowlist + size cap ordering, and write-once (idempotent re-PUT vs refusing a
- * differing body under an existing key).
+ * The whole write path with both seams substituted (no live D1 / R2), per
+ * `.patterns/effect-testing.md`.
  *
  * The `Storage` double is an in-memory map recording puts, so a "no write" claim is
  * provable (a refused upload leaves the map empty); the `ApiKeyVerifier` double is
@@ -19,7 +16,6 @@ import {Storage, type StoredObject} from "./storage.ts";
 import {type UploadRequest, upload} from "./upload.ts";
 import {ApiKeyVerifier} from "./verifier.ts";
 
-/** A recording in-memory storage double: `put`s land in `store`; `head` reads it. */
 const makeStorageDouble = (store: Map<string, StoredObject>) =>
 	Layer.succeed(Storage)(
 		Storage.of({
@@ -31,7 +27,6 @@ const makeStorageDouble = (store: Map<string, StoredObject>) =>
 		}),
 	);
 
-/** A verifier double: accepts any non-null key as `user-1`, rejects null. */
 const acceptingVerifier = Layer.succeed(ApiKeyVerifier)(
 	ApiKeyVerifier.of({
 		verify: (key) =>
@@ -41,7 +36,6 @@ const acceptingVerifier = Layer.succeed(ApiKeyVerifier)(
 	}),
 );
 
-/** A verifier double that rejects everything. */
 const rejectingVerifier = Layer.succeed(ApiKeyVerifier)(
 	ApiKeyVerifier.of({
 		verify: () => Effect.fail(new Unauthorized({reason: "invalid"})),

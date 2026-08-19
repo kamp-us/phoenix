@@ -53,7 +53,6 @@ test.describe("Topbar (signed out)", () => {
 
 		await search.fill("hello");
 		await search.press("Enter");
-		// no nav, no error
 		await expect(page.locator(".kp-topbar")).toBeVisible();
 		expect(errors).toHaveLength(0);
 	});

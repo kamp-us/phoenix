@@ -1,23 +1,16 @@
 /**
- * The fixture content the unauthenticated read e2e specs sample — a pure,
- * deterministic description of the rows the seed writes. No I/O, no DB: this is
- * the unit-testable core. `buildFixtures` returns typed insert values shaped to
- * the three read-model tables (`term_record`, `definition_record`,
- * `post_record`); `seed.ts` turns them into idempotent upserts.
+ * The fixture content the unauthenticated read e2e specs sample — a pure, deterministic
+ * description of the rows the seed writes. `seed.ts` turns them into idempotent upserts.
  *
- * What each row satisfies (the specs in apps/web/tests/e2e):
- *   - term + ≥1 definition → 00-smoke, 07-sozluk-term: a `.kp-sozluk-term-row`
- *     on /sozluk, a `.kp-sozluk-term__title` + a `.kp-sozluk-definition` card on
- *     /sozluk/<slug>, and the first (top-scoring) definition carries `--top`.
- *   - ≥1 pano post → 00-smoke, 03-pano-feed: a `.kp-pano-post` on /pano whose
- *     "N yorum" permalink lands on /pano/<id> and renders `.kp-pano-postpage__title`.
- *   - searchable seeded terms → 24-search: the seed FTS-indexes each term's title
- *     (ADR 0080), so a topbar search over a seeded title finds its row. The
- *     SEARCH_* term's İ/ı-bearing title is the Turkish-fold crux ("ışık" matched
- *     by "IŞIK"); `merhaba dünya` carries the exact-title + prefix assertions.
+ * Which spec needs which row:
+ *   - term + ≥1 definition → 00-smoke, 07-sozluk-term (the top-scoring definition gets `--top`).
+ *   - ≥1 pano post → 00-smoke, 03-pano-feed.
+ *   - searchable seeded terms → 24-search: the SEARCH_* term's İ/ı-bearing title is the
+ *     Turkish-fold crux ("ışık" matched by "IŞIK"); `merhaba dünya` carries the exact-title
+ *     and prefix assertions (ADR 0080).
  *
- * IDs/slugs are stable string literals (not random) so a re-run upserts the same
- * rows — the idempotency contract lives here, in the fixed identity.
+ * IDs/slugs are stable string literals (not random) so a re-run upserts the same rows — the
+ * idempotency contract lives here, in the fixed identity.
  */
 import type {seedSchema} from "./schema.ts";
 

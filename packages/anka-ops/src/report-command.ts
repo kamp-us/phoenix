@@ -1,15 +1,9 @@
 /**
- * The `report` verb group's `effect/unstable/cli` wiring — the thin IO shell over the generic
- * runner core (`report.ts` resolution + sampling-correct SQL rendering) and the AE read seam
- * (`analytics.ts`). It holds no query and no report content: it resolves `--name` against the
- * injected `ReportCatalog`, renders the resolved definition's query to sampling-correct SQL, runs
- * it over the shared operator credential, and prints the result.
+ * The `report` verb group's CLI wiring — the thin IO shell over `report.ts` and the AE read
+ * seam. It holds no query and no report content of its own.
  *
- *   anka-ops report --name <id>     run a named AE report from the injected catalog
- *
- * A non-TTY caller proceeds and renders headless (a read has nothing to confirm — the ADR 0134
- * posture only guards writes). An unknown `--name` fails loud with the known ids (`ReportNotFound`),
- * never an empty result.
+ * A non-TTY caller proceeds and renders headless: a read has nothing to confirm, and the
+ * ADR 0134 posture only guards writes.
  */
 
 import {Console, Effect} from "effect";

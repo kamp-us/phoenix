@@ -1,23 +1,12 @@
 /**
- * Unit — `FateDataView` class factory + `Entity` helper (the TS2883
- * workaround).
+ * Unit — `FateDataView` class factory + `Entity` helper (the TS2883 workaround).
  *
- * Two proofs live here:
- *
- * 1. **Runtime**: the class's static `view` IS fate's kernel `dataView()`
- *    output, unchanged — fate's own kernel functions accept it
- *    (`createSourcePlan`), selection masking works over it, and the literal
- *    field map is still stowed under fate's internal symbol key (the property
- *    codegen/`Entity` fidelity hang off).
- *
- * 2. **Type-level / nameability**: this module **exports** several view
- *    classes and `Entity` aliases at top level on purpose — the package's
- *    tsconfig is `composite` (like the worker project), so tsgo runs the
- *    declaration-nameability checks on them. A raw exported
- *    `dataView(...)(...)` const trips TS2883/TS4023 here (the inferred type
- *    references fate's non-exported `DataView` type and `dataViewFieldsKey`
- *    symbol); the exported classes below must not. If the factory's
- *    portability ever regresses, `pnpm typecheck` fails on this file.
+ * This module **exports** several view classes and `Entity` aliases at top level on purpose: the
+ * package's tsconfig is `composite` (like the worker project), so tsgo runs the
+ * declaration-nameability checks on them. A raw exported `dataView(...)(...)` const trips
+ * TS2883/TS4023 here (the inferred type references fate's non-exported `DataView` type and
+ * `dataViewFieldsKey` symbol); the exported classes below must not. If the factory's portability
+ * ever regresses, `pnpm typecheck` fails on this file.
  */
 import {createSourcePlan, dataView, type Entity as KernelEntity, list} from "@nkzw/fate/server";
 import {describe, expect, expectTypeOf, it} from "vitest";
@@ -149,10 +138,8 @@ describe("FateDataView — the static value IS a kernel dataView", () => {
 		expect(definitionsField.kind).toBe("list");
 		expect(definitionsField.typeName).toBe("Definition");
 		expect(TermView.view.fields.definitions).toBe(definitionsField);
-		// Deep-equal with the kernel twin's relation field, internal symbol
-		// properties included — vitest equality covers enumerable symbol keys, so
-		// this pins that the runtime value still carries everything kernel
-		// `list()` attaches (base view + list options under fate's symbols).
+		// Pins that the runtime value still carries everything kernel `list()` attaches (base
+		// view + list options under fate's symbols) — vitest equality covers those symbol keys.
 		expect(definitionsField).toEqual(kernelTermView.fields.definitions);
 		expect(Object.getOwnPropertySymbols(definitionsField).length).toBeGreaterThanOrEqual(3);
 	});

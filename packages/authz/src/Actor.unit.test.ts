@@ -1,4 +1,3 @@
-/** Unit — `Actor` constructors + the exhaustive `matchActor` dispatch. */
 import {describe, expect, it} from "vitest";
 import {agent, human, matchActor, unauthenticated} from "./Actor.ts";
 

@@ -4,18 +4,8 @@
  * baseline (`Executor.ts`, test-harness-only since ADR 0043) and the
  * build-time codegen server (`Codegen.ts`, the production build path every
  * deploy runs through `schema.ts`). Those two lifecycles must never import
- * each other, so what they share lives here:
- *
- *   - the compiled operation-definition shapes (`CompiledQueryDefinition` /
- *     `CompiledListDefinition` / `CompiledMutationDefinition`) — fate's
- *     definition records as the compile step emits them, executable (live
- *     compile) or inert (codegen);
- *   - the identity-keyed source resolver (`buildSourceResolver` →
- *     `CompiledFateSources`) — ONE registry Map keyed by each entry's
- *     definition object, with the executor half supplied by the caller;
- *   - the kernel-type recoveries those need (`toKernelDefinition`, the
- *     `getSource` Item re-pin) — erased→kernel narrowings; the contained-
- *     boundary story lives in `Executor.ts`'s module doc.
+ * each other, so what they share lives here. The contained-boundary story for
+ * the erased→kernel narrowings lives in `Executor.ts`'s module doc.
  */
 import type {ConnectionResult, SourceDefinition, SourceRegistry} from "@nkzw/fate/server";
 import type {FateRequestContext} from "./RequestContext.ts";
@@ -23,11 +13,7 @@ import type {FateSourcesList, SourceDefinitionLike} from "./Server.ts";
 
 export type AnyRow = Record<string, unknown>;
 
-/**
- * Map a record's values, keys preserved — the compile surfaces' ONE
- * entries→record loop (shared so `Executor.ts`/`Codegen.ts` never hand-roll
- * their own `Object.entries` builds).
- */
+/** The compile surfaces' ONE entries→record loop — `Executor.ts`/`Codegen.ts` never hand-roll it. */
 export const mapRecord = <V, R>(
 	record: Record<string, V>,
 	f: (value: V, name: string) => R,
@@ -73,7 +59,6 @@ export interface CompiledArgsInput {
 	readonly args?: AnyRow | undefined;
 }
 
-/** A compiled fate query definition. */
 export interface CompiledQueryDefinition {
 	readonly type?: string;
 	readonly resolve: (options: CompiledResolverOptions<CompiledArgsInput>) => Promise<unknown>;

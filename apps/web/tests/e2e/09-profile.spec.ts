@@ -2,11 +2,7 @@ import {expect, type Page, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
 import {randomSuffix} from "./_helpers/rand";
 
-/**
- * Helper: complete the bootstrap form so the signed-in user is past the
- * intercept and `/profile` actually renders. Without this the bootstrap form
- * blocks the Outlet (T13 behaviour).
- */
+/** Without this the bootstrap form blocks the Outlet and `/profile` never renders. */
 async function bootstrapUsername(page: Page): Promise<void> {
 	const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
 	await page.locator("input#bootstrap-username").fill(handle);
@@ -33,16 +29,11 @@ test.describe("ProfilePage (/profile)", () => {
 		await expect(page.getByTestId("user-profile-display-name")).toContainText(creds.name);
 		await expect(page.getByTestId("user-profile-handle")).toBeVisible();
 		await expect(page.locator(".kp-profile-header__stat")).toHaveCount(3);
-		// email row should show the credential email
 		await expect(page.locator(".kp-profile__row.readonly .value")).toContainText(creds.email);
 
-		// Section headings: katkıların / hesap / görünüm / oturum / tehlikeli alan.
-		// `katkıların` (the #1209 contribution signal) leads: it used to be gated on the
-		// authorship-loop flag retired by #3664, and this count encoded that flag's OFF
-		// world even though production served it on@100% — so the 4 was the stale
-		// expectation, not the render. The section is unconditional now, and its
-		// `SignalShell` renders in every state (loading / empty / list), so the count is
-		// stable for a fresh signup with no contributions yet.
+		// The count is 5, not 4: `katkıların` used to be gated on the authorship-loop flag
+		// retired by #3664, and its `SignalShell` renders in every state (loading / empty /
+		// list), so the count is stable for a fresh signup with no contributions yet.
 		const headings = page.locator(".kp-profile__section h3");
 		await expect(headings).toHaveCount(5);
 		await expect(headings.nth(0)).toHaveText("katkıların");
@@ -70,7 +61,6 @@ test.describe("ProfilePage (/profile)", () => {
 		await bootstrapUsername(page);
 		await page.goto("/profile");
 		await page.getByRole("button", {name: /^çıkış yap$/i}).click();
-		// Wait for the topbar to drop the pill (re-renders on session change).
 		await expect(page.locator(".kp-topbar__user")).toHaveCount(0, {timeout: 5_000});
 	});
 });

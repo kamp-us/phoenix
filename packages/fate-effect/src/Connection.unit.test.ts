@@ -99,7 +99,6 @@ describe("arrayToConnection — fate's in-array windowing, byte-shape included",
 				previousCursor: undefined,
 			},
 		});
-		// Feature args alone do not flip into the windowing arm.
 		expect(wrap({q: "junk"})).toEqual(wrap(undefined));
 	});
 

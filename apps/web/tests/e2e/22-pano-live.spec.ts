@@ -11,23 +11,11 @@ declare global {
 }
 
 /**
- * Two-client live propagation over SSE.
+ * Two-client live propagation over SSE (see ADR 0023, ADR 0037).
  *
- * fate's live views (`useLiveView`/`useLiveListView`) subscribe a ref to
- * server-pushed `live.*` events. Each phoenix mutation publishes the
- * inline-resolved entity/connection event (`live.update` /
- * `connection().prependNode|appendNode`), which the `LiveDO` fans out over one
- * SSE connection per client. This drives the swapped views without a refetch:
- *
- *   - Client B viewing a post sees a comment Client A adds (`Post.comments`
- *     `appendNode`) and the post's vote count change (`Post` `live.update`).
- *   - Client B with the feed open sees a post Client A submits (`posts`
- *     `prependNode`).
- *
- * Two real browser contexts = two independent logged-in sessions sharing one
- * dev worker, so the events genuinely cross the isolate boundary through the DO
- * (an in-memory bus could not). No `page.reload()` on the observer — if the row
- * appears, it arrived live.
+ * Two real browser contexts, so the events genuinely cross the isolate
+ * boundary through the DO — an in-memory bus could not. No `page.reload()` on
+ * the observer: if the row appears, it arrived live.
  */
 
 /**
@@ -48,7 +36,6 @@ async function signUpAndBootstrap(page: Page): Promise<{email: string}> {
 	return {email};
 }
 
-/** Submit a fresh post as the signed-in user; returns its `/pano/<id>` path. */
 async function submitPost(page: Page, title: string): Promise<string> {
 	await page.goto("/pano/yeni");
 	await expect(page.locator('[data-testid="pano-submit-title"]')).toBeVisible({timeout: 10_000});
@@ -84,8 +71,6 @@ test.describe("Pano live (two clients)", () => {
 			await promoteToYazar(emailA);
 			await promoteToYazar(emailB);
 
-			// Client B creates the post all live action targets and stays on its detail view —
-			// its live SSE connection + comments/header subscriptions are the observer.
 			const stamp = `${Date.now().toString(36)}${randomSuffix(3)}`;
 			const title = `live target ${stamp}`;
 			const postPath = await submitPost(pageB, title);
@@ -93,7 +78,6 @@ test.describe("Pano live (two clients)", () => {
 				timeout: 10_000,
 			});
 
-			// Client A opens the same post to act on it (comment + vote).
 			await pageA.goto(postPath);
 			await expect(pageA.getByRole("heading", {level: 1})).toContainText(title, {
 				timeout: 10_000,
@@ -102,13 +86,10 @@ test.describe("Pano live (two clients)", () => {
 				timeout: 10_000,
 			});
 
-			// --- Comment propagation: A adds a comment, B sees it live. ---
 			const commentBody = `live yorum ${stamp}`;
 			await pageA.locator('[data-testid="pano-comment-input"]').fill(commentBody);
 			await pageA.locator('[data-testid="pano-comment-submit"]').click();
 
-			// B did NOT navigate or reload — the comment appears only via the
-			// server-pushed `appendNode` over SSE.
 			await expect(pageB.getByText(commentBody, {exact: false}).first()).toBeVisible({
 				timeout: 15_000,
 			});
@@ -116,14 +97,11 @@ test.describe("Pano live (two clients)", () => {
 				timeout: 15_000,
 			});
 
-			// --- Post-vote propagation: A votes, B sees the score change live. ---
 			const scoreB = pageB.locator('[data-testid^="post-score-"]').first();
-			// Capture B's current score, then have A vote on the same post.
 			const voteBtnA = pageA.locator('[data-testid^="post-vote-"]').first();
 			await expect(voteBtnA).toBeVisible({timeout: 5_000});
 			await voteBtnA.click();
 
-			// B's post score reflects A's vote without a refetch (`live.update`).
 			await expect(scoreB).toHaveText("1", {timeout: 15_000});
 		} finally {
 			await ctxA.close();
@@ -152,7 +130,6 @@ test.describe("Pano live (two clients)", () => {
 			const title = `reconnect target ${stamp}`;
 			const postPath = await submitPost(pageB, title);
 
-			// A opens B's post to cast the votes; B stays on its own detail view as the observer.
 			await pageA.goto(postPath);
 			await expect(pageA.getByRole("heading", {level: 1})).toContainText(title, {timeout: 10_000});
 
@@ -164,16 +141,11 @@ test.describe("Pano live (two clients)", () => {
 			await expect(voteBtnA).toBeVisible({timeout: 5_000});
 			await voteBtnA.click();
 
-			// Reconnect: a full reload drops B's old SSE connection and opens a fresh
-			// one, resubscribing the post view from scratch. The vote A cast lands via
-			// the reload's re-fetch (cache read), not a replayed live event.
 			await pageB.reload();
 			await expect(pageB.getByRole("heading", {level: 1})).toContainText(title, {timeout: 10_000});
 			const scoreB = pageB.locator('[data-testid^="post-score-"]').first();
 			await expect(scoreB).toHaveText("1", {timeout: 10_000});
 
-			// Now prove the freshly-reconnected stream is live again: a SECOND vote
-			// from A (retract → score 0) reaches B without any refetch.
 			let bFateRequests = 0;
 			pageB.on("request", (req) => {
 				if (req.method() === "POST" && new URL(req.url()).pathname === "/fate") {
@@ -181,7 +153,7 @@ test.describe("Pano live (two clients)", () => {
 				}
 			});
 			await pageB.waitForTimeout(1_000); // let the resubscribe settle
-			await voteBtnA.click(); // retract
+			await voteBtnA.click();
 			await expect(scoreB).toHaveText("0", {timeout: 15_000});
 			// The post-detail also subscribes its comment list + header on mount, so
 			// the only `/fate` request that could fire is a re-fetch — assert none did
@@ -194,17 +166,9 @@ test.describe("Pano live (two clients)", () => {
 	});
 
 	/**
-	 * Nested-connection mutations update the on-screen list LIVE — no full
-	 * reload. `definition.add`/`definition.delete`/`comment.delete` used to call
-	 * `window.location.reload()` because nested-connection membership can't be
-	 * reached by fate's declarative `insert`/`delete`. The resolvers now publish
-	 * `appendNode`/`deleteEdge`/`live.update`, which the page's
-	 * `useLiveListView`/`useLiveView` consume in place.
-	 *
-	 * Single-client (the author's own view is driven by the same server event a
-	 * second client gets), so it sidesteps the two-client SSE flakiness above. The
-	 * no-reload proof is a window sentinel: a `window.location.reload()` wipes the
-	 * page's JS context, so the sentinel set before the mutation would be gone.
+	 * Single-client on purpose: the author's own view is driven by the same
+	 * server event a second client gets, so this sidesteps the two-client SSE
+	 * flakiness above. The no-reload proof is the `__noReload` window sentinel.
 	 */
 	test("definition add/delete + comment delete update in place without a reload", async ({
 		page,
@@ -212,7 +176,6 @@ test.describe("Pano live (two clients)", () => {
 		const suffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUpAndBootstrap(page);
 
-		// --- definition.add: the new row appears live on the term page. ---
 		const slug = `live-def-${suffix}`;
 		await page.goto(`/sozluk/${slug}`);
 		await expect(page.locator('[data-testid="sozluk-composer-body"]')).toBeVisible({
@@ -232,8 +195,6 @@ test.describe("Pano live (two clients)", () => {
 			timeout: 10_000,
 		});
 
-		// Drop a sentinel; a full reload would clear it. The term now exists, so a
-		// SECOND add must arrive via the live `appendNode` (no reload).
 		await page.evaluate(() => {
 			window.__noReload = true;
 		});
@@ -241,12 +202,8 @@ test.describe("Pano live (two clients)", () => {
 		await page.locator('[data-testid="sozluk-composer-body"]').fill(secondDef);
 		await page.locator('[data-testid="sozluk-composer-submit"]').click();
 		await expect(page.getByText(secondDef, {exact: false})).toBeVisible({timeout: 15_000});
-		// The new row arrived live: the sentinel survived → no `window.location.reload()`.
 		expect(await page.evaluate(() => window.__noReload === true)).toBe(true);
 
-		// --- definition.delete: the row drops live via `deleteEdge`. ---
-		// Delete the second definition (the author owns both). Resolve its card by
-		// the visible body, open its delete affordance, confirm.
 		const secondCard = page
 			.locator('[data-testid^="definition-card-"]')
 			.filter({hasText: secondDef});
@@ -259,12 +216,9 @@ test.describe("Pano live (two clients)", () => {
 		await expect(defConfirm).toBeVisible({timeout: 5_000});
 		await defConfirm.click();
 		await expect(page.getByText(secondDef, {exact: false})).toHaveCount(0, {timeout: 15_000});
-		// Still no reload — the row dropped via the live edge removal.
 		expect(await page.evaluate(() => window.__noReload === true)).toBe(true);
-		// The other definition is untouched.
 		await expect(page.getByText(firstDef, {exact: false})).toBeVisible();
 
-		// --- comment.delete: a leaf comment drops live via `deleteEdge`. ---
 		const postPath = await submitPost(page, `live target ${suffix}`);
 		await expect(page.locator('[data-testid="pano-comment-input"]')).toBeVisible({
 			timeout: 10_000,
@@ -291,12 +245,9 @@ test.describe("Pano live (two clients)", () => {
 		});
 		await page.locator('[data-testid="pano-comment-delete-confirm"]').click();
 
-		// The leaf comment drops live (hard-delete → `deleteEdge`) and the count
-		// falls — no reload.
 		await expect(page.getByText(commentBody, {exact: false})).toHaveCount(0, {timeout: 15_000});
 		await expect(page.getByRole("heading", {name: /0 yorum/i})).toBeVisible({timeout: 15_000});
 		expect(await page.evaluate(() => window.__noReload === true)).toBe(true);
-		// The URL never changed (no navigation, no reload).
 		expect(new URL(page.url()).pathname).toBe(postPath);
 	});
 
@@ -328,9 +279,6 @@ test.describe("Pano live (two clients)", () => {
 			// can't `waitForLoadState("networkidle")` — the live SSE stream is a
 			// long-lived request, so the page is never network-idle.)
 			await pageB.waitForTimeout(1_500);
-			// Record B's data-request count so we can prove the post arrives WITHOUT a
-			// feed refetch on B (live-driven, not a re-query). The live control POST
-			// to `/fate/live` is excluded — only `/fate` data ops count.
 			let bFateRequests = 0;
 			pageB.on("request", (req) => {
 				if (req.method() === "POST" && new URL(req.url()).pathname === "/fate") {
@@ -338,13 +286,10 @@ test.describe("Pano live (two clients)", () => {
 				}
 			});
 
-			// Client A submits a brand-new post.
 			const stamp = `${Date.now().toString(36)}${randomSuffix(3)}`;
 			const title = `feed live ${stamp}`;
 			await submitPost(pageA, title);
 
-			// The post appears at the top of B's open feed via the server-emitted
-			// `posts` connection event — B never reloaded or re-queried the feed.
 			await expect(
 				pageB.locator(".kp-pano-list").getByText(title, {exact: false}).first(),
 			).toBeVisible({timeout: 15_000});

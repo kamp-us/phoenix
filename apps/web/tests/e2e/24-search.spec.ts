@@ -24,7 +24,6 @@ const SEED_TERM_TITLE = "merhaba dünya";
 const SEARCH_TERM_SLUG = "isik";
 const SEARCH_TERM_TITLE = "ışık";
 
-/** Submit a query through the topbar search form (the #123 wiring). */
 async function topbarSearch(page: import("@playwright/test").Page, query: string): Promise<void> {
 	const search = page.locator(".kp-topbar__search input[name='q']");
 	await search.fill(query);
@@ -52,7 +51,7 @@ test.describe("Search (/search)", () => {
 		// The seeded title "ışık" indexes (via normalizeSearchText) to "isik". The
 		// crux: an uppercase Turkish casing variant ("IŞIK", dotless-I → dotless-ı)
 		// must normalize to the same token the index holds.
-		const variant = SEARCH_TERM_TITLE.toLocaleUpperCase("tr"); // "ışık" → "IŞIK"
+		const variant = SEARCH_TERM_TITLE.toLocaleUpperCase("tr");
 		expect(variant).not.toBe(SEARCH_TERM_TITLE); // guard: the query genuinely differs
 
 		await page.goto("/");

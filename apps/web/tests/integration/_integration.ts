@@ -1,28 +1,10 @@
 /**
  * Per-file integration lifecycle — the alchemy `Test.make` substrate (ADR 0082).
  *
- * Each integration test file calls `integrationStack(import.meta.url)` once at
- * module top level. It stands up a per-file `Test.make`, deploys the real phoenix
- * `Stack` to **real remote Cloudflare** under an **isolated stage** derived from the
- * file name, retries the first request through edge propagation, and returns the
- * black-box `harness` (`_harness.ts`) bound to that stage's worker URL. The deploy
- * runs in a `beforeAll(deploy(Stack, {stage}))`; teardown is
- * `afterAll.skipIf(NO_DESTROY)(destroy(Stack, {stage}))`.
- *
- * Per-file isolated stages are the whole point: each file owns its own worker + D1
- * (real, remote), freshly migrated by the existing
- * `D1Database({migrationsTable: "drizzle_migrations"})` resource the deploy applies
- * — one migration path. Files no longer share one long-lived deploy, so they run in
- * parallel instead of the forced single fork that raced itself (#547 / #220 / #560,
- * one root cause). D1 binds remote in `Test.make` (alchemy never emulates D1 — ADR
- * 0032/0082); real creds (`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` /
- * `ALCHEMY_PASSWORD`) come from the environment (CI secrets; a wrangler/alchemy
- * profile locally).
- *
- * `BETTER_AUTH_SECRET` (a required `Config.redacted`, `worker/config.ts`) and
- * `ENVIRONMENT` are self-supplied below when absent — orthogonal to the harness
- * swap, retained from the prior model so the suite stays self-contained on a clean
- * runner.
+ * Per-file isolated stages are the whole point: each file owns its own worker + D1 (real, remote,
+ * freshly migrated by the deploy's own `D1Database` resource), so files run in parallel instead of
+ * the forced single fork that raced itself (#547 / #220 / #560, one root cause). D1 binds remote
+ * (alchemy never emulates D1 — ADR 0032/0082); real creds come from the environment.
  */
 
 import type {Input} from "alchemy";
@@ -57,21 +39,13 @@ import {slugify, stageName} from "./_stage-name.ts";
 // helpers below. The harness client itself (`sharedStack`) is exported at the end.
 
 // All three deploy-time warm probes below ride the ONE shared readiness primitive
-// (`awaitEdgeReady`, ADR 0127): `edgeFetch` converts a cold edge-placeholder-404 into the typed
-// throw the primitive rides out, and each probe supplies a `ready` predicate that stops the poll
-// on its own "warmed" signal while a real terminal answer surfaces at once. The per-probe tagged
-// retry sentinels (`WorkerNotReady`/`LiveDONotReady`/`FateReadNotReady`) + their bespoke
-// `Schedule.spaced` loops are retired into that primitive — this is the #1689/#1717 point-fixes
-// generalized (see ADR 0127).
+// (`awaitEdgeReady`, ADR 0127): each supplies a `ready` predicate that stops the poll on its own
+// "warmed" signal while a real terminal answer surfaces at once.
 
-// `/api/health` is READY only on a 200 whose JSON body is `{status:"ok"}` — so its predicate is
-// async (it inspects a clone's body). A non-200, or a 200 with a non-JSON CF error page / a
-// non-"ok" body, is not ready → retry.
 const healthReady = async (res: Response): Promise<boolean> => {
 	if (res.status !== 200) return false;
 	// `.json()` rejects on a non-JSON CF error page → fold that rejection to `null` (⇒ not ready),
-	// rather than a raw try/catch in an effect-importing file (#2736 no-raw-try-catch). Same
-	// semantics: a non-200, a non-JSON body, or a non-"ok" body is not ready → retry.
+	// rather than a raw try/catch in an effect-importing file (#2736 no-raw-try-catch).
 	const body = (await res
 		.clone()
 		.json()
@@ -86,12 +60,8 @@ const healthReady = async (res: Response): Promise<boolean> => {
 const liveWarmReady = (res: Response): boolean =>
 	res.status === 200 || !isLiveWarmupNotReady(res.status, res.headers.get("content-type") ?? "");
 
-// `POST /fate` (the read path + D1 read replica) is READY only on a 200; a cold PoP / cold replica
-// surfaces a non-200 that hasn't ripened → retry.
 const fateReadReady = (res: Response): boolean => res.status === 200;
 
-// The deploy-probe poll cadence — the ~2s spacing the retired `Schedule.spaced("2 seconds")` used,
-// over `awaitEdgeReady`'s default 60s budget.
 const WARM_POLL_MS = 2_000;
 
 // A readiness/warmup probe's underlying promise rejected. The warm probes (`warmLiveDO`,
@@ -172,8 +142,6 @@ ensureIntegrationEnv();
 type StackOutput =
 	typeof Stack extends Effect.Effect<CompiledStack<infer A>, infer _E, infer _R> ? A : never;
 
-// `afterAll(destroy(...))` is skipped when `NO_DESTROY` is set, so a local iteration
-// loop can keep the per-file deploy alive between runs (matching the alchemy idiom).
 const NO_DESTROY = !!process.env.NO_DESTROY;
 
 // Per-PROCESS token for local default (destroy-on) runs: stable for one vitest
@@ -212,11 +180,6 @@ export const runTokenFromEnv = (): string =>
  *     a per-process LOCAL_TOKEN). `<readable>` is a slug prefix kept only as a human-debug
  *     aid (a CF-dashboard stage traces to its file).
  *
- * Sanitized to the `[a-z0-9-]` Cloudflare resource-name set, no leading/trailing dash, no
- * internal `--`, non-empty — the pure `stageName`/`slugify` of `_stage-name.ts` enforce
- * this for every input (unit-pinned in `_stage-name.unit.test.ts`). The harness reads the
- * deployed D1's uuid off the compiled Stack output, so the stage no longer needs the #689
- * `MAX_STAGE_LEN` length bound (#692).
  */
 const stageFor = (metaUrl: string): string => {
 	const base = (metaUrl.split("/").pop() ?? "integration").replace(/\.test\.ts$/, "");
@@ -286,9 +249,6 @@ export const warmLiveDO = (
 						headers: {accept: "text/event-stream", cookie},
 					}),
 				liveWarmReady,
-				// The caller's budget (the per-file path passes what the shared readiness deadline has
-				// left; the shared-stage path takes the default) — threaded so the exhaustion diagnostic
-				// below cites the number actually spent, never a drifted copy.
 				{pollMs: WARM_POLL_MS, deadlineMs},
 			);
 			await res.body?.cancel().catch(() => {});
@@ -320,9 +280,6 @@ export const warmLiveDO = (
  * (`fts-backfill`'s `before`, `search-error-vs-empty`'s reads) can hit a cold PoP. We
  * front-load that warm here behind the same bounded `spaced` retry as `warmLiveDO`, on the
  * dedicated path only (NOT the shared globalSetup — minimal blast radius). See ADR 0104, #1108.
- *
- * The anonymous `health` query (`Stats.getLandingStats` reads D1) needs no auth; the wire
- * envelope (`{version, operations}`) mirrors the harness `fateBatch`.
  */
 export const warmFateRead = (
 	url: string,
@@ -330,8 +287,6 @@ export const warmFateRead = (
 ): Effect.Effect<void, never, never> =>
 	Effect.tryPromise({
 		try: async () => {
-			// A 200 means the route + D1 read served; a cold PoP placeholder-404 (the thrown edge
-			// transient) / a non-200 that hasn't ripened rides the shared readiness budget → retry.
 			const res = await awaitEdgeReady(
 				() =>
 					edgeFetch(`${url}/fate`, {
@@ -465,14 +420,9 @@ export const awaitAuthRouteReady = (url: string): Effect.Effect<void, never, nev
 	}).pipe(Effect.orDie);
 
 /**
- * Stand up this file's per-file `Test.make` lifecycle and return the black-box
- * `harness` bound to its deployed worker URL. Call once at module top level.
- *
- * The deploy resolves inside a vitest `beforeAll` hook (so the worker exists before
- * any `it` body runs); its resolved URL is stashed in a holder the synchronous
- * `harness()` reads. The first request against a freshly-deployed workers.dev URL
- * 404s for a few seconds while the route propagates, so a probe retries
- * `GET /api/health` on a bounded `spaced` schedule before the suite asserts.
+ * Stand up this file's per-file `Test.make` lifecycle and return the black-box `harness` bound to
+ * its deployed worker URL. Call once at module top level: the deploy resolves inside a vitest
+ * `beforeAll` and stashes its URL in a holder the synchronous `harness()` reads.
  */
 export function integrationStack(metaUrl: string): Harness {
 	const stage = stageFor(metaUrl);
@@ -574,17 +524,12 @@ export function integrationStack(metaUrl: string): Harness {
 }
 
 /**
- * Build the black-box `harness` over the RUN-SCOPED SHARED stage (ADR 0104 step 7, #1027) —
- * the deploy-once counterpart to `integrationStack`. No `beforeAll`/`afterAll`, no deploy:
- * `_global-setup.ts` deploys ONE stage per run in vitest `globalSetup` and `provide`s its
- * handle, so this is a pure HTTP/D1 client over the injected values, built via the SAME
- * `harness(urlAccessor, d1Accessor)` factory the per-file path uses. A file moves onto the
- * shared stage by swapping `integrationStack(import.meta.url)` for `sharedStack()` (no file
- * is migrated in this PR — only the sanity test reads it).
+ * Build the black-box `harness` over the RUN-SCOPED SHARED stage (ADR 0104 step 7, #1027) — the
+ * deploy-once counterpart to `integrationStack`. `_global-setup.ts` deploys ONE stage per run and
+ * `provide`s its handle, so this is a pure client over the injected values.
  *
- * `inject` resolves the values `globalSetup` provided; it throws if globalSetup didn't run
- * (the `integration` project wasn't selected), which is the correct failure for a file that
- * deploys nothing of its own.
+ * `inject` throws if globalSetup didn't run (the `integration` project wasn't selected), which is
+ * the correct failure for a file that deploys nothing of its own.
  */
 export function sharedStack(): Harness {
 	const d1 = inject("integrationD1");

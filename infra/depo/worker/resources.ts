@@ -19,19 +19,11 @@
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 
-/**
- * The depo R2 bucket. Declared identically to `depo.ts` so the shared desired
- * state never drifts between the read stack and the doorman stack.
- */
 export const DepoBucket = Cloudflare.R2.Bucket("depo", {
 	name: "depo",
 	domains: [{name: "depo.kamp.us"}],
 });
 
-/**
- * The web app's D1 (`phoenix_db`), adopted by name for read-only apiKey lookups.
- * No `migrationsDir`: phoenix_db's schema is owned by `apps/web`, never by depo.
- */
 export const PasaportDb = Cloudflare.D1.Database("phoenix_db", {
 	name: "phoenix_db",
 });

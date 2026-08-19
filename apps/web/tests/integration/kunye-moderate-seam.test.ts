@@ -7,14 +7,12 @@
  * `RelationStoreLive` + `AgentAuthorityV1`) is run against the SAME D1 — so a
  * seeded founder mints a `Grant` and a non-founder is denied the invisible `Denied`.
  *
- * Crossing the two packages' object encodings on one real table is exactly what
- * catches a key divergence (the bug this seam closes: a bare `"platform"` write key
- * vs a `type:id` read key); a single-side unit test cannot. Both sides resolve the
- * object through `@kampus/authz`'s canonical `key(platform)`, so they cannot drift.
+ * Crossing the two packages' object encodings on one real table is what catches a
+ * key divergence (the bug this closes: a bare `"platform"` write key vs a `type:id`
+ * read key); a single-side unit test cannot.
  *
- * Runs on the run-scoped SHARED stage (ADR 0104 step 7); every id is `NS`-prefixed
- * (this file's deterministic token) to keep its rows its own, and the seeded
- * founder/tuple are cleaned up after each test.
+ * Runs on the run-scoped SHARED stage (ADR 0104 step 7), so every id is
+ * `NS`-prefixed to keep this file's rows its own.
  */
 import {CurrentActor, type Grant, human, isGrant, platform} from "@kampus/authz";
 import {makeSeedDb, seedFounders} from "@kampus/founder-seed";
@@ -38,7 +36,6 @@ const RANDO = `${NS}-rando`;
 // `d1` is the one binding both sides share: the founder-seed write path drizzles its
 // own schema slice over it, the worker read path drizzles the full schema over it.
 let d1: D1Database;
-// Discharge `Moderate.over(platform)` for a subject over the SAME D1, to an Exit.
 let discharge: (subject: string) => Promise<Exit.Exit<Grant<Moderate>, Denied>>;
 
 const seedFounderUser = (id: string) =>

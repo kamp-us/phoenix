@@ -1,22 +1,8 @@
 /**
- * `Capability` — the class-as-capability builders (ADR 0107 §3). One class
- * declaration yields, from a single name, the proof tag (a v4
- * `Context.Key<Self, Grant<Self>>`), the {@link Grant} it proves, and a discharge
- * verb that mints the proof by running a check. The proof flows into an op's R
- * channel via the one canonical `Grant.provide(grant)` (ADR 0107; #1270). The
- * non-obvious part: enforcement is by the R channel, not a domain field — an op
- * that declares the capability in its R fails to compile unless the proof is
- * provided at composition.
- *
- * Three builders, the asymmetric axes of ADR 0107 §4:
- *   - {@link Class} — generic: `.authorize(check)` discharges a boolean check.
- *   - {@link Level} — ordered ladder: `.require` discharges when standing `gte` the floor.
- *   - {@link Relation} — ReBAC: `.over(resource)` discharges over the resource's ancestry.
- *
- * Both specializations dispatch exhaustively on the {@link Actor} via
- * {@link matchActor}, consulting {@link AgentAuthority} (dormant, fail-closed in
- * v1) on the agent arm; the `deny()` thunk is instance-supplied (the mechanism
- * names no wire code). See .patterns/authz-capability-as-effect.md.
+ * `Capability` — the class-as-capability builders (ADR 0107 §3/§4, and
+ * .patterns/authz-capability-as-effect.md). The non-obvious part: enforcement
+ * is by the R channel, not a domain field — an op that declares the capability
+ * in its R fails to compile unless the proof is provided at composition.
  */
 import {Context, Effect} from "effect";
 import {matchActor, type Principal} from "./Actor.ts";
@@ -85,17 +71,14 @@ export interface ClassConfig<DenyError> {
 }
 
 export interface LevelConfig<Name extends string, DenyError, ReadError, ReadReqs> {
-	/** The ordered ladder the `min` floor is compared on. */
 	readonly scale: Scale<Name>;
-	/** The minimum standing this right requires (the floor). */
 	readonly min: Name;
-	/** Read a principal's current standing on the ladder. */
 	readonly read: (principal: Principal) => Effect.Effect<Name, ReadError, ReadReqs>;
 	readonly deny: () => DenyError;
 }
 
 export interface RelationConfig<DenyError> {
-	/** The relation name (the ReBAC verb, e.g. `moderates`). */
+	/** The ReBAC verb, e.g. `moderates`. */
 	readonly relation: string;
 	readonly deny: () => DenyError;
 }
@@ -113,12 +96,6 @@ export interface RelationConfig<DenyError> {
  */
 const sealCapability = <T>(tag: unknown): T => tag as T;
 
-/**
- * `Capability.Class<Self>()(id, { deny })` — the generic base builder. The
- * discharge verb `.authorize(check)` reads the current actor (to stamp the
- * proof), runs the caller's boolean `check`, and mints on success or raises
- * `deny()` otherwise.
- */
 const makeClass =
 	<Self>() =>
 	<const Id extends string, DenyError>(
@@ -142,12 +119,6 @@ const makeClass =
 		return sealCapability(Tag);
 	};
 
-/**
- * `Capability.Level<Self>()(id, { scale, min, read, deny })` — the ordered-ladder
- * builder. The discharge verb `.require` reads the actor's standing and mints
- * when it `gte` the floor; an agent passes only when its human root's standing
- * passes *and* {@link AgentAuthority} admits the attenuation.
- */
 const makeLevel =
 	<Self>() =>
 	<const Id extends string, Name extends string, DenyError, ReadError, ReadReqs>(
@@ -188,13 +159,6 @@ const makeLevel =
 		return sealCapability(Tag);
 	};
 
-/**
- * `Capability.Relation<Self>()(id, { relation, deny })` — the ReBAC builder. The
- * discharge verb `.over(resource)` mints when the actor holds `relation` over
- * the resource or any of its ancestors (checked fresh, once per ancestor); an
- * agent passes only when its human root holds it *and* {@link AgentAuthority}
- * admits the attenuation.
- */
 const makeRelation =
 	<Self>() =>
 	<const Id extends string, DenyError>(

@@ -2,10 +2,8 @@
  * `RelationStoreLive` against **real remote Cloudflare D1** (ADR 0082 integration
  * tier) — runs the production `has` lookup over the shipped REST transport
  * (`makeD1Rest` + `createDrizzle`, the worker's path) against this run's migrated D1
- * (incl. `0010_relation_tuple`), asserting the store's only-wrong-if-the-DB-differs
- * facts: the composite-PK existence read resolves a seeded `(subject, relation,
- * object)` tuple, a non-matching tuple reads absent, and a removed tuple denies on the
- * very next call (fresh per call, no cached authority — ADR 0107). The pure boolean
+ * (incl. `0010_relation_tuple`), asserting only the facts that are wrong if the DB
+ * differs — authority is fresh per call, never cached (ADR 0107). The pure boolean
  * mapping + statement shape stay in the unit tier (`worker/features/kunye/`).
  *
  * The store has no fate/HTTP surface (the `Moderate`/`Admin` consumers are a later

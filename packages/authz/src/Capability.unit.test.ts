@@ -1,9 +1,3 @@
-/**
- * Unit — the class-as-capability builders end to end: the exhaustive Actor
- * dispatch of each discharge verb, `Level` ordering through `.require`,
- * `Relation` ancestry through `.over`, the dormant `AgentAuthority` seam
- * (fail-closed), and `Grant` provision into the context channel via `Grant.provide`.
- */
 import {Effect, Exit} from "effect";
 import {describe, expect, it} from "vitest";
 import {type Actor, agent, human, unauthenticated} from "./Actor.ts";
@@ -21,14 +15,12 @@ class Denied {
 
 const ladder = Scale(["visitor", "çaylak", "yazar"]);
 
-/** Standing fixture: account id → earned rank. */
 const standings: Record<string, "visitor" | "çaylak" | "yazar"> = {
 	yzr: "yazar",
 	cyl: "çaylak",
 	vis: "visitor",
 };
 
-/** A `Level` capability floored at çaylak. */
 class AddEntry extends Capability.Level<AddEntry>()("test/AddEntry", {
 	scale: ladder,
 	min: "çaylak",
@@ -36,7 +28,6 @@ class AddEntry extends Capability.Level<AddEntry>()("test/AddEntry", {
 	deny: () => new Denied(),
 }) {}
 
-/** A `Relation` capability over the `moderates` verb. */
 class Moderate extends Capability.Relation<Moderate>()("test/Moderate", {
 	relation: "moderates",
 	deny: () => new Denied(),
@@ -53,7 +44,6 @@ interface Env {
 	readonly tuples?: ReadonlyArray<Tuple>;
 }
 
-/** Provide the three ports off a fixture and run to an `Exit`. */
 const run = <A, E>(
 	program: Effect.Effect<A, E, CurrentActor | AgentAuthority | RelationStore>,
 	env: Env,
@@ -196,7 +186,6 @@ describe("Capability.Class — .authorize", () => {
 });
 
 describe("Grant provision into context — Grant.provide", () => {
-	// An op that declares the proof in its R channel and reads it back.
 	const op: Effect.Effect<string, never, AddEntry> = Effect.gen(function* () {
 		const proof = yield* AddEntry;
 		return proof.scope.capability;
@@ -204,7 +193,6 @@ describe("Grant provision into context — Grant.provide", () => {
 
 	it("discharges the requirement: the provided proof flows through R", () => {
 		const grant = grantOf(run(AddEntry.require, {actor: human("yzr")}));
-		// after `Grant.provide(grant)` the op needs nothing — R is `never`, runnable.
 		const discharged: Effect.Effect<string, never, never> = op.pipe(Grant.provide(grant));
 		expect(Effect.runSync(discharged)).toBe("test/AddEntry");
 	});

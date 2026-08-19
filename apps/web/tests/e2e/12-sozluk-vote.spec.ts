@@ -6,24 +6,9 @@ import {expectScoreConsistent} from "./_helpers/wait-for-consistency";
 /**
  * Sözlük voteDefinition end-to-end.
  *
- * Sign up a fresh user, complete the username bootstrap, navigate to a brand
- * new term URL, write a definition, then exercise the optimistic vote flip:
- *   1. Vote → score becomes 1, button reflects pressed state.
- *   2. Click again → retract vote → score back to 0.
- *   3. Vote again → score 1.
- *
- * The DefinitionCard's optimistic updater flips `myVote` + `score`
- * synchronously; on success the projection lands in <1s and the page reads
- * the new state on subsequent renders.
- *
- * Historical note: this spec previously contained a `page.reload()` between
- * the addDefinition mutation and the vote interactions to escape the
- * Suspense double-mount race triggered by the legacy
- * `setFetchKey`-driven refetch. After the relay-idiom refactor the
- * page tree no longer unmounts on a mutation (idiomatic Relay
- * `@deleteRecord` + manual `updater` for prepends + `commitLocalUpdate`
- * for live updates), so the reload is gone. Its presence would now signal
- * a regression.
+ * There is deliberately no `page.reload()` between the addDefinition mutation and the vote
+ * interactions: the page tree no longer unmounts on a mutation, so a reload reappearing here
+ * would signal a regression.
  */
 test.describe("Sözlük voteDefinition", () => {
 	// QUARANTINED — un-quarantine blocked on #1838 (e2e can't establish yazar tier); see #1903.
@@ -35,7 +20,6 @@ test.describe("Sözlük voteDefinition", () => {
 	// re-vote round-trip. No vote-GATE (#1828) coverage lives here.
 	// Re-enable = revert to plain test(...).
 	test.fixme("vote → unvote → vote round-trip on a fresh definition", async ({page}) => {
-		// Fresh sign-up + bootstrap so the user is fully authenticated.
 		const localPart = `vt${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});
 		const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
@@ -45,7 +29,6 @@ test.describe("Sözlük voteDefinition", () => {
 			timeout: 10_000,
 		});
 
-		// Navigate to a fresh slug + add a definition.
 		const slug = `vote-${Date.now().toString(36)}${randomSuffix(4)}`;
 		await page.goto(`/sozluk/${slug}`);
 
@@ -81,17 +64,14 @@ test.describe("Sözlük voteDefinition", () => {
 		await expectScoreConsistent(page, score, "0");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "false");
 
-		// Cast vote — optimistic flip lands first.
 		await voteBtn.click();
 		await expectScoreConsistent(page, score, "1");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "true", {timeout: 5_000});
 
-		// Retract vote.
 		await voteBtn.click();
 		await expectScoreConsistent(page, score, "0");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "false");
 
-		// Re-vote.
 		await voteBtn.click();
 		await expectScoreConsistent(page, score, "1");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "true");

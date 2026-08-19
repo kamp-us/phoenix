@@ -2,17 +2,11 @@
  * Live views over SSE — the owner-isolation fence on OPEN (#2563), on the run-scoped
  * SHARED stage (ADR 0104 step 7, #1027).
  *
- * The invariant `subscribe` already enforces (a control message can't act on another
- * user's connection) was ABSENT on the open path: any authenticated session that
- * re-opened a `connectionId` already held by someone else reset that holder's stream
- * (generation bump + subscription clear + stream teardown). This proves the fence: a
- * foreign session opening the holder's `connectionId` is refused (403) and the holder's
- * live subscription keeps delivering.
- *
- * Shared-safe: the `definition.add` publishes to the ARGS-scoped `Term.definitions`
- * connection keyed on an `NS`-unique slug (never the global wildcard — `protocol.ts`),
- * so a concurrent file's `definition.add` can't land a frame on this subscription (the
- * same isolation `fate-live-scoped.test.ts` documents).
+ * The invariant `subscribe` already enforces (a control message can't act on another user's
+ * connection) was ABSENT on the open path: re-opening someone else's `connectionId` reset
+ * their stream. Shared-safe because `definition.add` publishes to the ARGS-scoped
+ * `Term.definitions` connection keyed on an `NS`-unique slug, never the global wildcard, so
+ * a concurrent file's `definition.add` can't land a frame on this subscription.
  */
 import {beforeAll, describe, expect, it} from "vitest";
 import {frameData, readEvent, readFrame} from "./_harness.ts";
@@ -37,7 +31,6 @@ describe("live views — /fate/live owner-isolation fence (#2563)", () => {
 		const slug = `${NS}-term-${Date.now()}`;
 		const connectionId = `${NS}-conn-${Date.now()}`;
 
-		// Alice opens and holds the SSE stream, subscribed to an args-scoped topic.
 		const connect = await h.openSse(connectionId, alice.cookie);
 		expect(connect.status).toBe(200);
 		const reader = connect.body!.getReader();
@@ -61,9 +54,8 @@ describe("live views — /fate/live owner-isolation fence (#2563)", () => {
 		);
 		expect(sub.status).toBe(200);
 
-		// Mallory (a DIFFERENT session user) opens the SAME connectionId. The DO is warm
-		// (Alice holds it), so the owner fence answers at once — drive it through `req`,
-		// not the ready-poll `openSse`, so the expected non-200 returns immediately
+		// The DO is warm (Alice holds it), so the fence answers at once — drive it through
+		// `req`, not the ready-poll `openSse`, so the expected non-200 returns immediately
 		// instead of riding the readiness budget.
 		const hostile = await h.req(`/fate/live?connectionId=${encodeURIComponent(connectionId)}`, {
 			headers: {accept: "text/event-stream", cookie: mallory.cookie},
@@ -71,9 +63,8 @@ describe("live views — /fate/live owner-isolation fence (#2563)", () => {
 		expect(hostile.status).toBe(403);
 		await hostile.body?.cancel();
 
-		// Alice's stream was not torn down: her subscription still delivers. Without the
-		// fence, Mallory's open would have bumped the generation and cleared Alice's
-		// subscriptions, so this `appendNode` would never arrive.
+		// Without the fence, Mallory's open would have bumped the generation and cleared
+		// Alice's subscriptions, so this `appendNode` would never arrive.
 		const added = await h.fate(
 			{
 				kind: "mutation",

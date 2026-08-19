@@ -1,33 +1,9 @@
 /**
  * `FateServer` — the tag, `config`, and `layer`.
  *
- * The composite contract under test:
- *
- *   1. **The layer's R is the union of handler/source requirements minus the
- *      per-request pair** (`CurrentUser`, `LivePublisher`) — those two are the
- *      server's per-request contract, provided by the compiler per
- *      request, never by worker-level layers. Type-level pins below.
- *   2. **A forgotten domain layer is a compile error at the `Layer.provide`
- *      composition site** — an undischarged layer is not a
- *      `Layer<FateServer>`. Pinned via `expectTypeOf` bounds, NOT
- *      `@ts-expect-error`: the effect LSP plugin reports the mismatch as
- *      TS377034 (`missingLayerContext`), which escapes the directive under
- *      tsgo — the recurring tsgo hazard, here in layer shape.
- *   3. **Init-time validation fails layer construction with names attached**:
- *      duplicate wire names across the category records (both owners named)
- *      and view-reachable entities without a source (entity named). These are
- *      the layer-construction tests in the integration tier: they build the
- *      layer for real (`Layer.build` through the Effect runtime) — no
- *      storage, but not pure-value unit either.
- *   4. **Every record is constructor-built** — the raw legacy bridge-shaped
- *      arms were removed with the v2 cutover (ADR 0043), so a non-`Fate.*`
- *      record is a compile error at the config site.
- *
  * Like the sibling suites, this module **exports** its config/layer consts on
  * purpose: the package tsconfig is `composite`, so tsgo's declaration
- * nameability checks (TS2883) run over `FateServer.config`'s inferred type
- * with a representative multi-feature config
- * (sozluk-shaped records + a string-typed query).
+ * nameability checks (TS2883) run over `FateServer.config`'s inferred type.
  */
 import {Cause, Context, Effect, Exit, Layer} from "effect";
 import * as Schema from "effect/Schema";
@@ -80,7 +56,6 @@ class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 	{[FateWireCode]: "BODY_REQUIRED"},
 ) {}
 
-/** sozluk-shaped feature records: `Fate.*` entries over the domain service. */
 export const sozlukQueries = {
 	term: Fate.query(
 		{args: Schema.Struct({slug: Schema.String}), type: TermView},
@@ -105,12 +80,7 @@ export const sozlukLists = {
 	),
 };
 
-/**
- * The per-request pair in action: the handler yields `CurrentUser` (via
- * `required`) and `LivePublisher` like any other service — both must be
- * EXCLUDED from the layer's R (they are provided per request by the
- * compiler).
- */
+/** The handler yields the per-request pair, which must stay OUT of the layer's R. */
 export const sozlukMutations = {
 	"definition.add": Fate.mutation(
 		{
@@ -152,11 +122,7 @@ export const definitionSource = Fate.source(
 	},
 );
 
-/**
- * The representative multi-feature config (exported: the TS2883 watchpoint
- * fixture): two `Fate.*` features' records spread together, exactly fate's
- * options shape.
- */
+/** The representative multi-feature config — the TS2883 watchpoint fixture. */
 export const phoenixConfig = FateServer.config({
 	queries: {
 		...sozlukQueries,
@@ -171,7 +137,6 @@ export const phoenixConfig = FateServer.config({
 
 export const phoenixLayer = FateServer.layer(phoenixConfig);
 
-/** The R channel of a layer, for the type-level pins below. */
 type LayerIn<L> = L extends Layer.Layer<infer _ROut, infer _E, infer RIn> ? RIn : never;
 
 const buildService = (layer: Layer.Layer<FateServer>) =>
@@ -190,23 +155,17 @@ const buildExit = (layer: Layer.Layer<FateServer>) =>
 const defectOf = (exit: Exit.Exit<unknown, unknown>): unknown =>
 	Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
 
-// Type-level: R = handler/source requirements minus the per-request pair.
-
 describe("FateServer.layer — the R channel", () => {
 	it("R is the requirement union minus CurrentUser and LivePublisher", () => {
-		// The mutation handler yields CurrentUser AND LivePublisher; the layer's
-		// R still contains ONLY the domain service — the per-request pair is the
-		// server's contract, not a worker-level layer.
+		// The mutation handler yields both, yet R holds only the domain service:
+		// the per-request pair is the server's contract, not a worker-level layer.
 		expectTypeOf<LayerIn<typeof phoenixLayer>>().toEqualTypeOf<TermStore>();
 	});
 
 	it("an undischarged domain requirement is a compile error at the composition site", () => {
-		// An undischarged layer is NOT a `Layer<FateServer>` (R = never), so
-		// handing it to anything that runs it — `ManagedRuntime.make`, a fully
-		// provided composition — is a compile error. Pinned as an `expectTypeOf`
-		// bound rather than `@ts-expect-error`: the effect LSP plugin reports the
-		// mismatch as TS377034 (`missingLayerContext`), which escapes the
-		// directive under tsgo (the recurring hazard the suite header documents).
+		// Pinned as an `expectTypeOf` bound rather than `@ts-expect-error`: the
+		// effect LSP plugin reports the mismatch as TS377034
+		// (`missingLayerContext`), which escapes the directive under tsgo.
 		expectTypeOf(phoenixLayer).not.toExtend<Layer.Layer<FateServer>>();
 
 		// Positive control: ordinary `Layer.provide` discharges it.

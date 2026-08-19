@@ -2,18 +2,6 @@
  * pano mutations — black-box against the deployed worker `/fate` route
  * (ADR 0026–0031).
  *
- * Ports the write surface of three pre-alchemy suites that drove the pano
- * mutation resolvers / `Pano` service directly inside workerd:
- *   - `fate-pano-mutations.test.ts` — post.submit/vote/retractVote/edit/delete,
- *     comment.add/vote/retractVote/edit/delete, and wire-error parity
- *     (`TAGS_REQUIRED`, `POST_NOT_FOUND`, `COMMENT_NOT_FOUND`, `UNAUTHORIZED`).
- *   - `pano-submit-post.test.ts` — submit happy path + post validation codes
- *     (`TITLE_REQUIRED`, `TITLE_TOO_LONG`, `URL_INVALID`, `BODY_TOO_LONG`,
- *     `TAGS_REQUIRED`, `TAG_INVALID`).
- *   - `pano-add-comment.test.ts` — top-level comment + commentCount bump, nested
- *     reply, comment validation codes (`BODY_REQUIRED`, `BODY_TOO_LONG`,
- *     `PARENT_NOT_FOUND` for missing + cross-post parent, `POST_NOT_FOUND`).
- *
  * Everything is observed over HTTP. Author identity comes from the session
  * (`h.signUp`), not explicit `authorId`/`authorName`, so submit input is
  * `{title, url?, body?, tags}`. Wire codes are the UPCASED pano sub-codes
@@ -77,7 +65,6 @@ const POST_SELECT = [
 ];
 const COMMENT_SELECT = ["id", "parentId", "body", "author", "authorId", "score", "myVote"];
 
-/** Submit a post under the author cookie; assert success; return its id. */
 async function seedPost(input: {
 	title: string;
 	url?: string;
@@ -319,7 +306,6 @@ describe("pano mutations — post.edit / post.delete", () => {
 		expect((deleted.data as PostNode).__typename).toBe("Post");
 		expect((deleted.data as PostNode).id).toBe(id);
 
-		// The post is gone: a detail read resolves null.
 		const detail = await h.fate({
 			kind: "query",
 			name: "post",
@@ -378,7 +364,6 @@ describe("pano mutations — comment.add", () => {
 		expect(comment.score).toBe(0);
 		expect(comment.myVote).toBeNull();
 
-		// It bumps the parent post's commentCount (re-resolve the post).
 		const detail = await h.fate({
 			kind: "query",
 			name: "post",
@@ -664,7 +649,6 @@ describe("pano mutations — comment.vote / retractVote / edit", () => {
 		const post = parent.data as PostNode;
 		expect(post.__typename).toBe("Post");
 		expect(post.id).toBe(postId);
-		// Two added, one (leaf) removed → one remains.
 		expect(post.commentCount).toBe(1);
 	});
 });

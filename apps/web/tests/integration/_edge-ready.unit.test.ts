@@ -1,19 +1,8 @@
 /**
- * Pins the ONE shared cold-start readiness primitive (`awaitEdgeReady`, ADR 0127) — the durable
- * shape the #1689 (`/fate/live`) and #1717 (`h.signUp`) point-fixes fold into, covering all three
- * probes' load-bearing invariants:
- *
- *   1. A CF edge-placeholder-404 / cold-worker signal rides the bounded budget (retry until it
- *      propagates or the deadline lapses) — for every probe, via ONE typed throw.
- *   2. A real error fast-fails: an abort, a genuine 4xx, a terminal worker JSON 4xx, and the
- *      422-already-exists answer surface at once, never swallowed into the budget.
- *   3. The three probes' `ready` predicates are exercised over the shared primitive: the SSE-open
- *      shape (200 + `text/event-stream`), the signup shape (`() => true`, only a thrown placeholder
- *      retries), the `/api/health` shape (async body inspection), and the `/fate/live`-warm shape
- *      (a terminal worker JSON 4xx stops the poll).
- *
- * This replaces the two per-probe point-fix test files (`_fate-live-readiness.unit.test.ts` #1690,
- * `_auth-signup-readiness.unit.test.ts` #1720) now that their logic is one primitive.
+ * Pins the shared cold-start readiness primitive (`awaitEdgeReady`, ADR 0127) and its two
+ * invariants, referenced by number throughout: (1) a CF edge-placeholder-404 / cold-worker signal
+ * rides the bounded budget; (2) a real error — an abort, a genuine 4xx, a terminal worker JSON 4xx,
+ * the 422-already-exists answer — fast-fails and is never swallowed into the budget.
  */
 
 import * as Effect from "effect/Effect";
@@ -61,7 +50,6 @@ const onFakeTimers = async <T>(start: () => Promise<T>): Promise<T> => {
 
 const okStream = () =>
 	new Response("", {status: 200, headers: {"content-type": "text/event-stream"}});
-// The `/fate/live` SSE-open readiness predicate (200 + event-stream), used across the poll tests.
 const sseReady = (res: Response): boolean =>
 	res.status === 200 && (res.headers.get("content-type") ?? "").includes("text/event-stream");
 
@@ -70,7 +58,6 @@ describe("awaitEdgeReady — the shared cold-start readiness primitive (ADR 0127
 		let call = 0;
 		const send = vi.fn(async () => {
 			call += 1;
-			// The edge is not propagated for the first two opens (the throw `req`/`edgeFetch` raises), then serves.
 			if (call <= 2) throw new CloudflarePlaceholder404Error("/fate/live");
 			return okStream();
 		});
@@ -139,7 +126,6 @@ describe("awaitEdgeReady — the shared cold-start readiness primitive (ADR 0127
 		};
 		const send = vi.fn(async () => {
 			call += 1;
-			// First two: propagating (a 503, then a 200 whose body isn't `ok` yet); then healthy.
 			if (call === 1) return new Response("<html>edge</html>", {status: 503});
 			if (call === 2) return new Response(JSON.stringify({status: "warming"}), {status: 200});
 			return new Response(JSON.stringify({status: "ok"}), {status: 200});
@@ -168,7 +154,6 @@ describe("awaitEdgeReady — the shared cold-start readiness primitive (ADR 0127
 		const res = await awaitEdgeReady(send, liveWarmReady, BUDGET);
 
 		expect(res.status).toBe(401);
-		// Fast-fail: the terminal worker JSON 4xx was ready on the FIRST attempt, never re-polled.
 		expect(send).toHaveBeenCalledTimes(1);
 	});
 });
@@ -191,8 +176,6 @@ describe("awaitAuthRouteReady — the bootstrap auth-route propagation gate (#24
 
 		await Effect.runPromise(awaitAuthRouteReady("https://stage.example.workers.dev"));
 
-		// One call: a real worker 400 (the empty-body probe answer) is READY at once under
-		// `() => true` — a genuine auth 4xx is never swallowed into the readiness budget (invariant 2).
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		const [input, init] = fetchMock.mock.calls[0]!;
 		expect(input).toBe("https://stage.example.workers.dev/api/auth/sign-up/email");
@@ -203,8 +186,6 @@ describe("awaitAuthRouteReady — the bootstrap auth-route propagation gate (#24
 		let call = 0;
 		const fetchMock = vi.fn(async () => {
 			call += 1;
-			// The auth route is not propagated on the first open (CF HTML placeholder 404 → edgeFetch
-			// throws the typed error the gate rides), then serves a structured 4xx (route propagated).
 			if (call === 1)
 				return new Response("<!DOCTYPE html>There is nothing here yet", {status: 404});
 			return new Response(JSON.stringify({code: "INVALID_EMAIL"}), {status: 400});
@@ -236,8 +217,6 @@ describe("awaitWorkerReady — typed readiness diagnostic (#3146)", () => {
 	});
 
 	it("a worker that never serves healthy JSON within the budget throws the typed diagnostic (not a bare Error, not a hook timeout)", async () => {
-		// A 200 whose body is never `{status:"ok"}` rides the readiness budget and never goes ready;
-		// on deadline `awaitEdgeReady` returns the last (still-not-ready) response, and the gate throws.
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async () => new Response(JSON.stringify({status: "warming"}), {status: 200})),
@@ -280,9 +259,7 @@ describe("perFileReadinessDeadline — the readiness chain is bounded by the hoo
 
 	it("keeps the whole readiness chain strictly below HOOK_TIMEOUT_MS from the hook start", () => {
 		const deadline = perFileReadinessDeadline(startedAt);
-		// Measured from the hook start, the chain can run at most until `deadline` — which is
-		// READINESS_HOOK_MARGIN_MS short of the ceiling, the headroom the typed throw needs to beat
-		// the vitest guillotine.
+		// The margin is the headroom the typed throw needs to beat the vitest guillotine.
 		expect(deadline - startedAt).toBe(HOOK_TIMEOUT_MS - READINESS_HOOK_MARGIN_MS);
 		expect(deadline - startedAt).toBeLessThan(HOOK_TIMEOUT_MS);
 		expect(READINESS_HOOK_MARGIN_MS).toBeGreaterThan(0);
@@ -290,8 +267,7 @@ describe("perFileReadinessDeadline — the readiness chain is bounded by the hoo
 
 	it("a probe reached after earlier probes spent part of the window gets only what remains (each consumes deadline - now)", () => {
 		const deadline = perFileReadinessDeadline(startedAt);
-		// health consumed 200s of the shared window; the live warm, reached now, sees only the remainder
-		// — strictly less than health got, and the sum can never exceed the window.
+		// 200s stands for what the health probe already spent out of the shared window.
 		const nowAfterHealth = startedAt + 200_000;
 		const liveBudget = Math.max(0, deadline - nowAfterHealth);
 		expect(liveBudget).toBe(HOOK_TIMEOUT_MS - READINESS_HOOK_MARGIN_MS - 200_000);
@@ -458,8 +434,6 @@ describe("h.signUp — cold-edge readiness over the shared primitive (invariants
 	});
 
 	it("replays a transient 422 FAILED_TO_CREATE_USER, then resolves the created session (#3799)", async () => {
-		// Cold-D1 first-write throws once → better-auth 422 FAILED_TO_CREATE_USER; the replay creates
-		// the user, and the `get-session` gate confirms the session before it is handed back.
 		const fetchMock = stubFetch([failedToCreate422, () => authOk("u_created")]);
 		const h = buildHarness();
 

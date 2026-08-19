@@ -3,7 +3,6 @@ import {expect, test} from "@playwright/test";
 test.describe("PanoFeed (/pano)", () => {
 	test.beforeEach(async ({page}) => {
 		await page.goto("/pano");
-		// Wait for at least one post to render before each test.
 		await expect(page.locator(".kp-pano-post").first()).toBeVisible({timeout: 10_000});
 	});
 
@@ -40,7 +39,6 @@ test.describe("PanoFeed (/pano)", () => {
 		await topChip.click();
 		await expect(page).toHaveURL("/pano?sort=top");
 
-		// Reload restores the sort from the URL, not the default.
 		await page.reload();
 		await expect(page.locator(".kp-pano-post").first()).toBeVisible({timeout: 10_000});
 		await expect(page).toHaveURL("/pano?sort=top");
@@ -49,7 +47,6 @@ test.describe("PanoFeed (/pano)", () => {
 			"true",
 		);
 
-		// A second switch pushes a history entry, so back returns to the prior sort.
 		const newChip = page.getByRole("button", {name: /^yeni$/i}).last();
 		await newChip.click();
 		await expect(page).toHaveURL("/pano?sort=new");
@@ -65,7 +62,6 @@ test.describe("PanoFeed (/pano)", () => {
 		const firstPostTitle = page.locator(".kp-pano-post .kp-pano-post__title").first();
 		const href = await firstPostTitle.getAttribute("href");
 		expect(href).toBeTruthy();
-		// Either an absolute external URL or a /pano/<id> path.
 		expect(href).toMatch(/^(https?:\/\/|\/pano\/)/);
 	});
 
@@ -74,7 +70,6 @@ test.describe("PanoFeed (/pano)", () => {
 		// non-navigating <span> with the same class. Target the anchor so the
 		// skip-guard skips on self-only feeds and the click hits a real link.
 		const siteLink = page.locator("a.kp-pano-post__site").first();
-		// Some seed posts are self-posts (no host) — only run if a host link exists.
 		if (!(await siteLink.isVisible().catch(() => false))) {
 			test.skip(true, "no host links on the current page (all self-posts)");
 		}
@@ -90,7 +85,6 @@ test.describe("PanoFeed (/pano)", () => {
 	test("meta line shows author, time, comment count", async ({page}) => {
 		const meta = page.locator(".kp-pano-post .kp-pano-post__meta").first();
 		await expect(meta.locator(".author")).toBeVisible();
-		// "N yorum" link
 		await expect(meta.locator("a", {hasText: /yorum$/})).toBeVisible();
 	});
 });

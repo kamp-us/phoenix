@@ -8,7 +8,6 @@ test.describe("AuthPage (/auth)", () => {
 		await expect(page.getByRole("heading", {name: /giriş yap/i})).toBeVisible();
 		await expect(page.getByLabel("e-posta")).toBeVisible();
 		await expect(page.getByLabel("parola", {exact: true})).toBeVisible();
-		// no görünen ad in sign-in mode
 		await expect(page.getByLabel("görünen ad")).toHaveCount(0);
 	});
 
@@ -27,7 +26,6 @@ test.describe("AuthPage (/auth)", () => {
 		await expect(pill).toContainText(creds.name);
 
 		await signOut(page);
-		// pill should be gone, "giriş yap" button should reappear
 		await expect(page.locator(".kp-topbar__user")).toHaveCount(0);
 		await expect(page.getByRole("button", {name: /giriş yap/i}).first()).toBeVisible();
 	});

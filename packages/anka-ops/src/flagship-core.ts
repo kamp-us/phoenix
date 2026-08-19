@@ -1,10 +1,7 @@
 /**
- * `@kampus/anka-ops` Flagship pure core — IO-free, total transforms over already-listed
- * Flagship data. The decodes, the effective-serving computation, the serving-plan model the
- * `flag` release verbs dry-run/apply, and the renderers — so the read/write clients
- * (`flagship.ts`) and the `flag` command wiring (`flag-command.ts`) stay thin and every branch
- * here is unit-testable off-network. Relocated from the retired `@kampus/cf-utils` package when
- * the flag surface's single home moved to anka-ops (ruling #3326).
+ * `@kampus/anka-ops` Flagship pure core — IO-free transforms over already-listed Flagship data,
+ * so the read/write clients (`flagship.ts`) and the `flag` command wiring (`flag-command.ts`) stay
+ * thin and every branch here is unit-testable off-network.
  *
  * The release lever is the **no-match split**, not `defaultVariation` (#1726): real releases
  * are performed as a conditions-empty rule carrying a `rollout: {percentage}` — the wire
@@ -18,11 +15,8 @@
  * doesn't count a conditions-empty rollout rule as a targeting rule. `defaultVariation`
  * stays at its create-time safe value forever and is never used as the release lever.
  *
- * The env↔app mapping is grounded in the same physical-name scheme `orphan-sweep`'s
- * `FLAGSHIP_APP_NAME_PREFIX`/`decodeStage` decode (`packages/orphan-sweep/src/orphan-sweep.ts`)
- * and in `apps/web/worker/features/flagship/resources.ts` (the app is
- * `Cloudflare.FlagshipApp("phoenix_flags")`, so alchemy names it
- * `${stack}-${id}-${stage}-${suffix}`, `_`→`-` lowercased).
+ * The env↔app naming is grounded in `apps/web/worker/features/flagship/resources.ts` and
+ * `packages/orphan-sweep/src/orphan-sweep.ts`.
  */
 
 import * as Schema from "effect/Schema";
@@ -37,11 +31,9 @@ const STACK = "phoenix";
 export const FLAGSHIP_APP_NAME_PREFIX = `${STACK}-${STACK}-flags-`;
 
 /**
- * Decode a Flagship app's physical name back to its stage (the `<stage>` between the
- * prefix and alchemy's last `-<suffix>` segment), or `undefined` when the name is not one
- * of OUR apps — a foreign account app, or a malformed name with no suffix segment. The
- * `undefined` return is the safety hinge every consumer relies on: a name we don't
- * recognize decodes to no env rather than a guessed one.
+ * Decode a Flagship app's physical name back to its stage. `undefined` is the safety hinge every
+ * consumer relies on: a name we don't recognize (a foreign account app, a malformed name) decodes
+ * to no env rather than a guessed one.
  */
 export const decodeEnv = (appName: string): string | undefined => {
 	if (!appName.startsWith(FLAGSHIP_APP_NAME_PREFIX)) {
@@ -56,10 +48,9 @@ export const decodeEnv = (appName: string): string | undefined => {
 };
 
 /**
- * The slice of a Flagship rule this package reads and round-trips — the SDK's
- * `GetAppFlagResponse`/`UpdateAppFlagRequest` rule shape with `conditions` held opaque
- * (rule-condition edits stay out of scope, #1609): we only test `conditions.length` and pass
- * the entries through verbatim on write.
+ * The slice of a Flagship rule this package reads and round-trips. `conditions` is held opaque
+ * (rule-condition edits stay out of scope, #1609): only `conditions.length` is tested, and the
+ * entries pass through verbatim on write.
  */
 export interface FlagRule {
 	readonly conditions: ReadonlyArray<unknown>;
@@ -68,13 +59,6 @@ export interface FlagRule {
 	readonly rollout?: {readonly percentage: number; readonly attribute?: string | null} | null;
 }
 
-/**
- * A Flagship flag reduced to the fields this package reads — the slice of
- * `@distilled.cloud/cloudflare`'s `ListAppFlagsResponse`/`GetAppFlagResponse` item.
- * `variations` maps a variation key to its served value; `defaultVariation` names the
- * variation served when no rule matches or the flag is disabled; `rules` carries the
- * serving config — including the no-match split, the actual release lever (#1726).
- */
 export interface RawFlag {
 	readonly key: string;
 	readonly enabled: boolean;
@@ -94,12 +78,9 @@ export const findNoMatchSplit = (rules: ReadonlyArray<FlagRule>): FlagRule | und
 		.sort((a, b) => a.priority - b.priority)[0];
 
 /**
- * What a flag effectively serves — the answer `flag get`/`flag list` print instead of the
- * lying `defaultVariation` reduction (#1726). `Split` ⇒ the no-match split serves
- * `variation` to `percentage`% (remainder falls to the default); `Default` ⇒ no split, the
- * flag serves `defaultVariation` (also the disabled case — a disabled flag bypasses all
- * rules per the SDK contract). `otherRules` counts the rules that are NOT the resolved
- * split (targeting rules), surfaced as a `+N targeting rules` note.
+ * What a flag effectively serves — the answer `flag get`/`flag list` print instead of the lying
+ * `defaultVariation` reduction (#1726). A disabled flag reads as `Default`: it bypasses all rules
+ * per the SDK contract, split or no split.
  */
 export type EffectiveServing =
 	| {
@@ -124,11 +105,6 @@ export const computeEffectiveServing = (flag: RawFlag): EffectiveServing => {
 	return {_tag: "Default", variation: flag.defaultVariation, otherRules};
 };
 
-/**
- * Render effective serving legibly: `on@100% (split)` for a full split release,
- * `on@N% (ramping)` for a partial one, `off (default)` when no split serves, with a
- * `+N targeting rules` suffix when targeting rules exist beyond the split.
- */
 export const renderEffectiveServing = (serving: EffectiveServing): string => {
 	const base =
 		serving._tag === "Split"
@@ -139,21 +115,15 @@ export const renderEffectiveServing = (serving: EffectiveServing): string => {
 	return serving.otherRules > 0 ? `${base} +${serving.otherRules} targeting rules` : base;
 };
 
-/** One `flag × env` cell: a flag's effective serving state in a single environment. */
 export interface FlagState {
 	readonly key: string;
 	readonly env: string;
 	readonly enabled: boolean;
 	readonly defaultVariation: string;
-	/**
-	 * The value `defaultVariation` resolves to (`variations[defaultVariation]`) — the flag's
-	 * no-split baseline. `undefined` when the named variation is absent (a malformed flag).
-	 */
 	readonly defaultValue: unknown;
 	readonly serving: EffectiveServing;
 }
 
-/** Reduce a raw flag envelope in a given env to its `key × env` effective-serving row. */
 export const decodeFlagState = (env: string, flag: RawFlag): FlagState => ({
 	key: flag.key,
 	env,
@@ -164,21 +134,16 @@ export const decodeFlagState = (env: string, flag: RawFlag): FlagState => ({
 });
 
 /**
- * The `--env` option help text — single-sourced so `get` and `set` describe the env the same
- * way, and so it can't drift from the guard. The valid env set is NOT a closed static enum: an
- * env is a deploy stage decoded from a live Flagship app's physical name (`decodeEnv`), so it's
- * runtime-open — `prod` is the one stable env, previews are `pr-<n>`, integration `it-…`, plus
- * named-dev stages. The authoritative live set is what `flag list` enumerates (the same
- * `decodeEnv`-over-listed-apps source `FlagEnvNotFound` reports), so the help names the stable
- * env and points there rather than hardcoding a divergent list that would rot.
+ * The `--env` option help text. The valid env set is NOT a closed enum — an env is a deploy stage
+ * decoded off a live Flagship app's name, so the help points at `flag list` rather than hardcoding
+ * a list that would rot.
  */
 export const ENV_HELP =
 	"the deploy stage to target, e.g. prod (previews are pr-<n>); run `flag list` to see the valid envs";
 
 /**
- * No Flagship app serves the requested env — the typed, legible not-found `flag set` fails
- * with BEFORE any read/write, so an unknown `--env` never reaches the mutation. Carries the
- * envs that DO resolve, so the message points the operator at a valid one.
+ * No Flagship app serves the requested env. `flag set` fails with this BEFORE any read/write, so
+ * an unknown `--env` never reaches the mutation.
  */
 export class FlagEnvNotFound extends Schema.TaggedErrorClass<FlagEnvNotFound>()(
 	"@kampus/anka-ops/FlagEnvNotFound",
@@ -194,11 +159,9 @@ export class FlagEnvNotFound extends Schema.TaggedErrorClass<FlagEnvNotFound>()(
 }
 
 /**
- * No flag with the requested key exists in ANY env — the typed, legible not-found the
- * env-less `flag get <key>` fails with when its per-key slice of `flag list` is empty, so a
- * mistyped key surfaces loud (never a silent empty table). Carries the keys that DO resolve so
- * the message points the operator at a valid one. The `--env`-scoped `flag get` instead fails
- * with the SDK's `FlagshipFlagNotFound` straight off the single-flag read.
+ * No flag with the requested key exists in ANY env — what the env-less `flag get <key>` fails
+ * with, so a mistyped key surfaces loud instead of as a silent empty table. The `--env`-scoped
+ * `flag get` instead fails with the SDK's `FlagshipFlagNotFound` off the single-flag read.
  */
 export class FlagKeyNotFound extends Schema.TaggedErrorClass<FlagKeyNotFound>()(
 	"@kampus/anka-ops/FlagKeyNotFound",
@@ -213,11 +176,6 @@ export class FlagKeyNotFound extends Schema.TaggedErrorClass<FlagKeyNotFound>()(
 	}
 }
 
-/**
- * `flag set` named neither or both of `on|off` and `--percent N` — the two target forms are
- * mutually exclusive and exactly one is required, enforced with a legible usage error rather
- * than a silent default.
- */
 export class FlagSetTargetInvalid extends Schema.TaggedErrorClass<FlagSetTargetInvalid>()(
 	"@kampus/anka-ops/FlagSetTargetInvalid",
 	{
@@ -230,9 +188,8 @@ export class FlagSetTargetInvalid extends Schema.TaggedErrorClass<FlagSetTargetI
 }
 
 /**
- * The interactive confirm's refusal — `flag set --execute` declined because a human at a terminal
- * did not affirm the `[y/N]` prompt. Surfaces ONLY on the TTY ergonomics path (`decideLeverGuard`,
- * ADR 0134); a non-TTY agent/CI caller is never refused. The message names the recoverable fix.
+ * Surfaces ONLY on the TTY ergonomics path (`decideLeverGuard`, ADR 0134); a non-TTY agent/CI
+ * caller is never refused.
  */
 export class LeverGuardRefused extends Schema.TaggedErrorClass<LeverGuardRefused>()(
 	"@kampus/anka-ops/LeverGuardRefused",
@@ -248,31 +205,15 @@ export class LeverGuardRefused extends Schema.TaggedErrorClass<LeverGuardRefused
 	}
 }
 
-/**
- * The lever confirm's decision for the live-flip `--execute` branch. `Allow` ⇒ the write proceeds
- * (a non-TTY agent/CI caller, or a TTY human who affirmed the prompt — ADR 0134); `Refuse` ⇒ a
- * human at a terminal declined the confirm, carrying the `reason` the `LeverGuardRefused` renders.
- */
 export type LeverGuardDecision =
 	| {readonly _tag: "Allow"}
 	| {readonly _tag: "Refuse"; readonly reason: string};
 
 /**
- * PURE core of the lever's interactive confirm — decide whether `flag set --execute` may flip a
- * flag live, given the two structural inputs the thin IO shell observes: whether stdin is an
- * interactive TTY, and the raw confirm line the operator typed (`undefined` for EOF / no input).
- *
- * Per ADR 0134 (supersedes 0133) the lever is **agent-invokable** — the humans-release boundary
- * (ADR 0083) lives at the `/release` skill + the audit trail, NOT as a structural TTY refuse at
- * the tool. So the confirm is now purely human ergonomics when a terminal is present:
- *
- *  - **No TTY ⇒ Allow** — an agent / CI runner proceeds without a prompt (the IO shell logs the
- *    non-interactive flip for the audit record). This is the 0134 reversal of 0133's non-TTY
- *    hard-refuse.
- *  - **TTY + confirm ⇒ Allow only on an affirmative** — `y`/`yes` (case-insensitive, whitespace
- *    trimmed) — the deliberate "are you sure" before a live prod flip for a human at the terminal.
- *    Empty input, EOF (`undefined`), `n`, and anything else ⇒ Refuse. The default is deny: the
- *    human must type a deliberate keystroke.
+ * Whether `flag set --execute` may flip a flag live. No TTY ⇒ Allow: the lever is agent-invokable
+ * and the humans-release boundary lives at the `/release` skill, not at a structural TTY refuse
+ * here (ADR 0134, superseding 0133). With a TTY the confirm is human ergonomics only, and it
+ * defaults to deny — anything that is not `y`/`yes` refuses.
  */
 export const decideLeverGuard = (input: {
 	readonly isTTY: boolean;
@@ -288,23 +229,18 @@ export const decideLeverGuard = (input: {
 	return {_tag: "Refuse", reason: "the interactive confirmation was not affirmed (expected y/yes)"};
 };
 
-/** The per-key slice of the `flag list` rows — a flag's state in every env it's defined in. */
 export const selectStatesForKey = (
 	rows: ReadonlyArray<FlagState>,
 	key: string,
 ): ReadonlyArray<FlagState> => rows.filter((r) => r.key === key);
 
-/** Every distinct flag key present across the listed rows, sorted — the `known flags` hint. */
 export const distinctKeys = (rows: ReadonlyArray<FlagState>): ReadonlyArray<string> =>
 	[...new Set(rows.map((r) => r.key))].sort();
 
 /**
- * What a `flag set` write aims the serving at. `Percent` sets the no-match split so
- * `percentage`% serves `on` and the remainder falls to the (safe, create-time)
- * `defaultVariation` — `flag set <key> on` is `Percent 100`, the canonical fully-on form.
- * `Kill` is the true kill switch: clear the no-match split AND set `defaultVariation` off,
- * so a split-released flag actually stops serving (#1726's sharp finding — a bare
- * `defaultVariation` flip does NOT turn a split-released flag off).
+ * What a `flag set` write aims the serving at. `Kill` must clear the no-match split AND set
+ * `defaultVariation` off: a bare `defaultVariation` flip does NOT turn a split-released flag off
+ * (#1726).
  */
 export type ServeTarget =
 	| {readonly _tag: "Percent"; readonly percentage: number}
@@ -318,12 +254,9 @@ export const renderServeTarget = (target: ServeTarget): string =>
 			: `on@${target.percentage}% (ramping)`;
 
 /**
- * The next serving state a `ServeTarget` writes: the rules to PUT and the
- * `defaultVariation` to PUT alongside them. `Percent` upserts the no-match split (replacing
- * the existing split in place — preserving its priority and rollout bucketing attribute — or
- * appending one after every existing rule) and leaves `defaultVariation` untouched; `Kill`
- * strips every no-match split rule and moves `defaultVariation` to `off`. Targeting rules
- * pass through verbatim in both (#1609 scope).
+ * The next serving state a `ServeTarget` writes. `Percent` replaces an existing split in place so
+ * its priority and rollout bucketing attribute survive; targeting rules pass through verbatim in
+ * both branches (#1609 scope).
  */
 export const planNextState = (
 	flag: RawFlag,
@@ -402,21 +335,12 @@ export const computeServingPlan = (input: {
 	};
 };
 
-/**
- * Render the serving plan as a legible one-line `current → target` diff. A no-op plan
- * (already at target) reads as such so a dry-run makes the "nothing to do" case obvious.
- */
 export const renderServingPlan = (plan: ServingPlan): string =>
 	plan.changed
 		? `flag ${plan.key} @ ${plan.env}: ${renderEffectiveServing(plan.current)} → ${renderServeTarget(plan.target)}`
 		: `flag ${plan.key} @ ${plan.env}: already ${renderServeTarget(plan.target)} (no change)`;
 
-/**
- * Find the Flagship app serving a given env, keyed on `decodeEnv` of each app's physical
- * name (a foreign app decodes to no env and is never matched). Generic over `{name}` so the
- * pure core stays free of the read client's `FlagshipApp` type. `undefined` ⇒ no app for that
- * env — the caller fails not-found BEFORE any write.
- */
+/** Generic over `{name}` so the pure core stays free of the read client's `FlagshipApp` type. */
 export const findAppForEnv = <T extends {readonly name: string}>(
 	apps: ReadonlyArray<T>,
 	env: string,
@@ -434,11 +358,6 @@ const renderValue = (value: unknown): string => {
 
 const pad = (cell: string, width: number): string => cell + " ".repeat(width - cell.length);
 
-/**
- * Lay flag rows out as a legible `flag × env` table (key, env, enabled, effective serving),
- * sorted by key then env so the same flag's envs sit together. Column widths size to the
- * widest cell so the columns line up.
- */
 export const renderFlagTable = (rows: ReadonlyArray<FlagState>): string => {
 	if (rows.length === 0) {
 		return "no flags found";
@@ -463,12 +382,6 @@ export const renderFlagTable = (rows: ReadonlyArray<FlagState>): string => {
 	return [line(header), ...body.map(line)].join("\n");
 };
 
-/**
- * Render one flag's full state in a single env as a legible key/value block — the
- * `flag get <key> --env <env>` view. `serves` is the effective serving (rules → no-match
- * split → default), `default` the no-split baseline, plus every variation with its value —
- * so the pre-release confirmation read shows exactly what an env serves and could serve.
- */
 export const renderFlagDetail = (env: string, flag: RawFlag): string => {
 	const defaultValue = renderValue(flag.variations[flag.defaultVariation]);
 	const label = (l: string) => pad(`${l}:`, 12);

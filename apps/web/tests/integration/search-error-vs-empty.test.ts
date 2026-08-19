@@ -47,9 +47,6 @@ beforeAll(async () => {
 // isn't tripped here. Remove once #3075's durable ci.yml worker-relevance filter lands.
 describe("search error-vs-empty (#549)", {retry: 2}, () => {
 	it("a legitimate zero-match query succeeds with an empty connection (the 'sonuç yok' branch)", async () => {
-		// A well-formed query that matches nothing: `ok:true` with zero items. This is the
-		// SUCCESS path the page renders as "sonuç yok" — it must stay distinct from the
-		// error path, so a regression that collapses errors into empties is detectable.
 		const res = await h.fate({
 			kind: "list",
 			name: "searchTerms",
@@ -76,9 +73,6 @@ describe("search error-vs-empty (#549)", {retry: 2}, () => {
 			select: ["slug", "title"],
 		});
 
-		// The regression guard: the errored read is an ERROR on the wire (the field
-		// `Screen` discriminates on for the "arama yapılamadı" error rail), never a
-		// successful empty connection that the page would render as "sonuç yok".
 		expect(res.ok).toBe(false);
 		if (!res.ok) {
 			// A non-empty code is what the rail prints (`arama yapılamadı: {code}`); the
