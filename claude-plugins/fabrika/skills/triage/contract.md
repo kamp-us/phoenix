@@ -766,6 +766,7 @@ withhold the home list a triager needs.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `triage homes: cannot read milestones in <repo>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
+| `triage homes: cannot probe the roadmap at <path>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
 | `triage homes: cannot read the roadmap at <path>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
 | `triage homes: <repo> has 0 open milestones — refusing to answer, since "no home exists" routes to a kill (ADR 0092).` | 7 | refusal |
 | `triage homes: the roadmap at <path> parsed to 0 arc rows — the table grammar changed or the file is truncated; refusing to answer over an unjoinable roadmap.` | 7 | refusal |
@@ -779,6 +780,21 @@ look" will route work irreversibly on the second one.
 The grammar is a table this verb does not own, so a grammar change silently empties the join; reading
 that as "no homes exist" would route work to a kill. Zero *campaign* rows is a legitimate state and
 passes.
+
+**An ABSENT roadmap is an answer, not either refusal (#5773).** A file that is proven not to exist is
+a proven negative — the join is simply empty — so every open milestone lists with `roadmapRow: null`,
+the standing lanes list beside them, and stderr carries
+`triage homes: no roadmap at <path> — every milestone lists with no arc name.` The campaigns fence
+reads the absent file as the empty document, so its scope line says `campaigns: none active — scope
+fence inert.` The zero-arc-rows refusal above is reached only by a roadmap that *exists*, so the
+grammar-drift guard keeps its teeth. This is the degrade disposition the rest of the corpus already
+declares for `ROADMAP.md`; `homes` was the one reader treating it fail-loud.
+
+**Absent and unreadable are separated by a filesystem probe, never by the text of a read failure.**
+The verb asks `exists(<path>)` first: a probe that could not be *performed* refuses `11`, `false`
+takes the absent path above, and only on `true` does it read — a read that then fails is the `11`
+row. The `ReadFailed` this package raises flattens `NotFound` and `EACCES` into one `reason` string,
+so matching on that string would be a guess dressed as a discrimination.
 
 **Scope** — every open milestone in `--repo`, paginated, joined to the `## Arcs` and `## Campaigns`
 tables of the roadmap file, read from the repo root the delivery layer already sets as the process
