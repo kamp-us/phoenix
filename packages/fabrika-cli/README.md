@@ -664,6 +664,12 @@ node packages/fabrika-cli/src/bin.ts guard readme-guard check
 |---|---|
 | `guard readme-guard check` | whether every real `packages/*` workspace member carries a `README.md` |
 | `guard skill-lint check` | whether the `claude-plugins/` skill + agent corpus holds a GraphQL-path `gh` call, an unparseable frontmatter block, a bare `git push` in a runnable block, or a plugin path literal that only resolves inside this repo |
+| `guard path-filter-guard check` | whether `deploy.yml`'s `deploy:` run-set still matches `ci.yml`'s `e2e:` one, globs and `token`/`base` diff basis alike |
+| `guard change-detect-guard check` | whether change detection is still on API-free git mode (`token: ''`) rather than the flaky API-HTML path |
+| `guard codeowners-cp check` | whether every path the §CP boundary marks control-plane is owned by a human team in `.github/CODEOWNERS` |
+| `guard decisions-index validate` | whether the ADR corpus holds a duplicate id, a filename that disagrees with its frontmatter, or a missing index field |
+| `guard design-token-guard check` | whether component CSS holds a dead `var()` ref, a raw hex outside the raw-scale layer, or an off-grid px over its file's ceiling |
+| `guard design-inventory check` / `generate` | whether the committed component inventory still matches the JSDoc it is extracted from, and the one write mode that regenerates it |
 
 Three things are shared by the group rather than rebuilt per guard, which is the point of it
 ([#6093](https://github.com/kamp-us/phoenix/issues/6093)):

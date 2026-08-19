@@ -115,6 +115,19 @@ describe("runDesignTokenGuard", () => {
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
+
+	// The clean arm is what makes this worth pinning: `tokens.css` still reads, so `judge` sees a
+	// non-empty corpus and would have exited 0 over a scan that lost a whole directory.
+	it("is UNKNOWN when a directory in the walk cannot be listed, not a pass over the rest", async () => {
+		const unlistable = tree(".a {\n  background: var(--surface);\n}\n");
+		const outcome = await run({
+			...unlistable,
+			dirs: {...unlistable.dirs, [`${SRC}/components`]: null},
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.join("\n")).toContain(`${SRC}/components`);
+	});
 });
 
 describe("--write-baseline", () => {

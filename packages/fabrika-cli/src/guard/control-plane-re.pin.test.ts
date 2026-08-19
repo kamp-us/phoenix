@@ -17,6 +17,14 @@
  * **This file dies with `packages/pipeline-cli/`.** Once that package is deleted the copy here
  * becomes the single source again and this pin has no second value to compare against — so it is
  * deleted in that commit, not carried forward as a test that skips.
+ *
+ * **One branch is compared with, not against: `^packages/fabrika-cli/src/ci/` (ADR 0299, #6206).**
+ * It landed on `main` in `pipeline-cli`'s copy while this epic's assembly branch was already cut, so
+ * on the branch the two copies disagree by exactly that clause until the tail merges `main` forward.
+ * Both sides are normalized by dropping it before the byte-compare, and the copy here is asserted to
+ * carry it on its own line below — so every OTHER branch stays pinned byte for byte, and the clause
+ * itself is still checked, just not against a copy that has not caught up. Once the merge lands both
+ * sides carry it, the normalization is a no-op, and the compare is unchanged.
  */
 import {existsSync, readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
@@ -36,14 +44,24 @@ const declaredIn = (source: string): string | null => {
 	return literal?.[1] === undefined ? null : literal[1].replace(/\\(.)/g, "$1");
 };
 
+/** The ADR 0299 clause, in the runtime (unescaped) form both copies carry it in. */
+const FABRIKA_CI_BRANCH = "^packages/fabrika-cli/src/ci/";
+
+/** The boundary with the one merge-lagged branch removed, so the rest compares byte for byte. */
+const withoutFabrikaCi = (value: string): string => value.split(`${FABRIKA_CI_BRANCH}|`).join("");
+
 describe("the §CP boundary copy", () => {
 	it("still matches pipeline-cli's, for as long as that package exists", () => {
 		// A skip on absence is the point, not a hedge: once that package is deleted there is no second
 		// copy to disagree with, and a hard failure there would red a tree that is finally correct.
 		if (!existsSync(UPSTREAM)) return;
 		const upstream = declaredIn(readFileSync(UPSTREAM, "utf8"));
-		expect(upstream).not.toBeNull();
-		expect(CONTROL_PLANE_RE).toBe(upstream);
+		if (upstream === null) throw new Error(`${UPSTREAM} declares no CONTROL_PLANE_RE literal`);
+		expect(withoutFabrikaCi(CONTROL_PLANE_RE)).toBe(withoutFabrikaCi(upstream));
+	});
+
+	it("carries the ADR 0299 fabrika-cli clause, whether or not upstream has caught up", () => {
+		expect(CONTROL_PLANE_RE).toContain(`${FABRIKA_CI_BRANCH}|`);
 	});
 
 	it("reads its own declaration the same way, so a green above cannot be a broken parse", () => {

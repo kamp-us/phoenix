@@ -9,7 +9,7 @@
 
 import {Effect, FileSystem, Option, Path} from "effect";
 import {discoverRepoRoot} from "../delegate/root.ts";
-import {type ReadFailed, readFile, type WriteFailed, writeFile} from "../io/fs.ts";
+import {type ReadFailed, readDir, readFile, type WriteFailed, writeFile} from "../io/fs.ts";
 import {parseJson} from "../io/json.ts";
 import {answer, type VerbOutcome} from "../verb.ts";
 import {atLine} from "./annotate.ts";
@@ -60,20 +60,22 @@ export interface DesignTokenGuardOptions {
  *
  * A failing stat is a dangling link (or an entry racing an unlink): a `*.css` one is pushed anyway
  * so it reds at the read, because a CSS file replaced by a dangling link must not silently leave
- * scope.
+ * scope. A directory that cannot be LISTED is a different thing and fails the walk: swallowing it
+ * shrinks the corpus while `judge` still sees files elsewhere and passes, which is a clean verdict
+ * over a scan that silently narrowed (ADR 0092).
  */
 const walkCss = (
 	fs: FileSystem.FileSystem,
 	path: Path.Path,
 	base: string,
-): Effect.Effect<ReadonlyArray<string>, never, never> =>
+): Effect.Effect<ReadonlyArray<string>, ReadFailed, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
 		const found: Array<string> = [];
 		const stack = [base];
 		for (;;) {
 			const dir = stack.pop();
 			if (dir === undefined) break;
-			const names = yield* fs.readDirectory(dir).pipe(Effect.orElseSucceed(() => []));
+			const names = yield* readDir(dir);
 			for (const name of names) {
 				const abs = path.join(dir, name);
 				const stat = yield* Effect.option(fs.stat(abs));
