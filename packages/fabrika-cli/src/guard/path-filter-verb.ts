@@ -1,5 +1,5 @@
 /**
- * `guard path-filter-guard check` — ported off `pipeline-cli path-filter-guard check` (epic #5720).
+ * `guard path-filter-guard check` — ported off v1's `path-filter-guard check` (epic #5720).
  *
  * The verb is the IO boundary and nothing else: read the two workflows, hand their texts to the
  * pure rule in `./path-filter.ts`, seat the answer on the group's exit taxonomy.

@@ -13,17 +13,14 @@
  * Two branch groups are worth naming because their scope is not obvious from the pattern:
  *
  * - The kampus-pipeline clauses (skills/, lib/, agents/, hooks) retired with the plugin itself
- *   (#5937): the tree is deleted, so they classified paths that can no longer exist, and their
- *   CODEOWNERS rows went with them.
+ *   (#5937), and ADR 0218's enforcement-core clauses over the v1 verb package retired with that
+ *   package (#6100): both trees are deleted, so they classified paths that can no longer
+ *   exist, and their CODEOWNERS rows went with them.
  * - `^packages/fabrika-cli/src/ci/` is the ONE §CP path in THIS package, and the narrowness is the
- *   ruling, not an omission: `ci-required`'s verdict core is moving here, and it must arrive already
- *   covered or it lands matching no CODEOWNERS row, which merges at zero approvals. The rest of the
- *   package is ordinary by founder ruling on #6164 (ADR 0299).
- * - The pipeline-cli clauses cover an enforcement CORE, not the package (ADR 0218): the
- *   non-recursive `src/` root that every gate dispatches through, the eight tools that ARE the
- *   enforcement surface, and `tracker/gh-io.ts` alone, whose `authorizedAuthors` is the ADR-0055
- *   write+ ACL a verdict's authority is resolved against.
+ *   ruling, not an omission: `ci-required`'s verdict core lives here, and it must stay covered or
+ *   it lands matching no CODEOWNERS row, which merges at zero approvals. The rest of the package is
+ *   ordinary by founder ruling on #6164 (ADR 0299).
  */
 
 export const CONTROL_PLANE_RE =
-	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^packages/ci-required/|^packages/fabrika-cli/src/ci/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$|^biome\\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\\.lefthook)[^/]+$";
+	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^packages/ci-required/|^packages/fabrika-cli/src/ci/|^biome\\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\\.lefthook)[^/]+$";

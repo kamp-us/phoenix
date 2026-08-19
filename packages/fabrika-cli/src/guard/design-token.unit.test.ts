@@ -1,6 +1,6 @@
 /**
  * The `design-token-guard` rule and its CSS parsers — the `design-token-guard.unit.test.ts` cases
- * from `pipeline-cli`.
+ * from the v1 CLI.
  */
 import {describe, expect, it} from "vitest";
 import {

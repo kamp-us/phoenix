@@ -16,44 +16,22 @@
 # owned here (ADR 0212, #3933).
 /.claude-plugin/                @kamp-us/control-plane
 # Control-plane: enforcement guard packages — the platform half of the §CP regex (ADR 0100).
-# The standalone *-guard packages were folded into pipeline-cli and deleted (#1003); ci-required
-# stays standalone (ADR 0092) and keeps its own owner line.
+# The standalone *-guard packages were folded into the verb router and deleted (#1003);
+# ci-required stays standalone (ADR 0092) and keeps its own owner line.
 /packages/ci-required/          @kamp-us/control-plane
-# Control-plane: fabrika-cli's CI-check core — where the `ci-required` verdict logic behind the
-# `main` ruleset's single always-on required context is moving (open child #6099 of epic #5720; the
-# dir does not exist yet, and `ci.yml` still runs the pipeline-cli bin). This row lands ahead of the
-# move so the core arrives covered (ADR 0299, extending ADR 0218's enforcement-core shape). This ONE
-# directory and nothing wider: the rest of `packages/fabrika-cli/` is ordinary (founder ruling on
-# #6164). Must stay in lockstep with the §CP `^packages/fabrika-cli/src/ci/` branch.
+# Control-plane: fabrika-cli's CI-check core — the `ci-required` verdict logic behind the `main`
+# ruleset's single always-on required context (#6099 of epic #5720), covered per ADR 0299,
+# extending ADR 0218's enforcement-core shape. This ONE directory and nothing wider: the rest of
+# `packages/fabrika-cli/` is ordinary (founder ruling on #6164). Must stay in lockstep with the
+# §CP `^packages/fabrika-cli/src/ci/` branch.
 /packages/fabrika-cli/src/ci/   @kamp-us/control-plane
-# Control-plane: pipeline-cli's ENFORCEMENT CORE only, not the whole package (ADR 0218, amending
-# ADR 0100). Must stay in lockstep with the three §CP `packages/pipeline-cli/` regex branches —
-# `codeowners-cp` detects UNDER-protection only, so an over-broad row here would NOT red the gate.
-# `src/*` is within-segment (like the `**/*.sh` row above, which needs `**` precisely because `*`
-# does not cross `/`), so it owns the shared-dispatch root and no deeper.
-/packages/pipeline-cli/src/*    @kamp-us/control-plane
-# Owner-less line = ownership UNSET (GitHub's documented `/apps/github` idiom). Belt-and-braces so
-# the ~60 non-gating tools are ungated even if `src/*` were ever read as crossing `/`; the eight
-# retained core tools below re-own themselves by CODEOWNERS last-match-wins.
-/packages/pipeline-cli/src/tools/
-/packages/pipeline-cli/src/tools/ci-required/          @kamp-us/control-plane
-/packages/pipeline-cli/src/tools/codeowners-cp/        @kamp-us/control-plane
-/packages/pipeline-cli/src/tools/control-plane-paths/  @kamp-us/control-plane
-/packages/pipeline-cli/src/tools/cp-cardinality/       @kamp-us/control-plane
-/packages/pipeline-cli/src/tools/cp-classify/          @kamp-us/control-plane
-/packages/pipeline-cli/src/tools/review-head/          @kamp-us/control-plane
-# One FILE, not its directory: `gh-io.ts` exports `authorizedAuthors`, the ADR 0055 write+ ACL
-# `verdict` resolves a marker's authority against. The rest of `tools/tracker/` stays ungated.
-/packages/pipeline-cli/src/tools/tracker/gh-io.ts      @kamp-us/control-plane
-/packages/pipeline-cli/src/tools/trivial-diff/         @kamp-us/control-plane
-/packages/pipeline-cli/src/tools/verdict/              @kamp-us/control-plane
 # Control-plane: lint/GritQL governance config — the biome config + GritQL plugin rules. An
 # ungated path to weaken a lint rule (disable a security lint, downgrade a GritQL guard) is a
 # guard-relaxing vector. The §CP `biome\.jsonc$` + `biome-plugins/` branches (ADR 0193).
 /biome.jsonc                    @kamp-us/control-plane
 /biome-plugins/                 @kamp-us/control-plane
-# Control-plane: the local hook-wiring config — `lefthook.yml` wires the CI-unbacked ref-guard
-# (#2143) and #2778 primary-index guards, and `.lefthookrc` is sourced by every generated wrapper.
+# Control-plane: the local hook-wiring config — `lefthook.yml` wires the pre-commit/pre-push guard
+# legs, and `.lefthookrc` is sourced by every generated hook wrapper.
 # The §CP `([^/]+/)*(lefthook|\.lefthook)[^/]+$` branch (founder ruling on #3402); `**/` is the
 # any-depth prefix (same idiom as the `**/*.sh` row above), the `*` suffix the config-name shape.
 **/lefthook*                    @kamp-us/control-plane

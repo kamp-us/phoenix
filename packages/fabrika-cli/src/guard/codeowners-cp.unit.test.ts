@@ -1,5 +1,5 @@
 /**
- * The `codeowners-cp` rule — the `codeowners-cp.unit.test.ts` cases from `pipeline-cli`, plus the
+ * The `codeowners-cp` rule — the `codeowners-cp.unit.test.ts` cases from the v1 CLI, plus the
  * live boundary as its own case.
  *
  * The coverage cases are asymmetric on purpose: this guard detects UNDER-protection only, so an
@@ -38,8 +38,8 @@ describe("expandBranch", () => {
 	});
 
 	it("translates a within-segment class to a gitignore glob", () => {
-		expect(expandBranch("packages/pipeline-cli/src/[^/]+$")).toEqual([
-			{path: "packages/pipeline-cli/src/*", kind: "glob"},
+		expect(expandBranch("packages/demo-cli/src/[^/]+$")).toEqual([
+			{path: "packages/demo-cli/src/*", kind: "glob"},
 		]);
 	});
 

@@ -57,7 +57,7 @@ The ruling has four parts, as ruled:
 
 1. **No §CP coverage for the fabrika tree.** No CODEOWNERS rows are added for it and
    `CONTROL_PLANE_RE` is not widened to cover it. The regex — single-sourced in
-   [`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts)
+   `packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`
    and byte-synced into
    `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`
    — anchors its plugin clauses at `^claude-plugins/kampus-pipeline/` (`skills/`, `lib/`, `agents/`,

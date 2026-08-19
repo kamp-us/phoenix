@@ -1,5 +1,5 @@
 /**
- * The pure rule behind `guard publish-isolation-guard check`, ported from `pipeline-cli`'s
+ * The pure rule behind `guard publish-isolation-guard check`, ported from the v1 CLI's
  * `publish-isolation-guard.unit.test.ts` (ADR 0201 §3, #3802): the verdict over already-gathered
  * facts, plus the two derivation helpers — parsing publish.yml's tag grammar, and mapping prefixes
  * onto members. No disk; the IO seam is covered in `publish-isolation-verb.unit.test.ts`.
@@ -33,14 +33,14 @@ describe("judge", () => {
 
 	it("reds a workspace:* link as the #3802 class", () => {
 		const v = judge([
-			manifest("packages/pipeline-cli/package.json", "@kampus/pipeline-cli", [
+			manifest("packages/demo-cli/package.json", "@kampus/demo-cli", [
 				{field: "dependencies", name: "@kampus/epic-ledger", value: "workspace:*"},
 			]),
 		]);
 		if (v.pass || v.reason !== "linked-private-deps") throw new Error("expected a violation");
 		expect(v.violations).toEqual([
 			{
-				path: "packages/pipeline-cli/package.json",
+				path: "packages/demo-cli/package.json",
 				field: "dependencies",
 				name: "@kampus/epic-ledger",
 				value: "workspace:*",
@@ -51,7 +51,7 @@ describe("judge", () => {
 
 	it("reds a private @kampus dep pinned to a version", () => {
 		const v = judge([
-			manifest("packages/pipeline-cli/package.json", "@kampus/pipeline-cli", [
+			manifest("packages/demo-cli/package.json", "@kampus/demo-cli", [
 				{field: "dependencies", name: "@kampus/leak-guard", value: "^1.0.0"},
 			]),
 		]);
@@ -61,7 +61,7 @@ describe("judge", () => {
 
 	it("scans optionalDependencies and peerDependencies, not just dependencies", () => {
 		const v = judge([
-			manifest("packages/pipeline-cli/package.json", "@kampus/pipeline-cli", [
+			manifest("packages/demo-cli/package.json", "@kampus/demo-cli", [
 				{field: "optionalDependencies", name: "@kampus/optional-private", value: "workspace:*"},
 				{field: "peerDependencies", name: "@kampus/peer-private", value: "^2.0.0"},
 			]),
@@ -76,7 +76,7 @@ describe("judge", () => {
 	// A published sibling resolves from the registry, so it is not the #3802 class.
 	it("passes a @kampus dep that is ITSELF in the published set", () => {
 		const v = judge([
-			manifest("packages/pipeline-cli/package.json", "@kampus/pipeline-cli", [
+			manifest("packages/demo-cli/package.json", "@kampus/demo-cli", [
 				{field: "dependencies", name: "@kampus/fabrika-cli", value: "^0.1.0"},
 			]),
 			manifest("packages/fabrika-cli/package.json", "@kampus/fabrika-cli", [
@@ -111,22 +111,22 @@ describe("parsePublishedTagPrefixes", () => {
 	it("dedupes and sorts multiple distinct prefixes", () => {
 		expect(
 			parsePublishedTagPrefixes(
-				"=~ ^pipeline-cli-v([0-9].*)$ ... =~ ^fabrika-cli-v([0-9].*)$ ... =~ ^fabrika-cli-v(.*)$",
+				"=~ ^fabrika-cli-v([0-9].*)$ ... =~ ^demo-cli-v([0-9].*)$ ... =~ ^demo-cli-v(.*)$",
 			),
-		).toEqual(["fabrika-cli", "pipeline-cli"]);
+		).toEqual(["demo-cli", "fabrika-cli"]);
 	});
 });
 
 describe("resolvePublished", () => {
 	const members: ReadonlyArray<PublishedManifest> = [
-		manifest("packages/pipeline-cli/package.json", "@kampus/pipeline-cli", []),
+		manifest("packages/demo-cli/package.json", "@kampus/demo-cli", []),
 		manifest("packages/fabrika-cli/package.json", "@kampus/fabrika-cli", []),
 		manifest("apps/web/package.json", "@kampus/web", []),
 	];
 
 	it("resolves a prefix to the member whose unscoped name matches", () => {
-		const {published, unmatchedPrefixes} = resolvePublished(["pipeline-cli"], members);
-		expect(published.map((m) => m.name)).toEqual(["@kampus/pipeline-cli"]);
+		const {published, unmatchedPrefixes} = resolvePublished(["demo-cli"], members);
+		expect(published.map((m) => m.name)).toEqual(["@kampus/demo-cli"]);
 		expect(unmatchedPrefixes).toEqual([]);
 	});
 

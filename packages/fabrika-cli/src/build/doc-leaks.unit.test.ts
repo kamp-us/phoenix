@@ -3,7 +3,7 @@ import {docLeaks, isDocLeakExempt, isDocSurface} from "./doc-leaks.ts";
 
 /**
  * The three ways the body scanner disagreed with the committed-file gate (#5687). Each fixture is
- * bytes `pipeline-cli leak-guard scan` passes clean and `build check --surface prose` used to red.
+ * bytes v1's `leak-guard scan` passes clean and `build check --surface prose` used to red.
  */
 describe("docLeaks — the three divergences from the body scanner", () => {
 	it("does not read a fenced regex literal as a path — a segment must be name-shaped", () => {

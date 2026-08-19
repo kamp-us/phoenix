@@ -1,5 +1,5 @@
 /**
- * The `change-detect-guard` rule — the `change-detect-guard.unit.test.ts` cases from `pipeline-cli`.
+ * The `change-detect-guard` rule — the `change-detect-guard.unit.test.ts` cases from the v1 CLI.
  *
  * The absent-`token:` case is the one that matters most and reads as the least alarming: dorny
  * DEFAULTS the input, so "no token" and "the API token" are the same thing to the action.

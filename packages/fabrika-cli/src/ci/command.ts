@@ -1,5 +1,5 @@
 /**
- * The `ci` verb group — the workflow plumbing that used to live in `pipeline-cli` (epic #5720).
+ * The `ci` verb group — the workflow plumbing that used to live in the v1 CLI (epic #5720).
  *
  * Not guards. These four are the release path and the CI build path: `ci changelog` and
  * `ci pr-body` are what let a release cut at all, `ci annotate` is what puts a failed typecheck on

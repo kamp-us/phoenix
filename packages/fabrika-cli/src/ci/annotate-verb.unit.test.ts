@@ -1,5 +1,5 @@
 /**
- * `ci annotate`, ported from `pipeline-cli tsc-annotate map` (#6099) — the two contracts that
+ * `ci annotate`, ported from v1's `tsc-annotate map` (#6099) — the two contracts that
  * matter: the log always goes through, and annotations only appear where they render.
  */
 import {Effect} from "effect";

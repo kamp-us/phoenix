@@ -1,6 +1,6 @@
 /**
  * `guard pointer-guard check` — every backticked repo path in a tracked `CLAUDE.md` resolves
- * (#988), ported off `pipeline-cli pointer-guard check` (epic #5720).
+ * (#988), ported off v1's `pointer-guard check` (epic #5720).
  *
  * Scope is the git-tracked `CLAUDE.md` set: `node_modules` docs and untracked scratch files are out,
  * and a renamed target reds the moment a referencing CLAUDE.md is committed. `.decisions/` and

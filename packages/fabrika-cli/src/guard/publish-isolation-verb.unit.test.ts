@@ -1,6 +1,6 @@
 /**
  * `guard publish-isolation-guard check`'s IO boundary and exit taxonomy, over a scripted
- * filesystem — the `gate.unit.test.ts` cases from `pipeline-cli`, re-seated on the three guard exit
+ * filesystem — the `gate.unit.test.ts` cases from the v1 CLI, re-seated on the three guard exit
  * codes (a single non-zero there, `7`/`11`/`12` here).
  */
 import {Effect} from "effect";
@@ -189,10 +189,10 @@ describe("runPublishIsolationGuard", () => {
 	it("passes a two-prefix publish.yml when both published members are clean", async () => {
 		const outcome = await run(
 			repo({
-				prefixes: ["fabrika-cli", "pipeline-cli"],
+				prefixes: ["fabrika-cli", "demo-cli"],
 				packages: {
 					"fabrika-cli": {name: "@kampus/fabrika-cli", dependencies: {effect: "catalog:"}},
-					"pipeline-cli": {name: "@kampus/pipeline-cli", dependencies: {effect: "catalog:"}},
+					"demo-cli": {name: "@kampus/demo-cli", dependencies: {effect: "catalog:"}},
 				},
 			}),
 		);
@@ -203,11 +203,11 @@ describe("runPublishIsolationGuard", () => {
 	it("reds a two-prefix publish.yml when the SECOND package links a workspace:* dep", async () => {
 		const outcome = await run(
 			repo({
-				prefixes: ["fabrika-cli", "pipeline-cli"],
+				prefixes: ["fabrika-cli", "demo-cli"],
 				packages: {
 					"fabrika-cli": {name: "@kampus/fabrika-cli", dependencies: {effect: "catalog:"}},
-					"pipeline-cli": {
-						name: "@kampus/pipeline-cli",
+					"demo-cli": {
+						name: "@kampus/demo-cli",
 						dependencies: {"@kampus/internal-lib": "workspace:*"},
 					},
 				},

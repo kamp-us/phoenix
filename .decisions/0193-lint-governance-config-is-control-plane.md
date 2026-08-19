@@ -15,7 +15,7 @@ per ADR [0071](0071-enforce-control-plane-at-github.md)) marks the surfaces wher
 autonomous green-then-ship merge could compromise the pipeline's own guards, so those PRs
 bank for a human control-plane (§CP) merge instead of auto-shipping. The concrete boundary
 is the single-source path regex in
-[`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts),
+`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`,
 its byte-synced `CONTROL_PLANE_RE=` copy in `gh-issue-intake-formats.md`,
 `.github/CODEOWNERS`, and the classifier tests.
 

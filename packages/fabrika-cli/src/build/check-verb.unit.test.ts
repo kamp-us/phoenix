@@ -468,7 +468,7 @@ describe("runCheck", () => {
 });
 
 // The #5687 divergence: `build check` asked `report/leaks.ts`'s ISSUE-BODY scanner about a file in a
-// diff, so it red on bytes `pipeline-cli leak-guard scan` — the gate it predicts — passes clean, and
+// diff, so it red on bytes v1's `leak-guard scan` — the gate it predicts — passes clean, and
 // the red was unclearable inside the lane that inherited it.
 describe("the prose leak scan predicts the committed-file gate, not the body guard", () => {
 	const CONFIG = "/repo/trees/lane-a/.fabrika.jsonc";

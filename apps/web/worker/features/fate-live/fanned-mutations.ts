@@ -13,7 +13,7 @@
  *
  * Every `entity.verb` mutation key MUST appear here with a `fanned` flag and a
  * one-line rationale; every `fanned: true` row MUST also declare its `topics`.
- * `pipeline-cli fanout-guard check` enforces three invariants:
+ * `fabrika guard fanout-guard check` enforces three invariants:
  *
  *   1. Drift — the set of keys here EQUALS the set discovered in
  *      `apps/web/worker/features/*.mutations.ts`. A new mutation with no row here

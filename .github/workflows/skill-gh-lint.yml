@@ -20,7 +20,7 @@ name: skill-gh-lint
 # regardless of which PR introduced it. The walk, its zero-scope floor and the per-plugin
 # coverage assertion (#5004 — a green from an empty corner is indistinguishable from a green
 # from clean code) moved OUT of this file's bash and into the verb when the guard was ported off
-# pipeline-cli (#6098), so each of them is now pinned by a unit test instead of living in a shell
+# the old CLI (#6098), so each of them is now pinned by a unit test instead of living in a shell
 # step nothing covers.
 on:
   pull_request:

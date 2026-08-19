@@ -1,5 +1,5 @@
 /**
- * `guard design-inventory check` / `generate` — ported off `pipeline-cli design-inventory` (epic
+ * `guard design-inventory check` / `generate` — ported off v1's `design-inventory` (epic
  * #5720).
  *
  * The verb is the IO boundary: read the annotated `components/ui` primitives, build the inventory

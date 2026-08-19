@@ -1,5 +1,5 @@
 /**
- * `guard codeowners-cp check` — ported off `pipeline-cli codeowners-cp check` (epic #5720).
+ * `guard codeowners-cp check` — ported off v1's `codeowners-cp check` (epic #5720).
  *
  * The verb is the IO boundary and nothing else: read `.github/CODEOWNERS`, hand it and the §CP
  * boundary const to the pure rule in `./codeowners-cp.ts`, seat the answer on the group's exit

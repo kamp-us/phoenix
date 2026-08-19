@@ -1,6 +1,6 @@
 /**
  * `guard patch-guard check` — every maintained `pnpm patch` carries a registered behavior-pinning
- * test (ADR 0038's forcing function), ported off `pipeline-cli patch-guard check` (epic #5720).
+ * test (ADR 0038's forcing function), ported off v1's `patch-guard check` (epic #5720).
  *
  * The verb is the IO boundary: read `patchedDependencies` out of `pnpm-workspace.yaml`, walk the
  * test tree gathering `@patch-pin:` markers, hand both to the pure rule in `./patch.ts`, seat the

@@ -13,9 +13,9 @@ const TEAM = "@kamp-us/control-plane";
 const ROWS = parseCodeowners(`# comment
 /.github/                     ${TEAM}
 **/lefthook*                  ${TEAM}
-/packages/pipeline-cli/src/*  ${TEAM}
-/packages/pipeline-cli/src/tools/
-/packages/pipeline-cli/src/tools/verdict/  ${TEAM}
+/packages/demo-cli/src/*  ${TEAM}
+/packages/demo-cli/src/tools/
+/packages/demo-cli/src/tools/verdict/  ${TEAM}
 `);
 
 describe("parseCodeowners", () => {
@@ -37,9 +37,9 @@ describe("matcherFor", () => {
 	});
 
 	it("keeps a wildcard within its segment — `src/*` owns the root and no deeper", () => {
-		const pattern = matcherFor("/packages/pipeline-cli/src/*");
-		expect(pattern.test("packages/pipeline-cli/src/registry.ts")).toBe(true);
-		expect(pattern.test("packages/pipeline-cli/src/tools/thing.ts")).toBe(false);
+		const pattern = matcherFor("/packages/demo-cli/src/*");
+		expect(pattern.test("packages/demo-cli/src/registry.ts")).toBe(true);
+		expect(pattern.test("packages/demo-cli/src/tools/thing.ts")).toBe(false);
 	});
 
 	it("escapes regex metacharacters in a pattern — a `.` matches a dot, not any character", () => {
@@ -55,11 +55,11 @@ describe("matcherFor", () => {
 
 describe("ownersOf", () => {
 	it("resolves LAST match wins, so an owner-less row un-owns what a broader row swept in", () => {
-		expect(ownersOf(ROWS, "packages/pipeline-cli/src/tools/thing.ts")).toEqual([]);
+		expect(ownersOf(ROWS, "packages/demo-cli/src/tools/thing.ts")).toEqual([]);
 	});
 
 	it("lets a later specific row re-own inside an un-owned directory", () => {
-		expect(ownersOf(ROWS, "packages/pipeline-cli/src/tools/verdict/index.ts")).toEqual([TEAM]);
+		expect(ownersOf(ROWS, "packages/demo-cli/src/tools/verdict/index.ts")).toEqual([TEAM]);
 	});
 
 	it("returns null for a path no row matches — distinct from a row that owns nobody", () => {

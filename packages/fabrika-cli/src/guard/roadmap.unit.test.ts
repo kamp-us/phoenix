@@ -1,6 +1,6 @@
 /**
  * The parse of `ROADMAP.md`'s two tables and the I1–I5 verdict — each invariant's pass and every way
- * it fails, ported from `pipeline-cli roadmap-guard` (#2648). No IO: the file and the milestone
+ * it fails, ported from v1's `roadmap-guard` (#2648). No IO: the file and the milestone
  * projection are crossed in `./roadmap-verb.ts`.
  */
 import {describe, expect, it} from "vitest";

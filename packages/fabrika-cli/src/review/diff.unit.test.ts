@@ -215,7 +215,7 @@ describe("tierMHits", () => {
 
 	it("reports the removed assertion PR #5730 printed None. beside", () => {
 		const line = 'assert.isTrue(isSelfExempt(".claude/skills/triage/SKILL.md"));';
-		const file = "packages/pipeline-cli/src/tools/leak-guard/leak-guard.unit.test.ts";
+		const file = "packages/demo-cli/src/tools/leak-guard/leak-guard.unit.test.ts";
 		const diff = `diff --git a/${file} b/${file}\n@@ -268,2 +268,1 @@\n \tit("exempts a skill", () => {\n-\t\t${line}\n`;
 		expect(tierMHits(diff)).toEqual([{kind: "removed-assertion", file, line: 269, token: line}]);
 	});

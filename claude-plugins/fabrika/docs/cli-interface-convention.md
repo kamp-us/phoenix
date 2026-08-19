@@ -55,7 +55,7 @@ per-tool help documents subcommands and exit codes inline.
   `pipeline-cli commands compact` is the working precedent: it reads name + description off the same
   `Command` objects the router dispatches on, so a new verb appears automatically and a verb shipped
   without a description is mechanically detectable
-  ([`packages/pipeline-cli/src/tools/commands/commands.ts`](../../../packages/pipeline-cli/src/tools/commands/commands.ts)).
+  (`packages/pipeline-cli/src/tools/commands/commands.ts`).
   A parallel hand-written list rots; that is the defect the derived index replaced.
 - **A `--help` that resolves is proof the path exists — up to the last node that takes subcommands.**
   `fabrika <unknown> …` is refused before the CLI runner sees it: the reason on stderr, nothing on
@@ -103,7 +103,7 @@ already binds the shell half of the same pipeline.
 
 Source: [`.patterns/skill-script-io-contract.md`](../../../.patterns/skill-script-io-contract.md)'s
 exit taxonomy, and the verdict-vs-invocation rule proven in v1 at
-[`packages/pipeline-cli/src/exit-codes.ts`](../../../packages/pipeline-cli/src/exit-codes.ts)
+`packages/pipeline-cli/src/exit-codes.ts`
 (#4208, #4219).
 
 - **`0` means "I produced the answer on stdout". Any non-zero means "I could not produce one"** —

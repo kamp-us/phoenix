@@ -1,6 +1,6 @@
 /**
  * `guard publish-isolation-guard check` — every published package installs from a clean registry
- * (ADR 0201 §3, #3802), ported off `pipeline-cli publish-isolation-guard check` (epic #5720).
+ * (ADR 0201 §3, #3802), ported off v1's `publish-isolation-guard check` (epic #5720).
  *
  * The verb is the IO boundary: derive the published set from `publish.yml`, read the workspace
  * members behind it, hand the manifests to the pure rule in `./publish-isolation.ts`, seat the

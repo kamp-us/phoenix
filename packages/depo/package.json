@@ -1,7 +1,7 @@
 {
 	"name": "@kampus/depo",
 	"version": "0.1.0",
-	"description": "depo — the standalone client for kampus's internal asset store/CDN (ADR 0144): a thin `put(file)` lib + a `depo` bin over it. NOT a pipeline-cli subcommand.",
+	"description": "depo — the standalone client for kampus's internal asset store/CDN (ADR 0144): a thin `put(file)` lib + a `depo` bin over it. NOT a verb-router subcommand.",
 	"license": "MIT",
 	"repository": {
 		"type": "git",

@@ -21,7 +21,6 @@ describe("the ported spawn guard's reach", () => {
 			// The docblocks cite v1's issue numbers, which is the point of a port — what may not appear
 			// is an `import`/`require`/`from` that resolves into v1.
 			if (!/\b(?:import|require|from)\b/.test(line)) continue;
-			expect(line).not.toContain("pipeline-cli");
 			expect(line).not.toContain("kampus-pipeline");
 		}
 	});

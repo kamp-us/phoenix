@@ -2,7 +2,7 @@
  * `publish-isolation-guard`'s pure half — is every PUBLISHED package's runtime dependency graph
  * installable from a clean registry (ADR 0201 §3)?
  *
- * The forcing incident: `pipeline-cli@0.2.0` published green yet was uninstallable, because it
+ * The forcing incident: a `@kampus/*` CLI published green at 0.2.0 yet was uninstallable, because it
  * declared three phoenix-private `workspace:*` packages as registry deps (#3802).
  *
  * The published set is DERIVED from `.github/workflows/publish.yml`'s release-tag grammar rather

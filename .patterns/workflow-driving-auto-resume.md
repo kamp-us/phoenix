@@ -29,13 +29,13 @@ resume is gated on **both** a failure classification **and** a hard per-run cap.
 ## The two-part decision (the shipped mechanism)
 
 The decision is a pure, unit-tested core — `pipeline-cli resume-policy decide`
-([`packages/pipeline-cli/src/tools/resume-policy/`](../packages/pipeline-cli/src/tools/resume-policy/),
+(`packages/pipeline-cli/src/tools/resume-policy/`,
 `decideResume`) — so "resume up to K then surface" is testable **without spawning a real
 workflow**. It **composes** the failure classifier (it does not reimplement classification):
 
 ### 1. Classify the crash (compose `failure-classifier`, #1758)
 
-`decideResume` calls the sibling [`failure-classifier`](../packages/pipeline-cli/src/tools/failure-classifier/)'s
+`decideResume` calls the sibling `failure-classifier`'s
 `classify()` on the crash signal (reason / errorKind lifted off the `status: failed` event).
 The taxonomy is two classes, **default-deny toward LOGIC**: a TRANSIENT signal is a positive
 match on a known recoverable signature (null subagent result, API/session-limit death,
@@ -107,7 +107,7 @@ lifetime cap before re-invoking. A single healthy subagent is resumed at most
 of resuming the degraded one. The count is per subagent instance (its
 spawn/`resumeFromRunId`), so a fresh spawn zeroes the budget and the successor gets a full K
 again. The decision is the pure, unit-tested
-[`resumeCapDecision`](../packages/pipeline-cli/src/tools/drive-issue-flow/resume-cap.ts)
+`resumeCapDecision`
 (mirrored inline in `.claude/workflows/drive-issue.js` as `HEALTHY_RESUME_CAP` +
 `resumeCapDecision`, the enforcement home per ADR 0152).
 

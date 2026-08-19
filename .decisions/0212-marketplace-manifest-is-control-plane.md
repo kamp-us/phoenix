@@ -15,7 +15,7 @@ ADR [0071](0071-enforce-control-plane-at-github.md), hard-gated per ADR
 [0135](0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)) marks the surfaces
 where an autonomous green-then-ship merge could compromise the pipeline's own guards. The concrete
 boundary is the single-source path regex in
-[`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts),
+`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`,
 its byte-synced `CONTROL_PLANE_RE=` copy in
 `gh-issue-intake-formats.md`,
 and `.github/CODEOWNERS`.

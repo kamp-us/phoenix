@@ -201,8 +201,9 @@ export type ValidatorsRead =
  * The commands the repo declares as validators of its own workflow YAML, each with the files it reads.
  *
  * Declared rather than compiled in, because the commands that machine-read a repo's workflows are
- * that repo's own — in phoenix three `pipeline-cli` guards — and fabrika installs into repos it does
- * not control (ADR 0273). An argv array rather than a command line: fabrika spawns it directly, and
+ * that repo's own — phoenix declares none today, having retired the v1 CLI guards that held the slot
+ * — and fabrika installs into repos it does not control (ADR 0273). An argv array rather than a
+ * command line: fabrika spawns it directly, and
  * splitting a string would put a quoting grammar between the config and the process.
  *
  * `reads` is mandatory and non-empty: a validator that names no file it opens can contribute nothing

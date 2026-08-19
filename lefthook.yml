@@ -24,15 +24,17 @@ pre-commit:
       # is safe. `set --` turns the {staged_files} expansion into positional params
       # so the "nothing staged" early-out is a path-count test ($# -eq 0) — robust to
       # the multi-path expansion that gave a bare `[ -z … ]` extra operands (#806).
-      # Exit-code contract from bin.ts (#332): 2 = confirmed leak (block); any
-      # OTHER non-zero = scan couldn't run (warn + allow, CI is the authority);
-      # 0 = clean. The deny-list lives once in findLeaks — nothing is re-grepped here.
+      # Exit-code contract from the verb (#332, #6100): 12 = confirmed leak (block); any
+      # OTHER non-zero = scan couldn't run, or reported UNKNOWN (warn + allow, CI is the
+      # authority); 0 = clean. The deny-list lives once in findLeaks — nothing is re-grepped
+      # here. The empty-list early-out above is why the verb's zero-scope red (exit 7) is
+      # unreachable from this caller.
       run: |
         set -- {staged_files}
         [ "$#" -eq 0 ] && exit 0
         status=0
-        node packages/pipeline-cli/src/bin.ts leak-guard scan {staged_files} || status=$?
-        if [ "$status" -eq 2 ]; then
+        node packages/fabrika-cli/src/bin.ts guard leak-guard scan {staged_files} || status=$?
+        if [ "$status" -eq 12 ]; then
           echo "blocked by leak-guard (#173); fix or \`git commit --no-verify\` to bypass" >&2
           exit 1
         elif [ "$status" -ne 0 ]; then
@@ -83,52 +85,6 @@ pre-commit:
           echo "blocked by biome (lint/format, #2147); fix with \`pnpm format\` or \`git commit --no-verify\` to bypass" >&2
           exit 1
         fi
-
-    # Read-only ATTRIBUTION for the #2778 primary-index mass-staged-deletion corruption: the
-    # primary checkout's index accumulating a mass of staged deletions of the instruction-trust set
-    # (.claude/**, .decisions/**, …) is the loaded-gun state — a commit + push from the primary would
-    # land a control-plane mass-deletion on origin/main. This leg RECORDS (never blocks) the actor
-    # about to commit that state at the one caller-agnostic choke point git fires — pre-commit —
-    # capturing agent-type / session-id / cwd so the next occurrence is attributable. It NEVER gates
-    # a commit (the recorder always exits 0); *preventing* the staging + *blocking* the commit is the
-    # §CP hardening fix (ops/incidents/2778-primary-index-mass-staged-deletion.md), out of scope here.
-    #
-    # Fail-OPEN on an absent toolchain, exactly like leak-guard: a stripped-PATH / no-node worktree
-    # can't run the recorder — SKIP (exit 0), never abort a commit. A resolved recorder is itself
-    # non-blocking, so this leg can NEVER block a commit; CI/the §CP fix stay the real defense.
-    primary-index-tripwire:
-      run: |
-        command -v node >/dev/null 2>&1 || {
-          echo "primary-index-tripwire: no node on PATH (stripped-PATH/lean worktree); skipping #2778 attribution — read-only, non-blocking anyway" >&2
-          exit 0
-        }
-        node packages/pipeline-cli/src/tools/primary-index-guard/bin.ts record || true
-        exit 0
-
-    # The BLOCKING §CP containment for the #2778 corruption (#2784) — the prevention half the
-    # record-only tripwire above names. It REFUSES a commit carrying the mass-staged-deletion
-    # signature (a mass control-plane staged deletion) on the PRIMARY checkout: the one
-    # caller-agnostic choke point that fires as the loaded-gun commit is CREATED, before a push can
-    # fast-forward it to origin/main (ref-guard allows a fast-forward, so it can't catch this).
-    # Scoped to the primary — a linked worktree's commit lands on a PR-reviewed feature branch.
-    #
-    # Fail-CLOSED on the guard's own refuse, fail-OPEN when the CLI can't RUN — same contract as
-    # ref-guard: a not-yet-installed / stripped-PATH env (#787) or a bin remediation exit (#1798)
-    # must NOT abort every commit repo-wide, so the guard signals a deliberate refuse with a
-    # DEDICATED code (REFUSE_EXIT_CODE = 3), distinct from success (0) and any infra failure. ONLY
-    # code 3 blocks; every other non-zero swallows to a clean allow.
-    primary-index-guard:
-      run: |
-        command -v node >/dev/null 2>&1 || {
-          echo "primary-index-guard: no node on PATH (stripped-PATH/lean worktree); skipping #2778 block — CI/the §CP fix stay the authority" >&2
-          exit 0
-        }
-        status=0
-        node packages/pipeline-cli/src/bin.ts primary-index-guard pre-commit || status=$?
-        # exit 3 == the guard's deliberate refuse (abort the commit); any other non-zero == the CLI
-        # couldn't run (node/CLI/module absent, crash) → fail-OPEN, allow.
-        [ "$status" -eq 3 ] && exit 1
-        exit 0
 
 # The deps-dependent fast-fail tier (#2147): typecheck + changed-scoped unit tests fire
 # at PUSH time, not commit time, because they need `node_modules` (unlike biome). Scoped so
@@ -232,41 +188,3 @@ post-checkout:
         # --ignore-scripts: a worktree shares .git/hooks (the common dir), so firing `prepare`
         # (lefthook install) from here would rewrite the SHARED hooks — provision deps, not lifecycle.
         "$@" install --prefer-offline --ignore-scripts
-
-# The caller-agnostic ref-transaction guard (ADR 0160, #2143): refuse a DIVERGING
-# refs/heads/main ref-move on the shared primary checkout (a non-fast-forward of
-# origin/main). Unlike the #1571 worktree-guard PreToolUse Bash hook — which only arms
-# for a $WORKTREE_ROOT subagent and only matches its HEAD_MOVING set — git's own
-# reference-transaction boundary fires for EVERY ref update regardless of caller (agent
-# Bash, harness worktree machinery, a manually-run command, or another git hook), which
-# is exactly the class #2143's force-move (a bare branch -f/checkout -B/update-ref by the
-# PULLER role, outside the agent Bash tool-call path) slipped past.
-#
-# git's contract: this hook runs on prepared|committed|aborted and gets one line per
-# queued update (`<old> <new> <ref>`) on stdin (use_stdin: true); a non-zero exit is
-# honored ONLY in the 'prepared' state, aborting the whole transaction. `{0}` is the
-# state arg git passes. The pure decision core (ref-guard.ts) refuses only a diverging
-# refs/heads/main move (exit 1); the legitimate PULLER `merge --ff-only origin/main` is
-# a fast-forward and always passes (exit 0).
-#
-# Fail-CLOSED on the guard's own refusal but fail-OPEN when the CLI can't RUN — a
-# not-yet-installed / stripped-PATH env (#787), or bin.ts's unlinked-dep remediation on a
-# fresh/partial checkout (#1798, which itself exits 1), must NOT abort every ref
-# transaction repo-wide (the #1050 guard.sh fail-open invariant). The guard signals a
-# deliberate refuse with a DEDICATED code (REFUSE_EXIT_CODE = 3), distinct from both
-# success (0) and any infra failure (1 / 127) — so ONLY code 3 propagates as an abort;
-# every other non-zero swallows to a clean allow. `run` executes under sh.
-reference-transaction:
-  commands:
-    ref-guard:
-      use_stdin: true
-      run: |
-        # `|| status=$?` (not a bare call) so a non-zero node exit can NEVER trip an inherited
-        # `set -e` and abort the transaction as a side effect — the guard aborts ONLY on its own
-        # deliberate refuse code below, never on any infra failure (the #1050 fail-open invariant).
-        status=0
-        node packages/pipeline-cli/src/bin.ts ref-guard reference-transaction {0} || status=$?
-        # exit 3 == the guard's deliberate refuse (abort the transaction); any other
-        # non-zero == the CLI couldn't run (node/CLI/module absent, crash) → fail-OPEN, allow.
-        [ "$status" -eq 3 ] && exit 1
-        exit 0

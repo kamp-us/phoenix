@@ -1,5 +1,5 @@
 /**
- * `guard readme-guard check`, ported from `pipeline-cli readme-guard` (#938/#939) — the scope
+ * `guard readme-guard check`, ported from v1's `readme-guard` (#938/#939) — the scope
  * filter, the fail-closed floor and the exit taxonomy, over a scripted filesystem.
  */
 import {Effect} from "effect";

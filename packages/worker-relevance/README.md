@@ -11,7 +11,7 @@ list `pnpm-lock.yaml` as a trigger, because a lockfile delta *can* bump a
 worker-imported dependency's resolution and that genuinely needs integration.
 `dorny/paths-filter` can't attribute a lockfile diff to a specific package, so it
 conservatively runs the worker integration tier on **every** lockfile change — and
-a packages-only PR (every `@kampus/pipeline-cli` reorg child, #994) edits the
+a packages-only PR (every tooling-package reorg child, #994) edits the
 lockfile, so it paid the worker-integration tier (and the #1010/#813 stage-leak
 flake) despite touching nothing the worker runs. This classifier distinguishes a
 lockfile delta confined to non-worker importer blocks from one that touches a

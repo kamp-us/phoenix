@@ -1,6 +1,6 @@
 /**
  * The `design-inventory` extractor and its firewall — the `design-inventory.unit.test.ts` cases from
- * `pipeline-cli`.
+ * the v1 CLI.
  */
 import {describe, expect, it} from "vitest";
 import {

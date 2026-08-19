@@ -6,7 +6,7 @@
  * bytes this returns are the same bytes fed to the handler's stdin, so the fixture, not inline test
  * code, is the assertion path's input.
  *
- * Reimplemented rather than reused: v1's `pipeline-cli` has the same helper, and ADR 0238 bans
+ * Reimplemented rather than reused: v1's CLI has the same helper, and ADR 0238 bans
  * calling v1 — the scar is duplicated as behaviour, not as a dependency.
  *
  * The raw `node:fs`/`node:url` is deliberate: this is test-only scaffolding whose whole point is the

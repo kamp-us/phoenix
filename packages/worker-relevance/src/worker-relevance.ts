@@ -9,7 +9,7 @@
  * resolution and that genuinely needs integration. `dorny/paths-filter` can't
  * attribute a lockfile diff to a specific package, so it conservatively runs
  * integration on EVERY lockfile change — and a packages-only PR (every #994
- * pipeline-cli reorg child) edits the lockfile, so it pays the worker-integration
+ * tooling-package reorg child) edits the lockfile, so it pays the worker-integration
  * tier (and the #1010/#813 stage-leak flake) despite touching nothing the worker
  * runs. This core distinguishes a lockfile delta confined to non-worker importers
  * from one that touches a worker dep, and decides whether to skip.

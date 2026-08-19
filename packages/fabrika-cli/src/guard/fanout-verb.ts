@@ -1,7 +1,7 @@
 /**
  * `guard fanout-guard check` — a mutation over a fate-live fanned entity publishes its `/fate/live`
  * invalidation, and publishes it at the declared topic (ADR 0155, #1898), ported off
- * `pipeline-cli fanout-guard check` (epic #5720).
+ * v1's `fanout-guard check` (epic #5720).
  *
  * The verb is the IO boundary and nothing else: gather the manifest, the `LiveTopic` map and each
  * feature's mutation keys / publisher reference / live targets, hand them to the rule in
