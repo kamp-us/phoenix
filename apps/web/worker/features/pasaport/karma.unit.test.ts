@@ -1,14 +1,9 @@
 /**
- * `karmaBumpStatements` — pasaport's `KarmaBump` implementation (#2592). Proves the
- * two co-committed statements by rendering their `.toSQL()` over a no-op D1 (the
- * `promotion-sweep.unit.test.ts` / `set-display-name.unit.test.ts` idiom) — no engine,
- * so this is a unit test; the execute-and-read-back over real D1 is the integration
- * tier (`tests/integration/pasaport.test.ts` drives the same batch via `totalKarma`).
- *
- * The load-bearing correctness concern is that every bump emits BOTH a `total_karma`
- * UPDATE and a `karma_event` INSERT carrying the same signed delta — so a delta can't
- * land without its provenance row, and `SUM(karma_event.delta)` reconciles to
- * `total_karma`. A retraction is a NEGATIVE-delta INSERT, never a deletion (append-only).
+ * `karmaBumpStatements` (#2592), proved by rendering `.toSQL()` over a no-op D1 — no
+ * engine, so this is a unit test. The concern: every bump emits BOTH a `total_karma`
+ * UPDATE and a `karma_event` INSERT with the same signed delta, so a delta can't land
+ * without its provenance row and `SUM(karma_event.delta)` reconciles to `total_karma`.
+ * A retraction is a NEGATIVE-delta INSERT, never a deletion.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -47,8 +42,7 @@ const render = (s: Stmt) =>
 	// biome-ignore lint/plugin: drizzle's `Stmt`/`BatchItem` carries `.toSQL()` at runtime but doesn't expose it on the type; render it to assert the built SQL.
 	(s as unknown as {toSQL: () => {sql: string; params: unknown[]}}).toSQL();
 
-// The pre-mutation vote-change guard the real batch threads in (`targetTable[kind]`),
-// so these render tests exercise the SAME guard SQL production sees, not a stand-in.
+// The guard the real batch threads in, so these render tests see production's SQL.
 const guardFor = (kind: "definition" | "post" | "comment", targetId: string, isCast: boolean) =>
 	targetTable[kind].voteChangeGuard(renderDb, targetId, "voter-1", isCast);
 
@@ -106,9 +100,8 @@ describe("karmaBumpStatements — the bump + its append-only ledger row (#2592)"
 	});
 
 	it("the bump delta and the event delta are the SAME value — they can't diverge", () => {
-		// The reconciliation invariant at the statement level: `total_karma += delta` and
-		// `karma_event.delta = delta` read the one `input.delta`, so SUM(events) tracks the
-		// accumulator by construction (#2592).
+		// Both statements read the one `input.delta`, so SUM(events) tracks the accumulator
+		// by construction (#2592).
 		for (const delta of [1, -1]) {
 			const stmts = karmaBumpStatements(renderDb, {
 				recipientId: "u",
@@ -125,13 +118,9 @@ describe("karmaBumpStatements — the bump + its append-only ledger row (#2592)"
 });
 
 describe("karmaBumpStatements — the pre-mutation guard blocks a raced double-bump (#2552)", () => {
-	// The double-bump defect: `Vote.castImpl` probes idempotency OUTSIDE the batch, so two
-	// concurrent identical casts both see `alreadyCast=false` and both run the batch. Before
-	// #2552 the karma UPDATE was unconditional, so `total_karma` bumped twice (and a second
-	// ledger row landed). The fix gates BOTH statements on `input.guard` — the vote row's
-	// PRE-mutation presence — and Vote orders the pair ahead of the vote write. Here we prove
-	// the statement-level invariant that makes the second cast a no-op: bump and event carry
-	// the SAME `NOT EXISTS(vote row)` predicate, so they commit together or not at all.
+	// The double-bump defect (#2552): `Vote.castImpl` probes idempotency OUTSIDE the batch,
+	// so two concurrent identical casts both run it. Both statements carry the SAME
+	// `NOT EXISTS(vote row)` predicate, which is what makes the second cast a no-op.
 	it("bump AND event are gated by the identical vote-row predicate — they can't diverge", () => {
 		const stmts = karmaBumpStatements(renderDb, {
 			recipientId: "author-1",
@@ -141,9 +130,8 @@ describe("karmaBumpStatements — the pre-mutation guard blocks a raced double-b
 			at: new Date("2026-01-02T03:04:05Z"),
 			guard: guardFor("definition", "def-1", true),
 		});
-		// The one guard subquery, keyed on the exact vote row (target + voter) whose presence
-		// decides whether the cast changed state, appears verbatim in BOTH statements — so a
-		// duplicate that finds the row present writes neither the delta nor the ledger row.
+		// The guard subquery appears verbatim in BOTH statements, so a duplicate that finds
+		// the row present writes neither the delta nor the ledger row.
 		const subquery = 'not exists (select 1 from "definition_vote"';
 		assert.include(render(stmts[0]).sql, subquery, "the bump is gated on the vote row");
 		assert.include(render(stmts[1]).sql, subquery, "the ledger row is gated by the same predicate");

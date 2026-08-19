@@ -1,19 +1,9 @@
 /**
- * `Notification` domain coverage (#1694) — record / list / unreadCount / markRead
- * scoping, the decisions that are wrong-or-right with no engine (ADR 0040, ADR
- * 0082 T1/T2; `.patterns/effect-testing.md`). The `Drizzle` seam is substituted
- * directly (the `Funnel` idiom):
+ * `Notification` domain coverage (#1694) — the decisions that are wrong-or-right with no engine
+ * (ADR 0082; `.patterns/effect-testing.md`), with the `Drizzle` seam substituted directly.
  *
- *   - **recipient scoping** — the exported pure builders' rendered SQL
- *     (`.toSQL()` over a no-op D1) is asserted to carry `recipient_id` in every
- *     read/write predicate, so "touch someone else's notification" matches zero
- *     rows by construction. This is the scoping AC's test.
- *   - **markRead** — end-to-end over the seam: the update's `changes` surfaces as
- *     `marked` (0 = foreign/unknown/already-read id, an idempotent no-op).
- *   - **list** — newest-first keyset paging: the `first + 1` probe folds into
- *     `{rows, hasNextPage, endCursor}`; a cursor that resolves to no row (foreign
- *     or dead id) is the shared cursor-miss empty page, never a probe.
- *   - **unreadCount / record** — the fold and the insert's field mapping.
+ * Recipient scoping is proven on RENDERED SQL: the exported pure builders' `.toSQL()` over a
+ * no-op D1 must carry `recipient_id` in every read/write predicate.
  */
 
 import {assert, describe, it} from "@effect/vitest";
@@ -33,12 +23,7 @@ import {
 	unreadCountQuery,
 } from "./Notification.ts";
 
-/**
- * A recording `LivePublisher` (#1700): captures every `update(type, id, opts)` so a
- * test can assert the publish seam fired on the recipient's `NotificationChannel`
- * topic. `record`/`recordAggregate` yield `LivePublisher` for the fire-and-forget
- * live fan-out, so the seam is provided here for those cases.
- */
+// Captures every `update(type, id, opts)` so a test can assert the #1700 publish seam fired.
 const recordingPublisher = () => {
 	const updates: Array<{type: string; id: string | number; data: unknown}> = [];
 	const layer = Layer.succeed(LivePublisher)({
@@ -54,8 +39,7 @@ const recordingPublisher = () => {
 	return {updates, layer};
 };
 
-// A real drizzle client over a no-op D1 — used ONLY to render `.toSQL()`; it
-// never executes.
+// A real drizzle client over a no-op D1 — used ONLY to render `.toSQL()`; it never executes.
 // biome-ignore lint/plugin: `D1Database` is a host binding that can't be structurally constructed in a fake; nothing here executes against it.
 const noopD1 = {
 	prepare: () => ({
@@ -173,7 +157,6 @@ describe("Notification.listForRecipient — newest-first keyset paging", () => {
 		}).pipe(
 			Effect.provide(
 				notificationLayer(
-					// One read (no cursor to resolve): the LIMIT 3 probe.
 					scriptedSequence([
 						[row("n3", new Date(3000)), row("n2", new Date(2000)), row("n1", new Date(1000))],
 					]),
@@ -248,8 +231,7 @@ describe("recordAggregate builders — recipient-scoped, unread-only (the anti-h
 });
 
 describe("Notification.recordAggregate — bump-or-insert in one batch", () => {
-	// recordAggregate does one batch (bump+insert) then reads the fresh unread count
-	// for the live publish (#1700) — so the seam is a batch AND a run.
+	// One batch (bump+insert), then a run for the fresh unread count the live publish carries.
 	const aggregateAccess = (
 		batchResults: ReadonlyArray<unknown>,
 		unreadRows: ReadonlyArray<unknown>,
@@ -370,8 +352,7 @@ describe("Notification.recordDigest — bump-or-insert in one batch", () => {
 });
 
 describe("Notification.record — the emitter write surface + the live publish (#1700)", () => {
-	// record does the insert (1 run) then reads the fresh unread count for the live
-	// publish (2nd run): the recipient-scoped `NotificationChannel` fan-out.
+	// The insert is one run; the fresh unread count for the publish is a second.
 	it.effect("inserts, returns a fresh id, and publishes the recipient's fresh unread count", () => {
 		const {updates, layer} = recordingPublisher();
 		return Effect.gen(function* () {
@@ -384,8 +365,6 @@ describe("Notification.record — the emitter write surface + the live publish (
 			});
 			assert.isString(id);
 			assert.isAbove(id.length, 0);
-			// The live publish fired on the recipient's own channel entity, carrying the
-			// re-read unread count — the recipient-scoped seam every emitter inherits.
 			assert.lengthOf(updates, 1);
 			assert.strictEqual(updates[0]?.type, "NotificationChannel");
 			assert.strictEqual(updates[0]?.id, "me");

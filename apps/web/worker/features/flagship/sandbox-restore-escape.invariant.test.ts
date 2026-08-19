@@ -1,28 +1,13 @@
 /**
- * The çaylak sandbox-escape-via-restore security invariant (#1811). A çaylak
- * escapes the #1205 mod-only sandbox for their OWN content by deleting then
- * restoring it: the old `restore : Removed → Live` was unconditional and both
- * `toColumns(Removed)`/`toColumns(Live)` nulled `sandboxedAt`, so a delete→restore
- * round-trip cleared the sandbox marker AND broadcast the node to the always-Live
- * public feed — no moderator in the loop. This defeats the sandbox for all three
- * content types through the ONE shared `EntityLifecycle.restore` seam.
+ * The çaylak sandbox-escape-via-restore security invariant (#1811): a çaylak used to
+ * escape the #1205 mod-only sandbox by deleting then restoring their own content, since
+ * `restore` cleared `sandboxedAt` and broadcast the node to the always-Live public feed
+ * with no moderator in the loop.
  *
- * The fix (state-preserving, ADR 0096 extended): `Removed` carries the pre-removal
- * `sandboxedAt`, so `restore` is sandbox-FAITHFUL — sandboxed content returns to
- * `Sandboxed`, only live content returns to `Live`. The pure lifecycle proof lives
- * in `../lifecycle/EntityLifecycle.unit.test.ts` (`restore : Removed → Sandboxed`,
- * the column round-trip). This file proves the RESOLVER consequence directly: the
- * restore broadcast is routed through the #1205/#1280 `decidePublish` gate, so a
- * sandboxed restore is SUPPRESSED from the viewer-blind public topic — for post,
- * comment, AND definition, the three call sites of the one fix.
- *
- * Wire-boundary unit test (ADR 0082): the `Pano`/`Sozluk`/`LivePublisher` seams are
- * substituted directly — no DB. The service's restore returns the `sandboxedAt` the
- * content landed back at; a recording `LivePublisher` captures which topic keys the
- * resolver actually published, so "a sandboxed restore does not reach the public
- * feed" is asserted as the ABSENCE of the node-append topic. Mirrors the
- * handler-over-stubs seam of `../pano/draft-save.invariant.test.ts` and
- * `../sozluk/definition-mutation.unit.test.ts`.
+ * The pure lifecycle proof (`restore : Removed → Sandboxed`) lives in
+ * `../lifecycle/EntityLifecycle.unit.test.ts`. This file proves the RESOLVER consequence
+ * for post, comment AND definition: a sandboxed restore is asserted as the ABSENCE of the
+ * node-append topic on a recording `LivePublisher` (wire-boundary, no DB — ADR 0082).
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
@@ -44,11 +29,8 @@ import {Sozluk, type TermPage} from "../sozluk/Sozluk.ts";
 const AUTHOR = {id: "caylak-1", email: "caylak@example.com", name: "çaylak"};
 const AT = new Date("2026-07-03T00:00:00.000Z");
 
-// A recording `LivePublisher`: `publish` captures the topic key the resolver's
-// `live.*` chose; `waitUntil` collects the fire-and-forget work so it can be
-// drained. The gated `appendNode` publishes NOTHING when `decidePublish` suppresses
-// it (`broadcastIf` returns `Effect.void`), so a suppressed restore leaves the topic
-// absent from `recorded` — exactly the escape-prevention assertion.
+// The gated `appendNode` publishes NOTHING when `decidePublish` suppresses it, so a
+// suppressed restore leaves the topic absent from `recorded` — the assertion itself.
 const recordingLive = () => {
 	const recorded: Array<string> = [];
 	const scheduled: Array<Promise<unknown>> = [];
@@ -64,13 +46,11 @@ const recordingLive = () => {
 				},
 			}),
 		),
-		// The base-feed purger a fanned pano mutation fires (#2324) — no-op here.
 		noopPanoFeedCache,
 	);
 	return {recorded, scheduled, layer};
 };
 
-/** A rejection while draining scheduled `waitUntil` work — dies the fiber. */
 class DrainRejected extends Schema.TaggedErrorClass<DrainRejected>()("test/DrainRejected", {
 	cause: Schema.Unknown,
 }) {}
@@ -81,11 +61,8 @@ const drain = (scheduled: Array<Promise<unknown>>) =>
 		catch: (cause) => new DrainRejected({cause}),
 	}).pipe(Effect.orDie);
 
-// Service stubs (the `definition-mutation.unit.test.ts` proxy idiom): only the
-// methods the restore resolver reaches are scripted; every other method dies on
-// contact, so a passing test proves the resolver touched only the restore
-// round-trip + the re-resolve reads. `sandboxedAt` is what the service's restore
-// reports (non-null ⇒ landed back in the sandbox).
+// Every unscripted method dies on contact, so a passing test proves the resolver touched
+// only the restore round-trip + the re-resolve reads.
 const panoStub = (methods: Partial<typeof Pano.Service>): Layer.Layer<Pano> =>
 	Layer.succeed(
 		Pano,
@@ -160,14 +137,12 @@ const termPage = (): TermPage => ({
 	definitions: [definitionRow()],
 });
 
-// The gated node-append topic each restore path routes through — the viewer-blind
-// public topic a sandbox escape would leak the node onto.
+// The viewer-blind public topics a sandbox escape would leak the node onto.
 const POST_FEED_TOPIC = liveGlobalConnectionTopic("posts");
 const COMMENT_THREAD_TOPIC = liveConnectionTopic("Post.comments", {id: "post-1"});
 const DEFINITION_TERM_TOPIC = liveConnectionTopic("Term.definitions", {id: "term-1"});
 
 describe("çaylak sandbox-escape via delete→restore is structurally prevented (#1811)", () => {
-	// POST — the restore broadcast is gated; sandboxed ⇒ suppressed, live ⇒ published.
 	const runPostRestore = (restoreSandboxedAt: Date | null) =>
 		Effect.gen(function* () {
 			const {recorded, scheduled, layer} = recordingLive();
@@ -207,8 +182,8 @@ describe("çaylak sandbox-escape via delete→restore is structurally prevented 
 		}),
 	);
 
-	// COMMENT — `live.post.update` (commentCount) always fires; the GATED signal is the
-	// thread appendNode, so filter to it.
+	// `live.post.update` (commentCount) always fires; the GATED signal is the thread
+	// appendNode, so the assertions filter to it.
 	const runCommentRestore = (restoreSandboxedAt: Date | null) =>
 		Effect.gen(function* () {
 			const {recorded, scheduled, layer} = recordingLive();
@@ -256,7 +231,6 @@ describe("çaylak sandbox-escape via delete→restore is structurally prevented 
 		}),
 	);
 
-	// DEFINITION
 	const runDefinitionRestore = (restoreSandboxedAt: Date | null) =>
 		Effect.gen(function* () {
 			const {recorded, scheduled, layer} = recordingLive();

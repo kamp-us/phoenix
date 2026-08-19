@@ -1,13 +1,7 @@
 /**
- * `RelationStoreLive` unit coverage — the port-contract decisions that are
- * wrong-or-right with no database (ADR 0082): a present row → `has === true`, an
- * absent row → `has === false`, the read runs fresh on every call (no cached
- * authority), and the `object` column key is the resource's `(type, id)` pair.
- *
- * The `Drizzle` seam is substituted directly (the `Report.unit.test.ts` idiom): a
- * scripted `run` returns the queued lookup result verbatim without an engine. Whether
- * the WHERE actually resolves the composite-PK existence against real D1 is
- * only-wrong-if-the-DB-differs and lives in the integration tier
+ * `RelationStoreLive` unit coverage — the port-contract decisions that hold with no database
+ * (ADR 0082), with the `Drizzle` seam substituted directly. Whether the WHERE actually resolves
+ * the composite-PK existence against real D1 is the integration tier's job
  * (`tests/integration/kunye-relation-store.test.ts`).
  */
 
@@ -19,9 +13,8 @@ import {createDrizzle, Drizzle, type DrizzleAccess, type DrizzleDb} from "../../
 import * as schema from "../../db/drizzle/schema.ts";
 import {objectKey, RelationStoreLive} from "./RelationStore.ts";
 
-// A `run` that returns the queued lookup result verbatim (the callback is never
-// invoked, so no engine is needed) and counts how many times it was called — the
-// counter pins the fresh-per-call read.
+// Returns the queued result verbatim (the callback is never invoked, so no engine is needed)
+// and counts calls — the counter pins the fresh-per-call read.
 function countingAccess(result: unknown): {access: DrizzleAccess; calls: () => number} {
 	const state = {n: 0};
 	return {
@@ -178,9 +171,6 @@ describe("RelationStore.subjectsOf — the open-set enumeration for one (relatio
 });
 
 describe("RelationStore.has — query shape (statement pin, no engine)", () => {
-	// The production lookup compiles to an existence read over `relation_tuple`,
-	// filtered by the three tuple columns with the `objectKey` serialization. The real
-	// engine resolving it is the integration tier's job; this pins the SQL contract.
 	it("filters subject/relation/object on relation_tuple, limit 1", () => {
 		const db: DrizzleDb = createDrizzle({} as D1Database);
 		const {sql, params} = db

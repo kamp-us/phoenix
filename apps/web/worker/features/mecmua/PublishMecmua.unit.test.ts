@@ -1,13 +1,9 @@
 /**
- * Unit — the `PublishMecmua` write-gate through the real `Capability.Level` seam
- * (#2497, epic #2467, #2463). The load-bearing, non-optional guarantee: a **çaylak
- * is REFUSED publish** and a **yazar is allowed** — the earned-authorship floor (ADR
- * 0107 §7, one global künye identity). Standing is read off the real {@link Kunye}
- * service (a {@link makeKunyeStub} keyed by account id), the actor flows through
- * {@link CurrentActor}, and the agent arm routes the fail-closed
- * {@link AgentAuthorityV1}, so the denial path is the real discharge — not a
- * re-implemented check. A denied çaylak/visitor/anonymous fails {@link RequiresLevel}
- * (`FORBIDDEN`) carrying the needed `yazar` rank.
+ * The `PublishMecmua` write-gate through the real `Capability.Level` seam. The load-bearing,
+ * non-optional guarantee: a **çaylak is REFUSED publish** and a **yazar is allowed** (ADR
+ * 0107 §7). Standing is read off the real {@link Kunye} service and the agent arm routes the
+ * fail-closed {@link AgentAuthorityV1}, so the denial path is the real discharge — not a
+ * re-implemented check.
  */
 import {
 	type Actor,
@@ -26,7 +22,6 @@ import {makeKunyeStub} from "../kunye/Kunye.testing.ts";
 import type {Kunye, Tier} from "../kunye/Kunye.ts";
 import {PublishMecmua} from "./PublishMecmua.ts";
 
-/** Account id → earned rank, the standing the real `Kunye.tierOf` read resolves. */
 const standings: Record<string, Tier> = {yzr: "yazar", cyl: "çaylak", vis: "visitor"};
 
 const kunye = makeKunyeStub({tierOf: (id) => Effect.succeed(standings[id] ?? "visitor")});
@@ -39,7 +34,6 @@ const require = (actor: Actor): Exit.Exit<Grant<PublishMecmua>, RequiresLevel> =
 		),
 	);
 
-/** The `RequiresLevel` a denied discharge failed with. */
 const denial = (exit: Exit.Exit<unknown, RequiresLevel>): RequiresLevel => {
 	const failure = Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : Option.none();
 	if (Option.isNone(failure)) throw new Error("expected a RequiresLevel denial, got a grant");
@@ -78,8 +72,8 @@ describe("the agent arm routes the fail-closed v1 seam", () => {
 	});
 });
 
-// The declared R channel — parity with `Authorship.typetest.ts`'s discharge assertion:
-// `.require` needs the ports + the standing read, never the proof it mints.
+// Parity with `Authorship.typetest.ts`: `.require` needs the ports + the standing read,
+// never the proof it mints.
 const _requiresTheThreePorts: Effect.Effect<
 	Grant<PublishMecmua>,
 	RequiresLevel,

@@ -1,13 +1,8 @@
 /**
- * Unit — the `Authorship` rights through the real `Capability.Level` seam: a
- * yazar clears `OpenTerm`, a çaylak is denied `OpenTerm` but clears the
- * çaylak-floored `AddEntry` (ordered-ladder `gte`), and a visitor / the
- * anonymous actor are denied both. Standing is read off the real {@link Kunye}
- * service (a {@link makeKunyeStub} keyed by account id), the actor flows through
- * {@link CurrentActor}, and the agent arm routes the fail-closed
- * {@link AgentAuthorityV1}, so the denial paths are the real discharge, not a
- * re-implemented check. Insufficient standing fails {@link RequiresLevel}
- * (`FORBIDDEN`), carrying the needed rank.
+ * The `Authorship` rights through the REAL `Capability.Level` seam — the denial paths
+ * are the real discharge, not a re-implemented check. Standing is read off the real
+ * {@link Kunye} service, the actor flows through {@link CurrentActor}, and the agent
+ * arm routes the fail-closed {@link AgentAuthorityV1}.
  */
 import {
 	type Actor,
@@ -26,12 +21,10 @@ import {RequiresLevel} from "./errors.ts";
 import {makeKunyeStub} from "./Kunye.testing.ts";
 import type {Kunye, Tier} from "./Kunye.ts";
 
-/** Account id → earned rank, the standing the real `Kunye.tierOf` read resolves. */
 const standings: Record<string, Tier> = {yzr: "yazar", cyl: "çaylak", vis: "visitor"};
 
 const kunye = makeKunyeStub({tierOf: (id) => Effect.succeed(standings[id] ?? "visitor")});
 
-/** Discharge a right against an actor through all three real ports (one merged Layer). */
 const require = <Self>(
 	gate: Effect.Effect<Grant<Self>, RequiresLevel, CurrentActor | AgentAuthority | Kunye>,
 	actor: Actor,
@@ -42,7 +35,6 @@ const require = <Self>(
 		),
 	);
 
-/** The `RequiresLevel` a denied discharge failed with. */
 const denial = (exit: Exit.Exit<unknown, RequiresLevel>): RequiresLevel => {
 	const failure = Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : Option.none();
 	if (Option.isNone(failure)) throw new Error("expected a RequiresLevel denial, got a grant");

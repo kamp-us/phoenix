@@ -1,11 +1,8 @@
 /**
- * `parseLiveControlRequest` decode contract for the closed live-topic set. The
- * one non-obvious guarantee under test: a `subscribeConnection` on a REGISTERED
- * procedure (`savedPosts`, the per-viewer saved list) decodes instead of failing
- * with the `BAD_REQUEST` the unregistered procedure returned (#2214), while an
- * unknown procedure still fails closed.
- *
- * Unit tier (ADR 0082): pure decode, no storage, no platform fake.
+ * `parseLiveControlRequest` decode contract. The non-obvious guarantee: a
+ * `subscribeConnection` on a REGISTERED procedure decodes rather than returning the
+ * `BAD_REQUEST` an unregistered one did (#2214), while an unknown procedure still fails
+ * closed.
  */
 
 import {assert, it} from "@effect/vitest";
@@ -56,19 +53,12 @@ it.effect("rejects a subscribeConnection on an unregistered procedure with BAD_R
 	}),
 );
 
-// A connectionId/entityId swap fails typecheck: the two live-protocol ids carry
-// distinct nominal brands, so neither is assignable to the other and the decoded
-// `LiveControlRequest`/subscribe-op surfaces expose the branded types. Pinned with
-// expectTypeOf, not `@ts-expect-error` — the effect LSP plugin's TS377003 escapes the
-// directive (see vote-boundary.unit.test.ts). This is the type-level half of the guard;
-// the decode tests above cover the byte-identical runtime.
+// Pinned with expectTypeOf, not `@ts-expect-error` — the effect LSP plugin's TS377003
+// escapes the directive (see vote-boundary.unit.test.ts).
 vit("connectionId and entityId are distinct branded surfaces", () => {
-	// Each id is branded, not a bare string / bare union (the brand is what a swap trips).
 	expectTypeOf<ConnectionId>().not.toEqualTypeOf<string>();
 	expectTypeOf<EntityId>().not.toEqualTypeOf<string | number>();
-	// The two brands are distinct, so a connectionId can't stand in for an entityId.
 	expectTypeOf<ConnectionId>().not.toEqualTypeOf<EntityId>();
-	// The decoded protocol surfaces expose the branded types (not bare strings/unions).
 	expectTypeOf<LiveControlRequest["connectionId"]>().toEqualTypeOf<ConnectionId>();
 	expectTypeOf<
 		Extract<LiveControlOperation, {kind: "subscribe"}>["entityId"]

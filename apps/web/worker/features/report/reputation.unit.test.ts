@@ -1,11 +1,8 @@
 /**
- * The triage-loop reputation-in-row merge — the T1 worker-seam unit (#1703, ADR
- * 0138), no engine. The decisions asserted: an author's tier/karma/prior-removals
- * fold onto the row's reputation cluster; an unresolved author leaves the WHOLE
- * cluster null (never a partial reputation); distinct-reporter count folds through,
- * falling back to the group's report count when the diversity read didn't separate
- * it (the PK-collapsed default). The batched künye / removal-count READS are
- * integration-tier; what's wrong-or-right without D1 is this pure merge.
+ * The triage-loop reputation-in-row merge (#1703, ADR 0138). The two decisions worth
+ * naming: an unresolved author leaves the WHOLE cluster null rather than a partial
+ * reputation, and the distinct-reporter count falls back to the group's report count
+ * when the diversity read did not separate it. The batched reads are integration-tier.
  */
 import {assert, describe, it} from "@effect/vitest";
 import type {OpenReportGroup} from "./Report.ts";

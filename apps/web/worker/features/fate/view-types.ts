@@ -4,8 +4,7 @@
  */
 
 /**
- * Identity row mapping. Interfaces don't satisfy `FateDataView`'s
- * `Record<string, unknown>` item bound (no implicit index signature); this
- * mapped type does, without repeating the row's fields.
+ * Interfaces don't satisfy `FateDataView`'s `Record<string, unknown>` item bound (no
+ * implicit index signature); this mapped type does, without repeating the row's fields.
  */
 export type ViewRow<Row> = {[K in keyof Row]: Row[K]};

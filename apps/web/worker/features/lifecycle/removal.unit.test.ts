@@ -1,30 +1,11 @@
 /**
- * The removal SUBSTRATE ({@link Removal.removeEntity}/{@link Removal.restoreEntity}, #1129)
- * driven directly through its own `RemovalSequence` port — the interface-level coverage the
- * substrate lacked (#2017). Its headline invariants (ADR 0096 §3, ADR 0080) were asserted only
- * by prose and exercised indirectly through the plane callers; the caller-side ceremony that
- * wraps it (`apply-removal-transition.unit.test.ts`, #2012) uses an INERT `RemovalSequence`, so
- * nothing drove the substrate's own ordering / batch-shape / FTS decisions.
+ * The removal SUBSTRATE driven directly through its own `RemovalSequence` port. A RECORDING
+ * port renders every `run`/`batch` builder's `.toSQL()` over a `drizzle(noopD1)` and appends
+ * each call to one ordered stream, so the ordering, the run-vs-batch routing and the FTS
+ * shape are all assertable without an engine (ADR 0082/0104/0105).
  *
- * The port is purpose-built for substitution, so this substitutes a RECORDING `RemovalSequence`
- * — the `Vote.clearTarget`-batch-shape idiom (`vote/Vote.unit.test.ts`) crossed with the
- * `.toSQL()` render double (`sozluk/persist-term-summary.unit.test.ts`, ADR 0082/0104/0105: no
- * engine, no revived `node:sqlite` fake). Every `run`/`batch` builder is invoked against a
- * `drizzle(noopD1)` so the produced statements render to real SQL, and every call (including
- * `clearTarget`) is appended to one ordered event stream. That lets us assert THROUGH the
- * interface:
- *
- *   (a) `clearTarget` (the vote wipe, karma KEPT) fires BEFORE any content stamp on a remove,
- *       and NOT AT ALL on a restore (ADR 0096 §3/§4);
- *   (b) `post` routes via `batch` (stamp + FTS lockstep, ADR 0080) while `comment`/`definition`
- *       route via a single `run` (FTS-free);
- *   (c) a `post` restore re-enters `post_search` FROM the title (delete + insert bound to it),
- *       a `post` remove drops it (delete only) — the FTS re-entry is asymmetric by direction;
- *   (d) an illegal transition intent is unrepresentable (title-less post restore / a title on a
- *       comment restore / a stray kind do not typecheck).
- *
- * Row-level fidelity on real D1 (the batch actually commits all-or-none) stays the integration
- * tier's job; this proves the substrate ASKS the port for the right shape, in the right order.
+ * Row-level fidelity on real D1 stays the integration tier's job; this proves the substrate
+ * ASKS the port for the right shape, in the right order.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -63,9 +44,7 @@ const renderDb = drizzle(noopD1, {relations});
 
 type Rendered = {sql: string; params: unknown[]};
 
-// One ordered event per port call. `clearTarget` records the (kind,id) the vote wipe targets;
-// `run`/`batch` record the mode + the rendered SQL of every statement the builder produced, so
-// the ordering, the run-vs-batch routing, and the FTS shape are all readable off `events`.
+// One ordered event per port call, carrying the mode + the rendered SQL of every statement.
 type Event =
 	| {readonly op: "clearTarget"; readonly kind: TargetKind; readonly id: string}
 	| {readonly op: "run"; readonly stmts: ReadonlyArray<Rendered>}
@@ -75,8 +54,6 @@ const render = (stmt: unknown): Rendered =>
 	// drizzle's `BatchItem`/`Stmt` carries `.toSQL()` at runtime but doesn't expose it on the type.
 	(stmt as {toSQL: () => Rendered}).toSQL();
 
-// A recording `RemovalSequence`: the substrate calls it exactly as it would the real Drizzle
-// seam, but every builder is rendered instead of executed and every call is appended to `events`.
 const recordingSeq = () => {
 	const events: Event[] = [];
 	const seq: Removal.RemovalSequence = {
@@ -86,10 +63,8 @@ const recordingSeq = () => {
 			}),
 		run: <A>(fn: (db: DrizzleDb) => Promise<A>) =>
 			Effect.sync(() => {
-				// `run` takes a single-statement builder; render it as a one-element list so the
-				// two modes share one shape. The substrate's `run` builder returns the drizzle
-				// statement synchronously (it's `db.update(...)`), never a resolved promise — we
-				// render its `.toSQL()`, we do not execute the query.
+				// `run` takes a single-statement builder; render it as a one-element list so the two
+				// modes share one shape. Nothing executes — only `.toSQL()` is read.
 				const stmt = fn(renderDb as never) as unknown;
 				events.push({op: "run", stmts: [render(stmt)]});
 				return undefined as A;
@@ -104,9 +79,8 @@ const recordingSeq = () => {
 	return {seq, events};
 };
 
-// The stamped-columns a caller loads from `Lifecycle.remove(...)`/`restore(...)` and hands the
-// substrate. The substrate does not compute these — it writes whatever it is given — so a fixed
-// pair suffices; the ordering/shape is what varies by intent.
+// The substrate does not compute the stamped columns — it writes whatever it is given — so
+// one fixed pair suffices; the ordering/shape is what varies by intent.
 const removedColumns: Removal.RemovalColumns = {
 	removedAt: now,
 	removedBy: "mod-1",
@@ -301,9 +275,8 @@ describe("post FTS lockstep — remove drops the search row, restore re-enters i
 						/insert into .*post_search/i,
 						"then re-inserts the FTS row",
 					);
-					// The re-indexed norm is derived FROM the title the caller passed — the restore
-					// re-enters search from the title (not from a stale/empty value). The title is
-					// normalized before binding, so assert the bound param derives from POST_TITLE.
+					// The re-indexed norm derives FROM the title the caller passed, not from a stale or
+					// empty value; the title is normalized before binding.
 					assert.isTrue(
 						(insert?.params ?? []).some(
 							(p) => typeof p === "string" && p.includes("kelime") && p.includes("baslik"),
@@ -318,13 +291,10 @@ describe("post FTS lockstep — remove drops the search row, restore re-enters i
 describe("removeEntity / restoreEntity — illegal transitions are unrepresentable (compile-time)", () => {
 	it("a post restore without its title does not typecheck; a comment restore with a title does not either", () => {
 		const {seq} = recordingSeq();
-		// A post restore MUST carry the title its FTS row is rebuilt from.
 		// @ts-expect-error — a title-less post restore is missing `title`.
 		void Removal.restoreEntity(seq, {kind: "post", id: "p1"}, liveColumns, now);
-		// The FTS-free kinds carry NO title — a title on a comment restore is not part of the intent.
 		// @ts-expect-error — `title` is not a member of a comment `RestoreTarget`.
 		void Removal.restoreEntity(seq, {kind: "comment", id: "c1", title: "x"}, liveColumns, now);
-		// A stray kind is not a valid target at all.
 		// @ts-expect-error — "reaction" is not a removable entity kind.
 		void Removal.removeEntity(seq, {kind: "reaction", id: "r1"}, removedColumns, now);
 

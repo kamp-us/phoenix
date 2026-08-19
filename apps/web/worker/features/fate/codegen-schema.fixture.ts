@@ -1,10 +1,8 @@
 /**
- * Codegen fixture — the `schema.ts` shape of the fate-effect era, fed to the
- * REAL fate Vite plugin in `codegen-vite.test.ts`. Mirrors `schema.ts`'s shape
- * but is self-contained (no live feature imports), so it pins the module SHAPE
- * against the plugin, not the live config's content. Handlers close over a
- * throw-on-touch Proxy standing in for D1: if the codegen path executed
- * anything, generation would fail loudly — the "no D1 at build time" proof.
+ * Codegen fixture fed to the REAL fate Vite plugin in `codegen-vite.test.ts`. Self-contained
+ * (no live feature imports), so it pins the module SHAPE against the plugin, not the live
+ * config's content. Handlers close over a throw-on-touch Proxy standing in for D1: if the
+ * codegen path executed anything, generation would fail loudly.
  */
 
 import {type Entity, Fate, FateDataView, FateExecutor, FateServer} from "@kampus/fate-effect";
@@ -26,20 +24,16 @@ class DefinitionView extends FateDataView<DefinitionRow>()("Definition")({
 	term: true,
 }) {}
 
-/** The kernel views the plugin's schema walk picks up (`isDataView` filter). */
 export const termDataView = TermView.view;
 export const definitionDataView = DefinitionView.view;
 
-/** The entity types the generated client imports by manifest type name. */
 export type Term = Entity<typeof TermView>;
 export type Definition = Entity<typeof DefinitionView>;
 
-/** Client-exposed roots (the `views.ts` convention: annotated for nameability). */
 export const Root: Record<string, unknown> = {
 	term: termDataView,
 };
 
-/** The build-time stand-in for a D1 binding: ANY access throws. */
 const d1: Record<string, unknown> = new Proxy(
 	{},
 	{
@@ -114,5 +108,4 @@ const config = FateServer.config({
 	sources: [termSource, definitionSource],
 });
 
-/** What the fate Vite plugin requires: a `fateServer` value with `.manifest`. */
 export const fateServer = FateExecutor.toCodegenServer(config);

@@ -1,12 +1,10 @@
 /**
  * Shared live wire types + topic helpers for the SSE fan-out (ADR 0023).
  *
- * Import-safe in a plain Node runner (no `cloudflare:workers`): the per-request
- * publisher and the fate codegen graph depend on it, while only `live-do.ts` and
- * the worker entry pull in the Workers runtime. The frame shapes mirror fate's
- * native `livePayload` / `liveConnectionPayload` / `sse()` exactly, so the
- * browser's native fate SSE client parses them unchanged — phoenix only swaps
- * WHERE the frames are produced (the DO), not their shape.
+ * Must stay import-safe in a plain Node runner (no `cloudflare:workers`) — the fate
+ * codegen graph depends on it. Frame shapes mirror fate's native `livePayload` /
+ * `liveConnectionPayload` / `sse()` exactly, so the browser's fate SSE client parses
+ * them unchanged; phoenix swaps only WHERE frames are produced, not their shape.
  */
 
 import {LivePublisher} from "@kampus/fate-effect";
@@ -21,35 +19,24 @@ import * as Schema from "effect/Schema";
 import {brandedId} from "../../lib/ids.ts";
 
 /**
- * A LiveDO connection id — the client's stream identity the connection role is
- * addressed by (`connection:<connectionId>`). Branded distinctly from {@link EntityId}
- * so the two live-protocol ids can't be transposed at a call site (they are both bare
- * strings on the wire, and the LiveDO plays both the connection and topic roles).
- * Type-only, so the SSE wire form decodes byte-identically. Shared brand idiom + the
- * cross-feature `UserId` live in `lib/ids.ts` (epic #2700); the two ids branded here are
- * fate-live-owned, so they stay feature-local.
+ * A LiveDO connection id (`connection:<connectionId>`). Branded distinctly from
+ * {@link EntityId} so the two can't be transposed at a call site — both are bare
+ * strings on the wire. Type-only, so the wire form decodes byte-identically.
  */
 export const ConnectionId = brandedId("ConnectionId");
 export type ConnectionId = typeof ConnectionId.Type;
 
 /**
- * A fate protocol entity id — fate's `isProtocolId` admits a string OR a number, so the
- * brand is applied to the *union* (not a branded string with a discarded number arm):
- * `(string | number) & Brand<"EntityId">` keeps both wire arms while staying nominally
- * distinct from {@link ConnectionId}. Brand is type-only, so the union decodes/serializes
- * byte-identically.
+ * A fate protocol entity id. fate's `isProtocolId` admits a string OR a number, so the
+ * brand goes on the *union* — a branded string would silently discard the number arm.
  */
 export const EntityId = Schema.Union([Schema.String, Schema.Number]).pipe(Schema.brand("EntityId"));
 export type EntityId = typeof EntityId.Type;
 
 /**
- * The ONE source of every live topic name: the string is
- * authored here once, and the union, the subscribe-side decode schema, and every
- * publish call site all derive from / reference this object. A topic key can no
- * longer be mistyped at a call site (publish and subscribe can't miss each other
- * via a stray literal). Add a topic by adding ONE entry here — the union and
- * the schema literal pick it up automatically, and publish sites reference
- * `LiveTopic.<name>` instead of restating the string.
+ * The ONE source of every live topic name — the union, the subscribe-side decode
+ * schema, and every publish site derive from this object, so publish and subscribe
+ * can't miss each other via a stray literal. Add a topic by adding ONE entry here.
  */
 export const LiveTopic = {
 	/** pano feed (no-args, global). */
@@ -59,34 +46,22 @@ export const LiveTopic = {
 	/** sözlük term → definitions (args: `{id: termSlug}`). */
 	termDefinitions: "Term.definitions",
 	/**
-	 * pano viewer's saved posts (per-viewer). Registered so the saved view's
-	 * connection-level subscribe DECODES instead of 400ing (`SavedConnectionView`
-	 * carries no `live:` config, so it wants no connection prepends — only a valid
-	 * subscribe). Deliberately has NO cross-client publish target: the saved list is
-	 * viewer-private, so a publish onto this login-blind shared topic would leak one
-	 * viewer's saved membership (and per-viewer `isSaved`) to every other subscriber.
-	 * Live save-state is carried per-row by the entity `Post` subscribe (`isSaved`)
-	 * + the client's local `savedReconcile`, not a connection fan-out.
+	 * pano viewer's saved posts (per-viewer). Registered only so the saved view's
+	 * subscribe DECODES instead of 400ing. Deliberately has NO publish target: this
+	 * topic is login-blind and shared, so publishing onto it would leak one viewer's
+	 * saved membership to every other subscriber. Live save-state rides the entity
+	 * `Post` subscribe (`isSaved`) plus the client's `savedReconcile`.
 	 */
 	savedPosts: "savedPosts",
 } as const;
 
-/**
- * The closed set of live topic keys phoenix publishes to / subscribes
- * on, derived from {@link LiveTopic}'s values. The subscribe side is gated by
- * {@link LiveTopicKeySchema}; the publish side by
- * {@link WorkerLivePublisher}.
- */
 export type LiveTopicKey = (typeof LiveTopic)[keyof typeof LiveTopic];
 
 /**
- * The package `LivePublisher` service surface with `topic`'s procedure
- * narrowed to {@link LiveTopicKey} — the publish-side typo gate. The
- * package takes a plain `string` by design; narrowing it here makes a misspelled
- * procedure a compile error instead of a silent dead topic. Parameters are
- * contravariant, so the package value is assignable with no cast/wrapper, and
- * everything but the narrowed parameter is structural (`Omit`/`Parameters`/
- * `ReturnType`) so the two surfaces can't drift.
+ * The package `LivePublisher` surface with `topic`'s procedure narrowed to
+ * {@link LiveTopicKey} — the publish-side typo gate. The package takes a plain
+ * `string`; narrowing makes a misspelled procedure a compile error instead of a
+ * silent dead topic. Parameters are contravariant, so no cast or wrapper is needed.
  */
 export type WorkerLivePublisher = Omit<typeof LivePublisher.Service, "topic"> & {
 	readonly topic: (
@@ -96,11 +71,9 @@ export type WorkerLivePublisher = Omit<typeof LivePublisher.Service, "topic"> & 
 };
 
 /**
- * The ONE seam where the package tag is narrowed to the typo-gated surface:
- * worker mutations write `const live = yield* WorkerLivePublisher` and never the
- * package tag directly. The un-narrowed `yield* LivePublisher` also compiles but
- * has no gate, so "import the worker accessor, not the package tag" is the
- * greppable convention. Same tag, retyped by plain assignability.
+ * The one place the package tag is narrowed to the typo-gated surface. Worker
+ * mutations must yield THIS, never `LivePublisher` directly — the package tag also
+ * compiles but has no gate.
  */
 export const WorkerLivePublisher: Effect.Effect<WorkerLivePublisher, never, LivePublisher> =
 	LivePublisher;
@@ -129,9 +102,8 @@ export type ConnectionFrame =
 
 /**
  * A publish to a topic DO. The mutation side resolves the topic string and the
- * per-event payload (already inline-resolved `data`/`node`), so the topic DO
- * relays it with no re-resolution. `procedure` is a plain `string` here (wire
- * data); the publish-side typo gate lives at the caller, {@link WorkerLivePublisher}.
+ * payload, so the topic DO relays with no re-resolution. `procedure` is a plain
+ * `string` here (wire data); the typo gate lives at {@link WorkerLivePublisher}.
  */
 export type PublishMessage =
 	| {
@@ -151,19 +123,16 @@ export type PublishMessage =
 	  };
 
 /**
- * A pre-bound per-request topic publish: one resolved topic key + message fires
- * the typed `LiveDO.publish` RPC, fired-and-forgotten via the request's
- * `waitUntil`. Reaches the DO via the typed RPC stub, not an
- * `env`-lookup/`idFromName`/string-URL `stub.fetch` (ADR 0028/0029).
+ * A pre-bound per-request topic publish, fired-and-forgotten via the request's
+ * `waitUntil`. Reaches the DO through the typed RPC stub, never a string-URL
+ * `stub.fetch` (ADR 0028/0029).
  */
 export type PublishToTopic = (topicKey: string, message: PublishMessage) => void;
 
 /**
- * A control message a connection DO records as a subscription. `lastEventId` is
- * the last SSE `id:` the client saw on this subscription before this (re)subscribe
- * — threaded through to `register` as an extra tightening on top of the primary
- * `subscribedAt` replay bound (the topic replays only frames from the subscriber's
- * intent forward, never the topic's prior history; see `live-do.ts` `replayBuffer`).
+ * A control message a connection DO records as a subscription. `lastEventId` tightens
+ * replay on top of the primary `subscribedAt` bound — the topic replays only frames
+ * from the subscriber's intent forward (see `live-do.ts` `replayBuffer`).
  */
 export type SubscribeControl =
 	| {
@@ -183,11 +152,7 @@ export type SubscribeControl =
 
 const OptionalArgs = Schema.optional(Schema.Record(Schema.String, Schema.Unknown));
 
-/**
- * The subscribe-side schema for {@link LiveTopicKey}, derived from
- * {@link LiveTopic}'s values so it can't drift from the union. An unknown
- * procedure fails decode (→ `BAD_REQUEST`) rather than registering a dead topic.
- */
+/** Derived from {@link LiveTopic} so an unknown procedure fails decode instead of registering a dead topic. */
 const LiveTopicKeySchema = Schema.Literals(Object.values(LiveTopic));
 
 const SubscribeOp = Schema.Struct({
@@ -216,7 +181,6 @@ const UnsubscribeOp = Schema.Struct({
 	kind: Schema.Literal("unsubscribe"),
 });
 
-/** The schema is the single source of truth; the types below derive from it. */
 const LiveControlOperationSchema = Schema.Union([
 	SubscribeOp,
 	SubscribeConnectionOp,
@@ -234,11 +198,9 @@ export type LiveControlOperation = Schema.Schema.Type<typeof LiveControlOperatio
 export type LiveControlRequest = Schema.Schema.Type<typeof LiveControlRequestSchema>;
 
 /**
- * Decode an untrusted fate live control request body, mirroring fate's native
- * `assertLiveControlRequest` (a malformed body fails with a `BAD_REQUEST`
- * `FateRequestError` rather than coercing — e.g. a missing/non-id `entityId` is
- * rejected, not turned into a dead empty-string subscription). Any `ParseError`
- * collapses to the same `FateRequestError` the route maps to `liveError(...)`.
+ * Decode an untrusted live control body, mirroring fate's `assertLiveControlRequest`:
+ * a malformed body fails rather than coercing — a missing `entityId` must be rejected,
+ * not turned into a dead empty-string subscription.
  */
 export const parseLiveControlRequest = (
 	value: unknown,
@@ -303,9 +265,9 @@ export function topicsForSubscribe(control: SubscribeControl): ReadonlyArray<str
 }
 
 /**
- * Per-request fan-out budgets (void's `LiveLimits`), threaded onto the LiveDO's
- * RPC inputs rather than hardcoded in the DO (decision 2B): the worker/route
- * supplies these on each call, the DO never invents its own.
+ * Per-request fan-out budgets, threaded onto the LiveDO's RPC inputs rather than
+ * hardcoded in the DO: the worker supplies these on each call, the DO never invents
+ * its own.
  */
 export interface LiveLimits {
 	readonly maxSubscriptionsPerConnection: number;
@@ -320,10 +282,8 @@ export interface LiveLimits {
 }
 
 /**
- * The default per-request fan-out budgets (void's `DEFAULT_LIMITS`). Lives HERE,
- * beside {@link LiveLimits}, so neither publishing/subscribing route imports
- * config out of a sibling ROUTE module. void's `maxOperationsPerControlRequest`
- * is a control-request cap, not a `LiveLimits` DO budget field, so it is omitted.
+ * The default budgets. Live here beside {@link LiveLimits} so neither route imports
+ * config out of a sibling ROUTE module.
  */
 export const defaultLiveLimits: LiveLimits = {
 	maxSubscriptionsPerConnection: 256,
@@ -338,13 +298,10 @@ export const defaultLiveLimits: LiveLimits = {
 };
 
 /**
- * A persisted topic-role subscriber row (the value under a `sub:` KV key, void's
- * flat-key model). `connectionId` is the name the topic re-addresses the instance
- * from (`connectionOf`); `subId` is the client's subscription id. The stale model
- * rides two counters: `generation` (the connection's stream lifetime at register
- * time) and `revision` (the subscription's lifetime). On deliver/check a reachable
- * connection compares both against live state; a mismatch means the topic prunes
- * the row. (See `live-do.ts` header.)
+ * A persisted topic-role subscriber row (the value under a `sub:` key). Staleness
+ * rides two counters — `generation` (the connection's stream lifetime at register
+ * time) and `revision` (the subscription's) — and a mismatch on deliver prunes the
+ * row. See `live-do.ts` header.
  */
 export interface SubscriberRow {
 	readonly topicKey: string;
@@ -356,17 +313,13 @@ export interface SubscriberRow {
 }
 
 /**
- * A frame the topic role retains in its storage-backed ring buffer (under a
- * `frame:<topicKey>:<seq>` key) so a subscriber whose `register` lands AFTER the
- * publish can still catch up — the publish-vs-register race fix (#714). The buffer
- * is storage-backed, not in-memory: a topic DO is not pinned by any open stream
- * (only connection DOs are), so it evicts between a publish and a later register,
- * and an in-memory buffer would be gone exactly when replay needs it. `seq` is the
- * monotonic per-topic publish ordinal (replay order, and dedup when frames carry no
- * `eventId`); `eventId` is the optional wire id that tightens replay by the
- * subscriber's `lastEventId`; `at` is the publish timestamp — both the TTL bound
- * and the primary `subscribedAt` replay bound (only frames at/after the
- * subscriber's intent replay; see `live-do.ts` `replayBuffer`).
+ * A frame the topic role retains in its ring buffer so a subscriber whose `register`
+ * lands AFTER the publish can still catch up (#714). Storage-backed, not in-memory:
+ * a topic DO is not pinned by any open stream (only connection DOs are), so it evicts
+ * between a publish and a later register — an in-memory buffer would be gone exactly
+ * when replay needs it. `seq` is the per-topic publish ordinal (replay order + dedup
+ * when frames carry no `eventId`); `at` bounds both the TTL and the `subscribedAt`
+ * replay window.
  */
 export interface BufferedFrame {
 	readonly seq: number;

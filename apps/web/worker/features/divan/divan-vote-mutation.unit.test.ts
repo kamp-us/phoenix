@@ -1,16 +1,8 @@
 /**
- * `divan.vote` WIRE-boundary coverage (#1288, epic #1202) — the sandboxed-vote
- * eligibility decision driven through the real external interface (`resolveWire`: input
- * decode + the `encodeWireError` class→wire-code seam), so a denial's wire `code` is what a
- * client gets.
- *
- * The acceptance matrix: a yazar OR a mod (the divan audience) votes a sandboxed item and the
- * cast lands crediting the author; a çaylak / visitor / anonymous actor gets the invisible
- * `UNAUTHORIZED` and NEVER reaches the cast (the non-gated rejection — a compile-error gate,
- * not an `if`, ADR 0107). And the karma-side promotion trigger (#1289): a vote that crosses the bar
- * WITH an active vouch fires `resolveTandem` → the author is promoted; with no active vouch it
- * is not. The yazar/mod disjunction itself is `gate.unit.test.ts`; the score+karma batch is
- * `vote/Vote.unit.test.ts` and the integration tier; the tandem invariant is `tandem.unit.test.ts`.
+ * `divan.vote` WIRE-boundary coverage — the eligibility decision driven through
+ * `resolveWire`, so a denial's wire `code` is what a client actually gets. Neighbours:
+ * the yazar/mod disjunction is `gate.unit.test.ts`, the score+karma batch is
+ * `vote/Vote.unit.test.ts`, the tandem invariant is `tandem.unit.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
@@ -48,8 +40,7 @@ const runtimeContextStub: BaseRuntimeContext = {
 	set: (id) => Effect.succeed(id),
 };
 
-// The rite-feedback emitter (notifyDivanVote) reads the `phoenix-bildirim` flag, so
-// every case still provides a Flags service — on, so the bildirim deliver path runs.
+// On, so the bildirim deliver path runs in every case.
 const flagsOn: Layer.Layer<Flags> = Layer.succeed(
 	Flags,
 	// biome-ignore lint/plugin: a Flags test double — only getBoolean is exercised here.
@@ -84,12 +75,10 @@ const kunyeOf = (
 		rootOf: (id: string) => Effect.succeed(id),
 	});
 
-// `VouchLedger` answering `hasActiveFor` from a fixed set (the candidates with ≥1 active vouch).
 const vouchActiveFor = (active: ReadonlyArray<string>): Layer.Layer<VouchLedger> =>
 	makeVouchLedgerStub({hasActiveFor: (id: string) => Effect.succeed(active.includes(id))});
 
-// A `Pasaport` whose `promoteToYazar` RECORDS each promoted userId (every other method fails on
-// contact), so "a vote crossed the bar with an active vouch → the çaylak is promoted" is observable.
+// Records each promoted userId, so the tandem promotion is observable.
 const pasaportRecording = (): {layer: Layer.Layer<Pasaport>; promoted: string[]} => {
 	const promoted: string[] = [];
 	const layer = makePasaportStub({
@@ -112,9 +101,7 @@ const pasaportRecording = (): {layer: Layer.Layer<Pasaport>; promoted: string[]}
 	return {layer, promoted};
 };
 
-// A `Vote` whose `castOnSandboxed` RECORDS each cast and returns a receipt naming the (server-
-// derived) `authorId` it credited; every other method fails on contact. The recorded `userId`
-// proves WHO voted and that the gate passed before any write.
+// The recorded `userId` proves WHO voted and that the gate passed before any write.
 const voteStubOf = (casts: VoteInput[], authorId = "u-author"): Layer.Layer<Vote> =>
 	Layer.succeed(Vote, {
 		cast: () => Effect.die(new Error("divan.vote must use castOnSandboxed, not cast")),
@@ -133,8 +120,6 @@ const voteStubOf = (casts: VoteInput[], authorId = "u-author"): Layer.Layer<Vote
 		clearTarget: () => Effect.die(new Error("unused")),
 	});
 
-// A `Notification` whose `recordAggregate` RECORDS each emit (every other method fails on
-// contact), so "a landed divan vote notifies the item's author, aggregated" is observable (#1695).
 const notificationRecording = (): {
 	layer: ReturnType<typeof makeNotificationStub>;
 	emits: NotificationAggregateInput[];
@@ -149,7 +134,7 @@ const notificationRecording = (): {
 	return {layer, emits};
 };
 
-// A Vote that DIES if any cast is attempted — proves a denied path never reaches the write.
+// Dies if any cast is attempted, which is how a denied path proves it never wrote.
 const voteFailOnContact: Layer.Layer<Vote> = Layer.succeed(Vote, {
 	cast: () => Effect.die(new Error("no cast on a denied path")),
 	castOnSandboxed: () => Effect.die(new Error("a non-divan actor must never reach the cast")),
@@ -157,13 +142,8 @@ const voteFailOnContact: Layer.Layer<Vote> = Layer.succeed(Vote, {
 	clearTarget: () => Effect.die(new Error("unused")),
 });
 
-// `divan.vote` fires `resolveTandem`, which reaches the #1886 live-publish on a
-// landed flip — so `LivePublisher` is a static requirement of every case (even a
-// denial). `noopLive` satisfies it universally; the case that actually promotes
-// asserts on nothing published, and the tandem-promote case builds its own record.
-// The divan-vote emit now consults `bildirimMutedBy` (#3238), which reads `Mute` — an
-// empty-set stub means no member is muted, so these cases exercise the deliver path
-// unchanged. Muted-suppression is covered in bildirim/mute-suppression.unit.test.ts.
+// No member is muted, so these cases exercise the deliver path. Muted-suppression is
+// covered in bildirim/mute-suppression.unit.test.ts.
 const noMutes = Layer.succeed(Mute, {
 	set: () => Effect.die("Mute.set not exercised"),
 	listMine: () => Effect.die("Mute.listMine not exercised"),
@@ -177,7 +157,6 @@ const requestContext = (actor: Actor) =>
 		Layer.provideMerge(Layer.succeed(RuntimeContext, runtimeContextStub)),
 	);
 
-// The signed-in id the voter casts under (anonymous → empty, never reaches the cast anyway).
 function actorId(actor: Actor): string {
 	return actor._tag === "Authenticated" && actor.principal._tag === "Human"
 		? actor.principal.id
@@ -252,8 +231,6 @@ describe("divan.vote — gated sandboxed vote", () => {
 			const {layer: pasaport, promoted} = pasaportRecording();
 			return Effect.gen(function* () {
 				yield* castVote("definition:def-1", true);
-				// the vote credited "u-author" (server-derived); with an active vouch + karma ≥ bar the
-				// tandem fires and flips the çaylak → yazar.
 				assert.deepStrictEqual(promoted, ["u-author"]);
 			}).pipe(
 				Effect.provide(
@@ -275,8 +252,8 @@ describe("divan.vote — gated sandboxed vote", () => {
 	it.effect("a bar-crossing vote with NO active vouch does NOT promote (the tandem holds)", () => {
 		const casts: VoteInput[] = [];
 		return Effect.gen(function* () {
-			// the vote lands and credits the author, but with no active vouch the tandem never flips a
-			// tier — `Pasaport.promoteToYazar` fail-on-contact proves it is never reached.
+			// `makePasaportStub()`'s fail-on-contact `promoteToYazar` is the assertion that no
+			// tier flip happened.
 			const receipt = yield* castVote("definition:def-1", true);
 			assert.strictEqual((receipt as {myVote: boolean}).myVote, true);
 		}).pipe(
@@ -338,10 +315,8 @@ describe("divan.vote — gated sandboxed vote", () => {
 	);
 });
 
-// Rite feedback (#1695): a landed divan vote notifies the item's author through the
-// bildirim spine — aggregated per item, self-suppressed, and NEVER able to fail the
-// committed cast. The retraction/self arms use the recording stub and assert ZERO
-// emits (the swallow would hide a die, so absence must be observed, not implied).
+// The silent arms assert ZERO emits against the RECORDING stub, not a dying one: the
+// emitter swallows failures, so absence has to be observed rather than implied.
 describe("divan.vote — rite-feedback bildirim (#1695)", () => {
 	const landedVoteLayers = (
 		notification: ReturnType<typeof makeNotificationStub>,
@@ -389,7 +364,6 @@ describe("divan.vote — rite-feedback bildirim (#1695)", () => {
 		const casts: VoteInput[] = [];
 		const {layer, emits} = notificationRecording();
 		return Effect.gen(function* () {
-			// the cast credits the VOTER as author → no self-notification
 			yield* castVote("definition:def-1", true);
 			assert.deepStrictEqual(emits, []);
 		}).pipe(Effect.provide(landedVoteLayers(layer, casts, "u-yazar")));
@@ -398,7 +372,7 @@ describe("divan.vote — rite-feedback bildirim (#1695)", () => {
 	it.effect("a DYING notification write cannot fail the committed vote (the seam AC)", () => {
 		const casts: VoteInput[] = [];
 		return Effect.gen(function* () {
-			// fail-on-contact Notification: recordAggregate DIES; the receipt still lands.
+			// `makeNotificationStub()` dies on contact; the receipt must still land.
 			const receipt = yield* castVote("definition:def-1", true);
 			assert.strictEqual((receipt as {myVote: boolean}).myVote, true);
 		}).pipe(Effect.provide(landedVoteLayers(makeNotificationStub(), casts, "u-author")));

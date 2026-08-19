@@ -1,21 +1,14 @@
 /**
- * `Profile`'s one field map — the single declaration of `Profile`'s wire field
- * set, which the row's construction site (`Pasaport.hydrateProfile`, pinned
- * `satisfies ProfileRow`), the wire shaper (`toProfile` in `shapers.ts`), and the
- * view field declaration (`ProfileView` in `views.ts`) all derive from, so a
- * one-field change touches this map instead of three hand-synced restatements
- * (#1545, the pasaport half of fate-wire epic #1332). Shaped on
- * `sozluk/definition-fields.ts`.
+ * `Profile`'s one field map — the row construction site, the wire shaper, and the
+ * view field declaration all derive from it, so a one-field change touches this file
+ * instead of three hand-synced restatements.
  *
- * Unlike `User`, a `Profile` row has no single DB record to read from — it is
- * assembled from a `user_profile` identity row plus three computed authored-content
- * counts — so there is no record→row reader map; `ProfileRow` IS the single source.
- * The one read-time divergence is the client normalization key `id` (=== `userId`),
- * stamped by `toProfile`; `id` is therefore not on `ProfileRow` but is part of the
- * pinned view field set below.
+ * A `Profile` has no single DB record behind it (identity row + three computed
+ * counts), so `ProfileRow` IS the source. The one divergence is the client
+ * normalization key `id` (=== `userId`), stamped by `toProfile`: not on the row, but
+ * part of the pinned view field set below.
  */
 
-/** The assembled profile row: the identity tuple plus the three content counts. */
 export interface ProfileRow {
 	userId: string;
 	username: string;
@@ -28,12 +21,9 @@ export interface ProfileRow {
 }
 
 /**
- * The view/wire scalar field selection (`{id: true, …}`) — a static literal (fate's
- * `FateDataView` reads the literal field map off this). `satisfies Record<keyof
- * ProfileRow | "id", true>` pins it to exactly the row's fields plus the `id`
- * normalization key: dropping one here (or adding one to `ProfileRow` without
- * listing it) is a compile error, so the view stays in lockstep with the row.
- * `contributions` is the list relation, declared structurally in `views.ts`.
+ * Must stay a static literal — fate's `FateDataView` reads the field map off it. The
+ * `satisfies` pins it to exactly the row's fields plus `id`, so dropping one here (or
+ * adding one to `ProfileRow` without listing it) is a compile error.
  */
 export const profileViewFields = {
 	id: true,

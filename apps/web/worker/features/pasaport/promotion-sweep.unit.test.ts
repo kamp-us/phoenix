@@ -1,23 +1,8 @@
 /**
- * `Pasaport.promoteToYazar` backlog-sweep coverage (#1206) — the load-bearing
- * correctness concern: the tier flip and the sandbox sweep are ONE atomic D1 batch
- * (ADR 0014), and every statement is *conditional*, which is what makes the
- * promotion idempotent and a mixed backlog land consistent. Proven by rendering the
- * batch's `.toSQL()` over a no-op D1 (the `Pano.connection.unit.test.ts` idiom) —
- * no engine, so this is a unit test; a real-D1 promote-twice / mixed-content
- * fidelity test (the `account-deletion.test.ts` precedent) is a follow-up in the
- * integration tier.
- *
- * The three structural guarantees asserted here:
- *   - **Atomic.** All four writes go through a single `batch`, so the world never
- *     sees a tier flipped with the backlog half-swept (or the reverse).
- *   - **Idempotent.** The tier UPDATE is guarded `tier = 'çaylak'` and the sweep
- *     `sandboxed_at IS NOT NULL` — so a re-run (promote twice) matches zero rows and
- *     `promoted` reads false the second time.
- *   - **Mixed-content-safe.** The sweep WHERE is exactly the #1205 backlog predicate
- *     (`sandboxed_at IS NOT NULL AND removed_at IS NULL AND author_id = ?`), so it
- *     flips only this author's still-sandboxed, not-removed rows — live rows
- *     (`sandboxed_at` already null) and removed rows (`removed_at` set) are untouched.
+ * `Pasaport.promoteToYazar` backlog-sweep coverage — the tier flip and the sandbox sweep
+ * are ONE atomic D1 batch (ADR 0014) and every statement is conditional, which is what
+ * makes a re-promote idempotent and a mixed backlog land consistent. Proven by rendering
+ * the batch's `.toSQL()` over a no-op D1, so no engine runs and this stays unit tier.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -31,9 +16,7 @@ import {
 } from "../../db/Drizzle.ts";
 import {type BetterAuthInstance, makePasaportLive, Pasaport} from "./Pasaport.ts";
 
-// A real drizzle client over a no-op D1 — used ONLY to render the batch statements'
-// `.toSQL()`; it never executes (the scripted `batch` renders, then returns a fake
-// per-statement result).
+// A real drizzle client over a no-op D1, used ONLY to render `.toSQL()`; nothing executes.
 // biome-ignore lint/plugin: `D1Database` is a host binding that can't be structurally constructed in a fake; nothing here executes against it.
 const noopD1 = {
 	prepare: () => ({
@@ -61,8 +44,7 @@ const renderDb = drizzle(noopD1, {relations});
 
 const inertAuth = {} as BetterAuthInstance;
 
-// Captures the batch's rendered statements and answers with a scripted per-statement
-// result whose first element's `meta.changes` drives `promoted`.
+// The first result's `meta.changes` is what drives `promoted`.
 function capturingBatch(tierChanges: number): {
 	access: DrizzleAccess;
 	statements: () => {sql: string; params: unknown[]}[];
@@ -77,8 +59,8 @@ function capturingBatch(tierChanges: number): {
 				const renderable = s as unknown as {toSQL: () => {sql: string; params: unknown[]}};
 				captured.push(renderable.toSQL());
 			}
-			// A fake per-statement batch result — the method reads only `.meta.changes`;
-			// the real generic `BatchResult` shape isn't reconstructable in a no-engine double.
+			// The method reads only `.meta.changes`; the real `BatchResult` shape is not
+			// reconstructable in a no-engine double.
 			const result = stmts.map((_, i) => ({meta: {changes: i === 0 ? tierChanges : 0}}));
 			return Effect.succeed(result as never);
 		},
@@ -127,8 +109,6 @@ describe("Pasaport.promoteToYazar — atomic, idempotent backlog sweep", () => {
 				const pasaport = yield* Pasaport;
 				yield* pasaport.promoteToYazar({userId: "u-caylak"});
 
-				// `promoted_at` is stamped inside statement 0 — the tier flip — so it commits
-				// in the same guarded UPDATE (WHERE tier = 'çaylak') and the same atomic batch.
 				const tier = cap.statements()[0];
 				assert.isTrue(tier !== undefined);
 				if (tier === undefined) return;
@@ -136,9 +116,8 @@ describe("Pasaport.promoteToYazar — atomic, idempotent backlog sweep", () => {
 				assert.match(sql, /set[\s\S]*"promoted_at"\s*=\s*\?/); // stamps promoted_at…
 				assert.match(sql, /where[\s\S]*"tier"/); // …only when the tier actually flips (guarded)
 
-				// And it is the ONLY statement that touches promoted_at — no unconditional
-				// write exists, so a non-promoting call (statement 0 matches 0 rows) stamps
-				// nothing and promoted_at stays null.
+				// It must also be the ONLY statement touching promoted_at, or an unconditional
+				// write would stamp on a non-promoting call.
 				const stmtsTouchingPromotedAt = cap
 					.statements()
 					.filter((s) => s.sql.toLowerCase().includes("promoted_at"));
@@ -150,9 +129,7 @@ describe("Pasaport.promoteToYazar — atomic, idempotent backlog sweep", () => {
 	it.effect(
 		"a non-promoting call (already-yazar / unknown) leaves promoted_at null — the only promoted_at write is the guarded UPDATE that matched 0 rows",
 		() => {
-			// `capturingBatch(0)` scripts the guarded tier UPDATE to match 0 rows (already
-			// yazar). The stamp rides that same guarded statement, so 0 changes ⇒ 0 rows
-			// stamped ⇒ promoted_at untouched (null preserved).
+			// 0 = the guarded tier UPDATE matched no rows (already yazar).
 			const cap = capturingBatch(0);
 			return Effect.gen(function* () {
 				const pasaport = yield* Pasaport;

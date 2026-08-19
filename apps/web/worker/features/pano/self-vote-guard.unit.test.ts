@@ -1,14 +1,8 @@
 /**
- * `Pano.applyPostVote` self-vote guard (#2216, founder-ruled) — the cast-site domain
- * guard proven over the real `makePostOperations` closures with a substituted `Drizzle`
- * `run` (the post load) + a RECORDING `Vote`, so three things are wrong-or-right with no
- * SQL engine:
- *
- *   1. self-cast rejected — `voteOnPost` where `voterId === post.authorId` fails
- *      `SelfVoteNotAllowed` and NEVER reaches `Vote.cast` (no score/karma write).
- *   2. other-author cast lands — a non-author vote reaches `Vote.cast` exactly as before.
- *   3. self-retract exempt — `retractPostVote` on one's own post reaches `Vote.cast`
- *      (the guard is cast-only; a blocked cast leaves nothing to retract).
+ * The cast-site self-vote guard (#2216), proven over the real `makePostOperations`
+ * closures with a substituted `run` and a RECORDING `Vote` — no SQL engine. The guard
+ * is cast-only: a self-RETRACT stays allowed, since a blocked cast leaves nothing to
+ * retract.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit} from "effect";
@@ -22,8 +16,7 @@ const AUTHOR = UserId.make("u-author");
 const OTHER = UserId.make("u-other");
 const POST_ID = PostId.make("post_1");
 
-// The `post_record` the up-front load returns. Only `authorId` drives the guard; the
-// rest satisfy the row shape the return projection reads.
+// Only `authorId` drives the guard; the rest satisfy the return projection's row shape.
 const postRow = {
 	id: POST_ID,
 	slug: "post-1",
@@ -45,10 +38,8 @@ const postRow = {
 	isDraft: null,
 };
 
-// A `Vote` double that RECORDS every cast and replays a no-op result — so "did the cast
-// path run" is observable with no engine. Only `cast` is on the vote path; every other
-// method dies on contact via the Proxy, so an off-path call is loud (the `reaction-mutation`
-// `panoStub` idiom).
+// Records every cast so "did the cast path run" is observable; every other method dies
+// on contact through the Proxy, so an off-path call is loud.
 const recordingVote = (casts: VoteInput[]): typeof Vote.Service =>
 	new Proxy(
 		{
@@ -72,8 +63,8 @@ const recordingVote = (casts: VoteInput[]): typeof Vote.Service =>
 		},
 	) as typeof Vote.Service;
 
-// Only `run` (the post load) + `voteSvc` are on the vote path; the other deps are captured
-// but never invoked, so they die on contact if the guard ever falls through to them.
+// Only `run` and `voteSvc` are on the vote path; the rest die on contact if the guard
+// ever falls through to them.
 const deps = (voteSvc: typeof Vote.Service): PostOperationsDeps =>
 	({
 		run: (<A>(_fn: unknown) => Effect.succeed(postRow as A)) as DrizzleAccessOrDie["run"],

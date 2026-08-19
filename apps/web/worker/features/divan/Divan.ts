@@ -1,22 +1,11 @@
 /**
- * `Divan` — the gated read model behind the çaylak proving ground (#1287, epic
- * #1202). A DESTINATION over the shipped `sandboxBacklogWhere` read model (#1205):
- * it composes the existing `listSandboxed*` reads (Sözlük definitions, pano posts +
- * comments — each already filtered to still-sandboxed, not-removed via
- * `sandboxBacklogWhere`) and groups them by author so the divan's unit is the
+ * The read model behind the çaylak proving ground (#1287), composing the existing
+ * `listSandboxed*` reads and grouping them by author so the divan's unit is the
  * **person**, not loose items.
  *
- * It does NOT re-derive the predicate and does NOT touch `sandboxVisibleWhere` —
- * inline sözlük/pano reads stay `{mod, author}`. A yazar gains visibility into çaylak
- * work ONLY through this service, reached only past the {@link requireDivanAccess}
- * gate (enforced at the fate resolver). The service read itself is unconditional,
- * exactly like the `listSandboxed*` reads it builds on.
- *
- * Two reads:
- *   - {@link Divan.roster} — the pending-çaylak roster (grouped by author, per-kind
- *     counts) across ALL authors.
- *   - {@link Divan.backlogOf} — one çaylak's sandboxed backlog (the items, for the
- *     #1290 detail view), newest first.
+ * It must NOT re-derive the sandbox predicate or touch `sandboxVisibleWhere` — inline
+ * sözlük/pano reads stay `{mod, author}`. These reads are unconditional; the yazar gate
+ * (`requireDivanAccess`) is enforced at the fate resolver, not here.
  */
 import {Context, Effect, Layer} from "effect";
 import {UserId} from "../../lib/ids.ts";
@@ -31,16 +20,13 @@ const preview = (text: string | null | undefined): string => excerpt(text ?? "")
 export class Divan extends Context.Service<
 	Divan,
 	{
-		/** The pending-çaylak roster: every çaylak with ≥1 sandboxed, not-removed item. */
 		readonly roster: () => Effect.Effect<ReadonlyArray<DivanRosterRow>>;
-		/** One çaylak's sandboxed backlog (newest first) — the detail-view items. */
+		/** Newest first. */
 		readonly backlogOf: (authorId: UserId) => Effect.Effect<ReadonlyArray<DivanItem>>;
 		/**
-		 * How many still-pending (sandboxed, not-removed) items one author has across
-		 * all three kinds — the mod-notification transition gate (#1699): a create path
-		 * fires the "new çaylak awaiting review" page only when this count is exactly 1
-		 * right after a çaylak's item committed (their 0→1 entry onto the roster), so a
-		 * çaylak's second and later items don't re-page the team.
+		 * The mod-notification transition gate (#1699): a create path pages the team only
+		 * when this count is exactly 1 right after an item committed — the author's 0→1
+		 * entry onto the roster — so their later items don't re-page.
 		 */
 		// `authorId` stays unbranded `string` (unlike `backlogOf`'s `UserId`): the only
 		// caller is bildirim's `notifyCaylakEntersDivan` (`mod-emitters.ts`), which passes a
@@ -56,9 +42,6 @@ export const DivanLive = Layer.effect(Divan)(
 		const pano = yield* Pano;
 		const pasaport = yield* Pasaport;
 
-		// Fetch the three sandboxed backlogs (optionally one author's) and collapse the
-		// per-domain rows onto the normalized `DivanItem` shape. The `sandboxBacklogWhere`
-		// filter (sandboxed + not-removed) lives in the `listSandboxed*` reads, not here.
 		const collect = Effect.fn("Divan.collect")(function* (opts: {authorId?: string} = {}) {
 			const [definitions, posts, comments] = yield* Effect.all(
 				[
@@ -100,12 +83,9 @@ export const DivanLive = Layer.effect(Divan)(
 			return items;
 		});
 
-		// Join each grouped roster entry to its çaylak's identity (handle + karma) in ONE
-		// batched profile read — so the single `divan.roster` fate request carries every
-		// row's identity in-batch and the client fires NO per-row by-id `Profile` read
-		// (ADR 0021's no-waterfalls contract, #1423). A çaylak with no profile row (or no
-		// username yet) degrades to nulls + 0 karma; the client renders the "çaylak"
-		// fallback label.
+		// ONE batched profile read, so the client fires no per-row by-id `Profile` read
+		// (ADR 0021's no-waterfalls contract). A çaylak with no profile row degrades to
+		// nulls + 0 karma rather than dropping off the roster.
 		const roster = Effect.fn("Divan.roster")(function* () {
 			const entries = buildRoster(yield* collect());
 			const identities = yield* pasaport.getProfileIdentitiesByIds(entries.map((e) => e.authorId));

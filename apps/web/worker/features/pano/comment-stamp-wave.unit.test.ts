@@ -1,20 +1,8 @@
 /**
- * The pano thread/comment stamp-wave collapse (#2710, epic #2567) — behavior equivalence
- * + the concurrency plumbing, over the real `makeCommentOperations` closures with a
- * substituted `Drizzle` `run` + recording service doubles (ADR 0082 litmus: wrong-or-right
- * with no SQL engine → unit). The pano twin of `sozluk/definition-stamp-wave.unit.test.ts`,
- * reusing the same shared `parallelStampWave` combinator behind pano's own seam.
- *
- * Two properties the acceptance criteria name:
- *
- *   - **byte-for-byte equivalence.** `getCommentsByIds` / `listCommentsKeyset` produce the
- *     identical stamped rows whether the wave runs serial (flag off) or concurrent (flag
- *     on) — `myVote`, `reactions`, live author identity all unchanged. The flag flips wall
- *     time and nothing else.
- *   - **the concurrency actually threads through.** With `parallelStamps: true` the reaction
- *     aggregate's own two D1 reads receive `{concurrency: "unbounded"}` (so the wave is one
- *     phase, not one-plus-the-reaction-arm's-two); with it off/absent they receive
- *     `{concurrency: 1}` — today's serial behavior every non-opted caller keeps.
+ * The pano stamp-wave collapse (#2710). Two properties: the flag flips wall time and
+ * NOTHING else (byte-for-byte identical rows serial vs concurrent), and the concurrency
+ * actually reaches the reaction aggregate's own two reads rather than stopping one level
+ * up. Pano twin of `sozluk/definition-stamp-wave.unit.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
@@ -25,7 +13,6 @@ import type {Reaction, ReactionAggregate} from "../reaction/Reaction.ts";
 import type {Vote} from "../vote/Vote.ts";
 import {type CommentOperationsDeps, makeCommentOperations} from "./comment-operations.ts";
 
-// A `comment_record` shaped just enough for `toCommentRow` + `Removal.fromColumns`.
 const commentRecord = (id: string, authorId: string) => ({
 	id,
 	postId: "post_1",
@@ -57,8 +44,7 @@ const VoteStub = {
 	clearTarget: () => Effect.void,
 } as unknown as typeof Vote.Service;
 
-// Reaction double that RECORDS the `options` (the concurrency knob) each `readAggregate`
-// call received, and answers a fixed aggregate for `comment_1`.
+// Records the `options` (the concurrency knob) each `readAggregate` call received.
 const reactionRecorder = (
 	calls: Array<{readonly concurrency?: Concurrency} | undefined>,
 ): typeof Reaction.Service =>
@@ -72,12 +58,11 @@ const reactionRecorder = (
 		},
 	}) satisfies typeof Reaction.Service;
 
-// Pasaport identity double: `comment_1`'s author has a live handle, `_2`'s has none.
+// `comment_1`'s author has a live handle, `_2`'s deliberately has none.
 const readProfileIdentities = () =>
 	Effect.succeed([{userId: "u1", username: "anka", displayName: "Anka Kadın", totalKarma: 0}]);
 
-// Replays `run` results in call order (the sözlük test's `scriptedAccess` shape); each
-// answer is a single `as A` — `run` ignores its query fn (no engine), returning the script.
+// Replays results in call order; `run` ignores its query fn since there is no SQL engine.
 const scriptedRun = (results: ReadonlyArray<unknown>): DrizzleAccessOrDie["run"] => {
 	let i = 0;
 	return (<A>(_fn: unknown) => Effect.succeed(results[i++] as A)) as DrizzleAccessOrDie["run"];
@@ -95,7 +80,7 @@ const deps = (
 	readProfileIdentities,
 });
 
-// `getCommentsByIds` issues exactly one `run` (the fetch); answer it with two records.
+// `getCommentsByIds` issues exactly one `run` (the fetch).
 const byIdRun = () =>
 	scriptedRun([[commentRecord("comment_1", "u1"), commentRecord("comment_2", "u2")]]);
 
@@ -122,7 +107,7 @@ describe("Pano.getCommentsByIds — stamp-wave behavior equivalence (#2710)", ()
 				serial.map((r) => JSON.stringify(r)),
 				"identical serialized bytes (fields, values, key order)",
 			);
-			// Spot the stamps actually landed (not a vacuous equality of two empty pages).
+			// Guards against a vacuous equality of two empty pages.
 			assert.strictEqual(parallel[0]?.myVote, true, "comment_1 viewer upvote stamped");
 			assert.strictEqual(parallel[1]?.myVote, false, "comment_2 no viewer upvote");
 			assert.deepStrictEqual(
@@ -147,7 +132,7 @@ describe("Pano.getCommentsByIds — stamp-wave behavior equivalence (#2710)", ()
 				viewerId: "v",
 				parallelStamps: false,
 			});
-			// No `parallelStamps` → the default-off path (today's behavior).
+			// No `parallelStamps` at all → the default-off path.
 			yield* makeCommentOperations(deps(byIdRun(), offCalls)).getCommentsByIds(["comment_1"], {
 				viewerId: "v",
 			});
@@ -162,7 +147,7 @@ describe("Pano.getCommentsByIds — stamp-wave behavior equivalence (#2710)", ()
 	});
 });
 
-// `listCommentsKeyset` (no cursor) issues: totalCount → fetch. Script both in order.
+// `listCommentsKeyset` (no cursor) issues totalCount then fetch, in that order.
 const keysetRun = () =>
 	scriptedRun([
 		2 /* count */,

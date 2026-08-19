@@ -1,16 +1,9 @@
 /**
- * Unit coverage for the `/api/health` readiness contract (ADR 0156). Drives the
- * real `healthApiLayer` router over `HttpRouter.toWebHandler` — no workerd, no
- * binding — with a stubbed `Flagship` client, and asserts the two typed outcomes:
- *
- *   - REACHABLE → 200 `{status:"ok", flagshipReachable:true}`;
- *   - a `FlagshipError` (unreachable/misconfigured binding) → 503
- *     `{status:"degraded", flagshipReachable:false}`, NOT an `orDie`→500.
- *
- * The 503 path is the ADR 0156 decision: flags fail-closed, so Flagship-unreachable
- * is a representable degraded-readiness state (not-ready-but-alive), not a handler
- * defect. The full black-box HTTP path is the CI-only integration tier
- * (`flagship-binding.test.ts`, ADR 0154); this is the local-runnable unit tier.
+ * The `/api/health` readiness contract (ADR 0156), driven over `HttpRouter.toWebHandler`
+ * with a stubbed `Flagship` — no workerd, no binding. A `FlagshipError` must surface as a
+ * 503 `{status:"degraded"}`, NOT an `orDie`→500: flags fail-closed, so Flagship-unreachable
+ * is a representable not-ready-but-alive state. The black-box HTTP path is the integration
+ * tier (ADR 0154).
  */
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Flagship as CfFlagship} from "alchemy/Cloudflare";
@@ -21,14 +14,10 @@ import {describe, expect, it} from "vitest";
 import {Flagship} from "../features/flagship/Flagship.ts";
 import {healthApiLayer} from "./health.ts";
 
-/**
- * The health read the handler exercises: the boolean probe evaluation, either
- * reachable (`succeed`) or a `FlagshipError` (unreachable/misconfigured binding).
- */
 type ProbeRead = Effect.Effect<boolean, CfFlagship.FlagshipError>;
 
-// `RuntimeContext` is the alchemy binding's intrinsic ambient requirement
-// (discharged at worker scope in production, #507); the stub satisfies it here.
+// `RuntimeContext` is the alchemy binding's ambient requirement (discharged at worker scope
+// in production); the stub satisfies it here.
 const runtimeContext: BaseRuntimeContext = {
 	Type: "test",
 	id: "test",
@@ -40,10 +29,7 @@ const runtimeContext: BaseRuntimeContext = {
 const unexercised = (method: string) => () =>
 	Effect.die(`Flagship.${method} not exercised in health.unit.test`);
 
-/**
- * A `Flagship` stub whose `getBooleanValue` runs the supplied probe read; every
- * other method dies so an accidental call is loud (the `Flags.unit.test` idiom).
- */
+/** Every method but `getBooleanValue` dies, so an accidental call is loud. */
 const stubFlagship = (probe: ProbeRead): Layer.Layer<Flagship> =>
 	Layer.succeed(Flagship)(
 		Flagship.of({
@@ -61,9 +47,8 @@ const stubFlagship = (probe: ProbeRead): Layer.Layer<Flagship> =>
 	);
 
 /**
- * Compile the real health router over a stub client into a `Request → Response`.
- * `provideRequest` discharges the group's per-request `Flagship` + `RuntimeContext`
- * markers (plain `Layer.provide` does not lift them — same seam as `app.ts`).
+ * `provideRequest` discharges the group's per-request `Flagship` + `RuntimeContext` markers
+ * — plain `Layer.provide` does not lift them (same seam as `app.ts`).
  */
 const healthHandler = (probe: ProbeRead) =>
 	HttpRouter.toWebHandler(

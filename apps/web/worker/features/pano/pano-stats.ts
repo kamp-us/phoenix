@@ -1,11 +1,7 @@
 /**
- * The pano-wide `pano_stats` cache — the one read model that spans both planes
- * (post + comment + author totals), so it lives apart from either plane's
- * operations. A pure fold (`recomputePanoStats`) decides the row from the three
- * live COUNTs + the write clock (ADR 0082), and `makePersistPanoStats` is the thin
- * port that gathers the COUNTs and upserts.
- *
- * Write owned by the source-mutation path, not the query-only stats feature (ADR 0117).
+ * The pano-wide `pano_stats` cache — the one read model spanning both planes (post + comment
+ * + author totals), so it lives apart from either plane's operations. Written by the
+ * source-mutation path, not the query-only stats feature (ADR 0117).
  */
 import {sql} from "drizzle-orm";
 import {Effect} from "effect";
@@ -15,14 +11,12 @@ import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
 import {publicLiveWhere} from "../lifecycle/SandboxVisibility.ts";
 import {publicLivePostWhere} from "./PostVisibility.ts";
 
-/** The three live COUNTs the pano-stats fold reads. */
 export interface PanoStatsCounts {
 	totalPosts: number;
 	totalComments: number;
 	totalAuthors: number;
 }
 
-/** The `pano_stats` row the upsert persists — fully derived from the counts + `now`. */
 export interface PanoStats {
 	totalPosts: number;
 	totalComments: number;
@@ -30,11 +24,7 @@ export interface PanoStats {
 	updatedAt: number;
 }
 
-/**
- * Pure stats fold: `pano_stats` is fully derived from the three live COUNTs + the
- * write clock (ADR 0082 — the decision lifted above the Drizzle seam). `updatedAt`
- * is unix seconds, matching the column.
- */
+// `updatedAt` is unix seconds, matching the column.
 export const recomputePanoStats = (counts: PanoStatsCounts, now: Date): PanoStats => ({
 	totalPosts: counts.totalPosts,
 	totalComments: counts.totalComments,
@@ -42,17 +32,11 @@ export const recomputePanoStats = (counts: PanoStatsCounts, now: Date): PanoStat
 	updatedAt: Math.floor(now.getTime() / 1000),
 });
 
-/**
- * Build the `persistPanoStats` port: gather the three live COUNTs via `run`, call
- * the pure `recomputePanoStats` fold, persist via the upsert. Runs after every write
- * that could affect totals. The closure keeps the `Pano.recomputePanoStats` span name.
- */
 export const makePersistPanoStats = (run: DrizzleAccessOrDie["run"]) =>
 	Effect.fn("Pano.recomputePanoStats")(function* (now: Date) {
-		// Public counts are LIVE-only for the anonymous viewer, sourced from the shared
-		// seam (#1359/#1407): posts route through the post-aware predicate so drafts are
-		// excluded too (a draft-only author never inflates the totals); comments have no
-		// draft dimension and use the base public-live predicate.
+		// Public counts are LIVE-only for the anonymous viewer. Posts route through the
+		// post-aware predicate so drafts are excluded too (a draft-only author never inflates the
+		// totals); comments have no draft dimension.
 		const postWhere = publicLivePostWhere(
 			{
 				removedAt: schema.postRecord.removedAt,
@@ -110,5 +94,4 @@ export const makePersistPanoStats = (run: DrizzleAccessOrDie["run"]) =>
 		);
 	});
 
-/** The `persistPanoStats` port type, shared by both plane operation factories. */
 export type PersistPanoStats = ReturnType<typeof makePersistPanoStats>;

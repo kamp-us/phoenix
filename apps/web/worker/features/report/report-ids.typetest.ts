@@ -1,9 +1,7 @@
 /**
- * Type-level assertion (no runtime — checked by `tsgo`, not vitest): the moderation
- * id surfaces `ReportId` (a filed report), `WaveId` (a remove-the-wave grouping), and
- * the shared polymorphic `TargetId` (the report's post/definition/comment target) are
- * nominally distinct, so transposing any two is a compile error (#2721 AC#4), while all
- * three stay plain strings at runtime. Mirrors `../vote/vote-ids.typetest.ts`.
+ * Type-level assertion, checked by `tsgo` rather than vitest: `ReportId`, `WaveId` and
+ * the polymorphic `TargetId` are nominally distinct, so transposing any two is a
+ * compile error (#2721 AC#4) while all three stay plain strings at runtime.
  */
 import {expectTypeOf} from "vitest";
 import type {TargetId} from "../../lib/ids.ts";
@@ -14,8 +12,7 @@ expectTypeOf<ReportId>().toMatchTypeOf<string>();
 expectTypeOf<WaveId>().toMatchTypeOf<string>();
 expectTypeOf<TargetId>().toMatchTypeOf<string>();
 
-// The distinctness that makes a reportId/targetId/waveId swap unrepresentable: no brand
-// is assignable to another, so a moderation flow can't confuse the three ids.
+// No brand is assignable to another, so a moderation flow cannot confuse the three.
 expectTypeOf<ReportId>().not.toEqualTypeOf<TargetId>();
 expectTypeOf<ReportId>().not.toMatchTypeOf<TargetId>();
 expectTypeOf<TargetId>().not.toMatchTypeOf<ReportId>();

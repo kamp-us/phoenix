@@ -1,11 +1,8 @@
 /**
- * Unit — the author's own-posts read (#2544), the PRIVATE complement of the draft-masked
- * public reads. Proven on the served `Mecmua.listOwnPostsConnection` path over a scripted
- * `Drizzle` seam (the `mecmua-feed.unit.test.ts` idiom): the load-bearing AC is that a
- * DRAFT (null `publishedAt`) is INCLUDED — unlike the feed, this surface applies NO
- * published mask, so the author sees both their drafts and their published posts. The
- * author-scoping itself is the SQL `where author_id = ?` (the trusted `publish` ownership
- * idiom), so a foreign row never reaches this JS.
+ * The author's own-posts read, the private complement of the draft-masked public reads.
+ * The load-bearing case is that a DRAFT is INCLUDED — this surface applies no published
+ * mask. Author-scoping is the SQL `where author_id = ?`, so a foreign row never reaches
+ * this JS.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
@@ -26,7 +23,6 @@ const post = (over: Partial<MecmuaRecord> & {id: string}): MecmuaRecord => ({
 	...over,
 });
 
-/** A `Drizzle` whose `run` replays a queued result sequence; `batch` is unused here. */
 const scriptedAccess = (results: ReadonlyArray<unknown>): DrizzleAccess => {
 	const state = {i: 0};
 	return {
@@ -42,8 +38,7 @@ const mecmuaLayer = (access: DrizzleAccess) =>
 	MecmuaLive.pipe(Layer.provide(Layer.succeed(Drizzle, access)));
 
 describe("Mecmua.listOwnPostsConnection — the author's own drafts + published", () => {
-	// Author A's own rows as the `author_id = ?` fetch would return them (createdAt desc):
-	// a published post AND a draft. No `after`, so `run` is called once (the fetch only).
+	// A published post AND a draft, as the `author_id = ?` fetch would return them.
 	const ownRows: MecmuaRecord[] = [
 		post({
 			id: "a-2",

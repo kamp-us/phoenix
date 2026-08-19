@@ -1,15 +1,8 @@
 /**
- * The pure core of the pano link-metadata prefill route (#1642): the SSRF guard
- * (`isSafeFetchUrl`) and the HTML metadata parser (`parseLinkMetadata`). Both
- * are tested here without a worker or a live network — the same testable-pure-
- * core idiom as `evaluate-contract.unit.test.ts`.
- *
- * `isSafeFetchUrl` is the security surface: it must admit only public `http(s)`
- * targets and reject every private/loopback/link-local/CGNAT/metadata address
- * and local-only hostname (AC: "rejects non-http(s) schemes and private/…IPs").
- * `parseLinkMetadata` must prefer `og:*` and fall back to `<title>` / `meta
- * description`, and yield an absent field (never a throw) when a source is
- * missing.
+ * The pure core of the pano link-metadata prefill route (#1642), tested without a worker
+ * or a live network. `isSafeFetchUrl` is the security surface: it must admit only public
+ * `http(s)` targets and reject every private/loopback/link-local/CGNAT/metadata address
+ * and local-only hostname.
  */
 import {describe, expect, it} from "vitest";
 import {isSafeFetchUrl, MAX_FIELD_LEN, parseLinkMetadata} from "./link-metadata.ts";

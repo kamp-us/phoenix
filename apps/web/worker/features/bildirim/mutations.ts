@@ -1,15 +1,11 @@
 /**
- * bildirim mutation resolvers (#1694):
+ * bildirim mutation resolvers. Recipient scoping lives in the service predicate
+ * (`WHERE id AND recipient_id AND read_at IS NULL`), so a foreign or unknown id is a
+ * `marked: 0` no-op ack — never an existence oracle, never someone else's row.
  *
- * - `bildirim.markRead` — flip ONE notification read. Recipient scoping lives in
- *   the service predicate (`WHERE id AND recipient_id AND read_at IS NULL`), so a
- *   foreign or unknown id is a `marked: 0` no-op ack — never an existence oracle,
- *   never someone else's row.
- * - `bildirim.markAllRead` — flip every unread notification of the caller.
- *
- * Both are flag-gated ({@link requireBildirimOn}) and `CurrentUser.required`;
- * each ack carries the post-write unread count so the badge settles in the same
- * round-trip. See `.patterns/fate-effect-operations.md`.
+ * Both are flag-gated and `CurrentUser.required`; each ack carries the post-write unread
+ * count so the badge settles in the same round-trip. See
+ * `.patterns/fate-effect-operations.md`.
  */
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";

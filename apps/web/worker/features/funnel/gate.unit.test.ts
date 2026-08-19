@@ -1,13 +1,7 @@
 /**
- * The funnel access gate (#1589) through the REAL capability seams — not a
- * re-implemented `isMod` check. {@link requireFunnelAccess} discharges
- * {@link ViewFunnel}, whose check runs a genuine `Moderate.over(platform)` discharge
- * (the `moderates` `Relation`) collapsed to a boolean. The matrix proves the mod arm
- * grants and every non-mod (a signed-in non-mod, the anonymous actor) is denied the
- * invisible `Denied`.
- *
- * The ports are scripted (`RelationStore` the moderates tuple, `AgentAuthority`
- * fail-closed, `CurrentActor` the actor) — no DB.
+ * The funnel access gate (#1589) through the REAL capability seams, not a re-implemented
+ * `isMod` check. Every non-mod — signed-in or anonymous — must get the same invisible
+ * `Denied`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
@@ -22,7 +16,6 @@ import {Effect, Exit} from "effect";
 import type {Denied} from "../kunye/errors.ts";
 import {requireFunnelAccess, ViewFunnel} from "./gate.ts";
 
-/** Run the gate over `body = succeed("ok")` for one actor, scripting the mod set. */
 const access = (
 	actor: Actor,
 	opts: {readonly mods?: ReadonlyArray<string>} = {},
@@ -76,8 +69,8 @@ describe("funnel gate — platform-moderation only", () => {
 	});
 
 	it("an allowed read threads a ViewFunnel grant into the body's R (enforcement-by-R)", () => {
-		// `yield* ViewFunnel` would be a compile error without the provided grant — so
-		// reaching "reached" proves the gate supplied the proof, not just a boolean.
+		// `yield* ViewFunnel` would not compile without the provided grant, so reaching
+		// "reached" proves the gate supplied the proof rather than just a boolean.
 		const exit = Effect.runSyncExit(
 			requireFunnelAccess(
 				Effect.gen(function* () {

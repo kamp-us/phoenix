@@ -1,20 +1,8 @@
 /**
- * Vote — the polymorphic vote service. One canonical write surface
- * (`Vote.cast`) for the three vote targets: `definition`, `post`, `comment`.
- *
- * Voting is up-only in the MVP: a vote is a pure presence — `cast({value: true})`
- * casts, `{value: false}` retracts — so invalid states (down-vote semantics, a
- * vote *weight*) are structurally unrepresentable; there is no number to misuse.
- *
- * The feature-local vote table (`definition_vote`/`post_vote`/`comment_vote`,
- * PK `(target_id, voter_id)`) is the score-truth source; the score cached on
- * the target row is rebuilt from `COUNT(*)` on it. The cross-product
- * `user_vote` table (PK `(user_id, target_kind, target_id)`) powers `myVote`.
- *
- * Atomicity invariant: every state-changing cast lands all four mutations —
- * vote-table upsert/delete, score-cache update, `user_vote` mirror, and karma
- * bump (via {@link KarmaBump}) — in one batch that commits or rolls back as a
- * unit. See ADR 0014 (batch as service method).
+ * Vote — the polymorphic vote service for the three targets (`definition`, `post`,
+ * `comment`). Up-only: a vote is a pure presence, so down-vote semantics and vote
+ * weights are unrepresentable. Every state-changing cast lands all four mutations in
+ * one batch that commits or rolls back as a unit (ADR 0014).
  */
 import {and, eq, inArray, type SQL} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
@@ -32,8 +20,6 @@ import {
 	VoteTargetSandboxed,
 } from "./errors.ts";
 
-// Re-exported from `db/target-kind.ts` (its source-of-truth home) for callers
-// that prefer importing it from `./Vote`.
 export type {TargetKind};
 
 export interface VoteInput {
@@ -47,54 +33,34 @@ export interface VoteInput {
 export interface VoteResult {
 	targetKind: TargetKind;
 	targetId: string;
-	/**
-	 * The target's author — the karma recipient of this cast. Surfaced so a caller can
-	 * fire an author-keyed downstream effect (e.g. the divan vote path re-evaluating the
-	 * çaylak→yazar promotion tandem on a bar-crossing vote, #1288/#1289) on the
-	 * **server-derived** author, never a client-supplied one.
-	 */
+	/** Server-derived author (the karma recipient) — never a client-supplied one. */
 	authorId: string;
 	score: number;
-	/** Whether the voter holds an upvote on this target after the write. */
 	myVote: boolean;
 	/** `false` on idempotent no-op. */
 	changed: boolean;
 }
 
-/**
- * The context of one karma bump, passed from Vote (which knows the cast) to the
- * `KarmaBump` implementation (which owns the karma schema) so the implementation
- * can write the provenance ledger row without Vote importing its internals —
- * preserving the dependency inversion (#2592).
- */
 export interface KarmaBumpInput {
-	/** The karma recipient — the vote target's author. */
 	readonly recipientId: string;
-	/** Signed karma delta: `+1` cast, `-1` retraction. */
+	/** Signed: `+1` cast, `-1` retraction. */
 	readonly delta: number;
-	/** The vote target the delta came from — its kind and id. */
 	readonly source: {readonly kind: TargetKind; readonly id: string};
-	/** The event kind driving the bump (`vote` cast / `retract`). */
 	readonly reason: KarmaEventReason;
-	/** Commit timestamp, shared with the rest of the cast batch. */
+	/** Shared with the rest of the cast batch. */
 	readonly at: Date;
 	/**
-	 * The pre-mutation vote-change guard (`targetTable[kind].voteChangeGuard`): an
-	 * `SQL` predicate gating BOTH statements so the karma delta commits only when the
-	 * vote write actually changes the row's presence. A duplicate concurrent cast that
-	 * raced the out-of-batch idempotency probe finds the vote row already present (or
-	 * already gone) and bumps `total_karma` — and appends its ledger row — zero times,
-	 * so `SUM(karma_event.delta)` still reconciles to `total_karma` (#2552).
+	 * Predicate gating BOTH statements, so the karma delta commits only when the vote
+	 * write actually changes the row's presence. A duplicate concurrent cast that raced
+	 * the idempotency probe bumps zero times, keeping `SUM(karma_event.delta)` reconciled
+	 * with `total_karma` (#2552).
 	 */
 	readonly guard: SQL;
 }
 
 /**
- * The karma-bump capability as Vote consumes it: given the bump's context, the
- * **unexecuted** statements to include in the cast batch — the `total_karma`
- * adjustment AND its append-only ledger row (#2592) — so both commit atomically
- * with the vote, or not at all. Two statements, never one: a bump can't land
- * without its provenance event.
+ * Returns **unexecuted** statements for the cast batch. Two, never one: a
+ * `total_karma` bump can't land without its append-only ledger row (#2592).
  */
 export interface KarmaBumpService {
 	readonly statements: (db: DrizzleDb, input: KarmaBumpInput) => readonly [Stmt, Stmt];
@@ -141,47 +107,31 @@ export class Vote extends Context.Service<
 	Vote,
 	{
 		/**
-		 * Score + credit karma for a vote on a **live** target. Two eligibility gates guard the
-		 * write: the *target*-liveness gate rejects a still-sandboxed target with
-		 * {@link VoteTargetSandboxed} (sandboxed çaylak content is votable ONLY through
-		 * {@link castOnSandboxed}, past the divan gate, #1288); the *voter*-tier gate rejects a
-		 * newcomer (çaylak/visitor) voter with {@link VoterNotEligible} — voting on live content
-		 * is earned above the çaylak floor ("earn to vote", #1810). This is the surface the inline
-		 * sözlük/pano vote paths delegate to, so an inline voter can neither score sandboxed
-		 * content nor cast before they are promoted.
+		 * Score + credit karma for a vote on a **live** target — the surface every inline
+		 * sözlük/pano vote path delegates to. Sandboxed targets are votable only through
+		 * {@link castOnSandboxed} (#1288), and a newcomer voter is rejected: voting is
+		 * earned above the çaylak floor (#1810).
 		 */
 		readonly cast: (
 			input: VoteInput,
 		) => Effect.Effect<VoteResult, VoteTargetNotFound | VoteTargetSandboxed | VoterNotEligible>;
 		/**
-		 * The divan-authorized cast (#1288): identical to {@link cast} but ACCEPTS a sandboxed
-		 * target. The only caller is the `features/divan` vote mutation, which reaches this
-		 * past `requireDivanAccess` (`yield* ViewDivan` — the compile-error gate, ADR 0107);
-		 * Vote stays vocabulary-free about the divan, so the authorization lives at that
-		 * resolver, not here. Karma + scoring are the SAME atomic batch as `cast` — the vote
-		 * writes GLOBAL `user_profile.total_karma` (ADR 0050) and a yazar's and a mod's vote
-		 * each weigh `+1` (the divan gate admits both identically).
+		 * The divan-authorized cast (#1288): {@link cast} but ACCEPTS a sandboxed target. Its
+		 * only caller is the `features/divan` vote mutation, which reaches it past
+		 * `requireDivanAccess` (ADR 0107) — the authorization lives at that resolver, so Vote
+		 * stays vocabulary-free about the divan.
 		 */
 		readonly castOnSandboxed: (input: VoteInput) => Effect.Effect<VoteResult, VoteTargetNotFound>;
-		/**
-		 * Batched `myVote` presence read: the subset of `targetIds` the viewer has
-		 * a `user_vote` row for, of the given `kind`, in one `IN (...)` read so
-		 * callers stamp `myVote` without an N+1. Missing viewer or empty
-		 * `targetIds` short-circuits to an empty Set with no read.
-		 */
+		/** The subset of `targetIds` the viewer voted on, in one `IN (...)` read (no N+1). */
 		readonly readMine: (
 			viewerId: string | null | undefined,
 			kind: TargetKind,
 			targetIds: ReadonlyArray<string>,
 		) => Effect.Effect<Set<string>>;
 		/**
-		 * The single vote-cleanup home for the removal substrate (ADR 0096 §3):
-		 * wipe the per-target vote rows (`*_vote`) and the `user_vote` mirror for one
-		 * target, in **one** D1 batch (ADR 0014). Karma is **KEPT** — there is no
-		 * `total_karma` decrement here, so removing content never reverses the karma
-		 * its upvotes earned (sözlük's keep rule, generalized; pano's reversal is
-		 * deleted). The caller stamps `Removed` on the content row and recomputes the
-		 * summary caches outside this batch (recomputable caches, ADR 0011/0096).
+		 * The single vote-cleanup home for the removal substrate (ADR 0096 §3). Karma is
+		 * deliberately **KEPT**: removing content never reverses the karma its upvotes
+		 * earned, so there is no `total_karma` decrement here.
 		 */
 		readonly clearTarget: (kind: TargetKind, targetId: string) => Effect.Effect<void>;
 	}
@@ -189,17 +139,13 @@ export class Vote extends Context.Service<
 
 export const VoteLive = Layer.effect(Vote)(
 	Effect.gen(function* () {
-		// `orDieAccess`: every internal DB call site dies on `DrizzleError`
-		// (infra failures are defects — the domain-boundary rule), so public
-		// signatures carry domain errors only and `R` stays `never`.
+		// `orDieAccess`: infra failures die as defects, so the public signatures below
+		// carry domain errors only.
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const karmaBump = yield* KarmaBump;
 		const voterStanding = yield* VoterStanding;
 		const telemetry = yield* Telemetry;
 
-		// Per-target metadata lookup. If the row is missing or removed we
-		// surface `VoteTargetNotFound` rather than letting the batch fail with
-		// an FK-shaped error.
 		const loadMeta = Effect.fn("Vote.loadMeta")(function* (kind: TargetKind, targetId: string) {
 			const meta = yield* run((db) => targetTable[kind].loadMeta(db, targetId));
 			if (!meta) {
@@ -212,19 +158,12 @@ export const VoteLive = Layer.effect(Vote)(
 			return meta;
 		});
 
-		// Idempotency probe: one point-lookup against the vote table to decide
-		// if the write would be a no-op, so re-casts/re-retracts stay cheap
-		// reads (the `isCast === alreadyCast` path skips the batch).
 		const probeExisting = (kind: TargetKind, targetId: string, userId: string) =>
 			run((db) => targetTable[kind].probeVote(db, targetId, userId));
 
-		// Read the truth-derived score back from the cache the batch just
-		// refreshed; also serves the idempotent path's tail.
 		const readCachedScore = (kind: TargetKind, targetId: string) =>
 			run((db) => targetTable[kind].readScore(db, targetId));
 
-		// Lives here (not in each consuming feature) because Vote owns the
-		// cross-product `user_vote` table. See the `readMine` interface doc.
 		const readMine = Effect.fn("Vote.readMine")(function* (
 			viewerId: string | null | undefined,
 			kind: TargetKind,
@@ -246,31 +185,19 @@ export const VoteLive = Layer.effect(Vote)(
 			return new Set(rows.map((r) => r.targetId));
 		});
 
-		// Shared cast body carrying the TWO internal eligibility regimes, never exposed — the
-		// public surface is two named methods so a caller can't pass the wrong regime:
-		//   • `allowSandboxed`   — the *target*-liveness regime: `cast` (false → reject sandboxed)
-		//     vs `castOnSandboxed` (true → accept), the divan-authorized path (#1288).
-		//   • `requireVoterTier` — the *voter*-tier regime ("earn to vote", #1810): `cast` (true →
-		//     a newcomer voter is rejected) vs `castOnSandboxed` (false → exempt: the divan gate
-		//     at the resolver already admits only yazar/mod, so re-gating tier here would be
-		//     redundant and would wrongly deny a divan-authorized mod).
-		// The real authorization for the sandboxed path is the divan gate at the resolver, not
-		// these booleans.
+		// Both booleans stay private — the public surface is two named methods so a caller
+		// can't pass the wrong regime. `requireVoterTier` is OFF for `castOnSandboxed`: the
+		// divan gate at the resolver already admits only yazar/mod, and re-gating tier here
+		// would wrongly deny a divan-authorized mod.
 		const castImpl = Effect.fn("Vote.castImpl")(function* (
 			input: VoteInput,
 			allowSandboxed: boolean,
 			requireVoterTier: boolean,
 		) {
-			// Voter-tier gate — the SINGLE choke point for all three inline cast paths (pano
-			// post/comment + sözlük definition all reach here via `cast`). Runs before any read
-			// of the target so a newcomer's cast is refused loudly (a typed `VoterNotEligible`,
-			// wire `VOTE_REQUIRES_YAZAR` — its wire code + `need` tier are single-sourced from
-			// `VOTE_REQUIRED_TIER` in `errors.ts`), never a silent no-op. "Above the çaylak floor"
-			// is resolved by the `VoterStanding` seam (discharged by Kunye at `fate/layers.ts`), keeping the
-			// tier vocabulary out of Vote. Gated on `input.value` (the CAST direction only): a
-			// retraction removes influence, never adds it, and a newcomer never cleared the gate
-			// to hold a vote worth retracting — so retraction stays open (and the retract
-			// mutations' error unions need no `VoterNotEligible` arm).
+			// Deliberately gated on `input.value` — the CAST direction only. A retraction
+			// removes influence rather than adding it, and a newcomer never cleared the gate to
+			// hold a vote worth retracting, so retraction stays open and the retract mutations'
+			// error unions need no `VoterNotEligible` arm.
 			if (requireVoterTier && input.value) {
 				const eligible = yield* voterStanding.isAboveNewcomer(input.userId);
 				if (!eligible) {
@@ -297,7 +224,6 @@ export const VoteLive = Layer.effect(Vote)(
 			const alreadyCast = yield* probeExisting(input.targetKind, input.targetId, input.userId);
 
 			if (isCast === alreadyCast) {
-				// State matches intent: no write, return the cached score.
 				const score = yield* readCachedScore(input.targetKind, input.targetId);
 				return {
 					targetKind: input.targetKind,
@@ -309,21 +235,15 @@ export const VoteLive = Layer.effect(Vote)(
 				} satisfies VoteResult;
 			}
 
-			// State change — see `buildBatchStatements` for the atomic batch.
 			const karmaDelta = isCast ? 1 : -1;
 
 			yield* batch((db) =>
 				buildBatchStatements(db, input, meta, isCast, karmaDelta, now, karmaBump),
 			);
 
-			// Reference instrument #1 (ADR 0153, epic #2065). Emit AFTER the atomic batch
-			// commits, so a rolled-back cast — and every idempotent no-op above, which
-			// returns before reaching here — emits nothing. `surface` is the vote's
-			// `targetKind` (definition|post|comment), `userId` the caster (a
-			// deliberately-approximate blob, ADR 0153). Emitted BARE: `TelemetryLive`
-			// contains the whole failure Cause — a `DatasetError` OR a defect — inside the
-			// seam (`Effect.ignoreCause`, ADR 0153 S4 / #2085), so `emit: Effect<void>`
-			// cannot fail or die and a call-site wrap would be redundant.
+			// Emit AFTER the batch commits, so a rolled-back cast emits nothing. Bare on
+			// purpose: `TelemetryLive` swallows its whole failure Cause inside the seam
+			// (ADR 0153 S4), so wrapping this call site would be redundant.
 			yield* telemetry.emit({
 				feature: "vote",
 				action: isCast ? "cast" : "retract",
@@ -345,12 +265,10 @@ export const VoteLive = Layer.effect(Vote)(
 
 		return {
 			readMine,
-			// `cast`: reject a sandboxed target AND require the voter be above the çaylak floor.
 			cast: (input: VoteInput) => castImpl(input, false, true),
 			castOnSandboxed: (input: VoteInput) =>
-				// `castImpl` with the sandbox gate open (and the voter-tier gate OFF — the divan
-				// resolver already admits only yazar/mod) never surfaces VoteTargetSandboxed or
-				// VoterNotEligible, so the divan path's error channel is VoteTargetNotFound only.
+				// With both gates off, `castImpl` can surface neither VoteTargetSandboxed nor
+				// VoterNotEligible — hence the narrowing cast.
 				castImpl(input, true, false) as Effect.Effect<VoteResult, VoteTargetNotFound>,
 			clearTarget: Effect.fn("Vote.clearTarget")(function* (kind: TargetKind, targetId: string) {
 				yield* batch((db) => buildClearTargetStatements(db, kind, targetId));
@@ -359,11 +277,6 @@ export const VoteLive = Layer.effect(Vote)(
 	}),
 );
 
-/**
- * The two statements clearing one target's votes: the per-target `*_vote` rows
- * and the `user_vote` mirror, no karma touched. `db.batch` commits both or
- * neither (ADR 0014), so a removed entity never carries orphan vote rows.
- */
 function buildClearTargetStatements(db: DrizzleDb, kind: TargetKind, targetId: string) {
 	return [
 		targetTable[kind].clearVotes(db, targetId),
@@ -374,14 +287,9 @@ function buildClearTargetStatements(db: DrizzleDb, kind: TargetKind, targetId: s
 }
 
 /**
- * The tuple of statements making up one atomic state-change, in order:
- * karma bump + its provenance ledger row (both from `KarmaBump`, #2592, guarded on
- * the PRE-mutation vote-row state), then the vote-table mutation (truth source),
- * score-cache update, and `user_vote` mirror. `db.batch([...])` commits all or none
- * (ADR 0014) and runs the tuple in order, so the karma pair is evaluated BEFORE the
- * vote write it credits — the guard reads the row's presence as it was, which is what
- * makes a raced duplicate cast a karma no-op (#2552). The vote/score/mirror writes are
- * each already collision-tolerant (`onConflictDoNothing`, `COUNT(*)` recompute).
+ * Order is load-bearing: `db.batch` runs the tuple in sequence, so the karma pair must
+ * come BEFORE the vote write it credits — its guard reads the row's presence as it was,
+ * which is what makes a raced duplicate cast a karma no-op (#2552).
  */
 function buildBatchStatements(
 	db: DrizzleDb,

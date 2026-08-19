@@ -1,19 +1,9 @@
 /**
- * `Sozluk.reactToDefinition` service-seam coverage (epic #1840, #1865) — the
- * cross-product wiring that proves the one reaction template spans sözlük. Driven
- * over a substituted `Drizzle` (the definition load) + a RECORDING `Reaction` double
- * + a fail-on-contact `Vote`, so three things are wrong-or-right with no SQL engine:
- *
- *   - **cast / change / retract on the definition path.** The reactor's intent
- *     (`👍` set, `❤️` change, `null` retract) is delegated verbatim to
- *     `Reaction.react` as `{userId, targetKind: "definition", targetId, emoji}`, and
- *     the re-resolved row carries the FRESH aggregate the engine returned. The
- *     cardinality-one write itself is `Reaction.unit.test.ts`; this pins the
- *     definition-path DELEGATION + re-hydration.
- *   - **ungated + karma-free.** `Vote.cast` fail-on-contact: a passing test proves the
- *     react path never casts a vote or writes karma (the settled #1861 divergence).
- *   - **target-miss → `DefinitionNotFound`.** A missing/removed definition is this
- *     surface's not-found, never the engine's `ReactionTargetNotFound`.
+ * `Sozluk.reactToDefinition` service-seam coverage, over a substituted `Drizzle` + a
+ * RECORDING `Reaction` double + a fail-on-contact `Vote`. Pins the definition-path
+ * DELEGATION and re-hydration (the cardinality-one write itself is `Reaction.unit.test.ts`),
+ * that the path never casts a vote or writes karma, and that a target miss surfaces as
+ * `DefinitionNotFound` rather than the engine's `ReactionTargetNotFound`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit, Layer} from "effect";
@@ -34,9 +24,6 @@ import {Sozluk, SozlukLive} from "./Sozluk.ts";
 const DEF_ID = DefinitionId.make("def-1");
 const REACTOR = UserId.make("u-reactor");
 
-// The scripted `definition_record` the up-front load returns (or `undefined` for the
-// not-found path). The reads only touch `toDefinitionRow`'s columns; the rest satisfy
-// the row shape without being exercised.
 const definitionRow = {
 	id: DEF_ID,
 	body: "bir tanım",
@@ -52,8 +39,8 @@ const definitionRow = {
 	bodyExcerpt: "bir tanım",
 };
 
-// One `run` (the definition load) is the only DB touch; a direct `batch` would mean
-// the react path wrote SQL itself instead of delegating to the engine — die on it.
+// A direct `batch` would mean the react path wrote SQL itself instead of delegating to the
+// engine — die on it.
 const definitionAccess = (row: unknown): DrizzleAccess => ({
 	run: () => Effect.succeed(row as never),
 	batch: () =>
@@ -62,8 +49,7 @@ const definitionAccess = (row: unknown): DrizzleAccess => ({
 		),
 });
 
-// A `Vote` that DIES on any cast — proves the react path is karma-free / ungated
-// (`readMine` alone is on the `myVote` stamp path and returns empty, no DB read).
+// Dies on any cast — proves the react path is karma-free / ungated.
 // biome-ignore lint/plugin: a service double — only `readMine` is reached; `cast` fail-on-contact is the karma-free proof.
 const VoteStub = Layer.succeed(Vote, {
 	cast: () =>
@@ -72,9 +58,8 @@ const VoteStub = Layer.succeed(Vote, {
 	clearTarget: () => Effect.void,
 } as unknown as typeof Vote.Service);
 
-// A `Reaction` that RECORDS every `react` input and replays a scripted aggregate on
-// `readAggregate` — so the delegated `{targetKind, targetId, emoji}` and the
-// re-hydrated aggregate are both observable with no engine/DB.
+// Records every `react` input and replays a scripted aggregate on `readAggregate`, so the
+// delegated input and the re-hydrated aggregate are both observable with no engine.
 const recordingReaction = (
 	reactCalls: ReactInput[],
 	aggregateById: ReadonlyMap<string, ReactionAggregate>,
@@ -123,11 +108,9 @@ describe("Sozluk.reactToDefinition — cast / change / retract delegate to the R
 					reactorId: REACTOR,
 					emoji,
 				});
-				// The intent is delegated verbatim to the ungated, karma-free engine.
 				assert.deepStrictEqual(reactCalls, [
 					{userId: REACTOR, targetKind: "definition", targetId: DEF_ID, emoji},
 				]);
-				// The re-resolved row carries the FRESH aggregate the engine returned.
 				assert.strictEqual(row.id, DEF_ID);
 				assert.deepStrictEqual(row.reactions, aggregate);
 			}).pipe(Effect.provide(sozlukLayer(definitionRow, reactCalls, aggregateById)));
@@ -147,8 +130,7 @@ describe("Sozluk.reactToDefinition — cast / change / retract delegate to the R
 		new Map([[DEF_ID, {counts: [{emoji: "❤️", count: 1}], myReaction: "❤️"}]]),
 	);
 
-	// Retract: the target drops out of the aggregate map, so the stamp fills the empty
-	// aggregate — no counts, no viewer reaction.
+	// Retract: the target drops out of the aggregate map, so the stamp fills the empty one.
 	delegationCase(
 		"retract: null is delegated and the row falls back to the empty aggregate",
 		null,

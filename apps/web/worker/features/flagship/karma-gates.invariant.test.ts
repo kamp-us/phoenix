@@ -1,8 +1,7 @@
 /**
- * The dark-ship default-=-safe-state invariant for the karma-gated privileges
- * feature (#150, künye epic #41). Inspected off the exported `KARMA_GATES_FLAG`
- * record (the same object the factory spreads into `FlagshipFlag`), so no alchemy
- * resource is constructed — mirrors `reactions.invariant.test.ts` (#1863).
+ * The dark-ship default-is-the-safe-state invariant for the karma-gated privileges
+ * feature (#150). Inspected off the exported record rather than the factory, so no
+ * alchemy resource is constructed.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {PHOENIX_KARMA_GATES} from "../../../src/flags/keys.ts";

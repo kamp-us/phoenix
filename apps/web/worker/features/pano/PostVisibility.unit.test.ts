@@ -1,13 +1,10 @@
 /**
- * The pano post-visibility matrix (ADR 0113) — the seam test that lets the Phase-3
- * per-surface predicates be deleted on migration without each re-testing the rule.
- * Asserts `postVisibleTo` over the full cross-product the acceptance criteria name:
- * four content states {Live, Sandboxed, Removed, Draft-private-to-author} × four viewer
- * kinds {anonymous, author, other-member, moderator}.
+ * The pano post-visibility matrix (ADR 0113) — the seam test that lets the per-surface
+ * predicates be deleted on migration without each re-testing the rule.
  *
  * The load-bearing cell that distinguishes draft from sandbox: a moderator sees a
- * Sandboxed post (sandbox review) but NOT a Draft — an unpublished draft is author-only
- * with no moderator exemption. The matrix pins both.
+ * Sandboxed post but NOT a Draft — an unpublished draft is author-only with no moderator
+ * exemption.
  */
 import {assert, describe, it} from "@effect/vitest";
 import * as L from "../lifecycle/EntityLifecycle.ts";
@@ -33,8 +30,7 @@ const viewers = {
 	moderator: {viewerId: "a-mod", canSeeSandboxed: true},
 } satisfies Record<string, L.SandboxViewer>;
 
-// Each cell is the expected `postVisibleTo(state.lifecycle, state.isDraft, AUTHOR, viewer)`
-// — content authored by AUTHOR, viewed by each viewer kind.
+// Content is always authored by AUTHOR; each cell is the expectation per viewer kind.
 const matrix: Record<
 	string,
 	{lifecycle: L.EntityLifecycle; isDraft: boolean; expect: Record<keyof typeof viewers, boolean>}
@@ -47,7 +43,6 @@ const matrix: Record<
 	Sandboxed: {
 		lifecycle: sandboxed,
 		isDraft: false,
-		// author + moderator (sandbox review); hidden from anonymous + other members.
 		expect: {anonymous: false, author: true, otherMember: false, moderator: true},
 	},
 	Removed: {
@@ -58,7 +53,7 @@ const matrix: Record<
 	DraftPrivateToAuthor: {
 		lifecycle: live,
 		isDraft: true,
-		// author ONLY — NO moderator exemption (the cell that separates draft from sandbox).
+		// Author ONLY — no moderator exemption; this is the cell separating draft from sandbox.
 		expect: {anonymous: false, author: true, otherMember: false, moderator: false},
 	},
 };
@@ -88,8 +83,8 @@ describe("postVisibleWhere — the SQL mirror's predicate shape", () => {
 	const cols = {sandboxedAt: {} as never, authorId: {} as never, isDraft: {} as never};
 
 	it("a moderator still gets a restricting predicate (drafts gated even for mods)", () => {
-		// sandbox arm is undefined for a mod, but the draft arm is not — so the
-		// composition is defined, proving mods do not see drafts via this seam.
+		// The sandbox arm is undefined for a mod but the draft arm is not, so a defined
+		// composition proves mods do not see drafts via this seam.
 		assert.isDefined(postVisibleWhere(cols, viewers.moderator));
 	});
 

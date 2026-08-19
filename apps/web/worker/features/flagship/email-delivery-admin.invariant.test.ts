@@ -1,8 +1,7 @@
 /**
- * The dark-ship default-=-safe-state invariant for the admin email-delivery
- * (failing-address) surface (#2692, epic #2687). Inspected off the exported
- * `EMAIL_DELIVERY_ADMIN_FLAG` record (the same object the factory spreads into
- * `FlagshipFlag`), so no alchemy resource is constructed — mirrors `mod-queue.invariant.test.ts`.
+ * The dark-ship default-is-the-safe-state invariant for the admin email-delivery
+ * surface. Inspected off the exported flag record, the same object the factory spreads
+ * into `FlagshipFlag`, so no alchemy resource is constructed.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {PHOENIX_EMAIL_DELIVERY_ADMIN} from "../../../src/flags/keys.ts";

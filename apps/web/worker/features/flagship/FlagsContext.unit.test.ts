@@ -1,11 +1,9 @@
 /**
- * Unit coverage for the environment / per-app-stage mapping (#512): the
- * per-request `FlagsContext` sources its `environment` attribute from the deploy
- * stage (`ENVIRONMENT` config / ADR 0057), and a flag with an environment rule
- * resolves per stage over the `Flags` service — degrading safe on error.
+ * Unit coverage for the environment / per-app-stage mapping (#512): the per-request
+ * `FlagsContext` sources its `environment` from the deploy stage (ADR 0057), and a
+ * flag with an environment rule resolves per stage — degrading safe on error.
  *
- * `makeRequestFlagsContext` reads `AppConfig` off the `ConfigProvider` alchemy
- * auto-wires at worker scope; here we mirror that with `ConfigProvider.fromUnknown`
+ * The worker-scope `ConfigProvider` is mirrored here with `ConfigProvider.fromUnknown`
  * over a fixed `ENVIRONMENT`, so the stage source is the thing under test.
  */
 import {assert, describe, it} from "@effect/vitest";
@@ -65,7 +63,6 @@ describe("makeRequestFlagsContext — environment sourced from the deploy stage"
 		Effect.gen(function* () {
 			const context = yield* makeRequestFlagsContext({userId: "u-1"});
 			assert.strictEqual(context.environment, "development");
-			// the supplied identity is preserved alongside the sourced environment
 			assert.strictEqual(context.userId, "u-1");
 		}).pipe(withStage("development")),
 	);
@@ -85,10 +82,9 @@ describe("makeRequestFlagsContext — environment sourced from the deploy stage"
 	);
 });
 
-// The load-bearing #622 gate: the override cookie is read into the context ONLY
-// under `development`. Any other stage (incl. the fail-closed `production`
-// default) drops it, so a hand-set cookie can never flip a flag in a deployed
-// stage — the override branch is unreachable there.
+// The load-bearing #622 gate: the override cookie is read into the context ONLY under
+// `development`. Any other stage (including the fail-closed `production` default) drops
+// it, so a hand-set cookie can never flip a flag in a deployed stage.
 describe("makeRequestFlagsContext — dev-only override gate (#622)", () => {
 	const overrideCookie = `${FLAG_OVERRIDE_COOKIE}=${encodeOverrideCookieValue({"flag-a": true})}`;
 
@@ -129,9 +125,8 @@ describe("makeRequestFlagsContext — dev-only override gate (#622)", () => {
 });
 
 describe("environment-targeting flag resolves per stage (no call-site change)", () => {
-	// One flag, one stub rule: ON only in development. The call-site is identical
-	// across stages — only the sourced `environment` differs, so the same flag
-	// resolves differently per stage with no code change.
+	// One flag, one stub rule: ON only in development. The call-site is identical across
+	// stages — only the sourced `environment` differs.
 	const devOnlyFlag = (_key: string, defaultValue: boolean, context?: {environment?: string}) =>
 		Effect.succeed(context?.environment === "development" ? true : defaultValue);
 
@@ -164,8 +159,8 @@ describe("environment-targeting degrades safe on error", () => {
 		Effect.gen(function* () {
 			const flags = yield* Flags;
 			const context = yield* makeRequestFlagsContext(anonymousFlagsContext);
-			// default `false` is the off/safe path; an eval error must fall back to it
-			// regardless of the environment attribute carried in the context.
+			// An eval error must fall back to the supplied default regardless of the
+			// environment attribute carried in the context.
 			const enabled = yield* flags
 				.getBoolean("dev-only-feature", false)
 				.pipe(Effect.provideService(FlagsContext, context));

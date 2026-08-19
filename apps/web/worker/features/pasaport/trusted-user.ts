@@ -1,13 +1,8 @@
 /**
- * Trusted-`User` composition — the one home for "resolve the server-authoritative
- * standing (tier + moderator signal) and attach it". `me` and `user.setUsername`
- * stamp the wire `User` here through `toTrustedUser`; the by-id loader joins the same
- * moderator/tier standing via `getUsersWithModerationByIds` (its `UserView` masks the
- * row to `User`). So the masking decision (trusted reads vs the `input:false` session
- * fields, #1297/#1320) has a single source and a third trusted field is a one-site
- * change. The leaf record-stamper stays `toUser` (`shapers.ts`); this is the
- * read-then-attach layer above it, in the domain (ADR 0013), never inline in a fate
- * transport handler (ADR 0016).
+ * Trusted-`User` composition — the one home for "resolve the server-authoritative standing
+ * (tier + moderator signal) and attach it", so the masking decision (trusted reads vs the
+ * `input:false` session fields, #1297/#1320) has a single source. The leaf record-stamper stays
+ * `toUser` (`shapers.ts`); this is the read-then-attach layer above it, in the domain (ADR 0013).
  */
 import type {RelationStore} from "@kampus/authz";
 import {Effect} from "effect";
@@ -17,24 +12,20 @@ import {Pasaport} from "./Pasaport.ts";
 import {toUser} from "./shapers.ts";
 import type {User} from "./views.ts";
 
-/** The non-standing fields of a `User` — id + the email-ish fields the session carries. */
 export interface TrustedUserBase {
 	id: string;
 	email: string;
 	name: string | null;
 	image: string | null;
 	username: string | null;
-	// The SELF failing-delivery signal (#2693). Only `queries.me` sets it (from #2691's
-	// projection); every other caller omits it and `toTrustedUser` defaults it `false`, so a
-	// non-self trusted `User` never carries real delivery-state (see `user-fields.ts`).
+	// The SELF failing-delivery signal (#2693): only `queries.me` sets it; every other caller omits
+	// it and it defaults `false`, so a non-self trusted `User` never carries real delivery-state.
 	emailFailing?: boolean;
 }
 
 /**
- * The SELF trusted `User`: the subject's OWN tier (`Kunye.tierOf`, the stored
- * column, never the session field) + OWN moderator signal (`isModerator`, the
- * `moderates` tuple) stamped onto `toUser`. `me` and `setUsername` route through
- * here so their `User` shape can't drift.
+ * The SELF trusted `User`: the subject's OWN tier (the stored column, never the session field)
+ * + OWN moderator signal stamped onto `toUser`.
  */
 export const toTrustedUser = (
 	base: TrustedUserBase,
@@ -46,7 +37,6 @@ export const toTrustedUser = (
 		return toUser({...base, tier, isModerator: isMod, emailFailing: base.emailFailing ?? false});
 	});
 
-/** The validated session identity {@link resolveMeUser} resolves the trusted `User` from. */
 export interface MeSessionUser {
 	id: string;
 	email: string;
@@ -55,12 +45,9 @@ export interface MeSessionUser {
 }
 
 /**
- * The ONE session→user resolution shared by the `/fate` `me` query and the edge
- * `__BOOT__.user` injection (ADR 0185), so both read the same canonical row + trusted
- * standing. Reads the canonical `user` row fresh (so a just-set `username` round-trips before
- * better-auth's session inference catches up), falling back to the session identity when the
- * row is absent; projects the SELF failing-delivery signal (#2693); then attaches the trusted
- * tier + moderator standing via {@link toTrustedUser}.
+ * The ONE session→user resolution shared by the `/fate` `me` query and the edge `__BOOT__.user`
+ * injection (ADR 0185). The canonical row is read FRESH so a just-set `username` round-trips
+ * before better-auth's session inference catches up; the session identity is the fallback.
  */
 export const resolveMeUser = (
 	sessionUser: MeSessionUser,
@@ -91,12 +78,9 @@ export const resolveMeUser = (
 	});
 
 /**
- * The BATCHED by-id user rows with moderator standing joined on: fetch the user
- * rows, then ONE `RelationStore` set-membership read (`moderatorsAmong`) decides
- * which of them moderate — no per-row `isModerator` call. Each row already carries
- * its stored `tier`, so the batch needs no per-row tier fetch. This is the domain
- * method `userSource.byIds` delegates to, restoring fate pure transport at the loader
- * (ADR 0016); the loader's `UserView` masks the row down to the wire `User`.
+ * The BATCHED by-id rows: ONE `RelationStore` set-membership read decides which of them
+ * moderate — no per-row `isModerator` call, and no per-row tier fetch (each row carries its
+ * stored `tier`). `userSource.byIds` delegates here, keeping fate transport pure (ADR 0016).
  */
 export const getUsersWithModerationByIds = (ids: ReadonlyArray<string>) =>
 	Effect.gen(function* () {

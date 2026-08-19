@@ -1,24 +1,9 @@
 /**
- * The divan vote mutation (#1288, epic #1202) — score a SANDBOXED çaylak item from inside
- * the proving ground, crediting the author's GLOBAL karma so a sandboxed çaylak can earn
- * toward the reduced çaylak→yazar promotion bar (#1289).
- *
- * The gate, exactly the read model's (`lists.ts`): {@link requireDivanAccess} (yazar OR
- * mod) — `yield* ViewDivan` makes the cast unreachable without the discharged grant, so a
- * çaylak / public / anonymous actor is denied the invisible {@link Denied}. This IS the
- * "non-gated actor cannot vote a sandboxed item" guarantee — a compile-error gate, not an
- * `if` (ADR 0107).
- *
- * The cast itself delegates to `Vote.castOnSandboxed` — the ONLY caller of the
- * sandbox-permitting path. The inline sözlük/pano vote paths use `Vote.cast`, which rejects a
- * sandboxed target, so the divan is the only surface that can score sandboxed content. The
- * karma + scoring batch is the shared Vote engine unchanged: GLOBAL `user_profile.total_karma`
- * (D2, ADR 0050) and `+1` per vote with the gate admitting yazar and mod identically (D3).
- *
- * After a vote moves the author's karma it fires `resolveTandem` (#1289) — the karma side of the
- * order-independent çaylak→yazar promotion tandem — so a bar-crossing vote with an already-active
- * vouch auto-promotes. `resolveTandem` holds no authority of its own (it only re-checks the
- * completed-tandem invariant), so it stays inside this same divan-gated path.
+ * The divan vote mutation — score a SANDBOXED çaylak item, crediting the author's global
+ * karma. `yield* ViewDivan` makes the cast unreachable without a discharged grant, so the
+ * "non-gated actor cannot vote a sandboxed item" guarantee is a compile error, not an `if`
+ * (ADR 0107). This is the ONLY caller of `Vote.castOnSandboxed`; every other vote path
+ * uses `Vote.cast`, which rejects a sandboxed target.
  */
 import {CurrentUser, Fate} from "@kampus/fate-effect";
 import {Effect} from "effect";
@@ -34,16 +19,13 @@ import {DivanVoteReceiptView} from "./views.ts";
 const DivanVoteInput = Schema.Struct({
 	/** The backlog item's `<kind>:<itemId>` composite id (see `DivanBacklogItemView`). */
 	id: Schema.String,
-	/** Up-only presence: `true` casts the upvote, `false` retracts it. */
+	/** Up-only presence: `true` casts, `false` retracts. */
 	value: Schema.Boolean,
 });
 
 /**
- * Split a `<kind>:<itemId>` divan item id back into its target, or `null` if malformed /
- * unknown-kind — the shared {@link parseTargetKey} codec, remapped to the vote engine's
- * `{targetKind, targetId}` field names. The backlog read only ever emits well-formed ids,
- * so a `null` here is a hand-crafted request past the gate — the caller collapses it to the
- * invisible `Denied`, keeping the private surface opaque.
+ * The backlog read only ever emits well-formed ids, so a `null` here means a hand-crafted
+ * request — the caller collapses it to the invisible `Denied` rather than a parse error.
  */
 const parseItemId = (id: string): {targetKind: TargetKind; targetId: string} | null => {
 	const parsed = parseTargetKey(id);
@@ -67,13 +49,9 @@ export const mutations = {
 	),
 };
 
-// The post-gate cast body — runnable only with a `ViewDivan` grant in R (`requireDivanAccess`
-// provides it); `yield* ViewDivan` IS the divan audience gate, so casting without a discharged
-// grant is a compile error. The voter is read OPTIONALLY (not `CurrentUser.required`) so an
-// anonymous actor gets the gate's invisible `Denied`, never a "not signed in" leak — though the
-// gate already denied them, since both arms (yazar / mod) need authentication. Delegates to the
-// sandbox-permitting `Vote.castOnSandboxed`; a `VoteTargetNotFound` (raced soft-delete) collapses
-// to the invisible `Denied`, keeping the surface opaque and the error union `{Denied}`.
+// The voter is read OPTIONALLY, not via `CurrentUser.required`, so an anonymous actor gets
+// the invisible `Denied` and never a "not signed in" leak. `VoteTargetNotFound` collapses
+// the same way, keeping this private surface opaque.
 const voteGated = Effect.fn("divan.voteGated")(function* (
 	targetKind: TargetKind,
 	targetId: string,
@@ -90,18 +68,13 @@ const voteGated = Effect.fn("divan.voteGated")(function* (
 				Effect.fail(new Denied({message: "Oy verilecek içerik bulunamadı."})),
 			),
 		);
-	// The karma-side promotion trigger (#1289): a vote that moved the AUTHOR's karma may have
-	// crossed the reduced bar — re-evaluate the order-independent tandem so a bar-crossing vote
-	// with an already-active vouch auto-promotes the çaylak. `resolveTandem` reads both halves
-	// fresh, is idempotent, and holds no authority of its own (it only checks the completed-tandem
-	// invariant), so it stays inside this divan-gated path with no new authority surface. Keyed on
-	// the SERVER-derived `result.authorId`, never a client-supplied id. Only on a real karma move.
+	// A karma move may have crossed the reduced promotion bar. Keyed on the SERVER-derived
+	// author id, never a client-supplied one; idempotent, and it holds no authority of its
+	// own, so it stays inside this gated path.
 	if (result.changed) yield* resolveTandem(result.authorId);
-	// Rite feedback (#1695): a LANDED upvote (not a retraction, not an idempotent
-	// no-op) notifies the item's author — aggregated per item, self-suppressed,
-	// flag-gated and swallowed inside the emitter, so it can never fail this
-	// committed cast. A retraction stays silent (no decrement: the aggregate is
-	// "attention received", not a live score).
+	// Only a LANDED upvote notifies — a retraction stays silent, because the aggregate is
+	// "attention received", not a live score. The emitter swallows its own failures, so it
+	// can never fail this already-committed cast.
 	if (value && result.changed) {
 		yield* notifyDivanVote({
 			authorId: result.authorId,

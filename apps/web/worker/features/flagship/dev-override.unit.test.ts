@@ -1,11 +1,6 @@
 /**
- * Unit coverage for the dev-only flag-override codec (#622) — the pure cookie
- * parse/serialize + tri-state apply that the dev settings route and the override
- * `Flags` wrapper rest on. No worker, no binding, no DOM: just the codec contract.
- *
- * The codec carries NO environment gate (that lives at the two install sites,
- * `makeRequestFlagsContext` + `http/app.ts`); these tests cover the parse/apply
- * surface, the malformed-input degrade-safe behavior, and the round-trip.
+ * The dev-only flag-override codec (#622). The codec itself carries NO environment gate —
+ * that lives at the two install sites, `makeRequestFlagsContext` + `http/app.ts`.
  */
 import {describe, expect, it} from "vitest";
 import {

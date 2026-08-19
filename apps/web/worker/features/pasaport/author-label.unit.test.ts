@@ -20,9 +20,8 @@ describe("authorDisplayLabel — the write-boundary author label (no email at re
 		expect(AUTHOR_FALLBACK_LABEL).toBe("kullanıcı");
 	});
 
-	// The regression this helper exists to prevent (#2130): a null-name account must
-	// NEVER have its email persisted as authorName. Email is not an input to the rule —
-	// a caller with only {email} in scope resolves to the fallback, not the email.
+	// The regression this helper exists to prevent (#2130): a null-name account must NEVER
+	// have its email persisted as `authorName`.
 	it("never emits an email — a null-name actor resolves to @username or the fallback, never PII", () => {
 		expect(authorDisplayLabel({name: null, username: "handle"})).toBe("@handle");
 		const nullNameNoUsername = authorDisplayLabel({name: null, username: null});

@@ -1,14 +1,8 @@
 /**
- * The lockstep guard for the worker-owned path set (#861). `app.ts` merges the
- * route layers; `index.ts` derives `runWorkerFirst` from the same manifest. These
- * tests pin that the derived globs actually cover every worker-owned mount path —
- * so a future route added without a matching glob fails CI here, not as the
- * fail-quiet "SPA shell served on GET" symptom in production.
- *
- * Extended for the edge-render shell route (#2929, ADR 0179): the CF spa-shell recipe
- * (`["/*", "!/assets/*"]`) is modelled by {@link runsWorkerFirst} — the positive `/*`
- * pulls every non-asset path worker-first and the `!`-exception keeps `/assets/*`
- * edge-direct — and the HTML route (`* /*`) is pinned coupled to that `!`-exception.
+ * The lockstep guard for the worker-owned path set (#861): the derived globs must
+ * cover every worker-owned mount path, so a route added without a matching glob fails
+ * CI here instead of showing up in production as the fail-quiet "SPA shell served on
+ * GET" symptom. {@link runsWorkerFirst} models the CF spa-shell recipe (ADR 0179).
  */
 import {describe, expect, it} from "vitest";
 import {

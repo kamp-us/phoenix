@@ -1,11 +1,9 @@
 /**
- * Mod-queue emitter coverage (#1699) — the decisions wrong-or-right with no database
- * (ADR 0082 T1/T2; `.patterns/effect-testing.md`): moderator resolution + actor
- * self-suppression, the flag containment (dark by default), the çaylak-entry 0→1
- * transition gate, and the swallow-at-the-seam guarantee — a DYING dependency (the
- * `orDieAccess` defect shape) cannot fail the caller. The `Notification` / `Divan` /
- * `RelationStore` seams are fail-on-contact stubs with only the exercised method
- * overridden, so "touched the wrong surface" is a test failure.
+ * Mod-queue emitter coverage — the decisions wrong-or-right with no database (ADR 0082):
+ * moderator resolution + actor self-suppression, the flag containment, the çaylak-entry 0→1
+ * gate, and the swallow-at-the-seam guarantee (a DYING dependency cannot fail the caller).
+ * The `Notification` / `Divan` / `RelationStore` seams are fail-on-contact stubs with only
+ * the exercised method overridden, so "touched the wrong surface" is a test failure.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {RelationStore} from "@kampus/authz";
@@ -46,9 +44,8 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 		getObject: () => Effect.die("getObject not exercised"),
 	} as typeof Flags.Service);
 
-// A no-op `LivePublisher`: `Notification.record` yields the per-request publisher for
-// the fire-and-forget live fan-out (#2076). The stub `record` never touches it, so a
-// do-nothing publisher satisfies the requirement without asserting on it.
+// `Notification.record` yields the per-request publisher for the fire-and-forget live
+// fan-out; the stub `record` never touches it.
 const noopLivePublisher = Layer.succeed(LivePublisher)({
 	update: () => Effect.void,
 	delete: () => Effect.void,
@@ -66,8 +63,8 @@ const requestContext = (on: boolean) =>
 		noopLivePublisher,
 	);
 
-// A `RelationStore` where exactly `mods` hold the `(moderates, platform)` tuple — the
-// authority model the recipient set is resolved from (never a hardcoded list).
+// Exactly `mods` hold the `(moderates, platform)` tuple — the authority model the recipient
+// set is resolved from, never a hardcoded list.
 const relationStoreOf = (mods: ReadonlyArray<string>): Layer.Layer<RelationStore> =>
 	Layer.succeed(RelationStore, {
 		has: () => Effect.die(new Error("mod-emitters resolve via subjectsOf, not has")),
@@ -77,7 +74,6 @@ const relationStoreOf = (mods: ReadonlyArray<string>): Layer.Layer<RelationStore
 			Effect.succeed(new Set(relation === "moderates" && object.type === "platform" ? mods : [])),
 	});
 
-// A `Divan` whose `pendingCountOf` answers a scripted count; the other reads die.
 const divanPending = (count: number): Layer.Layer<Divan> =>
 	Layer.succeed(Divan, {
 		roster: () => Effect.die(new Error("Divan.roster not exercised")),
@@ -109,7 +105,6 @@ describe("modRecipients — moderator resolution + actor self-suppression, pure"
 	});
 });
 
-// A `Notification` whose `recordDigest` captures the digest calls (input + window).
 const capturingDigest = () => {
 	const calls: Array<{input: NotificationDigestInput; window: Duration.Duration}> = [];
 	const layer = makeNotificationStub({
@@ -122,12 +117,9 @@ const capturingDigest = () => {
 	return {calls, layer};
 };
 
-/**
- * An in-memory `Notification` whose `recordDigest` mirrors the SQL key (#3641): bump the
- * recipient's page for `(kind, actor)` when one was minted inside the window, else mint a
- * fresh one. The clock is scripted, so the window boundary is decidable with no engine
- * (ADR 0082 T1/T2) — this is what makes "many reports → bounded pages" observable here.
- */
+// Mirrors the SQL key (#3641): bump the recipient's page for `(kind, actor)` when one was
+// minted inside the window, else mint a fresh one. The clock is scripted, so the window
+// boundary is decidable with no engine.
 const digestingNotification = (clock: {now: Date}) => {
 	const pages: Array<{
 		recipientId: string;
@@ -283,8 +275,8 @@ describe("notifyReportFiled — per-reporter/window coalescing (the mod-pager fa
 		Effect.gen(function* () {
 			const clock = {now: new Date("2026-07-22T10:00:00Z")};
 			const {pages, layer} = digestingNotification(clock);
-			// Eight reports, a minute apart, across eight DISTINCT targets — the
-			// amplification shape: un-coalesced this is 16 rows on a two-person team.
+			// Eight reports a minute apart across eight DISTINCT targets — un-coalesced this is 16
+			// rows on a two-person team.
 			for (let i = 0; i < 8; i++) {
 				clock.now = new Date(clock.now.getTime() + 60_000);
 				yield* fileReport("u-spammer", `p${i}`, layer);
@@ -297,7 +289,6 @@ describe("notifyReportFiled — per-reporter/window coalescing (the mod-pager fa
 				pages.map((page) => page.count),
 				[8, 8],
 			);
-			// Each page still links to the window's FIRST reported target.
 			assert.deepStrictEqual(
 				pages.map((page) => page.targetId),
 				["p0", "p0"],

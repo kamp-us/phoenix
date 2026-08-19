@@ -1,18 +1,12 @@
 /**
- * bildirim fate sources — every bildirim entity is delivered inline
- * (`Notification` by the `bildirim.list` resolver, `NotificationUnread` by the
- * `bildirim.unreadCount` query, `NotificationMarkReceipt` by the mark mutations,
- * `NotificationChannel` by the `bildirim.channel` query + reconciled live over
- * `/fate/live`) and never read by id, so all are capability-less
- * `Fate.syntheticSource` entries — view-reachable, no fetch path (the `ReportReceipt`
- * escape hatch, `.patterns/fate-effect-sources.md`).
+ * Every bildirim entity is delivered inline by a resolver and never read by id, so
+ * all of them are capability-less synthetic sources: view-reachable, with no fetch
+ * path (see .patterns/fate-effect-sources.md).
  *
  * `NotificationChannel` stays loader-less on purpose: its id IS the recipient's user
- * id, so a `byId(userId)` loader would be a cross-user read path bypassing the
- * recipient-scoped `/fate/live` gate. The client must therefore NEVER issue a `byId`
- * for it — it seeds the ref from the `bildirim.channel` query and subscribes live
- * (`useBildirimUnread`, `BildirimList`); an ungated `readView` on a cache miss fetches a
- * `byId` that 500s through the capability-less arm (#2206).
+ * id, so a `byId(userId)` loader would be a cross-user read path around the
+ * recipient-scoped live gate. The client must therefore never issue a `byId` for it —
+ * an ungated `readView` on a cache miss fetches one and 500s (#2206).
  */
 import {Fate} from "@kampus/fate-effect";
 import {

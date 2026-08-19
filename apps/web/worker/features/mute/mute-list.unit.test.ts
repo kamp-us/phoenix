@@ -1,19 +1,7 @@
 /**
- * `mute.listMine` coverage (#3114, epic #2035) — the manage-my-mutes read model,
- * split across the two seams the ACs live on (ADR 0082):
- *
- *   - **the domain read** (`Mute.listMine`) over the substituted `Drizzle` seam: the
- *     muter-ownership predicate is asserted on the rendered SQL (`.toSQL()` over a
- *     no-op D1 — the `Notification.unit.test.ts` idiom), so "list someone else's
- *     mutes" carries `muter_id` by construction; the newest-first keyset paging folds
- *     the `first + 1` probe into `{rows, hasNextPage, endCursor}`, and a foreign/dead
- *     cursor is the shared cursor-miss empty page (never a probe into another muter's
- *     rows). A null viewer short-circuits with no read.
- *   - **the WIRE boundary** (the `mute.listMine` list resolver) through `resolveWire`
- *     (decode → `encodeWireError`): an anonymous caller is rejected `UNAUTHORIZED`
- *     before any read; with the `member-mute` flag OFF an authed caller is refused
- *     `MUTE_DISABLED` (the dark-ship containment); with the flag ON the page is
- *     hydrated with the muted member's profile handle in ONE batched pasaport read.
+ * `mute.listMine` coverage across its two seams (ADR 0082): the domain read over a
+ * substituted `Drizzle`, where the muter-ownership predicate is asserted on the rendered
+ * SQL, and the wire boundary through `resolveWire`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser} from "@kampus/fate-effect";
@@ -28,8 +16,7 @@ import type {ProfileIdentityRow} from "../pasaport/Pasaport.ts";
 import {lists} from "./lists.ts";
 import {Mute, MuteLive, mutedMembersQuery} from "./Mute.ts";
 
-// A real drizzle client over a no-op D1 — used ONLY to render `.toSQL()`; it never
-// executes (the `Notification.unit.test.ts` render seam).
+// A real drizzle client over a no-op D1, used ONLY to render `.toSQL()`; nothing executes.
 // biome-ignore lint/plugin: `D1Database` is a host binding that can't be structurally constructed in a fake; nothing here executes against it.
 const noopD1 = {
 	prepare: () => ({
@@ -55,14 +42,12 @@ const noopD1 = {
 } as unknown as D1Database;
 const renderDb = drizzle(noopD1, {relations});
 
-// A `Drizzle` whose every call throws — any path that reaches the DB seam fails the
-// test, so a no-read short-circuit runs to completion against it (the "no read" proof).
+// Every call throws, so a short-circuit that runs to completion against it proves no read.
 const throwingAccess: DrizzleAccess = {
 	run: () => Effect.die(new Error("Mute read the DB on a path that must short-circuit")),
 	batch: () => Effect.die(new Error("Mute wrote a batch on a path that must short-circuit")),
 };
 
-// A `Drizzle` seam that dispenses queued responses in order (the Funnel idiom).
 const scriptedSequence = (responses: ReadonlyArray<unknown>): DrizzleAccess => {
 	let call = 0;
 	return {
@@ -111,7 +96,6 @@ describe("Mute.listMine — newest-first keyset paging", () => {
 			assert.isTrue(page.hasNextPage);
 			assert.strictEqual(page.endCursor, "u2");
 		}).pipe(
-			// One read (no cursor to resolve): the LIMIT 3 probe returns 3 rows.
 			Effect.provide(
 				muteLayer(
 					scriptedSequence([
@@ -133,7 +117,6 @@ describe("Mute.listMine — newest-first keyset paging", () => {
 			assert.deepStrictEqual(page.rows, []);
 			assert.isFalse(page.hasNextPage);
 			assert.isNull(page.endCursor);
-			// The cursor-resolve read returned no row → miss → no second read issued.
 		}).pipe(Effect.provide(muteLayer(scriptedSequence([undefined])))),
 	);
 
@@ -148,7 +131,6 @@ describe("Mute.listMine — newest-first keyset paging", () => {
 			assert.isFalse(page.hasNextPage);
 			assert.strictEqual(page.endCursor, "u1");
 		}).pipe(
-			// read #1 resolves the cursor to its created_at; read #2 is the keyset page.
 			Effect.provide(
 				muteLayer(
 					scriptedSequence([
@@ -160,8 +142,6 @@ describe("Mute.listMine — newest-first keyset paging", () => {
 		),
 	);
 });
-
-// --- WIRE boundary: the `mute.listMine` list resolver through `resolveWire` ---
 
 const VIEWER = {id: "u-viewer", email: "kaan@example.com", name: "kaan"};
 
@@ -183,8 +163,7 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 
 type ListMine = (typeof Mute.Service)["listMine"];
 
-// A `Mute` whose `listMine` runs `impl` (or dies on contact) — a denied path that must
-// short-circuit before the read proves it by failing the fail-on-contact default.
+// Dies on contact unless `impl` is given, so a denied path proves it never read.
 const muteStub = (impl?: ListMine) =>
 	Layer.succeed(Mute, {
 		listMine:

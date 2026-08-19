@@ -1,14 +1,10 @@
 /**
- * The `Divan` read-model service (#1287) over stub Sözlük/Pano (ADR 0082 unit tier,
- * no DB). The stubs re-express the `listSandboxed*` contract — they return ONLY
- * sandboxed, not-removed rows, optionally scoped to one author — so the test proves
- * the divan, composing them, yields a person-grouped roster that excludes removed and
- * live content, and that `backlogOf` scopes to one çaylak newest-first.
+ * The `Divan` read-model service (#1287) over stub Sözlük/Pano. Removed-exclusion is
+ * the `sandboxBacklogWhere` predicate's job in the REAL reads; the stubs honor that
+ * contract and what is asserted here is that the divan reflects it faithfully.
  *
- * Removed-exclusion is the `sandboxBacklogWhere` predicate's job in the REAL reads
- * (it carries `removed_at IS NULL`); here the stub honors that contract and the test
- * asserts the divan faithfully reflects it. Each stub is the `definition-mutation`
- * `Proxy`-over-`Partial` idiom: scripted reads, every other method dies on contact.
+ * Each stub is the `Proxy`-over-`Partial` idiom: scripted reads, every other method
+ * dies on contact.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
@@ -31,8 +27,6 @@ interface Raw {
 
 const at = (iso: string) => new Date(iso);
 
-// The `sandboxBacklogWhere` contract the real `listSandboxed*` reads enforce:
-// still-sandboxed, not-removed, optionally one author's backlog.
 const backlog = (rows: ReadonlyArray<Raw>, opts: {authorId?: string} = {}) =>
 	rows.filter(
 		(r) =>
@@ -114,16 +108,16 @@ const panoStub = (posts: ReadonlyArray<Raw>, comments: ReadonlyArray<Raw>): Laye
 		) as typeof Pano.Service,
 	);
 
-// The batched identity read the roster joins on: returns only the requested ids that
-// have a profile row, so an author absent here degrades to null handle + 0 karma.
+// Returns only requested ids that have a profile row, so an absent author degrades to
+// null handle + 0 karma.
 const pasaportStub = (identities: ReadonlyArray<ProfileIdentityRow>) =>
 	makePasaportStub({
 		getProfileIdentitiesByIds: (ids) =>
 			Effect.succeed(identities.filter((i) => ids.includes(i.userId))),
 	});
 
-// cyl-a has a full profile; cyl-b is deliberately ABSENT so the roster join exercises
-// the missing-profile degradation (null handle + 0 karma → the "çaylak" label client-side).
+// cyl-b is deliberately ABSENT, so the roster join exercises the missing-profile
+// degradation.
 const IDENTITIES: ReadonlyArray<ProfileIdentityRow> = [
 	{userId: "cyl-a", username: "ada", displayName: "Ada Lovelace", totalKarma: 7},
 ];
@@ -278,8 +272,7 @@ describe("Divan.backlogOf — one çaylak's sandboxed backlog, newest first", ()
 
 	it("excludes a removed item from the scoped backlog", () => {
 		const items = run(Effect.flatMap(Divan, (d) => d.backlogOf(UserId.make("cyl-b"))));
-		// cyl-b has c1 (06:00, sandboxed), c2 (07:00, REMOVED), d3 (03:00, sandboxed):
-		// the removed c2 is absent; the rest newest-first.
+		// The removed c2 must be absent; the rest newest-first.
 		assert.deepStrictEqual(
 			items.map((i) => i.id),
 			["c1", "d3"],
@@ -289,7 +282,7 @@ describe("Divan.backlogOf — one çaylak's sandboxed backlog, newest first", ()
 
 describe("Divan.pendingCountOf — the mod-notification 0→1 transition gate (#1699)", () => {
 	it("counts a çaylak's still-pending items across all kinds (removed & live excluded)", () => {
-		// cyl-a: d1 (sandboxed) + p1 (sandboxed) = 2; d2 (removed) and the yazar's live d4 excluded.
+		// d2 (removed) and the yazar's live d4 are excluded.
 		assert.strictEqual(run(Effect.flatMap(Divan, (d) => d.pendingCountOf("cyl-a"))), 2);
 	});
 

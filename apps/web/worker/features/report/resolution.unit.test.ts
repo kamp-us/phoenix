@@ -1,11 +1,4 @@
-/**
- * Resolution state-machine unit coverage (ADR 0098 §3) — the legal vs illegal
- * transitions, with no database. The compile-time guarantee (a missing branch is a
- * `Match.tagsExhaustive` error) is enforced by the type-checker; this proves the
- * runtime behavior: `open` resolves, terminals reject re-resolve, terminals reopen,
- * `open` rejects reopen. An illegal transition is a typed `Result.Failure`, not a
- * bare `throw` (#2560).
- */
+/** Resolution state-machine coverage (ADR 0098 §3) — legal vs illegal transitions. */
 import {assert, describe, it} from "@effect/vitest";
 import {Result} from "effect";
 import {

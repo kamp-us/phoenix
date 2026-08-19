@@ -1,13 +1,10 @@
 /**
- * Sözlük root list resolvers — `terms`, `recentTerms`, `popularTerms`. Root
- * lists map a service keyset page onto a `ConnectionResult` (ADR 0019; the
- * service owns the cursor + keyset SQL, this layer only reshapes). `sort` is a
- * plain validated string since fate has no enum type (ADR 0018).
+ * Sözlük root list resolvers. A root list maps a service keyset page onto a
+ * `ConnectionResult` (ADR 0019); the service owns the cursor + keyset SQL.
  *
- * `recentTerms` / `popularTerms` exist as fixed-sort duplicates of `terms`
- * because fate's `useRequest` keys map 1:1 to root names — one `terms` resolver
- * can't be aliased under two keys, so the home page (recent + popular side by
- * side) needs two resolvers to batch them in one request without a waterfall.
+ * `recentTerms` / `popularTerms` are fixed-sort duplicates of `terms` because fate's
+ * `useRequest` keys map 1:1 to root names — one resolver can't be aliased under two keys, so
+ * the home page needs two to batch them in one request without a waterfall.
  */
 
 import {Fate} from "@kampus/fate-effect";
@@ -43,8 +40,7 @@ const listTerms = (
 ) =>
 	Effect.gen(function* () {
 		const sozluk = yield* Sozluk;
-		// Resolve the sandbox viewer (identity + moderator probe) so the list hides terms
-		// whose only definitions this viewer can't read (#3724).
+		// So the list hides terms whose only definitions this viewer can't read.
 		const sandboxViewer = yield* currentSandboxViewer;
 		const page = yield* sozluk.listTermSummariesConnection({
 			sort,
@@ -74,8 +70,7 @@ export const lists = {
 			return yield* listTerms("popular", args);
 		}),
 	),
-	// The public landing "son eklenenler" column (#1424) — live-only recent terms,
-	// masked in `Sozluk.getLandingTerms`; a single non-paginated page.
+	// The public landing "son eklenenler" column — live-only, a single non-paginated page.
 	landingTerms: Fate.list(
 		{args: LandingTermsArgs, type: TermView},
 		Effect.fn("landingTerms")(function* ({args}) {

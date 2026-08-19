@@ -1,8 +1,7 @@
 /**
- * `makeNotificationStub` — the shared {@link Notification} test double, mirroring
- * `Funnel.testing.ts` / `Report.testing.ts`. Every method fails-on-contact
- * (`Effect.die`) by default; a test overrides only the method under test. A
- * **factory, not a shared instance** (`.patterns/effect-testing.md`).
+ * The shared {@link Notification} test double. Every method fails on contact by default; a test
+ * overrides only the method under test. A factory, not a shared instance
+ * (`.patterns/effect-testing.md`).
  */
 import {Effect, Layer} from "effect";
 import {Notification} from "./Notification.ts";

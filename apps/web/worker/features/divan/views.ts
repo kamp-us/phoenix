@@ -1,25 +1,18 @@
 /**
- * The divan fate views (#1287, epic #1202) — both private, gated surfaces with NO
- * source fetch path: each is delivered inline by its `divan.*` list resolver (the
- * `report.listOpen` / `OpenReport` shape), so its source is a capability-less
- * `Fate.syntheticSource` (view-reachable, no by-id read).
+ * The divan fate views — both private, gated surfaces with NO source fetch path: each is
+ * delivered inline by its `divan.*` list resolver, so its source is a capability-less
+ * `Fate.syntheticSource`.
  *
- *   - {@link DivanCaylakView} — one roster row: a çaylak with pending work + the
- *     per-kind counts + their inline identity (handle + karma, the
- *     {@link CaylakIdentityFields} sub-shape). `id` is the author id; identity is
- *     resolved IN-BATCH by the `divan.roster` resolver, so the client never fires a
- *     per-row by-id `Profile` read (ADR 0021's no-waterfalls contract, #1423).
- *   - {@link DivanBacklogItemView} — one sandboxed backlog item (the detail-view
- *     payload). `id` is `<kind>:<itemId>` so the three kinds never collide in one
- *     connection.
+ * A roster row's identity is resolved IN-BATCH by the `divan.roster` resolver, so the client
+ * never fires a per-row by-id `Profile` read (ADR 0021's no-waterfalls contract). A backlog
+ * item's `id` is `<kind>:<itemId>` so the three kinds never collide in one connection.
  */
 import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
 import type {CaylakIdentityFields, DivanItemKind} from "./roster.ts";
 
-// The identity sub-shape spread onto the roster row — only the handle + karma the
-// roster renders (the minimal {@link CaylakIdentityFields}); never a widening of
-// `Profile` onto this mod-gated surface (#1423).
+// Only the handle + karma the roster renders; never a widening of `Profile` onto this
+// mod-gated surface.
 const caylakIdentityFields = {
 	username: true,
 	displayName: true,
@@ -74,11 +67,9 @@ export const divanBacklogItemDataView = DivanBacklogItemView.view;
 export type DivanBacklogItem = WorkerEntity<typeof DivanBacklogItemView>;
 
 /**
- * The receipt a `divan.vote` returns (#1288): the post-cast vote state of one sandboxed
- * backlog item, delivered inline by the mutation (no by-id read), so its source is a
- * capability-less `Fate.syntheticSource` like the other two divan views. `id` is the
- * `<kind>:<itemId>` composite — the same identity as {@link DivanBacklogItemView} — so the
- * #1290 surface keys the rendered up-vote off the item it voted on.
+ * The receipt a `divan.vote` returns, delivered inline by the mutation (no by-id read), so
+ * its source is a capability-less `Fate.syntheticSource` like the other two. `id` is the
+ * `<kind>:<itemId>` composite — the same identity as {@link DivanBacklogItemView}.
  */
 export type DivanVoteReceiptViewRow = ViewRow<{
 	id: string;

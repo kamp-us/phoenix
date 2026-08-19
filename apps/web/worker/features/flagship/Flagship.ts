@@ -1,12 +1,8 @@
 /**
- * `Flagship` service — the single seam holding the init-resolved
- * Effect-native `FlagshipClient` for the Cloudflare Flagship binding (epic #488).
- *
- * Mirrors `db/Database.ts`: the binding is resolved once per isolate via
- * `Cloudflare.Flagship.ReadFlags(Flagship)` (the init-phase alias, like
- * `Cloudflare.D1.QueryDatabase(PhoenixDb)`) and wrapped behind a Tag so the
- * runtime never re-binds per request. This child wires the binding only; the flag
- * Effect service that consumes the client lands in #508.
+ * `Flagship` service — the single seam holding the init-resolved Effect-native
+ * `FlagshipClient` for the Cloudflare Flagship binding. Mirrors `db/Database.ts`: the binding
+ * is resolved once per isolate and wrapped behind a Tag so the runtime never re-binds per
+ * request.
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import {Context, Effect, Layer} from "effect";
@@ -16,11 +12,8 @@ export class Flagship extends Context.Service<Flagship, Cloudflare.Flagship.Read
 	"@kampus/Flagship",
 ) {}
 
-/**
- * Resolved once and provided as a worker-level layer (the binding is stable for
- * the isolate's life). No finalizer: a Cloudflare binding is not a resource the
- * worker owns or closes.
- */
+// Resolved once and provided as a worker-level layer (the binding is stable for the
+// isolate's life). No finalizer: a Cloudflare binding is not a resource the worker closes.
 export const FlagshipLive = Layer.effect(
 	Flagship,
 	Effect.gen(function* () {

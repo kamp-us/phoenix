@@ -1,32 +1,19 @@
 /**
- * `Definition`'s one column→field map — the single structure the row mapper
- * (`toDefinitionRow`), the wire shaper (`toDefinition` in `shapers.ts`), and the
- * view field declaration (`DefinitionView` in `views.ts`) all derive from, so a
- * one-field change touches this map instead of three hand-synced restatements
- * (#1126 AC#1, deferred from #1159).
+ * `Definition`'s one column→field map — the row mapper, the wire shaper, and the
+ * view field declaration all derive from it, so a one-field change lands here
+ * instead of in three hand-synced restatements.
  *
- * The map absorbs the per-source naming divergence the `shapers.ts` docblock
- * named: the DB record calls the author `authorName` and may leave the
- * timestamps null, while the wire field is `author` / a non-null `Date`. Each
- * intrinsic field carries a reader that maps a `definition_record` row onto its
- * wire value, so the divergence lives in the map, not at every call site.
- *
- * `myVote` is the viewer scalar — part of the view/wire field set (`definitionViewFields`)
- * but *not* read from the record here: it is stamped by `stampViewerScalars` after
- * the batched `user_vote` read (#1159, `viewer-scalars.ts`), the row→viewer-scalar
- * split that keeps the N+1-avoidance contract structural.
+ * The readers absorb the record→wire naming divergence (`authorName`→`author`,
+ * nullable timestamps→non-null `Date`). Viewer-scoped fields are NOT read here —
+ * they are stamped downstream after their batched reads, which is what keeps the
+ * N+1-avoidance split structural.
  */
 import type * as schema from "../../db/drizzle/schema.ts";
 import type {ReactionAggregate} from "../reaction/Reaction.ts";
 
 type DefinitionRecord = typeof schema.definitionRecord.$inferSelect;
 
-/**
- * The intrinsic (record-derived) wire fields, in `DefinitionView` order, each
- * mapping a `definition_record` row onto its wire value. The keys ARE the wire
- * field names; the readers absorb the `authorName`→`author` + null-timestamp
- * divergence.
- */
+/** The record-derived wire fields, in `DefinitionView` order. The keys ARE the wire field names. */
 const intrinsicFields = {
 	id: (d) => d.id,
 	body: (d) => d.body,
@@ -40,33 +27,22 @@ const intrinsicFields = {
 type IntrinsicRow = {[K in keyof typeof intrinsicFields]: ReturnType<(typeof intrinsicFields)[K]>};
 
 /**
- * `DefinitionRow` — the record-derived row the definition reads share, plus the
- * `myVote` viewer scalar that `stampViewerScalars` adds downstream (`null` for an
- * anonymous viewer; `undefined` when not requested — never read from the record).
+ * The record-derived row the definition reads share, plus the viewer-scoped fields
+ * stamped downstream. Each optional field is `undefined` when the read didn't request it.
  */
 export interface DefinitionRow extends IntrinsicRow {
 	myVote?: boolean | null;
 	/**
-	 * The owner-scoped in-review flag (#2200): `true` iff this definition is still
-	 * sandboxed (#1205) AND the viewer is its author, stamped by the read paths via
-	 * `ownSandboxed`. Owner-only by construction, so it never leaks review state to
-	 * another viewer; a read that doesn't stamp it leaves it `undefined` → default `false`.
+	 * `true` iff this definition is still sandboxed AND the viewer is its author.
+	 * Owner-only by construction, so it never leaks review state to another viewer.
 	 */
 	sandboxed?: boolean;
 	/**
-	 * The author's LIVE handle (`user_profile.username` / `.displayName`), stamped by
-	 * `stampAuthorIdentity` after the batched `getProfileIdentitiesByIds` read (#2139)
-	 * so the client renders the CURRENT display name via `actorLabel`, not the write-time
-	 * `authorName` snapshot (#2126's AC). `undefined` when not requested; `null` when the
-	 * author has no profile/handle — `actorLabel` then degrades to `@username` → fallback.
+	 * The author's LIVE handle, not the write-time `authorName` snapshot, so the client
+	 * renders the current display name. `null` when the author has no profile handle.
 	 */
 	authorUsername?: string | null;
 	authorDisplayName?: string | null;
-	/**
-	 * The reaction aggregate (per-emoji counts + the viewer's own reaction), stamped
-	 * by `stampReactionAggregate` after the batched `user_reaction` read (#1862) —
-	 * `undefined` when not requested; the shaper fills the empty aggregate.
-	 */
 	reactions?: ReactionAggregate;
 }
 
@@ -89,12 +65,9 @@ export interface DefinitionConnectionPage {
 }
 
 /**
- * The view/wire field selection (`{id: true, …}`) — a static literal (fate's
- * `FateDataView` / `WorkerEntity` read the literal field map off this, so it
- * can't be a dynamically-built object). `satisfies Record<keyof DefinitionRow, true>`
- * pins it to exactly the row's fields: dropping a field here (or adding one to
- * `DefinitionRow` without listing it here) is a compile error, so the view stays
- * in lockstep with the row mapper.
+ * Must stay a static literal — fate's `FateDataView` / `WorkerEntity` read the field
+ * map off it, so a dynamically-built object breaks them. The `satisfies` pins it to
+ * exactly `DefinitionRow`'s fields, making a drifted view a compile error.
  */
 export const definitionViewFields = {
 	id: true,
@@ -111,13 +84,7 @@ export const definitionViewFields = {
 	reactions: true,
 } as const satisfies Record<keyof DefinitionRow, true>;
 
-/**
- * Map a `definition_record` row onto its intrinsic `DefinitionRow` fields by
- * running every reader in the column→field map — the single place the
- * record→row mapping lives. `myVote` is the viewer scalar, stamped by
- * `stampViewerScalars` (#1159), not here — the row→viewer-scalar split keeps the
- * N+1-avoidance contract structural.
- */
+/** The single place the record→row mapping lives; viewer scalars are stamped elsewhere. */
 export const toDefinitionRow = (d: DefinitionRecord): IntrinsicRow =>
 	Object.fromEntries(
 		(Object.keys(intrinsicFields) as Array<keyof typeof intrinsicFields>).map((f) => [

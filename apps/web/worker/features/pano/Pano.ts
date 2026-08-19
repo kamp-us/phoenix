@@ -1,22 +1,9 @@
 /**
- * Pano — the link aggregator / discussion feature service. Resolver-facing
- * surface for post + comment CRUD, vote delegation, and connection-shaped
- * pagination.
- *
- * The service is one `Pano` tag with a single public surface, but its two planes
- * live apart: the posts plane in `post-operations.ts`, the comments plane in
- * `comment-operations.ts`, and the cross-plane `pano_stats` cache in
- * `pano-stats.ts`. `PanoLive` is the thin wiring seam — it builds the shared deps
- * once and hands them to each plane's factory, then spreads the two closure sets
- * into the one service object, so the wire surface is identical to when both planes
- * shared this file.
- *
- * Vote mutations delegate to `Vote.cast` rather than reimplementing the batched
- * vote / karma / score-cache logic; the Pano-side wrappers re-load the target
- * row for the canonical resolver shape and translate `VoteTargetNotFound` into
- * `PostNotFound` / `CommentNotFound` so the resolver codec keeps producing
- * `POST_NOT_FOUND` / `COMMENT_NOT_FOUND`.
- *
+ * Pano — the link aggregator / discussion feature service. One service tag, two planes
+ * implemented apart (`post-operations.ts` / `comment-operations.ts`) and spread back
+ * into one object here, so the wire surface is unchanged by the split. Vote mutations
+ * delegate to `Vote.cast` and translate `VoteTargetNotFound` into
+ * `PostNotFound` / `CommentNotFound` so the resolver codec keeps its wire codes.
  * Validation lives in the service methods, not resolvers (ADR 0013).
  */
 import {Context, Effect, Layer} from "effect";
@@ -84,9 +71,8 @@ import {
 	type VoteOnPostResult,
 } from "./post-operations.ts";
 
-// The tag enum + label aliases have a single typed home in `src/lib/panoTags.ts`,
-// cross-included by the worker tsconfig (#1030); re-exported here so the long-lived
-// server-side names (consumed by `sources.ts` etc.) keep resolving.
+// The tags' single typed home is `src/lib/panoTags.ts`; re-exported so the long-lived
+// server-side names keep resolving.
 export {tagLabel};
 export const ALLOWED_POST_TAG_KINDS = POST_TAG_KINDS;
 export type AllowedPostTagKind = PostTagKind;
@@ -128,9 +114,6 @@ export type {
 	VoteOnPostInput,
 	VoteOnPostResult,
 };
-// Constants, the stats fold, and the per-plane input/result types keep their
-// long-lived `Pano.ts` import paths via these re-exports, so callers (resolvers,
-// tests, the cross-feature consumers) are untouched by the post/comment split.
 export {COMMENT_BODY_MAX, POST_BODY_MAX, POST_TITLE_MAX, recomputePanoStats, SILINDI_PLACEHOLDER};
 
 export class Pano extends Context.Service<
@@ -152,15 +135,10 @@ export class Pano extends Context.Service<
 			after?: string | null;
 			host?: string | null;
 			sandboxViewer?: SandboxViewer | undefined;
-			/** Mute read-mask (#3113): the muter's muted authors, hidden from the feed. */
 			mutedIds?: ReadonlySet<string> | undefined;
 		}) => Effect.Effect<PostConnectionPage>;
 
-		/**
-		 * Keyset page over a post's comments, `(created_at asc, id asc)` (ADR 0019).
-		 * `viewerId` stamps `myVote` for the whole page in one `user_vote` read;
-		 * `sandboxViewer` filters the çaylak sandbox (#1205) per the same viewer.
-		 */
+		/** Keyset page over a post's comments, `(created_at asc, id asc)` (ADR 0019). */
 		readonly listCommentsKeyset: (
 			postId: string,
 			opts?: {
@@ -168,7 +146,6 @@ export class Pano extends Context.Service<
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
 				sandboxViewer?: SandboxViewer | undefined;
-				/** Mute read-mask (#3113): muted authors' comments hidden from the thread. */
 				mutedIds?: ReadonlySet<string> | undefined;
 				/** Collapse the finalize stamps into one concurrent wave (#2710). Default off. */
 				parallelStamps?: boolean | undefined;
@@ -181,16 +158,13 @@ export class Pano extends Context.Service<
 			opts?: {
 				viewerId?: string | null | undefined;
 				sandboxViewer?: SandboxViewer | undefined;
-				/** Mute read-mask (#3113): muted authors' posts dropped from the batch. */
 				mutedIds?: ReadonlySet<string> | undefined;
 			},
 		) => Effect.Effect<ReadonlyArray<PostSummaryRow>>;
 
 		/**
-		 * The viewer overlay (#2322, epic #2316 leg B): the per-viewer `myVote`/`isSaved`
-		 * slice the GET-able base feed omits, keyed by the base feed's post ids. Reuses
-		 * the same batched `user_vote` / `post_bookmark` presence readers `getPostsByIds`
-		 * uses (one `IN (...)` per scalar, never per-row), reading no `post_record`.
+		 * The per-viewer `myVote`/`isSaved` slice the cacheable base feed omits. Reads no
+		 * `post_record` — one `IN (...)` per scalar, never per-row.
 		 */
 		readonly readViewerOverlay: (
 			ids: ReadonlyArray<string>,
@@ -205,7 +179,6 @@ export class Pano extends Context.Service<
 			opts?: {
 				viewerId?: string | null | undefined;
 				sandboxViewer?: SandboxViewer | undefined;
-				/** Mute read-mask (#3113): muted authors' comments dropped from the batch. */
 				mutedIds?: ReadonlySet<string> | undefined;
 				/** Collapse the finalize stamps into one concurrent wave (#2710). Default off. */
 				parallelStamps?: boolean | undefined;
@@ -213,9 +186,8 @@ export class Pano extends Context.Service<
 		) => Effect.Effect<ReadonlyArray<CommentRow>>;
 
 		/**
-		 * The moderator sandbox-queue / promotion-backlog read models (#1205, #1206
-		 * seam): a çaylak's still-sandboxed, not-removed posts/comments — scoped to one
-		 * author when promotion flips their backlog.
+		 * A çaylak's still-sandboxed, not-removed content — scoped to one author when a
+		 * promotion flips their backlog.
 		 */
 		readonly listSandboxedPosts: (opts?: {
 			authorId?: string | undefined;
@@ -224,7 +196,6 @@ export class Pano extends Context.Service<
 			authorId?: string | undefined;
 		}) => Effect.Effect<ReadonlyArray<CommentRow>>;
 
-		/** Resolve a comment's parent post id (for re-resolving on delete). */
 		readonly lookupCommentPostId: (commentId: string) => Effect.Effect<string | null>;
 
 		readonly submitPost: (
@@ -245,18 +216,16 @@ export class Pano extends Context.Service<
 
 		/**
 		 * Un-remove a `Removed` post (ADR 0096 §4); re-enters search, votes stay wiped.
-		 * Sandbox-faithful (#1811): the result's `sandboxedAt` is non-null iff the post
-		 * returned to the çaylak sandbox, so the mutation can suppress the live echo.
+		 * `sandboxedAt` is non-null iff the post returned to the çaylak sandbox, so the
+		 * mutation can suppress the live echo.
 		 */
 		readonly restorePost: (
 			input: DeletePostInput,
 		) => Effect.Effect<RestorePostResult, UnauthorizedPostMutation>;
 
 		/**
-		 * Moderator soft-delete (ADR 0098 §6) — the same 0096 substrate write as
-		 * `deletePost`, gated on discharged moderator authority (NOT author ownership):
-		 * `removed_by` is the resolver, reason `Moderated({reportId})`. A missing target
-		 * is a no-op.
+		 * Moderator soft-delete (ADR 0098 §6) — same substrate write as `deletePost` but
+		 * gated on moderator authority, NOT author ownership. A missing target is a no-op.
 		 */
 		readonly moderateRemovePost: (input: {
 			postId: string;
@@ -266,18 +235,15 @@ export class Pano extends Context.Service<
 
 		/**
 		 * Moderator restore (ADR 0098 §3) — reopens the report at the resolve layer.
-		 * `sandboxedAt` is the target's round-tripped sandbox marker (#1811): non-null
-		 * iff the restored post is still sandboxed, so report's live re-append gates the
-		 * public-feed broadcast (a sandboxed restore stays suppressed, #1205/#1280).
+		 * `sandboxedAt` non-null means the restored post is still sandboxed, so report's
+		 * live re-append keeps it out of the public feed.
 		 */
 		readonly moderateRestorePost: (input: {
 			postId: string;
 		}) => Effect.Effect<{restored: boolean; sandboxedAt: Date | null}>;
 
-		// `VoterNotEligible` (#1810): a çaylak newcomer's cast is rejected — the "earn to vote"
-		// gate lives in `Vote.castImpl`. `SelfVoteNotAllowed` (#2216): a cast on one's own post
-		// is rejected at the cast site. Both surface on the cast path only — retraction raises
-		// neither (nothing to retract), so `retractPostVote` keeps its `PostNotFound` channel.
+		// The two cast-only failures: the "earn to vote" gate (`Vote.castImpl`) and the
+		// self-vote refusal. Retraction raises neither, so its channel stays narrower.
 		readonly voteOnPost: (
 			input: VoteOnPostInput,
 		) => Effect.Effect<VoteOnPostResult, PostNotFound | VoterNotEligible | SelfVoteNotAllowed>;
@@ -287,11 +253,8 @@ export class Pano extends Context.Service<
 		) => Effect.Effect<VoteOnPostResult, PostNotFound>;
 
 		/**
-		 * React to a post — the karma-free, ungated twin of `voteOnPost` (#1863).
-		 * Delegates to `Reaction.react` (kind `post`): a palette `emoji` sets/changes
-		 * the viewer's single reaction, `null` retracts it. Re-resolves the post so the
-		 * result carries the fresh `reactions` aggregate. NO tier gate (a çaylak may
-		 * react) and NO karma write — the only failure is a missing/removed target.
+		 * The karma-free, ungated twin of `voteOnPost`: `null` emoji retracts, a çaylak may
+		 * react, and no karma is written. The only failure is a missing/removed target.
 		 */
 		readonly reactToPost: (
 			input: ReactToPostInput,
@@ -324,17 +287,12 @@ export class Pano extends Context.Service<
 			reportId: ReportId;
 		}) => Effect.Effect<{removed: boolean}>;
 
-		/**
-		 * Moderator restore of a comment (ADR 0098 §3) — reopens the report at the resolve
-		 * layer. `sandboxedAt` is the round-tripped sandbox marker (#1811) so report's live
-		 * re-append gates the thread broadcast (a sandboxed restore stays suppressed).
-		 */
+		/** Moderator restore of a comment — the `moderateRestorePost` shape, for the thread. */
 		readonly moderateRestoreComment: (input: {
 			commentId: string;
 		}) => Effect.Effect<{restored: boolean; sandboxedAt: Date | null}>;
 
-		// `VoterNotEligible` (#1810) + `SelfVoteNotAllowed` (#2216) — see `voteOnPost`. Both
-		// fire on the cast path only; retraction is exempt.
+		// Cast-only failures — see `voteOnPost`.
 		readonly voteOnComment: (
 			input: VoteOnCommentInput,
 		) => Effect.Effect<
@@ -346,28 +304,16 @@ export class Pano extends Context.Service<
 			input: VoteOnCommentInput,
 		) => Effect.Effect<VoteOnCommentResult, CommentNotFound>;
 
-		/**
-		 * React to a comment — the karma-free, ungated twin of `voteOnComment` (#1864),
-		 * the direct mirror of `reactToPost`. Delegates to `Reaction.react` (kind
-		 * `comment`): a palette `emoji` sets/changes the viewer's single reaction,
-		 * `null` retracts it. Re-resolves the comment so the result carries the fresh
-		 * `reactions` aggregate. NO tier gate (a çaylak may react) and NO karma write —
-		 * the only failure is a missing/removed target.
-		 */
+		/** The comment mirror of `reactToPost`. */
 		readonly reactToComment: (
 			input: ReactToCommentInput,
 		) => Effect.Effect<ReactToCommentResult, CommentNotFound>;
 
 		/**
-		 * Periodic sıcak/hot decay-refresh (#2027, windowless since #2133, keyset-chunked in
-		 * #2559): recompute the stored `hot_score` for EVERY live, non-draft post at `now` and
-		 * write back the changed rows, so an inactive post's ranking decays with age at any age
-		 * without an activity write. Driven by the cron trigger (`index.ts`). The decay stays a
-		 * stored-column refresh with no read-time recompute, so the FEED's read-path keyset-cursor
-		 * pagination design is preserved (that read-path design is what "keyset-cursor" names here
-		 * — NOT the sweep's own scan shape). The sweep itself reads in ascending-id keyset chunks
-		 * (`post-operations.ts`), a distinct write-path bound. Returns the pass's scanned/updated
-		 * counts for observability.
+		 * Cron-driven sıcak/hot decay refresh: recompute the stored `hot_score` for every
+		 * live, non-draft post at `now`, so an inactive post decays without an activity
+		 * write. Deliberately a stored-column refresh and never a read-time recompute —
+		 * that is what keeps the feed's keyset pagination valid.
 		 */
 		readonly refreshHotScores: (
 			now: Date,
@@ -377,25 +323,20 @@ export class Pano extends Context.Service<
 
 export const PanoLive = Layer.effect(Pano)(
 	Effect.gen(function* () {
-		// `orDieAccess`: every internal DB call site dies on `DrizzleError`
-		// (infra failures are defects — the domain-boundary rule), so public
-		// signatures carry domain errors only and `R` stays `never`.
+		// `orDieAccess` dies on `DrizzleError`, so public signatures carry domain errors
+		// only and `R` stays `never`.
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 		const bookmarkSvc = yield* Bookmark;
 		const reactionSvc = yield* Reaction;
-		// Live author-identity resolver (#2139): one batched `user_profile` read per page
-		// (`getProfileIdentitiesByIds`) stamps the CURRENT `{username, displayName}` so the
-		// post/comment read surfaces render via `actorLabel`, not the `authorName` snapshot.
+		// Reads the CURRENT `{username, displayName}` per page, so the read surfaces render
+		// live identity rather than the stale `authorName` snapshot on the row.
 		const pasaport = yield* Pasaport;
 
-		// The removal-sequence owner (#1129): the vote-wipe→stamp→FTS ordering is the
-		// module's to enforce, not this service's to hand-wire.
+		// The vote-wipe→stamp→FTS ordering is the removal module's to enforce, not this
+		// service's to hand-wire.
 		const removalSeq: Removal.RemovalSequence = {run, batch, clearTarget: voteSvc.clearTarget};
 
-		// The cross-plane `pano_stats` port (post + comment + author totals), refreshed
-		// after every write that could move them — passed to both planes so the fold has
-		// one home (`pano-stats.ts`).
 		const persistPanoStats = makePersistPanoStats(run);
 
 		const postOps = makePostOperations({

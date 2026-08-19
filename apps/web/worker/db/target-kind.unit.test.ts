@@ -1,10 +1,7 @@
 /**
- * The shared `<kind>:<id>` target-key codec (#2018) — the one encode/decode pair the
- * vote/report/divan surfaces route through. The decisions asserted here: encode is the
- * literal `kind:id` spelling every view id carries; decode is its inverse for a
- * well-formed key, round-tripping every `TargetKind`; and decode rejects the malformed
- * and unknown-kind keys the divan collapses to the invisible `Denied`. Behavior-preserving
- * — these are the same round-trip / rejection semantics the per-feature spellings had.
+ * The shared `<kind>:<id>` target-key codec — the one encode/decode pair the
+ * vote/report/divan surfaces route through. Its rejections are what the divan collapses
+ * to the invisible `Denied`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {parseTargetKey, TARGET_KINDS, targetKey} from "./target-kind.ts";

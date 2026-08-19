@@ -1,21 +1,11 @@
 /**
- * `definition.add` ROUTING-boundary unit coverage (ADR 0039 / 0082) — the one
- * thing that is wrong-or-right with no database: does the resolver in
- * `mutations.ts` publish the new node to the term's **args-scoped**
- * `Term.definitions` topic (`{id: termSlug}`), or does it leak to the
- * procedure-wide global wildcard?
+ * `definition.add` ROUTING-boundary coverage (ADR 0039 / 0082): does the resolver
+ * publish to the term's args-scoped `Term.definitions` topic (`{id: termSlug}`), or
+ * leak to the procedure-wide global wildcard?
  *
- * This drives the REAL resolver (`mutations["definition.add"].handler`) over a
- * stub `Sozluk` and a recording `LivePublisher` — the same handler-over-stubs
- * seam `report/report-mutation.unit.test.ts` and `pano/draft-save.invariant.test.ts`
- * use. The resolver owns the `live.topic("Term.definitions", {id:
- * input.termSlug})` call; if it ever dropped the args (→ wildcard, the ADR 0039
- * mis-route), the recorded topic key is the global one and this test fails. The
- * publisher's key-MATH (the `(procedure, args)` → topic computation) is pinned
- * exhaustively against literal fixtures in
- * `../fate-live/live-publisher.unit.test.ts`; this asserts the resolver's routing
- * CHOICE — the contract that file's two deleted cases pretended to test by
- * re-spelling the publisher call inline (never crossing the resolver).
+ * Drives the REAL resolver over a stub `Sozluk` and a recording `LivePublisher`. The
+ * publisher's key MATH is pinned separately in
+ * `../fate-live/live-publisher.unit.test.ts`; this asserts the resolver's routing CHOICE.
  */
 
 import {assert, it} from "@effect/vitest";
@@ -36,7 +26,6 @@ import {mutations} from "./mutations.ts";
 import type {AddDefinitionResult} from "./Sozluk.ts";
 import {Sozluk} from "./Sozluk.ts";
 
-/** A rejection while draining scheduled `waitUntil` work — dies the fiber. */
 class DrainRejected extends Schema.TaggedErrorClass<DrainRejected>()("test/DrainRejected", {
 	cause: Schema.Unknown,
 }) {}
@@ -51,8 +40,7 @@ const runtimeContextStub: BaseRuntimeContext = {
 	set: (id) => Effect.succeed(id),
 };
 
-// A `Flags` stub with every flag OFF — the karma-gates dep the resolver reads (#150):
-// off ⇒ the add path is today's live-create, no karma read.
+// Every flag OFF ⇒ the karma-gates dep (#150) is inert and no karma is read.
 const flagsOffStub = Layer.succeed(Flags, {
 	getBoolean: () => Effect.succeed(false),
 	getString: () => Effect.die("getString not exercised"),
@@ -60,16 +48,14 @@ const flagsOffStub = Layer.succeed(Flags, {
 	getObject: () => Effect.die("getObject not exercised"),
 } as typeof Flags.Service);
 
-// A yazar author ⇒ `sandboxedAtForAuthor` returns null (yazar content is always live),
-// so the add path is a live-create.
+// A yazar author ⇒ `sandboxedAtForAuthor` returns null, so the add is a live-create.
 const kunyeStub = Layer.succeed(Kunye, {
 	tierOf: () => Effect.succeed("yazar" as const),
 	karmaOf: () => Effect.succeed(0),
 	rootOf: (id: string) => Effect.succeed(id),
 } as typeof Kunye.Service);
 
-// The mod-emitter deps the resolver gained (#1699). A yazar author ⇒ `sandboxedAtForAuthor`
-// returns null ⇒ `notifyCaylakEntersDivan` short-circuits before touching any of these,
+// A yazar author ⇒ `notifyCaylakEntersDivan` short-circuits before touching these,
 // so they exist only to satisfy the type and die on contact if ever reached.
 const notificationStub = makeNotificationStub();
 const divanStub = Layer.succeed(Divan, {
@@ -83,11 +69,9 @@ const relationStoreStub = Layer.succeed(RelationStore, {
 	subjectsOf: () => Effect.die("RelationStore.subjectsOf not exercised in definition-mutation"),
 });
 
-// A `Sozluk` stub whose `addDefinition` is scripted; every other method dies on
-// contact, so a passing test proves `definition.add` reached only the write it
-// routes around. Mirrors `draft-save.invariant.test.ts`'s `panoStub`. `capture`
-// (when passed) records the write input so a test can assert the persisted
-// `authorName` the resolver chose (#2130 — never the user's email).
+// Every method other than `addDefinition` dies on contact, so a passing test proves
+// `definition.add` reached only the write it routes around. `capture` records the write
+// input so a test can assert the persisted `authorName` (#2130 — never the user's email).
 const sozlukStub = (
 	result: AddDefinitionResult,
 	capture?: (input: {authorName: string}) => void,
@@ -127,9 +111,8 @@ it.effect(
 		Effect.gen(function* () {
 			const slug = "fate-read";
 
-			// A recording `LivePublisher`: `publish` captures the topic key the resolver's
-			// `live.*` chose, `waitUntil` collects the fire-and-forget work so `flush`
-			// drains it (the publish is detached off the request path).
+			// `waitUntil` collects the fire-and-forget work so it can be drained below — the
+			// publish is detached off the request path.
 			const recorded: Array<string> = [];
 			const scheduled: Array<Promise<unknown>> = [];
 			const liveStub = Layer.succeed(LivePublisher)(
@@ -168,23 +151,16 @@ it.effect(
 				catch: (cause) => new DrainRejected({cause}),
 			}).pipe(Effect.orDie);
 
-			// The contract: the resolver routes the new node to the term's args-scoped
-			// connection topic (keyed by `{id: slug}`), so only that term's open page
-			// updates live.
 			assert.deepStrictEqual(recorded, [liveConnectionTopic("Term.definitions", {id: slug})]);
-			// The ADR 0039 mis-route guard: a regression where the resolver called
-			// `topic("Term.definitions")` with NO args would land on the
-			// procedure-wide global wildcard (fanning one term's definition out to every
-			// `Term.definitions` subscriber across all slugs). That topic must be absent.
+			// The ADR 0039 mis-route guard: dropping the args would land on the procedure-wide
+			// wildcard, fanning one term's definition to every `Term.definitions` subscriber.
 			assert.isFalse(recorded.includes(liveGlobalConnectionTopic("Term.definitions")));
 		}),
 );
 
 // #2130 (PII-at-rest): a null-name account must NEVER have its EMAIL persisted as the
 // denormalized `authorName` — the old `user.name ?? user.email` fallback did exactly
-// that, and the flattened string renders publicly on the author surfaces. The resolver
-// now flattens identity through `authorDisplayLabel` (name → @username → fallback), so a
-// null-name / no-username actor persists the fixed fallback noun, never the email.
+// that, and the flattened string renders publicly.
 it.effect("definition.add never persists a null-name author's email as authorName", () =>
 	Effect.gen(function* () {
 		const nullNameUser = {id: "u-nameless", email: "leak@example.com", name: null, username: null};

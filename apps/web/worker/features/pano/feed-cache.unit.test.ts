@@ -1,13 +1,6 @@
 /**
- * `panoFeedCacheFor` — the base-feed edge-cache purger (leg B, #2324, ADR 0170). The
- * contract under test mirrors `live-publisher.unit.test.ts` (its cache-side twin):
- *
- *   1. `purge()` schedules ONE `cache.purge({tags: ["pano-feed"]})` through `waitUntil`,
- *      never awaited on the mutation path;
- *   2. `purge()`'s error channel is `never` — a rejecting purge cannot fail the caller;
- *   3. a synchronously-throwing execution context (`waitUntil` throws) is swallowed too.
- *
- * Unit tier (ADR 0082): stubs at the `purge`/`waitUntil` seam, zero platform fake.
+ * `panoFeedCacheFor` — the base-feed edge-cache purger (ADR 0170). Stubs at the
+ * `purge`/`waitUntil` seam, no platform fake.
  */
 import {assert, it} from "@effect/vitest";
 import {Effect, Exit} from "effect";
@@ -15,7 +8,6 @@ import * as Schema from "effect/Schema";
 import {expectTypeOf, vi} from "vitest";
 import {PANO_FEED_CACHE_TAG, panoFeedCacheFor} from "./feed-cache.ts";
 
-/** A rejection from the test harness flush thunk — dies the fiber. */
 class FlushRejected extends Schema.TaggedErrorClass<FlushRejected>()("test/FlushRejected", {
 	cause: Schema.Unknown,
 }) {}
@@ -24,10 +16,7 @@ interface PurgeCall {
 	readonly tags: string[];
 }
 
-/**
- * Build a purger over stubbed seams: `purge` defaults to a recorder, `waitUntil`
- * collects the scheduled promises so a test can `flush` the fire-and-forget work.
- */
+/** `waitUntil` collects the scheduled promises so a test can `flush` the deferred work. */
 function makeHarness(opts?: {purge?: (options: {tags: string[]}) => Promise<unknown>}) {
 	const purges: Array<PurgeCall> = [];
 	const scheduled: Array<Promise<unknown>> = [];
@@ -51,7 +40,6 @@ it.effect("one tag purge scheduled through waitUntil", () =>
 		const {cache, purges, scheduled, flush} = makeHarness();
 
 		yield* cache.purge();
-		// scheduled synchronously, but the delivery is not awaited on the caller path
 		assert.strictEqual(scheduled.length, 1);
 		yield* Effect.tryPromise({try: flush, catch: (cause) => new FlushRejected({cause})}).pipe(
 			Effect.orDie,

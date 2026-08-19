@@ -1,8 +1,4 @@
-/**
- * Unit tests for the deploy-environment taxonomy module (ADR 0088) — the single
- * owner of `isProduction`, the `stage → ENVIRONMENT` map, and the fail-LOUD
- * unknown-env guard that closes the silent fail-open downgrade (#1433).
- */
+/** The deploy-environment taxonomy (ADR 0088), including the fail-LOUD unknown-env guard. */
 import {describe, expect, it} from "vitest";
 import {
 	AUDIT_ENVIRONMENT,
@@ -46,7 +42,7 @@ describe("isProduction (the one shared predicate)", () => {
 		expect(isProduction("production")).toBe(true);
 		expect(isProduction("preview")).toBe(false);
 		expect(isProduction("development")).toBe(false);
-		// The audit class is NEVER production — the prod-never invariant at the taxonomy layer.
+		// The audit class is NEVER production — the prod-never invariant.
 		expect(isProduction("audit")).toBe(false);
 	});
 });
@@ -60,16 +56,15 @@ describe("parseDeployEnvironment (fail-loud guard, #1433)", () => {
 	});
 
 	it("treats a genuinely absent value as undefined (caller defaults), NOT as a class", () => {
-		// Absence is the local `alchemy deploy` / unset case — the deploy gates read this as
-		// non-prod, preserving the prior `=== "production"` behavior. It is NOT a fail-open
-		// downgrade because the value was never a recognized class to begin with.
+		// Absence is the local `alchemy deploy` case. NOT a fail-open downgrade: the value
+		// was never a recognized class to begin with.
 		expect(parseDeployEnvironment(undefined)).toBeUndefined();
 		expect(parseDeployEnvironment("")).toBeUndefined();
 	});
 
 	it("THROWS on a non-empty unrecognized value instead of silently failing open", () => {
-		// The #1433 hazard: CI emitting the stage spelling `prod` instead of `production`.
-		// Before, every gate fell through to non-prod on a green deploy; now it fails loud.
+		// The #1433 hazard: CI emitting the stage spelling `prod` instead of `production`
+		// once made every gate fall through to non-prod on a green deploy.
 		expect(() => parseDeployEnvironment("prod")).toThrow(UnknownEnvironmentError);
 		expect(() => parseDeployEnvironment("staging")).toThrow(UnknownEnvironmentError);
 		expect(() => parseDeployEnvironment("Production")).toThrow(UnknownEnvironmentError);
@@ -111,8 +106,7 @@ describe("environmentForStage (the single owner of the prod→production map)", 
 	});
 
 	it("never maps a non-prod stage to production (prod-never at the stage layer)", () => {
-		// The audit stage and every preview stay non-production: only `prod` is production,
-		// so the audit force-on rule can never reach a production deploy.
+		// Only `prod` is production, so the audit force-on rule can never reach a prod deploy.
 		expect(environmentForStage(AUDIT_STAGE)).not.toBe("production");
 		expect(environmentForStage("pr-1")).not.toBe("production");
 	});

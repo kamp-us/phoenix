@@ -1,30 +1,10 @@
 /**
- * `Pasaport.listContributions` sandbox-visibility wiring (#1309) — the security
- * fix: the public profile contribution feed must NOT leak a çaylak's sandboxed
- * (un-promoted) content to a visitor. The feed unions three content tables
- * (definitions / posts / comments); each per-table read — AND its `totalCount`
- * count — must carry the #1205 {@link sandboxVisibleWhere} predicate beside its
- * existing `removed_at IS NULL` guard, resolved against the request viewer.
- *
- * Unit-tier per ADR 0082: the predicate SEMANTICS (who sees what) are already
- * proven by `SandboxVisibility.unit.test.ts` over `isVisibleTo` /
- * `sandboxVisibleWhere`; what THIS test proves is that `listContributions` WIRES
- * that predicate into every feed read for every viewer kind. Rendered by reading
- * each statement's `.toSQL()` over a no-op D1 (the `Sozluk.connection.unit.test.ts`
- * / `promotion-sweep.unit.test.ts` idiom) — no engine, so the row-level filtering
- * itself is the integration tier's job; the wiring is unit-reachable.
- *
- * The viewer matrix (the leak is closed iff):
- *   - anonymous / public — predicate is `sandboxed_at IS NULL` (live only, no
- *     viewer arm): a logged-out visitor sees only the çaylak's live content.
- *   - other member — `sandboxed_at IS NULL OR author_id = :viewerId`: since the
- *     viewer is NOT the çaylak, the author arm matches none of the çaylak's rows,
- *     so only live content returns.
- *   - the author (viewing own profile) — same predicate, but `author_id =
- *     :viewerId` now matches ALL their own rows, so they DO see their own
- *     sandboxed content.
- *   - moderator — no sandbox restriction at all (`undefined` ⇒ dropped by `and()`):
- *     a moderator sees everything.
+ * `Pasaport.listContributions` sandbox-visibility WIRING (#1309): the public profile
+ * contribution feed must not leak a çaylak's un-promoted content. The predicate semantics
+ * are already proven in `SandboxVisibility.unit.test.ts`; what this proves is that every
+ * per-table feed read carries the predicate, for every viewer kind. Rendered by reading
+ * each statement's `.toSQL()` over a no-op D1 — no engine, so row-level filtering itself
+ * stays integration-tier (ADR 0082).
  */
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -63,8 +43,7 @@ const inertAuth = {} as BetterAuthInstance;
 const hasToSQL = (v: unknown): v is {toSQL: () => {sql: string; params: unknown[]}} =>
 	typeof v === "object" && v !== null && typeof (v as {toSQL?: unknown}).toSQL === "function";
 
-// Captures every `run` builder's `.toSQL()`; replays scripted results in call order
-// (the three feed SELECTs return [], the three `totalCount` counts return 0).
+// Replays scripted results in call order (three feed SELECTs return [], three counts 0).
 function scriptedAccess(results: ReadonlyArray<unknown>): {
 	access: DrizzleAccess;
 	queries: {sql: string; params: unknown[]}[];
@@ -96,17 +75,11 @@ const viewers = {
 	moderator: {viewerId: MOD, canSeeSandboxed: true},
 } satisfies Record<string, SandboxViewer>;
 
-// listContributions issues, in order: 3 feed SELECTs (def/post/comment) then 3
-// `COUNT(*)` totals. Six no-op `run` results cover both, but only the three feed
-// SELECTs return a renderable query builder — the `COUNT(*)` reads resolve through
-// `.then()` to a Promise (no `.toSQL()`), so they execute harmlessly against the
-// no-op D1 and are not captured here. The feed SELECTs ARE the row-leak surface:
-// the rows a visitor would see. (The `totalCount` count carries the same predicate
-// in the source so the count can't leak either, verified by review.)
+// Only the three feed SELECTs return a renderable query builder; the `COUNT(*)` reads
+// resolve through `.then()` to a Promise (no `.toSQL()`), so they are not captured here.
+// The `totalCount` count carries the same predicate in the source.
 const FEED_RESULTS = [[], [], [], 0, 0, 0] as const;
 
-// Render the three feed SELECTs (definition / post / comment) for `AUTHOR`'s feed
-// as seen by `sandboxViewer`.
 const renderFeed = (sandboxViewer: SandboxViewer) =>
 	Effect.gen(function* () {
 		const {access, queries} = scriptedAccess([...FEED_RESULTS]);
@@ -132,7 +105,6 @@ describe("Pasaport.listContributions — every feed read filters the sandbox (th
 				const s = sql.toLowerCase();
 				assert.match(s, /"removed_at" is null/, "keeps the removal guard");
 				assert.match(s, /"sandboxed_at" is null/, "filters sandboxed content (live only)");
-				// No `OR author_id = :viewer` arm for an anonymous viewer — purely live.
 				assert.notInclude(s, " or ", "anonymous predicate has no viewer-own-content OR arm");
 			}
 		}),
@@ -151,8 +123,8 @@ describe("Pasaport.listContributions — every feed read filters the sandbox (th
 						/"sandboxed_at" is null[)\s]*or[\s(]*"[a-z_]+"\."author_id" = \?/,
 						"sandboxed-or-own predicate is wired",
 					);
-					// The OWN arm is keyed to the VIEWER, not the profiled author — so it
-					// matches none of the çaylak's rows ⇒ the visitor sees only live content.
+					// The OWN arm is keyed to the VIEWER, not the profiled author — so it matches none
+					// of the çaylak's rows.
 					assert.include(params as unknown[], OTHER, "own-content arm bound to the viewer id");
 				}
 			}),
@@ -166,8 +138,8 @@ describe("Pasaport.listContributions — every feed read filters the sandbox (th
 				for (const {sql, params} of queries) {
 					const s = sql.toLowerCase();
 					assert.match(s, /"sandboxed_at" is null[)\s]*or[\s(]*"[a-z_]+"\."author_id" = \?/);
-					// viewerId === authorId, so the `author_id = :viewerId` arm matches ALL the
-					// author's rows — including sandboxed ones — so the owner sees them.
+					// viewerId === authorId, so the own arm matches ALL the author's rows, sandboxed
+					// ones included.
 					assert.include(
 						params as unknown[],
 						AUTHOR,
@@ -183,9 +155,8 @@ describe("Pasaport.listContributions — every feed read filters the sandbox (th
 			for (const {sql} of queries) {
 				const s = sql.toLowerCase();
 				assert.match(s, /"removed_at" is null/, "removal guard still applies");
-				// The column IS projected (for the per-item `sandboxed` flag, #1316), but the
-				// moderator's WHERE carries NO sandbox FILTER — no `sandboxed_at IS NULL` and
-				// no viewer-own-content OR arm — so they see every row.
+				// The column IS projected (for the per-item `sandboxed` flag), but the moderator's
+				// WHERE carries NO sandbox FILTER — so they see every row.
 				assert.notMatch(s, /"sandboxed_at" is null/, "a moderator gets no sandbox filter");
 				assert.notInclude(s, " or ", "no viewer-own-content OR arm for a moderator");
 			}
@@ -206,11 +177,8 @@ describe("Pasaport.listContributions — every feed read filters the sandbox (th
 	);
 });
 
-// The per-item review-state flag (#1316) the #1291 status block badges "incelemede"
-// off. Derived in the feed map as `sandboxed: sandboxed_at != null` — a bare
-// boolean carrying no reviewer identity. Scripts feed rows (a sandboxed + a live
-// one) and asserts each output node's flag, as the AUTHOR viewing their own profile
-// (the only viewer who sees their own sandboxed content, #1309).
+// The per-item review-state flag (#1316) the status block badges "incelemede" off, derived
+// in the feed map as `sandboxed: sandboxed_at != null`.
 describe("Pasaport.listContributions — the per-item sandboxed flag (#1316)", () => {
 	const sandboxedDef = {
 		id: "d-sandboxed",

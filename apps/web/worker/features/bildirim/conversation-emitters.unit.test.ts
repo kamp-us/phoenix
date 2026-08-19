@@ -1,12 +1,9 @@
 /**
- * Conversation-moment emitter coverage (#1697, epic #1666) — the decisions that
- * are wrong-or-right with no database (ADR 0082 T1/T2; `.patterns/effect-testing.md`):
- * recipient resolution (post author + parent-comment author), dedupe when they
- * coincide, self-suppression (story 12), the flag containment (dark by default),
- * and the swallow-at-the-seam guarantee — a DYING `Notification` (the `orDieAccess`
- * defect shape) cannot fail the comment mutation. The `Notification` seam is the
- * fail-on-contact stub with only `record` overridden, so touching any other write
- * surface (e.g. the vote path's `recordAggregate`) is a test failure.
+ * Conversation-moment emitter coverage (#1697): recipient resolution, dedupe,
+ * self-suppression, dark-by-default containment, and the swallow-at-the-seam guarantee —
+ * a DYING `Notification` cannot fail the comment mutation. The `Notification` stub is
+ * fail-on-contact with only `record` overridden, so touching any other write surface
+ * fails the test.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
@@ -39,10 +36,8 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 		} as unknown as typeof Flags.Service,
 	);
 
-// A no-op `LivePublisher`: the emitter calls `Notification.record`, which yields the
-// per-request publisher for the fire-and-forget live fan-out (#1700). The stub `record`
-// never touches it, so a do-nothing publisher satisfies the requirement (the live
-// publish is covered in `Notification.unit.test.ts` / the integration tier).
+// The stub `record` never publishes, so a do-nothing publisher satisfies the requirement;
+// the live publish is covered in `Notification.unit.test.ts`.
 const noopLivePublisher = Layer.succeed(LivePublisher)({
 	update: () => Effect.void,
 	delete: () => Effect.void,
@@ -51,10 +46,8 @@ const noopLivePublisher = Layer.succeed(LivePublisher)({
 	},
 } as typeof LivePublisher.Service);
 
-// A `Mute` returning no mutes: the emitter now consults `bildirimMutedBy` per recipient,
-// which reads `readMutedIds` — an empty set means no member is muted, so these cases
-// exercise the unchanged (deliver) path. Muted-suppression itself is covered in
-// mute-suppression.unit.test.ts.
+// An empty set puts every case below on the deliver path; muted-suppression itself is
+// covered in mute-suppression.unit.test.ts.
 const noMutes = Layer.succeed(Mute, {
 	set: () => Effect.die("Mute.set not exercised"),
 	listMine: () => Effect.die("Mute.listMine not exercised"),
@@ -198,7 +191,7 @@ describe("notifyCommentReply — the reply emit", () => {
 		() =>
 			Effect.gen(function* () {
 				// The default stub DIES on contact — the exact defect shape `orDieAccess`
-				// raises on a D1 failure. The emitter must swallow it, not surface it.
+				// raises on a D1 failure.
 				const exit = yield* notifyCommentReply({
 					commentId: "comm-6",
 					postAuthorId: "u-post",

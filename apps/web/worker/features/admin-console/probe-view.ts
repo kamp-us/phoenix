@@ -1,15 +1,8 @@
 /**
- * `AdminProbe` — the admin-console shell's one data view (#2740, epic #2711): the
- * server-authoritative "may THIS caller open the admin console?" signal the SPA reads to
- * decide whether to mount+fetch the lazy console bundle. A synthetic singleton (there is
- * only ever the one probe row per request, keyed `id: "admin-probe"`), mirroring
- * `stats/LandingStats` / `funnel/FunnelSummary`.
- *
- * Carries ONLY the fact that the gate passed — no identity, no capability list, no admin
- * roster. Producing this row at all is the signal; it is only ever reached past the
- * `requireAdmin` gate (`queries.ts`), so a non-admin
- * gets the invisible `Denied` (indistinguishable from not-signed-in, ADR 0107 / ADR 0098
- * §2) rather than a row that leaks admin-ness.
+ * The server-authoritative "may THIS caller open the admin console?" signal (#2740).
+ * Producing the row at all IS the signal, so it carries no identity, capability list, or
+ * roster — it is only ever reached past the `requireAdmin` gate, and a non-admin gets the
+ * invisible `Denied` instead (ADR 0107 / ADR 0098 §2).
  */
 import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";

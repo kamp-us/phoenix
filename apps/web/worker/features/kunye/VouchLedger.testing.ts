@@ -1,9 +1,7 @@
 /**
- * `makeVouchLedgerStub` — the shared {@link VouchLedger} test double. Defaults every
- * method to fail-on-contact (`Effect.die`) and takes a partial override of the
- * method(s) under test (`.patterns/effect-testing.md`, the `makePasaportStub` idiom).
- * A `layerStub`, not a `layerNoop`: an un-overridden method, if reached, dies and
- * fails the test — proving the path touched only the method(s) it was scripted with.
+ * The shared {@link VouchLedger} double. Fail-on-contact by default, not a noop: an
+ * un-overridden method that gets reached dies, proving the path touched only what it
+ * was scripted with (`.patterns/effect-testing.md`).
  */
 import {Effect, Layer} from "effect";
 import {VouchLedger} from "./VouchLedger.ts";

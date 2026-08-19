@@ -1,19 +1,10 @@
 /**
- * Username-validation unit coverage (ADR 0082) — the `setUsername` input checks
- * that are wrong-or-right with NO database.
+ * The `setUsername` input checks that are wrong-or-right with NO database (ADR 0082).
+ * Every `Drizzle` call dies, so a typed error rather than a die is the "no DB read"
+ * proof. The reserved-`silinen` branch is pinned in `account-deletion.unit.test.ts`.
  *
- * `Pasaport.setUsername` runs `assertUsername(value.trim().toLowerCase())` BEFORE
- * its first DB read (the uniqueness / already-set lookups), so the length and
- * format rejections are pure logic on the input value — they could never be wrong
- * just because the database differed (ADR 0082 litmus). The reserved-`silinen`
- * branch of the same gate is pinned in `account-deletion.unit.test.ts`; this file
- * pins the other two non-reserved branches (too-short, illegal-format) over the
- * same throwing-`Drizzle` seam, so a reached read would `die` rather than surface
- * the typed error — which is the "no DB read" proof.
- *
- * The DB-state-dependent rejections of the same mutation (`TAKEN` against a
- * persisted row, `ALREADY_SET` against a persisted username) stay on real D1 in
- * `tests/integration/pasaport.test.ts` — those are only-wrong-if-the-DB-differs.
+ * The DB-state-dependent rejections (`TAKEN`, `ALREADY_SET`) stay on real D1 in
+ * `tests/integration/pasaport.test.ts`.
  */
 
 import {it} from "@effect/vitest";
@@ -22,16 +13,12 @@ import {assert} from "vitest";
 import {Drizzle, type DrizzleAccess} from "../../db/Drizzle.ts";
 import {type BetterAuthInstance, makePasaportLive, Pasaport} from "./Pasaport.ts";
 
-// Every DB call dies, so any path that reaches the seam fails the test: the
-// length/format gate short-circuits before any read, and running to completion
-// against this access is the "no read" proof.
 const throwingAccess: DrizzleAccess = {
 	run: () => Effect.die(new Error("setUsername read the DB on a path that must short-circuit")),
 	batch: () => Effect.die(new Error("setUsername wrote a batch on a path that must short-circuit")),
 };
 
-// `setUsername`'s validation gate uses neither the session nor the DB, so a
-// never-cast inert instance satisfies the type.
+// The validation gate uses neither the session nor the DB, so an inert cast suffices.
 const inertAuth = {} as BetterAuthInstance;
 
 const pasaportLayer = makePasaportLive(inertAuth).pipe(

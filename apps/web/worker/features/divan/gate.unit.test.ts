@@ -1,14 +1,8 @@
 /**
- * The divan disjunctive gate (#1287, epic #1202) through the REAL capability seams
- * — not a re-implemented `tier === "yazar" || isMod` check. {@link requireDivanAccess}
- * discharges `ViewDivan`, whose check OR-s two genuine discharges: `DivanStanding.require`
- * (the divan's OWN yazar-floor `Level`) and `Moderate.over(platform)` (the `moderates`
- * `Relation`). The matrix proves both arms AND the disjunction independence: a mod who
- * is NOT a yazar still passes, a yazar who is NOT a mod still passes; a çaylak, a
- * visitor, and the anonymous actor are denied the invisible `Denied`.
- *
- * All four ports are scripted (`Kunye` standing, `RelationStore` the moderates tuple,
- * `AgentAuthority` fail-closed, `CurrentActor` the actor) — no DB.
+ * The divan disjunctive gate through the REAL capability seams, not a re-implemented
+ * `tier === "yazar" || isMod` check. The matrix proves both arms AND their independence: a
+ * mod who is NOT a yazar still passes, a yazar who is NOT a mod still passes; a çaylak, a
+ * visitor and the anonymous actor get the invisible `Denied`. All four ports are scripted.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
@@ -26,7 +20,6 @@ import {Kunye} from "../kunye/Kunye.ts";
 import type {Tier} from "../kunye/standing.ts";
 import {DivanStanding, requireDivanAccess, ViewDivan} from "./gate.ts";
 
-/** Run the gate over `body = succeed("ok")` for one actor, scripting standing + mods. */
 const access = (
 	actor: Actor,
 	opts: {readonly tier?: Tier; readonly mods?: ReadonlyArray<string>} = {},
@@ -101,8 +94,8 @@ describe("divan gate — yazar OR mod, collapse-to-allow", () => {
 	});
 
 	it("an allowed read threads a ViewDivan grant into the body's R (enforcement-by-R)", () => {
-		// `yield* ViewDivan` would be a compile error without the provided grant — so a
-		// reached "reached" proves the gate supplied the proof, not just returned a boolean.
+		// `yield* ViewDivan` would be a compile error without the provided grant, so reaching
+		// "reached" proves the gate supplied the proof rather than returning a boolean.
 		const exit = Effect.runSyncExit(
 			requireDivanAccess(
 				Effect.gen(function* () {
@@ -128,7 +121,6 @@ describe("divan gate — yazar OR mod, collapse-to-allow", () => {
 	});
 });
 
-/** Discharge `DivanStanding.require` for one actor at the given standing, no mods involved. */
 const standing = (actor: Actor, tier: Tier): Exit.Exit<Grant<DivanStanding>, RequiresLevel> =>
 	Effect.runSyncExit(
 		DivanStanding.require.pipe(

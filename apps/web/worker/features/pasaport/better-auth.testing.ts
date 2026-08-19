@@ -1,11 +1,8 @@
 /**
- * Test stand-ins for the `BetterAuth` Context tag. The deployed worker satisfies
- * it with `BetterAuthLive`, which needs the full alchemy provider stack
- * (`RuntimeContext`, the `secret_text` binding) absent in the node test pool —
- * so these factories build a hand-rolled `BetterAuth` layer over the same tag.
- * `auth` is `Effect.succeed(...)` so its `R` is `never`.
- *
- * A **factory, not a shared instance** (`.patterns/effect-testing.md`).
+ * Test stand-ins for the `BetterAuth` Context tag. `BetterAuthLive` needs the full alchemy
+ * provider stack (`RuntimeContext`, the `secret_text` binding) the node test pool lacks, so these
+ * factories build a hand-rolled layer over the same tag. Factories, not shared instances
+ * (`.patterns/effect-testing.md`).
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
 import {apiKey} from "@better-auth/api-key";
@@ -22,17 +19,11 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {apiKeyRateLimit, BetterAuthHandlerError} from "./better-auth-live.ts";
 
 /**
- * A REAL better-auth instance over a test `D1Database` handle, reproducing
- * `BetterAuthLive`'s construction because that Layer needs the alchemy provider
- * stack the node test pool lacks.
- *
- * MUST stay in lockstep with `BetterAuthLive` (same `emailAndPassword`,
- * `drizzleAdapter`, `bearer()`, `apiKey()`, `additionalFields.username`) — if they
- * drift the guard suites silently test a different shape than production. Test-only
- * diffs, immaterial to the shape under test: literal `secret`/`baseURL`/`trustedOrigins`
- * and no `magicLink` plugin.
- *
- * Returns a concrete `Auth<{…}>`; callers widen to the generic `Auth` (see {@link layerTest}).
+ * A REAL better-auth instance over a test `D1Database` handle. MUST stay in lockstep with
+ * `BetterAuthLive` (same `emailAndPassword`, `drizzleAdapter`, `bearer()`, `apiKey()`,
+ * `additionalFields.username`) — drift means the guard suites silently test a shape production
+ * never runs. Deliberate test-only diffs: literal `secret`/`baseURL`/`trustedOrigins`, no
+ * `magicLink` plugin.
  */
 export function makeRealAuthForTest(d1: D1Database) {
 	const db = drizzle(d1, {relations: defineRelations(schema)});
@@ -52,12 +43,9 @@ export function makeRealAuthForTest(d1: D1Database) {
 }
 
 /**
- * A `BetterAuth` test layer over an already-constructed instance, wiring `auth`
- * (for `Pasaport`) and `fetch` (for `/api/auth/*`).
- *
- * Takes the generic `Auth`; `makeRealAuthForTest` returns a concrete `Auth<{…}>`
- * that doesn't statically overlap it (TS2345), so callers widen with a documented
- * `as unknown as Parameters<typeof layerTest>[0]` hop.
+ * A `BetterAuth` test layer over an already-constructed instance. It takes the generic `Auth`,
+ * which `makeRealAuthForTest`'s concrete `Auth<{…}>` does not statically overlap (TS2345) — hence
+ * the `as unknown as Parameters<typeof layerTest>[0]` hop at the call sites.
  */
 export const layerTest = (instance: Auth): Layer.Layer<BetterAuth.BetterAuth> =>
 	Layer.succeed(BetterAuth.BetterAuth)({
@@ -73,9 +61,8 @@ export const layerTest = (instance: Auth): Layer.Layer<BetterAuth.BetterAuth> =>
 	});
 
 /**
- * A fail-on-contact stub: `auth` is a canned no-op `getSession`, `fetch` is
- * `Effect.die` — for tests that never reach the session path or `/api/auth/*`.
- * A `layerStub` (fail-on-contact), not a `layerNoop` (which silently succeeds).
+ * A fail-on-contact stub (not a `layerNoop`, which would silently succeed) — for tests that never
+ * reach the session path or `/api/auth/*`.
  */
 export const layerStub = (): Layer.Layer<BetterAuth.BetterAuth> =>
 	Layer.succeed(BetterAuth.BetterAuth)({

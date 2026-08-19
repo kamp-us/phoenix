@@ -1,17 +1,11 @@
 /**
- * The per-{@link TargetKind} **target-table descriptor** — the one structure the
- * vote/report engines dispatch through, so the `definition | post | comment`
- * fan-out lives once here instead of as a hand-written `switch (kind)` re-stated
- * at every call site. Each descriptor closes over the kind's own typed drizzle
- * tables/columns, so its bodies stay type-correct while the call sites collapse
- * to `targetTable[kind].<op>(…)`. (Issue #1125 — locality.)
+ * The per-{@link TargetKind} target-table descriptor the vote/report engines dispatch
+ * through, so the `definition | post | comment` fan-out lives once here instead of a
+ * hand-written `switch (kind)` at every call site (#1125).
  *
- * Sits in `db/` beside {@link ./target-kind.ts} — below both feature directories —
- * because the `vote/`↔`report/` boundary pins forbid a sibling-feature edge yet
- * Vote and Report (and the schema) all key off this one taxonomy. The descriptor
- * names only db primitives (`DrizzleDb`, drizzle tables, `Stmt`); it knows
- * nothing of the feature services, so a `report/mutations.ts` *service* fan-out
- * (Sözlük/Pano) is a different seam and stays out of here.
+ * Sits in `db/` because the `vote/`↔`report/` boundary pins forbid a sibling-feature edge yet
+ * Vote, Report and the schema all key off this one taxonomy. It names only db primitives, so
+ * a service-level fan-out is a different seam and stays out of here.
  */
 import {and, eq, exists, notExists, type SQL, sql} from "drizzle-orm";
 import type {DrizzleDb, Stmt} from "./Drizzle.ts";
@@ -19,43 +13,26 @@ import * as schema from "./drizzle/schema.ts";
 import {hotMultiplier} from "./hotScore.ts";
 import type {TargetKind} from "./target-kind.ts";
 
-/** The author + creation instant a vote needs before its write (karma recipient + hot-score age). */
 export interface TargetRecordMeta {
 	authorId: string;
 	createdAtMs: number;
 	/**
-	 * Is the target a still-sandboxed (`sandboxed_at IS NOT NULL`) çaylak item? The
-	 * eligibility split `Vote.cast` reads: the ordinary cast rejects a sandboxed target
-	 * ({@link ./../features/vote/errors.ts VoteTargetSandboxed}); only the divan-gated
-	 * `castOnSandboxed` accepts one (#1288). Live content reads `false`.
+	 * Is the target a still-sandboxed çaylak item? The eligibility split `Vote.cast` reads: an
+	 * ordinary cast rejects a sandboxed target; only the divan-gated `castOnSandboxed` accepts
+	 * one (#1288).
 	 */
 	sandboxed: boolean;
 }
 
-/**
- * One kind's vote/report table operations. Every method takes the live `db` plus
- * the row keys it needs and returns either an awaited query (`probeVote`,
- * `readScore`, `loadMeta`) or an unexecuted `Stmt` for the atomic batch
- * (`voteInsert`/`voteDelete`/`clearVotes`/`scoreCache`). Behaviour is identical to
- * the switch arms it replaces — same tables, same columns, same SQL.
- */
 export interface TargetTableDescriptor {
-	/**
-	 * Live-record lookup (`removed_at IS NULL`) returning the karma recipient + age,
-	 * or `null` when the target is missing or soft-removed. Backs Vote.loadMeta and
-	 * Report.assertTargetLive.
-	 */
 	readonly loadMeta: (db: DrizzleDb, targetId: string) => Promise<TargetRecordMeta | null>;
-	/** Vote-presence point lookup on `(targetId, voterId)` — the idempotency probe. */
 	readonly probeVote: (db: DrizzleDb, targetId: string, voterId: string) => Promise<boolean>;
 	/**
-	 * The karma-change guard: an `SQL` predicate true iff the vote write will
-	 * actually change the row's presence — `NOT EXISTS(vote row)` on a cast,
-	 * `EXISTS(vote row)` on a retract. Threaded into the karma bump + ledger
-	 * statements and ordered ahead of the vote-row write, so it reads PRE-mutation
-	 * state: a duplicate concurrent cast finds the row already present (cast) or
-	 * already gone (retract) and applies the karma delta zero times (#2552). This
-	 * is the in-batch backstop the out-of-batch `probeVote` fast-path can race past.
+	 * An `SQL` predicate true iff the vote write will actually change the row's presence.
+	 * Threaded into the karma bump + ledger statements and ordered ahead of the vote-row
+	 * write, so it reads PRE-mutation state: a duplicate concurrent cast finds the row already
+	 * present (or already gone on a retract) and applies the karma delta zero times (#2552).
+	 * The in-batch backstop the out-of-batch `probeVote` fast-path can race past.
 	 */
 	readonly voteChangeGuard: (
 		db: DrizzleDb,
@@ -63,19 +40,10 @@ export interface TargetTableDescriptor {
 		voterId: string,
 		isCast: boolean,
 	) => SQL;
-	/** The truth-derived score cached on the record row (0 when the row is gone). */
 	readonly readScore: (db: DrizzleDb, targetId: string) => Promise<number>;
-	/** Insert the per-target vote row (idempotent on the PK). */
 	readonly voteInsert: (db: DrizzleDb, targetId: string, voterId: string, now: Date) => Stmt;
-	/** Delete the per-target vote row for `(targetId, voterId)`. */
 	readonly voteDelete: (db: DrizzleDb, targetId: string, voterId: string) => Stmt;
-	/** Delete every per-target vote row for the target (the removal-substrate wipe). */
 	readonly clearVotes: (db: DrizzleDb, targetId: string) => Stmt;
-	/**
-	 * Refresh the record's cached `score` (and, for posts, `hot_score`) from a
-	 * `COUNT(*)` over the truth-source vote table, inside the same batch as the
-	 * vote write.
-	 */
 	readonly scoreCache: (db: DrizzleDb, targetId: string, now: Date, meta: TargetRecordMeta) => Stmt;
 }
 
@@ -89,11 +57,6 @@ const metaOf = (row: {
 	sandboxed: row.sandboxedAt != null,
 });
 
-/**
- * The taxonomy's behaviour, keyed once. Each entry closes over its kind's typed
- * tables; the shared method shape is what lets the generic call sites in
- * Vote/Report dispatch against any `TargetKind`.
- */
 export const targetTable: {readonly [K in TargetKind]: TargetTableDescriptor} = {
 	definition: {
 		loadMeta: (db, targetId) =>

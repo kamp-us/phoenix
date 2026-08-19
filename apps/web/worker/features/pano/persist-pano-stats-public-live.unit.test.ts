@@ -1,17 +1,10 @@
 /**
- * `makePersistPanoStats` public-live count wiring (#1407). The per-product
- * `pano_stats` totals (`total_posts`, `total_comments`, `total_authors`) count LIVE
- * content only: a sandboxed çaylak row is excluded like a removed one, and a draft
- * post is excluded too — a draft-only author must never inflate the totals.
+ * `pano_stats` totals count LIVE content only: a sandboxed row is excluded like a
+ * removed one, and a draft-only author must never inflate the totals (#1407).
  *
- * #1407 folds these counts onto the shared seam: posts route through the post-aware
- * `publicLivePostWhere` (removed + sandbox + draft) and comments through
- * `publicLiveWhere` (removed + sandbox), for the anonymous viewer — replacing the
- * hand-written `removed_at IS NULL AND sandboxed_at IS NULL` clauses.
- *
- * Unit-tier per ADR 0082: what THIS proves is that each count WIRES the seam
- * predicate. The counts execute against a RECORDING D1 binding whose `prepare(sql)`
- * records every statement, so their compiled WHERE clauses are inspectable.
+ * What this proves is that each count WIRES the shared seam predicate rather than a
+ * hand-written clause. The counts execute against a RECORDING D1 binding, so their
+ * compiled WHERE clauses are inspectable.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
@@ -52,8 +45,8 @@ function recordingD1(): {binding: D1Database; recorded: {sql: string}[]} {
 
 const recordCounts = Effect.gen(function* () {
 	const {binding, recorded} = recordingD1();
-	// `makePersistPanoStats` takes the OR-DIE run (error channel `never`); compose
-	// `orDieAccess` over the raw access so the test's `run` matches that signature.
+	// `makePersistPanoStats` takes the OR-DIE run, so compose `orDieAccess` over the
+	// raw access to match that signature.
 	const access = orDieAccess(makeDrizzleAccess(createDrizzle(binding)));
 	yield* makePersistPanoStats(access.run)(new Date("2024-06-01T00:00:00.000Z"));
 	return recorded.map((q) => q.sql.toLowerCase());

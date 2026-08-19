@@ -1,15 +1,10 @@
 /**
- * The by-id / batch-by-id draft-ownership gate (#1405, ADR 0113). `getPost` and
- * `getPostsByIds` must route the draft decision through the one PostVisibility seam
- * (`postVisibleTo` / `postVisibleWhere`), so a viewer holding a draft's id never reads
- * another author's unpublished draft while the author still reads their own
- * (read-your-writes). Two tiers, both unit-reachable over a substituted `Drizzle`:
+ * The by-id / batch-by-id draft-ownership gate (ADR 0113): a viewer holding a draft's
+ * id must never read another author's unpublished draft, while the author still reads
+ * their own.
  *
- *   - `getPost` decides in memory (relational query builder), so the leak case and
- *     read-your-writes are asserted as the actual returned value.
- *   - `getPostsByIds` decides in SQL, so the leak/own-draft behavior is the rendered
- *     `.toSQL()` predicate: the draft arm (`is_draft is not 1`) plus the signed-in
- *     ownership disjunction (`author_id = :viewerId`) the seam composes.
+ * `getPost` decides in memory, so it is asserted on the returned value; `getPostsByIds`
+ * decides in SQL, so it is asserted on the rendered `.toSQL()` predicate.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -95,7 +90,6 @@ const panoLayer = (access: DrizzleAccess) =>
 
 const now = new Date("2026-06-27T00:00:00.000Z");
 
-// A live (not removed, not sandboxed) draft `post_record` authored by AUTHOR.
 // biome-ignore lint/plugin: a row fixture standing in for a `post_record` select — getPost only reads the lifecycle/draft/author columns + the `toPostPage` field set off it; enumerating every column adds nothing.
 const draftRow = {
 	id: "post_draft1",

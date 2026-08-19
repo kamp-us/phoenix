@@ -1,19 +1,10 @@
 /**
- * Bookmark — per-user post bookmark ("kaydet") service. The structural twin of
- * {@link Vote} stripped to pure presence: no score, no karma, no hot-score
- * recompute. A `post_bookmark` row means saved; its absence means not.
+ * Bookmark — per-user post bookmark ("kaydet"). The structural twin of {@link Vote}
+ * stripped to pure presence: a `post_bookmark` row means saved, its absence means not.
+ * `toggle` is idempotent (probe-then-write, like `Vote.cast`).
  *
- * `toggle` is idempotent (probe-then-write, like `Vote.cast`): re-saving an
- * already-saved post — or un-saving an unsaved one — is a no-op that writes
- * nothing and returns `changed: false`. `readMine` is the batched presence read
- * the post hydration stamps `isSaved` from without an N+1.
- *
- * Lexeme (the `Vote` twin, #1138): the wire viewer-scalar is `isSaved` (the
- * `myVote` twin, the deliberate `is*` convention shared with `isDraft`), so the
- * toggle's presence-intent input is `value` (mirrors `VoteInput.value`) and its
- * result presence field is `isSaved` (mirrors `VoteResult.myVote`). The brand
- * term stays Turkish (`kaydet`) and the table stays `post_bookmark` (the
- * `post_vote` twin) — both deliberate, not drift.
+ * The naming mirrors Vote deliberately and is not drift (#1138): `value` in, `isSaved`
+ * out (the `myVote` twin), the brand term Turkish, the table `post_bookmark`.
  */
 import {and, desc, eq, inArray, isNull} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
@@ -25,25 +16,18 @@ import {PostNotFound} from "./errors.ts";
 export interface BookmarkToggleInput {
 	userId: string;
 	postId: string;
-	/** Presence intent: `true` saves, `false` un-saves (mirrors `VoteInput.value`). */
 	value: boolean;
 }
 
 export interface BookmarkToggleResult {
 	postId: string;
-	/** Viewer's save presence after the write — the wire `isSaved` lexeme (the `VoteResult.myVote` twin). */
 	isSaved: boolean;
-	/** `false` on an idempotent no-op (state already matched intent). */
 	changed: boolean;
 }
 
-/**
- * A keyset page of the viewer's saved post ids, newest save first. Carries the
- * ordered ids only — hydration (the `isSaved`/`myVote` batch stamp + post shape)
- * stays in `Pano.getPostsByIds`, so `Bookmark` owns the `post_bookmark` keyset
- * and `Pano` owns the post row. The cursor is the bookmark's `post_id` (unique
- * per user, the `(post_id, user_id)` PK).
- */
+// Ordered ids only — hydration stays in `Pano.getPostsByIds`, so `Bookmark` owns the
+// `post_bookmark` keyset and `Pano` owns the post row. The cursor is the bookmark's
+// `post_id`, unique per user by the `(post_id, user_id)` PK.
 export interface SavedPostsPage {
 	ids: string[];
 	hasNextPage: boolean;
@@ -56,21 +40,14 @@ export class Bookmark extends Context.Service<
 		readonly toggle: (
 			input: BookmarkToggleInput,
 		) => Effect.Effect<BookmarkToggleResult, PostNotFound>;
-		/**
-		 * Batched presence read: the subset of `postIds` the viewer has saved, in
-		 * one `IN (...)` read so #128 stamps `isSaved` without an N+1. Missing
-		 * viewer or empty `postIds` short-circuits to an empty Set with no read.
-		 */
+		// One `IN (...)` read, so `isSaved` is stamped without an N+1. Missing viewer
+		// or empty `postIds` short-circuits with no read at all.
 		readonly readMine: (
 			viewerId: string | null | undefined,
 			postIds: ReadonlyArray<string>,
 		) => Effect.Effect<Set<string>>;
-		/**
-		 * Keyset page of the viewer's saved post ids, ordered by save time
-		 * (`post_bookmark.created_at DESC, post_id DESC`) over the
-		 * `(user_id, created_at DESC)` index (#127). Inner-joins `post_record` so
-		 * a soft-deleted post never appears. Missing viewer → empty page, no read.
-		 */
+		// Ordered by save time over the `(user_id, created_at DESC)` index (#127).
+		// Inner-joins `post_record` so a soft-deleted post never appears.
 		readonly listSavedConnection: (
 			viewerId: string | null | undefined,
 			opts?: {first?: number | undefined; after?: string | null | undefined},
@@ -80,8 +57,6 @@ export class Bookmark extends Context.Service<
 
 export const BookmarkLive = Layer.effect(Bookmark)(
 	Effect.gen(function* () {
-		// `orDieAccess`: DB failures are defects (domain-boundary rule), so the
-		// public signature carries `PostNotFound` only and `R` stays `never`.
 		const {run, batch} = orDieAccess(yield* Drizzle);
 
 		const readMine = Effect.fn("Bookmark.readMine")(function* (
@@ -112,9 +87,8 @@ export const BookmarkLive = Layer.effect(Bookmark)(
 			const first = Math.max(1, Math.min(opts.first ?? 20, 100));
 			const after = opts.after ?? null;
 
-			// The DB read is the port; `resolveCursor` is the pure cursor-miss
-			// decision (see `Pano.listPostsConnection`). `after` is a bookmark
-			// `post_id`; resolve it to its `created_at` for the keyset tuple.
+			// `after` is a bookmark `post_id`; resolve it to its `created_at` for the
+			// keyset tuple. The DB read is the port, `resolveCursor` the pure decision.
 			const resolvedRow = after
 				? ((yield* run((db) =>
 						db

@@ -1,10 +1,8 @@
 /**
- * Unit — `AgentAuthorityV1` is fail-closed: `admits` denies every agent input,
- * so a capability discharged through the seam grants an agent nothing while a
- * human passes through unattenuated. The swap-without-editing-authz litmus is
- * asserted structurally — a program requiring the port is fully discharged by
- * this Layer alone (`Effect<…, never, never>`), so the port has exactly one
- * implementation point.
+ * `AgentAuthorityV1` is fail-closed: `admits` denies every agent input, so a
+ * capability discharged through the seam grants an agent nothing while a human passes
+ * through unattenuated. The swap-without-editing-authz litmus is asserted
+ * structurally: this Layer alone fully discharges a program requiring the port.
  */
 import {
 	type Actor,
@@ -45,10 +43,9 @@ class Denied {
 
 const ladder = Scale(["visitor", "çaylak", "yazar"]);
 
-/** Standing fixture: account id → earned rank (the agent root "yzr" is a yazar). */
+// The agent root "yzr" is a yazar.
 const standings: Record<string, "visitor" | "çaylak" | "yazar"> = {yzr: "yazar"};
 
-/** A `Level` right floored at çaylak, discharged through the agent seam. */
 class OpenTerm extends Capability.Level<OpenTerm>()("kunye/OpenTerm", {
 	scale: ladder,
 	min: "çaylak",

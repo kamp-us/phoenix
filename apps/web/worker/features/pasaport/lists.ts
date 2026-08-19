@@ -1,19 +1,7 @@
 /**
- * Pasaport root list resolvers — `emailDelivery.failing`, the admin failing-address
- * roll-up (Child #2692, email-bounce epic #2687). `Fate.list` def + `Effect.fn` pair
- * (`.patterns/fate-effect-operations.md`); the list is delivered inline (no source
- * `connection`), so the resolver builds the wire shape itself.
- *
- * Two gates, both enforced HERE (the service read is unconditional), mirroring
- * `divan/lists.ts`:
- *   1. The `PHOENIX_EMAIL_DELIVERY_ADMIN` dark-ship flag (default-off, ADR 0083). Off ⇒
- *      the invisible `Denied` (the ban-surface stance), so the roll-up never leaks before
- *      release.
- *   2. `requireAdmin` (ADR 0107) — `yield* Admin` makes the read unreachable without the
- *      discharged grant, so a non-admin gets the SAME invisible `Denied`.
- *
- * A single-page private read (no live view, no cursor pagination), so the
- * `ConnectionResult` is `hasNext: false`, mirroring `divan.roster`.
+ * The admin failing-address roll-up. Both gates are enforced HERE, because the service
+ * read is unconditional: the dark-ship flag and `requireAdmin` (ADR 0107). Both denials
+ * are the same invisible `Denied`, so a non-admin cannot tell them apart.
  */
 import {Fate} from "@kampus/fate-effect";
 import type {ConnectionResult} from "@nkzw/fate/server";
@@ -31,14 +19,14 @@ import {FailingAddressView} from "./views.ts";
 
 const FailingArgs = Schema.Struct({});
 
-/** Is the #2692 admin email-delivery flag on for this request? Safe-default `false` (dark). */
+/** Safe-default `false` — the flag reads dark when it cannot be resolved. */
 const emailDeliveryAdminOn = Effect.gen(function* () {
 	const flags = yield* Flags;
 	return yield* flags.getBoolean(PHOENIX_EMAIL_DELIVERY_ADMIN, false).pipe(provideRequestFlags);
 });
 
-// The post-gate roll-up read — `Admin`-gated in R (`requireAdmin` provides the grant).
-// `yield* Admin` requires the proof; the roll-up is unreachable without a discharged grant.
+// `yield* Admin` demands the proof in R, so this read is unreachable without a discharged
+// grant — a compile-time gate, not an `if`.
 const failingGated = Effect.fn("emailDelivery.failingGated")(function* () {
 	yield* Admin;
 	const pasaport = yield* Pasaport;

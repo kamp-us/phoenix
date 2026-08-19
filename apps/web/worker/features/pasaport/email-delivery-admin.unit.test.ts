@@ -1,9 +1,4 @@
-/**
- * `selectFailingAddresses` — the pure admin failing-address roll-up (Child #2692, epic
- * #2687). Latest-event-per-address wins, reusing `resolveEmailDeliveryState`: an address
- * whose newest event is a `fail` is failing; a later `clear` lifts it; a `fail` on a
- * DIFFERENT address is independent. No I/O, driven over hand-built log rows.
- */
+/** The pure admin failing-address roll-up: latest-event-per-address wins. No I/O. */
 import {assert, describe, it} from "@effect/vitest";
 import {type EmailDeliveryEventRow, selectFailingAddresses} from "./email-delivery.ts";
 
@@ -64,7 +59,6 @@ describe("selectFailingAddresses", () => {
 			row("3", "c@x.co", "u-c", "clear", null, "2025-12-31T09:00:00Z"),
 		];
 		const failing = selectFailingAddresses(rows, NOW);
-		// b (12:00) then a (06:00); c's latest is a clear → excluded.
 		assert.deepStrictEqual(
 			failing.map((f) => f.address),
 			["b@x.co", "a@x.co"],
@@ -79,7 +73,7 @@ describe("selectFailingAddresses", () => {
 			row("id-1", "a@x.co", "u-a", "fail", "older-write", at),
 			row("id-2", "a@x.co", "u-a", "clear", null, at),
 		];
-		// id-2 > id-1 at the same timestamp ⇒ the clear is the latest ⇒ excluded.
+		// id-2 > id-1 at the same timestamp ⇒ the clear is the latest.
 		assert.deepStrictEqual(selectFailingAddresses(rows, NOW), []);
 	});
 });

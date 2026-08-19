@@ -1,9 +1,7 @@
 /**
- * The mecmua public-index draft-mask + ordering (#2512, epic #2467). The public index
- * must (a) route the draft decision through the one `MecmuaPostVisibility` seam
- * (`mecmuaPostVisibleWhere`) so an anonymous visitor never sees an unpublished post, and
- * (b) order newest-first by `published_at`. Both are offline-reachable off `.toSQL()`
- * (no query runs) plus a scripted-`run` mapping check.
+ * The public index must route its draft decision through the one
+ * `mecmuaPostVisibleWhere` seam, so an anonymous visitor never sees an unpublished
+ * post (#2512). Checked off `.toSQL()` — no query runs.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {desc} from "drizzle-orm";
@@ -42,7 +40,6 @@ const noopD1 = {
 } as unknown as D1Database;
 const renderDb = drizzle(noopD1, {relations});
 
-/** A `run` that ignores its query and resolves the scripted rows — the mapping fixtures never touch D1. */
 const scriptedRun =
 	(rows: ReadonlyArray<unknown>): DrizzleAccessOrDie["run"] =>
 	<A>(_fn: (db: DrizzleDb) => Promise<A>) =>

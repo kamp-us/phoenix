@@ -1,19 +1,9 @@
 /**
- * `Telemetry` unit coverage (ADR 0153, #2067) — the decisions that are wrong-or-
- * right with no database and no real Analytics Engine (ADR 0082). Two facts:
- *
- *   1. the fixed positional `TelemetryEvent -> DataPoint` map (`toDataPoint`)
- *      lands each field in its exact slot — the guard against the silent
- *      column-misalignment failure AE's positional schema makes possible;
- *   2. the fail-safe (S4) invariant — a `DatasetError` from the underlying write
- *      client is discharged INSIDE `TelemetryLive`, so `emit` still succeeds
- *      (`Effect.void`) and never surfaces an error to its caller.
- *
- * The AE client seam is substituted directly at the `TelemetryClient` tag
- * (`.patterns/effect-testing.md`): a recording client to inspect the mapped data
- * point, and a failing client to prove the swallow. No real AE, and the emit path
- * carries no `R` (both channels discharged in the layer), so both run at the
- * `unit` tier.
+ * `Telemetry` unit coverage (ADR 0153, #2067), with the AE client substituted at the
+ * `TelemetryClient` tag. Two facts: the fixed positional `TelemetryEvent -> DataPoint` map lands
+ * each field in its exact slot (AE's positional schema makes column-misalignment silent), and the
+ * S4 fail-safe — a failure from the write client is discharged INSIDE `TelemetryLive`, so `emit`
+ * never surfaces an error to its caller.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {RuntimeContext} from "alchemy";
@@ -22,9 +12,8 @@ import {Effect, Exit, Layer} from "effect";
 import {toDataPoint} from "./schema.ts";
 import {Telemetry, TelemetryClient, TelemetryLive} from "./Telemetry.ts";
 
-// An inert `RuntimeContext` — the ambient context `writeDataPoint` needs, captured
-// by the layer at build. The substitute clients below ignore it, so a stub with
-// no-op accessors is enough to build the layer.
+// The ambient context `writeDataPoint` needs, captured by the layer at build; the substitute
+// clients ignore it.
 const inertRuntimeContext = Layer.succeed(RuntimeContext)({
 	Type: "telemetry-test",
 	id: "telemetry-test",
@@ -33,8 +22,6 @@ const inertRuntimeContext = Layer.succeed(RuntimeContext)({
 	set: (id: string) => Effect.succeed(id),
 });
 
-// A `TelemetryClient` whose `writeDataPoint` records the mapped data point — so a
-// test can assert the exact `{indexes, blobs, doubles}` `emit` produced.
 const recordingClient = (sink: Cloudflare.AnalyticsEngine.DataPoint[]) =>
 	Layer.succeed(TelemetryClient)(
 		TelemetryClient.of({
@@ -46,8 +33,6 @@ const recordingClient = (sink: Cloudflare.AnalyticsEngine.DataPoint[]) =>
 		}),
 	);
 
-// A `TelemetryClient` whose `writeDataPoint` always fails with a `DatasetError` —
-// drives the S4 fail-safe proof: `emit` must still succeed.
 const failingClient = Layer.succeed(TelemetryClient)(
 	TelemetryClient.of({
 		raw: Effect.die(new Error("raw unused")),
@@ -61,10 +46,8 @@ const failingClient = Layer.succeed(TelemetryClient)(
 	}),
 );
 
-// A `TelemetryClient` whose `writeDataPoint` DIES (a defect, not a typed error) —
-// drives the seam-contains-a-defect proof (#2085): `emit` must still succeed even
-// though a defect slipped into the emit path, because the seam swallows the whole
-// Cause (`Effect.ignoreCause`), not just the typed `E` (`Effect.ignore`).
+// A DEFECT, not a typed error (#2085): the seam swallows the whole Cause (`Effect.ignoreCause`),
+// not just the typed `E` (`Effect.ignore`).
 const dyingClient = Layer.succeed(TelemetryClient)(
 	TelemetryClient.of({
 		raw: Effect.die(new Error("raw unused")),
@@ -161,9 +144,7 @@ describe("Telemetry.emit", () => {
 	it.effect(
 		"contains a DEFECT in the write path — emit still succeeds (seam-level S4, #2085)",
 		() =>
-			// The whole point of moving containment into the seam: a defect (a die, a sync
-			// throw) inside emit must NOT propagate to the caller. `Effect.ignore` would let
-			// this exit die; `Effect.ignoreCause` swallows the whole Cause, so emit succeeds.
+			// `Effect.ignore` would let this exit die; `Effect.ignoreCause` swallows the whole Cause.
 			Effect.gen(function* () {
 				const telemetry = yield* Telemetry;
 				const exit = yield* Effect.exit(

@@ -1,21 +1,12 @@
 /**
- * The public `commentCount` bookkeeping is sandbox-symmetric across create AND
- * delete (#1831). `addComment` gates its `+1` on `sandboxedAt` (a sandboxed çaylak
- * comment (#1205) never bumps the PUBLIC count), but `deleteComment` used to
- * decrement `-1` UNCONDITIONALLY — so deleting a sandboxed comment that was never
- * counted at create drove the public count BELOW the true public total, compounding
- * per deletion (floored at 0 by `Math.max`).
+ * The public `commentCount` must be sandbox-symmetric across create AND delete
+ * (#1831): a sandboxed comment never bumps `+1` at create, so its delete must not
+ * decrement `-1`, or the public count drifts below truth, compounding per deletion.
  *
- * The fix mirrors the create-gate on the delete path: the decrement fires only when
- * the deleted comment was NOT sandboxed. This file proves the SERVICE-level count
- * arithmetic directly by driving `addComment`/`deleteComment` (from
- * `makeCommentOperations`) over a recording fake `db` that captures the
- * `post_record.comment_count` each write persists — the sandbox-gated integration
- * suites can't seed a sandboxed comment (the `sandboxedAt` stamp is resolver-decided
- * from the authorship flag, dark today), so the symmetry is asserted at this tier.
- *
- * COUNT-accuracy only: the sandbox boundary itself (containment/visibility) is
- * unchanged and proven elsewhere (#1811, `../flagship/sandbox-restore-escape.invariant.test.ts`).
+ * Asserted at the unit tier over a recording fake `db` because the integration suites
+ * cannot seed a sandboxed comment — the `sandboxedAt` stamp is resolver-decided from
+ * the authorship flag, dark today. Count accuracy only; the sandbox boundary itself is
+ * proven in `../flagship/sandbox-restore-escape.invariant.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
@@ -70,10 +61,7 @@ const commentRow = (over: Partial<CommentRow> = {}): CommentRow => ({
 	...over,
 });
 
-// A recording fake `db`: the four chained shapes `deleteComment` reaches, each
-// returning scripted data and capturing the `post_record` count the update
-// persists. `commentCount` starts at `startCount`; the captured value is the last
-// `.set()` written to `postRecord`.
+// The captured value is the last `.set()` written to `postRecord`.
 const fakeDb = (opts: {comment: CommentRow; startCount: number; childCount?: number}) => {
 	const captured: {postCommentCount: number | null} = {postCommentCount: null};
 	const post = {id: POST_ID, commentCount: opts.startCount, score: 0, createdAt: NOW};
@@ -98,9 +86,6 @@ const fakeDb = (opts: {comment: CommentRow; startCount: number; childCount?: num
 	return {db, captured};
 };
 
-// `deleteComment` reaches only `removalSeq.clearTarget` + `removalSeq.run` (the
-// comment removal stamp) — both inert here; the count write happens at the call
-// site over the fake `db.update(postRecord)`, which we capture instead.
 const inertRemovalSeq: Removal.RemovalSequence = {
 	run: () => Effect.succeed(undefined as never),
 	batch: () => Effect.succeed(undefined as never),
@@ -113,8 +98,8 @@ const deps = (run: DrizzleAccessOrDie["run"]): CommentOperationsDeps => ({
 	reactionSvc: {} as typeof Reaction.Service,
 	removalSeq: inertRemovalSeq,
 	persistPanoStats: () => Effect.void,
-	// The delete path never re-resolves live author identity (it stamps a count, not a
-	// read row), so a fail-on-contact reader proves that: reaching it fails the test.
+	// Fail-on-contact: the delete path stamps a count, never re-resolves author identity,
+	// so reaching this reader must fail the test.
 	readProfileIdentities: () =>
 		Effect.die(new Error("comment delete-count path must not read author identity")),
 });
@@ -191,8 +176,6 @@ describe("commentCount is sandbox-symmetric across create/delete (#1831)", () =>
 		}),
 	);
 
-	// The create side of the symmetry: addComment is already sandbox-gated (#1205);
-	// pinning it here keeps the create/delete mirror visible in one file.
 	it.effect("adding a SANDBOXED comment does not bump the public count (+0)", () =>
 		Effect.gen(function* () {
 			const {db, captured} = fakeDb({comment: commentRow(), startCount: 5});
@@ -225,8 +208,7 @@ describe("commentCount is sandbox-symmetric across create/delete (#1831)", () =>
 });
 
 // A removed row as it sits after a mod-remove: the ADR 0096 triad stamped, plus the
-// preserved pre-removal `sandboxedAt` marker (null if it was live). `Removal.fromColumns`
-// projects this to `Removed`, and `Removal.restore` round-trips the marker back.
+// preserved pre-removal `sandboxedAt` marker (null if it was live).
 const removedRow = (sandboxedAt: Date | null): CommentRow =>
 	commentRow({
 		removedAt: NOW,
@@ -237,11 +219,8 @@ const removedRow = (sandboxedAt: Date | null): CommentRow =>
 		sandboxedAt,
 	});
 
-// The MODERATOR remove/restore pair is sandbox-gated on the same arithmetic as the author
-// paths (#1835): a mod path that touches a SANDBOXED comment — a public count that never
-// counted it — must not drift the public `comment_count`. The pair is internally symmetric
-// (`-1`/`+1`), so the drift only appears against a sandboxed comment or across a now-gated
-// author path (mod-remove sandboxed `-0` then author-restore `+0`).
+// The mod pair is internally symmetric (`-1`/`+1`), so drift only shows against a
+// sandboxed comment or across a now-gated author path — hence the cross-path case.
 describe("commentCount is sandbox-gated across the MODERATOR remove/restore pair (#1835)", () => {
 	it.effect("mod-removing a SANDBOXED comment leaves the public count unchanged (-0, not -1)", () =>
 		Effect.gen(function* () {
@@ -301,7 +280,6 @@ describe("commentCount is sandbox-gated across the MODERATOR remove/restore pair
 
 	it.effect("a sandboxed mod-remove → mod-restore round-trip nets zero (never drifts)", () =>
 		Effect.gen(function* () {
-			// mod-remove of the sandboxed live comment: -0
 			const remove = fakeDb({comment: commentRow({sandboxedAt: NOW}), startCount: 5});
 			const opsRemove = makeCommentOperations(deps(runOverDb(remove.db)));
 			yield* opsRemove.moderateRemoveComment({
@@ -311,7 +289,6 @@ describe("commentCount is sandbox-gated across the MODERATOR remove/restore pair
 			});
 			assert.strictEqual(remove.captured.postCommentCount, 5, "mod-remove of sandboxed is -0");
 
-			// mod-restore of the now removed-AND-sandboxed row: +0 — the public count is back where it started
 			const restore = fakeDb({comment: removedRow(NOW), startCount: 5});
 			const opsRestore = makeCommentOperations(deps(runOverDb(restore.db)));
 			yield* opsRestore.moderateRestoreComment({commentId: "comm_1"});
@@ -327,7 +304,6 @@ describe("commentCount is sandbox-gated across the MODERATOR remove/restore pair
 		"cross-path: mod-remove SANDBOXED (-0) then author restoreComment (+0) never drifts",
 		() =>
 			Effect.gen(function* () {
-				// mod-remove of a sandboxed comment: -0 (the ungated bug would have made this -1)
 				const remove = fakeDb({comment: commentRow({sandboxedAt: NOW}), startCount: 5});
 				const opsRemove = makeCommentOperations(deps(runOverDb(remove.db)));
 				yield* opsRemove.moderateRemoveComment({
@@ -337,7 +313,6 @@ describe("commentCount is sandbox-gated across the MODERATOR remove/restore pair
 				});
 				assert.strictEqual(remove.captured.postCommentCount, 5, "mod-remove of sandboxed is -0");
 
-				// author restoreComment of the removed-AND-sandboxed row: +0 (author-gated, #1811)
 				const restore = fakeDb({comment: removedRow(NOW), startCount: 5});
 				const opsRestore = makeCommentOperations(deps(runOverDb(restore.db)));
 				yield* opsRestore.restoreComment({
@@ -353,10 +328,8 @@ describe("commentCount is sandbox-gated across the MODERATOR remove/restore pair
 	);
 });
 
-// The author `restoreComment` +1 (live) branch — the last arithmetic branch not asserted
-// directly (its +0 sandboxed arm is covered by the cross-path test above, #1811). Pins the
-// non-sandboxed restore to +1 so the shared delta rule (`nextCommentCount`) stays honest on
-// the create-mirror arm for the author path too.
+// The last arithmetic branch not asserted directly; its +0 sandboxed arm is covered by
+// the cross-path test above.
 describe("commentCount is sandbox-gated on the author restoreComment path (#1811)", () => {
 	it.effect("author-restoring a NON-sandboxed comment bumps the public count by one (+1)", () =>
 		Effect.gen(function* () {

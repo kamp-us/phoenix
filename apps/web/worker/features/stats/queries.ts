@@ -1,11 +1,6 @@
 /**
- * Stats root query resolvers — `health`, `landingStats`
- * (`.patterns/fate-effect-operations.md`).
- *
- * `health` is string-typed (no data view by design) so it stays off `Root`
- * but still dispatches over the native transport. Both roots are anonymous
- * reads (no `CurrentUser`); infra failures die inside `Stats`, never reaching
- * this layer (`.patterns/feature-services.md`).
+ * Stats root query resolvers (`.patterns/fate-effect-operations.md`). Both are anonymous
+ * reads; `health` is string-typed by design so it stays off `Root`.
  */
 
 import {Fate} from "@kampus/fate-effect";
@@ -19,8 +14,7 @@ export interface Health {
 
 const PHOENIX_BUILD_VERSION = "v0.3";
 
-// Stable id for the singleton entity, so the client normalizes it to one cache
-// record (see views.ts).
+// Stable, so the client normalizes the singleton to one cache record.
 const LANDING_STATS_ID = "landing";
 
 export const queries = {
@@ -33,11 +27,9 @@ export const queries = {
 		}),
 	),
 	landingStats: Fate.query(
-		// Wire type-name STRING, not `LandingStatsView`: a view-typed query would
-		// make the entity view-reachable and trip source-completeness validation,
-		// but `LandingStats` is a synthetic singleton with no fetch path (the
-		// resolver is its only producer). Codegen is unchanged — the client root
-		// still types off `Root`'s `landingStatsDataView` + this handler.
+		// A type-name STRING, not `LandingStatsView`: a view-typed query would make the
+		// entity view-reachable and trip source-completeness validation, but this is a
+		// synthetic singleton whose only producer is the resolver below.
 		{type: "LandingStats"},
 		Effect.fn("landingStats")(function* () {
 			const stats = yield* Stats;

@@ -1,18 +1,8 @@
 /**
- * The karma-VALUE privilege gates (#150) through the REAL capability seams — not a
- * re-implemented `karma >= floor` check. {@link requireCanPost} / {@link requireCanFlag}
- * discharge `CanPost` / `CanFlag` (`Capability.Class`, ADR 0107) over a fresh
- * {@link Kunye.karmaOf} read, threading the minted `Grant` into the gated body's R
- * channel — so a reached body proves the proof was supplied (enforcement-by-R), and a
- * below-floor read fails the visible {@link InsufficientKarma} (`INSUFFICIENT_KARMA`).
- *
- * The flag-aware wrappers ({@link gateContentOnKarma} / {@link gateFlagOnKarma}) are the
- * dark-ship seam: with `phoenix-karma-gates` OFF the karma read never runs and the body
- * passes freely (today's behavior); ON, the floor is enforced. The floors are read off
- * {@link KARMA_FLOORS} so a floor move can't drift from the test.
- *
- * All ports are scripted (`CurrentActor` the actor, `Kunye` the karma, `AgentAuthority`
- * admit-all, `Flags` the gate switch, `CurrentUser` for `provideRequestFlags`) — no DB.
+ * The karma-VALUE privilege gates driven through the REAL capability seams (ADR 0107),
+ * never a re-implemented `karma >= floor` check. Floors are read off
+ * {@link KARMA_FLOORS} so a floor move can't drift from the test. All ports are
+ * scripted — no DB.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {type Actor, AgentAuthority, CurrentActor, human, unauthenticated} from "@kampus/authz";
@@ -33,7 +23,7 @@ import {
 	requireCanPost,
 } from "./privilege.ts";
 
-/** A `Kunye` that answers only `karmaOf` (fixed) — every other read fails-on-contact. */
+/** Every read other than `karmaOf` fails on contact. */
 const kunyeWithKarma = (karma: number): Layer.Layer<Kunye> =>
 	Layer.succeed(Kunye, {
 		karmaOf: () => Effect.succeed(karma),
@@ -41,7 +31,6 @@ const kunyeWithKarma = (karma: number): Layer.Layer<Kunye> =>
 		rootOf: (id: string) => Effect.succeed(id),
 	});
 
-/** A `Flags` whose `getBoolean` returns a fixed value — the gate switch. */
 const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 	Layer.succeed(Flags, {
 		getBoolean: () => Effect.succeed(on),
@@ -52,10 +41,6 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 
 const userInfo = (id: string): CurrentUserInfo => ({id, email: `${id}@kamp.us`, name: id});
 
-/**
- * Run one gate over `body = succeed("ok")` for an actor at a karma value, with the flag
- * on/off. Provides every port the gate touches; `user` feeds `provideRequestFlags`.
- */
 const run = (
 	gate: <A, E, R>(body: Effect.Effect<A, E, R>) => Effect.Effect<A, E | InsufficientKarma, unknown>,
 	opts: {
@@ -67,12 +52,8 @@ const run = (
 ): Exit.Exit<"ok", InsufficientKarma> =>
 	Effect.runSyncExit(
 		(gate(Effect.succeed("ok" as const)) as Effect.Effect<"ok", InsufficientKarma, unknown>).pipe(
-			// One combined provide (a single merged layer), never a chain of provides —
-			// `@effect/language-service` flags chained provides (`multipleEffectProvide`).
-			// `provideRequestFlags` (the flag-aware wrappers) reads the per-request override
-			// seam + `AppConfig` for the stage; a non-development stage reads no cookie, so a
-			// null-cookie override + a bare config provider is all the flag path needs under
-			// `runSyncExit`.
+			// One combined provide, never a chain — `@effect/language-service` flags chained
+			// provides (`multipleEffectProvide`).
 			Effect.provide(
 				Layer.mergeAll(
 					Layer.succeed(CurrentActor, {actor: opts.actor}),
@@ -90,7 +71,6 @@ const run = (
 		) as Effect.Effect<"ok", InsufficientKarma, never>,
 	);
 
-/** The failure's `InsufficientKarma`, or `null` if the exit succeeded / died. */
 const denial = (exit: Exit.Exit<"ok", InsufficientKarma>): InsufficientKarma | null => {
 	if (!Exit.isFailure(exit)) return null;
 	const found = Cause.findErrorOption(exit.cause);

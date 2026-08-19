@@ -1,26 +1,16 @@
 /**
- * Pano submit-validation WIRING coverage (ADR 0082) — the post/draft/comment
- * input checks driven THROUGH their only caller, the mutation, not the extracted
- * helper in isolation.
+ * Pano submit-validation WIRING coverage (ADR 0082) — the input checks driven THROUGH
+ * the mutation, never by importing the module-private validators directly.
  *
- * `submitPost` / `saveDraft` / `addComment` run their validators BEFORE any DB
- * read, so a throwing `Drizzle` (every `run`/`batch` `die`s) is the "no DB call"
- * proof: a typed validation failure surfacing instead of a defect means the gate
- * fired before the seam was reached. A refactor that reorders a `validate*` call
- * after a DB read, or drops it, would die (or succeed) here instead of
- * rejecting — closing the interface-as-test-surface hole the
- * `pasaport/username-validation.unit.test.ts` pattern already closes.
+ * The proof shape: every `Drizzle` call `die`s, so a typed validation failure means the
+ * gate fired before the seam was reached. A refactor that reorders a `validate*` after a
+ * DB read, or drops it, dies here instead of rejecting.
  *
- * `editPost` is the one mutation whose validation runs AFTER its existence/auth
- * read (it validates against the persisted row), so its wiring is proven over a
- * scripted `Drizzle` that returns an owned post on the read and `die`s on the
- * write batch: the validator must reject before that write.
+ * `editPost` validates AFTER its existence/auth read, so it runs over a scripted access
+ * that resolves an owned post once and dies on the write.
  *
- * The DB-state-dependent rejections of the same mutations (`POST_NOT_FOUND`,
- * `PARENT_NOT_FOUND`, `UNAUTHORIZED`) stay on real D1 in
- * `tests/integration/pano-*.test.ts` — those are only-wrong-if-the-DB-differs.
- * The validator helpers are module-private; this file reaches them only through
- * the mutation, never by direct import.
+ * DB-state-dependent rejections (`POST_NOT_FOUND`, `PARENT_NOT_FOUND`, `UNAUTHORIZED`)
+ * stay on real D1 in `tests/integration/pano-*.test.ts`.
  */
 
 import {it} from "@effect/vitest";
@@ -35,18 +25,12 @@ import {Bookmark} from "./Bookmark.ts";
 import {type CommentId, PostId} from "./ids.ts";
 import {COMMENT_BODY_MAX, Pano, PanoLive, POST_BODY_MAX, POST_TITLE_MAX} from "./Pano.ts";
 
-// Every DB call dies, so any path that reaches the seam fails the test: the
-// validation gate short-circuits before any read/write, and running to a typed
-// failure against this access is the "no DB call" proof.
 const throwingAccess: DrizzleAccess = {
 	run: () => Effect.die(new Error("a pano mutation read the DB on a path that must short-circuit")),
 	batch: () =>
 		Effect.die(new Error("a pano mutation wrote a batch on a path that must short-circuit")),
 };
 
-// `editPost` validates AFTER its existence/auth read, so its wiring is proven
-// over a `run` that resolves an owned post once and dies on any later write: the
-// title/body gate must reject before the write batch is ever built.
 const editPostReadThenDieAccess = (postRow: unknown): DrizzleAccess => {
 	const state = {firstRunDone: false};
 	return {
@@ -63,9 +47,8 @@ const editPostReadThenDieAccess = (postRow: unknown): DrizzleAccess => {
 	};
 };
 
-// Pano's validation gate touches neither Vote nor Bookmark (they're consulted
-// only on the read/aggregate paths), so never-cast inert instances satisfy the
-// layer's dependency types without a real implementation.
+// The validation gate touches none of these services — they are consulted only on the
+// read/aggregate paths — so inert casts satisfy the layer's dependency types.
 const inertVote = Layer.succeed(Vote, {} as Context.Service.Shape<typeof Vote>);
 const inertBookmark = Layer.succeed(Bookmark, {} as Context.Service.Shape<typeof Bookmark>);
 const inertReaction = Layer.succeed(Reaction, {} as Context.Service.Shape<typeof Reaction>);
@@ -94,10 +77,8 @@ const expectTag = (exit: Exit.Exit<unknown, unknown>, tag: string) => {
 	}
 };
 
-// The inverse of `expectTag`: a URL that PASSES the protocol allowlist runs on
-// past the gate into the throwing `Drizzle`, so the mutation `die`s (a defect,
-// not a typed failure). Reaching the DB is the "URL accepted" proof — the
-// http(s) case must land here, never at a `UrlInvalid`.
+// The inverse of `expectTag`: a URL that PASSES the allowlist runs past the gate into
+// the throwing `Drizzle`, so reaching the DB is the "URL accepted" proof.
 const expectReachedDb = (exit: Exit.Exit<unknown, unknown>) => {
 	assert.isTrue(Exit.isFailure(exit), "expected the mutation to reach the throwing DB");
 	if (Exit.isFailure(exit)) {
@@ -282,8 +263,7 @@ it.effect("addComment: an over-long body rejects with CommentBodyTooLong before 
 	}),
 );
 
-// An owned, live post the existence/auth read resolves before editPost reaches
-// its validation gate — only the columns the mutation reads need be present.
+// Only the columns the mutation reads need be present.
 const ownedPostRow = {
 	id: "post_1",
 	title: "eski başlık",

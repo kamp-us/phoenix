@@ -1,8 +1,7 @@
 /**
- * The dark-ship default-=-safe-state invariant for the platform role-assign surface
- * (#3522, admin epic per ADR 0107). Inspected off the exported `USER_ROLE_ASSIGN_FLAG`
- * record (the same object the factory spreads into `FlagshipFlag`), so no alchemy resource
- * is constructed — mirrors `email-delivery-admin.invariant.test.ts`.
+ * The dark-ship default-is-the-safe-state invariant for the platform role-assign surface
+ * (#3522). Inspected off the exported record rather than the factory, so no alchemy
+ * resource is constructed.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {PHOENIX_USER_ROLE_ASSIGN} from "../../../src/flags/keys.ts";

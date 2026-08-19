@@ -1,20 +1,9 @@
 /**
- * Sözlük connection-resolver pagination DECISIONS, unit-reachable over the
- * substituted-`Drizzle` seam (ADR 0082 litmus: "could this be wrong even if the
- * database behaved perfectly?" → unit). Two resolvers, both pure above the
- * cursor-read port:
- *
- *   - `listDefinitionsKeyset` — the `first` clamp `[1,200]`, the MIXED-direction
- *     keyset tuple (`score desc, created_at asc, id asc`), the cursor-miss →
- *     empty-page branch, the page envelope. The `id` cursor value is the opaque
- *     `after` itself (the resolved row carries only `score`/`created_at`).
- *   - `listTermSummariesConnection` — the `first` clamp `[1,100]`.
- *
- * Doubles follow `Vote.unit.test.ts`: a `scriptedAccess` that replays `run`
- * results in call order and renders the fetch builder's `.toSQL()`, and a
- * fetch-seam-throws composition that proves the cursor miss takes no further
- * read. Real-D1 keyset EXECUTION (collation, NULL tiebreaks, the paged walk)
- * stays integration-tier per ADR 0082's irreducible core.
+ * Sözlük connection-resolver pagination DECISIONS over a substituted `Drizzle` seam (ADR
+ * 0082). `scriptedAccess` replays `run` results in call order and renders the fetch
+ * builder's `.toSQL()`; a throwing fetch seam proves the cursor miss takes no further
+ * read. Real-D1 keyset EXECUTION (collation, NULL tiebreaks, the paged walk) stays
+ * integration-tier.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -71,9 +60,8 @@ function scriptedAccess(results: ReadonlyArray<unknown>): {
 	return {access, queries};
 }
 
-// `listDefinitionsKeyset` finalizes the page through `stampViewerScalars`, which
-// reads `Vote.readMine`; the stub returns an empty Set so no `myVote` is stamped
-// and no extra DB read happens through the vote service.
+// The empty Set means no `myVote` is stamped and no extra DB read happens through the
+// vote service.
 // biome-ignore lint/plugin: a service double — `Vote.Service` carries methods the connection resolver never reaches (only the stubbed `readMine` is on this path).
 const VoteStub = Layer.succeed(Vote, {
 	cast: () => Effect.die(new Error("connection resolver must not cast a vote")),
@@ -149,10 +137,8 @@ describe("Sozluk.listDefinitionsKeyset — MIXED-direction keyset (score desc, c
 					/order by "definition_record"\."score" desc, "definition_record"\."created_at" asc, "definition_record"\."id" asc/,
 					"orderBy mirrors the keyset tuple directions",
 				);
-				// Param order: the base `WHERE termSlug = ?` first, then the keyset arms,
-				// then LIMIT. `createdAt` renders as epoch SECONDS (the column's timestamp
-				// mode). The `id` cursor value is the opaque `after` ("d7"), NOT carried on
-				// the resolved row (which holds only score/createdAt).
+				// `createdAt` renders as epoch SECONDS (the column's timestamp mode), and the
+				// `id` cursor value is the opaque `after` ("d7"), not a resolved-row field.
 				const sec = Math.floor(created.getTime() / 1000);
 				assert.deepStrictEqual(
 					params,
@@ -192,10 +178,6 @@ describe("Sozluk.listDefinitionsKeyset — cursor-miss → empty page, NO furthe
 	});
 });
 
-// Mute read-mask (#3113): the muted-author SQL arm is `and()`ed into the definition
-// fetch, so a muted member's definitions are absent from the muter's definition reads.
-// Rendered over the same `.toSQL()` seam — present-with-mute emits `author_id not in
-// (…)`, absent/off emits nothing (byte-for-byte today's definition read).
 describe("Sozluk.listDefinitionsKeyset — mute read-mask (author_id NOT IN …)", () => {
 	it.effect("masks a muted author when `mutedIds` is non-empty", () => {
 		const {access, queries} = scriptedAccess([1 /* count */, [] /* fetch */]);

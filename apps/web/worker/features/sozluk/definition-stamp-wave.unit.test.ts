@@ -1,21 +1,7 @@
 /**
- * The sözlük stamp-wave collapse (#2709, epic #2567) — behavior equivalence + the
- * concurrency plumbing, over the substituted-`Drizzle`/service seams (ADR 0082 litmus:
- * wrong-or-right with no SQL engine → unit).
- *
- * Two properties the acceptance criteria name:
- *
- *   - **byte-for-byte equivalence.** `getDefinitionsByIds` / `listDefinitionsKeyset`
- *     produce the identical stamped rows whether the wave runs serial (flag off) or
- *     concurrent (flag on) — `myVote`, `reactions`, live author identity all unchanged.
- *     The flag flips wall time and nothing else.
- *   - **the concurrency actually threads through.** With `parallelStamps: true` the
- *     reaction aggregate's own two D1 reads receive `{concurrency: "unbounded"}` (so the
- *     wave is one phase, not one-plus-the-reaction-arm's-two); with it off/absent they
- *     receive `{concurrency: 1}` — today's serial behavior every non-opted caller keeps.
- *
- * The stamps' batched reads are substituted by recording doubles (the feature's
- * scripted-double idiom) — real read fidelity lives on the per-stamp + integration tiers.
+ * The sözlük stamp-wave collapse (#2709): the `parallelStamps` flag must flip wall
+ * time and nothing else. Unit tier per ADR 0082 — the stamps' batched reads are
+ * recording doubles, so real read fidelity lives on the integration tier.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
@@ -27,7 +13,6 @@ import {Reaction, type ReactionAggregate} from "../reaction/Reaction.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Sozluk, SozlukLive} from "./Sozluk.ts";
 
-// A `definition_record` shaped just enough for `toDefinitionRow` + `ownSandboxed`.
 const defRecord = (id: string, authorId: string) => ({
 	id,
 	body: `body of ${id}`,
@@ -59,8 +44,7 @@ const agg = (myReaction: ReactionAggregate["myReaction"]): ReactionAggregate => 
 	myReaction,
 });
 
-// Reaction double that RECORDS the `options` (the concurrency knob) each `readAggregate`
-// call received, and answers a fixed aggregate for `d1`.
+// Records the `options` (the concurrency knob) each `readAggregate` call received.
 const reactionRecorder = (calls: Array<{readonly concurrency?: Concurrency} | undefined>) =>
 	Layer.succeed(Reaction, {
 		react: () => Effect.die(new Error("read path must not react")),
@@ -72,7 +56,7 @@ const reactionRecorder = (calls: Array<{readonly concurrency?: Concurrency} | un
 		},
 	} satisfies typeof Reaction.Service);
 
-// Pasaport double: `d1`'s author has a live handle, `d2`'s has none (→ null identity).
+// `d1`'s author has a live handle, `d2`'s has none (→ null identity).
 const PasaportStub = makePasaportStub({
 	getProfileIdentitiesByIds: () =>
 		Effect.succeed([{userId: "u1", username: "anka", displayName: "Anka Kadın", totalKarma: 0}]),
@@ -89,8 +73,8 @@ const sozlukLayer = (
 		Layer.provide(Layer.succeed(Drizzle, access)),
 	);
 
-// Replays `run` results in call order (the connection test's `scriptedAccess` shape);
-// `results` is `unknown`, so each answer is a single `as A` — no `as unknown as` cast.
+// Replays `run` results in call order, so each test's script must match the read
+// sequence of the method under test.
 const scriptedAccess = (results: ReadonlyArray<unknown>): DrizzleAccess => {
 	let i = 0;
 	return {
@@ -99,7 +83,7 @@ const scriptedAccess = (results: ReadonlyArray<unknown>): DrizzleAccess => {
 	};
 };
 
-// `getDefinitionsByIds` issues exactly one `run` (the fetch); answer it with two records.
+// `getDefinitionsByIds` issues exactly one `run` (the fetch).
 const byIdAccess = (): DrizzleAccess =>
 	scriptedAccess([[defRecord("d1", "u1"), defRecord("d2", "u2")]]);
 
@@ -130,7 +114,7 @@ describe("Sozluk.getDefinitionsByIds — stamp-wave behavior equivalence (#2709)
 				serial.map((r) => JSON.stringify(r)),
 				"identical serialized bytes (fields, values, key order)",
 			);
-			// Spot the stamps actually landed (not a vacuous equality of two empty pages).
+			// Guards against a vacuous equality of two empty pages.
 			assert.strictEqual(parallel[0]?.myVote, true, "d1 viewer upvote stamped");
 			assert.strictEqual(parallel[1]?.myVote, false, "d2 no viewer upvote");
 			assert.deepStrictEqual(parallel[0]?.reactions, agg("👍"), "d1 reaction aggregate stamped");
@@ -167,7 +151,7 @@ describe("Sozluk.getDefinitionsByIds — stamp-wave behavior equivalence (#2709)
 	});
 });
 
-// `listDefinitionsKeyset` (no cursor) issues: totalCount → fetch. Script both in order.
+// `listDefinitionsKeyset` (no cursor) issues: totalCount → fetch.
 const keysetAccess = (): DrizzleAccess =>
 	scriptedAccess([2 /* count */, [defRecord("d1", "u1"), defRecord("d2", "u2")] /* fetch */]);
 
