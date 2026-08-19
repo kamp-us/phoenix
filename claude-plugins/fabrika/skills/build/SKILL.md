@@ -99,9 +99,24 @@ now, and your next write lands in their lane.
 fabrika build issue $issue_or_pr_number
 ```
 
-That is the issue body and its acceptance criteria, off the verb, never off memory. Check any
-falsifiable claim the body makes against the source before building on it — a summary of a contract
-is not the contract. Name the surface you are on — **code** (compiled/tested text), **prose**
+That is the issue body and its acceptance criteria, off the verb, never off memory.
+
+**A `malformed` criteria token ends the run right here.** The verb's three tokens are three
+different facts, and this one says the contract cannot be read: the heading drifted, so nothing
+downstream can grade a PR against it, and building anyway spends the whole lane on work `review
+criteria` refuses (exit `7`) on a lane that cannot fix an issue body. Stop before any construction —
+no branch, no commit, no write anywhere. Name the reader's own reason, which the verb put on stderr,
+and name the route out: `fabrika triage repair-criteria <n>`, which repairs exactly this mechanical
+drift and refuses anything else on `14`. **Do not run it from this lane** — a build lane does not
+write an issue body; a human or triage does. Release the claim
+(`fabrika build release <n> --token <claim-token>`) so the repaired issue is pickable again, and end
+`BACKED-OFF`.
+
+`absent` is not that fork. A body with no criteria block is a fact, not a defect, and the build
+proceeds on the issue's own text.
+
+Check any falsifiable claim the body makes against the source before building on it — a summary of a
+contract is not the contract. Name the surface you are on — **code** (compiled/tested text), **prose**
 (docs, ADRs, briefs), or **plan** (a ledger with topology) — and read the matching rubric file in
 [`references/`](references/) before writing. Done when every acceptance criterion maps to
 something you can point at.
@@ -224,8 +239,9 @@ fabrika build release $issue_or_pr_number --token <claim-token>
 removed, findings filed via `/report`; closing the issue is triage's, not yours); `BUILT-NO-PR` (an
 epic child under the epic rules — your commit landed on the branch you cut from the assembly branch
 and the `build-deviations` marker is posted on the child issue; branch left local, unpushed, for the
-epic driver to fold); `BACKED-OFF` (claim lost or blocked — branch removed, nothing written); `ESCALATED`
-(repair cap reached — branch left pushed at its last verified head, escalation note posted);
+epic driver to fold); `BACKED-OFF` (claim lost, blocked, or a `malformed` contract — branch removed,
+nothing written); `ESCALATED` (repair cap reached — branch left pushed at its last verified head,
+escalation note posted);
 `STOPPED` (isolation, a denied tool call, or verdict UNKNOWN — branch left local, state named). An
 empty pick pool is
 `BACKED-OFF` too — nothing to build, nothing written, and on a lost claim "branch removed" means
