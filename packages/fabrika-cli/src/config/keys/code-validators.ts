@@ -59,4 +59,22 @@ export const codeValidatorsKey: KeyGroup<ReadonlyArray<CodeValidator>> = {
 	decode,
 	// `argv` is the spawn shape; the file's key is `command`, and a readout prints what the repo wrote.
 	render: (validators) => validators.map((one) => ({command: [...one.argv]})),
+	jsonSchema: {
+		type: "array",
+		description:
+			"The repo's own commands that compile and lint its code — `build check --surface code` spawns each. Empty (or absent) refuses UNKNOWN rather than guessing a command line.",
+		items: {
+			type: "object",
+			properties: {
+				command: {
+					type: "array",
+					description: 'The argv to spawn — e.g. ["pnpm", "typecheck"].',
+					items: {type: "string"},
+					minItems: 1,
+				},
+			},
+			required: ["command"],
+			additionalProperties: false,
+		},
+	},
 };

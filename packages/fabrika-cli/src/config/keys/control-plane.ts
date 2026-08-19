@@ -36,4 +36,10 @@ export const unreadableCodeownersKey: KeyGroup<UnreadableCodeowners> = {
 	key: UNREADABLE_CODEOWNERS,
 	shippedDefault: "ship",
 	decode,
+	jsonSchema: {
+		type: "string",
+		description:
+			"What a §CP read does when `.github/CODEOWNERS` itself cannot be read: `ship` treats the boundary as absent, `refuse` raises the caller's UNKNOWN. Nothing reads this key today.",
+		enum: ["ship", "refuse"],
+	},
 };

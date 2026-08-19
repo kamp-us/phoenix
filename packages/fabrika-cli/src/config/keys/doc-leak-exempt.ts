@@ -29,4 +29,10 @@ export const docLeakExemptKey: KeyGroup<ReadonlyArray<string>> = {
 	key: DOC_LEAK_EXEMPT,
 	shippedDefault: [],
 	decode,
+	jsonSchema: {
+		type: "array",
+		description:
+			"Docs whose subject IS path hygiene — `build check --surface prose` skips its leak scan on them. Repo-relative path suffixes. Empty (or absent) means nothing is exempt.",
+		items: {type: "string", minLength: 1},
+	},
 };

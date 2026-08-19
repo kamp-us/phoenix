@@ -11,6 +11,7 @@
  */
 
 import {CONFIG_PATH, type DocumentState} from "./document.ts";
+import type {JsonSchema} from "./json-schema.ts";
 
 export type Resolution<A> =
 	/** The repo declared this key and the value decoded. */
@@ -56,6 +57,17 @@ export interface KeyGroup<A> {
 	 * internal shape and leave the reader to reverse it.
 	 */
 	readonly render?: (value: A) => unknown;
+	/**
+	 * The JSON Schema fragment describing a declared value's shape, single-sourced beside this
+	 * key's {@link KeyGroup.decode}. `config schema` assembles the registry's fragments into the
+	 * one document an editor validates `.fabrika.jsonc` against (#6488).
+	 *
+	 * Optional on the type, required in practice: the assembler refuses a registry with any key
+	 * missing a fragment, so the emitted schema can never silently green a typo under a key it
+	 * forgot. A fragment describes the *declared* shape only — that a key is absent-optional is the
+	 * document's rule, not each fragment's.
+	 */
+	readonly jsonSchema?: JsonSchema;
 }
 
 export const resolveKey = <A>(state: DocumentState, group: KeyGroup<A>): Resolution<A> => {
@@ -105,10 +117,15 @@ export interface Registration {
 	 */
 	readonly readout: (state: DocumentState) => Resolution<unknown>;
 	readonly loadRefusal: (state: DocumentState) => string | null;
+	/** This key's JSON Schema fragment, carried erased so `config schema` can assemble the document. */
+	readonly jsonSchema?: JsonSchema;
 }
 
 export const register = <A>(group: KeyGroup<A>): Registration => ({
 	key: group.key,
+	// Spread rather than assign: under `exactOptionalPropertyTypes` an optional field may not carry
+	// an explicit `undefined`, so a key with no fragment simply omits it.
+	...(group.jsonSchema !== undefined ? {jsonSchema: group.jsonSchema} : {}),
 	resolve: (state) => resolveKey(state, group),
 	readout: (state) => {
 		const resolved = resolveKey(state, group);

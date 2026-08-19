@@ -63,4 +63,10 @@ export const governedRootsKey: KeyGroup<ReadonlyArray<string>> = {
 		governs(roots, CONFIG_PATH)
 			? null
 			: `\`${GOVERNED_ROOTS}\` does not cover ${CONFIG_PATH} — a config cannot un-govern itself`,
+	jsonSchema: {
+		type: "array",
+		description: `The repo-relative roots a diff derives the governance namespace over. Must cover ${CONFIG_PATH} itself — a config cannot un-govern itself.`,
+		items: {type: "string", minLength: 1},
+		minItems: 1,
+	},
 };

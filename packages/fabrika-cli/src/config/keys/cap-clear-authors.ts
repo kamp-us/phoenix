@@ -59,4 +59,13 @@ export const capClearAuthorsKey: KeyGroup<ReadonlyArray<GrantAuthor>> = {
 	shippedDefault: [],
 	decode,
 	render: (authors) => authors.map(grantAuthorText),
+	jsonSchema: {
+		type: "array",
+		description:
+			"Who may clear one extra repair round on a PR (`fabrika build clear`). Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means nobody may grant.",
+		items: {
+			type: "string",
+			pattern: "^@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?|[^/\\s]+/[^/\\s]+)$",
+		},
+	},
 };

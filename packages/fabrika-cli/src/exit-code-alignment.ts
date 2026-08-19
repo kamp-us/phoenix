@@ -366,6 +366,8 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
  */
 export const UNALIGNED_GROUPS: Readonly<Record<string, string>> = {
 	wire: "3-6 are ABSENT / MALFORMED / EMPTY_ARTIFACT / ARTIFACT_UNKNOWN — a different vocabulary about artifacts, not about writes",
+	config:
+		"4/6/7 are SCHEMA_DRIFT / IO_UNKNOWN / INCOMPLETE_REGISTRY — the generated-file reconcile vocabulary `wire index` uses, about a file derived from a registry, not about writes to GitHub",
 };
 
 /**

@@ -115,4 +115,36 @@ export const triageFacetsKey: KeyGroup<ReadonlyArray<FacetVocabulary>> = {
 	shippedDefault: FACET_VOCABULARY,
 	decode,
 	refuseLoad: (facets) => containmentRefusal(TRIAGE_FACETS, facets),
+	jsonSchema: {
+		type: "array",
+		description:
+			"What each triage facet owns and every label an input can make it keep. A facet declares its ownership as `owns` (a regex) or `ownsLabels` (an explicit set), never both.",
+		minItems: 1,
+		items: {
+			type: "object",
+			properties: {
+				name: {type: "string", minLength: 1, description: "The facet's name."},
+				values: {
+					type: "array",
+					description: "Every label this facet may keep.",
+					items: {type: "string", minLength: 1},
+					minItems: 1,
+				},
+				owns: {
+					type: "string",
+					minLength: 1,
+					description:
+						"A regular expression matching the labels this facet has delete authority over.",
+				},
+				ownsLabels: {
+					type: "array",
+					description: "The explicit set of labels this facet has delete authority over.",
+					items: {type: "string", minLength: 1},
+					minItems: 1,
+				},
+			},
+			required: ["name", "values"],
+			additionalProperties: false,
+		},
+	},
 };

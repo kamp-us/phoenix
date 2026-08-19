@@ -25,6 +25,10 @@
 			"!**/rite-audit/dimensions/vendor",
 			"!**/worker-configuration.d.ts",
 			"!**/__generated__",
+			// Generated from the config-key registry by `fabrika config schema --write`
+			// (#6488); its formatting is the generator's, not biome's, so the reconcile
+			// verb's committed output stays stable across a regenerate.
+			"!**/.fabrika.schema.json",
 			"!**/dist",
 			"!**/drizzle/migrations",
 			"!**/schema.graphql"
