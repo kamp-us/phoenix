@@ -82,7 +82,7 @@ export const rowCells = (line: string): ReadonlyArray<string> => {
  * **`covering` is a named case, not the regex reaching one token further.** The content-qualified
  * form is the only one where the words after the opening path are part of what the row requires,
  * so it is closed on that single keyword: read as "a path plus whatever token follows it",
- * *"`ROADMAP.md` with a `## Focus` section"* would demand a substring nobody declared. Without the
+ * *"`ROADMAP.md` with a `## Campaigns` table"* would demand a substring nobody declared. Without the
  * case, *"`.gitignore` covering `.fabrika/`"* rendered `present` off the existence of any
  * `.gitignore` at all (#5777) — `Unprobeable`'s own false positive, arriving through the branch
  * that does probe.

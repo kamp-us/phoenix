@@ -318,7 +318,7 @@ group implements
 
 | Verb | What it answers |
 |---|---|
-| `build pick` | the ranked candidate pool, with every excluded issue reported beside it under the axis that refused it. Four axes report: `out-of-focus` and `audience-not-agent` from the shared admission test, `unreadable`, and `no-acceptance-criteria` — a body with no block the wire reader answers `Found` on, which is a lane that could otherwise only fail at `review criteria` once a whole build was spent. The body rides the listing read the filter already performs, so the axis costs no second call ([#6025](https://github.com/kamp-us/phoenix/issues/6025)) |
+| `build pick` | the ranked candidate pool, with every excluded issue reported beside it under the axis that refused it. Four axes report: `out-of-scope` and `audience-not-agent` from the shared admission test, `unreadable`, and `no-acceptance-criteria` — a body with no block the wire reader answers `Found` on, which is a lane that could otherwise only fail at `review criteria` once a whole build was spent. The body rides the listing read the filter already performs, so the axis costs no second call ([#6025](https://github.com/kamp-us/phoenix/issues/6025)) |
 | `build issue` | the claimed issue's body and its criteria, transporting the wire read's three arms — `found` / `absent` / `malformed` — as distinct facts on exit 0. It is a read verb and refuses none of them; the refusals live at the stamp and the pick |
 
 ## The `review` group

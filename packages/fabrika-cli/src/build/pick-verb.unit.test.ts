@@ -7,8 +7,8 @@ import {BAD_SECTIONS, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {
 	blockedBy,
 	CRITERIA_BODY,
+	campaignsTable,
 	candidates,
-	focusTable,
 	issue,
 	NO_BLOCKERS,
 } from "./fixtures.test-support.ts";
@@ -32,13 +32,13 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
-/** No `ROADMAP.md` at all: a well-formed "no focus declared", so the scope axis admits everything. */
-const NO_FOCUS = fakeFs({files: {}});
+/** No `ROADMAP.md` at all: a well-formed "nothing active", so the scope axis admits everything. */
+const NO_CAMPAIGNS = fakeFs({files: {}});
 
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
-	fs = NO_FOCUS,
+	fs = NO_CAMPAIGNS,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
@@ -199,7 +199,7 @@ describe("runPick", () => {
 			pool: [],
 			excluded: [{number: 9, home: null, reason: "audience-not-agent"}],
 			scanned: {p0: 0, p1: 0, p2: 1},
-			focus: {state: "none"},
+			campaigns: {state: "none"},
 		});
 	});
 
@@ -223,7 +223,7 @@ describe("runPick", () => {
 			[bucket("p2"), EMPTY],
 		]);
 		await Effect.runPromise(
-			Effect.provide(runPick(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runPick(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(shell.calls.filter((line) => line.includes("--paginate"))).toHaveLength(3);
 	});
@@ -262,7 +262,7 @@ describe("runPick", () => {
 		expect(out.stdout).toBe("");
 	});
 
-	it("excludes an out-of-focus issue with its reason, and keeps the in-focus one", async () => {
+	it("excludes an out-of-scope issue with its reason, and keeps the in-scope one", async () => {
 		const out = await run(
 			[
 				[
@@ -276,12 +276,12 @@ describe("runPick", () => {
 				[bucket("p2"), EMPTY],
 			],
 			{},
-			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}}),
+			fakeFs({files: {[DEFAULT_ROADMAP]: campaignsTable(44)}}),
 		);
 		expect(out.code).toBe(0);
 		expect(pool(out).map((row) => row.number)).toEqual([500]);
-		expect(excluded(out)).toEqual([{number: 400, home: "39", reason: "out-of-focus"}]);
-		expect(JSON.parse(out.stdout).focus).toEqual({state: "declared", milestones: ["44"]});
+		expect(excluded(out)).toEqual([{number: 400, home: "39", reason: "out-of-scope"}]);
+		expect(JSON.parse(out.stdout).campaigns).toEqual({state: "active", milestones: ["44"]});
 	});
 
 	it("admits every milestone of a declared SET, and reports the whole set (#6005)", async () => {
@@ -299,15 +299,15 @@ describe("runPick", () => {
 				[bucket("p2"), EMPTY],
 			],
 			{},
-			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable([44, 46])}}),
+			fakeFs({files: {[DEFAULT_ROADMAP]: campaignsTable([44, 46])}}),
 		);
 		expect(out.code).toBe(0);
 		expect(pool(out).map((row) => row.number)).toEqual([500, 300]);
-		expect(excluded(out)).toEqual([{number: 400, home: "39", reason: "out-of-focus"}]);
-		expect(JSON.parse(out.stdout).focus).toEqual({state: "declared", milestones: ["44", "46"]});
+		expect(excluded(out)).toEqual([{number: 400, home: "39", reason: "out-of-scope"}]);
+		expect(JSON.parse(out.stdout).campaigns).toEqual({state: "active", milestones: ["44", "46"]});
 	});
 
-	it("admits a standing-lane issue under a declared focus — a lane is milestone-less by design", async () => {
+	it("admits a standing-lane issue under an active campaign — a lane is milestone-less by design", async () => {
 		const out = await run(
 			[
 				[bucket("p0"), candidates({number: 500, labels: [...TRIAGED, "p0", "wayfinder:backlog"]})],
@@ -315,13 +315,13 @@ describe("runPick", () => {
 				[bucket("p2"), EMPTY],
 			],
 			{},
-			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}}),
+			fakeFs({files: {[DEFAULT_ROADMAP]: campaignsTable(44)}}),
 		);
 		expect(pool(out).map((row) => row.number)).toEqual([500]);
 		expect(excluded(out)).toEqual([]);
 	});
 
-	it("refuses an unreadable focus declaration on 11 — never an unfiltered pool", async () => {
+	it("refuses an unreadable campaigns table on 11 — never an unfiltered pool", async () => {
 		const out = await run(
 			[[bucket("p0"), EMPTY]],
 			{},
@@ -332,15 +332,15 @@ describe("runPick", () => {
 		expect(out.stderr.at(-1)).toContain("the pool is UNKNOWN, never unfiltered");
 	});
 
-	it("refuses a malformed focus declaration on 4 — malformed is never read as 'no focus'", async () => {
+	it("refuses a malformed campaigns table on 4 — malformed is never read as 'nothing active'", async () => {
 		const out = await run(
 			[[bucket("p0"), EMPTY]],
 			{},
-			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44).replace("#44", "forty-four")}}),
+			fakeFs({files: {[DEFAULT_ROADMAP]: campaignsTable(44).replace("| active |", "| activ |")}}),
 		);
 		expect(out.code).toBe(BAD_SECTIONS);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toContain('never read as "no focus"');
+		expect(out.stderr.at(-1)).toContain('never read as "nothing is active"');
 	});
 
 	it("says on stderr which declaration it judged against", async () => {
@@ -351,9 +351,9 @@ describe("runPick", () => {
 				[bucket("p2"), EMPTY],
 			],
 			{},
-			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}}),
+			fakeFs({files: {[DEFAULT_ROADMAP]: campaignsTable(44)}}),
 		);
-		expect(out.stderr.at(-1)).toBe("build pick: focus: milestone #44, declared 2026-08-09.");
+		expect(out.stderr.at(-1)).toBe("build pick: campaigns: 1 active — Campaign 44 (#44).");
 	});
 
 	it("caps the pool at --limit after ranking", async () => {
@@ -438,7 +438,7 @@ describe("runPick — the blocked_by graph", () => {
 			[bucket("p2"), EMPTY],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runPick(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runPick(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(0);
 		expect(shell.calls.some((line) => /dependencies\/blocked_by/.test(line))).toBe(false);

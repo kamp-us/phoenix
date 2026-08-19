@@ -30,7 +30,7 @@ makes the implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4
 | `triage queue` | the claimable `status:needs-triage` queue, with the count it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
 | `triage claim` | take one lane's claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
 | `triage provenance` | was this issue reported by an agent or hand-typed by a human | a structural marker test over a fetched body, plus a membership test over the configured operator set — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
-| `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes, with every milestone in declared focus marked `running` | the join, the open-milestone filter and reading the focus declaration are mechanical; picking which home fits, and whether an exception applies, is judgment |
+| `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes, with every `active` campaign's milestone marked `running` | the join, the open-milestone filter and reading the campaigns table are mechanical; picking which home fits, and whether an exception applies, is judgment |
 | `triage split` | create one split child, once, keyed on the parent back-reference | idempotency keyed on a durable reference is mechanical; deciding a report *is* a bundle is judgment |
 | `triage enrich` | replace the body with your rewrite — or, for an epic, your pitch — over a preserved, leak-redacted original | envelope assembly, redaction and read-back are mechanical; what the rewrite says is judgment |
 | `triage apply` | apply the whole triaged transition — type, priority, audience, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
@@ -707,7 +707,7 @@ machine-channel answer.
 With `--json`, an object with keys `outcome`, `milestones` (array of `{number, title, roadmapRow}`),
 `lanes` (array of `{label, meaning}`), and `scanned`.
 
-**Every milestone in declared focus is marked `running`.** That campaign is closed to new intake
+**Every `active` campaign's milestone is marked `running`.** That campaign is closed to new intake
 unless the work is `p0` or blocks one of that milestone's own in-flight lanes, so its row carries a
 fourth tab-separated column, verbatim `running: p0/blocker only`, and its `--json` object carries
 `"running": "p0/blocker only"` as a fourth key. Every other row is unchanged on both channels — no
@@ -716,21 +716,21 @@ A marked milestone is still listed: the two exceptions are real work, and a remo
 carry them. This verb states the subtraction and stops; where excluded work goes instead is the
 caller's by-fit judgement, and no output here names a destination.
 
-**Which milestone is running is data, never a literal in this spec or in the verb.** It is
-`ROADMAP.md`'s `## Focus` table — the same focus declaration `build pick` fences on, read
-through the same parser, off the roadmap text this verb has already read for the arc join. Moving the
-focus to the next campaign is a `ROADMAP.md` edit and never a code or skill edit; `--roadmap` moves
-both reads together. The declaration's three states are the ones that declaration already has:
+**Which milestone is running is data, never a literal in this spec or in the verb.** It is the
+`State` column of `ROADMAP.md`'s `## Campaigns` table — the same permission `build pick` fences on
+(ADR 0304), read through the same parser, off the roadmap text this verb has already read for the arc
+join. Moving to the next campaign is a `ROADMAP.md` edit and never a code or skill edit; `--roadmap`
+moves both reads together. The table's three states are the ones the fence already reads:
 
-| `## Focus` | Rows marked | stderr |
+| `## Campaigns` | Rows marked | stderr |
 |---|---|---|
-| declares one or more milestones | every declared milestone's row, if it is open | `triage homes: focus: milestone #<n>, declared <date>.` — or, for N > 1, `triage homes: focus: <n> milestones — #<a> (declared <date>), #<b> (declared <date>).` |
-| absent, or an empty section | none — the answer is exactly the pre-marker one | `triage homes: focus: none declared — scope fence inert.` |
-| reads but does not parse | none | `triage homes: focus: unreadable — <reason>.` |
+| one or more rows are `active` | every `active` campaign's milestone row, if it is open | `triage homes: campaigns: 1 active — <name> (#<n>).` — or, for N > 1, `triage homes: campaigns: <n> active — <name> (#<a>), <name> (#<b>).` |
+| absent, empty, or every row `paused`/`done` | none — the answer is exactly the pre-marker one | `triage homes: campaigns: none active — scope fence inert.` |
+| reads but does not parse | none | `triage homes: campaigns: unreadable — <reason>.` |
 
-A malformed declaration is **never** rendered as "no milestone is running", and it does not refuse: a
-home list is still the right answer, and the stderr line is where the defect is named. A focus naming
-a milestone that is closed or absent from the open set marks no row and passes.
+A malformed table is **never** rendered as "no milestone is running", and it does not refuse: a home
+list is still the right answer, and the stderr line is where the defect is named. An `active` campaign
+pinning a milestone that is closed or absent from the open set marks no row and passes.
 
 **Only open milestones appear, and each is joined to its roadmap arc/campaign row.** `roadmapRow` is
 `null` for an open milestone no roadmap row pins, which is itself a signal worth seeing rather than a
@@ -756,8 +756,8 @@ milestone titled `Sözlük — search and discovery`, and the two share no subst
 | `7` | the repository has zero open milestones, **or the roadmap parsed to zero arc rows** — zero scope |
 | `11` | the milestone list or the roadmap file could not be read — the outcome is UNKNOWN |
 
-A malformed `## Focus` declaration is not on this table: it marks no row and names itself on stderr.
-The focus is an annotation on an answer this verb can give without it, so refusing over one would
+A malformed `## Campaigns` table is not on this table: it marks no row and names itself on stderr.
+The marker is an annotation on an answer this verb can give without it, so refusing over one would
 withhold the home list a triager needs.
 
 **Errors**

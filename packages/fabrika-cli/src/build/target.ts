@@ -14,8 +14,8 @@ import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
 	type Admission,
-	declaredMilestones,
-	type Focus,
+	type Dispatch,
+	dispatchMilestones,
 	type IssueFacts,
 	NOT_REPAIR,
 	noServedIssue,
@@ -117,9 +117,9 @@ export type AdmissionSubject =
  * Resolve a claim target to the record whose home and audience the fence judges.
  *
  * An issue judges itself. A pull request judges the issue its lane serves (#5562). The resolution
- * runs whether or not a focus is declared, because the audience axis reads the served issue either
- * way; only the *scope* refusal is gated on a declaration, so an **unresolvable** PR falls back to
- * its own record while the fence is inert instead of refusing at `20`. A served issue that cannot be
+ * runs whether or not a campaign is active, because the audience axis reads the served issue either
+ * way; only the *scope* refusal is gated on an active campaign, so an **unresolvable** PR falls back
+ * to its own record while the fence is inert instead of refusing at `20`. A served issue that cannot be
  * READ is UNKNOWN at either setting — `11`, and outside the overridable set, because a fence that
  * could not read its input has proven nothing.
  *
@@ -129,7 +129,7 @@ export type AdmissionSubject =
 export const resolveAdmissionSubject = (
 	verb: string,
 	repo: string,
-	focus: Focus,
+	dispatch: Dispatch,
 	target: IssueRecord,
 ): Effect.Effect<AdmissionSubject, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
@@ -137,10 +137,10 @@ export const resolveAdmissionSubject = (
 		const subject = scopeSubjectOf(target);
 		if (subject._tag === "Own") return own;
 		const unresolved = (reason: string): AdmissionSubject =>
-			focus._tag === "Declared"
+			dispatch._tag === "Active"
 				? {
 						_tag: "Refused" as const,
-						admission: noServedIssue(target.number, declaredMilestones(focus), reason),
+						admission: noServedIssue(target.number, dispatchMilestones(dispatch), reason),
 					}
 				: own;
 		if (subject._tag === "Unserved") {

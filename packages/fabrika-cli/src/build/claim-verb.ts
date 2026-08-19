@@ -34,14 +34,14 @@
  * to a session.
  *
  * **`claim` runs the admission test before it writes anything; `confirm` and `release` never run it.**
- * The fence decides what may *start* (ADR 0245), so a focus row edited mid-lane must not strand a
+ * The fence decides what may *start* (ADR 0245), so a campaign paused mid-lane must not strand a
  * running lane or block its release. Claiming is the one moment every path goes through — a number
  * handed straight to `claim` passes through no pool — which is why the refusal has teeth here and is
  * advice at the pool.
  *
  * Blockedness rides the same moment but not the same module: ADR 0301 makes the native `blocked_by`
  * graph the one carrier of "do not start this yet", and the gate reading it is composed AFTER the
- * pure axes, since those answer without IO and an out-of-focus number should refuse on the cheaper
+ * pure axes, since those answer without IO and an out-of-scope number should refuse on the cheaper
  * fact.
  *
  * In repair the number is a **PR**, which carries no home and no audience of its
@@ -93,13 +93,13 @@ import {
 	type Citation,
 	CLAIM_PURPOSES,
 	DEFAULT_CLAIM_PURPOSE,
-	focusScopeLine,
+	dispatchScopeLine,
 	NO_CITATION,
 	NOT_REPAIR,
 	parseCitation,
 	parseClaimPurpose,
 	purposeScopeLine,
-	readDeclaredFocus,
+	readDispatch,
 	scopeSubjectOf,
 	typeAxisOf,
 	typeScopeLine,
@@ -272,15 +272,15 @@ export const runClaim = (
 			}
 		}
 
-		const read = yield* readDeclaredFocus();
+		const read = yield* readDispatch();
 		if (read._tag === "Unreadable") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${CLAIM}: cannot read the "## Focus" declaration: ${read.reason} — scope is UNKNOWN, never admitted; nothing was written.`,
+				`${CLAIM}: cannot read the "## Campaigns" table: ${read.reason} — scope is UNKNOWN, never admitted; nothing was written.`,
 			);
 		}
-		const scopeLine = focusScopeLine(CLAIM, read.focus);
-		const subject = yield* resolveAdmissionSubject(CLAIM, repo, read.focus, ready.issue);
+		const scopeLine = dispatchScopeLine(CLAIM, read.dispatch);
+		const subject = yield* resolveAdmissionSubject(CLAIM, repo, read.dispatch, ready.issue);
 		const judged = subject._tag === "Judged" ? subject.facts : ready.issue;
 		const repair = subject._tag === "Judged" ? subject.repair : NOT_REPAIR;
 		const purposeLine = purposeScopeLine(CLAIM, purpose, audienceAxisOf(judged), repair);
@@ -297,7 +297,7 @@ export const runClaim = (
 		}
 		const admission =
 			subject._tag === "Judged"
-				? admissionOf(read.focus, subject.facts, purpose, repair, citation)
+				? admissionOf(read.dispatch, subject.facts, purpose, repair, citation)
 				: subject.admission;
 		const typeLine = typeScopeLine(CLAIM, typeAxisOf(judged), citation);
 		const lines = [
@@ -310,7 +310,7 @@ export const runClaim = (
 		// An override answers a PROVEN refusal. UNKNOWN has proven nothing, so there is nothing to
 		// override — a fence that could not read its input must not be talked past by a flag.
 		const overridable =
-			admission._tag === "OutOfFocus" ||
+			admission._tag === "OutOfScope" ||
 			admission._tag === "AudienceNotAgent" ||
 			admission._tag === "NoServedIssue";
 		if (refusal !== null && !(overridable && override !== null)) {
@@ -329,7 +329,7 @@ export const runClaim = (
 		}
 
 		// The blockedness gate, ordered AFTER the pure axes because they answer without IO: a number
-		// out of focus should be refused on the fact that cost no call (ADR 0301). It runs over the
+		// out of scope should be refused on the fact that cost no call (ADR 0301). It runs over the
 		// named target only when that target is an issue — a repair claim names a pull request, which
 		// carries no edges of its own, and a lane repairing an open PR has already started.
 		const gateNotes: string[] = [];

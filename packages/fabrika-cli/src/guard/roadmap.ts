@@ -5,24 +5,30 @@
  * **`ROADMAP.md` is the only surface parsed here.** Milestones are the projection it is checked
  * against, never a second source it is reconciled with — so drift always has one author.
  *
- * The six invariants, because they live nowhere else:
+ * The five invariants, because they live nowhere else:
  *   I1 — every row pins its milestone BY NUMBER and that milestone exists. A `queued` arc gets its
  *        milestone on activation, so a queued arc with no pin is legal; nothing else may defer.
  *   I2 — EXACTLY ONE arc is `active`. Arcs only: campaigns run concurrently.
  *   I3 — every OPEN milestone is claimed by some row.
  *   I4 — zero arc rows or zero milestones fails closed, never a vacuous green (ADR 0092).
- *   I5 — an `active` row's milestone is open and a `done` row's is closed. A queued arc is exempt
- *        (I1's lazy pin); a row whose pin dangles is already an I1 and is not re-reported.
- *   I6 — `## Focus` carries at most one row, and it pins an OPEN milestone some `active` row claims.
- *        An absent or empty `## Focus` is the well-formed default, never a violation.
+ *   I5 — an `active` or `paused` row's milestone is open and a `done` row's is closed. A queued arc
+ *        is exempt (I1's lazy pin); a row whose pin dangles is already an I1 and is not re-reported.
+ *
+ * I6 — the focus-row-honesty check — retired with the `## Focus` table it kept honest (ADR 0304):
+ * a campaign's `active` cell IS the dispatch permission, so there is no second declaration surface
+ * left to reconcile.
  *
  * Total and IO-free: `./roadmap-verb.ts` reads the file and the projection.
  */
 
 /** An arc is sequenced ahead (`queued`), made current (`active`), then retired (`done`). */
 export type ArcState = "active" | "queued" | "done";
-/** A campaign has no queued state — it opens `active` and ends `done`. */
-export type CampaignState = "active" | "done";
+/**
+ * A campaign has no queued state — a newly added row is `paused`, and it ends `done`. `paused` is
+ * alive but not being executed: its milestone is open and no lane opens against it, which is what
+ * makes this one cell the dispatch permission (ADR 0304).
+ */
+export type CampaignState = "active" | "paused" | "done";
 
 export type RowKind = "arc" | "campaign";
 
@@ -38,16 +44,6 @@ export interface RoadmapRow {
 	readonly state: string;
 }
 
-/**
- * One `## Focus` row. Unlike a queued arc's deferred pin, a `null` here is always a violation: a
- * declaration that names nothing declares nothing.
- */
-export interface FocusRow {
-	readonly milestone: number | null;
-	/** The raw `Declared` cell. Carried so the violation can say which declaration is wrong. */
-	readonly declaredAt: string;
-}
-
 /** A milestone reduced to the projection facts the guard validates against. */
 export interface Milestone {
 	readonly number: number;
@@ -56,11 +52,15 @@ export interface Milestone {
 }
 
 const ARC_STATES: ReadonlyArray<string> = ["active", "queued", "done"];
-const CAMPAIGN_STATES: ReadonlyArray<string> = ["active", "done"];
+/**
+ * A newly added campaign row defaults to `paused` — flipping it to `active` is the separate act
+ * that grants dispatch permission, so naming a campaign never grants it (founder ruling on #6289).
+ */
+const CAMPAIGN_STATES: ReadonlyArray<string> = ["active", "paused", "done"];
 
 /** One drift finding. `row-state` backstops I1/I2: a typo'd `activ` would drop out of I2's count. */
 export interface Violation {
-	readonly code: "I1" | "I2" | "I3" | "I5" | "I6" | "row-state";
+	readonly code: "I1" | "I2" | "I3" | "I5" | "row-state";
 	readonly message: string;
 }
 
@@ -74,8 +74,8 @@ export type RoadmapVerdict =
 			readonly arcCount: number;
 			readonly campaignCount: number;
 			readonly milestoneCount: number;
-			/** 0 or 1 — I6 admits no more. */
-			readonly focusCount: number;
+			/** How many campaign rows are `active` — the milestones a lane may open against. */
+			readonly activeCampaignCount: number;
 	  }
 	| {
 			readonly pass: false;
@@ -99,15 +99,11 @@ const pinMayBeAbsent = (row: RoadmapRow): boolean => row.kind === "arc" && row.s
  *
  * I4 fails closed first: with no arcs or no milestones there is nothing to check, so a green would
  * be vacuous. Past that every violation is collected, so one run names all the drift.
- *
- * `focus` defaults to empty because that IS the well-formed default (nothing declared), not a
- * convenience for the caller.
  */
 export const judge = (
 	arcs: ReadonlyArray<RoadmapRow>,
 	campaigns: ReadonlyArray<RoadmapRow>,
 	milestones: ReadonlyArray<Milestone>,
-	focus: ReadonlyArray<FocusRow> = [],
 ): RoadmapVerdict => {
 	if (arcs.length === 0 || milestones.length === 0) {
 		return {
@@ -174,50 +170,18 @@ export const judge = (
 		const m = byNumber.get(row.milestone);
 		// A dangling pin is already an I1; reporting it again as an I5 would double-count one fault.
 		if (m === undefined) continue;
-		const expected = row.state === "active" ? "open" : row.state === "done" ? "closed" : null;
+		// `paused` sits with `active`: pausing a campaign says nothing about its milestone — the work
+		// is alive, just not being dispatched (ADR 0304).
+		const expected =
+			row.state === "active" || row.state === "paused"
+				? "open"
+				: row.state === "done"
+					? "closed"
+					: null;
 		if (expected !== null && m.state !== expected) {
 			violations.push({
 				code: "I5",
-				message: `${row.kind} row "${row.name}" is "${row.state}" but its milestone #${m.number} ("${m.title}") is ${m.state} — an active row needs an open milestone, a done row a closed one`,
-			});
-		}
-	}
-
-	if (focus.length > 1) {
-		violations.push({
-			code: "I6",
-			message: `expected AT MOST ONE focus row in \`## Focus\`, found ${focus.length} — exclusive focus admits exactly one milestone`,
-		});
-	}
-	for (const row of focus) {
-		const where = row.declaredAt === "" ? "focus row" : `focus row (declared ${row.declaredAt})`;
-		if (row.milestone === null) {
-			violations.push({
-				code: "I6",
-				message: `${where} pins no milestone by number — a focus row must carry a \`#N\` pin`,
-			});
-			continue;
-		}
-		const m = byNumber.get(row.milestone);
-		if (m === undefined) {
-			violations.push({
-				code: "I6",
-				message: `${where} pins milestone #${row.milestone}, which does not exist`,
-			});
-			continue;
-		}
-		if (m.state !== "open") {
-			violations.push({
-				code: "I6",
-				message: `${where} pins milestone #${m.number} ("${m.title}"), which is closed — a declared focus must be an open milestone`,
-			});
-		}
-		// Requiring an ACTIVE claimer is what stops the focus pointing at a milestone the roadmap
-		// retired or never adopted — pinned and open is not enough.
-		if (!rows.some((r) => r.milestone === row.milestone && r.state === "active")) {
-			violations.push({
-				code: "I6",
-				message: `${where} pins milestone #${m.number} ("${m.title}"), which is claimed by no active arc or campaign row`,
+				message: `${row.kind} row "${row.name}" is "${row.state}" but its milestone #${m.number} ("${m.title}") is ${m.state} — an active or paused row needs an open milestone, a done row a closed one`,
 			});
 		}
 	}
@@ -230,7 +194,7 @@ export const judge = (
 		arcCount: arcs.length,
 		campaignCount: campaigns.length,
 		milestoneCount: milestones.length,
-		focusCount: focus.length,
+		activeCampaignCount: campaigns.filter((c) => c.state === "active").length,
 	};
 };
 
@@ -240,10 +204,13 @@ export const VERB = "guard roadmap-guard check";
 /** The human report for a verdict. It names what was scanned, per ADR 0092. */
 export const renderReport = (verdict: RoadmapVerdict): string => {
 	if (verdict.pass) {
-		const focus = verdict.focusCount === 0 ? "no exclusive focus declared" : "1 focus row declared";
+		const active =
+			verdict.activeCampaignCount === 0
+				? "no campaign active"
+				: `${verdict.activeCampaignCount} campaign(s) active`;
 		return (
 			`${VERB}: in sync — ${verdict.arcCount} arc row(s) + ${verdict.campaignCount} campaign row(s) ` +
-			`validated against ${verdict.milestoneCount} milestone(s), ${focus} (I1–I6 all green).`
+			`validated against ${verdict.milestoneCount} milestone(s), ${active} (I1–I5 all green).`
 		);
 	}
 	if (verdict.reason === "zero-scope") {
@@ -257,8 +224,8 @@ export const renderReport = (verdict: RoadmapVerdict): string => {
 	return (
 		`${VERB}: ${verdict.violations.length} ROADMAP.md ↔ milestone drift violation(s):\n` +
 		`${lines.join("\n")}\n\n` +
-		"ROADMAP.md's `## Arcs`/`## Campaigns`/`## Focus` tables and the GitHub milestone projection have drifted.\n" +
-		"Reconcile the offending row(s)/milestone(s) above (roadmap map #2620; invariants I1–I6, #2632/#2660/#5012)."
+		"ROADMAP.md's `## Arcs`/`## Campaigns` tables and the GitHub milestone projection have drifted.\n" +
+		"Reconcile the offending row(s)/milestone(s) above (roadmap map #2620; invariants I1–I5, #2632/#2660)."
 	);
 };
 
@@ -321,27 +288,12 @@ const toRow = (kind: RowKind, cells: ReadonlyArray<string>): RoadmapRow => ({
 	state: (cells[2] ?? "").trim().toLowerCase(),
 });
 
-/**
- * The `## Focus` table's rows.
- *
- * A row whose every cell is blank is a table artifact and is dropped; a row carrying a date but no
- * pin is KEPT, so I6 reds on it instead of it reading as nothing declared.
- */
-export const parseFocus = (md: string): ReadonlyArray<FocusRow> =>
-	parseSectionRows(md, "Focus")
-		.map((cells) => ({
-			milestone: parseMilestoneCell(cells[0] ?? ""),
-			declaredAt: (cells[1] ?? "").trim(),
-		}))
-		.filter((r) => r.milestone !== null || r.declaredAt !== "");
-
-/** The three tables. An arc or campaign row with an empty name is a table artifact, never a row. */
+/** The two tables. An arc or campaign row with an empty name is a table artifact, never a row. */
 export const parseRoadmap = (
 	md: string,
 ): {
 	readonly arcs: ReadonlyArray<RoadmapRow>;
 	readonly campaigns: ReadonlyArray<RoadmapRow>;
-	readonly focus: ReadonlyArray<FocusRow>;
 } => ({
 	arcs: parseSectionRows(md, "Arcs")
 		.map((cells) => toRow("arc", cells))
@@ -349,5 +301,4 @@ export const parseRoadmap = (
 	campaigns: parseSectionRows(md, "Campaigns")
 		.map((cells) => toRow("campaign", cells))
 		.filter((r) => r.name !== ""),
-	focus: parseFocus(md),
 });

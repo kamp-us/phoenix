@@ -91,8 +91,8 @@ export const runRoadmapGuard = (
 			);
 		}
 
-		const {arcs, campaigns, focus} = parseRoadmap(md);
-		const verdict = judge(arcs, campaigns, listed.value, focus);
+		const {arcs, campaigns} = parseRoadmap(md);
+		const verdict = judge(arcs, campaigns, listed.value);
 		const report = renderReport(verdict);
 		if (verdict.pass) {
 			return emitVerdict(clean(report, verdict.arcCount + verdict.campaignCount), options.env);

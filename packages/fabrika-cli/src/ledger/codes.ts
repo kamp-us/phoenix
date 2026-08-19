@@ -15,7 +15,7 @@
  *   readiness verdict — but carrying them keeps those seats occupied so a later verb here cannot
  *   re-seat one.
  * - `20`–`26` are this group's own. `build`'s `20`/`21` are deliberately **not** re-exported:
- *   re-exporting `OUT_OF_FOCUS`/`AUDIENCE_NOT_AGENT` alongside these would put two names on one code in
+ *   re-exporting `OUT_OF_SCOPE`/`AUDIENCE_NOT_AGENT` alongside these would put two names on one code in
  *   one module, which `allocatedCodes` reports as drift. The rule this group follows, taken from
  *   `plan/codes.ts` rather than re-derived: **import a code when two groups prove the same fact;
  *   allocate freely when they do not.** No `build`, `epic` or `plan` verb can prove a fact about a
