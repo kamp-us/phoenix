@@ -149,8 +149,14 @@ export const runAssembly = (
 			"git",
 			resuming
 				? ["worktree", "add", seat.expected, branch]
-				: ["worktree", "add", "-b", branch, seat.expected, "origin/HEAD"],
+				: ["worktree", "add", "--no-track", "-b", branch, seat.expected, "origin/HEAD"],
 		);
+		// A branch cut off `origin/HEAD` without `--no-track` records `refs/heads/main` as its
+		// upstream, which aimed the run's pushes at the default branch (#6435). `--no-track` covers a
+		// fresh cut; a branch cut by an older fabrika carries the config into every resume, so it is
+		// cleared here. There is nothing to unset on a branch that tracks nothing, hence the ignored
+		// result.
+		if (resuming) yield* execCapture("git", ["branch", "--unset-upstream", branch]);
 		const after = yield* seatOf(options.epic, branch);
 		if (after._tag === "Unreadable") {
 			return refuse(
