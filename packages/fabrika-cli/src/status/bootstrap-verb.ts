@@ -32,6 +32,7 @@ import {STATUSES} from "../labels.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
 import {AUDIENCES, PRIORITIES, TYPES} from "../triage/facets.ts";
+import {parseRoadmap} from "../triage/roadmap.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	BARE_AT_PATH,
@@ -107,6 +108,38 @@ export const ARTIFACT_BODY = `The durable home for the landed-decision digest. \
 here; \`fabrika status readout\` displays it. This issue stays open and is not worked.`;
 
 /**
+ * What a machine-read file's own parser saw in the bytes just written: a clause for the notice, and
+ * the same numbers as `--json` fields.
+ *
+ * **Reported, never enforced.** The read-back predicate stays the byte match, so a zero-row roadmap
+ * is still `created`. Refusing an unjoinable roadmap is `triage homes`'s exit `7`, at the point the
+ * rows are actually needed.
+ */
+export interface ContentCount {
+	/** The clause appended to the `created` notice, e.g. `3 arcs, 0 campaigns`. */
+	readonly clause: string;
+	/** The same counts, merged into the `--json` object. */
+	readonly fields: Readonly<Record<string, number>>;
+}
+
+const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+/**
+ * The `roadmap-focus` count: what {@link parseRoadmap} joins out of the roadmap just written.
+ *
+ * A roadmap is the one buildable file whose shape is not the drafting skill's judgement — it is a
+ * grammar `triage homes` joins milestones through — so the write says what parsed rather than
+ * leaving an inert draft to be discovered in some later session (#5778).
+ */
+export const roadmapCount = (text: string): ContentCount => {
+	const {arcs, campaigns} = parseRoadmap(text);
+	return {
+		clause: `${plural(arcs.length, "arc")}, ${plural(campaigns.length, "campaign")}`,
+		fields: {arcs: arcs.length, campaigns: campaigns.length},
+	};
+};
+
+/**
  * A surface carries only the fields its own kind uses, so no caller reads a `defaultPath` off a
  * label surface or a label set off a file.
  */
@@ -116,6 +149,11 @@ export type BuildableSurface =
 			readonly kind: "file";
 			/** The registry default write path. */
 			readonly defaultPath: string;
+			/**
+			 * Present only where the content is machine-read. Absent leaves the notice and the `--json`
+			 * object exactly as they were, which is what keeps the other surfaces byte-identical.
+			 */
+			readonly count?: (text: string) => ContentCount;
 	  }
 	| {
 			readonly id: string;
@@ -140,7 +178,7 @@ ${FABRIKA_IGNORE_ROW}`;
 /** Six ids. A seventh is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
-	{id: "roadmap-focus", kind: "file", defaultPath: "ROADMAP.md"},
+	{id: "roadmap-focus", kind: "file", defaultPath: "ROADMAP.md", count: roadmapCount},
 	{
 		id: "gitignore-row",
 		kind: "line",
@@ -170,9 +208,15 @@ export interface BootstrapInput {
 
 type Requirements = FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner;
 
-const created = (surfaceId: string, target: string, json: boolean, notice: string): VerbOutcome => {
+const created = (
+	surfaceId: string,
+	target: string,
+	json: boolean,
+	notice: string,
+	fields?: Readonly<Record<string, number>>,
+): VerbOutcome => {
 	const stdout = json
-		? `${JSON.stringify({outcome: "created", surfaceId, target, readback: "ok"})}\n`
+		? `${JSON.stringify({outcome: "created", surfaceId, target, readback: "ok", ...fields})}\n`
 		: `${row("bootstrap", "created", surfaceId, target, "ok")}\n`;
 	return answer(stdout, [notice]);
 };
@@ -287,11 +331,13 @@ const buildFile = (
 				`${VERB}: wrote ${relative} and the read-back differs — the outcome is UNKNOWN.`,
 			);
 		}
+		const count = surface.count?.(content);
 		return created(
 			surface.id,
 			relative,
 			input.json,
-			`${VERB}: created ${relative} for ${surface.id}, read-back conformed.`,
+			`${VERB}: created ${relative} for ${surface.id}, read-back conformed${count === undefined ? "" : ` — ${count.clause}`}.`,
+			count?.fields,
 		);
 	});
 

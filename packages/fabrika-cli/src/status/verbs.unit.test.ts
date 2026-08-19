@@ -34,6 +34,7 @@ import {
 	ISSUE_SHAPE_MARKERS,
 	knownIds,
 	MARKER_COLOR,
+	roadmapCount,
 	runBootstrap,
 	TAXONOMY,
 } from "./bootstrap-verb.ts";
@@ -525,6 +526,99 @@ describe("the .fabrika/ gitignore row", () => {
 		);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * #5778: `roadmap-focus` writes a machine-read file — `triage homes` joins milestones through its
+ * `#<n>` cells — and a byte-match read-back reads the same over a roadmap that parses to nothing.
+ * The counts make an inert draft visible at the moment it is written; they gate nothing, and the
+ * other file surface's bytes do not move.
+ */
+describe("the roadmap-focus row count", () => {
+	const write = (content: string, surfaceId = "roadmap-focus") => {
+		const fs = fakeFs({files: {}});
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId,
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "Text", text: content} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		);
+	};
+
+	const PARSING = [
+		"# Roadmap",
+		"",
+		"## Arcs",
+		"",
+		"| Arc | Milestone | State |",
+		"|---|---|---|",
+		"| Geçit | #46 | active |",
+		"| Sözlük | #47 | next |",
+		"",
+		"## Campaigns",
+		"",
+		"| Campaign | Milestone | State |",
+		"|---|---|---|",
+		"| fabrika everywhere | #48 | active |",
+		"",
+	].join("\n");
+
+	// What drafting by inference produces: the milestone's TITLE where the parser wants `#<n>`.
+	const INERT = [
+		"# Roadmap",
+		"",
+		"## Arcs",
+		"",
+		"| Arc | Milestone | State |",
+		"|---|---|---|",
+		"| Geçit | Sözlük — search and discovery | active |",
+		"",
+	].join("\n");
+
+	it("reports what parsed, and a roadmap that parses to nothing is still created", async () => {
+		const outcome = await write(INERT);
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "roadmap-focus",
+			target: "ROADMAP.md",
+			readback: "ok",
+			arcs: 0,
+			campaigns: 0,
+		});
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 0 arcs, 0 campaigns.",
+		]);
+	});
+
+	it("counts the rows a parsing roadmap joins, singular at one", async () => {
+		const outcome = await write(PARSING);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({arcs: 2, campaigns: 1});
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 2 arcs, 1 campaign.",
+		]);
+		expect(roadmapCount(PARSING).clause).toBe("2 arcs, 1 campaign");
+	});
+
+	it("leaves the other file surface's bytes and notice exactly as they were", async () => {
+		const outcome = await write("# Design system manifest\n", "design-manifest");
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "design-manifest",
+			target: "design-system-manifest.md",
+			readback: "ok",
+		});
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: created design-system-manifest.md for design-manifest, read-back conformed.",
+		]);
 	});
 });
 
