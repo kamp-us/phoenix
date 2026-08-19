@@ -1,257 +1,97 @@
 /**
- * The repo's own fabrika configuration — `.fabrika.jsonc` at the repository root.
+ * The three widen-only keys of `.fabrika.jsonc`, in the shape their callers already read.
  *
- * It answers three questions. **Who may clear a repair round** (#5959, ruled 2026-08-18 — "'founder'
- * concept can change repo by repo, let's make it a configuration? it can be an array of github
- * usernames and github teams"), **which docs are exempt from `build check`'s leak scan** —
- * repo policy for the same reason, since the docs whose subject is path hygiene differ repo by repo
- * and fabrika installs into repos that are not phoenix (ADR 0273) — and **which of the repo's own
- * commands validate its workflow YAML**, which is that repo's fleet of guards and nobody else's.
- * The file is the home epic #5631
- * names for every value that is a literal in source today; this module opens it for the keys that
- * have a ruling and leaves the rest of the surface to that epic.
+ * The surface itself now lives in `config/`: one load, one parse, one module per key group
+ * (`config/registry.ts`). This file is the adapter for the three keys that predate it — their
+ * callers open the bytes themselves, at a base ref (`build clearances`) or at the working root
+ * (`build check`), and take a text-in / union-out reader.
  *
- * **Fail-closed on every axis.** An absent file, an absent key, an empty array and a malformed
- * entry all resolve to *nobody may grant* rather than to a default set — a config that silently
- * widened who holds founder authority is the one failure this key cannot have. A read that failed
- * resolves to neither: it is UNKNOWN, and the caller refuses on it. The exempt list closes the same
- * way: unusable means *nothing is exempt*, so the scanner stays at its strictest.
+ * **All three are widen-only policy, where empty IS the strict answer**: nobody may grant, nothing
+ * is exempt, this repo declares no validator. So each collapses the surface's `Default` and
+ * `Malformed` arms into one `Unusable`, carrying the reason through unchanged, and an unreadable
+ * file never reaches here — the callers refuse on it before opening these readers.
  */
 
-import {isRecord, parseJson} from "./io/json.ts";
+import type {KeyGroup} from "./config/key-group.ts";
+import {
+	CAP_CLEAR_AUTHORS,
+	capClearAuthorsKey,
+	type GrantAuthor,
+} from "./config/keys/cap-clear-authors.ts";
+import {DOC_LEAK_EXEMPT, docLeakExemptKey} from "./config/keys/doc-leak-exempt.ts";
+import {
+	WORKFLOW_VALIDATORS,
+	type WorkflowValidator,
+	workflowValidatorsKey,
+} from "./config/keys/workflow-validators.ts";
+import {loadConfig, resolve} from "./config/load.ts";
 
-/** The file, at the repository root. Read at a base ref, never from the working tree (#981). */
-export const CONFIG_PATH = ".fabrika.jsonc";
+export {CONFIG_PATH, stripJsonComments} from "./config/document.ts";
+export type {Argv, WorkflowValidator} from "./config/keys/workflow-validators.ts";
+export type {GrantAuthor};
+export {CAP_CLEAR_AUTHORS, DOC_LEAK_EXEMPT, WORKFLOW_VALIDATORS};
 
-/** The key naming the accounts and teams that may clear a repair round. */
-export const CAP_CLEAR_AUTHORS = "capClearAuthors";
-
-/** The key naming the docs whose subject IS path hygiene, exempt from `build check`'s leak scan. */
-export const DOC_LEAK_EXEMPT = "docLeakExempt";
-
-/** The key naming the repo's own commands that machine-read `.github/workflows/**`. */
-export const WORKFLOW_VALIDATORS = "workflowValidators";
+/** The bytes were read in full and hold no usable value — the key's strictest answer. */
+type Unusable = {readonly _tag: "Unusable"; readonly reason: string};
 
 /**
- * Strip line and block comments, leaving string literals untouched, so the bytes parse as JSON.
+ * One widen-only key's entries, or why there are none.
  *
- * Hand-written rather than taken from a dependency because the whole surface is two comment forms
- * and one escape rule, and the string-awareness is the part that matters: a naive strip cuts a URL
- * in half at its `//` and turns a readable config into "the document is not JSON".
+ * `emptyReason` is the arm the surface itself has no opinion on: a declared-but-empty list is a
+ * perfectly valid config, and it is these three keys — not the loader — that read empty as "nothing
+ * usable" and say so in their own words.
  */
-export const stripJsonComments = (text: string): string => {
-	let out = "";
-	let inString = false;
-	let escaped = false;
-	let index = 0;
-	while (index < text.length) {
-		const char = text[index] ?? "";
-		if (inString) {
-			out += char;
-			if (escaped) escaped = false;
-			else if (char === "\\") escaped = true;
-			else if (char === '"') inString = false;
-			index += 1;
-			continue;
-		}
-		if (char === '"') {
-			inString = true;
-			out += char;
-			index += 1;
-			continue;
-		}
-		if (char === "/" && text[index + 1] === "/") {
-			while (index < text.length && text[index] !== "\n") index += 1;
-			continue;
-		}
-		if (char === "/" && text[index + 1] === "*") {
-			index += 2;
-			while (index < text.length && !(text[index] === "*" && text[index + 1] === "/")) index += 1;
-			index += 2;
-			continue;
-		}
-		out += char;
-		index += 1;
+const entries = <A>(
+	text: string,
+	group: KeyGroup<ReadonlyArray<A>>,
+	emptyReason: string,
+): {readonly _tag: "Entries"; readonly entries: ReadonlyArray<A>} | Unusable => {
+	const resolved = resolve(loadConfig({_tag: "Text", text}), group);
+	if (resolved._tag === "Malformed" || resolved._tag === "Unknown") {
+		return {_tag: "Unusable", reason: resolved.reason};
 	}
-	return out;
+	if (resolved._tag === "Default") return {_tag: "Unusable", reason: resolved.reason};
+	return resolved.value.length === 0
+		? {_tag: "Unusable", reason: emptyReason}
+		: {_tag: "Entries", entries: resolved.value};
 };
-
-/** One entry of the grant-author set: a `@login`, or a `@org/team` whose membership is resolved. */
-export type GrantAuthor =
-	| {readonly _tag: "User"; readonly login: string}
-	| {readonly _tag: "Team"; readonly org: string; readonly team: string};
 
 export type AuthorsRead =
 	| {readonly _tag: "Authors"; readonly authors: ReadonlyArray<GrantAuthor>}
-	/** The bytes were read in full and hold no usable set — nobody may grant. */
-	| {readonly _tag: "Unusable"; readonly reason: string};
+	| Unusable;
 
-const USER = /^@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)$/;
-const TEAM = /^@([^/\s]+)\/([^/\s]+)$/;
-
-/**
- * The grant-author set the config declares. Every rejection names what it rejected.
- *
- * An entry that is not a `@`-prefixed user or `@org/team` refuses the **whole** set rather than
- * being skipped: a typo'd entry silently dropped is an author the operator believes is configured
- * and is not, which surfaces only as a refused grant nobody can explain.
- */
+/** The grant-author set the config declares, or why nobody may clear a round. */
 export const readCapClearAuthors = (text: string): AuthorsRead => {
-	const parsed = parseJson(stripJsonComments(text));
-	if (!isRecord(parsed)) {
-		return {_tag: "Unusable", reason: `${CONFIG_PATH} is not a JSON object with comments`};
-	}
-	const raw = parsed[CAP_CLEAR_AUTHORS];
-	if (raw === undefined) {
-		return {_tag: "Unusable", reason: `${CONFIG_PATH} declares no \`${CAP_CLEAR_AUTHORS}\``};
-	}
-	if (!Array.isArray(raw)) {
-		return {_tag: "Unusable", reason: `\`${CAP_CLEAR_AUTHORS}\` is not an array`};
-	}
-	const authors: GrantAuthor[] = [];
-	for (const entry of raw) {
-		if (typeof entry !== "string") {
-			return {
-				_tag: "Unusable",
-				reason: `\`${CAP_CLEAR_AUTHORS}\` holds a non-string entry — expected "@user" or "@org/team"`,
-			};
-		}
-		const value = entry.trim();
-		const team = TEAM.exec(value);
-		if (team?.[1] !== undefined && team[2] !== undefined) {
-			authors.push({_tag: "Team", org: team[1], team: team[2]});
-			continue;
-		}
-		const user = USER.exec(value);
-		if (user?.[1] !== undefined) {
-			authors.push({_tag: "User", login: user[1]});
-			continue;
-		}
-		return {
-			_tag: "Unusable",
-			reason: `"${entry}" is not a \`${CAP_CLEAR_AUTHORS}\` entry — expected "@user" or "@org/team"`,
-		};
-	}
-	return authors.length === 0
-		? {_tag: "Unusable", reason: `\`${CAP_CLEAR_AUTHORS}\` is empty — nobody may clear a round`}
-		: {_tag: "Authors", authors};
+	const read = entries(
+		text,
+		capClearAuthorsKey,
+		`\`${CAP_CLEAR_AUTHORS}\` is empty — nobody may clear a round`,
+	);
+	return read._tag === "Entries" ? {_tag: "Authors", authors: read.entries} : read;
 };
 
-export type ExemptRead =
-	| {readonly _tag: "Paths"; readonly paths: ReadonlyArray<string>}
-	/** The bytes were read in full and hold no usable list — nothing is exempt. */
-	| {readonly _tag: "Unusable"; readonly reason: string};
+export type ExemptRead = {readonly _tag: "Paths"; readonly paths: ReadonlyArray<string>} | Unusable;
 
-/**
- * The docs the repo declares exempt from `build check`'s leak scan, as repo-relative path suffixes.
- *
- * A malformed entry refuses the **whole** list rather than being skipped, for the reason the
- * grant-author set does it: a typo'd entry silently dropped is an exemption the operator believes is
- * configured and is not, which surfaces only as a red nobody can explain. Refusing the list leaves
- * the scanner at its strictest, so the failure is loud rather than permissive.
- */
+/** The leak-scan exemptions the config declares, or why nothing is exempt. */
 export const readDocLeakExempt = (text: string): ExemptRead => {
-	const parsed = parseJson(stripJsonComments(text));
-	if (!isRecord(parsed)) {
-		return {_tag: "Unusable", reason: `${CONFIG_PATH} is not a JSON object with comments`};
-	}
-	const raw = parsed[DOC_LEAK_EXEMPT];
-	if (raw === undefined) {
-		return {_tag: "Unusable", reason: `${CONFIG_PATH} declares no \`${DOC_LEAK_EXEMPT}\``};
-	}
-	if (!Array.isArray(raw)) {
-		return {_tag: "Unusable", reason: `\`${DOC_LEAK_EXEMPT}\` is not an array`};
-	}
-	const paths: string[] = [];
-	for (const entry of raw) {
-		if (typeof entry !== "string" || entry.trim() === "") {
-			return {
-				_tag: "Unusable",
-				reason: `\`${DOC_LEAK_EXEMPT}\` holds an entry that is not a non-empty string — expected a repo-relative path`,
-			};
-		}
-		paths.push(entry.trim());
-	}
-	return paths.length === 0
-		? {_tag: "Unusable", reason: `\`${DOC_LEAK_EXEMPT}\` is empty — nothing is exempt`}
-		: {_tag: "Paths", paths};
+	const read = entries(
+		text,
+		docLeakExemptKey,
+		`\`${DOC_LEAK_EXEMPT}\` is empty — nothing is exempt`,
+	);
+	return read._tag === "Entries" ? {_tag: "Paths", paths: read.entries} : read;
 };
-
-/** An argv whose head is the binary, so a caller cannot spawn an empty command. */
-export type Argv = readonly [string, ...ReadonlyArray<string>];
-
-/**
- * One declared validator: the command to spawn, plus the workflow files it opens.
- *
- * `reads` is what makes the surface's green checkable per file. A declared guard takes no path
- * arguments — it reads a fixed set — so without this the verb can only prove that *something* ran,
- * and a diff touching a workflow nobody opens greens with an empty `unvalidated` list (#5991).
- */
-export interface WorkflowValidator {
-	readonly argv: Argv;
-	readonly reads: ReadonlyArray<string>;
-}
 
 export type ValidatorsRead =
 	| {readonly _tag: "Validators"; readonly validators: ReadonlyArray<WorkflowValidator>}
-	/** The bytes were read in full and hold no usable list — the repo declares no validator. */
-	| {readonly _tag: "Unusable"; readonly reason: string};
+	| Unusable;
 
-/**
- * The commands the repo declares as validators of its own workflow YAML, each with the files it reads.
- *
- * Declared rather than compiled in, because the commands that machine-read a repo's workflows are
- * that repo's own — in phoenix three `pipeline-cli` guards — and fabrika installs into repos it does
- * not control (ADR 0273). An argv array rather than a command line: fabrika spawns it directly, and
- * splitting a string would put a quoting grammar between the config and the process.
- *
- * `reads` is mandatory and non-empty: a validator that names no file it opens can contribute nothing
- * to the per-file coverage `build check --surface workflows` reports, so admitting one would only
- * buy back the false green this key exists to refuse.
- *
- * A malformed entry refuses the **whole** list, the way the other two keys do, and the reason prints
- * as a scope note beside whatever verdict follows. What that costs depends on the tree: with no
- * `actionlint` present nothing is left to open a changed workflow, so `build check --surface
- * workflows` refuses UNKNOWN; with `actionlint` present the run stands on it alone — still per-file
- * honest, still disclosed, but over fewer validators than the operator declared. Loud in the first
- * case, narrowed and stated in the second, never a silent green in either.
- */
+/** The repo's own workflow validators, or why this repo declares none. */
 export const readWorkflowValidators = (text: string): ValidatorsRead => {
-	const parsed = parseJson(stripJsonComments(text));
-	if (!isRecord(parsed)) {
-		return {_tag: "Unusable", reason: `${CONFIG_PATH} is not a JSON object with comments`};
-	}
-	const raw = parsed[WORKFLOW_VALIDATORS];
-	if (raw === undefined) {
-		return {_tag: "Unusable", reason: `${CONFIG_PATH} declares no \`${WORKFLOW_VALIDATORS}\``};
-	}
-	if (!Array.isArray(raw)) {
-		return {_tag: "Unusable", reason: `\`${WORKFLOW_VALIDATORS}\` is not an array`};
-	}
-	const malformed: ValidatorsRead = {
-		_tag: "Unusable",
-		reason: `\`${WORKFLOW_VALIDATORS}\` holds an entry that is not {"command": [non-empty argv of strings], "reads": [non-empty list of workflow paths]} — e.g. {"command": ["node", "tools/lint-workflows.js"], "reads": [".github/workflows/ci.yml"]}`,
-	};
-	const strings = (value: unknown): ReadonlyArray<string> | null => {
-		if (!Array.isArray(value)) return null;
-		const parts: string[] = [];
-		for (const part of value) {
-			if (typeof part !== "string" || part.trim() === "") return null;
-			parts.push(part.trim());
-		}
-		return parts;
-	};
-	const validators: WorkflowValidator[] = [];
-	for (const entry of raw) {
-		if (!isRecord(entry)) return malformed;
-		const command = strings(entry.command);
-		const reads = strings(entry.reads);
-		if (command === null || reads === null || reads.length === 0) return malformed;
-		const [binary, ...args] = command;
-		if (binary === undefined) return malformed;
-		validators.push({argv: [binary, ...args], reads});
-	}
-	return validators.length === 0
-		? {_tag: "Unusable", reason: `\`${WORKFLOW_VALIDATORS}\` is empty — this repo declares none`}
-		: {_tag: "Validators", validators};
+	const read = entries(
+		text,
+		workflowValidatorsKey,
+		`\`${WORKFLOW_VALIDATORS}\` is empty — this repo declares none`,
+	);
+	return read._tag === "Entries" ? {_tag: "Validators", validators: read.entries} : read;
 };
