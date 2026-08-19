@@ -59,4 +59,7 @@ export const workflowValidatorsKey: KeyGroup<ReadonlyArray<WorkflowValidator>> =
 	key: WORKFLOW_VALIDATORS,
 	shippedDefault: [],
 	decode,
+	// `argv` is the spawn shape; the file's key is `command`, and a readout prints what the repo wrote.
+	render: (validators) =>
+		validators.map((one) => ({command: [...one.argv], reads: [...one.reads]})),
 };

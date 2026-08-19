@@ -39,6 +39,15 @@ export interface KeyGroup<A> {
 	 * so the check has to run before any key's value is used.
 	 */
 	readonly refuseLoad?: (value: A) => string | null;
+	/**
+	 * How a resolved value prints in a readout, when the decoded shape is not the shape a repo
+	 * writes. Absent means the two are the same.
+	 *
+	 * `status settings` exists so a skill can ask what a key resolves to; answering
+	 * `{"_tag":"User","login":"…"}` where the file says `"@…"` would hand back this package's
+	 * internal shape and leave the reader to reverse it.
+	 */
+	readonly render?: (value: A) => unknown;
 }
 
 export const resolveKey = <A>(state: DocumentState, group: KeyGroup<A>): Resolution<A> => {
@@ -79,12 +88,30 @@ export const resolveKey = <A>(state: DocumentState, group: KeyGroup<A>): Resolut
 export interface Registration {
 	readonly key: string;
 	readonly resolve: (state: DocumentState) => Resolution<unknown>;
+	/**
+	 * The same resolution with its value in the shape a repo writes — what a readout prints.
+	 *
+	 * Kept apart from {@link Registration.resolve} rather than folded into it: a caller computing
+	 * with a value needs the decoded shape, and a renderer that silently replaced it would hand
+	 * logic the display form.
+	 */
+	readonly readout: (state: DocumentState) => Resolution<unknown>;
 	readonly loadRefusal: (state: DocumentState) => string | null;
 }
 
 export const register = <A>(group: KeyGroup<A>): Registration => ({
 	key: group.key,
 	resolve: (state) => resolveKey(state, group),
+	readout: (state) => {
+		const resolved = resolveKey(state, group);
+		const render = group.render;
+		if (render === undefined) return resolved;
+		if (resolved._tag === "Declared") return {_tag: "Declared", value: render(resolved.value)};
+		if (resolved._tag === "Default") {
+			return {_tag: "Default", value: render(resolved.value), reason: resolved.reason};
+		}
+		return resolved;
+	},
 	loadRefusal: (state) => {
 		const refuse = group.refuseLoad;
 		if (refuse === undefined) return null;
