@@ -677,3 +677,18 @@ export const mecmuaSubscription = sqliteTable(
 		index("mecmua_subscription_subscriber").on(t.subscriberId, sql`${t.createdAt} DESC`),
 	],
 );
+
+/**
+ * The yazar's "çaylak katkılarını yerinde göster" opt-in (#6422, epic #4306).
+ * Presence IS the preference: a row means this account opted in, its absence means
+ * it did not — there is no `false` row, so "opted in but we don't know when" is
+ * unrepresentable and an opt-out is a delete. Its own table rather than a
+ * `user_profile` column because `user_profile` is a recomputable denormalized
+ * summary cache (karma + contribution counts, rebuildable from its sources); this
+ * row is authored user intent that no recompute could restore. Written inline by
+ * `CaylakVisibility.set` (D1-direct, see ADR 0009).
+ */
+export const caylakVisibilityPreference = sqliteTable("caylak_visibility_preference", {
+	userId: text("user_id").primaryKey(),
+	setAt: timestamp("set_at").notNull(),
+});

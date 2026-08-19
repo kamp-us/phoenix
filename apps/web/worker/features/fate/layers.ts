@@ -20,6 +20,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import type {Database} from "../../db/Database.ts";
 import {DrizzleLive} from "../../db/Drizzle.ts";
 import {NotificationLive} from "../bildirim/Notification.ts";
+import {CaylakVisibilityLive} from "../caylak-visibility/CaylakVisibility.ts";
 import {DivanLive} from "../divan/Divan.ts";
 import {FlagsDevOverrideLive} from "../flagship/Flags.ts";
 import {RequestFlagOverrides} from "../flagship/FlagsContext.ts";
@@ -248,6 +249,11 @@ export const makeFateLayer = Layer.mergeAll(
 	// `mute.remove` presence writes, depending only on `Drizzle` (discharged below), so
 	// it merges flat like the other domain layers.
 	MuteLive,
+	// The çaylak in-place visibility preference store (#6422, epic #4306) — the
+	// yazar's own opt-in row, depending only on `Drizzle` (discharged below), so it
+	// merges flat like the other domain layers. The yazar floor is discharged at the
+	// mutation via `SetCaylakVisibility`, not here.
+	CaylakVisibilityLive,
 	// The authz ports the moderation gate (`report.resolve`/`restore`/`listOpen`)
 	// discharges `Moderate.over(platform)` against: `RelationStoreLive` reads the
 	// `moderates` tuple off the same `Drizzle` seam (discharged below), and
