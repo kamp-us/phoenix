@@ -4,7 +4,7 @@ import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {comments, HEAD, issue, OLD_HEAD, PRIOR_HEADS, pull} from "./fixtures.test-support.ts";
-import {runVerdicts} from "./verdicts-verb.ts";
+import {runChildVerdicts, runVerdicts} from "./verdicts-verb.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4310$/;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4310\/comments/;
@@ -403,5 +403,88 @@ describe("runVerdicts", () => {
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
 			expect(out.stdout).toBe("");
 		});
+	});
+});
+
+/**
+ * The child arm — where a lane sent to repair by `build claim --resume` reads its findings. A child
+ * opens no PR (ADR 0285), so the whole fold is the range-bound comments on the issue.
+ */
+describe("runChildVerdicts", () => {
+	const BASE = "9f2c1ab4d5e6f708192a3b4c5d6e7f8091a2b3c4";
+	const TIP = "03135b917283a4b5c6d7e8f90a1b2c3d4e5f6071";
+	const NEXT_TIP = "5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f";
+	const CHILD_COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
+	const range = (polarity: string, tip = TIP) =>
+		`review-code: ${polarity} range:${BASE}..${tip} content:2f1a9c4e0b7d — the child's range`;
+
+	const runChild = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
+		Effect.runPromise(
+			Effect.provide(
+				runChildVerdicts({
+					issue: 4312,
+					repo: null,
+					env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+				}),
+				fakeShell(script).layer,
+			),
+		);
+
+	it("folds the standing verdict per gate with the range it was formed over", async () => {
+		const out = await runChild([
+			[ISSUE, issue()],
+			[CHILD_COMMENTS, comments({id: 8801, body: `${range("FAIL")}\n\nthe finding's text`})],
+		]);
+		expect(out.code).toBe(0);
+		const answered = JSON.parse(out.stdout);
+		expect(answered.rows).toMatchObject([
+			{
+				gate: "review-code",
+				polarity: "FAIL",
+				range: `${BASE}..${TIP}`,
+				commentId: 8801,
+				kind: "range-marker",
+			},
+		]);
+		expect(answered.rows[0].body).toContain("the finding's text");
+	});
+
+	it("counts one round per graded tip, so two gates over one range stay one round", async () => {
+		const out = await runChild([
+			[ISSUE, issue()],
+			[
+				CHILD_COMMENTS,
+				comments(
+					{id: 1, body: range("FAIL")},
+					{id: 2, body: `governance: FAIL range:${BASE}..${TIP} content:2f1a9c4e0b7d — no`},
+					{id: 3, body: range("FAIL", NEXT_TIP)},
+				),
+			],
+		]);
+		expect(JSON.parse(out.stdout).rounds).toBe(2);
+	});
+
+	it("reports no clearance and says why — a grant is recorded against a base branch", async () => {
+		const out = await runChild([
+			[ISSUE, issue()],
+			[CHILD_COMMENTS, comments({id: 8801, body: range("PASS")})],
+		]);
+		expect(JSON.parse(out.stdout).clearances).toEqual([]);
+		expect(out.stderr.join("\n")).toContain("a child has no PR");
+	});
+
+	it("refuses a PR on 7 — its verdicts are head-bound", async () => {
+		const out = await runChild([[ISSUE, issue({pull_request: {}})]]);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stderr.at(-1)).toContain("drop --issue and pass --pr");
+	});
+
+	it("refuses an unreadable comment page on 11 — never 'none'", async () => {
+		const out = await runChild([
+			[ISSUE, issue()],
+			[CHILD_COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
 	});
 });

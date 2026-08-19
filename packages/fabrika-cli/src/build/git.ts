@@ -75,6 +75,20 @@ export const switchToNew = (name: string, start: string): Shell<Attempt<void>> =
 		return r.ok ? ok(undefined) : fail(r.reason);
 	});
 
+/**
+ * Re-key an existing local branch to a new name — how a repair lane takes over an epic child's branch.
+ *
+ * Renaming rather than cutting a second branch off the first is the whole point: two branches
+ * carrying one child's commits is what `lane prove` reports as an underivable range, and that
+ * refusal is unresolvable from inside a worktree (#6386). git refuses when the branch is checked out
+ * elsewhere, which is the honest answer — the prior lane's worktree is still standing on it.
+ */
+export const renameBranch = (from: string, to: string): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["branch", "-m", from, to]);
+		return r.ok ? ok(undefined) : fail(r.reason);
+	});
+
 /** Point a local branch's upstream at `<remote>/<ref>` — how resume mode publishes to the PR's head. */
 export const setUpstream = (name: string, remote: string, ref: string): Shell<Attempt<void>> =>
 	Effect.gen(function* () {

@@ -32,6 +32,7 @@ const options = {
 	slug: "editor-focus-loss" as string | null,
 	base: "origin/main",
 	resume: null as number | null,
+	resumeLane: false,
 	token: LANE_TOKEN,
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
@@ -193,5 +194,105 @@ describe("runBranch — resume mode", () => {
 		expect(out.stderr.at(-1)).toBe(
 			"build branch: PR #4310 is proven closed or merged — nothing to resume.",
 		);
+	});
+});
+
+/**
+ * Child-repair mode: the route a `build claim --resume` on an epic child hands its lane. It has to
+ * exist, or the prior-build refusal strands the child it stops (#6386).
+ */
+describe("runBranch — --resume-lane", () => {
+	const FOR_EACH_REF = /^git for-each-ref /;
+	const RENAME = /^git branch -m /;
+	const SWITCH = /^git switch build\//;
+	const PRIOR = "build/4312-path-surface-config-c4367b0b";
+	const RESUMED = `build/4312-path-surface-config-${NONCE}`;
+	const resumeLaneOptions = {slug: null, resumeLane: true};
+
+	it("re-keys the prior lane's branch to this claim's nonce and checks it out", async () => {
+		const shell = fakeShell([
+			...CLAIMED,
+			[FOR_EACH_REF, okOut(`main\n${PRIOR}\nepic/5631\n`)],
+			[RENAME, okOut("")],
+			[SWITCH, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...resumeLaneOptions}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(`${RESUMED}\n`);
+		expect(shell.calls).toContain(`git branch -m ${PRIOR} ${RESUMED}`);
+		expect(shell.calls).toContain(`git switch ${RESUMED}`);
+		// A second branch carrying the child's commits is the underivable range `lane prove` refuses
+		// on, and no cut here is what keeps that from happening.
+		expect(shell.calls.some((line) => SWITCH_NEW.test(line))).toBe(false);
+	});
+
+	it("fetches nothing — a child's branch is local, and the remote knows none of it", async () => {
+		const shell = fakeShell([
+			...CLAIMED,
+			[FOR_EACH_REF, okOut(`${PRIOR}\n`)],
+			[RENAME, okOut("")],
+			[SWITCH, okOut("")],
+		]);
+		await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...resumeLaneOptions}), shell.layer),
+		);
+		expect(shell.calls.some((line) => /^git fetch/.test(line))).toBe(false);
+	});
+
+	it("renames nothing on a re-run under the same nonce — the name already resolves", async () => {
+		const shell = fakeShell([
+			...CLAIMED,
+			[FOR_EACH_REF, okOut(`${RESUMED}\n`)],
+			[SWITCH, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runBranch({...options, ...resumeLaneOptions}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(shell.calls.some((line) => RENAME.test(line))).toBe(false);
+	});
+
+	it("refuses on 7 when no local branch was cut for the number", async () => {
+		const out = await run([...CLAIMED, [FOR_EACH_REF, okOut("main\nepic/5631\n")]], {
+			...resumeLaneOptions,
+		});
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stderr.at(-1)).toContain("no local branch in this tree was cut for #4312");
+	});
+
+	it("refuses on 11 when several branches were cut for the number", async () => {
+		const out = await run(
+			[...CLAIMED, [FOR_EACH_REF, okOut(`${PRIOR}\nbuild/4312-other-shape-11223344\n`)]],
+			{...resumeLaneOptions},
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("which one this lane resumes is not derivable here");
+	});
+
+	it("refuses on 11 when the re-key fails, naming the worktree that holds the branch", async () => {
+		const out = await run(
+			[
+				...CLAIMED,
+				[FOR_EACH_REF, okOut(`${PRIOR}\n`)],
+				[RENAME, errOut(`fatal: '${PRIOR}' is checked out at another worktree`)],
+			],
+			{...resumeLaneOptions},
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("the prior lane's worktree is likely still standing on it");
+	});
+
+	it("refuses --resume-lane beside --resume on 10 — a child has no PR to resume", async () => {
+		const out = await run([], {number: null, slug: null, resume: 4310, resumeLane: true});
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.at(-1)).toContain("it cannot be combined with --resume <pr>");
+	});
+
+	it("refuses --resume-lane beside --slug on 10 — the slug comes off the branch", async () => {
+		const out = await run([], {resumeLane: true});
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.at(-1)).toContain("reads the slug off the branch it takes over");
 	});
 });

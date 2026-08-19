@@ -367,6 +367,33 @@ target read off the PR's own head branch, the classification check — and reads
 (#5618). Re-send the corrected body on stdin, then answer the finding in a `fabrika build note` and
 release; no commit, no `build check`, no `build push`.
 
+**An epic child is repaired too, and it is the one repair that names an issue rather than a PR.** A
+child opens no PR (ADR 0285), so its verdicts are range-bound comments on the child issue and there
+is no head to resume from. `build claim` reads those verdicts on every fresh build-purpose claim: a
+child whose newest verdict in any gate is `FAIL` refuses on `31` naming that FAIL, because building
+it fresh re-implements work a reviewer already graded — which cost two whole lanes on epic #5631, and
+on one of them produced two divergent implementations of a single criterion (#6386). The route the
+refusal names is the whole repair:
+
+```bash
+fabrika build claim $issue_or_pr_number --resume
+fabrika build verdicts --issue $issue_or_pr_number
+fabrika build tree --issue $issue_or_pr_number
+fabrika build branch $issue_or_pr_number --resume-lane --token <claim-token>
+```
+
+`--resume` is checked against the board, not trusted: on a child holding no standing `FAIL` it
+refuses on `31` too, so the flag can never be typed past the fence. `--resume-lane` **re-keys** the
+branch the prior lane built on to this claim's nonce instead of cutting a second one — two branches
+carrying one child's commits is the range `lane prove` calls underivable, and that refusal cannot be
+cleared from inside a worktree. It refuses on `7` when no such branch is in this tree (the prior
+lane's is, and only a lane standing there can resume it) and on `11` when the re-key fails because
+another worktree still holds the branch — that one is an operator's to release, so end `STOPPED`
+naming the code. From there the loop is the ordinary one minus the publishing half: fix, `build
+check`, `build commit`, no push and no PR, then the `build-deviations` comment and `BUILT-NO-PR`.
+There is no cap clearance on this path — a grant is recorded against a PR's base branch — so a child
+at its cap escalates to the operator.
+
 ## Expectations you hold but never recompute
 
 - **Control-plane membership** — decided by CODEOWNERS at the merge gate. You never classify.

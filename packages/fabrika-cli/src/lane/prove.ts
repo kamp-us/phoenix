@@ -25,8 +25,10 @@
  */
 
 import {issueRefsIn} from "../build/commit-message.ts";
-import {parseLaneBranch} from "../build/lane.ts";
 import type {ParentedCommit} from "../io/git.ts";
+
+/** The branch grammar's own reader, re-exported so this module's callers take one derivation. */
+export {childLaneBranches} from "../build/lane.ts";
 
 /** The leaf state a builder runs in — a `DONE` out of it claims the built work exists. */
 export const BUILD_STATE = "build";
@@ -152,16 +154,6 @@ export type RangeTrace =
 	  }
 	| {readonly _tag: "None"; readonly why: string}
 	| {readonly _tag: "Many"; readonly branches: ReadonlyArray<string>};
-
-/** The local branches a lane branch's own grammar says were cut for this child (`build branch`). */
-export const childLaneBranches = (
-	issue: number,
-	branches: ReadonlyArray<string>,
-): ReadonlyArray<string> =>
-	branches.filter((name) => {
-		const lane = parseLaneBranch(name);
-		return lane !== null && lane._tag === "Create" && lane.number === issue;
-	});
 
 /**
  * The one range a child's `DONE` out of `build` stands on.

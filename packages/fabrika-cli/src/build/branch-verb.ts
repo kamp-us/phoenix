@@ -8,17 +8,29 @@
  * the remote head, so `build push` updates the PR while the local name carries *this* repair claim's
  * nonce — which is what stops a dead earlier lane from pinning this one (#4868's class).
  *
+ * `--resume-lane` is resume mode for the one artifact with no PR to resume — an epic child
+ * (ADR 0285). It re-keys the branch a prior lane built the child on to this claim's nonce rather than
+ * cutting a second one off it, because two branches carrying one child's commits is the underivable
+ * range `lane prove` refuses on, and that refusal cannot be cleared from inside a worktree (#6386).
+ *
  * A re-run is idempotent: the nonce is a function of the claim, so the second run resolves the same
  * name and switches to it instead of failing on a branch that is already there.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {localBranches} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {requireCallerToken, requireClaim, requireSession} from "./claim.ts";
 import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {branchExists, fetchBase, setUpstream, switchTo, switchToNew} from "./git.ts";
+import {branchExists, fetchBase, renameBranch, setUpstream, switchTo, switchToNew} from "./git.ts";
 import {getPullHead} from "./github.ts";
-import {createBranchName, isKebabSlug, resumeBranchName} from "./lane.ts";
+import {
+	childLaneBranches,
+	createBranchName,
+	isKebabSlug,
+	parseLaneBranch,
+	resumeBranchName,
+} from "./lane.ts";
 import {resolveTargetRepo} from "./target.ts";
 import {assertGround} from "./tree.ts";
 
@@ -31,6 +43,14 @@ export interface BranchOptions {
 	readonly base: string;
 	/** Resume mode: the PR whose head branch to publish back to. Exclusive with `number`. */
 	readonly resume: number | null;
+	/**
+	 * Child-repair mode: take over the branch a prior lane already built `number` on.
+	 *
+	 * The counterpart of `--resume` for the one artifact that has no PR to resume — an epic child
+	 * (ADR 0285). It takes `<number>` rather than a PR, needs no `--slug` because the branch already
+	 * carries one, and re-keys that branch to this claim's nonce instead of cutting a second one.
+	 */
+	readonly resumeLane: boolean;
 	/** The token `build claim` handed this lane — the identity it cuts the branch under (#6037). */
 	readonly token: string;
 	readonly repo: string | null;
@@ -47,14 +67,26 @@ export const runBranch = (
 	options: BranchOptions,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const {number, slug, resume} = options;
+		const {number, slug, resume, resumeLane} = options;
 		if ((number === null) === (resume === null)) {
 			return refuse(
 				OFF_VOCABULARY,
 				`${VERB}: give either <number> --slug <slug> or --resume <pr>, never both and never neither.`,
 			);
 		}
-		if (resume === null && (slug === null || !isKebabSlug(slug))) {
+		if (resumeLane && resume !== null) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --resume-lane takes over the local branch of an epic child, which has no PR — it cannot be combined with --resume <pr>.`,
+			);
+		}
+		if (resumeLane && slug !== null) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --resume-lane reads the slug off the branch it takes over — drop --slug "${slug}".`,
+			);
+		}
+		if (resume === null && !resumeLane && (slug === null || !isKebabSlug(slug))) {
 			return refuse(
 				OFF_VOCABULARY,
 				`${VERB}: --slug "${slug ?? ""}" is not kebab-case (lowercase letters, digits, single hyphens, ≤5 words).`,
@@ -125,6 +157,67 @@ export const runBranch = (
 						held.notes,
 					)
 				: answer(name, held.notes);
+		}
+
+		if (resumeLane) {
+			const issue = number as number;
+			const branches = yield* localBranches;
+			if (branches._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read this tree's local branches: ${branches.reason} — which branch carries #${issue}'s build is UNKNOWN; nothing was changed.`,
+					held.notes,
+				);
+			}
+			const candidates = childLaneBranches(issue, branches.value);
+			const [only, ...rest] = candidates;
+			if (only === undefined) {
+				return refuse(
+					ZERO_SCOPE,
+					`${VERB}: no local branch in this tree was cut for #${issue} — the build to resume is not here. A child's branch is never pushed (ADR 0285), so it exists only in the tree that built it; resume from that tree, or claim #${issue} without --resume once its FAIL is retracted.`,
+					held.notes,
+				);
+			}
+			if (rest.length > 0) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: ${candidates.join(", ")} were all cut for #${issue} — which one this lane resumes is not derivable here; retire the superseded branches, then re-run.`,
+					held.notes,
+				);
+			}
+			const prior = parseLaneBranch(only);
+			if (prior === null || prior._tag !== "Create") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: "${only}" does not parse back into a lane branch — nothing was changed.`,
+					held.notes,
+				);
+			}
+			const name = createBranchName(issue, prior.slug, nonce);
+			// Re-keyed in place rather than cut off `only`, so exactly one branch keeps naming this
+			// child — two is the underivable range `lane prove` refuses on, and an idempotent re-run
+			// under the same nonce resolves the same name and has nothing to rename.
+			if (name !== only) {
+				const renamed = yield* renameBranch(only, name);
+				if (renamed._tag === "Failure") {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot re-key ${only} to ${name}: ${renamed.reason} — the prior lane's worktree is likely still standing on it, and only an operator can release that; nothing was changed.`,
+						held.notes,
+					);
+				}
+			}
+			const switched = yield* switchTo(name);
+			return switched._tag === "Failure"
+				? refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot check out ${name}: ${switched.reason} — nothing was changed.`,
+						held.notes,
+					)
+				: answer(name, [
+						...held.notes,
+						`${VERB}: took over ${only} as ${name} — #${issue}'s build continues on the commits it already carries.`,
+					]);
 		}
 
 		const fetched = yield* fetchBase(options.base);

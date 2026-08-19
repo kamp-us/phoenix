@@ -26,13 +26,15 @@ import {getIssue, listComments} from "../io/issues.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
+import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
 import {bindToHead, read as readMarker} from "../wire/verdict-marker.ts";
 import {clearancesOn, grantedFrom} from "./clearances.ts";
-import {PRECONDITION_UNKNOWN} from "./codes.ts";
+import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {contentOf, gate} from "./content-gate.ts";
 import {listReviews} from "./github.ts";
 import {closingTargets, proseOf} from "./pr-body.ts";
-import {roundsOn} from "./rounds.ts";
+import {readRangeVerdicts} from "./range-verdicts.ts";
+import {countRounds, roundsOn} from "./rounds.ts";
 import {openPull, resolveTargetRepo} from "./target.ts";
 
 const VERB = "build verdicts";
@@ -42,6 +44,13 @@ const PROVENANCE_RE = /<!--\s*ac:review\s+pr:#(\d+)\s+round:(\d+)\s*-->/;
 
 export interface VerdictsOptions {
 	readonly pr: number;
+	readonly repo: string | null;
+	readonly env: Readonly<Record<string, string | undefined>>;
+}
+
+export interface ChildVerdictsOptions {
+	/** The epic child issue whose range-scoped verdicts are folded — it opens no PR (ADR 0285). */
+	readonly issue: number;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
@@ -151,6 +160,91 @@ export const runVerdicts = (
 			[
 				`${VERB}: head ${head}; scanned ${listed.value.length} comment(s) and ${reviews.value.length} review(s) on #${pr}.`,
 				`${VERB}: ${capNote(granted)}, from ${cleared.rows.length} marker(s).`,
+			],
+		);
+	});
+
+/**
+ * The same fold asked of an epic child, whose verdicts are range-bound comments on the issue itself.
+ *
+ * It exists because the repair route has to be walkable: `build claim --resume` refuses a fresh build
+ * over a child's standing `FAIL`, and a lane sent to repair needs the findings through a verb rather
+ * than a raw fetch (#6386). The rows carry the range each verdict was formed over instead of a head,
+ * and a round is one graded tip — the range analogue of one graded head, folded through the same
+ * `countRounds`.
+ *
+ * **It reports no clearance, and says so.** A cap clearance is recorded against a PR's base branch
+ * (`./clearances.ts`), and a child has no PR — so the budget here is the declared cap, unmodified,
+ * and a lane that needs another round escalates to the operator rather than reading a grant that has
+ * nowhere to live.
+ */
+export const runChildVerdicts = (
+	options: ChildVerdictsOptions,
+): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const {issue} = options;
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return resolved.outcome;
+		const repo = resolved.repo;
+
+		const target = yield* getIssue(repo, issue);
+		if (target._tag === "Unknown") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read #${issue}: ${target.reason} — the verdict state is UNKNOWN, never "none".`,
+			);
+		}
+		if (target._tag === "Absent") {
+			return refuse(ZERO_SCOPE, `${VERB}: #${issue} is proven absent in ${repo}.`);
+		}
+		if (target.value.isPullRequest) {
+			return refuse(
+				ZERO_SCOPE,
+				`${VERB}: #${issue} is a pull request — its verdicts are head-bound; drop --issue and pass --pr.`,
+			);
+		}
+
+		const listed = yield* listComments(repo, issue);
+		if (listed._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read the comments on #${issue} (page 1): ${listed.reason} — the verdict state is UNKNOWN, never "none".`,
+			);
+		}
+
+		const byId = new Map(listed.value.map((comment) => [comment.id, comment]));
+		const read = readRangeVerdicts(listed.value);
+		const rows = read.standing.map((verdict) => ({
+			gate: verdict.namespace,
+			polarity: verdict.polarity,
+			range: verdict.range,
+			commentId: verdict.commentId,
+			kind: "range-marker" as const,
+			body: contentOf(
+				gate(
+					"comment-body",
+					`comment ${verdict.commentId}`,
+					byId.get(verdict.commentId)?.body ?? "",
+				),
+			),
+		}));
+		const rounds = countRounds(
+			listed.value.flatMap((comment) => {
+				const parsed = readRangeMarker(comment.body);
+				return parsed._tag === "Found" && parsed.value.polarity === "FAIL"
+					? [{sha: parsed.value.range.tip, createdAt: comment.createdAt}]
+					: [];
+			}),
+		);
+		return answer(
+			JSON.stringify({rows, rounds, capReached: capReached(rounds, []), clearances: []}),
+			[
+				`${VERB}: scanned ${listed.value.length} comment(s) on #${issue}; ${rows.length} standing range verdict(s), ${rounds} graded range(s).`,
+				`${VERB}: ${capNote([])} — a clearance is recorded against a PR's base branch, and a child has no PR, so this budget takes none.`,
+				...read.malformed.map(
+					(reason) =>
+						`${VERB}: a comment on #${issue} reaches for a verdict marker and is not a range one — ${reason}`,
+				),
 			],
 		);
 	});
