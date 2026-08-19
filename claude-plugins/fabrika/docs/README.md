@@ -8,6 +8,8 @@ Everything here is **reference** — the rules an artifact is held to. The *why*
 lives in [`.decisions/`](../../../.decisions/), and a doc that re-derives an ADR's reasoning should
 point at it instead.
 
+The human-facing pages live in [`../guide/`](../guide/README.md).
+
 This directory is the home; the docs themselves land as the foundation epic's later children
 ([#4648](https://github.com/kamp-us/phoenix/issues/4648)):
 

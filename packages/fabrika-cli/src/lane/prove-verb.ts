@@ -572,7 +572,7 @@ const proveRangeVerdicts = (
 	Effect.gen(function* () {
 		const read = yield* located(epic, issue);
 		if (read._tag === "Refused") return read.outcome;
-		const range = `${read.range.baseRef}..${read.range.branch}`;
+		const range = `${read.range.base}..${read.range.tip}`;
 
 		const content = yield* rangeContentAt({base: read.range.base, tip: read.range.tip});
 		if (content._tag === "Failure") {

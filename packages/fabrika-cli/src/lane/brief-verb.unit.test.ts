@@ -108,6 +108,8 @@ const locating = (
 	[REV("epic/5800"), okOut(`${EPIC_BASE}\n`)],
 	[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
 	[BRANCHES, okOut(`${branches.join("\n")}\n`)],
+	// The child is not integrated here, so its fork point is where the epic branch stands.
+	[/^git merge-base /, okOut(`${EPIC_BASE}\n`)],
 	[LOG_RANGE, logOf(...commits)],
 ];
 

@@ -6,9 +6,10 @@ section. `fabrika build check` validates topology well-formedness here.
 - **Product layer leads, engineering follows**: problem and user stories before mechanism. A child
   that traces to no story is scope nobody asked for.
 - **The `## Dependencies` topology is explicit and complete** — phases and `requires:` edges
-  written down in the canonical grammar (defined in [`contract.md`](../contract.md), `build
-  eligible`), never implied by ordering. `fabrika build eligible` reads exactly this, so an
-  unwritten edge is an edge the picker cannot see (#4244, #4104).
+  written down in the canonical grammar (defined in [`contract.md`](../contract.md), under
+  `build check --surface plan`), never implied by ordering. The block is what a human reads the
+  ledger's shape off; the gate itself reads GitHub's native `blocked_by` edges (#5387, ADR 0301),
+  so an edge that exists only in this prose is an edge no verb enforces (#4244, #4104).
 - **Tracer bullets over layers**: each child is a thin end-to-end slice a builder can land alone,
   not a horizontal stratum that only works when its siblings do.
 - **No invented scope**: plan from what the source issue and the code support; keep the original's

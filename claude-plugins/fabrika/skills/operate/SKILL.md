@@ -423,7 +423,7 @@ One more refusal guards a reviewer `FAIL`, and it is the one half `lane prove` c
 hands — the read enforces it mechanically for a `PASS` (exit `23`) on both paths, the shell's
 through `lane report` and yours through the verb, while a `FAIL` claims no
 artifact and so is proven by nothing: **a reviewer `FAIL` is recorded only when every derived
-namespace holds a verdict that still binds** — governance included, on a `harness: true` diff. `FAIL`
+namespace holds a verdict that still binds** — governance included, on a `governance: required` diff. `FAIL`
 routes the machine into a repair build, and a repair pushes a new head; recorded while any
 namespace is still in flight, it orphans that namespace's verdict mid-write and spends one of the
 machine's retries on a verdict set nobody finished. A reviewer report carrying a `FAIL` beside a
@@ -438,13 +438,13 @@ ever spawned while any namespace at the head is non-terminal.
 **Re-reading terminates, because no reviewer may decline a derived namespace on a `FAIL` round, and
 none may route one away either.** ADR
 [0293](../../../../.decisions/0293-governance-fires-every-round.md) rules governance
-derived-required at every round and every head on a `harness: true` diff, FAIL rounds included —
+derived-required at every round and every head on a `governance: required` diff, FAIL rounds included —
 `review` §6 states it on both arms, and that skill's `routed elsewhere` terminal covers `review-ui`
 and `check-epic-plan` only, so no reviewer terminal ends a run with governance un-fired (#5769). So a
-governance verdict missing at a `harness: true` head is
+governance verdict missing at a `governance: required` head is
 always a read still in flight or a reviewer that died mid-emit, never a licensed refusal, and the
 remedy above reaches a verdict instead of waiting on one nobody will write. The floor stays, and no
-`harness: true` FAIL round holds the old deadlock — the state where the verdict is refused by rule,
+`governance: required` FAIL round holds the old deadlock — the state where the verdict is refused by rule,
 so it can never be written and the repair can never be dispatched. A namespace still empty after the
 reviewer's run has ended is a dead spawn like any other: record `BLOCKED` per the spawn-report step
 above and let a human unblock it. Do not re-spawn the reviewer on your own read.
@@ -523,9 +523,10 @@ and the who to the parking spawn's report. Clearing a park is a
 human's `UNBLOCKED`, recorded through the same `lane transition` verb — you never record
 `UNBLOCKED`. One exception, and it is still not yours: on a **known** park a recipe verb owns,
 `recipe unpark` records that lane's `UNBLOCKED` itself, and only after a re-fold proves the task
-left the park (#5848, on the founder's grill answer for epic #5840 — known clears autonomously,
-novel routes to a human). You relay that verb's exit into the chore lane's own event and type no
-`UNBLOCKED` anywhere.
+left the park. The rule and its actor list are ADR
+[0302](../../../../.decisions/0302-known-parks-clear-novel-routes-human.md)'s, which amends ADR 0297
+in part — this section states no park-clearing authority of its own. You relay that verb's exit into
+the chore lane's own event and type no `UNBLOCKED` anywhere.
 
 A chore lane has **no driven issue** — that is what a chore is — so a park it holds has nowhere to
 be commented. Report it to your caller instead, in the terminal line: the chore key, the state the
@@ -602,4 +603,4 @@ fabrika skill, so one reader parses all of them. No row here dead-ends on a bare
 | The recipe verb group — `<fabrika>` routing `recipe route` plus the recipes it names (`unpark`, `rerun`), and the chore template at `packages/fabrika-cli/src/lane/templates/chore.workflow.json` | A chore drive routes and folds through `recipe route`, runs the recipe it names, and boots from that template; there is no other path to either answer | **fail-loud** — a chore drive whose routing verb cannot be executed knows neither what to run nor what an exit meant; the run ends `STOPPED` naming `packages/fabrika-cli/src/recipe/`, records no event, and points at front-door. An issue lane is unaffected. |
 | The agent shells — `claude-plugins/fabrika/agents/builder.md`, `reviewer.md`, `shipper.md` | Step 2's routing table spawns exactly these three by their bare noun names | **fail-loud** — a route whose shell does not exist cannot spawn; the run ends `STOPPED` naming the absent shell file, and no event is recorded for a spawn that never started. |
 | The `package.json` scripts `typecheck` and `lint:worktree` | An epic run's `integrate` reads the semantic collision off them — two ranges that each passed alone and fail together show up as the merged assembly failing the checks, and a clean `git merge` alone cannot see that | **degrade** — a clean merge is then the whole `DONE` answer and a semantic collision only surfaces at the epic review; say so in the transcript comment and file the gap via `/report`. An epic run still drives; a single-issue lane is unaffected. |
-| `.gitignore` covering `.fabrika/` | The ledger is a disposable machine-local artifact, regenerable from the board — committed, it would smuggle one machine's lane state into every checkout | **degrade** — the verbs still work; state the uncovered `.fabrika/` in the park or transcript comment and file the gap via `/report`. |
+| `id:gitignore-row` `.gitignore` covering `.fabrika/` | The ledger is a disposable machine-local artifact, regenerable from the board — committed, it would smuggle one machine's lane state into every checkout | **bootstrap** — `fabrika status bootstrap gitignore-row` appends the row and reads it back; until then the verbs still work, so state the uncovered `.fabrika/` in the park or transcript comment. |

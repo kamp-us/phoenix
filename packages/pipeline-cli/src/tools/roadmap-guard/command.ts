@@ -13,7 +13,7 @@
  * pinned to an existing milestone by number (a queued arc may defer its pin); I2 exactly
  * one active arc; I3 no unclaimed open milestone; I4 fail-closed on zero scope (ADR 0092);
  * I5 active↔done state symmetry — an active row's milestone is open, a done row's closed
- * (the campaign lifecycle guard, #2660); I6 the declared focus is at most one row over an
+ * (the campaign lifecycle guard, #2660); I6 every declared focus row is pinned to an
  * open, actively-claimed milestone (#5012 — absence and emptiness are the legal default).
  *
  * The pure decision lives in `roadmap-guard.ts` (unit-tested exhaustively); the file read

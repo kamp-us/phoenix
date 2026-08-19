@@ -544,6 +544,8 @@ const REV = (rev: string) =>
 	new RegExp(`^git rev-parse --verify --quiet ${literally(rev)}\\^\\{commit\\}$`);
 const BRANCHES = /^git for-each-ref --format=%\(refname:short\) refs\/heads$/;
 const LOG_RANGE = /^git log --format=/;
+const MERGE_BASE = /^git merge-base /;
+const ANCESTRY = /^git rev-list --parents --ancestry-path /;
 const RAW = /^git diff .* --raw --abbrev=40 -z /;
 const CHILD_COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4301\/comments/;
 
@@ -575,8 +577,20 @@ const locating = (
 	[BRANCHES, okOut(`${branches.join("\n")}\n`)],
 	[REV(CHILD_BRANCH), okOut(`${CHILD_TIP}\n`)],
 	[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
+	// The child is not integrated here, so the fork point is where the epic branch stands.
+	[MERGE_BASE, okOut(`${EPIC_BASE}\n`)],
 	[LOG_RANGE, logOf(...commits)],
 ];
+
+/** A 40-hex object name from a short seed, so a fixture SHA reads as the thing it stands for. */
+const sha = (seed: string): string => seed.repeat(40).slice(0, 40);
+
+/** Where the child branch left the epic branch — the base its reviewer was handed. */
+const FORK = sha("664eb9dc");
+/** The epic branch after a sibling, and then this child, landed on it. */
+const EPIC_MOVED = sha("ec3894d3");
+/** The epic branch as it stood the instant before this child's integrating merge. */
+const EPIC_BEFORE = sha("d67022dc");
 
 const rangeMarker = (
 	polarity: "PASS" | "FAIL",
@@ -628,6 +642,46 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 		expect(out.stderr.join("\n")).toContain("adds 2 commit(s), 1 of them naming #4301");
 	});
 
+	it("proves a child DONE after its commits have landed on the epic branch", async () => {
+		// The merge base of a contained tip IS that tip, so the range only survives integration if the
+		// verb recovers the epic branch as it stood before the merge that took the child in (#5984).
+		const shell = fakeShell([
+			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
+			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
+			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
+			[new RegExp(`^git merge-base ${EPIC_MOVED} ${CHILD_TIP}$`), okOut(`${CHILD_TIP}\n`)],
+			[ANCESTRY, okOut(`${EPIC_MOVED} ${EPIC_BEFORE} ${CHILD_TIP}\n`)],
+			[new RegExp(`^git merge-base ${EPIC_BEFORE} ${CHILD_TIP}$`), okOut(`${FORK}\n`)],
+			[LOG_RANGE, logOf([CHILD_TIP, CHILD_MESSAGE])],
+		]);
+
+		const out = await runEpic(epicLaneAt("build"), shell, "DONE", "issue_4301");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence).toMatchObject({
+			range: {base: FORK, tip: CHILD_TIP},
+			commits: 1,
+			naming: 1,
+		});
+	});
+
+	it("measures a not-yet-integrated child over its fork point, not over the moved epic tip", async () => {
+		const shell = fakeShell([
+			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
+			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
+			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
+			[MERGE_BASE, okOut(`${FORK}\n`)],
+			[LOG_RANGE, logOf([CHILD_TIP, CHILD_MESSAGE])],
+		]);
+
+		const out = await runEpic(epicLaneAt("build"), shell, "DONE", "issue_4301");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence).toMatchObject({range: {base: FORK, tip: CHILD_TIP}});
+		expect(shell.calls.some((line) => line.includes(`${FORK}..${CHILD_TIP}`))).toBe(true);
+		expect(shell.calls.some((line) => ANCESTRY.test(line))).toBe(false);
+	});
+
 	it("refuses a child DONE whose branch was cut and never built on", async () => {
 		const shell = fakeShell([...locating([CHILD_BRANCH], [])]);
 
@@ -636,6 +690,27 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 		expect(out.code).toBe(PROOF_ABSENT);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("cut and not built on");
+	});
+
+	it("still refuses a never-built branch whose tip a sibling's merge names as first parent", async () => {
+		// The tip is an epic commit, so it is contained and a later merge names it — as its FIRST
+		// parent. Reading the second there would hand back a sibling's fork point and prove nothing.
+		const shell = fakeShell([
+			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
+			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
+			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
+			[new RegExp(`^git merge-base ${EPIC_MOVED} ${CHILD_TIP}$`), okOut(`${CHILD_TIP}\n`)],
+			[ANCESTRY, okOut(`${EPIC_MOVED} ${CHILD_TIP} ${sha("5b1b1a9c")}\n`)],
+			[LOG_RANGE, logOf()],
+		]);
+
+		const out = await runEpic(epicLaneAt("build"), shell, "DONE", "issue_4301");
+
+		expect(out.code).toBe(PROOF_ABSENT);
+		expect(out.stderr.join("\n")).toContain("cut and not built on");
+		expect(shell.calls.some((line) => line.startsWith(`git merge-base ${sha("5b1b1a9c")}`))).toBe(
+			false,
+		);
 	});
 
 	it("refuses a child DONE when the branch carries only another child's commits", async () => {
@@ -654,6 +729,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 			[REV("epic/4300"), okOut(`${EPIC_BASE}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\nbuild/4301-second-try-deadbeef\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
+			[MERGE_BASE, okOut(`${EPIC_BASE}\n`)],
 			[LOG_RANGE, logOf([CHILD_TIP, CHILD_MESSAGE])],
 		]);
 
@@ -722,6 +798,31 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 			issue: 4301,
 			evidence: {kind: "range-verdicts", epic: 4300, content: CHILD_DIGEST},
 		});
+	});
+
+	it("digests the range the reviewer measured once the child has been integrated", async () => {
+		// The binding is content and only content (ADR 0276), so an integrated child's PASS reads
+		// `Current` only while prove diffs the same two endpoints the marker was posted over (#5984).
+		const shell = fakeShell([
+			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
+			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
+			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
+			[new RegExp(`^git merge-base ${EPIC_MOVED} ${CHILD_TIP}$`), okOut(`${CHILD_TIP}\n`)],
+			[ANCESTRY, okOut(`${EPIC_MOVED} ${EPIC_BEFORE} ${CHILD_TIP}\n`)],
+			[new RegExp(`^git merge-base ${EPIC_BEFORE} ${CHILD_TIP}$`), okOut(`${FORK}\n`)],
+			[LOG_RANGE, logOf([CHILD_TIP, CHILD_MESSAGE])],
+			[RAW, okOut(CHILD_RAW)],
+			[CHILD_COMMENTS, comments_([{id: 1, body: rangeMarker("PASS", CHILD_DIGEST)}])],
+		]);
+
+		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence).toMatchObject({
+			range: {base: FORK, tip: CHILD_TIP},
+			content: CHILD_DIGEST,
+		});
+		expect(shell.calls.some((line) => RAW.test(line) && line.includes(FORK))).toBe(true);
 	});
 
 	it("refuses a child PASS with no verdict at all on the child issue", async () => {
