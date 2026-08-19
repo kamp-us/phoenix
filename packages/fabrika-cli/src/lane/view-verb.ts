@@ -23,15 +23,20 @@
  * It serves on localhost and reads the disk it is started on. Nothing is uploaded and no lane
  * leaves the machine.
  */
-import {createServer} from "node:http";
-import {type LaneFiles, laneViewer, type TransitionRequest} from "@demlik/tea/chart/lane/server";
-import {Effect, type FileSystem, type Path, Result} from "effect";
-import {readDir, readFile} from "../io/fs.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {serveLaneViewer, type TransitionRequest} from "@demlik/tea/chart/lane/server";
+import {Effect, type FileSystem, type Path, Result, Schema} from "effect";
+import {readDir} from "../io/fs.ts";
+import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_UNREADABLE} from "./codes.ts";
 import {runTransition} from "./transition-verb.ts";
 
 const VERB = "fabrika lane view";
+
+/** The one way serving fails: something else already holds the port. */
+class ServeFailed extends Schema.TaggedErrorClass<ServeFailed>("ServeFailed")("ServeFailed", {
+	port: Schema.Number,
+	reason: Schema.String,
+}) {}
 
 export const DEFAULT_VIEW_PORT = 5411;
 
@@ -64,53 +69,6 @@ export interface ViewOptions {
 	readonly port: number;
 }
 
-/**
- * One lane's two files, verbatim.
- *
- * The bytes, not the compiled machine: the page does its own importing, and handing it a value this
- * repo had already interpreted would put two readers of one document in the loop. An entry with no
- * `workflow.json` is not a lane — a scratch directory under the root is not something to draw — and
- * a lane with no `events.jsonl` is one that was emitted and never run, which is a real state and
- * shows every task where it booted.
- */
-const readLane = (
-	root: string,
-	name: string,
-): Effect.Effect<LaneFiles | null, never, FileSystem.FileSystem | Path.Path> =>
-	Effect.gen(function* () {
-		const workflow = yield* Effect.result(readFile(`${root}/${name}/workflow.json`));
-		if (Result.isFailure(workflow)) return null;
-		const events = yield* Effect.result(readFile(`${root}/${name}/events.jsonl`));
-		return {
-			id: name,
-			workflow: workflow.success,
-			events: Result.isFailure(events) ? "" : events.success,
-			origins: ORIGINS,
-		} satisfies LaneFiles;
-	});
-
-/**
- * Every lane under `root`, as the two files each one is.
- *
- * Separate from the server so the sweep is testable without binding a port, and so both the first
- * paint and every refresh go through one reader — two would eventually disagree about what counts
- * as a lane.
- */
-export const laneFilesIn = (
-	root: string,
-): Effect.Effect<ReadonlyArray<LaneFiles>, never, FileSystem.FileSystem | Path.Path> =>
-	Effect.gen(function* () {
-		const names = yield* Effect.result(readDir(root));
-		if (Result.isFailure(names)) return [];
-		// Unbounded on purpose: this is N independent two-file reads on every refresh of a page
-		// someone is watching, and serialising them would make a twelve-lane fleet feel slow for no
-		// reason — no read here depends on another (.patterns/serial-read-baseline.md).
-		const read = yield* Effect.forEach(names.success, (name) => readLane(root, name), {
-			concurrency: "unbounded",
-		});
-		return read.filter((lane): lane is LaneFiles => lane !== null);
-	});
-
 export const runView = (
 	options: ViewOptions,
 ): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
@@ -131,10 +89,6 @@ export const runView = (
 		const run = <A>(effect: Effect.Effect<A, never, FileSystem.FileSystem | Path.Path>) =>
 			Effect.runPromiseWith(services)(effect);
 
-		// Re-read on every ask rather than cache: a driver appends to these files while the screen is
-		// open, and the whole point of the screen is that it is current.
-		const lanes = () => run(laneFilesIn(options.root));
-
 		const transition = (req: TransitionRequest) =>
 			run(
 				runTransition({
@@ -143,56 +97,44 @@ export const runView = (
 					event: req.event,
 					task: req.task ?? null,
 				}).pipe(
-					Effect.map((out) => ({
-						ok: out.code === 0,
-						// The transition verb's own words, either way. A refusal it proved is a better
-						// sentence than anything this file could compose about it.
-						message: out.code === 0 ? out.stderr.join(" ") : out.stderr.join(" "),
-					})),
+					// The transition verb's own words, either way — a refusal it proved is a better
+					// sentence than anything this file could compose about it, and its answer line
+					// already names what it appended.
+					Effect.map((out) => ({ok: out.code === 0, message: out.stderr.join(" ")})),
 				),
 			);
 
-		const handle = laneViewer({lanes, transition, source: options.root});
+		// A port already in use is the one way this fails, and it is a failure to RUN rather than a
+		// verdict the verb proved — so it is seated at 1 with the port named, not in the 3+ band.
+		const started = yield* Effect.result(
+			Effect.tryPromise({
+				try: () =>
+					serveLaneViewer({
+						root: options.root,
+						origins: ORIGINS,
+						transition,
+						port: options.port,
+					}),
+				catch: (cause) => new ServeFailed({port: options.port, reason: String(cause)}),
+			}),
+		);
+		if (Result.isFailure(started)) {
+			return refuse(
+				FAILED,
+				`${VERB}: cannot serve on port ${options.port}: ${started.failure.reason} — pass --port to choose another.`,
+			);
+		}
+		const server = started.success;
 
-		yield* Effect.callback<void>(() => {
-			const server = createServer((req, res) => {
-				void (async () => {
-					const body =
-						req.method === "POST"
-							? await new Promise<string>((ok) => {
-									let read = "";
-									req.on("data", (chunk) => {
-										read += chunk;
-									});
-									req.on("end", () => ok(read));
-								})
-							: undefined;
-					const out = await handle(
-						new Request(`http://localhost:${options.port}${req.url ?? "/"}`, {
-							method: req.method ?? "GET",
-							...(body === undefined ? {} : {body}),
-						}),
-					);
-					res.writeHead(out.status, Object.fromEntries(out.headers));
-					if (out.body === null) {
-						res.end();
-						return;
-					}
-					// Streamed, not buffered — `/api/stream` stays open for the life of the page.
-					const reader = out.body.getReader();
-					for (;;) {
-						const {done, value} = await reader.read();
-						if (done) break;
-						res.write(value);
-					}
-					res.end();
-				})();
-			});
-			server.listen(options.port);
-			return Effect.sync(() => {
-				server.close();
-			});
-		});
+		// Serve until interrupted. The verb owns nothing about HTTP — the package creates the
+		// server, bridges the request and streams the response; this file supplies the two facts
+		// only fabrika knows.
+		yield* Effect.callback<void>(() =>
+			Effect.tryPromise({
+				try: () => server.close(),
+				catch: (cause) => new ServeFailed({port: options.port, reason: String(cause)}),
+			}).pipe(Effect.orDie),
+		);
 
 		return answer("");
 	});
