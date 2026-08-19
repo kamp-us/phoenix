@@ -1,14 +1,9 @@
 /**
- * The çaylak-sandbox visibility matrix (#1205) — the core deliverable (ADR 0082
- * unit tier: pure, no DB). Asserts `EntityLifecycle.isVisibleTo` over the full
- * cross-product the acceptance criteria name: every viewer kind
- * {çaylak-author, yazar, moderator, other-member, anonymous} × content ownership
- * {own, others'} × lifecycle {Live, Sandboxed, Removed}.
+ * The çaylak-sandbox visibility matrix (#1205): every viewer kind × content ownership ×
+ * lifecycle.
  *
- * The viewer rank (çaylak vs yazar) carries NO sandbox-visibility weight on its
- * own — only `canSeeSandboxed` (moderator) and authorship do. A yazar is modeled
- * here exactly as any non-moderator member to prove that: a yazar gains no view
- * into another member's sandbox just by being a yazar.
+ * Viewer RANK carries no sandbox-visibility weight — only `canSeeSandboxed` and
+ * authorship do — so a yazar is modeled here exactly as any non-moderator member.
  */
 import {assert, describe, it} from "@effect/vitest";
 import * as L from "./EntityLifecycle.ts";
@@ -32,8 +27,6 @@ const removed = L.remove({
 	sandboxedAt: null,
 });
 
-// The five viewer kinds. çaylak-author and yazar are both non-moderator members;
-// the matrix proves visibility turns on moderator-authority + authorship, not rank.
 const viewers = {
 	caylakAuthor: {viewerId: AUTHOR, canSeeSandboxed: false},
 	yazar: {viewerId: "a-yazar", canSeeSandboxed: false},
@@ -154,8 +147,8 @@ describe("publicLiveWhere — the removed+sandbox aggregate predicate", () => {
 	const cols = {sandboxedAt: {} as never, authorId: {} as never, removedAt: {} as never};
 
 	it("is defined for every viewer kind — the removal guard always restricts", () => {
-		// even a moderator (no sandbox restriction) still gets `isNull(removedAt)`, so the
-		// aggregate is never undefined — it always excludes removed content.
+		// Even a moderator still gets `isNull(removedAt)`, so the aggregate is never
+		// undefined.
 		for (const viewer of Object.values(viewers)) {
 			assert.isDefined(publicLiveWhere(cols, viewer));
 		}

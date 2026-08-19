@@ -1,18 +1,13 @@
 /**
  * Drizzle service contract — the wrapper's promise → Effect conversion in pure
- * isolation: no workerd, no SQL engine (ADR 0082 `unit` tier). A fake `DrizzleDb`
- * and a `db.batch` spy suffice because the wrapper never inspects the builder, it
- * just forwards it; these tests are wrong only if the wrapper is wrong, never if a
- * database differs.
+ * isolation: no workerd, no SQL engine (ADR 0082 `unit` tier).
  *
- * The generic `db.batch` atomicity-rollback property ("a mid-batch failure rolls
- * back the whole tuple — no partial write") used to live here over the banned
- * `node:sqlite` fake. It is a real-D1 fidelity fact, but it has no
- * integration-reachable surface: the integration tier is black-box HTTP over the
- * deployed worker (no in-process `db.batch` handle), and no fate mutation has a
- * reachable mid-batch fault (every `Vote.cast` batch statement is
- * collision-tolerant by construction). So it is a tracked, accepted irreducible —
- * see #614 — not satisfied by inventing a non-production fault-injection mutation.
+ * The generic `db.batch` atomicity-rollback property ("a mid-batch failure rolls back
+ * the whole tuple") used to live here over the banned `node:sqlite` fake. It is a
+ * real-D1 fact with no integration-reachable surface — the integration tier is
+ * black-box HTTP, and no fate mutation has a reachable mid-batch fault — so it is a
+ * tracked, accepted irreducible (#614), not a reason to invent a fault-injection
+ * mutation.
  */
 import {assert, describe, it} from "@effect/vitest";
 import type {BatchItem} from "drizzle-orm/batch";
@@ -28,17 +23,14 @@ import {
 // biome-ignore lint/plugin: `DrizzleDb` is a fully-typed drizzle client that can't be structurally constructed in a fake; the wrapper passes this sentinel through untouched.
 const FAKE_DB = {__phoenix_test_db__: true} as unknown as DrizzleDb;
 
-/**
- * Delegates to the production {@link makeDrizzleAccess} so the tests exercise the
- * real `run` / `batch` bodies, while letting each test supply its own `db`.
- */
+// Delegates to the production `makeDrizzleAccess`, so the real bodies are exercised.
 const makeAccess = (db: DrizzleDb): DrizzleAccess => makeDrizzleAccess(db);
 
 const TestDrizzleLayer = Layer.succeed(Drizzle, makeAccess(FAKE_DB));
 
 /**
- * Sentinel `BatchItem<"sqlite">`: the real one is an opaque `RunnableQuery` that
- * can't be built without a live builder. Keeps the tuple shape concrete so
+ * Sentinel `BatchItem<"sqlite">`: the real one is an opaque `RunnableQuery` that cannot
+ * be built without a live builder. Keeps the tuple shape concrete so
  * `T extends Readonly<[U, ...U[]]>` infers a length-typed tuple, not `never`.
  */
 const fakeStmt = (id: number) =>
@@ -96,8 +88,8 @@ describe("Drizzle.run", () => {
 	);
 
 	it.effect("type inference: callback's promised type is the Effect's success type", () =>
-		// Compile-time assertion: if `run` widened the return to `unknown`, these
-		// typed bindings would fail tsc.
+		// Compile-time assertion: if `run` widened the return to `unknown`, these typed
+		// bindings would fail tsc.
 		Effect.gen(function* () {
 			const {run} = yield* Drizzle;
 			const n: number = yield* run(() => Promise.resolve(7));
@@ -109,8 +101,6 @@ describe("Drizzle.run", () => {
 });
 
 describe("Drizzle.batch", () => {
-	// Stubs `db.batch` to record its calls and return a sentinel, so the
-	// wrapper's forwarding behavior is observable.
 	function makeBatchSpy() {
 		const calls: Array<readonly unknown[]> = [];
 		// biome-ignore lint/plugin: spy fake — `DrizzleDb` is a fully-typed drizzle client that can't be structurally built; only `db.batch` is exercised here.

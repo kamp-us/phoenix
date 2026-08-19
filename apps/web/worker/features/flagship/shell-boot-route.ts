@@ -1,21 +1,11 @@
 /**
- * The worker-first shell route (ADR 0179, epic #2926, child #2929): the catch-all
- * (`* /*`) that serves the SPA shell through the worker and injects `window.__BOOT__`
- * at the edge.
+ * The worker-first shell route (ADR 0179): the catch-all that proxies the SPA shell
+ * from the `ASSETS` binding and injects `window.__BOOT__` at the edge. The specific
+ * worker routes win by find-my-way precedence; this handles the rest.
  *
- * With the CF spa-shell recipe (`["/*", "!/assets/*"]`, `worker-routes.ts`) every
- * non-asset request now reaches the worker; the specific worker routes (`/fate`,
- * `/api/*`, `/rss.xml`) win by find-my-way precedence and this catch-all handles the
- * rest. It is a transparent proxy to the `ASSETS` binding — byte-identical to the
- * edge-direct shell (ADR 0168 amended) — that transforms ONLY an HTML `GET`.
- *
- * The payload is resolved per request, non-cached, full (founder ruling #2833): the session
- * is validated and the shell flags are evaluated under the userId targeting context through
- * {@link resolveRequestFlagsContext} — the EXACT override-authz seam `/api/flags/evaluate`
- * uses (the #2741 third arg), so an authorized admin's override yields identical values here
- * and from the API (ADR 0179 AC2). A non-HTML asset or a non-`GET` passes through untouched,
- * and the never-hang guard ({@link withNeverHangFallback}) degrades a slow or failing resolve
- * to the untransformed asset, so `__BOOT__` is absent-or-complete, never partial.
+ * `__BOOT__` must be absent-or-complete, never partial — a non-HTML asset or a
+ * non-`GET` passes through untouched, and {@link withNeverHangFallback} degrades a
+ * slow or failing resolve to the untransformed asset.
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Duration from "effect/Duration";
@@ -32,7 +22,6 @@ import {FlagsContext, type FlagsContextValue} from "./FlagsContext.ts";
 import {resolveRequestFlagsContext} from "./request-flags-context.ts";
 import {buildBootPayload, injectBootScript} from "./shell-boot.ts";
 
-/** A rejection from the `ASSETS` binding fetch — an infra defect (the never-hang fallback is #2931). */
 class ShellAssetFetchError extends Schema.TaggedErrorClass<ShellAssetFetchError>()(
 	"flagship/ShellAssetFetchError",
 	{cause: Schema.Defect()},
@@ -46,9 +35,8 @@ const toWebResponse = (response: unknown): HttpServerResponse.HttpServerResponse
 	HttpServerResponse.fromWeb(response as Parameters<typeof HttpServerResponse.fromWeb>[0]);
 
 /**
- * Project the wire `User` down to the client `BootUser` for `__BOOT__.user` — the same fields
- * `useMe` exposes as `MeUser`, minus fate's transport-only `__typename` (ADR 0185). An explicit
- * field list (not an `Omit` spread) so a wire-shape change surfaces here as a compile error.
+ * An explicit field list, not an `Omit` spread, so a wire-shape change surfaces here
+ * as a compile error (ADR 0185).
  */
 const toBootUser = (user: User): BootUser => ({
 	id: user.id,
@@ -62,9 +50,8 @@ const toBootUser = (user: User): BootUser => ({
 });
 
 /**
- * Resolve the shell flag values under an already-resolved per-request context. Exported so
- * the parity test can read the `__BOOT__` shell flags through the exact seam the handler uses
- * (mirroring `/api/flags/evaluate`'s per-key read over the SAME context, ADR 0179 AC2).
+ * Exported so the parity test reads the `__BOOT__` shell flags through the exact seam
+ * the handler uses (ADR 0179 AC2).
  */
 export const readShellFlags = (context: FlagsContextValue) =>
 	Effect.gen(function* () {
@@ -78,20 +65,14 @@ export const readShellFlags = (context: FlagsContextValue) =>
 	});
 
 /**
- * The never-hang ceiling on the per-request boot resolve — session validation (3 serial D1
- * queries when signed in) + shell-flag evaluation (ADR 0179 §2). A healthy resolve is well
- * under this; the cap bounds a slow or dead Flagship/D1 so the edge degrades rather than hangs.
- * Tunable — the invariant is that a bound EXISTS, not its exact value.
+ * Tunable — the invariant is that a bound EXISTS, not its exact value (ADR 0179 §2).
  */
 export const SHELL_BOOT_READ_TIMEOUT = Duration.seconds(1);
 
 /**
- * The never-hang / safe-default-on-outage guard (ADR 0179 §4): bound the boot resolve with
- * {@link SHELL_BOOT_READ_TIMEOUT} and, on timeout OR any Flagship/D1 failure, fall back to the
- * untransformed asset — byte-identical to the flag-off / edge-direct shell, with no partial
- * `__BOOT__`. Only expected failures (the `E` channel) + the timeout degrade; a genuine defect
- * still propagates. Exported so the never-hang invariant is unit-testable (TestClock) without a
- * deployed worker.
+ * The never-hang / safe-default-on-outage guard (ADR 0179 §4). Only expected failures
+ * (the `E` channel) and the timeout degrade to the untransformed asset; a genuine
+ * defect still propagates.
  */
 export const withNeverHangFallback = <A, E, R>(
 	resolve: Effect.Effect<A, E, R>,
@@ -105,38 +86,28 @@ export const withNeverHangFallback = <A, E, R>(
 export const handleShellBoot = Effect.gen(function* () {
 	const raw = yield* Cloudflare.Request;
 	const env = yield* Cloudflare.WorkerEnvironment;
-	// The `ASSETS` Fetcher binding, typed off the untyped worker env (`Record<string, any>`) so
-	// no cast is needed; `fetch` takes the request as-is and returns the workers-types `Response`.
 	const assets: {fetch(request: typeof raw): Promise<Response>} = env.ASSETS;
-	// The untransformed shell/asset — the same bytes the edge-direct binding served before this
-	// route existed, and the response the never-hang fallback degrades to (#2931). A rejection stays
-	// an infra defect (`orDie`) — it is the fallback SOURCE, so if it fails there is nothing to
-	// serve. The never-hang timeout wraps the boot READS (session + flags) below, not this fetch.
+	// A rejection stays an infra defect (`orDie`): this response is the fallback SOURCE,
+	// so if it fails there is nothing to serve. The never-hang timeout wraps the boot
+	// READS (session + flags) below, not this fetch.
 	const assetResponse = yield* Effect.tryPromise({
 		try: () => assets.fetch(raw),
 		catch: (cause) => new ShellAssetFetchError({cause}),
 	}).pipe(Effect.orDie);
 
-	// Only an HTML GET is a shell navigation to inject into; a non-GET or a non-HTML asset
-	// (favicon, manifest) passes through byte-identical — no session/flag work at all.
 	const isHtml = (assetResponse.headers.get("content-type") ?? "").includes("text/html");
 	if (raw.method !== "GET" || !isHtml) return toWebResponse(assetResponse);
 
-	// Validate the session and resolve the full context through the SAME override-authz seam
-	// `/api/flags/evaluate` uses (the #2741 third arg), read the shell flags under it, and inject
-	// the payload. The whole resolve is wrapped in the never-hang guard: on a slow/dead Flagship or
-	// D1 (timeout) or any resolve failure it degrades to the untransformed asset — never a hung or
-	// 500-ing shell (ADR 0179 §4).
+	// Resolves the context through the SAME override-authz seam `/api/flags/evaluate`
+	// uses, so an authorized admin's override yields identical values here and from the
+	// API (ADR 0179 AC2).
 	const resolveAndInject = Effect.gen(function* () {
 		const pasaport = yield* Pasaport;
 		const session = yield* pasaport.validateSession(raw.headers);
 		const context = yield* resolveRequestFlagsContext(session, raw.headers.get("cookie"));
 		const shellFlags = yield* readShellFlags(context);
-		// Edge-resolve the current user through the SAME session→user seam the `/fate` `me` view
-		// uses (ADR 0185), so first-paint surfaces read identity synchronously off `__BOOT__.user`
-		// instead of the async `useMe`; `null` when signed out. Projected off the wire `User` (drop
-		// fate's `__typename`) to the client `BootUser` shape. These extra D1 reads sit inside the
-		// never-hang guard below, so a slow/dead resolve degrades to the untransformed asset (#2931).
+		// The SAME session→user seam the `/fate` `me` view uses (ADR 0185), so first paint
+		// reads identity synchronously off `__BOOT__.user` instead of the async `useMe`.
 		const user = session ? toBootUser(yield* resolveMeUser(session.user)) : null;
 		const payload = buildBootPayload(user, shellFlags);
 		return injectBootScript(assetResponse, payload);

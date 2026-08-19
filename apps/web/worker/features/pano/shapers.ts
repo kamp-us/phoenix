@@ -1,19 +1,8 @@
 /**
- * Pano wire-entity shapers — `Post` / `Comment`. Every `{__typename, …}` literal
- * is built here once so the read/list/write paths can't drift. The wire field set is
- * NOT restated here: `PostFields` / `CommentFields` derive from the one column→field
- * map per entity (`post-fields.ts` / `comment-fields.ts`), so the row mapper, this
- * wire shaper, and the `*View` field list all trace back to a single structure —
- * rename a column reader in the map and every site follows (#1126 AC#1, the Pano
- * parallel of the Definition slice in `sozluk/definition-fields.ts`).
- *
- * The map's keys ARE the wire field names, so a shaper just stamps `__typename` + the
- * `updatedAt ?? createdAt` fallback + the `myVote` / `isSaved` / `isDraft` viewer-scalar
- * defaults onto the map's already-wire-named values; the per-source row→wire NAMING
- * lives in the map, not at each call site. The detail-page / write / vote results that
- * carry their own field names map onto `PostFields` at their call site (`toPostFromPage`,
- * the mutation shapers). See `.patterns/fate-connections.md`,
- * `.patterns/fate-effect-operations.md`.
+ * Pano wire-entity shapers — every `{__typename, …}` literal is built here once so
+ * the read/list/write paths can't drift. The row→wire NAMING lives in the per-entity
+ * column→field maps (`post-fields.ts` / `comment-fields.ts`), never at a call site,
+ * so renaming a column reader there carries every site with it.
  */
 
 import {EMPTY_REACTION_AGGREGATE, type ReactionAggregate} from "../reaction/Reaction.ts";
@@ -49,13 +38,11 @@ export const toPost = (r: PostFields): Post => ({
 });
 
 /**
- * The viewer-invariant BASE post (#2322, epic #2316 leg B): `toPost` minus the two
- * viewer scalars (`myVote`/`isSaved`). The GET-able base feed serves this so its bytes
- * are identical for anon and every signed-in viewer — the per-viewer scalars ride the
- * separate authed `PostOverlay` read instead. `sandboxed` stays but is structurally
- * `false` on the base path (the route reads the ANONYMOUS sandbox viewer, and any
- * sandboxed post is filtered out of the feed before it reaches here), so it carries no
- * viewer-derived value.
+ * The viewer-invariant BASE post: the cacheable base feed serves this, so its bytes
+ * must be identical for anon and every signed-in viewer. `sandboxed` stays but is
+ * structurally `false` here (the base route reads the ANONYMOUS sandbox viewer), so
+ * it carries no viewer-derived value; the real per-viewer scalars ride the separate
+ * authed `PostOverlay` read.
  */
 export type BasePost = Omit<Post, "myVote" | "isSaved">;
 
@@ -64,13 +51,9 @@ export const toBasePost = (r: PostFields): BasePost => {
 	return base;
 };
 
-// The single `PostPage` → `Post` mapping shared by the read resolver
-// (`queries.post`) and the delete-refresh (`comment.delete`) so they can't drift.
-// `myVote`/`isSaved`/`reactions` and the live `authorUsername`/`authorDisplayName`
-// identity (#2139) are stamped separately (the page row carries no viewer scalar,
-// aggregate, nor resolved identity), so the caller threads each in — `reactions`
-// defaults to the empty aggregate and `identity` to nulls for callers that don't
-// hydrate them (`actorLabel` then degrades on the client).
+// A `PostPage` row carries no viewer scalar, aggregate, nor resolved identity, so the
+// caller threads each in. Callers that don't hydrate `identity` get nulls, and
+// `actorLabel` degrades on the client.
 export const toPostFromPage = (
 	page: PostPage,
 	myVote: boolean | null,

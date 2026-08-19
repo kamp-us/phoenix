@@ -1,15 +1,7 @@
 /**
- * `user.promote` / `user.vouch` WIRE-boundary coverage (#1206) — the promotion
- * authority + tandem decisions that are wrong-or-right with no database (ADR 0082),
- * driven through the real external interface (`resolveWire`: decode + the
- * `encodeWireError` class→wire-code seam), so a denial's wire `code` is what a client
- * gets and a mis-annotated `[FateWireCode]` is a unit failure.
- *
- * Covers the acceptance matrix: direct mod promotion (server-enforced), vouch above
- * the reduced bar (promoted) vs below (recorded, NOT promoted) — the tandem, and that
- * an unprivileged actor cannot self-promote (a non-mod → invisible `UNAUTHORIZED`; a
- * çaylak vouching → public `FORBIDDEN`). The atomic backlog sweep itself is
- * `promotion-sweep.unit.test.ts`; real-D1 fidelity is the integration tier.
+ * `user.promote` / `user.vouch` WIRE-boundary coverage (#1206, ADR 0082): driven through
+ * `resolveWire` so a denial's wire `code` is what a client actually gets and a
+ * mis-annotated `[FateWireCode]` is a unit failure.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
@@ -36,9 +28,7 @@ import {makePasaportStub} from "./Pasaport.testing.ts";
 import {noopLive, relationStoreNoModerators} from "./promote-live.testing.ts";
 
 // A landed flip re-resolves the promoted `User` for the #1886 live-publish, so a
-// `promoted: true` stub answers `getUsersByIds` (the record it promoted, now
-// `yazar`); these cases already provide their own `RelationStore`, so only the
-// no-op `LivePublisher` (`noopLive`) is added to their layer set.
+// `promoted: true` stub must answer `getUsersByIds`.
 const promotedUsersByIds = (id: string) => ({
 	getUsersByIds: () =>
 		Effect.succeed([
@@ -54,8 +44,8 @@ const runtimeContextStub: BaseRuntimeContext = {
 	set: (id) => Effect.succeed(id),
 };
 
-// The kefil/terfi emitters (notifyKefil / notifyPromotion) read the `phoenix-bildirim`
-// flag, so every case still provides a Flags service — on, so the deliver path runs.
+// The kefil/terfi emitters read the `phoenix-bildirim` flag, so every case needs Flags —
+// on, so the deliver path runs.
 const flagsOn: Layer.Layer<Flags> = Layer.succeed(
 	Flags,
 	// biome-ignore lint/plugin: a Flags test double — only getBoolean is exercised here.
@@ -69,7 +59,6 @@ const flagsOn: Layer.Layer<Flags> = Layer.succeed(
 
 const agentAuthorityStub = Layer.succeed(AgentAuthority, {admits: () => Effect.succeed(false)});
 
-// A `RelationStore` where exactly `holders` hold the `moderates` relation on platform.
 const relationStoreOf = (holders: ReadonlyArray<string>): Layer.Layer<RelationStore> =>
 	Layer.succeed(RelationStore, {
 		has: (tuple) =>
@@ -81,7 +70,6 @@ const relationStoreOf = (holders: ReadonlyArray<string>): Layer.Layer<RelationSt
 		subjectsOf: ({relation}) => Effect.succeed(new Set(relation === "moderates" ? holders : [])),
 	});
 
-// A `Kunye` whose standing/karma answer by id.
 const kunyeOf = (
 	tierById: Record<string, Tier>,
 	karmaById: Record<string, number>,
@@ -92,12 +80,9 @@ const kunyeOf = (
 		rootOf: (id: string) => Effect.succeed(id),
 	});
 
-// Both promotion mutations now reach the #1886 live-publish through their shared
-// promote path, so `LivePublisher` is a static requirement of EVERY case (even a
-// denial that never runs the flip). `noopLive` satisfies it universally here; the
-// vouch/withdraw cases (no `RelationStore` of their own) add `relationStoreNone`.
-// The kefil (vouch) emit now consults `bildirimMutedBy` (#3238), which reads `Mute` —
-// an empty-set stub means no member is muted, so the deliver path is unchanged.
+// `LivePublisher` is a static requirement of EVERY case, even a denial that never runs
+// the flip. The kefil emit consults `bildirimMutedBy` (#3238), so `Mute` is required too;
+// an empty set means nobody is muted and the deliver path is unchanged.
 const noMutes = Layer.succeed(Mute, {
 	set: () => Effect.die("Mute.set not exercised"),
 	listMine: () => Effect.die("Mute.listMine not exercised"),
@@ -180,8 +165,6 @@ describe("user.promote — direct moderator promotion", () => {
 describe("user.vouch — author-vouch tandem", () => {
 	const yazarVoucher = {tier: {"u-yazar": "yazar"} as Record<string, Tier>};
 
-	// The KARMA-FIRST tandem order: karma is already over the bar, so placing the vouch
-	// promotes on the vouch act itself (through the shared `resolveTandem`).
 	it.effect(
 		"karma-first: vouch with karma already over the bar promotes; the vouch is recorded (actor preserved)",
 		() =>
@@ -235,10 +218,8 @@ describe("user.vouch — author-vouch tandem", () => {
 		),
 	);
 
-	// The concurrent-vouch cap (D5): the cap is owned by `VouchLedger.castVouch` (#1362),
-	// so a yazar at the cap gets a `capReached` outcome the resolver maps to the public
-	// VOUCH_LIMIT_REACHED. The default `has`/`activeCountFor` are fail-on-contact, proving
-	// the resolver no longer re-derives the cap from the active count.
+	// The default `has`/`activeCountFor` stay fail-on-contact, proving the resolver no
+	// longer re-derives the cap from the active count (#1362).
 	it.effect("a yazar at the concurrent-vouch cap is denied a 4th — VOUCH_LIMIT_REACHED", () =>
 		Effect.gen(function* () {
 			const exit = yield* vouch("u-fourth").pipe(Effect.exit);
@@ -262,9 +243,6 @@ describe("user.vouch — author-vouch tandem", () => {
 		),
 	);
 
-	// Re-vouching an already-vouched candidate is the idempotent `alreadyVouched` outcome —
-	// a success that consumes no fresh slot, so `vouchRecorded` is false and no tier flips
-	// below the bar.
 	it.effect("re-vouching an already-vouched candidate is allowed (idempotent, no fresh slot)", () =>
 		Effect.gen(function* () {
 			const receipt = yield* vouch("u-existing");
@@ -376,9 +354,6 @@ describe("user.withdrawVouch — releasing the slot", () => {
 	);
 });
 
-// Rite feedback (#1695): a RECORDED vouch notifies the vouched çaylak through the
-// bildirim spine (kind `kefil`, target = the çaylak's own account) — never on the
-// idempotent `alreadyVouched`, and never able to fail the committed vouch.
 describe("user.vouch — kefil bildirimi (#1695)", () => {
 	const yazarVoucher = {tier: {"u-yazar": "yazar"} as Record<string, Tier>};
 
@@ -443,10 +418,6 @@ describe("user.vouch — kefil bildirimi (#1695)", () => {
 	);
 });
 
-// Promotion ceremony (#1696): the mod-direct promotion path — a landed tier flip
-// notifies the promoted member (kind `terfi`, target = their own account, no actor
-// identity), keyed on the flip's `promoted: true` so a no-op notifies nothing, and
-// never able to fail the committed promotion.
 describe("user.promote — terfi bildirimi (#1696)", () => {
 	const promotionRecording = () => {
 		const emits: NotificationRecordInput[] = [];

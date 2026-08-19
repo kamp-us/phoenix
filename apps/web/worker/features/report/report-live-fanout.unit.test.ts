@@ -1,20 +1,12 @@
 /**
- * `report.resolve` / `report.restore` LIVE-FANOUT unit coverage (#1895, audit #1892).
+ * Live-fanout coverage for `report.resolve` / `report.restore` (#1895). A moderator
+ * remove/restore hides content that lives in subscribed connections, and the moderator
+ * path once fanned out nothing, so every other client kept rendering removed content
+ * until a manual reload.
  *
- * A moderator remove/restore hides or un-hides a `Post` / `Comment` / `Definition` —
- * the exact three entities that live in the subscribed `posts` / `Post.comments` /
- * `Term.definitions` connections. Before #1895 the moderator path fanned out NOTHING,
- * so a second connected moderator (and every other client) kept rendering the removed
- * content live until a manual reload. This drives the REAL resolve/restore handlers over
- * stub `Report` / `Pano` / `Sozluk` services and a recording `LivePublisher`, asserting
- * the resolver publishes the SAME invalidation the user-delete paths do — the
- * handler-over-stubs + recording-publisher seam `sozluk/definition-mutation.unit.test.ts`
- * uses. The publisher's key-MATH is pinned in `../fate-live/live-publisher.unit.test.ts`;
- * this asserts the resolver's routing CHOICE.
- *
- * The moderation gate is discharged the same way `divan/divan-vote-mutation.unit.test.ts`
- * does: a `RelationStore` holding the actor's `moderates` tuple + `CurrentActor` mints the
- * `Moderate` grant, so the gated body runs.
+ * These drive the real handlers over stub services and a recording `LivePublisher`, so
+ * what is asserted is the resolver's routing CHOICE; the publisher's key math is pinned
+ * in `../fate-live/live-publisher.unit.test.ts`.
  */
 
 import {assert, describe, it} from "@effect/vitest";
@@ -51,8 +43,7 @@ const relationStoreOf = (holders: ReadonlyArray<string>): Layer.Layer<RelationSt
 
 const agentAuthorityStub = Layer.succeed(AgentAuthority, {admits: () => Effect.succeed(false)});
 
-// The mod-emitter deps `report.submit` gained (#1699): `Flags` OFF ⇒ `bildirimOn` is
-// false ⇒ the report-filed page no-ops before the moderator read / notification write.
+// `Flags` OFF, so the report-filed page no-ops before the moderator read (#1699).
 const runtimeContextStub: BaseRuntimeContext = {
 	Type: "report-live-fanout-test",
 	id: "report-live-fanout-test",
@@ -69,14 +60,11 @@ const bildirimOffStub = Layer.mergeAll(
 	} as typeof Flags.Service),
 	Layer.succeed(RuntimeContext, runtimeContextStub),
 	noRequestFlagOverrides,
-	// The base-feed purger a fanned pano mutation fires alongside its publish (#2324):
-	// a no-op here, so the fanout assertions below are unchanged.
 	noopPanoFeedCache,
 	makeNotificationStub(),
 	relationStoreOf([]),
-	// The karma flag-gate deps `report.submit` gained (#150): `Flags` OFF ⇒ the
-	// `CanFlag` gate auto-passes without a karma read, so `Kunye.karmaOf` dies on
-	// contact (unexercised); the proof still stamps off the per-test `CurrentActor`.
+	// With the flag off the `CanFlag` gate auto-passes without a karma read, so these
+	// die on contact to prove they are never reached (#150).
 	Layer.succeed(Kunye, {
 		karmaOf: () => Effect.die("Kunye.karmaOf not exercised in report-live-fanout (flag off)"),
 		tierOf: () => Effect.die("Kunye.tierOf not exercised in report-live-fanout"),
@@ -86,9 +74,7 @@ const bildirimOffStub = Layer.mergeAll(
 
 const actorContext = (actor: Actor) => Layer.succeed(CurrentActor, {actor});
 
-// A `Report` scripted so a `remove`/restore resolves its target and collapses/reopens
-// one report — every unlisted method fail-on-contact, so the test proves the path
-// touched only these.
+// Every unlisted method fails on contact, so the test proves the path touched only these.
 const reportStub = (target: {targetKind: "post" | "comment" | "definition"; targetId: string}) =>
 	makeReportStub({
 		lookupReportTarget: () => Effect.succeed(target),
@@ -97,8 +83,6 @@ const reportStub = (target: {targetKind: "post" | "comment" | "definition"; targ
 		reopenForTarget: () => Effect.succeed({reopened: 1}),
 	});
 
-// Proxy stubs over `Pano`/`Sozluk`: scripted methods answer, every other dies on
-// contact — mirrors `definition-mutation.unit.test.ts`'s `sozlukStub`.
 const panoStub = (impl: Partial<typeof Pano.Service>): typeof Pano.Service =>
 	proxyOver("Pano", impl);
 const sozlukStub = (impl: Partial<typeof Sozluk.Service>): typeof Sozluk.Service =>
@@ -153,8 +137,6 @@ const commentRow = (id: string) => ({
 	myVote: null,
 });
 
-// A recording `LivePublisher`: `publish` captures the topic key the resolver's `live.*`
-// chose; `waitUntil` collects the detached publish work so `flush` drains it.
 const recordingPublisher = () => {
 	const recorded: Array<string> = [];
 	const scheduled: Array<Promise<unknown>> = [];
@@ -170,14 +152,11 @@ const recordingPublisher = () => {
 				},
 			}),
 		),
-		// The base-feed purger a fanned pano moderation path fires (#2324) — no-op here,
-		// so the recorded live topics below are the sole fan-out assertion.
 		noopPanoFeedCache,
 	);
 	return {recorded, scheduled, layer};
 };
 
-/** A rejection while draining scheduled `waitUntil` work — dies the fiber. */
 class DrainRejected extends Schema.TaggedErrorClass<DrainRejected>()("test/DrainRejected", {
 	cause: Schema.Unknown,
 }) {}
@@ -354,8 +333,7 @@ describe("report.restore — re-enters the target so a second moderator reconcil
 					select: ["id"],
 				});
 				yield* flush(scheduled);
-				// The round-tripped sandbox marker gates the re-append via decidePublish — a
-				// sandboxed restore broadcasts NOTHING to the viewer-blind public feed.
+				// A sandboxed restore broadcasts nothing to the viewer-blind public feed.
 				assert.deepStrictEqual(recorded, []);
 			}).pipe(
 				Effect.provide(
@@ -479,9 +457,8 @@ describe("fail-safe — a failed publish does not fail the moderation action", (
 	});
 });
 
-// #1855: the wave grouping the client generates rides the SAME `report.resolve` input,
-// threaded to `resolveTarget` so the batch's rows carry one shared id. A capturing stub
-// records what the handler passed down (a dismiss avoids the remove/publish detour).
+// The wave grouping id rides the same `report.resolve` input, so the batch's rows carry
+// one shared id (#1855).
 describe("report.resolve — threads the wave grouping id to resolveTarget (#1855)", () => {
 	const capturingReport = (sink: {waveId?: string | null}) =>
 		makeReportStub({
@@ -492,8 +469,7 @@ describe("report.resolve — threads the wave grouping id to resolveTarget (#185
 				}),
 		});
 
-	// Pano/Sozluk are in the handler's static R (the remove branch), never reached on a
-	// dismiss — empty stubs die on contact, proving the dismiss path never touches them.
+	// Empty stubs die on contact, proving the dismiss path never touches Pano/Sozluk.
 	const gate = <ROut>(extra: Layer.Layer<ROut, never, never>) =>
 		Layer.mergeAll(
 			extra,
@@ -534,12 +510,8 @@ describe("report.resolve — threads the wave grouping id to resolveTarget (#185
 	});
 });
 
-// #1704 AC3: restoring a wave-removal (one ledger event, #1855) restores EVERY target in
-// the batch as a unit. The handler reads the wave's targets, brings each back live (the same
-// per-target restore + live re-append the lone restore runs), then reopens the whole batch.
 describe("report.restoreWave — restores the batch as a unit (#1704 AC3)", () => {
-	// A `Report` scripted for a two-target wave: `waveTargets` names the batch, `reopenForWave`
-	// reopens it. Every other method fail-on-contact — the path touches only these.
+	// Every other method fails on contact, so the path touches only these two.
 	const waveReportStub = (
 		targets: ReadonlyArray<{targetKind: "post" | "comment" | "definition"; targetId: string}>,
 	) =>
@@ -556,12 +528,10 @@ describe("report.restoreWave — restores the batch as a unit (#1704 AC3)", () =
 				select: ["id", "collapsed"],
 			});
 			yield* flush(scheduled);
-			// Each target re-enters its subscribed connection — the batch restored as a unit.
 			assert.deepStrictEqual(recorded, [
 				liveGlobalConnectionTopic("posts"),
 				liveConnectionTopic("Term.definitions", {id: "effect"}),
 			]);
-			// The ack reports how many reports reopened across the wave.
 			assert.strictEqual((receipt as {collapsed: number}).collapsed, 2);
 		}).pipe(
 			Effect.provide(
@@ -633,14 +603,13 @@ describe("report.restoreWave — restores the batch as a unit (#1704 AC3)", () =
 			);
 			assert.isTrue(exit._tag === "Failure", "a non-moderator restoreWave is denied");
 			if (exit._tag === "Failure") {
-				// The künye invisible denial — never leaks the wave exists.
+				// The denial must not leak that the wave exists.
 				assert.match(String(Cause.pretty(exit.cause)), /Denied|UNAUTHORIZED/);
 			}
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
-					// fail-on-contact Report/Pano/Sozluk: the gate denies BEFORE the body, so a
-					// reached `waveTargets`/restore would die and fail the test.
+					// The gate denies BEFORE the body, so any reach into these dies and fails.
 					makeReportStub({}),
 					Layer.succeed(Pano, panoStub({})),
 					Layer.succeed(Sozluk, sozlukStub({})),
@@ -658,10 +627,8 @@ describe("report.submit — the audit refuted submit; the CONTENT path fans out 
 	it.effect(
 		"submit never publishes to a CONTENT topic (a private report row changes no subscribed content)",
 		() =>
-			// The submit handler never touches `WorkerLivePublisher` on the content path — a
-			// report is private moderation state. Its ONLY live dependency is the bildirim
-			// spine's per-recipient `Notification.record` delivery (#2076/#1699), gated OFF
-			// here (`bildirimOffStub`), so the recording publisher captures NOTHING.
+			// A report is private moderation state. Its only live dependency is the
+			// per-recipient notification delivery, gated off here, so nothing is captured.
 			Effect.gen(function* () {
 				const {recorded, scheduled, layer} = recordingPublisher();
 				const receipt = yield* mutations["report.submit"]

@@ -1,18 +1,11 @@
 /**
- * `user.setRole` WIRE-boundary coverage (#3522, admin epic per ADR 0107) — the
- * authority + dark-ship decisions that are wrong-or-right with no database (ADR 0082),
- * driven through the real external interface (`resolveWire`: decode + the
- * `encodeWireError` class→wire-code seam), so a denial's wire `code` is what a client
- * gets. Mirrors `ban-mutation.unit.test.ts`.
+ * `user.setRole` WIRE-boundary coverage (#3522), driven through `resolveWire` so the
+ * assertions are on the wire `code` a client actually gets.
  *
- * The load-bearing AC (#3522): setRole FAILS CLOSED for a non-admin caller — a
- * non-holder of the `admin` relation and the anonymous actor both get the invisible
- * `UNAUTHORIZED` (they can't tell "not admin" from "not signed in", ADR 0098 §2), and
- * neither reaches the write (the `Pasaport` stub is fail-on-contact). Plus the dark-ship:
- * with the `phoenix-user-role-assign` flag OFF the path is inert (fails `Denied` before
- * any authority check or write), so an unreleased role-grant never runs. The admin path
- * reaches `Pasaport.setRole` and echoes the assigned role. The real-D1 tuple write→read
- * round-trip (the roster re-reading the `moderates` tuple) is an integration concern.
+ * The load-bearing AC: setRole FAILS CLOSED. A non-admin and the anonymous actor get the
+ * SAME invisible `UNAUTHORIZED` — neither can tell "not admin" from "not signed in" (ADR
+ * 0098 §2) — and neither reaches the write. With the dark-ship flag off the path is inert
+ * before any authority check. The real-D1 tuple round-trip is an integration concern.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
@@ -53,7 +46,6 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 
 const agentAuthorityStub = Layer.succeed(AgentAuthority, {admits: () => Effect.succeed(false)});
 
-// A `RelationStore` where exactly `holders` hold the `admin` relation on platform.
 const adminStoreOf = (holders: ReadonlyArray<string>): Layer.Layer<RelationStore> =>
 	Layer.succeed(RelationStore, {
 		has: (tuple) => Effect.succeed(tuple.relation === "admin" && holders.includes(tuple.subject)),
@@ -82,7 +74,7 @@ const wireCodeOf = (cause: Cause.Cause<unknown>): unknown => {
 	return error._tag === "Some" ? (error.value as {code?: unknown}).code : undefined;
 };
 
-// A `Pasaport` that fails on ANY contact — proving a denied path never reached the write.
+// Fails on ANY contact, so a denied path that reached the write fails the test.
 const noWriteReached = Layer.mergeAll(makePasaportStub(), agentAuthorityStub);
 
 describe("user.setRole — admin authority (fail closed)", () => {
@@ -159,7 +151,7 @@ describe("user.setRole — admin authority (fail closed)", () => {
 		Effect.gen(function* () {
 			const exit = yield* setRole("u-target", "moderator").pipe(Effect.exit);
 			assert.isTrue(Exit.isFailure(exit));
-			// Flag-off is the invisible Denied (UNAUTHORIZED), the same code a non-admin sees.
+			// Flag-off must be indistinguishable from a non-admin denial.
 			if (Exit.isFailure(exit)) assert.strictEqual(wireCodeOf(exit.cause), "UNAUTHORIZED");
 		}).pipe(
 			Effect.provide(

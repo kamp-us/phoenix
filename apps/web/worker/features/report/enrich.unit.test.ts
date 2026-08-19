@@ -1,19 +1,15 @@
 /**
- * Moderation-queue enrichment merge — the T1 worker-seam unit (#1702), no engine.
- * The decisions asserted: each group is folded with its `<kind>:<id>`-keyed target
- * context onto the right `target*` fields; a group with no context keeps null
- * context (never dropped); and the excerpt clamp collapses whitespace + truncates.
- * The batched content READS (Pano/Sozluk SQL) are integration-tier, per the report
- * feature's stated split (`Report.unit.test.ts` docblock) — what's wrong-or-right
- * without D1 is this pure merge.
+ * The pure moderation-queue enrichment merge, no engine: each group folded with its
+ * `<kind>:<id>`-keyed context, a group with no context keeping null fields rather than being
+ * dropped, and the excerpt clamp. The batched content READS are integration-tier.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {contextKeyOf, enrichOpenReports, type ReportTargetContext, toExcerpt} from "./enrich.ts";
 import type {OpenReportGroup} from "./Report.ts";
 import type {RowReputation} from "./reputation.ts";
 
-// The reputation cluster is folded by a sibling merge (`reputation.unit.test.ts`); here
-// the enrich merge only routes it by key, so an empty map exercises the fallback path.
+// The reputation cluster is folded by a sibling merge; here the enrich merge only routes it
+// by key, so an empty map exercises the fallback path.
 const noReputations = new Map<string, RowReputation>();
 
 const group = (

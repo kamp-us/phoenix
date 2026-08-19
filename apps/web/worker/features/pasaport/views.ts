@@ -15,45 +15,26 @@ import {type ProfileRow, profileViewFields} from "./profile-fields.ts";
 import {type UserFields, userViewFields} from "./user-fields.ts";
 
 // Exported because the `Fate.source` entries surface the row type in their
-// declarations (TS2883 portability). The `User` wire row is `UserFields`
-// (`user-fields.ts`, which carries the `tier` widening + the `isModerator`
-// relation-tuple join); the `Profile` view row adds the client normalization key
-// `id` (=== `userId`, stamped by the resolver).
+// declarations (TS2883 portability).
 export type UserViewRow = ViewRow<UserFields>;
 export type ProfileViewRow = ViewRow<ProfileRow & {id: string}>;
 export type ContributionViewRow = ViewRow<ContributionRow>;
 
 // `username` is `null` until the bootstrap step sets it.
-// `tier` is the GLOBAL account-level authorship rank (ADR 0107 §4), exposed on
-// the TRUSTED read path: the resolver fills it from `Kunye.tierOf` (the stored
-// `user.tier` column read fresh through pasaport), NEVER from the `input:false`
-// better-auth session additionalField (#1203/#1297). Always present — the value
-// is not secret; the frontend gates rendering of authorship affordances on the
-// trusted tier, not on the field's presence.
-//
-// `isModerator` is the SELF moderator signal (#1320): the resolver reads it
-// server-side off the `moderates` `relation_tuple` (`kunye/moderate.ts`'s
-// `isModerator`, the same tuple `Moderate.over(platform)` checks — never a
-// retired `user.role` column, ADR 0107), keyed on the CURRENT user, so it is only
-// ever the viewer's OWN mod status. Like `tier` it is always present (the divan
-// "yazar yap" affordance is gated frontend-side); a dual-role yazar+moderator reads
-// `tier: "yazar"` + `isModerator: true`, which `tier` alone cannot express.
+// `tier` must be filled from `Kunye.tierOf` (the stored `user.tier` column read
+// fresh), NEVER from the `input:false` better-auth session additionalField
+// (#1203/#1297). `isModerator` is keyed on the CURRENT user, so it is only ever the
+// viewer's OWN mod status, read off the `moderates` relation tuple (ADR 0107 §4).
 export class UserView extends FateDataView<UserViewRow>()("User")(userViewFields) {}
 
-// The **discriminant** view for the profile contributions feed: fate has no
-// union type, so the variants' fields are flattened onto one row keyed by a
-// `kind` discriminant (ADR 0018; flattened by `shapers.toContributionRow`).
-// The field map IS the keys of `ContributionRow`, which derives from the
-// `ContributionVariants` manifest in `Pasaport.ts` — `ContributionViewRow` is
-// `ViewRow<ContributionRow>`, so a field added there (or dropped here) is a
-// compile error, never a silent flatten drift.
+// fate has no union type, so the variants' fields are flattened onto one row keyed
+// by a `kind` discriminant (ADR 0018).
 export class ContributionView extends FateDataView<ContributionViewRow>()("Contribution")({
 	kind: true,
 	id: true,
 	score: true,
 	createdAt: true,
-	// The per-item review-state flag (#1316): `true` for a still-sandboxed item, so
-	// #1291 can badge "incelemede". Carries no reviewer identity (one-way-glass).
+	// Carries no reviewer identity (one-way-glass, #1316).
 	sandboxed: true,
 	bodyExcerpt: true,
 	termSlug: true,
@@ -64,22 +45,19 @@ export class ContributionView extends FateDataView<ContributionViewRow>()("Contr
 	postTitle: true,
 } satisfies {[K in keyof ContributionViewRow]: true}) {}
 
-// `id` is the client's normalization key (codegen hardcodes `getId` to
-// `record.id`); a `Profile` is one-to-one with its user, so `id` === `userId`,
-// stamped by `queries.profile`. Without it the client throws `Missing 'id' on
-// entity record` when normalizing (see `.patterns/fate-data-views.md`). `userId`
-// stays for callers reading the raw per-type id (the source `byId` is keyed by it).
-// `contributions.orderBy` derives from `contributionOrdering` (ADR 0019).
+// Every view here needs an `id`: it is the client's normalization key (codegen
+// hardcodes `getId` to `record.id`), and without it the client throws `Missing 'id'
+// on entity record` when normalizing (see `.patterns/fate-data-views.md`). A
+// `Profile` is one-to-one with its user, so `id` === `userId`, and `userId` stays
+// for callers reading the raw per-type id.
 export class ProfileView extends FateDataView<ProfileViewRow>()("Profile")({
 	...profileViewFields,
 	contributions: FateDataView.list(ContributionView, {orderBy: CONTRIBUTION_VIEW_ORDER_BY}),
 }) {}
 
-// The `account.delete` acknowledgement (ADR 0097) — NOT a re-resolved entity. The
-// deleting user's `User` row is scrubbed to a tombstone, so re-resolving it would
-// leak the half-emptied row; the mutation returns a small typed ack instead. The
-// synthetic `id` is the `account:deleted` literal — one receipt shape, no per-user
-// payload to leak. Mirrors `ReportReceipt`; see `.patterns/fate-effect-data-views.md`.
+// NOT a re-resolved entity: the deleting user's `User` row is scrubbed to a
+// tombstone, so re-resolving it would leak the half-emptied row (ADR 0097). The
+// synthetic `id` is the `account:deleted` literal — no per-user payload to leak.
 export type AccountDeletionReceiptViewRow = ViewRow<{id: string; deleted: boolean}>;
 
 export class AccountDeletionReceiptView extends FateDataView<AccountDeletionReceiptViewRow>()(
@@ -89,13 +67,8 @@ export class AccountDeletionReceiptView extends FateDataView<AccountDeletionRece
 	deleted: true,
 } satisfies {[K in keyof AccountDeletionReceiptViewRow]: true}) {}
 
-// The çaylak→yazar promotion acknowledgement (#1206) — NOT a re-resolved entity
-// (the promotion's effects, the flipped tier + the swept backlog, are read through
-// the existing `Profile` / content views). The mutation returns a small typed ack:
 // `promoted` = did the tier flip this call; `vouchRecorded` = was a new vouch
-// persisted this call (vouch path only — the mod path never records a vouch). The
-// `id` carries the target so two targets resolve as distinct receipts. Mirrors
-// `AccountDeletionReceipt`; see `.patterns/fate-effect-data-views.md`.
+// persisted this call (vouch path only — the mod path never records a vouch).
 export type PromotionReceiptViewRow = ViewRow<{
 	id: string;
 	userId: string;
@@ -112,13 +85,8 @@ export class PromotionReceiptView extends FateDataView<PromotionReceiptViewRow>(
 	vouchRecorded: true,
 } satisfies {[K in keyof PromotionReceiptViewRow]: true}) {}
 
-// The admin ban-state readout / ban-unban acknowledgement (epic #968) — the
-// projected current ban-state for one account. `id` === the target user id (the
-// client normalization key), so the admin ban surface reads and the ban/unban
-// mutation ack reconcile the SAME entity. `expiresAt` is epoch-millis (or null =
-// permanent / not-banned) to keep the wire scalar plain; `reason` is null when not
-// banned. It carries ONLY the ban-state — no session, no PII — and is only ever
-// produced past the `requireAdmin` gate + the dark-ship flag, so it never leaks.
+// `expiresAt` is epoch-millis (or null = permanent / not-banned) to keep the wire
+// scalar plain. Carries ONLY the ban-state — no session, no PII.
 export type BanStateViewRow = ViewRow<{
 	id: string;
 	banned: boolean;
@@ -133,12 +101,8 @@ export class BanStateView extends FateDataView<BanStateViewRow>()("BanState")({
 	expiresAt: true,
 } satisfies {[K in keyof BanStateViewRow]: true}) {}
 
-// The admin email-delivery-state ack (email-bounce epic #2687) — the projected current
-// delivery-state for one address, returned by the `emailDelivery.mark` / `emailDelivery.clear`
-// mutations. `id` === the target address (the client normalization key), so the mark and the
-// clear reconcile the SAME entity. It carries ONLY the delivery-state (`failing` + the active
-// `reason`) — no session, no PII beyond the address the admin already targeted — and is only
-// ever produced past the `requireAdmin` gate + the dark-ship flag, so it never leaks.
+// `id` === the target address, so `emailDelivery.mark` and `emailDelivery.clear`
+// reconcile the SAME entity.
 export type EmailDeliveryStateViewRow = ViewRow<{
 	id: string;
 	failing: boolean;
@@ -153,11 +117,8 @@ export class EmailDeliveryStateView extends FateDataView<EmailDeliveryStateViewR
 	reason: true,
 } satisfies {[K in keyof EmailDeliveryStateViewRow]: true}) {}
 
-// One currently-failing address in the admin roll-up (`emailDelivery.failing`, epic #2687)
-// — the address, who it resolves to (nullable: a send can fail to an address with no account
-// row), why, and when it started failing (`since`, epoch-millis to keep the wire scalar
-// plain). `id` === the address (the client normalization key). Only ever produced past the
-// `requireAdmin` gate + the dark-ship flag, so the roll-up never leaks.
+// `userId` is nullable: a send can fail to an address with no account row. `since`
+// is epoch-millis to keep the wire scalar plain.
 export type FailingAddressViewRow = ViewRow<{
 	id: string;
 	address: string;
@@ -174,13 +135,8 @@ export class FailingAddressView extends FateDataView<FailingAddressViewRow>()("F
 	since: true,
 } satisfies {[K in keyof FailingAddressViewRow]: true}) {}
 
-// The admin role-assignment ack (#3522, admin epic per ADR 0107) — the projected
-// role returned by the `user.setRole` mutation. `id` === the target user id (the
-// client normalization key), so the ack reconciles the SAME account the roster
-// (`UserAdmin`) lists; `role` is the newly-assigned platform role (`moderator` iff
-// the `moderates` tuple was granted, else `member`). It carries ONLY the role — no
-// session, no PII — and is only ever produced past the `requireAdmin` gate + the
-// dark-ship flag, so it never leaks. Mirrors `BanStateView`.
+// `role` is `moderator` iff the `moderates` tuple was granted, else `member`
+// (ADR 0107). Carries ONLY the role — no session, no PII.
 export type RoleStateViewRow = ViewRow<{
 	id: string;
 	role: PlatformRole;
@@ -191,19 +147,12 @@ export class RoleStateView extends FateDataView<RoleStateViewRow>()("RoleState")
 	role: true,
 } satisfies {[K in keyof RoleStateViewRow]: true}) {}
 
-// The çaylak-SELF authorship-standing aggregate (#1316, epic #1202) — the
-// "yazarlığa giden yol" read the #1291 status block consumes about ITSELF. The
-// subject is always the authenticated çaylak (the `myAuthorshipStanding` resolver
-// keys it on `CurrentUser`, never an input arg), so it can only ever describe the
-// reader's own progress.
-//
 // ONE-WAY-GLASS, ENFORCED IN THE TYPE (#1316 hard AC): the row carries ONLY
-// aggregate scalars — `karma`/`bar` (numbers), `vouchExists` (a bare boolean, NOT
-// who vouched), `inReviewCount` (a bare count, NOT which items or who is reviewing).
-// There is deliberately NO reviewer / voter / voucher identity field, so a leak is
-// structurally unrepresentable, not merely unsent — the reason this is a NEW
-// self-scoped view and not a widening of the identity-carrying divan roster / vouch
-// ledger. `id` === the user id (the client normalization key).
+// aggregate scalars — `vouchExists` is a bare boolean, NOT who vouched;
+// `inReviewCount` a bare count, NOT which items or who is reviewing. Adding any
+// reviewer / voter / voucher identity field here breaks the invariant, which is why
+// this is a self-scoped view rather than a widening of the divan roster or the
+// vouch ledger. The subject is always `CurrentUser`, never an input arg.
 export type AuthorshipStandingViewRow = ViewRow<{
 	id: string;
 	karma: number;
@@ -222,8 +171,6 @@ export class AuthorshipStandingView extends FateDataView<AuthorshipStandingViewR
 	inReviewCount: true,
 } satisfies {[K in keyof AuthorshipStandingViewRow]: true}) {}
 
-// The plain kernel `dataView()` values, for cross-feature surfaces (the
-// `fate/views.ts` `Root` map + barrel re-exports).
 export const userDataView = UserView.view;
 export const contributionDataView = ContributionView.view;
 export const profileDataView = ProfileView.view;

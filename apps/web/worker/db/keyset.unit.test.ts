@@ -99,8 +99,7 @@ describe("resolveCursor", () => {
 	});
 
 	it("a resolved row whose keyset values are null is still a hit, not a miss", () => {
-		// the port found the row; a null lead value degrades the predicate (keysetAfter
-		// drops it), it does NOT collapse to the cursor-miss branch.
+		// A null lead value degrades the predicate; it does NOT collapse to a miss.
 		const row = {createdAt: null};
 		expect(resolveCursor("c1", row)).toEqual({kind: "hit", row});
 	});

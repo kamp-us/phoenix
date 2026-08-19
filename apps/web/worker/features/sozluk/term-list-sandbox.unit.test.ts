@@ -1,17 +1,11 @@
 /**
- * `Sozluk.listTermSummariesConnection` sandbox-visibility wiring (#3724) — the security
- * fix for the /sozluk root lists (`terms` / `recentTerms` / `popularTerms`). The list
- * selects from `term_record`, a summary cache with no lifecycle columns of its own, so
- * visibility must be derived from the definitions it summarizes: BOTH the page query and
- * `totalCount` carry an `EXISTS` over `definition_record` masked by `publicLiveWhere`.
- * Without it a çaylak's sandbox-only term lands at the top of the anonymous /sozluk front
- * door and its term page renders zero definition cards (#1205/#1424).
+ * `Sozluk.listTermSummariesConnection` sandbox-visibility wiring. `term_record` is a
+ * summary cache with no lifecycle columns, so visibility has to be derived from the
+ * definitions it summarizes — without that, a çaylak's sandbox-only term lands at the top
+ * of the anonymous /sozluk front door.
  *
- * Unit-tier per ADR 0082: row-level filtering is integration's job; what THIS proves is
- * that both reads WIRE the mask in, and that it is viewer-aware (the author's own arm
- * appears only for a signed-in viewer, and a moderator drops the sandbox arm entirely).
- * The compiled SQL is captured off a substituted `Drizzle` seam that renders each
- * builder's `.toSQL()` (the `Sozluk.connection.unit.test.ts` scripted-access idiom).
+ * Unit-tier per ADR 0082: row-level filtering is integration's job, so what this proves
+ * is only that both reads wire the mask in and that it is viewer-aware.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -27,10 +21,10 @@ const hasToSQL = (v: unknown): v is {toSQL: () => {sql: string; params: unknown[
 	typeof v === "object" && v !== null && typeof (v as {toSQL?: unknown}).toSQL === "function";
 
 /**
- * The two reads land on DIFFERENT capture surfaces, which is why this harness has two.
- * The page read hands `run` the un-awaited builder, so it renders via `.toSQL()`. The
- * `totalCount` read finalizes inside the callback (`.get().then(…)`), so `run` only ever
- * sees a promise — its SQL is recoverable solely at the D1 binding, off `prepare`/`bind`.
+ * Two capture surfaces, because the two reads land differently: the page read hands `run`
+ * an un-awaited builder that renders via `.toSQL()`, while `totalCount` finalizes inside
+ * its callback, so `run` sees only a promise and its SQL is recoverable solely at the D1
+ * binding.
  */
 function scriptedAccess(results: ReadonlyArray<unknown>): {
 	access: DrizzleAccess;
@@ -97,7 +91,6 @@ const sozlukLayer = (access: DrizzleAccess) =>
 		Layer.provide(Layer.succeed(Drizzle, access)),
 	);
 
-/** The connection's two rendered reads: the masked `totalCount` and the masked page. */
 const runList = (opts: {
 	sort?: ListSort;
 	after?: string;
@@ -137,7 +130,6 @@ describe("Sozluk.listTermSummariesConnection — the /sozluk lists exclude sandb
 			assert.match(page, EXISTS_OVER_DEFINITIONS, "correlated EXISTS over definition_record");
 			assert.match(page, /"definition_record"\."removed_at" is null/, "removal guard present");
 			assert.match(page, /"definition_record"\."sandboxed_at" is null/, "sandbox mask present");
-			// Never the inverted mask — that would show ONLY the sandboxed terms.
 			assert.notMatch(page, /sandboxed_at" is not null/, "mask is IS NULL, never IS NOT NULL");
 		}),
 	);

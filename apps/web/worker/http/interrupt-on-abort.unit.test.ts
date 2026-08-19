@@ -1,8 +1,7 @@
 /**
- * Tests for `interruptOnAbort` (unit: pure helper, no router, no workerd). Run on
- * the Effect runtime (`it.effect`), exercising the combinator the same way
- * production does. Coordination uses a `Latch`, never timers (a fixed tick raced
- * fiber startup on loaded CI runners).
+ * Tests for `interruptOnAbort` (unit: pure helper, no router, no workerd).
+ * Coordination uses a `Latch`, never timers — a fixed tick raced fiber startup on
+ * loaded CI runners.
  */
 import {assert, it} from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -36,8 +35,8 @@ describe("interruptOnAbort", () => {
 	it.effect("an abort mid-flight interrupts the program", () =>
 		Effect.gen(function* () {
 			const controller = new AbortController();
-			// Awaiting the latch the program opens first IS the deterministic
-			// "fiber is running" proof — the abort below provably lands mid-flight.
+			// Awaiting the latch the program opens IS the deterministic "fiber is running" proof,
+			// so the abort below provably lands mid-flight.
 			const started = yield* Latch.make();
 			const program = started.open.pipe(Effect.andThen(Effect.never));
 			const fiber = yield* Effect.forkChild(program.pipe(interruptOnAbort(controller.signal)));
@@ -52,10 +51,9 @@ describe("interruptOnAbort", () => {
 		"an abort dispatched in the pre-check→listener gap still interrupts (recheck branch)",
 		() =>
 			Effect.gen(function* () {
-				// A real AbortController can't hit the pre-check→listener gap
-				// deterministically, so simulate the helper's view of it: `aborted`
-				// reads false at the pre-check then true after, and the listener never
-				// fires (event already dispatched) — only the recheck can interrupt.
+				// A real AbortController cannot hit the pre-check→listener gap deterministically, so
+				// simulate the helper's view: `aborted` reads false at the pre-check then true after,
+				// and the listener never fires — only the recheck can interrupt.
 				let aborted = false;
 				const gapSignal: AbortSignalLike = {
 					get aborted() {

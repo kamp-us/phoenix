@@ -1,14 +1,7 @@
 /**
- * Tagged errors raised by the Pasaport service layer. Each class carries its
- * wire `code` as an `FateWireCode` annotation that `encodeWireError` reads at the
- * fate boundary (`.patterns/fate-effect-wire-errors.md`). One static code per
- * class (the codec reads the CONSTRUCTOR annotation), so each username sub-code
- * is its own class and {@link UsernameInvalid} is the union alias the service
- * signatures name. Wire codes are pinned verbatim in `errors.unit.test.ts` so
- * SPA pattern-matching can't drift.
- *
- * The package's `Unauthorized` (annotated `UNAUTHORIZED`) gates the writes via
- * `CurrentUser.required` and is not redeclared here.
+ * Tagged errors raised by the Pasaport service layer. See
+ * `.patterns/fate-effect-wire-errors.md`. The codec reads the CONSTRUCTOR annotation, so
+ * one static code per class — that is why each username sub-code is its own class.
  */
 import {FateWireCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
@@ -31,16 +24,12 @@ export class UsernameTooLong extends Schema.TaggedErrorClass<UsernameTooLong>()(
 	{[FateWireCode]: "TOO_LONG"},
 ) {}
 
-// Spread into the mutation `error:` union; {@link UsernameInvalid} is derived
-// from this tuple, so the two can never drift.
 export const UsernameInvalidErrors = [
 	UsernameInvalidFormat,
 	UsernameTooShort,
 	UsernameTooLong,
 ] as const;
 
-// The union the `Pasaport` service signatures declare, derived from
-// {@link UsernameInvalidErrors}.
 export type UsernameInvalid = InstanceType<(typeof UsernameInvalidErrors)[number]>;
 
 export class UsernameTaken extends Schema.TaggedErrorClass<UsernameTaken>()(
@@ -68,9 +57,8 @@ export class UserNotFound extends Schema.TaggedErrorClass<UserNotFound>()(
 	{[FateWireCode]: "USER_NOT_FOUND"},
 ) {}
 
-// A display-name change with an empty (or whitespace-only) value. The görünen-ad
-// save is the sole caller; the SPA input is `required` + trimmed, so this is the
-// server-authoritative floor against a blank submit — never a byline-blanking write.
+// The server-authoritative floor against a blank submit; the SPA's `required` input is
+// not trusted to prevent a byline-blanking write.
 export class DisplayNameEmpty extends Schema.TaggedErrorClass<DisplayNameEmpty>()(
 	"pasaport/DisplayNameEmpty",
 	{
@@ -79,9 +67,8 @@ export class DisplayNameEmpty extends Schema.TaggedErrorClass<DisplayNameEmpty>(
 	{[FateWireCode]: "DISPLAY_NAME_EMPTY"},
 ) {}
 
-// A ban with an empty (or whitespace-only) reason. A ban MUST carry a reason (epic
-// #968 — the audit record is meaningless without one), so the server rejects a blank
-// submit as the authoritative floor even though the admin UI marks the field required.
+// A ban MUST carry a reason — the audit record is meaningless without one — so the
+// server rejects a blank submit even though the admin UI marks the field required.
 export class BanReasonRequired extends Schema.TaggedErrorClass<BanReasonRequired>()(
 	"pasaport/BanReasonRequired",
 	{
@@ -90,10 +77,8 @@ export class BanReasonRequired extends Schema.TaggedErrorClass<BanReasonRequired
 	{[FateWireCode]: "BAN_REASON_REQUIRED"},
 ) {}
 
-// An admin `emailDelivery.mark` submitted without a reason. A manual failing-mark MUST
-// carry a reason (Child #2692 — the audit note is why the address was marked out-of-band),
-// so the server rejects a blank submit as the authoritative floor even though the admin UI
-// marks the field required. The `clear` carries no reason and has no such floor.
+// A manual failing-mark MUST carry a reason — it is the audit note for why the address
+// was marked out-of-band. The matching `clear` carries none and has no such floor.
 export class EmailFailingReasonRequired extends Schema.TaggedErrorClass<EmailFailingReasonRequired>()(
 	"pasaport/EmailFailingReasonRequired",
 	{

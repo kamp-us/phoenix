@@ -1,8 +1,7 @@
 /**
- * The token-bucket domain object (ADR 0177) — the rate-limit algorithm proven
- * store-free: refill-by-elapsed-time, consume, deny-at-empty, clock-skew safety.
- * The `RateLimiter` service and the DO/in-isolate backing reuse this same math,
- * so pinning it here is what lets those higher layers stay thin.
+ * The token-bucket domain object (ADR 0177), proven store-free. The `RateLimiter`
+ * service and the DO/in-isolate backing reuse this same math, so pinning it here is
+ * what lets those higher layers stay thin.
  */
 import {describe, expect, it} from "vitest";
 import {initialState, refill, tokenBucketPolicy, tryConsume} from "./TokenBucket.ts";

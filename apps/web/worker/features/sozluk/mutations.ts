@@ -1,12 +1,9 @@
 /**
- * Mutation resolvers — the sozluk write path (ADR 0020). Each mutation calls a
- * `Sozluk` service method then returns the re-resolved affected entity shaped
- * like a read; a delete returns the re-resolved parent (`Term`) so the client's
- * normalized cache updates the surrounding list. Domain validation stays in the
- * service (ADR 0013); `CurrentUser.required` gates every write.
+ * Mutation resolvers — the sozluk write path (ADR 0020). Each mutation calls a `Sozluk`
+ * service method then returns the re-resolved affected entity; a delete returns the
+ * re-resolved parent `Term` so the client's normalized cache updates the surrounding list.
  *
- * Live publishes go through `WorkerLivePublisher`, whose publish methods have
- * `E = never`, so a failed publish can never fail the mutation
+ * A live publish has `E = never`, so it can never fail the mutation
  * (`.patterns/fate-effect-server.md`).
  */
 
@@ -38,9 +35,8 @@ import {toDefinition, toTermFromPage} from "./shapers.ts";
 import type {Definition} from "./views.ts";
 import {DefinitionView, TermView} from "./views.ts";
 
-// Branded id schemas decode byte-identically (the brand is type-only) but carry
-// the nominal tag downstream, so `input.id` / `input.termSlug` arrive already
-// typed as DefinitionId / TermSlug for the service-call surface below.
+// Branded id schemas decode byte-identically (the brand is type-only) but carry the
+// nominal tag downstream, so the service-call surface below gets typed ids for free.
 const AddDefinitionInput = Schema.Struct({
 	termSlug: TermSlug,
 	termTitle: Schema.optional(Schema.NullOr(Schema.String)),
@@ -56,17 +52,14 @@ const DefinitionIdInput = Schema.Struct({
 	id: DefinitionId,
 });
 
-// The reaction intent decodes against the curated `REACTION_EMOJI` palette at the
-// wire boundary: a palette member sets/changes the reactor's single reaction, `null`
-// retracts it, and a NON-palette string fails to decode — so an arbitrary emoji is
-// structurally unrepresentable, never reaching the service (#1865 AC#1).
+// A NON-palette string fails to decode at the wire boundary, so an arbitrary emoji is
+// structurally unrepresentable and never reaches the service.
 const ReactDefinitionInput = Schema.Struct({
 	id: DefinitionId,
 	emoji: Schema.NullOr(ReactionEmojiSchema),
 });
 
-// Service results name the id `definitionId` / author `authorName`; the
-// `toDefinition` shaper takes wire field names, so remap those two keys first.
+// Service results name the id `definitionId` / author `authorName`; remap to wire names.
 const shapeDefinition = (r: {
 	definitionId: string;
 	body: string;
@@ -110,23 +103,17 @@ export const mutations = {
 					sandboxedAt,
 					...(input.termTitle ? {termTitle: input.termTitle} : {}),
 				});
-				// Fresh write: not yet voted by anyone.
 				const definition = shapeDefinition({...result, myVote: null});
-				// Append the node to the term's `Term.definitions` topic (same key
-				// `definition.delete` removes from) so every open term page updates live —
-				// but only when the definition is live: the topic is viewer-blind, so a
-				// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
+				// The term topic is viewer-blind, so a sandboxed node would leak to non-author and
+				// anonymous subscribers — hence the `decidePublish` gate.
 				yield* live.definition
 					.term(input.termSlug)
 					.appendNode(definition.id, {node: definition}, decidePublish(sandboxedAt));
-				// Mod-queue heartbeat (#1699): a sandboxed definition that is the çaylak's
-				// FIRST pending item pages the moderators — same transition gate as pano.
+				// A sandboxed definition that is the çaylak's FIRST pending item pages the moderators.
 				yield* notifyCaylakEntersDivan({authorId: user.id, sandboxedAt});
 				return definition;
 			});
-			// Post-value karma gate (#150), dark behind `phoenix-karma-gates` — the same
-			// ≥ −4 floor as pano's `post.submit` / `comment.add`, applied to the sözlük
-			// definition write path.
+			// Post-value karma gate, dark behind `phoenix-karma-gates` — the same ≥ −4 floor as pano's.
 			return yield* gateContentOnKarma(add());
 		}),
 	),
@@ -134,9 +121,8 @@ export const mutations = {
 		{
 			input: DefinitionIdInput,
 			type: DefinitionView,
-			// `VoterNotEligible` (wire `VOTE_REQUIRES_YAZAR`) — the "earn to vote" gate (#1810): a çaylak
-			// newcomer is rejected at cast. `SelfVoteNotAllowed` (wire `SELF_VOTE_NOT_ALLOWED`) — the
-			// founder-ruled self-vote block (#2216). Both cast-only; retraction is exempt for each.
+			// `VoterNotEligible` is the "earn to vote" gate, `SelfVoteNotAllowed` the founder-ruled
+			// self-vote block. Both cast-only; retraction is exempt for each.
 			error: Schema.Union([Unauthorized, DefinitionNotFound, VoterNotEligible, SelfVoteNotAllowed]),
 		},
 		Effect.fn("definition.vote")(function* ({input}) {
@@ -150,9 +136,7 @@ export const mutations = {
 			const definition = shapeDefinition(result);
 			// `myVote` is viewer-specific, so it's omitted from `changed`.
 			yield* live.definition.update(definition.id, {changed: ["score"], data: definition});
-			// Aggregated vote notification (#1698): see pano's `post.vote` — a landed
-			// upvote notifies the definition author, rolled up per item, on a real
-			// state change only. `result.authorId` is server-derived.
+			// A landed upvote notifies the author, rolled up per item, on a real state change only.
 			if (result.changed) {
 				yield* notifyContentVote({
 					authorId: result.authorId,
@@ -183,12 +167,8 @@ export const mutations = {
 			return definition;
 		}),
 	),
-	// Set / change / retract the viewer's single reaction on a definition (epic #1840,
-	// #1865) — the cross-product twin of `definition.vote`, delegating to the ungated,
-	// karma-free `Reaction` engine via `Sozluk.reactToDefinition`. `CurrentUser.required`
-	// is the ONLY gate (a signed-out reactor is `Unauthorized`, same as vote's signed-out
-	// gate) — deliberately NO voter-tier gate and NO karma write, so a çaylak may react
-	// (#1861). Ships dark behind the default-off `phoenix-reactions` flag.
+	// `CurrentUser.required` is the ONLY gate — deliberately NO voter-tier gate and NO karma
+	// write, so a çaylak may react. Ships dark behind the default-off `phoenix-reactions`.
 	"definition.react": Fate.mutation(
 		{
 			input: ReactDefinitionInput,
@@ -198,11 +178,8 @@ export const mutations = {
 		Effect.fn("definition.react")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
-			// Dark-ship gate (ADR 0083): default-off `phoenix-reactions`. Off ⇒ inert — the
-			// react never lands (the write is the new path, unreachable until release);
-			// re-resolve the definition unchanged so the caller's cache stays consistent,
-			// the divan.vote dark-ship inert-receipt shape. On a Flagship outage the safe
-			// read default (`false`) keeps the path dark.
+			// Dark-ship gate (ADR 0083). Off ⇒ inert: re-resolve the definition unchanged so the
+			// caller's cache stays consistent. A Flagship outage reads `false` and stays dark.
 			const flags = yield* Flags;
 			const on = yield* flags.getBoolean(PHOENIX_REACTIONS, false).pipe(provideRequestFlags);
 			if (!on) {
@@ -215,11 +192,8 @@ export const mutations = {
 				}
 				return toDefinition(current);
 			}
-			// The mutation return re-resolves the fresh aggregate for the reactor, and
-			// `live.definition.update({changed: ["reactions"]})` fans that aggregate out to
-			// every open subscriber so a reader watching the term sees the count move (#1868)
-			// — the reaction twin of `definition.vote`'s score publish, through the same
-			// never-failing `WorkerLivePublisher`.
+			// The publish fans the fresh aggregate out to every open subscriber, so a reader
+			// watching the term sees the count move.
 			const live = sozlukLive(yield* WorkerLivePublisher);
 			const row = yield* sozluk.reactToDefinition({
 				definitionId: input.id,
@@ -252,8 +226,7 @@ export const mutations = {
 				actorId: UserId.make(user.id),
 				body: input.body,
 			});
-			// Re-read the viewer's vote so the edit doesn't drop `myVote` (edit
-			// leaves vote state untouched but must not blank it).
+			// Re-read the viewer's vote so the edit doesn't blank `myVote`.
 			const [fresh] = yield* sozluk.getDefinitionsByIds([result.definitionId], {viewerId: user.id});
 			const definition = shapeDefinition({...result, myVote: fresh?.myVote ?? null});
 			yield* live.definition.update(definition.id, {changed: ["body"], data: definition});
@@ -262,8 +235,7 @@ export const mutations = {
 	),
 	"definition.delete": Fate.mutation(
 		{
-			// A delete returns the re-resolved **parent** `Term` so the client's
-			// normalized cache updates the surrounding definitions list (ADR 0020).
+			// A delete returns the re-resolved **parent** `Term` (ADR 0020).
 			input: DefinitionIdInput,
 			type: TermView,
 			error: Schema.Union([Unauthorized, DefinitionNotFound, UnauthorizedDefinitionMutation]),
@@ -286,8 +258,7 @@ export const mutations = {
 		}),
 	),
 
-	// Restore (un-delete) a previously removed definition (ADR 0096 §4). Returns
-	// the re-resolved parent `Term`; the definition re-enters the term's list.
+	// Restore (un-delete) a removed definition (ADR 0096 §4); returns the parent `Term`.
 	"definition.restore": Fate.mutation(
 		{
 			input: DefinitionIdInput,
@@ -308,8 +279,7 @@ export const mutations = {
 			if (!page) return null;
 			const restored = page.definitions.find((d) => d.id === input.id);
 			if (restored) {
-				// Re-enter the term's `Term.definitions` topic — the inverse of
-				// the `deleteEdge` the delete path published.
+				// Re-enter the term topic — the inverse of the delete path's `deleteEdge`.
 				const node = toDefinition({
 					id: restored.id,
 					body: restored.body,
@@ -320,10 +290,8 @@ export const mutations = {
 					updatedAt: restored.updatedAt,
 					myVote: restored.myVote ?? null,
 				});
-				// Sandbox-faithful restore (#1811): a çaylak's sandboxed definition
-				// round-trips back to Sandboxed, so route the broadcast through the
-				// #1205/#1280 gate — a sandboxed restore is suppressed from the
-				// viewer-blind term topic; a Live restore broadcasts as before.
+				// Sandbox-faithful restore: a çaylak's definition round-trips back to sandboxed, so a
+				// sandboxed restore stays suppressed from the viewer-blind term topic.
 				yield* live.definition
 					.term(slug)
 					.appendNode(restored.id, {node}, decidePublish(restoreResult.sandboxedAt ?? null));

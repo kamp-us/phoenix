@@ -1,20 +1,11 @@
 /**
- * `VouchLedger.castVouch` coverage (#1362) — the load-bearing concern is that the
- * concurrent-vouch cap (D5, {@link VOUCH_CONCURRENT_CAP}) is enforced *atomically with
- * the insert*, not as a separable check-then-act the resolver re-derives. Proven by
- * rendering the statements' `.toSQL()` over a no-op D1 (the `promotion-sweep.unit.test.ts`
- * idiom) — no engine, so this is a unit test; real-D1 concurrency fidelity (two near-
- * simultaneous vouches → exactly one lands at the boundary) is the integration tier.
+ * `VouchLedger.castVouch` — the load-bearing concern is that the concurrent-vouch cap is
+ * enforced *atomically with the insert*, not as a separable check-then-act. The cap check
+ * and the insert compile to a single `INSERT … SELECT <values> WHERE (active-count
+ * subquery) < cap`, so no concurrent vouch can interleave between the two.
  *
- * The two structural guarantees asserted here:
- *   - **One guarded statement.** The cap check and the insert compile to a single
- *     `INSERT … SELECT <values> WHERE (active-count subquery) < cap` — NOT a `count`
- *     read followed by a separate insert. Because it is one statement (run in a batch
- *     with only an existence probe, never via `run`), no concurrent vouch can interleave
- *     between the cap check and the insert, so the cap can't be exceeded by a race.
- *   - **Outcome mapping.** `recorded` when the insert changed a row, `alreadyVouched`
- *     when zero rows changed but the row already exists (idempotent re-vouch), and
- *     `capReached` when zero rows changed and no row exists (the cap blocked it).
+ * Proven by rendering `.toSQL()` over a no-op D1 — no engine, so this is a unit test;
+ * real-D1 concurrency fidelity is the integration tier.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -30,8 +21,7 @@ import {
 import {VOUCH_CONCURRENT_CAP} from "./standing.ts";
 import {VouchLedger, VouchLedgerLive} from "./VouchLedger.ts";
 
-// A real drizzle client over a no-op D1 — used ONLY to render the batch statements'
-// `.toSQL()`; it never executes.
+// A real drizzle client over a no-op D1, used ONLY to render `.toSQL()`; it never executes.
 // biome-ignore lint/plugin: `D1Database` is a host binding that can't be structurally constructed in a fake; nothing here executes against it.
 const noopD1 = {
 	prepare: () => ({
@@ -57,10 +47,8 @@ const noopD1 = {
 } as unknown as D1Database;
 const renderDb = drizzle(noopD1, {relations});
 
-// Captures the batch's two rendered statements (guarded insert, existence probe) and
-// answers with a scripted result: the insert's `meta.changes` and whether the existence
-// probe finds the row. `run` is fail-on-contact — `castVouch` must batch, never split
-// the cap check off into its own single statement.
+// Captures the batch's two rendered statements and answers with a scripted result. `run` is
+// fail-on-contact — `castVouch` must batch, never split the cap check into its own statement.
 function capturingBatch(opts: {changes: number; existing: boolean}): {
 	access: DrizzleAccess;
 	statements: () => {sql: string; params: unknown[]}[];
@@ -164,9 +152,8 @@ describe("VouchLedger.castVouch — the cap is enforced atomically with the inse
 	);
 });
 
-// A no-op D1 that records the rendered `{sql, params}` of the statement `.get()` prepares
-// and binds — `hasActiveFor` runs a real drizzle read over it, so this captures the actual
-// compiled SQL at the binding boundary without an engine (ADR 0082/0104/0105).
+// Records the rendered `{sql, params}` the statement `.get()` prepares and binds, so a real
+// drizzle read is captured at the binding boundary without an engine.
 function capturingRun(): {
 	access: DrizzleAccess;
 	statement: () => {sql: string; params: unknown[]};
@@ -225,9 +212,8 @@ const hasActiveFor = (cap: ReturnType<typeof capturingRun>, candidateId: string)
 
 describe("VouchLedger.hasActiveFor — active is tier-filtered, symmetric with activeCountFor (#1324)", () => {
 	// The behavioral contract — a yazar candidate whose only vouch row is leftover yields
-	// `false` — is pinned structurally here: the read inner-joins `user` and binds the
-	// `çaylak` tier, so a `tier = 'yazar'` row can't match the join filter and drops out,
-	// exactly as it does for `activeCountFor`. No engine runs (ADR 0082/0104/0105).
+	// `false` — is pinned structurally: the read inner-joins `user` and binds the `çaylak`
+	// tier, so a `tier = 'yazar'` row drops out of the join, exactly as in `activeCountFor`.
 	it.effect("the read inner-joins `user` and filters tier = 'çaylak' on the candidate", () => {
 		const cap = capturingRun();
 		return Effect.gen(function* () {

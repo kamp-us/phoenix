@@ -1,10 +1,7 @@
 /**
- * `RelationStoreLive` — the D1 adapter for `@kampus/authz`'s `RelationStore` port,
- * answering the ReBAC existence question over the `relation_tuple` table (ADR 0107).
- *
- * The port declares only `has`: the tuple's presence IS the grant, and there is no
- * runtime write path — tuples are minted offline (`@kampus/founder-seed`), the same
- * fail-closed shape `user.role` had.
+ * `RelationStoreLive` — the D1 adapter for `@kampus/authz`'s `RelationStore` port (ADR 0107).
+ * The port declares only `has`: the tuple's presence IS the grant, and there is no runtime
+ * write path — tuples are minted offline, the same fail-closed shape `user.role` had.
  */
 import {key as objectKey, RelationStore} from "@kampus/authz";
 import {and, eq, inArray} from "drizzle-orm";
@@ -12,10 +9,9 @@ import {Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 
-// The `relation_tuple.object` key IS `@kampus/authz`'s canonical `key` — re-exported
-// under the worker-side name so the integration seed and the store read encode the
-// object identically to the offline mint (`@kampus/founder-seed`). One key, no
-// divergence: a seeded tuple is found by a discharge over the same node.
+// The `relation_tuple.object` key IS `@kampus/authz`'s canonical `key`, re-exported under
+// the worker-side name so the integration seed and the store read encode the object
+// identically to the offline mint. One key, no divergence.
 export {objectKey};
 
 export const RelationStoreLive = Layer.effect(RelationStore)(

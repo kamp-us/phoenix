@@ -1,9 +1,7 @@
 /**
- * Sözlük fate sources — `Term` / `Definition` Effect-backed loaders. fate is
- * pure transport (ADR 0016); every handler delegates to a `Sozluk` method. Only
- * `byId`/`byIds` are implemented (the relation workhorse that avoids the N+1);
- * connections come from custom resolvers (ADR 0019). Reads are silent and
- * `E = never` — see `.patterns/fate-effect-sources.md`.
+ * Sözlük fate sources — `Term` / `Definition` Effect-backed loaders. fate is pure transport (ADR
+ * 0016); every handler delegates to a `Sozluk` method. Only `byId`/`byIds` are implemented (the
+ * relation workhorse that avoids the N+1); connections come from custom resolvers (ADR 0019).
  */
 import {Fate} from "@kampus/fate-effect";
 import {PHOENIX_SOZLUK_STAMP_WAVE} from "../../../src/flags/keys.ts";
@@ -22,8 +20,7 @@ export const definitionSource = Fate.source(
 			const sozluk = yield* Sozluk;
 			const sandboxViewer = yield* currentSandboxViewer;
 			const mutedIds = yield* currentMutedIds;
-			// The read-path collapse is contained behind its default-off flag (#2709): off ⇒
-			// the stamps run serially (today), on ⇒ one concurrent wave. Same wire output.
+			// #2709: off ⇒ the stamps run serially, on ⇒ one concurrent wave. Same wire output.
 			const flags = yield* Flags;
 			const parallelStamps = yield* flags
 				.getBoolean(PHOENIX_SOZLUK_STAMP_WAVE, false)

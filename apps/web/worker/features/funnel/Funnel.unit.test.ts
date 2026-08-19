@@ -1,23 +1,7 @@
 /**
- * `Funnel` read-model coverage (#1589, #1593, #1591, #1592) — the tier-population
- * counts, the headline promotion rate, the first-contribution rate, the vouch rate,
- * and the humans-only filter, the decisions that are wrong-or-right with no engine
- * (ADR 0082 T1/T2). The
- * `Drizzle` seam is substituted directly (the `Report` / `promotion-sweep` idiom):
- *
- *   - **counts** — a scripted `run` feeds grouped rows to `foldTierPopulation`
- *     THROUGH the real `FunnelLive` service, proving çaylak/yazar map to the right
- *     fields and an absent tier reads `0`.
- *   - **promotion rate** — `promotionRate` derives yazar / (çaylak + yazar) from the
- *     population, both directly and end-to-end over the seam, covering the
- *     zero-population edge (`0`, never a `NaN`).
- *   - **first-contribution rate** — `computeFirstContribution` folds the çaylak count
- *     and contributing-çaylak count into the rate (zero-population edge → `0`), read
- *     end-to-end through the two-call seam; `contributingCaylaksQuery`'s rendered SQL
- *     is asserted to gate on human çaylaks with a `sandboxed_at IS NOT NULL` row.
- *   - **humans-only** — the query's rendered SQL (`.toSQL()` over a no-op D1) is
- *     asserted to filter `type = 'human'` and group by `tier`, so bot/system rows
- *     are excluded by construction. No engine executes.
+ * `Funnel` read-model coverage — the counts, rates, and humans-only filter, all decided
+ * with no engine (ADR 0082). The `Drizzle` seam is substituted directly and the SQL
+ * assertions render `.toSQL()` over a no-op D1.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -45,8 +29,7 @@ const yazarAfterDays = (d: number, base = 0) => ({
 	promotedAt: new Date(base + d * DAY),
 });
 
-// A real drizzle client over a no-op D1 — used ONLY to render the query's `.toSQL()`;
-// it never executes.
+// A real drizzle client over a no-op D1, used ONLY to render `.toSQL()`; nothing executes.
 // biome-ignore lint/plugin: `D1Database` is a host binding that can't be structurally constructed in a fake; nothing here executes against it.
 const noopD1 = {
 	prepare: () => ({
@@ -72,8 +55,7 @@ const noopD1 = {
 } as unknown as D1Database;
 const renderDb = drizzle(noopD1, {relations});
 
-// A scripted `Drizzle` seam: `run` ignores its builder and returns the queued rows
-// (no engine); `batch` dies — the read issues none.
+// `run` ignores its builder and returns queued rows; `batch` dies, as the read issues none.
 const scriptedRows = (rows: ReadonlyArray<TierCountRow>): DrizzleAccess => ({
 	run: <A>(_fn: (db: never) => Promise<A>) => Effect.succeed(rows as A),
 	batch: () => Effect.die(new Error("Funnel.tierPopulation issues no batch")),
@@ -82,9 +64,8 @@ const scriptedRows = (rows: ReadonlyArray<TierCountRow>): DrizzleAccess => ({
 const funnelLayer = (access: DrizzleAccess) =>
 	FunnelLive.pipe(Layer.provide(Layer.succeed(Drizzle, access)));
 
-// A `Drizzle` seam that dispenses queued responses in order — `firstContribution`
-// issues two reads (the tier population, then the contributing-çaylak count), so it
-// needs a distinct payload per call, not the single-shape `scriptedRows` above.
+// Dispenses queued responses in order, for the reads that issue two queries and so need a
+// distinct payload per call rather than the single-shape `scriptedRows` above.
 const scriptedSequence = (responses: ReadonlyArray<ReadonlyArray<unknown>>): DrizzleAccess => {
 	let call = 0;
 	return {

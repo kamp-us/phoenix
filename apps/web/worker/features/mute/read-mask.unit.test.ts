@@ -1,17 +1,8 @@
 /**
- * Mute read-mask (#3113) — the decisions that are wrong-or-right with no database
- * (ADR 0082): the SQL arm {@link mutedAuthorsWhere} folds beside a read's existing
- * guards, the in-memory {@link isMutedAuthor} dual, and the {@link currentMutedIds}
- * flag gate. Row-level EXCLUSION against real D1 (each content surface actually
- * hiding a muted author's rows) is the integration tier's job, like the sandbox
- * filter (`SandboxVisibility.agreement` leaves execution to integration).
- *
- * The masked-read coverage per surface (present-without-mute / absent-with-mute /
- * flag-off-unchanged) is anchored on the two invariants those reds reduce to:
- *   - the arm is `undefined` (no clause) exactly when nothing is muted — so a
- *     flag-off read (empty set) is byte-for-byte today's read on every surface;
- *   - the arm is `author_id NOT IN (…)` when the muter has mutes — the one predicate
- *     the pano feed, pano thread, and sözlük definition reads all `and()` in.
+ * Mute read-mask (#3113, ADR 0082). Per-surface coverage reduces to two invariants: the
+ * arm is `undefined` (no clause) exactly when nothing is muted — so a flag-off read is
+ * byte-for-byte today's read — and `author_id NOT IN (…)` otherwise. Row-level exclusion
+ * against real D1 is the integration tier's job.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser} from "@kampus/fate-effect";
@@ -23,7 +14,6 @@ import {RequestFlagOverrides} from "../flagship/FlagsContext.ts";
 import {Mute} from "./Mute.ts";
 import {currentMutedIds, isMutedAuthor, mutedAuthorsWhere} from "./read-mask.ts";
 
-// A throwaway table carrying the one column the mask reads, for a stable rendered name.
 const content = sqliteTable("content", {
 	id: text("id").primaryKey(),
 	authorId: text("author_id").notNull(),
@@ -76,8 +66,8 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 		getObject: () => Effect.die("getObject not exercised"),
 	} as typeof Flags.Service);
 
-// `Mute` whose `readMutedIds` returns a fixed set — or dies on contact, proving a
-// path that must short-circuit before the read (flag off / anonymous) never reaches it.
+// Fail-on-contact by default, proving a path that must short-circuit before the read
+// (flag off / anonymous) never reaches it.
 const muteStub = (
 	readMutedIds?: (viewerId: string | null | undefined) => Effect.Effect<Set<string>>,
 ) =>

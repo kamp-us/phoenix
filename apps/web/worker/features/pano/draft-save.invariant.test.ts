@@ -1,13 +1,7 @@
 /**
- * `post.saveDraft` returns a `Post` carrying `isDraft: true` — the taslak write's
- * wire contract (#746; the dark-ship flag that once gated it is retired, ADR 0136).
- *
- * Wire-boundary unit test (ADR 0082): the `Pano`/`LivePublisher` seams are
- * substituted directly — no DB, no Flagship binding. The mutation runs through
- * `resolveWire` (its real external interface — `resolve` decode + the
- * `encodeWireError` class→wire-code seam) rather than `.handler`, so the decode
- * of the returned selection is part of what's proven. Mirrors
- * `report-mutation.unit.test.ts` (`resolveWire` + `CurrentUser`).
+ * `post.saveDraft` returns a `Post` carrying `isDraft: true` — the taslak write's wire
+ * contract. Driven through `resolveWire` rather than `.handler`, so the decode of the
+ * returned selection is part of what is proven.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
@@ -28,14 +22,13 @@ const runtimeContextStub: BaseRuntimeContext = {
 	set: (id) => Effect.succeed(id),
 };
 
-// A `LivePublisher` that records nothing — the publish is fire-and-forget and its
-// error channel is `never`, so it can never fail the mutation.
+// The publish is fire-and-forget with a `never` error channel, so it cannot fail the
+// mutation and nothing needs recording.
 const liveStub = Layer.succeed(LivePublisher)(
 	livePublisherFor({publish: () => Effect.void, waitUntil: () => {}}),
 );
 
-// A `Pano` stub whose `saveDraft` is scripted; every other method dies, so an
-// unexpected service call is loud rather than silently satisfied.
+// Every other method dies, so an unexpected service call is loud rather than satisfied.
 const panoStub = (saveDraft: (typeof Pano.Service)["saveDraft"]): Layer.Layer<Pano> =>
 	Layer.succeed(
 		Pano,

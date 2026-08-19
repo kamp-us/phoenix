@@ -1,19 +1,8 @@
 /**
- * The çaylak-SELF authorship-standing read (`myAuthorshipStanding`, #1316, epic
- * #1202) — the aggregate the #1291 status block consumes about ITSELF.
- *
- * What this proves (ADR 0082 unit tier — no DB; the trusted-source composition and
- * the gates are wrong-or-right independent of D1):
- *   - the read returns the reader's own `{karma, bar, vouchExists, inReviewCount}`
- *     from the trusted sources (`Kunye.karmaOf` / `VouchLedger.hasActiveFor` /
- *     `Pasaport.countInReview`), keyed on `CurrentUser` — never an input arg, so a
- *     çaylak cannot read another user's self-status;
- *   - `bar` is the vouch-aware promotion bar (reduced when vouched, full otherwise),
- *     so the frontend never hardcodes it;
- *   - anonymous ⇒ the wire `UNAUTHORIZED` before any read;
- *   - ONE-WAY-GLASS, structural: the payload TYPE carries ONLY aggregate scalars —
- *     no reviewer/voter/voucher identity field exists to fill (a compile-time guard,
- *     plus a runtime key assertion on the resolved payload).
+ * The self-scoped authorship-standing read (#1316): the aggregate the status block
+ * consumes about ITSELF. The read is keyed on `CurrentUser` and takes no input arg,
+ * so nobody can read another user's self-status, and the payload type carries only
+ * aggregate scalars — there is no identity field to leak.
  */
 
 import {assert, describe, it} from "@effect/vitest";
@@ -29,11 +18,8 @@ import {makePasaportStub} from "./Pasaport.testing.ts";
 import {queries} from "./queries.ts";
 import type {AuthorshipStanding} from "./views.ts";
 
-// ── ONE-WAY-GLASS, enforced in the TYPE (the #1316 hard AC) ──────────────────
-// The standing payload's keys are EXACTLY the aggregate set. Adding ANY
-// reviewer/voter/voucher identity field to `AuthorshipStanding` (a `voucherId`,
-// `reviewers`, a per-person count, …) breaks this `extends` both ways and is a
-// COMPILE error here — the leak is unrepresentable, not merely unsent.
+// Adding any identity field to `AuthorshipStanding` breaks this `extends` both ways
+// and is a COMPILE error here, which is what makes the leak unrepresentable.
 type StandingKeys = keyof Omit<AuthorshipStanding, "__typename">;
 type ExpectedKeys = "id" | "karma" | "bar" | "vouchExists" | "inReviewCount";
 type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
@@ -48,8 +34,7 @@ const runtimeContextStub: BaseRuntimeContext = {
 	set: (id) => Effect.succeed(id),
 };
 
-// A `Kunye` answering karma by id; `tierOf`/`rootOf` die — the standing read never
-// reads them (it reads only `karmaOf`), so a reached call fails the test.
+// `tierOf`/`rootOf` die: the standing read only reads karma, so a reached call fails.
 const kunyeWithKarma = (karmaById: Record<string, number>): Layer.Layer<Kunye> =>
 	Layer.succeed(Kunye, {
 		karmaOf: (id: string) => Effect.succeed(karmaById[id] ?? 0),
@@ -59,7 +44,6 @@ const kunyeWithKarma = (karmaById: Record<string, number>): Layer.Layer<Kunye> =
 
 const SELF: CurrentUserInfo = {id: "u-self", email: "self@kamp.us", name: "Self", image: null};
 
-// Drive `myAuthorshipStanding` over the trusted-source stubs, as `SELF`.
 const standingOf = (input: {
 	user?: CurrentUserInfo | undefined;
 	karma?: number;
@@ -135,8 +119,7 @@ describe("myAuthorshipStanding — the çaylak-self aggregate (#1316)", () => {
 				vouchExists: true,
 				inReviewCount: 1,
 			})) as AuthorshipStanding;
-			// No reviewer/voter/voucher identity field is present at runtime either —
-			// the key set is exactly the aggregate scalars (+ the fate `__typename`).
+			// No identity field is present at runtime either.
 			assert.deepStrictEqual(Object.keys(standing).sort(), [
 				"__typename",
 				"bar",

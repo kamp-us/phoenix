@@ -1,14 +1,8 @@
 /**
- * The mecmua public-read draft-mask gate (#2498, epic #2467). The anonymous read must
- * route the draft decision through the one `MecmuaPostVisibility` seam
- * (`mecmuaPostVisibleWhere`), so a visitor holding a draft's slug/id never reads an
- * unpublished post. Two tiers, both offline-reachable:
- *
- *   - the SQL PREDICATE (`mecmuaPublicReadWhere`) carries `published_at is not null`
- *     (the published gate) and NO `author_id = ?` ownership escape — so a draft is
- *     structurally undisclosable to the public, whichever key names it;
- *   - `readPublishedMecmuaPost` resolves null when no published row matches (a draft or
- *     a genuine miss), which the route renders as a 404 — the masked case.
+ * The mecmua public-read draft-mask gate: a visitor holding a draft's slug or id must
+ * never read an unpublished post. The predicate carries `published_at is not null` and NO
+ * `author_id = ?` ownership escape, so a draft is structurally undisclosable whichever key
+ * names it.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -43,7 +37,7 @@ const noopD1 = {
 } as unknown as D1Database;
 const renderDb = drizzle(noopD1, {relations});
 
-/** A `run` that ignores its query and resolves the scripted rows — the leak/mask fixtures never touch D1. */
+/** Ignores the query and resolves scripted rows; these fixtures never touch D1. */
 const scriptedRun =
 	(rows: ReadonlyArray<unknown>): DrizzleAccessOrDie["run"] =>
 	<A>(_fn: (db: DrizzleDb) => Promise<A>) =>
@@ -75,8 +69,7 @@ describe("mecmuaPublicReadWhere — the anonymous read masks drafts (the visibil
 describe("readPublishedMecmuaPost — masked/miss resolves null (the route's 404 path, #2498)", () => {
 	it.effect("a draft (masked by the WHERE ⇒ no row) resolves null", () =>
 		Effect.gen(function* () {
-			// The published gate drops the draft in SQL, so the query returns no rows —
-			// the read maps that to null, which the route renders as a 404.
+			// No rows: the read maps that to null, which the route renders as a 404.
 			const got = yield* readPublishedMecmuaPost(scriptedRun([]), "draft-slug");
 			assert.isNull(got, "a draft must not be publicly readable — masked to null (404)");
 		}),

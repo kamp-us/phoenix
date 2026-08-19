@@ -1,30 +1,22 @@
 /**
- * Mute unit coverage — the decisions that are wrong-or-right with no database
- * (ADR 0082, the `Bookmark.unit.test.ts` idiom): the `Drizzle` seam is substituted
- * directly. A `run`/`batch` that THROWS proves a short-circuit never touched the DB;
- * a stubbed `run` feeds the pre-write decision its inputs without an engine.
- *
- * Mute's real-D1 fidelity — composite-PK presence idempotency, the set/readMutedIds
- * round-trip over real rows — lands at the integration tier once a sibling wires the
- * fate/mutation surface this storage slice intentionally omits (there is no HTTP/fate
- * surface yet to drive Mute black-box over).
+ * Mute unit coverage over a substituted `Drizzle` seam (ADR 0082). Mute's real-D1 fidelity —
+ * composite-PK presence idempotency, the set/readMutedIds round-trip — lands at the
+ * integration tier once a sibling wires the fate/mutation surface this slice omits.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
 import {Mute, MuteLive} from "./Mute.ts";
 
-// A `Drizzle` whose every call throws — any path that actually reaches the DB seam
-// fails the test. A guard that short-circuits before reading runs to completion
-// against it, which is exactly the "no read" proof.
+// Every call throws, so any path that actually reaches the DB seam fails the test. A guard
+// that short-circuits before reading runs to completion against it.
 const throwingAccess: DrizzleAccess = {
 	run: () => Effect.die(new Error("Mute read the DB on a path that must short-circuit")),
 	batch: () => Effect.die(new Error("Mute wrote a batch on a path that must short-circuit")),
 };
 
-// A `Drizzle` whose `run` replays a queued sequence of results and whose `batch`
-// throws — drives `set`'s pre-write presence probe while proving the idempotent
-// no-op never reaches `batch`.
+// Replays a queued sequence of `run` results while `batch` throws — drives `set`'s pre-write
+// presence probe while proving the idempotent no-op never reaches `batch`.
 function scriptedAccess(results: ReadonlyArray<unknown>): {access: DrizzleAccess; runs: number} {
 	const state = {i: 0};
 	const access: DrizzleAccess = {
@@ -59,7 +51,7 @@ describe("Mute.set — self-mute rejection (mocked Drizzle seam)", () => {
 
 describe("Mute.set — pre-write idempotency (mocked Drizzle seam)", () => {
 	it.effect("re-muting an already-muted member is an idempotent no-op — no batch", () => {
-		// run #1 presence probe → already muted. The `batch` stub throws, so reaching it fails.
+		// Presence probe → already muted. The `batch` stub throws, so reaching it fails.
 		const {access} = scriptedAccess([{mutedId: "u2"}]);
 		return Effect.gen(function* () {
 			const mute = yield* Mute;
@@ -71,7 +63,6 @@ describe("Mute.set — pre-write idempotency (mocked Drizzle seam)", () => {
 	});
 
 	it.effect("un-muting a never-muted pair is an idempotent no-op — no batch", () => {
-		// run #1 presence probe → not muted.
 		const {access} = scriptedAccess([undefined]);
 		return Effect.gen(function* () {
 			const mute = yield* Mute;
@@ -101,7 +92,6 @@ describe("Mute.readMutedIds — no-read short-circuit + batched read (mocked Dri
 	);
 
 	it.effect("a viewer's muted ids come back as a Set from one batched read", () => {
-		// a single read returns the whole muted set for the viewer (keyed on muter_id).
 		const {access, runs} = ((): {access: DrizzleAccess; runs: () => number} => {
 			const state = {i: 0};
 			return {

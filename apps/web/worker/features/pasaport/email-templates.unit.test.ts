@@ -1,15 +1,8 @@
 /**
- * Unit coverage for the transactional email copy + the callback dispatch
- * contract (ADR 0101). The three better-auth callbacks (magic-link, verify,
- * change-email confirmation) each build their `EmailMessage` from these template
- * functions and dispatch it through the `EmailSender` port. This test asserts:
- *
- *   - each template carries the required `to`/`subject` and a body, the recipient
- *     and link the callback was handed, and Turkish subject copy;
- *   - a built message dispatched through a recording `EmailSender` reaches `send`
- *     verbatim — the callback→port wiring;
- *   - the change-email confirmation addresses the CURRENT email (not the new one),
- *     the security-load-bearing detail of the flow #75 needs.
+ * Unit coverage for the transactional email copy + the callback dispatch contract (ADR 0101):
+ * each template's `to`/`subject`/body, that a built message reaches `EmailSender.send`
+ * verbatim, and that the change-email confirmation addresses the CURRENT email, not the new
+ * one — the security-load-bearing detail of the flow.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";

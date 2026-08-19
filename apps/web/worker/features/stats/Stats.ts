@@ -1,11 +1,7 @@
 /**
- * Stats — the landing-page aggregate service. One read-only method,
- * `getLandingStats`, returns the SPA's four counters: three from per-product
- * single-row tables (`sozluk_stats`, `pano_stats`, maintained inline by the
- * feature services), the fourth a distinct-author UNION across the record tables.
- *
- * Reads go through `run`/`orDieAccess`, so infra failures die here (the
- * domain-boundary rule) and the public signature carries no error.
+ * Stats — the landing-page aggregate service. Three counters come from the per-product
+ * single-row tables the feature services maintain; the fourth is a distinct-author UNION
+ * across the record tables.
  */
 import {sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
@@ -35,8 +31,7 @@ export const StatsLive = Layer.effect(Stats)(
 
 		return {
 			getLandingStats: Effect.fn("Stats.getLandingStats")(function* () {
-				// The single-row tables can be missing on a fresh DB — coalesce to
-				// zero (below) so the resolver always has a non-null shape.
+				// The single-row tables can be missing on a fresh DB, hence the coalesce below.
 				const sozlukRow = yield* run((db) =>
 					db
 						.run(sql`SELECT total_definitions FROM sozluk_stats WHERE id = 1`)
@@ -50,12 +45,9 @@ export const StatsLive = Layer.effect(Stats)(
 								(r.results[0] as {total_posts: number; total_comments: number} | undefined) ?? null,
 						),
 				);
-				// Distinct-author UNION across the record tables: cheaper than reading
-				// both per-product `total_authors` columns, since neither is a strict
-				// subset of the other. Each arm sources the public-live filter from the
-				// shared seam (#1359/#1407) for the anonymous viewer — definition/comment
-				// via `publicLiveWhere` (removed + sandbox), the post arm via the
-				// post-aware `publicLivePostWhere` so a draft-only author is excluded too.
+				// A UNION rather than summing the per-product `total_authors` columns, since
+				// neither is a strict subset of the other. The post arm uses the post-aware
+				// `publicLivePostWhere` so a draft-only author is excluded too (#1359/#1407).
 				const defWhere = publicLiveWhere(
 					{
 						removedAt: schema.definitionRecord.removedAt,

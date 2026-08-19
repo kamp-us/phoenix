@@ -1,15 +1,10 @@
 /**
  * `applyRemovalTransition` — the shared remove/restore ceremony single-sourced across
- * the pano post/comment + sözlük definition planes (#2012). This asserts the INVARIANT
- * the twelve public methods used to hand-inline and drift on, directly at the helper:
- *
- *   - the `isRemoved` state guard short-circuits (no-op, no substrate write, no refresh);
- *   - a `remove`/`restore` stamps the substrate and reports the round-tripped `sandboxedAt`;
- *   - `afterCommit` runs AFTER the substrate write and BEFORE the refresh (the ordering the
- *     comment plane's post-`comment_count` adjustment depends on);
- *   - the refresh is swallowed-and-logged UNIFORMLY (#1639) — a refresh die never flips an
- *     already-committed transition into a failure. This is the drift the issue names: the
- *     swallow existed only in `deletePost`, bare in the other eleven; now one place owns it.
+ * the pano post/comment + sözlük definition planes (#2012). Asserts, at the helper,
+ * the invariant twelve public methods used to hand-inline and drift on: the
+ * already-in-that-state guard short-circuits; `afterCommit` runs after the substrate
+ * write and before the refresh; and the refresh is swallowed-and-logged UNIFORMLY
+ * (#1639), so a refresh die never flips a committed transition into a failure.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit} from "effect";
@@ -19,8 +14,7 @@ import * as Removal from "./removal.ts";
 
 const now = new Date("2026-07-04T00:00:00.000Z");
 
-// A `RemovalSequence` that records what it was asked to write — the substrate write is a
-// black box here (its own tests target `removal.ts`); this only proves the ceremony calls it.
+// Records what it was asked to write; the substrate write itself is `removal.ts`'s.
 const recordingSeq = () => {
 	const calls: Array<{op: "remove" | "restore"; kind: TargetKind}> = [];
 	const seq: Removal.RemovalSequence = {
@@ -31,7 +25,6 @@ const recordingSeq = () => {
 	return {seq, calls};
 };
 
-// The live/removed column shapes the caller loads and hands the helper as `subject`.
 const liveColumns: Removal.RemovalColumns = {
 	removedAt: null,
 	removedBy: null,

@@ -1,15 +1,10 @@
 /**
- * Unit coverage for the pasaport `me` resolver's auth gate — the anonymous →
- * `UNAUTHORIZED` boundary, proven with NO database (ADR 0082). The litmus: the
- * gate is wrong-or-right independent of the DB — `CurrentUser.required` fails
- * before any `Pasaport` read — so it belongs at `unit`, not on a database.
+ * Unit coverage for the pasaport `me` resolver's auth gate — the anonymous → `UNAUTHORIZED`
+ * boundary, proven with NO database (ADR 0082).
  *
- * The `me` op runs through `resolveWire` — its real external interface (`resolve`
- * decode + the `encodeWireError` class→wire-code seam) — over an anonymous
- * `CurrentUser` and a fail-on-contact `Pasaport` sentinel: the sentinel proves the
- * gate short-circuits the DB read (a reached read would `die` → `INTERNAL_SERVER_ERROR`,
- * not `UNAUTHORIZED`). Asserting the WIRE `code` (not the typed `Unauthorized`
- * instance one layer in) is what makes a mis-annotated `[FateWireCode]` a unit failure.
+ * `me` runs through `resolveWire` (decode + the `encodeWireError` class→wire-code seam), so the
+ * assertion is on the WIRE `code`, not the typed `Unauthorized` instance one layer in — that is
+ * what makes a mis-annotated `[FateWireCode]` a unit failure.
  */
 
 import {it} from "@effect/vitest";
@@ -26,34 +21,25 @@ import type {UserRow} from "./Pasaport.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {queries} from "./queries.ts";
 
-// Fail-on-contact `Pasaport`: any method call dies, so a passing test proves the
-// gate never reached the DB (a reached read would `die`, not `Unauthorized`).
-// `as never` widens the partial stub to the full service shape — the anon path
-// touches none of these methods.
+// Fail-on-contact: any method call dies, so a passing test proves the gate never reached the DB.
+// `as never` widens the partial stub — the anon path touches none of these methods.
 const failOnContactPasaport = {
 	getUserById: () => Effect.die("Pasaport.getUserById must not be reached on the anon gate"),
 } as never;
 
-// Same intent for `Kunye`: the anon gate fails at `CurrentUser.required` before
-// any tier read, so a reached `tierOf` would `die` (not `Unauthorized`).
 const failOnContactKunye = {
 	tierOf: () => Effect.die("Kunye.tierOf must not be reached on the anon gate"),
 } as never;
 
-// Same intent for `RelationStore`: the anon gate short-circuits before the
-// `isModerator` read (#1320), so a reached `has` would `die` (not `Unauthorized`).
 const failOnContactRelationStore = {
 	has: () => Effect.die("RelationStore.has must not be reached on the anon gate"),
 } as never;
 
-// A `RelationStore` answering a fixed moderator verdict for any tuple — the
-// `(subject, "moderates", platform)` membership the `me` resolver reads `isModerator`
-// off (#1320). `true` ⇒ the subject is a platform moderator, `false` ⇒ not.
+// A fixed verdict for the `(subject, "moderates", platform)` membership `me` reads (#1320).
 const relationStoreReturning = (isMod: boolean) => ({has: () => Effect.succeed(isMod)}) as never;
 
-// A stored account row carrying a given authorship tier. The `me` resolver reads
-// `getUserById` twice — once for the canonical row, once inside `Kunye.tierOf` —
-// so this single stub backs both reads.
+// The `me` resolver reads `getUserById` twice — canonical row, then inside `Kunye.tierOf` — so
+// this single stub backs both reads.
 const storedUser = (tier: StoredTier): UserRow => ({
 	id: "u1",
 	email: "u1@kamp.us",
@@ -63,9 +49,7 @@ const storedUser = (tier: StoredTier): UserRow => ({
 	tier,
 });
 
-// The `me` resolver also reads the SELF failing-delivery signal (#2693) via
-// `getEmailDeliveryState`; deliverable by default so the tier/isModerator paths run
-// unaffected. `deliveryState` overrides it for the emailFailing coverage below.
+// Deliverable by default so the tier/isModerator paths run unaffected (#2693).
 const pasaportWithStoredTier = (
 	tier: StoredTier,
 	deliveryState: {failing: boolean; reason: string | null} = DELIVERABLE,
@@ -75,10 +59,8 @@ const pasaportWithStoredTier = (
 		getEmailDeliveryState: () => Effect.succeed({address: "u1@kamp.us", state: deliveryState}),
 	}) as never;
 
-// Drive `me` to the resolved wire object's `tier` scalar over the REAL `Kunye`
-// (KunyeLive) layered on a stored-tier Pasaport stub — exercising the trusted
-// `getUserById → Kunye.tierOf → view` read path end to end. A non-moderator
-// `RelationStore` backs the orthogonal `isModerator` read so the `tier` path runs.
+// Drives `me` over the REAL `Kunye` on a stored-tier Pasaport stub — the trusted
+// `getUserById → Kunye.tierOf → view` path end to end.
 const resolveMeTier = (user: CurrentUserInfo, pasaport: never) =>
 	resolveWire(queries.me, {args: undefined, select: ["id", "tier"]}).pipe(
 		Effect.provideService(CurrentUser, {user}),
@@ -88,10 +70,6 @@ const resolveMeTier = (user: CurrentUserInfo, pasaport: never) =>
 		Effect.map((me) => (me as {tier: string}).tier),
 	);
 
-// Drive `me` to the resolved wire object's `isModerator` scalar (#1320) — the SELF
-// moderator signal read off the `moderates` relation tuple via `RelationStore`,
-// keyed on the current user. The `relationStore` stub fixes the membership verdict;
-// `tier` rides the same stored-tier Pasaport stub so a dual-role case is expressible.
 const resolveMeIsModerator = (user: CurrentUserInfo, pasaport: never, relationStore: never) =>
 	resolveWire(queries.me, {args: undefined, select: ["id", "isModerator"]}).pipe(
 		Effect.provideService(CurrentUser, {user}),
@@ -112,9 +90,6 @@ it.effect(
 				Effect.provideService(RelationStore, failOnContactRelationStore),
 				Effect.exit,
 			);
-			// The wire `UNAUTHORIZED` a client sees — derived by `encodeWireError` from the
-			// `Unauthorized` class's `[FateWireCode]` annotation, not the typed instance one
-			// layer in. A defect from a reached DB read would be `INTERNAL_SERVER_ERROR`.
 			assert.isTrue(Exit.isFailure(exit));
 			if (Exit.isFailure(exit)) {
 				const error = Cause.findErrorOption(exit.cause);
@@ -128,8 +103,6 @@ it.effect(
 
 it.effect("me carries tier from the stored column via Kunye.tierOf, NOT the session field", () =>
 	Effect.gen(function* () {
-		// Session claims `yazar`; the stored column says `çaylak`. The trusted read
-		// must win — proving the resolver ignores the `input:false` session tier (#1297).
 		const sessionUserClaimingYazar = {
 			id: "u1",
 			email: "u1@kamp.us",
@@ -163,10 +136,8 @@ it.effect("me ranks a row-missing principal as visitor (Kunye.tierOf fallback)",
 			name: "U One",
 			image: null,
 		} satisfies CurrentUserInfo;
-		// No stored row → both the canonical read and Kunye.tierOf see null → visitor,
-		// the read-time rank the column can never store. `getEmailDeliveryState` fails
-		// `UserNotFound` for the row-missing address, which the `me` resolver catches to a
-		// deliverable signal (proving the catch keeps the read from crashing).
+		// No stored row → visitor, the read-time rank the column can never store. `getEmailDeliveryState`
+		// fails `UserNotFound` here, which the resolver catches to a deliverable signal.
 		const noRowPasaport = {
 			getUserById: () => Effect.succeed(null),
 			getEmailDeliveryState: () => new UserNotFound({message: "kullanıcı bulunamadı"}),
@@ -176,10 +147,8 @@ it.effect("me ranks a row-missing principal as visitor (Kunye.tierOf fallback)",
 	}),
 );
 
-// #1320 — the SELF moderator signal, read off the `moderates` relation tuple (the
-// trusted source `Moderate.over(platform)` checks), self-only, never inferred from
-// `tier`. The dual-role case is the founding author-mod (#1207): `tier: "yazar"` AND
-// `isModerator: true` — exactly what `tier` alone cannot express.
+// #1320 — the SELF moderator signal, read off the `moderates` tuple, never inferred from `tier`:
+// the founding author-mod (#1207) is `tier: "yazar"` AND `isModerator: true`.
 const u1: CurrentUserInfo = {id: "u1", email: "u1@kamp.us", name: "U One", image: null};
 
 it.effect("me carries isModerator true for a dual-role yazar+moderator (the #1207 cohort)", () =>
@@ -215,8 +184,7 @@ it.effect("me carries isModerator false for a yazar who holds no moderates tuple
 	}),
 );
 
-// #2693 — the SELF failing-delivery signal the membrane notice reads. Stamped on the
-// `me` read from #2691's projection, self-scoped so it can only describe the reader.
+// #2693 — the SELF failing-delivery signal, self-scoped so it can only describe the reader.
 const resolveMeEmailFailing = (pasaport: never) =>
 	resolveWire(queries.me, {args: undefined, select: ["id", "emailFailing"]}).pipe(
 		Effect.provideService(CurrentUser, {user: u1}),

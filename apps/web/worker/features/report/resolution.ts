@@ -1,52 +1,35 @@
 /**
- * The report resolution state machine (ADR 0098 §3) as pure domain logic — the
- * transition rules, with no database or Effect. `content_report.status` is a
- * closed three-state set; a terminal transition is the only writer of the audit
- * triad, so "resolved but we don't know who/what" is unrepresentable.
+ * The report resolution state machine (ADR 0098 §3) as pure domain logic — no database, no
+ * Effect. A terminal transition is the only writer of the audit triad, so "resolved but we
+ * don't know who/what" is unrepresentable.
  *
  *   open ──resolve(remove)──▶ resolved   (target removed via the 0096 substrate)
  *   open ──resolve(dismiss)─▶ dismissed (report unfounded, no action)
  *   resolved  ──reopen──▶ open            (a restore re-opens; bounded)
  *   dismissed ──reopen──▶ open
  *
- * Transitions are decided by `Match.tagsExhaustive` over the source status, which
- * forces every status to be addressed. A transition from a *dynamic* source status
- * that is illegal (e.g. re-resolving a terminal report) surfaces as a typed
- * `Result.Failure(IllegalTransition)` — a value in the caller's error channel, never a
- * bare `throw`: inside `Effect.fn` callers a throw becomes an untyped defect/500, so the
- * domain condition must ride the typed channel instead (#2560).
+ * An illegal transition is a typed `Result.Failure(IllegalTransition)`, never a `throw`: inside
+ * an `Effect.fn` caller a throw becomes an untyped defect/500 (#2560).
  */
 import {Match, Result} from "effect";
 
-/**
- * The closed status set, as the one runtime tuple the `content_report.status`
- * D1 enum sources from (so the column can't drift from the machine). `open` is
- * the only non-terminal state.
- */
+/** The one runtime tuple the `content_report.status` D1 enum sources from. */
 export const REPORT_STATUSES = ["open", "resolved", "dismissed"] as const;
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
 
 /**
- * The outcome a terminal transition records — the persisted `resolution` column
- * value (a state the report reached; past tense), as the one runtime tuple the
- * `content_report.resolution` D1 enum sources from. A distinct axis from
- * {@link ResolveAction}: `removed` is the outcome under `status:"resolved"`,
- * `dismissed` the outcome under `status:"dismissed"`.
+ * The persisted `resolution` column value (the outcome reached; past tense) — a distinct axis
+ * from {@link ResolveAction}, and the one runtime tuple that D1 enum sources from.
  */
 export const RESOLUTIONS = ["removed", "dismissed"] as const;
 export type Resolution = (typeof RESOLUTIONS)[number];
 
 /**
- * The verb a moderator chooses on an open report (the action they take; present
- * tense) — the wire/input axis. Deliberately off the `removed`/`dismissed`
- * outcome tokens AND the `dismissed` status token: a bare `remove`/`dismiss`
- * reads as an action, never an outcome or a status. `remove` soft-deletes the
- * target. The action→outcome map is `remove → removed` (status `resolved`) and
- * `dismiss → dismissed` (status `dismissed`).
+ * The verb a moderator chooses (present tense) — the wire/input axis, deliberately off the
+ * outcome and status tokens so a bare `remove`/`dismiss` can't read as either.
  */
 export type ResolveAction = "remove" | "dismiss";
 
-/** A `Match`-able tagged view of a row's current status. */
 type StatusTag =
 	| {readonly _tag: "open"}
 	| {readonly _tag: "resolved"}
@@ -68,12 +51,7 @@ export class IllegalTransition extends Error {
 	}
 }
 
-/**
- * `resolve(action)` is legal only from `open`. The `Match.tagsExhaustive` forces
- * every status to be addressed; re-resolving an already-terminal report is a
- * `Result.Failure(IllegalTransition)` — the caller threads it through the typed error
- * channel rather than silently re-stamping the audit (#2560).
- */
+/** Legal only from `open`; re-resolving a terminal report fails rather than re-stamping the audit. */
 export const resolve = (
 	from: ReportStatus,
 	action: ResolveAction,
@@ -89,11 +67,7 @@ export const resolve = (
 		dismissed: () => Result.fail(new IllegalTransition(from, `resolve(${action})`)),
 	});
 
-/**
- * `reopen` is legal only from a terminal state (`resolved` | `dismissed`) — a
- * restore of a moderated entity reopens its report (ADR 0096 §4 ↔ 0098 §3).
- * Reopening an already-open report is a `Result.Failure(IllegalTransition)` (#2560).
- */
+/** Legal only from a terminal state — a restore reopens its report (ADR 0096 §4 ↔ 0098 §3). */
 export const reopen = (from: ReportStatus): Result.Result<ReportStatus, IllegalTransition> =>
 	Match.valueTags(tagged(from), {
 		open: () => Result.fail(new IllegalTransition(from, "reopen")),
@@ -104,15 +78,12 @@ export const reopen = (from: ReportStatus): Result.Result<ReportStatus, IllegalT
 export const isTerminal = (status: ReportStatus): boolean => status !== "open";
 
 /**
- * The terminal statuses a report can be reopened from, derived from the machine
- * ({@link isTerminal}) rather than hand-typed — so the SQL `reopen` guard sources
- * its "reopen only from a terminal state" set from the one machine, not a literal
- * that could drift from it (ADR 0098 §3). Narrowed to the terminal subtype.
+ * Derived from {@link isTerminal} rather than hand-typed, so the SQL `reopen` guard sources its
+ * terminal set from the one machine (ADR 0098 §3).
  */
 export const TERMINAL_STATUSES = REPORT_STATUSES.filter(isTerminal) as ReadonlyArray<
 	Exclude<ReportStatus, "open">
 >;
 
-/** The outcome an action records, independent of any transition — the action→outcome map. */
 export const outcomeOf = (action: ResolveAction): Resolution =>
 	action === "remove" ? "removed" : "dismissed";

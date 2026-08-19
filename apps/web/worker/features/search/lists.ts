@@ -1,10 +1,7 @@
 /**
- * Search root list resolvers — `searchTerms` / `searchPosts` (ADR 0080). Per-type
- * roots (no unified `SearchResult`), each reusing the existing `Term` / `Post`
- * view + shaper so #122 renders results with the verbatim `TermRow` / post-card
- * components. The service owns the FTS5 MATCH + bm25 keyset SQL (ADR 0019); this
- * layer validates the `query` arg and reshapes the page onto a `ConnectionResult`.
- * See `.patterns/fate-connections.md`.
+ * Search root list resolvers (ADR 0080). Per-type roots with no unified `SearchResult`,
+ * each reusing the existing `Term` / `Post` view + shaper so results render with the
+ * verbatim components. See `.patterns/fate-connections.md`.
  */
 
 import {Fate} from "@kampus/fate-effect";
@@ -41,9 +38,8 @@ export const lists = {
 	searchPosts: Fate.list(
 		{args: SearchArgs, type: PostView},
 		Effect.fn("searchPosts")(function* ({args}) {
-			// Resolve the sandbox viewer once (identity + moderator probe); search masks
-			// posts through the pano visibility seam (ADR 0113) — çaylak-sandboxed posts
-			// hidden from anyone but their author + a mod, and drafts from any non-author.
+			// Search masks posts through the pano visibility seam (ADR 0113), so it must
+			// resolve the viewer rather than reading sandbox-blind.
 			const sandboxViewer = yield* currentSandboxViewer;
 			const search = yield* Search;
 			const page = yield* search.searchPosts({

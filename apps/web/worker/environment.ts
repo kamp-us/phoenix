@@ -1,63 +1,36 @@
 /**
- * The deploy-environment taxonomy (ADR 0088) and the predicates the IaC↔CI↔runtime
- * seam shares — the ONE module owning `development | preview | production | audit`, the
- * `stage → ENVIRONMENT` map (the `prod`→`production` spelling), and the fail-closed
- * `isProduction` gate. Before #1433 these were re-derived independently at five sites
- * (deploy.yml, config.ts, email-resources.ts, env.ts, alchemy.run.ts) with no shared
- * predicate, so a `prod`≠`production` drift would fail OPEN: every gate falling through
- * to non-prod on a *green* deploy (no email subdomain, no apex domain, no error).
+ * The deploy-environment taxonomy (ADR 0088) and the predicates the IaC, CI and
+ * runtime share — one owner for the classes, the `stage → ENVIRONMENT` map and the
+ * production gate, because five sites once re-derived them and a `prod`≠`production`
+ * drift failed OPEN on a green deploy (#1433).
  *
- * Pure — no `effect` import — on purpose: this contract is read at THREE distinct
- * moments and must not be tied to any one of them. The worker runtime reads it via the
- * `effect/Config` surface in `config.ts`; the alchemy CLI reads it over `process.env`
- * at deploy time; and `.github/workflows/deploy.yml` runs `environmentForStage` directly
- * under node (which strips the types). An Effect dependency here would bind it to the
- * runtime moment alone.
+ * Deliberately pure, with no `effect` import: this is read at three moments — by the
+ * worker runtime through `config.ts`, by the alchemy CLI over `process.env` at deploy
+ * time, and by `deploy.yml` running `environmentForStage` directly under node. An
+ * Effect dependency would bind it to the runtime moment alone.
  */
 
-/**
- * The deploy classes (ADR 0088), as the canonical literal tuple every site reuses.
- * `audit` is the dedicated isolated stage the rite-audit harness deploys (#1511,
- * epic #1510): a non-production deployed stage, distinct from a per-PR `preview`,
- * that exists so a force-on targeting rule can serve a dark-ship flag ON
- * non-interactively without ever reaching production (such a rule keys on this
- * class). It is NOT production — `isProduction` stays `=== "production"`, so an
- * audit stage provisions no email subdomain / apex domain, exactly like a preview.
- */
+// `audit` is the rite-audit harness's isolated deployed stage (#1511): a force-on
+// targeting rule can serve a dark-ship flag there without ever reaching production. It
+// is not production, so it provisions no email subdomain or apex domain.
 export const ENVIRONMENTS = ["development", "preview", "production", "audit"] as const;
 
-/** The deploy environment — one of the deploy classes (ADR 0088). */
 export type Environment = (typeof ENVIRONMENTS)[number];
 
-/**
- * The dedicated audit deploy class (#1511, epic #1510). Single-sourced here so the
- * stage→ENVIRONMENT map (`environmentForStage`) and any audit-stage force-on
- * targeting rule name the SAME literal — such a rule serves `on` iff the request's
- * `environment` attribute equals this value.
- */
+// Single-sourced so `environmentForStage` and any audit force-on targeting rule name
+// the same literal.
 export const AUDIT_ENVIRONMENT: Environment = "audit";
 
-/** The alchemy stage name that deploys the dedicated audit class (#1511). */
 export const AUDIT_STAGE = "audit";
 
-/**
- * The fail-closed default when `ENVIRONMENT` is unset at runtime (ADR 0088): a missing
- * var lands in production, closing every dev gate. `config.ts` binds this as the
- * `Config.withDefault`.
- */
+// Fail-closed: a missing `ENVIRONMENT` lands in production and closes every dev gate.
 export const DEFAULT_ENVIRONMENT: Environment = "production";
 
-/** Is `value` one of the taxonomy's deploy classes? */
 export const isEnvironment = (value: string): value is Environment =>
 	(ENVIRONMENTS as readonly string[]).includes(value);
 
-/**
- * Thrown when a non-empty `ENVIRONMENT` value is outside the taxonomy — the fail-LOUD
- * guard (#1433). Before this, an unrecognized value (the stage spelling `prod` instead
- * of `production`, say) silently fell through to non-prod, so a green deploy provisioned
- * no email subdomain and no apex domain. Failing loud here is the fail-closed posture of
- * ADR 0092 applied to the env taxonomy: refuse rather than silently downgrade.
- */
+// Fail loud rather than downgrade (ADR 0092): an unrecognized value used to fall
+// through to non-prod, so a green deploy silently provisioned nothing (#1433).
 export class UnknownEnvironmentError extends Error {
 	readonly value: string;
 	constructor(value: string) {
@@ -70,46 +43,23 @@ export class UnknownEnvironmentError extends Error {
 	}
 }
 
-/**
- * Parse a deploy-time `ENVIRONMENT` string into a typed `Environment`.
- *
- * - unset / empty → `undefined`: genuinely absent, so the caller decides the default.
- *   The deploy gates read absence as non-prod, preserving the prior `=== "production"`
- *   behavior for a local `alchemy deploy` with no `ENVIRONMENT`.
- * - a known class → that `Environment`.
- * - a non-empty UNKNOWN value → throws `UnknownEnvironmentError` (fail loud, #1433).
- */
+// Absent stays `undefined` so the caller picks the default — a local `alchemy deploy`
+// with no `ENVIRONMENT` must still read as non-prod.
 export const parseDeployEnvironment = (value: string | undefined): Environment | undefined => {
 	if (value === undefined || value === "") return undefined;
 	if (isEnvironment(value)) return value;
 	throw new UnknownEnvironmentError(value);
 };
 
-/** The fail-closed production gate over a typed `Environment` — the ONE predicate every TS gate shares. */
 export const isProduction = (environment: Environment): boolean => environment === "production";
 
-/**
- * Is this a production deploy? Reads the deploy-time `process.env.ENVIRONMENT` (the same
- * var the worker's `Config` binds at runtime). Fail-closed: an absent value is non-prod,
- * and a non-empty unknown value throws rather than silently downgrading (#1433) — so a CI
- * misconfiguration (e.g. emitting `prod`) fails the deploy loudly instead of quietly
- * skipping the email subdomain and apex domain.
- */
 export const isProductionDeploy = (env: {readonly ENVIRONMENT?: string | undefined}): boolean => {
 	const environment = parseDeployEnvironment(env.ENVIRONMENT);
 	return environment !== undefined && isProduction(environment);
 };
 
-/**
- * Map an alchemy stage name → its deploy `ENVIRONMENT` class — the single owner of the
- * `prod`→`production` spelling. `.github/workflows/deploy.yml` calls this (via node) so
- * the mapping lives here, not inlined in a YAML expression (#1433). The main-push stage
- * `prod` is `production`; the dedicated `audit` stage is `audit` (the rite-audit harness,
- * #1511); every other stage (the per-PR `pr-<n>` previews, ephemeral `it-*` integration
- * stages) is `preview`. Local `alchemy dev` sets `development` via `.env` and is never a
- * deployed stage. `prod`→`production` is the load-bearing invariant: only `prod` maps to
- * `production`, so the audit force-on rule (which keys on `audit`) can never match a prod
- * deploy.
- */
+// The single owner of the `prod`→`production` spelling; `deploy.yml` calls this under
+// node rather than inlining the mapping in YAML (#1433). Only `prod` maps to
+// `production`, which is what keeps the audit force-on rule from matching a prod deploy.
 export const environmentForStage = (stage: string): Environment =>
 	stage === "prod" ? "production" : stage === AUDIT_STAGE ? "audit" : "preview";

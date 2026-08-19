@@ -1,8 +1,7 @@
 /**
- * The dark-ship default-=-safe-state invariant for the mecmua subscribed-author feed
- * flag (#2500, epic #2467). Inspected off the exported `MECMUA_FEED_FLAG` record (the
- * same object the factory spreads into `FlagshipFlag`), so no alchemy resource is
- * constructed — mirrors `mecmua-write.invariant.test.ts`.
+ * The dark-ship default-is-the-safe-state invariant for the mecmua subscribed-author
+ * feed flag. Inspected off the exported flag record, the same object the factory
+ * spreads into `FlagshipFlag`, so no alchemy resource is constructed.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {MECMUA_FEED} from "../../../src/flags/keys.ts";

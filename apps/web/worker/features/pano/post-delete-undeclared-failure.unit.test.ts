@@ -1,24 +1,10 @@
 /**
- * `post.delete` has no undeclared failure channel (#1639).
- *
- * The mutation declared only `Unauthorized | UnauthorizedPostMutation`, but its
- * removal commit runs over `DrizzleAccessOrDie` — a D1-layer write failure *dies*,
- * and a defect is not a member of that union, so it escaped the handler as a raw
- * `INTERNAL_SERVER_ERROR` (the squashed-defect wire code, `WireError.ts`). Two
- * regressions pin the closure:
- *
- *   (a) WIRE boundary — driven through `resolveWire` (`resolve` decode +
- *       `encodeWireError` class→wire-code, the same seams `/fate` crosses):
- *         - own-post delete → success (the id-only eviction ref, never a 500);
- *         - missing / already-removed post → success (the graceful `deleted:false`);
- *         - a removal-commit *die* → the DECLARED, annotated `POST_DELETE_FAILED`,
- *           NOT `INTERNAL_SERVER_ERROR`. Without the handler's `catchDefect` this
- *           asserts `INTERNAL_SERVER_ERROR` and fails.
- *
- *   (b) SERVICE — the post-commit stats refresh is a recomputable cache (ADR
- *       0011/0117): a refresh die must NOT flip an already-committed removal into a
- *       failure (the partial-commit-then-500). Driven over a scripted `Drizzle`
- *       whose stamp batch commits but whose later stats `run` dies.
+ * `post.delete` has no undeclared failure channel (#1639). Its removal commit runs over
+ * `DrizzleAccessOrDie`, so a D1 write failure DIES — and a defect is in no declared
+ * error union, so it used to escape as a raw `INTERNAL_SERVER_ERROR`. Two regressions
+ * pin the closure: (a) a removal-commit die must reach the wire as the declared
+ * `POST_DELETE_FAILED`; (b) a post-commit stats-refresh die must not flip an
+ * already-committed removal into a failure (ADR 0011/0117 — a recomputable cache).
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
@@ -46,13 +32,11 @@ const runtimeContextStub: BaseRuntimeContext = {
 	set: (id) => Effect.succeed(id),
 };
 
-// Fire-and-forget publish (error channel `never`); it can never fail the mutation.
 const liveStub = Layer.succeed(LivePublisher)(
 	livePublisherFor({publish: () => Effect.void, waitUntil: () => {}}),
 );
 
-// A `Pano` stub whose `deletePost` is scripted; every other method dies loud — the
-// handler path only ever reaches `deletePost`.
+// Every method but `deletePost` dies loud, so an unexpected call is caught.
 const panoStub = (deletePost: (typeof Pano.Service)["deletePost"]): Layer.Layer<Pano> =>
 	Layer.succeed(
 		Pano,
@@ -109,7 +93,6 @@ describe("post.delete — (a) no undeclared failure channel at the wire boundary
 	);
 });
 
-// The stamp batch commits (source of truth), then the post-commit stats refresh dies.
 const ownerId = UserId.make(AUTHOR.id);
 const removalCommitsThenStatsDie = (): DrizzleAccess => {
 	let runs = 0;
@@ -135,8 +118,7 @@ const removalCommitsThenStatsDie = (): DrizzleAccess => {
 	} as DrizzleAccess;
 };
 
-// `Vote.clearTarget` is the only Vote method `removeEntity` reaches; succeed inertly.
-// Every other method dies loud (mirrors `panoStub`), so an unexpected call is caught.
+// `clearTarget` is the only Vote method `removeEntity` reaches; the rest die loud.
 const voteStub = Layer.succeed(
 	Vote,
 	new Proxy({clearTarget: () => Effect.void} as Partial<Context.Service.Shape<typeof Vote>>, {

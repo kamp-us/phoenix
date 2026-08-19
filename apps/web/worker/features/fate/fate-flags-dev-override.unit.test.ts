@@ -1,21 +1,12 @@
 /**
- * The fate data-plane `Flags` layer installs the #622 local-override wrapper — so a
- * flag-gated fate resolver/mutation honors an `overrides` entry in its per-request
- * `FlagsContext`. This is the #1868 regression guard (before it, `makeFateLayer` baked
- * the PLAIN `FlagsLive`, so the decorator was never on the fate path and the flag-flip
- * cookie had no effect on a mutation).
+ * The #1868 regression guard: the fate data-plane `Flags` layer must install the
+ * local-override wrapper (before it, `makeFateLayer` baked the PLAIN `FlagsLive`, so the
+ * flag-flip cookie had no effect on a mutation). Whether an override is AUTHORIZED is a
+ * different question, proven in `flagship/override-authz.unit.test.ts`.
  *
- * As of #2741 the wrapper is installed UNCONDITIONALLY (not env-selected): whether an
- * override is HONORED is decided upstream, per request, by `overridesAuthorized` (dev,
- * or an admin) which populates `FlagsContext.overrides`.
- * That gate — including the prod fail-closed "a non-admin's cookie is inert" invariant —
- * is proven in `flagship/override-authz.unit.test.ts`. This test proves only the
- * mechanism it feeds: given an override in context, the fate layer honors it.
- *
- * No binding / no I/O — `FateFlagsLive` over a stub `Flagship` whose real eval always
- * returns the supplied default (dark-ship OFF for `phoenix-reactions`): the only way the
- * flag reads ON is the override decorator short-circuiting on `FlagsContext.overrides`,
- * so a passing ON assertion proves the wrapper is installed — not that real eval flipped.
+ * The stub `Flagship`'s real eval always returns the supplied default, so the only way a
+ * flag can read ON is the override decorator — a passing ON assertion proves the wrapper
+ * is installed, not that real eval flipped.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
@@ -60,9 +51,6 @@ const withEnvironment = (environment: string) =>
 		ConfigProvider.fromUnknown({ENVIRONMENT: environment}),
 	);
 
-// Read `phoenix-reactions` (default OFF) through the fate `Flags` layer with a given
-// `FlagsContext` — `overrides` populated or not — mirroring what `provideRequestFlags`
-// hands a resolver once `overridesAuthorized` has decided.
 const resolveWith = (context: {environment: string; overrides?: Record<string, boolean>}) =>
 	Effect.gen(function* () {
 		const flags = yield* Flags;
@@ -83,7 +71,6 @@ describe("fate Flags layer — the override wrapper is installed (#1868/#2741)",
 				environment: "production",
 				overrides: {[PHOENIX_REACTIONS]: true},
 			});
-			// The ON result can only come from the installed override wrapper.
 			assert.strictEqual(value, true);
 		}),
 	);

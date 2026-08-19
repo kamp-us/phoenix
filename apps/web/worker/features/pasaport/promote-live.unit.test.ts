@@ -1,21 +1,9 @@
 /**
- * Post-promote live-publish coverage (#1886) — the çaylak→yazar tier flip must
- * publish a `User` entity update so an open profile view reconciles the new
- * `tier` over `/fate/live` without a manual reload. This pins the shared
- * `publishPromotion` helper BOTH promotion triggers call, driven through a
- * recording `LivePublisher`:
+ * The çaylak→yazar tier flip must publish a `User` entity update so an open profile
+ * view reconciles the new tier over `/fate/live` without a reload.
  *
- *   - the entity topic is the promoted member's `User` topic (`liveEntityTopic`),
- *     so the app-lifetime global live pin's `User` subscription refreshes;
- *   - a no-op flip (already-yazar, `promoted: false`) publishes NOTHING extra
- *     (the caller keys the publish on `promoted`, exactly as `notifyPromotion`);
- *   - a DYING publish CANNOT fail the committed flip (the publisher's error
- *     channel is `never` — the seam swallows and logs, ADR 0039).
- *
- * The publish is fire-and-forget through `waitUntil`; `scheduled` collects the
- * detached work and the test drains it before asserting (the same pattern
- * `sozluk/definition-mutation.unit.test.ts` uses). Ports are scripted stubs — no
- * DB; the real-D1 re-resolution fidelity is the integration tier.
+ * The publish is fire-and-forget through `waitUntil`, so `scheduled` collects the
+ * detached work and each test drains it before asserting.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {RelationStore} from "@kampus/authz";
@@ -32,16 +20,14 @@ class DrainRejected extends Schema.TaggedErrorClass<DrainRejected>()("test/Drain
 	cause: Schema.Unknown,
 }) {}
 
-// A `RelationStore` where nobody moderates — `moderatorsAmong` (the `isModerator`
-// join in `getUsersWithModerationByIds`) reads `hasSubjects`, and a promoted yazar
-// need not be a moderator, so an empty membership is the realistic default.
+// Nobody moderates: a promoted yazar need not be a moderator, so empty membership is
+// the realistic default.
 const relationStoreEmpty: Layer.Layer<RelationStore> = Layer.succeed(RelationStore, {
 	has: () => Effect.succeed(false),
 	hasSubjects: () => Effect.succeed(new Set<string>()),
 	subjectsOf: () => Effect.succeed(new Set<string>()),
 });
 
-// One `user` record the re-resolve reads back — the promoted member, now `yazar`.
 const promotedRecord = {
 	id: "u-target",
 	email: "u-target@kamp.us",
@@ -55,9 +41,6 @@ const pasaportWithUser = makePasaportStub({
 	getUsersByIds: () => Effect.succeed([promotedRecord]),
 });
 
-// A recording `LivePublisher`: `publish` captures the topic key the resolver's
-// `live.update` chose; `waitUntil` collects the fire-and-forget work so the test
-// drains it (the publish is detached off the request path).
 const recordingLive = () => {
 	const recorded: Array<string> = [];
 	const scheduled: Array<Promise<unknown>> = [];
@@ -75,8 +58,7 @@ const recordingLive = () => {
 	return {layer, recorded, scheduled};
 };
 
-// A `LivePublisher` whose delivery DIES — proves the swallow-with-log seam keeps
-// `publishPromotion` infallible (the flip already committed).
+// Delivery DIES — proves the swallow seam keeps `publishPromotion` infallible.
 const dyingLive = () => {
 	const scheduled: Array<Promise<unknown>> = [];
 	const layer = Layer.succeed(LivePublisher)(
@@ -99,9 +81,8 @@ describe("publishPromotion — the shared post-promote live-publish (#1886)", ()
 				try: () => Promise.allSettled(scheduled),
 				catch: (cause) => new DrainRejected({cause}),
 			}).pipe(Effect.orDie);
-			// The `User` entity topic keyed on the promoted id — what the global live pin
-			// (`.patterns/fate-live-consistency.md#global-pin`) subscribes, so the profile view
-			// reconciles the new tier live.
+			// The topic the global live pin subscribes — see
+			// `.patterns/fate-live-consistency.md#global-pin`.
 			assert.deepStrictEqual(recorded, [liveEntityTopic("User", "u-target")]);
 		}).pipe(Effect.provide(Layer.mergeAll(pasaportWithUser, relationStoreEmpty, layer)));
 	});
@@ -129,8 +110,6 @@ describe("publishPromotion — the shared post-promote live-publish (#1886)", ()
 	it.effect("a DYING publish cannot fail the committed flip (the seam AC)", () => {
 		const {layer, scheduled} = dyingLive();
 		return Effect.gen(function* () {
-			// The helper itself must succeed even though delivery dies — the failure is
-			// caught on the detached promise, never surfacing into this effect.
 			yield* publishPromotion("u-target");
 			yield* Effect.tryPromise({
 				try: () => Promise.allSettled(scheduled),

@@ -1,10 +1,9 @@
 /**
- * `LiveTopics` — the worker-level handle the `/fate` route uses to fan a publish
- * out to the `LiveDO` namespace's topic-role instances (ADR 0028/0029). The
- * namespace is resolved once in worker init, wrapped as a `Context.Service` so the
- * per-request route reaches it without an `env`-based lookup. `publish` is a typed
- * RPC addressed through `live-do.ts`'s seam — no `idFromName`, no string-URL
- * `stub.fetch` — run inside `waitUntil` so the fan-out doesn't block the response.
+ * `LiveTopics` — the worker-level handle the `/fate` route fans a publish out
+ * through (ADR 0028/0029). The namespace resolves once in worker init, so the
+ * per-request route needs no `env` lookup. Publishes are typed RPC addressed through
+ * `live-do.ts` (never `idFromName` or a string-URL `stub.fetch`), run inside
+ * `waitUntil` so the fan-out doesn't block the response.
  */
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
@@ -17,15 +16,11 @@ import type {LiveLimits, PublishMessage} from "./protocol.ts";
 export class LiveTopics extends Context.Service<
 	LiveTopics,
 	{
-		/**
-		 * Fire the typed `LiveDO.publish` RPC for one resolved topic key.
-		 * `LiveTransportError` is the truthful channel the alchemy stub's `never`
-		 * hides (#842, #2551): a publish to an idle-evicted `topic:` DO can fail on
-		 * the cold first RPC, so the worker seam wraps this in `withColdStartRetry`
-		 * (the same bounded retry the sibling `subscribe`/`unsubscribe` use) and
-		 * surfaces this on exhaustion. The publisher swallows-and-logs it best-effort
-		 * off the request path — a publish still must not fail the committed mutation.
-		 */
+		// `LiveTransportError` is the truthful channel the alchemy stub's `never` hides
+		// (#842, #2551): a publish to an idle-evicted `topic:` DO can fail on the cold
+		// first RPC, so the worker seam retries and surfaces this on exhaustion. The
+		// publisher then swallows-and-logs it — a publish must never fail a committed
+		// mutation.
 		readonly publish: (
 			topicKey: string,
 			message: PublishMessage,
@@ -34,21 +29,12 @@ export class LiveTopics extends Context.Service<
 	}
 >()("@kampus/LiveTopics") {}
 
-/**
- * `LiveConnections` — the worker-level handle the `/fate/live` route uses to
- * reach the `LiveDO` namespace's connection-role instances (ADR 0028). Opens the
- * SSE stream by forwarding the inbound request to a connection's `fetch`, and
- * records/drops subscriptions via typed RPC. Connections are addressed through
- * `connectionOf(live, connectionId)` — no `idFromName`/`get` on the alchemy stub.
- */
+// The `/fate/live` counterpart (ADR 0028). Connections are addressed through
+// `connectionOf(live, connectionId)`, never `idFromName`/`get` on the alchemy stub.
 export class LiveConnections extends Context.Service<
 	LiveConnections,
 	{
-		/**
-		 * Forward the (request-shaped) SSE upgrade to a connection DO's `fetch`.
-		 * `LiveTransportError` is the bounded-retry-exhausted cold-start failure
-		 * (#842); the worker seam wraps the cross-DO call in `withColdStartRetry`.
-		 */
+		// `LiveTransportError` is the bounded-retry-exhausted cold-start failure (#842).
 		readonly open: (
 			connectionId: string,
 			request: HttpServerRequest.HttpServerRequest,
@@ -57,12 +43,8 @@ export class LiveConnections extends Context.Service<
 			HttpServerError | LiveTransportError,
 			never
 		>;
-		/**
-		 * Record a subscription on a connection (typed RPC). `LiveTransportError` is
-		 * the truthful error channel the alchemy stub's `never` hid (#842): the
-		 * worker seam retries a cold-DO transport failure and surfaces this on
-		 * exhaustion, so the route renders a 503 envelope instead of a defect-500.
-		 */
+		// On retry exhaustion the route renders a 503 envelope rather than a
+		// defect-500 (#842).
 		readonly subscribe: (
 			connectionId: string,
 			input: {
@@ -73,7 +55,6 @@ export class LiveConnections extends Context.Service<
 				readonly lastEventId?: string;
 			},
 		) => Effect.Effect<{readonly ok: boolean}, LiveTransportError, never>;
-		/** Drop a subscription on a connection (typed RPC). */
 		readonly unsubscribe: (
 			connectionId: string,
 			subId: string,

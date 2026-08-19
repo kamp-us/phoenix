@@ -1,9 +1,7 @@
 /**
- * The mecmua post-visibility matrix (#2463) — the draft/publish mask over the
- * cross-product {published, draft} × {anonymous, author, other-member}. The
- * load-bearing cell: a null-`publishedAt` draft is hidden from a public read and
- * from every non-author, while a published row is exposed to all. mecmua has NO
- * sandbox arm, so there is no moderator-exemption cell to pin.
+ * The mecmua draft/publish visibility matrix. The load-bearing cell: a null-`publishedAt`
+ * draft is hidden from every non-author. mecmua has NO sandbox arm, so there is no
+ * moderator-exemption cell to pin.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
@@ -23,8 +21,6 @@ const viewers = {
 	otherMember: {viewerId: OTHER},
 } satisfies Record<string, MecmuaPostViewer>;
 
-// Each cell is the expected `mecmuaPostVisibleTo(publishedAt, AUTHOR, viewer)` —
-// content authored by AUTHOR, viewed by each viewer kind.
 const matrix: Record<
 	string,
 	{publishedAt: Date | null; expect: Record<keyof typeof viewers, boolean>}
@@ -34,7 +30,6 @@ const matrix: Record<
 		expect: {anonymous: true, author: true, otherMember: true},
 	},
 	Draft: {
-		// null publishedAt ⇒ draft — author ONLY, hidden from anonymous + other members.
 		publishedAt: null,
 		expect: {anonymous: false, author: true, otherMember: false},
 	},

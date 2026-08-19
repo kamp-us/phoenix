@@ -1,15 +1,7 @@
 /**
- * `report.submit` WIRE-boundary unit coverage (ADR 0082) — the parts that are
- * wrong-or-right with no database: the `CurrentUser.required` auth gate, the
- * `ReportTargetNotFound` → per-feature not-found translation by `targetKind`, and
- * the `ReportReceipt` shape (its `__typename` discriminant + `<kind>:<id>` id). The
- * `Report` seam is substituted directly (`Layer.succeed(Report, …)`) with a stub
- * whose `submit` returns a scripted `ReportResult` or fails `ReportTargetNotFound` —
- * no engine, so this is a unit test.
- *
- * The persistence / idempotency / all-three-kinds facts that are only wrong if real
- * D1 differs live in `apps/web/tests/integration/report.test.ts`; the `Report.submit`
- * service decisions (created/no-op, target liveness) live in `Report.unit.test.ts`.
+ * `report.submit` WIRE-boundary unit coverage (ADR 0082). Persistence/idempotency facts
+ * live in `tests/integration/report.test.ts`; the service's own decisions live in
+ * `Report.unit.test.ts`.
  */
 
 import {assert, describe, it} from "@effect/vitest";
@@ -38,10 +30,8 @@ const runtimeContextStub: BaseRuntimeContext = {
 	set: (id) => Effect.succeed(id),
 };
 
-// The mod-emitter deps `report.submit` gained (#1699): the report-filed page rides
-// AFTER the committed submit. `Flags` OFF ⇒ `bildirimOn` is false ⇒ the emit no-ops
-// before the moderator read or any notification write, so the Notification /
-// RelationStore stubs exist only to satisfy the type and die if ever reached.
+// `Flags` OFF ⇒ the mod emit (#1699) no-ops before any moderator read or notification
+// write, so the stubs below exist only to satisfy the type and die if ever reached.
 const bildirimOffStub = Layer.mergeAll(
 	Layer.succeed(Flags, {
 		getBoolean: () => Effect.succeed(false),
@@ -52,19 +42,13 @@ const bildirimOffStub = Layer.mergeAll(
 	Layer.succeed(RuntimeContext, runtimeContextStub),
 	noRequestFlagOverrides,
 	makeNotificationStub(),
-	// `Notification.record` rides `LivePublisher` (the per-recipient live delivery seam,
-	// #2076) — a static requirement of the mod emit even though the flag-off path never
-	// records. A no-op publisher satisfies it; it is never reached.
 	Layer.succeed(LivePublisher)(livePublisherFor({publish: () => Effect.void, waitUntil: () => {}})),
 	Layer.succeed(RelationStore, {
 		has: () => Effect.die("RelationStore.has not exercised in report-mutation"),
 		hasSubjects: () => Effect.die("RelationStore.hasSubjects not exercised in report-mutation"),
 		subjectsOf: () => Effect.die("RelationStore.subjectsOf not exercised in report-mutation"),
 	}),
-	// The karma flag-gate deps `report.submit` gained (#150): `Flags` OFF ⇒ the
-	// `CanFlag` gate auto-passes without a karma read, so `Kunye.karmaOf` is never
-	// exercised (it dies on contact); `CanFlag.authorize` still stamps its proof off
-	// `CurrentActor`, provided per-call in `submit`.
+	// Flag off ⇒ the `CanFlag` gate auto-passes without a karma read (#150).
 	Layer.succeed(Kunye, {
 		karmaOf: () => Effect.die("Kunye.karmaOf not exercised in report-mutation (flag off)"),
 		tierOf: () => Effect.die("Kunye.tierOf not exercised in report-mutation"),
@@ -72,11 +56,6 @@ const bildirimOffStub = Layer.mergeAll(
 	} as typeof Kunye.Service),
 );
 
-// Drive the op through its real external interface (`resolveWire`: `resolve`
-// decode + the `encodeWireError` class→wire-code seam), not `.handler` — so the
-// failure assertions see the WIRE `code` a client gets, and a mis-annotated
-// `[FateWireCode]` (e.g. on `PostNotFound`) is a unit failure, not just an
-// integration-tier one.
 const submit = (
 	input: {targetKind: "post" | "comment" | "definition"; targetId: string; reason?: string | null},
 	user?: typeof REPORTER,
@@ -90,17 +69,13 @@ const submit = (
 		Effect.provide(bildirimOffStub),
 	);
 
-// The wire `code` carried by a `resolveWire` failure `Cause` (the `FateRequestError`
-// `encodeWireError` produced), or `undefined` if the cause holds no error / on success.
 const wireCodeOf = (cause: Cause.Cause<unknown>): unknown => {
 	const error = Cause.findErrorOption(cause);
 	return error._tag === "Some" ? (error.value as {code?: unknown}).code : undefined;
 };
 
-// A `Report` stub that hands `submit` whatever the test scripts — a landed
-// `ReportResult` or a `ReportTargetNotFound`. Every other method fails-on-contact
-// via the shared stub: this boundary only ever touches `submit`, so a reached
-// presence read / idempotency path (`Report.unit.test.ts`'s job) fails the test.
+// Every method but `submit` fails-on-contact, so a reached presence/idempotency path
+// (`Report.unit.test.ts`'s job) fails the test instead of passing quietly.
 const reportStub = (
 	respond: (input: ReportInput) => Effect.Effect<ReportResult, ReportTargetNotFound>,
 ): Layer.Layer<Report> => makeReportStub({submit: respond});
@@ -136,9 +111,8 @@ describe("report.submit wire boundary — auth gate (no DB)", () => {
 });
 
 describe("report.submit wire boundary — ReportTargetNotFound translates by targetKind", () => {
-	// The per-feature not-found WIRE codes — what `encodeWireError` derives from each
-	// translated class's `[FateWireCode]`. Asserting the code (not the class name in the
-	// cause string) is what catches a mis-annotated `PostNotFound` etc.
+	// Asserting the wire code, not the class name in the cause string, is what catches a
+	// mis-annotated `[FateWireCode]`.
 	const cases = [
 		{targetKind: "post" as const, wireCode: "POST_NOT_FOUND"},
 		{targetKind: "comment" as const, wireCode: "COMMENT_NOT_FOUND"},
@@ -154,8 +128,6 @@ describe("report.submit wire boundary — ReportTargetNotFound translates by tar
 				);
 				assert.isTrue(exit._tag === "Failure");
 				if (exit._tag === "Failure") {
-					// The translated per-feature code, never `INTERNAL_SERVER_ERROR` (which an
-					// un-translated, un-annotated `ReportTargetNotFound` would have encoded to).
 					assert.strictEqual(wireCodeOf(exit.cause), wireCode);
 				}
 			}),

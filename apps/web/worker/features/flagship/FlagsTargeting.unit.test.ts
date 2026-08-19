@@ -1,19 +1,7 @@
 /**
- * Unit coverage for targeting + percentage rollout (epic #488, #511). Two
- * layers are exercised without a binding or any I/O:
- *
- *   - `toEvaluationContext` — the domain→wire mapping: `userId → targetingKey`
- *     (the stable bucketing key), the role-list flattening, and `environment`.
- *   - `FlagsLive` over a stub `Flagship` whose `getBooleanValue` implements the
- *     real targeting/bucketing *semantics* (first-match rule, then a
- *     deterministic consistent-hash on `targetingKey`). This proves the three
- *     #511 contracts at the seam: a targeted user gets the variation and an
- *     untargeted one the default; a fixed `userId` lands in a STABLE bucket
- *     across repeated evaluations; and an eval error degrades to the safe default.
- *
- * The rule *configuration* (the live `FlagshipFlag` IaC) is system-tier and
- * declared in `resources.ts`; what's unit-testable — the bucketing stability
- * and the mapping/contract — is asserted here, per #511's TDD note.
+ * Targeting + percentage-rollout coverage, with no binding and no I/O. The rule
+ * *configuration* is system-tier and lives in `resources.ts`; what is unit-testable —
+ * the domain→wire mapping and the bucketing stability — is asserted here.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
@@ -59,11 +47,9 @@ const flagsOver = (
 	Layer.mergeAll(FlagsLive.pipe(Layer.provide(stubFlagship(getBooleanValue))), RuntimeContextStub);
 
 /**
- * A deterministic stand-in for Flagship's evaluation engine: a first-match
- * targeting rule (internal role → on) followed by a consistent-hash percentage
- * rollout on `targetingKey`. Mirrors the `demoTargetingFlag` IaC config so the
- * test asserts the same semantics the live flag declares — no real hashing, just
- * a deterministic function of the bucketing key (the property that matters).
+ * A deterministic stand-in for Flagship's evaluation engine, mirroring the
+ * `demoTargetingFlag` IaC config. No real hashing — just a deterministic function of the
+ * bucketing key, which is the only property these tests turn on.
  */
 const INTERNAL_ROLE_MARKER = "|internal|";
 const fnv1a = (s: string): number => {
@@ -74,15 +60,13 @@ const fnv1a = (s: string): number => {
 	}
 	return h >>> 0;
 };
-/** Stable bucket in [0, 100) for a targeting key — pure function of the key. */
 const bucketOf = (targetingKey: string): number => fnv1a(targetingKey) % 100;
 
 const demoEval: Flagship["Service"]["getBooleanValue"] = (_key, defaultValue, context) => {
 	if (context === undefined) return Effect.succeed(defaultValue);
-	// rule 1: attribute targeting on the flattened role string.
 	if (typeof context.roles === "string" && context.roles.includes(INTERNAL_ROLE_MARKER))
 		return Effect.succeed(true);
-	// rule 2: 25% consistent-hash rollout on the (stable) bucketing key.
+	// 25% consistent-hash rollout on the bucketing key.
 	if (typeof context.targetingKey === "string" && bucketOf(context.targetingKey) < 25)
 		return Effect.succeed(true);
 	return Effect.succeed(defaultValue);
@@ -135,8 +119,7 @@ describe("Flags — attribute targeting (#511)", () => {
 	it.effect("an untargeted user with a non-rollout bucket gets the default", () =>
 		Effect.gen(function* () {
 			const flags = yield* Flags;
-			// pick a userId whose bucket is >= 25 (outside the rollout) and no role.
-			const outside = "user-2"; // bucketOf asserted below
+			const outside = "user-2";
 			assert.isAtLeast(bucketOf(outside), 25);
 			const enabled = yield* flags
 				.getBoolean("targeting-demo", false)
@@ -155,8 +138,7 @@ describe("Flags — percentage rollout, stable bucketing (#511)", () => {
 					.getBoolean("targeting-demo", false)
 					.pipe(Effect.provideService(FlagsContext, {userId: "u-repeat"}));
 			const first = yield* evalOnce();
-			// repeat many times — a stable bucket means an identical result every time
-			// (no flicker), which is the #511 anti-flicker contract.
+			// Identical result every time IS the anti-flicker contract.
 			for (let i = 0; i < 50; i++) {
 				const again = yield* evalOnce();
 				assert.strictEqual(again, first);

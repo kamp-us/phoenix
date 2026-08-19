@@ -2,20 +2,14 @@
  * The `* /fate/live` route — the SSE transport endpoint (ADR 0023/0028,
  * `.patterns/alchemy-http-router.md`).
  *
- * Serves fate's native SSE live protocol from the unified `LiveDO` rather than
- * fate's in-Worker `handleLiveRequest` (which can't fan out across isolates). It
- * builds NO per-request runtime: the session check rides the worker-level
- * `Pasaport`, and the connection is reached through the worker-init `LiveDO`
- * namespace via typed RPC + a forwarded `fetch`, never
+ * Serves fate's native SSE live protocol from the unified `LiveDO` rather than fate's
+ * in-Worker `handleLiveRequest`, which cannot fan out across isolates. It builds no
+ * per-request runtime, and reaches the connection through the worker-init `LiveDO`
+ * namespace via typed RPC plus a forwarded `fetch` — never
  * `idFromName`/`get`/`stub.fetch(string)`.
  *
- *   - `GET  /fate/live?connectionId=…` → validate cookie, forward to the
- *     connection DO's `fetch` to open the SSE stream (401 without a session).
- *   - `POST /fate/live` → a `subscribe`/`subscribeConnection`/`unsubscribe`
- *     control message; validate cookie, drive the connection DO's typed RPC.
- *
- * The session cookie rides the request automatically (fate's `EventSource` uses
- * `withCredentials: true`, same-origin), so there's no token in the URL/header.
+ * There is no token in the URL or headers: the session cookie rides the request
+ * automatically, since fate's `EventSource` is same-origin with `withCredentials`.
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -34,7 +28,6 @@ import {
 } from "./protocol.ts";
 import {LiveConnections} from "./topics.ts";
 
-/** The fate live error envelope (`{results: [{error}], version: 1}`). */
 function liveError(code: string, message: string, status: number) {
 	return HttpServerResponse.jsonUnsafe(
 		{results: [{error: {code, message}, id: "live", ok: false}], version: 1},
@@ -64,9 +57,8 @@ export const handleLive = Effect.gen(function* () {
 			`https://live/connect?connectionId=${encodeURIComponent(connectionId)}&ownerId=${encodeURIComponent(ownerId)}&maxQueuedEventsPerConnection=${defaultLiveLimits.maxQueuedEventsPerConnection}`,
 			{headers: raw.headers},
 		);
-		// A cold-DO transport failure that survived the worker-seam retry is a
-		// graceful 503 (the live pin retries on the next mount), NOT a defect — only
-		// a genuine `HttpServerError` (request framing) stays an `orDie` defect.
+		// A cold-DO transport failure that survived the retry renders a graceful 503 (the
+		// live pin retries on the next mount); only a real framing error stays a defect.
 		return yield* connections.open(connectionId, HttpServerRequest.fromWeb(forward)).pipe(
 			Effect.catchTag("fate-live/LiveTransportError", (error) =>
 				Effect.succeed(liveError("LIVE_UNAVAILABLE", error.message, 503)),
@@ -76,8 +68,6 @@ export const handleLive = Effect.gen(function* () {
 	}
 
 	if (raw.method === "POST") {
-		// A bad-JSON body and a schema `FateRequestError` both become a `liveError`
-		// Response here (recovered via `Effect.result`), never threaded onward.
 		const decoded = yield* Effect.tryPromise({
 			try: () => raw.json(),
 			catch: () => new FateRequestError("BAD_REQUEST", "Body must be valid JSON."),
@@ -95,12 +85,10 @@ export const handleLive = Effect.gen(function* () {
 				results.push({id: operation.id, ok: true, data: null});
 				continue;
 			}
-			// Recipient-scoped topic gate (#1700): the `NotificationChannel` entity topic
-			// is keyed by a recipient's user id, so a subscription whose entity id is not
-			// the session user's own would watch ANOTHER user's notification stream. The
-			// entity id is client-supplied, and the DO's owner check only guards the
-			// CONNECTION owner (not the entity id), so this is the authorization seam —
-			// reject the cross-user subscribe here rather than register a foreign topic.
+			// This is the authorization seam for recipient-scoped topics (#1700). The
+			// entity id is client-supplied and the DO's owner check guards only the
+			// CONNECTION owner, so without this a subscribe could watch another user's
+			// notification stream.
 			if (
 				operation.kind === "subscribe" &&
 				operation.type === NOTIFICATION_CHANNEL_TYPE &&
@@ -125,10 +113,9 @@ export const handleLive = Effect.gen(function* () {
 							...(operation.args ? {args: operation.args} : {}),
 							...(operation.lastEventId !== undefined ? {lastEventId: operation.lastEventId} : {}),
 						};
-			// Resolve the control's topic keys + per-request limits here, so the DO
-			// records the subscription with a budget it never invents (decision 2B).
-			// `lastEventId` rides through so the topic replays only frames newer than
-			// the last one this subscription saw (#714 catch-up).
+			// Limits are resolved here so the DO records the subscription with a budget it
+			// never invents, and `lastEventId` rides through so the topic replays only
+			// frames newer than the last one this subscription saw (#714).
 			const res = yield* connections.subscribe(connectionId, {
 				subId: operation.id,
 				topics: topicsForSubscribe(control),
@@ -146,9 +133,8 @@ export const handleLive = Effect.gen(function* () {
 
 	return liveError("BAD_REQUEST", "Invalid live request.", 400);
 }).pipe(
-	// A cold-DO transport failure from the POST control loop (`subscribe`/
-	// `unsubscribe`) that survived the worker-seam retry renders a graceful 503
-	// envelope, NOT a defect-500 (#842). The GET path handles its own locally.
+	// Same 503-not-500 handling for the POST control loop (#842); the GET path handles
+	// its own locally.
 	Effect.catchTag("fate-live/LiveTransportError", (error: LiveTransportError) =>
 		Effect.succeed(liveError("LIVE_UNAVAILABLE", error.message, 503)),
 	),

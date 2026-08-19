@@ -1,11 +1,9 @@
 /**
- * Unit — the `Mecmua` write acts over a scripted `Drizzle` seam (the `Bookmark` /
- * `Vote.unit.test.ts` idiom, ADR 0082): `run` replays queued results so the pure
- * decisions are provable with no engine. Proves the ticket's write ACs (#2497):
- * `saveDraft` writes a PRIVATE draft (`publishedAt === null`) and allows MULTIPLE
- * drafts (distinct ids, never a probe-then-upsert), and `publish` STAMPS
- * `publishedAt` on the caller's own draft — refusing a foreign/absent id
- * (`MecmuaPostNotFound`) and an empty-title publish (`MecmuaTitleRequired`).
+ * Unit — the `Mecmua` write acts over a scripted `Drizzle` seam (ADR 0082): `run`
+ * replays queued results, so the pure decisions are provable with no engine. Covers
+ * #2497's write ACs: `saveDraft` writes a PRIVATE draft and allows MULTIPLE (distinct
+ * ids, never a probe-then-upsert); `publish` stamps `publishedAt` on the caller's own
+ * draft and refuses a foreign/absent id or an empty title.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";

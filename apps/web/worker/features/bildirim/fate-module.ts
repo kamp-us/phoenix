@@ -17,13 +17,11 @@ import {
 } from "./views.ts";
 
 const roots: FateRootsRecord = {
-	// The current user's notification center list (#1694) — flag-gated, newest-first;
-	// the `bildirim.list` resolver owns the keyset order + recipient scoping.
+	// The resolver owns the keyset order and the recipient scoping.
 	"bildirim.list": list(notificationDataView),
-	// The topbar badge's unread count — a synthetic singleton, `funnel.summary` shape.
+	// A synthetic singleton, in the `funnel.summary` shape.
 	"bildirim.unreadCount": notificationUnreadDataView,
-	// The current user's live notification channel (#1700) — the per-recipient
-	// `NotificationChannel` entity the badge + center subscribe to over `/fate/live`.
+	// The per-recipient entity the badge and center subscribe to over `/fate/live`.
 	"bildirim.channel": notificationChannelDataView,
 };
 

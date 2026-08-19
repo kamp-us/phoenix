@@ -1,42 +1,20 @@
 /**
- * The remove/restore *ceremony*, single-sourced (#2012). `removal.ts` already owns the
- * write SEQUENCE ({@link Removal.removeEntity}/{@link Removal.restoreEntity}, #1129); this
- * module owns the CALLER-side wrapper that every public remove/restore method (pano post,
- * pano comment, sözlük definition — author path + moderator path) had hand-inlined and
- * silently drifted:
+ * The caller-side remove/restore wrapper every public remove/restore method shares;
+ * `removal.ts` owns the write sequence itself.
  *
- *   `fromColumns` → `isRemoved` short-circuit → `remove`/`restore` + `toColumns` →
- *   `removeEntity`/`restoreEntity` → (plane side-effects) → recomputable-cache refresh
- *
- * The three arms differed only in the authorization gate, the `RemovalReason`, and the
- * result envelope — all of which stay at the call site. What is invariant — the state
- * guard, the column stamp, the substrate write, and the **stats-refresh policy** — lives
- * here, so a site can no longer forget a step or drift a policy.
- *
- * The refresh policy is uniform and load-bearing (#2012, #1639): the removal/restore is
- * committed BEFORE the refresh, and the refresh is a recomputable cache (ADR 0011/0117)
- * running over `DrizzleAccessOrDie` — a D1 hiccup there *dies*, and that must NOT flip an
- * already-committed transition into a raw 500 (the partial-commit-then-500). So the refresh
- * is swallowed-and-logged for EVERY arm (it was swallowed only in `deletePost`, bare in the
- * other eleven — the exact drift copy-pasted ceremony breeds). Totals recompute next write.
+ * The refresh policy is load-bearing: the transition commits BEFORE the refresh, and the
+ * refresh runs over `DrizzleAccessOrDie`, so a D1 hiccup there dies. Swallowing it in
+ * EVERY arm is what stops an already-committed transition turning into a raw 500; totals
+ * reconverge on the next write.
  */
 import {Effect} from "effect";
 import * as Removal from "./removal.ts";
 
-/**
- * A load→guard→transition subject: the already-loaded row's lifecycle columns plus the
- * pre-transition `sandboxedAt` marker the substrate preserves for a faithful round-trip
- * (#1811). The caller loads the row (its not-found + authority envelopes are its own);
- * this is the slice the transition reads.
- */
 export type TransitionSubject = Removal.RemovalColumns;
 
 /**
- * The uniform outcome of {@link applyRemovalTransition}. `committed` distinguishes the
- * no-op (already in the target state — the `isRemoved` short-circuit) from the applied
- * transition, and carries the stamped `sandboxedAt` a restore's broadcast decision reads.
- * A caller maps this to its result envelope; it cannot reach the transition without going
- * through the state guard.
+ * `committed: false` is the no-op — the row was already in the target state. The
+ * `sandboxedAt` on the committed arm is what a restore's broadcast decision reads.
  */
 export type RemovalTransitionOutcome =
 	| {readonly committed: false}
@@ -45,11 +23,8 @@ export type RemovalTransitionOutcome =
 const noop: RemovalTransitionOutcome = {committed: false};
 
 /**
- * Wrap a recomputable-cache refresh in the uniform swallow-and-log (#2012, #1639): the
- * write it follows has already committed, so a refresh die (a recomputable cache over
- * `DrizzleAccessOrDie`, ADR 0011/0117) must not flip it into a raw 500 — totals reconverge
- * on the next write. One place, so the removal/restore arms AND the create paths that
- * committed-then-refresh (`addDefinition`, `submitPost`, #2556) share the single policy.
+ * The swallow-and-log policy above, shared by the removal/restore arms and the create
+ * paths that commit-then-refresh.
  */
 export const swallowRefresh = (label: string, refresh: Effect.Effect<void>): Effect.Effect<void> =>
 	refresh.pipe(
@@ -57,15 +32,10 @@ export const swallowRefresh = (label: string, refresh: Effect.Effect<void>): Eff
 	);
 
 /**
- * Apply a remove/restore onto the substrate for one already-loaded, already-authorized
- * entity: state-guard → column stamp → `removeEntity`/`restoreEntity` → plane side-effects
- * → swallowed cache refresh. Returns {@link RemovalTransitionOutcome}; the no-op short-circuit
- * returns before any write.
- *
- * `afterCommit` runs after the substrate write and before the refresh — the plane-specific
- * bookkeeping that is NOT part of the invariant (pano's post `comment_count` adjustment,
- * sözlük's term-summary rebuild); pass `Effect.void` where there is none. `refresh` is the
- * recomputable stats/cache refresh, swallowed uniformly.
+ * Apply a remove/restore for one already-loaded, already-authorized entity. The caller
+ * owns the not-found and authority envelopes; this owns the state guard, the column
+ * stamp, the substrate write, and the refresh policy. `afterCommit` is the plane-specific
+ * bookkeeping that is NOT part of that invariant, run after the write, before the refresh.
  */
 export const applyRemovalTransition = <E = never, R = never>(
 	args: {

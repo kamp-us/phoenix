@@ -1,22 +1,8 @@
 /**
- * The `Comment` owner-scoped in-review flag on the wire (#4282) — the third leg of
- * #2200, which threaded `sandboxed` onto `Post` and `Definition` and left `Comment`
- * out. Without it a çaylak's own comment renders identically to a published one and
- * they quietly believe they contributed.
- *
- * Three things are pinned here, in the order a value travels:
- *   1. the derivation is the SHARED `ownSandboxed` helper — owner-only by
- *      construction, so no other viewer (member, anonymous, moderator) ever reads
- *      `true` off someone else's comment;
- *   2. the field is in the closed `commentViewFields` literal, so the fate view
- *      actually carries it (the `satisfies Record<keyof CommentRow, true>` pin means
- *      an omission is a compile error, but a *present* field is worth asserting —
- *      that literal is what `CommentView` derives from);
- *   3. the wire shaper defaults an unstamped row to `false`, matching `toPost`.
- *
+ * The `Comment` owner-scoped in-review flag on the wire (#4282, the third leg of #2200).
  * The stamping call sites are compile-locked rather than tested here: `rowToCommentRow`
- * takes `viewerId` as a REQUIRED parameter, so a read path cannot forget to state whose
- * view it is shaping.
+ * takes `viewerId` as a REQUIRED parameter, so a read path cannot forget whose view it is
+ * shaping.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {ownSandboxed} from "../lifecycle/SandboxVisibility.ts";

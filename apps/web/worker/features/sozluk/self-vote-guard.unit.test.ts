@@ -1,13 +1,8 @@
 /**
- * `Sozluk.applyVote` self-vote guard (#2216, founder-ruled) — the cast-site domain guard
- * proven over the REAL `SozlukLive` with a substituted `Drizzle` (the definition load) + a
- * RECORDING `Vote`, so three things are wrong-or-right with no SQL engine:
- *
- *   1. self-cast rejected — `voteDefinition` where `voterId === definition.authorId` fails
- *      `SelfVoteNotAllowed` and NEVER reaches `Vote.cast` (no score/karma write).
- *   2. other-author cast lands — a non-author vote reaches `Vote.cast` exactly as before.
- *   3. self-retract exempt — `retractDefinitionVote` on one's own definition reaches
- *      `Vote.cast` (the guard is cast-only; a blocked cast leaves nothing to retract).
+ * The self-vote guard (#2216), proven over the real `SozlukLive` with a substituted
+ * `Drizzle` and a recording `Vote`, so no SQL engine is needed. The guard is
+ * cast-only: retracting a vote on one's own definition still reaches `Vote.cast`,
+ * because a blocked cast leaves nothing to retract.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit, Layer} from "effect";
@@ -23,9 +18,8 @@ const AUTHOR = UserId.make("u-author");
 const OTHER = UserId.make("u-other");
 const DEF_ID = DefinitionId.make("def-1");
 
-// The `definition_record` the up-front load returns. Only `authorId` drives the guard; the
-// rest satisfy the row shape the return projection reads. `changed:false` from the Vote
-// double keeps `persistTermSummary` (and its DB writes) off the path, so one read is enough.
+// Only `authorId` drives the guard. `changed:false` from the Vote double keeps
+// `persistTermSummary` off the path, so one read is enough.
 const definitionRow = {
 	id: DEF_ID,
 	body: "bir tanım",
@@ -46,9 +40,8 @@ const definitionAccess = (row: unknown): DrizzleAccess => ({
 	batch: () => Effect.die(new Error("the vote path takes no direct batch in self-vote-guard")),
 });
 
-// A `Vote` that RECORDS every cast and replays a no-op result — so "did the cast path run"
-// is observable with no engine. Only `cast` is on the vote WRITE path; every other method
-// dies on contact via the Proxy (the `reaction-mutation` `panoStub` idiom).
+// Records every cast, so "did the cast path run" is observable with no engine. Every
+// other method dies on contact.
 const recordingVote = (casts: VoteInput[]): Layer.Layer<Vote> =>
 	Layer.succeed(
 		Vote,
@@ -76,8 +69,7 @@ const recordingVote = (casts: VoteInput[]): Layer.Layer<Vote> =>
 		) as typeof Vote.Service,
 	);
 
-// The vote path never reacts, so a fail-on-contact `Reaction` proves it — every method dies
-// on contact via the Proxy.
+// The vote path never reacts, so a fail-on-contact `Reaction` proves it.
 const reactionStub = Layer.succeed(
 	Reaction,
 	new Proxy({} as Partial<typeof Reaction.Service>, {

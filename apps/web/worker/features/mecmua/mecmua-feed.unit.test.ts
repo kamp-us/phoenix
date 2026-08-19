@@ -1,11 +1,8 @@
 /**
- * Unit — the subscribed-author feed's two load-bearing ACs (#2500), proven with no DB
- * (ADR 0082): (a) the feed returns PUBLISHED posts from SUBSCRIBED authors ordered by
- * `publishedAt` newest-first, and (b) draft/unpublished posts NEVER appear. Both are
- * proven twice: on the pure `selectMecmuaFeed` decision (the DB-free spec) AND on the
- * served `Mecmua.listFeedConnection` path over a scripted `Drizzle` seam (the `Bookmark`
- * / `Mecmua.unit.test.ts` idiom), so the guarantee holds where the feed is served, not
- * only in a helper.
+ * The subscribed-author feed's two load-bearing ACs, proven with no DB (ADR 0082) and
+ * proven TWICE: on the pure `selectMecmuaFeed` decision and on the served
+ * `Mecmua.listFeedConnection` path, so the guarantee holds where the feed is actually
+ * served, not only in a helper.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
@@ -31,8 +28,8 @@ const post = (over: Partial<MecmuaRecord> & {id: string}): MecmuaRecord => ({
 
 const AT = (iso: string) => new Date(iso);
 
-// Author A (subscribed) + B (subscribed) publish; A also has a draft; C (NOT subscribed)
-// publishes. The feed should be [B-May, A-Mar] — newest published first, drafts + C gone.
+// A + B are subscribed and publish; A also has a draft; C is NOT subscribed. The feed
+// should be [b-may, a-mar].
 const rows: MecmuaRecord[] = [
 	post({id: "a-mar", authorId: "A", publishedAt: AT("2026-03-01T00:00:00.000Z")}),
 	post({id: "b-may", authorId: "B", publishedAt: AT("2026-05-01T00:00:00.000Z")}),
@@ -80,7 +77,7 @@ describe("selectMecmuaFeed — the pure feed decision (ordering + draft mask)", 
 	});
 });
 
-/** A `Drizzle` whose `run` replays a queued result sequence; `batch` is unused here. */
+/** Replays a queued result sequence, so a script must match the method's read order. */
 const scriptedAccess = (results: ReadonlyArray<unknown>): DrizzleAccess => {
 	const state = {i: 0};
 	return {

@@ -1,42 +1,29 @@
 /**
- * The keyset-chunk decay sweep (`scanDecayChunks`, #2559), unit-reachable over in-memory
- * ports — the cursor-advance + full-coverage control flow is wrong-or-right with no SQL
- * engine (ADR 0082 litmus), so it is driven here over a JS-array table, never real D1. The
- * pure decay math (`decayHotScores`) has its own unit test; the real-D1 chunk EXECUTION
- * (the paged walk over `post_record`) stays integration-tier (`pano-hot-score-decay.test.ts`).
- *
- * The two properties this guards, both the point of #2559:
- *   - WINDOWLESS coverage (#2133 preserved): the sweep visits EVERY row across its pages, so
- *     a post beyond the first chunk is still decayed — chunking is not a recency window.
- *   - BOUNDED pages: each `fetchChunk` asks for at most `chunkSize` rows and resumes at a
- *     cursor strictly past the previous page's last id — no single unbounded scan.
+ * The keyset-chunk decay sweep (`scanDecayChunks`) over in-memory ports, never real D1 (ADR
+ * 0082). Guards the two properties of #2559: WINDOWLESS coverage — the sweep visits EVERY row
+ * across its pages, so chunking is not a recency window — and BOUNDED pages, each `fetchChunk`
+ * asking for at most `chunkSize` rows and resuming strictly past the previous page's last id.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import type {HotDecayRow, HotDecayUpdate} from "../../db/hotScoreDecay.ts";
 import {type HotDecayScanPorts, scanDecayChunks} from "./post-operations.ts";
 
-/** A row that decays: `score 0` recomputes to `hot_score 0`, so a stored `5` always changes. */
+// A row that decays: `score 0` recomputes to `hot_score 0`, so a stored `5` always changes.
 const changing = (id: string): HotDecayRow => ({id, score: 0, hotScore: 5, createdAtMs: 0});
-/** A row at rest: stored `hot_score 0` already equals the recompute, so it never writes. */
+// A row at rest: stored `hot_score 0` already equals the recompute, so it never writes.
 const steady = (id: string): HotDecayRow => ({id, score: 0, hotScore: 0, createdAtMs: 0});
 
 interface Harness {
 	readonly ports: HotDecayScanPorts;
-	/** Every `fetchChunk(afterId, limit)` call, in order — the paging trace. */
 	readonly fetchCalls: Array<{afterId: string | null; limit: number}>;
-	/** Every id passed to `writeBack`, across all pages — the coverage trace. */
 	readonly written: string[];
-	/** How many times `writeBack` was invoked (a no-change page issues none). */
+	// A no-change page issues none.
 	readonly writeBackCalls: {count: number};
 }
 
-/**
- * In-memory ports over a fixed, id-sorted table: `fetchChunk` serves the keyset page
- * (`id > afterId`, capped at `limit`) and records the cursor + limit it was asked for;
- * `writeBack` records every rewritten id. This is the exact contract `makeRefreshHotScores`
- * wires D1 into — so the driver's paging behavior is proven without a database.
- */
+// In-memory ports over a fixed, id-sorted table — the exact contract `makeRefreshHotScores`
+// wires D1 into, so the driver's paging behavior is proven without a database.
 function harness(table: ReadonlyArray<HotDecayRow>): Harness {
 	const sorted = [...table].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 	const fetchCalls: Array<{afterId: string | null; limit: number}> = [];

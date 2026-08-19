@@ -1,17 +1,11 @@
 /**
- * AC2 parity (#2984, ADR 0179): the shell flags injected into `window.__BOOT__` resolve to the
- * EXACT same values as `/api/flags/evaluate` across the #2741 override-authz path. Both consume
- * the one {@link resolveRequestFlagsContext} seam, so an authorized admin's `phoenix_flag_overrides`
- * cookie is honored identically on the API and in `__BOOT__`, and an unauthorized cookie is inert
- * identically. This is the regression guard for the divergence the review caught: the `__BOOT__`
- * path called `makeRequestFlagsContext` with 2 args (override-authz off) while the API passed the
- * 3-arg verdict — a prod admin got baseline values in `__BOOT__` but overridden values from the API.
+ * AC2 parity (#2984, ADR 0179): the shell flags injected into `window.__BOOT__` must resolve to
+ * the EXACT same values as `/api/flags/evaluate` across the #2741 override-authz path, because
+ * both consume the one {@link resolveRequestFlagsContext} seam.
  *
- * Proven with NO binding / NO I/O: `Flags` is the unconditional override wrapper
- * (`FlagsDevOverrideLive`, wired for every stage since #2741) over a stub `Flagship`, plus the same
- * `CurrentActor` (derived from the session) / `RelationStore` / `AgentAuthority` stubs
- * `override-authz.unit.test` uses. The two reads compared are the actual seams: the API's per-key
- * `flags.getBoolean` and the shell's {@link readShellFlags}, both over the ONE resolved context.
+ * The regression this guards: the `__BOOT__` path called `makeRequestFlagsContext` with 2 args
+ * (override-authz off) while the API passed the 3-arg verdict, so a prod admin got baseline
+ * values in `__BOOT__` but overridden values from the API.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {AgentAuthority, RelationStore} from "@kampus/authz";
@@ -56,8 +50,8 @@ const flagshipStub: Layer.Layer<Flagship> = Layer.succeed(Flagship)(
 
 const harness = (opts: {isAdmin: boolean}) =>
 	Layer.mergeAll(
-		// The unconditional override wrapper (prod-installed since #2741) over the stub, so an
-		// authorized request's `overrides` short-circuit is exercised without a binding.
+		// The unconditional override wrapper (prod-installed since #2741), so an authorized request's
+		// `overrides` short-circuit is exercised without a binding.
 		FlagsDevOverrideLive.pipe(Layer.provide(flagshipStub)),
 		Layer.succeed(AgentAuthority, {admits: () => Effect.succeed(true)}),
 		Layer.succeed(RelationStore, {has: () => Effect.succeed(opts.isAdmin)} as never),
@@ -68,11 +62,8 @@ const harness = (opts: {isAdmin: boolean}) =>
 const SHELL_KEY = SHELL_FLAG_KEYS[0];
 const overrideCookie = `${FLAG_OVERRIDE_COOKIE}=${encodeOverrideCookieValue({[SHELL_KEY]: true})}`;
 
-/**
- * Resolve the shared context under the harness, then read `SHELL_KEY` the TWO ways production
- * does: the API's per-key `flags.getBoolean` (`handleFlagsEvaluate`) and the shell's
- * `readShellFlags` (`handleShellBoot`). Both flow through `resolveRequestFlagsContext`.
- */
+// Reads `SHELL_KEY` the TWO ways production does — the API's per-key `flags.getBoolean` and the
+// shell's `readShellFlags` — both over the one resolved context.
 const parity = (session: FlagsSession, cookie: string, opts: {isAdmin: boolean}) =>
 	Effect.gen(function* () {
 		const context = yield* resolveRequestFlagsContext(session, cookie);

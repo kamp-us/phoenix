@@ -1,8 +1,6 @@
 /**
- * bildirim wire-entity shapers — the one spelling of each `{__typename, …}`
- * literal (the report-shaper idiom): every bildirim entity is returned inline
- * (list resolver / mutation ack), so the interpreter never stamps `__typename`;
- * these do. See `.patterns/fate-effect-operations.md`.
+ * Every bildirim entity is returned inline, so the interpreter never stamps `__typename`
+ * — these do, and they are its one spelling (`.patterns/fate-effect-operations.md`).
  */
 import type {NotificationRow} from "./Notification.ts";
 import type {

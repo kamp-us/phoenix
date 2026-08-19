@@ -1,9 +1,6 @@
 /**
- * `makeKunyeStub` — the shared {@link Kunye} test double, mirroring
- * `Pasaport.testing.ts`. Every standing read fails-on-contact (`Effect.die`) by
- * default; a test overrides only the read(s) under test. The one place the
- * `Kunye` shape lives for tests — the capability instances (#1235) that gate on
- * standing stub it here, not by hand.
+ * The shared {@link Kunye} test double. Every standing read fails-on-contact by default,
+ * so a test overrides only the read under test and an unexpected read is a failure.
  */
 import {Effect, Layer} from "effect";
 import {Kunye} from "./Kunye.ts";

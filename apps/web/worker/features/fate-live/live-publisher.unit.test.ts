@@ -1,18 +1,4 @@
-/**
- * `livePublisherFor` — the worker-side live implementation of the package's
- * `LivePublisher` per-request service. The contract under test:
- *
- *   1. every publish method's error channel is `never` ("a publish cannot fail
- *      the mutation" is a TYPE);
- *   2. the published `(topicKey, PublishMessage)` pairs match the wire shape —
- *      pinned against literal fixtures (the drift guard), including the no-`data`
- *      update frame;
- *   3. a rejecting topic call cannot fail the calling effect;
- *   4. publishes are scheduled through `waitUntil`, never awaited on the request
- *      path.
- *
- * Unit tier (ADR 0082): stubs at the topic seam, zero storage, no platform fake.
- */
+/** Unit tier (ADR 0082): stubs at the topic seam, zero storage, no platform fake. */
 
 import {assert, it} from "@effect/vitest";
 import type {LivePublisher} from "@kampus/fate-effect";
@@ -24,7 +10,6 @@ import {LiveTransportError} from "./cold-start-retry.ts";
 import {livePublisherFor} from "./live-publisher.ts";
 import type {PublishMessage} from "./protocol.ts";
 
-/** A rejection from a test harness thunk (flush / gated publish) — dies the fiber. */
 class PromiseRejected extends Schema.TaggedErrorClass<PromiseRejected>()("test/PromiseRejected", {
 	cause: Schema.Unknown,
 }) {}
@@ -35,9 +20,8 @@ interface Recorded {
 }
 
 /**
- * Build a `LivePublisher` over stubbed seams: `publish` defaults to a recorder,
- * `waitUntil` collects the scheduled promises so a test can `flush` (or
- * deliberately NOT flush) the fire-and-forget work.
+ * `waitUntil` collects the scheduled promises so a test can `flush` — or
+ * deliberately NOT flush — the fire-and-forget work.
  */
 function makeHarness(
 	publish?: (topicKey: string, message: PublishMessage) => Effect.Effect<void, LiveTransportError>,
@@ -69,8 +53,6 @@ it("every publish method's error channel is `never` — the no-fail contract is 
 	expectTypeOf<Effect.Error<ReturnType<Topic["deleteEdge"]>>>().toEqualTypeOf<never>();
 	expectTypeOf<Effect.Error<ReturnType<Topic["invalidate"]>>>().toEqualTypeOf<never>();
 
-	// The live value implements exactly the package's service shape — a drift in
-	// either direction is a compile error here.
 	const {live} = makeHarness();
 	expectTypeOf(live).toEqualTypeOf<typeof LivePublisher.Service>();
 });
@@ -79,15 +61,13 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 	Effect.gen(function* () {
 		const {live, recorded, flush} = makeHarness();
 
-		// `changed` is accepted but does NOT reach the wire — the update frame carries
-		// `data` only (no `select` mask); pinned by the fixture below.
+		// `changed` is accepted but does NOT reach the wire.
 		yield* live.update("Definition", "d1", {
 			data: {id: "d1", body: "updated"},
 			changed: ["body"],
 			eventId: "e1",
 		});
-		// An update with no `data` still carries the `data` key on the wire
-		// (`frame: {data: undefined}`) — asserted by the fixture below.
+		// An update with no `data` still carries the `data` key on the wire.
 		yield* live.update("Definition", "d9", {eventId: "e9"});
 		yield* live.delete("Post", 7, {eventId: "e2"});
 		const definitions = live.topic("Term.definitions", {slug: "effect"});
@@ -186,8 +166,7 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 );
 
 it.effect("a rejecting topic publish cannot fail the calling effect", () => {
-	// Silence the publisher's Warn failure log (the `ignoreCause({log: "Warn"})` default sink
-	// is `console.log`) so the run stays quiet.
+	// Silence the publisher's Warn failure log so the run stays quiet.
 	const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 	return Effect.gen(function* () {
 		const {live, flush} = makeHarness(() => Effect.die(new Error("DO unreachable")));
@@ -212,14 +191,10 @@ it.effect("a rejecting topic publish cannot fail the calling effect", () => {
 it.effect(
 	"an exhausted-cold-start publish is logged through the Effect logger, never a bare console.error or a silent drop (#2551)",
 	() => {
-		// The bug: the detached publish's terminal catch routed an exhausted-cold-start
-		// LiveTransportError to a bare `console.error` — invisible to the Effect logger and
-		// Sentry breadcrumbs, so the lost invalidation was silent by construction. It now
-		// flows through `Effect.ignoreCause({log: "Warn"})`: logged at Warn through the Effect
-		// logger (whose default runtime sink emits one `console.log` line; a Sentry logger
-		// layer routes it to breadcrumbs), OFF the bare `console.error`, and still swallowed
-		// (the calling mutation never fails). The detached fiber runs on the default runtime,
-		// so its logger writes to the real `console.log` this test captures.
+		// The regression: a bare `console.error` on the detached publish's terminal catch
+		// was invisible to the Effect logger and to Sentry breadcrumbs, so a lost
+		// invalidation was silent by construction. The detached fiber runs on the default
+		// runtime, whose logger sink is the real `console.log` this test captures.
 		const logged: Array<string> = [];
 		const logSpy = vi.spyOn(console, "log").mockImplementation((...args: Array<unknown>) => {
 			logged.push(args.map(String).join(" "));
@@ -271,8 +246,8 @@ it.effect("a slow publish does not block the request path — waitUntil carries 
 			}).pipe(Effect.orDie),
 		);
 
-		// The publish effect completes NOW, while the topic call is still hung —
-		// nothing on the request path awaits it.
+		// Completes NOW, while the topic call is still hung — nothing on the request
+		// path awaits it.
 		yield* live.update("Definition", "d1", {data: {id: "d1"}});
 		assert.isFalse(settled);
 

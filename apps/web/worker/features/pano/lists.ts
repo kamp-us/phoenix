@@ -1,17 +1,9 @@
 /**
- * Pano root list resolvers. Per ADR 0019, root lists map a service keyset page
- * onto a `ConnectionResult`: the service owns the cursor and keyset SQL, this
- * layer only reshapes. `sort` is a plain validated string (no fate enum, ADR
- * 0018). See `.patterns/fate-connections.md`.
+ * Pano root list resolvers. The service owns the cursor and keyset SQL, this layer
+ * only reshapes (ADR 0019; .patterns/fate-connections.md).
  *
- * - `posts` — the public feed. For a signed-in viewer the keyset page is
- *   re-hydrated through `Pano.getPostsByIds`, so `myVote`/`isSaved` ride the same
- *   batch as `savedPosts` and feed rows reflect the viewer's real vote/save state;
- *   signed-out skips the extra read and resolves to neutral state.
- * - `savedPosts` — the viewer's bookmarks, ordered by save time, `CurrentUser`-
- *   scoped; signed-out resolves to an empty connection (the read-path "viewer
- *   scalar degrades, never throws" convention). Hydrated through
- *   `Pano.getPostsByIds`, so `isSaved`/`myVote` ride the same batch as the feed.
+ * Signed-out reads degrade rather than throw: `savedPosts` resolves to an empty
+ * connection and `posts` skips the hydration pass, serving neutral viewer scalars.
  */
 
 import {CurrentUser, Fate} from "@kampus/fate-effect";
@@ -45,11 +37,8 @@ const LANDING_POSTS_DEFAULT = 5;
 const LandingPostsArgs = Schema.Struct({first: Schema.optional(Schema.Number)});
 
 export const lists = {
-	// The public landing "panoda son 24 saat" column (#1424) — most-recent posts,
-	// pinned to the ANONYMOUS sandbox viewer so the front door shows LIVE content
-	// only (`sandboxed_at IS NULL`, via `listPostsConnection`'s `sandboxVisibleWhere`),
-	// matching the public `landingStats` counts (#1391); a signed-in çaylak's own
-	// sandboxed post never surfaces here. Display-only — no `myVote`/`isSaved` stamping.
+	// Pinned to the ANONYMOUS sandbox viewer, so the front door shows LIVE content only
+	// and a signed-in çaylak's own sandboxed post never surfaces here (#1424/#1391).
 	landingPosts: Fate.list(
 		{args: LandingPostsArgs, type: PostView},
 		Effect.fn("landingPosts")(function* ({args}) {
@@ -69,12 +58,12 @@ export const lists = {
 	posts: Fate.list(
 		{args: PostsArgs, type: PostView},
 		Effect.fn("posts")(function* ({args}) {
-			// Resolve the sandbox viewer once (identity + moderator probe); the feed
-			// hides çaylak-sandboxed posts from anyone but their author + a mod (#1205).
+			// Resolved once (identity + moderator probe): the feed hides çaylak-sandboxed
+			// posts from anyone but their author + a mod (#1205).
 			const sandboxViewer = yield* currentSandboxViewer;
 			const viewerId = sandboxViewer.viewerId;
-			// Mute read-mask (#3113): the muter's muted authors, gated behind the
-			// default-off `member-mute` flag (empty set off ⇒ today's feed unchanged).
+			// Gated behind the default-off `member-mute` flag — empty set means unchanged
+			// feed (#3113).
 			const mutedIds = yield* currentMutedIds;
 			const pano = yield* Pano;
 			const page = yield* pano.listPostsConnection({
@@ -86,7 +75,6 @@ export const lists = {
 				mutedIds,
 			});
 
-			// Signed-out: serve the keyset page as-is (neutral `myVote`/`isSaved`).
 			if (!viewerId) {
 				return toConnection<PostSummaryRow, Post>(
 					page,
@@ -95,9 +83,7 @@ export const lists = {
 				);
 			}
 
-			// Signed-in: re-hydrate the page ids through `getPostsByIds` to batch-stamp
-			// the viewer's `myVote`/`isSaved`, then re-order to the keyset (the `inArray`
-			// fetch loses the sort), mirroring `savedPosts`.
+			// The `inArray` re-hydration loses the sort, so re-order back to the keyset.
 			const ids = page.rows.map((row) => row.id);
 			const hydrated = yield* pano.getPostsByIds(ids, {viewerId, sandboxViewer});
 			const byId = new Map(hydrated.map((row) => [row.id, row]));
@@ -134,8 +120,8 @@ export const lists = {
 				...(args.after !== undefined ? {after: args.after} : {}),
 			});
 
-			// `getPostsByIds` stamps `isSaved`/`myVote` in one batch but loses the
-			// save-time order (`inArray`), so re-order to the bookmark keyset.
+			// `getPostsByIds` loses the save-time order (`inArray`), so re-order to the
+			// bookmark keyset.
 			const hydrated = yield* pano.getPostsByIds(page.ids, {viewerId});
 			const byId = new Map(hydrated.map((row) => [row.id, row]));
 			const rows = page.ids.flatMap((id) => {

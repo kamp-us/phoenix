@@ -1,12 +1,7 @@
 /**
- * `LiveDO` (the unified, KV-backed live fan-out DO) on the Effect DO model.
- *
- * Drives the real {@link makeLiveInstance} builder over the KV-only `do-state`
- * fake, wiring `connection:`- and `topic:`-named instances as in-process
- * siblings. The `live` fake's `getByName` routes by name prefix to the matching
- * instance's {@link LiveRpcSurface}, exactly as the worker's cross-role RPC does —
- * so a topic→connection `deliver` and a connection→topic `register` hop between
- * the real instances, proving the acceptance criteria without workerd.
+ * `LiveDO` on the Effect DO model, driven over the KV-only `do-state` fake: the `live`
+ * fake's `getByName` routes by name prefix, so a topic→connection `deliver` and a
+ * connection→topic `register` hop between real instances without workerd.
  */
 import {RuntimeContext} from "alchemy";
 import {Effect} from "effect";
@@ -29,11 +24,9 @@ import type {
 } from "./protocol.ts";
 import {topicsForPublish, topicsForSubscribe} from "./protocol.ts";
 
-// alchemy beta.59 colored the DO storage methods (and every `LiveRpcSurface`
-// method that touches `state.storage` or hops cross-role) with `RuntimeContext`
-// (ADR 0124). The KV-only `do-state` fake is pure `Effect.sync`, so nothing
-// actually reads the context at runtime — `RuntimeContext.phantom` discharges the
-// type requirement so these in-process unit runs stay `Effect.runPromise`-able.
+// alchemy beta.59 colors the DO storage methods with `RuntimeContext` (ADR 0124). The
+// KV-only fake never reads it, so `RuntimeContext.phantom` discharges the type
+// requirement and keeps these in-process runs `Effect.runPromise`-able.
 const run = <A>(effect: Effect.Effect<A, never, RuntimeContext>): Promise<A> =>
 	Effect.runPromise(Effect.provide(effect, RuntimeContext.phantom));
 
@@ -51,9 +44,8 @@ const LIMITS: LiveLimits = {
 type LiveInstance = ReturnType<typeof makeLiveInstance>;
 
 /**
- * An in-process `live` namespace fake. An unknown name resolves to a stub whose
- * every method dies, so a topic probing an unregistered connection sees "couldn't
- * reach" (not "confirmed stale").
+ * An unknown name resolves to a stub whose every method dies, so a topic probing an
+ * unregistered connection sees "couldn't reach", not "confirmed stale".
  */
 interface LiveCell {
 	readonly live: {readonly getByName: (name: string) => LiveRpcSurface};
@@ -175,15 +167,12 @@ describe("LiveDO live fan-out (KV model)", () => {
 		expect(sub.ok).toBe(true);
 
 		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
-		// `delivered > 0` proves the topic→connection cross-role path fired (a
-		// wrong namespace-routing fake would silently pass with delivered 0).
 		expect(pub.delivered).toBeGreaterThan(0);
 
 		const frame = await stream.next();
 		expect(frame).toContain("event: next");
 		const payload = payloadOf(frame);
 		expect(payload.kind).toBe("next");
-		// Per-subscriber id: stamped at delivery from the row's subId, not publish.
 		expect(payload.id).toBe(subId);
 
 		await stream.cancel();
@@ -205,7 +194,6 @@ describe("LiveDO live fan-out (KV model)", () => {
 		);
 		await run(connection.subscribe({subId, topics: [topicKey], ownerId, limits: LIMITS}));
 
-		// Reconnect: generation bumps; the topic still holds the old-generation row.
 		await run(
 			connection.openStream({
 				ownerId,
@@ -222,8 +210,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const topicKey = "Term:t-1";
 		const {instance: topic, fake} = makeTopic(cell, topicKey);
 
-		// Register a row directly for a connection that is NOT in the cell, so any
-		// probe of `connection:gone` dies → "couldn't reach".
+		// A connection that is NOT in the cell, so any probe of it dies → "couldn't reach".
 		const row: SubscriberRow = {
 			topicKey,
 			connectionId: "gone",
@@ -236,8 +223,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 		expect(reg.ok).toBe(true);
 		expect(fake.hasAlarm()).toBe(true);
 
-		// First failed probe reaps ALL that connection's rows (void-faithful — no
-		// consecutive-miss counter).
+		// The first failed probe reaps ALL that connection's rows (no consecutive-miss counter).
 		await run(topic.alarm());
 
 		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
@@ -289,10 +275,8 @@ describe("LiveDO live fan-out (KV model)", () => {
 	});
 
 	it("connection sub under specific+global topics gets ONE frame per publish (no double-delivery)", async () => {
-		// A connection subscription registers under BOTH the args-scoped and global
-		// wildcard topic. The bug: `topicsForPublish` fanned a single publish out to
-		// both keys, so the connection (in both topic DOs) was `deliver`ed twice.
-		// Drive the FULL path (subscribe → register, publish) to assert real wiring.
+		// The subscription registers under BOTH the args-scoped and the global wildcard topic;
+		// the bug was `topicsForPublish` fanning one publish out to both keys.
 		const cell = makeLiveCell();
 		const connection = makeConnection(cell, "conn-dd");
 
@@ -341,7 +325,6 @@ describe("LiveDO live fan-out (KV model)", () => {
 			},
 		};
 		const publishTopics = topicsForPublish(message);
-		// The fix: a connection publish with args resolves to EXACTLY ONE key, not both.
 		expect(publishTopics.length).toBe(1);
 
 		let delivered = 0;
@@ -358,15 +341,13 @@ describe("LiveDO live fan-out (KV model)", () => {
 			delivered += pub.delivered;
 		}
 
-		// The connection was reached exactly once across the whole publish.
 		expect(delivered).toBe(1);
 
 		const first = await stream.next();
 		expect(first).toContain("event: connection");
 		expect(payloadOf(first).id).toBe(subControl.subId);
 
-		// No second frame: race `next()` against a short idle window. A pre-fix
-		// duplicate would already be buffered and returned immediately.
+		// A pre-fix duplicate would already be buffered, so race `next()` against an idle window.
 		const second = await Promise.race([
 			stream.next(),
 			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
@@ -392,8 +373,6 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const sub = await run(connection.subscribe({subId, topics: [topicKey], ownerId, limits}));
 		expect(sub.ok).toBe(true);
 
-		// Publish past the cap: the queue fills, the next deliver is refused, the
-		// connection closes, and the row goes stale (void's 410 on queue full).
 		let sawStale = false;
 		for (let i = 0; i < cap + 5; i++) {
 			const pub = await run(topic.publish({topicKey, frame: entityFrame, limits}));
@@ -404,7 +383,6 @@ describe("LiveDO live fan-out (KV model)", () => {
 		}
 		expect(sawStale).toBe(true);
 
-		// Stream closed: a subsequent deliver finds no queue → stale.
 		const after = await run(topic.publish({topicKey, frame: entityFrame, limits}));
 		expect(after.delivered).toBe(0);
 	});
@@ -414,8 +392,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const topicKey = "Post:post-hung";
 		const {instance: topic} = makeTopic(cell, topicKey);
 
-		// A connection whose `deliver` never resolves — a wedged isolate. Full
-		// `LiveInstance` (the rest die if touched) so no cast is needed.
+		// A connection whose `deliver` never resolves — a wedged isolate.
 		const hung: LiveInstance = {
 			openStream: () => Effect.die("unused"),
 			subscribe: () => Effect.die("unused"),
@@ -440,23 +417,18 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const reg = await run(topic.register({row, limits: LIMITS, subscribedAt: Date.now()}));
 		expect(reg.ok).toBe(true);
 
-		// A tight budget: the hung deliver must NOT wedge publish — the
-		// `Effect.timeout(deliveryAttemptTimeoutMs)` fires, the attempt is "couldn't
-		// reach" (delivered 0), and publish settles within the budget.
+		// The hung deliver must not wedge publish: the attempt times out and publish settles.
 		const limits: LiveLimits = {...LIMITS, deliveryAttemptTimeoutMs: 50};
 		const started = Date.now();
 		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits}));
 		const elapsed = Date.now() - started;
 
 		expect(pub.delivered).toBe(0);
-		// Settled near the budget, not hung forever (generous ceiling for CI jitter).
 		expect(elapsed).toBeLessThan(2000);
 		expect(elapsed).toBeGreaterThanOrEqual(40);
 	});
 
-	// The #714 race: a publish fires before the subscriber's `register` commits, so
-	// fan-out delivers to an empty registry. The storage-backed catch-up buffer must
-	// replay the missed frame to the connection when its register finally lands.
+	// The #714 publish-vs-register race: .patterns/fate-live-consistency.md
 	it("register after publish replays the buffered frame (the #714 catch-up)", async () => {
 		const cell = makeLiveCell();
 		const connection = makeConnection(cell, "conn-late");
@@ -474,12 +446,9 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const stream = await reader(res);
 		expect(await stream.next()).toContain("connected");
 
-		// Publish BEFORE the subscriber registers — fan-out finds an empty registry.
 		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
 		expect(pub.delivered).toBe(0);
 
-		// Now the subscribe→register lands (the slow RPC of #714). Replay must deliver
-		// the buffered frame to this just-registered connection.
 		const sub = await run(
 			connection.subscribe({subId, topics: [topicKey], ownerId, limits: LIMITS}),
 		);
@@ -492,10 +461,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 		await stream.cancel();
 	});
 
-	// The dedup boundary: an already-registered connection receives a publish via
-	// fan-out; a SECOND connection registering afterward gets the same frame via
-	// replay. Neither connection ever sees the frame twice — fan-out reaches only the
-	// already-registered, replay only the just-registering.
+	// Fan-out reaches only the already-registered, replay only the just-registering.
 	it("no double-apply: fan-out and replay deliver each frame to a connection at most once", async () => {
 		const cell = makeLiveCell();
 		const topicKey = "Post:post-dedup";
@@ -521,7 +487,6 @@ describe("LiveDO live fan-out (KV model)", () => {
 		expect(await streamEarly.next()).toContain("connected");
 		expect(await streamLate.next()).toContain("connected");
 
-		// Only the early connection is registered when the publish fires.
 		await run(
 			connEarly.subscribe({
 				subId: "sub-early",
@@ -531,9 +496,8 @@ describe("LiveDO live fan-out (KV model)", () => {
 			}),
 		);
 		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
-		expect(pub.delivered).toBe(1); // fan-out reached ONLY the early connection
+		expect(pub.delivered).toBe(1);
 
-		// The early connection got it via fan-out — exactly one frame, no replay echo.
 		expect(payloadOf(await streamEarly.next()).id).toBe("sub-early");
 		const earlyEcho = await Promise.race([
 			streamEarly.next(),
@@ -541,8 +505,6 @@ describe("LiveDO live fan-out (KV model)", () => {
 		]);
 		expect(earlyEcho).toBe("idle");
 
-		// The late connection registers AFTER the publish → gets the frame via replay,
-		// exactly once (fan-out could not have reached it).
 		await run(
 			connLate.subscribe({
 				subId: "sub-late",
@@ -562,10 +524,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 		await streamLate.cancel();
 	});
 
-	// `lastEventId` bounds the replay: a resubscribe carrying the per-topic `seq` it
-	// already saw replays ONLY the strictly-newer frames, not the whole window. The
-	// topic owns the SSE `id:` (it stamps `eventId = String(seq)` on publish, #731),
-	// so the cursor the client carries on reconnect is that seq — here `"1"`.
+	// The topic stamps the SSE `id:` as the per-topic `seq` (#731), so the cursor is that seq.
 	it("lastEventId bounds replay to frames newer than the last one the subscriber saw", async () => {
 		const cell = makeLiveCell();
 		const topicKey = "Post:post-lei";
@@ -581,13 +540,11 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const stream = await reader(res);
 		expect(await stream.next()).toContain("connected");
 
-		// Two frames published before any register; the topic stamps seq 1, then 2.
 		const frameOld: DeliverFrame = {kind: "next", id: "", event: {data: {n: 1}}};
 		const frameNew: DeliverFrame = {kind: "next", id: "", event: {data: {n: 2}}};
 		await run(topic.publish({topicKey, frame: frameOld, limits: LIMITS}));
 		await run(topic.publish({topicKey, frame: frameNew, limits: LIMITS}));
 
-		// Resubscribe declaring it already saw seq 1 → replay must skip seq 1, deliver seq 2.
 		const sub = await run(
 			connection.subscribe({
 				subId: "sub-lei",
@@ -600,7 +557,6 @@ describe("LiveDO live fan-out (KV model)", () => {
 		expect(sub.ok).toBe(true);
 
 		const frame = await stream.next();
-		// Only the newer frame replays — its SSE `id:` header carries seq 2.
 		expect(frame).toContain("id: 2");
 		expect(frame).not.toContain("id: 1\n");
 
@@ -613,18 +569,9 @@ describe("LiveDO live fan-out (KV model)", () => {
 		await stream.cancel();
 	});
 
-	// The #731 fix, at the cursor that exposes it: the reconnect `lastEventId` is the
-	// last per-topic `seq` the client saw, and replay must skip `seq <= cursor` and
-	// deliver STRICTLY-newer — even when the cursor frame itself has aged out of the
-	// window. The old string-equality scan walked the window looking for the exact
-	// `eventId === lastEventId`; when that frame is gone it never matches, so it
-	// wrongly DROPS every newer frame too — the client never catches up and its scalar
-	// is stuck at the stale value it last applied (the #731 clobber, replay side).
-	//
-	// Drive register directly (deterministic `subscribedAt`) over a SEPARATE topic with
-	// no fan-out row, so the only path a frame can arrive is replay. Publish seq 1, then
-	// seq 2; age seq 1 out of the window; reconnect with cursor `"1"`. The numeric skip
-	// replays seq 2 (`2 > 1`); the string scan, never finding seq 1, drops it.
+	// The #731 replay-side clobber: the old string-equality scan looked for the exact
+	// `eventId === lastEventId` in the window, so once the cursor frame aged out it matched
+	// nothing and dropped every newer frame too. Replay must skip `seq <= cursor` numerically.
 	it("replay delivers strictly-newer even when the cursor frame aged out (the #731 clobber, replay side)", async () => {
 		const cell = makeLiveCell();
 		const topicKey = "Post:post-clobber";
@@ -644,8 +591,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const stream = await reader(res);
 		expect(await stream.next()).toContain("connected");
 
-		// Activate `subId` on the connection via the decoy (so the replayed deliver isn't
-		// stale), generation 1 / revision 1 — matching the manual row below.
+		// Activate `subId` via the decoy so the replayed deliver isn't stale (generation 1 / revision 1).
 		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
 
 		// A short TTL: seq 1 is published, then aged past its window; seq 2 lands fresh.
@@ -653,12 +599,11 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const frameOld: DeliverFrame = {kind: "next", id: "", event: {data: {score: 1}}};
 		const frameNew: DeliverFrame = {kind: "next", id: "", event: {data: {score: 2}}};
 		const beforePublish = Date.now();
-		await run(topic.publish({topicKey, frame: frameOld, limits})); // seq 1 (the cursor frame)
+		await run(topic.publish({topicKey, frame: frameOld, limits}));
 		await new Promise((resolve) => setTimeout(resolve, 50)); // seq 1 ages past the 30ms TTL
-		await run(topic.publish({topicKey, frame: frameNew, limits})); // seq 2 (strictly newer, fresh)
+		await run(topic.publish({topicKey, frame: frameNew, limits}));
 
-		// Reconnect carrying cursor `"1"` — the seq it last saw, now aged out of the window.
-		// Register from BEFORE either publish so the `subscribedAt` floor admits seq 2.
+		// Reconnect with cursor `"1"` (now aged out); register from before either publish.
 		const row: SubscriberRow = {
 			topicKey,
 			connectionId: "conn-clobber",
@@ -672,9 +617,6 @@ describe("LiveDO live fan-out (KV model)", () => {
 		);
 		expect(reg.ok).toBe(true);
 
-		// seq 2 replays (strictly newer than the cursor), carrying its SSE `id: 2`. The
-		// old string scan would have dropped it (cursor frame seq 1 is gone), stranding
-		// the client on the stale score-1 it last applied.
 		const frame = await stream.next();
 		expect(frame).toContain("id: 2");
 		expect(payloadOf(frame).id).toBe(subId);
@@ -688,14 +630,9 @@ describe("LiveDO live fan-out (KV model)", () => {
 		await stream.cancel();
 	});
 
-	// The PRIMARY replay bound is `subscribedAt`: replay delivers ONLY frames
-	// published at/after the subscriber's intent instant. These two tests drive
-	// `register` directly with an explicit `subscribedAt` so the window edge is
-	// deterministic (no wall-clock race). To isolate the REPLAY path from fan-out,
-	// the connection subscribes to a DECOY topic (activating the subId on the
-	// connection so the replayed deliver isn't stale) while the frame is published to
-	// a SEPARATE topic with NO registered row — so fan-out reaches nothing and the
-	// only way the frame can arrive is replay on the manual `register`.
+	// Replay's primary `subscribedAt` bound: .patterns/fate-live-views.md. These drive `register`
+	// directly for a deterministic window edge, and isolate replay from fan-out by subscribing to a
+	// DECOY topic while publishing to a SEPARATE topic with no registered row.
 	it("a frame published at/after subscribedAt replays (the #714 catch-up window)", async () => {
 		const cell = makeLiveCell();
 		const topicKey = "Post:post-after";
@@ -718,9 +655,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 		// Activate `subId` on the connection via the decoy (revision 1, generation 1).
 		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
 
-		// Publish to the REAL topic (no registered row → fan-out delivers nothing),
-		// then register a row with `subscribedAt` set BEFORE the frame's publish time:
-		// the frame is at/after intent → replay must deliver it.
+		// `subscribedAt` set BEFORE the frame's publish time → the frame is at/after intent.
 		const beforePublish = Date.now();
 		await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
 		const row: SubscriberRow = {
@@ -762,10 +697,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 
 		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
 
-		// Publish to the REAL topic, then register (epoch-absent, `subscribedAt`-fallback
-		// path) with `subscribedAt` set WELL AFTER the frame's publish time — the frame
-		// predates the subscriber's intent, the regression's stale-history case. It must NOT
-		// replay.
+		// `subscribedAt` set WELL AFTER the publish (epoch-absent fallback path) → must not replay.
 		await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
 		const row: SubscriberRow = {
 			topicKey,
@@ -787,8 +719,6 @@ describe("LiveDO live fan-out (KV model)", () => {
 		await stream.cancel();
 	});
 
-	// The buffer is bounded by TTL: a register that lands past the window gets no
-	// replay — the race window is a few seconds, not unbounded retention.
 	it("a register past the TTL window replays nothing (bounded buffer)", async () => {
 		const cell = makeLiveCell();
 		const topicKey = "Post:post-ttl";
@@ -804,10 +734,8 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const stream = await reader(res);
 		expect(await stream.next()).toContain("connected");
 
-		// A 1ms TTL + a real gap before register: the buffered frame is past its
-		// window by the time replay runs, so nothing replays. (A 0ms TTL would race
-		// the clock — a same-millisecond publish+register is `now - at === 0`, still
-		// inside the `<= ttl` window.)
+		// A 1ms TTL + a real gap: a 0ms TTL would race the clock, since a same-millisecond
+		// publish+register is `now - at === 0` and still inside the `<= ttl` window.
 		const limits: LiveLimits = {...LIMITS, bufferedFrameTtlMs: 1};
 		await run(topic.publish({topicKey, frame: entityFrame, limits}));
 		await new Promise((resolve) => setTimeout(resolve, 20));
@@ -821,7 +749,6 @@ describe("LiveDO live fan-out (KV model)", () => {
 		);
 		expect(sub.ok).toBe(true);
 
-		// No replay frame — only the idle timeout resolves.
 		const echo = await Promise.race([
 			stream.next(),
 			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
@@ -841,11 +768,8 @@ describe("LiveDO live fan-out (KV model)", () => {
 // beat — while a #714 register-race frame (published after `openStream`) still clears it. The
 // wall-clock grace that once sat below this floor was itself the #1903 leak and is gone.
 describe("LiveDO replay epoch fence (#1072/#1903)", () => {
-	// Driven via direct `register` with explicit `subscribedAt` + `epochStartedAt` so the
-	// window edges are deterministic (no wall-clock race), mirroring the `subscribedAt`-floor
-	// tests: subscribe to a DECOY topic to activate the subId on the connection, publish to a
-	// SEPARATE topic with NO registered row (fan-out reaches nothing), so replay is the only
-	// path the frame could arrive by.
+	// Direct `register` with explicit `subscribedAt` + `epochStartedAt` for a deterministic window
+	// edge; decoy topic + separate publish topic isolate replay from fan-out, as above.
 	it("a pre-epoch frame inside the clock grace does NOT replay (epoch fence)", async () => {
 		const cell = makeLiveCell();
 		const topicKey = "Post:post-epoch-fence";
@@ -873,10 +797,8 @@ describe("LiveDO replay epoch fence (#1072/#1903)", () => {
 		await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
 		const afterPublish = Date.now();
 
-		// The epoch began strictly AFTER the frame was buffered (a reconnect past the
-		// publish), while `subscribedAt` sits INSIDE the 1s grace — so the time-grace floor
-		// alone (`subscribedAt - 1000` ≈ `afterPublish - 900` ≤ buffered.at) WOULD admit it
-		// (the pre-fix leak). The epoch floor (`epochStartedAt` > buffered.at) excludes it.
+		// The epoch begins strictly AFTER the frame was buffered, while `subscribedAt` sits inside
+		// the old 1s grace — the pre-fix leak the epoch floor now excludes.
 		const epochStartedAt = afterPublish + 1;
 		const subscribedAt = afterPublish + 100;
 		const row: SubscriberRow = {
@@ -921,9 +843,7 @@ describe("LiveDO replay epoch fence (#1072/#1903)", () => {
 
 		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
 
-		// The epoch began BEFORE the frame was published (the stream was already open when
-		// the race frame fired) and `subscribedAt` is at the epoch start — the #714 catch-up
-		// case. `buffered.at >= epochStartedAt`, so the fence does NOT exclude it.
+		// The epoch begins BEFORE the publish (stream already open) — the #714 case the fence keeps.
 		const epochStartedAt = Date.now();
 		const subscribedAt = epochStartedAt;
 		await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
@@ -945,11 +865,7 @@ describe("LiveDO replay epoch fence (#1072/#1903)", () => {
 		await stream.cancel();
 	});
 
-	// The real-client flake shape end to end: a cursorless reconnect under a reused
-	// connectionId, driven through `openStream` → `subscribe` (which threads the recorded
-	// `epochStartedAt`), not a direct `register`. A small real gap before the reconnect makes
-	// `epochStartedAt` strictly later than the buffered frame yet far inside the 1s grace, so
-	// pre-fix the time-grace floor would leak the prior frame onto the reconnected stream.
+	// The same shape end to end through `openStream` → `subscribe`, not a direct `register`.
 	it("a frame buffered before a cursorless reconnect's epoch does not leak onto the new stream", async () => {
 		const cell = makeLiveCell();
 		const topicKey = "Post:posts-reconnect";
@@ -957,8 +873,7 @@ describe("LiveDO replay epoch fence (#1072/#1903)", () => {
 		const connection = makeConnection(cell, "conn-reconnect");
 		const ownerId = "owner-reconnect";
 
-		// First connect (epoch 1): a connection exists so the frame is realistic, but no
-		// subscription yet — the published frame lands only in the buffer.
+		// First connect (epoch 1), no subscription yet — the frame lands only in the buffer.
 		await run(
 			connection.openStream({
 				ownerId,
@@ -967,12 +882,9 @@ describe("LiveDO replay epoch fence (#1072/#1903)", () => {
 		);
 		await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
 
-		// A real gap so the reconnect's `epochStartedAt` is strictly after the buffered
-		// frame's `at`, yet far inside the 1s grace (pre-fix, the grace floor still admits it).
+		// A real gap so the reconnect's epoch is strictly after the buffered frame's `at`.
 		await new Promise((resolve) => setTimeout(resolve, 5));
 
-		// Reconnect under the SAME connectionId (epoch 2): generation bumps, a fresh
-		// `epochStartedAt` is recorded — strictly after the buffered frame.
 		const res = await run(
 			connection.openStream({
 				ownerId,
@@ -982,8 +894,6 @@ describe("LiveDO replay epoch fence (#1072/#1903)", () => {
 		const stream = await reader(res);
 		expect(await stream.next()).toContain("connected");
 
-		// Cursorless resubscribe on the reconnected stream → register (generation 2) →
-		// replay. The buffered frame predates epoch 2, so the epoch fence excludes it.
 		const sub = await run(
 			connection.subscribe({subId: "sub-reconnect", topics: [topicKey], ownerId, limits: LIMITS}),
 		);
@@ -1031,35 +941,28 @@ describe("LiveDO replay epoch fence (#1072/#1903)", () => {
 		const stream = await reader(res);
 		expect(await stream.next()).toContain("connected");
 
-		// Activate `subId` on the connection via the decoy so a replayed deliver to the
-		// real topic is non-stale (generation 1 / revision 1).
+		// Activate `subId` via the decoy so a replayed deliver to the real topic isn't stale.
 		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
 
-		// (b) STALE PRE-VOTE frame (score:0): buffered BEFORE the reload's epoch begins.
-		// `buffered.at` is stamped `Date.now()` inside `publish` (live-do.ts:713); a real gap
-		// on either side of the epoch makes the two frames' `at` fall on opposite sides of
-		// `epochStartedAt` deterministically (no same-millisecond ambiguity).
+		// (b) STALE PRE-VOTE frame (score:0), buffered BEFORE the reload's epoch. The real gaps on
+		// either side put the two frames' `at` on opposite sides of `epochStartedAt`.
 		const preVoteFrame: DeliverFrame = {kind: "next", id: "", event: {data: {score: 0}}};
 		const staleAt = Date.now();
 		await run(topic.publish({topicKey, frame: preVoteFrame, limits: LIMITS}));
 
-		// The reload's epoch begins strictly AFTER the stale frame was buffered — this is the
-		// causal boundary `openStream` (live-do.ts:264) stamps on the page-reload reconnect.
+		// The reload's epoch: the causal boundary `openStream` stamps on the reconnect.
 		await new Promise((resolve) => setTimeout(resolve, 5));
 		const epochStartedAt = Date.now();
 		await new Promise((resolve) => setTimeout(resolve, 5));
 
-		// (a) #714 REGISTER-RACE frame (score:1): fires AFTER the epoch (stream already open)
-		// but BEFORE `register` commits. Post-epoch ⇒ must be KEPT for #714.
+		// (a) #714 REGISTER-RACE frame (score:1): post-epoch ⇒ must be KEPT.
 		const raceFrame: DeliverFrame = {kind: "next", id: "", event: {data: {score: 1}}};
 		const raceAt = Date.now();
 		await run(topic.publish({topicKey, frame: raceFrame, limits: LIMITS}));
 		const afterRace = Date.now();
 
-		// The cursorless (`lastEventId: undefined`) register lands. `subscribedAt` sits so BOTH
-		// frames would have been inside the OLD 1s wall-clock grace (`subscribedAt - 1000 <
-		// staleAt`) — proving the removed grace admitted the stale frame, so ONLY the
-		// `epochStartedAt` causal floor discriminates now.
+		// `subscribedAt` sits so BOTH frames were inside the OLD 1s grace, leaving the epoch floor
+		// as the only discriminator.
 		const subscribedAt = afterRace;
 		expect(subscribedAt - 1000).toBeLessThan(staleAt); // the removed grace would KEEP the stale frame
 		expect(staleAt).toBeLessThan(epochStartedAt); // pre-vote frame is pre-epoch ⇒ DROP
@@ -1076,15 +979,12 @@ describe("LiveDO replay epoch fence (#1072/#1903)", () => {
 		const reg = await run(topic.register({row, limits: LIMITS, subscribedAt, epochStartedAt}));
 		expect(reg.ok).toBe(true);
 
-		// The KEEP frame (#714 race, score:1) replays — and it is the ONLY frame that arrives.
 		const kept = await stream.next();
 		expect(kept).toContain("event: next");
 		expect(payloadOf(kept).id).toBe(subId);
 		expect((payloadOf(kept).event.data as {score: number}).score).toBe(1);
 
-		// No second frame: the stale pre-vote (score:0) was fenced by the epoch floor, so it
-		// never reaches the reconnected stream to clobber the correct value. The fence cleanly
-		// separated KEEP (post-epoch) from DROP (pre-epoch) with no wall-clock grace beneath it.
+		// No second frame: the stale pre-vote was fenced by the epoch floor.
 		const echo = await Promise.race([
 			stream.next(),
 			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
@@ -1095,18 +995,11 @@ describe("LiveDO replay epoch fence (#1072/#1903)", () => {
 	});
 });
 
-// The OTHER buffer bound is the count cap (`maxBufferedFramesPerTopic`): the ring
-// stays small so a topic DO's storage can't grow without limit under a publish
-// storm with no subscriber to drain it. Prune runs INLINE on every publish
-// (`appendToBuffer`) and on register (`replayBuffer`), with no background sweep.
-//
-// Non-obvious shape exercised here: prune is "prune-then-append" — `appendToBuffer`
-// prunes the EXISTING buffer (to the cap) and then writes the new frame, so storage
-// settles at cap+1 frames, while the read path (`pruneBuffer` inside `replayBuffer`)
-// prunes again and only ever hands replay the newest `cap` survivors. The cap is the
-// thing under test, so these drive it directly with a small `maxBufferedFramesPerTopic`.
+// Buffer bounds: .patterns/fate-live-views.md. Non-obvious shape exercised here: prune is
+// "prune-then-append" — `appendToBuffer` prunes the EXISTING buffer to the cap and then writes
+// the new frame, so storage settles at cap+1, while the read path (`pruneBuffer` inside
+// `replayBuffer`) prunes again and hands replay only the newest `cap` survivors.
 describe("LiveDO replay buffer count-cap overflow prune", () => {
-	/** The seqs currently retained in a topic's storage-backed ring, ascending. */
 	const bufferedSeqs = (
 		fake: ReturnType<typeof makeDurableObjectStateForTest>,
 		topicKey: string,
@@ -1122,26 +1015,19 @@ describe("LiveDO replay buffer count-cap overflow prune", () => {
 		const topicKey = "Post:post-cap-overflow";
 		const {instance: topic, fake} = makeTopic(cell, topicKey);
 
-		// Cap of 3, no registered subscriber: every publish only writes the ring.
 		const cap = 3;
 		const limits: LiveLimits = {...LIMITS, maxBufferedFramesPerTopic: cap};
 
-		// Publish far past the cap (seq 1..10). Prune-then-append settles storage at
-		// cap+1: the prune (which runs BEFORE the append) trims the existing ring to
-		// `cap`, then the new frame lands → `cap + 1` retained.
 		const total = 10;
 		for (let i = 0; i < total; i++) {
 			await run(topic.publish({topicKey, frame: entityFrame, limits}));
 		}
 
 		const retained = await bufferedSeqs(fake, topicKey);
-		// (a) bounded: never grows with publish count — exactly cap+1, not `total`.
 		expect(retained.length).toBe(cap + 1);
-		// (b)+(c) the SURVIVORS are the newest contiguous window: seqs 7,8,9,10. The
-		// oldest (1..6) were pruned, lowest-seq-first.
 		expect(retained).toEqual([total - cap, total - cap + 1, total - cap + 2, total]);
-		expect(retained[0]).toBe(total - cap); // oldest survivor
-		expect(retained[retained.length - 1]).toBe(total); // newest survivor retained
+		expect(retained[0]).toBe(total - cap);
+		expect(retained[retained.length - 1]).toBe(total);
 	});
 
 	it("the cap bounds the replay WINDOW to the newest `cap` frames (overflow not replayed)", async () => {
@@ -1163,14 +1049,11 @@ describe("LiveDO replay buffer count-cap overflow prune", () => {
 		const stream = await reader(res);
 		expect(await stream.next()).toContain("connected");
 
-		// Activate the subId on the connection via a decoy topic (revision 1 /
-		// generation 1), so the replayed deliver to the REAL topic isn't stale.
+		// Activate the subId via a decoy topic so the replayed deliver to the REAL topic isn't stale.
 		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
 
-		// Cap of 3; publish seq 1..6 to the real topic (no registered row → fan-out
-		// reaches nothing, so replay is the only delivery path). A `subscribedAt` from
-		// before any publish admits the whole surviving window, isolating the COUNT cap
-		// from the `subscribedAt` bound.
+		// No registered row on the real topic → replay is the only delivery path; a `subscribedAt`
+		// from before any publish isolates the COUNT cap from the `subscribedAt` bound.
 		const cap = 3;
 		const limits: LiveLimits = {...LIMITS, maxBufferedFramesPerTopic: cap};
 		const beforePublish = Date.now();
@@ -1190,9 +1073,7 @@ describe("LiveDO replay buffer count-cap overflow prune", () => {
 		const reg = await run(topic.register({row, limits, subscribedAt: beforePublish}));
 		expect(reg.ok).toBe(true);
 
-		// Replay hands back exactly the newest `cap` frames, in order — the read-path
-		// prune drops the cap+1th oldest survivor from the window. SSE `id:` carries the
-		// per-topic seq, so we assert the exact retained seq range: 4, 5, 6.
+		// SSE `id:` carries the per-topic seq, so assert the exact retained range.
 		const seqs: Array<number> = [];
 		for (let i = 0; i < cap; i++) {
 			const frame = await stream.next();
@@ -1200,9 +1081,8 @@ describe("LiveDO replay buffer count-cap overflow prune", () => {
 			const idLine = frame.split("\n").find((l) => l.startsWith("id: "))!;
 			seqs.push(Number(idLine.slice("id: ".length)));
 		}
-		expect(seqs).toEqual([total - cap + 1, total - cap + 2, total]); // 4, 5, 6 — never seq 1..3
+		expect(seqs).toEqual([total - cap + 1, total - cap + 2, total]);
 
-		// No further frame: the overflow (seq 1..3) was pruned, not replayed.
 		const echo = await Promise.race([
 			stream.next(),
 			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
@@ -1233,12 +1113,8 @@ describe("LiveDO replay buffer count-cap overflow prune", () => {
 
 		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
 
-		// Cap of 3; publish seq 1..6 — survivors are 4,5,6 (per the prune above). The
-		// client reconnects carrying cursor "2": a seq that has been EVICTED by the
-		// count cap (it's < the oldest survivor 4). The numeric-cursor semantics (#731)
-		// must resolve this to "replay everything still buffered strictly newer than 2"
-		// — i.e. the whole surviving window 4,5,6 — never deliver a pruned frame, never
-		// crash on a cursor it can't find in the window.
+		// Cursor "2" is a seq EVICTED by the count cap (< the oldest survivor 4): the #731 numeric
+		// semantics must replay the whole surviving window, never a pruned frame, never crash.
 		const cap = 3;
 		const limits: LiveLimits = {...LIMITS, maxBufferedFramesPerTopic: cap};
 		const beforePublish = Date.now();
@@ -1260,8 +1136,6 @@ describe("LiveDO replay buffer count-cap overflow prune", () => {
 		);
 		expect(reg.ok).toBe(true);
 
-		// Survivors 4,5,6 all satisfy `seq > 2`, so the whole window replays in order;
-		// the pruned seqs (1,2,3) are simply gone — none is delivered.
 		const seqs: Array<number> = [];
 		for (let i = 0; i < cap; i++) {
 			const frame = await stream.next();
@@ -1269,7 +1143,7 @@ describe("LiveDO replay buffer count-cap overflow prune", () => {
 			const idLine = frame.split("\n").find((l) => l.startsWith("id: "))!;
 			seqs.push(Number(idLine.slice("id: ".length)));
 		}
-		expect(seqs).toEqual([total - cap + 1, total - cap + 2, total]); // 4, 5, 6
+		expect(seqs).toEqual([total - cap + 1, total - cap + 2, total]);
 
 		const echo = await Promise.race([
 			stream.next(),
@@ -1282,9 +1156,7 @@ describe("LiveDO replay buffer count-cap overflow prune", () => {
 });
 
 describe("LiveDO role-guard: a misrouted RPC no-ops without mutating storage (#1368)", () => {
-	// Mirror live-do.ts's internal KV-key contract so the test can assert storage
-	// was (not) touched directly: GENERATION_KEY is the connection-role generation
-	// slot; subscriberKey is the topic-role subscriber row key.
+	// Mirror live-do.ts's KV-key contract so the test can assert storage was (not) touched.
 	const GENERATION_KEY = "connection:generation";
 	const subscriberKey = (row: SubscriberRow): string =>
 		`sub:${row.topicKey}:${row.connectionId}:${row.subId}:${row.generation}:${row.revision}`;
@@ -1317,13 +1189,10 @@ describe("LiveDO role-guard: a misrouted RPC no-ops without mutating storage (#1
 			}),
 		);
 
-		// No-op shape: not the `text/event-stream` a connection's openStream returns.
 		const web = HttpServerResponse.toWeb(res);
 		expect(web.status).toBe(404);
 		expect(web.headers.get("content-type") ?? "").not.toContain("text/event-stream");
 
-		// No mutation: the generation slot was never written (a connection's
-		// openStream would have persisted 1).
 		expect(await run(fake.state.storage.get<number>(GENERATION_KEY))).toBeUndefined();
 	});
 
@@ -1349,8 +1218,7 @@ describe("LiveDO role-guard: a misrouted RPC no-ops without mutating storage (#1
 		const {instance: connection, fake} = makeConnectionWithState(cell, "conn-unreg");
 		const row = guardRow("Post:guard-unreg", "conn-unreg");
 		const key = subscriberKey(row);
-		// Seed the connection's OWN KV with the row's key — an unguarded unregister
-		// would `delete` it on this wrong-role call.
+		// Seed the connection's OWN KV with the row's key — an unguarded unregister would delete it.
 		await run(fake.state.storage.put(key, row));
 
 		const res = await run(connection.unregister({row}));
@@ -1374,13 +1242,8 @@ describe("LiveDO role-guard: a misrouted RPC no-ops without mutating storage (#1
 	});
 });
 
-// The platform-fired reap `alarm()` is a deep module (probe → partial-reap → reschedule)
-// whose reachable branches the fan-out tests above never reach: `do.test.ts`'s pre-#1369
-// alarm coverage hit only the unreachable→reap-all (die) path. These exercise the
-// connection-reports-stale partial reap, the reschedule-while-rows-remain re-arm, and
-// `check` itself (call-only-from-alarm), against the real instance over the DO-state fake.
+// Branches the fan-out tests never reach: the partial reap, the re-arm, and `check` itself.
 describe("LiveDO alarm reap branches (#1369)", () => {
-	// How many subscriber rows the topic still holds (the set the alarm reaps off).
 	const subRowCount = (
 		fake: ReturnType<typeof makeDurableObjectStateForTest>,
 		topicKey: string,
@@ -1396,8 +1259,7 @@ describe("LiveDO alarm reap branches (#1369)", () => {
 		const topicKey = "Term:partial-reap";
 		const {instance: topic, fake} = makeTopic(cell, topicKey);
 
-		// A reachable connection with ONE live subscription. Its `check` reports
-		// staleness per-row, so the alarm must reap only the rows it names.
+		// A reachable connection with ONE live subscription; `check` reports staleness per-row.
 		const connection = makeConnection(cell, "conn-partial");
 		const ownerId = "owner-partial";
 		await run(
@@ -1410,9 +1272,8 @@ describe("LiveDO alarm reap branches (#1369)", () => {
 			connection.subscribe({subId: "sub-keep", topics: [topicKey], ownerId, limits: LIMITS}),
 		);
 
-		// A second row for the SAME connection whose subId has no live subscription: same
-		// generation (clears the generation gate), so the staleness verdict is the
-		// subscription miss — a partial reap, NOT the reach-failure reap-all.
+		// A second row for the SAME connection with no live subscription and the same generation:
+		// the verdict is the subscription miss, so a partial reap — not the reach-failure reap-all.
 		const staleRow: SubscriberRow = {
 			topicKey,
 			connectionId: "conn-partial",
@@ -1426,7 +1287,6 @@ describe("LiveDO alarm reap branches (#1369)", () => {
 
 		await run(topic.alarm());
 
-		// Exactly the stale row is gone; the live one survives (a reap-all clears both).
 		expect(await subRowCount(fake, topicKey)).toBe(1);
 		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
 		expect(pub.delivered).toBe(1);
@@ -1465,7 +1325,7 @@ describe("LiveDO alarm reap branches (#1369)", () => {
 		await run(fake.state.storage.setAlarm(1));
 		await run(topic.alarm());
 
-		expect(await subRowCount(fake, topicKey)).toBe(1); // the live row remains
+		expect(await subRowCount(fake, topicKey)).toBe(1);
 		const rearmed = await run(fake.state.storage.getAlarm());
 		expect(rearmed).not.toBeNull();
 		expect(rearmed as number).toBeGreaterThan(1);
@@ -1491,7 +1351,6 @@ describe("LiveDO alarm reap branches (#1369)", () => {
 		await run(topic.alarm());
 
 		expect(await subRowCount(fake, topicKey)).toBe(0);
-		// Nothing remains, so the handler must NOT reschedule — the sentinel stands.
 		expect(await run(fake.state.storage.getAlarm())).toBe(1);
 	});
 
@@ -1582,7 +1441,6 @@ describe("LiveDO open-owner fence (#2563)", () => {
 		expect(await run(fake.state.storage.get<number>(GENERATION_KEY))).toBe(1);
 		expect(await run(fake.state.storage.get<string>(OWNER_KEY))).toBe(ownerA);
 
-		// A different session user re-opens the SAME connectionId.
 		const hostile = await run(
 			connection.openStream({
 				ownerId: "attacker",
@@ -1593,9 +1451,7 @@ describe("LiveDO open-owner fence (#2563)", () => {
 		expect(web.status).toBe(403);
 		expect(web.headers.get("content-type") ?? "").not.toContain("text/event-stream");
 
-		// Nothing was disturbed: generation not bumped, owner unchanged, and A's
-		// subscription is still live — a publish reaches A. A missing fence would have
-		// bumped the generation and cleared A's row, so `delivered` would be 0.
+		// Nothing disturbed: generation, owner, and A's live subscription all survive.
 		expect(await run(fake.state.storage.get<number>(GENERATION_KEY))).toBe(1);
 		expect(await run(fake.state.storage.get<string>(OWNER_KEY))).toBe(ownerA);
 		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));

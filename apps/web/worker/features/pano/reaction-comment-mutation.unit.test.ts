@@ -1,26 +1,8 @@
 /**
- * `comment.react` WIRE-boundary coverage (epic #1840, #1864) — the pano-comment
- * reaction mutation driven through its real external interface (`resolveWire`: the
- * input decode + the `encodeWireError` class→wire-code seam), over a stub `Pano` + a
- * `Flags` double. No database. The direct twin of `definition-reaction-mutation`
- * (#1865) and the comment mirror of `reaction-mutation` (#1863):
- *
- *   - **flag ON delegates.** The resolver hands `{commentId, userId, emoji}` to
- *     `Pano.reactToComment` and echoes the re-resolved comment's `reactions`
- *     aggregate. Cast / change / retract are the three intents threaded (a palette
- *     emoji, a different palette emoji, `null`).
- *   - **flag OFF is inert (dark ship, ADR 0083).** The react never lands
- *     (`reactToComment` fail-on-contact); the resolver re-resolves the unchanged
- *     comment via `getCommentsByIds`, so a merged-but-unflipped feature is invisible.
- *   - **auth-only gate.** A signed-out reactor gets the invisible `UNAUTHORIZED`,
- *     never reaching the service — NO voter-tier gate, so a çaylak reacts like anyone.
- *   - **palette decode.** A non-`REACTION_EMOJI` emoji fails to decode at the wire
- *     boundary (`ReactionEmojiSchema`), so an arbitrary emoji is structurally
- *     unrepresentable and never reaches the service (#1864 AC#1).
- *
- * The react/change/retract write semantics themselves (probe-then-write, cardinality
- * one, NO karma, NO tier gate) are proven over the real service in
- * `../reaction/Reaction.unit.test.ts` (#1861); here we prove the MUTATION wiring.
+ * `comment.react` wire-boundary coverage (#1864): the mutation driven through
+ * `resolveWire` over a stub `Pano` and a `Flags` double, no database. What is proven
+ * here is the MUTATION wiring — the write semantics themselves live in
+ * `../reaction/Reaction.unit.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
@@ -37,7 +19,7 @@ import {CommentId} from "./ids.ts";
 import {mutations} from "./mutations.ts";
 import {Pano} from "./Pano.ts";
 
-// A plain member — the newcomer/çaylak the ungated proof needs (no tier fields).
+// A plain member with no tier fields: the ungated proof needs a newcomer.
 const CAYLAK = {id: "u-caylak", email: "yeni@example.com", name: "yeni"};
 
 const runtimeContextStub: BaseRuntimeContext = {
@@ -48,8 +30,7 @@ const runtimeContextStub: BaseRuntimeContext = {
 	set: (id) => Effect.succeed(id),
 };
 
-// A `Flags` whose `getBoolean` returns a fixed value — the only method the gate
-// calls; every typed read dies so an accidental call is loud.
+// Every typed read dies, so an accidental call is loud.
 const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 	Layer.succeed(Flags, {
 		getBoolean: () => Effect.succeed(on),
@@ -58,15 +39,13 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 		getObject: () => Effect.die("getObject not exercised"),
 	} as typeof Flags.Service);
 
-// A `LivePublisher` that records nothing — the flag-ON path's reaction-count publish
-// (#1868) is fire-and-forget with an error channel of `never`, so it can never fail the
-// mutation; the stub just satisfies the requirement.
+// Records nothing: the publish is fire-and-forget and can never fail the mutation.
 const liveStub = Layer.succeed(LivePublisher)(
 	livePublisherFor({publish: () => Effect.void, waitUntil: () => {}}),
 );
 
-// A `Pano` whose named methods are scripted; every OTHER method dies on contact, so
-// a passing test proves the resolver reached only the method its path routes to.
+// Every unscripted method dies on contact, so a pass proves the resolver reached only
+// the method its path routes to.
 const panoProxy = (methods: Partial<typeof Pano.Service>): Layer.Layer<Pano> =>
 	Layer.succeed(
 		Pano,
@@ -78,8 +57,6 @@ const panoProxy = (methods: Partial<typeof Pano.Service>): Layer.Layer<Pano> =>
 		}) as typeof Pano.Service,
 	);
 
-// A `CommentRow` the scripted paths re-resolve — the reaction bar it carries (counts
-// + the viewer's own `myReaction`) is what the mutation echoes.
 const commentRowWith = (reactions: ReactionAggregate): CommentRow => ({
 	id: "comment_1",
 	parentId: null,
@@ -94,8 +71,6 @@ const commentRowWith = (reactions: ReactionAggregate): CommentRow => ({
 	reactions,
 });
 
-// Drive `comment.react` through its real external interface (`resolveWire`), selecting
-// the `reactions` aggregate so the echoed field is asserted on the wire shape.
 const react = (
 	pano: Layer.Layer<Pano>,
 	on: boolean,
@@ -200,7 +175,6 @@ describe("comment.react — (2) flag OFF is inert (dark ship)", () => {
 				{id: "comment_1", emoji: "👍"},
 			);
 			assert.strictEqual((comment as {id: string}).id, "comment_1");
-			// The current, unreacted aggregate — the react write never happened while dark.
 			assert.deepStrictEqual(
 				(comment as {reactions?: unknown}).reactions,
 				EMPTY_REACTION_AGGREGATE,
@@ -232,8 +206,8 @@ describe("comment.react — (3) a non-palette emoji is rejected at the wire boun
 describe("comment.react — (4) reactions are ungated (a çaylak reacts, no tier gate)", () => {
 	it.effect("a signed-out reactor gets UNAUTHORIZED — never reaches the service", () =>
 		Effect.gen(function* () {
-			// A genuinely-anonymous request: `{user: undefined}` provided EXPLICITLY (not via
-			// the `react` helper, whose defaulted param would coerce `undefined` back to CAYLAK).
+			// Provided explicitly, not through the `react` helper, whose defaulted param
+			// would coerce `undefined` back to CAYLAK.
 			const exit = yield* resolveWire(mutations["comment.react"], {
 				input: {id: "comment_1", emoji: "👍"},
 				select: ["id"],
@@ -259,8 +233,7 @@ describe("comment.react — (4) reactions are ungated (a çaylak reacts, no tier
 			const comment = yield* react(
 				panoProxy({
 					reactToComment: (i) => {
-						// The mutation carries no tier gate: a plain user's react reaches the
-						// service exactly like any other — the ungated/social-only model.
+						// No tier gate: a plain user's react reaches the service like any other.
 						assert.strictEqual(i.userId, CAYLAK.id);
 						return Effect.succeed({
 							comment: commentRowWith({counts: [{emoji: "❤️", count: 1}], myReaction: "❤️"}),

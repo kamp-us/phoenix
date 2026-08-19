@@ -1,14 +1,9 @@
 /**
- * `Pano.readViewerOverlay` — the per-viewer overlay read (#2322, epic #2316 leg B):
- * post ids in → `myVote`/`isSaved` out. Unit-reachable because the whole decision is
- * "batch the presence readers once and stamp `viewerId ? set.has(id) : null`" — no SQL
- * engine (ADR 0082 litmus: wrong-even-if-the-DB-behaved-perfectly → unit).
- *
- * The load-bearing AC is **no N+1**: each `ViewerScalarSpec` reader (`Vote.readMine` /
- * `Bookmark.readMine`) must be called EXACTLY ONCE for the whole id batch, never per
- * row. The doubles here record every call, so the test asserts the call count is 1 per
- * spec with the full id set — the batched-read contract, proven structurally. A throwing
- * `Drizzle` under `PanoLive` proves the overlay reads no `post_record` at all.
+ * `Pano.readViewerOverlay` — post ids in → `myVote`/`isSaved` out. The load-bearing AC is
+ * **no N+1**: each `ViewerScalarSpec` reader must be called EXACTLY ONCE for the whole id
+ * batch, never per row, so the doubles record every call and the test asserts one call per
+ * spec with the full id set. A throwing `Drizzle` under `PanoLive` proves the overlay reads
+ * no `post_record` at all.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
@@ -87,8 +82,7 @@ describe("Pano.readViewerOverlay — batched per-viewer scalars, no N+1 (#2322)"
 					{id: "p3", myVote: false, isSaved: false},
 				]);
 
-				// No N+1: ONE vote read + ONE bookmark read for the 3-id batch, each carrying
-				// the full id set (never one read per row).
+				// ONE vote read + ONE bookmark read for the 3-id batch, each carrying the full id set.
 				assert.strictEqual(voteCalls.length, 1, "one batched user_vote read");
 				assert.strictEqual(bookmarkCalls.length, 1, "one batched post_bookmark read");
 				assert.deepStrictEqual(voteCalls[0], {
