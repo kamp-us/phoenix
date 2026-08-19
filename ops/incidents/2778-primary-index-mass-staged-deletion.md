@@ -57,7 +57,7 @@ primary checkout between tool calls (the documented `isolation:worktree` cwd-res
 staging command there.
 
 The containment against exactly this is the `worktree-guard pre-bash` `PreToolUse` hook
-([`packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`](../../packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts),
+(`packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`,
 `pinBash`). For a managed-worktree agent it:
 
 - **refuses** an auto-stage-all op (`git add -A/--all/.`, `git commit -a`) — the #2666 containment;
@@ -100,7 +100,7 @@ reflog trace.
 ### 4. Shared-index / `git worktree` plumbing side-effects — RULED OUT
 
 `git worktree add`/`remove`/`prune` and the `reap` subcommand
-([`worktree-guard`](../../packages/pipeline-cli/src/tools/worktree-guard/command.ts)) operate on
+(`worktree-guard`) operate on
 per-worktree metadata and the worktree's own tree; none stage into the primary index. The `reap`
 path runs `git worktree remove` **without `--force`** (it refuses on a dirty tree), so it cannot mass-
 delete-and-stage. No shared-index interaction stages the primary.
@@ -128,7 +128,7 @@ to resolve on the next occurrence.**
 ### What caught it
 
 `pipeline-cli main-sync`
-([`packages/pipeline-cli/src/tools/main-sync/main-sync.ts`](../../packages/pipeline-cli/src/tools/main-sync/main-sync.ts))
+(`packages/pipeline-cli/src/tools/main-sync/main-sync.ts`)
 surfaced the state via `decideMainRefresh`: on `main` with **tracked modifications**
 (`hasTrackedModifications` — staged deletions are staged changes to tracked files), it returns
 `leave-alone` with reason `dirty` and **refuses to fast-forward**, surfacing the dirt instead of
@@ -160,7 +160,7 @@ between it and origin.
 ## The read-only instrumentation (this unit)
 
 the `primary-index-guard` tool
-([`packages/pipeline-cli/src/tools/primary-index-guard/`](../../packages/pipeline-cli/src/tools/primary-index-guard/)) — a pure, unit-tested
+(`packages/pipeline-cli/src/tools/primary-index-guard/`) — a pure, unit-tested
 detection core plus a thin Effect CLI that, at commit time, records (never blocks) an **attribution
 event** when the staged index carries the #2778 signature (a mass control-plane staged deletion),
 capturing `CLAUDE_CODE_AGENT` / `CLAUDE_CODE_SESSION_ID` / cwd / primary-vs-worktree. It is wired as a

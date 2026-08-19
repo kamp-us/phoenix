@@ -84,6 +84,8 @@ no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker +
 
 The ADRs live in [`.decisions/`](./.decisions/) — one `NNNN-slug.md` per decision, the *why* in each file's body. There is no committed index (ADR [0126](./.decisions/0126-ambient-adr-discovery.md)) and **no `SessionStart` ADR-map hook** (ADR [0129](./.decisions/0129-adr-discovery-is-the-claude-md-contract.md), dropping 0126's hook as needless indirection): discovery is *this* contract, the same in every context (session, subagent, CI). Discover ADRs by `ls .decisions/` — the `NNNN-slug` filenames are the map — plus each file's frontmatter (`id`/`title`/`status`) for the row. Open the file when you need the why. Record new decisions with `/adr`.
 
+**There is no on-demand `id · title · status` map today.** v1's `decisions-index compact` printed one and was deleted with its package (#6100); fabrika ships no replacement (`adr next` / `adr resolve` / `adr sweep` / `guard decisions-number` answer other questions). So `ls` plus frontmatter is the whole discovery contract until one is built — [#6332](https://github.com/kamp-us/phoenix/issues/6332) tracks it. Stated rather than left silent, because ADR 0129 makes *this* section the contract, and a contract naming a command nobody ships sends its reader nowhere.
+
 ## Vocabulary
 
 See [.glossary/LANGUAGE.md](./.glossary/LANGUAGE.md) — the canonical architecture vocabulary (module / interface / implementation / depth / seam / adapter / leverage / locality + the deletion test), extended with phoenix's own structural terms (the two test tiers — unit / integration, the fate loader/resolver split, the LiveDO connection/topic roles) and the product/brand nouns. This is the single source for those terms; don't redefine them inline.

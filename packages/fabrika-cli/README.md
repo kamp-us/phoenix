@@ -28,10 +28,10 @@ not a general-purpose CLI.
 
 ## It calls nothing outside fabrika
 
-**`fabrika` invokes the v1 CLI nowhere** — no import, no subprocess
-([ADR 0238](../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). Where v1
-already solves the same problem, its source is a reference for the semantics and the scars,
-never a dependency.
+**`fabrika` invoked the v1 CLI nowhere** — no import, no subprocess
+([ADR 0238](../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). That package is
+deleted now (#6100), so the rule is history rather than a live constraint; what it bought is that
+nothing here needs porting or unhooking.
 
 The reason is the deletion test: a fabrika that calls v1 can never be the thing that
 replaces it, because every call is a tether keeping the old tree alive. Duplication costs a

@@ -99,7 +99,7 @@ to, and collapsing them produces a confident wrong answer either way.
   canonical instance: exit `1` is read-OK-but-not-green (definite), exit `2` is UNREADABLE, and
   they are deliberately distinct — "'I could not read this head' must be distinguishable from 'I
   read it and it isn't what you expected', and neither may be mistaken for green"
-  ([`../packages/pipeline-cli/src/tools/checks/command.ts`](../packages/pipeline-cli/src/tools/checks/command.ts)
+  (`../packages/pipeline-cli/src/tools/checks/command.ts`
   L19–22, [#3999](https://github.com/kamp-us/phoenix/issues/3999)). Refusing here costs one stalled
   PR — recoverable, visible, and cheaper than a wrong merge.
 - **Liveness probe — unrunnable resolves to UNKNOWN, never "down".**

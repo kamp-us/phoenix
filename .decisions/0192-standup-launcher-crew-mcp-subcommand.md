@@ -115,7 +115,7 @@ as ordinary work that auto-ships on green:
   ruling; the control-plane regex matches `claude-plugins/kampus-pipeline/{skills,agents,hooks}`
   and `packages/{ci-required,pipeline-cli}`, and matches **neither** crew path — verified
   against
-  [`control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts)).
+  `control-plane-re.ts`).
 
 Downstream children inherit this: launcher PRs go through the review-code gate and auto-ship,
 they do not bank for a §CP human merge.

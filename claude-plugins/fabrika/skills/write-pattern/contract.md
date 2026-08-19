@@ -31,7 +31,7 @@ inside that scope already.
 
 **Machine-local path leakage — the leak gate owns it.** `.patterns/` is a shared-artifact doc
 surface to it (`DOC_DIRS` in
-[`leak-guard.ts`](../../../../packages/pipeline-cli/src/tools/leak-guard/leak-guard.ts)), so a
+[`leak.ts`](../../../../packages/fabrika-cli/src/guard/leak.ts)), so a
 leaked path in a pattern doc already reds a merge. The skill states the expectation and computes no
 second verdict. It deliberately does **not** direct `fabrika build check --surface prose`, whose
 `prose` validators are these same two scans: that verb requires a session, a repository token and a

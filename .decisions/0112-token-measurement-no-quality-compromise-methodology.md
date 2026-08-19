@@ -59,7 +59,7 @@ is the standing rule that gates every lever:
    `cost.total_cost_usd` aggregate, exactly what the existing
    [`spawn-guard`](0282-spawn-guard-retired.md) statusline reader (since retired; its cost
    core survives in
-   [`token-spend/session-cost.ts`](../packages/pipeline-cli/src/tools/token-spend/session-cost.ts)) already
+   `token-spend/session-cost.ts`) already
    prints — reuse that meter read-only, never mint a new one. Because that aggregate is not
    persisted into a transcript, an **offline reconstruction** reproduces it from a stage
    sub-agent's own transcript

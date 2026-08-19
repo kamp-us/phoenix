@@ -88,7 +88,7 @@ Two boundaries on that, so nothing wider was narrowed:
 
 ## What this changes relative to v1
 
-v1's [`pipeline-cli cp-classify`](../../../packages/pipeline-cli/src/tools/cp-classify/README.md)
+v1's `pipeline-cli cp-classify`
 answers a **different** question and is not wrong at what it does: it has two independent sources —
 the `CONTROL_PLANE_RE` path regex *and* an ADR-0164 content probe over touched `.decisions/**` files
 — and four states, including `content-undetermined`, which is an obligation to probe rather than a

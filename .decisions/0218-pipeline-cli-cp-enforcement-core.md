@@ -15,7 +15,7 @@ The control-plane boundary (ADR [0053](0053-control-plane-boundary.md), enforced
 [0135](0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)) marks the surfaces
 where an autonomous green-then-ship merge could compromise the pipeline's own guards. Its concrete
 form is the single-source `CONTROL_PLANE_RE` in
-[`control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts),
+`control-plane-re.ts`,
 its byte-synced copy in
 `gh-issue-intake-formats.md`
 §CP, and the matching `.github/CODEOWNERS` rows.
@@ -159,7 +159,7 @@ a path leaving §CP through which a change could reach the enforcement surface?*
 addressed by name rather than by "the guards are green."
 
 **(a) Transitive imports of the retained core.** Computed mechanically, not asserted — see
-[`core-import-closure.unit.test.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/core-import-closure.unit.test.ts).
+`core-import-closure.unit.test.ts`.
 
 > **The walk needs two non-obvious rules to mean anything.**
 >

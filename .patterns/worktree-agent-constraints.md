@@ -117,7 +117,7 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   **auto-reattaches to `main`** before the merge — but **only on a clean tree**; a dirty off-`main`
   HEAD is detect-and-surface (refuse, report the dirt), never a blind `checkout` that discards
   work. Dry-run by default; `--execute` runs the plan. See
-  [`packages/pipeline-cli/README.md`](../packages/pipeline-cli/README.md) (the `main-sync`
+  `packages/pipeline-cli/README.md` (the `main-sync`
   section) for the full contract.
 
   **The ref-force-move sibling (the caller-agnostic backstop, [ADR 0160](../.decisions/0160-ref-transaction-guard-refuses-diverging-primary-main.md)):**
