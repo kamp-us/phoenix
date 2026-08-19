@@ -612,7 +612,7 @@ jobs:
       # Marketplace manifest guard (#5605): every `source` in .claude-plugin/marketplace.json
       # resolves to a real plugin directory carrying its own .claude-plugin/plugin.json — a
       # typo'd or renamed source ships a plugin nobody can install with nothing red. Fails
-      # closed on zero entries (ADR 0092).
+      # closed on zero entries and on zero in-tree sources (ADR 0092).
       - name: Check every marketplace source resolves to a real plugin
         run: |
           set -uo pipefail
@@ -627,15 +627,25 @@ jobs:
               process.exit(3);
             }
             let bad = 0;
+            let checked = 0;
             for (const p of plugins) {
+              // An object source (git-subdir pinned to a sha) names a plugin in another tree at
+              // another commit — there is no path in THIS checkout to resolve, so it is valid by
+              // construction. Only a string source is a repo-relative path this guard can check.
+              if (typeof p?.source !== "string" || p.source === "") continue;
+              checked++;
               const manifestPath = `${p.source}/.claude-plugin/plugin.json`;
               if (!fs.existsSync(manifestPath)) {
                 console.error(`marketplace-sources: FAIL — plugin "${p.name}" source "${p.source}" has no ${manifestPath}.`);
                 bad++;
               }
             }
+            if (checked === 0) {
+              console.error("marketplace-sources: FAIL — no in-tree plugin source to check (zero-scope fail-closed, ADR 0092).");
+              process.exit(3);
+            }
             if (bad > 0) process.exit(1);
-            console.log(`marketplace-sources: OK — ${plugins.length} plugin source(s) resolve.`);
+            console.log(`marketplace-sources: OK — ${checked} in-tree plugin source(s) resolve.`);
           '
 
   # Reproducible workflow-YAML lint (issue #568). `.github/workflows/**` is the most

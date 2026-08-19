@@ -10,10 +10,14 @@ tags: [pipeline, fabrika, control-plane, retirement]
 
 ## Decision
 
-`claude-plugins/kampus-pipeline/` is deleted — skills, agents, hooks, shared lib, shim and
-marketplace entry — together with everything that existed only to serve it. **fabrika is the one
-pipeline** (founder ruling, 2026-08-18, recorded at ruling time on
+`claude-plugins/kampus-pipeline/` is deleted — skills, agents, hooks, shared lib and shim —
+together with everything that existed only to serve it. **fabrika is the one pipeline** (founder
+ruling, 2026-08-18, recorded at ruling time on
 [#5937](https://github.com/kamp-us/phoenix/issues/5937)).
+
+The `kampus-pipeline` marketplace entry **stays**, by a later founder ruling on the same issue: it
+is a `git-subdir` source pinned to sha `633d61e5913f7666178e0bb4a7fe1a89b5c206fd`, so it serves the
+v1 roster out of history rather than out of this tree, and it survives this deletion verbatim.
 
 ## Why
 
@@ -27,11 +31,13 @@ calling or porting v1, and #4638 banned it as a source of truth.
 
 ## What went with the tree
 
-- **Hooks and the marketplace entry.** The ten v1 hook commands leave `.claude/settings.json`
-  (fabrika's hook surface is `claude-plugins/fabrika/hooks.json`, ADR 0250); the `kampus-pipeline`
-  marketplace entry and its `enabledPlugins` suppression (ADR 0277's mechanism — moot with nothing
-  to suppress) are removed. `.claude/workflows/drive-issue.js`, the v1 orchestrator that spawned
-  the v1 crew, is deleted with it.
+- **Hooks — but not the marketplace entry or the suppression.** The ten v1 hook commands leave
+  `.claude/settings.json` (fabrika's hook surface is `claude-plugins/fabrika/hooks.json`, ADR
+  0250). What stays is the sha-pinned `kampus-pipeline` marketplace entry and, with it,
+  `"kampus-pipeline@kampus": false` — ADR 0277 bans removing that suppression as part of retiring
+  v1, and the pinned entry keeps the v1 roster installable, so the suppression still has something
+  to suppress. `.claude/workflows/drive-issue.js`, the v1 orchestrator that spawned the v1 crew, is
+  deleted.
 - **Corpus guards.** `trap-status-guard.yml`, `cli-invocation-guard.yml` and `adoption-lint.yml`
   scanned the retiring script corpus and fail closed on an empty surface (ADR 0092), so they
   retire with it, along with their pipeline-cli tools (`trap-status-guard`,

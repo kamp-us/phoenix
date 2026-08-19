@@ -1,5 +1,6 @@
 {
 	"enabledPlugins": {
-		"fabrika@kampus": true
+		"fabrika@kampus": true,
+		"kampus-pipeline@kampus": false
 	}
 }
