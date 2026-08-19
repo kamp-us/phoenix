@@ -1,7 +1,8 @@
 ---
 id: 0150
 title: The control-plane / §CP boundary covers the pipeline agent definitions (`claude-plugins/kampus-pipeline/agents/**`) — a gate/merge agent's own instructions are a self-weakening surface, so they are BLOCKING (human merge) and review-skill-routed for the verdict
-status: accepted
+status: superseded by [0303](0303-retire-kampus-pipeline-plugin.md)
+superseded_by: 0303
 date: 2026-07-04
 tags: [control-plane, pipeline, security, ship-it]
 ---

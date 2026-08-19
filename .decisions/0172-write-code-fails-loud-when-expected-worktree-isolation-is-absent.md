@@ -1,7 +1,8 @@
 ---
 id: 0172
 title: write-code fails closed LOUD when worktree isolation was expected but the harness didn't provision it — self-provision is standalone-only
-status: accepted
+status: superseded by [0303](0303-retire-kampus-pipeline-plugin.md)
+superseded_by: 0303
 date: 2026-07-11
 tags: [pipeline, worktree, harness, safety, gates]
 ---

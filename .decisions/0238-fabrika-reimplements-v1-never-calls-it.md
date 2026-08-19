@@ -102,3 +102,5 @@ were amended to match, which is the amendment path their own sequencing note ant
 No vocabulary impact — "the deletion test" is already the canonical term in
 [`.glossary/LANGUAGE.md`](../.glossary/LANGUAGE.md) and this decision applies it rather than coining
 anything.
+
+> Amendment 2026-08-19: the caveat is discharged. The v1 skills are deleted (ADR [0303](0303-retire-kampus-pipeline-plugin.md)), all 34 guards run on `packages/fabrika-cli/`, and `packages/pipeline-cli/` was removed by PR #6326 — there is no v1 code left to call. The rule itself stands: fabrika implements its own deterministic work and calls no v1 code.

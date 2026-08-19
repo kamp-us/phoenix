@@ -1,7 +1,8 @@
 ---
 id: 0174
 title: "ACCEPTED — Gate-critical bare `.sh` guards under `skills/` are control-plane (broaden `CONTROL_PLANE_RE` to `skills/[^/]+\\.sh$`)"
-status: amended-in-part by `0227`
+status: superseded by [0303](0303-retire-kampus-pipeline-plugin.md) (was: amended-in-part by `0227`)
+superseded_by: 0303
 date: 2026-07-11
 tags: [pipeline, control-plane, security]
 ---

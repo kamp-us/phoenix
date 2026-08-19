@@ -119,3 +119,5 @@ from a test run.
 - **Add an offline emulator for D1/R2/KV.** Rejected upstream; would be
   phoenix-local work with no fidelity guarantee. The shared deploy-stage
   model is what alchemy is designed around.
+
+> Amendment 2026-08-19: `connection-do.ts` and `topic-do.ts` no longer exist — the two DOs were merged into one `LiveDO` at `apps/web/worker/features/fate-live/live-do.ts` (see ADR [0037](0037-unified-void-aligned-live-do.md)). Read that file for the modular `.make()` form this ADR adopted.

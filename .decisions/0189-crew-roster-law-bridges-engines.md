@@ -1,7 +1,8 @@
 ---
 id: 0189
 title: The crew roster law — bridges (fixed-cardinality seam owners) vs engines (N-instance throughput), and why per-kind cardinality falls out of the role KIND, not a global uniqueness invariant
-status: accepted
+status: superseded by [0279](0279-v1-crew-retired-in-full.md)
+superseded_by: 0279
 date: 2026-07-16
 tags: [pipeline, pipeline-crew, crew-mcp, topology, roster]
 ---

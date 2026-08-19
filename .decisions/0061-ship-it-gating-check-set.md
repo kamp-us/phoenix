@@ -75,3 +75,5 @@ an additive constraint, not the sole authority.
 - The known-informational list is a small, explicit surface in
   `.claude/skills/ship-it/SKILL.md` Step 3. Adding a deploy-class check there is a
   deliberate, reviewable act; the list must never contain a CI-suite / run-evidence check.
+
+> Amendment 2026-08-19: the ship-it skill retired with the v1 plugin (ADR 0303); the gate now lives in fabrika — `fabrika ship checks` (packages/fabrika-cli/src/ship/checks-verb.ts) with the known-informational denylist as `isInformational` in packages/fabrika-cli/src/review/rollup.ts, also consumed by `fabrika heal-ci`.

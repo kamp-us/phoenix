@@ -81,3 +81,5 @@ This is not a new rubric. Priority remains `p0`/`p1`/`p2` with their existing me
 - **Vocabulary impact: none.** This re-prices already-named concepts — `arc`, `campaign`, and the `p0`/`p1`/`p2` bands — and coins nothing. The home/priority distinction it draws is a relationship between two existing terms, not a new one.
 - Supersedes [0214](0214-active-campaign-confers-p1.md); amends in part [0202](0202-forward-motion-doctrine-crewops.md) (§2's active-arc restriction only — §1 and points 3–5 stand).
 - Records the standing rule behind the founder-approved re-level tracked on #4226 (closed). Evidence issues: #4268, #4271.
+
+> Amendment 2026-08-19: the first "Owed work" item is discharged. The `kampus-pipeline` plugin is retired (ADR 0303); the live rubric is `claude-plugins/fabrika/skills/triage/SKILL.md`, whose priority section already prices on merit and states "A roadmap row confers no band either way" (line 176). No conferral text remains to rewrite.

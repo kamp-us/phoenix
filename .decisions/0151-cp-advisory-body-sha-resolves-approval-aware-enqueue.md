@@ -149,3 +149,5 @@ review-code-PASS) is untouched.
   in the body, no first-line bindable §CP marker exists. This ADR refines **how the body binding is
   written and read** (a canonical anchor), and refines ADR 0135's enqueue precondition for the §CP
   advisory namespaces; it supersedes neither.
+
+> Amendment 2026-08-19: the kampus-pipeline skills retired (ADR 0303). The §CP advisory resolution now lives in fabrika's merge authority — `claude-plugins/fabrika/skills/ship/SKILL.md` + `claude-plugins/fabrika/skills/ship/contract.md` (`ship gate --cp`), with the canonical `Reviewed-head:` / marker wire grammars in `packages/fabrika-cli/src/review/advisory.ts` and `packages/fabrika-cli/src/wire/verdict-marker.ts` instead of `gh-issue-intake-formats.md` §6.6. The decision itself is unchanged.

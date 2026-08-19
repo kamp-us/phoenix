@@ -152,3 +152,5 @@ Vocabulary: this ADR is the canonical coining site for **vertical-completeness g
 `.glossary/LANGUAGE.md` (the architecture vocabulary) via a follow-up `/glossary` invocation
 (per epic #1943's vocabulary-impact plan), so the downstream `write-code` agents inherit the
 canonical names rather than re-coining synonyms.
+
+> Amendment 2026-08-19: the conventions still bind — `@journey:<flag-key>` tags live in `apps/web/tests/e2e/` and `@reachability-exempt:` markers in `apps/web/src/flags/keys.ts` — but the named machinery moved: the flip ritual is now `anka-ops flag set … --execute` (`packages/anka-ops/`, `cf-utils` is gone), and the `/release` skill plus the v1 `reachability-guard` retired with the `kampus-pipeline` plugin and `packages/pipeline-cli/` (ADR [0303](0303-retire-kampus-pipeline-plugin.md)). Fabrika's `plan-epic` v2 explicitly declines to emit the reachability slice (`claude-plugins/fabrika/skills/plan-epic/contract.md`), and no fabrika verb enforces the gate today; re-homing it under `fabrika guard` is open work.

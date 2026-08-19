@@ -129,3 +129,5 @@ placed at the only surface that can judge the ticket rather than count a number.
 - The criterion belongs to **whichever skill is the live skill-class gate**. When fabrika's own
   `review` skill takes that role from `claude-plugins/kampus-pipeline/skills/review-skill/`, it
   carries this criterion with it; it is not a second, parallel check.
+
+> Amendment 2026-08-19: `skill-creator` is retired (founder ruling, 2026-08-19); skill authoring runs through fabrika's `writing-for-agents` skill (`claude-plugins/fabrika/skills/writing-for-agents/`). The one-door principle this ADR rules is unchanged — read every `skill-creator` below as `writing-for-agents`.

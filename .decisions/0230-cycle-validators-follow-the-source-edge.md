@@ -1,7 +1,8 @@
 ---
 id: 0230
 title: Cycle validators widen a skill's scan surface across its own source edges — one hop, fail-closed
-status: accepted
+status: superseded by [0303](0303-retire-kampus-pipeline-plugin.md)
+superseded_by: 0303
 date: 2026-07-30
 tags: [pipeline, skills, guards, control-plane]
 ---

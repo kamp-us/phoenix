@@ -62,3 +62,5 @@ control-plane (settings hook + workflow change — human merge per ADR 0053).
   agents, all of whom have the map injected or one `ls` away.
 - The `/adr` skill and CLAUDE.md drop their index-row/regenerate language; ADR PRs remain purely
   additive (one new file, plus the superseded file's status edit when superseding).
+
+> Amendment 2026-08-19: §Decision 3's `SessionStart` map-injection hook was reversed before it was built — discovery is the CLAUDE.md contract alone (`ls .decisions/` + frontmatter); see ADR [0129](0129-adr-discovery-is-the-claude-md-contract.md). §Decisions 1/2/4/5 stand. The on-demand `id · title · status` renderer is retired with `packages/pipeline-cli/` and has no successor today (ADR [0305](0305-v1-cli-deletion-retires-three-git-boundary-guards.md)); the §4 number-lock check survives as `fabrika guard decisions-index validate` (`packages/fabrika-cli/src/guard/decisions-number-verb.ts`).

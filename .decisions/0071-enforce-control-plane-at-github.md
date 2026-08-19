@@ -218,3 +218,5 @@ edits are human-merged — the boundary protects its own owner-list.
   [0048](0048-ship-it-merge-actor.md) by choosing required *checks* (not reviews) for the
   general lane. Applies the repo-as-config discipline of [0062](0062-repo-as-config-plugin.md)
   to the ruleset itself.
+
+> Amendment 2026-08-19: the illustrative `CODEOWNERS` block above is v1-era — the `/skills/ship-it/`, `/skills/review-code/`, `/skills/review-doc/`, `/skills/review-plan/` and `/skills/gh-issue-intake-formats.md` rows no longer exist; the v1 `kampus-pipeline` plugin and its §CP clauses were retired by ADR [0303](0303-retire-kampus-pipeline-plugin.md). The decision itself still binds — read the live `.github/CODEOWNERS` (now `@kamp-us/control-plane`, per ADR 0135) as the authority on the §CP owner set, never this list.

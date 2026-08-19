@@ -79,3 +79,5 @@ fresh-clone / CI / cron spawn.
 - A *misconfigured* `WORKFLOW_MODEL` (present, off-allowlist) still denies loudly rather than
   masking under the default, preserving the "a misconfigured pin can't smuggle a bad model"
   guarantee.
+
+> Amendment 2026-08-19: the v1 spawn-guard at `packages/pipeline-cli/src/tools/spawn-guard/` is deleted (ADR [0282](0282-spawn-guard-retired.md)), but this decision still binds — fabrika reimplements it (ADR [0238](0238-fabrika-reimplements-v1-never-calls-it.md)): `DEFAULT_PIN`/`ALLOWLIST`/`canonicalModel` live in [`packages/fabrika-cli/src/models.ts`](../packages/fabrika-cli/src/models.ts) and the unset-inherit vs present-but-off-allowlist split in [`packages/fabrika-cli/src/hook/spawn.ts`](../packages/fabrika-cli/src/hook/spawn.ts) (`effectivePin = configured ?? DEFAULT_PIN`).

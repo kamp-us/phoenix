@@ -82,3 +82,5 @@ The architectural decision from 0011 — wrap drizzle behind `Context.Service` r
 **Consistency check with [0013](0013-validation-in-service-methods.md):** unchanged. Input validation still lives inside service method bodies as `Effect.fn` helpers / closure validators; this decision only relocates the db-access wrap. Validation predates the db touch in any method that does both — the call order is `validate → run → batch`.
 
 **Patterns:** see [.patterns/feature-services.md](../.patterns/feature-services.md) for the `Drizzle` service shape and call-site idioms (single-query, atomic batch, raw SQL escape), and [.patterns/effect-testing.md](../.patterns/effect-testing.md) for the test layer shape.
+
+> Amendment 2026-08-19: the canonical test file is now `apps/web/worker/db/Drizzle.unit.test.ts` (two-tier unit/integration naming); the `Drizzle.test.ts` path named at lines 76 and 80 no longer exists.
