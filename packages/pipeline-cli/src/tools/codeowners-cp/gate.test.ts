@@ -21,6 +21,7 @@ const FULL_CODEOWNERS = [
 	"/claude-plugins/kampus-pipeline/hooks/ @usirin",
 	"/claude-plugins/kampus-pipeline/hooks.json @usirin",
 	"/packages/ci-required/ @usirin",
+	"/packages/fabrika-cli/src/ci/ @usirin",
 	"/packages/pipeline-cli/ @usirin",
 	"/biome.jsonc @usirin",
 	"/biome-plugins/ @usirin",
