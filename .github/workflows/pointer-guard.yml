@@ -7,8 +7,8 @@ name: pointer-guard
 # unseen when its file is renamed/moved — the same silent-drift class as the dead
 # README (#939) and guard-path (#955) incidents. This job reads exactly the code
 # spans doc-links masks, fails closed on any non-resolving repo-root-relative
-# pointer, and fails closed on zero CLAUDE.md in scope (ADR 0092). It reuses
-# pipeline-cli's `pointer-guard check` mode — the scan lives once in the tool.
+# pointer, and fails closed on zero CLAUDE.md in scope (ADR 0092). The scan lives
+# once in `fabrika guard pointer-guard check`.
 on:
   pull_request:
   push:
@@ -37,7 +37,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Exit 1 on a stale CLAUDE.md pointer (the file:line → path report is on
-      # stderr), or when zero CLAUDE.md files are in scope (fail-closed). See #988.
+      # Non-zero on a stale CLAUDE.md pointer (12; the file:line → path report is on
+      # stderr), on zero CLAUDE.md files in scope (7), or on a tree git could not read (11).
+      # See #988.
       - name: Check CLAUDE.md path pointers resolve
-        run: node packages/pipeline-cli/src/bin.ts pointer-guard check
+        run: node packages/fabrika-cli/src/bin.ts guard pointer-guard check

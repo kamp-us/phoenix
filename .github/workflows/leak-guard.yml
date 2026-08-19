@@ -3,8 +3,8 @@ name: leak-guard
 # The authoritative leak gate (issue #312). CI is the only surface that sees
 # every PR's diff regardless of how it was authored (agent tool, vim, cat >,
 # a human commit), so it — not a write-time hook — is the unbypassable gate for
-# the no-local-paths rule (#158/#173). It reuses pipeline-cli's `leak-guard scan`
-# mode; the deny-list lives once in the tool (findLeaks), never re-grepped here.
+# the no-local-paths rule (#158/#173). The deny-list lives once in the verb
+# (`fabrika guard leak-guard scan`), never re-grepped here.
 on:
   # No `push: main` (#5085): this scan's scope IS the diff (`git diff base...HEAD`), so a
   # `main` run would re-scan history rather than the change under review.
@@ -100,4 +100,4 @@ jobs:
           fi
           printf 'Scanning %d changed file(s):\n' "${#changed[@]}"
           printf '  %s\n' "${changed[@]}"
-          node packages/pipeline-cli/src/bin.ts leak-guard scan "${changed[@]}"
+          node packages/fabrika-cli/src/bin.ts guard leak-guard scan "${changed[@]}"

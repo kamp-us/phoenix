@@ -59,7 +59,7 @@ is undetectable at the type level. That gap is closed by the **landed enforcemen
 (#1898 → ADR [0155](../.decisions/0155-fanned-mutation-publish-guard.md)): every `entity.verb`
 mutation is classified fanned/not in
 [`fanned-mutations.ts`](../apps/web/worker/features/fate-live/fanned-mutations.ts), and
-`pipeline-cli fanout-guard check` (the `fanout-guard.yml` CI job) fails closed on an
+`fabrika guard fanout-guard check` (the `fanout-guard.yml` CI job) fails closed on an
 unclassified mutation or a `fanned: true` mutation whose feature omits the publish. Authoring
 a new mutation forces the fanned/not decision; this section is the *why* behind the guard. The
 recipe the guard expects — how to actually wire the publish — is in
