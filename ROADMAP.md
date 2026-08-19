@@ -12,7 +12,7 @@ Direction flows top-down: **vision → arcs → milestones → epics → feature
 
 ## Dependency graph
 
-Generated top-down view of the roadmap: every **arc** and **campaign** is a node styled by its lifecycle state (active / queued / done); edges are the real cross-item dependencies declared in the [`## Dependencies`](#dependencies) section below. GitHub renders this natively on the repo page. It was generated from the tables; the generator was deleted with the v1 verb package (#6100), so the block is hand-maintained against the tables until a `fabrika` verb owns it again.
+Generated top-down view of the roadmap: every **arc** and **campaign** is a node styled by its lifecycle state (active / queued / paused / done); edges are the real cross-item dependencies declared in the [`## Dependencies`](#dependencies) section below. GitHub renders this natively on the repo page. It was generated from the tables; the generator was deleted with the v1 verb package (#6100), so the block is hand-maintained against the tables until a `fabrika` verb owns it again.
 
 ```mermaid
 %% Was generated; its generator retired with the v1 verb package (#6100) — keep in step with the tables by hand.
@@ -35,7 +35,7 @@ flowchart TD
 		camp_flag_graduation["Flag Graduation"]:::done
 		camp_pipeline_cli_glue_consolidation["pipeline-cli Glue Consolidation"]:::done
 		camp_lint_gate_adoption["Lint-Gate Adoption"]:::done
-		camp_taste_skill_library["Taste-Skill Library"]:::active
+		camp_taste_skill_library["Taste-Skill Library"]:::paused
 		camp_pipeline_anywhere["Pipeline Anywhere"]:::done
 		camp_pipeline_cli_effect_platform_migration["pipeline-cli @effect/platform migration"]:::done
 		camp_agentic_design_system_coverage["Agentic design-system coverage"]:::done
@@ -56,6 +56,7 @@ flowchart TD
 	ext_adr_0202 --> ext_triage_rubric
 	classDef active fill:#1a7f37,stroke:#116329,color:#ffffff;
 	classDef queued fill:#9a6700,stroke:#7d4e00,color:#ffffff;
+	classDef paused fill:#6639ba,stroke:#4c2889,color:#ffffff;
 	classDef done fill:#57606a,stroke:#424a53,color:#ffffff;
 	classDef external fill:#ddf4ff,stroke:#54aeff,color:#0550ae,stroke-dasharray:5 5;
 ```
