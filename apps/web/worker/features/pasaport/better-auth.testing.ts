@@ -13,10 +13,9 @@ import {drizzle} from "drizzle-orm/d1";
 import {defineRelations} from "drizzle-orm/relations";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as schema from "../../db/drizzle/schema.ts";
-import {apiKeyRateLimit, BetterAuthHandlerError} from "./better-auth-live.ts";
+import {authBridgeFetch} from "./auth-bridge.ts";
+import {apiKeyRateLimit} from "./better-auth-live.ts";
 
 /**
  * A REAL better-auth instance over a test `D1Database` handle. MUST stay in lockstep with
@@ -50,14 +49,7 @@ export function makeRealAuthForTest(d1: D1Database) {
 export const layerTest = (instance: Auth): Layer.Layer<BetterAuth.BetterAuth> =>
 	Layer.succeed(BetterAuth.BetterAuth)({
 		auth: Effect.succeed(instance),
-		fetch: Effect.gen(function* () {
-			const request = yield* HttpServerRequest.HttpServerRequest;
-			const response = yield* Effect.tryPromise({
-				try: () => instance.handler(request.source as Request),
-				catch: (cause) => new BetterAuthHandlerError({cause}),
-			}).pipe(Effect.orDie);
-			return HttpServerResponse.fromWeb(response);
-		}),
+		fetch: authBridgeFetch((request) => instance.handler(request)),
 	});
 
 /**

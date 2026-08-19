@@ -21,14 +21,12 @@ import {defineRelations} from "drizzle-orm/relations";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import * as Schema from "effect/Schema";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import type {} from "zod/v4/core";
 import {AppConfig, betterAuthSecret, type Environment} from "../../config.ts";
 import {Database} from "../../db/Database.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {PHOENIX_APEX_HOSTNAME} from "../../env.ts";
+import {authBridgeFetch} from "./auth-bridge.ts";
 import {type EmailMessage, EmailSender} from "./email-sender.ts";
 import {
 	changeEmailConfirmationEmail,
@@ -37,11 +35,6 @@ import {
 } from "./email-templates.ts";
 
 type AdditionalUserFields = NonNullable<NonNullable<BetterAuthOptions["user"]>["additionalFields"]>;
-
-export class BetterAuthHandlerError extends Schema.TaggedErrorClass<BetterAuthHandlerError>()(
-	"pasaport/BetterAuthHandlerError",
-	{cause: Schema.Defect()},
-) {}
 
 /**
  * Every field here is `input:false`, and that is the security invariant: `role`
@@ -169,13 +162,8 @@ export const BetterAuthLive = Layer.effect(
 		return {
 			auth,
 			fetch: Effect.gen(function* () {
-				const request = yield* HttpServerRequest.HttpServerRequest;
 				const authInstance = yield* auth;
-				const response = yield* Effect.tryPromise({
-					try: () => authInstance.handler(request.source as Request),
-					catch: (cause) => new BetterAuthHandlerError({cause}),
-				}).pipe(Effect.orDie);
-				return HttpServerResponse.fromWeb(response);
+				return yield* authBridgeFetch((request) => authInstance.handler(request));
 			}),
 		};
 	}),
