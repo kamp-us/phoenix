@@ -232,6 +232,13 @@
 			"when": 2596000000000,
 			"tag": "0032_user_role_event",
 			"breakpoints": true
+		},
+		{
+			"idx": 33,
+			"version": "6",
+			"when": 2696000000000,
+			"tag": "0033_caylak_visibility_preference",
+			"breakpoints": true
 		}
 	]
 }

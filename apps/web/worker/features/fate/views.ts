@@ -18,6 +18,7 @@ import type {
 	NotificationUnreadView,
 	NotificationView,
 } from "../bildirim/views.ts";
+import type {CaylakVisibilityPreferenceView} from "../caylak-visibility/views.ts";
 import type {DivanBacklogItemView, DivanCaylakView, DivanVoteReceiptView} from "../divan/views.ts";
 import type {FunnelSummaryView} from "../funnel/views.ts";
 import type {MecmuaPostView, MecmuaSubscriptionReceiptView} from "../mecmua/views.ts";
@@ -61,6 +62,8 @@ export {
 	notificationMarkReceiptDataView,
 	notificationUnreadDataView,
 } from "../bildirim/views.ts";
+export type {CaylakVisibilityPreference} from "../caylak-visibility/views.ts";
+export {caylakVisibilityPreferenceDataView} from "../caylak-visibility/views.ts";
 export type {DivanBacklogItem, DivanCaylak, DivanVoteReceipt} from "../divan/views.ts";
 export {
 	divanBacklogItemDataView,
@@ -171,6 +174,10 @@ type _FateViewsFieldMapResolved = [
 	AssertResolved<
 		typeof NotificationMarkReceiptView,
 		AssertFieldMapResolved<typeof NotificationMarkReceiptView>
+	>,
+	AssertResolved<
+		typeof CaylakVisibilityPreferenceView,
+		AssertFieldMapResolved<typeof CaylakVisibilityPreferenceView>
 	>,
 	AssertResolved<typeof DivanCaylakView, AssertFieldMapResolved<typeof DivanCaylakView>>,
 	AssertResolved<typeof DivanBacklogItemView, AssertFieldMapResolved<typeof DivanBacklogItemView>>,
