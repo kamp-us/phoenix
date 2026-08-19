@@ -94,6 +94,13 @@ cannot reconcile an issue into a shape nobody asked for (#4285). A convention co
 one, because the config is what the convention would be read from — and a check written at a call
 site is a check the next verb forgets.
 
+Declaring `refuseLoad` also makes that key's own `Malformed` a load refusal, relayed in the
+decoder's words: a value that did not decode leaves the key with nothing to check, and
+`{"governedRoots": []}` un-governs the config exactly as `{"governedRoots": [".decisions/"]}` does
+(#6314). The two document-level arms stay out of it — `Unknown` proves nothing about what the repo
+declared, and a document that is not a JSON object already resolves *every* key `Malformed`, so
+there is no weakened value to read off either one.
+
 **Two keys that answer one question are joined in one module, not read apart.** `boardVocabulary`
 says what each triage facet may *keep*; `triageFacets` says what it may *delete*. Read separately
 they drift into #4285's shape — a declared lane no facet owns is written once and never superseded.
@@ -129,10 +136,12 @@ unit test can point the load at a scripted filesystem.
 ## A gate refuses on a config that never decoded
 
 `loadConfig` answers `Config` for a file nobody could open, a file that is not a JSON object, and a
-key whose value the decoder rejected — those arms live per key in `Resolution`, not on the `Load`,
-because a caller reading one key has no business being stopped by another key's malformity. A gate
-is the opposite case: it is about to write, and it needs *every* key it is judged against to have
-decoded.
+key whose value the decoder rejected *where that key carries no `refuseLoad`* — those arms live per
+key in `Resolution`, not on the `Load`, because a caller reading one key has no business being
+stopped by another key's malformity. The exception is the pair above: a `refuseLoad` key's own
+`Malformed` does stop the load, because a key that can un-govern the config is one every caller is
+stopped by on purpose. A gate is the opposite case: it is about to write, and it needs *every* key
+it is judged against to have decoded.
 
 So a gate never reads `load._tag === "Config"` as "it loaded". It calls `unusableReason(load)`
 (`config/unusable.ts`), which answers the one reason no value of this config may be used, or `null`.

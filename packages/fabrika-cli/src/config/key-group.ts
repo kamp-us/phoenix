@@ -41,6 +41,10 @@ export interface KeyGroup<A> {
 	 * A refusal this key alone can raise over the whole load, or `null`. It exists for the one rule
 	 * a convention cannot hold: a config that edits its own governed-path list can un-govern itself,
 	 * so the check has to run before any key's value is used.
+	 *
+	 * Declaring this also makes the key's *own* malformity a load refusal: a value that did not
+	 * decode leaves the key with nothing to check, which un-governs the config exactly like a value
+	 * this function rejects. {@link register} raises that arm; this function only ever sees a value.
 	 */
 	readonly refuseLoad?: (value: A) => string | null;
 	/**
@@ -120,8 +124,12 @@ export const register = <A>(group: KeyGroup<A>): Registration => ({
 		const refuse = group.refuseLoad;
 		if (refuse === undefined) return null;
 		const resolved = resolveKey(state, group);
-		return resolved._tag === "Declared" || resolved._tag === "Default"
-			? refuse(resolved.value)
-			: null;
+		if (resolved._tag === "Declared" || resolved._tag === "Default") return refuse(resolved.value);
+		// A declared value this key's decoder rejected refuses the load in the decoder's own words: it
+		// leaves the key with no usable value, which un-governs the config exactly like a value
+		// `refuseLoad` rejects. The two document-level arms are not this key's to raise — `Unknown`
+		// proves nothing about what the repo declared, and a document that is not a JSON object
+		// resolves *every* key `Malformed`, so no weakened value is readable off it either way.
+		return resolved._tag === "Malformed" && state._tag === "Record" ? resolved.reason : null;
 	},
 });

@@ -3,8 +3,10 @@
  *
  * A load that is not `Refused` is not thereby a load that decoded. `Refused` is the narrow arm a
  * key's `refuseLoad` raises over a config it *could* read; a file nobody could open, a file that is
- * not a JSON object, and a key whose value the decoder rejected all answer `Config`, because the
- * arms live per key in {@link Resolution} rather than on the load. Reading `_tag === "Config"` as
+ * not a JSON object, and a key whose value the decoder rejected — that last one only where the key
+ * carries no `refuseLoad`, since a key that does have one refuses the load on its own `Malformed`
+ * too (#6314) — all answer `Config`, because the arms live per key in {@link Resolution} rather
+ * than on the load. Reading `_tag === "Config"` as
  * "it loaded" is what let `triage apply` reach the label write with the containment check never run
  * (#6292): a gate keyed on the refusal alone is fail-open on exactly the input class this surface
  * exists to keep apart.
