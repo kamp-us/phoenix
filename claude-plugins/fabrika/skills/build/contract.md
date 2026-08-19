@@ -1396,10 +1396,14 @@ the file-open level (#5304). Two facts hold that promise up:
 
 Per surface:
 
-- **code** — the exact CI commands (`pnpm typecheck`, `pnpm lint:worktree`), executed in this
-  tree **with the build cache bypassed** (turbo `--force`). A cache hit from another checkout
-  returned another tree's green three times in one session (#4106) and recurred on the review
-  side (#4887); bypassing is cheaper than trusting a key that has already lied.
+- **code** — every command the repo declares under `.fabrika.jsonc`'s `codeValidators`, executed in
+  this tree **with the build cache bypassed**. The cache bypass is the design — a cache hit from
+  another checkout returned another tree's green three times in one session (#4106) and recurred on
+  the review side (#4887) — but the flag expressing it is the repo's, since turbo's `--force` is a
+  hard error to a bare `tsc` (#6015). A repo declaring nothing gets the shipped pair, `pnpm
+  typecheck --force` and `pnpm lint:worktree`. A declared list that is **empty** has nothing to run,
+  which refuses `11`, UNKNOWN — never green, and never the `VALIDATION_RED` that says the code
+  failed.
 - **prose** — changed markdown files: every relative link resolves against this tree; no
   machine-local path (the imported `doc-leaks.ts` predicate); every fabrika-doc reference cited by
   id exists.

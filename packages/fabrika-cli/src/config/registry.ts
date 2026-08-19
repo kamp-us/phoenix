@@ -8,6 +8,7 @@
 
 import {type Registration, register} from "./key-group.ts";
 import {capClearAuthorsKey} from "./keys/cap-clear-authors.ts";
+import {codeValidatorsKey} from "./keys/code-validators.ts";
 import {docLeakExemptKey} from "./keys/doc-leak-exempt.ts";
 import {governedRootsKey} from "./keys/governed-roots.ts";
 import {triageFacetsKey} from "./keys/triage-facets.ts";
@@ -15,6 +16,7 @@ import {workflowValidatorsKey} from "./keys/workflow-validators.ts";
 
 export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(capClearAuthorsKey),
+	register(codeValidatorsKey),
 	register(docLeakExemptKey),
 	register(governedRootsKey),
 	register(triageFacetsKey),
