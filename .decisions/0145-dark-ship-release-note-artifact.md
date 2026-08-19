@@ -110,3 +110,5 @@ The four forks close as follows.
   (the untouched control-plane boundary), [0126](0126-ambient-adr-discovery.md) (the
   render-on-demand, no-committed-artifact discipline), and #602 (the `status:awaiting-release`
   queue this note reads).
+
+> Amendment 2026-08-19: the decision stands — a per-flag release note is still rendered on demand at flip time, never hand-authored, never wired into the merge gate. Two names moved. `ship-it` is retired with the `kampus-pipeline` plugin (ADR [0303](0303-retire-kampus-pipeline-plugin.md)); the `status:awaiting-release` label is now applied by fabrika's `ship` skill, unchanged in behavior. And `packages/pipeline-cli/` is deleted, so the owed generator belongs at `packages/fabrika-cli/src/release-note/`, not `packages/pipeline-cli/src/tools/release-note/`.

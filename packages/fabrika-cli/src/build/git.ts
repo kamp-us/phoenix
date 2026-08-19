@@ -75,6 +75,61 @@ export const switchToNew = (name: string, start: string): Shell<Attempt<void>> =
 		return r.ok ? ok(undefined) : fail(r.reason);
 	});
 
+/**
+ * Re-key an existing local branch to a new name — how a repair lane takes over an epic child's branch.
+ *
+ * Renaming rather than cutting a second branch off the first is the whole point: two branches
+ * carrying one child's commits is what `lane prove` reports as an underivable range, and that
+ * refusal is unresolvable from inside a worktree (#6386).
+ *
+ * **It does not refuse a branch another worktree has checked out**, which is the trap the caller
+ * guards with {@link worktreeCheckouts}: `git branch -m` exits 0 there and silently retargets that
+ * worktree's `HEAD` to the new name — only the `git switch` afterwards fails, by which point the
+ * rename has already landed under a lane that is not this one. Measured against git 2.40.1 rather
+ * than reasoned about (#6386, review round 1).
+ */
+export const renameBranch = (from: string, to: string): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["branch", "-m", from, to]);
+		return r.ok ? ok(undefined) : fail(r.reason);
+	});
+
+/** One worktree of this repo, and the branch it holds checked out. */
+export interface WorktreeCheckout {
+	readonly path: string;
+	readonly branch: string;
+}
+
+/**
+ * Every worktree of this repo that holds a branch, paired with the branch it holds.
+ *
+ * The proof {@link renameBranch} needs and cannot make for itself. A detached worktree contributes
+ * no row: it holds no branch name, so it can collide with none.
+ */
+export const worktreeCheckouts: Shell<Attempt<ReadonlyArray<WorktreeCheckout>>> = Effect.gen(
+	function* () {
+		const r = yield* execCapture("git", ["worktree", "list", "--porcelain"]);
+		if (!r.ok) return fail(r.reason);
+		const held: Array<WorktreeCheckout> = [];
+		let path = "";
+		for (const line of r.stdout.split("\n")) {
+			if (line.startsWith("worktree ")) path = line.slice("worktree ".length).trim();
+			else if (line.startsWith("branch refs/heads/") && path !== "") {
+				held.push({path, branch: line.slice("branch refs/heads/".length).trim()});
+			}
+		}
+		return ok(held);
+	},
+);
+
+/** The branch this tree holds, or `null` when its HEAD is detached. */
+export const currentBranch: Shell<Attempt<string | null>> = Effect.gen(function* () {
+	const r = yield* execCapture("git", ["branch", "--show-current"]);
+	if (!r.ok) return fail(r.reason);
+	const name = r.stdout.trim();
+	return ok(name === "" ? null : name);
+});
+
 /** Point a local branch's upstream at `<remote>/<ref>` — how resume mode publishes to the PR's head. */
 export const setUpstream = (name: string, remote: string, ref: string): Shell<Attempt<void>> =>
 	Effect.gen(function* () {

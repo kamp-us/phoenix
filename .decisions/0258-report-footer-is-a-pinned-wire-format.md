@@ -212,3 +212,5 @@ superseded or amended by this — only the ownership of its bytes is settled her
 
 **No vocabulary impact.** *Wire format* is coined in ADR 0241 and applied here; *filing provenance*
 and the *never-auto-close signal* are ADR 0159's and are used, not redefined.
+
+> Amendment 2026-08-19: v1 is gone — `claude-plugins/kampus-pipeline/skills/report/footer.sh` and its `packages/pipeline-cli/` conformance test retired with the plugin (ADR 0303), and that producer row plus the "second party is outside the package" fixture-file rationale describe a seam that no longer exists. `packages/fabrika-cli` is now the sole owner and sole producer of the footer bytes; the wire-module/one-fixture ruling still governs, and a fixture file (rather than an inline TS sample) is now a preference, not a forced choice.

@@ -112,3 +112,5 @@ FAIL on 0231 discretionarily; the row makes it mandatory.
 - Vocabulary impact: **none.** "Criterion row", "review-skill gate", and the derive family are all
   already-named concepts; this ADR re-decides where enforcement lives, coining and redefining
   nothing. Considered and explicitly none.
+
+> Amendment 2026-08-19: the governed skill-markdown surface is now `claude-plugins/fabrika/skills/**/SKILL.md` and sibling docs — `claude-plugins/kampus-pipeline/` was deleted (ADR 0303) and the review-skill gate it names is fabrika's `review` skill. `scripts/**` is unchanged; the decision itself stands.

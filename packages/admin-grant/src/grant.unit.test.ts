@@ -20,7 +20,7 @@ import {grantSchema as schema} from "./schema.ts";
 
 // An inert `D1Database`: drizzle's query builders resolve SQL+params via `.toSQL()`
 // with no session call, so no binding method is ever invoked (the unit-tier "no SQL
-// engine" shape — same idiom as moderator-grant's `grant.unit.test.ts`).
+// engine" shape — same idiom as founder-seed's `seed.unit.test.ts`).
 // biome-ignore lint/plugin: a no-op stand-in (statement-building never touches the binding) can't be structurally typed as the full `D1Database` interface; nothing here calls a binding method.
 const inertD1 = {} as unknown as D1Database;
 const db = drizzle(inertD1, {relations: defineRelations(schema)});

@@ -4,9 +4,8 @@
  *
  * Three properties are load-bearing and each has an incident behind it:
  *
- * - **Last match wins, and an owner-less row unsets ownership.** That is GitHub's documented rule
- *   and this repo leans on it: `/packages/pipeline-cli/src/tools/` carries no owner precisely to
- *   un-own the ~60 non-gating tools that a broader row above it would otherwise sweep in.
+ * - **Last match wins, and an owner-less row unsets ownership.** That is GitHub's documented rule,
+ *   and a repo leans on it to un-own a subtree that a broader row above it would otherwise sweep in.
  * - **A trivial boundary is a printed hold, not a match-everything verdict** — the #4336 adopter
  *   incident and the #4401 empty-capture class.
  * - **The owners are parsed, never hardcoded.** `@<org>/<team>` and individual `@login` owners are
@@ -68,8 +67,8 @@ const escapeSegment = (segment: string): string =>
  *
  * A trailing `/` is a directory prefix and matches everything beneath it. Everything else matches
  * the path exactly, and additionally as a directory prefix **only when its last segment carries no
- * wildcard** — which is what keeps `/packages/pipeline-cli/src/*` owning the dispatch root and no
- * deeper, the reading that row's own comment pins.
+ * wildcard** — which is what keeps a row like `/packages/<pkg>/src/*` owning that directory's own
+ * files and nothing deeper.
  */
 export const matcherFor = (pattern: string): RegExp => {
 	let body = pattern;

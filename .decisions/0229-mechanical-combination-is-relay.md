@@ -129,7 +129,7 @@ was cost plus near-zero detection power; the six-path fail-safe trace was the en
 not the ratio. What this hatch licenses is therefore the trace, not the duplication.
 
 The worked boundary case, already ruled by a review gate:
-[`packages/pipeline-cli/src/skill-shell-surface.ts`](../packages/pipeline-cli/src/skill-shell-surface.ts)
+`packages/pipeline-cli/src/skill-shell-surface.ts`
 takes a markdown heading slice and returns that section's shell surface *as text*, appending the
 content of each script the slice sources; `kp_skill_shell_surfaces` in
 `lib/common.sh`

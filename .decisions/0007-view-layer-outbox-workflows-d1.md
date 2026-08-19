@@ -1,12 +1,16 @@
 ---
 id: 0007
 title: View layer — outbox + Workflows + single D1, triggered inline
-status: accepted
+status: superseded by [0008](0008-mutations-as-workflows.md)
+superseded_by: 0008
+superseded_date: 2026-05-10
 date: 2026-05-09
 tags: [architecture, durable-objects, workflows, d1, projection, agents-sdk]
 ---
 
 # 0007 — View layer: outbox + Workflows + single D1, triggered inline
+
+> **Superseded (2026-05-10):** the outbox + `PHOENIX_PROJECTION` workflow + materialized-view layer is retired by [ADR 0008](0008-mutations-as-workflows.md), and the whole DO/projection/workflow stack it sat on by [ADR 0009](0009-d1-direct-defer-dos-and-workflows.md) — resolvers write D1 directly, there is no `apps/web/worker/view/`, no outbox, no projection workflow.
 
 ## Context
 

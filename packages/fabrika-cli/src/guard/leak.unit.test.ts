@@ -1,5 +1,5 @@
 /**
- * The leak gate's BLOCK/ALLOW matrix, ported from `pipeline-cli`'s `leak-guard.unit.test.ts` and
+ * The leak gate's BLOCK/ALLOW matrix, ported from the v1 CLI's `leak-guard.unit.test.ts` and
  * `path-matcher.unit.test.ts` (#173, #3070, #3401, #3475, #4496).
  *
  * Every literal below is a *shape*, not anyone's path — this file names the forbidden forms because

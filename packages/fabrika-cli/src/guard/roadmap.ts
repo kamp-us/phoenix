@@ -1,6 +1,6 @@
 /**
  * `guard roadmap-guard check`'s pure core — does `ROADMAP.md` still agree with the live milestone
- * projection? Ported from `pipeline-cli roadmap-guard` (#2620/#2628/#2660/#5012).
+ * projection? Ported from v1's `roadmap-guard` (#2620/#2628/#2660/#5012).
  *
  * **`ROADMAP.md` is the only surface parsed here.** Milestones are the projection it is checked
  * against, never a second source it is reconciled with — so drift always has one author.

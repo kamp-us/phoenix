@@ -1,8 +1,8 @@
 /**
  * The GitHub boundary: read the set of OPEN PR numbers, so the sweep keeps each open
  * PR's `pr-<n>` preview stage. Shells `gh api` REST over `ChildProcessSpawner` — REST
- * only (GraphQL is broken on the kamp-us org), the same boundary shape as
- * `@kampus/flake-rate`'s `github.ts`. Read-only; the repo is resolved per ADR 0062 §1.
+ * only (GraphQL is broken on the kamp-us org), the boundary shape of
+ * `.patterns/effect-process-cli-shell.md`. Read-only; the repo is resolved per ADR 0062 §1.
  */
 import {Context, Effect, Layer, Stream} from "effect";
 import * as Schema from "effect/Schema";
@@ -135,8 +135,8 @@ const loadOpenPrs = Effect.fn("Github.openPrNumbers")(function* (repo: string) {
 const normalizePaginatedJson = (raw: string): string => raw.replaceAll("][", ",");
 
 /**
- * The live `Github` layer. Mirrors `@kampus/flake-rate`'s `GithubLive`: spawner captured
- * at construction, repo resolution `Effect.cached` and deferred to first use.
+ * The live `Github` layer: spawner captured at construction, repo resolution
+ * `Effect.cached` and deferred to first use.
  */
 export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildProcessSpawner> =
 	Layer.effect(Github)(

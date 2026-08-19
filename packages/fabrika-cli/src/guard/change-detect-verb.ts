@@ -1,5 +1,5 @@
 /**
- * `guard change-detect-guard check` — ported off `pipeline-cli change-detect-guard check`
+ * `guard change-detect-guard check` — ported off v1's `change-detect-guard check`
  * (epic #5720).
  *
  * The verb is the IO boundary and nothing else: read ci.yml, hand its text to the pure rule in

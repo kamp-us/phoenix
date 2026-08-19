@@ -202,3 +202,5 @@ here; if that behavior is wanted it is a separate `loop.ts` change.
   `.claude`/`.decisions` control-plane change, this ADR and its skill edits are
   **human-merged** per ADR [0053](0053-control-plane-boundary.md); the pipeline does not
   self-merge changes to its own plan-layer contract.
+
+> Amendment 2026-08-19: `@phoenix/epic-ledger` is gone. The epic lock is live at `packages/fabrika-cli/src/ledger/preconditions.ts` (the `epic-lock` claim, still a two-write `status:planning` acquire) and the plan gate at `packages/fabrika-cli/src/plan/` (`check-verb.ts` / `flip-verb.ts`). The signature-keyed convergence loop of Decision 3 (`gate.ts` / `loop.ts`, `runConvergenceLoop`, `ledgerSignature`) no longer exists: the gate is one-shot and TOCTOU-closed by the scope digest in `packages/fabrika-cli/src/plan/digest.ts`, which every mutating verb must pass as `--digest` and recompute from a fresh read.

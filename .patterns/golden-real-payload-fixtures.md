@@ -25,23 +25,26 @@ the spec real.
    the actual JSON the runtime emits — not a doc summary, not a plausible-looking shape.
 2. **Commit it as a golden fixture.** Co-locate next to the handler's test under
    `__fixtures__/<handler>.payload.golden.json` (e.g.
-   [`packages/pipeline-cli/src/tools/worktree-sweep/__fixtures__/worktree-create.payload.golden.json`](../packages/pipeline-cli/src/tools/worktree-sweep/__fixtures__/worktree-create.payload.golden.json)).
+   [`packages/fabrika-cli/src/hook/__fixtures__/pre-tool-use-spawn.payload.golden.json`](../packages/fabrika-cli/src/hook/__fixtures__/pre-tool-use-spawn.payload.golden.json)).
    The **key set + construction rule is the golden part**; opaque per-spawn values
    (`session_id`/`transcript_path`/`prompt_id`, and the absolute `cwd`) are sanitized to
    representative placeholders — never a real operator path or PII
    ([no-local-paths convention](../CLAUDE.md)). What must stay real is the *shape*: which
-   keys exist, and which do NOT (here: `name`+`cwd` present, `worktree_path`/`base_ref`
-   absent — the exact fact #2925 got wrong).
+   keys exist, and which do NOT (here: a spawn's `tool_name` is `Agent` even though the
+   matcher that fired is `Task`, and `model` arrives as the harness alias `opus` — the two
+   facts a hand-authored envelope gets wrong). Record how the capture was taken beside the
+   fixtures: [`PROVENANCE.md`](../packages/fabrika-cli/src/hook/__fixtures__/PROVENANCE.md)
+   is what lets a reviewer tell a captured payload from an invented one.
 3. **Load it verbatim, never inline the payload.** The raw fixture bytes are the assertion
    path's input, via the shared loader
-   [`packages/pipeline-cli/src/golden-fixture.ts`](../packages/pipeline-cli/src/golden-fixture.ts):
+   [`packages/fabrika-cli/src/golden-fixture.ts`](../packages/fabrika-cli/src/golden-fixture.ts):
    `readGoldenFixture(import.meta.url, "__fixtures__/…json")` for the raw stdin bytes,
    `loadGoldenPayload(…)` for a parsed record to assert the shape. A hand-authored payload in
    the assertion path is the anti-pattern — it re-admits the fabrication #2925 shipped.
 4. **Assert the handler against the fixture, and assert the shape.** Drive the real handler
-   (for a shell hook: `execFileSync` the script against a throwaway git repo, feeding the
-   golden payload on stdin — see
-   `create-worktree.hook.test.ts`, retired with v1 — #5937),
+   (feed the golden payload on stdin and assert what the handler emits — see
+   [`packages/fabrika-cli/src/hook/envelope.golden.test.ts`](../packages/fabrika-cli/src/hook/envelope.golden.test.ts)
+   for the direct form and `pretooluse-polarity.cli.test.ts` for the CLI-driven one),
    plus a direct shape assertion (`assert.notProperty(p, "worktree_path")`) so the captured
    contract's *absences* are guarded too. The litmus: **the test must FAIL against the old
    fabricated contract** — if it passes against both shapes it isn't guarding the real one.

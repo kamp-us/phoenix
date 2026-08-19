@@ -199,3 +199,5 @@ Verified end-to-end against a throwaway scratch epic (created and torn down in o
 PASS flips `status:planned → status:triaged` + posts the verdict comment; a zero-AC child
 yields FAIL with nothing flipped; the gate is idempotent on re-run. 70/70 package tests
 green.
+
+> Amendment 2026-08-19: the gate's operable surface moved — `packages/epic-ledger` is gone; the ledger code now lives at `packages/fabrika-cli/src/ledger/` (registered as `ledgerCommand` in `packages/fabrika-cli/src/registry.ts`), run via the `fabrika ledger …` binstub, and the skill that invokes it is `/fabrika:check-epic-plan`. See ADR 0303.

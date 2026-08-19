@@ -1,8 +1,8 @@
 /**
- * The canonical D1 REST transport's contract, tested ONCE here for all three
- * consumers (issue #941) — previously the same assertions lived in triplicate
- * (preview-seed's `seed.unit.test.ts`, fts-backfill's `backfill.batch.unit.test.ts`,
- * moderator-grant's `d1-rest.unit.test.ts`). All three checks run with no CF creds and
+ * The canonical D1 REST transport's contract, tested ONCE here for every consumer
+ * (issue #941) — previously the same assertions lived in triplicate (preview-seed's
+ * `seed.unit.test.ts`, fts-backfill's `backfill.batch.unit.test.ts`, and a third copy
+ * in the since-deleted `moderator-grant`). All three checks run with no CF creds and
  * no SQL engine (ADR 0082 unit tier): the param transform is pure, and the
  * `makeD1Rest` shape assertions drive the real REST adapter offline over a fake
  * `FetchHttpClient.Fetch`. The faithful proof that real D1 actually rejects null /
@@ -43,7 +43,7 @@ describe("toRestParams / assertRestParam — D1 REST rejects null params (#569)"
 });
 
 // #940: `run()` once hardcoded `meta: {}`, dropping D1's row-change count — latent in the
-// seed (no consumer reads it) but it bit moderator-grant's setRole (#937). Lock the REST
+// seed (no consumer reads it) but it bit a since-deleted grant CLI's setRole (#937). Lock the REST
 // `result: [{ meta: { changes } }]` → `meta.changes` mapping so it can't regress, driving
 // the real REST adapter offline over a fake Fetch (no CF creds).
 describe("makeD1Rest — run() carries D1's row-change count (#937/#940)", () => {

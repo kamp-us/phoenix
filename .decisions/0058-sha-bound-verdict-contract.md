@@ -176,3 +176,5 @@ the load-bearing fallback for the operator's own PR (org branch rules block self
   verdict the proof justifies. As a `.claude`/`.decisions` control-plane change, this ADR and
   its skill edits are **human-merged** per ADR [0053](0053-control-plane-boundary.md); the
   pipeline does not self-merge changes to its own merge authority.
+
+> Amendment 2026-08-19: `packages/epic-ledger` is gone — the plan gate now lives in `packages/fabrika-cli/src/plan/` (`fabrika plan check` / `plan verdict` / `plan flip`, driven by the `check-epic-plan` skill). The scope carve-out is unchanged: the plan gate's verdict rides an epic issue, not a PR head, so it stays out of the SHA-binding contract. Renamed actors: `review-code`/`review-doc` → `review`, `ship-it` → `ship`, `write-code` repair → `build` repair mode.

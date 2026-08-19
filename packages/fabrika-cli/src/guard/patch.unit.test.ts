@@ -1,5 +1,5 @@
 /**
- * The pure rule behind `guard patch-guard check`, ported from `pipeline-cli`'s
+ * The pure rule behind `guard patch-guard check`, ported from the v1 CLI's
  * `patch-guard.unit.test.ts` (#3051): the workspace slice, the marker grammar, and the two-way
  * cross-check. No disk — the IO seam is covered in `patch-verb.unit.test.ts`.
  *

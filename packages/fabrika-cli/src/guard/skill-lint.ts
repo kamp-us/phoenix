@@ -1,6 +1,6 @@
 /**
  * `guard skill-lint check` core — the pure, IO-free matchers that gate the skill
- * corpus, ported from `pipeline-cli gh-phoenix lint-skills` (epic #5720). Four independent
+ * corpus, ported from v1's `gh-phoenix lint-skills` (epic #5720). Four independent
  * checks, all fail-closed on zero scope (ADR 0092):
  *
  *  1. GraphQL-path `gh` invocations (issue #743) — flags a reflexive `gh project`
@@ -135,7 +135,6 @@ const SELF_EXEMPT_SUFFIXES = [
 	// follows it, still per-file and never a `write-code/`-wide exemption.
 	"/skills/write-code/repair.md",
 	"/skills/gh-issue-intake-formats.md",
-	"/packages/pipeline-cli/src/tools/gh-phoenix/README.md",
 	// The one finding the #5004 widening surfaced, and it is prose, not a call: the passage
 	// names `gh issue edit --add-label` to explain why an implementer must NOT reach for it
 	// (that porcelain rejects an unknown label client-side, which would make the contract's

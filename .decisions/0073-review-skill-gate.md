@@ -1,7 +1,8 @@
 ---
 id: 0073
 title: "The review-skill gate — skills are a third artifact class with their own behavioral gate"
-status: accepted
+status: superseded by [0303](0303-retire-kampus-pipeline-plugin.md)
+superseded_by: 0303
 date: 2026-06-16
 tags: [pipeline, ship-it, review-skill, skills, control-plane, gate-routing]
 ---

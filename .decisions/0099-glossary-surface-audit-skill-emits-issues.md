@@ -151,3 +151,5 @@ subdir `claude-plugins/kampus-pipeline/skills/` per the multi-plugin marketplace
 - **Scope of this ADR.** It records the **decisions** the epic settles; it does **not**
   write the skills or the glossary files. Those are the epic's other children (#882–#887);
   this child (#884) only produces the decision record they build against.
+
+> Amendment 2026-08-19: the `kampus-pipeline` plugin is retired (ADR [0303](0303-retire-kampus-pipeline-plugin.md)); the `glossary` skill now lives at `claude-plugins/fabrika/skills/glossary/`. No `architecture-audit` skill exists in fabrika — Decision 1 still governs if one is ever authored. Decisions 1 and 2 (issue-per-finding output, `.glossary/` as a committed surface) are unchanged.

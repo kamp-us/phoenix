@@ -25,7 +25,7 @@
  * gate whose marker drifted must never read as a PR nobody reviewed.
  *
  * v1's `claude-plugins/kampus-pipeline/skills/shared/gate-verdict-contract.md` §VERDICT and
- * `packages/pipeline-cli/src/tools/verdict/verdict-match.ts` are where the semantics and the scars
+ * v1's `verdict-match.ts` are where the semantics and the scars
  * come from — read as prior art, never called (ADR 0238). v1's upsert keying, its advisory line and
  * its read-back guard are deliberately not carried here.
  */

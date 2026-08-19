@@ -12,9 +12,8 @@
  *
  * The fail-closed drift guard is {@link assertShellBootKeysSingleSourced}. It is a pure,
  * in-app unit-tested check that lives in the same bundle as the manifest — deliberately
- * NOT a `pipeline-cli` CI guard (#2928): a CI guard would touch `packages/pipeline-cli/**`
- * and flip this slice §CP-blocking-for-merge. If a CI-level guard is wanted later it is its
- * own §CP child.
+ * NOT a CI guard (#2928): a CI guard would move the check into the verb package and out of the
+ * bundle it guards. If a CI-level guard is wanted later it is its own child.
  *
  * Inert until the edge-render children consume it (#2929 worker injection, #2932 unified
  * `useFlag`): this module introduces no runtime behavior on its own.

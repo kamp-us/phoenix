@@ -1,5 +1,5 @@
 /**
- * The pure rule behind `guard settings-env-guard check`, ported from `pipeline-cli`'s
+ * The pure rule behind `guard settings-env-guard check`, ported from the v1 CLI's
  * `settings-env-guard.unit.test.ts` (#2495). The cases carried across are the two real regression
  * values and the shape boundary — braced expands, bare `$VAR` does not.
  */

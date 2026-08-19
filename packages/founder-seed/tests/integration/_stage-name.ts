@@ -1,10 +1,10 @@
 /**
  * Pure per-file stage-name construction for the founder-seed integration harness
- * (`_d1.ts`) — the same invariant + shape `@kampus/moderator-grant`'s
- * `tests/integration/_stage-name.ts` (and apps/web's) upholds (real remote D1 + a
+ * (`_d1.ts`) — the same invariant + shape apps/web's
+ * `tests/integration/_stage-name.ts` upholds (real remote D1 + a
  * shared Cloudflare account are stage-keyed, so a stage name must be run-unique and
- * Cloudflare-resource-name-legal). Kept local to this package because the apps/web /
- * moderator-grant copies are test-internal (not a shared export), and the helper is
+ * Cloudflare-resource-name-legal). Kept local to this package because the apps/web
+ * copy is test-internal (not a shared export), and the helper is
  * small and pure. Unit-pinned in `_stage-name.unit.test.ts`.
  *
  * The invariant: `[a-z0-9-]` only, no leading/trailing dash, no internal `--`,

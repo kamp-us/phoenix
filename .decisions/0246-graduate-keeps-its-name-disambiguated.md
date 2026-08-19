@@ -47,7 +47,7 @@ use — recorded here as found, rather than the one the ruling assumed:
 
 1. **`Tracker.graduate`** — the graduation-close envelope
    ([#3266](https://github.com/kamp-us/phoenix/issues/3266)), implemented in
-   [`packages/pipeline-cli/src/tools/tracker/tracker.ts`](../packages/pipeline-cli/src/tools/tracker/tracker.ts)
+   `packages/pipeline-cli/src/tools/tracker/tracker.ts`
    and specified by ADR [0190](0190-tracker-design-against-two-build-one.md) as one of the four
    domain-shaped signatures (`claim` / `apply-triage` / `post-verdict` / `graduate`).
 2. **`anka-ops flag graduate <key>`** — the Flagship flag-lifecycle verb in

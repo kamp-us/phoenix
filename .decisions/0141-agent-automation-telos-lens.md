@@ -41,3 +41,5 @@ Record where we are **ahead**: kampus-pipeline carries verification infrastructu
 ## Vocabulary impact
 
 Coins **telos lens** — the frame that, when comparing kampus-pipeline to a lineage or peer harness, asks for the *agent-automation analog* of a *human-cooperation* discipline rather than treating a difference as a deficiency. Also names the standing distinction **agent-automation harness** vs **human-cooperation harness**. These are short and unambiguous; they should be routed to [`.glossary/TERMS.md`](../.glossary/TERMS.md) via `/glossary` as a follow-up (not inlined here, to keep this PR a purely additive single-ADR add).
+
+> Amendment 2026-08-19: kampus-pipeline is retired (ADR 0303) — fabrika is the one pipeline. The telos lens still governs: read every "kampus-pipeline" here as "fabrika", and keep the disposition rule (keep / adapt / build-analog / reject) when comparing fabrika to any lineage harness.

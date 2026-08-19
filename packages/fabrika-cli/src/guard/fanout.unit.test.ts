@@ -1,5 +1,5 @@
 /**
- * The pure rule behind `guard fanout-guard check`, ported from `pipeline-cli`'s
+ * The pure rule behind `guard fanout-guard check`, ported from the v1 CLI's
  * `fanout-guard.unit.test.ts` (ADR 0155, #1898, #2554): the three invariants, the fail-closed zero
  * verdict, the report wording, and every source parse. No IO — that is `./fanout-verb.unit.test.ts`.
  */

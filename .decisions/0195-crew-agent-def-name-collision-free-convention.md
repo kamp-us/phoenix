@@ -1,7 +1,8 @@
 ---
 id: 0195
 title: Crew agent-def `name:` carries the collision-free `crew-<role>` convention; the bare role keys everything else
-status: accepted
+status: superseded by [0279](0279-v1-crew-retired-in-full.md)
+superseded_by: 0279
 date: 2026-07-18
 tags: [pipeline, pipeline-crew, crew-mcp, roster, naming]
 ---

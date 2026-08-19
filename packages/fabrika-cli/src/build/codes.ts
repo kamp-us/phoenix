@@ -156,3 +156,17 @@ export const LOCAL_LANE_UNWRITTEN = 29;
  * re-label a decision `ready-for:agent` would satisfy `21` and still be building the wrong artifact.
  */
 export const TYPE_NOT_BUILDABLE = 30;
+/**
+ * Proven: the claim's mode and the child's standing range verdict disagree (#6386).
+ *
+ * Two directions, one seat, because one fact is established either way — *this number's build state
+ * is not what the claim says it is* — and the remedy is the same act in both: re-run the claim in the
+ * mode the board already recorded, adding `--resume` on a child holding a `FAIL`, dropping it on one
+ * holding none. That is unlike every neighbouring seat: `20`/`21`/`30` are about whether an issue
+ * may be built at all, and this one is about whether it has been built already.
+ *
+ * Never {@link PRECONDITION_UNKNOWN}: the comments were read in full and the standing verdicts folded,
+ * so the refusal is a fact about the child. A read that *failed* stays `11`, and a fence that could
+ * not read its input must never resolve to "no prior build".
+ */
+export const PRIOR_BUILD_MISMATCH = 31;

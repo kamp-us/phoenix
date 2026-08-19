@@ -140,3 +140,5 @@ branch only decides *whether the §CP enqueue is unblocked*, never substitutes f
 
 No vocabulary impact — this ADR re-decides gate mechanics (a cardinality branch) over already-named
 concepts (§CP, the control-plane team, SHA-bound approval); it coins and redefines no term.
+
+> Amendment 2026-08-19: `kampus-pipeline/skills/ship-it` is retired (ADR 0303). The cardinality branch now lives in code — `fabrika ship cp-approval` (`packages/fabrika-cli/src/ship/cp-approval-verb.ts`): roster from the CODEOWNERS control-plane row read at the PR base ref, `stop zero-owners` for N==0, the head-bound `control-plane-self-approval @ <sha>` marker for the sole-owner arm, and a different-member current-head approval for N>=2. The "ship-it SKILL lines 376-399" citations above are historical.

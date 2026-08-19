@@ -689,13 +689,14 @@ $ fabrika status menu --json
 
 **Grounding**
 
-- ADR 0129 and `DEVELOPMENT.md` — the directory is the list. `pipeline-cli decisions-index compact`
-  and `commands compact` are the repo's two existing generated-on-demand, never-auto-injected
-  indexes; this is fabrika's own third instance, implemented in fabrika's package (ADR 0238).
+- ADR 0129 and `DEVELOPMENT.md` — the directory is the list. v1's `decisions-index compact` and
+  `commands compact` were the repo's two generated-on-demand, never-auto-injected indexes; both died
+  with that package (#6100, and #6332 tracks the ADR map's absence), so this roster is the shape's
+  only live instance, implemented in fabrika's package (ADR 0238).
 - v1's `decisions-index`, designed out: its committed `index.md` was deleted because a stored index
-  drifts, yet `checkIndex` and `generateIndex` still ship, still compare against the deleted file,
-  and still print a fix command naming a package that no longer exists. A derived roster leaves no
-  such surface behind.
+  drifts, yet `checkIndex` and `generateIndex` shipped on, still comparing against the deleted file
+  and still printing a fix command naming a package that no longer existed. A derived roster leaves
+  no such surface behind.
 - skill-conventions §3 — the router names the others and when to reach for each; the invocation axis
   is printed because it decides who can reach each one.
 - #4105 / #4163 — false absence. Unparseable frontmatter yields a row saying so, never a missing row.

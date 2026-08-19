@@ -1,6 +1,6 @@
 /**
  * `guard fanout-guard check`'s IO boundary and exit taxonomy, over a scripted filesystem — the
- * `gate.unit.test.ts` cases from `pipeline-cli`, re-seated on the three guard exit codes.
+ * `gate.unit.test.ts` cases from the v1 CLI, re-seated on the three guard exit codes.
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";

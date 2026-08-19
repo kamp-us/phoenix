@@ -20,7 +20,7 @@ import {FOUNDER_ROLE, FOUNDER_TIER, MODERATES, PLATFORM, seedFounders} from "./s
 
 // An inert `D1Database`: drizzle's query builders resolve SQL+params via `.toSQL()`
 // with no session call, so no binding method is ever invoked (the unit-tier "no SQL
-// engine" shape — same idiom as moderator-grant's `grant.unit.test.ts`).
+// engine" shape — same idiom as admin-grant's `grant.unit.test.ts`).
 // biome-ignore lint/plugin: a no-op stand-in (statement-building never touches the binding) can't be structurally typed as the full `D1Database` interface; nothing here calls a binding method.
 const inertD1 = {} as unknown as D1Database;
 const db = drizzle(inertD1, {relations: defineRelations(schema)});

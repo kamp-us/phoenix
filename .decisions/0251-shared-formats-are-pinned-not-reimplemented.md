@@ -176,3 +176,5 @@ applies to a format whose second party is outside fabrika. The fabrika README's 
 `claude-plugins/fabrika/skills/triage/contract.md` are amended by the same change.
 
 No vocabulary impact: **wire format** is already coined in ADR 0241 and this decision applies it.
+
+> Amendment 2026-08-19: v1 is retired (ADR 0303), so the `epic-splice` conformance half of this ruling is discharged — there is no second party left to pin the fixture or to fence an import edge against. The rule itself stands: any byte-level format fabrika shares with a non-fabrika program is a wire format fabrika owns (module + registry row + golden fixture), the other side conforms by pinning that fixture, and a test asserting a fabrika property lives in `packages/fabrika-cli/`.

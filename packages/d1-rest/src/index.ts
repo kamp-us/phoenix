@@ -4,12 +4,12 @@
  * plain Node process (no workerd). It implements only the slice `drizzle-orm/d1`
  * drives — `prepare`/`bind`/`all`/`run`/`raw`/`first` and `batch`.
  *
- * One leaf, three consumers: `@kampus/preview-seed` (`seed`), `@kampus/fts-backfill`
- * (the FTS re-index), and `@kampus/moderator-grant` (`setRole`/`listModerators`) all
- * run their real direct-D1 path through this — the bins offline over the env layer,
- * the integration tiers against real D1 (ADR 0082, no faked engine). Before this leaf
- * each carried a hand-copy (issue #941), which is why the `meta.changes` defect had to
- * be fixed three times (#937/#940); now it's fixed once, here.
+ * One leaf, two consumers: `@kampus/preview-seed` (`seed`) and `@kampus/fts-backfill`
+ * (the FTS re-index) run their real direct-D1 path through this — the bins offline over
+ * the env layer, the integration tiers against real D1 (ADR 0082, no faked engine).
+ * Before this leaf each consumer carried a hand-copy (issue #941), which is why the
+ * `meta.changes` defect had to be fixed three times (#937/#940); now it's fixed once,
+ * here.
  *
  * Transport is `@distilled.cloud/cloudflare`'s `queryDatabase` (already in the tree
  * via alchemy). A single statement is one REST call; a drizzle `batch([...])` collects
@@ -103,7 +103,7 @@ export const makeD1Rest = (config: D1RestConfig): D1Database => {
 		// Carry D1's real row-change count into `meta.changes`: drizzle's `.run()` exposes
 		// `result.meta.changes` (rows affected), and the REST `/query` response is
 		// `result: [{ meta: { changes }, … }]`. Hardcoding `{}` here dropped it — latent
-		// until a consumer reads it (it bit moderator-grant's setRole; #937/#940).
+		// until a consumer reads it (it bit a since-deleted grant CLI's setRole; #937/#940).
 		run: async () => {
 			const res = await runQuery({accountId, databaseId, sql, params: toRestParams(params)});
 			return {success: true, meta: {changes: res.result?.[0]?.meta?.changes ?? 0}, results: []};

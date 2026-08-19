@@ -379,7 +379,7 @@ describe("scanFencePortability — the #4605 consumer-break gate", () => {
 	it("reds on a repo-relative shim assignment too — bin/, not only skills/", () => {
 		const f = scanFencePortability(
 			"agents/reviewer.md",
-			fenced('PCLI="./claude-plugins/kampus-pipeline/bin/pipeline-cli"'),
+			fenced('PCLI="./claude-plugins/kampus-pipeline/bin/router"'),
 		);
 		assert.strictEqual(f.length, 1);
 	});

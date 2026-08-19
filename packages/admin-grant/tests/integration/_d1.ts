@@ -2,7 +2,7 @@
  * Per-file real-D1 substrate for the admin-grant integration tier — the alchemy
  * `Test.make` idiom of ADR 0082 / `.patterns/alchemy-test-harness.md`, scoped to a
  * **D1-only stack** (this package has no worker; the grant CLI talks to D1 directly).
- * The twin of `@kampus/moderator-grant`'s `tests/integration/_d1.ts`, returning a
+ * The twin of `@kampus/founder-seed`'s `tests/integration/_d1.ts`, returning a
  * `grantDb()` over the admin grant's drizzle slice.
  *
  * Each integration test file calls `adminD1(import.meta.url)` once at module top
@@ -17,7 +17,7 @@
  *
  * Real remote D1 + a shared Cloudflare account are stage-keyed, so two CI runs (or a
  * rerun) must never collide on a stage name — the same isolated-stage derivation
- * apps/web / moderator-grant use (`_stage-name`'s run-unique `it-<readable>-<disc>`).
+ * apps/web / founder-seed use (`_stage-name`'s run-unique `it-<readable>-<disc>`).
  * Creds (`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` / `ALCHEMY_PASSWORD`) come
  * from the environment — CI secrets; an alchemy/wrangler profile locally. Without them
  * the deploy fails at `Unauthorized` (expected off-CI; the suite proves itself on CI's

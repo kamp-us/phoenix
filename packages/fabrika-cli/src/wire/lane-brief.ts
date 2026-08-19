@@ -207,6 +207,9 @@ your own worktree on a local branch cut from \`branch\`, and never push or open 
 child state — the merge happens once, after the epic review. A child's build that lands its commit
 ends on \`BUILT-NO-PR\`, whose branch disposition is exactly that: left local and unpushed for this
 lane to fold (#6019).
+A child re-entering \`build\` after a \`FAIL\` is a repair, not a second build: \`build claim\` refuses
+the fresh claim naming that FAIL, and the route it points at takes over the branch the prior lane
+built on rather than cutting another (#6386).
 A child's build discloses its deviations — the section a PR body would carry — as a
 \`build-deviations\` marker comment on the child issue, composed through
 \`node <fabrika> wire emit --format build-deviations\`; the epic-tail review

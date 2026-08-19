@@ -159,7 +159,7 @@ sometimes the only option, in these grounded cases:
   `Stream.Stream<Uint8Array, PlatformError>` (`effect/dist/Stdio.d.ts` at the pinned
   `effect@4.0.0-beta.92`), `Stdio` is a member of the same `NodeServices` union as
   `FileSystem`/`Path` (`@effect/platform-node/dist/NodeServices.d.ts`), and
-  `packages/pipeline-cli/src/run.ts` already provides `NodeServices.layer` — so the
+  `packages/fabrika-cli/src/run.ts` already provides `NodeServices.layer` — so the
   service exists and is in scope. What is genuinely absent is a **`FileSystem`** route:
   every member of the v4 `FileSystem` interface is keyed by a `path: string`, and the only
   `File.Descriptor` it hands out comes from `fs.open(path)`. The exported
@@ -180,9 +180,9 @@ sometimes the only option, in these grounded cases:
 
   **The ruling, so it isn't re-derived per PR: fd 0 stays a raw `node:fs` read at the
   boundary**, while the *sibling path branch* of the same helper routes the `FileSystem`
-  seam. `readBody` in `packages/pipeline-cli/src/tools/verdict/command.ts` is the shape
-  (`--body-file` → `fs.readFileString`, else `readFileSync(0, "utf8")`); `leak-guard`'s
-  `readCommentBody` and `redact-leaks`' `readBody` carry the same split. Routing fd 0 through
+  seam. [`packages/fabrika-cli/src/io/stdin.ts`](../packages/fabrika-cli/src/io/stdin.ts) is the
+  shape — `readStdin` is the one place fd 0 is named, a raw `node:fs` `readSync` loop, while the
+  sibling `--body-file` path goes through `FileSystem`. Routing fd 0 through
   `Stdio.stdin` **eventually** is a live option, not a closed door — but it is its own
   decision with its own behavior-preservation bar, and it must preserve whatever fd-0
   failure semantics the raw read carries
@@ -296,10 +296,10 @@ Both polarities ship in this repo, which is why the trail above records each sit
 sites guard the `Directory` arm, `workflow-contract` guards the file arm.
 
 **Directory-arm shape** (the common case). The `readLink` gate is `patch-guard`'s `gatherMarkers`
-(`packages/pipeline-cli/src/tools/patch-guard/gate.ts`, covered by two `gate.unit.test.ts` cases that
+(`packages/fabrika-cli/src/guard/patch-verb.ts`, covered by two `patch-verb.unit.test.ts` cases that
 plant a real symlinked dir and a real symlinked file); the `Effect.option` stat and the
-dangling-entry split are `design-token-guard`'s `walkCss`
-(`packages/pipeline-cli/src/tools/design-token-guard/gate.ts`). Copy **both** — the `readLink` gate
+dangling-entry split are the design-token guard's `walkCss`
+(`packages/fabrika-cli/src/guard/design-token-verb.ts`). Copy **both** — the `readLink` gate
 alone satisfies obligation 1 below but not obligation 2:
 
 ```ts
@@ -330,8 +330,8 @@ const walk = (dir: string): Effect.Effect<void, PlatformError.PlatformError> =>
 ```
 
 **File-arm shape**, when the base arm was a positive `Dirent.isFile()` — the gate moves *ahead of*
-the type test so a symlinked entry never reaches it
-(`packages/pipeline-cli/src/tools/workflow-contract/gate.ts`):
+the type test so a symlinked entry never reaches it (the `workflow-contract` guard, retired with
+`packages/pipeline-cli/`; the shape is kept here because the file arm has no other example):
 
 ```ts
 if (!name.endsWith(".js")) continue;
@@ -372,8 +372,8 @@ it, say so and take on the two obligations below.
   [#3950](https://github.com/kamp-us/phoenix/issues/3950) — do not "fix" it by reverting the split
   above.
 
-  Skippability belongs on the stat, never on the downstream read. `reachability-guard`
-  (`packages/pipeline-cli/src/tools/reachability-guard/gate.ts`) tests `readLink` before `stat`, so it
+  Skippability belongs on the stat, never on the downstream read. The `reachability-guard`
+  (retired with `packages/pipeline-cli/`) tested `readLink` before `stat`, so it
   never fails *at the stat* — but that is not blanket tolerance: a dangling `*.tsx` is still pushed by
   `matches(name)` and then reds at `gatherConsumers`'s unguarded `fs.readFileString` (`ENOENT` →
   `IoError` → exit 1), while a dangling non-matching entry is silently ignored. Two exit codes, one

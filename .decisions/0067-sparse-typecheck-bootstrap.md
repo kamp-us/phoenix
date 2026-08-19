@@ -1,7 +1,8 @@
 ---
 id: 0067
 title: "`review-code`'s review worktree becomes **cone-mode minus a fixed instruction denylist** (`CLAUDE.md`/`.claude/**`/`.decisions/**`/`.patterns/**`), not the ADR-0052 non-cone product-only allowlist — so `biome.jsonc`+`biome-plugins/`, `patches/`, the catalog/lockfile, and `fate generate`'s deps are all present and the in-worktree `pnpm typecheck` is **authoritative again** (reversing 0060's defer-to-CI workaround). Rejects allowlist-expansion (Option A — wrong polarity, perpetual creep) and harness-level relocation (Option C — out of band for a skill edit); the one cost is that cone mode leaks top-level `CLAUDE.md`, so the denylist must be excluded+asserted-absent, not inherited from the pattern set. Refines 0052's mechanism (property preserved), resolves the #236/#336 deeper half; impl tracked in #388 (control-plane, human-merged)"
-status: accepted
+status: superseded by [0303](0303-retire-kampus-pipeline-plugin.md)
+superseded_by: 0303
 date: 2026-06-15
 tags: [pipeline, skills, review-code, worktree, typecheck, isolation, biome, fate]
 ---

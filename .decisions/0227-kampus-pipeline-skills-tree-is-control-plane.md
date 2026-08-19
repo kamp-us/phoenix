@@ -14,7 +14,7 @@ The §CP boundary (ADR [0053](0053-control-plane-boundary.md), enforced at GitHu
 [0071](0071-enforce-control-plane-at-github.md), hard-gated per ADR
 [0135](0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)) is a single-source
 path regex in
-[`control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts),
+`control-plane-re.ts`,
 byte-synced to the `CONTROL_PLANE_RE=` line in
 `gh-issue-intake-formats.md`
 and to `.github/CODEOWNERS`.

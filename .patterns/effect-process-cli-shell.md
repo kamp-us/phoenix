@@ -14,11 +14,11 @@ moment it does.
 > `Command`/`CommandExecutor`. The v3 `Command.make(...).pipe(Command.string)` idiom
 > most training data shows does not apply here.
 
-The canonical examples are `packages/pipeline-cli/src/tools/epic-ledger/github.ts`
-(the richest: read + mutate, repo resolution, Schema-decoded JSON) and
-`packages/pipeline-cli/src/tools/crabbox-manifest/commit.ts` (the smallest:
-`git rev-parse HEAD` → one trimmed SHA). `packages/flake-rate/src/github.ts` is a
-third, read-only, deliberately mirroring `epic-ledger`.
+The canonical example is [`packages/fabrika-cli/src/io/exec.ts`](../packages/fabrika-cli/src/io/exec.ts)
+— the one subprocess seam: spawn, read all three channels, fold a spawn fault into the result. Its
+two readers are [`packages/fabrika-cli/src/io/git.ts`](../packages/fabrika-cli/src/io/git.ts) (`git`
+refs and remotes) and [`packages/fabrika-cli/src/io/github.ts`](../packages/fabrika-cli/src/io/github.ts)
+(`gh api` REST, paged, shape-validated).
 
 ## When to use it
 
@@ -26,7 +26,7 @@ A package needs to run an external CLI whose output it has to read, and that CLI
 isn't usefully reachable as a typed SDK — `gh api` (the GitHub REST surface; the
 pipeline's only sanctioned GitHub access, since GraphQL is broken on the kamp-us
 org) and `git` (for `rev-parse HEAD`). The shape is for **pipeline/tooling
-packages run by the `pipeline-cli` bin on Node**, not the Cloudflare worker — the
+packages run by the `fabrika` bin on Node**, not the Cloudflare worker — the
 worker has no subprocess to spawn.
 
 If you only need the CLI's exit status to gate a build step and don't read its
@@ -107,12 +107,11 @@ export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildPro
 	);
 ```
 
-In production the spawner comes from the Node platform: a tool bakes its live
-layer in with `Command.provide(GithubLive)`
-(`packages/pipeline-cli/src/tools/epic-ledger/command.ts`), and the bin provides
-the platform union with `Effect.provide(NodeServices.layer)`
-(`packages/pipeline-cli/src/bin.ts`) — `ChildProcessSpawner` is a `NodeServices`
-member, so nothing in the tool ever names the platform.
+In production the spawner comes from the Node platform: the runner provides the
+platform union once with `Effect.provide(NodeServices.layer)`
+(`packages/fabrika-cli/src/run.ts`, entered from `packages/fabrika-cli/src/bin.ts`)
+— `ChildProcessSpawner` is a `NodeServices` member, so nothing in a verb ever names
+the platform.
 
 ## Gotchas the real usages reveal
 
@@ -140,13 +139,20 @@ member, so nothing in the tool ever names the platform.
   (ADR 0054 §1). Trim and check; don't pass an empty string downstream as if it
   were data.
 
-- **Resolve ambient inputs (the repo) lazily and once.** Repo resolution
-  (`CLAUDE_PIPELINE_REPO` → `GITHUB_REPOSITORY` → `gh repo view`, ADR 0062 §1) is
-  itself a `gh` call, so it's wrapped in `Effect.cached` and deferred to first
-  method use — the layer build stays side-effect-free, `--help`/`--version` never
-  shell out, and the result is memoized once per process. It never silently
-  defaults to a repo: with nothing resolvable it fails `RepoResolutionError`, so a
-  foreign install can't accidentally operate on phoenix.
+- **A non-zero exit can be data, not a failure.** `exec.ts` returns
+  `{ok, stdout, reason}` with `E = never` and folds the `PlatformError` in too, so a
+  spawn fault and a non-zero exit arrive on the same channel; callers read `ok`
+  before `stdout`, because empty `stdout` from a failed call is byte-identical to a
+  successful call that found nothing. Raise a typed error only where the caller
+  cannot express the failure as an outcome — the typed-error snippets above
+  illustrate that variant, not the default.
+
+- **Resolve ambient inputs (the repo) lazily and once.** The repo slug is parsed
+  off the checkout's own remotes (`parseOwnerRepo` / `remoteFor` in
+  [`packages/fabrika-cli/src/io/git.ts`](../packages/fabrika-cli/src/io/git.ts)),
+  which is itself a `git` call — so resolve it at first use rather than at layer
+  build, keep `--help`/`--version` from shelling out, and never silently default to
+  a repo, so a foreign install can't accidentally operate on phoenix.
 
 ## Testing — substitute the spawner
 
@@ -155,9 +161,10 @@ The `ChildProcessSpawner` seam is exactly what a `unit` test replaces
 fake spawner built with `ChildProcessSpawner.make` + `ChildProcessSpawner.makeHandle`
 that answers with canned stdout/stderr/exit, or one that fails the spawn with a
 `PlatformError` to exercise the not-on-`PATH` path. The canonical fakes are the
-`cannedSpawner`/`faultingSpawner` and `mockSpawner` idioms in
-`packages/pipeline-cli/src/tools/crabbox-manifest/commit.unit.test.ts` and
-`packages/pipeline-cli/src/tools/epic-ledger/github-service.unit.test.ts`.
+`shell`/`faultingShell` canned-spawner idioms in
+[`packages/fabrika-cli/src/fakes.test-support.ts`](../packages/fabrika-cli/src/fakes.test-support.ts),
+used by `packages/fabrika-cli/src/io/git.unit.test.ts` and
+`packages/fabrika-cli/src/io/github.unit.test.ts`.
 
 ```ts
 const cannedSpawner = (canned: Canned): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> =>

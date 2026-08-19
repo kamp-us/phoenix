@@ -1,5 +1,5 @@
 /**
- * The pure rule behind `guard catalog-guard check`, ported from `pipeline-cli`'s
+ * The pure rule behind `guard catalog-guard check`, ported from the v1 CLI's
  * `catalog-guard.unit.test.ts` (#2737) — a `catalog:`/`workspace:` ref passes, a hardcoded version
  * is a violation, an allowlisted exception passes, and the line-locator survives the npm names that
  * broke it. Scope and the fail-closed floor are covered in `catalog-verb.unit.test.ts`.

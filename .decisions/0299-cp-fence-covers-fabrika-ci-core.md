@@ -73,7 +73,7 @@ fence is scoped to the CI checks, and the rest of fabrika self-drives.
 The boundary gains one branch, `^packages/fabrika-cli/src/ci/`, in the single-source
 `CONTROL_PLANE_RE` const, and it lands in lockstep with the two surfaces that cannot import it —
 the byte-synced `CONTROL_PLANE_RE=` line in
-[`boundaries.md`](../packages/pipeline-cli/src/tools/control-plane-paths/boundaries.md)
+`boundaries.md`
 (the prose copy's home since the v1 plugin's retirement, ADR 0303), and a literal `.github/CODEOWNERS` row owned by `@kamp-us/control-plane`. That is the ADR-0218
 lockstep, unchanged; `codeowners-cp` fails closed on the CODEOWNERS half of it.
 
@@ -120,3 +120,5 @@ is the same property: whatever #6099 puts there is covered on arrival.
 ## Records
 
 no vocabulary impact
+
+> Amendment 2026-08-19: `packages/pipeline-cli/` is deleted, and the prose copy of `CONTROL_PLANE_RE=` in its `control-plane-paths/boundaries.md` went with it (no equivalent prose file exists under `packages/fabrika-cli/`). The lockstep is now two surfaces, not three: the single-source const in `packages/fabrika-cli/src/guard/control-plane-re.ts` and the literal `.github/CODEOWNERS` row. The same-commit rule below applies to those two.

@@ -6,42 +6,33 @@ The measured capacity ceilings of the live plane — the `LiveDO` SSE fan-out (A
 limits, not remedies: acting on a ceiling (tuning a budget, sharding a hot topic,
 autoscaling) is out of scope here (epic [#2568](https://github.com/kamp-us/phoenix/issues/2568)).
 
-## How the numbers are produced — the audit-harness load dimension
+## How the numbers are produced — the ephemeral-stage load run
 
-The reproducible method drives load through the existing ephemeral-stage audit harness (the
-rite-audit family, epic [#1510](https://github.com/kamp-us/phoenix/issues/1510)):
-[`@kampus/audit-stage`](../packages/audit-stage/README.md) provisions an **isolated,
-disposable** stage on the dedicated `preview` deploy class (ADR
-[0088](../.decisions/0088-preview-deploy-environment.md)) via `alchemy deploy --stage <name>`,
-preview-seeds it, mints a login-able test-mod, runs an injected hook, and **tears the stage
-down on every exit path** — so a load run never leaks a live stage.
-[`@kampus/audit-run`](../packages/audit-run/README.md) is the single-entry command that wraps
-that lifecycle around an injected `--walk` seam.
+The reproducible method needs an **isolated, disposable** stage on the dedicated `preview`
+deploy class (ADR [0088](../.decisions/0088-preview-deploy-environment.md)), stood up with
+`alchemy deploy --stage <name>` and **torn down on every exit path** so a load run never leaks
+a live stage. The rite-audit harness that once wrapped that lifecycle
+(`@kampus/audit-stage` / `@kampus/audit-run`, epic
+[#1510](https://github.com/kamp-us/phoenix/issues/1510)) was deleted as consumerless in
+[#6346](https://github.com/kamp-us/phoenix/issues/6346), so a run today needs a driver written
+for it — the lifecycle shape above is what that driver has to reproduce.
 
-Capacity measurement is a **load dimension** run through that same `--walk` seam: a driver
-opens N concurrent `GET /fate/live?connectionId=…` SSE streams against the deployed stage
-(each is one connection-role `LiveDO`), subscribes them to a shared hot topic, drives
-mutations that fan out through that topic, and records the wire-level outcome (frames
-delivered, drops, latency). The stage's own worker telemetry
+The measurement itself: a driver opens N concurrent `GET /fate/live?connectionId=…` SSE
+streams against the deployed stage (each is one connection-role `LiveDO`), subscribes them to
+a shared hot topic, drives mutations that fan out through that topic, and records the
+wire-level outcome (frames delivered, drops, latency). The stage's own worker telemetry
 ([`apps/web/worker/features/telemetry`](../apps/web/worker/features/telemetry)) and the
 `/fate/live` response codes are the instruments — the same observability surface the
 2026-07-06 read-path investigation used (see the baseline recorded on
-[#2707](https://github.com/kamp-us/phoenix/issues/2707)). Run from the repo root with the
-account credentials in the environment, never in source:
-
-```bash
-node packages/audit-run/src/bin.ts run \
-  --walk '<capacity-load driver: opens N SSE streams, fans mutations, prints the wire outcome>' \
-  --stage capacity-<date>
-```
+[#2707](https://github.com/kamp-us/phoenix/issues/2707)). Run it from the repo root with the
+account credentials in the environment, never in source.
 
 > **Honest status of the numbers below — method-derived, not yet stage-measured.** A live run
 > needs a real deployed `preview` stage, which needs the Cloudflare account + `alchemy` +
 > better-auth credentials (`$CLOUDFLARE_ACCOUNT_ID`, `$CLOUDFLARE_API_TOKEN`,
 > `$ALCHEMY_PASSWORD`, `$BETTER_AUTH_SECRET`) — absent in the environment this doc was authored
-> in, so no live measurement was taken. The harness **has no capacity/load dimension yet** (its
-> `--walk` seam today drives the functional rite-audit, not a load driver), so establishing the
-> live baseline is: add the load-driver walk, then run it against a stage. Each ceiling below is
+> in, so no live measurement was taken. No load driver exists either, so establishing the live
+> baseline is: write the driver + its stage lifecycle, then run it. Each ceiling below is
 > therefore **derived from the in-source fan-out budgets** (`defaultLiveLimits` in
 > [`apps/web/worker/features/fate-live/protocol.ts`](../apps/web/worker/features/fate-live/protocol.ts))
 > and the DO execution model, and is labelled **(derived — pending live measurement)**. When the

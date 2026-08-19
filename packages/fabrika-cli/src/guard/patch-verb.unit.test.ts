@@ -1,6 +1,6 @@
 /**
  * `guard patch-guard check`'s IO boundary and exit taxonomy, over a scripted filesystem — the
- * `gate.unit.test.ts` cases from `pipeline-cli`, re-seated on the three guard exit codes.
+ * `gate.unit.test.ts` cases from the v1 CLI, re-seated on the three guard exit codes.
  *
  * The marker tag is assembled at runtime (`TAG`) rather than written contiguously, so this file —
  * itself a `*.test.ts` the real-tree scan reads — never contributes a stray pin marker of its own.

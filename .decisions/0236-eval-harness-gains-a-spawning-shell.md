@@ -1,7 +1,8 @@
 ---
 id: 0236
 title: The eval-harness gains a spawning IO shell — its pure cores stay spawn-free, and no CI job ever spawns a model
-status: accepted
+status: superseded by [0303](0303-retire-kampus-pipeline-plugin.md)
+superseded_by: 0303
 date: 2026-08-01
 tags: [pipeline, eval-harness, tooling, fabrika, cost]
 ---

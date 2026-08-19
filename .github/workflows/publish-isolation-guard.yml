@@ -3,7 +3,7 @@ name: publish-isolation-guard
 # CI gate for ADR 0201 §3 (isolated publishing = decoupled dependency graph): every
 # package the release pipeline (`publish.yml`) ships must be installable from a clean
 # registry state — zero phoenix-private `@kampus/*` deps, no `workspace:*` links. The
-# forcing incident: `pipeline-cli@0.2.0` published green yet was uninstallable because
+# forcing incident: a `@kampus/*` CLI published green at 0.2.0 yet was uninstallable because
 # it declared three phoenix-private `workspace:*` packages as registry deps (#3802,
 # inlined in #3805). This job derives the published-package set from publish.yml's
 # release-tag grammar, walks each published package's runtime deps, and fails closed on

@@ -1,7 +1,8 @@
 ---
 id: 0192
 title: The stand-up launcher's mechanics live as a `pipeline-crew-mcp stand-up` subcommand (Effect CLI, pure core + thin bin), invoked by a thin plugin command — not as plugin-embedded Node
-status: accepted
+status: superseded by [0279](0279-v1-crew-retired-in-full.md)
+superseded_by: 0279
 date: 2026-07-16
 tags: [pipeline, pipeline-crew, crew-mcp, plugin, packaging, launcher]
 ---
@@ -115,7 +116,7 @@ as ordinary work that auto-ships on green:
   ruling; the control-plane regex matches `claude-plugins/kampus-pipeline/{skills,agents,hooks}`
   and `packages/{ci-required,pipeline-cli}`, and matches **neither** crew path — verified
   against
-  [`control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts)).
+  `control-plane-re.ts`).
 
 Downstream children inherit this: launcher PRs go through the review-code gate and auto-ship,
 they do not bank for a §CP human merge.

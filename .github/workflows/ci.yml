@@ -53,7 +53,7 @@ jobs:
       # skip. The `backend`/`e2e` filters list `pnpm-lock.yaml` (a worker-dep bump
       # needs integration) and `paths-filter` can't attribute a lockfile delta to a
       # package, so it ran integration on EVERY lockfile change — and a packages-only
-      # PR (the #994 pipeline-cli reorg) edits the lockfile, paying the tier + the
+      # PR (the #994 CLI reorg) edits the lockfile, paying the tier + the
       # #1010/#813 stage-leak flake for nothing. The `@kampus/worker-relevance`
       # classifier (run in the `worker-relevance` step below) attributes the lockfile
       # delta and FAILS SAFE TO RUNNING. Default `'true'`: the step runs on `pull_request`
@@ -276,11 +276,9 @@ jobs:
               - 'infra/**'
               - 'apps/**/vitest.config.ts'
               - 'apps/**/package.json'
-              # preview-seed's + moderator-grant's real-remote-D1 `integration` tiers
-              # (ADR 0082, #672 / #930) run in the `integration` job below, so a change to
-              # either must trip this gate.
+              # preview-seed's real-remote-D1 `integration` tier (ADR 0082, #672) runs in
+              # the `integration` job below, so a change to it must trip this gate.
               - 'packages/preview-seed/**'
-              - 'packages/moderator-grant/**'
               - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
             # Paths the full e2e suite (#525) actually exercises: the SPA and its
@@ -562,8 +560,8 @@ jobs:
       - run: pnpm --filter './apps/**' test:client
 
   # The `packages/**` vitest suites (#760). Every workspace tooling/guard package
-  # ships a `test` script (pipeline-cli — now the single home for the consolidated
-  # guard/tooling logic — plus ci-required, …) but CI ran only `@kampus/web`'s — so a
+  # ships a `test` script (fabrika-cli — the single home for the consolidated guard/tooling
+  # logic — plus ci-required, …) but CI ran only `@kampus/web`'s — so a
   # regression in any gate guard's logic (incl. the #786 ci-required verdict
   # helper that runs HERE) shipped uncaught. This runs them as a REQUIRED gate.
   #
@@ -775,18 +773,6 @@ jobs:
       # `test` (now unit-only), so this creds-bearing job is its only home.
       - name: Integration tests (preview-seed)
         run: pnpm --filter @kampus/preview-seed test:integration
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
-
-      # moderator-grant's `integration` tier (ADR 0082, #930) is the same real-remote-D1
-      # `Test.make` shape as preview-seed's above — its `node:sqlite` fake is gone (the
-      # ban's last survivor), so it needs the same Cloudflare creds. The no-creds
-      # `packages-tests` job runs only its `test` (now unit-only), so this creds-bearing
-      # job is its only home.
-      - name: Integration tests (moderator-grant)
-        run: pnpm --filter @kampus/moderator-grant test:integration
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

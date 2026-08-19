@@ -30,7 +30,7 @@ permissions:
 jobs:
   # Job-level change-detection gating ONLY the `deploy` job (issue #2366): a
   # docs/canon/pipeline-only PR (`.decisions/`, `.patterns/`, `.glossary/`, `*.md`,
-  # `.claude/`, `claude-plugins/`, `packages/pipeline-cli/`, …) mints no preview stack
+  # `.claude/`, `claude-plugins/`, `packages/fabrika-cli/`, …) mints no preview stack
   # — no worker, no D1, no DOs, no Flagship app that nothing ever requests.
   #
   # Why JOB-level and not a workflow-level `paths:`/`paths-ignore:` filter: a

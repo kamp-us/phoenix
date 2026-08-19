@@ -2,7 +2,7 @@
  * The fail-closed drift check for the shell-key manifest (#2928, ADR 0179 §3): the worker
  * injects `window.__BOOT__` and the client reads it, and this proves BOTH key sets derive
  * from the one manifest — a divergence throws. Deliberately an in-app unit test, NOT a
- * `pipeline-cli` CI guard, so this slice stays NON-§CP (#2928).
+ * CI guard, so this slice stays NON-§CP (#2928).
  */
 import {describe, expect, it} from "vitest";
 import {MECMUA_FEED, MECMUA_PUBLIC_READ} from "./keys";

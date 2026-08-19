@@ -3,8 +3,8 @@
  * minting/dropping the `(subject, "admin", "platform:platform")` relation tuple (ADR
  * 0107). The ONLY sanctioned grant path: a server-side direct-D1 script, never a
  * runtime worker route (the deleted `/api/admin/*` fail-open shape). The
- * `effect/unstable/cli` tooling idiom, mirroring `@kampus/moderator-grant` /
- * `@kampus/founder-seed`; transport is the D1 REST query API over alchemy's already
+ * `effect/unstable/cli` tooling idiom, mirroring `@kampus/founder-seed`; transport is
+ * the D1 REST query API over alchemy's already
  * installed `@distilled.cloud/cloudflare` (zero new deps).
  *
  * Parameterized on the TARGET stage's D1 (never prod-hardcoded):

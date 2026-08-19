@@ -72,3 +72,5 @@ is coverage theater; the discipline-plus-lint pair is deemed sufficient on the e
   PR #3805.
 - No vocabulary impact — this retires a mechanism over already-named concepts; nothing is
   coined or redefined.
+
+> Amendment 2026-08-19: `pipeline-cli` is retired — the GraphQL-breaking-usage lint now lives in fabrika-cli as `fabrika guard skill-lint` (`packages/fabrika-cli/src/guard/skill-lint.ts`, ported from `pipeline-cli gh-phoenix lint-skills` per epic #5720); the `gh-phoenix` router/shim core is not carried forward. The retirement ruling stands: no first-on-PATH `gh` shadowing is rebuilt, and `gh api` REST discipline plus the lint remain the guard. See ADR 0303.

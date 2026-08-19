@@ -20,11 +20,12 @@ import {leafCommand} from "../excess-operand.ts";
 import {readFile} from "../io/fs.ts";
 import {readStdin} from "../io/stdin.ts";
 import {DEFAULT_LANES_ROOT} from "../lane/store.ts";
-import type {VerbOutcome} from "../verb.ts";
+import {refuse, type VerbOutcome} from "../verb.ts";
 import {runBranch} from "./branch-verb.ts";
 import {runCheck} from "./check-verb.ts";
 import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
 import {type DocumentRead, runClear} from "./clear-verb.ts";
+import {OFF_VOCABULARY} from "./codes.ts";
 import {runCommit} from "./commit-verb.ts";
 import {runEligible} from "./eligible-verb.ts";
 import {runIssue} from "./issue-verb.ts";
@@ -43,7 +44,7 @@ import {
 } from "./scope-admission.ts";
 import {runScratch} from "./scratch-verb.ts";
 import {runTree} from "./tree-verb.ts";
-import {runVerdicts} from "./verdicts-verb.ts";
+import {runChildVerdicts, runVerdicts} from "./verdicts-verb.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
 const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
@@ -178,9 +179,14 @@ const claim = leafCommand(
 				`the founder ruling comment this build transcribes, as ${CITATION_GRAMMAR} — the type axis's one arm, and only on a ${DECISION_TYPE_LABEL}`,
 			),
 		),
+		resume: Flag.boolean("resume").pipe(
+			Flag.withDescription(
+				"take the repair lane of an epic child that already carries a standing range FAIL, rather than building it fresh; refused on a child holding no such FAIL, exactly as its absence is refused on one that does",
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({number, token, purpose, override, overrideLane, cites, repo}) {
+	Effect.fn(function* ({number, token, purpose, override, overrideLane, cites, resume, repo}) {
 		yield* emit(
 			yield* runClaim({
 				number,
@@ -194,13 +200,14 @@ const claim = leafCommand(
 				override: Option.getOrNull(override),
 				overrideLane: Option.getOrNull(overrideLane),
 				cites: Option.getOrNull(cites),
+				resume,
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Race the claim marker on an issue and win it or name the winner."),
 	Command.withDescription(
-		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated (#5175); the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. The type axis binds a build claim against an ISSUE only, so ${DECISION_TYPE_LABEL} and ${EPIC_TYPE_LABEL} refuse before any marker is written; --cites ${CITATION_GRAMMAR} opens it on a decision whose choice a founder already recorded on that issue, and the URL must name this repository and the issue being judged. It is not an override: it says the refusal does not apply, and it is never accepted for an epic. Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used and "cites" when a ruling was cited. --token makes the re-claim idempotent per LANE: handed the token this lane already holds, a number that lane already owns answers won with that same marker and writes nothing (#5782), while a same-session marker under another nonce is a sibling lane and races normally. A lost race retracts this run's own marker and exits 15, never 0 — including when the winner is another lane of THIS session, since ownership turns on the whole token and never the session id (#6037); an unset CLAUDE_CODE_SESSION_ID, a --token that is not a claim token of this session, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. After the admission test, and only against an ISSUE, a blockedness gate reads the native blocked_by graph (ADR 0301): a number with any blocker still open refuses on 16 naming every one of them, and an edge list that could not be read is 11 — never "not blocked". It is not overridable, because the remedy is waiting rather than an edit. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum), 15 (proven lost), 16 (proven blocked), and from the admission test: ${admissionExits}. Example: fabrika build claim 4312 --purpose gate`,
+		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated (#5175); the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. The type axis binds a build claim against an ISSUE only, so ${DECISION_TYPE_LABEL} and ${EPIC_TYPE_LABEL} refuse before any marker is written; --cites ${CITATION_GRAMMAR} opens it on a decision whose choice a founder already recorded on that issue, and the URL must name this repository and the issue being judged. It is not an override: it says the refusal does not apply, and it is never accepted for an epic. Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used and "cites" when a ruling was cited. --token makes the re-claim idempotent per LANE: handed the token this lane already holds, a number that lane already owns answers won with that same marker and writes nothing (#5782), while a same-session marker under another nonce is a sibling lane and races normally. A lost race retracts this run's own marker and exits 15, never 0 — including when the winner is another lane of THIS session, since ownership turns on the whole token and never the session id (#6037); an unset CLAUDE_CODE_SESSION_ID, a --token that is not a claim token of this session, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. After the admission test, and only against an ISSUE, a blockedness gate reads the native blocked_by graph (ADR 0301): a number with any blocker still open refuses on 16 naming every one of them, and an edge list that could not be read is 11 — never "not blocked". It is not overridable, because the remedy is waiting rather than an edit. Then, on a fresh build-purpose claim only, a prior-build gate reads the number's range-scoped verdict comments — where an epic child's review lands, since a child opens no PR (ADR 0285/0276): a child whose newest verdict in any gate is FAIL refuses on 31 naming that FAIL and pointing at "--resume", and --resume on a child holding no standing FAIL refuses on 31 too. Unreadable comments are 11, never "no prior build", and neither direction is overridable — --override admits a scope refusal, and this is not one. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum), 15 (proven lost), 16 (proven blocked), 31 (the claim's mode and the child's standing verdict disagree), and from the admission test: ${admissionExits}. Example: fabrika build claim 4312 --purpose gate`,
 	),
 );
 
@@ -264,16 +271,22 @@ const branch = leafCommand(
 				"repair mode: a PR number whose head branch to publish back to; exclusive with <number>",
 			),
 		),
+		resumeLane: Flag.boolean("resume-lane").pipe(
+			Flag.withDescription(
+				"child-repair mode: take over the local branch a prior lane built <number> on, re-keyed to this claim's nonce; for an epic child, which opens no PR — takes no --slug and is exclusive with --resume",
+			),
+		),
 		token: tokenFlag,
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({number, slug, base, resume, token, repo}) {
+	Effect.fn(function* ({number, slug, base, resume, resumeLane, token, repo}) {
 		yield* emit(
 			yield* runBranch({
 				number: Option.getOrNull(number),
 				slug: Option.getOrNull(slug),
 				base,
 				resume: Option.getOrNull(resume),
+				resumeLane,
 				token,
 				repo: Option.getOrNull(repo),
 				env: process.env,
@@ -283,7 +296,7 @@ const branch = leafCommand(
 ).pipe(
 	Command.withShortDescription("Cut or resume the lane's branch off a freshly fetched base."),
 	Command.withDescription(
-		"Cut (or resume) the lane's nonce branch off a FRESHLY FETCHED base, never a stale local ref. Prints the checked-out branch name: build/<number>-<slug>-<nonce> in create mode, build/pr-<pr>-<nonce> in resume mode, where <nonce> is the first 8 hex of --token's UUID — the token THIS lane holds, proven against the live claim before the name is composed, so a lane cannot cut a branch on a nonce that holds nothing (#6037). The branch name IS the lane record — there is no stamp file. Exits 1 (--token is not a claim token of this session), 7 (--resume's PR is proven absent, closed or merged), 10 (--slug is not kebab-case, exceeds 5 words, or is flag-shaped), 11 (the fetch failed, or the tree root or claim state could not be read), 15 (proven: the claim is held by another lane). Example: fabrika build branch 4312 --slug editor-focus-loss --token build:s-9f2e:c1a4d6f8-…",
+		"Cut (or resume) the lane's nonce branch off a FRESHLY FETCHED base, never a stale local ref. Prints the checked-out branch name: build/<number>-<slug>-<nonce> in create mode, build/pr-<pr>-<nonce> in resume mode, where <nonce> is the first 8 hex of --token's UUID — the token THIS lane holds, proven against the live claim before the name is composed, so a lane cannot cut a branch on a nonce that holds nothing (#6037). The branch name IS the lane record — there is no stamp file. --resume-lane is resume mode for an epic child, which opens no PR (ADR 0285): it finds the one local branch this grammar says was cut for <number>, RE-KEYS it to this claim's nonce and checks it out, so the child's commits carry forward and exactly one branch keeps naming it — cutting a second is the underivable range lane prove refuses on (#6386). It fetches nothing, takes no --slug, and re-keys nothing when the name already matches. Exits 1 (--token is not a claim token of this session), 7 (--resume's PR is proven absent, closed or merged, or --resume-lane found no local branch cut for <number>), 10 (--slug is not kebab-case, exceeds 5 words, or is flag-shaped, or --resume-lane was combined with --resume or --slug), 11 (the fetch failed, the tree root or claim state could not be read, or --resume-lane found several candidate branches or could not re-key the one it found — the prior lane's worktree is likely still on it, which only an operator can release), 15 (proven: the claim is held by another lane). Example: fabrika build branch 4312 --slug editor-focus-loss --token build:s-9f2e:c1a4d6f8-…",
 	),
 );
 
@@ -494,17 +507,43 @@ const verdicts = leafCommand(
 	"verdicts",
 	{
 		pr: Flag.integer("pr").pipe(
+			Flag.optional,
 			Flag.withDescription("the pull request whose verdict state is folded"),
+		),
+		issue: Flag.integer("issue").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the epic child whose range-scoped verdicts are folded; it opens no PR, so its verdicts live on the issue — exclusive with --pr",
+			),
 		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({pr: number, repo}) {
-		yield* emit(yield* runVerdicts({pr: number, repo: Option.getOrNull(repo), env: process.env}));
+	Effect.fn(function* ({pr, issue, repo}) {
+		const number = Option.getOrNull(pr);
+		const child = Option.getOrNull(issue);
+		if ((number === null) === (child === null)) {
+			yield* emit(
+				refuse(
+					OFF_VOCABULARY,
+					"build verdicts: give either --pr <n> or --issue <n>, never both and never neither.",
+				),
+			);
+			return;
+		}
+		yield* emit(
+			number === null
+				? yield* runChildVerdicts({
+						issue: child as number,
+						repo: Option.getOrNull(repo),
+						env: process.env,
+					})
+				: yield* runVerdicts({pr: number, repo: Option.getOrNull(repo), env: process.env}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("The latest gate verdict per namespace at a PR's live head."),
 	Command.withDescription(
-		'The paginated, current-head, per-gate verdict fold on a PR: every comment and every review, the latest marker per gate namespace bound to the live head, native reviews as their OWN row kind (never coerced), the per-head FAIL round count, capReached, and the criteria frozen after round 2. Prints one JSON object with head, rows, rounds, capReached and frozenCriteria; {"rows":[]} on exit 0 is a proven "no verdicts", readable against the scope line. A stale marker prints as stale, never dropped. Exits 7 (PR proven absent or closed), 11 (the head, any comment page or any review page could not be read — UNKNOWN, never "none"). Example: fabrika build verdicts --pr 4310',
+		'The paginated, current-head, per-gate verdict fold on a PR: every comment and every review, the latest marker per gate namespace bound to the live head, native reviews as their OWN row kind (never coerced), the per-head FAIL round count, capReached, and the criteria frozen after round 2. Prints one JSON object with head, rows, rounds, capReached and frozenCriteria; {"rows":[]} on exit 0 is a proven "no verdicts", readable against the scope line. A stale marker prints as stale, never dropped. --issue <n> folds an epic child instead, whose verdicts are range-bound comments on the issue because a child opens no PR (ADR 0285/0276): each row names the range it was formed over rather than a head, a round is one graded tip, and clearances are empty with the reason on stderr — a clearance is recorded against a PR\'s base branch, and a child has none. Exits 7 (PR or issue proven absent or closed, or --issue names a PR), 10 (neither or both of --pr and --issue), 11 (the head, any comment page or any review page could not be read — UNKNOWN, never "none"). Example: fabrika build verdicts --pr 4310',
 	),
 );
 

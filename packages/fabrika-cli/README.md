@@ -28,10 +28,10 @@ not a general-purpose CLI.
 
 ## It calls nothing outside fabrika
 
-**`fabrika` invokes `pipeline-cli` nowhere** — no import, no subprocess
-([ADR 0238](../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). Where v1
-already solves the same problem, its source is a reference for the semantics and the scars,
-never a dependency.
+**`fabrika` invoked the v1 CLI nowhere** — no import, no subprocess
+([ADR 0238](../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). That package is
+deleted now (#6100), so the rule is history rather than a live constraint; what it bought is that
+nothing here needs porting or unhooking.
 
 The reason is the deletion test: a fabrika that calls v1 can never be the thing that
 replaces it, because every call is a tether keeping the old tree alive. Duplication costs a
@@ -651,7 +651,7 @@ no merge and emits no verdict, so it registers in no verdict namespace and no wi
 
 ## The `ci` group
 
-The workflow plumbing, migrated here from `pipeline-cli` alongside the guards
+The workflow plumbing, migrated here from the v1 CLI alongside the guards
 ([#6099](https://github.com/kamp-us/phoenix/issues/6099)). These are **not** guards: they are the
 release path and the build path, where a mistake breaks cutting a release or breaks the evidence a
 merge gate reads, rather than breaking a check.
@@ -681,7 +681,7 @@ Two things in the group do not follow the ordinary verb shape, and both are forc
 
 ## The `guard` group
 
-The repo's fail-closed CI gates, migrating here from `pipeline-cli` (epic
+The repo's fail-closed CI gates, migrating here from the v1 CLI (epic
 [#5720](https://github.com/kamp-us/phoenix/issues/5720)). Unlike every other group this one nests —
 a guard is its own subcommand and `check` is its leaf — so a workflow step and a human reproducing
 its red type the same thing:
@@ -704,7 +704,7 @@ node packages/fabrika-cli/src/bin.ts guard readme-guard check
 Three things are shared by the group rather than rebuilt per guard, which is the point of it
 ([#6093](https://github.com/kamp-us/phoenix/issues/6093)):
 
-`skill-lint` also owns its own walk, and that is deliberate: in `pipeline-cli` the corpus walk, the
+`skill-lint` also owns its own walk, and that is deliberate: in the v1 CLI the corpus walk, the
 zero-scope floor and the per-plugin coverage assertion lived in forty lines of workflow bash, which
 put four fail-closed decisions where no test could reach them and made a local repro a retyped
 `find`. They are verb code now ([#6098](https://github.com/kamp-us/phoenix/issues/6098)).
@@ -1205,15 +1205,16 @@ Three consequences worth knowing before you install it:
   where that did not complete fails loudly, with the remediation command, rather than silently.
 - **Storing golden bytes is an injected `StoreLeg`, not a dependency.** A repo's goldens live
   in its own asset store, so anything naming a host or a credential stayed with the consuming
-  repo — phoenix keeps that half in `packages/design-capture/`. This package owns the shape and
+  repo. This package owns the shape and
   the diff, never the store. It is also what keeps the package installable: a published artifact
   may depend only on what a clean registry resolves
   ([ADR 0201](../../.decisions/0201-pipeline-tenant-phoenix-first.md) §3), and phoenix's depo client is
   private.
-- **The capture bin is still phoenix's** — `node packages/design-capture/src/bin.ts capture …`,
-  unchanged. It is a v1 caller, not the adopter-facing surface; the adopter-facing surface is the
-  `ui` verb group ([#5061](https://github.com/kamp-us/phoenix/issues/5061)) — see
-  [the `ui` group](#the-ui-group). This move deliberately changed no behavior.
+- **The adopter-facing surface is the `ui` verb group**
+  ([#5061](https://github.com/kamp-us/phoenix/issues/5061)) — see
+  [the `ui` group](#the-ui-group). Phoenix's v1 `design-capture` bin was the other caller; it was
+  deleted unused in [#6346](https://github.com/kamp-us/phoenix/issues/6346), and the move here
+  deliberately changed no behavior.
 
 ## Development
 

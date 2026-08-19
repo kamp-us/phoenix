@@ -11,7 +11,7 @@ list `pnpm-lock.yaml` as a trigger, because a lockfile delta *can* bump a
 worker-imported dependency's resolution and that genuinely needs integration.
 `dorny/paths-filter` can't attribute a lockfile diff to a specific package, so it
 conservatively runs the worker integration tier on **every** lockfile change — and
-a packages-only PR (every `@kampus/pipeline-cli` reorg child, #994) edits the
+a packages-only PR (every tooling-package reorg child, #994) edits the
 lockfile, so it paid the worker-integration tier (and the #1010/#813 stage-leak
 flake) despite touching nothing the worker runs. This classifier distinguishes a
 lockfile delta confined to non-worker importer blocks from one that touches a
@@ -26,10 +26,10 @@ package, any lockfile change outside a non-worker importer block, any ambiguity 
 parse failure ⇒ `relevant` (RUN). When unsure, run.
 
 The worker's grounded in-repo import closure is exactly `{db-schema, fate-effect}`
-(`apps/web`'s only `@kampus/*` deps, both leaves), plus `preview-seed` and
-`moderator-grant` which own their **own** real-D1 integration tiers (ADR
-[0082](../../.decisions/0082-two-test-tiers-unit-integration.md), #672/#930). A
-change to any of those four is integration-relevant; everything else under
+(`apps/web`'s only `@kampus/*` deps, both leaves), plus `preview-seed` which owns its
+**own** real-D1 integration tier (ADR
+[0082](../../.decisions/0082-two-test-tiers-unit-integration.md), #672). A
+change to any of those three is integration-relevant; everything else under
 `packages/**` is dev-tooling the worker never imports — **unless an integration/e2e
 test imports it** (see below).
 

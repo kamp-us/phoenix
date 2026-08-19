@@ -96,3 +96,5 @@ one subdir per plugin, each distributed from its own subdir source.**
 - **No ignore-file escape hatch** means any future "don't ship X" need is met by keeping X
   outside `claude-plugins/`, not by an allowlist — the subdir boundary *is* the allowlist.
 - **Relates to:** ADR [0062](0062-repo-as-config-plugin.md) (repo-as-config; §4 permalink convention, §5 layout/symlink), and the foreign-repo-hardening front #592 (manifest drift), #425 (ship-it degradation), #460 (preflight doctor).
+
+> Amendment 2026-08-19: the rule stands — the live instance is now `claude-plugins/fabrika/`, with `"source": "./claude-plugins/fabrika"` in the root `.claude-plugin/marketplace.json`. `claude-plugins/kampus-pipeline/` was deleted (ADR [0303](0303-retire-kampus-pipeline-plugin.md)); its catalog entry survives only as a `git-subdir` source pinned to sha `633d61e`, and `.claude/skills` no longer exists, so §2's local-discovery symlink is gone. §4's gate-path anchors now live in fabrika's own paths.

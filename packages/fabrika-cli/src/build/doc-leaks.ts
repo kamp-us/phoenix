@@ -16,7 +16,7 @@
  *
  * **Why the shapes are re-declared, and what keeps them honest.** phoenix's `leak-guard` owns the
  * authoritative gate, but ADR 0238 forbids a fabrika verb running v1 code and ADR 0273 makes
- * fabrika installable into a repo that has no `pipeline-cli` at all, so neither side can derive the
+ * fabrika installable into a repo that has no v1 CLI at all, so neither side can derive the
  * shapes from the other. ADR 0251 rules what stands in for the import: the canonical bytes are
  * committed as the golden fixture `__fixtures__/doc-leak-patterns.golden.json`, and each side pins
  * it in a test of its own — `doc-leak-patterns.golden.test.ts` here, and

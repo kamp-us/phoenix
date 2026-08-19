@@ -40,7 +40,54 @@ that plugin (#5937). The shape outlives it: it binds the shell this repo still c
    ([#4487](https://github.com/kamp-us/phoenix/issues/4487)). A genuinely empty surface still
    exits 0 — empty is a fact, a failed scan is UNKNOWN, and the two must not look alike.
 
+## The workflow-step class — a status recorded after the command that can erase it
+
+A GitHub `run:` block runs under `bash -e` whatever the block says, because the `-e` is in the shell
+GitHub invokes, not in the script. Rule 1 above therefore has to be *asked for* here: `set -uo
+pipefail` does not clear an errexit that is already on, so a step that needs it off writes `set +e`
+first. Nothing in the YAML hints at this, which is why a step can read as fail-closed and behave
+fail-open.
+
+The shape that goes wrong is a step that **records its own status into `$GITHUB_OUTPUT` after the
+command whose failure it is recording**:
+
+```text
+- id: guard
+  continue-on-error: true
+  run: |
+    set -o pipefail
+    node … check 2>&1 | tee guard-output.txt     # red here -> errexit aborts the step
+    echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"   # never runs
+```
+
+The red aborts the step at the pipeline, so `code` is never written; `continue-on-error` then keeps
+the aborted step from failing the job, and every later step that reads `steps.guard.outputs.code` is
+deciding off an output the failure itself erased. The guard's red is the one input the guard cannot
+see. `roadmap-guard.yml` shipped exactly this and concluded **success** on a run whose own log listed
+ten violations ([#5560](https://github.com/kamp-us/phoenix/issues/5560)).
+
+Three rules, and the third is the one that makes the other two safe to get wrong:
+
+1. **`set +e` before anything else**, then `set -uo pipefail`. Now the status line always runs, on
+   the pass path and the fail path alike.
+2. **Then `continue-on-error` is dead weight — drop it.** The step no longer exits non-zero for the
+   check's red, so nothing needs excusing; and if the *instrumentation* fails (the `$GITHUB_OUTPUT`
+   write itself), the step fails and reds the job, which is the right answer.
+3. **Decide pass/fail in bash against the recorded code, not in the `if:` expression.** Read it in as
+   `env:` and pass only on a literal `0`, so an empty code — the instrumentation not having run — is
+   red like any other unreadable answer (ADR 0092). An `if:` written as `outputs.code != '0'` leans
+   on how the expression engine compares an unset output against a string, which is a question the
+   guard should not be asking at all.
+
 ## Enforcement (historical)
+
+`trap-status-guard`'s remit does **not** extend to workflow `run:` blocks, and cannot: the guard
+retired with its corpus below, so there is nothing to extend. Its axis was also the wrong one — it
+read `errexit` + an `EXIT` trap in one script file, while the class above has no trap, no script
+file, and gets its `-e` from the runner. A guard for this class would be a new one, reading YAML:
+a step that writes `$GITHUB_OUTPUT` after a command that can abort it. That is worth building when
+this shape recurs; today it exists in three workflows, all fixed in #5560, and the shape binds by
+review.
 
 Both mechanical enforcers retired with their corpus (#5937): `pipeline-cli trap-status-guard
 check` (the `trap-status-guard.yml` job) redded on `errexit` enabled together with an `EXIT`
