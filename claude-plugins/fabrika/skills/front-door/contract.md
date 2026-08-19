@@ -483,15 +483,18 @@ them."* This verb is that reader.
 `` `id:<slug>` `` token in its first cell; `<slug>` is `[a-z0-9-]+`. A row with no id token reports
 id `-`, and that is the whole of what an absent id decides: **the id column and `<presence>` are
 independent**. The probe still runs, so an id-less row's `<presence>` and `<detail>` carry what the
-probe proved, exactly as on a row that has an id. Coupling the two would report every row on the
-current tree `unknown` — no landed skill carries an id token — leaving a detection verb that names
-no gap it can act on, and making the example below unproducible (#5298). **No slug is derived
-from prose** — a rule that kebab-cased a cell would turn "The board label taxonomy — `status:triaged`,
+probe proved, exactly as on a row that has an id. Coupling the two would report nearly every row on
+the current tree `unknown` — 8 of the roster's 102 rows carry an id token, and they sit in three
+skills (`write-pattern`, `operate`, `front-door`) — leaving a detection verb that names almost no
+gap it can act on, and making the example below unproducible (#5298). **No slug is derived from
+prose** — a rule that kebab-cased a cell would turn "The board label taxonomy — `status:triaged`,
 …" into `the-board-label-taxonomy`, two implementers would ship two id sets, and a reworded cell
 would silently break every documented invocation. The ids this group itself needs are fixed in
-[the buildable-surface registry](#buildable-surfaces). **Almost no landed skill carries an id token**
-— `operate`'s `.gitignore` row is the first, and every other row reports id `-` — which is why the
-registry below, and never the roster, is the authority for what `bootstrap` accepts.
+[the buildable-surface registry](#buildable-surfaces). **A roster id is not a registry id**, which
+is why the registry below, and never the roster, is the authority for what `bootstrap` accepts:
+`write-pattern`'s six ids (`patterns-dir`, `patterns-index`, `admission-bar`, `git-history`,
+`doc-gates`, `dep-manifest`) name no buildable surface at all, so a `bootstrap` that read the
+roster would accept six ids it cannot build.
 
 <a id="disposition-is-reported-never-interpreted"></a>**The disposition is printed verbatim, and an
 unrecognized word is reported rather than refused.** Every landed skill uses exactly the three
@@ -1042,7 +1045,7 @@ here; `fabrika status readout` displays it. This issue stays open and is not wor
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | string | yes | — | one `<surface-id>` from the registry above |
-| `--path` | string | no | the registry default | override the write path for a file or line surface; must resolve inside the repository root |
+| `--path` | string | no | the registry default | override the target path for a file or line surface; must resolve inside the repository root |
 | `--repo` | string | no | resolved | the repository, for the two non-file surfaces |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | text | yes for `design-manifest` and `roadmap-focus` | — | the content. `NoStdin` and `Text("")` are exit `3`; a **failed** stdin read is exit `1` — the content is UNKNOWN, never empty, the split `packages/fabrika-cli/src/report/file-verb.ts` already ships |
