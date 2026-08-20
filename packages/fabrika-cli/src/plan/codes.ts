@@ -64,3 +64,19 @@ export const LABEL_ABSENT = 23;
  * `plan` verb produces.
  */
 export const APPROVAL_UNAUTHORIZED = 24;
+/**
+ * Proven: the plan is not approved as it now stands — the epic carries no standing approval marker,
+ * or the marker's digest names a plan the epic has since moved off.
+ *
+ * Its own seat, refused **ahead of the floor**, and folded into nothing: a plan no human approved is
+ * a different fact from a defective one, so neither {@link FLOOR_DEFECTIVE} nor {@link PLAN_MOVED}
+ * may carry it (ADR 0289). `PLAN_MOVED` is the nearest miss and still the wrong answer — it proves a
+ * *caller's* `--digest` went stale between one verb and the next, which a re-check fixes, where this
+ * proves a *founder's* reading went stale, which only a re-approval fixes.
+ *
+ * The seat is `25` rather than the `24` the brief named, because `APPROVAL_UNAUTHORIZED` took `24`
+ * first; the rule is unchanged — allocate freely above the reserved band when no other group proves
+ * the same fact, and `build`'s `GRANT_UNAUTHORIZED` (25) proves an account may not clear a repair
+ * round, which no `plan` verb produces.
+ */
+export const PLAN_UNAPPROVED = 25;

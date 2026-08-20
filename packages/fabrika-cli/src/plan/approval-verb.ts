@@ -2,17 +2,16 @@
  * `plan approval` — report whether an epic's plan carries a current founder approval.
  *
  * **A reporting surface, never the enforcement.** It exits `0` on `absent` exactly as it does on
- * `current`, because a missing approval is this verb's *answer*. The refusal that keeps an
- * unapproved plan out of the gate will be seated inside `plan check` / `plan flip` / `plan verdict`
- * by a later slice of epic #5843; no `plan` verb refuses on an approval today. Those three will
- * re-derive rather than trust any caller — the same discipline that makes `plan check`'s defective
- * floor an answer and `plan flip`'s re-gate the guard.
+ * `current`, because a missing approval is this verb's *answer*. The refusal that keeps an unapproved
+ * plan out of the gate lives in `plan check` / `plan flip` / `plan verdict`, each of which re-derives
+ * the approval through `./approval.ts`'s `requireApproval` rather than trusting this report or any
+ * caller — the same discipline that makes `plan check`'s defective floor an answer and `plan flip`'s
+ * re-gate the guard.
  *
- * **What the state is nevertheless safe to be read as.** `current` means a marker whose author the
- * control-plane roster resolves *at this read* — the author gate lives here, in the read, not only
- * in `plan approve`'s write, because bytes carrying the right digest can reach the epic from any
- * account that can comment on it (ADR 0289; `./approval.ts` says why). A later gate may honour
- * `current` without re-checking who wrote it.
+ * **What the state is safe to be read as.** `current` means a marker whose author the control-plane
+ * roster resolves *at this read* — the author gate lives here, in the read, not only in `plan
+ * approve`'s write, because bytes carrying the right digest can reach the epic from any account that
+ * can comment on it (ADR 0289; `./approval.ts` says why).
  *
  * Both digests are printed, the marker's and the freshly derived one, so a `stale` answer shows what
  * moved rather than asserting that something did.

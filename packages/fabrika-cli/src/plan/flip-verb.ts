@@ -11,8 +11,10 @@
  *
  * Four guards, each designed against a named v1 failure:
  *
- * 1. **Re-gate.** The floor is re-derived and the digest recomputed here, not read off a prior verb's
- *    exit code. The gap between deciding and writing is closed by re-deciding.
+ * 1. **Re-gate.** The founder approval is re-read, the floor re-derived and the digest recomputed
+ *    here, not read off a prior verb's exit code. The gap between deciding and writing is closed by
+ *    re-deciding — including the human decision, so a lane cannot carry a `plan check` that passed
+ *    before a re-plan past this write (`25`, ADR 0289).
  * 2. **Vocabulary precondition.** `POST .../labels` *creates* an unknown label rather than rejecting
  *    it (#4285), so an absent label would be silently minted. With nothing to write the check is
  *    skipped — a `nothing-to-flip` success must not refuse over a label it was never going to touch.
@@ -36,6 +38,7 @@ import {type ReasonHistogram, reasonHistogram} from "../evidence.ts";
 import {addLabels, getIssue, listLabels, removeLabel} from "../io/issues.ts";
 import {PLANNED, TRIAGED} from "../labels.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {requireApproval} from "./approval.ts";
 import {
 	FLOOR_DEFECTIVE,
 	LABEL_ABSENT,
@@ -179,6 +182,9 @@ export const runFlip = (
 			ledger.children.map((child) => child.number),
 		);
 		const notes = [...held.notes, scanned];
+
+		const approval = yield* requireApproval(MESSAGES, repo, ledger.epic, ledger.digest, notes);
+		if (approval._tag === "Refused") return approval.outcome;
 
 		const derived = yield* deriveFloorFor(MESSAGES, repo, ledger, vocabulary.vocabulary);
 		if (derived._tag === "Refused") return derived.outcome;
