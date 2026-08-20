@@ -1,4 +1,5 @@
 import {expect, type Page, test} from "@playwright/test";
+import {signUpViaApi} from "./_helpers/auth";
 
 /**
  * The first-paint contract for the edge-resolved shell (ADR 0179, epic #2926). Its containment
@@ -44,22 +45,14 @@ const BOOT_NAV_ON: SeedBoot = {
 	user: null,
 };
 
-// A signed-in edge payload: `__BOOT__.user` present drives signed-in-at-first-paint (the giriş-yap
-// CTA is suppressed from frame one). Field shape mirrors BootUser (shell-keys.ts); values are inert
-// for the CTA assertion (they only late-fill the chips).
-const BOOT_SIGNED_IN: SeedBoot = {
+// The flag half of the signed-in payload. Its `user` half is NOT fixture data — it is read back
+// off the edge's own injection for a real session ({@link edgeBootUser}), because a fabricated
+// user with no session behind it is a divergence the app correctly collapses: `reserveSignedInSlots`
+// (App.tsx) goes false the moment `/api/auth/get-session` settles signed-out and the pill drops
+// mid-assertion (#6573).
+const BOOT_SIGNED_IN_FLAGS: SeedBoot = {
 	"mecmua-public-read": false,
 	"mecmua-feed": false,
-	user: {
-		id: "boot-e2e-user",
-		email: "boot@example.test",
-		name: "Boot Kullanıcı",
-		image: null,
-		username: "bootkullanici",
-		tier: "caylak",
-		isModerator: false,
-		emailFailing: false,
-	},
 };
 
 /**
@@ -106,6 +99,34 @@ async function routeBoot(page: Page, boot: SeedBoot | null): Promise<() => numbe
 		},
 	);
 	return () => rewritten;
+}
+
+/**
+ * The `user` the EDGE resolved for this page's current session, read back off the worker's own
+ * `__BOOT__` injection (`bootScriptTag`, shell-boot.ts) on a plain shell `GET`. `page.request`
+ * shares the page's cookie jar, so a sign-up done through it is the session the worker sees.
+ *
+ * The signed-in spec drives its payload from this rather than from a fixture so the boot payload
+ * and the settled session name the same user — the divergence a fixture creates is one the app is
+ * designed to collapse (ADR 0185), not a state worth asserting. Reading it back also keeps every
+ * field the edge's own, so no profile default is guessed here.
+ *
+ * Retried because the never-hang guard (ADR 0179 §4) degrades to an untransformed asset when the
+ * boot reads exceed their 1s bound — transient, and a one-shot read would turn it into a red.
+ * A null `user` after the attempts is thrown, never returned: it would make the spec vacuous.
+ */
+async function edgeBootUser(page: Page, attempts = 3): Promise<SeedBoot> {
+	let last = "the shell document carried no window.__BOOT__ — the never-hang guard degraded";
+	for (let attempt = 0; attempt < attempts; attempt++) {
+		const html = await (await page.request.get("/")).text();
+		const injected = /window\.__BOOT__\s*=\s*(\{[\s\S]*?\})\s*<\/script>/i.exec(html);
+		if (injected) {
+			const {user} = JSON.parse(injected[1]) as {user: SeedBoot | null};
+			if (user) return user;
+			last = "the edge resolved __BOOT__.user as null — the sign-up session did not reach it";
+		}
+	}
+	throw new Error(`edgeBootUser: ${last} (${attempts} attempts)`);
 }
 
 /**
@@ -189,7 +210,8 @@ test.describe("edge-resolved shell boot", () => {
 	test("edge-resolved __BOOT__.user suppresses the giriş-yap flash at first paint", async ({
 		page,
 	}) => {
-		await routeBoot(page, BOOT_SIGNED_IN);
+		await signUpViaApi(page);
+		await routeBoot(page, {...BOOT_SIGNED_IN_FLAGS, user: await edgeBootUser(page)});
 		await page.goto("/");
 
 		await expect(page.locator(".kp-topbar")).toBeVisible({timeout: 10_000});
@@ -199,6 +221,14 @@ test.describe("edge-resolved shell boot", () => {
 		// own Subnav zone), so it carries the positive half of the guarantee.
 		await expect(page.getByRole("button", {name: /giriş yap/i})).toHaveCount(0);
 		await expect(page.locator(".kp-topbar__user")).toBeVisible();
+
+		// Both halves then survive the session settle rather than resting on the boot payload
+		// alone. The REAL pill replaces the reserved placeholder only once fate publishes the
+		// signed-in chips, so waiting for it pins the assertions to a genuine session — the
+		// window in which the earlier pair could pass vacuously.
+		const settledPill = page.locator(".kp-topbar__user:not(.kp-topbar__user--placeholder)");
+		await expect(settledPill).toBeVisible({timeout: 15_000});
+		await expect(page.getByRole("button", {name: /giriş yap/i})).toHaveCount(0);
 	});
 
 	test("without __BOOT__ the shell degrades gracefully — the never-hang fallback path", async ({
