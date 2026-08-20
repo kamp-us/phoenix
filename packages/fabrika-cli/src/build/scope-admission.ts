@@ -29,6 +29,7 @@ import {CONFIG_PATH} from "../config/document.ts";
 import {readRoadmapFile} from "../config/paths.ts";
 import {exists, type ReadFailed, readFile} from "../io/fs.ts";
 import {issueRefOf} from "../review/classes.ts";
+import {READY_FOR_AGENT, READY_FOR_PREFIX} from "../triage/audience.ts";
 import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -51,9 +52,8 @@ import {
 export const STANDING_LANE_LABELS = ["wayfinder:backlog", "axis:pipeline-hardening"] as const;
 export type StandingLaneLabel = (typeof STANDING_LANE_LABELS)[number];
 
-/** The one audience an agent lane may open against. */
-export const READY_FOR_AGENT = "ready-for:agent";
-const READY_FOR_PREFIX = "ready-for:";
+/** The one audience an agent lane may open against — defined once in `../triage/audience.ts`. */
+export {READY_FOR_AGENT};
 
 /**
  * The type whose deliverable is a recorded choice rather than a pull request — `/adr`'s lane.
