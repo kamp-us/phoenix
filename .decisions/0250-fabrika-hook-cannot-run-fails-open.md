@@ -226,3 +226,44 @@ spread to a per-verb site.
 - **A future hook that is a git hook would re-open the blast-radius question.** This ADR's finding is
   scoped to the harness hooks fabrika declares today; a fabrika artifact installed into `.git/hooks`
   inherits the #787–#789 radius and gets its own record.
+
+## Amendment (2026-08-20, #6547) — the publish landed, #4791 closed, and the `127` residue outlived both
+
+The ruling above is untouched: cannot-run still fails open, fail-open-and-silent is still banned, and
+the notice for the `127` state still has no owner. What has gone stale is the factual scaffolding
+under it, in two places — the "only structural cure is the publish plus install at #4791" line and
+the Consequences bullet that calls the exposure "what #4791 closes". Both read as though a ticket
+discharges the exposure. Neither does, and the correction runs the other way: the exposure is wider
+than the record now admits, not narrower.
+
+Verified against source on 2026-08-20:
+
+- **`@kampus/fabrika-cli` is published.** The public npm registry serves it, `dist-tags.latest` is
+  `0.4.0`, and the published manifest ships `bin.fabrika` → `dist/bin.js`. The "not published"
+  premise the two lines rest on is false.
+- **[#4791](https://github.com/kamp-us/phoenix/issues/4791) is CLOSED as COMPLETED.** So the pointer
+  "what #4791 closes" names a ticket that is already closed, and a reader who follows it finds a
+  discharged obligation rather than an open one.
+- **ADR [0292](0292-dispatched-publish-path-tag-bound.md) is the standing publish-path record.** It
+  is live and `accepted`, and it bounds how a publish run starts — a tagged tree, off a Release PR a
+  human merged. The publish half of the cure is law there, not pending anywhere.
+
+**The cure is now the per-machine install, and nothing performs it.** Publishing makes
+`pnpm add --global @kampus/fabrika-cli` resolve; it does not run that command on anybody's machine.
+So the `127` state survives on every machine where the install has not been run, exactly as the
+ruling describes it — a bare `fabrika` the shell reports as `command not found`, with the model
+defence absent for that whole session and no fabrika-side voice to say so. The circularity the
+`spawn-guard freshness` record identified is unchanged by the publish: a fabrika probe of "fabrika
+does not resolve" is itself a `fabrika` invocation. **The `127` degraded notice still has no owner,
+and no open ticket discharges it.**
+
+Read L194–195 and L223 as the historical record: true when written, wrong on their premise now,
+correct in their ruling.
+
+A related pin drifted with the same premise. [`hook-surface.md`](../claude-plugins/fabrika/docs/hook-surface.md)'s
+`spawn-guard freshness` record cites the fabrika-cli README's *unpublished-global callout* in its
+**Graded against** line, pinned to commit `5226c492`. That callout has since been rewritten (#6543):
+it now states the package is on the registry and that a bare `fabrika` exits `127` only on a machine
+that has not installed it. The quoted substance the record leans on — `127` means the verb never ran
+— survives the rewrite; the label "unpublished-global" does not, and the citation is historical from
+here.
