@@ -252,7 +252,7 @@ export const mutations = {
 				yield* live.definition.term(slug).deleteEdge(input.id);
 			}
 			if (!slug) return null;
-			const page = yield* sozluk.getTerm(slug);
+			const page = yield* sozluk.getTerm(slug, {viewerId: user.id});
 			if (!page) return null;
 			return toTermFromPage(page);
 		}),
@@ -275,7 +275,7 @@ export const mutations = {
 			});
 			const slug = yield* sozluk.lookupDefinitionTermSlug(input.id);
 			if (!slug) return null;
-			const page = yield* sozluk.getTerm(slug);
+			const page = yield* sozluk.getTerm(slug, {viewerId: user.id});
 			if (!page) return null;
 			const restored = page.definitions.find((d) => d.id === input.id);
 			if (restored) {

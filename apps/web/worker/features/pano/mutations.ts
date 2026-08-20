@@ -458,7 +458,7 @@ export const mutations = {
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const restored = yield* pano.restorePost({postId: input.id, actorId: UserId.make(user.id)});
-			const page = yield* pano.getPost(input.id);
+			const page = yield* pano.getPost(input.id, {viewerId: user.id});
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
 			const post = toPostFromPage(
@@ -666,7 +666,7 @@ export const mutations = {
 				actorId: UserId.make(user.id),
 			});
 			if (!postId) return null;
-			const page = yield* pano.getPost(postId);
+			const page = yield* pano.getPost(postId, {viewerId: user.id});
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
 			const post = toPostFromPage(
@@ -721,7 +721,7 @@ export const mutations = {
 					.thread(postId)
 					.appendNode(node.id, {node}, decidePublish(restored.sandboxedAt ?? null));
 			}
-			const page = yield* pano.getPost(postId);
+			const page = yield* pano.getPost(postId, {viewerId: user.id});
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
 			const post = toPostFromPage(
