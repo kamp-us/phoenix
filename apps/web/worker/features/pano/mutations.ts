@@ -322,12 +322,12 @@ export const mutations = {
 		Effect.fn("post.react")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
+			const sandboxViewer = yield* currentSandboxViewer;
 			// Dark-ship gate (ADR 0083). Off ⇒ the react never lands; re-resolve unchanged so
 			// the caller's cache stays consistent. A Flagship outage reads `false` = dark.
 			const flags = yield* Flags;
 			const on = yield* flags.getBoolean(PHOENIX_REACTIONS, false).pipe(provideRequestFlags);
 			if (!on) {
-				const sandboxViewer = yield* currentSandboxViewer;
 				const [current] = yield* pano.getPostsByIds([input.id], {
 					viewerId: user.id,
 					sandboxViewer,
@@ -342,6 +342,7 @@ export const mutations = {
 				postId: input.id,
 				userId: UserId.make(user.id),
 				emoji: input.emoji,
+				sandboxViewer,
 			});
 			const post = toPost(r.post);
 			yield* live.post.update(post.id, {changed: ["reactions"], data: post});
@@ -415,7 +416,8 @@ export const mutations = {
 			});
 			// Re-read the viewer's vote so the edited entity carries an accurate
 			// `myVote` (edit doesn't touch vote state).
-			const [fresh] = yield* pano.getPostsByIds([r.postId], {viewerId: user.id});
+			const sandboxViewer = yield* currentSandboxViewer;
+			const [fresh] = yield* pano.getPostsByIds([r.postId], {viewerId: user.id, sandboxViewer});
 			const post = shapePost({...r, myVote: fresh?.myVote ?? null});
 			yield* live.post.update(post.id, {changed: ["title", "body"], data: post});
 			return post;
@@ -458,9 +460,10 @@ export const mutations = {
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const restored = yield* pano.restorePost({postId: input.id, actorId: UserId.make(user.id)});
-			const page = yield* pano.getPost(input.id, {viewerId: user.id});
+			const sandboxViewer = yield* currentSandboxViewer;
+			const page = yield* pano.getPost(input.id, {viewerId: user.id, sandboxViewer});
 			if (!page) return null;
-			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
+			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id, sandboxViewer});
 			const post = toPostFromPage(
 				page,
 				stamped?.myVote ?? null,
@@ -585,12 +588,12 @@ export const mutations = {
 		Effect.fn("comment.react")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
+			const sandboxViewer = yield* currentSandboxViewer;
 			// Dark-ship gate (ADR 0083). Off ⇒ the react never lands; re-resolve unchanged so
 			// the caller's cache stays consistent. A Flagship outage reads `false` = dark.
 			const flags = yield* Flags;
 			const on = yield* flags.getBoolean(PHOENIX_REACTIONS, false).pipe(provideRequestFlags);
 			if (!on) {
-				const sandboxViewer = yield* currentSandboxViewer;
 				const [current] = yield* pano.getCommentsByIds([input.id], {
 					viewerId: user.id,
 					sandboxViewer,
@@ -608,6 +611,7 @@ export const mutations = {
 				commentId: input.id,
 				userId: UserId.make(user.id),
 				emoji: input.emoji,
+				sandboxViewer,
 			});
 			const comment = toComment(r.comment);
 			yield* live.comment.update(comment.id, {changed: ["reactions"], data: comment});
@@ -634,7 +638,11 @@ export const mutations = {
 				actorId: UserId.make(user.id),
 				body: input.body,
 			});
-			const [fresh] = yield* pano.getCommentsByIds([r.commentId], {viewerId: user.id});
+			const sandboxViewer = yield* currentSandboxViewer;
+			const [fresh] = yield* pano.getCommentsByIds([r.commentId], {
+				viewerId: user.id,
+				sandboxViewer,
+			});
 			const comment = shapeComment({
 				...r,
 				myVote: fresh?.myVote ?? null,
@@ -666,9 +674,10 @@ export const mutations = {
 				actorId: UserId.make(user.id),
 			});
 			if (!postId) return null;
-			const page = yield* pano.getPost(postId, {viewerId: user.id});
+			const sandboxViewer = yield* currentSandboxViewer;
+			const page = yield* pano.getPost(postId, {viewerId: user.id, sandboxViewer});
 			if (!page) return null;
-			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
+			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id, sandboxViewer});
 			const post = toPostFromPage(
 				page,
 				stamped?.myVote ?? null,
@@ -712,7 +721,11 @@ export const mutations = {
 				actorId: UserId.make(user.id),
 			});
 			if (!postId) return null;
-			const [comment] = yield* pano.getCommentsByIds([input.id], {viewerId: user.id});
+			const sandboxViewer = yield* currentSandboxViewer;
+			const [comment] = yield* pano.getCommentsByIds([input.id], {
+				viewerId: user.id,
+				sandboxViewer,
+			});
 			if (comment) {
 				const node = toComment(comment);
 				// Sandbox-faithful restore (#1811): route the thread broadcast through the
@@ -721,9 +734,9 @@ export const mutations = {
 					.thread(postId)
 					.appendNode(node.id, {node}, decidePublish(restored.sandboxedAt ?? null));
 			}
-			const page = yield* pano.getPost(postId, {viewerId: user.id});
+			const page = yield* pano.getPost(postId, {viewerId: user.id, sandboxViewer});
 			if (!page) return null;
-			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
+			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id, sandboxViewer});
 			const post = toPostFromPage(
 				page,
 				stamped?.myVote ?? null,

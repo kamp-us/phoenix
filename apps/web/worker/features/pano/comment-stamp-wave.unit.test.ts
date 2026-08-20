@@ -9,6 +9,7 @@ import {Effect} from "effect";
 import type {Concurrency} from "effect/Types";
 import type {DrizzleAccessOrDie} from "../../db/Drizzle.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
+import {memberSandboxViewer} from "../kunye/sandbox.testing.ts";
 import type {Reaction, ReactionAggregate} from "../reaction/Reaction.ts";
 import type {Vote} from "../vote/Vote.ts";
 import {type CommentOperationsDeps, makeCommentOperations} from "./comment-operations.ts";
@@ -92,12 +93,14 @@ describe("Pano.getCommentsByIds — stamp-wave behavior equivalence (#2710)", ()
 			const serialOps = makeCommentOperations(deps(byIdRun(), serialCalls));
 			const serial = yield* serialOps.getCommentsByIds(["comment_1", "comment_2"], {
 				viewerId: "viewer-1",
+				sandboxViewer: memberSandboxViewer("viewer-1"),
 				parallelStamps: false,
 			});
 
 			const parallelOps = makeCommentOperations(deps(byIdRun(), parallelCalls));
 			const parallel = yield* parallelOps.getCommentsByIds(["comment_1", "comment_2"], {
 				viewerId: "viewer-1",
+				sandboxViewer: memberSandboxViewer("viewer-1"),
 				parallelStamps: true,
 			});
 
@@ -126,15 +129,18 @@ describe("Pano.getCommentsByIds — stamp-wave behavior equivalence (#2710)", ()
 		return Effect.gen(function* () {
 			yield* makeCommentOperations(deps(byIdRun(), onCalls)).getCommentsByIds(["comment_1"], {
 				viewerId: "v",
+				sandboxViewer: memberSandboxViewer("v"),
 				parallelStamps: true,
 			});
 			yield* makeCommentOperations(deps(byIdRun(), offCalls)).getCommentsByIds(["comment_1"], {
 				viewerId: "v",
+				sandboxViewer: memberSandboxViewer("v"),
 				parallelStamps: false,
 			});
 			// No `parallelStamps` at all → the default-off path.
 			yield* makeCommentOperations(deps(byIdRun(), offCalls)).getCommentsByIds(["comment_1"], {
 				viewerId: "v",
+				sandboxViewer: memberSandboxViewer("v"),
 			});
 
 			assert.deepStrictEqual(onCalls, [{concurrency: "unbounded"}], "flag on → unbounded");
@@ -165,6 +171,7 @@ describe("Pano.listCommentsKeyset — stamp-wave behavior equivalence (#2710)", 
 				const serial = yield* serialOps.listCommentsKeyset("post_1", {
 					first: 10,
 					viewerId: "viewer-1",
+					sandboxViewer: memberSandboxViewer("viewer-1"),
 					parallelStamps: false,
 				});
 
@@ -172,6 +179,7 @@ describe("Pano.listCommentsKeyset — stamp-wave behavior equivalence (#2710)", 
 				const parallel = yield* parallelOps.listCommentsKeyset("post_1", {
 					first: 10,
 					viewerId: "viewer-1",
+					sandboxViewer: memberSandboxViewer("viewer-1"),
 					parallelStamps: true,
 				});
 

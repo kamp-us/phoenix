@@ -19,11 +19,10 @@ import {type ReadProfileIdentities, stampAuthorIdentity} from "../fate/author-id
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import {applyRemovalTransition, swallowRefresh} from "../lifecycle/apply-removal-transition.ts";
-import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {
+	type MaskedReadOptions,
 	ownSandboxed,
-	resolveSandboxViewer,
 	sandboxBacklogWhere,
 	sandboxedInPlace,
 	sandboxVisibleWhere,
@@ -138,7 +137,7 @@ export interface VoteOnPostResult {
 	changed: boolean;
 }
 
-export interface ReactToPostInput {
+export interface ReactToPostInput extends MaskedReadOptions {
 	postId: PostId;
 	userId: UserId;
 	/** Sets/changes the user's single reaction; `null` retracts it. */
@@ -444,11 +443,10 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 
 	const getPost = Effect.fn("Pano.getPost")(function* (
 		postId: string,
-		opts: {
+		opts: MaskedReadOptions & {
 			viewerId?: string | null | undefined;
-			sandboxViewer?: SandboxViewer | undefined;
 			mutedIds?: ReadonlySet<string> | undefined;
-		} = {},
+		},
 	) {
 		const meta = yield* run((db) =>
 			db.query.postRecord.findFirst({
@@ -464,7 +462,7 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 				Removal.fromColumns(meta),
 				Boolean(meta.isDraft),
 				meta.authorId,
-				resolveSandboxViewer(opts),
+				opts.sandboxViewer,
 			)
 		) {
 			return null;
@@ -473,14 +471,13 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 	});
 
 	const listPostsConnection = Effect.fn("Pano.listPostsConnection")(function* (
-		opts: {
+		opts: MaskedReadOptions & {
 			sort?: PostSort;
 			first?: number;
 			after?: string | null;
 			host?: string | null;
-			sandboxViewer?: SandboxViewer | undefined;
 			mutedIds?: ReadonlySet<string> | undefined;
-		} = {},
+		},
 	) {
 		const sort = opts.sort ?? "hot";
 		const first = Math.max(1, Math.min(opts.first ?? 20, 100));
@@ -496,7 +493,7 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		if (host) baseConditions.push(eq(schema.postRecord.host, host));
 		const sandboxClause = sandboxVisibleWhere(
 			{sandboxedAt: schema.postRecord.sandboxedAt, authorId: schema.postRecord.authorId},
-			resolveSandboxViewer(opts),
+			opts.sandboxViewer,
 		);
 		if (sandboxClause) baseConditions.push(sandboxClause);
 		const muteClause = mutedAuthorsWhere(schema.postRecord.authorId, opts.mutedIds);
@@ -608,15 +605,14 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 
 	const getPostsByIds = Effect.fn("Pano.getPostsByIds")(function* (
 		ids: ReadonlyArray<string>,
-		opts: {
+		opts: MaskedReadOptions & {
 			viewerId?: string | null | undefined;
-			sandboxViewer?: SandboxViewer | undefined;
 			mutedIds?: ReadonlySet<string> | undefined;
-		} = {},
+		},
 	) {
 		if (ids.length === 0) return [];
 		const viewerId = opts.viewerId ?? null;
-		const viewer = resolveSandboxViewer(opts);
+		const viewer = opts.sandboxViewer;
 		const fetched = yield* run((db) =>
 			db
 				.select()
@@ -1140,7 +1136,10 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 
 		// The react write already asserted the target is live, so a missing row here is a
 		// raced removal, not a bad input.
-		const [row] = yield* getPostsByIds([input.postId], {viewerId: input.userId});
+		const [row] = yield* getPostsByIds([input.postId], {
+			viewerId: input.userId,
+			sandboxViewer: input.sandboxViewer,
+		});
 		if (!row) {
 			return yield* new PostNotFound({
 				postId: input.postId,

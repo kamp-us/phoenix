@@ -12,7 +12,11 @@ import {UserId} from "../../lib/ids.ts";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
-import {inPlaceVisibilityStores, moderatorAxisLayer} from "../kunye/sandbox.testing.ts";
+import {
+	inPlaceVisibilityStores,
+	memberSandboxViewer,
+	moderatorAxisLayer,
+} from "../kunye/sandbox.testing.ts";
 import {EMPTY_REACTION_AGGREGATE, type ReactionAggregate} from "../reaction/Reaction.ts";
 import type {CommentRow} from "./comment-fields.ts";
 import type {ReactToCommentInput, ReactToCommentResult} from "./comment-operations.ts";
@@ -87,12 +91,13 @@ const react = (
 				pano,
 				flagsStub(on),
 				liveStub,
-				// The inert (flag-off) branch re-resolves the comment through the real sandbox
-				// viewer (#6424), so the moderator axis it probes has to be on the context.
+				// Both branches now re-resolve the comment through the real sandbox viewer
+				// (#6424 for the inert one, #6586 for the write's own re-read), so both axes
+				// it probes have to be on the context. `flagsStub` answers every key with
+				// `on`, so the çaylak tier is what keeps the in-place axis `false` when this
+				// file's own flag is ON.
 				moderatorAxisLayer({viewerId: user?.id ?? "anon", isModerator: false}),
-				// Both stores die on contact: the caylak-visibility flag is off on the only
-				// branch that resolves a viewer, so neither may be read.
-				inPlaceVisibilityStores({}),
+				inPlaceVisibilityStores({tier: "çaylak"}),
 			),
 		),
 		Effect.provideService(CurrentUser, {user}),
@@ -118,7 +123,14 @@ describe("comment.react — (1) flag ON delegates and echoes the aggregate", () 
 				{id: "comment_1", emoji: "👍"},
 			);
 			assert.deepStrictEqual(calls, [
-				{commentId: CommentId.make("comment_1"), userId: UserId.make(CAYLAK.id), emoji: "👍"},
+				{
+					commentId: CommentId.make("comment_1"),
+					userId: UserId.make(CAYLAK.id),
+					emoji: "👍",
+					// The write's own re-read masks on the sandbox dimension, so the handler
+					// hands the service the viewer it resolved rather than a degraded one (#6586).
+					sandboxViewer: memberSandboxViewer(CAYLAK.id),
+				},
 			]);
 			assert.deepStrictEqual((comment as {reactions?: unknown}).reactions, {
 				counts: [{emoji: "👍", count: 1}],
