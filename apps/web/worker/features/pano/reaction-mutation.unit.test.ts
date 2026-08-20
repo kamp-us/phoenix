@@ -90,12 +90,12 @@ const react = (
 				pano,
 				flags,
 				liveStub,
-				// The inert (flag-off) branch re-resolves the post through the real sandbox viewer
-				// (#6424), so the moderator axis it probes has to be on the context.
+				// Both branches now re-resolve the post through the real sandbox viewer (#6424
+				// for the inert one, #6586 for the write's own re-read), so both axes it probes
+				// have to be on the context. `flagsStub` answers every key alike, so the çaylak
+				// tier is what keeps the in-place axis `false` when this file's own flag is ON.
 				moderatorAxisLayer({viewerId: user?.id ?? "anon", isModerator: false}),
-				// Both stores die on contact: the caylak-visibility flag is off on the only
-				// branch that resolves a viewer, so neither may be read.
-				inPlaceVisibilityStores({}),
+				inPlaceVisibilityStores({tier: "çaylak"}),
 			),
 		),
 		Effect.provideService(CurrentUser, {user}),

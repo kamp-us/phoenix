@@ -74,6 +74,25 @@ This is the **advisory layer's** read — the floor re-fetches on its own so it 
 document a caller could hand it. Done when it prints the child set with each child's labels,
 assignee slot, criteria token, stories and containment.
 
+**Then the approval precondition, ahead of the floor.** No plan reaches the gate without a founder
+approval bound to the scope it now derives (ADR
+[0289](../../../../.decisions/0289-founder-approves-every-epic-plan.md)):
+
+```bash
+fabrika plan approval $epic_number
+```
+
+It exits `0` on every arm and the answer's `state` is the discriminator — `current`, `stale` or
+`absent`. Only `current` proceeds to step 2. On `stale` or `absent` end at `PLAN-UNAPPROVED`,
+**naming which**: `absent` means nobody with authority has approved this plan, `stale` means the plan
+moved after he read it and a re-plan does not inherit the old approval. You never write the marker
+and you never decide the plan is approved enough — `plan approve` is the founder's verb and its
+roster is resolved from CODEOWNERS at both the write and the read.
+
+This read is the *report*, not the enforcement: `plan check`, `plan flip` and `plan verdict` each
+re-derive the approval themselves and refuse on `25`, so an approval that lapses between this read
+and a later verb is caught there too. A `25` off any of them is the same terminal.
+
 ## 2 — Run the floor; do not re-derive it
 
 ```bash
@@ -191,6 +210,14 @@ An unreleased claim is a lock nobody can reclaim, which a human then clears by h
 - `PLAN-REFUSED` — the floor proved defects, whether at step 2 or at the flip's re-gate (`20`);
   verdict posted naming them, nothing flipped. A verdict **is** the deliverable, so this is a
   success, not a back-off.
+- `PLAN-UNAPPROVED` — the plan is **proven** unapproved as it now stands: `plan approval` answered
+  `stale` or `absent` at step 1, or any of `plan check` / `plan flip` / `plan verdict` refused on
+  `25`. **Nothing was flipped and no verdict was posted** — the floor never ran, so there is no
+  reading of this plan to relay. Say which of the two it was. Then release the claim with
+  `fabrika build release $epic_number --token <claim-token>` before you end: this refusal lands ahead
+  of everything, and an epic waiting on a founder must not also be waiting on a lock nobody can
+  reclaim (ADR [0059](../../../../.decisions/0059-epic-plan-lock.md)). The epic goes back to the
+  founder — a re-plan is `plan-epic`'s, and a fresh approval is his.
 - `PLAN-MOVED` — `21`: the plan changed between the check and a writing verb. Nothing was written
   and no verdict is posted; re-check from step 2.
 - `FLIP-PARTIAL` — `22`: the floor was clean and something did not move — some children, or the

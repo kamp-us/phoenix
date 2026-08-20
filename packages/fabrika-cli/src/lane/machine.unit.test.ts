@@ -6,7 +6,7 @@ import {
 	twoPhaseWorkflow,
 } from "./fixtures.test-support.ts";
 import {applyEvent, foldLog, type LogEntry} from "./fold.ts";
-import {type CompiledLane, compile, OPERATOR_EVENTS, topology} from "./machine.ts";
+import {CLEARED_EVENT, type CompiledLane, compile, OPERATOR_EVENTS, topology} from "./machine.ts";
 
 const compiled = (workflow: unknown) => {
 	const result = compile(workflow);
@@ -57,10 +57,25 @@ describe("the compiler — structural recognition", () => {
 
 		expect(lane.phases).toEqual([{name: "pipeline", tasks: ["issue"]}]);
 		expect(lane.terminals).toEqual({complete: "complete", tripped: "tripped"});
-		expect(defined(lane.tasks.issue).initial).toEqual({type: "queued", retries: 0, maxRetries: 2});
+		expect(defined(lane.tasks.issue).initial).toEqual({
+			type: "queued",
+			retries: 0,
+			maxRetries: 2,
+			cleared: [],
+		});
 		expect([...defined(lane.tasks.issue).finals].sort()).toEqual(["frozen", "shipped"]);
 		expect([...defined(lane.tasks.issue).errorFinals]).toEqual(["frozen"]);
 		expect([...defined(lane.tasks.issue).openFinals]).toEqual(["frozen"]);
+		expect([...defined(lane.tasks.issue).guardedStates].sort()).toEqual(["review", "ship"]);
+	});
+
+	it("leaves every final an end but `frozen`, though all of them take a clearance", () => {
+		const summary = topology(compiled(coderWorkflow()));
+
+		// The injected cell is on `shipped` too, and it must not make `shipped` a park: an open final
+		// is one the DOCUMENT left a door in, and a clearance is a door out of nothing (ADR 0312).
+		expect(defined(summary.tasks.issue).states.shipped).toEqual([CLEARED_EVENT]);
+		expect([...defined(compiled(coderWorkflow()).tasks.issue).openFinals]).toEqual(["frozen"]);
 	});
 
 	it("reads a guarded array as retry-or-fallthrough by shape, never by guard name", () => {
@@ -86,12 +101,22 @@ describe("the compiler — structural recognition", () => {
 	it("summarizes each state's legal events in the topology", () => {
 		const summary = topology(compiled(coderWorkflow()));
 
-		expect(defined(summary.tasks.issue).states.queued).toEqual(["WIP", "BLOCKED"]);
-		expect(defined(summary.tasks.issue).states.review).toEqual(["PASS", "BLOCKED", "FAIL"]);
-		expect(defined(summary.tasks.issue).states.ship).toEqual(["DONE", "BLOCKED", "FAIL"]);
-		expect(defined(summary.tasks.issue).states.shipped).toEqual([]);
+		// Every state also holds the compiler's own `CLEARED` cell (ADR 0312), which no document declares.
+		expect(defined(summary.tasks.issue).states.queued).toEqual(["WIP", "BLOCKED", CLEARED_EVENT]);
+		expect(defined(summary.tasks.issue).states.review).toEqual([
+			"PASS",
+			"BLOCKED",
+			"FAIL",
+			CLEARED_EVENT,
+		]);
+		expect(defined(summary.tasks.issue).states.ship).toEqual([
+			"DONE",
+			"BLOCKED",
+			"FAIL",
+			CLEARED_EVENT,
+		]);
 		// `frozen` is a final that carries a door: a park the lane trips on, not an end (ADR 0297).
-		expect(defined(summary.tasks.issue).states.frozen).toEqual(["UNBLOCKED"]);
+		expect(defined(summary.tasks.issue).states.frozen).toEqual(["UNBLOCKED", CLEARED_EVENT]);
 		expect(summary.trigger).toBeUndefined();
 	});
 
@@ -124,6 +149,7 @@ describe("the compiler — structural recognition", () => {
 			type: "queued",
 			retries: 0,
 			maxRetries: 2,
+			cleared: [],
 		});
 		expect([...defined(lane.tasks.park_sweep).errorFinals]).toEqual(["frozen"]);
 		expect([...defined(lane.tasks.park_sweep).openFinals]).toEqual(["frozen"]);
@@ -132,8 +158,18 @@ describe("the compiler — structural recognition", () => {
 	it("holds the chore template to the same six events as every other lane", () => {
 		const summary = topology(compiled(choreWorkflow()));
 		const listened = new Set(Object.values(defined(summary.tasks.park_sweep).states).flat());
+		// The clearance is the compiler's cell on every lane, so it is not a seventh event this
+		// document declares — the six a chore template may listen for are unchanged.
+		listened.delete(CLEARED_EVENT);
 
 		for (const event of listened) expect(OPERATOR_EVENTS).toContain(event);
+	});
+
+	it("refuses a document that declares the clearance itself, on any lane", () => {
+		const workflow = twoPhaseWorkflow();
+		stateNode(workflow, "task_a", "doing").on[`TASK_A.${CLEARED_EVENT}`] = "checking";
+
+		expect(defectsOf(workflow)).toContain("never a document's transition");
 	});
 });
 

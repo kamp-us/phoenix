@@ -22,6 +22,7 @@ import * as acceptanceCriteria from "./acceptance-criteria.ts";
 import * as buildDeviations from "./build-deviations.ts";
 import * as cameFrom from "./came-from.ts";
 import * as capClearance from "./cap-clearance.ts";
+import * as decisionRuling from "./decision-ruling.ts";
 import * as deviations from "./deviations.ts";
 import {brandWitnesses, type WireFormat} from "./format.ts";
 import * as governanceDigest from "./governance-digest.ts";
@@ -32,6 +33,7 @@ import * as grillSupersede from "./grill-supersede.ts";
 import * as handoffPack from "./handoff-pack.ts";
 import * as laneBrief from "./lane-brief.ts";
 import * as mapTicket from "./map-ticket.ts";
+import * as planApproval from "./plan-approval.ts";
 import * as rangeVerdictMarker from "./range-verdict-marker.ts";
 import * as routedElsewhere from "./routed-elsewhere.ts";
 import * as verdictMarker from "./verdict-marker.ts";
@@ -924,6 +926,108 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			],
 		},
 		brands: brandWitnesses<cameFrom.CameFrom>({binding: true}),
+	},
+	{
+		key: "plan-approval",
+		purpose:
+			"a control-plane human's approval of one epic's plan, carried as a marker comment on the epic and bound to the ledger scope digest the plan gate re-derives (ADR 0289)",
+		module: "packages/fabrika-cli/src/wire/plan-approval.ts",
+		producers: ["check-epic-plan"],
+		consumers: ["check-epic-plan"],
+		emit: planApproval.emitFromFields,
+		read: planApproval.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: "epic: 5843\ndigest: 4d90e1bb27ac\nat: 2026-08-16T07:16:03Z\n",
+				values: ["5843", "4d90e1bb27ac", "2026-08-16T07:16:03Z"],
+			},
+			found: [
+				{
+					shape: "the marker over the plan it approves, as `plan approve` posts it",
+					artifact:
+						"plan-approved: #5843 @ 4d90e1bb27ac \u00b7 2026-08-16T07:16:03Z\n\nRead the ledger. The four slices are the split I want.\n",
+					values: ["5843", "4d90e1bb27ac", "2026-08-16T07:16:03Z"],
+				},
+			],
+			absent: "Re-planned the third slice — the topology is smaller now.\n",
+			malformed: [
+				{
+					drift: "the digest is not 12 lowercase hex, so it binds no scope",
+					artifact: "plan-approved: #5843 @ 4D90E1BB \u00b7 2026-08-16T07:16:03Z\n",
+				},
+				{
+					drift: "the marker names no digest, so the approval survives any re-plan",
+					artifact: "plan-approved: #5843 \u00b7 2026-08-16T07:16:03Z\n",
+				},
+				{
+					drift: "the epic reference lost its #, so it is a number rather than a reference",
+					artifact: "plan-approved: 5843 @ 4d90e1bb27ac \u00b7 2026-08-16T07:16:03Z\n",
+				},
+				{
+					drift: "the timestamp is not an ISO-8601 UTC instant",
+					artifact: "plan-approved: #5843 @ 4d90e1bb27ac \u00b7 last Thursday\n",
+				},
+			],
+		},
+		brands: brandWitnesses<planApproval.PlanApproval>({digest: true, at: true}),
+	},
+	{
+		key: "decision-ruling",
+		purpose:
+			"a control-plane human's ruling on one type:decision issue, carried as a marker comment on it, bound to a digest of the issue body that was ruled on and naming the comment the ruling is written in",
+		module: "packages/fabrika-cli/src/wire/decision-ruling.ts",
+		producers: ["adr"],
+		consumers: ["build", "triage"],
+		emit: decisionRuling.emitFromFields,
+		read: decisionRuling.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields:
+					"issue: 6569\ndigest: 4d90e1bb27ac\nruling: https://github.com/kamp-us/phoenix/issues/6569#issuecomment-3512345\nat: 2026-08-20T05:11:02Z\n",
+				values: [
+					"6569",
+					"4d90e1bb27ac",
+					"https://github.com/kamp-us/phoenix/issues/6569#issuecomment-3512345",
+					"2026-08-20T05:11:02Z",
+				],
+			},
+			found: [
+				{
+					shape: "the marker over the ruling it records, as `decision rule` posts it",
+					artifact:
+						"decision-ruled: #6569 @ 4d90e1bb27ac · ruling:https://github.com/kamp-us/phoenix/issues/6569#issuecomment-3512345 · 2026-08-20T05:11:02Z\n\nRuled. Build it as the citation reads.\n",
+					values: [
+						"6569",
+						"4d90e1bb27ac",
+						"https://github.com/kamp-us/phoenix/issues/6569#issuecomment-3512345",
+						"2026-08-20T05:11:02Z",
+					],
+				},
+			],
+			absent: "Re-scoped the second fork — this needs another read before it is ruled.\n",
+			malformed: [
+				{
+					drift: "the digest is not 12 lowercase hex, so it binds no body",
+					artifact:
+						"decision-ruled: #6569 @ 4D90E1BB · ruling:https://github.com/kamp-us/phoenix/issues/6569#issuecomment-3512345 · 2026-08-20T05:11:02Z\n",
+				},
+				{
+					drift: "the marker names no ruling, so a builder has nothing to read the choice from",
+					artifact: "decision-ruled: #6569 @ 4d90e1bb27ac · 2026-08-20T05:11:02Z\n",
+				},
+				{
+					drift: "the ruling is recorded on another issue, so it rules nothing here",
+					artifact:
+						"decision-ruled: #6569 @ 4d90e1bb27ac · ruling:https://github.com/kamp-us/phoenix/issues/5842#issuecomment-3512345 · 2026-08-20T05:11:02Z\n",
+				},
+				{
+					drift: "the timestamp is not an ISO-8601 UTC instant",
+					artifact:
+						"decision-ruled: #6569 @ 4d90e1bb27ac · ruling:https://github.com/kamp-us/phoenix/issues/6569#issuecomment-3512345 · last Thursday\n",
+				},
+			],
+		},
+		brands: brandWitnesses<decisionRuling.DecisionRuling>({digest: true, ruling: true, at: true}),
 	},
 	{
 		key: "routed-elsewhere",
