@@ -141,6 +141,9 @@ describe("runScope", () => {
 	it("emits the record with --json, carrying the merge base the range was read across", async () => {
 		const out = await run(GOVERNING, {json: true});
 		const record = JSON.parse(out.stdout);
+		// `roots` is a histogram object, not an array of `{name, files}` — the evidence collapse of
+		// ADR 0308. `records` beside it stays whole: every `id` feeds `governance sweep --record`.
+		expect(record.roots).toEqual({".decisions/": 1, "claude-plugins/": 1});
 		expect(record).toMatchObject({
 			outcome: "required",
 			head: HEAD,

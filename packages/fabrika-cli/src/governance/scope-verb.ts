@@ -302,7 +302,7 @@ export const runScope = (
 					// on the PR path, `<base>..<tip>` on the range path, matching `governance post`'s
 					// third field in each mode.
 					head: named,
-					roots: result.roots.map((tally) => ({name: tally.name, files: tally.files})),
+					roots: result.roots,
 					self: result.self,
 					base,
 					records: result.records,
@@ -314,7 +314,7 @@ export const runScope = (
 		return answer(
 			[
 				`governance\t${outcome}\t${named}`,
-				...result.roots.map((tally) => `root\t${tally.name}\t${tally.files}`),
+				...Object.entries(result.roots).map(([name, files]) => `root\t${name}\t${files}`),
 				`self\t${result.self}`,
 				...result.records.map((row) => `record\t${row.id}\t${row.change}\t${row.path}`),
 			].join("\n"),
