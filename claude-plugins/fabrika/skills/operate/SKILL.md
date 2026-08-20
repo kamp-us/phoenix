@@ -19,7 +19,8 @@ through `lane report`'s closed in-code map, a recipe exit folds through `recipe 
 `lane prove`'s read — the artifact behind an event — is what lets any event reach the machine at
 all, run by `lane report` on the shell's path and by you on yours.
 **Capability set:** shell in the checkout you were spawned in, repo-scoped token, subagent spawns.
-Writes used — lane-ledger appends, comments on the driven issue, whatever a recipe verb writes on
+Writes used — lane-ledger appends, a booted lane's own machine document brought up to the committed
+template through `lane migrate`, comments on the driven issue, whatever a recipe verb writes on
 its own account (step 3's chore row), and, **on an epic lane only**, that run's assembly branch: you
 merge a passing child into it, push it, and open the one draft PR (step 2's `integrate`). Never a
 branch a spawned shell owns, never a verdict of your own, and never the merge into the default
@@ -343,7 +344,7 @@ Relay its answer, never your own reading of the PR:
 | `reconcile` says | Record |
 | --- | --- |
 | `landed` | `--token LANDED --pr <pr-url>` — the machine folds the lane to `shipped` |
-| `unresolved` | `--token UNRESOLVED` — still queued; the cell re-enters itself, and after its bounded re-folds escalates to `human:cp-approval` on its own |
+| `unresolved` | `--token UNRESOLVED` — still queued; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own |
 | `ejected` | `--token EJECTED` — the PR left the queue un-merged, which is repair work: the machine spends a retry back into `build` |
 | `parked` | `--token UNKNOWN` — the timeline shows a PR neither queued, ejected nor merged, and an unread queue state is UNKNOWN, never a wait to keep sitting in |
 
