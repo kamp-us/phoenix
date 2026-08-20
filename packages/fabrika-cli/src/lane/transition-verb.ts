@@ -31,6 +31,14 @@ export interface TransitionOptions extends LaneRef {
 	 * novel by construction, which is the gap #6480 closed on the shell's path.
 	 */
 	readonly cause: string | null;
+	/**
+	 * The lane classes standing at this event, which the `class:<name>` arms route on (ADR 0316).
+	 *
+	 * The driver relays a shipped verb's answer here and never derives one (ADR 0228): `lane prove`
+	 * writes nothing by design and the append path stays offline, so the class rides the event line
+	 * exactly as `--cause` does. Empty leaves the standing set alone.
+	 */
+	readonly classes: ReadonlyArray<string>;
 }
 
 export const runTransition = (
@@ -57,7 +65,8 @@ export const runTransition = (
 		}
 
 		const at = yield* Effect.sync(() => new Date().toISOString());
-		const applied = applyEvent(loaded.lane, fold.states, task.taskId, event, at);
+		const classes = options.classes.length === 0 ? null : options.classes;
+		const applied = applyEvent(loaded.lane, fold.states, task.taskId, event, at, classes);
 		if (applied._tag === "Refused") {
 			return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${applied.reason}`);
 		}
@@ -80,6 +89,7 @@ export const runTransition = (
 					event: entry.event,
 					current: applied.current.stateValue,
 					taskAffected: task.taskId,
+					...(classes === null ? {} : {classes}),
 					...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
 				},
 				null,

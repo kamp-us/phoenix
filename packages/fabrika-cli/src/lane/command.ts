@@ -93,6 +93,22 @@ const causeFlag = Flag.string("cause").pipe(
 	),
 );
 
+/**
+ * The lane classes standing at the event being recorded, on the same two appending verbs.
+ *
+ * Relayed from a shipped verb's answer, never derived by the caller (ADR 0228) — `ship scope` and
+ * `review scope` already name the classes a head raises, and the issue's own labels name them
+ * before any head exists. It rides the event line because that is where every other
+ * observed-at-record-time fact rides, and because `lane prove`, the other candidate writer, writes
+ * nothing by design.
+ */
+const classFlag = Flag.string("class").pipe(
+	Flag.atLeast(0),
+	Flag.withDescription(
+		"a lane class standing at this event (repeatable) — the fact a `class:<name>` transition arm routes on, e.g. `ui`. Omit it and the classes already standing are left alone.",
+	),
+);
+
 const transition = leafCommand(
 	"transition",
 	{
@@ -106,8 +122,9 @@ const transition = leafCommand(
 			Flag.withDescription("the task the event addresses; omittable on a single-task lane"),
 		),
 		cause: causeFlag,
+		classes: classFlag,
 	},
-	Effect.fn(function* ({lane, event, root, task, cause}) {
+	Effect.fn(function* ({lane, event, root, task, cause, classes}) {
 		yield* emit(
 			yield* onKey(lane, root, (_key, ref) =>
 				runTransition({
@@ -115,6 +132,7 @@ const transition = leafCommand(
 					event,
 					task: Option.getOrNull(task),
 					cause: Option.getOrNull(cause),
+					classes,
 				}),
 			),
 		);
@@ -122,7 +140,7 @@ const transition = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record one operator event, refusing an invalid one unappended."),
 	Command.withDescription(
-		"Record one operator event on the lane's append-only log — after the machine accepts it, never before. stdout is `{previous, event, current, taskAffected}` with the two stateValues around the fold. An invalid event — no cell in the task's current state (tea's NoCellError, surfaced verbatim), outside the operator's six, a task outside the active phase, a finished workflow — is refused loudly and the log is left byte-identical. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (the lane could not be read), 12 (the event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 35 (--cause is outside the closed park-cause set or rides on an event that is not BLOCKED). An optional --cause lands on a BLOCKED's event line and is what `recipe unpark` keys its recipe table on; a BLOCKED with no cause is the bare park it always was, and routes to a human. Example: fabrika lane transition 5673 DONE",
+		"Record one operator event on the lane's append-only log — after the machine accepts it, never before. stdout is `{previous, event, current, taskAffected}` with the two stateValues around the fold. An invalid event — no cell in the task's current state (tea's NoCellError, surfaced verbatim), outside the operator's six, a task outside the active phase, a finished workflow — is refused loudly and the log is left byte-identical. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (the lane could not be read), 12 (the event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 35 (--cause is outside the closed park-cause set or rides on an event that is not BLOCKED). An optional --cause lands on a BLOCKED's event line and is what `recipe unpark` keys its recipe table on; a BLOCKED with no cause is the bare park it always was, and routes to a human. A repeatable --class lands the lane classes standing at the event on the same line, and is the fact the machine's `class:<name>` arms route on — `--class ui` on a WIP sends the lane to `build:ui`, and it stands until another event names a different set. Example: fabrika lane transition 5673 DONE",
 	),
 );
 
@@ -149,6 +167,7 @@ const report = leafCommand(
 			Flag.withDescription("the comment URL the terminal names, recorded on the event line"),
 		),
 		cause: causeFlag,
+		classes: classFlag,
 		repo: Flag.string("repo").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -156,7 +175,7 @@ const report = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({lane, token, root, task, pr, comment, cause, repo}) {
+	Effect.fn(function* ({lane, token, root, task, pr, comment, cause, classes, repo}) {
 		yield* emit(
 			yield* onKey(lane, root, (_key, ref) =>
 				runReport(
@@ -167,6 +186,7 @@ const report = leafCommand(
 						pr: Option.getOrNull(pr),
 						comment: Option.getOrNull(comment),
 						cause: Option.getOrNull(cause),
+						classes,
 						repo: Option.getOrNull(repo),
 						cwd: process.cwd(),
 						env: process.env,
@@ -179,7 +199,7 @@ const report = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record a shell's terminal token, mapped to one operator event."),
 	Command.withDescription(
-		"Record a spawned shell's terminal token on the lane's append-only log: the token→event map in code (report.ts) picks one of the operator's six, the mapped event is then proven exactly as `lane prove` proves it — a token is a self-report, so a DONE and a PASS reach the log only with their artifact behind them, every other event answering not-required without a board read — and only then does the append ride transition's exact path, validated against the folded state first, refused unappended otherwise. Optional --pr/--comment refs land on the event line itself, so the event names its evidence (visible via lane history), and an optional --cause names why a BLOCKED parked, from a closed set in code — the key `recipe unpark` seats the park against, without which every BLOCKED is novel and costs a human UNBLOCKED. stdout is `{token, previous, event, current, taskAffected}` plus the refs. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (a lane, board or tree read failed — whether the event is proven is UNKNOWN), 12 (the mapped event is refused, log unappended), 13 (the task is not in the machine, names no issue, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 22/23/24/25 (`lane prove`'s own refusals — artifact provably absent, a namespace with no still-binding verdict, a FAIL under a claimed PASS, several candidates — log unappended, remedies unchanged), 32 (the token is no shell's terminal token — refused, never interpreted), 35 (--cause is outside the closed park-cause set or rides on an event that is not BLOCKED). Example: fabrika lane report 5736 --token SHIPPED-PR --pr https://github.com/kamp-us/phoenix/pull/5760",
+		"Record a spawned shell's terminal token on the lane's append-only log: the token→event map in code (report.ts) picks one of the operator's six, the mapped event is then proven exactly as `lane prove` proves it — a token is a self-report, so a DONE and a PASS reach the log only with their artifact behind them, every other event answering not-required without a board read — and only then does the append ride transition's exact path, validated against the folded state first, refused unappended otherwise. Optional --pr/--comment refs land on the event line itself, so the event names its evidence (visible via lane history), a repeatable --class lands the lane classes standing at the event (what the machine's `class:<name>` arms route on), and an optional --cause names why a BLOCKED parked, from a closed set in code — the key `recipe unpark` seats the park against, without which every BLOCKED is novel and costs a human UNBLOCKED. stdout is `{token, previous, event, current, taskAffected}` plus the refs. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (a lane, board or tree read failed — whether the event is proven is UNKNOWN), 12 (the mapped event is refused, log unappended), 13 (the task is not in the machine, names no issue, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 22/23/24/25 (`lane prove`'s own refusals — artifact provably absent, a namespace with no still-binding verdict, a FAIL under a claimed PASS, several candidates — log unappended, remedies unchanged), 32 (the token is no shell's terminal token — refused, never interpreted), 35 (--cause is outside the closed park-cause set or rides on an event that is not BLOCKED). Example: fabrika lane report 5736 --token SHIPPED-PR --pr https://github.com/kamp-us/phoenix/pull/5760",
 	),
 );
 
@@ -232,7 +252,7 @@ const history = leafCommand(
 ).pipe(
 	Command.withShortDescription("The lane's append-only event log, verbatim."),
 	Command.withDescription(
-		"The lane's append-only event log, verbatim — one `{task, event, at}` per recorded event, in append order, carrying the optional `pr`/`comment` refs where the event was recorded with one as its evidence; the log IS the history, and `from`/`to` are reconstructible by folding, never stored. A lane with no events yet answers `[]`. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane could not be read), 21 (the key is not a lane key). Example: fabrika lane history 5673",
+		"The lane's append-only event log, verbatim — one `{task, event, at}` per recorded event, in append order, carrying the optional `pr`/`comment` refs where the event was recorded with one as its evidence, the `classes` a class-carrying event named; the log IS the history, and `from`/`to` are reconstructible by folding, never stored. A lane with no events yet answers `[]`. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane could not be read), 21 (the key is not a lane key). Example: fabrika lane history 5673",
 	),
 );
 

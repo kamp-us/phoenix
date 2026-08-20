@@ -333,7 +333,7 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			"the spawn prompt a lane driver hands one fabrika shell — which task and state it serves, the ground it stands on (a PR, or an epic run's branch and range), and the format's own byte-fixed rules",
 		module: "packages/fabrika-cli/src/wire/lane-brief.ts",
 		producers: ["operate"],
-		consumers: ["build", "review", "ship"],
+		consumers: ["build", "build-ui", "review", "review-ui", "ship"],
 		emit: laneBrief.emitFromFields,
 		read: laneBrief.readToLines,
 		fixtures: {
@@ -359,6 +359,27 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				],
 			},
 			found: [
+				{
+					shape: "a UI-class construction brief, routed to the shell that owns rendered work",
+					artifact: `## Task\nlane: 5751\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: build:ui\nshell: build-ui\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5751\n## Rules\n${laneBrief.RULES}\n`,
+					values: [
+						"5751",
+						"build:ui",
+						"build-ui",
+						"https://github.com/kamp-us/phoenix/issues/5751",
+					],
+				},
+				{
+					shape: "a UI-class review brief — the rendered round, over the same one PR",
+					artifact: `## Task\nlane: 5751\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: review:ui\nshell: review-ui\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5751\npr: https://github.com/kamp-us/phoenix/pull/5788\n## Rules\n${laneBrief.RULES}\n`,
+					values: [
+						"5751",
+						"review:ui",
+						"review-ui",
+						"https://github.com/kamp-us/phoenix/issues/5751",
+						"https://github.com/kamp-us/phoenix/pull/5788",
+					],
+				},
 				{
 					shape: "a construction brief, as the driver hands it over with no PR yet",
 					artifact: `## Task\nlane: 5751\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: build\nshell: builder\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5751\n## Rules\n${laneBrief.RULES}\n`,
@@ -416,6 +437,10 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				{
 					drift: "a review brief names no PR — the shell would have nothing to judge",
 					artifact: `## Task\nlane: 5751\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: review\nshell: reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5751\n## Rules\n${laneBrief.RULES}\n`,
+				},
+				{
+					drift: "a UI review brief names no PR — the rendered round has nothing to render",
+					artifact: `## Task\nlane: 5751\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: review:ui\nshell: review-ui\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5751\n## Rules\n${laneBrief.RULES}\n`,
 				},
 				{
 					drift: "the shell disagrees with the state it was routed from",

@@ -46,6 +46,8 @@ export interface ReportOptions extends LaneRef {
 	readonly comment: string | null;
 	/** Why the lane parked, from the closed set in [`report.ts`](report.ts); `BLOCKED` only. */
 	readonly cause: string | null;
+	/** The lane classes standing at this event, relayed onto the event line (ADR 0316). */
+	readonly classes: ReadonlyArray<string>;
 	/** The target repo the proof reads against, resolved exactly as `lane prove` resolves it. */
 	readonly repo: string | null;
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in, not the ledger root. */
@@ -76,7 +78,8 @@ export const runReport = <R>(
 		if (fold._tag !== "Folded") return replayRefusal(VERB, loaded.logPath, fold);
 
 		const at = yield* Effect.sync(() => new Date().toISOString());
-		const applied = applyEvent(loaded.lane, fold.states, task.taskId, resolved.event, at);
+		const classes = options.classes.length === 0 ? null : options.classes;
+		const applied = applyEvent(loaded.lane, fold.states, task.taskId, resolved.event, at, classes);
 		if (applied._tag === "Refused") {
 			return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${applied.reason}`);
 		}

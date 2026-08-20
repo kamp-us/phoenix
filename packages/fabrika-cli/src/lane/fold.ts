@@ -15,15 +15,17 @@ import {
 	bareEvent,
 	type CompiledLane,
 	isOperatorEvent,
+	type LaneMsg,
 	OPERATOR_EVENTS,
 	type TaskState,
 } from "./machine.ts";
 
 /**
  * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
- * event a shell reported through `lane report`, the artifact refs its terminal named (#5712) and,
- * on a `BLOCKED`, the closed-set cause of the park (#6480). All three are evidence carried
- * verbatim; the fold reads only `task`/`event`, so a line with or without them folds identically.
+ * event a shell reported through `lane report`, the artifact refs its terminal named (#5712), on a
+ * `BLOCKED`, the closed-set cause of the park (#6480), and the lane classes the recorder observed
+ * at that moment (ADR 0316). The first three are evidence carried verbatim; `classes` is the one
+ * payload the fold reads, because a `class:<name>` guard routes on it.
  */
 export interface LogEntry {
 	readonly task: string;
@@ -32,6 +34,7 @@ export interface LogEntry {
 	readonly pr?: string;
 	readonly comment?: string;
 	readonly cause?: string;
+	readonly classes?: ReadonlyArray<string>;
 }
 
 export type ParseLogResult =
@@ -59,6 +62,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			pr?: unknown;
 			comment?: unknown;
 			cause?: unknown;
+			classes?: unknown;
 		};
 		if (
 			typeof record !== "object" ||
@@ -78,6 +82,16 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(`line ${index + 1} carries a non-string \`pr\`/\`comment\`/\`cause\` field`);
 			continue;
 		}
+		if (
+			record.classes !== undefined &&
+			!(
+				Array.isArray(record.classes) &&
+				record.classes.every((name) => typeof name === "string" && name !== "")
+			)
+		) {
+			defects.push(`line ${index + 1} carries a \`classes\` field that is not a list of names`);
+			continue;
+		}
 		entries.push({
 			task: record.task,
 			event: record.event,
@@ -85,6 +99,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.pr === undefined ? {} : {pr: record.pr}),
 			...(record.comment === undefined ? {} : {comment: record.comment}),
 			...(record.cause === undefined ? {} : {cause: record.cause}),
+			...(record.classes === undefined ? {} : {classes: record.classes as ReadonlyArray<string>}),
 		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};
@@ -128,7 +143,10 @@ export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): F
 	for (const [taskId, task] of Object.entries(lane.tasks)) {
 		const msgs = entries
 			.filter((entry) => entry.task === taskId)
-			.map((entry) => ({type: bareEvent(entry.event)}));
+			.map((entry) => ({
+				type: bareEvent(entry.event),
+				...(entry.classes === undefined ? {} : {classes: entry.classes}),
+			}));
 		try {
 			states[taskId] = foldMsgs(task.machine, task.initial, msgs);
 		} catch (error) {
@@ -262,6 +280,7 @@ export const applyEvent = (
 	taskId: string,
 	event: string,
 	at: string,
+	classes: ReadonlyArray<string> | null = null,
 ): ApplyResult => {
 	if (!isOperatorEvent(event)) {
 		return {
@@ -300,11 +319,12 @@ export const applyEvent = (
 	}
 	let next: TaskState;
 	try {
-		[next] = applyCell<TaskState, {type: string}, never>(
+		[next] = applyCell<TaskState, LaneMsg, never>(
 			taskIn(lane, taskId).machine,
 			stateIn(states, taskId),
 			{
 				type: event,
+				...(classes === null ? {} : {classes}),
 			},
 		);
 	} catch (error) {
@@ -321,7 +341,12 @@ export const applyEvent = (
 			reason: `task "${taskId}" booted in "${next.type}" and left no state to resume — the door leads back to itself`,
 		};
 	}
-	const entry: LogEntry = {task: taskId, event: `${taskId.toUpperCase()}.${event}`, at};
+	const entry: LogEntry = {
+		task: taskId,
+		event: `${taskId.toUpperCase()}.${event}`,
+		at,
+		...(classes === null ? {} : {classes}),
+	};
 	const current = deriveStatus(lane, {...states, [taskId]: next});
 	return {_tag: "Applied", entry, previous, current};
 };

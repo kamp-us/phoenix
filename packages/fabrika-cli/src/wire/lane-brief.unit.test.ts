@@ -19,6 +19,8 @@ import {
 	lanesRoot,
 	RULES,
 	read,
+	SHELL_STATES,
+	shellOf,
 } from "./lane-brief.ts";
 
 const url = (raw: string) => {
@@ -59,17 +61,41 @@ const brief = (ground: LaneGround, fabrika: string, state: LaneBrief["state"]): 
 	fabrika: entry(fabrika),
 	task: "issue",
 	state,
-	shell: state === "build" ? "builder" : state === "review" ? "reviewer" : "shipper",
+	shell: shellOf(state),
 	issue: ISSUE,
 	ground,
 });
 
 const GROUNDS: ReadonlyArray<readonly [string, LaneGround, LaneBrief["state"]]> = [
 	["Pull, mid-construction", {_tag: "Pull", pr: null}, "build"],
+	["Pull, mid-UI-construction", {_tag: "Pull", pr: null}, "build:ui"],
 	["Pull, with the lane's PR", {_tag: "Pull", pr: PR}, "review"],
+	["Pull, at the rendered review", {_tag: "Pull", pr: PR}, "review:ui"],
 	["Tail", {_tag: "Tail", pr: PR, epic: EPIC}, "review"],
 	["Epic child build", {_tag: "Epic", epic: EPIC, branch: ref("epic/40")}, "build"],
+	["Epic child UI build", {_tag: "Epic", epic: EPIC, branch: ref("epic/40")}, "build:ui"],
 ];
+
+describe("the five shell states route through one table", () => {
+	it("routes every state the format admits, and nothing else", () => {
+		expect(SHELL_STATES.map((state) => [state, shellOf(state)])).toEqual([
+			["build", "builder"],
+			["build:ui", "build-ui"],
+			["review", "reviewer"],
+			["review:ui", "review-ui"],
+			["ship", "shipper"],
+		]);
+	});
+
+	it("refuses a `shell:` field that disagrees with the state it was routed from", () => {
+		const artifact = `## Task\nlane: 4\nroot: /home/dev/demlik/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build:ui\nshell: builder\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
+
+		expect(read(artifact)).toMatchObject({
+			_tag: "Malformed",
+			evidence: "shell",
+		});
+	});
+});
 
 describe("the lane-brief carries no repo's own path in its rules", () => {
 	it("names no in-tree fabrika path anywhere in the byte-fixed text", () => {

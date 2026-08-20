@@ -1,4 +1,5 @@
 import {describe, expect, it} from "vitest";
+import {readGoldenFixture} from "../golden-fixture.ts";
 import {
 	choreWorkflow,
 	coderWorkflow,
@@ -6,7 +7,14 @@ import {
 	twoPhaseWorkflow,
 } from "./fixtures.test-support.ts";
 import {applyEvent, foldLog, type LogEntry} from "./fold.ts";
-import {type CompiledLane, compile, OPERATOR_EVENTS, topology} from "./machine.ts";
+import {
+	type CompiledLane,
+	compile,
+	type LaneMsg,
+	OPERATOR_EVENTS,
+	type TaskState,
+	topology,
+} from "./machine.ts";
 
 const compiled = (workflow: unknown) => {
 	const result = compile(workflow);
@@ -24,6 +32,7 @@ const leaves = (
 	lane: CompiledLane,
 	task: string,
 	events: ReadonlyArray<string>,
+	classes: ReadonlyArray<string> | null = null,
 ): ReadonlyArray<string> => {
 	const log: LogEntry[] = [];
 	const statesOf = () => {
@@ -31,12 +40,48 @@ const leaves = (
 		if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
 		return fold.states;
 	};
-	return events.map((event) => {
-		const applied = applyEvent(lane, statesOf(), task, event, "2026-08-17T00:00:00.000Z");
+	return events.map((event, index) => {
+		// Only the first event carries the classes, so these tests also prove they stand afterwards.
+		const applied = applyEvent(
+			lane,
+			statesOf(),
+			task,
+			event,
+			"2026-08-17T00:00:00.000Z",
+			index === 0 ? classes : null,
+		);
 		if (applied._tag !== "Applied") throw new Error(`${task} ${event}: ${applied.reason}`);
 		log.push(applied.entry);
 		return defined(statesOf()[task]).type;
 	});
+};
+
+/**
+ * Every compiled cell of one task, driven and rendered — `state event classes retries -> next
+ * retries`. The topology alone lists which events a state answers; this also pins where each
+ * answer *goes*, which is what a routing change has to move.
+ */
+const cellTable = (lane: CompiledLane, taskId: string): string => {
+	const update = defined(lane.tasks[taskId]).machine.update as Record<
+		string,
+		Record<string, (state: TaskState, msg: LaneMsg) => readonly [TaskState, unknown]>
+	>;
+	const rows: string[] = [];
+	for (const [state, cells] of Object.entries(update)) {
+		for (const event of Object.keys(cells)) {
+			for (const classes of [[] as ReadonlyArray<string>, ["ui"]]) {
+				for (const retries of [0, 2]) {
+					const from: TaskState = {type: state, retries, maxRetries: 2, classes: [], was: "review"};
+					const [next] = defined(cells[event])(from, {type: event, classes});
+					const carried = classes.length === 0 ? "-" : classes.join(",");
+					rows.push(
+						`${state}\t${event}\t${carried}\t${retries}/2\t-> ${next.type}\t${next.retries}/2`,
+					);
+				}
+			}
+		}
+	}
+	return `${rows.join("\n")}\n`;
 };
 
 const defectsOf = (workflow: unknown): string => {
@@ -57,7 +102,12 @@ describe("the compiler — structural recognition", () => {
 
 		expect(lane.phases).toEqual([{name: "pipeline", tasks: ["issue"]}]);
 		expect(lane.terminals).toEqual({complete: "complete", tripped: "tripped"});
-		expect(defined(lane.tasks.issue).initial).toEqual({type: "queued", retries: 0, maxRetries: 2});
+		expect(defined(lane.tasks.issue).initial).toEqual({
+			type: "queued",
+			retries: 0,
+			maxRetries: 2,
+			classes: [],
+		});
 		expect([...defined(lane.tasks.issue).finals].sort()).toEqual(["frozen", "shipped"]);
 		expect([...defined(lane.tasks.issue).errorFinals]).toEqual(["frozen"]);
 		expect([...defined(lane.tasks.issue).openFinals]).toEqual(["frozen"]);
@@ -95,23 +145,64 @@ describe("the compiler — structural recognition", () => {
 		expect(summary.trigger).toBeUndefined();
 	});
 
-	it("re-enters build on a FAIL at ship, and freezes once the retries are spent (#5807)", () => {
+	it("re-reviews on a FAIL at ship, and freezes once the retries are spent (#5807)", () => {
 		const lane = compiled(coderWorkflow());
-		const toShip = ["WIP", "DONE", "PASS"];
-		const roundTrip = ["FAIL", "DONE", "PASS"];
+		// A ship-stage failure is not a construction defect: the PR is green and there is nothing at
+		// `build` to repair, so the retry buys a re-review rather than a builder round (#6688).
+		const roundTrip = ["FAIL", "PASS"];
 
-		expect(leaves(lane, "issue", [...toShip, ...roundTrip, ...roundTrip, "FAIL"])).toEqual([
+		expect(
+			leaves(lane, "issue", ["WIP", "DONE", "PASS", ...roundTrip, ...roundTrip, "FAIL"]),
+		).toEqual(["build", "review", "ship", "review", "ship", "review", "ship", "frozen"]);
+	});
+
+	it("routes a UI-class lane through build:ui and review:ui, and back to build:ui on a FAIL", () => {
+		const lane = compiled(coderWorkflow());
+
+		expect(
+			leaves(lane, "issue", ["WIP", "DONE", "PASS", "FAIL", "DONE", "PASS", "PASS"], ["ui"]),
+		).toEqual(["build:ui", "review", "review:ui", "build:ui", "review", "review:ui", "ship"]);
+	});
+
+	it("leaves a lane carrying no class exactly where it routes today", () => {
+		const lane = compiled(coderWorkflow());
+
+		expect(leaves(lane, "issue", ["WIP", "DONE", "PASS", "DONE"])).toEqual([
 			"build",
 			"review",
 			"ship",
-			"build",
-			"review",
-			"ship",
-			"build",
-			"review",
-			"ship",
-			"frozen",
+			"shipped",
 		]);
+	});
+
+	it("spends no retry on a class arm — the budget is the repair budget alone", () => {
+		const lane = compiled(coderWorkflow());
+		const log: LogEntry[] = [];
+		const statesOf = () => {
+			const fold = foldLog(lane, log);
+			if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
+			return fold.states;
+		};
+		for (const [index, event] of ["WIP", "DONE", "PASS"].entries()) {
+			const applied = applyEvent(
+				lane,
+				statesOf(),
+				"issue",
+				event,
+				"2026-08-17T00:00:00.000Z",
+				index === 0 ? ["ui"] : null,
+			);
+			if (applied._tag !== "Applied") throw new Error(applied.reason);
+			log.push(applied.entry);
+		}
+
+		expect(defined(statesOf().issue)).toEqual({
+			type: "review:ui",
+			was: "review",
+			retries: 0,
+			maxRetries: 2,
+			classes: ["ui"],
+		});
 	});
 
 	it("compiles the committed chore template, carrying its declared trigger", () => {
@@ -124,6 +215,7 @@ describe("the compiler — structural recognition", () => {
 			type: "queued",
 			retries: 0,
 			maxRetries: 2,
+			classes: [],
 		});
 		expect([...defined(lane.tasks.park_sweep).errorFinals]).toEqual(["frozen"]);
 		expect([...defined(lane.tasks.park_sweep).openFinals]).toEqual(["frozen"]);
@@ -186,6 +278,12 @@ describe("the compiler — refusals", () => {
 		];
 
 		expect(defectsOf(workflow)).toContain('unknown machine-level state "compleet"');
+	});
+
+	it("pins the coder template's compiled cell table", () => {
+		expect(cellTable(compiled(coderWorkflow()), "issue")).toEqual(
+			readGoldenFixture(import.meta.url, "./__fixtures__/coder.cells.golden.txt"),
+		);
 	});
 
 	it("refuses a machine-level final no `onDone` pair reaches", () => {

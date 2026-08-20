@@ -54,6 +54,7 @@ const run = (
 		pr?: string | null;
 		comment?: string | null;
 		cause?: string | null;
+		classes?: ReadonlyArray<string>;
 		prover?: ReturnType<typeof fakeProver>;
 	} = {},
 ) =>
@@ -68,6 +69,7 @@ const run = (
 					pr: extra.pr ?? null,
 					comment: extra.comment ?? null,
 					cause: extra.cause ?? null,
+					classes: extra.classes ?? [],
 					repo: "kamp-us/phoenix",
 					cwd: "/repo",
 					env: {},
