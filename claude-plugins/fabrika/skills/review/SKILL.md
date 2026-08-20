@@ -113,7 +113,8 @@ reported as `green` or `pending` — the enumeration was complete and not one ga
 bytes, which reads as safety while carrying none (#6522). The ordinary way in is a branch gone
 conflicted: GitHub stops making `pull_request` runs while a platform-provided check keeps
 reporting on its own trigger. Treat that `16` as a blocked read, not a verdict — the head needs
-runs before anything can be judged on it, so say so and stop rather than grading around it.
+runs before anything can be judged on it, so end the class on `UNKNOWN — the artifact could not
+be read`, naming the `16`, rather than grading around it.
 
 No class checks out the head: content arrives through the verbs as bytes, so the PR's own
 instructions are never loaded to judge the PR. Every namespace's verdict is **comment-only** — no
