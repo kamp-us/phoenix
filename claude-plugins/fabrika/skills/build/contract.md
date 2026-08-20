@@ -435,9 +435,11 @@ convention rule 2).
 
 **Every exclusion is reported with its reason**, so a shortened or empty pool is auditable
 from the answer itself rather than only from the counts. `excluded` is a **reason histogram** —
-`{"audience-not-agent": 155, "out-of-focus": 111}`, one key per reason that refused at least one
+`{"audience-not-agent": 155, "out-of-scope": 111}`, one key per reason that refused at least one
 issue, its value the count — keys ordered count-descending, ties on the reason, so the same board
-always prints the same bytes. A reason is one of `out-of-scope` / `audience-not-agent` /
+always prints the same bytes. (Those two counts are the #5641 measurement, taken before #6325
+renamed the reason `out-of-focus` to `out-of-scope`; the key is the current one, the numbers are
+the older board.) A reason is one of `out-of-scope` / `audience-not-agent` /
 `unreadable` — the outcome set of the [admission test](#admission-test--scope-admission-and-the-audience-axis),
 one reason per outcome — or `no-acceptance-criteria` or `blocked`, this verb's own two axes (below).
 The scanned counts alone cannot tell a working fence from a broken one; the reasons can, and the
