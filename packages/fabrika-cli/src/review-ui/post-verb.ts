@@ -17,6 +17,7 @@
  * misdirected-namespace write is unrepresentable rather than refused.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {exists, readFile} from "../io/fs.ts";
 import {createComment, getComment, listComments} from "../io/issues.ts";
@@ -89,7 +90,11 @@ export interface UploadRequest {
  */
 export type UploadLeg = (
 	request: UploadRequest,
-) => Effect.Effect<UploadResult, never, ChildProcessSpawner.ChildProcessSpawner>;
+) => Effect.Effect<
+	UploadResult,
+	never,
+	HttpClient.HttpClient | ChildProcessSpawner.ChildProcessSpawner
+>;
 
 export interface PostOptions {
 	readonly pr: number;
@@ -227,7 +232,10 @@ export const runPost = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| HttpClient.HttpClient
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		const {pr} = options;

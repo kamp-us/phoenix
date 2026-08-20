@@ -1,6 +1,6 @@
 import {Effect, FileSystem, Layer, Path, PlatformError} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {fakeHttp, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
@@ -150,8 +150,14 @@ const run = (
 	layer: Layer.Layer<FileSystem.FileSystem | Path.Path> = world(),
 ) => {
 	const shell = fakeShell(script);
+	// The upload leg is injected, so nothing here reaches the network; the client is provided only
+	// because the seam `githubAttachmentUploadLeg` runs on is part of `runPost`'s requirements now.
+	const http = fakeHttp([]);
 	return Effect.runPromise(
-		Effect.provide(runPost({...options, ...overrides}), Layer.merge(shell.layer, layer)),
+		Effect.provide(
+			runPost({...options, ...overrides}),
+			Layer.mergeAll(shell.layer, http.layer, layer),
+		),
 	).then((outcome) => ({outcome, calls: shell.calls}));
 };
 

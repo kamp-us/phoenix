@@ -161,7 +161,7 @@ const evidence = leafCommand(
 				env: process.env,
 				tmpRoot: tmpdir(),
 				storeUpload,
-				attachmentUpload: ghAttachmentUpload,
+				attachmentUpload: ghAttachmentUpload(process.env),
 			}),
 		);
 	}),
