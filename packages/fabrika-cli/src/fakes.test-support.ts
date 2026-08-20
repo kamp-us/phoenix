@@ -487,6 +487,8 @@ export const fakeSeams = (
 ): {
 	readonly layer: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient>;
 	readonly calls: ReadonlyArray<string>;
+	/** What each spawn was handed on stdin, aligned with `calls` — a `git commit -F -` claim (#5484). */
+	readonly inputs: ReadonlyArray<string>;
 	readonly requests: ReadonlyArray<string>;
 	readonly bodies: ReadonlyArray<string>;
 	/**
@@ -515,6 +517,7 @@ export const fakeSeams = (
 	return {
 		layer: Layer.merge(shell.layer, http.layer),
 		calls: shell.calls,
+		inputs: shell.inputs,
 		requests: http.calls,
 		bodies: http.bodies,
 		headers: http.headers,

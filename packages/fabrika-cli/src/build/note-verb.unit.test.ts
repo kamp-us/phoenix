@@ -1,6 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
+import {fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
 	BARE_AT_PATH,
@@ -24,12 +24,15 @@ import {
 } from "./fixtures.test-support.ts";
 import {headStamp, runNote} from "./note-verb.ts";
 
+/** The write permission the marker's author holds — what authorizes a claim (ADR 0055). */
+const WRITE = served({permission: "write"});
+
 const IS_PULL = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4310$/;
-const PULL = /^gh api repos\/o\/r\/pulls\/4310$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4310\/comments/;
-const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
-const POST = /^gh api --method POST repos\/o\/r\/issues\/4310\/comments/;
-const GET_COMMENT = /^gh api repos\/o\/r\/issues\/comments\/512346$/;
+const PULL = /GET .*\/repos\/o\/r\/pulls\/4310$/;
+const COMMENTS = /GET .*\/repos\/o\/r\/issues\/4310\/comments/;
+const PERM = /GET .*\/repos\/o\/r\/collaborators\/agent\/permission/;
+const POST = /POST .*\/repos\/o\/r\/issues\/4310\/comments/;
+const GET_COMMENT = /GET .*\/repos\/o\/r\/issues\/comments\/512346$/;
 
 const TEXT = "Round 2 findings addressed: focus restore moved out of the render path.";
 const STAMPED = `${TEXT}\n\n${headStamp(HEAD)}`;
@@ -38,10 +41,10 @@ const CLAIMED: ReadonlyArray<Scripted> = [
 	[IS_PULL, served({number: 4310, pull_request: {url: "…"}})],
 	[PULL, pull({number: 4310})],
 	[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
-	[PERM, okOut("write\n")],
+	[PERM, WRITE],
 ];
 
-const POSTED = okOut(JSON.stringify({id: 512346, html_url: "https://github.com/o/r/pull/4310#c"}));
+const POSTED = served({id: 512346, html_url: "https://github.com/o/r/pull/4310#c"}, 201);
 
 const options = {
 	number: 4310,
@@ -59,12 +62,8 @@ const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options>
 
 describe("runNote", () => {
 	it("stamps a note on a PR with that PR's head SHA (#4808)", async () => {
-		const shell = fakeSeams([
-			...CLAIMED,
-			[POST, POSTED],
-			[GET_COMMENT, okOut(JSON.stringify({body: STAMPED}))],
-		]);
-		const out = await Effect.runPromise(Effect.provide(runNote(options), shell.layer));
+		const seams = fakeSeams([...CLAIMED, [POST, POSTED], [GET_COMMENT, served({body: STAMPED})]]);
+		const out = await Effect.runPromise(Effect.provide(runNote(options), seams.layer));
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({
 			answer: "posted",
@@ -72,16 +71,16 @@ describe("runNote", () => {
 			commentId: 512346,
 			head: HEAD,
 		});
-		expect(shell.calls.some((line) => line.includes(`— at ${HEAD}`))).toBe(true);
+		expect(seams.bodies.some((body) => body.includes(`— at ${HEAD}`))).toBe(true);
 	});
 
 	it("does not stamp a note on a plain issue, and reports head null", async () => {
 		const out = await run([
 			[IS_PULL, served({number: 4310})],
 			[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
-			[PERM, okOut("write\n")],
+			[PERM, WRITE],
 			[POST, POSTED],
-			[GET_COMMENT, okOut(JSON.stringify({body: TEXT}))],
+			[GET_COMMENT, served({body: TEXT})],
 		]);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).head).toBeNull();
@@ -92,13 +91,9 @@ describe("runNote", () => {
 	 * `build tree` just refused, so this verb never runs the tree assertions.
 	 */
 	it("never runs the tree assertions — a refused tree does not silence the report", async () => {
-		const shell = fakeSeams([
-			...CLAIMED,
-			[POST, POSTED],
-			[GET_COMMENT, okOut(JSON.stringify({body: STAMPED}))],
-		]);
-		await Effect.runPromise(Effect.provide(runNote(options), shell.layer));
-		expect(shell.calls.some((line) => /git rev-parse|git status/.test(line))).toBe(false);
+		const seams = fakeSeams([...CLAIMED, [POST, POSTED], [GET_COMMENT, served({body: STAMPED})]]);
+		await Effect.runPromise(Effect.provide(runNote(options), seams.layer));
+		expect(seams.calls.some((line) => /git rev-parse|git status/.test(line))).toBe(false);
 	});
 
 	it("refuses empty stdin on 3", async () => {
@@ -114,18 +109,18 @@ describe("runNote", () => {
 	});
 
 	it("refuses a machine-local path on 5, and posts nothing", async () => {
-		const shell = fakeSeams(CLAIMED);
+		const seams = fakeSeams(CLAIMED);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runNote({
 					...options,
 					stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "see /Users/someone/log.txt"}),
 				}),
-				shell.layer,
+				seams.layer,
 			),
 		);
 		expect(out.code).toBe(LEAKED_PATH);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(seams.requests.some((request) => POST.test(request))).toBe(false);
 	});
 
 	it("refuses a proven-absent target on 7", async () => {
@@ -137,19 +132,19 @@ describe("runNote", () => {
 	});
 
 	it("refuses a foreign claim on 15, and posts nothing", async () => {
-		const shell = fakeSeams([
+		const seams = fakeSeams([
 			[IS_PULL, served({number: 4310, pull_request: {url: "…"}})],
 			[PULL, pull({number: 4310})],
 			[COMMENTS, comments({id: 1, body: marker("s-77aa", LANE_UUID)})],
-			[PERM, okOut("write\n")],
+			[PERM, WRITE],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runNote(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runNote(options), seams.layer));
 		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(seams.requests.some((request) => POST.test(request))).toBe(false);
 	});
 
 	it("refuses a failed write on 8 — UNKNOWN whether it landed", async () => {
-		const out = await run([...CLAIMED, [POST, errOut("gh: Gateway timeout (HTTP 504)")]]);
+		const out = await run([...CLAIMED, [POST, {status: 504, body: "{}"}]]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 	});
 
@@ -157,7 +152,7 @@ describe("runNote", () => {
 		const out = await run([
 			...CLAIMED,
 			[POST, POSTED],
-			[GET_COMMENT, okOut(JSON.stringify({body: "something else"}))],
+			[GET_COMMENT, served({body: "something else"})],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 	});

@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeSeams, linkNext, type Scripted} from "../fakes.test-support.ts";
+import {fakeFs, fakeSeams, linkNext, type Scripted} from "../fakes.test-support.ts";
 import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {FAILED} from "../verb.ts";
 import {BAD_SECTIONS, PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -408,8 +408,8 @@ describe("runPick", () => {
  */
 describe("runPick — the blocked_by graph", () => {
 	const edges = (n: number) =>
-		new RegExp(`^gh api --paginate repos/o/r/issues/${n}/dependencies/blocked_by`);
-	const blocker = (n: number) => new RegExp(`^gh api repos/o/r/issues/${n}$`);
+		new RegExp(`^GET \\S+/repos/o/r/issues/${n}/dependencies/blocked_by`);
+	const blocker = (n: number) => new RegExp(`^GET \\S+/repos/o/r/issues/${n}$`);
 
 	it("excludes a candidate with an open blocker, with `blocked` as its named reason", async () => {
 		const out = await run([
@@ -442,7 +442,7 @@ describe("runPick — the blocked_by graph", () => {
 			[bucket("p0"), candidatePage({number: 500, labels: [...TRIAGED, "p0"]})],
 			[bucket("p1"), EMPTY],
 			[bucket("p2"), EMPTY],
-			[edges(500), errOut("gh: Bad gateway (HTTP 502)")],
+			[edges(500), GATEWAY],
 		]);
 		expect(out.code).toBe(0);
 		expect(pool(out)).toEqual([]);
@@ -467,6 +467,6 @@ describe("runPick — the blocked_by graph", () => {
 			Effect.provide(runPick(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(0);
-		expect(shell.calls.some((line) => /dependencies\/blocked_by/.test(line))).toBe(false);
+		expect(shell.requests.some((line) => /dependencies\/blocked_by/.test(line))).toBe(false);
 	});
 });

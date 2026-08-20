@@ -1,20 +1,30 @@
 import {Effect, FileSystem, Layer, PlatformError} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeFs, fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {CLAIM_NOT_MINE, OFF_VOCABULARY} from "./codes.ts";
-import {comments, issue, LANE_TOKEN, LANE_UUID, marker, NONCE} from "./fixtures.test-support.ts";
+import {
+	comments,
+	issue,
+	LANE_TOKEN,
+	LANE_UUID,
+	marker,
+	NONCE,
+	served,
+} from "./fixtures.test-support.ts";
 import {runScratch} from "./scratch-verb.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
-const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
+/** The write permission the marker's author holds — what authorizes a claim (ADR 0055). */
+const WRITE = served({permission: "write"});
 
-const CLAIMED: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const ISSUE = /GET .*\/repos\/o\/r\/issues\/4312$/;
+const COMMENTS = /GET .*\/repos\/o\/r\/issues\/4312\/comments/;
+const PERM = /GET .*\/repos\/o\/r\/collaborators\/agent\/permission/;
+
+const CLAIMED: ReadonlyArray<Scripted> = [
 	[ISSUE, issue()],
 	[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
-	[PERM, okOut("write\n")],
+	[PERM, WRITE],
 ];
 
 const options = {
@@ -29,14 +39,11 @@ const options = {
 	tmpRoot: "/scratch-root",
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(
 		Effect.provide(
 			runScratch({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, fakeFs({}).layer),
+			Layer.merge(fakeSeams(script).layer, fakeFs({}).layer),
 		),
 	);
 
@@ -68,7 +75,7 @@ describe("runScratch", () => {
 		const out = await run([
 			[ISSUE, issue()],
 			[COMMENTS, comments({id: 1, body: marker("s-77aa", LANE_UUID)})],
-			[PERM, okOut("write\n")],
+			[PERM, WRITE],
 		]);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stdout).toBe("");
@@ -87,7 +94,7 @@ describe("runScratch", () => {
 				),
 		});
 		const out = await Effect.runPromise(
-			Effect.provide(runScratch(options), Layer.merge(fakeShell(CLAIMED).layer, unmakeable)),
+			Effect.provide(runScratch(options), Layer.merge(fakeSeams(CLAIMED).layer, unmakeable)),
 		);
 		expect(out.code).toBe(FAILED);
 		expect(out.stdout).toBe("");

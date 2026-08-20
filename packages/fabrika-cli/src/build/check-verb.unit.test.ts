@@ -38,9 +38,9 @@ const ROOT = "/repo/trees/lane-a";
 
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
 const BRANCH = /^git rev-parse --abbrev-ref HEAD$/;
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
-const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
+const ISSUE = /^GET \S+\/repos\/o\/r\/issues\/4312$/;
+const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4312\/comments/;
+const PERM = /^GET \S+\/repos\/o\/r\/collaborators\/agent\/permission/;
 const REPO_META = /^GET https:\/\/api\.github\.com\/repos\/o\/r$/;
 const MERGE_BASE = /^git merge-base HEAD origin\/main$/;
 const DIFF = /^git diff --name-only /;
@@ -97,7 +97,7 @@ const LANE_OK: ReadonlyArray<Scripted> = [
 	[BRANCH, okOut(`${LANE}\n`)],
 	[ISSUE, issue()],
 	[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
-	[PERM, okOut("write\n")],
+	[PERM, served({permission: "write"})],
 	[REPO_META, served({default_branch: "main"})],
 	[MERGE_BASE, okOut(`${HEAD}\n`)],
 	untracked(""),

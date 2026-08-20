@@ -33,13 +33,16 @@ import {runPr, runPrBody} from "./pr-verb.ts";
 
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
 const BRANCH = /^git rev-parse --abbrev-ref HEAD$/;
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
-const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
+const ISSUE = /^GET \S+\/repos\/o\/r\/issues\/4312$/;
+const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4312\/comments/;
+const PERM = /^GET \S+\/repos\/o\/r\/collaborators\/agent\/permission/;
 const OPEN_PULLS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\?state=open&head=/;
 const REPO_META = /^GET https:\/\/api\.github\.com\/repos\/o\/r$/;
 const CREATE = /^POST https:\/\/api\.github\.com\/repos\/o\/r\/pulls$/;
-const READ_BACK = /^gh api repos\/o\/r\/pulls\/4318$/;
+const READ_BACK = /^GET \S+\/repos\/o\/r\/pulls\/4318$/;
+
+/** The write permission the marker's author holds — what authorizes a claim (ADR 0055). */
+const WRITE = served({permission: "write"});
 
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
 const BODY = "Fixes #4312\n\nEditor focus now survives a save.\n\n## Deviations\nNone.\n";
@@ -49,7 +52,7 @@ const LANE_OK: ReadonlyArray<Scripted> = [
 	[REV_PARSE, GIT_DIRS],
 	[BRANCH, okOut(`${LANE}\n`)],
 	[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
-	[PERM, okOut("write\n")],
+	[PERM, WRITE],
 ];
 
 const options = {
@@ -157,7 +160,8 @@ describe("runPr — the write path", () => {
 			[READ_BACK, pull({body: BODY})],
 		]);
 		await Effect.runPromise(Effect.provide(runPr(options), shell.layer));
-		expect(shell.calls.some((line) => line.includes("body=@"))).toBe(false);
+		const create = shell.requests.findIndex((line) => CREATE.test(line));
+		expect(JSON.parse(shell.bodies[create] ?? "null")).toMatchObject({body: BODY});
 	});
 
 	it("answers `existing` on exit 0 when this head already has an open PR — no duplicate", async () => {
@@ -214,8 +218,15 @@ describe("runPr — the write path", () => {
 const PULL_HEAD = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4318$/;
 const PATCH_BODY = /^PATCH https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4318$/;
 
+/**
+ * The head read, scripted to answer once.
+ *
+ * The head probe and the read-back hit the same endpoint, so a row that matched forever would
+ * answer the read-back with the payload the probe was scripted with — and every read-back test
+ * would compare the body against itself.
+ */
 const head = (overrides: {ref?: string; state?: string; merged?: boolean} = {}): Scripted => [
-	PULL_HEAD,
+	once(PULL_HEAD),
 	served(
 		pullPayload({
 			number: 4318,
@@ -233,7 +244,7 @@ const LANE_ONLY: ReadonlyArray<Scripted> = [
 	[REV_PARSE, GIT_DIRS],
 	[BRANCH, okOut(`${LANE}\n`)],
 	[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
-	[PERM, okOut("write\n")],
+	[PERM, WRITE],
 ];
 
 const bodyOptions = {
@@ -408,10 +419,10 @@ describe("runPrBody — the guarded body-only repair (#5618)", () => {
 			[REV_PARSE, GIT_DIRS],
 			[BRANCH, okOut(`${other}\n`)],
 			[
-				/^gh api --paginate repos\/o\/r\/issues\/9999\/comments/,
+				/^GET \S+\/repos\/o\/r\/issues\/9999\/comments/,
 				comments({id: 1, body: marker("s-9f2e", LANE_UUID)}),
 			],
-			[PERM, okOut("write\n")],
+			[PERM, WRITE],
 			head(),
 		]);
 		expect(out.code).toBe(WRONG_LANE);
@@ -423,7 +434,7 @@ describe("runPrBody — the guarded body-only repair (#5618)", () => {
 			[REV_PARSE, GIT_DIRS],
 			[BRANCH, okOut(`${LANE}\n`)],
 			[COMMENTS, comments()],
-			[PERM, okOut("write\n")],
+			[PERM, WRITE],
 			head(),
 			[PATCH_BODY, PATCHED],
 		]);

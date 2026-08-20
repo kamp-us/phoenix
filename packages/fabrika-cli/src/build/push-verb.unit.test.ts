@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeSeams, okOut, once, type Scripted} from "../fakes.test-support.ts";
 import {
 	CLAIM_NOT_MINE,
 	HEAD_DROPS_REMOTE,
@@ -20,14 +19,18 @@ import {
 	marker,
 	NONCE,
 	OLD_HEAD,
+	served,
 } from "./fixtures.test-support.ts";
 import {runPush} from "./push-verb.ts";
 
+/** The write permission the marker's author holds — what authorizes a claim (ADR 0055). */
+const WRITE = served({permission: "write"});
+
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
 const BRANCH = /^git rev-parse --abbrev-ref HEAD$/;
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
-const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
+const ISSUE = /^GET \S+\/repos\/o\/r\/issues\/4312$/;
+const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4312\/comments/;
+const PERM = /^GET \S+\/repos\/o\/r\/collaborators\/agent\/permission/;
 const HEAD_SHA = /^git rev-parse HEAD$/;
 const UPSTREAM = /^git rev-parse --abbrev-ref --symbolic-full-name /;
 const LS_REMOTE = /^git ls-remote origin /;
@@ -39,12 +42,12 @@ const LOG = /^git log /;
 
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
 
-const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const LANE_OK: ReadonlyArray<Scripted> = [
 	[REV_PARSE, GIT_DIRS],
 	[BRANCH, okOut(`${LANE}\n`)],
 	[ISSUE, issue()],
 	[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
-	[PERM, okOut("write\n")],
+	[PERM, WRITE],
 	[HEAD_SHA, okOut(`${HEAD}\n`)],
 	[UPSTREAM, errOut("fatal: no upstream")],
 	// The remote head is in this object database, so the containment test has both commits.
@@ -61,11 +64,8 @@ const options = {
 	>,
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
-	Effect.runPromise(Effect.provide(runPush({...options, ...overrides}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runPush({...options, ...overrides}), fakeSeams(script).layer));
 
 describe("runPush", () => {
 	it("puts the WHOLE report on stdout, with the verdict line last", async () => {
@@ -83,15 +83,15 @@ describe("runPush", () => {
 	});
 
 	it("proves MOVED by reading the remote ref back, not by git push's own report (#4136)", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			...LANE_OK,
 			[/^git remote$/, okOut("origin\n")],
 			[LS_REMOTE, okOut(`${HEAD}\trefs/heads/${LANE}\n`)],
 			[ANCESTOR, okOut("")],
 			[PUSH, errOut("everything up-to-date")],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runPush(options), shell.layer));
-		expect(shell.calls.filter((line) => LS_REMOTE.test(line)).length).toBeGreaterThanOrEqual(2);
+		const out = await Effect.runPromise(Effect.provide(runPush(options), seams.layer));
+		expect(seams.calls.filter((line) => LS_REMOTE.test(line)).length).toBeGreaterThanOrEqual(2);
 		expect(out.code).toBe(0);
 	});
 
@@ -127,22 +127,22 @@ describe("runPush", () => {
 	});
 
 	it("refuses a non-fast-forward without --force-with-lease on 19, and pushes nothing", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			...LANE_OK,
 			[/^git remote$/, okOut("origin\n")],
 			[LS_REMOTE, okOut(`${OLD_HEAD}\trefs/heads/${LANE}\n`)],
 			[ANCESTOR, errOut("")],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runPush(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runPush(options), seams.layer));
 		expect(out.code).toBe(UNSAFE_PUSH);
 		expect(out.stderr.at(-1)).toBe(
 			"build push: non-fast-forward — pass --force-with-lease only for this lane's own repair resubmission.",
 		);
-		expect(shell.calls.some((line) => PUSH.test(line))).toBe(false);
+		expect(seams.calls.some((line) => PUSH.test(line))).toBe(false);
 	});
 
 	it("passes --force-with-lease through, and never a bare --force or --no-verify", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			...LANE_OK,
 			[/^git remote$/, okOut("origin\n")],
 			[LS_REMOTE, okOut(`${HEAD}\trefs/heads/${LANE}\n`)],
@@ -150,24 +150,24 @@ describe("runPush", () => {
 			[PUSH, okOut("")],
 		]);
 		await Effect.runPromise(
-			Effect.provide(runPush({...options, forceWithLease: true}), shell.layer),
+			Effect.provide(runPush({...options, forceWithLease: true}), seams.layer),
 		);
-		const pushed = shell.calls.find((line) => PUSH.test(line)) ?? "";
+		const pushed = seams.calls.find((line) => PUSH.test(line)) ?? "";
 		expect(pushed).toContain("--force-with-lease");
 		expect(pushed).not.toMatch(/--force(?!-with-lease)/);
 		expect(pushed).not.toContain("--no-verify");
 	});
 
 	it("pushes to the TRACKED UPSTREAM when there is one — resume mode's local name differs", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[REV_PARSE, GIT_DIRS],
 			[BRANCH, okOut(`build/pr-4310-${NONCE}\n`)],
-			[/^gh api repos\/o\/r\/issues\/4310$/, issue({number: 4310})],
+			[/^GET \S+\/repos\/o\/r\/issues\/4310$/, issue({number: 4310})],
 			[
-				/^gh api --paginate repos\/o\/r\/issues\/4310\/comments/,
+				/^GET \S+\/repos\/o\/r\/issues\/4310\/comments/,
 				comments({id: 1, body: marker("s-9f2e", LANE_UUID)}),
 			],
-			[PERM, okOut("write\n")],
+			[PERM, WRITE],
 			[HEAD_SHA, okOut(`${HEAD}\n`)],
 			[UPSTREAM, okOut("origin/umut/fix-focus\n")],
 			[PRESENT, okOut(`${HEAD}\n`)],
@@ -176,15 +176,15 @@ describe("runPush", () => {
 			[ANCESTOR, okOut("")],
 			[PUSH, okOut("")],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runPush(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runPush(options), seams.layer));
 		expect(out.code).toBe(0);
-		expect(shell.calls).toContain("git push origin HEAD:refs/heads/umut/fix-focus");
+		expect(seams.calls).toContain("git push origin HEAD:refs/heads/umut/fix-focus");
 	});
 
 	// The repair path mandates --force-with-lease, and the lease is blind to THIS lane dropping the
 	// remote's own commits — so these four are the containment contract (#5222).
 	it("refuses on 23 when the force-path head does not contain the remote head, and pushes nothing", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			...LANE_OK,
 			[/^git remote$/, okOut("origin\n")],
 			[LS_REMOTE, okOut(`${OLD_HEAD}\trefs/heads/${LANE}\n`)],
@@ -193,11 +193,11 @@ describe("runPush", () => {
 			[PUSH, okOut("")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runPush({...options, forceWithLease: true}), shell.layer),
+			Effect.provide(runPush({...options, forceWithLease: true}), seams.layer),
 		);
 		expect(out.code).toBe(HEAD_DROPS_REMOTE);
 		expect(out.stdout).toBe("");
-		expect(shell.calls.some((line) => PUSH.test(line))).toBe(false);
+		expect(seams.calls.some((line) => PUSH.test(line))).toBe(false);
 		const said = out.stderr.at(-1) ?? "";
 		expect(said).toContain(`does not contain origin/${LANE} (${OLD_HEAD})`);
 		expect(said).toContain("a1b2c3d restore the 20 workflow triggers");
@@ -205,7 +205,7 @@ describe("runPush", () => {
 	});
 
 	it("publishes the dropping head only when --drop-remote-commits says so, and says it did", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			...LANE_OK,
 			[/^git remote$/, okOut("origin\n")],
 			[once(LS_REMOTE), okOut(`${OLD_HEAD}\trefs/heads/${LANE}\n`)],
@@ -216,7 +216,7 @@ describe("runPush", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runPush({...options, forceWithLease: true, dropRemoteCommits: true}),
-				shell.layer,
+				seams.layer,
 			),
 		);
 		expect(out.code).toBe(0);
@@ -225,7 +225,7 @@ describe("runPush", () => {
 	});
 
 	it("refuses on 11 when the remote head is unreadable locally — UNKNOWN, never 'not contained'", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			...LANE_OK.filter(([pattern]) => pattern !== PRESENT),
 			[/^git remote$/, okOut("origin\n")],
 			[LS_REMOTE, okOut(`${OLD_HEAD}\trefs/heads/${LANE}\n`)],
@@ -233,12 +233,12 @@ describe("runPush", () => {
 			[FETCH, errOut("fatal: could not read from remote repository")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runPush({...options, forceWithLease: true}), shell.layer),
+			Effect.provide(runPush({...options, forceWithLease: true}), seams.layer),
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
-		expect(shell.calls.some((line) => PUSH.test(line))).toBe(false);
-		expect(shell.calls.some((line) => FETCH.test(line))).toBe(true);
+		expect(seams.calls.some((line) => PUSH.test(line))).toBe(false);
+		expect(seams.calls.some((line) => FETCH.test(line))).toBe(true);
 		expect(out.stderr.at(-1)).toContain("cannot prove containment");
 	});
 
@@ -267,15 +267,15 @@ describe("runPush", () => {
 	});
 
 	it("refuses a foreign claim on 15, and pushes nothing", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[REV_PARSE, GIT_DIRS],
 			[BRANCH, okOut(`${LANE}\n`)],
 			[ISSUE, issue()],
 			[COMMENTS, comments({id: 1, body: marker("s-77aa", LANE_UUID)})],
-			[PERM, okOut("write\n")],
+			[PERM, WRITE],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runPush(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runPush(options), seams.layer));
 		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(shell.calls.some((line) => PUSH.test(line))).toBe(false);
+		expect(seams.calls.some((line) => PUSH.test(line))).toBe(false);
 	});
 });

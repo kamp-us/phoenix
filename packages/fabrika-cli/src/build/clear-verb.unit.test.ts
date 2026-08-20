@@ -1,22 +1,24 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs, fakeHttp, fakeShell, type HttpReply, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
 import {compileText} from "../lane/machine.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {type DocumentRead, runClear} from "./clear-verb.ts";
 import {AUTHORIZATION_VOID, GRANT_UNAUTHORIZED, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {comments, HEAD, PRIOR_HEADS, pull} from "./fixtures.test-support.ts";
+import {comments, HEAD, PRIOR_HEADS, pull, served} from "./fixtures.test-support.ts";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4310$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4310\/comments/;
-const VIEWER = /^gh api user --jq \.login$/;
+const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4310$/;
+const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4310\/comments/;
+const VIEWER = /^GET https:\/\/api\.github\.com\/user$/;
 const CONFIG = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
 const TEAM = /orgs\/kamp-us\/teams\/control-plane\/members/;
-const PERMISSION = /^gh api repos\/o\/r\/collaborators\/usirin\/permission/;
-const POST = /^gh api --method POST repos\/o\/r\/issues\/4310\/comments/;
-const GET_COMMENT = /^gh api repos\/o\/r\/issues\/comments\/(\d+)$/;
+const PERMISSION = /^GET \S+\/repos\/o\/r\/collaborators\/usirin\/permission/;
+const POST = /^POST \S+\/repos\/o\/r\/issues\/4310\/comments/;
+const GET_COMMENT = /^GET \S+\/repos\/o\/r\/issues\/comments\/\d+$/;
+
+const viewer = (login: string): HttpReply => served({login});
+const permission = (level: string): HttpReply => served({permission: level});
 
 const WORKFLOW = ".fabrika/lanes/4312/workflow.json";
 const NOW = new Date("2026-08-18T07:16:03Z");
@@ -34,7 +36,7 @@ const CONFIGURED: HttpReply = {
 	status: 200,
 	body: '{\n\t// the founder accounts\n\t"capClearAuthors": ["@usirin"]\n}\n',
 };
-const POSTED = (id: number): ExecResult => okOut(JSON.stringify({id, html_url: "https://x/y#c"}));
+const POSTED = (id: number): HttpReply => served({id, html_url: "https://x/y#c"}, 201);
 
 const document = (text: string): Effect.Effect<DocumentRead> =>
 	Effect.succeed(text === "" ? {_tag: "Failed", reason: "no such file"} : {_tag: "Text", text});
@@ -51,38 +53,44 @@ const options = {
 };
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	files: Record<string, string | null> = {},
-	http: ReadonlyArray<readonly [RegExp, HttpReply]> = [[CONFIG, CONFIGURED]],
+	config: ReadonlyArray<Scripted> = [[CONFIG, CONFIGURED]],
 ) => {
-	const shell = fakeShell(script);
+	const seams = fakeSeams([...script, ...config]);
 	const fs = fakeFs({files});
 	return Effect.runPromise(
-		Effect.provide(
-			runClear({...options, ...overrides}),
-			Layer.mergeAll(shell.layer, fs.layer, fakeHttp(http).layer),
-		),
-	).then((outcome) => ({outcome, inputs: shell.inputs, calls: shell.calls, written: fs.written}));
+		Effect.provide(runClear({...options, ...overrides}), Layer.merge(seams.layer, fs.layer)),
+	).then((outcome) => ({
+		outcome,
+		requests: seams.requests,
+		bodies: seams.bodies,
+		written: fs.written,
+	}));
 };
 
-const GRANTABLE: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+/** The bodies of the requests that wrote, in order — what the two posted comments carried. */
+const postedBodies = (
+	requests: ReadonlyArray<string>,
+	bodies: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+	bodies.filter((_, index) => requests[index]?.startsWith("POST") === true);
+
+const GRANTABLE: ReadonlyArray<Scripted> = [
 	[PULL, pull({number: 4310, base: {ref: "main"}})],
 	[COMMENTS, THREE_ROUNDS],
-	[VIEWER, okOut("usirin\n")],
-	[PERMISSION, okOut("admin\n")],
+	[VIEWER, viewer("usirin")],
+	[PERMISSION, permission("admin")],
 ];
 
 describe("runClear", () => {
 	it("posts the authorization first and the marker second, then answers `cleared`", async () => {
-		const {outcome, calls} = await run(
+		const {outcome, requests, bodies} = await run(
 			[
 				...GRANTABLE,
 				[POST, POSTED(900)],
-				[
-					GET_COMMENT,
-					okOut(JSON.stringify({body: "cap-cleared: round 3 · 2026-08-18T07:16:03Z\n"})),
-				],
+				[GET_COMMENT, served({body: "cap-cleared: round 3 · 2026-08-18T07:16:03Z\n"})],
 			],
 			{},
 			{[WORKFLOW]: coderTemplateText()},
@@ -91,7 +99,7 @@ describe("runClear", () => {
 		const parsed = JSON.parse(outcome.stdout);
 		expect(parsed).toMatchObject({round: CAP_ROUND, by: "usirin", resolvesTo: "cleared"});
 		expect(parsed.cap).toBe(CAP_ROUND + 1);
-		const posted = calls.filter((line) => line.includes("--method POST"));
+		const posted = postedBodies(requests, bodies);
 		expect(posted[0]).toContain("Founder ruling 2026-08-18");
 		expect(posted[1]).toContain("cap-cleared: round 3");
 	});
@@ -101,10 +109,7 @@ describe("runClear", () => {
 			[
 				...GRANTABLE,
 				[POST, POSTED(900)],
-				[
-					GET_COMMENT,
-					okOut(JSON.stringify({body: "cap-cleared: round 3 · 2026-08-18T07:16:03Z\n"})),
-				],
+				[GET_COMMENT, served({body: "cap-cleared: round 3 · 2026-08-18T07:16:03Z\n"})],
 			],
 			{},
 			{[WORKFLOW]: coderTemplateText()},
@@ -115,13 +120,13 @@ describe("runClear", () => {
 	});
 
 	it("refuses an account outside the configured set, writing nothing", async () => {
-		const {outcome, calls} = await run([
+		const {outcome, requests} = await run([
 			[PULL, pull({number: 4310, base: {ref: "main"}})],
 			[COMMENTS, THREE_ROUNDS],
-			[VIEWER, okOut("someone-else\n")],
+			[VIEWER, viewer("someone-else")],
 		]);
 		expect(outcome.code).toBe(GRANT_UNAUTHORIZED);
-		expect(calls.some((line) => /--method POST/.test(line))).toBe(false);
+		expect(requests.some((request) => request.startsWith("POST"))).toBe(false);
 	});
 
 	it("refuses when the repo configures nobody — an absent config grants nobody (#5959)", async () => {
@@ -129,7 +134,7 @@ describe("runClear", () => {
 			[
 				[PULL, pull({number: 4310, base: {ref: "main"}})],
 				[COMMENTS, THREE_ROUNDS],
-				[VIEWER, okOut("usirin\n")],
+				[VIEWER, viewer("usirin")],
 			],
 			{},
 			{},
@@ -143,7 +148,7 @@ describe("runClear", () => {
 			[
 				[PULL, pull({number: 4310, base: {ref: "main"}})],
 				[COMMENTS, THREE_ROUNDS],
-				[VIEWER, okOut("usirin\n")],
+				[VIEWER, viewer("usirin")],
 			],
 			{},
 			{},
@@ -156,11 +161,11 @@ describe("runClear", () => {
 	});
 
 	it("refuses a bare stamp — an authorization with no date is void (#4938)", async () => {
-		const {outcome, calls} = await run(GRANTABLE, {
+		const {outcome, requests} = await run(GRANTABLE, {
 			authorization: document("one more round, go ahead"),
 		});
 		expect(outcome.code).toBe(AUTHORIZATION_VOID);
-		expect(calls).toEqual([]);
+		expect(requests).toEqual([]);
 	});
 
 	it("refuses an empty authorization before reading anything", async () => {
@@ -182,7 +187,7 @@ describe("runClear", () => {
 					createdAt: "2026-08-18T01:00:00Z",
 				}),
 			],
-			[VIEWER, okOut("usirin\n")],
+			[VIEWER, viewer("usirin")],
 		]);
 		expect(outcome.code).toBe(ZERO_SCOPE);
 	});
@@ -205,13 +210,10 @@ describe("runClear", () => {
 						{id: 6, body: `review-code: FAIL @ ${HEAD} — four`, createdAt: "2026-08-18T04:00:00Z"},
 					),
 				],
-				[VIEWER, okOut("usirin\n")],
-				[PERMISSION, okOut("admin\n")],
+				[VIEWER, viewer("usirin")],
+				[PERMISSION, permission("admin")],
 				[POST, POSTED(901)],
-				[
-					GET_COMMENT,
-					okOut(JSON.stringify({body: "cap-cleared: round 4 · 2026-08-18T07:16:03Z\n"})),
-				],
+				[GET_COMMENT, served({body: "cap-cleared: round 4 · 2026-08-18T07:16:03Z\n"})],
 			],
 			{},
 			{[WORKFLOW]: coderTemplateText()},
@@ -224,23 +226,23 @@ describe("runClear", () => {
 
 	/** A committed set narrows the ACL; it never stands in for one (ADR 0055, ADR 0294). */
 	it("refuses a configured account that resolves below write at the ACL", async () => {
-		const {outcome, calls} = await run([
+		const {outcome, requests} = await run([
 			[PULL, pull({number: 4310, base: {ref: "main"}})],
 			[COMMENTS, THREE_ROUNDS],
-			[VIEWER, okOut("usirin\n")],
-			[PERMISSION, okOut("read\n")],
+			[VIEWER, viewer("usirin")],
+			[PERMISSION, permission("read")],
 		]);
 		expect(outcome.code).toBe(GRANT_UNAUTHORIZED);
 		expect(outcome.stderr.at(-1)).toContain("below write");
-		expect(calls.some((line) => /--method POST/.test(line))).toBe(false);
+		expect(requests.some((request) => request.startsWith("POST"))).toBe(false);
 	});
 
 	it("holds an unreadable permission UNKNOWN rather than granting on the config alone", async () => {
 		const {outcome} = await run([
 			[PULL, pull({number: 4310, base: {ref: "main"}})],
 			[COMMENTS, THREE_ROUNDS],
-			[VIEWER, okOut("usirin\n")],
-			[PERMISSION, {ok: false, stdout: "", reason: "HTTP 502"}],
+			[VIEWER, viewer("usirin")],
+			[PERMISSION, {status: 502, body: "{}"}],
 		]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
@@ -250,7 +252,7 @@ describe("runClear", () => {
 	 * now makes the budget test say "not spent". The re-run must reconcile the lane, not refuse on 7.
 	 */
 	it("reconciles the lane on a re-run for a round already granted, posting nothing", async () => {
-		const {outcome, calls, written} = await run(
+		const {outcome, requests, written} = await run(
 			[
 				[PULL, pull({number: 4310, base: {ref: "main"}})],
 				[
@@ -266,8 +268,8 @@ describe("runClear", () => {
 						},
 					),
 				],
-				[VIEWER, okOut("usirin\n")],
-				[PERMISSION, okOut("admin\n")],
+				[VIEWER, viewer("usirin")],
+				[PERMISSION, permission("admin")],
 			],
 			{},
 			{[WORKFLOW]: coderTemplateText()},
@@ -279,7 +281,7 @@ describe("runClear", () => {
 			authorization: 4,
 			resolvesTo: "reconciled",
 		});
-		expect(calls.some((line) => /--method POST/.test(line))).toBe(false);
+		expect(requests.some((request) => request.startsWith("POST"))).toBe(false);
 		const compiled = compileText(written.get(WORKFLOW) ?? "");
 		if (compiled._tag !== "Compiled") throw new Error("the lane document did not recompile");
 		expect(compiled.lane.tasks.issue?.initial.maxRetries).toBe(RETRY_BUDGET + 1);
