@@ -25,7 +25,7 @@ import {
 	withColdStartRetryFetch,
 } from "./features/fate-live/cold-start-retry.ts";
 import {connectionOf, LiveDO, LiveDOLive, topicOf} from "./features/fate-live/live-do.ts";
-import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.ts";
+import {deliverFrameOf} from "./features/fate-live/protocol.ts";
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
 import {Flagship, FlagshipLive} from "./features/flagship/Flagship.ts";
 import {Flagship as FlagshipResource} from "./features/flagship/resources.ts";
@@ -46,19 +46,6 @@ class RequestHandlerError extends Schema.TaggedErrorClass<RequestHandlerError>()
 	"web/RequestHandlerError",
 	{cause: Schema.Defect()},
 ) {}
-
-/**
- * `id` (the fate subscription id) is left empty: one publish fans out to many
- * subscriptions, each stamped with its own id by the topic instance at delivery.
- */
-function deliverFrameOf(message: PublishMessage): DeliverFrame {
-	return {
-		kind: message.kind === "entity" ? "next" : "connection",
-		id: "",
-		event: message.frame,
-		...(message.eventId !== undefined ? {eventId: message.eventId} : {}),
-	};
-}
 
 export class Phoenix extends Cloudflare.Worker<
 	Phoenix,

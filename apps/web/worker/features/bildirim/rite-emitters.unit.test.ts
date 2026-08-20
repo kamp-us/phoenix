@@ -47,6 +47,7 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 const noopLivePublisher = Layer.succeed(LivePublisher)({
 	update: () => Effect.void,
 	delete: () => Effect.void,
+	invalidate: () => Effect.void,
 	topic: () => {
 		throw new Error("noopLivePublisher.topic unused");
 	},

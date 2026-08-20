@@ -7,13 +7,16 @@
 
 import {assert, it} from "@effect/vitest";
 import {Effect} from "effect";
-import {expectTypeOf, it as vit} from "vitest";
+import {describe, expectTypeOf, it as vit} from "vitest";
 import {
 	type ConnectionId,
+	deliverFrameOf,
 	type EntityId,
+	encodeFrame,
 	type LiveControlOperation,
 	type LiveControlRequest,
 	LiveTopic,
+	type PublishMessage,
 	parseLiveControlRequest,
 } from "./protocol.ts";
 
@@ -52,6 +55,35 @@ it.effect("rejects a subscribeConnection on an unregistered procedure with BAD_R
 		assert.strictEqual(error.code, "BAD_REQUEST");
 	}),
 );
+
+describe("an entity invalidate relays as a `next` frame", () => {
+	const message = {
+		kind: "entity",
+		match: {type: "Post", entityId: "p1"},
+		frame: {type: "invalidate", id: "p1"},
+		eventId: "e1",
+	} as const satisfies PublishMessage;
+
+	vit("takes the entity publish's `next` SSE event name, like every other entity frame", () => {
+		assert.deepStrictEqual(deliverFrameOf(message), {
+			kind: "next",
+			id: "",
+			event: {type: "invalidate", id: "p1"},
+			eventId: "e1",
+		});
+	});
+
+	vit("serializes on fate's `next` SSE event, carrying no entity payload", () => {
+		assert.strictEqual(
+			encodeFrame(deliverFrameOf(message)),
+			`id: e1\nevent: next\ndata: ${JSON.stringify({
+				event: {type: "invalidate", id: "p1"},
+				id: "",
+				kind: "next",
+			})}\n\n`,
+		);
+	});
+});
 
 // Pinned with expectTypeOf, not `@ts-expect-error` — the effect LSP plugin's TS377003
 // escapes the directive (see vote-boundary.unit.test.ts).

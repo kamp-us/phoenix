@@ -72,6 +72,16 @@ export class LivePublisher extends Context.Service<
 			id: string | number,
 			options?: LiveEventOptions,
 		) => Effect.Effect<void>;
+		/**
+		 * Tell every subscriber holding this row to read it again. Carries no data by
+		 * design: the true new value of a viewer-derived field differs per reader, so a
+		 * broadcast payload is exactly what the re-read exists to avoid (ADR 0314).
+		 */
+		readonly invalidate: (
+			type: string,
+			id: string | number,
+			options?: LiveEventOptions,
+		) => Effect.Effect<void>;
 		readonly topic: (procedure: string, args?: Record<string, unknown>) => LiveTopicPublisher;
 	}
 >()("fate-effect/LivePublisher") {}
