@@ -15,12 +15,10 @@ fabrika is and how to run it, read [the guide](../../claude-plugins/fabrika/guid
 pnpm add --global @kampus/fabrika-cli
 ```
 
-> [!IMPORTANT]
-> **The package is not published yet, so the line above does not work today.** It answers a
-> registry 404. Publishing needs npm Trusted Publishing registered against this repo plus a
-> one-time bootstrap publish, tracked by
-> [#4791](https://github.com/kamp-us/phoenix/issues/4791). Until then a bare `fabrika` exits `127`
-> on a machine with no global install, and inside a phoenix checkout the fallback is
+> [!NOTE]
+> The package is on the public npm registry, so the line above works. A bare `fabrika` still exits
+> `127` on a machine that has not installed it — the shell reporting that nothing ran, never a
+> verdict. Inside a phoenix checkout the no-install fallback is
 > `node packages/fabrika-cli/src/bin.ts …`.
 
 `fabrika` is installed globally once, and the binary decides for itself which copy runs. On startup
