@@ -98,7 +98,13 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 		const clearance = yield* clear(options, task, parked.recipe);
 		if (clearance._tag === "Refused") return clearance.outcome;
 
-		const recorded = yield* runTransition({...ref, event: "UNBLOCKED", task, cause: null});
+		const recorded = yield* runTransition({
+			...ref,
+			event: "UNBLOCKED",
+			task,
+			cause: null,
+			classes: [],
+		});
 		if (recorded.code !== 0) {
 			return relayRefusal(VERB, "fabrika lane transition", recorded, laneExit(recorded.code));
 		}

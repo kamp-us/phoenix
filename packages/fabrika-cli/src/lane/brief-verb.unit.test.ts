@@ -59,8 +59,15 @@ const closingPulls = (...rows: ReadonlyArray<readonly [number, string]>): ExecRe
 		}),
 	);
 
-/** A single-issue lane at `lane`, with one log line per operator event already recorded. */
-const lane = (id: string, events: ReadonlyArray<string>) =>
+/**
+ * A single-issue lane at `lane`, with one log line per operator event already recorded. `classes`
+ * rides the first event, which is where a UI-class lane's own routing is decided.
+ */
+const lane = (
+	id: string,
+	events: ReadonlyArray<string>,
+	classes: ReadonlyArray<string> | null = null,
+) =>
 	fakeFs({
 		files: {
 			[`${ROOT}/${id}/workflow.json`]: coderTemplateText(),
@@ -68,11 +75,12 @@ const lane = (id: string, events: ReadonlyArray<string>) =>
 				events.length === 0
 					? null
 					: `${events
-							.map((event) =>
+							.map((event, index) =>
 								JSON.stringify({
 									task: "issue",
 									event: `ISSUE.${event}`,
 									at: "2026-08-17T00:00:00Z",
+									...(index === 0 && classes !== null ? {classes} : {}),
 								}),
 							)
 							.join("\n")}\n`,
@@ -201,6 +209,32 @@ describe("lane brief", () => {
 				issue: ISSUE_URL,
 				ground: {_tag: "Pull", pr: PR_URL},
 			},
+		});
+	});
+
+	it("briefs the ui-builder shell on a `build:ui` state, still with no PR", async () => {
+		const out = await run(lane("5751", ["WIP"], ["ui"]), [
+			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+			[PR_CLOSERS, closingPulls()],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {state: "build:ui", shell: "ui-builder", ground: {_tag: "Pull", pr: null}},
+		});
+	});
+
+	it("briefs the ui-reviewer shell on a `review:ui` state, over the same one PR", async () => {
+		const out = await run(lane("5751", ["WIP", "DONE", "PASS"], ["ui"]), [
+			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+			[PR_CLOSERS, closingPulls([5790, PR_URL])],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {state: "review:ui", shell: "ui-reviewer", ground: {_tag: "Pull", pr: PR_URL}},
 		});
 	});
 

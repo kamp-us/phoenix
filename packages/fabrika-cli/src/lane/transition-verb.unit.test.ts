@@ -23,9 +23,10 @@ const run = (
 	event: string,
 	task: string | null = null,
 	cause: string | null = null,
+	classes: ReadonlyArray<string> = [],
 ) =>
 	Effect.runPromise(
-		Effect.provide(runTransition({root: ROOT, lane: "42", event, task, cause}), fs.layer),
+		Effect.provide(runTransition({root: ROOT, lane: "42", event, task, cause, classes}), fs.layer),
 	);
 
 const freshLane = (log?: string, extra: Parameters<typeof fakeFs>[0] = {}) =>

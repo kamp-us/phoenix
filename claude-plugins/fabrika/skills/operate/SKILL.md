@@ -167,7 +167,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | Leaf state | Action |
 | --- | --- |
 | `queued` | record `WIP` — the task enters build |
-| `build` / `review` / `ship` | dispatch through `lane brief` — below |
+| `build` / `build:ui` / `review` / `review:ui` / `ship` | dispatch through `lane brief` — below |
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
 | a task's own final — `landed`, `shipped` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final |
@@ -184,7 +184,8 @@ node <fabrika> lane brief $lane_key --task <name>
 
 Its stdout is the whole prompt — send those bytes to the spawn verbatim and add nothing to them. It
 derives every value: the state from the same fold you just read, the shell from its own routing
-table (`build` → builder, `review` → reviewer, `ship` → shipper), the issue and PR URLs off the
+table (`build` → builder, `build:ui` → ui-builder, `review` → reviewer, `review:ui` → ui-reviewer,
+`ship` → shipper), the issue and PR URLs off the
 board, your lanes root resolved absolute so the shell's `lane report` addresses this ledger rather
 than its own worktree's (#5736), the fabrika entrypoint resolved for this repo so the shell runs a
 path that exists there (#6012), and its rules from byte-fixed text the `lane-brief` wire format owns
@@ -413,6 +414,14 @@ node <fabrika> lane transition $lane_key DONE
 
 (On a multi-task lane, address both verbs with `--task <name>`, the name exactly as `lane status`
 prints it; a single-task lane tolerates omission.)
+
+**`--class` is how a UI lane reaches its own shells.** The machine's `build:ui` and `review:ui`
+states are entered by a guarded arm reading the classes standing over the task, and those classes
+ride the event line the way `--cause` does. So a lane whose work is a rendered surface takes
+`--class ui` on the `WIP` you record before spawning the builder, and it stands from there — the
+`PASS` out of `review` routes to `review:ui` without you naming it again. **Relay it, never derive
+it**: the class comes off a shipped verb's answer (`ship scope` / `review scope` at a head, the
+issue's own labels before one exists), not off your reading of the diff (ADR 0228).
 
 `lane prove` reads the two events a report can lie about — a `DONE` out of `build` and a `PASS` out
 of `review` — and answers `not-required` at exit `0` for every other one, so it is run on every
