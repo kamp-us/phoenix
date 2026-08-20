@@ -25,7 +25,7 @@
  *
  * `governance` is the one namespace the caller cannot decline: see {@link requiredWithFloor}.
  *
- * `routed` is the fifth state and the newest (ADR 0315). It is not a verdict and not a weaker pass:
+ * `routed` is the fifth state and the newest (ADR 0316). It is not a verdict and not a weaker pass:
  * it is a gate recording that this PR's diff holds nothing its rubric is about, which `review-ui`
  * alone needed because its emit path cannot produce a verdict over zero rendered surfaces. See
  * {@link ROUTABLE} for why exactly one namespace may resolve that way.
@@ -68,12 +68,12 @@ export type Carrier = "marker" | "advisory" | "review-fold" | "routed-elsewhere"
  * The record exists because `review-ui`'s emit path is *structurally* unable to answer a PR that
  * renders nothing — `render` refuses zero surfaces, `post` requires a capture set — so the class
  * `ship scope` raises off a path test can name a namespace nothing legal could fill (#6376, ADR
- * 0315). No other gate has that shape: `review-code` can PASS a one-line diff, `governance` can
+ * 0316). No other gate has that shape: `review-code` can PASS a one-line diff, `governance` can
  * PASS a diff that contradicts no ADR. Admitting the record anywhere else would turn a
  * one-namespace repair into a general "I decline this gate", which is the merge authority a session
  * does not have.
  */
-const ROUTABLE = "review-ui";
+export const ROUTABLE = "review-ui";
 
 export interface NamespaceVerdict {
 	readonly name: string;
@@ -417,7 +417,7 @@ export const runGate = (
 			}
 			if (winner.polarity === "ROUTED") {
 				diagnostics.push(
-					`${VERB}: ${name}: no verdict was formed — a routed-elsewhere record at ${winner.sha} states this PR owes none, and the namespace resolves routed rather than absent (ADR 0315).`,
+					`${VERB}: ${name}: no verdict was formed — a routed-elsewhere record at ${winner.sha} states this PR owes none, and the namespace resolves routed rather than absent (ADR 0316).`,
 				);
 			}
 			return {
@@ -441,7 +441,7 @@ export const runGate = (
 
 		// `routed` satisfies beside `pass` because the conjunction asks whether every required gate has
 		// answered, and "this PR is not mine to judge" is an answer — the one the `review-ui` namespace
-		// had no way to give (ADR 0315). It is not a weaker pass: the record is head-bound, ACL-checked
+		// had no way to give (ADR 0316). It is not a weaker pass: the record is head-bound, ACL-checked
 		// as any verdict, and admitted for ROUTABLE alone, so no gate whose subject *is* in the diff
 		// can be routed past.
 		const outcome = verdicts.every(

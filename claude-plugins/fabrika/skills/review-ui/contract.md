@@ -593,7 +593,7 @@ it and `ship gate` blocked forever (#6376). This verb records the answer that wa
 `verdict-marker` reads it as `Absent` and it can never be counted as a PASS; `ship gate` resolves
 it as its own `routed` state and admits it for `review-ui` alone; and the record is head-bound, so
 any push voids it. ADR
-[0315](../../../../.decisions/0315-a-gate-records-that-it-owes-no-verdict.md) is the ruling.
+[0316](../../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md) is the ruling.
 
 **The mechanism, in order.** Validate `--sha` and `--clause` (`10`). Read stdin (`3` on empty) —
 an unexplained route is an assertion nobody can check. Resolve the PR, open and non-empty

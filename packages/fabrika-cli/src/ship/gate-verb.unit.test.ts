@@ -267,7 +267,7 @@ describe("runGate", () => {
 		);
 	});
 
-	// ADR 0315. `review-ui` is the one namespace whose emit path cannot answer a PR that renders
+	// ADR 0316. `review-ui` is the one namespace whose emit path cannot answer a PR that renders
 	// nothing — `render` refuses zero surfaces, `post` refuses without captures — so the class
 	// `ship scope` raises off a path test named a namespace nothing legal could fill (#6376).
 	it("resolves review-ui as routed from a head-bound routed-elsewhere record, and satisfies", async () => {

@@ -10,7 +10,7 @@
  * passed", which is the one thing the `review-ui` group's evidence-required emit path exists to
  * prevent.
  *
- * **Why the format exists (ADR 0315).** `ship scope` raises the `ui` class off a path test that
+ * **Why the format exists (ADR 0316).** `ship scope` raises the `ui` class off a path test that
  * cannot see whether pixels moved, so a PR whose only `apps/web/src/**` change is a docblock
  * requires a `review-ui` verdict — and `review-ui`'s emit path structurally cannot produce one:
  * `render` refuses zero surfaces, `post` requires a capture set. The namespace was unfillable and

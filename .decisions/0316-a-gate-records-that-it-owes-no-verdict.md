@@ -1,12 +1,12 @@
 ---
-id: 0315
+id: 0316
 title: A gate records that it owes no verdict, rather than the class being narrowed to guess for it
 status: accepted
 date: 2026-08-20
 tags: [fabrika, ship, review-ui, pipeline, wire-formats]
 ---
 
-# 0315 — A gate records that it owes no verdict, rather than the class being narrowed to guess for it
+# 0316 — A gate records that it owes no verdict, rather than the class being narrowed to guess for it
 
 **What this decides:** `ship gate` gains a fifth namespace state, `routed`, filled by a head-bound
 `routed-elsewhere` record that `review-ui` emits with no capture evidence. The `ui` class stays the
@@ -83,6 +83,11 @@ derivation stays honest and dumb; the escape is explicit and recorded.
 - `ship gate`'s state vocabulary is five wide. A consumer reading its rows must handle `routed`;
   reading it as `pass` loses the distinction the whole decision rests on, and reading it as a block
   restores #6376.
+- `heal-ci diagnose` is the second consumer that resolves the same question, off its own read set
+  rather than off `ship gate`'s rows, so it reads the record too. Left marker-only it would have
+  called a correctly-routed PR `ungated` and dispatched it back to the review that cannot fill the
+  namespace — #6376's loop relocated into the healer rather than closed. `lane prove` deliberately
+  does not derive `review-ui` at all, so it needs no such teaching (#6699).
 - A route is one comment, upserted, so a PR carries at most one claim per namespace about this
   question.
 - `review-ui`'s `ROUTED-ELSEWHERE` terminal now lands a record instead of emitting nothing. The

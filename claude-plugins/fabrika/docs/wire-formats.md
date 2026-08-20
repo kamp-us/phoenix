@@ -295,7 +295,7 @@ whose only `apps/web/src/**` change is a docblock required a `review-ui` verdict
 cannot produce one, because `render` refuses zero surfaces and `post` refuses to compose without a
 capture set. The namespace was unfillable, `ship gate` blocks on absence, and the PR was stuck
 forever (#6376). The record is the missing answer, and ADR
-[0315](../../../.decisions/0315-a-gate-records-that-it-owes-no-verdict.md) is why it is this shape.
+[0316](../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md) is why it is this shape.
 
 It carries no polarity, and that is the whole safety story. A PASS says a gate looked and found
 nothing wrong; this says the gate's subject is not in the diff at all. Fold them and "I judged

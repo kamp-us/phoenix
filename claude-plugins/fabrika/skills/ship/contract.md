@@ -634,7 +634,7 @@ re-run it at this head), and both block — absence-is-refusal is the #3944 law 
 with no live-head verdict at all).
 
 **`routed` is the fifth state, and it is a gate saying it owes this PR nothing** (ADR
-[0315](../../../../.decisions/0315-a-gate-records-that-it-owes-no-verdict.md)). It resolves from a
+[0316](../../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md)). It resolves from a
 `routed-elsewhere` record — its own wire format, carrying no polarity, read through the same
 head-binding and the same ADR 0055 ACL as a verdict — and it satisfies beside `pass`, because the
 conjunction asks whether every required gate has answered and "not mine to judge" is an answer.

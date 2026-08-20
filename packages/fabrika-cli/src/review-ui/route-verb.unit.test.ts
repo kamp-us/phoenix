@@ -1,6 +1,6 @@
 /**
  * `review-ui route` — the escape from the unfillable namespace, and the fences that keep it from
- * becoming a second verdict path (ADR 0315, #6376).
+ * becoming a second verdict path (ADR 0316, #6376).
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";

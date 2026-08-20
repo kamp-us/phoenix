@@ -6,7 +6,7 @@
  * total over its own bytes and says nothing about `verdict-marker`'s. The property that matters
  * here is cross-format: `ship gate` resolves a namespace by asking both readers, and the moment one
  * of them answers on the other's bytes, "I judged nothing" and "I judged it and it passed" become
- * one state (ADR 0315).
+ * one state (ADR 0316).
  */
 import {assert, describe, it} from "@effect/vitest";
 import {read as readRouted} from "./routed-elsewhere.ts";

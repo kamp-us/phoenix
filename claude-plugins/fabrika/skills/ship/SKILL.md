@@ -102,7 +102,7 @@ says so on stderr, having proved this head's content digest is the one that verd
 never does is pass a content binding it could not check — that reads `stale`. An `ns review-ui
 routed` line is neither a pass nor a refusal you missed: it is `review-ui` recording that this diff
 moves no pixels, so it owes no verdict (ADR
-[0315](../../../../.decisions/0315-a-gate-records-that-it-owes-no-verdict.md)); it satisfies, and no
+[0316](../../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md)); it satisfies, and no
 other namespace can read that way. The polarity rules, the
 content-digest binding and the whole `blocked` taxonomy are the verb's section
 (`fabrika wire doc-section --heading "ship gate" < <skill-base>/contract.md`).

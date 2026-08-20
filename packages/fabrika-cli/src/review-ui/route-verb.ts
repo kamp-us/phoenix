@@ -7,7 +7,7 @@
  * that this group structurally cannot produce — `render` refuses zero surfaces, `post` requires a
  * capture set — and `ship gate` blocks on the absence forever (#6376). This verb records the
  * missing half instead of manufacturing the verdict: an attested, head-bound "nothing here
- * renders", which `ship gate` resolves as `routed` (ADR 0315).
+ * renders", which `ship gate` resolves as `routed` (ADR 0316).
  *
  * **It is not a second verdict path, and three things keep it from becoming one.** The bytes are
  * their own wire format with no polarity, so a route can never be read as a PASS. The record is

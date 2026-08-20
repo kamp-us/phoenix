@@ -39,7 +39,7 @@ The shared gate mechanics are the shipped `review` group's verbs, reused as-is �
 criteria, ci, verdicts, deviations, each addressed in that group's contract by its own name
 (`fabrika wire doc-section --heading "review scope" < <review skill's base dir>/contract.md`, and
 likewise `--heading "review diff"`, `"review criteria"`, `"review ci"`, `"review verdicts"`,
-`"review deviations"`). This skill adds only the `review-ui` group, whose three verbs are listed at
+`"review deviations"`). This skill adds only the `review-ui` group, whose four verbs are listed at
 `fabrika wire doc-section --heading "Verb inventory" < <skill-base>/contract.md`. **You owe a verdict only when the PR
 changes a rendered-visual surface** — a page, component, screen, state, or style a user sees. Read
 the diff (`fabrika review diff $pr_number`) and decide. The decision is yours, formed from verb-served bytes: the diff verb refuses truncation, so
@@ -48,19 +48,24 @@ your judgment sits on proven input rather than on a pattern match that can swall
 A PR with no rendered delta is `review`'s alone, and **you say so on the record rather than walking
 away silently**: `ship scope` raises the `ui` class off a path test that cannot see whether pixels
 moved, so the namespace is required and `ship gate` blocks on an absence nothing else can fill (ADR
-[0315](../../../../.decisions/0315-a-gate-records-that-it-owes-no-verdict.md)).
+[0316](../../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md)).
 
 ```bash
-fabrika review-ui route $pr_number --sha <head> --clause "<the one-line why>" <<'EOF'
+fabrika review-ui route $pr_number --sha 03135b91 --clause "<the one-line why>" <<'EOF'
 …which files changed and why none of them renders anything…
 EOF
 ```
 
 That is a route, not a verdict: it carries no polarity, it needs no captures, and `ship gate` shows
 it as `routed`. Then end **ROUTED-ELSEWHERE**. What you still never do is post a `review-ui` PASS —
-the namespace you did not judge is one you never *pass*, and the record says exactly that. Exit `7`
-means the diff raises no `ui` class at all, so nothing required your namespace and there is nothing
-to route; end ROUTED-ELSEWHERE with no write.
+the namespace you did not judge is one you never *pass*, and the record says exactly that.
+
+Exit `7` covers four different facts, and only one of them is a clean end — **read the message
+before you pick a terminal.** `raises no ui class` means nothing required your namespace and there
+is nothing to route: end ROUTED-ELSEWHERE with no write. The other three — the PR proven absent
+(404), the PR closed, the diff empty — are an **unread** PR, not a judged one, so ending
+ROUTED-ELSEWHERE on any of them claims a judgment you never formed: end **CANT-SEE** and name the
+message.
 
 ## 2 — Read the law you judge by
 

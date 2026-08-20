@@ -24,7 +24,7 @@ import {
 } from "../io/pulls.ts";
 import {partitionWithUi, shipNamespacesOf, touchesGovernanceRoot} from "../review/classes.ts";
 import {isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
-import {inForce} from "../ship/gate-verb.ts";
+import {inForce, ROUTABLE} from "../ship/gate-verb.ts";
 import {
 	behindBase,
 	countWorkflowRuns,
@@ -44,6 +44,7 @@ import {
 	resolveTargetRepo,
 } from "../ship/target.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {read as readRoute} from "../wire/routed-elsewhere.ts";
 import {read as readMarker} from "../wire/verdict-marker.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {commitPushedAt} from "./github.ts";
@@ -55,6 +56,46 @@ const VERB = "heal-ci diagnose";
 
 /** The permission levels ADR 0055 counts as an authorized verdict author. */
 const AUTHORIZED = new Set(["admin", "maintain", "write"]);
+
+/**
+ * The claim one comment carries, or `null` for a comment that carries none.
+ *
+ * Two carriers fill a namespace and this verb must read both, because it resolves the same question
+ * `ship gate` does: a PR the gate calls satisfied must not classify here as `ungated` and get
+ * re-dispatched to a review that cannot fill the namespace (#6376). `ROUTABLE` is imported from the
+ * gate rather than restated, so the one-namespace fence has one home.
+ */
+const claimOf = (
+	comment: CommentRecord,
+): {
+	readonly namespace: string;
+	readonly polarity: "PASS" | "FAIL" | "ROUTED";
+	readonly sha: string;
+	readonly content: string | null;
+	readonly carrier: "marker" | "routed-elsewhere";
+} | null => {
+	const marker = readMarker(comment.body);
+	if (marker._tag === "Found") {
+		return {
+			namespace: marker.value.namespace,
+			polarity: marker.value.polarity,
+			sha: marker.value.sha,
+			content: marker.value.content,
+			carrier: "marker",
+		};
+	}
+	const route = readRoute(comment.body);
+	if (route._tag !== "Found" || route.value.namespace !== ROUTABLE) return null;
+	// Head-bound with no content binding, exactly as the gate binds it (ADR 0316): a push voids the
+	// route, so the namespace re-opens rather than staying resolved across a rewrite.
+	return {
+		namespace: route.value.namespace,
+		polarity: "ROUTED",
+		sha: route.value.sha,
+		content: null,
+		carrier: "routed-elsewhere",
+	};
+};
 
 export interface DiagnoseParams {
 	readonly dwellMinutes: number;
@@ -299,16 +340,16 @@ export const diagnoseOne = (
 		const authorized = new Map<string, boolean>();
 		const candidates: Array<{
 			readonly namespace: string;
-			readonly polarity: "PASS" | "FAIL";
+			readonly polarity: "PASS" | "FAIL" | "ROUTED";
 			readonly sha: string;
 			readonly content: string | null;
-			readonly carrier: "marker";
+			readonly carrier: "marker" | "routed-elsewhere";
 			readonly stamp: string;
 			readonly commentId: number;
 		}> = [];
 		for (const comment of commented.value as ReadonlyArray<CommentRecord>) {
-			const marker = readMarker(comment.body);
-			if (marker._tag !== "Found") continue;
+			const claim = claimOf(comment);
+			if (claim === null) continue;
 			if (!authorized.has(comment.author)) {
 				const permission = yield* permissionFor(repo, comment.author);
 				if (permission._tag === "Unknown") {
@@ -323,22 +364,15 @@ export const diagnoseOne = (
 				);
 			}
 			if (authorized.get(comment.author) !== true) continue;
-			candidates.push({
-				namespace: marker.value.namespace,
-				polarity: marker.value.polarity,
-				sha: marker.value.sha,
-				content: marker.value.content,
-				carrier: "marker",
-				stamp: comment.updatedAt,
-				commentId: comment.id,
-			});
+			candidates.push({...claim, stamp: comment.updatedAt, commentId: comment.id});
 		}
 		const passes = required.filter((name) => {
 			const winner = inForce(
 				candidates.filter((claim) => claim.namespace === name),
 				bound,
 			);
-			return winner !== null && winner.polarity === "PASS" && prefixMatch(winner.sha, bound);
+			if (winner === null || !prefixMatch(winner.sha, bound)) return false;
+			return winner.polarity === "PASS" || winner.polarity === "ROUTED";
 		}).length;
 
 		const link = linkOf(pull.body);
