@@ -62,6 +62,9 @@ describe("a repo that keeps no decision corpus", {timeout: SUBPROCESS_TEST_TIMEO
 		expect(out.code).toBe(CORPUS_DECLINED);
 		expect(out.stdout).toBe("");
 		expect(out.stderr).toContain("declines `decisionsDir`");
+		// This verb does carry `--dir`, so the remedy clause is true here — it is the reference the
+		// two flagless/differently-flagged callers below must not inherit (#6433).
+		expect(out.stderr).toContain("Point --dir at a corpus to read one anyway.");
 		expect(readdirSync(root)).toEqual([".fabrika.jsonc"]);
 	});
 
@@ -74,6 +77,9 @@ describe("a repo that keeps no decision corpus", {timeout: SUBPROCESS_TEST_TIMEO
 		const out = run(root, ["guard", "decisions-index", "validate", "--root", root]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("declines `decisionsDir`");
+		// `--root` is this verb's only flag; there is no override to point anywhere, so the skip
+		// message must offer none rather than send the reader after `adr`'s `--dir` (#6433).
+		expect(out.stdout).not.toContain("Point ");
 		expect(out.stderr).toBe("");
 	});
 

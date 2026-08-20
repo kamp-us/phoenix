@@ -15,7 +15,7 @@
  */
 import {Effect, Path, Result} from "effect";
 import {idFromFile, isLive, statusOf} from "../adr/records.ts";
-import {decisionsDirOr} from "../config/paths.ts";
+import {corpusOverride, decisionsDirOr} from "../config/paths.ts";
 import {readDir, readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -150,7 +150,7 @@ export const runCheck = (options: CheckOptions): GlossaryEffect<VerbOutcome> =>
 		const corpus = yield* decisionsDirOr(
 			VERB,
 			options.cwd,
-			options.decisions,
+			corpusOverride("--decisions", options.decisions),
 			"a row's four-digit citations cannot be resolved against anything.",
 		);
 		if (corpus._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, corpus.message, scope);

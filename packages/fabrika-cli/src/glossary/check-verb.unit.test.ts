@@ -114,6 +114,10 @@ describe("runCheck", () => {
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("citations-unverified\t-\t-\t-\t");
 		expect(out.stdout).toContain("declines `decisionsDir`");
+		// The remedy clause names this verb's own override. `--dir` is the register directory here,
+		// so inheriting `adr`'s spelling would send the reader to repoint the registers (#6433).
+		expect(out.stdout).toContain("Point --decisions at a corpus to read one anyway.");
+		expect(out.stdout).not.toContain("Point --dir");
 		// The word a declined corpus must never produce: a dead citation is a claim about a corpus
 		// that was read, and this one never was.
 		expect(out.stdout).not.toContain("citation-dead");

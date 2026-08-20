@@ -14,7 +14,7 @@
 
 import {Effect, type FileSystem, Path} from "effect";
 import {isRecordCandidate} from "../adr/records.ts";
-import {decisionsDirOr} from "../config/paths.ts";
+import {decisionsDirOr, noCorpusOverride} from "../config/paths.ts";
 import {discoverRepoRoot} from "../delegate/root.ts";
 import {exists, type ReadFailed, readDir, readFile} from "../io/fs.ts";
 import type {VerbOutcome} from "../verb.ts";
@@ -115,7 +115,7 @@ export const runDecisionsIndexGuard = (
 		const corpus = yield* decisionsDirOr(
 			VERB,
 			root,
-			null,
+			noCorpusOverride,
 			"there is no corpus to scan and this guard has nothing to lock.",
 		);
 		switch (corpus._tag) {
