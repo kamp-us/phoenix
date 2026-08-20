@@ -5,8 +5,8 @@
  *
  * The order is load-bearing. `loading` outranks everything — the deferred-404 gate,
  * `.patterns/flag-dark-page-gate.md`; `not-found` outranks the session so a dark feature leaks
- * nothing to a signed-out visitor either; and an unread tier is `loading`, never `caylak` — telling a
- * yazar they are a çaylak because their `me` read had not landed yet would be a lie.
+ * nothing to a signed-out visitor either; and an unread tier is `loading`, never `caylak` —
+ * telling a yazar they are a çaylak because their `me` read had not landed yet would be a lie.
  */
 import type {Tier} from "../../worker/features/kunye/standing";
 

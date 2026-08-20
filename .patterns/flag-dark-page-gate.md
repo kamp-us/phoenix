@@ -1,7 +1,7 @@
 # The flag-dark page gate
 
-**How to gate a whole page dark**: the route ships behind a default-off flag, self-404s while the
-flag is off, and never decides 404-vs-page until the flag has actually resolved. Reach for this doc
+**The shape a flag-dark page gate takes**: the route ships behind a default-off flag, self-404s while
+the flag is off, and never decides 404-vs-page until the flag has actually resolved. Reach for this doc
 before adding a page-level `useFlag` gate; the flag system itself (declaring, flipping, reading
 server-side) is [feature-flags.md](./feature-flags.md), and where the route mounts is
 [frontend-routing.md](./frontend-routing.md).
@@ -68,8 +68,9 @@ A key listed in `SHELL_FLAG_KEYS` ([`apps/web/src/flags/shell-keys.ts`](../apps/
 is injected into `window.__BOOT__` by the worker's shell render, and `useFlag` resolves it
 synchronously in its `useState` initializer — so the very first render already carries
 `{value, loading: false}` and the placeholder branch never paints. `MECMUA_PUBLIC_READ` and
-`MECMUA_FEED` are the members today; the mecmua pages get the fast path, every other gated page
-takes the `/api/flags/evaluate` round trip.
+`MECMUA_FEED` are the members today, so `MecmuaIndexPage`, `MecmuaPostPage` and `MecmuaFeedPage` get
+the fast path; every other gated page — including the `MECMUA_WRITE` pages `MecmuaDraftsPage` and
+`MecmuaEditorPage` — takes the `/api/flags/evaluate` round trip and does paint the placeholder.
 
 That does not make the placeholder branch dead code: `__BOOT__` is absent whenever the shell was not
 injected, and membership is a deliberate, guarded decision — only a flag whose wrong value moves
