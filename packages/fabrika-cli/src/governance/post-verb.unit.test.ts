@@ -1,7 +1,15 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once, unconfigured} from "../fakes.test-support.ts";
-import {runsAtHead, workflowRun} from "../heal-ci/fixtures.test-support.ts";
+import {
+	errOut,
+	fakeHttp,
+	fakeShell,
+	type HttpReply,
+	okOut,
+	once,
+	unconfigured,
+} from "../fakes.test-support.ts";
+import {accepted, RERUN, RUN, runsAtHead, workflowRun} from "../heal-ci/fixtures.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {CONTENT, PATHS_AT} from "../review/fixtures.test-support.ts";
@@ -27,8 +35,6 @@ const CREATE = /^gh api --method POST repos\/o\/r\/issues\/4321\/comments/;
 const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/comments\/77/;
 const READ_BACK = /^gh api repos\/o\/r\/issues\/comments\/(\d+)$/;
 const RUNS = /^gh api --paginate repos\/o\/r\/actions\/runs\?head_sha=/;
-const RUN = /^gh api repos\/o\/r\/actions\/runs\/\d+$/;
-const RERUN = /^gh api --method POST repos\/o\/r\/actions\/runs\/\d+\/rerun-failed-jobs$/;
 const FLOOR = 31_863_008_185;
 
 const BODY = "The sweep found no contradiction; no anchored invariant is in reach.\n";
@@ -44,18 +50,22 @@ const options = {
 	repo: null,
 	json: false,
 	cwd: "/repo",
-	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	env: {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} as Record<
+		string,
+		string | undefined
+	>,
 	stdin: Effect.succeed({_tag: "Text", text: BODY} as StdinRead),
 };
 
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
+	served: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runPost({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, unconfigured),
+			Layer.mergeAll(fakeShell(script).layer, unconfigured, fakeHttp(served).layer),
 		),
 	);
 
@@ -113,7 +123,10 @@ describe("runPost", () => {
 			[READ_BACK, okOut(JSON.stringify({body: composed()}))],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runPost(options), Layer.merge(shell.layer, unconfigured)),
+			Effect.provide(
+				runPost(options),
+				Layer.mergeAll(shell.layer, unconfigured, fakeHttp([]).layer),
+			),
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("\tcreated\t");
@@ -140,7 +153,10 @@ describe("runPost", () => {
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runPost(options), Layer.merge(fake.layer, unconfigured)),
+			Effect.provide(
+				runPost(options),
+				Layer.mergeAll(fake.layer, unconfigured, fakeHttp([]).layer),
+			),
 		);
 		expect(out.code).toBe(NOT_HARNESS_TOUCHING);
 		expect(out.code).not.toBe(OFF_VOCABULARY);
@@ -217,7 +233,10 @@ describe("runPost", () => {
 			governing([once(CREATE), created()], [READ_BACK, okOut(JSON.stringify({body: composed()}))]),
 		);
 		await Effect.runPromise(
-			Effect.provide(runPost(options), Layer.merge(fake.layer, unconfigured)),
+			Effect.provide(
+				runPost(options),
+				Layer.mergeAll(fake.layer, unconfigured, fakeHttp([]).layer),
+			),
 		);
 		expect(fake.calls).toContain("gh api repos/o/r/issues/comments/91");
 	});
@@ -236,25 +255,31 @@ describe("runPost asserts the governance floor at the head it posted to", () => 
 			...extra,
 		);
 
-	const floorRed = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-		[RUNS, runsAtHead(1, [{id: FLOOR, name: "governance-floor"}])],
+	/** The run list is still a `gh` read; the run reads and the re-fire went to HTTP (ADR 0315). */
+	const floorListed: readonly [RegExp, ExecResult] = [
+		RUNS,
+		runsAtHead(1, [{id: FLOOR, name: "governance-floor"}]),
+	];
+
+	const floorRed = (): ReadonlyArray<readonly [RegExp, HttpReply]> => [
 		[once(RUN), workflowRun({id: FLOOR, attempt: 1})],
-		[RERUN, okOut("")],
+		[RERUN, accepted],
 		[RUN, workflowRun({id: FLOOR, attempt: 2})],
 	];
 
 	it("re-fires the red floor run and names the new attempt on stderr", async () => {
-		const shell = fakeShell(landed(...floorRed()));
+		const shell = fakeShell(landed(floorListed));
+		const http = fakeHttp(floorRed());
 		const out = await Effect.runPromise(
-			Effect.provide(runPost(options), Layer.merge(shell.layer, unconfigured)),
+			Effect.provide(runPost(options), Layer.mergeAll(shell.layer, unconfigured, http.layer)),
 		);
 		expect(out.code).toBe(0);
-		expect(shell.calls.some((call) => RERUN.test(call))).toBe(true);
+		expect(http.calls.some((call) => RERUN.test(call))).toBe(true);
 		expect(out.stderr.at(-1)).toContain(`re-fired governance-floor run ${FLOOR} at attempt 2`);
 	});
 
 	it("carries the floor's outcome in the --json record", async () => {
-		const out = await run(landed(...floorRed()), {json: true});
+		const out = await run(landed(floorListed), {json: true}, floorRed());
 		expect(JSON.parse(out.stdout)).toMatchObject({outcome: "posted", floor: "refired"});
 	});
 
@@ -267,14 +292,22 @@ describe("runPost asserts the governance floor at the head it posted to", () => 
 		expect(out.stderr.at(-1)).toContain("may still need a re-fire");
 	});
 
+	// The two seams record their own calls, so the order is proven by what a failed read-back
+	// leaves undone rather than by two indices in one list: a verdict that did not read back
+	// re-fires nothing at all.
 	it("asserts the floor only after the verdict has been read back", async () => {
-		const shell = fakeShell(landed(...floorRed()));
-		await Effect.runPromise(
-			Effect.provide(runPost(options), Layer.merge(shell.layer, unconfigured)),
+		const shell = fakeShell(
+			governing(
+				[CREATE, created()],
+				[READ_BACK, errOut("gh: Bad gateway (HTTP 502)")],
+				floorListed,
+			),
 		);
-		const readBack = shell.calls.findIndex((call) => READ_BACK.test(call));
-		const refire = shell.calls.findIndex((call) => RERUN.test(call));
-		expect(readBack).toBeGreaterThanOrEqual(0);
-		expect(refire).toBeGreaterThan(readBack);
+		const http = fakeHttp(floorRed());
+		await Effect.runPromise(
+			Effect.provide(runPost(options), Layer.mergeAll(shell.layer, unconfigured, http.layer)),
+		);
+		expect(shell.calls.some((call) => READ_BACK.test(call))).toBe(true);
+		expect(http.calls.some((call) => RERUN.test(call))).toBe(false);
 	});
 });

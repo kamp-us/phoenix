@@ -6,7 +6,7 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
+import {fakeHttp, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
 import {NOT_HARNESS_TOUCHING} from "../governance/codes.ts";
 import {
 	type PostOptions as GovernancePostOptions,
@@ -108,7 +108,7 @@ const runReview = (
 	Effect.runPromise(
 		Effect.provide(
 			runReviewPost({...reviewOptions, ...overrides}),
-			Layer.merge(fakeShell(script).layer, unconfigured),
+			Layer.mergeAll(fakeShell(script).layer, unconfigured, fakeHttp([]).layer),
 		),
 	);
 
@@ -119,7 +119,7 @@ const runGovernance = (
 	Effect.runPromise(
 		Effect.provide(
 			runGovernancePost({...governanceOptions, ...overrides}),
-			Layer.merge(fakeShell(script).layer, unconfigured),
+			Layer.mergeAll(fakeShell(script).layer, unconfigured, fakeHttp([]).layer),
 		),
 	);
 
@@ -221,7 +221,10 @@ describe("governance post --base/--tip", () => {
 	it("composes the governance marker through the range wire format", async () => {
 		const shell = fakeShell(governanceHappy());
 		await Effect.runPromise(
-			Effect.provide(runGovernancePost(governanceOptions), Layer.merge(shell.layer, unconfigured)),
+			Effect.provide(
+				runGovernancePost(governanceOptions),
+				Layer.mergeAll(shell.layer, unconfigured, fakeHttp([]).layer),
+			),
 		);
 		const write = shell.calls.find((call) => CREATE.test(call)) ?? "";
 		const body = write.slice(write.indexOf("body=") + "body=".length);

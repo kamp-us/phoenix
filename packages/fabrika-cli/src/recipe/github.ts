@@ -1,9 +1,11 @@
 /**
  * The Actions reads and the one write the `recipe rerun` verb needs.
  *
- * The house disciplines hold: `gh api` REST and never GraphQL, every list read pages, a shape that
- * is not what was asked for is a failure rather than an empty result, and `ok` is read before
- * `stdout`.
+ * The house disciplines hold: REST and never GraphQL, every list read pages, a shape that is not what
+ * was asked for is a failure rather than an empty result, and the status is read before the body.
+ *
+ * The credential is an argument to every leg of the client, so each read resolves one from the `env`
+ * its caller hands down — never from `process`, which is what keeps a test's environment scripted.
  *
  * **A rerun is proven by re-reading the run, never by the POST's own status.** GitHub answers the
  * rerun endpoint before the run has moved, so the acceptance evidence is the run record itself:
@@ -12,10 +14,21 @@
  * that caught the run mid-transition from reading as a refusal.
  */
 import {Effect} from "effect";
-import {execCapture} from "../io/exec.ts";
-import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
-import {scanJsonPages} from "../io/issues.ts";
-import {isRecord, parseJson} from "../io/json.ts";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
+import type {ChildProcessSpawner} from "effect/unstable/process";
+import {pagedEnvelope, resolveToken, restRead} from "../io/gh-api.ts";
+import {type Attempt, fail, ok} from "../io/git.ts";
+import {isRecord} from "../io/json.ts";
+
+/** An authenticated GitHub read: the transport, plus the spawner the `gh auth token` leg needs. */
+type Authed<A> = Effect.Effect<
+	A,
+	never,
+	HttpClient.HttpClient | ChildProcessSpawner.ChildProcessSpawner
+>;
+
+/** The environment a read resolves its credential from — the caller's, never `process`'s. */
+type Env = Readonly<Record<string, string | undefined>>;
 
 /** One workflow run at a head, reduced to the fields the recipe reads. */
 export interface WorkflowRun {
@@ -43,63 +56,71 @@ const toRun = (value: unknown): WorkflowRun | null => {
 	};
 };
 
-const SHAPE = "`gh api` exited 0 but its output is not a workflow run";
+const SHAPE = "GitHub answered 200 but its body is not a workflow run";
 
 /**
  * Every workflow run recorded against `sha`, paged in full.
  *
- * Unaccounted bytes are a failure, not a shorter list: a stream that stopped mid-page would answer
- * "no failed run at this head" from a page nobody read, and the caller seats that as "nothing to
- * rerun" — a proven no-op it never proved.
+ * A short list is a failure, not a shorter answer: a walk that read fewer runs than the endpoint
+ * declared would answer "no failed run at this head" from a page nobody read, and the caller seats
+ * that as "nothing to rerun" — a proven no-op it never proved. The `gh --paginate` era proved that
+ * over stdout bytes, refusing a stream that stopped mid-page; the envelope's `total_count` is the
+ * same refusal against the platform's own declaration, and it is the only thing that catches a walk
+ * stopped by the page cap.
  */
 export const listRunsAtHead = (
 	repo: string,
 	sha: string,
-): Shell<Attempt<ReadonlyArray<WorkflowRun>>> =>
+	env: Env,
+): Authed<Attempt<ReadonlyArray<WorkflowRun>>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/actions/runs?head_sha=${encodeURIComponent(sha)}&per_page=100`,
-		]);
-		if (!r.ok) return fail(r.reason);
-		const scanned = scanJsonPages(r.stdout);
-		if (scanned.truncated !== null) return fail(scanned.truncated);
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return token;
+		const read = yield* pagedEnvelope(
+			token.value,
+			`repos/${repo}/actions/runs?head_sha=${encodeURIComponent(sha)}`,
+			"workflow_runs",
+		);
+		if (read._tag === "Failure") return read;
+		const {declared, entries} = read.value;
+		if (entries.length < declared) {
+			return fail(
+				`the workflow-run list at ${sha} is short — GitHub declared ${declared} run(s) and ${entries.length} arrived`,
+			);
+		}
 		const runs: WorkflowRun[] = [];
-		for (const page of scanned.pages) {
-			const parsed = parseJson(page);
-			// The Actions list endpoint wraps its rows; a bare array is a shape nobody asked for.
-			if (!isRecord(parsed) || !Array.isArray(parsed.workflow_runs)) {
-				return fail("`gh api` exited 0 but its output is not a workflow-run page");
-			}
-			for (const value of parsed.workflow_runs) {
-				const run = toRun(value);
-				if (run === null) return fail(SHAPE);
-				runs.push(run);
-			}
+		for (const value of entries) {
+			const run = toRun(value);
+			if (run === null) return fail(SHAPE);
+			runs.push(run);
 		}
 		return ok(runs);
 	});
 
 /** One workflow run, re-read — the evidence a rerun was accepted. */
-export const getRun = (repo: string, id: number): Shell<Attempt<WorkflowRun>> =>
+export const getRun = (repo: string, id: number, env: Env): Authed<Attempt<WorkflowRun>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", ["api", `repos/${repo}/actions/runs/${id}`]);
-		if (!r.ok) return fail(r.reason);
-		const run = toRun(parseJson(r.stdout));
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return token;
+		const outcome = yield* restRead(token.value, "GET", `repos/${repo}/actions/runs/${id}`);
+		if (outcome._tag === "Unreachable") return fail(outcome.reason);
+		if (outcome.status < 200 || outcome.status >= 300) {
+			return fail(`GitHub answered HTTP ${outcome.status}`);
+		}
+		const run = toRun(outcome.body);
 		return run === null ? fail(SHAPE) : ok(run);
 	});
 
-/** Ask GitHub to rerun a whole workflow run — the endpoint `gh run rerun` posts to. */
-export const rerunRun = (repo: string, id: number): Shell<Attempt<void>> =>
+/** Ask GitHub to rerun a whole workflow run — the endpoint `gh run rerun` posted to. */
+export const rerunRun = (repo: string, id: number, env: Env): Authed<Attempt<void>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"POST",
-			`repos/${repo}/actions/runs/${id}/rerun`,
-		]);
-		return r.ok ? ok<void>(undefined) : fail(r.reason);
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return token;
+		const outcome = yield* restRead(token.value, "POST", `repos/${repo}/actions/runs/${id}/rerun`);
+		if (outcome._tag === "Unreachable") return fail(outcome.reason);
+		return outcome.status >= 200 && outcome.status < 300
+			? ok<void>(undefined)
+			: fail(`GitHub answered HTTP ${outcome.status}`);
 	});
 
 /** Whether a re-read proves the rerun landed: a new attempt, or a run that is no longer completed. */

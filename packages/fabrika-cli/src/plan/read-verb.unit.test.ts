@@ -1,42 +1,42 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut} from "../fakes.test-support.ts";
 import {BAD_SECTIONS, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
+	CHILD,
 	CWD,
+	CYCLE_DOC,
 	child,
 	childBody,
+	cycleDoc,
+	ENV,
 	epic,
 	epicBody,
 	labelSet,
-	planContext,
+	planSeams,
+	type Scripted,
+	SUB_ISSUES,
 	subIssues,
 } from "./fixtures.test-support.ts";
 import {runRead} from "./read-verb.ts";
 
 const EPIC = /^gh api repos\/o\/r\/issues\/4300$/;
-const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
-const CHILD_1 = /^gh api repos\/o\/r\/issues\/4301$/;
-const CHILD_2 = /^gh api repos\/o\/r\/issues\/4302$/;
-const CYCLE = /^gh api repos\/o\/r\/contents\/product-development-cycle\.md$/;
+const SUBS = SUB_ISSUES;
+const CHILD_1 = CHILD(4301);
+const CHILD_2 = CHILD(4302);
+const CYCLE = CYCLE_DOC;
 
-const options = {
-	number: 4300,
-	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
-	cwd: CWD,
-};
+const options = {number: 4300, repo: null, env: ENV, cwd: CWD};
 
-const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
-	Effect.runPromise(Effect.provide(runRead(options), planContext(fakeShell(script))));
+const run = (script: ReadonlyArray<Scripted>) =>
+	Effect.runPromise(Effect.provide(runRead(options), planSeams(script).layer));
 
-const CLEAN: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const CLEAN: ReadonlyArray<Scripted> = [
 	[EPIC, epic()],
 	[SUBS, subIssues(4301, 4302)],
 	[CHILD_1, child({number: 4301})],
 	[CHILD_2, child({number: 4302, body: childBody({stories: "2"})})],
-	[CYCLE, okOut('{"name":"product-development-cycle.md"}')],
+	[CYCLE, cycleDoc],
 ];
 
 describe("runRead", () => {
@@ -69,7 +69,7 @@ describe("runRead", () => {
 			[SUBS, subIssues(4301, 4302)],
 			[CHILD_1, child({number: 4301, assignees: null})],
 			[CHILD_2, child({number: 4302, assignees: ["rmoreno"]})],
-			[CYCLE, okOut("{}")],
+			[CYCLE, cycleDoc],
 		]);
 		const [first, second] = JSON.parse(out.stdout).children;
 		expect(first).toMatchObject({assignees: null, assigneesObserved: false});
@@ -79,7 +79,7 @@ describe("runRead", () => {
 	it("refuses zero sub-issue children on 7, with nothing on stdout (ADR 0092)", async () => {
 		const out = await run([
 			[EPIC, epic()],
-			[SUBS, okOut("[]")],
+			[SUBS, subIssues()],
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
@@ -138,7 +138,7 @@ describe("runRead", () => {
 		const out = await run([
 			[EPIC, epic()],
 			[SUBS, subIssues(4301)],
-			[CHILD_1, errOut("gh: Bad gateway (HTTP 502)")],
+			[CHILD_1, {status: 502, body: '{"message":"Bad gateway"}'}],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -151,16 +151,16 @@ describe("runRead", () => {
 	it("refuses a sub-issue list of the wrong shape on 11", async () => {
 		const out = await run([
 			[EPIC, epic()],
-			[SUBS, okOut('[{"id": 1}]')],
+			[SUBS, {status: 200, body: '[{"id": 1}]'}],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
 	describe("the cycle-doc probe is three-valued", () => {
 		it.each([
-			["present", okOut("{}")],
-			["absent", errOut("gh: Not Found (HTTP 404)")],
-			["unknown", errOut("gh: Bad gateway (HTTP 502)")],
+			["present", cycleDoc],
+			["absent", {status: 404, body: '{"message":"Not Found"}'}],
+			["unknown", {status: 502, body: '{"message":"Bad gateway"}'}],
 		] as const)("reads %s", async (expected, response) => {
 			const out = await run([
 				[EPIC, epic()],
@@ -173,8 +173,8 @@ describe("runRead", () => {
 	});
 
 	it("reads the child fetches at bounded fan-out, one request per child", async () => {
-		const shell = fakeShell([...CLEAN, [/^gh api --paginate repos\/o\/r\/labels/, labelSet()]]);
-		await Effect.runPromise(Effect.provide(runRead(options), planContext(shell)));
-		expect(shell.calls.filter((line) => /issues\/430[12]$/.test(line))).toHaveLength(2);
+		const seams = planSeams([...CLEAN, [/^gh api --paginate repos\/o\/r\/labels/, labelSet()]]);
+		await Effect.runPromise(Effect.provide(runRead(options), seams.layer));
+		expect(seams.http.calls.filter((line) => /issues\/430[12]$/.test(line))).toHaveLength(2);
 	});
 });

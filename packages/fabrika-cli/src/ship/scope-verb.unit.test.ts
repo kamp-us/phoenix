@@ -1,6 +1,13 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeHttp,
+	fakeShell,
+	type HttpReply,
+	okOut,
+	unconfigured,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
@@ -10,7 +17,7 @@ import {
 	files,
 	HEAD,
 	pull,
-	repository,
+	repositoryServed,
 } from "./fixtures.test-support.ts";
 import {runScope} from "./scope-verb.ts";
 
@@ -18,7 +25,7 @@ const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
 const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
 const OWNERS = /contents\/\.github\/CODEOWNERS/;
 const RULES = /^gh api repos\/o\/r\/rules\/branches\/main$/;
-const REPO = /^gh api repos\/o\/r$/;
+const REPO = /^GET https:\/\/api\.github\.com\/repos\/o\/r$/;
 const CONFIG = /contents\/\.fabrika\.jsonc/;
 
 const options = {pr: 4321, repo: null, json: false, cwd: "/repo", env: ENV};
@@ -26,11 +33,12 @@ const options = {pr: 4321, repo: null, json: false, cwd: "/repo", env: ENV};
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
+	served: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runScope({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, unconfigured),
+			Layer.mergeAll(fakeShell(script).layer, unconfigured, fakeHttp(served).layer),
 		),
 	);
 
@@ -45,13 +53,16 @@ describe("runScope", () => {
 	});
 
 	it("prints one derivation: state, issue ref, classes, the namespaces they require, cp, landing and count", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[FILES, files("apps/web/src/App.tsx", "README.md")],
-			[OWNERS, okOut(CODEOWNERS)],
-			[RULES, branchRules("pull_request")],
-			[REPO, repository()],
-		]);
+		const out = await run(
+			[
+				[PULL, pull()],
+				[FILES, files("apps/web/src/App.tsx", "README.md")],
+				[OWNERS, okOut(CODEOWNERS)],
+				[RULES, branchRules("pull_request")],
+			],
+			{},
+			[[REPO, repositoryServed()]],
+		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
 			[

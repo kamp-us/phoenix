@@ -10,9 +10,11 @@
 
 import type {FileSystem, Path} from "effect";
 import {Layer} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {CONFIG_PATH} from "../config/document.ts";
-import {fakeFs, okOut} from "../fakes.test-support.ts";
+import type {FakeHttp, FakeShell, HttpReply} from "../fakes.test-support.ts";
+import {fakeFs, fakeHttp, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 
 export const EPIC = 4300;
@@ -49,17 +51,17 @@ export const epic = (overrides: Record<string, unknown> = {}): ExecResult =>
 		}),
 	);
 
-export const subIssues = (...numbers: ReadonlyArray<number>): ExecResult =>
-	okOut(
-		JSON.stringify(
-			numbers.map((number) => ({
-				number,
-				title: `child ${number}`,
-				state: "open",
-				state_reason: null,
-			})),
-		),
-	);
+export const subIssues = (...numbers: ReadonlyArray<number>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(
+		numbers.map((number) => ({
+			number,
+			title: `child ${number}`,
+			state: "open",
+			state_reason: null,
+		})),
+	),
+});
 
 /** A child body that clears the floor: criteria, a story claim, and a containment marker. */
 export const childBody = (
@@ -81,21 +83,21 @@ export const child = (options: {
 	assignees?: ReadonlyArray<string> | null;
 	body?: string;
 	state?: string;
-}): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: options.number,
-			title: `child ${options.number}`,
-			body: options.body ?? childBody(),
-			state: options.state ?? "open",
-			labels: (options.labels ?? ["type:feature", "p1", "status:planned"]).map((name) => ({name})),
-			// `null` drops the key entirely — the unobserved slot, not an observed-empty one.
-			...(options.assignees === null
-				? {}
-				: {assignees: (options.assignees ?? []).map((login) => ({login}))}),
-			html_url: `https://github.com/o/r/issues/${options.number}`,
-		}),
-	);
+}): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: options.number,
+		title: `child ${options.number}`,
+		body: options.body ?? childBody(),
+		state: options.state ?? "open",
+		labels: (options.labels ?? ["type:feature", "p1", "status:planned"]).map((name) => ({name})),
+		// `null` drops the key entirely — the unobserved slot, not an observed-empty one.
+		...(options.assignees === null
+			? {}
+			: {assignees: (options.assignees ?? []).map((login) => ({login}))}),
+		html_url: `https://github.com/o/r/issues/${options.number}`,
+	}),
+});
 
 export const labelSet = (...names: ReadonlyArray<string>): ExecResult =>
 	okOut(`${names.join("\n")}\n`);
@@ -121,3 +123,56 @@ export const planContext = (
 	const unreadable = config === undefined || typeof config === "string" ? [] : [path];
 	return Layer.merge(shell.layer, fakeFs({files, unreadable}).layer);
 };
+
+/** The GitHub reads this group makes over the fetch client, matched on `METHOD url` (ADR 0315). */
+const API = "https:\\/\\/api\\.github\\.com";
+export const SUB_ISSUES = new RegExp(
+	`^GET ${API}\\/repos\\/o\\/r\\/issues\\/${EPIC}\\/sub_issues\\?`,
+);
+export const CHILD = (number: number): RegExp =>
+	new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/${number}$`);
+export const CYCLE_DOC = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/contents\\/`);
+
+/** The cycle doc, served — `present` is any 2xx, and the body is not read. */
+export const cycleDoc: HttpReply = {status: 200, body: "{}"};
+
+/** One scripted answer at either seam; which seam it belongs to is read off its own shape. */
+export type Scripted = readonly [RegExp, ExecResult] | readonly [RegExp, HttpReply];
+
+const isServed = (entry: Scripted): entry is readonly [RegExp, HttpReply] => "status" in entry[1];
+
+export interface PlanSeams {
+	readonly layer: Layer.Layer<
+		| ChildProcessSpawner.ChildProcessSpawner
+		| FileSystem.FileSystem
+		| HttpClient.HttpClient
+		| Path.Path
+	>;
+	readonly shell: FakeShell;
+	readonly http: FakeHttp;
+}
+
+/**
+ * Every seam a plan verb reads through, scripted from **one** list.
+ *
+ * The list is split by each answer's own shape rather than by the caller sorting it, so a test
+ * still reads as the ordered walk the verb makes — splitting it by hand is how a fixture ends up
+ * scripted at a seam nobody calls, which fails as "unscripted command" rather than as the thing the
+ * test is about.
+ */
+export const planSeams = (
+	script: ReadonlyArray<Scripted>,
+	config?: string | {readonly unreadable: true},
+): PlanSeams => {
+	const shell = fakeShell(
+		script.filter((entry): entry is readonly [RegExp, ExecResult] => !isServed(entry)),
+	);
+	const http = fakeHttp(script.filter(isServed));
+	return {layer: Layer.merge(planContext(shell, config), http.layer), shell, http};
+};
+
+/** The environment a plan verb test hands its verb — the repo, plus the client's credential. */
+export const ENV = {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} as Record<
+	string,
+	string | undefined
+>;

@@ -22,10 +22,12 @@ export const GIT_DIR = `${TREE_ROOT}/.git`;
 export const DIR = runDir(TREE_ROOT, runKey(EPIC, NONCE));
 export const EXCLUDE_PATH = `${GIT_DIR}/info/exclude`;
 
-export const env = {CLAUDE_PIPELINE_REPO: REPO, CLAUDE_CODE_SESSION_ID: SESSION} as Record<
-	string,
-	string | undefined
->;
+/** `GITHUB_TOKEN` is here because the GitHub client resolves its credential from this env (ADR 0315). */
+export const env = {
+	CLAUDE_PIPELINE_REPO: REPO,
+	CLAUDE_CODE_SESSION_ID: SESSION,
+	GITHUB_TOKEN: "ghp_scripted",
+} as Record<string, string | undefined>;
 
 export const epic = (overrides: Record<string, unknown> = {}): ExecResult =>
 	okOut(

@@ -9,6 +9,7 @@
  * rather than a second one.
  */
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type Producer, producerFor, resolveCi} from "../config/ci-producer.ts";
 import type {Resolution} from "../config/key-group.ts";
@@ -138,11 +139,17 @@ export const diagnoseOne = (
 	pr: number,
 	sha: string,
 	params: DiagnoseParams,
+	/** The caller's environment, which is where the GitHub credential resolves from. */
+	env: Readonly<Record<string, string | undefined>>,
 	/** This repo's `governedRoots`, resolved once by the caller — a sweep reads the config once. */
 	governedRoots: ReadonlyArray<string>,
 	/** This repo's `ci`, resolved once by the caller for the same reason. */
 	ci: Resolution<CiSurface>,
-): Effect.Effect<DiagnoseResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	DiagnoseResult,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const notices: string[] = [];
 
@@ -225,7 +232,7 @@ export const diagnoseOne = (
 			return refused(PRECONDITION_UNKNOWN, unreadable("the workflow runs", pr, runCount.reason));
 		}
 
-		const pushedAt = yield* commitPushedAt(repo, bound);
+		const pushedAt = yield* commitPushedAt(repo, bound, env);
 		if (pushedAt._tag === "Failure") {
 			return refused(PRECONDITION_UNKNOWN, unreadable("the head commit", pr, pushedAt.reason));
 		}
@@ -240,7 +247,7 @@ export const diagnoseOne = (
 			);
 		}
 
-		const declared = yield* readDeclared(repo, pull.baseRef);
+		const declared = yield* readDeclared(repo, pull.baseRef, env);
 		if (declared._tag === "Unknown") {
 			return refused(PRECONDITION_UNKNOWN, unreadable(declared.what, pr, declared.reason));
 		}
@@ -480,7 +487,10 @@ export const runDiagnose = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "a pull-request number", options.pr);
@@ -505,6 +515,7 @@ export const runDiagnose = (
 			options.pr,
 			options.sha,
 			options,
+			options.env,
 			governed.roots,
 			yield* resolveCi(options.cwd),
 		);

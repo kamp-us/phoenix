@@ -21,8 +21,9 @@
  * two groups come to disagree about what the platform returns.
  */
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
+import type {ChildProcessSpawner} from "effect/unstable/process";
 import {getWorkflowRun, rerunFailedJobs} from "../heal-ci/github.ts";
-import type {Shell} from "../io/git.ts";
 import {listRunsAtHead} from "../ship/github.ts";
 
 /** The floor workflow's `name:`, which is what a run at a head carries. */
@@ -60,7 +61,15 @@ const unknown = (reason: string): FloorAssertion => ({_tag: "Unknown", reason});
  * signal proves it: `run_attempt` increased, or the completed-and-red run is running again under the
  * same id while the counter catches up.
  */
-export const assertFloorAt = (repo: string, sha: string): Shell<FloorAssertion> =>
+export const assertFloorAt = (
+	repo: string,
+	sha: string,
+	env: Readonly<Record<string, string | undefined>>,
+): Effect.Effect<
+	FloorAssertion,
+	never,
+	HttpClient.HttpClient | ChildProcessSpawner.ChildProcessSpawner
+> =>
 	Effect.gen(function* () {
 		const listed = yield* listRunsAtHead(repo, sha);
 		if (listed._tag === "Failure") return unknown(listed.reason);
@@ -77,7 +86,7 @@ export const assertFloorAt = (repo: string, sha: string): Shell<FloorAssertion> 
 		if (latest.status !== "completed") return {_tag: "InFlight", run: latest.id};
 		if (!RED_CONCLUSIONS.has(latest.conclusion ?? "")) return {_tag: "Green", run: latest.id};
 
-		const before = yield* getWorkflowRun(repo, latest.id);
+		const before = yield* getWorkflowRun(repo, latest.id, env);
 		if (before._tag !== "Present") {
 			return unknown(
 				before._tag === "Absent"
@@ -85,9 +94,9 @@ export const assertFloorAt = (repo: string, sha: string): Shell<FloorAssertion> 
 					: `run ${latest.id}: ${before.reason}`,
 			);
 		}
-		const requested = yield* rerunFailedJobs(repo, latest.id);
+		const requested = yield* rerunFailedJobs(repo, latest.id, env);
 		if (requested._tag === "Failure") return unknown(requested.reason);
-		const after = yield* getWorkflowRun(repo, latest.id);
+		const after = yield* getWorkflowRun(repo, latest.id, env);
 		if (after._tag !== "Present") {
 			return unknown(
 				`the re-fire was requested and the confirming read of run ${latest.id} failed — UNKNOWN whether it re-ran`,

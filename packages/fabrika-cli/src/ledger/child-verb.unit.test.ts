@@ -2,7 +2,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {GIT_DIRS} from "../build/fixtures.test-support.ts";
 import {CONFIG_PATH} from "../config/document.ts";
-import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeHttp, fakeShell, type HttpReply, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {runChild} from "./child-verb.ts";
@@ -35,7 +35,7 @@ import {manifestPath, parseManifest, renderRunRecord, runJsonPath} from "./run.t
 const CREATE = /^gh api --method POST repos\/o\/r\/issues /;
 const LINK = /^gh api --method POST repos\/o\/r\/issues\/4300\/sub_issues/;
 const READBACK = /^gh api repos\/o\/r\/issues\/4301$/;
-const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
+const SUBS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issues\?/;
 const LABELS = /^gh api --paginate repos\/o\/r\/labels/;
 const MILESTONES = /^gh api --paginate repos\/o\/r\/milestones/;
 
@@ -65,7 +65,17 @@ const HAPPY: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[CREATE, CREATED],
 	[LINK, okOut("{}")],
 	[READBACK, childIssue({number: 4301, labels: MINTED_LABELS, milestone: HOME})],
-	[SUBS, okOut(JSON.stringify([{number: 4301, id: 90210, state: "open", state_reason: null}]))],
+];
+
+/** The sub-issue list, read over the fetch client since the port (ADR 0315). */
+const SIBLINGS: ReadonlyArray<readonly [RegExp, HttpReply]> = [
+	[
+		SUBS,
+		{
+			status: 200,
+			body: JSON.stringify([{number: 4301, id: 90210, state: "open", state_reason: null}]),
+		},
+	],
 ];
 
 const options = {
@@ -88,14 +98,16 @@ const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]> = HAPPY,
 	files: Readonly<Record<string, string | null>> = {[runJsonPath(DIR)]: RUN_JSON()},
 	body: string = childBody(),
+	served: ReadonlyArray<readonly [RegExp, HttpReply]> = SIBLINGS,
 ) => {
 	const shell = fakeShell(script);
 	const fs = fakeFs({files});
+	const http = fakeHttp(served);
 	const stdin: Effect.Effect<StdinRead> = Effect.succeed({_tag: "Text", text: body});
 	return Effect.runPromise(
 		Effect.provide(
 			runChild({...options, ...overrides, stdin}),
-			Layer.mergeAll(shell.layer, fs.layer),
+			Layer.mergeAll(shell.layer, fs.layer, http.layer),
 		),
 	).then((outcome) => ({outcome, written: fs.written, calls: shell.calls}));
 };
@@ -362,9 +374,8 @@ describe("runChild", () => {
 	});
 
 	it("seats an unprovable link on 23 even when the write itself returned", async () => {
-		const {outcome} = await run({}, [
-			...HAPPY.filter(([pattern]) => pattern !== SUBS),
-			[SUBS, okOut("[]")],
+		const {outcome} = await run({}, HAPPY, {[runJsonPath(DIR)]: RUN_JSON()}, childBody(), [
+			[SUBS, {status: 200, body: "[]"}],
 		]);
 		expect(outcome.code).toBe(LINK_UNPROVEN);
 	});
@@ -398,7 +409,7 @@ describe("runChild", () => {
 					...options,
 					stdin: Effect.succeed({_tag: "Text", text: childBody()} as StdinRead),
 				}),
-				Layer.mergeAll(shell.layer, fs.layer),
+				Layer.mergeAll(shell.layer, fs.layer, fakeHttp(SIBLINGS).layer),
 			),
 		);
 		expect(outcome.code).toBe(MANIFEST_UNWRITTEN);

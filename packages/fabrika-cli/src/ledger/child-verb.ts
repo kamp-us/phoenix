@@ -21,6 +21,7 @@
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {readAuthored} from "../build/authored.ts";
 import {STANDING_LANE_LABELS, type StandingLaneLabel} from "../build/scope-admission.ts";
@@ -99,7 +100,10 @@ export const runChild = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		if (options.readyFor === null) {
@@ -277,7 +281,7 @@ export const runChild = (
 			);
 		}
 
-		const siblings = yield* listSubIssues(repo, epic.number);
+		const siblings = yield* listSubIssues(repo, epic.number, options.env);
 		if (
 			siblings._tag === "Failure" ||
 			!siblings.value.some((link) => link.number === child.number)

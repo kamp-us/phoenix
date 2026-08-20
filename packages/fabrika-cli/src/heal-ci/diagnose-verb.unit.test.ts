@@ -1,6 +1,14 @@
 import {Effect, type FileSystem, Layer, type Path} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeFs,
+	fakeHttp,
+	fakeShell,
+	type HttpReply,
+	okOut,
+	unconfigured,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {runDiagnose} from "./diagnose-verb.ts";
@@ -18,6 +26,7 @@ import {
 	FILES,
 	files,
 	HEAD,
+	httpError,
 	PERMISSION,
 	PROTECTION,
 	PULL,
@@ -53,14 +62,25 @@ const options = {
 	now: NOW,
 };
 
+/** The three reads this verb makes over the HTTP client; cases override the row they are about. */
+const served = (
+	overrides: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
+): ReadonlyArray<readonly [RegExp, HttpReply]> => [
+	...overrides,
+	[COMMIT_DATE, commitDate(PUSHED)],
+	[RULES, rules("ci-required")],
+	[PROTECTION, protection()],
+];
+
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
+	http: ReadonlyArray<readonly [RegExp, HttpReply]> = served(),
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runDiagnose({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, unconfigured),
+			Layer.mergeAll(fakeShell(script).layer, unconfigured, fakeHttp(http).layer),
 		),
 	);
 
@@ -73,7 +93,7 @@ const runWith = (
 	Effect.runPromise(
 		Effect.provide(
 			runDiagnose({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, config),
+			Layer.mergeAll(fakeShell(script).layer, config, fakeHttp(served()).layer),
 		),
 	);
 
@@ -89,9 +109,6 @@ const script = (
 	[CHECK_RUNS, checkRuns(1, [green()])],
 	[WORKFLOWS, workflows("active")],
 	[RUN_COUNT, runsTotal(3)],
-	[COMMIT_DATE, commitDate(PUSHED)],
-	[RULES, rules("ci-required")],
-	[PROTECTION, protection()],
 	[COMMENTS, comments()],
 	[TIMELINE, timeline()],
 	[REVIEWS, reviews()],
@@ -134,12 +151,13 @@ describe("runDiagnose answers", () => {
 	it("reports check-surface above red when a required context has no producing run", async () => {
 		const out = await run(
 			script([
-				[RULES, rules("ci-required", "code-scanning/codeql")],
 				[
 					CHECK_RUNS,
 					checkRuns(1, [{name: "ci-required", status: "completed", conclusion: "failure"}]),
 				],
 			]),
+			{},
+			served([[RULES, rules("ci-required", "code-scanning/codeql")]]),
 		);
 		expect(out.stdout.split("\n")[0]).toBe(`stall\tcheck-surface\t${HEAD}\t35`);
 	});
@@ -147,12 +165,13 @@ describe("runDiagnose answers", () => {
 	it("skips the surface arm on an unprobeable protection surface rather than passing it", async () => {
 		const out = await run(
 			script([
-				[RULES, errOut("gh: Must have admin rights (HTTP 403)")],
 				[
 					CHECK_RUNS,
 					checkRuns(1, [{name: "ci-required", status: "completed", conclusion: "failure"}]),
 				],
 			]),
+			{},
+			served([[RULES, httpError(403, "Must have admin rights")]]),
 		);
 		expect(out.stdout.split("\n")[0]).toBe(`stall\tred\t${HEAD}\t35`);
 		expect(out.stderr.join("\n")).toContain("UNPROBEABLE");

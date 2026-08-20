@@ -1,7 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {comments, GIT_DIRS} from "../build/fixtures.test-support.ts";
-import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeHttp, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	CLAIM_NOT_MINE,
@@ -29,7 +29,7 @@ const SHA = "03135b9188d2be6c0a4b7bd0b7a3ff9c53f0f2b1";
 const EPIC_READ = /^gh api repos\/o\/r\/issues\/4300$/;
 const TREE = /^git rev-parse --path-format=absolute/;
 const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
-const CYCLE = /^gh api repos\/o\/r\/contents\/product-development-cycle\.md$/;
+const CYCLE = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/contents\//;
 const BACKLOG = /^gh api --paginate repos\/o\/r\/issues\?state=open/;
 const SEARCH = /^gh api --paginate search\/issues/;
 const REV_LIST = /^git rev-list --count/;
@@ -47,7 +47,6 @@ const CLEAN: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	...CLAIMED,
 	...GROUND,
 	[SUBS, subIssues()],
-	[CYCLE, okOut("{}")],
 	[BACKLOG, issueRows([4180, "queue view for reports"])],
 	[SEARCH, issueRows()],
 ];
@@ -58,10 +57,12 @@ const run = (
 ) => {
 	const shell = fakeShell(script);
 	const fs = fakeFs({files});
+	// The cycle-doc probe is the one read this verb makes over the fetch client (ADR 0315).
+	const http = fakeHttp([[CYCLE, {status: 200, body: "{}"}]]);
 	return Effect.runPromise(
 		Effect.provide(
 			runOpen({number: 4300, token: TOKEN, repo: null, cwd: "/repo", env}),
-			Layer.mergeAll(shell.layer, fs.layer),
+			Layer.mergeAll(shell.layer, fs.layer, http.layer),
 		),
 	).then((outcome) => ({outcome, written: fs.written, calls: shell.calls}));
 };

@@ -4,6 +4,7 @@
  * One module, because every verb in the group reads the same PR shape — a per-test literal is how
  * two tests come to disagree about what the platform returns.
  */
+import type {HttpReply} from "../fakes.test-support.ts";
 import {okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 
@@ -220,10 +221,44 @@ export const repository = (
 		}),
 	);
 
-/** The landing read-back projection: `merged` beside the commit that proves it. */
-export const mergeProof = (shape: {merged?: boolean; commit?: string} = {}): ExecResult =>
-	okOut(JSON.stringify({merged: shape.merged ?? true, commit: shape.commit ?? MERGE_COMMIT}));
+/** The repository payload as the HTTP client reads it — the same flags, off a served body. */
+export const repositoryServed = (
+	allowed: {squash?: boolean; merge?: boolean; rebase?: boolean} = {},
+): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		full_name: "o/r",
+		allow_squash_merge: allowed.squash ?? true,
+		allow_merge_commit: allowed.merge ?? true,
+		allow_rebase_merge: allowed.rebase ?? true,
+	}),
+});
+
+/**
+ * The landing read-back, off the pull request's own payload.
+ *
+ * `merge_commit_sha` is the payload's key, not the `--jq` era's projected `commit`: the projection
+ * is gone with `gh`, so the fixture speaks the endpoint's own shape.
+ */
+export const mergeProofServed = (shape: {merged?: boolean; commit?: string} = {}): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		merged: shape.merged ?? true,
+		merge_commit_sha: shape.commit ?? MERGE_COMMIT,
+	}),
+});
 
 export const MERGE_COMMIT = "5c7d1e930a2b4f6d8e0c1a3b5d7f9e1c3a5b7d9f";
 
-export const ENV = {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>;
+/**
+ * The environment every ship verb test hands its verb.
+ *
+ * `GITHUB_TOKEN` is here because the GitHub client takes a credential as an argument (ADR 0315) and
+ * resolves it from this environment — without it a test would fall through to a `gh auth token`
+ * spawn and read the developer's own login, which is exactly the inherited state the scripted seams
+ * exist to remove.
+ */
+export const ENV = {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} as Record<
+	string,
+	string | undefined
+>;
