@@ -9,7 +9,7 @@
  * checked-in `/report` contract already sits behind its own binary on `7` and `11` (#4752), which is
  * why the shipped package is the authority and no prose copy is.
  *
- * **`12`-`15` are this group's private band, and are deliberately not cleared against sibling
+ * **`12`-`16` are this group's private band, and are deliberately not cleared against sibling
  * groups.** `triage` seats `12`/`13` on its own two refusals; that is two namespaces, not one
  * collision, because the `3`+ band carries no cross-group uniqueness obligation — see rule 3 of
  * `../../../../claude-plugins/fabrika/docs/cli-interface-convention.md`, which also names the one
@@ -74,6 +74,14 @@ export const INCOMPLETE_SCAN = 13;
 export const ACL_DENIED = 14;
 /** Refused: the write is not provably the prior rows plus one — the append-only fence. */
 export const APPEND_ONLY = 15;
+/**
+ * Refused: the check runs at the head came from no workflow this repo authors.
+ *
+ * Neither {@link ZERO_SCOPE} (runs exist) nor {@link INCOMPLETE_SCAN} (all of them were seen). The
+ * enumeration is complete and every run passed — and not one gate inspected the bytes, which is the
+ * state that reads as safety while carrying none (#6522).
+ */
+export const NO_GATE_COVERAGE = 16;
 
 /** The unallocated code — see the gap note at the top of this file. */
 export const DELIBERATE_GAP = 4;

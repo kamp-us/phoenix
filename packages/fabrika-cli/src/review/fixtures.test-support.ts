@@ -118,6 +118,31 @@ export const checkRuns = (
 	runs: ReadonlyArray<{name: string; status: string; conclusion: string | null}>,
 ): ExecResult => okOut(JSON.stringify({total_count: declared, check_runs: runs}));
 
+/** The active workflow inventory, addressed the way the Actions API addresses one: by `path`. */
+export const inventory = (...paths: ReadonlyArray<string>): ExecResult =>
+	okOut(
+		JSON.stringify({
+			total_count: paths.length,
+			workflows: paths.map((path, index) => ({id: index + 1, state: "active", path})),
+		}),
+	);
+
+/** The workflow runs recorded at one head, each naming the workflow it came from. */
+export const runsAtHead = (...paths: ReadonlyArray<string>): ExecResult =>
+	okOut(
+		JSON.stringify({
+			total_count: paths.length,
+			workflow_runs: paths.map((path, index) => ({
+				id: index + 1,
+				name: path,
+				path,
+				status: "completed",
+				conclusion: "success",
+				completed_at: "2026-08-08T00:00:00Z",
+			})),
+		}),
+	);
+
 export const comments = (
 	...rows: ReadonlyArray<{id: number; body: string; author?: string; createdAt?: string}>
 ): ExecResult =>

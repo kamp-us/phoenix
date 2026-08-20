@@ -170,7 +170,7 @@ exit taxonomy, and the verdict-vs-invocation rule proven in v1 at
   [`exit-code-alignment.ts`](../../../packages/fabrika-cli/src/exit-code-alignment.ts) mechanizes
   exactly that scope and no more: it checks each aligning group against the **base** and never
   pairwise against a sibling. Above the shared overlap each group's private band is its own —
-  `review`'s `12`–`15` and `triage`'s `12`–`13` are not required to clear each other, and do not.
+  `review`'s `12`–`16` and `triage`'s `12`–`13` are not required to clear each other, and do not.
 
   [`wire/codes.ts`](../../../packages/fabrika-cli/src/wire/codes.ts) is the shipped counter-example.
   It aligns to nothing, and is *registered* as unaligned with its reason so the exemption carries
