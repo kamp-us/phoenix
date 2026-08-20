@@ -489,6 +489,14 @@ export const fakeSeams = (
 	readonly calls: ReadonlyArray<string>;
 	readonly requests: ReadonlyArray<string>;
 	readonly bodies: ReadonlyArray<string>;
+	/**
+	 * What each request carried as headers, aligned with `requests`.
+	 *
+	 * The only place an `Accept` claim can be read: two reads of one URL that differ solely by
+	 * `Accept` — the pull metadata read and the diff read — are one line in `requests`, so a fence
+	 * pinning which of them ran can be stated nowhere else (#5117, #5122).
+	 */
+	readonly headers: ReadonlyArray<Readonly<Record<string, string>>>;
 	/** Both seams' traffic in one order — the only place a "X happened before Y" claim can be read. */
 	readonly log: ReadonlyArray<string>;
 } => {
@@ -509,6 +517,7 @@ export const fakeSeams = (
 		calls: shell.calls,
 		requests: http.calls,
 		bodies: http.bodies,
+		headers: http.headers,
 		log,
 	};
 };

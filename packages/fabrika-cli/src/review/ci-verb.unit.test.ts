@@ -1,26 +1,32 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeHttp, fakeShell, type HttpReply, okOut} from "../fakes.test-support.ts";
+import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {workflows} from "../ship/fixtures.test-support.ts";
 import {runCi} from "./ci-verb.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {checkRuns, HEAD, inventory, OLD_HEAD, pull, runsAtHead} from "./fixtures.test-support.ts";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-const COMMIT = (sha: string) => new RegExp(`^gh api repos/o/r/commits/${sha} --jq \\.sha$`);
-const RUNS = /^gh api --paginate repos\/o\/r\/commits\/[0-9a-f]+\/check-runs/;
-// The two Actions reads went over to HTTP with `ship/github.ts`; everything else here still shells.
+const PULL = /GET .*\/repos\/o\/r\/pulls\/4321$/;
+const COMMIT = (sha: string) => new RegExp(`GET .*/repos/o/r/commits/${sha}$`);
+const RUNS = /GET .*\/repos\/o\/r\/commits\/[0-9a-f]+\/check-runs/;
 const WORKFLOWS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/workflows\?/;
 const AT_HEAD = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/runs\?head_sha=/;
 const CONFIG = "/repo/.fabrika.jsonc";
 
-/** A canned payload, served as the body of the 200 the ported read now issues. */
+/** A canned payload as the platform serves it — the fixtures speak `ExecResult`, the seam HTTP. */
 const served = (result: ExecResult): HttpReply => ({status: 200, body: result.stdout});
 
 const BAD_GATEWAY: HttpReply = {status: 502, body: '{"message":"Bad gateway"}'};
+const NOT_FOUND = '{"message":"Not Found"}';
 
-const GREEN = checkRuns(3, [
+/** The check-run envelope at a commit, as the platform serves it. */
+const runs = (
+	declared: number,
+	list: ReadonlyArray<{name: string; status: string; conclusion: string | null}>,
+): HttpReply => served(checkRuns(declared, list));
+
+const GREEN = runs(3, [
 	{name: "lint / format / typecheck", status: "completed", conclusion: "success"},
 	{name: "unit tests", status: "completed", conclusion: "success"},
 	{name: "leak-guard", status: "completed", conclusion: "success"},
@@ -31,7 +37,7 @@ const GUARD_YML = ".github/workflows/leak-guard.yml";
 const CODEQL = "dynamic/github-code-scanning/codeql";
 
 /** The repo's own gates ran here — the coverage reads every non-red rollup now owes. */
-const GATED: ReadonlyArray<readonly [RegExp, HttpReply]> = [
+const GATED: ReadonlyArray<Scripted> = [
 	[WORKFLOWS, served(inventory(CI_YML, GUARD_YML, CODEQL))],
 	[AT_HEAD, served(runsAtHead(CI_YML, GUARD_YML))],
 ];
@@ -46,15 +52,15 @@ const options = {
 };
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
+	script: ReadonlyArray<Scripted>,
+	http: ReadonlyArray<Scripted> = [],
 	overrides: Partial<typeof options> = {},
 	files: Readonly<Record<string, string | null>> = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runCi({...options, ...overrides}),
-			Layer.mergeAll(fakeShell(script).layer, fakeHttp(http).layer, fakeFs({files}).layer),
+			Layer.merge(fakeSeams([...script, ...http]).layer, fakeFs({files}).layer),
 		),
 	);
 
@@ -62,7 +68,7 @@ describe("runCi", () => {
 	it("prints the rollup, the count of lines that follow, and one line per run", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
+				[PULL, served(pull())],
 				[RUNS, GREEN],
 			],
 			GATED,
@@ -82,10 +88,10 @@ describe("runCi", () => {
 
 	it("names a red check by name, not as a rollup boolean", async () => {
 		const out = await run([
-			[PULL, pull()],
+			[PULL, served(pull())],
 			[
 				RUNS,
-				checkRuns(2, [
+				runs(2, [
 					{name: "unit tests", status: "completed", conclusion: "failure"},
 					{name: "leak-guard", status: "completed", conclusion: "success"},
 				]),
@@ -98,8 +104,8 @@ describe("runCi", () => {
 	it("enumerates at --sha and notices when the live head has moved past it", async () => {
 		const out = await run(
 			[
-				[PULL, pull({head: HEAD})],
-				[COMMIT(OLD_HEAD), okOut(OLD_HEAD)],
+				[PULL, served(pull({head: HEAD}))],
+				[COMMIT(OLD_HEAD), {status: 200, body: JSON.stringify({sha: OLD_HEAD})}],
 				[RUNS, GREEN],
 			],
 			GATED,
@@ -113,8 +119,8 @@ describe("runCi", () => {
 	it("refuses a --sha proven absent on 7", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
-				[COMMIT(OLD_HEAD), errOut("gh: Not Found (HTTP 404)")],
+				[PULL, served(pull())],
+				[COMMIT(OLD_HEAD), {status: 404, body: NOT_FOUND}],
 			],
 			[],
 			{sha: OLD_HEAD},
@@ -126,8 +132,8 @@ describe("runCi", () => {
 	it("refuses zero declared check runs on 7 — a vacuous green is the ADR 0092 fail-open", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
-				[RUNS, checkRuns(0, [])],
+				[PULL, served(pull())],
+				[RUNS, runs(0, [])],
 			],
 			[[WORKFLOWS, served(workflows("active", "active"))]],
 		);
@@ -138,8 +144,8 @@ describe("runCi", () => {
 
 	it("refuses a short enumeration on 13 — never read as `no red checks`", async () => {
 		const out = await run([
-			[PULL, pull()],
-			[RUNS, checkRuns(9, [{name: "unit tests", status: "completed", conclusion: "success"}])],
+			[PULL, served(pull())],
+			[RUNS, runs(9, [{name: "unit tests", status: "completed", conclusion: "success"}])],
 		]);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.stdout).toBe("");
@@ -150,8 +156,8 @@ describe("runCi", () => {
 
 	it("refuses an unreadable enumeration on 11 — CI state is UNKNOWN, never green", async () => {
 		const out = await run([
-			[PULL, pull()],
-			[RUNS, errOut("gh: Bad gateway (HTTP 502)")],
+			[PULL, served(pull())],
+			[RUNS, BAD_GATEWAY],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -161,7 +167,7 @@ describe("runCi", () => {
 	it("reports what it scanned against what was declared", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
+				[PULL, served(pull())],
 				[RUNS, GREEN],
 			],
 			GATED,
@@ -172,7 +178,7 @@ describe("runCi", () => {
 
 describe("the gate-coverage read", () => {
 	/** The live incident: a conflicted head where only CodeQL's default setup reported (#6522). */
-	const CODEQL_ONLY = checkRuns(4, [
+	const CODEQL_ONLY = runs(4, [
 		{name: "CodeQL", status: "completed", conclusion: "success"},
 		{name: "Analyze (actions)", status: "completed", conclusion: "success"},
 		{name: "Analyze (javascript-typescript)", status: "completed", conclusion: "success"},
@@ -182,7 +188,7 @@ describe("the gate-coverage read", () => {
 	it("refuses an all-passed CodeQL-only head on 16 — never green over ungated bytes", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
+				[PULL, served(pull())],
 				[RUNS, CODEQL_ONLY],
 			],
 			[
@@ -200,8 +206,8 @@ describe("the gate-coverage read", () => {
 	it("refuses a pending rollup with no gate coverage too — the reviewer would wait forever", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
-				[RUNS, checkRuns(1, [{name: "CodeQL", status: "in_progress", conclusion: null}])],
+				[PULL, served(pull())],
+				[RUNS, runs(1, [{name: "CodeQL", status: "in_progress", conclusion: null}])],
 			],
 			[
 				[WORKFLOWS, served(inventory(CI_YML, CODEQL))],
@@ -214,7 +220,7 @@ describe("the gate-coverage read", () => {
 	it("names the coverage it judged when the repo's own gates did run", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
+				[PULL, served(pull())],
 				[RUNS, GREEN],
 			],
 			GATED,
@@ -228,7 +234,7 @@ describe("the gate-coverage read", () => {
 	it("carries the coverage on the --json object", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
+				[PULL, served(pull())],
 				[RUNS, GREEN],
 			],
 			GATED,
@@ -241,8 +247,8 @@ describe("the gate-coverage read", () => {
 		// No WORKFLOWS or AT_HEAD entry in the script: a call would fail the fake, which is the
 		// assertion. A red check names itself; refusing it as ungated would bury that.
 		const out = await run([
-			[PULL, pull()],
-			[RUNS, checkRuns(1, [{name: "unit tests", status: "completed", conclusion: "failure"}])],
+			[PULL, served(pull())],
+			[RUNS, runs(1, [{name: "unit tests", status: "completed", conclusion: "failure"}])],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("\tred\n");
@@ -251,7 +257,7 @@ describe("the gate-coverage read", () => {
 	it("judges no coverage when the repo authors no workflow of its own", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
+				[PULL, served(pull())],
 				[RUNS, GREEN],
 			],
 			[
@@ -270,7 +276,7 @@ describe("the gate-coverage read", () => {
 	it("refuses an unreadable inventory on 11 — which gates exist is UNKNOWN, never green", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
+				[PULL, served(pull())],
 				[RUNS, GREEN],
 			],
 			[[WORKFLOWS, BAD_GATEWAY]],
@@ -283,7 +289,7 @@ describe("the gate-coverage read", () => {
 	it("refuses an unreadable run list on 11 — which gates ran is UNKNOWN, never green", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
+				[PULL, served(pull())],
 				[RUNS, GREEN],
 			],
 			[
@@ -298,9 +304,9 @@ describe("the gate-coverage read", () => {
 });
 
 describe("the no-producer split", () => {
-	const empty: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull()],
-		[RUNS, checkRuns(0, [])],
+	const empty: ReadonlyArray<Scripted> = [
+		[PULL, served(pull())],
+		[RUNS, runs(0, [])],
 	];
 
 	it("never asks the producer question while checks are reporting", async () => {
@@ -309,7 +315,7 @@ describe("the no-producer split", () => {
 		// malformed refuses on 11 the moment anything asks it, and nothing here does.
 		const out = await run(
 			[
-				[PULL, pull()],
+				[PULL, served(pull())],
 				[RUNS, GREEN],
 			],
 			GATED,

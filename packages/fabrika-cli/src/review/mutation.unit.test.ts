@@ -21,12 +21,11 @@ import {Effect, type FileSystem, Layer, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {
-	errOut,
-	fakeHttp,
-	fakeShell,
+	fakeSeams,
 	type HttpReply,
 	okOut,
 	once,
+	type Scripted,
 	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
@@ -56,17 +55,16 @@ import {
 	runsAtHead,
 } from "./fixtures.test-support.ts";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
-const RAW = /^gh api -H Accept: application\/vnd\.github\.diff repos\/o\/r\/pulls\/4321$/;
-const RUNS = /^gh api --paginate repos\/o\/r\/commits\/[0-9a-f]+\/check-runs/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
-const CREATE = /^gh api --method POST repos\/o\/r\/issues\/4321\/comments /;
-const READBACK = /^gh api repos\/o\/r\/issues\/comments\/\d+$/;
-const USER = /^gh api user --jq \.login$/;
-const PERMISSION = /^gh api repos\/o\/r\/collaborators\/kampus-bot\/permission --jq \.permission$/;
-const ISSUE = /^gh api repos\/o\/r\/issues\/4287$/;
-const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/4287 -f body=/;
+const PULL = /GET .*\/repos\/o\/r\/pulls\/4321$/;
+const FILES = /GET .*\/repos\/o\/r\/pulls\/4321\/files\?/;
+const RUNS = /GET .*\/repos\/o\/r\/commits\/[0-9a-f]+\/check-runs/;
+const COMMENTS = /GET .*\/repos\/o\/r\/issues\/4321\/comments/;
+const CREATE = /POST .*\/repos\/o\/r\/issues\/4321\/comments/;
+const READBACK = /GET .*\/repos\/o\/r\/issues\/comments\/\d+/;
+const USER = /GET .*api\.github\.com\/user$/;
+const PERMISSION = /GET .*\/repos\/o\/r\/collaborators\/kampus-bot\/permission$/;
+const ISSUE = /GET .*\/repos\/o\/r\/issues\/4287$/;
+const PATCH = /PATCH .*\/repos\/o\/r\/issues\/4287$/;
 
 const ENV = {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>;
 
@@ -80,20 +78,17 @@ const withShell = <A>(
 		never,
 		ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 	>,
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
+	script: ReadonlyArray<Scripted>,
+	http: ReadonlyArray<Scripted> = [],
 ): Promise<A> =>
 	Effect.runPromise(
-		Effect.provide(
-			effect,
-			Layer.mergeAll(fakeShell(script).layer, fakeHttp(http).layer, unconfigured),
-		),
+		Effect.provide(effect, Layer.merge(fakeSeams([...script, ...http]).layer, unconfigured)),
 	);
 
-/** A canned payload, served as the body of the 200 the ported `ship/github.ts` read now issues. */
+/** A canned payload as the platform serves it — the fixtures speak `ExecResult`, the seam HTTP. */
 const served = (result: ExecResult): HttpReply => ({status: 200, body: result.stdout});
 
-/** The two Actions reads that moved to HTTP; every other read in this file still shells out. */
+/** The two Actions reads, addressed by their full URLs — the query is what tells them apart. */
 const WORKFLOWS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/workflows\?/;
 const AT_HEAD = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/runs\?head_sha=/;
 
@@ -126,11 +121,11 @@ describe("the CI rollup's fail-closed buckets", () => {
 	// Scripted so the mutant reaches the exact wrong answer this case pins. The real verb short-
 	// circuits on `red` and never issues these two reads; only the mutant, having dropped the
 	// cancelled run, gets far enough to ask which gates ran.
-	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull()],
-		[RUNS, CANCELLED],
+	const script: ReadonlyArray<Scripted> = [
+		[PULL, served(pull())],
+		[RUNS, served(CANCELLED)],
 	];
-	const http: ReadonlyArray<readonly [RegExp, HttpReply]> = [
+	const http: ReadonlyArray<Scripted> = [
 		[WORKFLOWS, served(inventory(CI_YML))],
 		[AT_HEAD, served(runsAtHead(CI_YML))],
 	];
@@ -165,11 +160,11 @@ describe("the CI rollup's gate-coverage refusal", () => {
 	const CI_YML = ".github/workflows/ci.yml";
 	const CODEQL = "dynamic/github-code-scanning/codeql";
 	/** The #6522 head: a complete, all-passed enumeration that no gate of this repo produced. */
-	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull()],
-		[RUNS, checkRuns(1, [{name: "CodeQL", status: "completed", conclusion: "success"}])],
+	const script: ReadonlyArray<Scripted> = [
+		[PULL, served(pull())],
+		[RUNS, served(checkRuns(1, [{name: "CodeQL", status: "completed", conclusion: "success"}]))],
 	];
-	const http: ReadonlyArray<readonly [RegExp, HttpReply]> = [
+	const http: ReadonlyArray<Scripted> = [
 		[WORKFLOWS, served(inventory(CI_YML, CODEQL))],
 		[AT_HEAD, served(runsAtHead(CODEQL))],
 	];
@@ -203,9 +198,9 @@ describe("the CI rollup's gate-coverage refusal", () => {
 
 describe("the three-outcome binding", () => {
 	const STALE = `review-code: PASS @ ${OLD_HEAD} — merge-ready`;
-	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull({comments: 1})],
-		[COMMENTS, comments({id: 1, body: STALE})],
+	const script: ReadonlyArray<Scripted> = [
+		[PULL, served(pull({comments: 1}))],
+		[COMMENTS, served(comments({id: 1, body: STALE}))],
 	];
 
 	it("prints a stale PASS as stale", async () => {
@@ -237,8 +232,8 @@ describe("the three-outcome binding", () => {
 describe("the diff completeness proof", () => {
 	// The range carries seven files; the served diff carries two. Both counts are git's, over the
 	// same range — anything but a refusal judges 2/7 (#5139).
-	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull({changedFiles: 7})],
+	const script: ReadonlyArray<Scripted> = [
+		[PULL, served(pull({changedFiles: 7}))],
 		...binding(),
 		[DIFF_AT(), okOut(DIFF)],
 		[PATHS_AT(), paths("src/cart.ts", "README.md", "c.ts", "d.ts", "e.ts", "f.ts", "g.ts")],
@@ -278,12 +273,11 @@ describe("the commit binding on the read verbs", () => {
 +const y = 2;
 `;
 
-	const diffScript: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull({changedFiles: 1})],
+	const diffScript: ReadonlyArray<Scripted> = [
+		[PULL, served(pull({changedFiles: 1}))],
 		...binding(),
 		[DIFF_AT(), okOut(DIFF)],
 		[PATHS_AT(), paths("src/cart.ts")],
-		[RAW, okOut(MOVED_DIFF)],
 	];
 
 	it("serves the bound commit's bytes", async () => {
@@ -304,11 +298,11 @@ describe("the commit binding on the read verbs", () => {
 		expect(out.stdout).not.toBe(DIFF);
 	});
 
-	const scopeScript: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull({changedFiles: 1})],
+	const scopeScript: ReadonlyArray<Scripted> = [
+		[PULL, served(pull({changedFiles: 1}))],
 		...binding(),
 		[PATHS_AT(), paths("src/cart.ts")],
-		[FILES, files("docs/moved.md")],
+		[FILES, served(files("docs/moved.md"))],
 	];
 
 	it("partitions the bound commit's file list", async () => {
@@ -350,12 +344,11 @@ diff --git a/README.md b/README.md
 +a line
 `;
 
-	const deviationsScript: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull()],
+	const deviationsScript: ReadonlyArray<Scripted> = [
+		[PULL, served(pull())],
 		...binding(),
 		[DIFF_AT(), okOut(SUPPRESSING_DIFF)],
 		[PATHS_AT(), paths("src/cart.ts", "README.md")],
-		[RAW, okOut(DIFF)],
 	];
 
 	it("scans the bound commit's bytes for Tier-M tokens", async () => {
@@ -396,30 +389,31 @@ diff --git a/README.md b/README.md
 		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "the table\n"}),
 		now: NOW,
 	};
-	const postScript: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull({changedFiles: 1})],
+	const postScript: ReadonlyArray<Scripted> = [
+		[PULL, served(pull({changedFiles: 1}))],
 		...binding(),
 		[PATHS_AT(), paths("src/cart.ts")],
-		[FILES, files("skills/deploy/SKILL.md")],
-		[USER, okOut("kampus-bot")],
-		[COMMENTS, comments()],
-		[CREATE, okOut(JSON.stringify({id: 1, html_url: "https://example.test/c/1"}))],
+		[FILES, served(files("skills/deploy/SKILL.md"))],
+		[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+		[COMMENTS, served(comments())],
+		[CREATE, {status: 201, body: JSON.stringify({id: 1, html_url: "https://example.test/c/1"})}],
 		[
 			READBACK,
-			okOut(
-				JSON.stringify({
+			{
+				status: 200,
+				body: JSON.stringify({
 					body: `review-skill: PASS @ ${HEAD} content:${CONTENT} — guide matches shipped behavior\n\nthe table\n\n${STAMP}`,
 				}),
-			),
+			},
 		],
 	];
 
 	it("refuses a namespace the bound commit's file list does not derive", async () => {
 		const {runPost} = await import("./post-verb.ts");
-		const shell = fakeShell(postScript);
+		const shell = fakeSeams(postScript);
 		const out = await Effect.runPromise(Effect.provide(runPost(postOptions), shell.layer));
 		expect(out.code).toBe(10);
-		expect(shell.calls.some((call) => CREATE.test(call))).toBe(false);
+		expect(shell.requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("MUTANT: reading the PR-number file list POSTS a namespace this run never derived", async () => {
@@ -428,11 +422,11 @@ diff --git a/README.md b/README.md
 				Effect.succeed({_tag: "Ok" as const, value: ["skills/deploy/SKILL.md"]}),
 		}));
 		const {runPost} = await import("./post-verb.ts");
-		const shell = fakeShell(postScript);
+		const shell = fakeSeams(postScript);
 		const out = await Effect.runPromise(Effect.provide(runPost(postOptions), shell.layer));
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("posted\treview-skill\tPASS");
-		expect(shell.calls.some((call) => CREATE.test(call))).toBe(true);
+		expect(shell.requests.some((request) => CREATE.test(request))).toBe(true);
 	});
 });
 
@@ -453,30 +447,31 @@ describe("the leak predicate over the assembled verdict", () => {
 		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: LEAKY}),
 		now: NOW,
 	};
-	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull()],
+	const script: ReadonlyArray<Scripted> = [
+		[PULL, served(pull())],
 		...binding(),
 		[PATHS_AT(), paths("src/cart.ts", "README.md")],
-		[FILES, files("skills/deploy/SKILL.md")],
-		[USER, okOut("kampus-bot")],
-		[COMMENTS, comments()],
-		[CREATE, okOut(JSON.stringify({id: 1, html_url: "https://example.test/c/1"}))],
+		[FILES, served(files("skills/deploy/SKILL.md"))],
+		[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+		[COMMENTS, served(comments())],
+		[CREATE, {status: 201, body: JSON.stringify({id: 1, html_url: "https://example.test/c/1"})}],
 		[
 			READBACK,
-			okOut(
-				JSON.stringify({
+			{
+				status: 200,
+				body: JSON.stringify({
 					body: `review-doc: PASS @ ${HEAD} content:${CONTENT} — guide matches shipped behavior\n\n${LEAKY}\n\n${STAMP}`,
 				}),
-			),
+			},
 		],
 	];
 
 	it("refuses a machine-local path in the verdict body on 5, posting nothing", async () => {
 		const {runPost} = await import("./post-verb.ts");
-		const shell = fakeShell(script);
+		const shell = fakeSeams(script);
 		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
 		expect(out.code).toBe(LEAKED_PATH);
-		expect(shell.calls.some((call) => CREATE.test(call))).toBe(false);
+		expect(shell.requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("MUTANT: a predicate that finds nothing posts the machine-local path to the PR (#3173)", async () => {
@@ -484,10 +479,10 @@ describe("the leak predicate over the assembled verdict", () => {
 			scanBody: (body: string) => ({leaks: [], redacted: body}),
 		}));
 		const {runPost} = await import("./post-verb.ts");
-		const shell = fakeShell(script);
+		const shell = fakeSeams(script);
 		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
 		expect(out.code).toBe(0);
-		expect(shell.calls.some((call) => call.includes("/Users/someone/scratch/case.md"))).toBe(true);
+		expect(shell.bodies.some((body) => body.includes("/Users/someone/scratch/case.md"))).toBe(true);
 	});
 });
 
@@ -509,21 +504,22 @@ describe("normalizeForReadback's trailing-newline step", () => {
 		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "the table\n"}),
 		now: NOW,
 	};
-	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull()],
+	const script: ReadonlyArray<Scripted> = [
+		[PULL, served(pull())],
 		...binding(),
 		[PATHS_AT(), paths("src/cart.ts", "README.md")],
-		[FILES, files("skills/deploy/SKILL.md")],
-		[USER, okOut("kampus-bot")],
-		[COMMENTS, comments()],
-		[CREATE, okOut(JSON.stringify({id: 1, html_url: "https://example.test/c/1"}))],
+		[FILES, served(files("skills/deploy/SKILL.md"))],
+		[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+		[COMMENTS, served(comments())],
+		[CREATE, {status: 201, body: JSON.stringify({id: 1, html_url: "https://example.test/c/1"})}],
 		[
 			READBACK,
-			okOut(
-				JSON.stringify({
+			{
+				status: 200,
+				body: JSON.stringify({
 					body: `review-doc: PASS @ ${HEAD} content:${CONTENT} — guide matches shipped behavior   \n\nthe table\n\n${STAMP}\n\n\n`,
 				}),
-			),
+			},
 		],
 	];
 
@@ -563,11 +559,11 @@ describe("the append-only fence", () => {
 
 nothing yet.
 `;
-	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[USER, okOut("kampus-bot")],
-		[PERMISSION, okOut("write")],
-		[ISSUE, issue(WITH_LATER_SECTION)],
-		[PATCH, okOut("{}")],
+	const script: ReadonlyArray<Scripted> = [
+		[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+		[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+		[ISSUE, served(issue(WITH_LATER_SECTION))],
+		[PATCH, {status: 200, body: "{}"}],
 	];
 
 	it("MUTANT: a composition that appends PAST the block reds on 15, before any PATCH", async () => {
@@ -578,14 +574,14 @@ nothing yet.
 			}),
 		}));
 		const {runAppendCriterion} = await import("./append-criterion-verb.ts");
-		const shell = fakeShell(script);
+		const shell = fakeSeams(script);
 		const out = await Effect.runPromise(Effect.provide(runAppendCriterion(options), shell.layer));
 		expect(out.code).toBe(APPEND_ONLY);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
 			"review append-criterion: the composed body does not re-read as the 1 prior row(s) plus this one — it re-reads as 1 row(s); refusing (append-only fence).",
 		);
-		expect(shell.calls.some((call) => PATCH.test(call))).toBe(false);
+		expect(shell.requests.some((request) => PATCH.test(request))).toBe(false);
 	});
 
 	it("MUTANT: a growth check that always passes lets an unchanged read-back exit 0", async () => {
@@ -593,12 +589,12 @@ nothing yet.
 			grewByOne: () => true,
 		}));
 		const {runAppendCriterion} = await import("./append-criterion-verb.ts");
-		const unchanged: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, okOut("write")],
-			[once(ISSUE), issue()],
-			[ISSUE, issue()],
-			[PATCH, okOut("{}")],
+		const unchanged: ReadonlyArray<Scripted> = [
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[once(ISSUE), served(issue())],
+			[ISSUE, served(issue())],
+			[PATCH, {status: 200, body: "{}"}],
 		];
 		const out = await withShell(runAppendCriterion(options), unchanged);
 		expect(out.code).toBe(0);
@@ -606,12 +602,12 @@ nothing yet.
 
 	it("without the mutant, that same unchanged read-back reds on 9", async () => {
 		const {runAppendCriterion} = await import("./append-criterion-verb.ts");
-		const unchanged: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, okOut("write")],
-			[once(ISSUE), issue()],
-			[ISSUE, issue()],
-			[PATCH, okOut("{}")],
+		const unchanged: ReadonlyArray<Scripted> = [
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[once(ISSUE), served(issue())],
+			[ISSUE, served(issue())],
+			[PATCH, {status: 200, body: "{}"}],
 		];
 		const out = await withShell(runAppendCriterion(options), unchanged);
 		expect(out.code).toBe(READBACK_MISMATCH);
@@ -621,8 +617,8 @@ nothing yet.
 describe("the empty-read refusal on the changed-file list", () => {
 	// git reports no paths while GitHub declares nine: the emptiness refuses, the disagreement does
 	// not (#5154).
-	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull({changedFiles: 9})],
+	const script: ReadonlyArray<Scripted> = [
+		[PULL, served(pull({changedFiles: 9}))],
 		...binding(),
 		[PATHS_AT(), paths()],
 	];
@@ -658,7 +654,7 @@ describe("the empty-read refusal on the changed-file list", () => {
 		const {runScope} = await import("./scope-verb.ts");
 		const out = await withShell(
 			runScope({pr: 4321, sha: null, repo: null, json: false, cwd: "/repo", env: ENV}),
-			[[PULL, errOut("gh: Bad gateway (HTTP 502)")]],
+			[[PULL, {status: 502, body: "{}"}]],
 		);
 		expect(out.code).not.toBe(0);
 	});

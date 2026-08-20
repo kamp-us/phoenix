@@ -1,14 +1,14 @@
-import {Effect, Layer} from "effect";
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeHttp, fakeShell, type HttpReply, linkNext} from "../fakes.test-support.ts";
+import {fakeSeams, type HttpReply, linkNext, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {latestPerAuthor, runCpApproval} from "./cp-approval-verb.ts";
 import {CODEOWNERS, comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
+const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4321$/;
+const FILES = /^GET \S+\/repos\/o\/r\/pulls\/4321\/files\?/;
+const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4321\/comments\?/;
 
 const OWNERS = /contents\/\.github\/CODEOWNERS/;
 const CONFIG = /contents\/\.fabrika\.jsonc/;
@@ -54,20 +54,20 @@ const reviewPage = (
 
 const options = {pr: 4321, sha: HEAD, repo: null, json: false, env: ENV};
 
+/** A canned `ExecResult` fixture as the body of a 200 — the same payload, off the served seam. */
+const served = (result: ExecResult): HttpReply => ({status: 200, body: result.stdout});
+
 const run = (
-	shell: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]>,
+	shell: ReadonlyArray<Scripted>,
+	http: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 ) =>
 	Effect.runPromise(
-		Effect.provide(
-			runCpApproval({...options, ...overrides}),
-			Layer.merge(fakeShell(shell).layer, fakeHttp(http).layer),
-		),
+		Effect.provide(runCpApproval({...options, ...overrides}), fakeSeams([...shell, ...http]).layer),
 	);
 
 /** The §CP path set, so the boundary classifies `control-plane` and the table actually runs. */
-const CP_FILES = files(".github/workflows/ci.yml", "README.md");
+const CP_FILES = served(files(".github/workflows/ci.yml", "README.md"));
 
 const OWNED: HttpReply = {status: 200, body: CODEOWNERS};
 
@@ -87,8 +87,8 @@ describe("runCpApproval", () => {
 	it("answers n/a on a proven-ordinary PR, computed from the same cp derivation `ship scope` prints", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
-				[FILES, files("apps/web/src/App.tsx", "README.md")],
+				[PULL, served(pull())],
+				[FILES, served(files("apps/web/src/App.tsx", "README.md"))],
 			],
 			[
 				[OWNERS, OWNED],
@@ -102,7 +102,7 @@ describe("runCpApproval", () => {
 	it("discharges on a non-author member's APPROVED review bound to --sha", async () => {
 		const out = await run(
 			[
-				[PULL, pull({author: "usirin"})],
+				[PULL, served(pull({author: "usirin"}))],
 				[FILES, CP_FILES],
 			],
 			[
@@ -118,7 +118,7 @@ describe("runCpApproval", () => {
 	it("refuses an unexhausted review read on 13 — an approval could sit on an unread page", async () => {
 		const out = await run(
 			[
-				[PULL, pull({author: "usirin"})],
+				[PULL, served(pull({author: "usirin"}))],
 				[FILES, CP_FILES],
 			],
 			[
@@ -138,7 +138,7 @@ describe("runCpApproval", () => {
 	it("does NOT discharge on an approval bound to a superseded head (#3769)", async () => {
 		const out = await run(
 			[
-				[PULL, pull({author: "usirin"})],
+				[PULL, served(pull({author: "usirin"}))],
 				[FILES, CP_FILES],
 			],
 			[
@@ -154,7 +154,7 @@ describe("runCpApproval", () => {
 	it("never counts the author's own approval", async () => {
 		const out = await run(
 			[
-				[PULL, pull({author: "usirin"})],
+				[PULL, served(pull({author: "usirin"}))],
 				[FILES, CP_FILES],
 			],
 			[
@@ -170,11 +170,13 @@ describe("runCpApproval", () => {
 	it("takes the sole-owner-authored arm through the head-bound self-approval marker", async () => {
 		const out = await run(
 			[
-				[PULL, pull({author: "usirin", comments: 1})],
+				[PULL, served(pull({author: "usirin", comments: 1}))],
 				[FILES, CP_FILES],
 				[
 					COMMENTS,
-					comments({id: 1, author: "usirin", body: `control-plane-self-approval @ ${HEAD}`}),
+					served(
+						comments({id: 1, author: "usirin", body: `control-plane-self-approval @ ${HEAD}`}),
+					),
 				],
 			],
 			[
@@ -189,8 +191,8 @@ describe("runCpApproval", () => {
 	it("stops on zero-owners when CODEOWNERS names no resolvable owner at all", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
-				[FILES, files("a/b.ts", "README.md")],
+				[PULL, served(pull())],
+				[FILES, served(files("a/b.ts", "README.md"))],
 			],
 			[
 				[OWNERS, {status: 200, body: "/a/ owner@example.test\n"}],
@@ -203,8 +205,8 @@ describe("runCpApproval", () => {
 	it("discharges on an individual @login owner's approval, with no roster read at all (#6299)", async () => {
 		const out = await run(
 			[
-				[PULL, pull({author: "usirin"})],
-				[FILES, files("a/b.ts", "README.md")],
+				[PULL, served(pull({author: "usirin"}))],
+				[FILES, served(files("a/b.ts", "README.md"))],
 			],
 			[
 				[OWNERS, {status: 200, body: "/a/ @cansirin\n"}],
@@ -218,15 +220,17 @@ describe("runCpApproval", () => {
 	it("takes the self-approval path when the sole individual owner authored the PR", async () => {
 		const out = await run(
 			[
-				[PULL, pull({author: "usirin", comments: 1})],
-				[FILES, files("a/b.ts", "README.md")],
+				[PULL, served(pull({author: "usirin", comments: 1}))],
+				[FILES, served(files("a/b.ts", "README.md"))],
 				[
 					COMMENTS,
-					comments({
-						id: 1,
-						author: "usirin",
-						body: `control-plane-self-approval @ ${HEAD}`,
-					}),
+					served(
+						comments({
+							id: 1,
+							author: "usirin",
+							body: `control-plane-self-approval @ ${HEAD}`,
+						}),
+					),
 				],
 			],
 			[
@@ -240,7 +244,7 @@ describe("runCpApproval", () => {
 	it("unions an individual owner with a team roster — GitHub's any-listed-owner semantics", async () => {
 		const out = await run(
 			[
-				[PULL, pull({author: "usirin"})],
+				[PULL, served(pull({author: "usirin"}))],
 				[FILES, CP_FILES],
 			],
 			[
@@ -256,7 +260,7 @@ describe("runCpApproval", () => {
 	it("never answers n/a on a proven-absent CODEOWNERS — an empty boundary is the `unknown` hold", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
+				[PULL, served(pull())],
 				[FILES, CP_FILES],
 			],
 			[
@@ -271,7 +275,7 @@ describe("runCpApproval", () => {
 	it("refuses a failed boundary read on 11 whatever the repo's config says (ADR 0220 §4)", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
+				[PULL, served(pull())],
 				[FILES, CP_FILES],
 			],
 			[
@@ -287,7 +291,7 @@ describe("runCpApproval", () => {
 	it("refuses an UNREADABLE roster on 11 — never `stop`, never `awaiting approval` (#4223)", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
+				[PULL, served(pull())],
 				[FILES, CP_FILES],
 			],
 			[
@@ -304,8 +308,8 @@ describe("runCpApproval", () => {
 	it("notices base drift so the approval is not spent on a head that must move (#4477)", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
-				[FILES, files("apps/web/src/App.tsx", "README.md")],
+				[PULL, served(pull())],
+				[FILES, served(files("apps/web/src/App.tsx", "README.md"))],
 			],
 			[
 				[OWNERS, OWNED],
@@ -320,8 +324,8 @@ describe("runCpApproval", () => {
 	it("refuses a truncated file sweep on 13", async () => {
 		const out = await run(
 			[
-				[PULL, pull({changedFiles: 9})],
-				[FILES, files("README.md")],
+				[PULL, served(pull({changedFiles: 9}))],
+				[FILES, served(files("README.md"))],
 			],
 			[],
 		);
@@ -329,13 +333,13 @@ describe("runCpApproval", () => {
 	});
 
 	it("refuses a closed PR on 7 — nothing to discharge", async () => {
-		const out = await run([[PULL, pull({state: "closed"})]], []);
+		const out = await run([[PULL, served(pull({state: "closed"}))]], []);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe("ship cp-approval: PR #4321 is closed — nothing to discharge.");
 	});
 
 	it("refuses a malformed --sha rather than treating it as a pattern (#4223)", async () => {
-		const out = await run([[PULL, pull()]], [], {sha: ""});
+		const out = await run([[PULL, served(pull())]], [], {sha: ""});
 		expect(out.code).toBe(1);
 		expect(out.stderr.at(-1)).toContain("never a pattern that matches every head");
 	});

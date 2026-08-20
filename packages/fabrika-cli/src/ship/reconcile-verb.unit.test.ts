@@ -1,14 +1,13 @@
-import {Effect, Layer} from "effect";
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeHttp, fakeShell, type HttpReply, linkNext} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type HttpReply, linkNext, type Scripted} from "../fakes.test-support.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {ENV, pull} from "./fixtures.test-support.ts";
 import {ADDED, MERGED, REMOVED} from "./queue.ts";
 import {runReconcile} from "./reconcile-verb.ts";
 
-/** The pull read is `../io/pulls.ts`'s, which still shells out to `gh`. */
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
+/** The pull read is `../io/pulls.ts`'s, and it is served over HTTP. */
+const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4321$/;
 
 const RULES = /^GET \S+\/repos\/o\/r\/rules\/branches\/main$/;
 const SUBJECTS = /^GET \S+\/repos\/o\/r\/commits\?sha=main/;
@@ -18,16 +17,21 @@ const TIMELINE = /^GET \S+\/repos\/o\/r\/issues\/4321\/timeline\?/;
 const options = {pr: 4321, polls: 1, cadenceSeconds: 0, repo: null, json: false, env: ENV};
 
 const run = (
-	rows: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]>,
+	rows: ReadonlyArray<Scripted>,
+	http: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 ) =>
 	Effect.runPromise(
-		Effect.provide(
-			runReconcile({...options, ...overrides}),
-			Layer.merge(fakeShell(rows).layer, fakeHttp(http).layer),
-		),
+		Effect.provide(runReconcile({...options, ...overrides}), fakeSeams([...rows, ...http]).layer),
 	);
+
+/** The PR read, served — the same canned payload the spawner era scripted. */
+const pullServed = (shape: Parameters<typeof pull>[0] = {}): HttpReply => ({
+	status: 200,
+	body: pull(shape).stdout,
+});
+
+const PR = pullServed();
 
 const withQueue: HttpReply = {status: 200, body: JSON.stringify([{type: "merge_queue"}])};
 const offQueue: HttpReply = {status: 200, body: "[]"};
@@ -49,14 +53,17 @@ const unexhaustedPage = (): HttpReply => ({
 
 describe("runReconcile", () => {
 	it("classifies landed off merged:true", async () => {
-		const out = await run([[PULL, pull({merged: true, state: "closed"})]], [[RULES, withQueue]]);
+		const out = await run(
+			[[PULL, pullServed({merged: true, state: "closed"})]],
+			[[RULES, withQueue]],
+		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("reconcile\tlanded\t1\t0\n");
 	});
 
 	it("classifies landed off a base-branch squash whose subject ENDS with the number", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, PR]],
 			[
 				[RULES, withQueue],
 				[SUBJECTS, subjects("fix(x): a thing (#3924) (#4321)")],
@@ -67,7 +74,7 @@ describe("runReconcile", () => {
 
 	it("does NOT credit a landing whose subject merely mentions the number", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, PR]],
 			[
 				[RULES, withQueue],
 				[SUBJECTS, subjects("fix(x): a thing (#4321) (#4999)")],
@@ -79,7 +86,7 @@ describe("runReconcile", () => {
 
 	it("reports `ejected` as a proven answer at exit 0, never an error (#4557)", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, PR]],
 			[
 				[RULES, withQueue],
 				[SUBJECTS, noSubjects],
@@ -98,7 +105,7 @@ describe("runReconcile", () => {
 
 	it("does not call a merge-paired removal an ejection (#4155)", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, PR]],
 			[
 				[RULES, withQueue],
 				[SUBJECTS, noSubjects],
@@ -116,7 +123,7 @@ describe("runReconcile", () => {
 
 	it("reports `parked` when the arm never entered a queue on a queue-governed base", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, PR]],
 			[
 				[RULES, withQueue],
 				[SUBJECTS, noSubjects],
@@ -128,7 +135,7 @@ describe("runReconcile", () => {
 
 	it("reports `unresolved` off a queue, where a long dwell is ordinary", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, PR]],
 			[
 				[RULES, offQueue],
 				[SUBJECTS, noSubjects],
@@ -140,7 +147,7 @@ describe("runReconcile", () => {
 
 	it("refuses on 11 when every poll failed to read — UNKNOWN, not `unresolved`", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, PR]],
 			[
 				[RULES, withQueue],
 				[SUBJECTS, noSubjects],
@@ -154,7 +161,7 @@ describe("runReconcile", () => {
 
 	it("refuses an unexhausted timeline on 13 — a truncated history classifies nothing", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, PR]],
 			[
 				[RULES, withQueue],
 				[SUBJECTS, noSubjects],
@@ -169,7 +176,7 @@ describe("runReconcile", () => {
 	});
 
 	it("refuses a PR proven absent on 7", async () => {
-		const out = await run([[PULL, errOut("gh: Not Found (HTTP 404)")]], []);
+		const out = await run([[PULL, {status: 404, body: '{"message":"Not Found"}'}]], []);
 		expect(out.code).toBe(ZERO_SCOPE);
 	});
 });

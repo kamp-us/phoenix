@@ -1,6 +1,6 @@
-import {Effect, Layer} from "effect";
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeHttp, fakeShell, type HttpReply, linkNext, once} from "../fakes.test-support.ts";
+import {fakeSeams, type HttpReply, linkNext, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	INCOMPLETE_SCAN,
@@ -12,8 +12,8 @@ import {
 import {checkRuns, ENV, HEAD, OTHER_HEAD, pull, workflows} from "./fixtures.test-support.ts";
 import {runNudge} from "./nudge-verb.ts";
 
-/** The live-head read is `../io/pulls.ts`'s, which still shells out to `gh`. */
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
+/** The live-head read is `../io/pulls.ts`'s, served over HTTP like every other leg. */
+const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4321$/;
 
 const RUNS = /^GET \S+\/repos\/o\/r\/commits\/[0-9a-f]+\/check-runs\?/;
 const STATUS = /^GET \S+\/repos\/o\/r\/commits\/[0-9a-f]+\/status$/;
@@ -48,25 +48,16 @@ const unexhaustedPage = (): HttpReply => ({
 
 const options = {pr: 4321, sha: HEAD, repo: null, json: false, env: ENV};
 
-const both = (
-	rows: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]>,
-) => {
-	const shell = fakeShell(rows);
-	const client = fakeHttp(http);
+const both = (rows: ReadonlyArray<Scripted>, http: ReadonlyArray<Scripted>) => {
+	const seams = fakeSeams([...rows, ...http]);
 	return {
-		shell,
-		client,
-		outcome: Effect.runPromise(
-			Effect.provide(runNudge(options), Layer.merge(shell.layer, client.layer)),
-		),
+		seams,
+		outcome: Effect.runPromise(Effect.provide(runNudge(options), seams.layer)),
 	};
 };
 
-const run = (
-	rows: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]>,
-) => both(rows, http).outcome;
+const run = (rows: ReadonlyArray<Scripted>, http: ReadonlyArray<Scripted>) =>
+	both(rows, http).outcome;
 
 const preconditionsMet: ReadonlyArray<readonly [RegExp, HttpReply]> = [
 	[RUNS, served(checkRuns(0, []))],
@@ -80,9 +71,9 @@ describe("runNudge", () => {
 	it("closes, verifies, reopens and verifies — both legs read back", async () => {
 		const out = await run(
 			[
-				[once(PULL), pull()],
-				[once(PULL), pull({state: "closed"})],
-				[PULL, pull()],
+				[once(PULL), served(pull())],
+				[once(PULL), served(pull({state: "closed"}))],
+				[PULL, served(pull())],
 			],
 			[...preconditionsMet, [PATCH_PULL, {status: 200, body: "{}"}]],
 		);
@@ -91,18 +82,18 @@ describe("runNudge", () => {
 	});
 
 	it("refuses on 16 when runs already exist at the head — it re-derives, it does not trust (#4816)", async () => {
-		const scripted = both([[PULL, pull()]], [[RUNS, served(checkRuns(14, []))]]);
+		const scripted = both([[PULL, served(pull())]], [[RUNS, served(checkRuns(14, []))]]);
 		const out = await scripted.outcome;
 		expect(out.code).toBe(PROVEN_NOT_IN_STATE);
 		expect(out.stderr.at(-1)).toBe(
 			`ship nudge: #4321 is not in the dropped-trigger state (14 check runs exist at ${HEAD}) — refusing to touch it (#4816).`,
 		);
-		expect(scripted.client.calls.some((line) => line.startsWith("PATCH"))).toBe(false);
+		expect(scripted.seams.requests.some((line) => line.startsWith("PATCH"))).toBe(false);
 	});
 
 	it("refuses on 16 when a commit status exists even though check runs do not", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, served(pull())]],
 			[
 				[RUNS, served(checkRuns(0, []))],
 				[STATUS, statusTotal(3)],
@@ -114,7 +105,7 @@ describe("runNudge", () => {
 
 	it("refuses on 16 when the repository declares no workflows at all", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, served(pull())]],
 			[
 				[RUNS, served(checkRuns(0, []))],
 				[STATUS, statusTotal(0)],
@@ -127,7 +118,7 @@ describe("runNudge", () => {
 
 	it("refuses a second nudge on the same head on 16 — escalation, not retry", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, served(pull())]],
 			[
 				[RUNS, served(checkRuns(0, []))],
 				[STATUS, statusTotal(0)],
@@ -141,22 +132,22 @@ describe("runNudge", () => {
 	});
 
 	it("refuses a moved head on 12 — the state diagnosed is another tree's", async () => {
-		const out = await run([[PULL, pull({head: OTHER_HEAD})]], []);
+		const out = await run([[PULL, served(pull({head: OTHER_HEAD}))]], []);
 		expect(out.code).toBe(STALE_HEAD);
 	});
 
 	it("refuses an unreadable precondition on 11 without touching the PR", async () => {
-		const scripted = both([[PULL, pull()]], [[RUNS, badGateway]]);
+		const scripted = both([[PULL, served(pull())]], [[RUNS, badGateway]]);
 		const out = await scripted.outcome;
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(scripted.client.calls.some((line) => line.startsWith("PATCH"))).toBe(false);
+		expect(scripted.seams.requests.some((line) => line.startsWith("PATCH"))).toBe(false);
 	});
 
 	it("returns 17 — the loudest code — when the close landed and the reopen is unconfirmed", async () => {
 		const out = await run(
 			[
-				[once(PULL), pull()],
-				[PULL, pull({state: "closed"})],
+				[once(PULL), served(pull())],
+				[PULL, served(pull({state: "closed"}))],
 			],
 			[
 				...preconditionsMet,
@@ -170,7 +161,7 @@ describe("runNudge", () => {
 
 	it("refuses an unexhausted timeline on 13 — an undercounted history licenses a second nudge", async () => {
 		const scripted = both(
-			[[PULL, pull()]],
+			[[PULL, served(pull())]],
 			[
 				...preconditionsMet.filter(([pattern]) => pattern !== TIMELINE),
 				[TIMELINE, unexhaustedPage()],
@@ -181,6 +172,6 @@ describe("runNudge", () => {
 		expect(out.stderr.at(-1)).toBe(
 			"ship nudge: the timeline read never reached a terminal page — pagination is unexhausted; refusing to count reopens over a truncated history.",
 		);
-		expect(scripted.client.calls.some((line) => line.startsWith("PATCH"))).toBe(false);
+		expect(scripted.seams.requests.some((line) => line.startsWith("PATCH"))).toBe(false);
 	});
 });
