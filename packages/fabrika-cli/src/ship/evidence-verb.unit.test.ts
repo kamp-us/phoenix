@@ -99,7 +99,7 @@ describe("readManifest", () => {
 });
 
 describe("runEvidence", () => {
-	it("reports present with the lookup evidence and one line per manifest check", async () => {
+	it("reports present with the lookup evidence and the manifest checks as a status tally", async () => {
 		const out = await run([
 			...upToArtifact,
 			[
@@ -117,11 +117,52 @@ describe("runEvidence", () => {
 			[
 				`evidence\tpresent\t${HEAD}`,
 				"lookup\trun:9182736450\tartifact:2211334455\tstatus:completed",
-				"check\ttypecheck\tpass",
-				"check\tunit\tpass",
+				"check\tpass\t2",
 				"",
 			].join("\n"),
 		);
+	});
+
+	// ADR 0308: `checks` is an evidence-array, so the manifest's rows collapse to a status tally. The
+	// names behind a non-passing tally stay readable — the verb already lists them on stderr.
+	it("tallies the manifest's checks by status instead of printing a row per check", async () => {
+		const out = await run([
+			...upToArtifact,
+			[
+				UNZIP,
+				okOut(
+					manifest(HEAD, [
+						{name: "typecheck", status: "pass"},
+						{name: "unit", status: "fail"},
+						{name: "lint", status: "fail"},
+					]),
+				),
+			],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`evidence\tfailed\t${HEAD}`);
+		expect(out.stdout).toContain("check\tfail\t2");
+		expect(out.stdout).toContain("check\tpass\t1");
+		expect(out.stdout).not.toContain("typecheck");
+		expect(out.stderr.join("\n")).toContain("unit, lint");
+	});
+
+	it("mirrors the same collapsed tally into the --json payload", async () => {
+		const out = await run(
+			[
+				...upToArtifact,
+				[
+					UNZIP,
+					okOut(
+						manifest(HEAD, [
+							{name: "typecheck", status: "pass"},
+							{name: "unit", status: "pass"},
+						]),
+					),
+				],
+			],
+			{json: true},
+		);
+		expect(JSON.parse(out.stdout).checks).toEqual({pass: 2});
 	});
 
 	// #5563: the consumer read the bundle against GitHub's conclusion vocabulary, which the producer

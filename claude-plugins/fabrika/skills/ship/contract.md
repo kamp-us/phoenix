@@ -86,7 +86,8 @@ inline, the same tracked debt the sibling contracts carry.)
   halves of the #3999 ruling. `ship checks` diagnoses `wedged` and names the check; the lever
   is an operator's.
 - **A CI-repair or flake-classification verb.** Red CI routes to the heal seam (v1's
-  `heal-ci` lane); this group reports `red` with the failing runs named and stops.
+  `heal-ci` lane); this group reports `red` with the failing gating runs named on the notes
+  channel and stops.
 - **A flag-flip or release-execution verb.** Agents deploy, humans release (ADR 0083).
   `ship release` ends at the label.
 - **An approval-watcher / banked-§CP ledger verb.** The watch loop over parked §CP PRs is separate
@@ -869,9 +870,21 @@ fabrika ship checks 4321 --sha 03135b91 [--wait] [--budget-seconds 600] [--caden
 
 **Output** — machine channel. First line:
 `checks\t<sha>\t<green|red|pending|wedged|no-runs|no-producer>`. Second line: `run\t<count>` — the count
-of latest-per-context check-run lines that follow (gating and informational both), the line
-channel's own completeness proof. Then one line per check run, latest-per-context:
-`<name>\t<success|failure|neutral|cancelled|skipped|timed_out|action_required|in_progress|queued|stale>\t<gating|informational>`.
+of latest-per-context check runs read (gating and informational both), the line channel's own
+completeness proof. Then the **collapsed tally** of those runs, one line per class, count-descending
+with ties broken on the class:
+`check\t<success|failure|neutral|cancelled|skipped|timed_out|action_required|in_progress|queued|stale>/<gating|informational>\t<count>`.
+`checks` is an evidence-array under ADR [0308](../../../../.decisions/0308-bounded-evidence-output-shape.md):
+step 4 routes off the rollup and nothing reads a run by name, so the rows collapse to counts. The
+gating axis stays inside the key because status alone would leave the rollup underivable from the
+answer — a `red` head and a head whose only `failure` is an ADR 0061 informational run would tally
+identically. The two runs the skill's terminals read by name are still **named**, on the notes
+channel, where the skill already reads them: the wedged run, and — wherever a gating run has failed,
+which is `red` and also the `wedged` head that carries a failure too — the failing gating runs,
+`ship checks: failing gating checks: <name>, … — route these to heal-ci.`, name-sorted. Informational
+failures are excluded from that line for the same reason the gating axis exists: they do not make
+the head red, and naming them there would send the operator to `heal-ci` over a check that gates
+nothing.
 Last line: `facts\tworkflows:<n>\truns:<n>` — `workflows` counts the repository's **active**
 workflows (the inventory's `state == "active"` rows, nothing more: no trigger matching, no YAML
 parser — [ruled on
@@ -890,8 +903,9 @@ at exit `0` with the fact on stderr. With `--wait`, progress goes to stderr and
 the final stdout adds `settle\t<settled|budget-exhausted|head-moved>` before the first line's
 shape is emitted at the terminal state.
 
-With `--json`: `{"outcome":…,"sha":…,"rollup":…,"checks":[{name,status,gating}…],"workflows":<n>,"runs":<n>,"settle":…}` —
-`settle` is `null` without `--wait` (the line grammar emits the settle line only under it).
+With `--json`: `{"outcome":…,"sha":…,"rollup":…,"checks":{"<status>/<gating|informational>":<count>…},"workflows":<n>,"runs":<n>,"settle":…}` —
+`checks` is the same tally the `check` lines carry, so the two channels cannot desync. `settle` is
+`null` without `--wait` (the line grammar emits the settle line only under it).
 
 **The rollup is total over the status vocabulary, fail-closed on the ambiguous rows** — the
 same bucket rules as the shipped `review ci` (`red` on `failure`/`timed_out`/
@@ -949,9 +963,8 @@ neither prints `pending` — that collapse is what made this state read as *wait
 $ fabrika ship checks 4321 --sha 03135b91
 checks	03135b91	green
 run	3
-ci-required	success	gating
-unit tests	success	gating
-deploy (web)	success	informational
+check	success/gating	2
+check	success/informational	1
 facts	workflows:12	runs:14
 ```
 
@@ -974,9 +987,8 @@ $ fabrika ship checks 4321 --sha 03135b91 --wait
 settle	settled
 checks	03135b91	green
 run	3
-ci-required	success	gating
-unit tests	success	gating
-deploy (web)	success	informational
+check	success/gating	2
+check	success/informational	1
 facts	workflows:12	runs:14
 ```
 
@@ -1015,11 +1027,16 @@ fabrika ship evidence 4321 --sha 03135b91 [--repo <owner/name>] [--json]
 **Output** — machine channel. First line:
 `evidence\t<present|pending|failed|absent|unknown>\t<sha>`. Then the evidence tuple, always:
 `lookup\trun:<id|->\tartifact:<id|->\tstatus:<status|->` — every claim carries the lookup
-evidence that makes it falsifiable from the report. On `present`, one line per manifest
-check: `check\t<name>\t<status-string>` — and the same lines on `failed`, which is a bundle that
-was read, so its checks are exactly what makes the answer falsifiable.
+evidence that makes it falsifiable from the report. On `present`, the manifest's checks as a
+**status tally**, one line per status, count-descending with ties broken on the status:
+`check\t<status-string>\t<count>` — and the same lines on `failed`, which is a bundle that was read,
+so its check counts are what make the answer falsifiable. `checks` is an evidence-array under ADR
+[0308](../../../../.decisions/0308-bounded-evidence-output-shape.md): step 5 routes off the five
+states alone and no reader reads a check by name, so the rows collapse to counts. On `failed` the
+non-passing checks are still **named**, on the notes channel.
 
-With `--json`: `{"outcome":…,"sha":…,"run":…,"artifact":…,"checks":[{name,status}…]}`.
+With `--json`: `{"outcome":…,"sha":…,"run":…,"artifact":…,"checks":{"<status-string>":<count>…}}` —
+the same tally the `check` lines carry, so the two channels cannot desync.
 
 **The five states carry positive-evidence rules, verbatim from the #3991 law** (the fifth,
 `failed`, [ruled on
@@ -1099,8 +1116,7 @@ match only), one artifact, one manifest. All fetch intermediates live under a pe
 $ fabrika ship evidence 4321 --sha 03135b91
 evidence	present	03135b91
 lookup	run:9182736450	artifact:2211334455	status:completed
-check	typecheck	pass
-check	unit	pass
+check	pass	2
 ```
 
 ```
@@ -1113,9 +1129,13 @@ lookup	run:9182736999	artifact:-	status:in_progress
 $ fabrika ship evidence 4323 --sha 7c31a0de
 evidence	failed	7c31a0de
 lookup	run:9182737111	artifact:2211334999	status:completed
-check	typecheck	pass
-check	unit	fail
+check	fail	1
+check	pass	1
 ```
+
+The names the collapse drops from stdout ride the notes channel, which is what keeps the tally
+honest: `ship evidence: the bundle binds 7c31a0de and 1 of its checks did not pass (unit) — it
+attests a run, not a passing one.`
 
 **Grounding**
 

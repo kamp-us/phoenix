@@ -119,7 +119,8 @@ rather than a new exit code, and why it refuses on WRONG and not only on MISSING
 fabrika ship checks $pr_number --sha 03135b91 --wait
 ```
 
-Terminals: `green` → continue. `red` → disarm, note, route the failed run to `heal-ci`, stop.
+Terminals: `green` → continue. `red` → disarm, note, route the failing gating runs the notes channel
+names to `heal-ci`, stop.
 `wedged` → disarm, note naming the stranded check; **the cancel-and-rerun lever belongs to a
 human** — you diagnose, you never pull it. `no-runs` → one bounded nudge:
 `fabrika ship nudge $pr_number --sha 03135b91` re-derives the dropped-trigger state itself and refuses
