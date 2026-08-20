@@ -54,6 +54,7 @@ does not exist yet — rather than missing; check the registry before assuming a
 | `came-from` | [`packages/fabrika-cli/src/wire/came-from.ts`](../../../packages/fabrika-cli/src/wire/came-from.ts) | `grilling`, `prototyping` | `grilling`, `wayfinding` |
 | `plan-approval` | [`packages/fabrika-cli/src/wire/plan-approval.ts`](../../../packages/fabrika-cli/src/wire/plan-approval.ts) | `check-epic-plan` | `check-epic-plan` |
 | `decision-ruling` | [`packages/fabrika-cli/src/wire/decision-ruling.ts`](../../../packages/fabrika-cli/src/wire/decision-ruling.ts) | `adr` | `build`, `triage` |
+| `routed-elsewhere` | [`packages/fabrika-cli/src/wire/routed-elsewhere.ts`](../../../packages/fabrika-cli/src/wire/routed-elsewhere.ts) | `review-ui` | `ship` |
 <!-- fabrika:wire-index:end -->
 
 ### `acceptance-criteria`
@@ -316,6 +317,24 @@ admitting one would let a single comment unlock every decision on the board. The
 `decision rule` proves before it flips the issue from `ready-for:human` to `ready-for:agent` — that
 ordering is the point, since a flip written ahead of a proven marker leaves a decision reading
 pickable with no recorded ruling behind it.
+
+### `routed-elsewhere`
+
+This is a gate saying, at one head, that this PR owes it no verdict. `review-ui` writes it and
+`ship gate` reads it, and it exists because those two disagreed in a way neither could resolve:
+`ship scope` raises the `ui` class from a path test that cannot see whether pixels moved, so a PR
+whose only `apps/web/src/**` change is a docblock required a `review-ui` verdict — and `review-ui`
+cannot produce one, because `render` refuses zero surfaces and `post` refuses to compose without a
+capture set. The namespace was unfillable, `ship gate` blocks on absence, and the PR was stuck
+forever (#6376). The record is the missing answer, and ADR
+[0316](../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md) is why it is this shape.
+
+It carries no polarity, and that is the whole safety story. A PASS says a gate looked and found
+nothing wrong; this says the gate's subject is not in the diff at all. Fold them and "I judged
+nothing" ships as "I judged it and it passed" — so these are separate bytes under a key of their
+own, `verdict-marker` reads them as `Absent`, and this reader is `Absent` on every verdict marker.
+The head binding does the rest: a route is voided by any push, so the next tree is attested afresh
+rather than inheriting a judgement formed over a diff nobody has read since.
 
 ## Adding a format
 

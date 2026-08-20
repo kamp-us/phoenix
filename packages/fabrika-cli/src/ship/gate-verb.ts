@@ -24,6 +24,11 @@
  * (#4049). The fold living inside this verb is what makes that seam unrepresentable.
  *
  * `governance` is the one namespace the caller cannot decline: see {@link requiredWithFloor}.
+ *
+ * `routed` is the fifth state and the newest (ADR 0316). It is not a verdict and not a weaker pass:
+ * it is a gate recording that this PR's diff holds nothing its rubric is about, which `review-ui`
+ * alone needed because its emit path cannot produce a verdict over zero rendered surfaces. See
+ * {@link ROUTABLE} for why exactly one namespace may resolve that way.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -35,6 +40,7 @@ import {SHIP_NAMESPACES, touchesGovernanceRoot} from "../review/classes.ts";
 import {contentDigestAt} from "../review/content-binding.ts";
 import {bindHead} from "../review/head.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {read as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
 import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {listReviews, type ReviewRecord} from "./github.ts";
@@ -53,8 +59,21 @@ const VERB = "ship gate";
 /** The permission levels ADR 0055 counts as an authorized verdict author. */
 const AUTHORIZED = new Set(["admin", "maintain", "write"]);
 
-export type NamespaceState = "pass" | "fail" | "absent" | "stale";
-export type Carrier = "marker" | "advisory" | "review-fold" | "-";
+export type NamespaceState = "pass" | "fail" | "absent" | "stale" | "routed";
+export type Carrier = "marker" | "advisory" | "review-fold" | "routed-elsewhere" | "-";
+
+/**
+ * The one namespace a `routed-elsewhere` record may resolve.
+ *
+ * The record exists because `review-ui`'s emit path is *structurally* unable to answer a PR that
+ * renders nothing — `render` refuses zero surfaces, `post` requires a capture set — so the class
+ * `ship scope` raises off a path test can name a namespace nothing legal could fill (#6376, ADR
+ * 0316). No other gate has that shape: `review-code` can PASS a one-line diff, `governance` can
+ * PASS a diff that contradicts no ADR. Admitting the record anywhere else would turn a
+ * one-namespace repair into a general "I decline this gate", which is the merge authority a session
+ * does not have.
+ */
+export const ROUTABLE = "review-ui";
 
 export interface NamespaceVerdict {
 	readonly name: string;
@@ -75,10 +94,16 @@ export interface GateOptions {
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
-/** One authorized comment's verdict claim, before any ordering is applied. */
+/**
+ * One authorized comment's claim about a namespace, before any ordering is applied.
+ *
+ * `polarity` is the verdict's go/no-go and a route has none, so a route carries `"ROUTED"` in that
+ * field rather than borrowing `PASS`. Nothing folds the two: the state map below reads `"ROUTED"`
+ * as its own row, so a route can never be printed, counted or logged as a verdict somebody formed.
+ */
 interface Candidate {
 	readonly namespace: string;
-	readonly polarity: "PASS" | "FAIL";
+	readonly polarity: "PASS" | "FAIL" | "ROUTED";
 	readonly sha: string;
 	/** The content the claim binds, or `null` for a carrier that emits none (ADR 0276). */
 	readonly content: string | null;
@@ -99,6 +124,22 @@ const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
 			stamp: comment.updatedAt,
 			commentId: comment.id,
 		};
+	}
+	const route = readRoute(comment.body);
+	if (route._tag === "Found") {
+		return route.value.namespace !== ROUTABLE
+			? null
+			: {
+					namespace: route.value.namespace,
+					polarity: "ROUTED",
+					sha: route.value.sha,
+					// Head-bound, never content-bound: a route attests a diff nobody has to re-render, but
+					// it also attests the *reader's* judgment of that diff, so a push re-opens the question.
+					content: null,
+					carrier: "routed-elsewhere",
+					stamp: comment.updatedAt,
+					commentId: comment.id,
+				};
 	}
 	if (!cp) return null;
 	const advisory = readAdvisory(comment.body);
@@ -374,9 +415,15 @@ export const runGate = (
 					`${VERB}: ${name}: the verdict at ${winner.sha} binds content ${winner.content}, which is this head's — the head moved, the reviewed content did not (ADR 0276).`,
 				);
 			}
+			if (winner.polarity === "ROUTED") {
+				diagnostics.push(
+					`${VERB}: ${name}: no verdict was formed — a routed-elsewhere record at ${winner.sha} states this PR owes none, and the namespace resolves routed rather than absent (ADR 0316).`,
+				);
+			}
 			return {
 				name,
-				state: winner.polarity === "PASS" ? "pass" : "fail",
+				state:
+					winner.polarity === "ROUTED" ? "routed" : winner.polarity === "PASS" ? "pass" : "fail",
 				carrier: winner.carrier,
 				commentId,
 			};
@@ -392,7 +439,16 @@ export const runGate = (
 			);
 		}
 
-		const outcome = verdicts.every((verdict) => verdict.state === "pass") ? "satisfied" : "blocked";
+		// `routed` satisfies beside `pass` because the conjunction asks whether every required gate has
+		// answered, and "this PR is not mine to judge" is an answer — the one the `review-ui` namespace
+		// had no way to give (ADR 0316). It is not a weaker pass: the record is head-bound, ACL-checked
+		// as any verdict, and admitted for ROUTABLE alone, so no gate whose subject *is* in the diff
+		// can be routed past.
+		const outcome = verdicts.every(
+			(verdict) => verdict.state === "pass" || verdict.state === "routed",
+		)
+			? "satisfied"
+			: "blocked";
 		return json
 			? answer(
 					JSON.stringify({outcome, sha: bound, namespaces: verdicts, required: required.length}),

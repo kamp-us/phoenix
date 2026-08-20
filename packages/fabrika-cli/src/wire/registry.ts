@@ -35,6 +35,7 @@ import * as laneBrief from "./lane-brief.ts";
 import * as mapTicket from "./map-ticket.ts";
 import * as planApproval from "./plan-approval.ts";
 import * as rangeVerdictMarker from "./range-verdict-marker.ts";
+import * as routedElsewhere from "./routed-elsewhere.ts";
 import * as verdictMarker from "./verdict-marker.ts";
 
 export const registeredFormats: ReadonlyArray<WireFormat> = [
@@ -1027,6 +1028,62 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			],
 		},
 		brands: brandWitnesses<decisionRuling.DecisionRuling>({digest: true, ruling: true, at: true}),
+	},
+	{
+		key: "routed-elsewhere",
+		purpose:
+			"a gate's head-bound record that this PR owes it no verdict — the namespace it resolves, the head it inspected, and why nothing was owed",
+		module: "packages/fabrika-cli/src/wire/routed-elsewhere.ts",
+		producers: ["review-ui"],
+		consumers: ["ship"],
+		emit: routedElsewhere.emitFromFields,
+		read: routedElsewhere.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields:
+					"namespace: review-ui\nsha: 6c6fe226\nclause: no rendered delta — the two changed files are prose only\n",
+				values: [
+					"review-ui",
+					"6c6fe226",
+					"no rendered delta — the two changed files are prose only",
+				],
+			},
+			found: [
+				{
+					shape:
+						"the record as review-ui posts it — first line of a comment that then explains itself",
+					artifact:
+						"routed-elsewhere: review-ui @ 6c6fe226 — no rendered delta; both apps/web/src files are docblock-only\n\n`shell-keys.ts` rewrites one JSDoc paragraph and `design-token-lint.config.json` two note strings. No component, route, token or style changes.\n",
+					values: [
+						"review-ui",
+						"6c6fe226",
+						"no rendered delta; both apps/web/src files are docblock-only",
+					],
+				},
+			],
+			absent:
+				"review-ui: PASS @ 6c6fe226 — every surface matches its golden\n\nA verdict is not a route.\n",
+			malformed: [
+				{
+					drift: "the record is bound to no head SHA",
+					artifact: "routed-elsewhere: review-ui — no rendered delta\n",
+				},
+				{
+					drift: "the namespace is not kebab-case",
+					artifact: "routed-elsewhere: review_ui @ 6c6fe226 — no rendered delta\n",
+				},
+				{
+					drift:
+						"a polarity was written where the namespace belongs, so the record reads as a verdict",
+					artifact: "routed-elsewhere: PASS @ 6c6fe226 — no rendered delta\n",
+				},
+				{
+					drift: "the record carries no trailing clause, so it says nothing about why",
+					artifact: "routed-elsewhere: review-ui @ 6c6fe226\n",
+				},
+			],
+		},
+		brands: brandWitnesses<routedElsewhere.RoutedElsewhere>({sha: true, clause: true}),
 	},
 ];
 
