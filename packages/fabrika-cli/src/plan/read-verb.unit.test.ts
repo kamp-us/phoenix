@@ -1,6 +1,5 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut} from "../fakes.test-support.ts";
 import {BAD_SECTIONS, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
 	CHILD,
@@ -20,7 +19,7 @@ import {
 } from "./fixtures.test-support.ts";
 import {runRead} from "./read-verb.ts";
 
-const EPIC = /^gh api repos\/o\/r\/issues\/4300$/;
+const EPIC = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
 const SUBS = SUB_ISSUES;
 const CHILD_1 = CHILD(4301);
 const CHILD_2 = CHILD(4302);
@@ -93,9 +92,9 @@ describe("runRead", () => {
 	});
 
 	it("refuses a proven-absent epic on 7 and an unreadable one on 11", async () => {
-		const absent = await run([[EPIC, errOut("gh: Not Found (HTTP 404)")]]);
+		const absent = await run([[EPIC, {status: 404, body: '{"message":"Not Found"}'}]]);
 		expect(absent.code).toBe(ZERO_SCOPE);
-		const unknown = await run([[EPIC, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const unknown = await run([[EPIC, {status: 502, body: '{"message":"Bad gateway"}'}]]);
 		expect(unknown.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
@@ -173,7 +172,7 @@ describe("runRead", () => {
 	});
 
 	it("reads the child fetches at bounded fan-out, one request per child", async () => {
-		const seams = planSeams([...CLEAN, [/^gh api --paginate repos\/o\/r\/labels/, labelSet()]]);
+		const seams = planSeams([...CLEAN, [/^GET .*\/repos\/o\/r\/labels\?/, labelSet()]]);
 		await Effect.runPromise(Effect.provide(runRead(options), seams.layer));
 		expect(seams.http.calls.filter((line) => /issues\/430[12]$/.test(line))).toHaveLength(2);
 	});

@@ -1,25 +1,33 @@
 /**
- * `guard roadmap-guard check` over a scripted filesystem and a scripted `gh` — the exit taxonomy the
- * port exists for. The v1 original exited `1` for drift, for an unreadable ROADMAP.md and
- * for a `gh` that could not answer; each case below pins one of those onto its own code.
+ * `guard roadmap-guard check` over a scripted filesystem and a scripted GitHub — the exit taxonomy
+ * the port exists for. The v1 original exited `1` for drift, for an unreadable ROADMAP.md and for a
+ * read that could not answer; each case below pins one of those onto its own code.
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, type FakeFsOptions, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {
+	type FakeFsOptions,
+	fakeFs,
+	fakeSeams,
+	type HttpReply,
+	type Scripted,
+} from "../fakes.test-support.ts";
 import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
 import {runRoadmapGuard} from "./roadmap-verb.ts";
 
 const ROOT = "/repo";
 const ROADMAP = `${ROOT}/ROADMAP.md`;
-const MILESTONES = /^gh api --paginate repos\/o\/r\/milestones\?state=all/;
+const MILESTONES = /^GET .*\/repos\/o\/r\/milestones\?state=all/;
 
 const ENV = {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>;
 
-/** The projection `gh api --jq` prints: `<number>\t<state>\t<title>` rows. */
+/** The milestone list, as the bare JSON array the read validates its shape against. */
 const milestones = (
 	...rows: ReadonlyArray<readonly [number, "open" | "closed", string]>
-): ExecResult => okOut(rows.map(([n, state, title]) => `${n}\t${state}\t${title}`).join("\n"));
+): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(rows.map(([number, state, title]) => ({number, state, title}))),
+});
 
 const roadmap = (body: string): FakeFsOptions => ({files: {[ROADMAP]: body}});
 
@@ -47,13 +55,13 @@ const PROJECTION = milestones(
 
 const run = (
 	fs: FakeFsOptions,
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	env: Record<string, string | undefined> = ENV,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runRoadmapGuard({root: ROOT, repo: null, cwd: ROOT, env}),
-			Layer.merge(fakeFs(fs).layer, fakeShell(script).layer),
+			Layer.merge(fakeFs(fs).layer, fakeSeams(script).layer),
 		),
 	);
 
@@ -133,7 +141,7 @@ describe("runRoadmapGuard", () => {
 	});
 
 	it("fails closed when the repo has no milestones at all", async () => {
-		const out = await run(roadmap(IN_SYNC), [[MILESTONES, okOut("")]]);
+		const out = await run(roadmap(IN_SYNC), [[MILESTONES, {status: 200, body: "[]"}]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.join("\n")).toContain("0 milestone(s)");
 	});
@@ -154,15 +162,20 @@ describe("runRoadmapGuard", () => {
 	});
 
 	it("seats a failed milestone read on PRECONDITION_UNKNOWN, never on ZERO_SCOPE", async () => {
-		const out = await run(roadmap(IN_SYNC), [[MILESTONES, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const out = await run(roadmap(IN_SYNC), [[MILESTONES, {status: 502, body: "{}"}]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stderr.join("\n")).toContain("Bad gateway");
+		expect(out.stderr.join("\n")).toContain("HTTP 502");
 	});
 
 	// A shape that is not the projection asked for is a failed read, never an empty one — an empty
-	// one would read as ZERO_SCOPE and blame the roadmap for `gh` printing something else.
+	// one would read as ZERO_SCOPE and blame the roadmap for GitHub answering something else.
 	it("seats a malformed projection on PRECONDITION_UNKNOWN", async () => {
-		const out = await run(roadmap(IN_SYNC), [[MILESTONES, okOut("17\tajar\tFour Pillars")]]);
+		const out = await run(roadmap(IN_SYNC), [
+			[
+				MILESTONES,
+				{status: 200, body: JSON.stringify([{number: 17, state: "ajar", title: "Four Pillars"}])},
+			],
+		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.join("\n")).toContain('state is "ajar"');
 	});
@@ -208,7 +221,7 @@ describe("runRoadmapGuard", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runRoadmapGuard({root: null, repo: null, cwd: "/nowhere", env: ENV}),
-				Layer.merge(fakeFs({files: {}}).layer, fakeShell([[MILESTONES, PROJECTION]]).layer),
+				Layer.merge(fakeFs({files: {}}).layer, fakeSeams([[MILESTONES, PROJECTION]]).layer),
 			),
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);

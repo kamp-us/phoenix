@@ -1,5 +1,5 @@
 /**
- * The canned `gh` responses the `plan` verb tests script their spawner with.
+ * The canned GitHub responses the `plan` verb tests script their seams with.
  *
  * Shaped like the real payloads rather than like the parsers, so a parser that starts reading a
  * different field still has to find it here — a fixture trimmed to exactly what the code reads today
@@ -14,7 +14,7 @@ import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {CONFIG_PATH} from "../config/document.ts";
 import type {FakeHttp, FakeShell, HttpReply} from "../fakes.test-support.ts";
-import {fakeFs, fakeHttp, fakeShell, okOut} from "../fakes.test-support.ts";
+import {fakeFs, fakeHttp, fakeShell} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 
 export const EPIC = 4300;
@@ -36,20 +36,20 @@ export const epicBody = (overrides: {dependencies?: string; stories?: string} = 
 		"",
 	].join("\n");
 
-export const epic = (overrides: Record<string, unknown> = {}): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: EPIC,
-			title: "The plan gate",
-			body: epicBody(),
-			state: "open",
-			labels: [{name: "type:epic"}],
-			html_url: "https://github.com/o/r/issues/4300",
-			milestone: null,
-			state_reason: null,
-			...overrides,
-		}),
-	);
+export const epic = (overrides: Record<string, unknown> = {}): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: EPIC,
+		title: "The plan gate",
+		body: epicBody(),
+		state: "open",
+		labels: [{name: "type:epic"}],
+		html_url: "https://github.com/o/r/issues/4300",
+		milestone: null,
+		state_reason: null,
+		...overrides,
+	}),
+});
 
 export const subIssues = (...numbers: ReadonlyArray<number>): HttpReply => ({
 	status: 200,
@@ -99,8 +99,10 @@ export const child = (options: {
 	}),
 });
 
-export const labelSet = (...names: ReadonlyArray<string>): ExecResult =>
-	okOut(`${names.join("\n")}\n`);
+export const labelSet = (...names: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(names.map((name) => ({name}))),
+});
 
 /** The directory a plan verb under test is standing in. Its config is the one the load reads. */
 export const CWD = "/repo";

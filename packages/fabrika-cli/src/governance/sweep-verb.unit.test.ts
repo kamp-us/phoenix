@@ -1,12 +1,15 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeShell, okOut, record} from "../fakes.test-support.ts";
+import {fakeFs, fakeSeams, okOut, record, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {binding, HEAD, pull, SHOW_AT, STATUS_AT, statuses} from "./fixtures.test-support.ts";
 import {runSweep} from "./sweep-verb.ts";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
+const PULL = /^GET .*\/repos\/o\/r\/pulls\/4321$/;
+
+/** A fixture's canned JSON, served as the 200 the REST read now parses. */
+const served = (result: ExecResult) => ({status: 200, body: result.stdout});
 const DIR = ".decisions";
 const SUBJECT_PATH = ".decisions/0240-only-landed-adrs-may-be-cited.md";
 
@@ -38,14 +41,14 @@ const options = {
 };
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	fs = fakeFs({dirs: {[DIR]: names}, files: corpusFiles()}),
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runSweep({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, fs.layer),
+			Layer.merge(fakeSeams(script).layer, fs.layer),
 		),
 	);
 
@@ -118,8 +121,8 @@ describe("runSweep in --landed mode", () => {
 });
 
 describe("runSweep in --record mode", () => {
-	const scripted: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull({changedFiles: 1})],
+	const scripted: ReadonlyArray<Scripted> = [
+		[PULL, served(pull({changedFiles: 1}))],
 		...binding(),
 		[STATUS_AT(), statuses(["A", SUBJECT_PATH])],
 		[
@@ -136,7 +139,11 @@ describe("runSweep in --record mode", () => {
 
 	it("refuses when the bound commit carries no such record on 11", async () => {
 		const out = await run(
-			[[PULL, pull({changedFiles: 1})], ...binding(), [STATUS_AT(), statuses(["M", "src/a.ts"])]],
+			[
+				[PULL, served(pull({changedFiles: 1}))],
+				...binding(),
+				[STATUS_AT(), statuses(["M", "src/a.ts"])],
+			],
 			{pr: 4321, record: "0240"},
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -145,7 +152,11 @@ describe("runSweep in --record mode", () => {
 
 	it("refuses a short changed-file read on 13", async () => {
 		const out = await run(
-			[[PULL, pull({changedFiles: 9})], ...binding(), [STATUS_AT(), statuses(["A", SUBJECT_PATH])]],
+			[
+				[PULL, served(pull({changedFiles: 9}))],
+				...binding(),
+				[STATUS_AT(), statuses(["A", SUBJECT_PATH])],
+			],
 			{pr: 4321, record: "0240"},
 		);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
@@ -153,7 +164,10 @@ describe("runSweep in --record mode", () => {
 	});
 
 	it("refuses an absent PR on 7", async () => {
-		const out = await run([[PULL, errOut("gh: Not Found (HTTP 404)")]], {pr: 4321, record: "0240"});
+		const out = await run([[PULL, {status: 404, body: '{"message":"Not Found"}'}]], {
+			pr: 4321,
+			record: "0240",
+		});
 		expect(out.code).toBe(ZERO_SCOPE);
 	});
 });

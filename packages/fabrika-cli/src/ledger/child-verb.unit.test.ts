@@ -1,8 +1,8 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {GIT_DIRS, served} from "../build/fixtures.test-support.ts";
+import {GATEWAY, GIT_DIRS, served} from "../build/fixtures.test-support.ts";
 import {CONFIG_PATH} from "../config/document.ts";
-import {errOut, fakeFs, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
+import {fakeFs, fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {runChild} from "./child-verb.ts";
 import {
@@ -34,9 +34,10 @@ import {manifestPath, parseManifest, renderRunRecord, runJsonPath} from "./run.t
 const CREATE = /^POST https:\/\/api\.github\.com\/repos\/o\/r\/issues$/;
 const LINK = /^POST https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issues$/;
 const READBACK = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4301$/;
-const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
-const LABELS = /^gh api --paginate repos\/o\/r\/labels/;
-const MILESTONES = /^gh api --paginate repos\/o\/r\/milestones/;
+const SUBS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issues\?/;
+const LABELS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/labels\?/;
+const MILESTONES = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/milestones\?/;
+const EPIC_READ = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
 
 const MINTED_LABELS = ["type:feature", "p1", "status:planned", "ready-for:agent"];
 
@@ -56,7 +57,7 @@ const RUN_JSON = (cycleDoc: "present" | "absent" | "unknown" = "present") =>
 const CREATED = served({number: 4301, id: 90210});
 
 const HAPPY: ReadonlyArray<Scripted> = [
-	[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
+	[EPIC_READ, epic()],
 	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	...CLAIMED,
 	[LABELS, labelSet(...DEFAULT_LABELS)],
@@ -64,7 +65,7 @@ const HAPPY: ReadonlyArray<Scripted> = [
 	[CREATE, CREATED],
 	[LINK, served({})],
 	[READBACK, childIssue({number: 4301, labels: MINTED_LABELS, milestone: HOME})],
-	[SUBS, okOut(JSON.stringify([{number: 4301, id: 90210, state: "open", state_reason: null}]))],
+	[SUBS, served([{number: 4301, id: 90210, state: "open", state_reason: null}])],
 ];
 
 const options = {
@@ -99,7 +100,7 @@ const run = (
 	).then((outcome) => ({
 		outcome,
 		written: fs.written,
-		calls: shell.calls,
+		calls: shell.log,
 		requests: shell.requests,
 		bodies: shell.bodies,
 	}));
@@ -219,7 +220,7 @@ describe("runChild", () => {
 		expect(JSON.parse(minted.outcome.stdout).observed.milestone).toBe(null);
 		expect(sent(minted, CREATE).labels).toContain(LANE);
 		expect(sent(minted, CREATE)).not.toHaveProperty("milestone");
-		expect(minted.calls.some((line) => MILESTONES.test(line))).toBe(false);
+		expect(minted.requests.some((line) => MILESTONES.test(line))).toBe(false);
 	});
 
 	it("refuses a retired priority", async () => {
@@ -230,12 +231,12 @@ describe("runChild", () => {
 
 	/** #4285: `POST .../labels` CREATES an unknown label rather than rejecting it. */
 	it("refuses a label absent from the repo taxonomy rather than minting it", async () => {
-		const {outcome, calls} = await run({labels: ["not-a-label"]});
+		const {outcome, requests} = await run({labels: ["not-a-label"]});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toBe(
 			'ledger child: label "not-a-label" is absent from o/r\'s taxonomy — refusing to create it (#4285).',
 		);
-		expect(calls.some((line) => CREATE.test(line))).toBe(false);
+		expect(requests.some((line) => CREATE.test(line))).toBe(false);
 	});
 
 	it("refuses a milestone that is not open in the repo", async () => {
@@ -336,18 +337,18 @@ describe("runChild", () => {
 	});
 
 	it("refuses when a precondition read fails, and creates nothing", async () => {
-		const {outcome, calls} = await run({}, [
+		const {outcome, requests} = await run({}, [
 			...HAPPY.filter(([pattern]) => pattern !== LABELS),
-			[LABELS, errOut("gh: Bad Gateway (HTTP 502)")],
+			[LABELS, GATEWAY],
 		]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
-		expect(calls.some((line) => CREATE.test(line))).toBe(false);
+		expect(requests.some((line) => CREATE.test(line))).toBe(false);
 	});
 
 	it("seats a create that could not be proven on 8", async () => {
 		const {outcome} = await run({}, [
 			...HAPPY.filter(([pattern]) => pattern !== CREATE),
-			[CREATE, errOut("gh: Bad Gateway (HTTP 502)")],
+			[CREATE, GATEWAY],
 		]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 	});
@@ -360,7 +361,7 @@ describe("runChild", () => {
 	it("records the child before it links, so a 23 leaves a findable number", async () => {
 		const {outcome, written} = await run({}, [
 			...HAPPY.filter(([pattern]) => pattern !== LINK),
-			[LINK, errOut("gh: Unprocessable (HTTP 422)")],
+			[LINK, {status: 422, body: '{"message":"Unprocessable"}'}],
 		]);
 		expect(outcome.code).toBe(LINK_UNPROVEN);
 		expect(outcome.stderr.at(-1)).toContain("recorded in the run manifest as linked:false");
@@ -372,7 +373,7 @@ describe("runChild", () => {
 	it("seats an unprovable link on 23 even when the write itself returned", async () => {
 		const {outcome} = await run({}, [
 			...HAPPY.filter(([pattern]) => pattern !== SUBS),
-			[SUBS, okOut("[]")],
+			[SUBS, served([])],
 		]);
 		expect(outcome.code).toBe(LINK_UNPROVEN);
 	});
@@ -380,7 +381,7 @@ describe("runChild", () => {
 	it("seats a create it cannot re-read on 8", async () => {
 		const {outcome} = await run({}, [
 			...HAPPY.filter(([pattern]) => pattern !== READBACK),
-			[READBACK, errOut("gh: Bad Gateway (HTTP 502)")],
+			[READBACK, GATEWAY],
 		]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 	});

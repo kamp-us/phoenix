@@ -1,6 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {errOut, fakeSeams, okOut, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {runBase} from "./base-verb.ts";
 import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, STALE_HEAD, ZERO_SCOPE} from "./codes.ts";
@@ -19,7 +19,10 @@ import {
 	treeOf,
 } from "./fixtures.test-support.ts";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
+const PULL = /^GET .*\/repos\/o\/r\/pulls\/4321$/;
+
+/** A fixture's canned JSON, served as the 200 the REST read now parses. */
+const served = (result: ExecResult) => ({status: 200, body: result.stdout});
 
 const options = {
 	pr: 4321 as number | null,
@@ -30,25 +33,22 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
-	Effect.runPromise(Effect.provide(runBase({...options, ...overrides}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runBase({...options, ...overrides}), fakeSeams(script).layer));
 
 const SKILL_BYTES = "---\nname: governance\n---\n\n# governance\n";
 const CONTRACT_BYTES = "# contract\n";
 
 const upTo = (
 	tree: ReadonlyArray<string> = [`${SKILL_ROOT}SKILL.md`, `${SKILL_ROOT}contract.md`],
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-	[once(PULL), pull()],
+): ReadonlyArray<Scripted> => [
+	[once(PULL), served(pull())],
 	...binding(),
-	[PULL, pull()],
+	[PULL, served(pull())],
 	[TREE_AT(MERGE_BASE), treeOf(...tree)],
 ];
 
-const happy: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const happy: ReadonlyArray<Scripted> = [
 	...upTo(),
 	[SHOW_AT(MERGE_BASE, `${SKILL_ROOT}SKILL.md`), okOut(SKILL_BYTES)],
 	[SHOW_AT(MERGE_BASE, `${SKILL_ROOT}contract.md`), okOut(CONTRACT_BYTES)],
@@ -120,7 +120,11 @@ describe("runBase", () => {
 
 	it("refuses on 12 when the head moved while the base was being resolved", async () => {
 		const moved = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
-		const out = await run([[once(PULL), pull()], ...binding(), [PULL, pull({head: moved})]]);
+		const out = await run([
+			[once(PULL), served(pull())],
+			...binding(),
+			[PULL, served(pull({head: moved}))],
+		]);
 		expect(out.code).toBe(STALE_HEAD);
 		expect(out.stderr.at(-1)).toBe(
 			`governance base: #4321's head moved to ${moved} while resolving — re-run.`,
@@ -131,7 +135,7 @@ describe("runBase", () => {
 	// rather than `bindHead`'s — the entry precedes `binding()` because the first match wins.
 	it("refuses an unresolvable merge base on 11", async () => {
 		const out = await run([
-			[once(PULL), pull()],
+			[once(PULL), served(pull())],
 			[/^git merge-base /, errOut("fatal: no merge base")],
 			...binding(),
 		]);
@@ -142,12 +146,14 @@ describe("runBase", () => {
 	});
 
 	it("refuses an absent PR on 7 and a non-PR number on 1", async () => {
-		expect((await run([[PULL, errOut("gh: Not Found (HTTP 404)")]])).code).toBe(ZERO_SCOPE);
+		expect((await run([[PULL, {status: 404, body: '{"message":"Not Found"}'}]])).code).toBe(
+			ZERO_SCOPE,
+		);
 		expect((await run(happy, {pr: 0})).code).toBe(1);
 	});
 
 	it("reads the head it bound, so nothing is ever checked out", async () => {
-		const fake = fakeShell(happy);
+		const fake = fakeSeams(happy);
 		await Effect.runPromise(Effect.provide(runBase(options), fake.layer));
 		expect(fake.calls.some((call) => call.startsWith("git checkout"))).toBe(false);
 		expect(fake.calls).toContain(`git ls-tree -r --name-only -z ${MERGE_BASE}`);
@@ -159,12 +165,12 @@ const ranged = {pr: null, base: RANGE_BASE, tip: RANGE_TIP};
 
 const overRange = (
 	tree: ReadonlyArray<string> = [`${SKILL_ROOT}SKILL.md`, `${SKILL_ROOT}contract.md`],
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+): ReadonlyArray<Scripted> => [
 	[MERGE_BASE_OF(), okOut(`${RANGE_MERGE_BASE}\n`)],
 	[TREE_AT(RANGE_MERGE_BASE), treeOf(...tree)],
 ];
 
-const happyRange: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const happyRange: ReadonlyArray<Scripted> = [
 	...overRange(),
 	[SHOW_AT(RANGE_MERGE_BASE, `${SKILL_ROOT}SKILL.md`), okOut(SKILL_BYTES)],
 	[SHOW_AT(RANGE_MERGE_BASE, `${SKILL_ROOT}contract.md`), okOut(CONTRACT_BYTES)],
@@ -250,9 +256,9 @@ describe("runBase over a range", () => {
 	});
 
 	it("resolves no PR on a range — the epic child has none to resolve", async () => {
-		const fake = fakeShell(happyRange);
+		const fake = fakeSeams(happyRange);
 		await Effect.runPromise(Effect.provide(runBase({...options, ...ranged}), fake.layer));
-		expect(fake.calls.some((call) => call.startsWith("gh "))).toBe(false);
+		expect(fake.requests).toEqual([]);
 		expect(fake.calls.some((call) => call.startsWith("git checkout"))).toBe(false);
 		expect(fake.calls).toContain(`git ls-tree -r --name-only -z ${RANGE_MERGE_BASE}`);
 	});
