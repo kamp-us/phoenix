@@ -9,8 +9,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {audienceLabel, type BoardVocabulary, statusList, typeLabel} from "../config/board.ts";
 import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
-import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeFs, fakeSeams, fakeShell, type HttpReply} from "../fakes.test-support.ts";
 import {ok} from "../io/git.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {AWAITING_RELEASE, DEFAULT_STATUS_NAMES, PLANNED, STATUSES} from "../labels.ts";
@@ -741,27 +740,30 @@ describe("the roadmap-focus row count", () => {
  * write — the branch is proven only when the outcome no longer depends on it.
  */
 describe("the readout-artifact read-back reads the created issue by number", () => {
-	const LIST = /^gh api --paginate repos\/o\/r\/issues\?state=open/;
-	const CREATE = /^gh api --method POST repos\/o\/r\/issues /;
-	const READBACK = /^gh api repos\/o\/r\/issues\/3$/;
-	const CREATED = okOut(JSON.stringify({number: 3, html_url: "https://github.com/o/r/issues/3"}));
+	const LIST = /GET .*\/repos\/o\/r\/issues\?state=open/;
+	const CREATE = /POST .*\/repos\/o\/r\/issues$/;
+	const READBACK = /GET .*\/repos\/o\/r\/issues\/3$/;
+	const CREATED: HttpReply = {
+		status: 201,
+		body: JSON.stringify({number: 3, html_url: "https://github.com/o/r/issues/3"}),
+	};
 
-	const artifact = (overrides: Readonly<Record<string, unknown>> = {}) =>
-		okOut(
-			JSON.stringify({
-				number: 3,
-				title: ARTIFACT_TITLE,
-				body: "",
-				state: "open",
-				labels: [],
-				html_url: "https://github.com/o/r/issues/3",
-				...overrides,
-			}),
-		);
+	const artifact = (overrides: Readonly<Record<string, unknown>> = {}): HttpReply => ({
+		status: 200,
+		body: JSON.stringify({
+			number: 3,
+			title: ARTIFACT_TITLE,
+			body: "",
+			state: "open",
+			labels: [],
+			html_url: "https://github.com/o/r/issues/3",
+			...overrides,
+		}),
+	});
 
-	const run = (readback: ExecResult) => {
-		const shell = fakeShell([
-			[LIST, okOut("")],
+	const run = (readback: HttpReply) => {
+		const seams = fakeSeams([
+			[LIST, {status: 200, body: "[]"}],
 			[CREATE, CREATED],
 			[READBACK, readback],
 		]);
@@ -777,9 +779,9 @@ describe("the readout-artifact read-back reads the created issue by number", () 
 					repo: ok("o/r"),
 					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
 				}),
-				Layer.mergeAll(shell.layer, fs.layer),
+				Layer.mergeAll(seams.layer, fs.layer),
 			),
-		).then((outcome) => ({outcome, calls: shell.calls}));
+		).then((outcome) => ({outcome, calls: seams.requests}));
 	};
 
 	it("reports created off the issue's own resource, never a second list read", async () => {
@@ -796,12 +798,12 @@ describe("the readout-artifact read-back reads the created issue by number", () 
 	});
 
 	it("spends READBACK_MISMATCH only on a proven 404", async () => {
-		const {outcome} = await run(errOut("gh: Not Found (HTTP 404)"));
+		const {outcome} = await run({status: 404, body: '{"message":"Not Found"}'});
 		expect(outcome.code).toBe(READBACK_MISMATCH);
 	});
 
 	it("reads an unreadable re-read as WRITE_UNKNOWN, never as a mismatch", async () => {
-		const {outcome} = await run(errOut("gh: Bad Gateway (HTTP 502)"));
+		const {outcome} = await run({status: 502, body: "{}"});
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 	});
 

@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {DocumentRead} from "./answer-verb.ts";
 import {
 	AUTHORIZATION_ABSENT,
@@ -28,12 +27,17 @@ import {
 } from "./fixtures.test-support.ts";
 import {runRule} from "./rule-verb.ts";
 
-const VIEWER = /^gh api user --jq \.login$/;
-const PERMISSION = /^gh api repos\/o\/r\/collaborators\/[a-z-]+\/permission/;
-const ISSUE = /^gh api repos\/o\/r\/issues\/9412$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/9412\/comments\?/;
-const POST = /^gh api --method POST repos\/o\/r\/issues\/9412\/comments -f/;
-const READBACK = /^gh api repos\/o\/r\/issues\/comments\/\d+$/;
+const VIEWER = /^GET .*\/user$/;
+const PERMISSION = /^GET .*\/repos\/o\/r\/collaborators\/[a-z-]+\/permission$/;
+const ISSUE = /^GET .*\/repos\/o\/r\/issues\/9412$/;
+const COMMENTS = /^GET .*\/repos\/o\/r\/issues\/9412\/comments\?/;
+const POST = /^POST .*\/repos\/o\/r\/issues\/9412\/comments$/;
+const READBACK = /^GET .*\/repos\/o\/r\/issues\/comments\/\d+$/;
+
+const served = (body: string, status = 200): HttpReply => ({status, body});
+const granted = (permission: string): HttpReply => served(JSON.stringify({permission}));
+const NOT_FOUND: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
+const GATEWAY: HttpReply = {status: 502, body: '{"message":"Bad gateway"}'};
 
 const BOUND = roundDigestOf(1);
 const ROUND_ONE = commentsPayload([{id: 1, author: "acme-founder", body: roundComment(1)}]);
@@ -49,27 +53,24 @@ const options = {
 };
 
 const postedAs = (id: number) =>
-	okOut(JSON.stringify({id, html_url: `https://example.test/#${id}`}));
+	served(JSON.stringify({id, html_url: `https://example.test/#${id}`}), 201);
 
-const identity: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[VIEWER, okOut("acme-founder")],
-	[PERMISSION, okOut("write")],
+const identity: ReadonlyArray<Scripted> = [
+	[VIEWER, served(JSON.stringify({login: "acme-founder"}))],
+	[PERMISSION, granted("write")],
 ];
 
-const happy: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const happy: ReadonlyArray<Scripted> = [
 	...identity,
-	[ISSUE, okOut(sessionPayload(9412))],
-	[COMMENTS, okOut(ROUND_ONE)],
+	[ISSUE, served(sessionPayload(9412))],
+	[COMMENTS, served(ROUND_ONE)],
 	[once(POST), postedAs(5234567893)],
 	[POST, postedAs(5234567892)],
-	[READBACK, okOut(JSON.stringify({body: rulingComment("R1.2", BOUND)}))],
+	[READBACK, served(JSON.stringify({body: rulingComment("R1.2", BOUND)}))],
 ];
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
-	Effect.runPromise(Effect.provide(runRule({...options, ...overrides}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runRule({...options, ...overrides}), fakeSeams(script).layer));
 
 describe("runRule records a bound ruling", () => {
 	it("answers with both comment ids and resolvesTo ruled", async () => {
@@ -86,9 +87,9 @@ describe("runRule records a bound ruling", () => {
 	});
 
 	it("writes the authorization FIRST and the marker second", async () => {
-		const shell = fakeShell(happy);
-		await Effect.runPromise(Effect.provide(runRule(options), shell.layer));
-		const posts = shell.calls.filter((call) => POST.test(call));
+		const seams = fakeSeams(happy);
+		await Effect.runPromise(Effect.provide(runRule(options), seams.layer));
+		const posts = seams.bodies.filter((_, at) => POST.test(seams.requests[at] ?? ""));
 		expect(posts).toHaveLength(2);
 		expect(posts[0]).toContain("weight is earned per account");
 		expect(posts[0]).not.toContain("grill-ruled:");
@@ -98,10 +99,10 @@ describe("runRule records a bound ruling", () => {
 	it("names the orphaned authorization when the marker write is the half that failed", async () => {
 		const out = await run([
 			...identity,
-			[ISSUE, okOut(sessionPayload(9412))],
-			[COMMENTS, okOut(ROUND_ONE)],
+			[ISSUE, served(sessionPayload(9412))],
+			[COMMENTS, served(ROUND_ONE)],
 			[once(POST), postedAs(5234567893)],
-			[POST, errOut("gh: Bad gateway (HTTP 502)")],
+			[POST, GATEWAY],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -115,56 +116,56 @@ describe("runRule refuses without a quoted, dated authorization", () => {
 		["an empty authorization", "   \n"],
 		["an authorization carrying no ISO-8601 date", 'he said "do it that way"\n'],
 	])("refuses %s on AUTHORIZATION_ABSENT with nothing written", async (_case, text) => {
-		const shell = fakeShell(happy);
+		const seams = fakeSeams(happy);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runRule({...options, authorization: Effect.succeed<DocumentRead>({_tag: "Text", text})}),
-				shell.layer,
+				seams.layer,
 			),
 		);
 		expect(out.code).toBe(AUTHORIZATION_ABSENT);
-		expect(shell.calls.some((call) => POST.test(call))).toBe(false);
+		expect(seams.requests.some((request) => POST.test(request))).toBe(false);
 	});
 });
 
 describe("runRule never grants authority from a failed lookup", () => {
 	it("refuses a permission read that could not complete as UNKNOWN", async () => {
 		const out = await run([
-			[VIEWER, okOut("acme-founder")],
-			[PERMISSION, errOut("gh: Bad gateway (HTTP 502)")],
+			[VIEWER, served(JSON.stringify({login: "acme-founder"}))],
+			[PERMISSION, GATEWAY],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
 	it("refuses a token below write on its own code, distinct from UNKNOWN", async () => {
 		const out = await run([
-			[VIEWER, okOut("acme-founder")],
-			[PERMISSION, okOut("read")],
+			[VIEWER, served(JSON.stringify({login: "acme-founder"}))],
+			[PERMISSION, granted("read")],
 		]);
 		expect(out.code).toBe(TOKEN_UNAUTHORIZED);
 	});
 
 	it("refuses a token that is no collaborator at all", async () => {
 		const out = await run([
-			[VIEWER, okOut("acme-founder")],
-			[PERMISSION, errOut("gh: Not Found (HTTP 404)")],
+			[VIEWER, served(JSON.stringify({login: "acme-founder"}))],
+			[PERMISSION, NOT_FOUND],
 		]);
 		expect(out.code).toBe(TOKEN_UNAUTHORIZED);
 	});
 
 	it("resolves the ACL before it reads the session, so nothing is read on an unauthorized token", async () => {
-		const shell = fakeShell([
-			[VIEWER, okOut("acme-founder")],
-			[PERMISSION, okOut("read")],
+		const seams = fakeSeams([
+			[VIEWER, served(JSON.stringify({login: "acme-founder"}))],
+			[PERMISSION, granted("read")],
 		]);
-		await Effect.runPromise(Effect.provide(runRule(options), shell.layer));
-		expect(shell.calls.some((call) => ISSUE.test(call))).toBe(false);
+		await Effect.runPromise(Effect.provide(runRule(options), seams.layer));
+		expect(seams.requests.some((request) => ISSUE.test(request))).toBe(false);
 	});
 });
 
 describe("runRule seats every other refusal on its own code", () => {
 	const cases: ReadonlyArray<
-		readonly [string, number, ReadonlyArray<readonly [RegExp, ExecResult]>, Partial<typeof options>]
+		readonly [string, number, ReadonlyArray<Scripted>, Partial<typeof options>]
 	> = [
 		[
 			"an authorization carrying a machine-local path",
@@ -188,12 +189,7 @@ describe("runRule seats every other refusal on its own code", () => {
 				}),
 			},
 		],
-		[
-			"an absent session",
-			NO_TARGET,
-			[...identity, [ISSUE, errOut("gh: Not Found (HTTP 404)")]],
-			{},
-		],
+		["an absent session", NO_TARGET, [...identity, [ISSUE, NOT_FOUND]], {}],
 		["an id that names no question", QUESTION_UNKNOWN, happy, {question: "R9.9"}],
 		["a fact question", KIND_MISMATCH, happy, {question: "R1.1"}],
 		[
@@ -201,10 +197,10 @@ describe("runRule seats every other refusal on its own code", () => {
 			QUESTION_RETIRED,
 			[
 				...identity,
-				[ISSUE, okOut(sessionPayload(9412))],
+				[ISSUE, served(sessionPayload(9412))],
 				[
 					COMMENTS,
-					okOut(
+					served(
 						commentsPayload([
 							{id: 1, author: "acme-founder", body: roundComment(1)},
 							{
@@ -223,10 +219,10 @@ describe("runRule seats every other refusal on its own code", () => {
 			DIGEST_UNBINDABLE,
 			[
 				...identity,
-				[ISSUE, okOut(sessionPayload(9412))],
+				[ISSUE, served(sessionPayload(9412))],
 				[
 					COMMENTS,
-					okOut(
+					served(
 						commentsPayload([
 							{
 								id: 1,
@@ -247,11 +243,11 @@ describe("runRule seats every other refusal on its own code", () => {
 			READBACK_MISMATCH,
 			[
 				...identity,
-				[ISSUE, okOut(sessionPayload(9412))],
-				[COMMENTS, okOut(ROUND_ONE)],
+				[ISSUE, served(sessionPayload(9412))],
+				[COMMENTS, served(ROUND_ONE)],
 				[once(POST), postedAs(5234567893)],
 				[POST, postedAs(5234567892)],
-				[READBACK, okOut(JSON.stringify({body: "something else"}))],
+				[READBACK, served(JSON.stringify({body: "something else"}))],
 			],
 			{},
 		],

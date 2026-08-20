@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import * as graduateEmitted from "../wire/graduate-emitted.ts";
 import {markerTime} from "../wire/grill-marker.ts";
 import {
@@ -27,13 +26,19 @@ import {
 import {renderFooter, withFooter} from "./spec.ts";
 import {digestOfDecisions} from "./trail.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/9412$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/9412\/comments\?/;
+const ISSUE = /^GET .*\/repos\/o\/r\/issues\/9412$/;
+const COMMENTS = /^GET .*\/repos\/o\/r\/issues\/9412\/comments\?/;
 const PERMISSION = /collaborators\/.*\/permission/;
-const LABELS = /^gh api --paginate repos\/o\/r\/labels\?/;
-const CREATE = /^gh api --method POST repos\/o\/r\/issues /;
-const CREATED_ISSUE = /^gh api repos\/o\/r\/issues\/9520$/;
-const COMMENT = /^gh api --method POST repos\/o\/r\/issues\/9412\/comments/;
+const LABELS = /^GET .*\/repos\/o\/r\/labels\?/;
+const CREATE = /^POST .*\/repos\/o\/r\/issues$/;
+const CREATED_ISSUE = /^GET .*\/repos\/o\/r\/issues\/9520$/;
+const COMMENT = /^POST .*\/repos\/o\/r\/issues\/9412\/comments$/;
+
+/** A served 200 — every read below asks for JSON and gets a whole single page. */
+const served = (body: string): HttpReply => ({status: 200, body});
+
+/** A served 201 — what a create answers. */
+const created = (body: string): HttpReply => ({status: 201, body});
 
 const NOW = new Date("2026-08-09T18:36:48.000Z");
 const AT = markerTime("2026-08-09T18:36:48Z");
@@ -48,11 +53,11 @@ const LANDED = withFooter(
 const TITLE = "Cap moderation weight per topic";
 
 const emit = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	spec: DocumentRead = {_tag: "Text", text: SPEC},
 	title = TITLE,
 ) => {
-	const shell = fakeShell(script);
+	const seams = fakeSeams(script);
 	return Effect.runPromise(
 		Effect.provide(
 			runEmit({
@@ -64,27 +69,37 @@ const emit = (
 				env: {CLAUDE_PIPELINE_REPO: REPO},
 				now: () => NOW,
 			}),
-			shell.layer,
+			seams.layer,
 		),
-	).then((outcome) => ({outcome, shell}));
+	).then((outcome) => ({outcome, seams}));
 };
 
-const healthy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-	[ISSUE, okOut(issueJson({number: SESSION, labels: ["grilling:session"]}))],
-	[COMMENTS, okOut(commentsPayload([...CLEARED_SESSION]))],
-	[PERMISSION, okOut("write")],
-	[LABELS, okOut(`${INTAKE_LABEL}\ntype:feature\np1`)],
-	[CREATE, okOut(JSON.stringify({number: 9520, html_url: "https://example.test/issues/9520"}))],
+/** The JSON body of the first request matching `pattern`; `""` when none was issued. */
+const bodyOf = (seams: ReturnType<typeof fakeSeams>, pattern: RegExp): string =>
+	seams.bodies[seams.requests.findIndex((line) => pattern.test(line))] ?? "";
+
+const labelSet = (...names: ReadonlyArray<string>): HttpReply =>
+	served(JSON.stringify(names.map((name) => ({name}))));
+
+const healthy = (): ReadonlyArray<Scripted> => [
+	[ISSUE, served(issueJson({number: SESSION, labels: ["grilling:session"]}))],
+	[COMMENTS, served(commentsPayload([...CLEARED_SESSION]))],
+	[PERMISSION, served(JSON.stringify({permission: "write"}))],
+	[LABELS, labelSet(INTAKE_LABEL, "type:feature", "p1")],
+	[CREATE, created(JSON.stringify({number: 9520, html_url: "https://example.test/issues/9520"}))],
 	[
 		CREATED_ISSUE,
-		okOut(issueJson({number: 9520, title: TITLE, body: LANDED, labels: [INTAKE_LABEL]})),
+		served(issueJson({number: 9520, title: TITLE, body: LANDED, labels: [INTAKE_LABEL]})),
 	],
-	[COMMENT, okOut(JSON.stringify({id: 5234567892, html_url: "https://example.test/c/5234567892"}))],
+	[
+		COMMENT,
+		created(JSON.stringify({id: 5234567892, html_url: "https://example.test/c/5234567892"})),
+	],
 ];
 
 describe("the whole transaction", () => {
 	it("files one issue at status:needs-triage, reads it back, then posts the marker", async () => {
-		const {outcome, shell} = await emit(healthy());
+		const {outcome, seams} = await emit(healthy());
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout)).toEqual({
 			source: SESSION,
@@ -94,23 +109,20 @@ describe("the whole transaction", () => {
 			labels: [INTAKE_LABEL],
 			marker: 5234567892,
 		});
-		const created = shell.calls.findIndex((line) => CREATE.test(line));
-		const marker = shell.calls.findIndex((line) => COMMENT.test(line));
-		expect(created).toBeGreaterThanOrEqual(0);
-		expect(marker).toBeGreaterThan(created);
+		const filed = seams.requests.findIndex((line) => CREATE.test(line));
+		const marker = seams.requests.findIndex((line) => COMMENT.test(line));
+		expect(filed).toBeGreaterThanOrEqual(0);
+		expect(marker).toBeGreaterThan(filed);
 	});
 
 	it("applies exactly one label and no classification of its own", async () => {
-		const {shell} = await emit(healthy());
-		const create = shell.calls.find((line) => CREATE.test(line)) ?? "";
-		expect(create).toContain(`labels[]=${INTAKE_LABEL}`);
-		expect(create).not.toContain("type:");
-		expect(create).not.toContain("p1");
+		const {seams} = await emit(healthy());
+		expect(JSON.parse(bodyOf(seams, CREATE)).labels).toEqual([INTAKE_LABEL]);
 	});
 
 	it("posts a marker binding the spec digest and every covered ref", async () => {
-		const {shell} = await emit(healthy());
-		const posted = shell.calls.find((line) => COMMENT.test(line)) ?? "";
+		const {seams} = await emit(healthy());
+		const posted = JSON.parse(bodyOf(seams, COMMENT)).body as string;
 		expect(posted).toContain(`graduate-emitted: #${SESSION} → #9520 @ ${SPEC_DIGEST}`);
 		expect(posted).toContain("covers R1.1;R1.2");
 		expect(graduateEmitted.read(posted.slice(posted.indexOf("graduate-emitted:")))._tag).toBe(
@@ -119,8 +131,8 @@ describe("the whole transaction", () => {
 	});
 
 	it("appends the footer BEFORE the leak scan, so its own bytes are scanned too", async () => {
-		const {shell} = await emit(healthy());
-		const create = shell.calls.find((line) => CREATE.test(line)) ?? "";
+		const {seams} = await emit(healthy());
+		const create = bodyOf(seams, CREATE);
 		expect(create).toContain(`spec ${SPEC_DIGEST}`);
 		expect(create).toContain("Filed by an agent");
 	});
@@ -161,7 +173,7 @@ describe("the digest is re-derived, never trusted from --spec", () => {
 				...healthy().filter(([pattern]) => pattern !== CREATED_ISSUE),
 				[
 					CREATED_ISSUE,
-					okOut(issueJson({number: 9520, title: TITLE, body: landed, labels: [INTAKE_LABEL]})),
+					served(issueJson({number: 9520, title: TITLE, body: landed, labels: [INTAKE_LABEL]})),
 				],
 			],
 			{_tag: "Text", text: specFor(subset)},
@@ -180,13 +192,15 @@ describe("the digest is re-derived, never trusted from --spec", () => {
 			at: AT,
 		});
 		const {outcome} = await emit([
-			[ISSUE, okOut(issueJson({number: SESSION, labels: ["grilling:session"]}))],
-			[once(COMMENTS), okOut(commentsPayload([...CLEARED_SESSION]))],
+			[ISSUE, served(issueJson({number: SESSION, labels: ["grilling:session"]}))],
+			[once(COMMENTS), served(commentsPayload([...CLEARED_SESSION]))],
 			[
 				COMMENTS,
-				okOut(commentsPayload([...CLEARED_SESSION, {id: 7, author: "acme-founder", body: marker}])),
+				served(
+					commentsPayload([...CLEARED_SESSION, {id: 7, author: "acme-founder", body: marker}]),
+				),
 			],
-			[PERMISSION, okOut("write")],
+			[PERMISSION, served(JSON.stringify({permission: "write"}))],
 		]);
 		expect(outcome.code).toBe(ALREADY_GRADUATED);
 		expect(outcome.stderr.join("\n")).toContain("#9520");
@@ -196,9 +210,9 @@ describe("the digest is re-derived, never trusted from --spec", () => {
 
 describe("the refusals that write nothing", () => {
 	it("refuses a spec missing a section", async () => {
-		const {outcome, shell} = await emit(healthy(), {_tag: "Text", text: "## Problem\nx\n"});
+		const {outcome, seams} = await emit(healthy(), {_tag: "Text", text: "## Problem\nx\n"});
 		expect(outcome.code).toBe(BAD_SECTIONS);
-		expect(shell.calls).toEqual([]);
+		expect(seams.log).toEqual([]);
 	});
 
 	it("refuses a hand-edited decisions line rather than skipping it", async () => {
@@ -213,7 +227,7 @@ describe("the refusals that write nothing", () => {
 	it("refuses a repo with no status:needs-triage label", async () => {
 		const {outcome} = await emit([
 			...healthy().filter(([pattern]) => pattern !== LABELS),
-			[LABELS, okOut("type:feature\np1")],
+			[LABELS, labelSet("type:feature", "p1")],
 		]);
 		expect(outcome.code).toBe(NO_TARGET);
 		expect(outcome.stderr.join("\n")).toContain("no triage run can find");
@@ -230,7 +244,7 @@ describe("a write whose outcome is unproven", () => {
 	it("seats a failed create on 8, naming the repo to check", async () => {
 		const {outcome} = await emit([
 			...healthy().filter(([pattern]) => pattern !== CREATE),
-			[CREATE, errOut("gh: Bad gateway (HTTP 502)")],
+			[CREATE, {status: 502, body: "{}"}],
 		]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 		expect(outcome.stdout).toBe("");
@@ -239,22 +253,22 @@ describe("a write whose outcome is unproven", () => {
 	it("seats a failed marker write on 8, naming the ORPHANED spec a re-run would duplicate", async () => {
 		const {outcome} = await emit([
 			...healthy().filter(([pattern]) => pattern !== COMMENT),
-			[COMMENT, errOut("gh: Bad gateway (HTTP 502)")],
+			[COMMENT, {status: 502, body: "{}"}],
 		]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 		expect(outcome.stderr.join("\n")).toContain("the spec EXISTS but #9412 does not record it");
 	});
 
 	it("seats a read-back that does not match on 9, before any marker is written", async () => {
-		const {outcome, shell} = await emit([
+		const {outcome, seams} = await emit([
 			...healthy().filter(([pattern]) => pattern !== CREATED_ISSUE),
 			[
 				CREATED_ISSUE,
-				okOut(issueJson({number: 9520, title: TITLE, body: LANDED, labels: [INTAKE_LABEL, "p1"]})),
+				served(issueJson({number: 9520, title: TITLE, body: LANDED, labels: [INTAKE_LABEL, "p1"]})),
 			],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
-		expect(shell.calls.some((line) => COMMENT.test(line))).toBe(false);
+		expect(seams.requests.some((line) => COMMENT.test(line))).toBe(false);
 	});
 });
 

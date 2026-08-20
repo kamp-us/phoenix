@@ -1,6 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {runAppendCriterion} from "./append-criterion-verb.ts";
@@ -17,11 +17,25 @@ import {
 } from "./codes.ts";
 import {issue} from "./fixtures.test-support.ts";
 
-const USER = /^gh api user --jq \.login$/;
-const PERMISSION = /^gh api repos\/o\/r\/collaborators\/kampus-bot\/permission --jq \.permission$/;
-const ISSUE = /^gh api repos\/o\/r\/issues\/4287$/;
-const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/4287 -f body=/;
-const COMMENT = /^gh api --method POST repos\/o\/r\/issues\/4287\/comments /;
+const USER = /GET .*api\.github\.com\/user$/;
+const PERMISSION = /GET .*\/repos\/o\/r\/collaborators\/kampus-bot\/permission$/;
+const ISSUE = /GET .*\/repos\/o\/r\/issues\/4287$/;
+const PATCH = /PATCH .*\/repos\/o\/r\/issues\/4287$/;
+const COMMENT = /POST .*\/repos\/o\/r\/issues\/4287\/comments/;
+
+const NOT_FOUND = '{"message":"Not Found"}';
+
+/** A canned payload as the platform serves it — the fixtures speak `ExecResult`, the seam HTTP. */
+const served = (result: ExecResult, status = 200): HttpReply => ({status, body: result.stdout});
+
+/** The body the PATCH carried, as text — the successor to reading it off a `-f body=` argv. */
+const patched = (seams: {
+	readonly requests: ReadonlyArray<string>;
+	readonly bodies: ReadonlyArray<string>;
+}): string => {
+	const index = seams.requests.findIndex((request) => PATCH.test(request));
+	return index === -1 ? "" : String(JSON.parse(seams.bodies[index] ?? "{}").body ?? "");
+};
 
 const TEXT = "a regression test covers qty > 1";
 const ROW = `- [ ] ${TEXT} <!-- ac:review pr:#4321 round:1 -->`;
@@ -45,20 +59,17 @@ const options = {
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: TEXT}),
 };
 
-const happy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-	[USER, okOut("kampus-bot")],
-	[PERMISSION, okOut("write")],
-	[once(ISSUE), issue()],
-	[ISSUE, issue(APPENDED)],
-	[PATCH, okOut("{}")],
+const happy = (): ReadonlyArray<Scripted> => [
+	[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+	[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+	[once(ISSUE), served(issue())],
+	[ISSUE, served(issue(APPENDED))],
+	[PATCH, {status: 200, body: "{}"}],
 ];
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(
-		Effect.provide(runAppendCriterion({...options, ...overrides}), fakeShell(script).layer),
+		Effect.provide(runAppendCriterion({...options, ...overrides}), fakeSeams(script).layer),
 	);
 
 describe("runAppendCriterion", () => {
@@ -69,17 +80,17 @@ describe("runAppendCriterion", () => {
 	});
 
 	it("writes exactly one row, tagged with its provenance", async () => {
-		const shell = fakeShell(happy());
+		const shell = fakeSeams(happy());
 		await Effect.runPromise(Effect.provide(runAppendCriterion(options), shell.layer));
-		const write = shell.calls.find((call) => PATCH.test(call)) ?? "";
+		const write = patched(shell);
 		expect(write).toContain(ROW);
 	});
 
 	// Fence 1 — the ACL, fail-closed.
 	it("refuses a token below write on 14, and writes nothing", async () => {
-		const shell = fakeShell([
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, okOut("read")],
+		const shell = fakeSeams([
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "read"})}],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runAppendCriterion(options), shell.layer));
 		expect(out.code).toBe(ACL_DENIED);
@@ -87,34 +98,34 @@ describe("runAppendCriterion", () => {
 		expect(out.stderr.at(-1)).toBe(
 			"review append-criterion: token resolves below write on o/r, or the ACL could not be read — refusing the append (ADR 0055, fail-closed).",
 		);
-		expect(shell.calls.some((call) => PATCH.test(call))).toBe(false);
+		expect(shell.requests.some((request) => PATCH.test(request))).toBe(false);
 	});
 
 	it("refuses a FAILED ACL lookup on 14 too — authority never comes from a failed read", async () => {
 		const lookupFailed = await run([
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, errOut("gh: Bad gateway (HTTP 502)")],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 502, body: "{}"}],
 		]);
 		expect(lookupFailed.code).toBe(ACL_DENIED);
 
-		const noIdentity = await run([[USER, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const noIdentity = await run([[USER, {status: 502, body: "{}"}]]);
 		expect(noIdentity.code).toBe(ACL_DENIED);
 	});
 
 	it("admits admin and maintain, which resolve above write", async () => {
 		for (const permission of ["admin", "maintain", "write"]) {
 			const out = await run([
-				[USER, okOut("kampus-bot")],
-				[PERMISSION, okOut(permission)],
-				[once(ISSUE), issue()],
-				[ISSUE, issue(APPENDED)],
-				[PATCH, okOut("{}")],
+				[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+				[PERMISSION, {status: 200, body: JSON.stringify({permission})}],
+				[once(ISSUE), served(issue())],
+				[ISSUE, served(issue(APPENDED))],
+				[PATCH, {status: 200, body: "{}"}],
 			]);
 			expect(out.code).toBe(0);
 		}
 		const triage = await run([
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, okOut("triage")],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "triage"})}],
 		]);
 		expect(triage.code).toBe(ACL_DENIED);
 	});
@@ -129,21 +140,23 @@ describe("runAppendCriterion", () => {
 
 - [ ] a checkbox that is not a criterion
 `;
-		const shell = fakeShell([
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, okOut("write")],
-			[once(ISSUE), issue(withLaterList)],
+		const shell = fakeSeams([
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[once(ISSUE), served(issue(withLaterList))],
 			[
 				ISSUE,
-				issue(
-					withLaterList.replace("- [ ] the only criterion", `- [ ] the only criterion\n${ROW}`),
+				served(
+					issue(
+						withLaterList.replace("- [ ] the only criterion", `- [ ] the only criterion\n${ROW}`),
+					),
 				),
 			],
-			[PATCH, okOut("{}")],
+			[PATCH, {status: 200, body: "{}"}],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runAppendCriterion(options), shell.layer));
 		expect(out.code).toBe(0);
-		const write = shell.calls.find((call) => PATCH.test(call)) ?? "";
+		const write = patched(shell);
 		expect(write.indexOf(ROW)).toBeLessThan(write.indexOf("## Notes"));
 	});
 
@@ -159,17 +172,17 @@ describe("runAppendCriterion", () => {
   the runtime actually applies rather than the one the ADR proposed, so a reader comparing the two
   can tell which is in force.
 `;
-		const shell = fakeShell([
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, okOut("write")],
-			[once(ISSUE), issue(wrapped)],
-			[ISSUE, issue(`${wrapped.trimEnd()}\n${ROW}\n`)],
-			[PATCH, okOut("{}")],
+		const shell = fakeSeams([
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[once(ISSUE), served(issue(wrapped))],
+			[ISSUE, served(issue(`${wrapped.trimEnd()}\n${ROW}\n`))],
+			[PATCH, {status: 200, body: "{}"}],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runAppendCriterion(options), shell.layer));
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("appended\t4287\t3\n");
-		const write = shell.calls.find((call) => PATCH.test(call)) ?? "";
+		const write = patched(shell);
 		expect(write).toContain(`can tell which is in force.\n${ROW}`);
 	});
 
@@ -184,13 +197,13 @@ describe("runAppendCriterion", () => {
 	it("keeps 15 distinct from every other refusal this verb can reach", async () => {
 		const reachable = await Promise.all([
 			run([
-				[USER, okOut("kampus-bot")],
-				[PERMISSION, okOut("read")],
+				[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+				[PERMISSION, {status: 200, body: JSON.stringify({permission: "read"})}],
 			]),
 			run([
-				[USER, okOut("kampus-bot")],
-				[PERMISSION, okOut("write")],
-				[ISSUE, errOut("gh: Not Found (HTTP 404)")],
+				[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+				[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+				[ISSUE, {status: 404, body: NOT_FOUND}],
 			]),
 			run(happy(), {stdin: Effect.succeed({_tag: "Text", text: ""})}),
 		]);
@@ -199,28 +212,28 @@ describe("runAppendCriterion", () => {
 
 	// Fence 3 — frozen at round 3.
 	it("escalates instead of appending at the freeze, and appends NOTHING", async () => {
-		const shell = fakeShell([
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, okOut("write")],
-			[ISSUE, issue()],
-			[COMMENT, okOut(JSON.stringify({id: 1, html_url: "https://example.test/c/1"}))],
+		const shell = fakeSeams([
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[ISSUE, served(issue())],
+			[COMMENT, {status: 201, body: JSON.stringify({id: 1, html_url: "https://example.test/c/1"})}],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runAppendCriterion({...options, round: 3}), shell.layer),
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("escalated-frozen\t4287\t3\n");
-		expect(shell.calls.some((call) => PATCH.test(call))).toBe(false);
-		expect(shell.calls.some((call) => COMMENT.test(call))).toBe(true);
+		expect(shell.requests.some((request) => PATCH.test(request))).toBe(false);
+		expect(shell.requests.some((request) => COMMENT.test(request))).toBe(true);
 	});
 
 	it("reports a failed escalation comment as 8, naming which write it was", async () => {
 		const out = await run(
 			[
-				[USER, okOut("kampus-bot")],
-				[PERMISSION, okOut("write")],
-				[ISSUE, issue()],
-				[COMMENT, errOut("gh: timeout")],
+				[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+				[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+				[ISSUE, served(issue())],
+				[COMMENT, {status: 502, body: "{}"}],
 			],
 			{round: 3},
 		);
@@ -232,16 +245,16 @@ describe("runAppendCriterion", () => {
 	// The target's own preconditions.
 	it("refuses an absent issue on 7 and a CLOSED one on 7 — a row there enters no cycle", async () => {
 		const absent = await run([
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, okOut("write")],
-			[ISSUE, errOut("gh: Not Found (HTTP 404)")],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[ISSUE, {status: 404, body: NOT_FOUND}],
 		]);
 		expect(absent.code).toBe(ZERO_SCOPE);
 
 		const closed = await run([
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, okOut("write")],
-			[ISSUE, issue(undefined, "closed")],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[ISSUE, served(issue(undefined, "closed"))],
 		]);
 		expect(closed.code).toBe(ZERO_SCOPE);
 		expect(closed.stderr.at(-1)).toContain("file the finding instead");
@@ -249,9 +262,9 @@ describe("runAppendCriterion", () => {
 
 	it("refuses an issue with no conforming block on 7, naming absent vs malformed", async () => {
 		const out = await run([
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, okOut("write")],
-			[ISSUE, issue("nothing to append under")],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[ISSUE, served(issue("nothing to append under"))],
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain("(absent:");
@@ -260,9 +273,9 @@ describe("runAppendCriterion", () => {
 
 	it("refuses an unreadable issue on 11 — nothing was written", async () => {
 		const out = await run([
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, okOut("write")],
-			[ISSUE, errOut("gh: Bad gateway (HTTP 502)")],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[ISSUE, {status: 502, body: "{}"}],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("nothing was written");
@@ -270,10 +283,10 @@ describe("runAppendCriterion", () => {
 
 	it("reports a failed PATCH as 8 — UNKNOWN whether the row landed", async () => {
 		const out = await run([
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, okOut("write")],
-			[ISSUE, issue()],
-			[PATCH, errOut("gh: timeout")],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[ISSUE, served(issue())],
+			[PATCH, {status: 502, body: "{}"}],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -282,11 +295,11 @@ describe("runAppendCriterion", () => {
 
 	it("refuses on 9 when the read-back does not show the prior rows plus this one", async () => {
 		const out = await run([
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, okOut("write")],
-			[once(ISSUE), issue()],
-			[ISSUE, issue()],
-			[PATCH, okOut("{}")],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[once(ISSUE), served(issue())],
+			[ISSUE, served(issue())],
+			[PATCH, {status: 200, body: "{}"}],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 		expect(out.stdout).toBe("");
@@ -301,11 +314,11 @@ describe("runAppendCriterion", () => {
 ${ROW}
 `;
 		const out = await run([
-			[USER, okOut("kampus-bot")],
-			[PERMISSION, okOut("write")],
-			[once(ISSUE), issue()],
-			[ISSUE, issue(mutated)],
-			[PATCH, okOut("{}")],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[PERMISSION, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[once(ISSUE), served(issue())],
+			[ISSUE, served(issue(mutated))],
+			[PATCH, {status: 200, body: "{}"}],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 	});
@@ -327,14 +340,14 @@ ${ROW}
 	});
 
 	it("writes nothing at all on a stdin refusal — not even the ACL lookup", async () => {
-		const shell = fakeShell(happy());
+		const shell = fakeSeams(happy());
 		await Effect.runPromise(
 			Effect.provide(
 				runAppendCriterion({...options, stdin: Effect.succeed({_tag: "Text", text: ""})}),
 				shell.layer,
 			),
 		);
-		expect(shell.calls).toEqual([]);
+		expect(shell.log).toEqual([]);
 	});
 
 	it("emits the record with --json, naming the ACL it resolved", async () => {

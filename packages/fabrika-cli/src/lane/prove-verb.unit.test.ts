@@ -1,6 +1,13 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeHttp, fakeShell, okOut} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeFs,
+	fakeSeams,
+	type HttpReply,
+	okOut,
+	type Scripted,
+} from "../fakes.test-support.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {contentDigest, parseRaw} from "../review/content-binding.ts";
@@ -20,34 +27,42 @@ const LOG = `${ROOT}/5747/events.jsonl`;
 const HEAD = "03135b9188d2be6c0a4b7bd0b7a3ff9c53f0f2b1";
 const OLD = "8f1c2ad4e5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0";
 
-const CLOSERS = /^gh api graphql -f query=query\(/;
-const SEARCH = /^gh api --paginate search\/issues/;
-const PULL = /^gh api repos\/o\/r\/pulls\/4318$/;
-const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4318\/files/;
-const PR_COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4318\/comments/;
-const ISSUE = /^gh api repos\/o\/r\/issues\/5747$/;
-const ISSUE_COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/5747\/comments/;
+const CLOSERS = /^POST .*\/graphql$/;
+const SEARCH = /^GET .*\/search\/issues\?/;
+const PULL = /^GET .*\/repos\/o\/r\/pulls\/4318$/;
+const FILES = /^GET .*\/repos\/o\/r\/pulls\/4318\/files\?/;
+const PR_COMMENTS = /^GET .*\/repos\/o\/r\/issues\/4318\/comments\?/;
+const ISSUE = /^GET .*\/repos\/o\/r\/issues\/5747$/;
+const ISSUE_COMMENTS = /^GET .*\/repos\/o\/r\/issues\/5747\/comments\?/;
+
+const served = (payload: unknown): HttpReply => ({status: 200, body: JSON.stringify(payload)});
+const GATEWAY: HttpReply = {status: 502, body: '{"message":"Bad gateway"}'};
+
+/** The `{total_count, items}` envelope the search index answers with. */
+const nominated = (...numbers: ReadonlyArray<number>): HttpReply =>
+	served({
+		total_count: numbers.length,
+		items: numbers.map((number) => ({number, title: `pull ${number}`})),
+	});
 
 /** One page of the closing-issue link edge, every node OPEN — the verb filters on that itself. */
-const closingPulls = (...numbers: ReadonlyArray<number>): ExecResult =>
-	okOut(
-		JSON.stringify({
-			data: {
-				repository: {
-					issue: {
-						closedByPullRequestsReferences: {
-							pageInfo: {hasNextPage: false, endCursor: null},
-							nodes: numbers.map((number) => ({
-								number,
-								url: `https://github.com/o/r/pull/${number}`,
-								state: "OPEN",
-							})),
-						},
+const closingPulls = (...numbers: ReadonlyArray<number>): HttpReply =>
+	served({
+		data: {
+			repository: {
+				issue: {
+					closedByPullRequestsReferences: {
+						pageInfo: {hasNextPage: false, endCursor: null},
+						nodes: numbers.map((number) => ({
+							number,
+							url: `https://github.com/o/r/pull/${number}`,
+							state: "OPEN",
+						})),
 					},
 				},
 			},
-		}),
-	);
+		},
+	});
 
 const logLine = (event: string, at: string): string =>
 	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at})}\n`;
@@ -64,54 +79,43 @@ const laneAt = (state: "build" | "review") =>
 		},
 	});
 
-const pull = (overrides: Record<string, unknown> = {}): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: 4318,
-			state: "open",
-			head: {sha: HEAD},
-			base: {ref: "main"},
-			body: "Fixes #5747\n\n## Deviations\nNone.\n",
-			changed_files: 1,
-			comments: 1,
-			merged: false,
-			...overrides,
-		}),
-	);
+const pull = (overrides: Record<string, unknown> = {}): HttpReply =>
+	served({
+		number: 4318,
+		state: "open",
+		head: {sha: HEAD},
+		base: {ref: "main"},
+		body: "Fixes #5747\n\n## Deviations\nNone.\n",
+		changed_files: 1,
+		comments: 1,
+		merged: false,
+		...overrides,
+	});
 
 const comments = (
 	...rows: ReadonlyArray<{id: number; body: string; createdAt?: string}>
-): ExecResult =>
-	okOut(
-		JSON.stringify(
-			rows.map((row) => ({
-				id: row.id,
-				body: row.body,
-				user: {login: "agent"},
-				created_at: row.createdAt ?? "2026-08-16T03:00:00Z",
-				updated_at: row.createdAt ?? "2026-08-16T03:00:00Z",
-			})),
-		),
+): HttpReply =>
+	served(
+		rows.map((row) => ({
+			id: row.id,
+			body: row.body,
+			user: {login: "agent"},
+			created_at: row.createdAt ?? "2026-08-16T03:00:00Z",
+			updated_at: row.createdAt ?? "2026-08-16T03:00:00Z",
+		})),
 	);
 
-const issue = (labels: ReadonlyArray<string>): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: 5747,
-			title: "a lane task",
-			body: "",
-			state: "open",
-			labels: labels.map((name) => ({name})),
-			html_url: "https://github.com/o/r/issues/5747",
-		}),
-	);
+const issue = (labels: ReadonlyArray<string>): HttpReply =>
+	served({
+		number: 5747,
+		title: "a lane task",
+		body: "",
+		state: "open",
+		labels: labels.map((name) => ({name})),
+		html_url: "https://github.com/o/r/issues/5747",
+	});
 
-const run = (
-	fs: ReturnType<typeof fakeFs>,
-	shell: ReturnType<typeof fakeShell>,
-	event: string,
-	http: ReturnType<typeof fakeHttp> = fakeHttp([]),
-) =>
+const run = (fs: ReturnType<typeof fakeFs>, seams: ReturnType<typeof fakeSeams>, event: string) =>
 	Effect.runPromise(
 		Effect.provide(
 			runProve({
@@ -123,19 +127,19 @@ const run = (
 				cwd: "/repo",
 				env: {CLAUDE_PIPELINE_REPO: "o/r"},
 			}),
-			Layer.mergeAll(fs.layer, shell.layer, http.layer),
+			Layer.mergeAll(fs.layer, seams.layer),
 		),
 	);
 
 describe("lane prove — the two events that carry a claim", () => {
 	it("proves a build DONE against the one open PR whose body links the issue", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 		]);
 
-		const out = await run(laneAt("build"), shell, "DONE");
+		const out = await run(laneAt("build"), seams, "DONE");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
@@ -147,15 +151,15 @@ describe("lane prove — the two events that carry a claim", () => {
 	});
 
 	it("proves a review PASS when every derived namespace passes at the live head", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
-			[FILES, okOut(JSON.stringify([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]))],
+			[FILES, served([{filename: "packages/fabrika-cli/src/lane/prove.ts"}])],
 			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
@@ -167,14 +171,14 @@ describe("lane prove — the two events that carry a claim", () => {
 
 describe("lane prove — the refusals, each on its own remedy", () => {
 	it("refuses a build DONE with no open PR and no no-PR outcome, naming what it looked for", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("")],
+			[SEARCH, nominated()],
 			[ISSUE, issue(["type:feature"])],
 			[ISSUE_COMMENTS, comments()],
 		]);
 
-		const out = await run(laneAt("build"), shell, "DONE");
+		const out = await run(laneAt("build"), seams, "DONE");
 
 		expect(out.code).toBe(PROOF_ABSENT);
 		expect(out.stdout).toBe("");
@@ -183,129 +187,126 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 	});
 
 	it("refuses a build DONE when several open PRs link the issue", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n4319\n")],
+			[SEARCH, nominated(4318, 4319)],
 			[PULL, pull()],
-			[/^gh api repos\/o\/r\/pulls\/4319$/, pull({number: 4319})],
+			[/^GET .*\/repos\/o\/r\/pulls\/4319$/, pull({number: 4319})],
 		]);
 
-		const out = await run(laneAt("build"), shell, "DONE");
+		const out = await run(laneAt("build"), seams, "DONE");
 
 		expect(out.code).toBe(PROOF_AMBIGUOUS);
 		expect(out.stderr.join("\n")).toContain("#4318, #4319");
 	});
 
 	it("refuses a PASS while a derived namespace has no current-head verdict", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
-			[
-				FILES,
-				okOut(JSON.stringify([{filename: "claude-plugins/fabrika/skills/operate/SKILL.md"}])),
-			],
+			[FILES, served([{filename: "claude-plugins/fabrika/skills/operate/SKILL.md"}])],
 			[PR_COMMENTS, comments({id: 1, body: `review-skill: PASS @ ${HEAD} — reads clean`})],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("governance (absent)");
 	});
 
 	it("refuses a PASS whose namespace verdict is at a head the PR has moved past", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
-			[FILES, okOut(JSON.stringify([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]))],
+			[FILES, served([{filename: "packages/fabrika-cli/src/lane/prove.ts"}])],
 			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${OLD} — merge-ready`})],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-code (stale)");
 	});
 
 	it("refuses a PASS the board contradicts with a current-head FAIL", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
-			[FILES, okOut(JSON.stringify([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]))],
+			[FILES, served([{filename: "packages/fabrika-cli/src/lane/prove.ts"}])],
 			[PR_COMMENTS, comments({id: 1, body: `review-code: FAIL @ ${HEAD} — the fold drops a row`})],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_CONTRADICTED);
 		expect(out.stderr.join("\n")).toContain("FAIL");
 	});
 
 	it("leaves the proof UNKNOWN when a board read fails — never proven, never absent", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, errOut("HTTP 502")],
+			[SEARCH, GATEWAY],
 		]);
 
-		const out = await run(laneAt("build"), shell, "DONE");
+		const out = await run(laneAt("build"), seams, "DONE");
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain("UNKNOWN");
 	});
 
 	it("leaves the proof UNKNOWN when the closing-issue edge fails, before any search", async () => {
-		const shell = fakeShell([[CLOSERS, errOut("HTTP 502")]]);
+		const seams = fakeSeams([[CLOSERS, GATEWAY]]);
 
-		const out = await run(laneAt("build"), shell, "DONE");
+		const out = await run(laneAt("build"), seams, "DONE");
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain("closing #5747");
-		expect(shell.calls.some((line) => SEARCH.test(line))).toBe(false);
+		expect(seams.requests.some((line) => SEARCH.test(line))).toBe(false);
 	});
 });
 
 describe("lane prove — the union of the two nomination reads", () => {
 	it("proves a DONE off the closing edge while the search index still lags the fresh PR", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls(4318)],
-			[SEARCH, okOut("")],
+			[SEARCH, nominated()],
 			[PULL, pull()],
 		]);
 
-		const out = await run(laneAt("build"), shell, "DONE");
+		const out = await run(laneAt("build"), seams, "DONE");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({evidence: {kind: "open-pull", pr: 4318}});
 	});
 
 	it("proves a DONE off the search nomination for a Part of PR the closing edge cannot see", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull({body: "Part of #5747\n\n## Deviations\nNone.\n"})],
 		]);
 
-		const out = await run(laneAt("build"), shell, "DONE");
+		const out = await run(laneAt("build"), seams, "DONE");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({evidence: {kind: "open-pull", pr: 4318}});
 	});
 
 	it("counts a PR both reads nominate once, so agreement is not ambiguity", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls(4318)],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 		]);
 
-		const out = await run(laneAt("build"), shell, "DONE");
+		const out = await run(laneAt("build"), seams, "DONE");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({evidence: {kind: "open-pull", pr: 4318}});
-		expect(shell.calls.filter((line) => PULL.test(line))).toHaveLength(1);
+		expect(seams.requests.filter((line) => PULL.test(line))).toHaveLength(1);
 	});
 });
 
@@ -314,21 +315,19 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 	const CONFIG = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
 	const advisory = (rows = ""): string =>
 		`review-code: advisory — merge stays human-gated\n${rows}\nReviewed-head: @ ${HEAD}\n`;
-	const codeFile = okOut(JSON.stringify([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]));
+	const codeFile = served([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]);
 
 	it("proves a review PASS carried by an advisory when the diff classifies control-plane", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory()})],
-		]);
-		const http = fakeHttp([
 			[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"}],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS", http);
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
@@ -339,18 +338,16 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 	});
 
 	it("still rows a marker-less comment absent when the diff is not control-plane", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory()})],
-		]);
-		const http = fakeHttp([
 			[CODEOWNERS, {status: 200, body: "/claude-plugins/ @kamp-us/control-plane\n"}],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS", http);
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-code (absent)");
@@ -358,18 +355,16 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 	});
 
 	it("reads a [FAIL] row inside an advisory as fail, never as a pass", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory("\n- [FAIL] the guard is bypassed\n")})],
-		]);
-		const http = fakeHttp([
 			[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"}],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS", http);
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_CONTRADICTED);
 		expect(out.stderr.join("\n")).toContain("invalid emission (ADR 0226)");
@@ -377,90 +372,85 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 
 	it("refuses an advisory bound to a head the PR has moved past as in-flight, not proven", async () => {
 		const stale = `review-code: advisory — merge stays human-gated\n\nReviewed-head: @ ${OLD}\n`;
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: stale})],
-		]);
-		const http = fakeHttp([
 			[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"}],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS", http);
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-code (stale)");
 	});
 
 	it("leaves the proof UNKNOWN when the boundary itself cannot be read", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory()})],
+			[CODEOWNERS, {status: 502, body: '{"message":"Bad Gateway"}'}],
 		]);
-		const http = fakeHttp([[CODEOWNERS, {status: 502, body: '{"message":"Bad Gateway"}'}]]);
 
-		const out = await run(laneAt("review"), shell, "PASS", http);
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain(".github/CODEOWNERS");
 	});
 
 	it("still refuses a failed boundary read when the repo's config says ship (ADR 0220 §4)", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory()})],
-		]);
-		const http = fakeHttp([
 			[CODEOWNERS, {status: 502, body: '{"message":"Bad Gateway"}'}],
 			[CONFIG, {status: 200, body: '{"unreadableCodeowners": "ship"}'}],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS", http);
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 	});
 
 	it("never reads the boundary while no comment reaches for the advisory carrier", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: "looks good to me"})],
 		]);
-		const http = fakeHttp([]);
 
-		const out = await run(laneAt("review"), shell, "PASS", http);
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
-		expect(http.calls.some((line) => CODEOWNERS.test(line))).toBe(false);
+		expect(seams.requests.some((line) => CODEOWNERS.test(line))).toBe(false);
 	});
 });
 
 describe("lane prove — what it does not claim, and what it never writes", () => {
 	it("answers not-required for an event no board read can falsify, reading nothing", async () => {
-		const shell = fakeShell([]);
+		const seams = fakeSeams([]);
 		const fs = laneAt("build");
 
-		const out = await run(fs, shell, "BLOCKED");
+		const out = await run(fs, seams, "BLOCKED");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({proof: "not-required", state: "build"});
-		expect(shell.calls).toEqual([]);
+		expect(seams.log).toEqual([]);
 	});
 
 	it("proves a no-PR builder outcome from the investigation label and its diagnosis", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("")],
+			[SEARCH, nominated()],
 			[ISSUE, issue(["type:investigation"])],
 			[
 				ISSUE_COMMENTS,
@@ -468,7 +458,7 @@ describe("lane prove — what it does not claim, and what it never writes", () =
 			],
 		]);
 
-		const out = await run(laneAt("build"), shell, "DONE");
+		const out = await run(laneAt("build"), seams, "DONE");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
@@ -478,27 +468,27 @@ describe("lane prove — what it does not claim, and what it never writes", () =
 	});
 
 	it("refuses a no-PR DONE whose only comment predates the build", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("")],
+			[SEARCH, nominated()],
 			[ISSUE, issue(["type:investigation"])],
 			[ISSUE_COMMENTS, comments({id: 900, body: "triaged", createdAt: "2026-08-16T00:30:00Z"})],
 		]);
 
-		const out = await run(laneAt("build"), shell, "DONE");
+		const out = await run(laneAt("build"), seams, "DONE");
 
 		expect(out.code).toBe(PROOF_ABSENT);
 	});
 
 	it("writes nothing on any path — the ledger append stays lane transition's (single-issue)", async () => {
 		const fs = laneAt("build");
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 		]);
 
-		await run(fs, shell, "DONE");
+		await run(fs, seams, "DONE");
 
 		expect(fs.written.size).toBe(0);
 	});
@@ -552,7 +542,7 @@ const epicLaneAt = (state: "build" | "review" | "tail") =>
 
 const runEpic = (
 	fs: ReturnType<typeof fakeFs>,
-	shell: ReturnType<typeof fakeShell>,
+	seams: ReturnType<typeof fakeSeams>,
 	event: string,
 	task: string,
 ) =>
@@ -567,7 +557,7 @@ const runEpic = (
 				cwd: "/repo",
 				env: {CLAUDE_PIPELINE_REPO: "o/r"},
 			}),
-			Layer.mergeAll(fs.layer, shell.layer),
+			Layer.mergeAll(fs.layer, seams.layer),
 		),
 	);
 
@@ -581,7 +571,7 @@ const LOG_RANGE = /^git log --format=/;
 const MERGE_BASE = /^git merge-base /;
 const ANCESTRY = /^git rev-list --parents --ancestry-path /;
 const RAW = /^git diff .* --raw --abbrev=40 -z /;
-const CHILD_COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4301\/comments/;
+const CHILD_COMMENTS = /^GET .*\/repos\/o\/r\/issues\/4301\/comments\?/;
 
 /** `git log`'s framing for one commit: `<sha>\x1f<message>\x1e`. */
 const logOf = (...rows: ReadonlyArray<readonly [string, string]>): ExecResult =>
@@ -606,7 +596,7 @@ const GOVERNED_DIGEST = digestOf(GOVERNED_RAW);
 const locating = (
 	branches: ReadonlyArray<string> = [CHILD_BRANCH, "main", "epic/4300"],
 	commits: ReadonlyArray<readonly [string, string]> = [[CHILD_TIP, CHILD_MESSAGE]],
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+): ReadonlyArray<Scripted> => [
 	[REV("epic/4300"), okOut(`${EPIC_BASE}\n`)],
 	[BRANCHES, okOut(`${branches.join("\n")}\n`)],
 	[REV(CHILD_BRANCH), okOut(`${CHILD_TIP}\n`)],
@@ -637,9 +627,9 @@ const rangeMarker = (
 
 describe("lane prove — an epic child's DONE stands on commits, never on a PR", () => {
 	it("proves a child DONE from the commits its branch adds over the epic branch", async () => {
-		const shell = fakeShell([...locating()]);
+		const seams = fakeSeams([...locating()]);
 
-		const out = await runEpic(epicLaneAt("build"), shell, "DONE", "issue_4301");
+		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
@@ -655,11 +645,11 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 				naming: 1,
 			},
 		});
-		expect(shell.calls.filter((line) => line.startsWith("gh "))).toEqual([]);
+		expect(seams.requests).toEqual([]);
 	});
 
 	it("reports the range's size and its naming commits as the two numbers they are", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			...locating(
 				[CHILD_BRANCH, "main", "epic/4300"],
 				[
@@ -669,7 +659,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 			),
 		]);
 
-		const out = await runEpic(epicLaneAt("build"), shell, "DONE", "issue_4301");
+		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence).toMatchObject({commits: 2, naming: 1});
@@ -679,7 +669,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 	it("proves a child DONE after its commits have landed on the epic branch", async () => {
 		// The merge base of a contained tip IS that tip, so the range only survives integration if the
 		// verb recovers the epic branch as it stood before the merge that took the child in (#5984).
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
@@ -689,7 +679,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 			[LOG_RANGE, logOf([CHILD_TIP, CHILD_MESSAGE])],
 		]);
 
-		const out = await runEpic(epicLaneAt("build"), shell, "DONE", "issue_4301");
+		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence).toMatchObject({
@@ -700,7 +690,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 	});
 
 	it("measures a not-yet-integrated child over its fork point, not over the moved epic tip", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
@@ -708,18 +698,18 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 			[LOG_RANGE, logOf([CHILD_TIP, CHILD_MESSAGE])],
 		]);
 
-		const out = await runEpic(epicLaneAt("build"), shell, "DONE", "issue_4301");
+		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence).toMatchObject({range: {base: FORK, tip: CHILD_TIP}});
-		expect(shell.calls.some((line) => line.includes(`${FORK}..${CHILD_TIP}`))).toBe(true);
-		expect(shell.calls.some((line) => ANCESTRY.test(line))).toBe(false);
+		expect(seams.calls.some((line) => line.includes(`${FORK}..${CHILD_TIP}`))).toBe(true);
+		expect(seams.calls.some((line) => ANCESTRY.test(line))).toBe(false);
 	});
 
 	it("refuses a child DONE whose branch was cut and never built on", async () => {
-		const shell = fakeShell([...locating([CHILD_BRANCH], [])]);
+		const seams = fakeSeams([...locating([CHILD_BRANCH], [])]);
 
-		const out = await runEpic(epicLaneAt("build"), shell, "DONE", "issue_4301");
+		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
 
 		expect(out.code).toBe(PROOF_ABSENT);
 		expect(out.stdout).toBe("");
@@ -729,7 +719,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 	it("still refuses a never-built branch whose tip a sibling's merge names as first parent", async () => {
 		// The tip is an epic commit, so it is contained and a later merge names it — as its FIRST
 		// parent. Reading the second there would hand back a sibling's fork point and prove nothing.
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
@@ -738,28 +728,28 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 			[LOG_RANGE, logOf()],
 		]);
 
-		const out = await runEpic(epicLaneAt("build"), shell, "DONE", "issue_4301");
+		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
 
 		expect(out.code).toBe(PROOF_ABSENT);
 		expect(out.stderr.join("\n")).toContain("cut and not built on");
-		expect(shell.calls.some((line) => line.startsWith(`git merge-base ${sha("5b1b1a9c")}`))).toBe(
+		expect(seams.calls.some((line) => line.startsWith(`git merge-base ${sha("5b1b1a9c")}`))).toBe(
 			false,
 		);
 	});
 
 	it("refuses a child DONE when the branch carries only another child's commits", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			...locating([CHILD_BRANCH], [[CHILD_TIP, "feat(lane): another child (#4302)"]]),
 		]);
 
-		const out = await runEpic(epicLaneAt("build"), shell, "DONE", "issue_4301");
+		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
 
 		expect(out.code).toBe(PROOF_ABSENT);
 		expect(out.stderr.join("\n")).toContain("names #4301");
 	});
 
 	it("refuses a child DONE when two lane branches both carry its commits", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[REV("epic/4300"), okOut(`${EPIC_BASE}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\nbuild/4301-second-try-deadbeef\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
@@ -767,24 +757,24 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 			[LOG_RANGE, logOf([CHILD_TIP, CHILD_MESSAGE])],
 		]);
 
-		const out = await runEpic(epicLaneAt("build"), shell, "DONE", "issue_4301");
+		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
 
 		expect(out.code).toBe(PROOF_AMBIGUOUS);
 		expect(out.stderr.join("\n")).toContain("build/4301-second-try-deadbeef");
 	});
 
 	it("leaves a child DONE UNKNOWN when the epic branch is not in this tree", async () => {
-		const shell = fakeShell([[REV("epic/4300"), errOut("unknown revision")]]);
+		const seams = fakeSeams([[REV("epic/4300"), errOut("unknown revision")]]);
 
-		const out = await runEpic(epicLaneAt("build"), shell, "DONE", "issue_4301");
+		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain("UNKNOWN");
-		expect(shell.calls.some((line) => BRANCHES.test(line))).toBe(false);
+		expect(seams.calls.some((line) => BRANCHES.test(line))).toBe(false);
 	});
 
 	it("answers not-required for the DONE that lands a reviewed range, reading nothing", async () => {
-		const shell = fakeShell([]);
+		const seams = fakeSeams([]);
 		const fs = fakeFs({
 			files: {
 				[EPIC_WORKFLOW]: epicWorkflowText(),
@@ -795,35 +785,33 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 			},
 		});
 
-		const out = await runEpic(fs, shell, "DONE", "issue_4301");
+		const out = await runEpic(fs, seams, "DONE", "issue_4301");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({proof: "not-required", state: "integrate"});
-		expect(shell.calls).toEqual([]);
+		expect(seams.log).toEqual([]);
 	});
 });
 
 describe("lane prove — an epic child's PASS stands on a range verdict that still binds", () => {
 	const proving = (...comments: ReadonlyArray<{id: number; body: string}>) =>
-		fakeShell([...locating(), [RAW, okOut(CHILD_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
+		fakeSeams([...locating(), [RAW, okOut(CHILD_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
 
-	const comments_ = (rows: ReadonlyArray<{id: number; body: string}>): ExecResult =>
-		okOut(
-			JSON.stringify(
-				rows.map((row) => ({
-					id: row.id,
-					body: row.body,
-					user: {login: "agent"},
-					created_at: "2026-08-16T03:00:00Z",
-					updated_at: "2026-08-16T03:00:00Z",
-				})),
-			),
+	const comments_ = (rows: ReadonlyArray<{id: number; body: string}>): HttpReply =>
+		served(
+			rows.map((row) => ({
+				id: row.id,
+				body: row.body,
+				user: {login: "agent"},
+				created_at: "2026-08-16T03:00:00Z",
+				updated_at: "2026-08-16T03:00:00Z",
+			})),
 		);
 
 	it("proves a child PASS whose verdict binds the content this range carries now", async () => {
-		const shell = proving({id: 1, body: rangeMarker("PASS", CHILD_DIGEST)});
+		const seams = proving({id: 1, body: rangeMarker("PASS", CHILD_DIGEST)});
 
-		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
@@ -837,7 +825,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	it("digests the range the reviewer measured once the child has been integrated", async () => {
 		// The binding is content and only content (ADR 0276), so an integrated child's PASS reads
 		// `Current` only while prove diffs the same two endpoints the marker was posted over (#5984).
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
@@ -849,41 +837,41 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 			[CHILD_COMMENTS, comments_([{id: 1, body: rangeMarker("PASS", CHILD_DIGEST)}])],
 		]);
 
-		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence).toMatchObject({
 			range: {base: FORK, tip: CHILD_TIP},
 			content: CHILD_DIGEST,
 		});
-		expect(shell.calls.some((line) => RAW.test(line) && line.includes(FORK))).toBe(true);
+		expect(seams.calls.some((line) => RAW.test(line) && line.includes(FORK))).toBe(true);
 	});
 
 	it("refuses a child PASS with no verdict at all on the child issue", async () => {
-		const shell = proving({id: 1, body: "looks good to me"});
+		const seams = proving({id: 1, body: "looks good to me"});
 
-		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-code (absent)");
 	});
 
 	it("refuses a child PASS whose verdict binds a digest the range has moved past", async () => {
-		const shell = proving({id: 1, body: rangeMarker("PASS", "2f1a9c4e0b7d")});
+		const seams = proving({id: 1, body: rangeMarker("PASS", "2f1a9c4e0b7d")});
 
-		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-code (stale)");
 	});
 
 	it("refuses a child PASS whose verdict was written over another range's content", async () => {
-		const shell = proving({
+		const seams = proving({
 			id: 1,
 			body: rangeMarker("PASS", OTHER_DIGEST, "aaaaaaa", "bbbbbbb"),
 		});
 
-		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-code (stale)");
@@ -891,30 +879,30 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	});
 
 	it("refuses a child PASS the child issue contradicts with a range FAIL", async () => {
-		const shell = proving({id: 1, body: rangeMarker("FAIL", CHILD_DIGEST)});
+		const seams = proving({id: 1, body: rangeMarker("FAIL", CHILD_DIGEST)});
 
-		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(PROOF_CONTRADICTED);
 		expect(out.stderr.join("\n")).toContain("FAIL");
 	});
 
 	it("names a PR-scoped marker posted on the child issue instead of reading it as no verdict", async () => {
-		const shell = proving({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`});
+		const seams = proving({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`});
 
-		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("is not a range one");
 	});
 
 	const governedBy = (...comments: ReadonlyArray<{id: number; body: string}>) =>
-		fakeShell([...locating(), [RAW, okOut(GOVERNED_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
+		fakeSeams([...locating(), [RAW, okOut(GOVERNED_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
 
 	it("refuses a child PASS whose range touches a governance root and carries no governance verdict", async () => {
-		const shell = governedBy({id: 1, body: rangeMarker("PASS", GOVERNED_DIGEST)});
+		const seams = governedBy({id: 1, body: rangeMarker("PASS", GOVERNED_DIGEST)});
 
-		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("derives review-code, governance");
@@ -923,7 +911,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	});
 
 	it("proves that same governed child PASS once the governance range verdict is on the issue", async () => {
-		const shell = governedBy(
+		const seams = governedBy(
 			{id: 1, body: rangeMarker("PASS", GOVERNED_DIGEST)},
 			{
 				id: 2,
@@ -937,7 +925,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 			},
 		);
 
-		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(0);
 		expect(
@@ -946,9 +934,9 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	});
 
 	it("leaves a child PASS UNKNOWN when the range's own content cannot be read", async () => {
-		const shell = fakeShell([...locating(), [RAW, errOut("fatal: bad object")]]);
+		const seams = fakeSeams([...locating(), [RAW, errOut("fatal: bad object")]]);
 
-		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain("UNKNOWN");
@@ -957,35 +945,15 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 
 describe("lane prove — the epic tail keeps the PR arms", () => {
 	it("proves the tail PASS off the one PR's current-head verdicts, reading no range", async () => {
-		const shell = fakeShell([
-			[/^gh api graphql -f query=query\(/, closingPulls()],
-			[/^gh api --paginate search\/issues/, okOut("4318\n")],
-			[
-				/^gh api repos\/o\/r\/pulls\/4318$/,
-				okOut(
-					JSON.stringify({
-						number: 4318,
-						state: "open",
-						head: {sha: HEAD},
-						base: {ref: "main"},
-						body: "Fixes #4300\n\n## Deviations\nNone.\n",
-						changed_files: 1,
-						comments: 1,
-						merged: false,
-					}),
-				),
-			],
-			[
-				/^gh api --paginate repos\/o\/r\/pulls\/4318\/files/,
-				okOut(JSON.stringify([{filename: "packages/fabrika-cli/src/lane/prove.ts"}])),
-			],
-			[
-				/^gh api --paginate repos\/o\/r\/issues\/4318\/comments/,
-				comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`}),
-			],
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull({body: "Fixes #4300\n\n## Deviations\nNone.\n"})],
+			[FILES, served([{filename: "packages/fabrika-cli/src/lane/prove.ts"}])],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
 		]);
 
-		const out = await runEpic(epicLaneAt("tail"), shell, "PASS", "epic_4300");
+		const out = await runEpic(epicLaneAt("tail"), seams, "PASS", "epic_4300");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
@@ -993,6 +961,6 @@ describe("lane prove — the epic tail keeps the PR arms", () => {
 			issue: 4300,
 			evidence: {kind: "head-verdicts", pr: 4318, head: HEAD},
 		});
-		expect(shell.calls.some((line) => BRANCHES.test(line))).toBe(false);
+		expect(seams.calls.some((line) => BRANCHES.test(line))).toBe(false);
 	});
 });

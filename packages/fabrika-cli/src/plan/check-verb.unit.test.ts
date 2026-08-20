@@ -1,6 +1,5 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut} from "../fakes.test-support.ts";
 import {runCheck} from "./check-verb.ts";
 import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
@@ -19,11 +18,11 @@ import {
 	subIssues,
 } from "./fixtures.test-support.ts";
 
-const EPIC = /^gh api repos\/o\/r\/issues\/4300$/;
+const EPIC = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
 const SUBS = SUB_ISSUES;
 const CHILD_1 = CHILD(4301);
 const CHILD_2 = CHILD(4302);
-const REF_9999 = /^gh api repos\/o\/r\/issues\/9999$/;
+const REF_9999 = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/9999$/;
 const CYCLE = CYCLE_DOC;
 
 const options = {number: 4300, repo: null, env: ENV, cwd: CWD};
@@ -112,7 +111,7 @@ describe("runCheck", () => {
 			[EPIC, referencing],
 			[SUBS, subIssues(4301)],
 			[CHILD_1, child({number: 4301})],
-			[REF_9999, errOut("gh: Not Found (HTTP 404)")],
+			[REF_9999, {status: 404, body: '{"message":"Not Found"}'}],
 			[CYCLE, cycleDoc],
 		]);
 		expect(JSON.parse(dangling.stdout).defects).toContainEqual({
@@ -125,7 +124,7 @@ describe("runCheck", () => {
 			[EPIC, referencing],
 			[SUBS, subIssues(4301)],
 			[CHILD_1, child({number: 4301})],
-			[REF_9999, errOut("gh: Bad gateway (HTTP 502)")],
+			[REF_9999, {status: 502, body: '{"message":"Bad gateway"}'}],
 			[CYCLE, cycleDoc],
 		]);
 		expect(unreadable.code).toBe(PRECONDITION_UNKNOWN);

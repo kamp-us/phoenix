@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeHttp, fakeShell, type HttpReply} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {CODEOWNERS, ENV, files, HEAD, pull} from "../ship/fixtures.test-support.ts";
 import {
@@ -15,6 +15,7 @@ import {
 import {
 	branchList,
 	closingPulls,
+	httpError,
 	LANE,
 	LANE_BRANCH,
 	LANES_ROOT,
@@ -29,9 +30,9 @@ import {
 } from "./fixtures.test-support.ts";
 import {runUnpark} from "./unpark-verb.ts";
 
-const CLOSERS = /^gh api graphql/;
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
+const CLOSERS = /^POST .*\/graphql$/;
+const PULL = /^GET .*\/repos\/o\/r\/pulls\/4321$/;
+const FILES = /^GET .*\/repos\/o\/r\/pulls\/4321\/files\?/;
 const OWNERS = /contents\/\.github\/CODEOWNERS/;
 const COMPARE = /\/repos\/o\/r\/compare\//;
 const ROSTER = /orgs\/kamp-us\/teams\/control-plane\/members/;
@@ -39,8 +40,11 @@ const REVIEWS = /\/repos\/o\/r\/pulls\/4321\/reviews/;
 const BRANCHES = /^git for-each-ref/;
 const TREES = /^git worktree list/;
 
+/** The shared payload fixtures speak `gh`'s `ExecResult`; the seam now serves the same bytes. */
+const reply = (result: ExecResult, status = 200): HttpReply => ({status, body: result.stdout});
+
 /** The §CP path set, so the boundary classifies `control-plane` and the discharge table runs. */
-const CP_FILES = files(".github/workflows/ci.yml", "README.md");
+const CP_FILES = reply(files(".github/workflows/ci.yml", "README.md"));
 
 const members = (...logins: ReadonlyArray<string>): HttpReply => ({
 	status: 200,
@@ -62,15 +66,15 @@ const reviewPage = (
 	),
 });
 
-/** The shell half of a discharged §CP park: the closing PR, its shape, its changed files. */
-const DISCHARGED: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[CLOSERS, closingPulls(4321)],
-	[PULL, pull({author: "usirin"})],
+/** A discharged §CP park's target half: the closing PR, its shape, its changed files. */
+const DISCHARGED: ReadonlyArray<Scripted> = [
+	[CLOSERS, reply(closingPulls(4321))],
+	[PULL, reply(pull({author: "usirin"}))],
 	[FILES, CP_FILES],
 ];
 
-/** The HTTP half: the boundary, no base drift, the roster, an approving owner at the live head. */
-const DISCHARGED_HTTP: ReadonlyArray<readonly [RegExp, HttpReply]> = [
+/** The clearance half: the boundary, no base drift, the roster, an approving owner at the live head. */
+const DISCHARGED_HTTP: ReadonlyArray<Scripted> = [
 	[OWNERS, {status: 200, body: CODEOWNERS}],
 	[COMPARE, {status: 200, body: '{"behind_by":0}'}],
 	[ROSTER, members("usirin", "notusirin")],
@@ -82,14 +86,14 @@ const lane = (log: string, extra: Parameters<typeof fakeFs>[0] = {}) =>
 
 const run = (
 	fs: ReturnType<typeof fakeFs>,
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]> = DISCHARGED_HTTP,
+	script: ReadonlyArray<Scripted>,
+	http: ReadonlyArray<Scripted> = DISCHARGED_HTTP,
 	task: string | null = null,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runUnpark({root: LANES_ROOT, lane: LANE, task, repo: null, env: ENV}),
-			Layer.mergeAll(fs.layer, fakeShell(script).layer, fakeHttp(http).layer),
+			Layer.merge(fs.layer, fakeSeams([...script, ...http]).layer),
 		),
 	);
 
@@ -201,9 +205,9 @@ describe("recipe unpark — the refusals write nothing", () => {
 		const out = await run(
 			fs,
 			[
-				[CLOSERS, closingPulls(4321)],
-				[PULL, pull()],
-				[FILES, files("apps/web/src/App.tsx", "README.md")],
+				[CLOSERS, reply(closingPulls(4321))],
+				[PULL, reply(pull())],
+				[FILES, reply(files("apps/web/src/App.tsx", "README.md"))],
 			],
 			[
 				[OWNERS, {status: 200, body: CODEOWNERS}],
@@ -218,7 +222,7 @@ describe("recipe unpark — the refusals write nothing", () => {
 	it("is PARK_NOVEL when several open PRs declare they close the issue", async () => {
 		const fs = lane(PARKED_AT_CP);
 
-		const out = await run(fs, [[CLOSERS, closingPulls(4321, 4322)]]);
+		const out = await run(fs, [[CLOSERS, reply(closingPulls(4321, 4322))]]);
 
 		expect(out.code).toBe(PARK_NOVEL);
 		expect(out.stderr.join("\n")).toMatch(/#4321, #4322/);
@@ -231,8 +235,8 @@ describe("recipe unpark — the refusals write nothing", () => {
 		const out = await run(
 			fs,
 			[
-				[CLOSERS, closingPulls(4321)],
-				[PULL, pull({author: "usirin"})],
+				[CLOSERS, reply(closingPulls(4321))],
+				[PULL, reply(pull({author: "usirin"}))],
 				[FILES, CP_FILES],
 			],
 			[
@@ -260,7 +264,7 @@ describe("recipe unpark — the refusals write nothing", () => {
 	it("is TARGET_ABSENT when no open PR declares it closes the issue the park hangs on", async () => {
 		const fs = lane(PARKED_AT_CP);
 
-		const out = await run(fs, [[CLOSERS, closingPulls()]]);
+		const out = await run(fs, [[CLOSERS, reply(closingPulls())]]);
 
 		expect(out.code).toBe(TARGET_ABSENT);
 		expect(fs.written.size).toBe(0);
@@ -269,7 +273,7 @@ describe("recipe unpark — the refusals write nothing", () => {
 	it("is UNKNOWN when the closing-PR read fails — never a cleared park", async () => {
 		const fs = lane(PARKED_AT_CP);
 
-		const out = await run(fs, [[CLOSERS, errOut("api down")]]);
+		const out = await run(fs, [[CLOSERS, httpError(503, "api down")]]);
 
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(fs.written.size).toBe(0);
@@ -296,7 +300,7 @@ describe("recipe unpark — the refusals write nothing", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runUnpark({root, lane: "nightly", task: null, repo: null, env: ENV}),
-				Layer.mergeAll(fs.layer, fakeShell(DISCHARGED).layer, fakeHttp(DISCHARGED_HTTP).layer),
+				Layer.merge(fs.layer, fakeSeams([...DISCHARGED, ...DISCHARGED_HTTP]).layer),
 			),
 		);
 

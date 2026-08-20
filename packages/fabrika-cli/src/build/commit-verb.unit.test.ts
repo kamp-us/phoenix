@@ -1,7 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeFs, fakeSeams, okOut, once, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {scanBody} from "../report/leaks.ts";
 import type {VerbOutcome} from "../verb.ts";
@@ -28,14 +27,18 @@ import {
 	NONCE,
 	OLD_HEAD,
 	pull,
+	served,
 } from "./fixtures.test-support.ts";
 import {laneScratchDir} from "./scratch-verb.ts";
 
+/** The write permission the marker's author holds — what authorizes a claim (ADR 0055). */
+const WRITE = served({permission: "write"});
+
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
 const BRANCH = /^git rev-parse --abbrev-ref HEAD$/;
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
-const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
+const ISSUE = /^GET \S+\/repos\/o\/r\/issues\/4312$/;
+const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4312\/comments/;
+const PERM = /^GET \S+\/repos\/o\/r\/collaborators\/agent\/permission/;
 const HEAD_SHA = /^git rev-parse HEAD$/;
 const STAGED = /^git diff --cached --name-only -z$/;
 const COMMIT = /^git commit /;
@@ -51,12 +54,12 @@ const MESSAGE = "fix(build): read the commit message back off the commit (#4312)
 /** The message the #5484 incident's commit really carried — another lane's, two days stale. */
 const BORROWED = "fix(report): state the guarantee the eval set actually delivers (#4789)\n";
 
-const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const LANE_OK: ReadonlyArray<Scripted> = [
 	[REV_PARSE, GIT_DIRS],
 	[BRANCH, okOut(`${LANE}\n`)],
 	[ISSUE, issue()],
 	[COMMENTS, comments({id: 1, body: marker(SESSION, LANE_UUID)})],
-	[PERM, okOut("write\n")],
+	[PERM, WRITE],
 ];
 
 /**
@@ -65,7 +68,7 @@ const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
  * Built fresh per call: `once` carries its own spent flag, so a shared array would answer the
  * second test's before-read with the first test's after-read.
  */
-const ready = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+const ready = (): ReadonlyArray<Scripted> => [
 	...LANE_OK,
 	[STAGED, okOut("packages/fabrika-cli/src/build/commit-verb.ts\0")],
 	[once(HEAD_SHA), okOut(`${OLD_HEAD}\n`)],
@@ -83,7 +86,14 @@ const options = {
 	tmpRoot: TMP_ROOT,
 };
 
-const shellFor = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => fakeShell(script);
+/**
+ * Both seams off one script, keeping the spawner's `inputs` reachable.
+ *
+ * `fakeSeams` hands back everything else this file needs but not what a child was piped, and the
+ * message travelling on `git commit -F -`'s own stdin is exactly what one of these tests is about
+ * (#5484) — so the two fakes are built side by side here rather than through it.
+ */
+const shellFor = (script: ReadonlyArray<Scripted>) => fakeSeams(script);
 
 const runWith = (
 	shell: ReturnType<typeof shellFor>,
@@ -98,7 +108,7 @@ const runWith = (
 	);
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	files: Record<string, string | null> = {},
 ): Promise<VerbOutcome> => runWith(shellFor(script), overrides, files);
@@ -195,13 +205,13 @@ describe("runCommit — the message names only what this lane holds", () => {
 		const shell = shellFor([
 			[REV_PARSE, GIT_DIRS],
 			[BRANCH, okOut(`${resume}\n`)],
-			[/^gh api repos\/o\/r\/issues\/4318$/, issue({number: 4318})],
+			[/^GET \S+\/repos\/o\/r\/issues\/4318$/, issue({number: 4318})],
 			[
-				/^gh api --paginate repos\/o\/r\/issues\/4318\/comments/,
+				/^GET \S+\/repos\/o\/r\/issues\/4318\/comments/,
 				comments({id: 1, body: marker(SESSION, LANE_UUID)}),
 			],
-			[PERM, okOut("write\n")],
-			[/^gh api repos\/o\/r\/pulls\/4318$/, pull()],
+			[PERM, WRITE],
+			[/^GET \S+\/repos\/o\/r\/pulls\/4318$/, pull()],
 			[STAGED, okOut("a.ts\0")],
 			[once(HEAD_SHA), okOut(`${OLD_HEAD}\n`)],
 			[HEAD_SHA, okOut(`${HEAD}\n`)],
@@ -303,7 +313,7 @@ describe("runCommit — preconditions", () => {
 			[BRANCH, okOut(`${LANE}\n`)],
 			[ISSUE, issue()],
 			[COMMENTS, comments({id: 1, body: marker("s-77aa", LANE_UUID)})],
-			[PERM, okOut("write\n")],
+			[PERM, WRITE],
 			[COMMIT, okOut("")],
 		]);
 		const out = await runWith(shell);

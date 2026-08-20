@@ -8,20 +8,33 @@ import {
 	LANE_UUID,
 	NO_BLOCKERS,
 	SIBLING_UUID,
+	served,
 	truncatedComments,
 } from "../build/fixtures.test-support.ts";
-import {fakeFs, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {
+	fakeFs,
+	fakeSeams,
+	type HttpReply,
+	type Scripted,
+	unconfigured,
+} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {runLaneClaim, runLaneRelease} from "./claim-verb.ts";
 import {APPEND_UNKNOWN, CLAIM_NOT_MINE, LANE_UNREADABLE, MARKER_READBACK} from "./codes.ts";
 import {parseKey} from "./key.ts";
 
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/5492\/comments/;
-const POST = /^gh api --method POST repos\/o\/r\/issues\/5492\/comments/;
-const GET_COMMENT = /^gh api repos\/o\/r\/issues\/comments\/9001$/;
-const DELETE = /^gh api --method DELETE repos\/o\/r\/issues\/comments\//;
-const perm = (login: string) => new RegExp(`^gh api repos/o/r/collaborators/${login}/permission`);
+const COMMENTS = /^GET .*\/repos\/o\/r\/issues\/5492\/comments\?/;
+const POST = /^POST .*\/repos\/o\/r\/issues\/5492\/comments$/;
+const GET_COMMENT = /^GET .*\/repos\/o\/r\/issues\/comments\/9001$/;
+const DELETE = /^DELETE .*\/repos\/o\/r\/issues\/comments\//;
+const perm = (login: string) => new RegExp(`^GET .*/repos/o/r/collaborators/${login}/permission$`);
+
+/** The request line a retraction shows up as — what a "which markers were deleted" claim reads. */
+const deleted = (id: number) => `DELETE https://api.github.com/repos/o/r/issues/comments/${id}`;
+
+const WRITE_PERMISSION: HttpReply = served({permission: "write"});
+const GATEWAY: HttpReply = {status: 502, body: '{"message":"Bad gateway"}'};
+const DELETED: HttpReply = {status: 204, body: ""};
 
 const OTHER_UUID = "9d8c7b6a-5f4e-3d2c-1b0a-998877665544";
 
@@ -36,8 +49,8 @@ const SIBLING = laneMarker("s-9f2e", SIBLING_UUID);
 const MY_TOKEN = `lane:s-9f2e:${LANE_UUID}`;
 const SIBLING_TOKEN = `lane:s-9f2e:${SIBLING_UUID}`;
 
-const POSTED = okOut(JSON.stringify({id: 9001, html_url: "https://github.com/o/r/issues/5492#c"}));
-const ECHO = okOut(JSON.stringify({body: MINE}));
+const POSTED = served({id: 9001, html_url: "https://github.com/o/r/issues/5492#c"}, 201);
+const ECHO = served({body: MINE});
 
 const key = (raw: string) => {
 	const parsed = parseKey(raw);
@@ -59,25 +72,19 @@ const options = {
 	at: "2026-08-17T00:00:00Z",
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(
 		Effect.provide(
 			runLaneClaim({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, unconfigured),
+			Layer.merge(fakeSeams(script).layer, unconfigured),
 		),
 	);
 
-const release = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
+const release = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(
 		Effect.provide(
 			runLaneRelease({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, unconfigured),
+			Layer.merge(fakeSeams(script).layer, unconfigured),
 		),
 	);
 
@@ -87,7 +94,7 @@ describe("runLaneClaim", () => {
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, buildComments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITE_PERMISSION],
 		]);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({
@@ -99,21 +106,21 @@ describe("runLaneClaim", () => {
 	});
 
 	it("re-reads AFTER posting — the checkpoint is what resolves a staggered race", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, buildComments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITE_PERMISSION],
 		]);
-		await Effect.runPromise(Effect.provide(runLaneClaim(options), shell.layer));
-		const posted = shell.calls.findIndex((line) => POST.test(line));
-		const swept = shell.calls.findIndex((line) => COMMENTS.test(line));
+		await Effect.runPromise(Effect.provide(runLaneClaim(options), seams.layer));
+		const posted = seams.requests.findIndex((line) => POST.test(line));
+		const swept = seams.requests.findIndex((line) => COMMENTS.test(line));
 		expect(posted).toBeGreaterThanOrEqual(0);
 		expect(swept).toBeGreaterThan(posted);
 	});
 
 	it("exits 31 on a proven loss — never 0 — and retracts only its OWN marker", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[
@@ -123,15 +130,15 @@ describe("runLaneClaim", () => {
 					{id: 9001, body: MINE, createdAt: "2026-08-17T00:00:00Z"},
 				),
 			],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITE_PERMISSION],
+			[DELETE, DELETED],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runLaneClaim(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runLaneClaim(options), seams.layer));
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain(`lane:s-77aa:${OTHER_UUID}`);
-		const deletes = shell.calls.filter((line) => DELETE.test(line));
-		expect(deletes).toEqual(["gh api --method DELETE repos/o/r/issues/comments/9001"]);
+		const deletes = seams.requests.filter((line) => DELETE.test(line));
+		expect(deletes).toEqual([deleted(9001)]);
 	});
 
 	/**
@@ -140,7 +147,7 @@ describe("runLaneClaim", () => {
 	 * neighbour's claim as its own (#6060).
 	 */
 	it("loses to a sibling driver of its own session, and says which one", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[
@@ -150,15 +157,13 @@ describe("runLaneClaim", () => {
 					{id: 9001, body: MINE, createdAt: "2026-08-17T00:00:00Z"},
 				),
 			],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITE_PERMISSION],
+			[DELETE, DELETED],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runLaneClaim(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runLaneClaim(options), seams.layer));
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.join("\n")).toContain(SIBLING_TOKEN);
-		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
-			"gh api --method DELETE repos/o/r/issues/comments/9001",
-		]);
+		expect(seams.requests.filter((line) => DELETE.test(line))).toEqual([deleted(9001)]);
 	});
 
 	/**
@@ -167,33 +172,31 @@ describe("runLaneClaim", () => {
 	 * resolve, on a namespace with no TTL to expire it (#6000).
 	 */
 	it("exits 11 on an unreadable marker set — UNKNOWN, never unclaimed — retracting its own", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, truncatedComments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITE_PERMISSION],
+			[DELETE, DELETED],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runLaneClaim(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runLaneClaim(options), seams.layer));
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("UNKNOWN");
-		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
-			"gh api --method DELETE repos/o/r/issues/comments/9001",
-		]);
+		expect(seams.requests.filter((line) => DELETE.test(line))).toEqual([deleted(9001)]);
 	});
 
 	it("exits 1 with no session id, and writes nothing", async () => {
-		const shell = fakeShell([]);
+		const seams = fakeSeams([]);
 		const out = await Effect.runPromise(
-			Effect.provide(runLaneClaim({...options, env: {CLAUDE_PIPELINE_REPO: "o/r"}}), shell.layer),
+			Effect.provide(runLaneClaim({...options, env: {CLAUDE_PIPELINE_REPO: "o/r"}}), seams.layer),
 		);
 		expect(out.code).toBe(FAILED);
-		expect(shell.calls).toEqual([]);
+		expect(seams.requests).toEqual([]);
 	});
 
 	it("exits 8 when the marker write fails — UNKNOWN, never a held lane", async () => {
-		const out = await run([[POST, {ok: false, stdout: "", reason: "502"}]]);
+		const out = await run([[POST, GATEWAY]]);
 		expect(out.code).toBe(APPEND_UNKNOWN);
 		expect(out.stdout).toBe("");
 	});
@@ -201,51 +204,51 @@ describe("runLaneClaim", () => {
 	it("exits 9 when the marker lands and does not read back", async () => {
 		const out = await run([
 			[POST, POSTED],
-			[GET_COMMENT, okOut(JSON.stringify({body: THEIRS}))],
+			[GET_COMMENT, served({body: THEIRS})],
 		]);
 		expect(out.code).toBe(MARKER_READBACK);
 		expect(out.stderr.join("\n")).toContain("9001");
 	});
 
 	it("answers unclaimable on a chore lane, writing nothing", async () => {
-		const shell = fakeShell([]);
+		const seams = fakeSeams([]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runLaneClaim({...options, key: key("chore:park-sweep"), lane: "chore:park-sweep"}),
-				shell.layer,
+				seams.layer,
 			),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).answer).toBe("unclaimable");
-		expect(shell.calls).toEqual([]);
+		expect(seams.requests).toEqual([]);
 	});
 });
 
 describe("runLaneRelease", () => {
 	it("retracts this driver's own marker", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[COMMENTS, buildComments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITE_PERMISSION],
+			[DELETE, DELETED],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), shell.layer),
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), seams.layer),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({answer: "released", lane: "5492", number: 5492});
-		expect(shell.calls).toContain("gh api --method DELETE repos/o/r/issues/comments/9001");
+		expect(seams.requests).toContain(deleted(9001));
 	});
 
 	it("exits 31 rather than retracting another driver's marker", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[COMMENTS, buildComments({id: 8000, body: THEIRS})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITE_PERMISSION],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), shell.layer),
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), seams.layer),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([]);
+		expect(seams.requests.filter((line) => DELETE.test(line))).toEqual([]);
 	});
 
 	/**
@@ -254,47 +257,47 @@ describe("runLaneRelease", () => {
 	 * (#6060). The refusal names the holding token so a reader can find the comment.
 	 */
 	it("refuses a sibling driver of its OWN session, naming the holding token", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[COMMENTS, buildComments({id: 8000, body: SIBLING})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITE_PERMISSION],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), shell.layer),
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), seams.layer),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.join("\n")).toContain(SIBLING_TOKEN);
-		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([]);
+		expect(seams.requests.filter((line) => DELETE.test(line))).toEqual([]);
 	});
 
 	it("exits 1 with no --token on a board lane, and reads nothing", async () => {
-		const shell = fakeShell([]);
-		const out = await Effect.runPromise(Effect.provide(runLaneRelease(options), shell.layer));
+		const seams = fakeSeams([]);
+		const out = await Effect.runPromise(Effect.provide(runLaneRelease(options), seams.layer));
 		expect(out.code).toBe(FAILED);
-		expect(shell.calls).toEqual([]);
+		expect(seams.requests).toEqual([]);
 	});
 
 	/** A read that failed is UNKNOWN, and an UNKNOWN holding never authorizes a delete. */
 	it("exits 11 on an unreadable marker read, retracting nothing", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[COMMENTS, truncatedComments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITE_PERMISSION],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), shell.layer),
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), seams.layer),
 		);
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain("UNKNOWN");
-		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([]);
+		expect(seams.requests.filter((line) => DELETE.test(line))).toEqual([]);
 	});
 
 	it("exits 8 when the delete fails — whether the lane is still held is UNKNOWN", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[COMMENTS, buildComments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, {ok: false, stdout: "", reason: "502"}],
+			[perm("agent"), WRITE_PERMISSION],
+			[DELETE, GATEWAY],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), shell.layer),
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), seams.layer),
 		);
 		expect(out.code).toBe(APPEND_UNKNOWN);
 		expect(out.stderr.join("\n")).toContain("UNKNOWN");
@@ -318,12 +321,12 @@ describe("one driver, one marker", () => {
 		buildComments(...bodies.map(([id, body]) => ({id, body})));
 
 	it("posts no second marker on a re-claim, and answers with the owning token", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[COMMENTS, held([9001, MINE])],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITE_PERMISSION],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runLaneClaim({...options, token: MY_TOKEN}), shell.layer),
+			Effect.provide(runLaneClaim({...options, token: MY_TOKEN}), seams.layer),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({
@@ -332,42 +335,40 @@ describe("one driver, one marker", () => {
 			number: 5492,
 			token: MY_TOKEN,
 		});
-		expect(shell.calls.filter((line) => POST.test(line))).toEqual([]);
+		expect(seams.requests.filter((line) => POST.test(line))).toEqual([]);
 	});
 
 	/** Claim, re-claim, release once: no marker of this driver survives for a later claim to lose to. */
 	it("leaves nothing behind after one release", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[COMMENTS, held([9001, MINE])],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITE_PERMISSION],
+			[DELETE, DELETED],
 		]);
 		await Effect.runPromise(
-			Effect.provide(runLaneClaim({...options, token: MY_TOKEN}), shell.layer),
+			Effect.provide(runLaneClaim({...options, token: MY_TOKEN}), seams.layer),
 		);
 		const out = await Effect.runPromise(
-			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), shell.layer),
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), seams.layer),
 		);
 		expect(out.code).toBe(0);
-		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
-			"gh api --method DELETE repos/o/r/issues/comments/9001",
-		]);
+		expect(seams.requests.filter((line) => DELETE.test(line))).toEqual([deleted(9001)]);
 	});
 
 	/** A thread that already carries duplicates — written before the guard — is swept, not crashed on. */
 	it("sweeps every marker carrying this driver's token, and only those", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[COMMENTS, held([9001, MINE], [9002, MINE], [9003, THEIRS])],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITE_PERMISSION],
+			[DELETE, DELETED],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), shell.layer),
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), seams.layer),
 		);
 		expect(out.code).toBe(0);
-		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
-			"gh api --method DELETE repos/o/r/issues/comments/9001",
-			"gh api --method DELETE repos/o/r/issues/comments/9002",
+		expect(seams.requests.filter((line) => DELETE.test(line))).toEqual([
+			deleted(9001),
+			deleted(9002),
 		]);
 	});
 
@@ -377,16 +378,16 @@ describe("one driver, one marker", () => {
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, buildComments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITE_PERMISSION],
 		]);
 		const token = JSON.parse(claimed.stdout).token as string;
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[COMMENTS, buildComments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITE_PERMISSION],
+			[DELETE, DELETED],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runLaneRelease({...options, token}), shell.layer),
+			Effect.provide(runLaneRelease({...options, token}), seams.layer),
 		);
 		expect(out.code).toBe(0);
 	});
@@ -399,7 +400,7 @@ describe("a driver's claim and the builder it spawns", () => {
 	 * two namespaces on one thread rather than one race with two entrants (#5761).
 	 */
 	it("lets the spawned builder claim the same issue and win", async () => {
-		const BUILD_ISSUE = /^gh api repos\/o\/r\/issues\/5492$/;
+		const BUILD_ISSUE = /^GET .*\/repos\/o\/r\/issues\/5492$/;
 		const BUILD_COMMENTS = COMMENTS;
 		const claimable = buildIssue({
 			number: 5492,
@@ -427,13 +428,10 @@ describe("a driver's claim and the builder it spawns", () => {
 					cites: null,
 					resume: false,
 				}),
-				fakeShell([
+				fakeSeams([
 					[BUILD_ISSUE, claimable],
-					[POST, okOut(JSON.stringify({id: 9002, html_url: "https://github.com/o/r#c"}))],
-					[
-						/^gh api repos\/o\/r\/issues\/comments\/9002$/,
-						okOut(JSON.stringify({body: buildMarker})),
-					],
+					[POST, served({id: 9002, html_url: "https://github.com/o/r#c"}, 201)],
+					[/^GET .*\/repos\/o\/r\/issues\/comments\/9002$/, served({body: buildMarker})],
 					[
 						BUILD_COMMENTS,
 						buildComments(
@@ -442,7 +440,7 @@ describe("a driver's claim and the builder it spawns", () => {
 							{id: 9002, body: buildMarker, createdAt: "2026-08-17T00:10:00Z"},
 						),
 					],
-					[perm("agent"), okOut("write\n")],
+					[perm("agent"), WRITE_PERMISSION],
 					NO_BLOCKERS,
 				]).layer,
 			).pipe(Effect.provide(fakeFs({files: {}}).layer)),

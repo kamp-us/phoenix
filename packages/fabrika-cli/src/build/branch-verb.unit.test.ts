@@ -18,9 +18,9 @@ import {
 } from "./fixtures.test-support.ts";
 
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
-const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
+const ISSUE = /^GET \S+\/repos\/o\/r\/issues\/4312$/;
+const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4312\/comments/;
+const PERM = /^GET \S+\/repos\/o\/r\/collaborators\/agent\/permission/;
 const REMOTES = /^git remote$/;
 const FETCH = /^git fetch --quiet origin main$/;
 const RESOLVE = /^git rev-parse --verify --quiet FETCH_HEAD/;
@@ -28,6 +28,9 @@ const VERIFY_BRANCH = /^git rev-parse --verify --quiet refs\/heads\//;
 const SWITCH_NEW = /^git switch -c /;
 
 const MINE = comments({id: 1, body: marker("s-9f2e", LANE_UUID)});
+
+/** The write permission the marker's author holds — what authorizes a claim (ADR 0055). */
+const WRITE = served({permission: "write"});
 
 const options = {
 	number: 4312 as number | null,
@@ -47,7 +50,7 @@ const CLAIMED: ReadonlyArray<Scripted> = [
 	[REV_PARSE, GIT_DIRS],
 	[ISSUE, issue()],
 	[COMMENTS, MINE],
-	[PERM, okOut("write\n")],
+	[PERM, WRITE],
 ];
 
 const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
@@ -123,7 +126,7 @@ describe("runBranch — create mode", () => {
 			[REV_PARSE, GIT_DIRS],
 			[ISSUE, issue()],
 			[COMMENTS, comments({id: 1, body: marker("s-77aa", LANE_UUID)})],
-			[PERM, okOut("write\n")],
+			[PERM, WRITE],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runBranch(options), shell.layer));
 		expect(out.code).toBe(CLAIM_NOT_MINE);
@@ -149,8 +152,8 @@ describe("runBranch — create mode", () => {
 });
 
 describe("runBranch — resume mode", () => {
-	const RESUME_ISSUE = /^gh api repos\/o\/r\/issues\/4310$/;
-	const RESUME_COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4310\/comments/;
+	const RESUME_ISSUE = /^GET \S+\/repos\/o\/r\/issues\/4310$/;
+	const RESUME_COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4310\/comments/;
 	const PULL_HEAD = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4310$/;
 	const resumeOptions = {number: null, slug: null, resume: 4310};
 
@@ -159,7 +162,7 @@ describe("runBranch — resume mode", () => {
 			[REV_PARSE, GIT_DIRS],
 			[RESUME_ISSUE, issue({number: 4310})],
 			[RESUME_COMMENTS, MINE],
-			[PERM, okOut("write\n")],
+			[PERM, WRITE],
 			[PULL_HEAD, served(pullPayload({number: 4310, head: {ref: "umut/fix-focus", sha: HEAD}}))],
 			[REMOTES, okOut("origin\n")],
 			[/^git fetch --quiet origin umut\/fix-focus$/, okOut("")],
@@ -184,7 +187,7 @@ describe("runBranch — resume mode", () => {
 				[REV_PARSE, GIT_DIRS],
 				[RESUME_ISSUE, issue({number: 4310})],
 				[RESUME_COMMENTS, MINE],
-				[PERM, okOut("write\n")],
+				[PERM, WRITE],
 				[
 					PULL_HEAD,
 					served(

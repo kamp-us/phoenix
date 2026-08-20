@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import {instant, packNonce} from "../wire/handoff-pack.ts";
 import {runClaim} from "./claim-verb.ts";
 import {
@@ -23,9 +22,9 @@ import {
 } from "./fixtures.test-support.ts";
 import {composeClaimMarker} from "./markers.ts";
 
-const POST = new RegExp(`--method POST repos/${REPO}/issues/${ISSUE}/comments`);
-const GET_COMMENT = /issues\/comments\/\d+/;
-const LIST = new RegExp(`issues/${ISSUE}/comments`);
+const POST = new RegExp(`POST .*/repos/${REPO}/issues/${ISSUE}/comments`);
+const GET_COMMENT = /GET .*\/issues\/comments\/\d+/;
+const LIST = new RegExp(`GET .*/issues/${ISSUE}/comments`);
 const PACK_COMMENT = 9234567891;
 
 const claim = (nonce: string, packComment = PACK_COMMENT): string => {
@@ -43,13 +42,11 @@ const options = {
 	now: () => new Date("2026-08-09T19:02:11.000Z"),
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	over: Partial<typeof options> = {},
-) => Effect.runPromise(Effect.provide(runClaim({...options, ...over}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, over: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runClaim({...options, ...over}), fakeSeams(script).layer));
 
 const sealed = (comments: ReadonlyArray<{readonly id: number; readonly body: string}>) =>
-	[[LIST, okOut(commentsJson(comments))], ...groundScript()] as const;
+	[[LIST, {status: 200, body: commentsJson(comments)}], ...groundScript()] as const;
 
 describe("runClaim", () => {
 	it("exits 1 on a claim key two runs would collide on", async () => {
@@ -68,8 +65,8 @@ describe("runClaim", () => {
 	it("exits 0 and holds the pack when it is free", async () => {
 		const body = claim(NONCE);
 		const out = await run([
-			[POST, okOut('{"id":9234599999,"html_url":"u"}')],
-			[GET_COMMENT, okOut(JSON.stringify({body}))],
+			[POST, {status: 201, body: '{"id":9234599999,"html_url":"u"}'}],
+			[GET_COMMENT, {status: 200, body: JSON.stringify({body})}],
 			...sealed([{id: PACK_COMMENT, body: packBody()}]),
 		]);
 		expect(out.code).toBe(0);
@@ -84,16 +81,16 @@ describe("runClaim", () => {
 	});
 
 	it("exits 0 with `resumed` and posts no second comment when this nonce already holds it", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			...sealed([
 				{id: PACK_COMMENT, body: packBody()},
 				{id: 9234599999, body: claim(NONCE)},
 			]),
 		]);
-		const out = await Effect.runPromise(Effect.provide(runClaim(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runClaim(options), seams.layer));
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).claim).toBe("resumed");
-		expect(shell.calls.some((line) => /--method POST/.test(line))).toBe(false);
+		expect(seams.requests.filter((line) => line.startsWith("POST"))).toEqual([]);
 	});
 
 	it("exits 15 when another nonce holds the pack", async () => {
@@ -117,14 +114,14 @@ describe("runClaim", () => {
 	});
 
 	it("exits 11 when the comment walk failed — whether a pack is claimed is UNKNOWN, never free", async () => {
-		const out = await run([[LIST, errOut("gh: Bad gateway (HTTP 502)")], ...groundScript()]);
+		const out = await run([[LIST, {status: 502, body: "{}"}], ...groundScript()]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 	});
 
 	it("exits 8 when the claim write failed — whether the claim holds is UNKNOWN", async () => {
 		const out = await run([
-			[POST, errOut("gh: Bad gateway (HTTP 502)")],
+			[POST, {status: 502, body: "{}"}],
 			...sealed([{id: PACK_COMMENT, body: packBody()}]),
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
@@ -133,8 +130,8 @@ describe("runClaim", () => {
 
 	it("exits 9 when the posted claim does not read back — the stamp is verified, never assumed", async () => {
 		const out = await run([
-			[POST, okOut('{"id":9234599999,"html_url":"u"}')],
-			[GET_COMMENT, okOut(JSON.stringify({body: "something else entirely"}))],
+			[POST, {status: 201, body: '{"id":9234599999,"html_url":"u"}'}],
+			[GET_COMMENT, {status: 200, body: JSON.stringify({body: "something else entirely"})}],
 			...sealed([{id: PACK_COMMENT, body: packBody()}]),
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);

@@ -1,7 +1,13 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, type FakeFsOptions, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {
+	errOut,
+	type FakeFsOptions,
+	fakeFs,
+	fakeSeams,
+	okOut,
+	type Scripted,
+} from "../fakes.test-support.ts";
 import {captureMarker, forfeitNote} from "./bodies.ts";
 import {
 	CAPTURE_STALE,
@@ -59,24 +65,24 @@ const options = {
 
 const CAPTURED = commentsPayload([{id: 500, body: `${captureMarker(NONCE, ONE_RUN_DIGEST)}\n`}]);
 
-const happy: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const happy: ReadonlyArray<Scripted> = [
 	[STATUS, okOut("")],
-	[ISSUE, okOut(issuePayload({state: "closed"}))],
-	[COMMENTS, okOut(CAPTURED)],
+	[ISSUE, {status: 200, body: issuePayload({state: "closed"})}],
+	[COMMENTS, {status: 200, body: CAPTURED}],
 ];
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	fs: FakeFsOptions = resident,
 ) => {
-	const shell = fakeShell(script);
+	const seams = fakeSeams(script);
 	return Effect.runPromise(
 		Effect.provide(
 			runDispose({...options, ...overrides}),
-			Layer.merge(fakeFs(fs).layer, shell.layer),
+			Layer.merge(fakeFs(fs).layer, seams.layer),
 		),
-	).then((outcome) => ({outcome, calls: shell.calls}));
+	).then((outcome) => ({outcome, requests: seams.requests, bodies: seams.bodies}));
 };
 
 describe("runDispose removes a captured spike's workspace and proves it is gone", () => {
@@ -108,16 +114,16 @@ describe("runDispose removes a captured spike's workspace and proves it is gone"
 describe("the tree comparison runs first, so a 17 never destroys the leak it found", () => {
 	const dirty = [
 		[STATUS, okOut("?? apps/web/src/probe.ts\n!! node_modules/\n")],
-		[ISSUE, okOut(issuePayload({state: "closed"}))],
-		[COMMENTS, okOut(CAPTURED)],
-	] as ReadonlyArray<readonly [RegExp, ExecResult]>;
+		[ISSUE, {status: 200, body: issuePayload({state: "closed"})}],
+		[COMMENTS, {status: 200, body: CAPTURED}],
+	] as ReadonlyArray<Scripted>;
 
 	it("refuses on 17 with the workspace intact and nothing posted", async () => {
-		const {outcome, calls} = await run(dirty, {forfeit: true});
+		const {outcome, requests} = await run(dirty, {forfeit: true});
 		expect(outcome.code).toBe(TREE_MOVED);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.join("\n")).toContain("NOT removed");
-		expect(calls.filter((line) => POST.test(line))).toHaveLength(0);
+		expect(requests.filter((line) => POST.test(line))).toHaveLength(0);
 	});
 
 	it("enumerates every differing line, not only the first", async () => {
@@ -129,8 +135,8 @@ describe("the tree comparison runs first, so a 17 never destroys the leak it fou
 	it("counts an ignored path — the check has no hole where prototypes write", async () => {
 		const {outcome} = await run([
 			[STATUS, okOut("!! dist/\n")],
-			[ISSUE, okOut(issuePayload({state: "closed"}))],
-			[COMMENTS, okOut(CAPTURED)],
+			[ISSUE, {status: 200, body: issuePayload({state: "closed"})}],
+			[COMMENTS, {status: 200, body: CAPTURED}],
 		]);
 		expect(outcome.code).toBe(TREE_MOVED);
 	});
@@ -145,8 +151,8 @@ describe("runDispose refuses to destroy what a decision would rest on", () => {
 	it("seats an uncaptured spike on 15, naming both ways forward", async () => {
 		const {outcome} = await run([
 			[STATUS, okOut("")],
-			[ISSUE, okOut(issuePayload())],
-			[COMMENTS, okOut(commentsPayload([]))],
+			[ISSUE, {status: 200, body: issuePayload()}],
+			[COMMENTS, {status: 200, body: commentsPayload([])}],
 		]);
 		expect(outcome.code).toBe(NOT_CAPTURED);
 		expect(outcome.stderr.join("\n")).toContain("--forfeit");
@@ -155,20 +161,32 @@ describe("runDispose refuses to destroy what a decision would rest on", () => {
 	it("seats a capture that no longer covers the log on 21, forfeit or not", async () => {
 		const stale = [
 			[STATUS, okOut("")],
-			[ISSUE, okOut(issuePayload({state: "closed"}))],
-			[COMMENTS, okOut(commentsPayload([{id: 500, body: captureMarker(NONCE, "a".repeat(64))}]))],
-		] as ReadonlyArray<readonly [RegExp, ExecResult]>;
+			[ISSUE, {status: 200, body: issuePayload({state: "closed"})}],
+			[
+				COMMENTS,
+				{
+					status: 200,
+					body: commentsPayload([{id: 500, body: captureMarker(NONCE, "a".repeat(64))}]),
+				},
+			],
+		] as ReadonlyArray<Scripted>;
 		expect((await run(stale)).outcome.code).toBe(CAPTURE_STALE);
 		const forfeited = await run(stale, {forfeit: true});
 		expect(forfeited.outcome.code).toBe(CAPTURE_STALE);
-		expect(forfeited.calls.filter((line) => POST.test(line))).toHaveLength(0);
+		expect(forfeited.requests.filter((line) => POST.test(line))).toHaveLength(0);
 	});
 
 	it("names the human escalation a 19 on capture would force", async () => {
 		const {outcome} = await run([
 			[STATUS, okOut("")],
-			[ISSUE, okOut(issuePayload({state: "closed"}))],
-			[COMMENTS, okOut(commentsPayload([{id: 500, body: captureMarker(NONCE, "a".repeat(64))}]))],
+			[ISSUE, {status: 200, body: issuePayload({state: "closed"})}],
+			[
+				COMMENTS,
+				{
+					status: 200,
+					body: commentsPayload([{id: 500, body: captureMarker(NONCE, "a".repeat(64))}]),
+				},
+			],
 		]);
 		expect(outcome.stderr.join("\n")).toContain("someone holding write");
 	});
@@ -185,34 +203,34 @@ describe("runDispose refuses to destroy what a decision would rest on", () => {
 });
 
 describe("--forfeit abandons the spike on the record before disposing", () => {
-	const forfeitScript: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+	const forfeitScript: ReadonlyArray<Scripted> = [
 		[STATUS, okOut("")],
-		[ISSUE, okOut(issuePayload())],
-		[COMMENTS, okOut(commentsPayload([]))],
-		[POST, okOut(JSON.stringify({id: 700, html_url: "https://example.test/#c"}))],
-		[READBACK, okOut(JSON.stringify({body: NOTE}))],
-		[CLOSE, okOut("{}")],
+		[ISSUE, {status: 200, body: issuePayload()}],
+		[COMMENTS, {status: 200, body: commentsPayload([])}],
+		[POST, {status: 201, body: JSON.stringify({id: 700, html_url: "https://example.test/#c"})}],
+		[READBACK, {status: 200, body: JSON.stringify({body: NOTE})}],
+		[CLOSE, {status: 200, body: "{}"}],
 	];
 
 	it("posts the note, closes, disposes and says so", async () => {
-		const {outcome, calls} = await run(forfeitScript, {forfeit: true});
+		const {outcome, requests} = await run(forfeitScript, {forfeit: true});
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout).forfeited).toBe(true);
-		expect(calls.filter((line) => CLOSE.test(line))).toHaveLength(1);
+		expect(requests.filter((line) => CLOSE.test(line))).toHaveLength(1);
 	});
 
 	it("reads the question from the manifest — dispose takes no --question", async () => {
-		const {calls} = await run(forfeitScript, {forfeit: true});
-		expect(calls.find((line) => POST.test(line))).toContain(QUESTION);
+		const {requests, bodies} = await run(forfeitScript, {forfeit: true});
+		expect(bodies[requests.findIndex((line) => POST.test(line))]).toContain(QUESTION);
 	});
 
 	it("seats an unproven post on 8 with nothing removed", async () => {
 		const {outcome} = await run(
 			[
 				[STATUS, okOut("")],
-				[ISSUE, okOut(issuePayload())],
-				[COMMENTS, okOut(commentsPayload([]))],
-				[POST, errOut("gh: Bad gateway (HTTP 502)")],
+				[ISSUE, {status: 200, body: issuePayload()}],
+				[COMMENTS, {status: 200, body: commentsPayload([])}],
+				[POST, {status: 502, body: "{}"}],
 			],
 			{forfeit: true},
 		);
@@ -223,7 +241,7 @@ describe("--forfeit abandons the spike on the record before disposing", () => {
 
 describe("a provisional manifest skips the issue half entirely", () => {
 	it("disposes an orphaned workspace with no GitHub read at all", async () => {
-		const {outcome, calls} = await run(
+		const {outcome, requests} = await run(
 			[[STATUS, okOut("")]],
 			{},
 			{
@@ -233,6 +251,6 @@ describe("a provisional manifest skips the issue half entirely", () => {
 		);
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({spike: null, runs: 0, forfeited: false});
-		expect(calls.filter((line) => line.startsWith("gh "))).toHaveLength(0);
+		expect(requests).toHaveLength(0);
 	});
 });

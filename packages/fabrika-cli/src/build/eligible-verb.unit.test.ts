@@ -1,29 +1,19 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
+import {errOut, fakeSeams, type HttpReply, okOut, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {BLOCKED, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {runEligible} from "./eligible-verb.ts";
-import {
-	GH_TOKEN_ENV,
-	NOT_FOUND as HTTP_404,
-	GATEWAY as HTTP_502,
-	issue,
-	served,
-} from "./fixtures.test-support.ts";
+import {GATEWAY, GH_TOKEN_ENV, issue, NOT_FOUND, served} from "./fixtures.test-support.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
+const ISSUE = /^GET \S+\/repos\/o\/r\/issues\/4312$/;
 const PARENT = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4312\/parent$/;
-const EDGES =
-	/^gh api --paginate repos\/o\/r\/issues\/4312\/dependencies\/blocked_by\?per_page=100$/;
-const BLOCKER = (n: number) => new RegExp(`^gh api repos/o/r/issues/${n}$`);
-
-const NOT_FOUND = errOut("gh: Not Found (HTTP 404)");
-const GATEWAY = errOut("gh: Bad gateway (HTTP 502)");
+const EDGES = /^GET \S+\/repos\/o\/r\/issues\/4312\/dependencies\/blocked_by\?/;
+const BLOCKER = (n: number) => new RegExp(`^GET \\S+/repos/o/r/issues/${n}$`);
 
 /** The `blocked_by` payload, shaped like the endpoint's rows rather than like the parser. */
-const edges = (...numbers: ReadonlyArray<number>): ExecResult =>
-	okOut(JSON.stringify(numbers.map((number) => ({number, state: "open"}))));
+const edges = (...numbers: ReadonlyArray<number>): HttpReply =>
+	served(numbers.map((number) => ({number, state: "open"})));
 
 const options = {
 	number: 4312,
@@ -34,11 +24,11 @@ const options = {
 const run = (script: ReadonlyArray<Scripted>) =>
 	Effect.runPromise(Effect.provide(runEligible(options), fakeSeams(script).layer));
 
-/** The same run, with the command lines it spawned — how "no git read happened" is asserted. */
+/** The same run, with what it spawned and what it requested — how "X was never read" is asserted. */
 const runWatched = async (script: ReadonlyArray<Scripted>) => {
 	const seams = fakeSeams(script);
 	const out = await Effect.runPromise(Effect.provide(runEligible(options), seams.layer));
-	return {out, calls: seams.calls};
+	return {out, calls: seams.calls, requests: seams.requests};
 };
 
 const ASSEMBLY = /^git rev-parse --verify --quiet epic\/4300\^\{commit\}$/;
@@ -64,7 +54,7 @@ describe("runEligible", () => {
 	it("answers eligible for a standalone issue with no edges, with parent null", async () => {
 		const out = await run([
 			[ISSUE, issue()],
-			[PARENT, HTTP_404],
+			[PARENT, NOT_FOUND],
 			[EDGES, edges()],
 		]);
 		expect(out.code).toBe(0);
@@ -90,7 +80,7 @@ describe("runEligible", () => {
 	 * for this child and answer `eligible`.
 	 */
 	it("holds back a child blocked by a native edge no prose row names", async () => {
-		const {out, calls} = await runWatched([
+		const {out, requests} = await runWatched([
 			[ISSUE, issue()],
 			[PARENT, served({number: 4300})],
 			[EDGES, edges(210)],
@@ -102,13 +92,13 @@ describe("runEligible", () => {
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe("build eligible: blocked by 1 open blocked_by edge: #210.");
 		// The parent ledger body is never fetched — the prose block is not an input any more.
-		expect(calls.some((line) => line === "gh api repos/o/r/issues/4300")).toBe(false);
+		expect(requests.some((request) => request.endsWith("/issues/4300"))).toBe(false);
 	});
 
 	it("gates a STANDALONE issue on its own edges — no parent ledger to derive from", async () => {
 		const out = await run([
 			[ISSUE, issue()],
-			[PARENT, HTTP_404],
+			[PARENT, NOT_FOUND],
 			[EDGES, edges(210)],
 			[BLOCKER(210), issue({number: 210, state: "open"})],
 		]);
@@ -119,7 +109,7 @@ describe("runEligible", () => {
 	it("names EVERY open edge, not only the first", async () => {
 		const out = await run([
 			[ISSUE, issue()],
-			[PARENT, HTTP_404],
+			[PARENT, NOT_FOUND],
 			[EDGES, edges(210, 211)],
 			[BLOCKER(210), issue({number: 210, state: "open"})],
 			[BLOCKER(211), issue({number: 211, state: "open"})],
@@ -133,7 +123,7 @@ describe("runEligible", () => {
 	it("counts a blocker the token cannot see as open, never as discharged", async () => {
 		const out = await run([
 			[ISSUE, issue()],
-			[PARENT, HTTP_404],
+			[PARENT, NOT_FOUND],
 			[EDGES, edges(210)],
 			[BLOCKER(210), NOT_FOUND],
 		]);
@@ -158,19 +148,19 @@ describe("runEligible", () => {
 		it("the issue itself", async () => {
 			const out = await run([
 				[ISSUE, GATEWAY],
-				[PARENT, HTTP_404],
+				[PARENT, NOT_FOUND],
 			]);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
 			expect(out.stdout).toBe("");
 			expect(out.stderr.at(-1)).toBe(
-				'build eligible: cannot read #4312: gh: Bad gateway (HTTP 502) — eligibility is UNKNOWN, never "eligible".',
+				'build eligible: cannot read #4312: GitHub answered HTTP 502 — eligibility is UNKNOWN, never "eligible".',
 			);
 		});
 
 		it("the parent lookup — never 'standalone'", async () => {
 			const out = await run([
 				[ISSUE, issue()],
-				[PARENT, HTTP_502],
+				[PARENT, GATEWAY],
 			]);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
 			expect(out.stderr.at(-1)).toContain('eligibility is UNKNOWN, never "eligible"');
@@ -179,7 +169,7 @@ describe("runEligible", () => {
 		it("the edge list — never 'no edges, so not blocked'", async () => {
 			const out = await run([
 				[ISSUE, issue()],
-				[PARENT, HTTP_404],
+				[PARENT, NOT_FOUND],
 				[EDGES, GATEWAY],
 			]);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -190,7 +180,7 @@ describe("runEligible", () => {
 		it("a 404 on the edge list of an issue already proven open", async () => {
 			const out = await run([
 				[ISSUE, issue()],
-				[PARENT, HTTP_404],
+				[PARENT, NOT_FOUND],
 				[EDGES, NOT_FOUND],
 			]);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -200,7 +190,7 @@ describe("runEligible", () => {
 		it("a blocker's state, with nothing else proven open", async () => {
 			const out = await run([
 				[ISSUE, issue()],
-				[PARENT, HTTP_404],
+				[PARENT, NOT_FOUND],
 				[EDGES, edges(210)],
 				[BLOCKER(210), GATEWAY],
 			]);
@@ -245,7 +235,7 @@ describe("runEligible", () => {
 		it("reads no branch for a standalone issue, which has no assembly branch", async () => {
 			const {out, calls} = await runWatched([
 				[ISSUE, issue()],
-				[PARENT, HTTP_404],
+				[PARENT, NOT_FOUND],
 				[EDGES, edges(210)],
 				[BLOCKER(210), issue({number: 210, state: "open"})],
 			]);
@@ -288,7 +278,7 @@ describe("runEligible", () => {
 				[EDGES, edges(210)],
 				[BLOCKER(210), issue({number: 210, state: "open"})],
 				[ASSEMBLY, okOut(`${TIP}\n`)],
-				[TRUNK, HTTP_502],
+				[TRUNK, GATEWAY],
 			]);
 			expect(out.code).toBe(BLOCKED);
 			expect(out.stderr.some((line) => line.includes("cannot name o/r's default branch"))).toBe(
@@ -330,7 +320,7 @@ describe("runEligible", () => {
 	it("an unread blocker never masks a proven-open one, and is reported beside it", async () => {
 		const out = await run([
 			[ISSUE, issue()],
-			[PARENT, HTTP_404],
+			[PARENT, NOT_FOUND],
 			[EDGES, edges(210, 211)],
 			[BLOCKER(210), GATEWAY],
 			[BLOCKER(211), issue({number: 211, state: "open"})],

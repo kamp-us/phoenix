@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, once, type Scripted} from "../fakes.test-support.ts";
 import {parseBody, renderFrontierRow, spliceSection} from "./body.ts";
 import {
 	ALREADY_DESCOPED,
@@ -26,17 +25,18 @@ import {composeTicketMarker} from "./markers.ts";
 import {runTicket} from "./ticket-verb.ts";
 
 const PERMISSION = /collaborators\/.*\/permission/;
-const CHILDREN = /issues\/9140\/sub_issues/;
+const CHILDREN = /GET .*\/issues\/9140\/sub_issues/;
 const TICKET_COMMENTS = /issues\/9142\/comments/;
 const EDGES = /issues\/9142\/dependencies\//;
 const TICKET_ISSUE = /issues\/9142$/;
 const MAP_ISSUE = /issues\/9140$/;
-const INTERNAL_ID = /issues\/\d+ --jq \.id/;
-const CREATE = /--method POST repos\/o\/r\/issues -f/;
-const POST_COMMENT = /--method POST repos\/o\/r\/issues\/9145\/comments/;
-const NEW_ID = /issues\/9145 --jq \.id/;
-const LINK = /sub_issues -F/;
-const PATCH = /--method PATCH repos\/o\/r\/issues\/9140/;
+const CREATE = /POST .*\/repos\/o\/r\/issues$/;
+const POST_COMMENT = /POST .*\/issues\/9145\/comments/;
+const NEW_ISSUE = /issues\/9145$/;
+const LINK = /POST .*\/issues\/9140\/sub_issues/;
+const PATCH = /PATCH .*\/issues\/9140/;
+
+const served = (body: string) => ({status: 200, body}) as const;
 
 const QUESTION = "does better-auth mint a single-use token without a new table?";
 
@@ -52,28 +52,28 @@ const options = {
 	nonce: () => NONCE,
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	over: Partial<typeof options> = {},
-) => Effect.runPromise(Effect.provide(runTicket({...options, ...over}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, over: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runTicket({...options, ...over}), fakeSeams(script).layer));
 
-const mapOk = (body = MAP_BODY) =>
-	[MAP_ISSUE, okOut(issueJson({number: MAP, body, labels: ["wayfinding:map"]}))] as const;
+const mapOk = (body = MAP_BODY): Scripted => [
+	MAP_ISSUE,
+	served(issueJson({number: MAP, body, labels: ["wayfinding:map"]})),
+];
 
-const frontier = [
-	[PERMISSION, okOut("write")],
-	[CHILDREN, okOut(`[{"number":${TICKET}}]`)],
+const frontier: ReadonlyArray<Scripted> = [
+	[PERMISSION, served('{"permission":"write"}')],
+	[CHILDREN, served(`[{"number":${TICKET}}]`)],
 	[
 		TICKET_COMMENTS,
-		okOut(
+		served(
 			commentsJson([
 				{id: 1, body: composeTicketMarker({map: MAP, kind: "research", nonce: NONCE})},
 			]),
 		),
 	],
-	[EDGES, okOut("[]")],
-	[TICKET_ISSUE, okOut(issueJson({number: TICKET, body: "which table carries it?"}))],
-] as const;
+	[EDGES, served("[]")],
+	[TICKET_ISSUE, served(issueJson({number: TICKET, body: "which table carries it?"}))],
+];
 
 /** The body a successful file leaves: the fixture's row plus the new ticket's. */
 const spliced = spliceSection(
@@ -121,31 +121,29 @@ describe("runTicket — the preconditions, all before anything is written", () =
 		expect(out.stderr.join("\n")).toContain("no run can drain");
 	});
 
+	// The frontier's issue payload carries no `id`, so the edge target's internal id is unresolvable
+	// off the very read that answers everything else about it.
 	it("exits 14 when an edge target's internal id cannot be resolved, before the create", async () => {
-		const shell = fakeShell([
-			[INTERNAL_ID, errOut("gh: Bad gateway (HTTP 502)")],
-			...frontier,
-			mapOk(),
-		]);
+		const seams = fakeSeams([...frontier, mapOk()]);
 		const out = await Effect.runPromise(
-			Effect.provide(runTicket({...options, blockedBy: [TICKET]}), shell.layer),
+			Effect.provide(runTicket({...options, blockedBy: [TICKET]}), seams.layer),
 		);
 		expect(out.code).toBe(EDGE_UNRESOLVABLE);
 		expect(out.stderr.join("\n")).toContain("nothing was written");
-		expect(shell.calls.some((line) => line.includes("--method POST"))).toBe(false);
+		expect(seams.requests.some((line) => line.startsWith("POST"))).toBe(false);
 	});
 });
 
 describe("runTicket — the write order", () => {
-	const created = [
+	const created: Scripted = [
 		CREATE,
-		okOut('{"number":9145,"html_url":"https://github.com/o/r/issues/9145"}'),
-	] as const;
+		{status: 201, body: '{"number":9145,"html_url":"https://github.com/o/r/issues/9145"}'},
+	];
 
 	it("exits 8 naming the number when the marker does not land — the issue is inert, not half-present", async () => {
 		const out = await run([
 			created,
-			[POST_COMMENT, errOut("gh: Bad gateway (HTTP 502)")],
+			[POST_COMMENT, {status: 502, body: "{}"}],
 			...frontier,
 			mapOk(),
 		]);
@@ -157,9 +155,9 @@ describe("runTicket — the write order", () => {
 	it("exits 8 naming the number when the sub-issue link does not land", async () => {
 		const out = await run([
 			created,
-			[POST_COMMENT, okOut('{"id":1,"html_url":"u"}')],
-			[NEW_ID, okOut("55")],
-			[LINK, errOut("gh: Bad gateway (HTTP 502)")],
+			[POST_COMMENT, {status: 201, body: '{"id":1,"html_url":"u"}'}],
+			[NEW_ISSUE, served('{"id":55}')],
+			[LINK, {status: 502, body: "{}"}],
 			...frontier,
 			mapOk(),
 		]);
@@ -168,31 +166,33 @@ describe("runTicket — the write order", () => {
 	});
 
 	it("exits 0 with the ticket, its edges and the map's NEW digest", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			created,
-			[POST_COMMENT, okOut('{"id":1,"html_url":"u"}')],
-			[NEW_ID, okOut("55")],
-			[LINK, okOut("{}")],
-			[PATCH, okOut("{}")],
+			[POST_COMMENT, {status: 201, body: '{"id":1,"html_url":"u"}'}],
+			[NEW_ISSUE, served('{"id":55}')],
+			[LINK, served("{}")],
+			[PATCH, served("{}")],
 			...frontier,
 			[
 				once(MAP_ISSUE),
-				okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+				served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
 			],
 			[
 				once(MAP_ISSUE),
-				okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+				served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
 			],
-			[MAP_ISSUE, okOut(issueJson({number: MAP, body: spliced, labels: ["wayfinding:map"]}))],
+			[MAP_ISSUE, served(issueJson({number: MAP, body: spliced, labels: ["wayfinding:map"]}))],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runTicket(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runTicket(options), seams.layer));
 		expect(out.code).toBe(0);
 		const answer = JSON.parse(out.stdout);
 		expect(answer).toMatchObject({map: MAP, ticket: 9145, kind: "research"});
 		expect(answer.digest).not.toBe(options.digest);
 		// The body write is last, so it spends the shortest time between the guard and the write.
-		const patchAt = shell.calls.findIndex((line) => line.includes("--method PATCH"));
-		const linkAt = shell.calls.findIndex((line) => line.includes("sub_issues -F"));
+		const patchAt = seams.requests.findIndex((line) => line.startsWith("PATCH"));
+		const linkAt = seams.requests.findIndex(
+			(line) => line.startsWith("POST") && line.includes("/sub_issues"),
+		);
 		expect(patchAt).toBeGreaterThan(linkAt);
 	});
 

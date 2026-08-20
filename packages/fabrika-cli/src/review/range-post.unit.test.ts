@@ -6,25 +6,30 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeHttp, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
+import {
+	fakeSeams,
+	type HttpReply,
+	okOut,
+	type Scripted,
+	unconfigured,
+} from "../fakes.test-support.ts";
 import {NOT_HARNESS_TOUCHING} from "../governance/codes.ts";
 import {
 	type PostOptions as GovernancePostOptions,
 	runPost as runGovernancePost,
 } from "../governance/post-verb.ts";
-import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
 import {OFF_VOCABULARY, ZERO_SCOPE} from "./codes.ts";
 import {BASE, CONTENT, comments, HEAD, RAW, RAW_AT} from "./fixtures.test-support.ts";
 import {type PostOptions as ReviewPostOptions, runPost as runReviewPost} from "./post-verb.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/5830$/;
-const USER = /^gh api user --jq \.login$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/5830\/comments/;
-const CREATE = /^gh api --method POST repos\/o\/r\/issues\/5830\/comments /;
-const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/comments\/\d+ /;
-const READBACK = /^gh api repos\/o\/r\/issues\/comments\/\d+$/;
+const ISSUE = /GET .*\/repos\/o\/r\/issues\/5830$/;
+const USER = /GET .*api\.github\.com\/user$/;
+const COMMENTS = /GET .*\/repos\/o\/r\/issues\/5830\/comments/;
+const CREATE = /POST .*\/repos\/o\/r\/issues\/5830\/comments/;
+const PATCH = /PATCH .*\/repos\/o\/r\/issues\/comments\/\d+/;
+const READBACK = /GET .*\/repos\/o\/r\/issues\/comments\/\d+/;
 
 const BODY = "| criterion | verdict |\n|---|---|\n| the first thing | PASS |\n";
 const URL = "https://example.test/issues/5830#issuecomment-6100000001";
@@ -36,22 +41,34 @@ const GOV_RAW = `:100644 100644 ${"a".repeat(40)} ${"b".repeat(40)} M\0claude-pl
 const GOV_CONTENT = "bb15e4131548";
 const GOV_MARKER = `governance: PASS range:${RANGE} content:${GOV_CONTENT} — no contradiction, no weakening`;
 
-const issue = (shape: {state?: string; pull?: boolean} = {}): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: 5830,
-			title: "epic child",
-			body: "",
-			state: shape.state ?? "open",
-			labels: [],
-			html_url: "https://example.test/issues/5830",
-			user: {login: "usirin"},
-			...(shape.pull ? {pull_request: {url: "https://example.test/pulls/5830"}} : {}),
-		}),
-	);
+const issue = (shape: {state?: string; pull?: boolean} = {}): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: 5830,
+		title: "epic child",
+		body: "",
+		state: shape.state ?? "open",
+		labels: [],
+		html_url: "https://example.test/issues/5830",
+		user: {login: "usirin"},
+		...(shape.pull ? {pull_request: {url: "https://example.test/pulls/5830"}} : {}),
+	}),
+});
 
-const created = okOut(JSON.stringify({id: 6100000001, html_url: URL}));
-const commentBody = (body: string): ExecResult => okOut(JSON.stringify({body}));
+const created: HttpReply = {status: 201, body: JSON.stringify({id: 6100000001, html_url: URL})};
+const commentBody = (body: string): HttpReply => ({status: 200, body: JSON.stringify({body})});
+
+/** The body one write carried, as text — the successor to reading it off a `-f body=` argv. */
+const written = (
+	seams: {
+		readonly requests: ReadonlyArray<string>;
+		readonly bodies: ReadonlyArray<string>;
+	},
+	pattern: RegExp,
+): string => {
+	const index = seams.requests.findIndex((request) => pattern.test(request));
+	return index === -1 ? "" : String(JSON.parse(seams.bodies[index] ?? "{}").body ?? "");
+};
 
 const reviewOptions: ReviewPostOptions = {
 	pr: 5830,
@@ -83,43 +100,43 @@ const governanceOptions: GovernancePostOptions = {
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
 };
 
-const reviewHappy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+const reviewHappy = (): ReadonlyArray<Scripted> => [
 	[ISSUE, issue()],
 	[RAW_AT(BASE, HEAD), okOut(RAW)],
-	[USER, okOut("kampus-bot")],
-	[COMMENTS, comments()],
+	[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+	[COMMENTS, {status: 200, body: comments().stdout}],
 	[CREATE, created],
 	[READBACK, commentBody(`${MARKER}\n\n${BODY}`)],
 ];
 
-const governanceHappy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+const governanceHappy = (): ReadonlyArray<Scripted> => [
 	[ISSUE, issue()],
 	[RAW_AT(BASE, HEAD), okOut(GOV_RAW)],
-	[USER, okOut("kampus-bot")],
-	[COMMENTS, comments()],
+	[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+	[COMMENTS, {status: 200, body: comments().stdout}],
 	[CREATE, created],
 	[READBACK, commentBody(`${GOV_MARKER}\n\n${BODY}`)],
 ];
 
 const runReview = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof reviewOptions> = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runReviewPost({...reviewOptions, ...overrides}),
-			Layer.mergeAll(fakeShell(script).layer, unconfigured, fakeHttp([]).layer),
+			Layer.merge(fakeSeams(script).layer, unconfigured),
 		),
 	);
 
 const runGovernance = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof governanceOptions> = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runGovernancePost({...governanceOptions, ...overrides}),
-			Layer.mergeAll(fakeShell(script).layer, unconfigured, fakeHttp([]).layer),
+			Layer.merge(fakeSeams(script).layer, unconfigured),
 		),
 	);
 
@@ -131,12 +148,11 @@ describe("review post --base/--tip", () => {
 	});
 
 	it("composes the exact marker the epic-child prove arm reads back", async () => {
-		const shell = fakeShell(reviewHappy());
+		const shell = fakeSeams(reviewHappy());
 		await Effect.runPromise(
 			Effect.provide(runReviewPost(reviewOptions), Layer.merge(shell.layer, unconfigured)),
 		);
-		const write = shell.calls.find((call) => CREATE.test(call)) ?? "";
-		const body = write.slice(write.indexOf("body=") + "body=".length);
+		const body = written(shell, CREATE);
 		expect(body.split("\n")[0]).toBe(MARKER);
 		const parsed = readRangeMarker(body);
 		expect(parsed._tag).toBe("Found");
@@ -152,9 +168,12 @@ describe("review post --base/--tip", () => {
 		const out = await runReview([
 			[ISSUE, issue()],
 			[RAW_AT(BASE, HEAD), okOut(RAW)],
-			[USER, okOut("kampus-bot")],
-			[COMMENTS, comments({id: 42, body: `${MARKER}\n\nan earlier table\n`})],
-			[PATCH, okOut(JSON.stringify({html_url: URL}))],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[
+				COMMENTS,
+				{status: 200, body: comments({id: 42, body: `${MARKER}\n\nan earlier table\n`}).stdout},
+			],
+			[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
 			[READBACK, commentBody(`${MARKER}\n\n${BODY}`)],
 		]);
 		expect(out.code).toBe(0);
@@ -219,15 +238,11 @@ describe("governance post --base/--tip", () => {
 	});
 
 	it("composes the governance marker through the range wire format", async () => {
-		const shell = fakeShell(governanceHappy());
+		const shell = fakeSeams(governanceHappy());
 		await Effect.runPromise(
-			Effect.provide(
-				runGovernancePost(governanceOptions),
-				Layer.mergeAll(shell.layer, unconfigured, fakeHttp([]).layer),
-			),
+			Effect.provide(runGovernancePost(governanceOptions), Layer.merge(shell.layer, unconfigured)),
 		);
-		const write = shell.calls.find((call) => CREATE.test(call)) ?? "";
-		const body = write.slice(write.indexOf("body=") + "body=".length);
+		const body = written(shell, CREATE);
 		const parsed = readRangeMarker(body);
 		expect(parsed._tag).toBe("Found");
 		if (parsed._tag === "Found") {

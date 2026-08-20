@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {type DocumentRead, runAnswer} from "./answer-verb.ts";
 import {
 	BAD_SECTIONS,
@@ -24,11 +23,16 @@ import {
 	supersedeComment,
 } from "./fixtures.test-support.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/9412$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/9412\/comments\?/;
-const PERMISSION = /^gh api repos\/o\/r\/collaborators\/[a-z-]+\/permission/;
-const POST = /^gh api --method POST repos\/o\/r\/issues\/9412\/comments -f/;
-const READBACK = /^gh api repos\/o\/r\/issues\/comments\/\d+$/;
+const ISSUE = /^GET .*\/repos\/o\/r\/issues\/9412$/;
+const COMMENTS = /^GET .*\/repos\/o\/r\/issues\/9412\/comments\?/;
+const PERMISSION = /^GET .*\/repos\/o\/r\/collaborators\/[a-z-]+\/permission$/;
+const POST = /^POST .*\/repos\/o\/r\/issues\/9412\/comments$/;
+const READBACK = /^GET .*\/repos\/o\/r\/issues\/comments\/\d+$/;
+
+const served = (body: string, status = 200): HttpReply => ({status, body});
+const granted = (permission: string): HttpReply => served(JSON.stringify({permission}));
+const NOT_FOUND: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
+const GATEWAY: HttpReply = {status: 502, body: '{"message":"Bad gateway"}'};
 
 const FINDING = "The vote table carries no weight column; the schema is in the vote feature.\n";
 const BOUND = roundDigestOf(1);
@@ -44,38 +48,36 @@ const options = {
 	now: () => new Date("2026-08-09T18:36:48.000Z"),
 };
 
-const posted = okOut(
+const posted = served(
 	JSON.stringify({id: 5234567891, html_url: "https://example.test/issues/9412#c"}),
+	201,
 );
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
-	Effect.runPromise(Effect.provide(runAnswer({...options, ...overrides}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runAnswer({...options, ...overrides}), fakeSeams(script).layer));
 
 /** Run once to learn the body the verb composes, then replay with a read-back that echoes it. */
 const runEchoing = async (
 	comments: string,
 	overrides: Partial<typeof options> = {},
 ): Promise<{code: number; stdout: string; stderr: ReadonlyArray<string>; body: string}> => {
-	const probe = fakeShell([
-		[ISSUE, okOut(sessionPayload(9412))],
-		[COMMENTS, okOut(comments)],
-		[PERMISSION, okOut("write")],
+	const probe = fakeSeams([
+		[ISSUE, served(sessionPayload(9412))],
+		[COMMENTS, served(comments)],
+		[PERMISSION, granted("write")],
 		[POST, posted],
-		[READBACK, okOut(JSON.stringify({body: "not what was sent"}))],
+		[READBACK, served(JSON.stringify({body: "not what was sent"}))],
 	]);
 	await Effect.runPromise(Effect.provide(runAnswer({...options, ...overrides}), probe.layer));
-	const call = probe.calls.find((line) => POST.test(line)) ?? "";
-	const body = call.slice(call.indexOf("-f body=") + "-f body=".length);
+	const at = probe.requests.findIndex((request) => POST.test(request));
+	const body = at === -1 ? "" : String(JSON.parse(probe.bodies[at] ?? "{}").body ?? "");
 	const out = await run(
 		[
-			[ISSUE, okOut(sessionPayload(9412))],
-			[COMMENTS, okOut(comments)],
-			[PERMISSION, okOut("write")],
+			[ISSUE, served(sessionPayload(9412))],
+			[COMMENTS, served(comments)],
+			[PERMISSION, granted("write")],
 			[POST, posted],
-			[READBACK, okOut(JSON.stringify({body}))],
+			[READBACK, served(JSON.stringify({body}))],
 		],
 		overrides,
 	);
@@ -103,8 +105,8 @@ describe("runAnswer refuses on the kind guard, and it is the guard that fires", 
 	it("refuses a decision question, pointing at grill rule", async () => {
 		const out = await run(
 			[
-				[ISSUE, okOut(sessionPayload(9412))],
-				[COMMENTS, okOut(ROUND_ONE)],
+				[ISSUE, served(sessionPayload(9412))],
+				[COMMENTS, served(ROUND_ONE)],
 			],
 			{question: "R1.2"},
 		);
@@ -124,9 +126,9 @@ describe("runAnswer refuses on the kind guard, and it is the guard that fires", 
 		]);
 		const out = await run(
 			[
-				[ISSUE, okOut(sessionPayload(9412))],
-				[COMMENTS, okOut(comments)],
-				[PERMISSION, okOut("write")],
+				[ISSUE, served(sessionPayload(9412))],
+				[COMMENTS, served(comments)],
+				[PERMISSION, granted("write")],
 			],
 			{question: "R1.2"},
 		);
@@ -135,14 +137,14 @@ describe("runAnswer refuses on the kind guard, and it is the guard that fires", 
 });
 
 describe("runAnswer seats each refusal on its own code, with nothing on stdout", () => {
-	const base: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[ISSUE, okOut(sessionPayload(9412))],
-		[COMMENTS, okOut(ROUND_ONE)],
-		[PERMISSION, okOut("write")],
+	const base: ReadonlyArray<Scripted> = [
+		[ISSUE, served(sessionPayload(9412))],
+		[COMMENTS, served(ROUND_ONE)],
+		[PERMISSION, granted("write")],
 	];
 
 	const cases: ReadonlyArray<
-		readonly [string, number, ReadonlyArray<readonly [RegExp, ExecResult]>, Partial<typeof options>]
+		readonly [string, number, ReadonlyArray<Scripted>, Partial<typeof options>]
 	> = [
 		[
 			"an empty finding",
@@ -162,13 +164,13 @@ describe("runAnswer seats each refusal on its own code, with nothing on stdout",
 			base,
 			{finding: Effect.succeed<DocumentRead>({_tag: "Text", text: "@/Users/someone/finding.md"})},
 		],
-		["an absent session", NO_TARGET, [[ISSUE, errOut("gh: Not Found (HTTP 404)")]], {}],
+		["an absent session", NO_TARGET, [[ISSUE, NOT_FOUND]], {}],
 		[
 			"a comment read that could not complete",
 			PRECONDITION_UNKNOWN,
 			[
-				[ISSUE, okOut(sessionPayload(9412))],
-				[COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
+				[ISSUE, served(sessionPayload(9412))],
+				[COMMENTS, GATEWAY],
 			],
 			{},
 		],
@@ -178,9 +180,9 @@ describe("runAnswer seats each refusal on its own code, with nothing on stdout",
 			"a write that failed",
 			WRITE_UNKNOWN,
 			[
-				[ISSUE, okOut(sessionPayload(9412))],
-				[COMMENTS, okOut(ROUND_ONE)],
-				[POST, errOut("gh: Bad gateway (HTTP 502)")],
+				[ISSUE, served(sessionPayload(9412))],
+				[COMMENTS, served(ROUND_ONE)],
+				[POST, GATEWAY],
 			],
 			{},
 		],
@@ -188,10 +190,10 @@ describe("runAnswer seats each refusal on its own code, with nothing on stdout",
 			"a read-back that differs",
 			READBACK_MISMATCH,
 			[
-				[ISSUE, okOut(sessionPayload(9412))],
-				[COMMENTS, okOut(ROUND_ONE)],
+				[ISSUE, served(sessionPayload(9412))],
+				[COMMENTS, served(ROUND_ONE)],
 				[POST, posted],
-				[READBACK, okOut(JSON.stringify({body: "something else"}))],
+				[READBACK, served(JSON.stringify({body: "something else"}))],
 			],
 			{},
 		],
@@ -199,10 +201,10 @@ describe("runAnswer seats each refusal on its own code, with nothing on stdout",
 			"a round whose block is missing the field the digest covers",
 			DIGEST_UNBINDABLE,
 			[
-				[ISSUE, okOut(sessionPayload(9412))],
+				[ISSUE, served(sessionPayload(9412))],
 				[
 					COMMENTS,
-					okOut(
+					served(
 						commentsPayload([
 							{
 								id: 1,
@@ -229,9 +231,9 @@ describe("runAnswer seats each refusal on its own code, with nothing on stdout",
 
 	it("writes nothing on any refusal", async () => {
 		for (const [, , script, overrides] of cases) {
-			const shell = fakeShell(script);
-			await Effect.runPromise(Effect.provide(runAnswer({...options, ...overrides}), shell.layer));
-			const posts = shell.calls.filter((call) => POST.test(call));
+			const seams = fakeSeams(script);
+			await Effect.runPromise(Effect.provide(runAnswer({...options, ...overrides}), seams.layer));
+			const posts = seams.requests.filter((request) => POST.test(request));
 			// The write-failure and read-back cases attempt exactly one write by construction.
 			expect(posts.length).toBeLessThanOrEqual(1);
 		}

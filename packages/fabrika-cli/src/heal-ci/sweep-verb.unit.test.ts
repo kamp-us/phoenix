@@ -1,20 +1,16 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
-	errOut,
-	fakeHttp,
-	fakeShell,
+	fakeSeams,
 	type HttpReply,
 	linkNext,
+	type Scripted,
 	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {
-	behind,
-	CHECK_RUNS,
 	COMMIT_DATE,
-	COMPARE,
 	checkRuns,
 	comments,
 	commitDate,
@@ -29,16 +25,31 @@ import {
 	pull,
 	RATE_LIMIT,
 	RULES,
-	RUN_COUNT,
 	rateLimit,
-	reviews,
 	rules,
 	runsTotal,
-	timeline,
-	WORKFLOWS,
 	workflows,
 } from "./fixtures.test-support.ts";
 import {runSweep} from "./sweep-verb.ts";
+
+const PULL = /^GET .*\/repos\/o\/r\/pulls\/\d+$/;
+const FILES = /^GET .*\/repos\/o\/r\/pulls\/\d+\/files\?/;
+const CHECK_RUNS = /^GET .*\/repos\/o\/r\/commits\/[0-9a-f]+\/check-runs\?/;
+const WORKFLOWS = /^GET .*\/repos\/o\/r\/actions\/workflows\?/;
+const RUN_COUNT = /^GET .*\/repos\/o\/r\/actions\/runs\?head_sha=[0-9a-f]+&per_page=1$/;
+const COMMENTS = /^GET .*\/repos\/o\/r\/issues\/\d+\/comments\?/;
+const TIMELINE = /^GET .*\/repos\/o\/r\/issues\/\d+\/timeline\?/;
+const REVIEWS = /^GET .*\/repos\/o\/r\/pulls\/\d+\/reviews\?/;
+const COMPARE = /^GET .*\/repos\/o\/r\/compare\/main\.\.\.[0-9a-f]+$/;
+
+/** The shared payload fixtures speak `gh`'s `ExecResult`; the seam now serves the same bytes. */
+const reply = (result: ExecResult, status = 200): HttpReply => ({status, body: result.stdout});
+
+/** An empty bare-array page — no `Link`, so the walk is proven exhausted. */
+const emptyPage: HttpReply = {status: 200, body: "[]"};
+
+/** `compare` answers a record; `behind_by` is the field, not the `--jq` era's bare number. */
+const behind = (by: number): HttpReply => ({status: 200, body: JSON.stringify({behind_by: by})});
 
 const NOW = Date.parse("2026-08-08T01:00:00Z");
 const PUSHED = "2026-08-08T00:00:00Z";
@@ -57,40 +68,30 @@ const options = {
 	now: NOW,
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	served: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
-	overrides: Partial<typeof options> = {},
-) =>
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(
 		Effect.provide(
 			runSweep({...options, ...overrides}),
-			Layer.mergeAll(fakeShell(script).layer, unconfigured, fakeHttp(served).layer),
+			Layer.mergeAll(fakeSeams(script).layer, unconfigured),
 		),
 	);
 
-/** One classifiable PR's `gh` reads, reachable by any number: they are not keyed on it. */
-const classifiable = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-	[/^gh api repos\/o\/r\/pulls\/\d+$/, pull({updatedAt: PUSHED})],
-	[
-		/^gh api --paginate repos\/o\/r\/pulls\/\d+\/files/,
-		files("apps/web/worker/a.ts", "apps/web/worker/b.ts"),
-	],
-	[CHECK_RUNS, checkRuns(1, [{name: "ci-required", status: "completed", conclusion: "success"}])],
-	[WORKFLOWS, workflows("active")],
-	[RUN_COUNT, runsTotal(3)],
-	[/^gh api --paginate repos\/o\/r\/issues\/\d+\/comments/, comments()],
-	[/^gh api -i repos\/o\/r\/issues\/\d+\/timeline/, timeline()],
-	[/^gh api -i repos\/o\/r\/pulls\/\d+\/reviews/, reviews()],
-	[COMPARE, behind(0)],
-];
-
-/** The same PR's reads over the HTTP client, beneath whichever board read the case scripts. */
-const classifiableHttp = (
-	board: readonly [RegExp, HttpReply],
-): ReadonlyArray<readonly [RegExp, HttpReply]> => [
+/** One classifiable PR's reads, reachable by any number: they are not keyed on it. */
+const classifiable = (board: Scripted): ReadonlyArray<Scripted> => [
 	board,
 	[RATE_LIMIT, rateLimit(4000)],
+	[PULL, reply(pull({updatedAt: PUSHED}))],
+	[FILES, reply(files("apps/web/worker/a.ts", "apps/web/worker/b.ts"))],
+	[
+		CHECK_RUNS,
+		reply(checkRuns(1, [{name: "ci-required", status: "completed", conclusion: "success"}])),
+	],
+	[WORKFLOWS, reply(workflows("active"))],
+	[RUN_COUNT, reply(runsTotal(3))],
+	[COMMENTS, reply(comments())],
+	[TIMELINE, emptyPage],
+	[REVIEWS, emptyPage],
+	[COMPARE, behind(0)],
 	[COMMIT_DATE, commitDate(PUSHED)],
 	[RULES, rules("ci-required")],
 	[PROTECTION, protection()],
@@ -99,11 +100,7 @@ const classifiableHttp = (
 describe("runSweep reports the whole board or none of it", () => {
 	it("prints both counts and one row per stalled PR, oldest strand first", async () => {
 		const out = await run(
-			classifiable(),
-			classifiableHttp([
-				OPEN_PULLS,
-				openPulls({number: 4321, head: HEAD}, {number: 4322, head: HEAD}),
-			]),
+			classifiable([OPEN_PULLS, openPulls({number: 4321, head: HEAD}, {number: 4322, head: HEAD})]),
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
@@ -114,50 +111,44 @@ describe("runSweep reports the whole board or none of it", () => {
 	});
 
 	it("answers a quiet board rather than refusing it", async () => {
-		const out = await run([], [[OPEN_PULLS, openPulls()]]);
+		const out = await run([[OPEN_PULLS, openPulls()]]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("swept\t0\t0\n");
 	});
 
 	it("omits a PR inside the grace window", async () => {
-		const out = await run(
-			classifiable(),
-			classifiableHttp([OPEN_PULLS, openPulls({number: 4321, head: HEAD})]),
-			{minAgeMinutes: 600},
-		);
+		const out = await run(classifiable([OPEN_PULLS, openPulls({number: 4321, head: HEAD})]), {
+			minAgeMinutes: 600,
+		});
 		expect(out.stdout).toBe("swept\t1\t0\n");
 	});
 
 	it("writes nothing at all", async () => {
-		const shell = fakeShell(classifiable());
-		const http = fakeHttp(classifiableHttp([OPEN_PULLS, openPulls({number: 4321, head: HEAD})]));
+		const seams = fakeSeams(classifiable([OPEN_PULLS, openPulls({number: 4321, head: HEAD})]));
 		await Effect.runPromise(
-			Effect.provide(runSweep(options), Layer.mergeAll(shell.layer, unconfigured, http.layer)),
+			Effect.provide(runSweep(options), Layer.mergeAll(seams.layer, unconfigured)),
 		);
-		expect(shell.calls.some((call) => call.includes("--method POST"))).toBe(false);
-		expect(http.calls.every((call) => call.startsWith("GET "))).toBe(true);
+		expect(seams.requests.every((request) => request.startsWith("GET "))).toBe(true);
 	});
 });
 
 describe("runSweep refuses a board it could not read whole", () => {
 	it("refuses an unexhausted open-PR read on 13", async () => {
-		const out = await run(
-			[],
-			[[OPEN_PULLS, {...openPulls(), headers: linkNext("https://api.github.com/next")}]],
-		);
+		const out = await run([
+			[OPEN_PULLS, {...openPulls(), headers: linkNext("https://api.github.com/next")}],
+		]);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.stdout).toBe("");
 	});
 
 	it("refuses an unreadable list on 11 — never `none stranded`", async () => {
-		const out = await run([], [[OPEN_PULLS, httpError(502, "Bad gateway")]]);
+		const out = await run([[OPEN_PULLS, httpError(502, "Bad gateway")]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain('UNKNOWN, never "none stranded"');
 	});
 
 	it("refuses a board larger than --limit rather than answering over a subset", async () => {
 		const out = await run(
-			[],
 			[[OPEN_PULLS, openPulls({number: 4321, head: HEAD}, {number: 4322, head: HEAD})]],
 			{limit: 1},
 		);
@@ -166,38 +157,31 @@ describe("runSweep refuses a board it could not read whole", () => {
 	});
 
 	it("refuses a sweep with a hole in it rather than dropping the PR", async () => {
-		const out = await run(
-			[[/^gh api repos\/o\/r\/pulls\/\d+$/, errOut("gh: Bad gateway (HTTP 502)")]],
-			[
-				[OPEN_PULLS, openPulls({number: 4321, head: HEAD})],
-				[RATE_LIMIT, rateLimit(4000)],
-			],
-		);
+		const out = await run([
+			[OPEN_PULLS, openPulls({number: 4321, head: HEAD})],
+			[RATE_LIMIT, rateLimit(4000)],
+			[PULL, httpError(502, "Bad gateway")],
+		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("refusing a sweep with a hole in it");
 	});
 
 	it("refuses a partial board on an exhausted rate limit, emitting nothing", async () => {
-		const out = await run(
-			[],
-			[
-				[OPEN_PULLS, openPulls({number: 4321, head: HEAD})],
-				[RATE_LIMIT, rateLimit(2)],
-			],
-		);
+		const out = await run([
+			[OPEN_PULLS, openPulls({number: 4321, head: HEAD})],
+			[RATE_LIMIT, rateLimit(2)],
+		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("refusing a partial board");
 	});
 
 	it("counts a PR that vanished between the list read and its classification as scanned", async () => {
-		const out = await run(
-			[[/^gh api repos\/o\/r\/pulls\/\d+$/, errOut("gh: Not Found (HTTP 404)")]],
-			[
-				[OPEN_PULLS, openPulls({number: 4321, head: HEAD})],
-				[RATE_LIMIT, rateLimit(4000)],
-			],
-		);
+		const out = await run([
+			[OPEN_PULLS, openPulls({number: 4321, head: HEAD})],
+			[RATE_LIMIT, rateLimit(4000)],
+			[PULL, httpError(404, "Not Found")],
+		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("swept\t1\t0\n");
 		expect(out.stderr.join("\n")).toContain("counted as scanned, not stalled");

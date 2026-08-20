@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
 	EMPTY_STDIN,
@@ -16,25 +15,25 @@ import {runNote} from "./note-verb.ts";
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const URL = "https://example.test/pull/4321#issuecomment-512399";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-const CREATE = /^gh api --method POST repos\/o\/r\/issues\/4321\/comments /;
-const READBACK = /^gh api repos\/o\/r\/issues\/comments\/\d+$/;
+const PULL = /GET .*\/repos\/o\/r\/pulls\/4321\b/;
+const CREATE = /POST .*\/repos\/o\/r\/issues\/4321\/comments/;
+const READBACK = /GET .*\/repos\/o\/r\/issues\/comments\/\d+/;
 
 const NOTE =
 	"review-ui cannot see this PR: no preview-deploy comment exists, so there is nothing to judge\nwithout running the PR's code.\n";
 
-const pull = (state = "open"): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: 4321,
-			state,
-			head: {sha: HEAD},
-			base: {ref: "main"},
-			body: "",
-			changed_files: 1,
-			comments: 0,
-		}),
-	);
+const pull = (state = "open"): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: 4321,
+		state,
+		head: {sha: HEAD},
+		base: {ref: "main"},
+		body: "",
+		changed_files: 1,
+		comments: 0,
+	}),
+});
 
 const options = {
 	pr: 4321,
@@ -43,19 +42,16 @@ const options = {
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: NOTE}),
 };
 
-const happy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+const happy = (): ReadonlyArray<Scripted> => [
 	[PULL, pull()],
-	[CREATE, okOut(JSON.stringify({id: 512399, html_url: URL}))],
-	[READBACK, okOut(JSON.stringify({body: NOTE}))],
+	[CREATE, {status: 201, body: JSON.stringify({id: 512399, html_url: URL})}],
+	[READBACK, {status: 200, body: JSON.stringify({body: NOTE})}],
 ];
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) => {
-	const shell = fakeShell(script);
-	return Effect.runPromise(Effect.provide(runNote({...options, ...overrides}), shell.layer)).then(
-		(outcome) => ({outcome, calls: shell.calls}),
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
+	const seams = fakeSeams(script);
+	return Effect.runPromise(Effect.provide(runNote({...options, ...overrides}), seams.layer)).then(
+		(outcome) => ({outcome, requests: seams.requests}),
 	);
 };
 
@@ -73,11 +69,11 @@ describe("runNote", () => {
 
 	it("refuses a marker-shaped body on 10 — a verdict goes through review-ui post", async () => {
 		const marker = `review-ui: PASS @ ${HEAD} — sneaking a verdict through\n`;
-		const {outcome, calls} = await run(happy(), {
+		const {outcome, requests} = await run(happy(), {
 			stdin: Effect.succeed<StdinRead>({_tag: "Text", text: marker}),
 		});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
-		expect(calls.some((call) => CREATE.test(call))).toBe(false);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("refuses a body reaching for a marker and missing it, too", async () => {
@@ -121,7 +117,7 @@ describe("runNote", () => {
 	it("refuses on 8 when the post failed — UNKNOWN whether it landed", async () => {
 		const {outcome} = await run([
 			[PULL, pull()],
-			[CREATE, {ok: false, stdout: "", reason: "gh: 502"}],
+			[CREATE, {status: 502, body: "{}"}],
 		]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 	});
@@ -129,8 +125,8 @@ describe("runNote", () => {
 	it("refuses on 9 when the comment does not read back as sent", async () => {
 		const {outcome} = await run([
 			[PULL, pull()],
-			[CREATE, okOut(JSON.stringify({id: 512399, html_url: URL}))],
-			[READBACK, okOut(JSON.stringify({body: "something else"}))],
+			[CREATE, {status: 201, body: JSON.stringify({id: 512399, html_url: URL})}],
+			[READBACK, {status: 200, body: JSON.stringify({body: "something else"})}],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
 	});

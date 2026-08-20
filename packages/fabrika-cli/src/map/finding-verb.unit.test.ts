@@ -1,7 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeFs, fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import {
 	BAD_SECTIONS,
 	KIND_MISMATCH,
@@ -22,7 +21,7 @@ import {
 } from "./fixtures.test-support.ts";
 import {composeFindingMarker, composeLaneMarker, composeTicketMarker} from "./markers.ts";
 
-const POST = /--method POST repos\/o\/r\/issues\/9142\/comments/;
+const POST = /POST .*\/issues\/9142\/comments/;
 const GET_COMMENT = /issues\/comments\/\d+/;
 const PERMISSION = /collaborators\/.*\/permission/;
 const CHILDREN = /issues\/9140\/sub_issues/;
@@ -30,6 +29,8 @@ const TICKET_COMMENTS = /issues\/9142\/comments/;
 const EDGES = /issues\/9142\/dependencies\//;
 const TICKET_ISSUE = /issues\/9142$/;
 const MAP_ISSUE = /issues\/9140$/;
+
+const served = (body: string) => ({status: 200, body}) as const;
 
 const FINDING_PATH = "finding.md";
 
@@ -44,34 +45,33 @@ const options = {
 };
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	over: Partial<typeof options> = {},
 	files: Readonly<Record<string, string | null>> = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runFinding({...options, ...over}),
-			Layer.merge(fakeShell(script).layer, fakeFs({files}).layer),
+			Layer.merge(fakeSeams(script).layer, fakeFs({files}).layer),
 		),
 	);
 
-const held = (nonce = NONCE) =>
+const held = (nonce = NONCE): ReadonlyArray<Scripted> => [
+	[PERMISSION, served('{"permission":"write"}')],
+	[CHILDREN, served(`[{"number":${TICKET}}]`)],
 	[
-		[PERMISSION, okOut("write")],
-		[CHILDREN, okOut(`[{"number":${TICKET}}]`)],
-		[
-			TICKET_COMMENTS,
-			okOut(
-				commentsJson([
-					{id: 1, body: composeTicketMarker({map: MAP, kind: "research", nonce: NONCE})},
-					{id: 2, body: composeLaneMarker({map: MAP, ticket: TICKET, nonce})},
-				]),
-			),
-		],
-		[EDGES, okOut("[]")],
-		[TICKET_ISSUE, okOut(issueJson({number: TICKET, body: "which table?"}))],
-		[MAP_ISSUE, okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]}))],
-	] as const;
+		TICKET_COMMENTS,
+		served(
+			commentsJson([
+				{id: 1, body: composeTicketMarker({map: MAP, kind: "research", nonce: NONCE})},
+				{id: 2, body: composeLaneMarker({map: MAP, ticket: TICKET, nonce})},
+			]),
+		),
+	],
+	[EDGES, served("[]")],
+	[TICKET_ISSUE, served(issueJson({number: TICKET, body: "which table?"}))],
+	[MAP_ISSUE, served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]}))],
+];
 
 describe("runFinding — the outcome vocabulary", () => {
 	it("exits 1 on an off-vocabulary outcome, naming the three", async () => {
@@ -120,8 +120,8 @@ describe("runFinding — the lane", () => {
 	it("exits 0, records the outcome and releases the lane", async () => {
 		const body = `${composeFindingMarker({map: MAP, ticket: TICKET, outcome: "no-evidence", nonce: NONCE})}\n`;
 		const out = await run([
-			[POST, okOut('{"id":77,"html_url":"u"}')],
-			[GET_COMMENT, okOut(JSON.stringify({body}))],
+			[POST, {status: 201, body: '{"id":77,"html_url":"u"}'}],
+			[GET_COMMENT, served(JSON.stringify({body}))],
 			...held(),
 		]);
 		expect(out.code).toBe(0);
@@ -143,19 +143,19 @@ describe("runFinding — the lane", () => {
 
 	it("exits 15 when no lane is held at all — the state is named rather than guessed", async () => {
 		const out = await run([
-			[PERMISSION, okOut("write")],
-			[CHILDREN, okOut(`[{"number":${TICKET}}]`)],
+			[PERMISSION, served('{"permission":"write"}')],
+			[CHILDREN, served(`[{"number":${TICKET}}]`)],
 			[
 				TICKET_COMMENTS,
-				okOut(
+				served(
 					commentsJson([
 						{id: 1, body: composeTicketMarker({map: MAP, kind: "research", nonce: NONCE})},
 					]),
 				),
 			],
-			[EDGES, okOut("[]")],
-			[TICKET_ISSUE, okOut(issueJson({number: TICKET}))],
-			[MAP_ISSUE, okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]}))],
+			[EDGES, served("[]")],
+			[TICKET_ISSUE, served(issueJson({number: TICKET}))],
+			[MAP_ISSUE, served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]}))],
 		]);
 		expect(out.code).toBe(LANE_NOT_MINE);
 		expect(out.stderr.join("\n")).toContain("the ticket reads open");
@@ -163,19 +163,19 @@ describe("runFinding — the lane", () => {
 
 	it("exits 20 on a decision ticket — a decision has no lane", async () => {
 		const out = await run([
-			[PERMISSION, okOut("write")],
-			[CHILDREN, okOut(`[{"number":${TICKET}}]`)],
+			[PERMISSION, served('{"permission":"write"}')],
+			[CHILDREN, served(`[{"number":${TICKET}}]`)],
 			[
 				TICKET_COMMENTS,
-				okOut(
+				served(
 					commentsJson([
 						{id: 1, body: composeTicketMarker({map: MAP, kind: "decision", nonce: NONCE})},
 					]),
 				),
 			],
-			[EDGES, okOut("[]")],
-			[TICKET_ISSUE, okOut(issueJson({number: TICKET}))],
-			[MAP_ISSUE, okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]}))],
+			[EDGES, served("[]")],
+			[TICKET_ISSUE, served(issueJson({number: TICKET}))],
+			[MAP_ISSUE, served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]}))],
 		]);
 		expect(out.code).toBe(KIND_MISMATCH);
 		expect(out.stdout).toBe("");
@@ -183,24 +183,24 @@ describe("runFinding — the lane", () => {
 
 	it("never touches the map body — lane traffic goes to the ticket", async () => {
 		const body = `${composeFindingMarker({map: MAP, ticket: TICKET, outcome: "no-evidence", nonce: NONCE})}\n`;
-		const shell = fakeShell([
-			[POST, okOut('{"id":77,"html_url":"u"}')],
-			[GET_COMMENT, okOut(JSON.stringify({body}))],
+		const seams = fakeSeams([
+			[POST, {status: 201, body: '{"id":77,"html_url":"u"}'}],
+			[GET_COMMENT, served(JSON.stringify({body}))],
 			...held(),
 		]);
 		await Effect.runPromise(
-			Effect.provide(runFinding(options), Layer.merge(shell.layer, fakeFs({}).layer)),
+			Effect.provide(runFinding(options), Layer.merge(seams.layer, fakeFs({}).layer)),
 		);
-		expect(shell.calls.some((line) => line.includes("--method PATCH"))).toBe(false);
+		expect(seams.requests.some((line) => line.startsWith("PATCH"))).toBe(false);
 	});
 
 	it("exits 8 when the comment write fails, and 9 when it does not read back", async () => {
-		const failed = await run([[POST, errOut("gh: Bad gateway (HTTP 502)")], ...held()]);
+		const failed = await run([[POST, {status: 502, body: "{}"}], ...held()]);
 		expect(failed.code).toBe(WRITE_UNKNOWN);
 		expect(failed.stdout).toBe("");
 		const drifted = await run([
-			[POST, okOut('{"id":77,"html_url":"u"}')],
-			[GET_COMMENT, okOut(JSON.stringify({body: "not the marker"}))],
+			[POST, {status: 201, body: '{"id":77,"html_url":"u"}'}],
+			[GET_COMMENT, served(JSON.stringify({body: "not the marker"}))],
 			...held(),
 		]);
 		expect(drifted.code).toBe(READBACK_MISMATCH);

@@ -1,6 +1,6 @@
-import {Effect, Layer} from "effect";
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeHttp, fakeShell, type HttpReply, once} from "../fakes.test-support.ts";
+import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
@@ -15,8 +15,8 @@ import {
 import {ENV, pull, threadPage} from "./fixtures.test-support.ts";
 import {runResolve} from "./resolve-verb.ts";
 
-/** The pull read is `../io/pulls.ts`'s, which still shells out to `gh`. */
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
+/** The pull read is `../io/pulls.ts`'s, served over HTTP. */
+const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4321$/;
 
 /**
  * Every thread leg is a POST to the one GraphQL endpoint, so the request line cannot tell them
@@ -77,34 +77,27 @@ const options = {
 };
 
 const both = (
-	rows: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]>,
+	rows: ReadonlyArray<Scripted>,
+	http: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 ) => {
-	const shell = fakeShell(rows);
-	const client = fakeHttp(http);
+	const seams = fakeSeams([...rows, ...http]);
 	return {
-		shell,
-		client,
-		outcome: Effect.runPromise(
-			Effect.provide(
-				runResolve({...options, ...overrides}),
-				Layer.merge(shell.layer, client.layer),
-			),
-		),
+		seams,
+		outcome: Effect.runPromise(Effect.provide(runResolve({...options, ...overrides}), seams.layer)),
 	};
 };
 
 const run = (
-	rows: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]>,
+	rows: ReadonlyArray<Scripted>,
+	http: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 ) => both(rows, http, overrides).outcome;
 
 describe("runResolve", () => {
 	it("replies, resolves and proves both from a re-read", async () => {
 		const scripted = both(
-			[[PULL, pull()]],
+			[[PULL, served(pull())]],
 			[
 				[graphql(), openBotThread],
 				[graphql(), replied],
@@ -115,13 +108,13 @@ describe("runResolve", () => {
 		const out = await scripted.outcome;
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(`resolved\tPRRT_kwDOLxx1\t${URL}\n`);
-		expect(scripted.client.bodies[1]).toContain("addPullRequestReviewThreadReply");
-		expect(scripted.client.bodies[2]).toContain("resolveReviewThread");
+		expect(scripted.seams.bodies[2]).toContain("addPullRequestReviewThreadReply");
+		expect(scripted.seams.bodies[3]).toContain("resolveReviewThread");
 	});
 
 	it("refuses a thread with any non-Bot author on 16 — a human objection is theirs", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, served(pull())]],
 			[
 				[
 					graphql(),
@@ -142,7 +135,7 @@ describe("runResolve", () => {
 
 	it("refuses an already-resolved thread on 16", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, served(pull())]],
 			[
 				[
 					graphql(),
@@ -159,12 +152,12 @@ describe("runResolve", () => {
 	});
 
 	it("refuses a thread absent from the PR on 7", async () => {
-		const out = await run([[PULL, pull()]], [[graphql(), served(threadPage(0, []))]]);
+		const out = await run([[PULL, served(pull())]], [[graphql(), served(threadPage(0, []))]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 	});
 
 	it("refuses an empty rationale on 3 — a silent resolve is unauditable", async () => {
-		const out = await run([[PULL, pull()]], [], {
+		const out = await run([[PULL, served(pull())]], [], {
 			stdin: Effect.succeed({_tag: "Text", text: "   "} as StdinRead),
 		});
 		expect(out.code).toBe(EMPTY_STDIN);
@@ -172,7 +165,7 @@ describe("runResolve", () => {
 	});
 
 	it("refuses a machine-local path in the rationale on 5", async () => {
-		const out = await run([[PULL, pull()]], [], {
+		const out = await run([[PULL, served(pull())]], [], {
 			stdin: Effect.succeed({_tag: "Text", text: "see /Users/someone/notes.md"} as StdinRead),
 		});
 		expect(out.code).toBe(LEAKED_PATH);
@@ -180,7 +173,7 @@ describe("runResolve", () => {
 	});
 
 	it("refuses a bare @ reference on 6 — the bytes never arrived", async () => {
-		const out = await run([[PULL, pull()]], [], {
+		const out = await run([[PULL, served(pull())]], [], {
 			stdin: Effect.succeed({_tag: "Text", text: "@notes/rationale.md"} as StdinRead),
 		});
 		expect(out.code).toBe(BARE_AT_PATH);
@@ -188,7 +181,7 @@ describe("runResolve", () => {
 
 	it("refuses on 8 when the reply itself fails — UNKNOWN what landed", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, served(pull())]],
 			[
 				[graphql(), openBotThread],
 				[graphql(), badGateway],
@@ -200,7 +193,7 @@ describe("runResolve", () => {
 
 	it("refuses on 9 when the write landed and the read-back does not show it resolved", async () => {
 		const out = await run(
-			[[PULL, pull()]],
+			[[PULL, served(pull())]],
 			[
 				[graphql(), openBotThread],
 				[graphql(), replied],

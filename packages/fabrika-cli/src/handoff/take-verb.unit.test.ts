@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
 	BAD_SECTIONS,
@@ -20,6 +19,7 @@ import {
 	GROUND,
 	groundScript,
 	ISSUE,
+	ISSUE_READ,
 	NONCE,
 	packBody,
 	REPO,
@@ -27,9 +27,9 @@ import {
 import {digestOf} from "./ground.ts";
 import {runTake} from "./take-verb.ts";
 
-const POST = new RegExp(`--method POST repos/${REPO}/issues/${ISSUE}/comments`);
-const GET_COMMENT = /issues\/comments\/\d+/;
-const LIST = new RegExp(`issues/${ISSUE}/comments`);
+const POST = new RegExp(`POST .*/repos/${REPO}/issues/${ISSUE}/comments`);
+const GET_COMMENT = /GET .*\/issues\/comments\/\d+/;
+const LIST = new RegExp(`GET .*/issues/${ISSUE}/comments`);
 
 const text = (value: string): Effect.Effect<StdinRead> =>
 	Effect.succeed({_tag: "Text", text: value});
@@ -45,19 +45,17 @@ const options = {
 	now: () => new Date("2026-08-09T18:36:48.000Z"),
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	over: Partial<typeof options> = {},
-) => Effect.runPromise(Effect.provide(runTake({...options, ...over}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, over: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runTake({...options, ...over}), fakeSeams(script).layer));
 
 /** The happy-path script: post, read back the pack this run composes, and one prior-pack-free walk. */
 const sealScript = (
 	readback = packBody(),
 	comments = commentsJson([]),
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-	[POST, okOut('{"id":9234567891,"html_url":"u"}')],
-	[GET_COMMENT, okOut(JSON.stringify({body: readback}))],
-	[LIST, okOut(comments)],
+): ReadonlyArray<Scripted> => [
+	[POST, {status: 201, body: '{"id":9234567891,"html_url":"u"}'}],
+	[GET_COMMENT, {status: 200, body: JSON.stringify({body: readback})}],
+	[LIST, {status: 200, body: comments}],
 	...groundScript(),
 ];
 
@@ -115,7 +113,7 @@ describe("runTake", () => {
 
 	it("exits 7 on an issue that does not exist", async () => {
 		const out = await run([
-			[new RegExp(`api repos/${REPO}/issues/${ISSUE}$`), errOut("gh: Not Found (HTTP 404)")],
+			[ISSUE_READ, {status: 404, body: '{"message":"Not Found"}'}],
 			...groundScript(),
 		]);
 		expect(out.code).toBe(NO_TARGET);
@@ -183,14 +181,14 @@ describe("runTake", () => {
 	});
 
 	it("exits 8 when the write failed — whether the pack landed is UNKNOWN", async () => {
-		const out = await run([[POST, errOut("gh: Bad gateway (HTTP 502)")], ...sealScript()]);
+		const out = await run([[POST, {status: 502, body: "{}"}], ...sealScript()]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
 	});
 
 	it("exits 9 when the posted pack does not read back", async () => {
 		const out = await run([
-			[GET_COMMENT, okOut(JSON.stringify({body: "something else entirely"}))],
+			[GET_COMMENT, {status: 200, body: JSON.stringify({body: "something else entirely"})}],
 			...sealScript(),
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
@@ -218,7 +216,7 @@ describe("runTake", () => {
 	});
 
 	it("exits 11 when the comment walk failed — supersedes is never guessed", async () => {
-		const out = await run([[LIST, errOut("gh: Bad gateway (HTTP 502)")], ...sealScript()]);
+		const out = await run([[LIST, {status: 502, body: "{}"}], ...sealScript()]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 	});

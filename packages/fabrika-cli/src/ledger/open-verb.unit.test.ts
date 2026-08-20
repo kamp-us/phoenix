@@ -26,12 +26,13 @@ import {manifestPath, parseManifest, parseRunRecord, runJsonPath} from "./run.ts
 
 const SHA = "03135b9188d2be6c0a4b7bd0b7a3ff9c53f0f2b1";
 
-const EPIC_READ = /^gh api repos\/o\/r\/issues\/4300$/;
+const EPIC_READ = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
 const TREE = /^git rev-parse --path-format=absolute/;
 const SUBS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issues/;
-const CYCLE = /^gh api repos\/o\/r\/contents\/product-development-cycle\.md$/;
+const CYCLE =
+	/^GET https:\/\/api\.github\.com\/repos\/o\/r\/contents\/product-development-cycle\.md$/;
 const BACKLOG = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\?state=open/;
-const SEARCH = /^gh api --paginate search\/issues/;
+const SEARCH = /^GET https:\/\/api\.github\.com\/search\/issues\?/;
 const REV_LIST = /^git rev-list --count/;
 
 const GROUND: ReadonlyArray<Scripted> = [
@@ -47,7 +48,7 @@ const CLEAN: ReadonlyArray<Scripted> = [
 	...CLAIMED,
 	...GROUND,
 	[SUBS, subIssues()],
-	[CYCLE, okOut("{}")],
+	[CYCLE, {status: 200, body: "{}"}],
 	[BACKLOG, backlogPage([4180, "queue view for reports"])],
 	[SEARCH, issueRows()],
 ];
@@ -199,17 +200,14 @@ describe("runOpen", () => {
 
 	it("refuses a proven-absent epic on 7", async () => {
 		const {outcome} = await run([
-			[EPIC_READ, errOut("gh: Not Found (HTTP 404)")],
+			[EPIC_READ, {status: 404, body: '{"message":"Not Found"}'}],
 			...CLEAN.slice(1),
 		]);
 		expect(outcome.code).toBe(ZERO_SCOPE);
 	});
 
 	it("refuses an unreadable epic on 11 — absence is decided by status, never by text", async () => {
-		const {outcome} = await run([
-			[EPIC_READ, errOut("gh: Bad Gateway (HTTP 502)")],
-			...CLEAN.slice(1),
-		]);
+		const {outcome} = await run([[EPIC_READ, GATEWAY], ...CLEAN.slice(1)]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
@@ -227,7 +225,7 @@ describe("runOpen", () => {
 			[EPIC_READ, epic()],
 			[TREE, GIT_DIRS],
 			[
-				/^gh api --paginate repos\/o\/r\/issues\/4300\/comments/,
+				/^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/comments\?/,
 				comments({id: 1, body: "nothing here"}),
 			],
 			...CLEAN.slice(4),

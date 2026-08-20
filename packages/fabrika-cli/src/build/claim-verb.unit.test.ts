@@ -1,7 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeSeams, okOut, once, type Scripted} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeFs, fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {FAILED} from "../verb.ts";
 import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
@@ -27,12 +26,14 @@ import {
 	campaignsTable,
 	candidatePage,
 	comments,
+	GATEWAY,
 	GH_TOKEN_ENV,
 	issue,
 	LANE_TOKEN,
 	LANE_UUID,
 	marker,
 	NO_BLOCKERS,
+	NOT_FOUND,
 	SIBLING_TOKEN,
 	SIBLING_UUID,
 	served,
@@ -40,20 +41,27 @@ import {
 } from "./fixtures.test-support.ts";
 import {runPick} from "./pick-verb.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
-const POST = /^gh api --method POST repos\/o\/r\/issues\/4312\/comments/;
-const GET_COMMENT = /^gh api repos\/o\/r\/issues\/comments\/9001$/;
-const DELETE = /^gh api --method DELETE repos\/o\/r\/issues\/comments\//;
-const perm = (login: string) => new RegExp(`^gh api repos/o/r/collaborators/${login}/permission`);
+const ISSUE = /^GET \S+\/repos\/o\/r\/issues\/4312$/;
+const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4312\/comments/;
+const POST = /^POST \S+\/repos\/o\/r\/issues\/4312\/comments/;
+const GET_COMMENT = /^GET \S+\/repos\/o\/r\/issues\/comments\/9001$/;
+const DELETE = /^DELETE \S+\/repos\/o\/r\/issues\/comments\//;
+const perm = (login: string) => new RegExp(`^GET \\S+/repos/o/r/collaborators/${login}/permission`);
+
+/** The two permissions the ACL answers with: one authorizes a marker, the other does not. */
+const WRITES = served({permission: "write"});
+const READS = served({permission: "read"});
+/** What GitHub answers a successful delete with — a status and no body at all. */
+const NO_CONTENT: HttpReply = {status: 204, body: ""};
+const TIMEOUT: HttpReply = {status: 504, body: '{"message":"Gateway timeout"}'};
 
 const MINE = marker("s-9f2e", LANE_UUID);
 const THEIRS = marker("s-77aa", "9d8c7b6a-5f4e-3d2c-1b0a-998877665544");
 /** A marker of the same SESSION under another nonce — a sibling lane's, which release must NOT sweep. */
 const SIBLING_MARKER = marker("s-9f2e", SIBLING_UUID);
 
-const POSTED = okOut(JSON.stringify({id: 9001, html_url: "https://github.com/o/r/issues/4312#c"}));
-const ECHO = okOut(JSON.stringify({body: MINE}));
+const POSTED = served({id: 9001, html_url: "https://github.com/o/r/issues/4312#c"}, 201);
+const ECHO = served({body: MINE});
 
 const labelled = (...names: ReadonlyArray<string>) => names.map((name) => ({name}));
 
@@ -75,7 +83,7 @@ const unclaimed = () => [once(COMMENTS), comments()] as const;
  * every read after it. The protocol reads the thread several times in one run, and a static entry
  * cannot tell a pre-post read from the checkpoint that follows it.
  */
-const thread = (...states: ReadonlyArray<ExecResult>) =>
+const thread = (...states: ReadonlyArray<HttpReply>) =>
 	states.map((state, i) =>
 		i === states.length - 1 ? ([COMMENTS, state] as const) : ([once(COMMENTS), state] as const),
 	);
@@ -84,7 +92,7 @@ const thread = (...states: ReadonlyArray<ExecResult>) =>
 const NO_CAMPAIGNS = fakeFs({files: {}});
 
 /**
- * `fakeShell` with every `blocked_by` edge list answering empty.
+ * Both seams with every `blocked_by` edge list answering empty.
  *
  * The claim seam reads the graph on the path to every marker (ADR 0301), so a script about any other
  * axis would otherwise hit an unscripted read and refuse on `11`. A test about blockedness scripts
@@ -131,7 +139,7 @@ describe("runClaim", () => {
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({
@@ -155,14 +163,11 @@ describe("runClaim", () => {
 		const siblingMarker = marker("s-9f2e", SIBLING_UUID);
 		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
-			[POST, okOut(JSON.stringify({id: 9002, html_url: "https://github.com/o/r/issues/4312#c"}))],
-			[
-				/^gh api repos\/o\/r\/issues\/comments\/9002$/,
-				okOut(JSON.stringify({body: siblingMarker})),
-			],
+			[POST, served({id: 9002, html_url: "https://github.com/o/r/issues/4312#c"}, 201)],
+			[/^GET \S+\/repos\/o\/r\/issues\/comments\/9002$/, served({body: siblingMarker})],
 			[COMMENTS, comments({id: 9001, body: MINE}, {id: 9002, body: siblingMarker})],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(
@@ -172,11 +177,11 @@ describe("runClaim", () => {
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.some((line) => line.includes(`lost to ${LANE_TOKEN}`))).toBe(true);
-		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
-			"gh api --method DELETE repos/o/r/issues/comments/9002",
+		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
+			"DELETE https://api.github.com/repos/o/r/issues/comments/9002",
 		]);
 		expect(
-			shell.calls.some((line) => /DELETE repos\/o\/r\/issues\/comments\/9001/.test(line)),
+			shell.requests.some((line) => /DELETE \S+\/repos\/o\/r\/issues\/comments\/9001/.test(line)),
 		).toBe(false);
 	});
 
@@ -187,13 +192,13 @@ describe("runClaim", () => {
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		await Effect.runPromise(
 			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
-		const posted = shell.calls.findIndex((line) => POST.test(line));
-		const swept = shell.calls.findLastIndex((line) => COMMENTS.test(line));
+		const posted = shell.requests.findIndex((line) => POST.test(line));
+		const swept = shell.requests.findLastIndex((line) => COMMENTS.test(line));
 		expect(posted).toBeGreaterThanOrEqual(0);
 		expect(swept).toBeGreaterThan(posted);
 	});
@@ -211,8 +216,8 @@ describe("runClaim", () => {
 					{id: 9001, body: MINE, createdAt: "2026-08-09T00:00:00Z"},
 				),
 			],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
@@ -222,7 +227,7 @@ describe("runClaim", () => {
 		expect(out.stderr.at(-1)).toContain("lost to build:s-77aa:");
 		expect(out.stderr.some((line) => line.includes("retracted this run's own marker"))).toBe(true);
 		expect(
-			shell.calls.some((line) => /DELETE repos\/o\/r\/issues\/comments\/9001/.test(line)),
+			shell.requests.some((line) => /DELETE \S+\/repos\/o\/r\/issues\/comments\/9001/.test(line)),
 		).toBe(true);
 	});
 
@@ -239,8 +244,8 @@ describe("runClaim", () => {
 					{id: 9001, body: MINE, createdAt: "2026-08-09T00:00:00Z"},
 				),
 			],
-			[perm("drive-by"), okOut("read\n")],
-			[perm("agent"), okOut("write\n")],
+			[perm("drive-by"), READS],
+			[perm("agent"), WRITES],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stderr.some((line) => line.includes("who holds no write permission"))).toBe(true);
@@ -251,7 +256,7 @@ describe("runClaim", () => {
 			[ISSUE, CLAIMABLE],
 			unclaimed(),
 			unclaimed(),
-			[POST, errOut("gh: Gateway timeout (HTTP 504)")],
+			[POST, TIMEOUT],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		// `confirm` and `release` both require --token, so the minted token has to reach the operator
@@ -269,7 +274,7 @@ describe("runClaim", () => {
 			unclaimed(),
 			unclaimed(),
 			[POST, POSTED],
-			[GET_COMMENT, okOut(JSON.stringify({body: "something else"}))],
+			[GET_COMMENT, served({body: "something else"})],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 	});
@@ -281,7 +286,7 @@ describe("runClaim", () => {
 			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
-			[COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
+			[COMMENTS, GATEWAY],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain('ownership is UNKNOWN, never "unclaimed"');
@@ -294,16 +299,16 @@ describe("runClaim", () => {
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, truncatedComments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stderr.at(-1)).toContain("page boundary");
+		expect(out.stderr.at(-1)).toContain("GitHub answered 200 but its body is not a list");
 		expect(out.stderr.some((line) => line.includes("is not authorized"))).toBe(false);
-		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
+		expect(shell.requests.some((line) => DELETE.test(line))).toBe(false);
 	});
 
 	it("refuses an unreadable PERMISSION on 11 — a transient read never demotes an author", async () => {
@@ -313,7 +318,7 @@ describe("runClaim", () => {
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), errOut("gh: Bad gateway (HTTP 502)")],
+			[perm("agent"), GATEWAY],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 	});
@@ -324,7 +329,7 @@ describe("runClaim", () => {
 	});
 
 	it("refuses a proven-absent issue on 7", async () => {
-		const out = await run(runClaim, [[ISSUE, errOut("gh: Not Found (HTTP 404)")]]);
+		const out = await run(runClaim, [[ISSUE, NOT_FOUND]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 	});
 });
@@ -332,25 +337,21 @@ describe("runClaim", () => {
 /**
  * The fence, at the seam where it has teeth.
  *
- * Every refusal below asserts on **`shell.calls`** as well as the exit code: "refuses" and "refuses
+ * Every refusal below asserts on **`shell.requests`** as well as the exit code: "refuses" and "refuses
  * before writing anything" are different claims, and only the call log can tell them apart. A claim
  * that posted and then refused would leave a marker on the issue with nothing to retract it.
  */
 describe("runClaim — the admission test runs before any marker is written", () => {
 	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
 
-	const claimWith = (
-		target: ExecResult,
-		fs = IN_SCOPE,
-		overrides: Partial<typeof options> = {},
-	) => {
+	const claimWith = (target: HttpReply, fs = IN_SCOPE, overrides: Partial<typeof options> = {}) => {
 		const shell = unblocked([
 			[ISSUE, target],
 			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		return Effect.runPromise(
 			Effect.provide(runClaim({...options, ...overrides}), Layer.merge(shell.layer, fs.layer)),
@@ -370,7 +371,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN);
 		expect(out.code).toBe(OUT_OF_SCOPE);
 		expect(out.stdout).toBe("");
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		expect(out.stderr.some((line) => line.includes("out of scope"))).toBe(true);
 		expect(out.stderr.at(-1)).toContain("nothing was written");
 	});
@@ -397,7 +398,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	it("refuses a non-agent audience on 21 — a sibling axis, never folded into 20", async () => {
 		const {out, shell} = await claimWith(HUMAN_AUDIENCE);
 		expect(out.code).toBe(AUDIENCE_NOT_AGENT);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		expect(out.stderr.some((line) => line.includes("ready-for:human"))).toBe(true);
 	});
 
@@ -423,7 +424,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		const {out, shell} = await claimWith(NO_CONTRACT);
 		expect(out.code).toBe(NO_ACCEPTANCE_CRITERIA);
 		expect(out.stdout).toBe("");
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		expect(out.stderr.join("\n")).toContain("no acceptance criteria");
 		expect(out.stderr.join("\n")).toContain("triage enrich");
 		expect(out.stderr.at(-1)).toContain("nothing was written");
@@ -435,7 +436,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 			overrideLane: "build",
 		});
 		expect(out.code).toBe(NO_ACCEPTANCE_CRITERIA);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		expect(out.stderr.at(-1)).not.toContain("--override");
 	});
 
@@ -457,7 +458,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 			fakeFs({files: {[ROADMAP_FILE]: null}, unprobeable: [ROADMAP_FILE]}),
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		expect(out.stderr.at(-1)).toContain("scope is UNKNOWN, never admitted; nothing was written");
 	});
 
@@ -467,7 +468,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 			fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44).replace("| active |", "| activ |")}}),
 		);
 		expect(out.code).toBe(BAD_SECTIONS);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("claims a refused issue under --override, recording the lane and reason on the marker and in the answer", async () => {
@@ -483,11 +484,12 @@ describe("runClaim — the admission test runs before any marker is written", ()
 			token: `build:s-9f2e:${LANE_UUID}`,
 			override: {lane: "build-ui", reason: "hotfix for the release blocker"},
 		});
+		const posted = shell.bodies.filter(
+			(_, index) => POST.test(shell.requests[index] ?? "") === true,
+		);
 		expect(
-			shell.calls.some(
-				(line) =>
-					POST.test(line) &&
-					line.includes("build-claim-override: build-ui · hotfix for the release blocker"),
+			posted.some((body) =>
+				body.includes("build-claim-override: build-ui · hotfix for the release blocker"),
 			),
 		).toBe(true);
 	});
@@ -499,7 +501,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 			{override: "I know what I am doing", overrideLane: "build-ui"},
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("refuses an empty --override reason on 1 — an override is recorded or it is not one", async () => {
@@ -508,7 +510,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 			overrideLane: "build-ui",
 		});
 		expect(out.code).toBe(FAILED);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("refuses an --override that names no lane on 1 — the escape hatch says who took it (#5175)", async () => {
@@ -517,7 +519,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		});
 		expect(out.code).toBe(FAILED);
 		expect(out.stderr.some((line) => line.includes("--override-lane"))).toBe(true);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("refuses a blank --override-lane on 1 — whitespace names no lane", async () => {
@@ -526,13 +528,13 @@ describe("runClaim — the admission test runs before any marker is written", ()
 			overrideLane: "   ",
 		});
 		expect(out.code).toBe(FAILED);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("refuses an --override-lane with no --override on 1 — a lane names no override alone", async () => {
 		const {out, shell} = await claimWith(CLAIMABLE, IN_SCOPE, {overrideLane: "build-ui"});
 		expect(out.code).toBe(FAILED);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("names the declaration it judged against on a win, so an inert-fence claim reads as one", async () => {
@@ -567,15 +569,15 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		// The same issue, handed straight to `claim` by number: the pool was bypassed, the fence is not.
 		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN);
 		expect(out.code).toBe(OUT_OF_SCOPE);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("leaves confirm and release outside the fence — a mid-lane pause strands no lane", async () => {
 		const script: ReadonlyArray<Scripted> = [
 			[ISSUE, OUT_OF_CAMPAIGN],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
 		];
 		const confirmed = await run(runConfirm, script, {}, IN_SCOPE);
 		expect(confirmed.code).toBe(0);
@@ -591,7 +593,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
  */
 describe("runClaim — a PR number is judged by the issue it serves", () => {
 	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
-	const SERVED = /^gh api repos\/o\/r\/issues\/5553$/;
+	const SERVED = /^GET \S+\/repos\/o\/r\/issues\/5553$/;
 
 	const pull = (body: string) =>
 		issue({
@@ -602,26 +604,24 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			pull_request: {url: "https://api.github.com/repos/o/r/pulls/4312"},
 		});
 
-	const served = (
+	const servedTicket = (
 		milestone: number | null,
 		labels = labelled("status:triaged", "ready-for:agent"),
 	) =>
-		okOut(
-			JSON.stringify({
-				number: 5553,
-				title: "The ticket the lane serves",
-				body: CRITERIA_BODY,
-				state: "open",
-				labels,
-				html_url: "https://github.com/o/r/issues/5553",
-				milestone: milestone === null ? null : {number: milestone},
-				state_reason: null,
-			}),
-		);
+		served({
+			number: 5553,
+			title: "The ticket the lane serves",
+			body: CRITERIA_BODY,
+			state: "open",
+			labels,
+			html_url: "https://github.com/o/r/issues/5553",
+			milestone: milestone === null ? null : {number: milestone},
+			state_reason: null,
+		});
 
 	const claimPull = (
 		body: string,
-		servedRecord: ExecResult,
+		servedRecord: HttpReply,
 		overrides: Partial<typeof options> = {},
 	) => {
 		const shell = unblocked([
@@ -631,7 +631,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		return Effect.runPromise(
 			Effect.provide(
@@ -642,28 +642,28 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 	};
 
 	it("admits a PR whose served issue is in scope, with no override", async () => {
-		const {out} = await claimPull("Fixes #5553\n", served(44));
+		const {out} = await claimPull("Fixes #5553\n", servedTicket(44));
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).answer).toBe("won");
 		expect(out.stderr.some((line) => line.includes("PR #4312 serves #5553 (fixes)"))).toBe(true);
 	});
 
 	it("reads Part of #<n> too — the partial-PR shape build --partial emits", async () => {
-		const {out} = await claimPull("Part of #5553\n", served(44));
+		const {out} = await claimPull("Part of #5553\n", servedTicket(44));
 		expect(out.code).toBe(0);
 		expect(out.stderr.some((line) => line.includes("serves #5553 (part-of)"))).toBe(true);
 	});
 
 	it("still refuses at 20 when the served issue is genuinely out of scope, and posts NOTHING", async () => {
-		const {out, shell} = await claimPull("Fixes #5553\n", served(39));
+		const {out, shell} = await claimPull("Fixes #5553\n", servedTicket(39));
 		expect(out.code).toBe(OUT_OF_SCOPE);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		expect(out.stderr.some((line) => line.includes("out of scope"))).toBe(true);
 		expect(out.stderr.some((line) => line.includes("this issue's home is 39"))).toBe(true);
 	});
 
 	it("keeps that refusal overridable", async () => {
-		const {out} = await claimPull("Fixes #5553\n", served(39), {
+		const {out} = await claimPull("Fixes #5553\n", servedTicket(39), {
 			override: "repairing a landed FAIL",
 			overrideLane: "build",
 		});
@@ -673,11 +673,11 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 
 	it("refuses a PR naming no issue at 20, saying which case fired — and stays overridable", async () => {
 		const body = "A conversation-authored ADR.\n\n## Deviations\nNone.\n";
-		const {out, shell} = await claimPull(body, served(44));
+		const {out, shell} = await claimPull(body, servedTicket(44));
 		expect(out.code).toBe(OUT_OF_SCOPE);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		expect(out.stderr.some((line) => line.includes("no served issue"))).toBe(true);
-		const overridden = await claimPull(body, served(44), {
+		const overridden = await claimPull(body, servedTicket(44), {
 			override: "no ticket — the ADR was authored in conversation",
 			overrideLane: "build",
 		});
@@ -685,15 +685,15 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 	});
 
 	it("refuses at 20 when the named issue is proven absent — never on the PR's own empty home", async () => {
-		const {out} = await claimPull("Fixes #5553\n", errOut("gh: Not Found (HTTP 404)"));
+		const {out} = await claimPull("Fixes #5553\n", NOT_FOUND);
 		expect(out.code).toBe(OUT_OF_SCOPE);
 		expect(out.stderr.some((line) => line.includes("proven absent"))).toBe(true);
 	});
 
 	it("refuses at 11 when the served issue cannot be read — UNKNOWN, never admitted", async () => {
-		const {out, shell} = await claimPull("Fixes #5553\n", errOut("gh: Bad gateway (HTTP 502)"));
+		const {out, shell} = await claimPull("Fixes #5553\n", GATEWAY);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	/**
@@ -703,17 +703,17 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 	 * marker or a broken one would refuse the very repair it was written to route to (#6386).
 	 */
 	it("never runs the prior-build gate on a PR target — repair has already answered its question", async () => {
-		const {out, shell} = await claimPull("Fixes #5553\n", served(44));
+		const {out, shell} = await claimPull("Fixes #5553\n", servedTicket(44));
 		expect(out.code).toBe(0);
 		expect(out.stderr.join("\n")).not.toContain("standing range verdict");
 		// Two comment reads on the admitting path: the existing-claim scan, and the marker read-back.
-		expect(shell.calls.filter((line) => COMMENTS.test(line))).toHaveLength(2);
+		expect(shell.requests.filter((line) => COMMENTS.test(line))).toHaveLength(2);
 	});
 
 	it("judges the audience on the served issue too, so a repair lane is not refused at 21", async () => {
 		const {out} = await claimPull(
 			"Fixes #5553\n",
-			served(44, labelled("status:triaged", "ready-for:agent")),
+			servedTicket(44, labelled("status:triaged", "ready-for:agent")),
 		);
 		expect(out.code).toBe(0);
 		expect(out.stderr.some((line) => line.includes("this issue carries ready-for:agent"))).toBe(
@@ -731,7 +731,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runClaim(options), Layer.merge(shell.layer, IN_SCOPE.layer)),
@@ -747,7 +747,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(
@@ -763,7 +763,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 	 * so the one that reads whichever record the resolution returned.
 	 */
 	describe("with no campaign active", () => {
-		const claimInert = (body: string, servedRecord: ExecResult | null) => {
+		const claimInert = (body: string, servedRecord: HttpReply | null) => {
 			const shell = unblocked([
 				[ISSUE, pull(body)],
 				...(servedRecord === null ? [] : ([[SERVED, servedRecord]] as ReadonlyArray<Scripted>)),
@@ -771,7 +771,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				[POST, POSTED],
 				[GET_COMMENT, ECHO],
 				[COMMENTS, comments({id: 9001, body: MINE})],
-				[perm("agent"), okOut("write\n")],
+				[perm("agent"), WRITES],
 			]);
 			return Effect.runPromise(
 				Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
@@ -779,7 +779,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		};
 
 		it("resolves a served issue anyway, so the audience axis reads it and the claim is won", async () => {
-			const {out} = await claimInert("Fixes #5553\n", served(null));
+			const {out} = await claimInert("Fixes #5553\n", servedTicket(null));
 			expect(out.code).toBe(0);
 			expect(out.stderr.some((line) => line.includes("PR #4312 serves #5553 (fixes)"))).toBe(true);
 			expect(out.stderr.some((line) => line.includes("scope fence inert"))).toBe(true);
@@ -788,14 +788,14 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		it("leaves an unserved PR on its own record, audience and all — the pre-#5562 answer", async () => {
 			const {out, shell} = await claimInert("No reference at all.\n", null);
 			expect(out.code).toBe(AUDIENCE_NOT_AGENT);
-			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 			expect(out.stderr.some((line) => line.includes("serves #"))).toBe(false);
 		});
 
 		it("still refuses at 11 when the served issue cannot be read — an inert fence does not soften UNKNOWN", async () => {
-			const {out, shell} = await claimInert("Fixes #5553\n", errOut("gh: Bad gateway (HTTP 502)"));
+			const {out, shell} = await claimInert("Fixes #5553\n", GATEWAY);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
-			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		});
 	});
 
@@ -809,7 +809,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		const DECISION = labelled("status:triaged", "type:decision", "ready-for:human");
 
 		it("admits the repair claim with no override, and writes the marker", async () => {
-			const {out, shell} = await claimPull("Fixes #5553\n", served(44, DECISION));
+			const {out, shell} = await claimPull("Fixes #5553\n", servedTicket(44, DECISION));
 			expect(out.code).toBe(0);
 			expect(JSON.parse(out.stdout)).toEqual({
 				answer: "won",
@@ -817,7 +817,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				purpose: "build",
 				token: `build:s-9f2e:${LANE_UUID}`,
 			});
-			expect(shell.calls.some((line) => POST.test(line))).toBe(true);
+			expect(shell.requests.some((line) => POST.test(line))).toBe(true);
 			expect(
 				out.stderr.some((line) =>
 					line.includes(
@@ -828,7 +828,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		});
 
 		it("records no override on the answer — the ruling made this the ordinary path", async () => {
-			const {out} = await claimPull("Fixes #5553\n", served(44, DECISION));
+			const {out} = await claimPull("Fixes #5553\n", servedTicket(44, DECISION));
 			expect(JSON.parse(out.stdout).override).toBeUndefined();
 		});
 
@@ -842,13 +842,13 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				[POST, POSTED],
 				[GET_COMMENT, ECHO],
 				[COMMENTS, comments({id: 9001, body: MINE})],
-				[perm("agent"), okOut("write\n")],
+				[perm("agent"), WRITES],
 			]);
 			const out = await Effect.runPromise(
 				Effect.provide(runClaim(options), Layer.merge(shell.layer, IN_SCOPE.layer)),
 			);
 			expect(out.code).toBe(TYPE_NOT_BUILDABLE);
-			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 			expect(out.stderr.some((line) => line.includes("type not buildable"))).toBe(true);
 		});
 
@@ -859,7 +859,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				[POST, POSTED],
 				[GET_COMMENT, ECHO],
 				[COMMENTS, comments({id: 9001, body: MINE})],
-				[perm("agent"), okOut("write\n")],
+				[perm("agent"), WRITES],
 			]);
 			const out = await Effect.runPromise(
 				Effect.provide(
@@ -873,7 +873,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			// The DECISION fixture is `ready-for:human`, which triage re-stamps when it routes a ruled
 			// decision to an agent. Until it does, the claim stops here (ADR 0300's binding constraint).
 			expect(out.code).toBe(AUDIENCE_NOT_AGENT);
-			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		});
 
 		it("takes the ruled decision once triage has stamped it for an agent", async () => {
@@ -889,7 +889,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				[POST, POSTED],
 				[GET_COMMENT, ECHO],
 				[COMMENTS, comments({id: 9001, body: MINE})],
-				[perm("agent"), okOut("write\n")],
+				[perm("agent"), WRITES],
 			]);
 			const cites = "https://github.com/o/r/issues/4312#issuecomment-5335398768";
 			const out = await Effect.runPromise(
@@ -907,7 +907,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				[POST, POSTED],
 				[GET_COMMENT, ECHO],
 				[COMMENTS, comments({id: 9001, body: MINE})],
-				[perm("agent"), okOut("write\n")],
+				[perm("agent"), WRITES],
 			]);
 			const out = await Effect.runPromise(
 				Effect.provide(
@@ -919,22 +919,22 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				),
 			);
 			expect(out.code).toBe(1);
-			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		});
 
 		it("keeps the fence for every other type an open PR serves", async () => {
 			const {out, shell} = await claimPull(
 				"Fixes #5553\n",
-				served(44, labelled("status:triaged", "type:bug", "ready-for:human")),
+				servedTicket(44, labelled("status:triaged", "type:bug", "ready-for:human")),
 			);
 			expect(out.code).toBe(AUDIENCE_NOT_AGENT);
-			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		});
 
 		it("keeps the scope fence armed — an out-of-scope decision PR is still 20", async () => {
-			const {out, shell} = await claimPull("Fixes #5553\n", served(39, DECISION));
+			const {out, shell} = await claimPull("Fixes #5553\n", servedTicket(39, DECISION));
 			expect(out.code).toBe(OUT_OF_SCOPE);
-			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		});
 	});
 });
@@ -949,14 +949,14 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 describe("runClaim — the purpose axis", () => {
 	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
 
-	const claimWith = (target: ExecResult, overrides: Partial<typeof options> = {}) => {
+	const claimWith = (target: HttpReply, overrides: Partial<typeof options> = {}) => {
 		const shell = unblocked([
 			[ISSUE, target],
 			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		return Effect.runPromise(
 			Effect.provide(
@@ -981,14 +981,14 @@ describe("runClaim — the purpose axis", () => {
 	it("keeps the fence with no purpose passed — 30, and no marker written", async () => {
 		const {out, shell} = await claimWith(UNLABELLED_EPIC);
 		expect(out.code).toBe(TYPE_NOT_BUILDABLE);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		expect(out.stderr.some((line) => line.includes("type not buildable"))).toBe(true);
 	});
 
 	it("keeps the fence under an explicit --purpose build — the default is not the only path", async () => {
 		const {out, shell} = await claimWith(UNLABELLED_EPIC, {purpose: "build"});
 		expect(out.code).toBe(TYPE_NOT_BUILDABLE);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("still seats 21 under build on a type the type axis admits", async () => {
@@ -996,7 +996,7 @@ describe("runClaim — the purpose axis", () => {
 			issue({milestone: {number: 44}, labels: labelled("type:bug", "p1", "status:triaged")}),
 		);
 		expect(out.code).toBe(AUDIENCE_NOT_AGENT);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	for (const purpose of ["plan", "gate"] as const) {
@@ -1019,7 +1019,7 @@ describe("runClaim — the purpose axis", () => {
 		it(`still refuses an out-of-scope epic on 20 under --purpose ${purpose} — scope is untouched`, async () => {
 			const {out, shell} = await claimWith(OUT_OF_CAMPAIGN_EPIC, {purpose});
 			expect(out.code).toBe(OUT_OF_SCOPE);
-			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		});
 	}
 
@@ -1027,7 +1027,7 @@ describe("runClaim — the purpose axis", () => {
 		const {out, shell} = await claimWith(UNLABELLED_EPIC, {purpose: "planning"});
 		expect(out.code).toBe(OFF_VOCABULARY);
 		expect(out.stderr.some((line) => line.includes("plan | gate | build"))).toBe(true);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 });
 
@@ -1036,7 +1036,7 @@ describe("runConfirm", () => {
 		const out = await run(runConfirm, [
 			[ISSUE, CLAIMABLE],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({answer: "mine", number: 4312, token: LANE_TOKEN});
@@ -1048,7 +1048,7 @@ describe("runConfirm", () => {
 			[
 				[ISSUE, CLAIMABLE],
 				[COMMENTS, comments({id: 9001, body: MINE})],
-				[perm("agent"), okOut("write\n")],
+				[perm("agent"), WRITES],
 			],
 			{token: SIBLING_TOKEN},
 		);
@@ -1062,7 +1062,7 @@ describe("runConfirm", () => {
 		const out = await run(runConfirm, [
 			[ISSUE, CLAIMABLE],
 			[COMMENTS, comments({id: 8000, body: THEIRS})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.at(-1)).toBe(
@@ -1075,7 +1075,7 @@ describe("runConfirm", () => {
 	it("refuses proven-unclaimed on 15 too, with the no-claim message", async () => {
 		const out = await run(runConfirm, [
 			[ISSUE, CLAIMABLE],
-			[COMMENTS, okOut("[]")],
+			[COMMENTS, served([])],
 		]);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.at(-1)).toBe(
@@ -1087,10 +1087,10 @@ describe("runConfirm", () => {
 		const out = await run(runConfirm, [
 			[ISSUE, CLAIMABLE],
 			[COMMENTS, truncatedComments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stderr.at(-1)).toContain("page boundary");
+		expect(out.stderr.at(-1)).toContain("GitHub answered 200 but its body is not a list");
 	});
 });
 
@@ -1099,16 +1099,16 @@ describe("runRelease", () => {
 		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({answer: "released", number: 4312});
-		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
-			"gh api --method DELETE repos/o/r/issues/comments/9001",
+		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
+			"DELETE https://api.github.com/repos/o/r/issues/comments/9001",
 		]);
 	});
 
@@ -1116,7 +1116,7 @@ describe("runRelease", () => {
 		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[COMMENTS, comments({id: 8000, body: THEIRS})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
@@ -1125,29 +1125,29 @@ describe("runRelease", () => {
 		expect(out.stderr.at(-1)).toBe(
 			"build release: this lane holds no claim on #4312 — refusing to release another lane's.",
 		);
-		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
+		expect(shell.requests.some((line) => DELETE.test(line))).toBe(false);
 	});
 
 	it("refuses a truncated read on 11 and deletes nothing", async () => {
 		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[COMMENTS, truncatedComments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
+		expect(shell.requests.some((line) => DELETE.test(line))).toBe(false);
 	});
 
 	it("refuses a failed retraction on 8 — whether the claim is still held is UNKNOWN", async () => {
 		const out = await run(runRelease, [
 			[ISSUE, CLAIMABLE],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
-			[once(DELETE), errOut("gh: Gateway timeout (HTTP 504)")],
+			[perm("agent"), WRITES],
+			[once(DELETE), TIMEOUT],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain(`run "fabrika build confirm 4312 --token ${LANE_TOKEN}"`);
@@ -1171,7 +1171,7 @@ describe("the claim protocol", () => {
 		...thread(comments(), comments({id: 9001, body: MINE})),
 		[POST, POSTED] as const,
 		[GET_COMMENT, ECHO] as const,
-		[perm("agent"), okOut("write\n")] as const,
+		[perm("agent"), WRITES] as const,
 	];
 
 	const on = (
@@ -1184,7 +1184,7 @@ describe("the claim protocol", () => {
 		const shell = unblocked(held());
 		const first = await on(shell, runClaim);
 		const second = await on(shell, runClaim);
-		expect(shell.calls.filter((line) => POST.test(line))).toHaveLength(1);
+		expect(shell.requests.filter((line) => POST.test(line))).toHaveLength(1);
 		expect(second.code).toBe(0);
 		expect(JSON.parse(second.stdout)).toEqual(JSON.parse(first.stdout));
 		expect(second.stderr.at(-1)).toContain("already held by this lane");
@@ -1203,13 +1203,10 @@ describe("the claim protocol", () => {
 				comments({id: 9001, body: MINE}),
 				comments({id: 9001, body: MINE}, {id: 9002, body: SIBLING_MARKER}),
 			),
-			[POST, okOut(JSON.stringify({id: 9002, html_url: "https://github.com/o/r/issues/4312#c"}))],
-			[
-				/^gh api repos\/o\/r\/issues\/comments\/9002$/,
-				okOut(JSON.stringify({body: SIBLING_MARKER})),
-			],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[POST, served({id: 9002, html_url: "https://github.com/o/r/issues/4312#c"}, 201)],
+			[/^GET \S+\/repos\/o\/r\/issues\/comments\/9002$/, served({body: SIBLING_MARKER})],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(
@@ -1219,8 +1216,8 @@ describe("the claim protocol", () => {
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.some((line) => line.includes(`lost to ${LANE_TOKEN}`))).toBe(true);
-		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
-			"gh api --method DELETE repos/o/r/issues/comments/9002",
+		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
+			"DELETE https://api.github.com/repos/o/r/issues/comments/9002",
 		]);
 	});
 
@@ -1247,19 +1244,19 @@ describe("the claim protocol", () => {
 			...thread(dirty, dirty, dirty, comments({id: 9003, body: SIBLING_MARKER})),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
 		]);
 		const claimed = await on(shell, runClaim);
 		expect(claimed.code).toBe(0);
 		expect(JSON.parse(claimed.stdout).token).toBe(LANE_TOKEN);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 
 		const released = await on(shell, runRelease);
 		expect(released.code).toBe(0);
-		expect(shell.calls.filter((line) => DELETE.test(line)).sort()).toEqual([
-			"gh api --method DELETE repos/o/r/issues/comments/9001",
-			"gh api --method DELETE repos/o/r/issues/comments/9002",
+		expect(shell.requests.filter((line) => DELETE.test(line)).sort()).toEqual([
+			"DELETE https://api.github.com/repos/o/r/issues/comments/9001",
+			"DELETE https://api.github.com/repos/o/r/issues/comments/9002",
 		]);
 
 		const confirmed = await on(shell, runConfirm);
@@ -1302,7 +1299,7 @@ describe("runAdopt / succession", () => {
 		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[POST, POSTED],
-			[GET_COMMENT, okOut(JSON.stringify({body: ADOPT}))],
+			[GET_COMMENT, served({body: ADOPT})],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runAdopt(adoptOptions), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
@@ -1314,7 +1311,7 @@ describe("runAdopt / succession", () => {
 			session: DEAD,
 			token: `build:s-9f2e:${LANE_UUID}`,
 		});
-		expect(shell.calls.filter((line) => POST.test(line))).toHaveLength(1);
+		expect(shell.requests.filter((line) => POST.test(line))).toHaveLength(1);
 	});
 
 	it("refuses an adopt naming this very session, and writes nothing", async () => {
@@ -1327,7 +1324,7 @@ describe("runAdopt / succession", () => {
 		);
 		expect(out.code).toBe(FAILED);
 		expect(out.stderr.at(-1)).toContain("already covers");
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("refuses an empty reason before anything is read", async () => {
@@ -1347,7 +1344,7 @@ describe("runAdopt / succession", () => {
 			);
 			expect(out.code).toBe(FAILED);
 			expect(out.stderr.at(-1)).toContain("no reader can read back");
-			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		}
 	});
 
@@ -1361,7 +1358,7 @@ describe("runAdopt / succession", () => {
 		);
 		expect(out.code).toBe(FAILED);
 		expect(out.stderr.at(-1)).toContain("one line");
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	// A tokenless `claim` over an adopted number is the shape a real successor produces: `adopt` ran
@@ -1385,8 +1382,8 @@ describe("runAdopt / succession", () => {
 					{id: 9001, body: MINE, createdAt: "2026-08-11T00:00:00Z"},
 				),
 			],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(
@@ -1396,8 +1393,8 @@ describe("runAdopt / succession", () => {
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.some((line) => line.includes("lost to build:s-77aa:"))).toBe(true);
-		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
-			"gh api --method DELETE repos/o/r/issues/comments/9001",
+		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
+			"DELETE https://api.github.com/repos/o/r/issues/comments/9001",
 		]);
 	});
 
@@ -1411,7 +1408,7 @@ describe("runAdopt / succession", () => {
 					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
 				),
 			],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
@@ -1419,14 +1416,14 @@ describe("runAdopt / succession", () => {
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		// The token named is the ADOPT's — the one `release` accepts — never the dead session's winner.
 		expect(out.stderr.some((line) => line.includes(`--token ${LANE_TOKEN}`))).toBe(true);
-		expect(shell.calls.some((line) => POST.test(line) || DELETE.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line) || DELETE.test(line))).toBe(false);
 	});
 
 	it("release still refuses the dead session's claim while no adopt marker names it", async () => {
 		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[COMMENTS, comments({id: 8000, body: THEIRS})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
@@ -1435,7 +1432,7 @@ describe("runAdopt / succession", () => {
 		expect(out.stderr.some((line) => line.includes("fabrika build adopt 4312 --session"))).toBe(
 			true,
 		);
-		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
+		expect(shell.requests.some((line) => DELETE.test(line))).toBe(false);
 	});
 
 	it("release retracts BOTH markers once an authorized adopt names the dead session", async () => {
@@ -1448,17 +1445,17 @@ describe("runAdopt / succession", () => {
 					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
 				),
 			],
-			[perm("agent"), okOut("write\n")],
-			[DELETE, okOut("")],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({answer: "released", number: 4312, adopted: DEAD});
-		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
-			"gh api --method DELETE repos/o/r/issues/comments/8000",
-			"gh api --method DELETE repos/o/r/issues/comments/8100",
+		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
+			"DELETE https://api.github.com/repos/o/r/issues/comments/8000",
+			"DELETE https://api.github.com/repos/o/r/issues/comments/8100",
 		]);
 	});
 
@@ -1475,7 +1472,7 @@ describe("runAdopt / succession", () => {
 					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
 				),
 			],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runConfirm(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
@@ -1494,15 +1491,15 @@ describe("runAdopt / succession", () => {
 					{id: 8100, body: ADOPT, author: "drive-by", createdAt: "2026-08-10T00:00:00Z"},
 				),
 			],
-			[perm("agent"), okOut("write\n")],
-			[perm("drive-by"), okOut("read\n")],
+			[perm("agent"), WRITES],
+			[perm("drive-by"), READS],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.some((line) => line.includes("counted, never a succession"))).toBe(true);
-		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
+		expect(shell.requests.some((line) => DELETE.test(line))).toBe(false);
 	});
 
 	// The adopt names ONE lane by its whole token, so succession confers exactly what an ordinary win
@@ -1521,7 +1518,7 @@ describe("runAdopt / succession", () => {
 					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
 				),
 			],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(
@@ -1530,7 +1527,7 @@ describe("runAdopt / succession", () => {
 			),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
+		expect(shell.requests.some((line) => DELETE.test(line))).toBe(false);
 	});
 });
 
@@ -1540,8 +1537,8 @@ describe("runAdopt / succession", () => {
  * so this is where the refusal has teeth.
  */
 describe("runClaim — the blockedness gate", () => {
-	const EDGES = /^gh api --paginate repos\/o\/r\/issues\/4312\/dependencies\/blocked_by/;
-	const blocker = (n: number) => new RegExp(`^gh api repos/o/r/issues/${n}$`);
+	const EDGES = /^GET \S+\/repos\/o\/r\/issues\/4312\/dependencies\/blocked_by/;
+	const blocker = (n: number) => new RegExp(`^GET \\S+/repos/o/r/issues/${n}$`);
 
 	const claimAgainst = (graph: ReadonlyArray<Scripted>) => {
 		const shell = fakeSeams([
@@ -1551,7 +1548,7 @@ describe("runClaim — the blockedness gate", () => {
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		return Effect.runPromise(
 			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
@@ -1565,7 +1562,7 @@ describe("runClaim — the blockedness gate", () => {
 		]);
 		expect(out.code).toBe(BLOCKED);
 		expect(out.stdout).toBe("");
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		expect(out.stderr.at(-1)).toContain("blocked by 1 open blocked_by edge: #210");
 		expect(out.stderr.at(-1)).toContain("nothing was written");
 	});
@@ -1592,17 +1589,17 @@ describe("runClaim — the blockedness gate", () => {
 	});
 
 	it('refuses an unreadable edge list on 11 — UNKNOWN is never "not blocked"', async () => {
-		const {out, shell} = await claimAgainst([[EDGES, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const {out, shell} = await claimAgainst([[EDGES, GATEWAY]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 		expect(out.stderr.at(-1)).toContain("cannot read the blocked_by edges of #4312");
 	});
 
 	it("refuses on 11 when a blocker's own state could not be read and nothing is proven open", async () => {
 		const {out} = await claimAgainst([
 			[EDGES, blockedBy(210)],
-			[blocker(210), errOut("gh: Bad gateway (HTTP 502)")],
+			[blocker(210), GATEWAY],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("blocker #210");
@@ -1629,7 +1626,7 @@ describe("runClaim — the blockedness gate", () => {
 			),
 		);
 		expect(out.code).toBe(OUT_OF_SCOPE);
-		expect(shell.calls.some((line) => EDGES.test(line))).toBe(false);
+		expect(shell.requests.some((line) => EDGES.test(line))).toBe(false);
 	});
 });
 
@@ -1668,7 +1665,7 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 		await Effect.runPromise(
 			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
-		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("admits the claim under --resume, so the refusal points at a route that exists", async () => {
@@ -1681,7 +1678,7 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 				[POST, POSTED],
 				[GET_COMMENT, ECHO],
 				[COMMENTS, comments({id: 9001, body: MINE})],
-				[perm("agent"), okOut("write\n")],
+				[perm("agent"), WRITES],
 			],
 			{resume: true},
 		);
@@ -1712,17 +1709,13 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		expect(out.code).toBe(0);
 	});
 
 	it("refuses on 11 when the comments cannot be read — never 'no prior build'", async () => {
-		const out = await run(runClaim, [
-			[ISSUE, CLAIMABLE],
-			unclaimed(),
-			[COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
-		]);
+		const out = await run(runClaim, [[ISSUE, CLAIMABLE], unclaimed(), [COMMENTS, GATEWAY]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain('UNKNOWN, never "no"');
 	});
@@ -1770,7 +1763,7 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
-			[perm("agent"), okOut("write\n")],
+			[perm("agent"), WRITES],
 		]);
 		expect(out.code).toBe(0);
 	});
@@ -1784,7 +1777,7 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 				[POST, POSTED],
 				[GET_COMMENT, ECHO],
 				[COMMENTS, comments({id: 9001, body: MINE})],
-				[perm("agent"), okOut("write\n")],
+				[perm("agent"), WRITES],
 			],
 			{purpose: "plan"},
 		);

@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, once, type Scripted} from "../fakes.test-support.ts";
 import {renderFrontierRow, spliceSection} from "./body.ts";
 import {DIGEST_STALE, KIND_MISMATCH, TICKET_UNKNOWN} from "./codes.ts";
 import {
@@ -18,7 +17,7 @@ import {
 import {runFork, SESSION_LABEL} from "./fork-verb.ts";
 import {composeForkMarker, composeTicketMarker} from "./markers.ts";
 
-const POST = /--method POST repos\/o\/r\/issues\/9142\/comments/;
+const POST = /POST .*\/issues\/9142\/comments/;
 const GET_COMMENT = /issues\/comments\/\d+/;
 const PERMISSION = /collaborators\/.*\/permission/;
 const CHILDREN = /issues\/9140\/sub_issues/;
@@ -27,7 +26,9 @@ const EDGES = /issues\/9142\/dependencies\//;
 const TICKET_ISSUE = /issues\/9142$/;
 const MAP_ISSUE = /issues\/9140$/;
 const SESSION_ISSUE = /issues\/9301$/;
-const PATCH = /--method PATCH repos\/o\/r\/issues\/9140/;
+const PATCH = /PATCH .*\/issues\/9140/;
+
+const served = (body: string) => ({status: 200, body}) as const;
 
 const options = {
 	map: MAP,
@@ -39,30 +40,27 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: REPO},
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	over: Partial<typeof options> = {},
-) => Effect.runPromise(Effect.provide(runFork({...options, ...over}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, over: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runFork({...options, ...over}), fakeSeams(script).layer));
 
-const frontier = (kind: "research" | "prototype" | "decision") =>
+const frontier = (kind: "research" | "prototype" | "decision"): ReadonlyArray<Scripted> => [
+	[PERMISSION, served('{"permission":"write"}')],
+	[CHILDREN, served(`[{"number":${TICKET}}]`)],
 	[
-		[PERMISSION, okOut("write")],
-		[CHILDREN, okOut(`[{"number":${TICKET}}]`)],
-		[
-			TICKET_COMMENTS,
-			okOut(commentsJson([{id: 1, body: composeTicketMarker({map: MAP, kind, nonce: NONCE})}])),
-		],
-		[EDGES, okOut("[]")],
-		[
-			TICKET_ISSUE,
-			okOut(issueJson({number: TICKET, body: "does an invited çaylak start at 0 karma?"})),
-		],
-	] as const;
+		TICKET_COMMENTS,
+		served(commentsJson([{id: 1, body: composeTicketMarker({map: MAP, kind, nonce: NONCE})}])),
+	],
+	[EDGES, served("[]")],
+	[
+		TICKET_ISSUE,
+		served(issueJson({number: TICKET, body: "does an invited çaylak start at 0 karma?"})),
+	],
+];
 
-const mapOk = [
+const mapOk: Scripted = [
 	MAP_ISSUE,
-	okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
-] as const;
+	served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+];
 
 const forked = spliceSection(
 	parsed(MAP_BODY),
@@ -100,7 +98,7 @@ describe("runFork", () => {
 
 	it("exits 13 when --session is not a grilling session", async () => {
 		const out = await run([
-			[SESSION_ISSUE, okOut(issueJson({number: 9301}))],
+			[SESSION_ISSUE, served(issueJson({number: 9301}))],
 			...frontier("decision"),
 			mapOk,
 		]);
@@ -112,20 +110,20 @@ describe("runFork", () => {
 	it("exits 0, marks the ticket and renders the route onto the row", async () => {
 		const marker = composeForkMarker({map: MAP, ticket: TICKET, route: "session", issue: 9301});
 		const out = await run([
-			[POST, okOut('{"id":9,"html_url":"u"}')],
-			[GET_COMMENT, okOut(JSON.stringify({body: marker}))],
-			[SESSION_ISSUE, okOut(issueJson({number: 9301, labels: [SESSION_LABEL]}))],
-			[PATCH, okOut("{}")],
+			[POST, {status: 201, body: '{"id":9,"html_url":"u"}'}],
+			[GET_COMMENT, served(JSON.stringify({body: marker}))],
+			[SESSION_ISSUE, served(issueJson({number: 9301, labels: [SESSION_LABEL]}))],
+			[PATCH, served("{}")],
 			...frontier("decision"),
 			[
 				once(MAP_ISSUE),
-				okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+				served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
 			],
 			[
 				once(MAP_ISSUE),
-				okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+				served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
 			],
-			[MAP_ISSUE, okOut(issueJson({number: MAP, body: forked, labels: ["wayfinding:map"]}))],
+			[MAP_ISSUE, served(issueJson({number: MAP, body: forked, labels: ["wayfinding:map"]}))],
 		]);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
@@ -138,25 +136,25 @@ describe("runFork", () => {
 
 	it("records where the decision is being made and never the decision itself", async () => {
 		const marker = composeForkMarker({map: MAP, ticket: TICKET, route: "session", issue: 9301});
-		const shell = fakeShell([
-			[POST, okOut('{"id":9,"html_url":"u"}')],
-			[GET_COMMENT, okOut(JSON.stringify({body: marker}))],
-			[SESSION_ISSUE, okOut(issueJson({number: 9301, labels: [SESSION_LABEL]}))],
-			[PATCH, okOut("{}")],
+		const seams = fakeSeams([
+			[POST, {status: 201, body: '{"id":9,"html_url":"u"}'}],
+			[GET_COMMENT, served(JSON.stringify({body: marker}))],
+			[SESSION_ISSUE, served(issueJson({number: 9301, labels: [SESSION_LABEL]}))],
+			[PATCH, served("{}")],
 			...frontier("decision"),
 			[
 				once(MAP_ISSUE),
-				okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+				served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
 			],
 			[
 				once(MAP_ISSUE),
-				okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+				served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
 			],
-			[MAP_ISSUE, okOut(issueJson({number: MAP, body: forked, labels: ["wayfinding:map"]}))],
+			[MAP_ISSUE, served(issueJson({number: MAP, body: forked, labels: ["wayfinding:map"]}))],
 		]);
-		await Effect.runPromise(Effect.provide(runFork(options), shell.layer));
-		const patch = shell.calls.find((line) => line.includes("--method PATCH")) ?? "";
-		expect(patch).not.toContain("## Decisions\n-");
+		await Effect.runPromise(Effect.provide(runFork(options), seams.layer));
+		const patch = seams.bodies[seams.requests.findIndex((line) => line.startsWith("PATCH"))] ?? "";
+		expect(patch).not.toContain("## Decisions\\n-");
 		expect(patch).toContain("forked to #9301");
 	});
 });

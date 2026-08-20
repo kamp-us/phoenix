@@ -1,8 +1,7 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {describe, expect, it} from "vitest";
-import {fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {
 	anySessionCaller,
@@ -21,21 +20,24 @@ import {
 	SIBLING_NONCE,
 	SIBLING_TOKEN,
 	SIBLING_UUID,
+	served,
 } from "./fixtures.test-support.ts";
 
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
-const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
+const COMMENTS = /GET .*\/repos\/o\/r\/issues\/4312\/comments/;
+const PERM = /GET .*\/repos\/o\/r\/collaborators\/agent\/permission/;
+
+const WRITE = served({permission: "write"});
 
 const run = <A>(
 	effect: Effect.Effect<A, never, ChildProcessSpawner.ChildProcessSpawner>,
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-) => Effect.runPromise(Effect.provide(effect, fakeShell(script).layer));
+	script: ReadonlyArray<Scripted>,
+) => Effect.runPromise(Effect.provide(effect, fakeSeams(script).layer));
 
 /**
  * Two lanes, one session id, one number — the shape the session-only rule could not see (#6037). The
  * earlier marker is lane A's; lane B reads the same thread and must be told it lost.
  */
-const BOTH_LANES: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const BOTH_LANES: ReadonlyArray<Scripted> = [
 	[
 		COMMENTS,
 		comments(
@@ -43,7 +45,7 @@ const BOTH_LANES: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 			{id: 9002, body: marker("s-9f2e", SIBLING_UUID)},
 		),
 	],
-	[PERM, okOut("write\n")],
+	[PERM, WRITE],
 ];
 
 describe("resolveOwnership", () => {
@@ -71,7 +73,7 @@ describe("resolveOwnership", () => {
 			resolveOwnership("o/r", 4312, laneCaller("s-9f2e", NONCE, LANE_TOKEN)),
 			[
 				[COMMENTS, comments({id: 9001, body: marker("s-77aa", LANE_UUID)})],
-				[PERM, okOut("write\n")],
+				[PERM, WRITE],
 			],
 		);
 		expect(ownership._tag === "Foreign" && ownership.sameSession).toBe(false);
@@ -82,7 +84,7 @@ describe("resolveOwnership", () => {
 			resolveOwnership("o/r", 4312, laneCaller("s-9f2e", NONCE, LANE_TOKEN)),
 			[
 				[COMMENTS, comments({id: 9001, body: marker("s-9f2e", LANE_UUID)})],
-				[PERM, okOut("write\n")],
+				[PERM, WRITE],
 			],
 		);
 		expect(ownership._tag).toBe("Mine");

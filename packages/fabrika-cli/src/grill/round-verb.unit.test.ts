@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
 	BAD_SECTIONS,
@@ -26,11 +25,20 @@ import {
 } from "./fixtures.test-support.ts";
 import {runRound} from "./round-verb.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/9412$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/9412\/comments\?/;
-const PERMISSION = /^gh api repos\/o\/r\/collaborators\/([a-z-]+)\/permission/;
-const POST = /^gh api --method POST repos\/o\/r\/issues\/9412\/comments -f/;
-const READBACK = /^gh api repos\/o\/r\/issues\/comments\/\d+$/;
+const ISSUE = /^GET .*\/repos\/o\/r\/issues\/9412$/;
+const COMMENTS = /^GET .*\/repos\/o\/r\/issues\/9412\/comments\?/;
+const PERMISSION = /^GET .*\/repos\/o\/r\/collaborators\/[a-z-]+\/permission$/;
+const POST = /^POST .*\/repos\/o\/r\/issues\/9412\/comments$/;
+const READBACK = /^GET .*\/repos\/o\/r\/issues\/comments\/\d+$/;
+
+const served = (body: string, status = 200): HttpReply => ({status, body});
+const granted = (permission: string): HttpReply => served(JSON.stringify({permission}));
+const NOT_FOUND: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
+const GATEWAY: HttpReply = {status: 502, body: '{"message":"Bad gateway"}'};
+
+/** The bodies a write carried, in order — where a "what was posted" claim is read now. */
+const postedBodies = (seams: ReturnType<typeof fakeSeams>): ReadonlyArray<string> =>
+	seams.bodies.filter((_, at) => POST.test(seams.requests[at] ?? ""));
 
 const options = {
 	session: 9412,
@@ -42,26 +50,23 @@ const options = {
 };
 
 const postedAs = (id: number) =>
-	okOut(JSON.stringify({id, html_url: `https://example.test/issues/9412#issuecomment-${id}`}));
+	served(
+		JSON.stringify({id, html_url: `https://example.test/issues/9412#issuecomment-${id}`}),
+		201,
+	);
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
-	Effect.runPromise(Effect.provide(runRound({...options, ...overrides}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runRound({...options, ...overrides}), fakeSeams(script).layer));
 
 /**
  * A script whose read-back echoes the body the verb composed. The composed round is derived from the
  * same fixture builder the verb uses, so an echo is a real read-back rather than a rubber stamp.
  */
-const happy = (
-	comments: string = commentsPayload([]),
-	round = 1,
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-	[ISSUE, okOut(sessionPayload(9412))],
-	[COMMENTS, okOut(comments)],
+const happy = (comments: string = commentsPayload([]), round = 1): ReadonlyArray<Scripted> => [
+	[ISSUE, served(sessionPayload(9412))],
+	[COMMENTS, served(comments)],
 	[POST, postedAs(5234567890)],
-	[READBACK, okOut(JSON.stringify({body: roundComment(round)}))],
+	[READBACK, served(JSON.stringify({body: roundComment(round)}))],
 ];
 
 describe("runRound derives the round number and stamps the ids", () => {
@@ -101,16 +106,16 @@ describe("runRound validates the grammar before it writes", () => {
 		["a heading that is not a question block", "### Background\nprose\n"],
 		["a kind outside the set", "### 1 · musing\nWhat if?\n\n**Recommended:** x\n"],
 	])("refuses %s on BAD_SECTIONS with nothing posted", async (_case, text) => {
-		const shell = fakeShell(happy());
+		const seams = fakeSeams(happy());
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runRound({...options, stdin: Effect.succeed<StdinRead>({_tag: "Text", text})}),
-				shell.layer,
+				seams.layer,
 			),
 		);
 		expect(out.code).toBe(BAD_SECTIONS);
 		expect(out.stdout).toBe("");
-		expect(shell.calls.some((call) => POST.test(call))).toBe(false);
+		expect(seams.requests.some((request) => POST.test(request))).toBe(false);
 	});
 
 	it("refuses an empty stdin on its own code", async () => {
@@ -129,47 +134,47 @@ describe("runRound validates the grammar before it writes", () => {
 		["a bare @ path body", "@/Users/someone/round.md", BARE_AT_PATH],
 	])("refuses %s before any write", async (_case, text, code) => {
 		const stdin = Effect.succeed<StdinRead>({_tag: "Text", text});
-		const shell = fakeShell(happy());
-		const out = await Effect.runPromise(Effect.provide(runRound({...options, stdin}), shell.layer));
+		const seams = fakeSeams(happy());
+		const out = await Effect.runPromise(Effect.provide(runRound({...options, stdin}), seams.layer));
 		expect(out.code).toBe(code);
-		expect(shell.calls.some((call) => POST.test(call))).toBe(false);
+		expect(seams.requests.some((request) => POST.test(request))).toBe(false);
 	});
 });
 
 describe("runRound seats each read and write failure on its own code", () => {
 	it("refuses an absent session as proven, never as unreadable", async () => {
-		const out = await run([[ISSUE, errOut("gh: Not Found (HTTP 404)")]]);
+		const out = await run([[ISSUE, NOT_FOUND]]);
 		expect(out.code).toBe(NO_TARGET);
 	});
 
 	it("refuses an issue that is not a grilling session", async () => {
-		const out = await run([[ISSUE, okOut(sessionPayload(9412, {labels: ["bug"]}))]]);
+		const out = await run([[ISSUE, served(sessionPayload(9412, {labels: ["bug"]}))]]);
 		expect(out.code).toBe(NO_TARGET);
 	});
 
 	it("refuses a comment read that could not complete — the next round number is UNKNOWN", async () => {
-		const shell = fakeShell([
-			[ISSUE, okOut(sessionPayload(9412))],
-			[COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
+		const seams = fakeSeams([
+			[ISSUE, served(sessionPayload(9412))],
+			[COMMENTS, GATEWAY],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runRound(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runRound(options), seams.layer));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(shell.calls.some((call) => POST.test(call))).toBe(false);
+		expect(seams.requests.some((request) => POST.test(request))).toBe(false);
 	});
 
 	it("refuses a truncated comment page rather than answering short", async () => {
 		const out = await run([
-			[ISSUE, okOut(sessionPayload(9412))],
-			[COMMENTS, okOut(`${commentsPayload([])}[{"id":`)],
+			[ISSUE, served(sessionPayload(9412))],
+			[COMMENTS, served(`${commentsPayload([])}[{"id":`)],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
 	it("refuses a comment write that failed as UNKNOWN, never as 1", async () => {
 		const out = await run([
-			[ISSUE, okOut(sessionPayload(9412))],
-			[COMMENTS, okOut(commentsPayload([]))],
-			[POST, errOut("gh: Bad gateway (HTTP 502)")],
+			[ISSUE, served(sessionPayload(9412))],
+			[COMMENTS, served(commentsPayload([]))],
+			[POST, GATEWAY],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -177,10 +182,10 @@ describe("runRound seats each read and write failure on its own code", () => {
 
 	it("refuses a read-back that differs from what was sent", async () => {
 		const out = await run([
-			[ISSUE, okOut(sessionPayload(9412))],
-			[COMMENTS, okOut(commentsPayload([]))],
+			[ISSUE, served(sessionPayload(9412))],
+			[COMMENTS, served(commentsPayload([]))],
 			[POST, postedAs(5234567890)],
-			[READBACK, okOut(JSON.stringify({body: "something else"}))],
+			[READBACK, served(JSON.stringify({body: "something else"}))],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 	});
@@ -190,16 +195,16 @@ describe("runRound --supersedes retires a question", () => {
 	const bound = roundDigestOf(1);
 	const withRoundOne = commentsPayload([{id: 1, author: "acme-founder", body: roundComment(1)}]);
 
-	const supersedeScript = (comments: string): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-		[ISSUE, okOut(sessionPayload(9412))],
-		[COMMENTS, okOut(comments)],
-		[PERMISSION, okOut("write")],
+	const supersedeScript = (comments: string): ReadonlyArray<Scripted> => [
+		[ISSUE, served(sessionPayload(9412))],
+		[COMMENTS, served(comments)],
+		[PERMISSION, granted("write")],
 		[once(POST), postedAs(5234567890)],
-		[once(READBACK), okOut(JSON.stringify({body: roundComment(2)}))],
+		[once(READBACK), served(JSON.stringify({body: roundComment(2)}))],
 		[POST, postedAs(5234567891)],
 		[
 			READBACK,
-			okOut(
+			served(
 				JSON.stringify({
 					body: supersedeComment([{question: "R1.2", digest: bound, round: 2}]),
 				}),
@@ -208,9 +213,9 @@ describe("runRound --supersedes retires a question", () => {
 	];
 
 	it("writes the round first and the marker second, naming both ids", async () => {
-		const shell = fakeShell(supersedeScript(withRoundOne));
+		const seams = fakeSeams(supersedeScript(withRoundOne));
 		const out = await Effect.runPromise(
-			Effect.provide(runRound({...options, supersedes: ["R1.2"]}), shell.layer),
+			Effect.provide(runRound({...options, supersedes: ["R1.2"]}), seams.layer),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
@@ -219,17 +224,17 @@ describe("runRound --supersedes retires a question", () => {
 			comment: 5234567890,
 			supersedeComment: 5234567891,
 		});
-		const posts = shell.calls.filter((call) => POST.test(call));
+		const posts = postedBodies(seams);
 		expect(posts[0]).toContain("grill-round: 2");
 		expect(posts[1]).toContain("grill-superseded: R1.2");
 	});
 
 	it("binds the RETIRED question's round digest, not the retiring round's", async () => {
-		const shell = fakeShell(supersedeScript(withRoundOne));
+		const seams = fakeSeams(supersedeScript(withRoundOne));
 		await Effect.runPromise(
-			Effect.provide(runRound({...options, supersedes: ["R1.2"]}), shell.layer),
+			Effect.provide(runRound({...options, supersedes: ["R1.2"]}), seams.layer),
 		);
-		const marker = shell.calls.filter((call) => POST.test(call))[1] ?? "";
+		const marker = postedBodies(seams)[1] ?? "";
 		expect(marker).toContain(roundDigestOf(1));
 		expect(marker).not.toContain(roundDigestOf(2));
 	});
@@ -268,21 +273,21 @@ describe("runRound --supersedes retires a question", () => {
 				body: supersedeComment([{question: "R1.1", digest: bound, round: 2}]),
 			},
 		]);
-		const shell = fakeShell([
-			[ISSUE, okOut(sessionPayload(9412))],
-			[COMMENTS, okOut(comments)],
-			[PERMISSION, errOut("gh: Bad gateway (HTTP 502)")],
+		const seams = fakeSeams([
+			[ISSUE, served(sessionPayload(9412))],
+			[COMMENTS, served(comments)],
+			[PERMISSION, GATEWAY],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runRound({...options, supersedes: ["R1.2"]}), shell.layer),
+			Effect.provide(runRound({...options, supersedes: ["R1.2"]}), seams.layer),
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(shell.calls.some((call) => POST.test(call))).toBe(false);
+		expect(seams.requests.some((request) => POST.test(request))).toBe(false);
 	});
 
 	it("costs no ACL read at all when nothing is being retired", async () => {
-		const shell = fakeShell(happy(withRoundOne, 2));
-		await Effect.runPromise(Effect.provide(runRound(options), shell.layer));
-		expect(shell.calls.some((call) => PERMISSION.test(call))).toBe(false);
+		const seams = fakeSeams(happy(withRoundOne, 2));
+		await Effect.runPromise(Effect.provide(runRound(options), seams.layer));
+		expect(seams.requests.some((request) => PERMISSION.test(request))).toBe(false);
 	});
 });

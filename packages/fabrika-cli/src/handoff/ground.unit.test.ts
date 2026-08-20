@@ -1,8 +1,7 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import {GROUND, groundScript} from "./fixtures.test-support.ts";
 import {
 	COMPARED_FIELDS,
@@ -49,8 +48,8 @@ const WORKED = {
 
 const run = <A>(
 	effect: Effect.Effect<A, never, ChildProcessSpawner.ChildProcessSpawner>,
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-): Promise<A> => Effect.runPromise(Effect.provide(effect, fakeShell(script).layer));
+	script: ReadonlyArray<Scripted>,
+): Promise<A> => Effect.runPromise(Effect.provide(effect, fakeSeams(script).layer));
 
 describe("the digest pre-image", () => {
 	it("is the nineteen fields, in order, as the contract prints them", () => {
@@ -194,11 +193,11 @@ describe("the derivations", () => {
 	it("reports checks as none only over a rollup it read, never over one it could not", async () => {
 		expect(
 			await run(deriveChecks("o/r", "abc"), [
-				[/check-runs/, okOut('{"total_count":0,"check_runs":[]}')],
+				[/check-runs/, {status: 200, body: '{"total_count":0,"check_runs":[]}'}],
 			]),
 		).toMatchObject({value: "none"});
 		expect(
-			await run(deriveChecks("o/r", "abc"), [[/check-runs/, errOut("gh: Bad gateway (HTTP 502)")]]),
+			await run(deriveChecks("o/r", "abc"), [[/check-runs/, {status: 502, body: "{}"}]]),
 		).toMatchObject({_tag: "Failure"});
 	});
 

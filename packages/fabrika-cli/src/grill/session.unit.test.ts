@@ -1,6 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import type {CommentRecord} from "../io/issues.ts";
 import {
 	answerComment,
@@ -30,8 +30,12 @@ const comment = (id: number, author: string, body: string): CommentRecord => ({
 });
 
 const BOUND = roundDigestOf(1);
-const PERMISSION = /^gh api repos\/o\/r\/collaborators\/([a-z-]+)\/permission/;
-const ISSUE = /^gh api repos\/o\/r\/issues\/9412$/;
+const PERMISSION = /^GET .*\/repos\/o\/r\/collaborators\/[a-z-]+\/permission$/;
+const ISSUE = /^GET .*\/repos\/o\/r\/issues\/9412$/;
+
+const served = (payload: unknown): HttpReply => ({status: 200, body: JSON.stringify(payload)});
+const NOT_FOUND: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
+const GATEWAY: HttpReply = {status: 502, body: '{"message":"Bad gateway"}'};
 
 describe("normalizeTopic", () => {
 	it.each([
@@ -48,24 +52,24 @@ describe("normalizeTopic", () => {
 });
 
 describe("resolveSession splits absent from unreadable", () => {
-	const resolve = (script: Parameters<typeof fakeShell>[0]) =>
-		Effect.runPromise(Effect.provide(resolveSession("o/r", 9412), fakeShell(script).layer));
+	const resolve = (script: ReadonlyArray<Scripted>) =>
+		Effect.runPromise(Effect.provide(resolveSession("o/r", 9412), fakeSeams(script).layer));
 
 	it("resolves a labelled issue", async () => {
-		expect(await resolve([[ISSUE, okOut(sessionPayload(9412))]])).toMatchObject({_tag: "Session"});
+		expect(await resolve([[ISSUE, {status: 200, body: sessionPayload(9412)}]])).toMatchObject({
+			_tag: "Session",
+		});
 	});
 
 	it("treats an issue without the session label as absent, not as a session", async () => {
-		expect(await resolve([[ISSUE, okOut(sessionPayload(9412, {labels: ["bug"]}))]])).toEqual({
-			_tag: "Absent",
-		});
+		expect(
+			await resolve([[ISSUE, {status: 200, body: sessionPayload(9412, {labels: ["bug"]})}]]),
+		).toEqual({_tag: "Absent"});
 	});
 
 	it("keeps a 404 and a 502 apart", async () => {
-		expect(await resolve([[ISSUE, errOut("gh: Not Found (HTTP 404)")]])).toEqual({_tag: "Absent"});
-		expect(await resolve([[ISSUE, errOut("gh: Bad gateway (HTTP 502)")]])).toMatchObject({
-			_tag: "Unknown",
-		});
+		expect(await resolve([[ISSUE, NOT_FOUND]])).toEqual({_tag: "Absent"});
+		expect(await resolve([[ISSUE, GATEWAY]])).toMatchObject({_tag: "Unknown"});
 	});
 
 	it("names the label the whole group keys on", () => {
@@ -105,9 +109,11 @@ describe("scanning rounds", () => {
 });
 
 describe("scanMarkers resolves authority before it counts anything", () => {
-	const scan = (comments: ReadonlyArray<CommentRecord>, permission = okOut("write")) =>
+	const granted = (permission: string): HttpReply => served({permission});
+
+	const scan = (comments: ReadonlyArray<CommentRecord>, permission = granted("write")) =>
 		Effect.runPromise(
-			Effect.provide(scanMarkers("o/r", comments), fakeShell([[PERMISSION, permission]]).layer),
+			Effect.provide(scanMarkers("o/r", comments), fakeSeams([[PERMISSION, permission]]).layer),
 		);
 
 	it("counts a marker whose author resolves write+", async () => {
@@ -121,7 +127,7 @@ describe("scanMarkers resolves authority before it counts anything", () => {
 	it("disregards a marker whose author is below write, and says so", async () => {
 		const result = await scan(
 			[comment(3, "stranger", rulingComment("R1.2", BOUND))],
-			okOut("read"),
+			granted("read"),
 		);
 		if (result._tag !== "Scanned") throw new Error("expected a scan");
 		expect(result.scan.rulings).toEqual([]);
@@ -129,31 +135,28 @@ describe("scanMarkers resolves authority before it counts anything", () => {
 	});
 
 	it("returns UNKNOWN, naming the marker, when a permission read fails", async () => {
-		const result = await scan(
-			[comment(3, "acme-founder", rulingComment("R1.2", BOUND))],
-			errOut("gh: Bad gateway (HTTP 502)"),
-		);
+		const result = await scan([comment(3, "acme-founder", rulingComment("R1.2", BOUND))], GATEWAY);
 		expect(result).toMatchObject({_tag: "Unknown", login: "acme-founder", subject: "R1.2"});
 	});
 
 	it("resolves each distinct author once", async () => {
-		const shell = fakeShell([[PERMISSION, okOut("write")]]);
+		const seams = fakeSeams([[PERMISSION, granted("write")]]);
 		await Effect.runPromise(
 			Effect.provide(
 				scanMarkers("o/r", [
 					comment(3, "acme-founder", rulingComment("R1.2", BOUND)),
 					comment(4, "acme-founder", answerComment("R1.1", BOUND)),
 				]),
-				shell.layer,
+				seams.layer,
 			),
 		);
-		expect(shell.calls.filter((call) => PERMISSION.test(call))).toHaveLength(1);
+		expect(seams.requests.filter((request) => PERMISSION.test(request))).toHaveLength(1);
 	});
 
 	it("gates the supersede marker at the ACL too — clear is what a downstream skill keys on", async () => {
 		const result = await scan(
 			[comment(4, "stranger", supersedeComment([{question: "R1.2", digest: BOUND, round: 2}]))],
-			okOut("read"),
+			granted("read"),
 		);
 		if (result._tag !== "Scanned") throw new Error("expected a scan");
 		expect(retirements(result.scan).size).toBe(0);

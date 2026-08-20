@@ -1,6 +1,13 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeFs,
+	fakeSeams,
+	okOut,
+	type Scripted,
+	unconfigured,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	INCOMPLETE_SCAN,
@@ -32,7 +39,10 @@ import {
 } from "./fixtures.test-support.ts";
 import {NOT_CP_NOTICE, runScope} from "./scope-verb.ts";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
+const PULL = /^GET .*\/repos\/o\/r\/pulls\/4321$/;
+
+/** A fixture's canned JSON, served as the 200 the REST read now parses. */
+const served = (result: ExecResult) => ({status: 200, body: result.stdout});
 
 const options = {
 	pr: 4321 as number | null,
@@ -45,21 +55,16 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(
 		Effect.provide(
 			runScope({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, unconfigured),
+			Layer.merge(fakeSeams(script).layer, unconfigured),
 		),
 	);
 
-const happy = (
-	...rows: ReadonlyArray<readonly [string, string]>
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-	[PULL, pull({changedFiles: rows.length})],
+const happy = (...rows: ReadonlyArray<readonly [string, string]>): ReadonlyArray<Scripted> => [
+	[PULL, served(pull({changedFiles: rows.length}))],
 	...binding(),
 	[STATUS_AT(), statuses(...rows)],
 	[TREE_AT(), treeOf(...FULL_TREE)],
@@ -80,7 +85,7 @@ describe("runScope over a foreign repo's declared roots (#6296)", () => {
 			Effect.provide(
 				runScope({...options}),
 				Layer.merge(
-					fakeShell(happy(["M", "src/cart.ts"])).layer,
+					fakeSeams(happy(["M", "src/cart.ts"])).layer,
 					declaring({governedRoots: ["src/", ".fabrika.jsonc"]}).layer,
 				),
 			),
@@ -96,7 +101,7 @@ describe("runScope over a foreign repo's declared roots (#6296)", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runScope({...options}),
-				Layer.merge(fakeShell(GOVERNING).layer, declaring({governedRoots: 7}).layer),
+				Layer.merge(fakeSeams(GOVERNING).layer, declaring({governedRoots: 7}).layer),
 			),
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -157,7 +162,7 @@ describe("runScope", () => {
 
 	it("says on stderr, on every run, that this is not the §CP answer", async () => {
 		expect((await run(GOVERNING)).stderr).toContain(NOT_CP_NOTICE);
-		expect((await run([[PULL, errOut("gh: Not Found (HTTP 404)")]])).stderr).toContain(
+		expect((await run([[PULL, {status: 404, body: '{"message":"Not Found"}'}]])).stderr).toContain(
 			NOT_CP_NOTICE,
 		);
 	});
@@ -174,7 +179,7 @@ describe("runScope", () => {
 
 	it("names a root that is absent in this repository rather than counting it silently", async () => {
 		const out = await run([
-			[PULL, pull({changedFiles: 1})],
+			[PULL, served(pull({changedFiles: 1}))],
 			...binding(),
 			[STATUS_AT(), statuses(["M", ".decisions/0240-x.md"])],
 			[TREE_AT(), treeOf(".decisions/0240-x.md", "src/cart.ts")],
@@ -185,20 +190,20 @@ describe("runScope", () => {
 	});
 
 	it("refuses a PR proven absent on 7", async () => {
-		const out = await run([[PULL, errOut("gh: Not Found (HTTP 404)")]]);
+		const out = await run([[PULL, {status: 404, body: '{"message":"Not Found"}'}]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
 	});
 
 	it("refuses a closed PR, and a zero-file PR, on 7 — never `not-required`", async () => {
-		expect((await run([[PULL, pull({state: "closed"})]])).code).toBe(ZERO_SCOPE);
-		const empty = await run([[PULL, pull({changedFiles: 0})]]);
+		expect((await run([[PULL, served(pull({state: "closed"}))]])).code).toBe(ZERO_SCOPE);
+		const empty = await run([[PULL, served(pull({changedFiles: 0}))]]);
 		expect(empty.code).toBe(ZERO_SCOPE);
 		expect(empty.stderr.at(-2)).toContain("refusing to derive over an empty diff");
 	});
 
 	it("separates an UNREADABLE PR from an absent one — 11, never 7", async () => {
-		const out = await run([[PULL, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const out = await run([[PULL, {status: 502, body: "{}"}]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.code).not.toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-2)).toContain('is UNKNOWN, never "not-required"');
@@ -206,7 +211,7 @@ describe("runScope", () => {
 
 	it("phrases the binding failure in this verb's own noun", async () => {
 		const out = await run([
-			[PULL, pull()],
+			[PULL, served(pull())],
 			[/^git remote -v$/, okOut("origin\tgit@github.com:someone/else.git (fetch)\n")],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -217,7 +222,7 @@ describe("runScope", () => {
 
 	it("refuses a short changed-file read on 13, distinct from 11 and 7", async () => {
 		const out = await run([
-			[PULL, pull({changedFiles: 9})],
+			[PULL, served(pull({changedFiles: 9}))],
 			...binding(),
 			[STATUS_AT(), statuses(["M", "src/cart.ts"])],
 		]);
@@ -242,9 +247,7 @@ describe("runScope", () => {
 
 const ranged = {pr: null, base: RANGE_BASE, tip: RANGE_TIP};
 
-const overRange = (
-	...rows: ReadonlyArray<StatusRow>
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+const overRange = (...rows: ReadonlyArray<StatusRow>): ReadonlyArray<Scripted> => [
 	[MERGE_BASE_OF(), okOut(`${RANGE_MERGE_BASE}\n`)],
 	[STATUS_AT(RANGE_BASE, RANGE_TIP), statuses(...rows)],
 	// `--name-only` gives a rename its destination alone, which is a record's last field either way.
@@ -406,11 +409,11 @@ describe("runScope over a range", () => {
 	});
 
 	it("reads only the object database — no PR is resolved and nothing is checked out", async () => {
-		const fake = fakeShell(overRange(["M", "src/cart.ts"]));
+		const fake = fakeSeams(overRange(["M", "src/cart.ts"]));
 		await Effect.runPromise(
 			Effect.provide(runScope({...options, ...ranged}), Layer.merge(fake.layer, unconfigured)),
 		);
-		expect(fake.calls.some((call) => call.startsWith("gh "))).toBe(false);
+		expect(fake.requests).toEqual([]);
 		expect(fake.calls.some((call) => call.startsWith("git checkout"))).toBe(false);
 		expect(fake.calls).toContain(`git merge-base ${RANGE_BASE} ${RANGE_TIP}`);
 	});

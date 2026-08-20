@@ -1,8 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {comments, LANE_UUID, marker, LANE_TOKEN as TOKEN} from "../build/fixtures.test-support.ts";
-import {errOut, type HttpReply, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {type HttpReply, once} from "../fakes.test-support.ts";
 import {runCheck} from "./check-verb.ts";
 import {
 	CLAIM_NOT_MINE,
@@ -31,19 +30,23 @@ import {
 } from "./fixtures.test-support.ts";
 import {childrenEvidence, runFlip} from "./flip-verb.ts";
 
-const EPIC = /^gh api repos\/o\/r\/issues\/4300$/;
+const EPIC = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
 const SUBS = SUB_ISSUES;
 const CHILD = CHILD_AT(4301);
 const CYCLE = CYCLE_DOC;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4300\/comments/;
-const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
-const LABELS = /^gh api --paginate repos\/o\/r\/labels/;
-const ADD = /^gh api --method POST repos\/o\/r\/issues\/4301\/labels/;
-const REMOVE = /^gh api --method DELETE repos\/o\/r\/issues\/4301\/labels/;
-const ADD_EPIC = /^gh api --method POST repos\/o\/r\/issues\/4300\/labels/;
-const REMOVE_EPIC = /^gh api --method DELETE repos\/o\/r\/issues\/4300\/labels/;
+const COMMENTS = /^GET .*\/repos\/o\/r\/issues\/4300\/comments\?/;
+const PERM = /^GET .*\/repos\/o\/r\/collaborators\/agent\/permission/;
+const LABELS = /^GET .*\/repos\/o\/r\/labels\?/;
+const ADD = /^POST .*\/repos\/o\/r\/issues\/4301\/labels$/;
+const REMOVE = /^DELETE .*\/repos\/o\/r\/issues\/4301\/labels\//;
+const ADD_EPIC = /^POST .*\/repos\/o\/r\/issues\/4300\/labels$/;
+const REMOVE_EPIC = /^DELETE .*\/repos\/o\/r\/issues\/4300\/labels\//;
+/** Any label write at all — what an assertion that nothing was written reads. */
+const LABEL_WRITE = /^(POST|DELETE) .*\/labels/;
+const SERVED_LABELS: HttpReply = {status: 200, body: "[]"};
+const BAD_GATEWAY: HttpReply = {status: 502, body: '{"message":"Bad gateway"}'};
 
-const oneChildEpic = (labels: ReadonlyArray<string>): ExecResult =>
+const oneChildEpic = (labels: ReadonlyArray<string>): HttpReply =>
 	epic({
 		body: epicBody({dependencies: "- phase 1: #4301"}),
 		labels: labels.map((name) => ({name})),
@@ -61,7 +64,7 @@ const env = {
 
 const CLAIMED: ReadonlyArray<Scripted> = [
 	[COMMENTS, comments({id: 1, body: marker(SESSION, LANE_UUID)})],
-	[PERM, okOut("write\n")],
+	[PERM, {status: 200, body: '{"permission":"write"}'}],
 ];
 
 const PLANNED = child({number: 4301, labels: ["type:feature", "p1", "status:planned"]});
@@ -71,7 +74,7 @@ const TRIAGED = child({number: 4301, labels: ["type:feature", "p1", "status:tria
 const ledger = (
 	first: HttpReply,
 	reread: HttpReply,
-	epics: {first?: ExecResult; reread?: ExecResult} = {},
+	epics: {first?: HttpReply; reread?: HttpReply} = {},
 ): ReadonlyArray<Scripted> => [
 	[once(EPIC), epics.first ?? ONE_CHILD_EPIC],
 	[SUBS, subIssues(4301)],
@@ -102,7 +105,7 @@ const run = (digest: string, script: ReadonlyArray<Scripted>) => {
 			runFlip({number: 4300, digest, token: TOKEN, repo: null, env, cwd: CWD}),
 			seams.layer,
 		),
-	).then((outcome) => ({outcome, calls: seams.shell.calls, reads: seams.http.calls}));
+	).then((outcome) => ({outcome, calls: seams.http.calls}));
 };
 
 describe("runFlip", () => {
@@ -112,10 +115,10 @@ describe("runFlip", () => {
 			...CLAIMED,
 			...ledger(PLANNED, TRIAGED),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent", "type:feature")],
-			[ADD, okOut("[]")],
-			[REMOVE, okOut("[]")],
-			[ADD_EPIC, okOut("[]")],
-			[REMOVE_EPIC, okOut("[]")],
+			[ADD, SERVED_LABELS],
+			[REMOVE, SERVED_LABELS],
+			[ADD_EPIC, SERVED_LABELS],
+			[REMOVE_EPIC, SERVED_LABELS],
 		]);
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({
@@ -142,16 +145,16 @@ describe("runFlip", () => {
 			...CLAIMED,
 			...ledger(PLANNED, TRIAGED),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
-			[ADD, okOut("[]")],
-			[REMOVE, okOut("[]")],
-			[ADD_EPIC, okOut("[]")],
-			[REMOVE_EPIC, okOut("[]")],
+			[ADD, SERVED_LABELS],
+			[REMOVE, SERVED_LABELS],
+			[ADD_EPIC, SERVED_LABELS],
+			[REMOVE_EPIC, SERVED_LABELS],
 		];
-		const {calls, reads} = await run(digest, script);
+		const {calls} = await run(digest, script);
 		const childWrite = calls.findIndex((line) => REMOVE.test(line));
 		const epicAdd = calls.findIndex((line) => ADD_EPIC.test(line));
 		const epicRemove = calls.findIndex((line) => REMOVE_EPIC.test(line));
-		expect(reads.filter((line) => CHILD.test(line)).length).toBe(2);
+		expect(calls.filter((line) => CHILD.test(line)).length).toBe(2);
 		expect(epicAdd).toBeGreaterThan(childWrite);
 		expect(epicRemove).toBeGreaterThan(epicAdd);
 
@@ -161,10 +164,10 @@ describe("runFlip", () => {
 			...CLAIMED,
 			...ledger(PLANNED, {status: 502, body: '{"message":"Bad gateway"}'}),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
-			[ADD, okOut("[]")],
-			[REMOVE, okOut("[]")],
-			[ADD_EPIC, okOut("[]")],
-			[REMOVE_EPIC, okOut("[]")],
+			[ADD, SERVED_LABELS],
+			[REMOVE, SERVED_LABELS],
+			[ADD_EPIC, SERVED_LABELS],
+			[REMOVE_EPIC, SERVED_LABELS],
 		]);
 		expect(unread.calls.some((line) => ADD_EPIC.test(line))).toBe(false);
 	});
@@ -175,10 +178,10 @@ describe("runFlip", () => {
 			...CLAIMED,
 			...ledger(PLANNED, TRIAGED, {reread: ONE_CHILD_EPIC}),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
-			[ADD, okOut("[]")],
-			[REMOVE, okOut("[]")],
-			[ADD_EPIC, okOut("[]")],
-			[REMOVE_EPIC, errOut("gh: Bad gateway (HTTP 502)")],
+			[ADD, SERVED_LABELS],
+			[REMOVE, SERVED_LABELS],
+			[ADD_EPIC, SERVED_LABELS],
+			[REMOVE_EPIC, BAD_GATEWAY],
 		]);
 		expect(outcome.code).toBe(PARTIAL_FLIP);
 		expect(outcome.stdout).toBe("");
@@ -191,12 +194,12 @@ describe("runFlip", () => {
 		const digest = await digestOf(CLEAN_READ);
 		const {outcome} = await run(digest, [
 			...CLAIMED,
-			...ledger(PLANNED, TRIAGED, {reread: errOut("gh: Bad gateway (HTTP 502)")}),
+			...ledger(PLANNED, TRIAGED, {reread: BAD_GATEWAY}),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
-			[ADD, okOut("[]")],
-			[REMOVE, okOut("[]")],
-			[ADD_EPIC, okOut("[]")],
-			[REMOVE_EPIC, okOut("[]")],
+			[ADD, SERVED_LABELS],
+			[REMOVE, SERVED_LABELS],
+			[ADD_EPIC, SERVED_LABELS],
+			[REMOVE_EPIC, SERVED_LABELS],
 		]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toContain("could not re-read the epic #4300");
@@ -217,7 +220,7 @@ describe("runFlip", () => {
 		]);
 		expect(outcome.code).toBe(LABEL_ABSENT);
 		expect(outcome.stderr.at(-1)).toContain('label "ready-for:agent" is absent');
-		expect(calls.some((line) => /--method POST .*labels/.test(line))).toBe(false);
+		expect(calls.some((line) => /^POST .*\/labels/.test(line))).toBe(false);
 	});
 
 	/**
@@ -231,10 +234,10 @@ describe("runFlip", () => {
 			...CLAIMED,
 			...ledger(PLANNED, TRIAGED),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
-			[ADD, okOut("[]")],
-			[REMOVE, okOut("[]")],
-			[ADD_EPIC, okOut("[]")],
-			[REMOVE_EPIC, okOut("[]")],
+			[ADD, SERVED_LABELS],
+			[REMOVE, SERVED_LABELS],
+			[ADD_EPIC, SERVED_LABELS],
+			[REMOVE_EPIC, SERVED_LABELS],
 		]);
 		const add = calls.findIndex((line) => ADD.test(line));
 		const remove = calls.findIndex((line) => REMOVE.test(line));
@@ -265,7 +268,7 @@ describe("runFlip", () => {
 		]);
 		expect(outcome.code).toBe(FLOOR_DEFECTIVE);
 		expect(outcome.stdout).toBe("");
-		expect(calls.some((line) => /--method (POST|DELETE) .*labels/.test(line))).toBe(false);
+		expect(calls.some((line) => LABEL_WRITE.test(line))).toBe(false);
 	});
 
 	/** The TOCTOU answer: the gap between deciding and writing is closed by re-deciding. */
@@ -277,7 +280,7 @@ describe("runFlip", () => {
 		]);
 		expect(outcome.code).toBe(PLAN_MOVED);
 		expect(outcome.stderr.at(-1)).toContain("the plan moved since the check");
-		expect(calls.some((line) => /--method (POST|DELETE) .*labels/.test(line))).toBe(false);
+		expect(calls.some((line) => LABEL_WRITE.test(line))).toBe(false);
 	});
 
 	/**
@@ -293,7 +296,7 @@ describe("runFlip", () => {
 		]);
 		expect(outcome.code).toBe(LABEL_ABSENT);
 		expect(outcome.stderr.at(-1)).toContain('label "status:triaged" is absent');
-		expect(calls.some((line) => /--method POST .*labels/.test(line))).toBe(false);
+		expect(calls.some((line) => /^POST .*\/labels/.test(line))).toBe(false);
 	});
 
 	it("skips the vocabulary check when there is nothing to flip", async () => {
@@ -316,7 +319,7 @@ describe("runFlip", () => {
 			audience: {result: "already", observed: ["ready-for:agent", "type:epic"]},
 		});
 		expect(calls.some((line) => LABELS.test(line))).toBe(false);
-		expect(calls.some((line) => /--method (POST|DELETE) .*labels/.test(line))).toBe(false);
+		expect(calls.some((line) => LABEL_WRITE.test(line))).toBe(false);
 	});
 
 	/** #5680's shape: an epic planned and gated before #5832, re-gated to earn its audience label. */
@@ -332,8 +335,8 @@ describe("runFlip", () => {
 			...CLAIMED,
 			...ledger(already, already),
 			[LABELS, labelSet("ready-for:agent")],
-			[ADD_EPIC, okOut("[]")],
-			[REMOVE_EPIC, okOut("[]")],
+			[ADD_EPIC, SERVED_LABELS],
+			[REMOVE_EPIC, SERVED_LABELS],
 		]);
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({
@@ -359,8 +362,8 @@ describe("runFlip", () => {
 			...CLAIMED,
 			...ledger(PLANNED, stuck),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
-			[ADD, okOut("[]")],
-			[REMOVE, errOut("gh: Bad gateway (HTTP 502)")],
+			[ADD, SERVED_LABELS],
+			[REMOVE, BAD_GATEWAY],
 		]);
 		expect(outcome.code).toBe(PARTIAL_FLIP);
 		expect(outcome.stdout).toBe("");
@@ -374,8 +377,8 @@ describe("runFlip", () => {
 			...CLAIMED,
 			...ledger(PLANNED, {status: 502, body: '{"message":"Bad gateway"}'}),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
-			[ADD, okOut("[]")],
-			[REMOVE, okOut("[]")],
+			[ADD, SERVED_LABELS],
+			[REMOVE, SERVED_LABELS],
 		]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toContain("the outcome is UNKNOWN");
@@ -385,10 +388,10 @@ describe("runFlip", () => {
 		const {outcome, calls} = await run("4d90e1bb27ac", [
 			[EPIC, ONE_CHILD_EPIC],
 			[COMMENTS, comments({id: 1, body: marker("another-session", LANE_UUID)})],
-			[PERM, okOut("write\n")],
+			[PERM, {status: 200, body: '{"permission":"write"}'}],
 		]);
 		expect(outcome.code).toBe(CLAIM_NOT_MINE);
-		expect(calls.some((line) => /--method/.test(line))).toBe(false);
+		expect(calls.some((line) => !line.startsWith("GET "))).toBe(false);
 	});
 
 	it("refuses 10 on a --digest that is not 12 lowercase hex, before any read", async () => {

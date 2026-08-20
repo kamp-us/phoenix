@@ -1,12 +1,11 @@
 /**
- * The canned `gh` and `git` responses the `build` verb tests script their spawner with.
+ * The canned GitHub and `git` answers the `build` verb tests script their seams with.
  *
  * They are shaped like the real payloads rather than like the parsers, so a parser that starts reading
  * a different field still has to find it here — a fixture trimmed to exactly what the code reads today
  * stops being able to catch tomorrow's misread.
  */
 import {type HttpReply, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
 
 /**
  * The credential a ported test hands its verb.
@@ -59,8 +58,8 @@ export const issuePayload = (overrides: Record<string, unknown> = {}): Record<st
 	...overrides,
 });
 
-export const issue = (overrides: Record<string, unknown> = {}): ExecResult =>
-	okOut(JSON.stringify(issuePayload(overrides)));
+export const issue = (overrides: Record<string, unknown> = {}): HttpReply =>
+	served(issuePayload(overrides));
 
 export const pullPayload = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
 	number: 4318,
@@ -73,51 +72,53 @@ export const pullPayload = (overrides: Record<string, unknown> = {}): Record<str
 	...overrides,
 });
 
-export const pull = (overrides: Record<string, unknown> = {}): ExecResult =>
-	okOut(JSON.stringify(pullPayload(overrides)));
+export const pull = (overrides: Record<string, unknown> = {}): HttpReply =>
+	served(pullPayload(overrides));
+
+export interface CommentFixture {
+	readonly id: number;
+	readonly body: string;
+	readonly author?: string;
+	readonly createdAt?: string;
+}
+
+const commentPayload = (rows: ReadonlyArray<CommentFixture>): ReadonlyArray<unknown> =>
+	rows.map((row) => ({
+		id: row.id,
+		body: row.body,
+		user: {login: row.author ?? "agent"},
+		created_at: row.createdAt ?? "2026-08-09T00:00:00Z",
+	}));
 
 /** One paged `issues/<n>/comments` response. */
-export const comments = (
-	...rows: ReadonlyArray<{id: number; body: string; author?: string; createdAt?: string}>
-): ExecResult =>
-	okOut(
-		JSON.stringify(
-			rows.map((row) => ({
-				id: row.id,
-				body: row.body,
-				user: {login: row.author ?? "agent"},
-				created_at: row.createdAt ?? "2026-08-09T00:00:00Z",
-			})),
-		),
-	);
+export const comments = (...rows: ReadonlyArray<CommentFixture>): HttpReply =>
+	served(commentPayload(rows));
 
 /**
- * The same response, cut off before its last comment closes — what a killed `gh --paginate` leaves
- * on stdout, and the read a claim must never resolve ownership from.
+ * The same response, cut off before its last comment closes — a 200 whose bytes are not the list
+ * they claim to be, and the read a claim must never resolve ownership from.
  */
-export const truncatedComments = (
-	...rows: ReadonlyArray<{id: number; body: string; author?: string; createdAt?: string}>
-): ExecResult => {
-	const whole = comments(...rows).stdout;
-	return okOut(whole.slice(0, whole.lastIndexOf("}")));
+export const truncatedComments = (...rows: ReadonlyArray<CommentFixture>): HttpReply => {
+	const whole = JSON.stringify(commentPayload(rows));
+	return {status: 200, body: whole.slice(0, whole.lastIndexOf("}"))};
 };
 
 /**
  * Every `blocked_by` edge list answering empty — the unblocked board, for a test about some other
  * axis.
  *
- * {@link fakeShell} resolves by first match, so this belongs LAST in a script: a test that scripts a
+ * The fakes resolve by first match, so this belongs LAST in a script: a test that scripts a
  * specific issue's edges wins over it. Without it every claim and every pool candidate reads an
- * unscripted command, and the blockedness gate correctly seats that as UNKNOWN.
+ * unscripted request, and the blockedness gate correctly seats that as UNKNOWN.
  */
-export const NO_BLOCKERS: readonly [RegExp, ExecResult] = [
-	/^gh api --paginate repos\/[^ ]+\/issues\/\d+\/dependencies\/blocked_by/,
-	okOut("[]"),
+export const NO_BLOCKERS: readonly [RegExp, HttpReply] = [
+	/GET .*\/issues\/\d+\/dependencies\/blocked_by/,
+	served([]),
 ];
 
 /** The same edge list, naming one blocker — pair it with that blocker's own `issues/<n>` read. */
-export const blockedBy = (...blockers: ReadonlyArray<number>): ExecResult =>
-	okOut(JSON.stringify(blockers.map((number) => ({number, state: "open"}))));
+export const blockedBy = (...blockers: ReadonlyArray<number>): HttpReply =>
+	served(blockers.map((number) => ({number, state: "open"})));
 
 /**
  * A body carrying the conforming block — what a triaged, agent-ready issue looks like.

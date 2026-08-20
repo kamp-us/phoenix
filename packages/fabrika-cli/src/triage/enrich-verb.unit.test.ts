@@ -1,9 +1,15 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {COMMENTS, claimPage, EXPIRED, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
+import {
+	COMMENTS,
+	claimPage,
+	EXPIRED,
+	type GuardedSeams,
+	guardedShell,
+	LIVE,
+} from "./claim-fixtures.test-support.ts";
 import {
 	BARE_AT_PATH,
 	CLAIMED_ELSEWHERE,
@@ -18,26 +24,31 @@ import {
 import {MARKER_RE, renderMarker, SUMMARY_LINE} from "./enrich.ts";
 import {runEnrich} from "./enrich-verb.ts";
 
-const READ = /^gh api repos\/o\/r\/issues\/4312$/;
-const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/4312 -f body=/;
+const READ = /GET .*\/repos\/o\/r\/issues\/4312$/;
+const PATCH = /PATCH .*\/repos\/o\/r\/issues\/4312$/;
+
+const ACCEPTED: HttpReply = {status: 200, body: "{}"};
+const UNREADABLE: HttpReply = {status: 502, body: "{}"};
+const NOT_FOUND: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
+const WRITE_FAILED: HttpReply = {status: 500, body: "{}"};
 
 const ORIGINAL = "## Summary\n\nThe editor loses focus after a save.";
 const REWRITE = "## What to build\n\nKeep focus on the editor across a save.";
 const PITCH =
 	"**Problem:** yazars lose their place\n**Arc:** fabrika campaign\n**Appetite:** 2 cycles\n**Rabbit-holes:** none\n**No-gos:** no rewrite";
 
-const issue = (body: string): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: 4312,
-			title: "t",
-			body,
-			state: "open",
-			labels: [],
-			html_url: "https://example.test/issues/4312",
-			milestone: null,
-		}),
-	);
+const issue = (body: string): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: 4312,
+		title: "t",
+		body,
+		state: "open",
+		labels: [],
+		html_url: "https://example.test/issues/4312",
+		milestone: null,
+	}),
+});
 
 const options = {
 	issue: 4312,
@@ -49,9 +60,12 @@ const options = {
 };
 
 /** The body the PATCH carried, or `null` when the verb wrote nothing. */
-const written = (calls: ReadonlyArray<string>): string | null => {
-	const call = calls.find((line) => PATCH.test(line));
-	return call === undefined ? null : call.slice(call.indexOf(" -f body=") + " -f body=".length);
+const written = (seams: GuardedSeams): string | null => {
+	const at = seams.requests.findIndex((line) => PATCH.test(line));
+	if (at < 0) return null;
+	const sent: unknown = JSON.parse(seams.bodies[at] ?? "{}");
+	const body = (sent as {readonly body?: unknown}).body;
+	return typeof body === "string" ? body : null;
 };
 
 /**
@@ -63,29 +77,26 @@ const written = (calls: ReadonlyArray<string>): string | null => {
 const run = async (before: string, overrides: Partial<typeof options> = {}) => {
 	const shell = guardedShell([
 		[once(READ), issue(before)],
-		[PATCH, okOut("{}")],
+		[PATCH, ACCEPTED],
 	]);
 	// Two passes: the first to learn what the verb writes, the second to feed it back as the read-back.
 	const probe = await Effect.runPromise(
 		Effect.provide(runEnrich({...options, ...overrides}), shell.layer),
 	);
-	const patched = written(shell.calls);
-	if (patched === null) return {outcome: probe, body: null, calls: shell.calls};
+	const patched = written(shell);
+	if (patched === null) return {outcome: probe, body: null, requests: shell.requests};
 	const echoing = guardedShell([
 		[once(READ), issue(before)],
-		[PATCH, okOut("{}")],
+		[PATCH, ACCEPTED],
 		[READ, issue(patched)],
 	]);
 	const outcome = await Effect.runPromise(
 		Effect.provide(runEnrich({...options, ...overrides}), echoing.layer),
 	);
-	return {outcome, body: patched, calls: echoing.calls};
+	return {outcome, body: patched, requests: echoing.requests};
 };
 
-const runScripted = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
+const runScripted = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(
 		Effect.provide(runEnrich({...options, ...overrides}), guardedShell(script).layer),
 	);
@@ -287,7 +298,7 @@ describe("runEnrich — the composed body's criteria block must be one the wire 
 		);
 		expect(outcome.code).toBe(MALFORMED_CRITERIA);
 		expect(outcome.stderr.at(-1)).toContain("heading level 2, expected 3");
-		expect(shell.calls.some((line) => PATCH.test(line))).toBe(false);
+		expect(shell.requests.some((line) => PATCH.test(line))).toBe(false);
 	});
 
 	it("accepts a conforming level-3 block", async () => {
@@ -331,7 +342,7 @@ describe("runEnrich — the composed body's criteria block must be one the wire 
 			),
 		);
 		expect(outcome.code).toBe(MALFORMED_CRITERIA);
-		expect(shell.calls.some((line) => PATCH.test(line))).toBe(false);
+		expect(shell.requests.some((line) => PATCH.test(line))).toBe(false);
 	});
 });
 
@@ -353,7 +364,7 @@ describe("runEnrich — refusals", () => {
 			),
 		);
 		expect(outcome.code).toBe(EMPTY_STDIN);
-		expect(shell.calls).toEqual([]);
+		expect(shell.requests).toEqual([]);
 	});
 
 	it("refuses a bare @ reference on 6", async () => {
@@ -379,21 +390,21 @@ describe("runEnrich — refusals", () => {
 		);
 		expect(outcome.code).toBe(LEAKED_PATH);
 		expect(outcome.stderr.at(-1)).toContain("rewrite it repo-relative");
-		expect(shell.calls.some((line) => PATCH.test(line))).toBe(false);
+		expect(shell.requests.some((line) => PATCH.test(line))).toBe(false);
 	});
 
 	it("refuses an issue proven absent on 7", async () => {
-		const outcome = await runScripted([[READ, errOut("gh: Not Found (HTTP 404)")]]);
+		const outcome = await runScripted([[READ, NOT_FOUND]]);
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.at(-1)).toBe("triage enrich: issue #4312 not found in o/r.");
 	});
 
 	it("separates an UNREADABLE issue from an absent one, and writes nothing", async () => {
-		const shell = guardedShell([[READ, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const shell = guardedShell([[READ, UNREADABLE]]);
 		const outcome = await Effect.runPromise(Effect.provide(runEnrich(options), shell.layer));
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toContain("an original that was never read");
-		expect(shell.calls.some((line) => PATCH.test(line))).toBe(false);
+		expect(shell.requests.some((line) => PATCH.test(line))).toBe(false);
 	});
 
 	it("refuses an EMPTY body rather than preserving nothing as though it were the record", async () => {
@@ -401,13 +412,13 @@ describe("runEnrich — refusals", () => {
 		const outcome = await Effect.runPromise(Effect.provide(runEnrich(options), shell.layer));
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.at(-1)).toContain("there is no original to preserve");
-		expect(shell.calls.some((line) => PATCH.test(line))).toBe(false);
+		expect(shell.requests.some((line) => PATCH.test(line))).toBe(false);
 	});
 
 	it("reports a failed PATCH as UNKNOWN on 8, never as a failure to write", async () => {
 		const outcome = await runScripted([
 			[READ, issue(ORIGINAL)],
-			[PATCH, errOut("gh: timeout")],
+			[PATCH, WRITE_FAILED],
 		]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 		expect(outcome.stdout).toBe("");
@@ -417,7 +428,7 @@ describe("runEnrich — refusals", () => {
 	it("refuses on 9 when the read-back does not match what was written", async () => {
 		const outcome = await runScripted([
 			[once(READ), issue(ORIGINAL)],
-			[PATCH, okOut("{}")],
+			[PATCH, ACCEPTED],
 			[READ, issue("something else entirely")],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
@@ -428,8 +439,8 @@ describe("runEnrich — refusals", () => {
 	it("refuses on 9 when the read-back itself fails", async () => {
 		const outcome = await runScripted([
 			[once(READ), issue(ORIGINAL)],
-			[PATCH, okOut("{}")],
-			[READ, errOut("gh: Bad gateway (HTTP 502)")],
+			[PATCH, ACCEPTED],
+			[READ, UNREADABLE],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
 		expect(outcome.stderr.at(-1)).toContain("could not be read back");
@@ -439,7 +450,7 @@ describe("runEnrich — refusals", () => {
 		const composed = `${REWRITE}\n\n---\n\n${renderMarker(4312, "rewrite")}\n<details>\n${SUMMARY_LINE.rewrite}\n\n${ORIGINAL}\n\n</details>\n`;
 		const outcome = await runScripted([
 			[once(READ), issue(ORIGINAL)],
-			[PATCH, okOut("{}")],
+			[PATCH, ACCEPTED],
 			[READ, issue(`${composed.replace(/\n/g, "\r\n")}\r\n\r\n`)],
 		]);
 		expect(outcome.code).toBe(0);
@@ -452,7 +463,7 @@ describe("runEnrich — refusals", () => {
 			Effect.provide(runEnrich({...options, env: {}}), shell.layer),
 		);
 		expect(outcome.code).toBe(1);
-		expect(shell.calls.some((line) => PATCH.test(line))).toBe(false);
+		expect(shell.requests.some((line) => PATCH.test(line))).toBe(false);
 	});
 });
 
@@ -464,8 +475,9 @@ describe("runEnrich — the target guard", () => {
 		string,
 		string | undefined
 	>;
-	const closed = okOut(
-		JSON.stringify({
+	const closed: HttpReply = {
+		status: 200,
+		body: JSON.stringify({
 			number: 4312,
 			title: "t",
 			body: ORIGINAL,
@@ -474,14 +486,14 @@ describe("runEnrich — the target guard", () => {
 			html_url: "https://example.test/issues/4312",
 			milestone: null,
 		}),
-	);
+	};
 
-	const guard = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
+	const guard = async (script: ReadonlyArray<Scripted>) => {
 		const shell = guardedShell(script);
 		const outcome = await Effect.runPromise(
 			Effect.provide(runEnrich({...options, env: mine}), shell.layer),
 		);
-		return {outcome, patched: shell.calls.some((line) => PATCH.test(line))};
+		return {outcome, patched: shell.requests.some((line) => PATCH.test(line))};
 	};
 
 	it("refuses a closed issue on 7 and writes nothing", async () => {
@@ -494,7 +506,7 @@ describe("runEnrich — the target guard", () => {
 		const {outcome, patched} = await guard([
 			[READ, issue(ORIGINAL)],
 			[COMMENTS, claimPage({session: THEIRS, createdAt: LIVE})],
-			[PATCH, okOut("{}")],
+			[PATCH, ACCEPTED],
 		]);
 		expect(outcome.code).toBe(CLAIMED_ELSEWHERE);
 		expect(patched).toBe(false);
@@ -504,7 +516,7 @@ describe("runEnrich — the target guard", () => {
 		const {patched} = await guard([
 			[once(READ), issue(ORIGINAL)],
 			[COMMENTS, claimPage({session: MINE, createdAt: LIVE})],
-			[PATCH, okOut("{}")],
+			[PATCH, ACCEPTED],
 			[READ, issue(ORIGINAL)],
 		]);
 		expect(patched).toBe(true);
@@ -513,7 +525,7 @@ describe("runEnrich — the target guard", () => {
 	it("writes over an issue nobody has claimed", async () => {
 		const {patched} = await guard([
 			[once(READ), issue(ORIGINAL)],
-			[PATCH, okOut("{}")],
+			[PATCH, ACCEPTED],
 			[READ, issue(ORIGINAL)],
 		]);
 		expect(patched).toBe(true);
@@ -523,7 +535,7 @@ describe("runEnrich — the target guard", () => {
 		const {patched} = await guard([
 			[once(READ), issue(ORIGINAL)],
 			[COMMENTS, claimPage({session: THEIRS, createdAt: EXPIRED})],
-			[PATCH, okOut("{}")],
+			[PATCH, ACCEPTED],
 			[READ, issue(ORIGINAL)],
 		]);
 		expect(patched).toBe(true);

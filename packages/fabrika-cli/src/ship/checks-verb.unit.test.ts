@@ -1,13 +1,13 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeHttp, fakeShell, type HttpReply, okOut} from "../fakes.test-support.ts";
+import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {rollupFor, runChecks} from "./checks-verb.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {checkRuns, ENV, HEAD, pull, runsTotal, workflows} from "./fixtures.test-support.ts";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-const COMMIT = /^gh api repos\/o\/r\/commits\/[0-9a-f]+ --jq \.sha$/;
+const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4321$/;
+const COMMIT = /^GET \S+\/repos\/o\/r\/commits\/[0-9a-f]+$/;
 const RUNS = /\/repos\/o\/r\/commits\/[0-9a-f]+\/check-runs/;
 const WORKFLOWS = /\/repos\/o\/r\/actions\/workflows/;
 const RUN_COUNT = /\/repos\/o\/r\/actions\/runs\?head_sha=/;
@@ -36,22 +36,22 @@ const options = {
 const CONFIG = "/repo/.fabrika.jsonc";
 
 const run = (
-	shell: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]>,
+	shell: ReadonlyArray<Scripted>,
+	http: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	files: Readonly<Record<string, string | null>> = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runChecks({...options, ...overrides}),
-			Layer.mergeAll(fakeShell(shell).layer, fakeHttp(http).layer, fakeFs({files}).layer),
+			Layer.merge(fakeSeams([...shell, ...http]).layer, fakeFs({files}).layer),
 		),
 	);
 
-/** The PR and the commit probe, which both still shell out to `gh`. */
-const found: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[PULL, pull()],
-	[COMMIT, okOut(HEAD)],
+/** The PR and the commit probe — a present PR at a commit the repository holds. */
+const found: ReadonlyArray<Scripted> = [
+	[PULL, served(pull())],
+	[COMMIT, {status: 200, body: JSON.stringify({sha: HEAD})}],
 ];
 
 const noRun = (name: string, status: string, conclusion: string | null = null) => ({
@@ -251,8 +251,8 @@ describe("runChecks", () => {
 	it("refuses a --sha proven absent on 7", async () => {
 		const out = await run(
 			[
-				[PULL, pull()],
-				[COMMIT, errOut("gh: Not Found (HTTP 404)")],
+				[PULL, served(pull())],
+				[COMMIT, {status: 404, body: '{"message":"Not Found"}'}],
 			],
 			[],
 		);
@@ -262,7 +262,7 @@ describe("runChecks", () => {
 });
 
 describe("the no-producer split", () => {
-	const noWorkflows: ReadonlyArray<readonly [RegExp, HttpReply]> = [
+	const noWorkflows: ReadonlyArray<Scripted> = [
 		[RUNS, served(checkRuns(0, []))],
 		[WORKFLOWS, served(workflows())],
 		[RUN_COUNT, served(runsTotal(0))],

@@ -1,7 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {
 	INVALID_CAPTURE,
 	NO_PREVIEW,
@@ -18,34 +17,34 @@ import {type RenderLeg, runRender, type SurfaceRender} from "./render-verb.ts";
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const PREVIEW = "https://pr-4321-web.example.test";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
+const PULL = /GET .*\/repos\/o\/r\/pulls\/4321\b/;
+const COMMENTS = /GET .*\/repos\/o\/r\/issues\/4321\/comments/;
 
-const pull = (state = "open", head = HEAD): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: 4321,
-			state,
-			head: {sha: head},
-			base: {ref: "main"},
-			body: "",
-			changed_files: 2,
-			comments: 1,
-		}),
-	);
+const pull = (state = "open", head = HEAD): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: 4321,
+		state,
+		head: {sha: head},
+		base: {ref: "main"},
+		body: "",
+		changed_files: 2,
+		comments: 1,
+	}),
+});
 
-const announcement = (sha: string = HEAD.slice(0, 7)): ExecResult =>
-	okOut(
-		JSON.stringify([
-			{
-				id: 7,
-				user: {login: "kampus-bot"},
-				created_at: "2026-08-09T00:00:00Z",
-				updated_at: "2026-08-09T00:00:00Z",
-				body: `<!-- preview-deploy:web -->\n- **web** — Stage \`pr-4321\` → ${PREVIEW} <sub>(${sha})</sub>`,
-			},
-		]),
-	);
+const announcement = (sha: string = HEAD.slice(0, 7)): HttpReply => ({
+	status: 200,
+	body: JSON.stringify([
+		{
+			id: 7,
+			user: {login: "kampus-bot"},
+			created_at: "2026-08-09T00:00:00Z",
+			updated_at: "2026-08-09T00:00:00Z",
+			body: `<!-- preview-deploy:web -->\n- **web** — Stage \`pr-4321\` → ${PREVIEW} <sub>(${sha})</sub>`,
+		},
+	]),
+});
 
 const rendered = (surface: string, outDir: string): SurfaceRender => ({
 	_tag: "Rendered",
@@ -76,20 +75,17 @@ const options = {
 	render: legOf({}),
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) => {
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
 	const fs = fakeFs({});
 	return Effect.runPromise(
 		Effect.provide(
 			runRender({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, fs.layer),
+			Layer.merge(fakeSeams(script).layer, fs.layer),
 		),
 	).then((outcome) => ({outcome, written: fs.written}));
 };
 
-const happy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+const happy = (): ReadonlyArray<Scripted> => [
 	[PULL, pull()],
 	[COMMENTS, announcement()],
 ];
@@ -159,11 +155,12 @@ describe("runRender", () => {
 	});
 
 	it("proves CANT-SEE (16) only when no comment carries the preview anchor", async () => {
-		const none = okOut(
-			JSON.stringify([
+		const none: HttpReply = {
+			status: 200,
+			body: JSON.stringify([
 				{id: 1, user: {login: "x"}, created_at: "", updated_at: "", body: "looks fine"},
 			]),
-		);
+		};
 		const {outcome} = await run([
 			[PULL, pull()],
 			[COMMENTS, none],
@@ -172,8 +169,9 @@ describe("runRender", () => {
 	});
 
 	it("calls a malformed announcement UNKNOWN (11), never absent", async () => {
-		const malformed = okOut(
-			JSON.stringify([
+		const malformed: HttpReply = {
+			status: 200,
+			body: JSON.stringify([
 				{
 					id: 1,
 					user: {login: "x"},
@@ -182,7 +180,7 @@ describe("runRender", () => {
 					body: "<!-- preview-deploy:web -->\n- **web** — the deploy failed",
 				},
 			]),
-		);
+		};
 		const {outcome} = await run([
 			[PULL, pull()],
 			[COMMENTS, malformed],

@@ -1,6 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, type okOut} from "../fakes.test-support.ts";
+import type {Scripted} from "../fakes.test-support.ts";
 import type {IssueRecord} from "../io/issues.ts";
 import {DEFAULT_TTL_MINUTES} from "./claim.ts";
 import {COMMENTS, claimPage, EXPIRED, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
@@ -32,7 +32,7 @@ const said = (outcome: {readonly stderr: ReadonlyArray<string>} | null): string 
 	(outcome?.stderr ?? []).join("\n");
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]>,
+	script: ReadonlyArray<Scripted>,
 	over: {readonly state?: "open" | "closed"; readonly session?: string} = {},
 ) =>
 	Effect.runPromise(
@@ -112,7 +112,7 @@ describe("guardTarget", () => {
 			),
 		);
 		expect(outcome?.code).toBe(ZERO_SCOPE);
-		expect(shell.calls).toEqual([]);
+		expect(shell.requests).toEqual([]);
 	});
 
 	it("names the target by the caller's noun", async () => {
@@ -153,7 +153,7 @@ describe("guardTarget", () => {
 	});
 
 	it("refuses on 11 when the comment read fails — never a pass", async () => {
-		const outcome = await run([[COMMENTS, errOut("gh: Bad gateway (HTTP 502)")]], {session: MINE});
+		const outcome = await run([[COMMENTS, {status: 502, body: "{}"}]], {session: MINE});
 		expect(outcome?.code).toBe(PRECONDITION_UNKNOWN);
 	});
 

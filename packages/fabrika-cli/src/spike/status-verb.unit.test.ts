@@ -1,7 +1,13 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, type FakeFsOptions, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {
+	errOut,
+	type FakeFsOptions,
+	fakeFs,
+	fakeSeams,
+	okOut,
+	type Scripted,
+} from "../fakes.test-support.ts";
 import {captureMarker} from "./bodies.ts";
 import {MALFORMED_RECORD, OFF_VOCABULARY, READ_OR_EXEC_UNKNOWN} from "./codes.ts";
 import {
@@ -31,21 +37,21 @@ const resident: FakeFsOptions = {
 
 const options = {nonce: NONCE, repo: null as string | null, env: ENV, tmpRoot: TMP_ROOT};
 
-const happy: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const happy: ReadonlyArray<Scripted> = [
 	[STATUS, okOut("")],
-	[ISSUE, okOut(issuePayload())],
-	[COMMENTS, okOut(commentsPayload([]))],
+	[ISSUE, {status: 200, body: issuePayload()}],
+	[COMMENTS, {status: 200, body: commentsPayload([])}],
 ];
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	fs: FakeFsOptions = resident,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runStatus({...options, ...overrides}),
-			Layer.merge(fakeFs(fs).layer, fakeShell(script).layer),
+			Layer.merge(fakeFs(fs).layer, fakeSeams(script).layer),
 		),
 	);
 
@@ -102,8 +108,11 @@ describe("runStatus reports per-field state inside exit 0", () => {
 	it("reports a captured spike", async () => {
 		const outcome = await run([
 			[STATUS, okOut("")],
-			[ISSUE, okOut(issuePayload({state: "closed"}))],
-			[COMMENTS, okOut(commentsPayload([{id: 1, body: captureMarker(NONCE, ONE_RUN_DIGEST)}]))],
+			[ISSUE, {status: 200, body: issuePayload({state: "closed"})}],
+			[
+				COMMENTS,
+				{status: 200, body: commentsPayload([{id: 1, body: captureMarker(NONCE, ONE_RUN_DIGEST)}])},
+			],
 		]);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({spikeState: "closed", captured: true});
 	});
@@ -111,8 +120,8 @@ describe("runStatus reports per-field state inside exit 0", () => {
 	it("reports treeMatched as information, never as a verdict", async () => {
 		const outcome = await run([
 			[STATUS, okOut("?? probe.ts\n")],
-			[ISSUE, okOut(issuePayload())],
-			[COMMENTS, okOut(commentsPayload([]))],
+			[ISSUE, {status: 200, body: issuePayload()}],
+			[COMMENTS, {status: 200, body: commentsPayload([])}],
 		]);
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout).treeMatched).toBe(false);
@@ -151,7 +160,7 @@ describe("the near-totality is bounded by ADR 0092", () => {
 	it("refuses an unreadable spike state on 11 rather than reporting a default", async () => {
 		const outcome = await run([
 			[STATUS, okOut("")],
-			[ISSUE, errOut("gh: Bad gateway (HTTP 502)")],
+			[ISSUE, {status: 502, body: "{}"}],
 		]);
 		expect(outcome.code).toBe(READ_OR_EXEC_UNKNOWN);
 		expect(outcome.stdout).toBe("");
@@ -172,7 +181,7 @@ describe("a proven-absent spike is reported, never fused with an unreadable one"
 	it("names it on stderr and leaves the state null at exit 0", async () => {
 		const outcome = await run([
 			[STATUS, okOut("")],
-			[ISSUE, errOut("gh: Not Found (HTTP 404)")],
+			[ISSUE, {status: 404, body: '{"message":"Not Found"}'}],
 		]);
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout).spikeState).toBeNull();

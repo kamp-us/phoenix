@@ -1,19 +1,30 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {ANSWER, FAILED} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {RUNNING_MARKER, runHomes} from "./homes-verb.ts";
 import {offeredLanes} from "./standing-lanes.ts";
 
-const MILESTONES = /repos\/o\/r\/milestones/;
-const LABELS = /repos\/o\/r\/labels/;
+const MILESTONES = /GET .*\/repos\/o\/r\/milestones\?/;
+const LABELS = /GET .*\/repos\/o\/r\/labels\?/;
+
+const UNREADABLE: HttpReply = {status: 502, body: "{}"};
+
+const labels = (...names: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(names.map((name) => ({name}))),
+});
+
+const milestones = (
+	...rows: ReadonlyArray<{readonly number: number; readonly title: string}>
+): HttpReply => ({status: 200, body: JSON.stringify(rows)});
 
 /** The shipped default lane set — what a repo declaring no `boardVocabulary` resolves to. */
 const PHOENIX_LANES = ["wayfinder:backlog", "axis:pipeline-hardening"];
 
 /** A board carrying both lane labels, so the presence filter offers both — phoenix's own state. */
-const bothLabels = [LABELS, okOut(["type:bug", ...PHOENIX_LANES].join("\n"))] as const;
+const bothLabels = [LABELS, labels("type:bug", ...PHOENIX_LANES)] as const;
 
 const ROADMAP = `## Arcs
 
@@ -37,7 +48,7 @@ const options = {
 };
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]>,
+	script: ReadonlyArray<Scripted>,
 	files: Record<string, string | null> = {"ROADMAP.md": ROADMAP},
 	overrides: Partial<typeof options> = {},
 	fs: {
@@ -50,13 +61,13 @@ const run = (
 			runHomes({...options, ...overrides}),
 			// The label read is appended, never prepended: a case that scripts `LABELS` itself is
 			// asserting on the presence filter, and its entry has to win the first-match lookup.
-			Layer.merge(fakeShell([...script, bothLabels]).layer, fakeFs({files, ...fs}).layer),
+			Layer.merge(fakeSeams([...script, bothLabels]).layer, fakeFs({files, ...fs}).layer),
 		),
 	);
 
 const twoMilestones = [
 	MILESTONES,
-	okOut("24\tSözlük — search and discovery\n44\tfabrika"),
+	milestones({number: 24, title: "Sözlük — search and discovery"}, {number: 44, title: "fabrika"}),
 ] as const;
 
 describe("runHomes", () => {
@@ -83,7 +94,7 @@ describe("runHomes", () => {
 
 	it("reports an open milestone no roadmap row pins as null rather than hiding it", async () => {
 		const out = await run(
-			[[MILESTONES, okOut("99\toff-roadmap")]],
+			[[MILESTONES, milestones({number: 99, title: "off-roadmap"})]],
 			{"ROADMAP.md": ROADMAP},
 			{
 				json: true,
@@ -100,20 +111,20 @@ describe("runHomes", () => {
 	});
 
 	it("REFUSES zero open milestones — `no home exists` routes to an irreversible close", async () => {
-		const out = await run([[MILESTONES, okOut("")]]);
+		const out = await run([[MILESTONES, milestones()]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("0 open milestones");
 	});
 
 	it("still names the standing lanes on stderr when it refuses over zero milestones", async () => {
-		const out = await run([[MILESTONES, okOut("")]]);
+		const out = await run([[MILESTONES, milestones()]]);
 		expect(out.stderr.join("\n")).toContain("wayfinder:backlog");
 		expect(out.stderr.join("\n")).toContain("axis:pipeline-hardening");
 	});
 
 	it("refuses an unreadable milestone list as UNKNOWN — never as `no homes`", async () => {
-		const out = await run([[MILESTONES, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const out = await run([[MILESTONES, UNREADABLE]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("never empty");
@@ -170,7 +181,7 @@ describe("runHomes", () => {
 	});
 
 	it("still refuses zero open milestones when the roadmap is absent — the two guards are independent", async () => {
-		const out = await run([[MILESTONES, okOut("")]], {});
+		const out = await run([[MILESTONES, milestones()]], {});
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.join("\n")).toContain("0 open milestones");
 	});
@@ -189,15 +200,15 @@ describe("runHomes", () => {
 	});
 
 	it("pages the milestone read and asks only for open ones", async () => {
-		const shell = fakeShell([twoMilestones, bothLabels]);
+		const shell = fakeSeams([twoMilestones, bothLabels]);
 		await Effect.runPromise(
 			Effect.provide(
 				runHomes(options),
 				Layer.merge(shell.layer, fakeFs({files: {"ROADMAP.md": ROADMAP}}).layer),
 			),
 		);
-		const call = shell.calls.find((line) => line.includes("/milestones")) ?? "";
-		expect(call).toContain("--paginate");
+		const call = shell.requests.find((line) => line.includes("/milestones")) ?? "";
+		expect(call).toContain("per_page=100");
 		expect(call).toContain("state=open");
 	});
 
@@ -281,7 +292,7 @@ describe("runHomes and the running-campaign marker", () => {
 
 describe("runHomes and the standing lanes the host repo carries", () => {
 	it("offers a declared lane only when the board carries its label — the bare-repo arm", async () => {
-		const out = await run([twoMilestones, [LABELS, okOut("bug\nenhancement")]]);
+		const out = await run([twoMilestones, [LABELS, labels("bug", "enhancement")]]);
 		expect(out.code).toBe(ANSWER);
 		expect(out.stdout.trimEnd().split("\n")).toEqual([
 			"homes",
@@ -299,27 +310,27 @@ describe("runHomes and the standing lanes the host repo carries", () => {
 	});
 
 	it("drops only the missing lane when the board carries one of the two", async () => {
-		const out = await run([twoMilestones, [LABELS, okOut("wayfinder:backlog")]]);
+		const out = await run([twoMilestones, [LABELS, labels("wayfinder:backlog")]]);
 		expect(out.stdout).toContain("lane\twayfinder:backlog");
 		expect(out.stdout).not.toContain("axis:pipeline-hardening");
 	});
 
 	it("names the dropped labels on stderr, so the config/board gap is readable at the point it bites", async () => {
-		const out = await run([twoMilestones, [LABELS, okOut("bug")]]);
+		const out = await run([twoMilestones, [LABELS, labels("bug")]]);
 		expect(out.stderr.join("\n")).toContain(
 			"standing lanes: 0 of 2 declared carry a label in o/r — not offered: wayfinder:backlog, axis:pipeline-hardening.",
 		);
 	});
 
 	it("carries the offered lanes, not the declared set, into the --json payload", async () => {
-		const out = await run([twoMilestones, [LABELS, okOut("wayfinder:backlog")]], {}, {json: true});
+		const out = await run([twoMilestones, [LABELS, labels("wayfinder:backlog")]], {}, {json: true});
 		expect(JSON.parse(out.stdout).lanes).toEqual(
 			offeredLanes(PHOENIX_LANES, new Set(["wayfinder:backlog"])),
 		);
 	});
 
 	it("refuses an unreadable label list as UNKNOWN — never as `this repo declares no lanes`", async () => {
-		const out = await run([twoMilestones, [LABELS, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const out = await run([twoMilestones, [LABELS, UNREADABLE]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("which standing lanes this board accepts is UNKNOWN");
@@ -331,14 +342,14 @@ describe("runHomes and the standing lanes the host repo carries", () => {
 	 * `command.ts` passes what it read straight through (#6440).
 	 */
 	it("reads no labels at all when the repo declares no lanes — there is nothing to filter", async () => {
-		const shell = fakeShell([twoMilestones]);
+		const shell = fakeSeams([twoMilestones]);
 		await Effect.runPromise(
 			Effect.provide(
 				runHomes({...options, standingLanes: []}),
 				Layer.merge(shell.layer, fakeFs({files: {"ROADMAP.md": ROADMAP}}).layer),
 			),
 		);
-		expect(shell.calls.some((line) => line.includes("/labels"))).toBe(false);
+		expect(shell.requests.some((line) => line.includes("/labels"))).toBe(false);
 	});
 
 	it("says the repo declares none rather than printing a bare 0-of-0 count", async () => {
