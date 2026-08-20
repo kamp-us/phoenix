@@ -54,3 +54,13 @@ export const PLAN_MOVED = 21;
 export const PARTIAL_FLIP = 22;
 /** Proven: a label the flip must write is absent from the repository's taxonomy (#4285). */
 export const LABEL_ABSENT = 23;
+/**
+ * Proven: the invoking account may not approve this epic's plan — it is outside the
+ * `@kamp-us/control-plane` roster resolved from CODEOWNERS at write time, or that roster names
+ * nobody at all.
+ *
+ * Its own seat rather than `build`'s `GRANT_UNAUTHORIZED` (25), under the rule stated above: that
+ * code proves an account may not clear a repair round on a PR, which is not this fact and which no
+ * `plan` verb produces.
+ */
+export const APPROVAL_UNAUTHORIZED = 24;

@@ -101,6 +101,8 @@ as the sibling contracts do):
 | `plan check` | the deterministic floor: the thirteen hard defect types over the scanned child set | a total function from the ledger to a sorted defect list; the whole pass/fail decision, checkable by construction |
 | `plan flip` | flip every `status:planned` child to `status:triaged` and the epic itself to `ready-for:agent`, re-gating first, reporting the **observed** result for each | a guarded batch write with a read-back — no judgment; *what a partial flip means* stays in the skill |
 | `plan verdict` | post the gate's verdict comment, bound to the scope digest, and read it back | marker composition + a guarded write; the caveats are the skill's judgment, taken as input |
+| `plan approve` | post the approval marker on the epic, bound to a scope digest the verb derives itself, and read it back | an ACL-checked guarded write with a read-back — no judgment; **no `--digest` flag exists**, because an approval whose scope its caller supplies attests whatever the caller pleased |
+| `plan approval` | report the epic's approval state — `current` / `stale` / `absent`, with the marker's author and both digests | a total read that never refuses on a missing approval; the enforcement is seated in the three verbs that re-derive the floor, never in this report |
 
 **Considered and not derived: a `plan defects --explain` verb.** A defect's *remedy* is the
 planner's judgment, and a verb that authored one would be minting advice the floor cannot check.
@@ -326,26 +328,27 @@ command that produced it: [SKILL.md](SKILL.md) step 1 is total (`any other non-z
 and branches on `20`/`21` only off `plan flip` / `plan verdict`. Re-seating at `24`+ would also buy
 nothing, since `epic` already seats `20`–`24` over the same two `build` codes.
 
-| Code | Meaning | `read` | `check` | `flip` | `verdict` |
-|---|---|---|---|---|---|
-| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ |
-| `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ |
-| `126` | no implementation could be resolved (`src/bin.ts`) | ✓ | ✓ | ✓ | ✓ |
-| `3` | stdin was read and held nothing | — | — | — | — |
-| `4` | a required section is unparseable, duplicated, or mis-numbered in a document the verb derives from | ✓ | ✓ | ✓ | ✓ |
-| `5` | the **authored** text carries a machine-local path | — | — | — | ✓ |
-| `6` | the authored text is a bare `@` path reference — not redactable | — | — | — | ✓ |
-| `7` | zero scope: the epic is proven absent (404) or closed, or it has zero children | ✓ | ✓ | ✓ | ✓ |
-| `8` | a write was attempted and its outcome could not be proven — UNKNOWN | — | — | ✓ | ✓ |
-| `9` | the write landed but the read-back does not match | — | — | — | ✓ |
-| `10` | a value off its closed vocabulary — a semantic refusal, never a malformed-flag usage error | ✓ | ✓ | ✓ | ✓ |
-| `11` | a required read failed — nothing was written, no outcome is proven | ✓ | ✓ | ✓ | ✓ |
-| `15` | proven: this lane does not hold the epic's claim (imported from `build`) | — | — | ✓ | ✓ |
-| `20` | proven: the floor derived hard defects — refused as a **precondition to writing**, never as `plan check`'s own answer | — | — | ✓ | — |
-| `21` | proven: the plan moved — the recomputed digest differs from the `--digest` the caller carried | — | — | ✓ | ✓ |
-| `22` | proven: at least one child is `unchanged` — the flip did not fully apply; the observed set is on stderr | — | — | ✓ | — |
-| `23` | proven: a label the flip must write is absent from the repository's taxonomy | — | — | ✓ | — |
-| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ |
+| Code | Meaning | `read` | `check` | `flip` | `verdict` | `approve` | `approval` |
+|---|---|---|---|---|---|---|---|
+| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved (`src/bin.ts`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `3` | stdin was read and held nothing | — | — | — | — | — | — |
+| `4` | a required section is unparseable, duplicated, or mis-numbered in a document the verb derives from | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `5` | the **authored** text carries a machine-local path | — | — | — | ✓ | — | — |
+| `6` | the authored text is a bare `@` path reference — not redactable | — | — | — | ✓ | — | — |
+| `7` | zero scope: the epic is proven absent (404) or closed, or it has zero children | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `8` | a write was attempted and its outcome could not be proven — UNKNOWN | — | — | ✓ | ✓ | ✓ | — |
+| `9` | the write landed but the read-back does not match | — | — | — | ✓ | ✓ | — |
+| `10` | a value off its closed vocabulary — a semantic refusal, never a malformed-flag usage error | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `11` | a required read failed — nothing was written, no outcome is proven | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `15` | proven: this lane does not hold the epic's claim (imported from `build`) | — | — | ✓ | ✓ | — | — |
+| `20` | proven: the floor derived hard defects — refused as a **precondition to writing**, never as `plan check`'s own answer | — | — | ✓ | — | — | — |
+| `21` | proven: the plan moved — the recomputed digest differs from the `--digest` the caller carried | — | — | ✓ | ✓ | — | — |
+| `22` | proven: at least one child is `unchanged` — the flip did not fully apply; the observed set is on stderr | — | — | ✓ | — | — | — |
+| `23` | proven: a label the flip must write is absent from the repository's taxonomy | — | — | ✓ | — | — | — |
+| `24` | proven: the invoking account may not approve this epic's plan — it is outside the `@kamp-us/control-plane` roster resolved from CODEOWNERS at write time, or that roster names nobody | — | — | — | — | ✓ | — |
+| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 `3` is a seat no `plan` verb reaches: the only stdin-taking verb is `plan verdict`, whose stdin is
 **optional** (a clean verdict with no caveats is an ordinary answer), so an empty stdin is a fact,

@@ -18,6 +18,8 @@ import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import type {VerbOutcome} from "../verb.ts";
+import {runApproval} from "./approval-verb.ts";
+import {runApprove} from "./approve-verb.ts";
 import {runCheck} from "./check-verb.ts";
 import {runFlip} from "./flip-verb.ts";
 import {runRead} from "./read-verb.ts";
@@ -141,6 +143,47 @@ const verdict = leafCommand(
 	),
 );
 
+const approve = leafCommand(
+	"approve",
+	{number: epicArg, repo: repoFlag},
+	Effect.fn(function* ({number, repo}) {
+		yield* emit(
+			yield* runApprove({
+				number,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+				now: () => new Date(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Record a control-plane approval of the epic's plan."),
+	Command.withDescription(
+		'Post the approval marker on the epic, bound to the scope digest this verb derives itself, and read it back. Prints {"answer":"approved","epic":n,"digest":"…","by":"…","at":"…","comment":id}. There is NO --digest flag and adding one would be the defect: an approval whose scope its caller supplies attests whatever the caller pleased, and the binding is the whole point (ADR 0289). The control-plane roster is resolved at write time from .github/CODEOWNERS on the default branch, through the same modules `ship cp-approval` uses. Exits 4 (the ledger grammar refused), 7 (the epic is proven absent or closed, or it has zero children), 8 (posted and unprovable — UNKNOWN), 9 (posted but the read-back does not match), 10 (the issue is not a type:epic), 11 (a read failed — including the roster read, which is never "not approved" and never "approved", #4223; nothing was posted), 24 (the invoking account is not on the roster, or the roster names nobody). Example: fabrika plan approve 5843',
+	),
+);
+
+const approval = leafCommand(
+	"approval",
+	{number: epicArg, repo: repoFlag},
+	Effect.fn(function* ({number, repo}) {
+		yield* emit(
+			yield* runApproval({
+				number,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Report the epic's approval state — current, stale or absent."),
+	Command.withDescription(
+		'Report whether the epic\'s plan carries a current approval. Prints {"answer":"approval","epic":n,"state":"current|stale|absent","by":"…","markerDigest":"…","derivedDigest":"…","at":"…","comment":id,"disregarded":k}. A REPORTING surface, never the enforcement: an absent approval is this verb\'s answer at exit 0, and the refusal that keeps an unapproved plan out of the gate is seated in `plan check` / `plan flip` / `plan verdict`. Both digests are printed so a stale answer shows what moved. A marker that reaches for the format and drifts is counted in "disregarded" rather than folded into "absent". Exits 4 (the ledger grammar refused), 7 (the epic is proven absent or closed, or it has zero children), 10 (the issue is not a type:epic), 11 (the epic, a child or the comment list could not be read — the state is UNKNOWN, not absent). Example: fabrika plan approval 5843',
+	),
+);
+
 export const planCommand = Command.make("plan").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
@@ -148,6 +191,8 @@ export const planCommand = Command.make("plan").pipe(
 		check,
 		flip,
 		verdict,
+		approve,
+		approval,
 	]),
 	Command.withShortDescription("Gate an epic's plan before its children build."),
 	Command.withDescription(
