@@ -1,7 +1,7 @@
 ---
 id: 0280
 title: The review agent shell carries the spawn tool; the driver plans no governance stage
-status: accepted
+status: amended-in-part by [0311](0311-every-agent-shell-carries-the-spawn-tool.md)
 date: 2026-08-14
 tags: [pipeline, fabrika, governance, review, agents]
 ---
