@@ -9,9 +9,12 @@
  *
  * The tier is not all that moves. The same batch sweeps the author's sandbox backlog, and
  * the rows it un-sandboxes are already in subscribers' caches carrying a `sandboxedInPlace`
- * derived at read time. That field cannot ride an entity payload — see
- * `.patterns/fate-live-consistency.md` — so the swept content is re-announced as a
- * connection INVALIDATION and each subscriber re-derives it on their own re-read (#6462).
+ * derived at read time. That field cannot ride a payload — see
+ * `.patterns/fate-live-consistency.md` — so the swept content is re-announced as an
+ * INVALIDATION and each subscriber re-derives it on their own re-read (#6462). Both
+ * subscription shapes get one: the connection topics the rows sit in, AND the rows
+ * themselves, because a row held by id sits in no connection and the topic invalidations
+ * never reach it (ADR 0314).
  *
  * The publish cannot fail the tier flip: `WorkerLivePublisher.update`'s error channel is
  * `never` by contract (.patterns/fate-effect-server.md).
@@ -23,16 +26,14 @@ import {PanoFeedCache} from "../pano/feed-cache.ts";
 import {panoLive} from "../pano/live.ts";
 import {sozlukLive} from "../sozluk/live.ts";
 import {pasaportLive} from "./live.ts";
-import type {SandboxSweep} from "./sandbox-sweep.ts";
+import {isEmptySweep, type SandboxSweep} from "./sandbox-sweep.ts";
 import {toUser} from "./shapers.ts";
 import {getUsersWithModerationByIds} from "./trusted-user.ts";
 
 export {NO_SANDBOX_SWEEP, type SandboxSweep} from "./sandbox-sweep.ts";
 
 const publishSweep = Effect.fn("pasaport.publishSandboxSweep")(function* (sweep: SandboxSweep) {
-	if (!sweep.feed && sweep.commentThreads.length === 0 && sweep.definitionTerms.length === 0) {
-		return;
-	}
+	if (isEmptySweep(sweep)) return;
 	const publisher = yield* WorkerLivePublisher;
 	const pano = panoLive(publisher, yield* PanoFeedCache);
 	const sozluk = sozlukLive(publisher);
@@ -43,6 +44,16 @@ const publishSweep = Effect.fn("pasaport.publishSandboxSweep")(function* (sweep:
 	}
 	for (const termSlug of sweep.definitionTerms) {
 		yield* sozluk.definition.term(termSlug).invalidate();
+	}
+
+	for (const id of sweep.postIds) {
+		yield* pano.post.invalidate(id);
+	}
+	for (const id of sweep.commentIds) {
+		yield* pano.comment.invalidate(id);
+	}
+	for (const id of sweep.definitionIds) {
+		yield* sozluk.definition.invalidate(id);
 	}
 });
 

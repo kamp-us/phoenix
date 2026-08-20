@@ -24,6 +24,14 @@ export const sozlukLive = (live: WorkerLivePublisher) => ({
 		update: (id: string | number, options?: {changed?: ReadonlyArray<string>; data?: Definition}) =>
 			live.update(DEFINITION, id, viewerBlindUpdate(options)),
 		delete: (id: string | number) => live.delete(DEFINITION, id),
+		/**
+		 * `term(...).invalidate`'s entity twin: the subscriber holding this row BY ID
+		 * re-reads it through the normal path, so a viewer-derived field is re-derived
+		 * against their own viewer. A row held by id sits in no connection, so the term
+		 * invalidation never reaches it (ADR 0314).
+		 */
+		invalidate: (id: string | number, options?: {eventId?: string}) =>
+			live.invalidate(DEFINITION, id, options),
 		term: (slug: string) => {
 			const topic = live.topic(LiveTopic.termDefinitions, {id: slug});
 			return {
