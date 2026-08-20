@@ -101,11 +101,11 @@ Every `ui` verb obeys these; stated once.
 - **Answer channel: machine.** Stdout carries one JSON object and nothing else; scope lines,
   refusal reasons and progress go to stderr. A non-zero exit prints nothing on stdout
   (`refuse` in `packages/fabrika-cli/src/verb.ts`).
-- **Repo-root anchored.** Every convention path below is resolved against the repo root the
-  delivery layer already finds (the shim's repo-root inference, interface convention rule 5) —
-  never against cwd, never against a web URL. v1 fetched the manifest from a hardcoded GitHub
-  URL (`write-code/SKILL.md:972`), which reads the wrong repo's law in any fork and nothing on
-  a network fault; here the law is the tree's own bytes.
+- **Repo-root anchored.** Every path below — the convention paths and the declared `designHarness`
+  path alike — is resolved against the repo root the delivery layer already finds (the shim's
+  repo-root inference, interface convention rule 5) — never against cwd, never against a web URL.
+  v1 fetched the manifest from a hardcoded GitHub URL (`write-code/SKILL.md:972`), which reads the
+  wrong repo's law in any fork and nothing on a network fault; here the law is the tree's own bytes.
 - **GitHub access** per [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql),
   paginated. Only `ui evidence` touches GitHub at all.
 - **A non-zero exit is UNKNOWN** to the caller until the code is read. No partial answers.
@@ -152,7 +152,7 @@ the established doctrine (`triage`'s own `codes.ts` states it for `adr`).
 | `16` | proven: a capture was produced but is invalid — zero bytes, undecodable, or zero-area |
 | `17` | proven: at least one evidence upload failed — nothing was posted |
 | `18` | proven: the lane precondition failed — this session does not hold the claim the checked-out lane branch names (foreign, none, or an unparseable branch); detail on stderr |
-| `19` | proven: no render harness is declared at the harness convention path — the repo cannot be rendered headlessly |
+| `19` | proven: no file at the declared `designHarness` path — the repo cannot be rendered headlessly |
 | `127` | the verb never ran at all (unresolved binary — the shell's code) |
 
 **`7` versus `11`** is the same split the whole CLI rests on: a proven absence is a verdict, a
@@ -249,8 +249,8 @@ the law.
 fabrika ui manifest
 ```
 
-**Inputs** — none. The repo root is the delivery layer's; the convention paths are this
-contract's table.
+**Inputs** — none. The repo root is the delivery layer's; four of the five paths are this
+contract's convention table, and the harness path is whatever `designHarness` declares.
 
 **Output** — machine. One JSON object:
 
@@ -275,7 +275,7 @@ The manifest itself is the one surface whose absence refuses: without it there i
 
 | Code | Trigger |
 |---|---|
-| `11` | the repo root could not be resolved, or a convention path's existence could not be determined (permission fault, unreadable dir) |
+| `11` | the repo root could not be resolved, or one of the five paths' existence could not be determined (permission fault, unreadable dir) |
 | `12` | proven: no file at the manifest convention path |
 
 **Errors**
@@ -285,8 +285,9 @@ The manifest itself is the one surface whose absence refuses: without it there i
 | `ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Run /fabrika: front-door's bootstrap drafts one from the repo's own CSS and pages (#4952). Never improvise a design language.` | 12 | refusal |
 | `ui manifest: cannot probe <path>: <reason> — presence is UNKNOWN, never "absent".` | 11 | refusal |
 
-**Scope** — the five convention paths against the repo root. Not a judging verb; presence is the
-supplied fact, and the one refusal (`12`) exists because "no manifest" must route, not report.
+**Scope** — the same five paths against the repo root: four convention, one declared
+(`designHarness`). Not a judging verb; presence is the supplied fact, and the one refusal (`12`)
+exists because "no manifest" must route, not report.
 
 **Examples**
 
