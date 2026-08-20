@@ -330,10 +330,27 @@ export const GUARD_SEATS: SharedSeats = {
 	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
 };
 
+/**
+ * `decision`'s seats: four, under the base's own names.
+ *
+ * The group writes one marker comment and one audience label pair, so it claims the three
+ * write-shaped seats plus the unreadable-precondition one. It seats `7` as `NO_TARGET` — the base's
+ * own reading, an issue proven absent or proven not to be a `type:decision` — rather than the
+ * `ZERO_SCOPE` widening, because both verbs address exactly one named issue and never a scope. Its
+ * table says in full why the other five base seats are unreachable here.
+ */
+export const DECISION_SEATS: SharedSeats = {
+	NO_TARGET: "NO_TARGET",
+	WRITE_UNKNOWN: "WRITE_UNKNOWN",
+	READBACK_MISMATCH: "READBACK_MISMATCH",
+	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
+};
+
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	adr: ADR_SEATS,
 	build: BUILD_SEATS,
+	decision: DECISION_SEATS,
 	governance: GOVERNANCE_SEATS,
 	hook: HOOK_SEATS,
 	glossary: GLOSSARY_SEATS,

@@ -6,8 +6,11 @@
  *
  * Three fields, and the digest is the load-bearing one: the approval binds the **ledger scope** the
  * plan gate judges, so a plan rewritten after the founder read it no longer matches and does not
- * inherit the approval. The epic is carried too, because a marker is bytes and bytes travel — a
- * comment quoting another epic's approval must never read as this epic's.
+ * inherit the approval.
+ *
+ * The binding half — `#<epic> @ <digest>`, and the discipline of carrying the number in the bytes —
+ * lives in `./issue-marker.ts`, which `./decision-ruling.ts` reads through too. What is written here
+ * is only what is this format's own: the key, and a tail that is one timestamp.
  *
  * **The digest binds the ledger scope, not the plan's prose.** ADR 0289 states that limit itself and
  * it is repeated here so no reader over-reads the marker: what `../plan/digest.ts` serializes is the
@@ -22,7 +25,6 @@
 import type {NonEmptyReadonlyArray, WireEmit, WireRead, WireReadLines} from "./format.ts";
 import {
 	absent,
-	FIELD_SEPARATOR,
 	firstNonBlankLine,
 	type MarkerTime,
 	malformed,
@@ -30,39 +32,26 @@ import {
 	payloadOf,
 	reachesFor,
 } from "./grill-marker.ts";
+import {
+	emitIssueMarker,
+	issueField,
+	type MarkedIssue,
+	markedIssue,
+	parseFieldLines,
+	parseIssueBinding,
+	type ScopeDigest,
+	scopeDigest,
+} from "./issue-marker.ts";
 
 export type {MarkerTime} from "./grill-marker.ts";
+export {type ScopeDigest, scopeDigest} from "./issue-marker.ts";
 
 /** The key that names these bytes. Never widened — a second meaning would need a second format. */
 export const KEY = "plan-approved";
 
-/** The token between the epic and the digest, matching the `grill` markers' own binding word. */
-const BINDS = "@";
-
-declare const APPROVED_EPIC: unique symbol;
-declare const SCOPE_DIGEST: unique symbol;
-
-/** The epic an approval names: a positive integer. No other inhabitant exists. */
-export type ApprovedEpic = number & {readonly [APPROVED_EPIC]: true};
-
-/**
- * The scope digest an approval binds: exactly 12 lowercase hex.
- *
- * Fixed-width rather than a prefix match. The value only ever comes from `../plan/digest.ts`, which
- * emits exactly this width, so a shorter-or-longer one is a drift and reads `Malformed` — never a
- * value to compare loosely, because a loose compare is an approval that survives a re-plan.
- */
-export type ScopeDigest = string & {readonly [SCOPE_DIGEST]: true};
-
-const SCOPE_DIGEST_RE = /^[0-9a-f]{12}$/;
-
-export const approvedEpic = (raw: number): ApprovedEpic | null =>
-	Number.isInteger(raw) && raw > 0 ? (raw as ApprovedEpic) : null;
-
-export const scopeDigest = (raw: string): ScopeDigest | null => {
-	const value = raw.trim().toLowerCase();
-	return SCOPE_DIGEST_RE.test(value) ? (value as ScopeDigest) : null;
-};
+/** The epic an approval names. An alias of the shared brand, not a second one — one marker family. */
+export type ApprovedEpic = MarkedIssue;
+export const approvedEpic = markedIssue;
 
 export interface PlanApproval {
 	readonly epic: ApprovedEpic;
@@ -75,9 +64,8 @@ export type PlanApprovalRead = WireRead<PlanApproval>;
 /**
  * Read the approval marker out of a comment body. Total: `Found` | `Absent` | `Malformed`.
  *
- * The walk is stepwise so a refusal names which field drifted. A body that reaches for the key and
- * misses must never read as an epic nobody approved *nor* as one somebody did: the gate's whole
- * question is which of those two it is, and a drift is neither.
+ * A body that reaches for the key and misses must never read as an epic nobody approved *nor* as one
+ * somebody did: the gate's whole question is which of those two it is, and a drift is neither.
  */
 export const read = (artifact: string): PlanApprovalRead => {
 	if (!reachesFor(artifact, KEY)) {
@@ -85,45 +73,21 @@ export const read = (artifact: string): PlanApprovalRead => {
 	}
 	const line = firstNonBlankLine(artifact) ?? "";
 	const evidence = `first line: "${line}"`;
-	const payload = payloadOf(line, KEY);
-	const [bindingPart, ...afterSeparator] = payload.split(FIELD_SEPARATOR);
-	if (afterSeparator.length === 0) {
-		return malformed(
-			`the marker carries no "${FIELD_SEPARATOR}"-separated timestamp after the digest`,
-			evidence,
-		);
-	}
-	const binding = (bindingPart ?? "").trim();
-	const [epicPart, ...afterBinds] = binding.split(BINDS);
-	if (afterBinds.length !== 1) {
-		return malformed(`"${binding}" is not an "#<epic> ${BINDS} <digest>" binding`, evidence);
-	}
-	const epicToken = (epicPart ?? "").trim();
-	const epic = /^#[0-9]+$/.test(epicToken) ? approvedEpic(Number(epicToken.slice(1))) : null;
-	if (epic === null) {
-		return malformed(`"${epicToken}" is not an epic reference — expected "#<n>"`, evidence);
-	}
-	const digestToken = (afterBinds[0] ?? "").trim();
-	const digest = scopeDigest(digestToken);
-	if (digest === null) {
-		return malformed(
-			`"${digestToken}" is not a scope digest — expected 12 lowercase hex`,
-			evidence,
-		);
-	}
-	const at = markerTime(afterSeparator.join(FIELD_SEPARATOR));
+	const bound = parseIssueBinding(payloadOf(line, KEY), "timestamp");
+	if (typeof bound === "string") return malformed(bound, evidence);
+	const at = markerTime(bound.rest);
 	if (at === null) {
 		return malformed(
-			`"${afterSeparator.join(FIELD_SEPARATOR).trim()}" is not an ISO-8601 UTC timestamp — expected a Z-suffixed instant`,
+			`"${bound.rest.trim()}" is not an ISO-8601 UTC timestamp — expected a Z-suffixed instant`,
 			evidence,
 		);
 	}
-	return {_tag: "Found", value: {epic, digest, at}};
+	return {_tag: "Found", value: {epic: bound.issue, digest: bound.digest, at}};
 };
 
 /** Compose the marker's first line. Round-trips through {@link read}. */
 export const emit = ({epic, digest, at}: PlanApproval): string =>
-	`${KEY}: #${epic} ${BINDS} ${digest} ${FIELD_SEPARATOR} ${at}\n`;
+	emitIssueMarker(KEY, epic, digest, [at]);
 
 /**
  * Whether this marker approves `epic`'s plan **as `derived` now stands**.
@@ -146,40 +110,20 @@ export type PlanApprovalFields =
 	| {readonly _tag: "Fields"; readonly approval: PlanApproval}
 	| {readonly _tag: "Unusable"; readonly reason: string};
 
-/** `<key>: <value>` or `<key><TAB><value>`, so `wire read`'s own output pipes back into `wire emit`. */
-const FIELD_LINE = /^([A-Za-z-]+)[ \t]*[:\t][ \t]*(.*)$/;
 const KEYS = ["epic", "digest", "at"] as const;
-type FieldKey = (typeof KEYS)[number];
-
-const isFieldKey = (key: string): key is FieldKey => (KEYS as ReadonlyArray<string>).includes(key);
 
 /** Parse `wire emit`'s stdin into an approval. Every rejection is a refusal, never a default. */
 export const parseFields = (fields: string): PlanApprovalFields => {
-	const seen = new Map<FieldKey, string>();
-	for (const [index, raw] of fields.split("\n").entries()) {
-		const line = raw.trim();
-		if (line === "") continue;
-		const matched = FIELD_LINE.exec(line);
-		const key = matched?.[1]?.toLowerCase() ?? "";
-		if (matched === null || !isFieldKey(key)) {
-			return {
-				_tag: "Unusable",
-				reason: `line ${index + 1} is not a "<field>: <value>" line over ${KEYS.join(", ")}: "${line}"`,
-			};
-		}
-		if (seen.has(key)) {
-			return {
-				_tag: "Unusable",
-				reason: `"${key}" is given twice — which one is the field is undecidable`,
-			};
-		}
-		seen.set(key, matched[2] ?? "");
-	}
+	const lines = parseFieldLines(fields, KEYS);
+	if (lines._tag === "Unusable") return lines;
+	const {seen} = lines;
 
-	const epicRaw = (seen.get("epic") ?? "").replace(/^#/, "").trim();
-	const epic = /^[0-9]+$/.test(epicRaw) ? approvedEpic(Number(epicRaw)) : null;
+	const epic = issueField(seen.get("epic") ?? "");
 	if (epic === null) {
-		return {_tag: "Unusable", reason: `"${epicRaw}" is not an epic — expected a positive integer`};
+		return {
+			_tag: "Unusable",
+			reason: `"${seen.get("epic") ?? ""}" is not an epic — expected a positive integer`,
+		};
 	}
 	const digest = scopeDigest(seen.get("digest") ?? "");
 	if (digest === null) {

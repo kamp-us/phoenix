@@ -22,6 +22,7 @@ import * as acceptanceCriteria from "./acceptance-criteria.ts";
 import * as buildDeviations from "./build-deviations.ts";
 import * as cameFrom from "./came-from.ts";
 import * as capClearance from "./cap-clearance.ts";
+import * as decisionRuling from "./decision-ruling.ts";
 import * as deviations from "./deviations.ts";
 import {brandWitnesses, type WireFormat} from "./format.ts";
 import * as governanceDigest from "./governance-digest.ts";
@@ -968,6 +969,64 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			],
 		},
 		brands: brandWitnesses<planApproval.PlanApproval>({digest: true, at: true}),
+	},
+	{
+		key: "decision-ruling",
+		purpose:
+			"a control-plane human's ruling on one type:decision issue, carried as a marker comment on it, bound to a digest of the issue body that was ruled on and naming the comment the ruling is written in",
+		module: "packages/fabrika-cli/src/wire/decision-ruling.ts",
+		producers: ["adr"],
+		consumers: ["build", "triage"],
+		emit: decisionRuling.emitFromFields,
+		read: decisionRuling.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields:
+					"issue: 6569\ndigest: 4d90e1bb27ac\nruling: https://github.com/kamp-us/phoenix/issues/6569#issuecomment-3512345\nat: 2026-08-20T05:11:02Z\n",
+				values: [
+					"6569",
+					"4d90e1bb27ac",
+					"https://github.com/kamp-us/phoenix/issues/6569#issuecomment-3512345",
+					"2026-08-20T05:11:02Z",
+				],
+			},
+			found: [
+				{
+					shape: "the marker over the ruling it records, as `decision rule` posts it",
+					artifact:
+						"decision-ruled: #6569 @ 4d90e1bb27ac · ruling:https://github.com/kamp-us/phoenix/issues/6569#issuecomment-3512345 · 2026-08-20T05:11:02Z\n\nRuled. Build it as the citation reads.\n",
+					values: [
+						"6569",
+						"4d90e1bb27ac",
+						"https://github.com/kamp-us/phoenix/issues/6569#issuecomment-3512345",
+						"2026-08-20T05:11:02Z",
+					],
+				},
+			],
+			absent: "Re-scoped the second fork — this needs another read before it is ruled.\n",
+			malformed: [
+				{
+					drift: "the digest is not 12 lowercase hex, so it binds no body",
+					artifact:
+						"decision-ruled: #6569 @ 4D90E1BB · ruling:https://github.com/kamp-us/phoenix/issues/6569#issuecomment-3512345 · 2026-08-20T05:11:02Z\n",
+				},
+				{
+					drift: "the marker names no ruling, so a builder has nothing to read the choice from",
+					artifact: "decision-ruled: #6569 @ 4d90e1bb27ac · 2026-08-20T05:11:02Z\n",
+				},
+				{
+					drift: "the ruling is recorded on another issue, so it rules nothing here",
+					artifact:
+						"decision-ruled: #6569 @ 4d90e1bb27ac · ruling:https://github.com/kamp-us/phoenix/issues/5842#issuecomment-3512345 · 2026-08-20T05:11:02Z\n",
+				},
+				{
+					drift: "the timestamp is not an ISO-8601 UTC instant",
+					artifact:
+						"decision-ruled: #6569 @ 4d90e1bb27ac · ruling:https://github.com/kamp-us/phoenix/issues/6569#issuecomment-3512345 · last Thursday\n",
+				},
+			],
+		},
+		brands: brandWitnesses<decisionRuling.DecisionRuling>({digest: true, ruling: true, at: true}),
 	},
 ];
 
