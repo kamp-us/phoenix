@@ -14,7 +14,13 @@ import {isRecord, parseJson} from "../io/json.ts";
 import {isPark} from "./parks.ts";
 
 export type LeafRead =
-	| {readonly _tag: "Leaf"; readonly task: string; readonly leaf: string}
+	| {
+			readonly _tag: "Leaf";
+			readonly task: string;
+			readonly leaf: string;
+			/** Why the task parked, off the fold's `context.<task>.cause`; `null` on a causeless park. */
+			readonly cause: string | null;
+	  }
 	| {readonly _tag: "Finished"; readonly terminal: string}
 	| {readonly _tag: "Unreadable"; readonly reason: string};
 
@@ -27,6 +33,19 @@ const activeTasks = (stateValue: unknown): Readonly<Record<string, unknown>> | n
 		if (isRecord(value)) return value;
 	}
 	return null;
+};
+
+/**
+ * The cause `lane status` folded onto one task, or `null`. A context that is not there, a task with
+ * no entry in it, and a `cause` that is not a string all read the same: no cause, so the park is
+ * the bare one it was before the field existed and `classifyPark` answers Novel for it.
+ */
+const causeOf = (parsed: Readonly<Record<string, unknown>>, task: string): string | null => {
+	const context = parsed.context;
+	if (!isRecord(context)) return null;
+	const entry = context[task];
+	if (!isRecord(entry)) return null;
+	return typeof entry.cause === "string" ? entry.cause : null;
 };
 
 /** One task's leaf, off `lane status`'s stdout. `requested` is `null` on a single-task lane. */
@@ -58,7 +77,7 @@ export const leafOf = (stdout: string, requested: string | null): LeafRead => {
 	}
 	const leaf = tasks[task];
 	return typeof leaf === "string"
-		? {_tag: "Leaf", task, leaf}
+		? {_tag: "Leaf", task, leaf, cause: causeOf(parsed, task)}
 		: {_tag: "Unreadable", reason: `task "${task}" carries no leaf state`};
 };
 

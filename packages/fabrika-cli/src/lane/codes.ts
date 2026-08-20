@@ -222,3 +222,14 @@ export const PRIMARY_CHECKOUT = 33;
  * remote disagrees, this one is proven before anything is sent.
  */
 export const MISDIRECTED_PUSH = 34;
+
+/**
+ * The `--cause` handed to `lane report` or `lane transition` is outside the closed park-cause set,
+ * or rides on an event that is not `BLOCKED` — refused with the log unappended.
+ *
+ * Its own seat rather than {@link TOKEN_UNRECOGNISED}'s: that one says the terminal token is
+ * unknown and the whole report is unreadable, this one says the event resolved fine and the reason
+ * bolted onto it did not, so the remedy is to drop or respell the cause and record the same event.
+ * A cause nobody can key on must never be recorded as one that can (#6480).
+ */
+export const CAUSE_UNRECOGNISED = 35;

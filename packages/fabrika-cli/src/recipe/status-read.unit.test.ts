@@ -7,7 +7,7 @@ describe("leafOf", () => {
 	it("reads the only task of a single-task active phase with no --task", () => {
 		const read = leafOf(status({pipeline: {issue: "human:cp-approval"}}), null);
 
-		expect(read).toEqual({_tag: "Leaf", task: "issue", leaf: "human:cp-approval"});
+		expect(read).toEqual({_tag: "Leaf", task: "issue", leaf: "human:cp-approval", cause: null});
 	});
 
 	it("reads the named task past the future phases the fold marks waiting", () => {
@@ -16,7 +16,29 @@ describe("leafOf", () => {
 			"issue_2",
 		);
 
-		expect(read).toEqual({_tag: "Leaf", task: "issue_2", leaf: "build"});
+		expect(read).toEqual({_tag: "Leaf", task: "issue_2", leaf: "build", cause: null});
+	});
+
+	it("reads the park cause the fold hung on the task's context", () => {
+		const read = leafOf(
+			JSON.stringify({
+				stateValue: {pipeline: {issue: "blocked"}},
+				status: "active",
+				context: {issue: {retries: 0, cause: "worktree-holds-branch"}},
+			}),
+			null,
+		);
+
+		expect(read).toMatchObject({leaf: "blocked", cause: "worktree-holds-branch"});
+	});
+
+	it("is causeless on a context with no cause, a cause that is not a string, or no context", () => {
+		const at = (context: unknown) =>
+			leafOf(JSON.stringify({stateValue: {pipeline: {issue: "blocked"}}, context}), null);
+
+		expect(at({issue: {retries: 0}})).toMatchObject({cause: null});
+		expect(at({issue: {cause: 7}})).toMatchObject({cause: null});
+		expect(at(undefined)).toMatchObject({cause: null});
 	});
 
 	it("refuses to guess on a multi-task phase with no --task", () => {

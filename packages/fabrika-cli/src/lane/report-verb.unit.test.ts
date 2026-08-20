@@ -2,7 +2,13 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {LANE_ABSENT, PROOF_ABSENT, TASK_UNKNOWN, TOKEN_UNRECOGNISED} from "./codes.ts";
+import {
+	CAUSE_UNRECOGNISED,
+	LANE_ABSENT,
+	PROOF_ABSENT,
+	TASK_UNKNOWN,
+	TOKEN_UNRECOGNISED,
+} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 import {runHistory} from "./history-verb.ts";
 import type {ProveOptions} from "./prove-verb.ts";
@@ -47,6 +53,7 @@ const run = (
 		task?: string | null;
 		pr?: string | null;
 		comment?: string | null;
+		cause?: string | null;
 		prover?: ReturnType<typeof fakeProver>;
 	} = {},
 ) =>
@@ -60,6 +67,7 @@ const run = (
 					task: extra.task ?? null,
 					pr: extra.pr ?? null,
 					comment: extra.comment ?? null,
+					cause: extra.cause ?? null,
 					repo: "kamp-us/phoenix",
 					cwd: "/repo",
 					env: {},
@@ -236,5 +244,59 @@ describe("lane report — the append is proof-gated", () => {
 		const out = await run(fs, "SHIPPED-PR", {prover});
 		expect(out.code).toBe(0);
 		expect(out.stderr).toContain("fabrika lane prove: read 3 candidate(s).");
+	});
+});
+
+describe("lane report — the park cause a BLOCKED carries (#6480)", () => {
+	it("records a known cause on the event line, where the fold reads it back", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "STOPPED", {cause: "worktree-holds-branch"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.BLOCKED",
+			cause: "worktree-holds-branch",
+		});
+		expect(JSON.parse(out.stdout).cause).toBe("worktree-holds-branch");
+	});
+
+	it("case-folds the cause, so a shell's casing is not a second vocabulary", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "STOPPED", {cause: "Worktree-Holds-Branch"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs)).cause).toBe("worktree-holds-branch");
+	});
+
+	it("leaves a BLOCKED with no cause exactly the bare park it always was", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "STOPPED");
+
+		expect(out.code).toBe(0);
+		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "cause")).toBe(false);
+	});
+
+	it("refuses a cause outside the closed set, log unappended — never records an unkeyable one", async () => {
+		const fs = laneAt(LOG_AT.build);
+
+		const out = await run(fs, "STOPPED", {cause: "the-tree-was-busy"});
+
+		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(out.stderr.at(-1)).toContain("log unappended");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses a cause on a token that is not a park, and never reaches the prover", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const prover = fakeProver();
+
+		const out = await run(fs, "SHIPPED-PR", {cause: "worktree-holds-branch", prover});
+
+		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(prover.asked).toEqual([]);
+		expect(fs.written.size).toBe(0);
 	});
 });

@@ -80,6 +80,7 @@ export const runView = (
 					lane: req.lane,
 					event: req.event,
 					task: req.task ?? null,
+					cause: null,
 				}).pipe(
 					// The transition verb's own words, either way: a refusal it proved beats anything
 					// this file could compose, and its answer line already names what it appended.

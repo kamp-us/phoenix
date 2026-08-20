@@ -19,11 +19,17 @@
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import {appendText} from "../io/fs.ts";
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
-import {APPEND_UNKNOWN, EVENT_REFUSED, TASK_UNKNOWN, TOKEN_UNRECOGNISED} from "./codes.ts";
+import {
+	APPEND_UNKNOWN,
+	CAUSE_UNRECOGNISED,
+	EVENT_REFUSED,
+	TASK_UNKNOWN,
+	TOKEN_UNRECOGNISED,
+} from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
 import type {ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
-import {eventForToken} from "./report.ts";
+import {causeForEvent, eventForToken} from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane report";
@@ -38,6 +44,8 @@ export interface ReportOptions extends LaneRef {
 	readonly pr: string | null;
 	/** The comment URL the terminal names, recorded on the event line. */
 	readonly comment: string | null;
+	/** Why the lane parked, from the closed set in [`report.ts`](report.ts); `BLOCKED` only. */
+	readonly cause: string | null;
 	/** The target repo the proof reads against, resolved exactly as `lane prove` resolves it. */
 	readonly repo: string | null;
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in, not the ledger root. */
@@ -53,6 +61,10 @@ export const runReport = <R>(
 		const resolved = eventForToken(options.token);
 		if (resolved._tag === "Unrecognised") {
 			return refuse(TOKEN_UNRECOGNISED, `${VERB}: refused (log unappended): ${resolved.reason}`);
+		}
+		const caused = causeForEvent(options.cause, resolved.event);
+		if (caused._tag === "Rejected") {
+			return refuse(CAUSE_UNRECOGNISED, `${VERB}: refused (log unappended): ${caused.reason}.`);
 		}
 		const loaded = yield* loadLane(options);
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
@@ -90,6 +102,7 @@ export const runReport = <R>(
 			...applied.entry,
 			...(options.pr === null ? {} : {pr: options.pr}),
 			...(options.comment === null ? {} : {comment: options.comment}),
+			...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
 		};
 		const wrote = yield* Effect.result(appendText(loaded.logPath, `${JSON.stringify(entry)}\n`));
 		if (Result.isFailure(wrote)) {
@@ -108,6 +121,7 @@ export const runReport = <R>(
 					taskAffected: task.taskId,
 					...(options.pr === null ? {} : {pr: options.pr}),
 					...(options.comment === null ? {} : {comment: options.comment}),
+					...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
 				},
 				null,
 				2,
