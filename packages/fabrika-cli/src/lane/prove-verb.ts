@@ -26,7 +26,7 @@ import {governedRootsOr} from "../config/paths.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {getPullRequest, listPullFiles, openPullsClosing, searchOpenPulls} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
-import {issueRefOf, namespacesOf, partition, touchesGovernanceRoot} from "../review/classes.ts";
+import {issueRefOf, partitionWithUi, shipNamespacesOf} from "../review/classes.ts";
 import {bindRange, contentDigestAt, rangeContentAt} from "../review/content-binding.ts";
 import {bindHead} from "../review/head.ts";
 import {CODEOWNERS_PATH, readBoundary} from "../ship/boundary.ts";
@@ -365,11 +365,9 @@ const proveNoPull = (
 /**
  * Every namespace this PR's diff derives, judged at its live head.
  *
- * The derivation is `review scope`'s partition plus the `governance` floor `ship gate` applies —
- * the same two shipped functions, so the bar this proves against cannot drift from the bar the
- * gates enforce. `review-ui` is deliberately not derived here: the rendered-visual verdict is
- * `review-ui`'s own lane and the lane machine spawns no shell that emits it, so requiring it would
- * stall every UI lane on a verdict nothing in this loop writes.
+ * The derivation is `ship scope`'s own pair — the `ui`-bearing partition and the namespace map that
+ * appends the `governance` floor — so the bar this proves against is the same object the merge gate
+ * enforces rather than a second reading of it.
  *
  * On a control-plane PR the reviewer's PASS arrives through the §CP advisory carrier by design —
  * no first-line marker, the head in the body (ADR 0111/0226) — so a marker-only read would row it
@@ -400,10 +398,7 @@ const proveVerdicts = (
 		if (files._tag === "Failure") {
 			return unreadable(`the changed files of #${pr}`, files.reason);
 		}
-		const required = [
-			...namespacesOf(partition(files.value)),
-			...(touchesGovernanceRoot(files.value, roots) ? ["governance"] : []),
-		];
+		const required = shipNamespacesOf(partitionWithUi(files.value, roots));
 
 		const commented = yield* listComments(repo, pr);
 		if (commented._tag === "Failure") {
@@ -572,8 +567,8 @@ interface RangeClaim {
  * The child arm of the `PASS` claim: a range-bound verdict on the child issue that still binds.
  *
  * The required namespaces are derived from the range's own changed paths through the same
- * `review scope` partition and the same `governance` floor the PR arm uses, so a child's bar is the
- * tail's bar asked of a different scope. What binds is content and only content (ADR 0276): the two
+ * `ship scope` pair the PR arm uses, so a child's bar is the tail's bar asked of a different scope.
+ * What binds is content and only content (ADR 0276): the two
  * SHAs a range marker names stop being history the moment the range merges into the epic branch, so
  * `bindRange` compares the digest the reviewer recorded against the digest this range carries now —
  * a verdict written over a sibling's range, or over a tip the builder has since moved past, reads
@@ -600,10 +595,7 @@ const proveRangeVerdicts = (
 		if (content._tag === "Failure") {
 			return unreadable(`the content ${range} changes`, content.reason);
 		}
-		const required = [
-			...namespacesOf(partition(content.value.paths)),
-			...(touchesGovernanceRoot(content.value.paths, roots) ? ["governance"] : []),
-		];
+		const required = shipNamespacesOf(partitionWithUi(content.value.paths, roots));
 
 		const commented = yield* listComments(repo, issue);
 		if (commented._tag === "Failure") {

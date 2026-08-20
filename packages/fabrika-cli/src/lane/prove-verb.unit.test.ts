@@ -160,6 +160,66 @@ describe("lane prove — the two events that carry a claim", () => {
 	});
 });
 
+describe("lane prove — the ui class, derived exactly as `ship scope` derives it", () => {
+	const UI_FILE = okOut(JSON.stringify([{filename: "apps/web/src/routes/pano.tsx"}]));
+
+	it("holds a lane whose head raises the ui class and carries no review-ui verdict", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, UI_FILE],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.stderr.join("\n")).toContain("review-ui (absent)");
+	});
+
+	it("proves the same lane once a head-bound review-ui PASS is on the board", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, UI_FILE],
+			[
+				PR_COMMENTS,
+				comments(
+					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
+					{id: 2, body: `review-ui: PASS @ ${HEAD} — the four pillars hold`},
+				),
+			],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
+			{namespace: "review-code", state: "pass", commentId: 1},
+			{namespace: "review-ui", state: "pass", commentId: 2},
+		]);
+	});
+
+	it("requires no review-ui row of a head that raises no ui class", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, okOut(JSON.stringify([{filename: "apps/web/src/routes/pano.test.tsx"}]))],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
+			{namespace: "review-code", state: "pass", commentId: 1},
+		]);
+	});
+});
+
 describe("lane prove — the refusals, each on its own remedy", () => {
 	it("refuses a build DONE with no open PR and no no-PR outcome, naming what it looked for", async () => {
 		const shell = fakeShell([
@@ -588,6 +648,10 @@ const OTHER_DIGEST = digestOf(rawRecord("packages/fabrika-cli/src/lane/emit.ts")
 const GOVERNED_RAW = CHILD_RAW + rawRecord(".github/workflows/ci.yml");
 const GOVERNED_DIGEST = digestOf(GOVERNED_RAW);
 
+/** The same child range, plus one rendered frontend surface — the `ui` class beside `code`. */
+const UI_RAW = CHILD_RAW + rawRecord("apps/web/src/routes/pano.tsx");
+const UI_DIGEST = digestOf(UI_RAW);
+
 /** The git reads that locate the one child branch and the range it adds. */
 const locating = (
 	branches: ReadonlyArray<string> = [CHILD_BRANCH, "main", "epic/4300"],
@@ -929,6 +993,42 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 		expect(
 			JSON.parse(out.stdout).evidence.namespaces.map((row: {namespace: string}) => row.namespace),
 		).toEqual(["review-code", "governance"]);
+	});
+
+	const uiRanged = (...comments: ReadonlyArray<{id: number; body: string}>) =>
+		fakeShell([...locating(), [RAW, okOut(UI_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
+
+	it("refuses a child PASS whose range raises the ui class and carries no review-ui verdict", async () => {
+		const shell = uiRanged({id: 1, body: rangeMarker("PASS", UI_DIGEST)});
+
+		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.stderr.join("\n")).toContain("derives review-code, review-ui");
+		expect(out.stderr.join("\n")).toContain("review-ui (absent)");
+	});
+
+	it("proves that same ui child once the review-ui range verdict is on the issue", async () => {
+		const shell = uiRanged(
+			{id: 1, body: rangeMarker("PASS", UI_DIGEST)},
+			{
+				id: 2,
+				body: rangeMarker(
+					"PASS",
+					UI_DIGEST,
+					EPIC_BASE.slice(0, 7),
+					CHILD_TIP.slice(0, 7),
+					"review-ui",
+				),
+			},
+		);
+
+		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+
+		expect(out.code).toBe(0);
+		expect(
+			JSON.parse(out.stdout).evidence.namespaces.map((row: {namespace: string}) => row.namespace),
+		).toEqual(["review-code", "review-ui"]);
 	});
 
 	it("leaves a child PASS UNKNOWN when the range's own content cannot be read", async () => {
