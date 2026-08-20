@@ -22,60 +22,29 @@
 
 import {writeFile} from "node:fs/promises";
 import {Effect} from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import {execCapture} from "../io/exec.ts";
 import {
 	type Api,
+	ambientToken,
+	authed,
+	authedExistence,
 	pagedEnvelope as envelopeOverHttp,
 	existenceOf,
 	graphqlRead,
 	pagedWithLinkProof as linkProofOverHttp,
+	onTransport,
 	PAGE_CAP,
 	type Rest,
-	resolveToken,
 	restRead,
 } from "../io/gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
-import {absent, type Existence, pagedJson, present, unknown} from "../io/issues.ts";
-import {isRecord, parseJson} from "../io/json.ts";
+import {absent, type Existence, present, unknown} from "../io/issues.ts";
+import {isRecord} from "../io/json.ts";
 
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
-
-/**
- * Run one leg over whichever transport the caller already holds, else the platform's fetch.
- *
- * Every signature in this file still reads `Shell<…>`, and this is why. Six groups import from here
- * and their own adapters are being ported on parallel branches, so widening these signatures to
- * carry `HttpClient` would red every one of those branches at once. `src/run.ts` provides a client
- * for every verb the CLI runs and a unit test provides `fakeHttp`, so the `Some` arm is the one both
- * production and the tests take; the fallback exists for a direct library caller. The epic's closing
- * child (#6651) hoists the requirement into the signatures and deletes this.
- */
-const overHttp = <A>(effect: Api<A>): Effect.Effect<A> =>
-	Effect.flatMap(Effect.serviceOption(HttpClient.HttpClient), (held) =>
-		held._tag === "Some"
-			? Effect.provideService(effect, HttpClient.HttpClient, held.value)
-			: Effect.provide(effect, FetchHttpClient.layer),
-	);
-
-/** Resolve the credential, then run the leg. An unresolvable token is the caller's `Failure`. */
-const called = <A>(use: (token: string) => Api<Attempt<A>>): Shell<Attempt<A>> =>
-	Effect.gen(function* () {
-		const token = yield* resolveToken(process.env);
-		if (token._tag === "Failure") return token;
-		return yield* overHttp(use(token.value));
-	});
-
-/** The same, for a read whose absence is a fact: an unresolvable token is `Unknown`, never `Absent`. */
-const calledForExistence = <A>(use: (token: string) => Api<Existence<A>>): Shell<Existence<A>> =>
-	Effect.gen(function* () {
-		const token = yield* resolveToken(process.env);
-		if (token._tag === "Failure") return unknown<A>(token.reason);
-		return yield* overHttp(use(token.value));
-	});
 
 const API_ROOT = "https://api.github.com";
 
@@ -120,56 +89,6 @@ const deliver = <A>(
 		),
 	);
 
-/** What a bare-array read holds, beside the one fact that says whether it holds all of it. */
-export interface PagedProof {
-	readonly entries: ReadonlyArray<unknown>;
-	/** True only when a terminal page arrived carrying no `rel="next"` link. */
-	readonly exhausted: boolean;
-}
-
-/**
- * A list read whose completeness proof is **exhausted pagination**, not a declared count.
- *
- * Reviews and timeline events arrive as bare arrays and the platform declares no `total_count` for
- * either, so a `received <k> of <m>` refusal over them has no derivable `<m>` — any number printed
- * there was invented, and an invented denominator is a completeness proof that proves nothing. What
- * the platform *does* declare is the `Link` header: a terminal page carries no `rel="next"`, and
- * seeing one is positive proof the caller holds every page. Reaching the page cap with a `next`
- * still outstanding is the caller's `13`.
- *
- * Kept exported at this signature for `../heal-ci/github.ts`, which is being ported on its own
- * branch; the closing child deletes it once nothing imports it.
- */
-export const pagedWithLinkProof = (path: string): Shell<Attempt<PagedProof>> =>
-	called((token) => linkProofOverHttp(token, path));
-
-/** A `{total_count, <key>: []}` envelope, paged: entries accumulate, the declared total is page 1's. */
-export const pagedEnvelope = (
-	stdout: string,
-	key: string,
-): Attempt<{declared: number; entries: ReadonlyArray<unknown>}> => {
-	const pages = pagedJson(stdout);
-	if (pages._tag === "Failure") return pages;
-	const entries: unknown[] = [];
-	let declared: number | null = null;
-	for (const page of pages.value) {
-		const parsed = parseJson(page);
-		if (!isRecord(parsed) || !Array.isArray(parsed[key])) {
-			return fail(`\`gh api\` exited 0 but its output carries no ${key} list`);
-		}
-		if (declared === null) {
-			if (typeof parsed.total_count !== "number") {
-				return fail("`gh api` exited 0 but the envelope declares no total_count");
-			}
-			declared = parsed.total_count;
-		}
-		entries.push(...parsed[key]);
-	}
-	return declared === null
-		? fail("`gh api` exited 0 and printed no envelope at all")
-		: ok({declared, entries});
-};
-
 export interface ReviewRecord {
 	readonly login: string;
 	readonly state: string;
@@ -190,7 +109,7 @@ export interface ReviewRead {
  * per-page `group_by` could surface a page-1 stale approval past a page-2 revocation (#725's class).
  */
 export const listReviews = (repo: string, pr: number): Shell<Attempt<ReviewRead>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(linkProofOverHttp(token, `repos/${repo}/pulls/${pr}/reviews`), (paged) => {
 			if (paged._tag === "Failure") return paged;
 			const reviews: ReviewRecord[] = [];
@@ -246,7 +165,7 @@ export const listTeamMembers = (
 	org: string,
 	team: string,
 ): Shell<Existence<ReadonlyArray<string>>> =>
-	calledForExistence((token) =>
+	authedExistence((token) =>
 		Effect.map(
 			pagedForExistence(token, `orgs/${org}/teams/${team}/members`),
 			(read): Existence<ReadonlyArray<string>> => {
@@ -272,7 +191,7 @@ export const listTeamMembers = (
  * branch**, never from the PR — a PR must not reclassify itself (#981).
  */
 export const readFileAtRef = (repo: string, path: string, ref: string): Shell<Existence<string>> =>
-	calledForExistence((token) =>
+	authedExistence((token) =>
 		Effect.map(
 			deliver(
 				HttpClientRequest.get(endpoint(`repos/${repo}/contents/${path}?ref=${ref}`)).pipe(
@@ -314,7 +233,7 @@ export interface CheckRunSet {
  * unfinished gating check.
  */
 export const listShipCheckRuns = (repo: string, sha: string): Shell<Attempt<CheckRunSet>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(
 			envelopeOverHttp(token, `repos/${repo}/commits/${sha}/check-runs`, "check_runs"),
 			(enveloped) => {
@@ -361,7 +280,7 @@ export const latestPerContext = (
  * apart is what `../review/gate-coverage.ts` needs, and the path is the only field that says it.
  */
 export const listWorkflowPaths = (repo: string): Shell<Attempt<ReadonlyArray<string>>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(
 			envelopeOverHttp(token, `repos/${repo}/actions/workflows`, "workflows"),
 			(enveloped) => {
@@ -392,7 +311,7 @@ export const listWorkflows = (repo: string): Shell<Attempt<number>> =>
  * the foreign-repo degradation (ADR 0086) is a fact about the repo, and a failed read is not.
  */
 export const workflowExists = (repo: string, file: string): Shell<Existence<string>> =>
-	calledForExistence((token) =>
+	authedExistence((token) =>
 		Effect.map(
 			restRead(token, "GET", `repos/${repo}/actions/workflows/${file}`),
 			(outcome): Existence<string> =>
@@ -405,7 +324,7 @@ export const workflowExists = (repo: string, file: string): Shell<Existence<stri
 
 /** Total workflow runs recorded at one head, **pre-dedupe** — the `no-runs` second discriminator. */
 export const countWorkflowRuns = (repo: string, sha: string): Shell<Attempt<number>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(
 			restRead(token, "GET", `repos/${repo}/actions/runs?head_sha=${sha}&per_page=1`),
 			(outcome) =>
@@ -415,7 +334,7 @@ export const countWorkflowRuns = (repo: string, sha: string): Shell<Attempt<numb
 
 /** The combined commit-status count at a head — the nudge's second zero-signal. */
 export const countCommitStatuses = (repo: string, sha: string): Shell<Attempt<number>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(restRead(token, "GET", `repos/${repo}/commits/${sha}/status`), (outcome) =>
 			readDeclared(outcome, "GitHub answered 200 but the status rollup declares no total_count"),
 		),
@@ -454,7 +373,7 @@ export const listRunsAtHead = (
 	repo: string,
 	sha: string,
 ): Shell<Attempt<{declared: number; runs: ReadonlyArray<WorkflowRun>}>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(
 			envelopeOverHttp(token, `repos/${repo}/actions/runs?head_sha=${sha}`, "workflow_runs"),
 			(enveloped) => {
@@ -488,7 +407,7 @@ export const listRunArtifacts = (
 	repo: string,
 	runId: number,
 ): Shell<Attempt<{declared: number; artifacts: ReadonlyArray<ArtifactRecord>}>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(
 			envelopeOverHttp(token, `repos/${repo}/actions/runs/${runId}/artifacts`, "artifacts"),
 			(enveloped) => {
@@ -531,9 +450,9 @@ export const fetchManifest = (
 ): Shell<Attempt<string>> =>
 	Effect.gen(function* () {
 		const zip = `${directory}/run-evidence.zip`;
-		const token = yield* resolveToken(process.env);
+		const token = yield* ambientToken;
 		if (token._tag === "Failure") return token;
-		const download = yield* overHttp(
+		const download = yield* onTransport(
 			deliver(
 				HttpClientRequest.get(endpoint(`repos/${repo}/actions/artifacts/${artifactId}/zip`)).pipe(
 					HttpClientRequest.setHeaders(headersFor(token.value, "application/vnd.github+json")),
@@ -583,7 +502,7 @@ export interface TimelineRead {
  * `next` link is what makes the ejection classification and the reopened count honest.
  */
 export const pullTimeline = (repo: string, pr: number): Shell<Attempt<TimelineRead>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(linkProofOverHttp(token, `repos/${repo}/issues/${pr}/timeline`), (paged) => {
 			if (paged._tag === "Failure") return paged;
 			const events: TimelineEvent[] = [];
@@ -604,7 +523,7 @@ export const pullTimeline = (repo: string, pr: number): Shell<Attempt<TimelineRe
  * three §CP approvals destroyed in one night), so the notice fires before one is asked for.
  */
 export const behindBase = (repo: string, base: string, sha: string): Shell<Attempt<number>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(restRead(token, "GET", `repos/${repo}/compare/${base}...${sha}`), (outcome) => {
 			const body = bodyOf(outcome);
 			if (body._tag === "Failure") return body;
@@ -620,7 +539,7 @@ export const branchSubjects = (
 	repo: string,
 	branch: string,
 ): Shell<Attempt<ReadonlyArray<string>>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(
 			restRead(token, "GET", `repos/${repo}/commits?sha=${branch}&per_page=50`),
 			(outcome) => {
@@ -643,7 +562,7 @@ export const branchSubjects = (
 
 /** One commit's author date — the window the nudge counts `reopened` events within. */
 export const commitDate = (repo: string, sha: string): Shell<Attempt<string>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(restRead(token, "GET", `repos/${repo}/commits/${sha}`), (outcome) => {
 			const body = bodyOf(outcome);
 			if (body._tag === "Failure") return body;
@@ -661,7 +580,7 @@ export const commitDate = (repo: string, sha: string): Shell<Attempt<string>> =>
  * exactly the parked intent `ship disarm` exists to clear.
  */
 export const isQueueGoverned = (repo: string, branch: string): Shell<Attempt<boolean>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(restRead(token, "GET", `repos/${repo}/rules/branches/${branch}`), (outcome) => {
 			const body = bodyOf(outcome);
 			if (body._tag === "Failure") return body;
@@ -690,7 +609,7 @@ export const isIndefinite = (read: Mergeability): boolean =>
 	read.mergeable === null || read.state === "" || read.state === "unknown";
 
 export const readMergeability = (repo: string, pr: number): Shell<Attempt<Mergeability>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(restRead(token, "GET", `repos/${repo}/pulls/${pr}`), (outcome) => {
 			const body = bodyOf(outcome);
 			if (body._tag === "Failure") return body;
@@ -774,7 +693,7 @@ const DISARM_MUTATION =
  * GraphQL name, so it is left unset rather than defaulted.
  */
 export const armAutoMerge = (repo: string, pr: number): Shell<Attempt<void>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.gen(function* () {
 			const id = yield* pullRequestId(token, repo, pr);
 			if (id._tag === "Failure") return id;
@@ -785,7 +704,7 @@ export const armAutoMerge = (repo: string, pr: number): Shell<Attempt<void>> =>
 
 /** Clear a parked merge intent. Its exit status is never trusted — the caller re-reads. */
 export const disableAutoMerge = (repo: string, pr: number): Shell<Attempt<void>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.gen(function* () {
 			const id = yield* pullRequestId(token, repo, pr);
 			if (id._tag === "Failure") return id;
@@ -796,7 +715,7 @@ export const disableAutoMerge = (repo: string, pr: number): Shell<Attempt<void>>
 
 /** Close or reopen a pull request. Each leg is read back by the caller; neither is trusted here. */
 export const setPullState = (repo: string, pr: number, state: string): Shell<Attempt<void>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(
 			deliver(
 				HttpClientRequest.patch(endpoint(`repos/${repo}/pulls/${pr}`)).pipe(
@@ -864,7 +783,7 @@ export const listReviewThreads = (
 	repo: string,
 	pr: number,
 ): Shell<Attempt<{declared: number; threads: ReadonlyArray<ReviewThread>}>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.gen(function* () {
 			const named = ownerAndName(repo);
 			if (named._tag === "Failure") return named;
@@ -917,7 +836,7 @@ const RESOLVE_MUTATION =
 
 /** Post the rationale reply. It lands **before** the resolve, so an interrupted run is never silent. */
 export const replyToThread = (thread: string, body: string): Shell<Attempt<string>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(graphql(token, REPLY_MUTATION, {thread, body}), (data) => {
 			if (data._tag === "Failure") return data;
 			const added = isRecord(data.value.addPullRequestReviewThreadReply)
@@ -932,7 +851,7 @@ export const replyToThread = (thread: string, body: string): Shell<Attempt<strin
 
 /** Fire the resolve. Its response is never the proof — the caller re-reads the thread. */
 export const resolveThread = (thread: string): Shell<Attempt<void>> =>
-	called((token) =>
+	authed((token) =>
 		Effect.map(graphql(token, RESOLVE_MUTATION, {thread}), (data) =>
 			data._tag === "Failure" ? data : ok(undefined),
 		),

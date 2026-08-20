@@ -139,8 +139,6 @@ export const diagnoseOne = (
 	pr: number,
 	sha: string,
 	params: DiagnoseParams,
-	/** The caller's environment, which is where the GitHub credential resolves from. */
-	env: Readonly<Record<string, string | undefined>>,
 	/** This repo's `governedRoots`, resolved once by the caller — a sweep reads the config once. */
 	governedRoots: ReadonlyArray<string>,
 	/** This repo's `ci`, resolved once by the caller for the same reason. */
@@ -232,7 +230,7 @@ export const diagnoseOne = (
 			return refused(PRECONDITION_UNKNOWN, unreadable("the workflow runs", pr, runCount.reason));
 		}
 
-		const pushedAt = yield* commitPushedAt(repo, bound, env);
+		const pushedAt = yield* commitPushedAt(repo, bound);
 		if (pushedAt._tag === "Failure") {
 			return refused(PRECONDITION_UNKNOWN, unreadable("the head commit", pr, pushedAt.reason));
 		}
@@ -247,7 +245,7 @@ export const diagnoseOne = (
 			);
 		}
 
-		const declared = yield* readDeclared(repo, pull.baseRef, env);
+		const declared = yield* readDeclared(repo, pull.baseRef);
 		if (declared._tag === "Unknown") {
 			return refused(PRECONDITION_UNKNOWN, unreadable(declared.what, pr, declared.reason));
 		}
@@ -515,7 +513,6 @@ export const runDiagnose = (
 			options.pr,
 			options.sha,
 			options,
-			options.env,
 			governed.roots,
 			yield* resolveCi(options.cwd),
 		);

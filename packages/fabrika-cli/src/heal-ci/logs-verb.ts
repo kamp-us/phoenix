@@ -157,7 +157,7 @@ export const runLogs = (
 		for (const check of selected) {
 			let job: {readonly id: number; readonly name: string} | null = null;
 			for (const run of runs.value.runs) {
-				const jobs = yield* listRunJobs(repo, run.id, options.env);
+				const jobs = yield* listRunJobs(repo, run.id);
 				if (jobs._tag === "Failure") {
 					return refuse(
 						PRECONDITION_UNKNOWN,
@@ -196,7 +196,7 @@ export const runLogs = (
 				continue;
 			}
 
-			const log = yield* fetchJobLog(repo, job.id, options.env);
+			const log = yield* fetchJobLog(repo, job.id);
 			if (log._tag === "Expired") {
 				return refuse(
 					LOGS_EXPIRED,

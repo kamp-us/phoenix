@@ -67,10 +67,8 @@ export interface SubIssueLink {
  * defaulting to open, because a silently-defaulted state is exactly how `lane emit` booted closed
  * children as `queued` (#5746).
  *
- * **A walk that never reached a terminal page fails.** `gh api --paginate`'s stdout could stop
- * mid-page, and `pagedJson` refused those bytes; the HTTP walk's equivalent is a `rel="next"` still
- * outstanding at the page cap. Both are one refusal: a child list nobody proved was all of it must
- * not read back as a shorter ledger.
+ * **A walk that never reached a terminal page fails.** The proof is a `rel="next"` still outstanding
+ * at the page cap: a child list nobody proved was all of it must not read back as a shorter ledger.
  */
 export const listSubIssues = (
 	repo: string,

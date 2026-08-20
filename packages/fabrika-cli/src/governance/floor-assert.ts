@@ -64,7 +64,6 @@ const unknown = (reason: string): FloorAssertion => ({_tag: "Unknown", reason});
 export const assertFloorAt = (
 	repo: string,
 	sha: string,
-	env: Readonly<Record<string, string | undefined>>,
 ): Effect.Effect<
 	FloorAssertion,
 	never,
@@ -86,7 +85,7 @@ export const assertFloorAt = (
 		if (latest.status !== "completed") return {_tag: "InFlight", run: latest.id};
 		if (!RED_CONCLUSIONS.has(latest.conclusion ?? "")) return {_tag: "Green", run: latest.id};
 
-		const before = yield* getWorkflowRun(repo, latest.id, env);
+		const before = yield* getWorkflowRun(repo, latest.id);
 		if (before._tag !== "Present") {
 			return unknown(
 				before._tag === "Absent"
@@ -94,9 +93,9 @@ export const assertFloorAt = (
 					: `run ${latest.id}: ${before.reason}`,
 			);
 		}
-		const requested = yield* rerunFailedJobs(repo, latest.id, env);
+		const requested = yield* rerunFailedJobs(repo, latest.id);
 		if (requested._tag === "Failure") return unknown(requested.reason);
-		const after = yield* getWorkflowRun(repo, latest.id, env);
+		const after = yield* getWorkflowRun(repo, latest.id);
 		if (after._tag !== "Present") {
 			return unknown(
 				`the re-fire was requested and the confirming read of run ${latest.id} failed — UNKNOWN whether it re-ran`,

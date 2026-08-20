@@ -11,35 +11,25 @@
  * (ADR 0315) the status is a number the response carried rather than a code scraped out of an error
  * string, so `Absent` and `Unknown` are told apart by the platform's own answer.
  *
- * **Where the credential comes from.** Every leg of the client takes a token as an argument, so each
- * read here resolves one, and `env` is the last parameter of every read rather than something a read
- * reaches for out of `process`. That is the package's shape: the environment enters at the verb and
- * is passed down, which is also what keeps a test's environment scripted rather than inherited.
+ * **Where the credential comes from.** Every export takes `(repo, …)` and reaches `ambientToken` for
+ * its credential, erasing the transport requirement with `onTransport` rather than publishing
+ * `HttpClient` up through its callers — the shape ADR 0315 carries as amended by the #6704 ruling.
  */
 import {Effect} from "effect";
-import type * as HttpClient from "effect/unstable/http/HttpClient";
-import type {ChildProcessSpawner} from "effect/unstable/process";
 import {
+	ambientToken,
+	authed,
+	authedExistence,
 	existenceOf,
+	onTransport,
 	type PagedAttempt,
 	pagedEnvelope,
 	pagedWithLinkProof,
-	resolveToken,
 	restRead,
 } from "../io/gh-api.ts";
-import {type Attempt, fail, ok} from "../io/git.ts";
+import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
 import {type Existence, unknown} from "../io/issues.ts";
 import {isRecord} from "../io/json.ts";
-
-/** An authenticated GitHub read: the transport, plus the spawner the `gh auth token` leg needs. */
-type Authed<A> = Effect.Effect<
-	A,
-	never,
-	HttpClient.HttpClient | ChildProcessSpawner.ChildProcessSpawner
->;
-
-/** The environment a read resolves its credential from — the caller's, never `process`'s. */
-type Env = Readonly<Record<string, string | undefined>>;
 
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
 
@@ -57,30 +47,30 @@ export interface JobSet {
 }
 
 /** Every job of one run, paged, with the platform's declared count beside what arrived. */
-export const listRunJobs = (repo: string, run: number, env: Env): Authed<Attempt<JobSet>> =>
-	Effect.gen(function* () {
-		const token = yield* resolveToken(env);
-		if (token._tag === "Failure") return token;
-		const enveloped = yield* pagedEnvelope(
-			token.value,
-			`repos/${repo}/actions/runs/${run}/jobs`,
-			"jobs",
-		);
-		if (enveloped._tag === "Failure") return enveloped;
-		const jobs: WorkflowJob[] = [];
-		for (const value of enveloped.value.entries) {
-			if (!isRecord(value) || typeof value.id !== "number") {
-				return fail("GitHub answered 200 but one entry is not a workflow job");
+export const listRunJobs = (repo: string, run: number): Shell<Attempt<JobSet>> =>
+	authed((token) =>
+		Effect.gen(function* () {
+			const enveloped = yield* pagedEnvelope(
+				token,
+				`repos/${repo}/actions/runs/${run}/jobs`,
+				"jobs",
+			);
+			if (enveloped._tag === "Failure") return enveloped;
+			const jobs: WorkflowJob[] = [];
+			for (const value of enveloped.value.entries) {
+				if (!isRecord(value) || typeof value.id !== "number") {
+					return fail("GitHub answered 200 but one entry is not a workflow job");
+				}
+				jobs.push({
+					id: value.id,
+					name: str(value.name),
+					status: str(value.status),
+					conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
+				});
 			}
-			jobs.push({
-				id: value.id,
-				name: str(value.name),
-				status: str(value.status),
-				conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
-			});
-		}
-		return ok({declared: enveloped.value.declared, jobs});
-	});
+			return ok({declared: enveloped.value.declared, jobs});
+		}),
+	);
 
 /** A run's log availability: the platform serves the bytes, has purged them, or could not be asked. */
 export type LogRead =
@@ -109,11 +99,13 @@ export type LogRead =
  * header on the cross-origin hop, per the Fetch standard's HTTP-redirect step. Nothing here has to
  * follow the redirect by hand, and nothing may re-attach the credential to the signed URL.
  */
-export const fetchJobLog = (repo: string, job: number, env: Env): Authed<LogRead> =>
+export const fetchJobLog = (repo: string, job: number): Shell<LogRead> =>
 	Effect.gen(function* () {
-		const token = yield* resolveToken(env);
+		const token = yield* ambientToken;
 		if (token._tag === "Failure") return {_tag: "Failed" as const, reason: token.reason};
-		const outcome = yield* restRead(token.value, "GET", `repos/${repo}/actions/jobs/${job}/logs`);
+		const outcome = yield* onTransport(
+			restRead(token.value, "GET", `repos/${repo}/actions/jobs/${job}/logs`),
+		);
 		if (outcome._tag === "Unreachable") {
 			return {_tag: "Failed" as const, reason: outcome.reason};
 		}
@@ -147,13 +139,12 @@ const toRunRecord = (value: unknown): Attempt<RunRecord> => {
 };
 
 /** One workflow run — the rerun guard's second and third preconditions read from here. */
-export const getWorkflowRun = (repo: string, run: number, env: Env): Authed<Existence<RunRecord>> =>
-	Effect.gen(function* () {
-		const token = yield* resolveToken(env);
-		if (token._tag === "Failure") return unknown<RunRecord>(token.reason);
-		const outcome = yield* restRead(token.value, "GET", `repos/${repo}/actions/runs/${run}`);
-		return existenceOf(outcome, toRunRecord);
-	});
+export const getWorkflowRun = (repo: string, run: number): Shell<Existence<RunRecord>> =>
+	authedExistence((token) =>
+		Effect.map(restRead(token, "GET", `repos/${repo}/actions/runs/${run}`), (outcome) =>
+			existenceOf(outcome, toRunRecord),
+		),
+	);
 
 /**
  * Request a re-run of a run's **failed jobs only**.
@@ -163,20 +154,18 @@ export const getWorkflowRun = (repo: string, run: number, env: Env): Authed<Exis
  * anything. v1 wrote its durable marker on the strength of this response and thereby blocked every
  * future rerun of a run that never re-ran.
  */
-export const rerunFailedJobs = (repo: string, run: number, env: Env): Authed<Attempt<void>> =>
-	Effect.gen(function* () {
-		const token = yield* resolveToken(env);
-		if (token._tag === "Failure") return token;
-		const outcome = yield* restRead(
-			token.value,
-			"POST",
-			`repos/${repo}/actions/runs/${run}/rerun-failed-jobs`,
-		);
-		if (outcome._tag === "Unreachable") return fail(outcome.reason);
-		return outcome.status >= 200 && outcome.status < 300
-			? ok<void>(undefined)
-			: fail(`GitHub answered HTTP ${outcome.status}`);
-	});
+export const rerunFailedJobs = (repo: string, run: number): Shell<Attempt<void>> =>
+	authed((token) =>
+		Effect.map(
+			restRead(token, "POST", `repos/${repo}/actions/runs/${run}/rerun-failed-jobs`),
+			(outcome) => {
+				if (outcome._tag === "Unreachable") return fail(outcome.reason);
+				return outcome.status >= 200 && outcome.status < 300
+					? ok<void>(undefined)
+					: fail(`GitHub answered HTTP ${outcome.status}`);
+			},
+		),
+	);
 
 /**
  * A read's answer beside the status GitHub served — which is what a permission denial is told apart
@@ -198,17 +187,14 @@ export interface Answered<A> {
 export const branchProtectionContexts = (
 	repo: string,
 	branch: string,
-	env: Env,
-): Authed<Answered<Existence<ReadonlyArray<string>>>> =>
+): Shell<Answered<Existence<ReadonlyArray<string>>>> =>
 	Effect.gen(function* () {
-		const token = yield* resolveToken(env);
+		const token = yield* ambientToken;
 		if (token._tag === "Failure") {
 			return {read: unknown<ReadonlyArray<string>>(token.reason), status: null};
 		}
-		const outcome = yield* restRead(
-			token.value,
-			"GET",
-			`repos/${repo}/branches/${branch}/protection`,
+		const outcome = yield* onTransport(
+			restRead(token.value, "GET", `repos/${repo}/branches/${branch}/protection`),
 		);
 		const read = existenceOf<ReadonlyArray<string>>(outcome, (body) => {
 			if (!isRecord(body))
@@ -237,15 +223,13 @@ export interface RulesetRead {
  * endpoints answer at ordinary `repo` scope, so nothing about the permission finding changes: a
  * permission denial here is `unprobeable`, never "no requirements".
  */
-export const rulesetContexts = (
-	repo: string,
-	branch: string,
-	env: Env,
-): Authed<PagedAttempt<RulesetRead>> =>
+export const rulesetContexts = (repo: string, branch: string): Shell<PagedAttempt<RulesetRead>> =>
 	Effect.gen(function* () {
-		const token = yield* resolveToken(env);
+		const token = yield* ambientToken;
 		if (token._tag === "Failure") return {...token, status: null};
-		const read = yield* pagedWithLinkProof(token.value, `repos/${repo}/rules/branches/${branch}`);
+		const read = yield* onTransport(
+			pagedWithLinkProof(token.value, `repos/${repo}/rules/branches/${branch}`),
+		);
 		if (read._tag === "Failure") return read;
 		const contexts: string[] = [];
 		for (const entry of read.value.entries) {
@@ -277,26 +261,24 @@ export interface OpenPullRow {
  */
 export const listOpenPulls = (
 	repo: string,
-	env: Env,
-): Authed<Attempt<{readonly rows: ReadonlyArray<OpenPullRow>; readonly exhausted: boolean}>> =>
-	Effect.gen(function* () {
-		const token = yield* resolveToken(env);
-		if (token._tag === "Failure") return token;
-		const read = yield* pagedWithLinkProof(token.value, `repos/${repo}/pulls?state=open`);
-		if (read._tag === "Failure") return read;
-		const rows: OpenPullRow[] = [];
-		for (const entry of read.value.entries) {
-			if (!isRecord(entry) || typeof entry.number !== "number") {
-				return fail("GitHub answered 200 but one entry is not a pull request");
+): Shell<Attempt<{readonly rows: ReadonlyArray<OpenPullRow>; readonly exhausted: boolean}>> =>
+	authed((token) =>
+		Effect.map(pagedWithLinkProof(token, `repos/${repo}/pulls?state=open`), (read) => {
+			if (read._tag === "Failure") return read;
+			const rows: OpenPullRow[] = [];
+			for (const entry of read.value.entries) {
+				if (!isRecord(entry) || typeof entry.number !== "number") {
+					return fail("GitHub answered 200 but one entry is not a pull request");
+				}
+				const head = entry.head;
+				rows.push({
+					number: entry.number,
+					headSha: isRecord(head) ? str(head.sha) : "",
+				});
 			}
-			const head = entry.head;
-			rows.push({
-				number: entry.number,
-				headSha: isRecord(head) ? str(head.sha) : "",
-			});
-		}
-		return ok({rows, exhausted: read.value.exhausted});
-	});
+			return ok({rows, exhausted: read.value.exhausted});
+		}),
+	);
 
 export interface RateLimit {
 	readonly remaining: number;
@@ -305,39 +287,37 @@ export interface RateLimit {
 }
 
 /** The core rate limit, which a full-board sweep is capable of exhausting on its own. */
-export const readRateLimit = (env: Env): Authed<Attempt<RateLimit>> =>
-	Effect.gen(function* () {
-		const token = yield* resolveToken(env);
-		if (token._tag === "Failure") return token;
-		const outcome = yield* restRead(token.value, "GET", "rate_limit");
-		if (outcome._tag === "Unreachable") return fail(outcome.reason);
-		if (outcome.status < 200 || outcome.status >= 300) {
-			return fail(`GitHub answered HTTP ${outcome.status}`);
-		}
-		const parsed = outcome.body;
-		const core =
-			isRecord(parsed) && isRecord(parsed.resources) && isRecord(parsed.resources.core)
-				? parsed.resources.core
-				: null;
-		if (core === null || typeof core.remaining !== "number") {
-			return fail("GitHub answered 200 but the rate-limit record declares no core remaining");
-		}
-		const reset = typeof core.reset === "number" ? new Date(core.reset * 1000).toISOString() : "";
-		return ok({remaining: core.remaining, resetsAt: reset});
-	});
+export const readRateLimit = (): Shell<Attempt<RateLimit>> =>
+	authed((token) =>
+		Effect.map(restRead(token, "GET", "rate_limit"), (outcome) => {
+			if (outcome._tag === "Unreachable") return fail(outcome.reason);
+			if (outcome.status < 200 || outcome.status >= 300) {
+				return fail(`GitHub answered HTTP ${outcome.status}`);
+			}
+			const parsed = outcome.body;
+			const core =
+				isRecord(parsed) && isRecord(parsed.resources) && isRecord(parsed.resources.core)
+					? parsed.resources.core
+					: null;
+			if (core === null || typeof core.remaining !== "number") {
+				return fail("GitHub answered 200 but the rate-limit record declares no core remaining");
+			}
+			const reset = typeof core.reset === "number" ? new Date(core.reset * 1000).toISOString() : "";
+			return ok({remaining: core.remaining, resetsAt: reset});
+		}),
+	);
 
 /** When the head commit was pushed — the left operand of the strand age, read at the commit. */
-export const commitPushedAt = (repo: string, sha: string, env: Env): Authed<Attempt<string>> =>
-	Effect.gen(function* () {
-		const token = yield* resolveToken(env);
-		if (token._tag === "Failure") return token;
-		const outcome = yield* restRead(token.value, "GET", `repos/${repo}/commits/${sha}`);
-		if (outcome._tag === "Unreachable") return fail(outcome.reason);
-		if (outcome.status < 200 || outcome.status >= 300) {
-			return fail(`GitHub answered HTTP ${outcome.status}`);
-		}
-		const commit = isRecord(outcome.body) ? outcome.body.commit : null;
-		const committer = isRecord(commit) ? commit.committer : null;
-		const at = isRecord(committer) ? str(committer.date).trim() : "";
-		return at === "" ? fail("GitHub answered 200 but named no commit date") : ok(at);
-	});
+export const commitPushedAt = (repo: string, sha: string): Shell<Attempt<string>> =>
+	authed((token) =>
+		Effect.map(restRead(token, "GET", `repos/${repo}/commits/${sha}`), (outcome) => {
+			if (outcome._tag === "Unreachable") return fail(outcome.reason);
+			if (outcome.status < 200 || outcome.status >= 300) {
+				return fail(`GitHub answered HTTP ${outcome.status}`);
+			}
+			const commit = isRecord(outcome.body) ? outcome.body.commit : null;
+			const committer = isRecord(commit) ? commit.committer : null;
+			const at = isRecord(committer) ? str(committer.date).trim() : "";
+			return at === "" ? fail("GitHub answered 200 but named no commit date") : ok(at);
+		}),
+	);

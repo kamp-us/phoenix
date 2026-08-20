@@ -25,6 +25,7 @@ import {runDesignTokenGuard} from "./design-token-verb.ts";
 import {runFanoutGuard} from "./fanout-verb.ts";
 import {runHomingGuard} from "./homing-verb.ts";
 import {runLeakGuard} from "./leak-verb.ts";
+import {runNoGh} from "./no-gh-verb.ts";
 import {runPatchGuard} from "./patch-verb.ts";
 import {runPathFilterGuard} from "./path-filter-verb.ts";
 import {runPitchGuard} from "./pitch-verb.ts";
@@ -108,6 +109,33 @@ const skillLint = Command.make("skill-lint").pipe(
 	Command.withShortDescription("The skill + agent corpus obeys its four mechanical rules."),
 	Command.withDescription(
 		"The skill and agent corpus under claude-plugins/ must hold no GraphQL-path `gh` call, no unparseable frontmatter, no bare `git push` in a runnable block, and no plugin path literal that only resolves inside this repo.",
+	),
+);
+
+const noGhCheck = leafCommand(
+	"check",
+	{root: rootFlag},
+	Effect.fn(function* ({root}) {
+		yield* emit(
+			yield* runNoGh({
+				root: Option.getOrNull(root),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Red on a `gh` invocation left in fabrika-cli's source."),
+	Command.withDescription(
+		"Walk packages/fabrika-cli/src/ and red on any invocation of the `gh` binary in it, in all three spellings: the binary named in argv position to any spawner, a shell string that runs it under a -c argument, and the same string reached after a shell operator. Epic #6629 put every GitHub call on the fetch client in src/io/gh-api.ts so a verb runs where no `gh` is installed — a phone, a lean CI image, a consumer repo — and one new call in one line puts the binary back with nothing else noticing. Comments are stripped before matching and a command string is judged only beside a spawn, so the package's own prose and test fixtures are untouched; ADR 0315's credential leg is sanctioned by file AND by matched text, never file-wide. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: nothing walked, or a directory contributed no file — fail-closed, ADR 0092), 11 (a read failed, so the verdict is UNKNOWN), 12 (an invocation was found). Example: fabrika guard no-gh check",
+	),
+);
+
+const noGhGuard = Command.make("no-gh").pipe(
+	Command.withSubcommands([noGhCheck]),
+	Command.withShortDescription("fabrika-cli's source holds no `gh` invocation."),
+	Command.withDescription(
+		"packages/fabrika-cli/src/ must reach GitHub over HTTP and never through the `gh` binary, so that every verb runs from a token alone (epic #6629, ADR 0315).",
 	),
 );
 
@@ -641,6 +669,7 @@ const guards = [
 	decisionsIndexGuard,
 	designTokenGuard,
 	designInventoryGuard,
+	noGhGuard,
 ];
 
 export const guardCommand = Command.make("guard").pipe(

@@ -28,13 +28,9 @@ import {
 	openIssuesWithLabel,
 	openIssuesWithLabelDetailed,
 	openQueueIssues,
-	pagedJson,
-	parseIssueDetails,
-	parseTabRows,
 	patchIssueBody,
 	removeLabel,
 	repoDefaultBranch,
-	scanJsonPages,
 	searchOpenIssues,
 	setMilestone,
 } from "./issues.ts";
@@ -704,58 +700,5 @@ describe("repoDefaultBranch", () => {
 			scripted([[/repos/, {status: 200, body: {}}]]),
 		);
 		expect(result._tag).toBe("Failure");
-	});
-});
-
-describe("the `gh`-shaped parsers the sibling adapters still import", () => {
-	it("parseTabRows reads rows of exactly the asked-for column count", () => {
-		expect(parseTabRows("1\ta\n2\tb\n", 2)).toEqual([
-			["1", "a"],
-			["2", "b"],
-		]);
-		expect(parseTabRows("", 2)).toEqual([]);
-		expect(parseTabRows("1\ta\tb\n", 2)).toBeNull();
-		expect(parseTabRows("1\n", 2)).toBeNull();
-	});
-
-	it("pagedJson splits the concatenated pages `--paginate` emits, which JSON.parse rejects whole", () => {
-		expect(() => JSON.parse("[1][2]")).toThrow();
-		expect(pagedJson("[1][2]")).toEqual({_tag: "Ok", value: ["[1]", "[2]"]});
-		expect(pagedJson('[{"body":"see [1] and ]"}]')).toEqual({
-			_tag: "Ok",
-			value: ['[{"body":"see [1] and ]"}]'],
-		});
-		expect(pagedJson('[{"body":"a \\" ] b"}]')).toEqual({
-			_tag: "Ok",
-			value: ['[{"body":"a \\" ] b"}]'],
-		});
-	});
-
-	it("pagedJson fails on a read that stopped mid-page rather than handing back what closed", () => {
-		const result = pagedJson('[{"id":1}][{"id');
-		expect(result._tag).toBe("Failure");
-		expect(result).toMatchObject({reason: expect.stringContaining("page boundary")});
-	});
-
-	it("scanJsonPages accounts for every byte, and reports the ones no page closed over", () => {
-		expect(scanJsonPages("[1]\n[2]\n")).toEqual({pages: ["[1]", "[2]"], truncated: null});
-		expect(scanJsonPages("")).toEqual({pages: [], truncated: null});
-		expect(scanJsonPages('[{"number":1},{"num').truncated).not.toBeNull();
-		expect(scanJsonPages('[{"number":1}][{"num').pages).toEqual(['[{"number":1}]']);
-		expect(scanJsonPages("[1]]").truncated).not.toBeNull();
-		expect(scanJsonPages('[{"body":"half a sen').truncated).not.toBeNull();
-	});
-
-	it("parseIssueDetails refuses a line it cannot read rather than dropping it", () => {
-		const line = (row: unknown): string => JSON.stringify(row);
-		expect(
-			parseIssueDetails(`${line({number: 9412, title: "a topic", body: "## Came from"})}\n`),
-		).toEqual([{number: 9412, title: "a topic", body: "## Came from"}]);
-		expect(parseIssueDetails(line({number: 9412, title: "a topic"}))).toEqual([
-			{number: 9412, title: "a topic", body: ""},
-		]);
-		expect(parseIssueDetails("not json at all")).toBeNull();
-		expect(parseIssueDetails(line({number: "9412", title: "a topic"}))).toBeNull();
-		expect(parseIssueDetails("")).toEqual([]);
 	});
 });
