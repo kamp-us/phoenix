@@ -1,7 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {type FakeFs, fakeFs, record} from "../fakes.test-support.ts";
-import {runCheck} from "./check-verb.ts";
+import {type CheckOptions, runCheck} from "./check-verb.ts";
 import {BAD_SECTIONS, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
 	DIR,
@@ -15,9 +15,15 @@ import {
 
 const DECISIONS = "/repo/.decisions";
 
-const options = {register: "terms", dir: DIR, decisions: ".decisions", json: false, cwd: REPO};
+const options: CheckOptions = {
+	register: "terms",
+	dir: DIR,
+	decisions: ".decisions",
+	json: false,
+	cwd: REPO,
+};
 
-const run = (fs: FakeFs, overrides: Partial<typeof options> = {}) =>
+const run = (fs: FakeFs, overrides: Partial<CheckOptions> = {}) =>
 	Effect.runPromise(Effect.provide(runCheck({...options, ...overrides}), fs.layer));
 
 const withDecisions = (files: Record<string, string | null>, names: ReadonlyArray<string>) =>
@@ -89,6 +95,28 @@ describe("runCheck", () => {
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("citations-unverified\t-\t-\t-\tcannot read .decisions:");
 		expect(out.stdout.split("\n")[0]).toBe("defects");
+	});
+
+	// #6433: the flag is an override, not the only way to name a corpus.
+	it("resolves the corpus from the repo's config when --decisions is absent", async () => {
+		const out = await run(corpus(), {decisions: null});
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("cites 0044");
+		expect(out.stderr.join("\n")).toContain("citation(s) resolved under .decisions");
+	});
+
+	it("leaves citations unverified on a repo that declares it keeps no corpus", async () => {
+		const fs = withDecisions(
+			{[TERMS_PATH]: TERMS, [`${REPO}/.fabrika.jsonc`]: '{"decisionsDir": null}'},
+			[],
+		);
+		const out = await run(fs, {decisions: null});
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("citations-unverified\t-\t-\t-\t");
+		expect(out.stdout).toContain("declines `decisionsDir`");
+		// The word a declined corpus must never produce: a dead citation is a claim about a corpus
+		// that was read, and this one never was.
+		expect(out.stdout).not.toContain("citation-dead");
 	});
 
 	it("refuses an unreadable register — the outcome is UNKNOWN, never clean", async () => {

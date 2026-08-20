@@ -781,7 +781,7 @@ fabrika glossary check [--register <terms|language|both>] [--dir <path>] [--deci
 |---|---|---|---|---|
 | `--register` | enum `terms\|language\|both` | no | `both` | which register(s) to check |
 | `--dir` | string | no | `.glossary` | the directory holding the registers |
-| `--decisions` | string | no | `.decisions` | the decision-record directory citations resolve against |
+| `--decisions` | string | no | the repo's `decisionsDir` | the decision-record directory citations resolve against; an override, and the only way to read a corpus in a repo that declares it keeps none |
 | `--json` | boolean | no | `false` | emit the check result as one JSON object on stdout |
 
 **Output** — machine channel. The first line is the outcome token alone: `clean`, `defects` or
@@ -796,9 +796,9 @@ fabrika glossary check [--register <terms|language|both>] [--dir <path>] [--deci
 | `duplicate-key` | two rows in the selected registers share a `normalizeKey` |
 | `cross-register` | one key is declared in both TERMS and LANGUAGE — one term, one register (#4465) |
 | `out-of-order` | a row precedes a row that sorts before it within its section |
-| `citation-dead` | a cited `NNNN` decision id has no record under `--decisions` |
+| `citation-dead` | a cited `NNNN` decision id has no record under the resolved corpus |
 | `citation-superseded` | a cited record exists and its frontmatter `status:` is not live |
-| `citations-unverified` | `--decisions` could not be read, so no citation in scope was resolved |
+| `citations-unverified` | the corpus could not be read, or the repo declares `decisionsDir: null` and keeps none — either way no citation in scope was resolved |
 
 A citation is a four-digit token in a row's second or third cell. **Live** is decided by importing
 `isLive` from [`src/adr/records.ts`](../../../../packages/fabrika-cli/src/adr/records.ts) rather than
@@ -839,9 +839,10 @@ exiting non-zero on the one case it was asked to produce (#4723).
 | `clean` | `checked <n> row(s) across <m> register(s); no defect found` |
 | `defects` | `null` |
 
-**Scope** — every parsed row of the selected register(s), plus every decision record under
-`--decisions` that a row cites. The scope line goes to stderr naming the row count per register and
-the number of citations resolved.
+**Scope** — every parsed row of the selected register(s), plus every decision record a row cites,
+resolved against the corpus `decisionsDir` declares unless `--decisions` overrides it (#6433). The
+scope line goes to stderr naming the row count per register and the number of citations resolved, or
+the reason none were.
 
 **Zero scope is a red for this verb, with one carved-out exception.** A selected register that is
 present and parses to **zero rows** is exit `7`: a check that scanned nothing must never report
@@ -865,7 +866,7 @@ expectation that those gates hold; it does not recompute their verdicts.
 | `4` | a selected register was read and has no parseable term table |
 | `7` | a selected register is present and holds zero rows — refusing to report a clean scan of nothing |
 | `10` | `--register` carried a value off its closed enum |
-| `11` | a selected register could not be read, so the outcome is UNKNOWN |
+| `11` | a selected register, or `.fabrika.jsonc`, could not be read, so the outcome is UNKNOWN |
 
 **Errors**
 

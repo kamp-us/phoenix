@@ -1,8 +1,11 @@
 /**
  * `guard decisions-index validate` — ported off v1's `decisions-index validate` (epic #5720).
  *
- * The verb is the IO boundary and nothing else: list `.decisions/`, read each record, hand them to
- * the pure rule in `./decisions-number.ts`, seat the answer on the group's exit taxonomy.
+ * The verb is the IO boundary and nothing else: list the decision corpus, read each record, hand
+ * them to the pure rule in `./decisions-number.ts`, seat the answer on the group's exit taxonomy.
+ *
+ * Where the corpus is comes from `decisionsDir` (#6433), the same resolver `adr` and `governance`
+ * read, so a repo that keeps its records elsewhere is scanned rather than reported empty.
  *
  * v1's other three modes did not come with it: `generate`/`check` served a committed
  * `.decisions/index.md` that ADR 0126 deleted, and `compact`/`next` are `fabrika adr`'s
@@ -11,6 +14,7 @@
 
 import {Effect, type FileSystem, Path} from "effect";
 import {isRecordCandidate} from "../adr/records.ts";
+import {decisionsDirOr} from "../config/paths.ts";
 import {discoverRepoRoot} from "../delegate/root.ts";
 import {exists, type ReadFailed, readDir, readFile} from "../io/fs.ts";
 import type {VerbOutcome} from "../verb.ts";
@@ -21,14 +25,13 @@ import {
 	clean,
 	emitVerdict,
 	type GuardVerdict,
+	skipped,
 	unknown,
 	violation,
 	zeroScope,
 } from "./verdict.ts";
 
 const VERB = "guard decisions-index validate";
-
-const DECISIONS = ".decisions";
 
 export interface DecisionsIndexGuardOptions {
 	/** An explicit repo root, or `null` to walk up from `cwd` for one. */
@@ -39,13 +42,14 @@ export interface DecisionsIndexGuardOptions {
 
 const judge = (
 	root: string,
+	corpus: string,
 ): Effect.Effect<GuardVerdict, ReadFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
-		const dir = path.join(root, DECISIONS);
+		const dir = path.join(root, corpus);
 		if (!(yield* exists(dir))) {
 			return zeroScope(
-				`${VERB}: ${DECISIONS}/ does not exist under ${root} — the guard read no records at all, fail-closed (ADR 0092). Is the repo root correct?`,
+				`${VERB}: ${corpus}/ does not exist under ${root} — the guard read no records at all, fail-closed (ADR 0092). Is the repo root correct?`,
 			);
 		}
 		// A name that leads with a digit and ends `.md` is a record or a MALFORMED one, and both are
@@ -54,7 +58,7 @@ const judge = (
 		const names = (yield* readDir(dir)).filter(isRecordCandidate).sort();
 		if (names.length === 0) {
 			return zeroScope(
-				`${VERB}: ${DECISIONS}/ holds ZERO decision records — the guard compared no numbers, fail-closed (ADR 0092).`,
+				`${VERB}: ${corpus}/ holds ZERO decision records — the guard compared no numbers, fail-closed (ADR 0092).`,
 			);
 		}
 		const files: Array<DecisionFile> = [];
@@ -64,7 +68,7 @@ const judge = (
 		const defects = findDefects(files);
 		if (defects.length === 0) {
 			return clean(
-				`${VERB}: all ${files.length} ${DECISIONS}/ records carry the four index fields, a filename number matching their \`id\`, and no duplicate id`,
+				`${VERB}: all ${files.length} ${corpus}/ records carry the four index fields, a filename number matching their \`id\`, and no duplicate id`,
 				files.length,
 			);
 		}
@@ -83,7 +87,7 @@ const judge = (
 					defectFiles(defect).map((file) =>
 						atFile(
 							"error",
-							`${DECISIONS}/${file}`,
+							`${corpus}/${file}`,
 							`${describeDefect(defect).trim()} — the ADR number lock (ADR 0074) requires the filename prefix and the frontmatter \`id\` to name one record, uniquely. Fix: renumber the newer record and rename its file to match.`,
 						),
 					),
@@ -106,7 +110,22 @@ export const runDecisionsIndexGuard = (
 				options.env,
 			);
 		}
-		return emitVerdict(yield* judge(root), options.env);
+		// Read from `root`, not `cwd`: the corpus path is repo-relative, so it must resolve against
+		// the same root the scan is scoped to when `--root` names one the cwd is not under.
+		const corpus = yield* decisionsDirOr(
+			VERB,
+			root,
+			null,
+			"there is no corpus to scan and this guard has nothing to lock.",
+		);
+		switch (corpus._tag) {
+			case "Refused":
+				return emitVerdict(unknown(corpus.message), options.env);
+			case "Declined":
+				return emitVerdict(skipped(corpus.message), options.env);
+			case "Dir":
+				return emitVerdict(yield* judge(root, corpus.dir), options.env);
+		}
 	}).pipe(
 		Effect.catchTag("fabrika-cli/ReadFailed", (failure) =>
 			Effect.succeed(

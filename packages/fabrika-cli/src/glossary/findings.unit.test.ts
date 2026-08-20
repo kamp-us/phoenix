@@ -1,5 +1,11 @@
 import {describe, expect, it} from "vitest";
-import {citationsOf, findDefects, type RegisterRows, renderFinding} from "./findings.ts";
+import {
+	type CitationScope,
+	citationsOf,
+	findDefects,
+	type RegisterRows,
+	renderFinding,
+} from "./findings.ts";
 import {parseRegister, type Row} from "./register.ts";
 
 const rowsOf = (text: string): ReadonlyArray<Row> => {
@@ -11,10 +17,8 @@ const rowsOf = (text: string): ReadonlyArray<Row> => {
 const terms = (text: string): RegisterRows => ({register: "terms", rows: rowsOf(text)});
 
 const noCitations = {
-	citations: new Map(),
-	citationsUnverified: null,
-	decisionsDir: ".decisions",
-};
+	citations: {_tag: "Resolved", dir: ".decisions", states: new Map()},
+} satisfies {citations: CitationScope};
 
 describe("citationsOf", () => {
 	it("reads four-digit ids out of cells 2 and 3, never the term", () => {
@@ -119,12 +123,14 @@ describe("findDefects", () => {
 | depo | Cites 0044 and 9999. | |
 `),
 			],
-			citations: new Map([
-				["0044", {_tag: "Superseded" as const, status: "superseded by [0144](0144-x.md)"}],
-				["9999", {_tag: "Dead" as const}],
-			]),
-			citationsUnverified: null,
-			decisionsDir: ".decisions",
+			citations: {
+				_tag: "Resolved",
+				dir: ".decisions",
+				states: new Map([
+					["0044", {_tag: "Superseded" as const, status: "superseded by [0144](0144-x.md)"}],
+					["9999", {_tag: "Dead" as const}],
+				]),
+			},
 		});
 		expect(findings.map((finding) => finding.detail)).toEqual([
 			"cites 9999, no record under .decisions",
@@ -142,9 +148,7 @@ describe("findDefects", () => {
 | depo | Cites 0044. | |
 `),
 			],
-			citations: new Map(),
-			citationsUnverified: "ENOENT",
-			decisionsDir: ".decisions",
+			citations: {_tag: "Unverified", detail: "cannot read .decisions: ENOENT"},
 		});
 		expect(findings).toEqual([
 			{

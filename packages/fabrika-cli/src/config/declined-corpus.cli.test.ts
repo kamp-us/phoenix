@@ -1,12 +1,14 @@
 /**
  * A repo that declines `decisionsDir`, end to end: what `adr` and `governance` do about it.
  *
- * The behaviour only exists at the process boundary — both verbs resolve the key from the **cwd**
- * they are run in, so an in-process test would have to fake the one thing under test. Two spawns,
- * one per half of the ruling (R11.1 on #5603): `adr` refuses to write, and `governance`'s
- * contradiction half refuses rather than answering `no-overlap` over a corpus that does not exist.
+ * The behaviour only exists at the process boundary — each verb resolves the key from the **cwd**
+ * it is run in, so an in-process test would have to fake the one thing under test. Three spawns:
+ * per the ruling (R11.1 on #5603) `adr` refuses to write and `governance`'s contradiction half
+ * refuses rather than answering `no-overlap` over a corpus that does not exist, and per #6433
+ * `guard decisions-index validate` skips on exit 0 rather than reporting the ADR 0092 zero-scope
+ * red at a repo whose config is valid.
  *
- * Neither spawn reaches the network: both refuse at the config read, ahead of any `gh` call.
+ * No spawn reaches the network: each answers at the config read, ahead of any `gh` call.
  */
 import {execFileSync} from "node:child_process";
 import {mkdtempSync, readdirSync, rmSync, writeFileSync} from "node:fs";
@@ -61,6 +63,18 @@ describe("a repo that keeps no decision corpus", {timeout: SUBPROCESS_TEST_TIMEO
 		expect(out.stdout).toBe("");
 		expect(out.stderr).toContain("declines `decisionsDir`");
 		expect(readdirSync(root)).toEqual([".fabrika.jsonc"]);
+	});
+
+	// The whole point of #6433: an ADR 0092 red here would make a valid config a permanent CI
+	// failure, and its wording ("Is the repo root correct?") would send the reader after a defect
+	// that is not there.
+	it("skips `guard decisions-index validate` on exit 0 rather than reporting zero scope", () => {
+		// --root because the fixture is a bare directory with no `package.json` for root discovery
+		// to find, and this test is about the config read, not about that walk.
+		const out = run(root, ["guard", "decisions-index", "validate", "--root", root]);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("declines `decisionsDir`");
+		expect(out.stderr).toBe("");
 	});
 
 	it("refuses `governance sweep` and names the half this repo can still run", () => {

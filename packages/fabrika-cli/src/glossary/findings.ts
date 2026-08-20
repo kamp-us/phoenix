@@ -83,13 +83,26 @@ const rowShape = (register: string, row: Row): Finding | null => {
 	return null;
 };
 
+/**
+ * What became of the four-digit citations: they were resolved against a corpus, or they were not
+ * resolved at all.
+ *
+ * One arm each rather than a state map plus a nullable reason, because those two fields could
+ * always be set together — and a run that reports both a dead citation and "the corpus was never
+ * read" contradicts itself. `detail` is the whole finding line, worded by whoever knows why the
+ * corpus went unread (unreadable directory, or a repo that declares it keeps none — #6433).
+ */
+export type CitationScope =
+	| {
+			readonly _tag: "Resolved";
+			readonly dir: string;
+			readonly states: ReadonlyMap<string, CitationState>;
+	  }
+	| {readonly _tag: "Unverified"; readonly detail: string};
+
 export interface DefectInput {
 	readonly registers: ReadonlyArray<RegisterRows>;
-	/** Cited id → what it resolved to. Absent from the map means it was never resolved. */
-	readonly citations: ReadonlyMap<string, CitationState>;
-	/** The reason `--decisions` could not be read, or `null` when it was. */
-	readonly citationsUnverified: string | null;
-	readonly decisionsDir: string;
+	readonly citations: CitationScope;
 }
 
 export const findDefects = (input: DefectInput): ReadonlyArray<Finding> => {
@@ -144,40 +157,41 @@ export const findDefects = (input: DefectInput): ReadonlyArray<Finding> => {
 		}
 	}
 
-	for (const {register, rows} of input.registers) {
-		for (const row of rows) {
-			for (const id of citationsOf(row)) {
-				const state = input.citations.get(id);
-				if (state === undefined || state._tag === "Live") continue;
-				findings.push(
-					state._tag === "Dead"
-						? {
-								kind: "citation-dead",
-								register,
-								section: row.section,
-								term: row.term,
-								detail: `cites ${id}, no record under ${input.decisionsDir}`,
-							}
-						: {
-								kind: "citation-superseded",
-								register,
-								section: row.section,
-								term: row.term,
-								detail: `cites ${id}, status "${state.status}"`,
-							},
-				);
-			}
-		}
-	}
-
-	if (input.citationsUnverified !== null) {
+	if (input.citations._tag === "Unverified") {
 		findings.push({
 			kind: "citations-unverified",
 			register: "-",
 			section: "-",
 			term: "-",
-			detail: `cannot read ${input.decisionsDir}: ${input.citationsUnverified}`,
+			detail: input.citations.detail,
 		});
+	} else {
+		const {dir, states} = input.citations;
+		for (const {register, rows} of input.registers) {
+			for (const row of rows) {
+				for (const id of citationsOf(row)) {
+					const state = states.get(id);
+					if (state === undefined || state._tag === "Live") continue;
+					findings.push(
+						state._tag === "Dead"
+							? {
+									kind: "citation-dead",
+									register,
+									section: row.section,
+									term: row.term,
+									detail: `cites ${id}, no record under ${dir}`,
+								}
+							: {
+									kind: "citation-superseded",
+									register,
+									section: row.section,
+									term: row.term,
+									detail: `cites ${id}, status "${state.status}"`,
+								},
+					);
+				}
+			}
+		}
 	}
 
 	return [...findings].sort((a, b) => KINDS.indexOf(a.kind) - KINDS.indexOf(b.kind));
