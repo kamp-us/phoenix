@@ -86,7 +86,8 @@ inline, the same tracked debt the sibling contracts carry.)
   halves of the #3999 ruling. `ship checks` diagnoses `wedged` and names the check; the lever
   is an operator's.
 - **A CI-repair or flake-classification verb.** Red CI routes to the heal seam (v1's
-  `heal-ci` lane); this group reports `red` with the failing runs named and stops.
+  `heal-ci` lane); this group reports `red` with the failing gating runs named on the notes
+  channel and stops.
 - **A flag-flip or release-execution verb.** Agents deploy, humans release (ADR 0083).
   `ship release` ends at the label.
 - **An approval-watcher / banked-§CP ledger verb.** The watch loop over parked §CP PRs is separate
@@ -877,7 +878,12 @@ with ties broken on the class:
 step 4 routes off the rollup and nothing reads a run by name, so the rows collapse to counts. The
 gating axis stays inside the key because status alone would leave the rollup underivable from the
 answer — a `red` head and a head whose only `failure` is an ADR 0061 informational run would tally
-identically. A wedged run is still **named**, on the notes channel, where the skill already reads it.
+identically. The two runs the skill's terminals read by name are still **named**, on the notes
+channel, where the skill already reads them: the wedged run, and — on `red` — the failing gating
+runs, `ship checks: failing gating checks: <name>, … — route these to heal-ci.`, name-sorted. Informational
+failures are excluded from that line for the same reason the gating axis exists: they do not make
+the head red, and naming them there would send the operator to `heal-ci` over a check that gates
+nothing.
 Last line: `facts\tworkflows:<n>\truns:<n>` — `workflows` counts the repository's **active**
 workflows (the inventory's `state == "active"` rows, nothing more: no trigger matching, no YAML
 parser — [ruled on

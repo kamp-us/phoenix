@@ -17,7 +17,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {producerFor, resolveCi} from "../config/ci-producer.ts";
 import {reasonHistogram} from "../evidence.ts";
 import {commitExists} from "../io/pulls.ts";
-import {isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
+import {isFailing, isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
@@ -58,8 +58,10 @@ export interface ChecksOptions {
 /**
  * The histogram key one check run tallies under: its status composed with whether it gates.
  *
- * `checks` is an evidence-array under ADR 0308 — the skill routes off the rollup and no reader reads
- * a row by name — so it collapses to counts. The gating axis rides inside the key because status
+ * `checks` is an evidence-array under ADR 0308 — the skill routes off the rollup, never off a row —
+ * so it collapses to counts. The two names the skill's own terminals do read, the wedged run and the
+ * failing gating run, ride the notes channel instead, so `red` still routes to `heal-ci` by name.
+ * The gating axis rides inside the key because status
  * alone would leave the rollup underivable from the payload: a `red` head and a head whose only
  * `failure` is an ADR 0061 informational run would tally identically, and the carve-out is exactly
  * what separates them.
@@ -177,6 +179,10 @@ export const runChecks = (
 			wedged: ReadonlyArray<string>,
 			settle: Settle | null,
 		): VerbOutcome => {
+			const failing = read.runs
+				.filter((run) => !isInformational(run.name) && isFailing(run))
+				.map((run) => run.name)
+				.sort();
 			const scope = [
 				...diagnostics,
 				scannedLine(
@@ -190,6 +196,9 @@ export const runChecks = (
 					: [
 							`${VERB}: stranded past the dwell: ${wedged.join(", ")} — the cancel-and-rerun lever is an operator's (#3999).`,
 						]),
+				...(failing.length === 0
+					? []
+					: [`${VERB}: failing gating checks: ${failing.join(", ")} — route these to heal-ci.`]),
 			];
 			const checks = reasonHistogram(read.runs, checkClassOf);
 			if (json) {

@@ -116,6 +116,45 @@ describe("runChecks", () => {
 		expect(out.stdout).not.toContain("unit tests");
 	});
 
+	// The collapse costs the rows, never the route: `red` still has to hand `heal-ci` a name.
+	it("names the failing gating runs on the notes channel, sorted, informational excluded", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[COMMIT, okOut(HEAD)],
+			[
+				RUNS,
+				checkRuns(3, [
+					noRun("unit tests", "completed", "failure"),
+					noRun("ci-required", "completed", "cancelled"),
+					noRun("deploy (web)", "completed", "failure"),
+				]),
+			],
+			[WORKFLOWS, workflows("active")],
+			[RUN_COUNT, runsTotal(3)],
+		]);
+		expect(out.stderr).toContain(
+			"ship checks: failing gating checks: ci-required, unit tests — route these to heal-ci.",
+		);
+	});
+
+	it("names no failing check when the only failure is informational", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[COMMIT, okOut(HEAD)],
+			[
+				RUNS,
+				checkRuns(2, [
+					noRun("deploy (web)", "completed", "failure"),
+					noRun("unit tests", "completed", "success"),
+				]),
+			],
+			[WORKFLOWS, workflows("active")],
+			[RUN_COUNT, runsTotal(2)],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tgreen`);
+		expect(out.stderr.join("\n")).not.toContain("failing gating checks");
+	});
+
 	it("mirrors the same collapsed tally into the --json payload", async () => {
 		const out = await run(
 			[
