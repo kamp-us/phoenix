@@ -124,7 +124,7 @@ describe("runScope", () => {
 	});
 
 	/**
-	 * The governance line is the four-root derivation, not the three-root `harness` flag (#5607): a
+	 * The governance line is the `governedRoots` derivation, not the three-root `harness` flag (#5607): a
 	 * `.decisions/`-only diff owes a governance verdict while touching no harness root, and a reviewer
 	 * keying off `harness` posted a clean PASS on PR #5604 that the ship gate then blocked.
 	 */

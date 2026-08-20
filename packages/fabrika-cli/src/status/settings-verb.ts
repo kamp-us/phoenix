@@ -3,8 +3,8 @@
  * came from. The one place a skill asks what `.fabrika.jsonc` resolves to, so no skill document has
  * to restate a value (R9.1, #6293).
  *
- * **Provenance is the load-bearing column.** "the governance roots are the four shipped defaults"
- * and "the governance roots are four values this repo declared" are different facts, and an agent
+ * **Provenance is the load-bearing column.** "the governance roots are the five shipped defaults"
+ * and "the governance roots are five values this repo declared" are different facts, and an agent
  * reading a bare value cannot tell whether the repo made a choice. So each row says which.
  *
  * A key whose value could not be established prints UNKNOWN and the verb exits non-zero — never a

@@ -24,7 +24,7 @@ const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
 const REVIEWS = /^gh api -i repos\/o\/r\/pulls\/4321\/reviews/;
 const ACL = /^gh api repos\/o\/r\/collaborators\/[^ ]+\/permission/;
 
-/** A fabrika-tree diff — `claude-plugins/` is one of the four governance roots. */
+/** A fabrika-tree diff — `claude-plugins/` is one of the shipped governance roots. */
 const FABRIKA_TREE = [
 	FILES,
 	files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/web/src/b.ts"),
