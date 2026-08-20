@@ -51,11 +51,11 @@ fabrika build pick
 The pool is `status:triaged` + `ready-for:agent` + unassigned + homed on a milestone some
 `## Campaigns` row marks `active`, p0 first. **An assigned issue is not yours whatever its labels**
 — assignment is how humans keep documents out of this pool. Read the `excluded` histogram beside the
-pool: it counts why issues were left out — `out-of-scope`, `audience-not-agent` or `unreadable`
-from the admission test, or `no-acceptance-criteria` and `blocked`, this verb's own two axes: a body
-carrying no criteria block to build against, and an issue whose native `blocked_by` graph still
-names an open blocker. `campaigns` says whether any campaign is active at all — an inert fence is a
-fact to report, not a shorter pool to explain.
+pool: it counts why issues were left out — `out-of-scope`, `audience-not-agent`,
+`no-acceptance-criteria` or `unreadable` from the admission test, or `blocked`, this verb's own
+axis: an issue whose native `blocked_by` graph still names an open blocker. `campaigns` says
+whether any campaign is active at all — an inert fence is a fact to report, not a shorter pool to
+explain.
 Two refusals before claiming: a `type:decision`'s deliverable is a recorded choice
 (`/adr`'s, not yours), and a rendered-visual deliverable is outside this skill's modality
 (`build-ui`'s) — **do not claim either**. The decision refusal has one arm, and a citation is the only
@@ -115,6 +115,16 @@ and the verb can prove no more than that, so citing a comment that does not rule
 the tool cannot catch and you must not tell. Passing `--cites` on a decision whose audience is still
 `ready-for:human` lands on `21`, because the citation opens the type axis and nothing else.
 
+Exit `32` (no acceptance criteria) is the fourth refusal, and it is the one you are most likely to
+meet: the verb reads the issue's body itself, so a body with no readable `### Acceptance criteria`
+block — or one whose heading drifted — is refused here, before any branch, commit or write.
+**It is not overridable either, and the remedy is on the refusal line**: `fabrika triage enrich <n>`
+for an absent block, `fabrika triage repair-criteria <n>` for a drifted one. **Do not run either
+from this lane** — the repair belongs on the issue body, which a build lane may not write from a
+branch; a human or triage does it. End `BACKED-OFF` and take the next candidate. The axis binds a
+fresh build claim only: a repair claim is exempt so an in-flight PR is not stranded, which is why §3
+still hands a repair lane the token instead of stopping it.
+
 Before **every** later mutation addressed to an issue or PR number, re-confirm:
 
 ```bash
@@ -132,19 +142,35 @@ fabrika build issue $issue_or_pr_number
 
 That is the issue body and its acceptance criteria, off the verb, never off memory.
 
-**A `malformed` criteria token ends the run right here.** The verb's three tokens are three
-different facts, and this one says the contract cannot be read: the heading drifted, so nothing
-downstream can grade a PR against it, and building anyway spends the whole lane on work `review
-criteria` refuses (exit `7`) on a lane that cannot fix an issue body. Stop before any construction —
-no branch, no commit, no write anywhere. Name the reader's own reason, which the verb put on stderr,
-and name the route out: `fabrika triage repair-criteria <n>`, which repairs exactly this mechanical
-drift and refuses anything else on `14`. **Do not run it from this lane** — a build lane does not
+**Neither `absent` nor `malformed` is a token you build past.** The verb's three tokens are
+three different facts, and only `found` is a contract: `absent` says no heading reaches for the
+block, `malformed` says one drifted, and in both cases nothing downstream can grade a PR — so
+building anyway spends the whole lane on work `review criteria` refuses (exit `7`) from a seat that
+cannot fix an issue body.
+
+**In the ordinary run you never see either here, because `build claim` already refused at §2.** The
+criteria axis is the fourth axis of the shared admission test, beside scope, type and audience, so
+it refuses on `32` at the claim seam before any branch, commit or write — the pool and the
+by-number route (an operator naming a lane, `operate`, a resume) hit the one fence rather than the
+pool alone (#6554).
+
+**The one lane that does see a token here is a repair lane, and it does not back off.** The axis
+binds a fresh build claim and nothing else, and a repair claim is exempt on purpose: refusing it
+would strand an open PR, because writing an issue body is not something a build lane may do from a
+branch. So on a repair, read the token, take it as a fact about the served issue, and go on fixing
+the findings the fold printed — those findings are your contract for the round. (A `plan` or `gate`
+claim is exempt too, but you never hold one here: an epic handed to a build claim refuses on `30`,
+and `--purpose plan` / `--purpose gate` belong to `plan-epic` and `check-epic-plan`, neither of
+which runs this section.)
+
+**Only a fresh build claim stops here**, and only if one reached this step past the `32` refusal.
+Then stop before any construction, name the reader's own reason off stderr, and name the route out:
+`fabrika triage repair-criteria <n>` for a drifted heading, which repairs exactly that mechanical
+drift and refuses anything else on `14`, or `fabrika triage enrich <n>` for an absent block, which
+has nothing to repair mechanically. **Do not run either from this lane** — a build lane does not
 write an issue body; a human or triage does. Release the claim
 (`fabrika build release <n> --token <claim-token>`) so the repaired issue is pickable again, and end
 `BACKED-OFF`.
-
-`absent` is not that fork. A body with no criteria block is a fact, not a defect, and the build
-proceeds on the issue's own text.
 
 Check any falsifiable claim the body makes against the source before building on it — a summary of a
 contract is not the contract. Name the surface you are on — **code** (compiled/tested text), **prose**
@@ -278,7 +304,7 @@ fabrika build release $issue_or_pr_number --token <claim-token>
 removed, findings filed via `/report`; closing the issue is triage's, not yours); `BUILT-NO-PR` (an
 epic child under the epic rules — your commit landed on the branch you cut from the assembly branch
 and the `build-deviations` marker is posted on the child issue; branch left local, unpushed, for the
-epic driver to fold); `BACKED-OFF` (claim lost, blocked, or a `malformed` contract — branch removed,
+epic driver to fold); `BACKED-OFF` (claim lost, blocked, or no readable contract — branch removed,
 nothing written); `ESCALATED` (repair cap reached — branch left pushed at its last verified head,
 escalation note posted);
 `STOPPED` (isolation, a denied tool call, or verdict UNKNOWN — branch left local, state named). An

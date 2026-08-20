@@ -1,5 +1,5 @@
 /**
- * The admission test both `build` seams run — **two named axes composed, never one widened term**
+ * The admission test both `build` seams run — **four named axes composed, never one widened term**
  * (`claude-plugins/fabrika/skills/build/contract.md`, the admission test; ADR 0245).
  *
  * - **Scope admission** is campaign membership and nothing else: is the issue's home pinned by a
@@ -10,15 +10,19 @@
  *   {@link TYPE_NOT_BUILDABLE}, and it lives here rather than in the pool because the pool is the
  *   browse path: a number handed straight to `claim` passes through no pool, so a type rule fenced
  *   only there is no fence (#5490).
+ * - **The criteria axis** is whether the body carries a contract to build against. It refuses on
+ *   {@link NO_ACCEPTANCE_CRITERIA}, and it is here for exactly the reason the type axis is: the pool
+ *   held it privately, so `build issue <n>` built a no-AC issue the pool would have refused and the
+ *   review gate was the first thing to catch it (#6554).
  *
  * They are siblings with different remedies — flip the campaign's state cell, re-label the audience,
- * or take the work to the skill whose lane it is — so they stay separately named, separately seated and
- * separately reported everywhere. A single predicate answering all three questions at once is the
- * shape the contract's repair round removed; every outcome below therefore carries **every** axis
- * verdict, so a caller can never lose one behind another.
+ * take the work to the skill whose lane it is, or repair the issue body — so they stay separately
+ * named, separately seated and separately reported everywhere. A single predicate answering all four
+ * questions at once is the shape the contract's repair round removed; every outcome below therefore
+ * carries **every** axis verdict, so a caller can never lose one behind another.
  *
- * A claim's {@link ClaimPurpose} rides **beside** those axes: it decides whether the audience axis
- * *binds* this claim, and it never enters either axis's own reading (#5175).
+ * A claim's {@link ClaimPurpose} rides **beside** those axes: it decides which of them *bind* this
+ * claim, and it never enters any axis's own reading (#5175).
  *
  * The core is pure and total, and this module is **imported** by the pool and claim seams rather than
  * invoked through a relaying verb (the wrapper shape ADR 0238 bans). Only {@link readDispatch}
@@ -31,9 +35,11 @@ import {exists, type ReadFailed, readFile} from "../io/fs.ts";
 import {issueRefOf} from "../review/classes.ts";
 import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
+import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {
 	AUDIENCE_NOT_AGENT,
 	BAD_SECTIONS,
+	NO_ACCEPTANCE_CRITERIA,
 	OUT_OF_SCOPE,
 	PRECONDITION_UNKNOWN,
 	TYPE_NOT_BUILDABLE,
@@ -111,6 +117,49 @@ export const typeAxisOf = (issue: IssueFacts): TypeAxis => {
 };
 
 /**
+ * Axis four — whether the issue carries a contract to build against (#6554).
+ *
+ * It reads through the shared `wire/acceptance-criteria` read and keeps that read's three answers
+ * apart: `Found` contracts, and `Absent` and `Malformed` are two different defects with two different
+ * repairs. Both refuse — a heading drifted by one character is no more gradeable than no heading at
+ * all, and `build pick` has always excluded the pair on one test — but the reason travels so the
+ * refusal can name the right route out.
+ *
+ * The axis lived in the pool as a private constant, which is what made it no fence at all: a number
+ * handed straight to `claim` passes through no pool, so `build issue <n>` built the same no-AC issue
+ * the pool refused, and the review gate was the first thing to catch it (#6554, on #6462 → PR #6552).
+ * That is the reasoning {@link typeAxisOf} already carries from #5490, and it moves the rule here
+ * without changing what the rule says.
+ */
+export type CriteriaAxis =
+	/** A readable `### Acceptance criteria` block — the lane has something to build against. */
+	| {readonly _tag: "Contracted"}
+	/** No contract: `state` is the wire read's own token, `reason` its own words. */
+	| {
+			readonly _tag: "NoContract";
+			readonly state: "absent" | "malformed";
+			readonly reason: string;
+	  };
+
+/**
+ * The word every seam reports a criteria refusal under, declared once beside the axis.
+ *
+ * The pool owned it privately while the rule lived there; it stays the same string so an operator
+ * reading an `excluded` histogram sees no rename, and no second spelling can drift into existence.
+ */
+export const NO_CRITERIA_REASON = "no-acceptance-criteria";
+
+export const criteriaAxisOf = (issue: IssueFacts): CriteriaAxis => {
+	const read = readCriteria(issue.body);
+	if (read._tag === "Found") return {_tag: "Contracted"};
+	return {
+		_tag: "NoContract",
+		state: read._tag === "Absent" ? "absent" : "malformed",
+		reason: read.reason,
+	};
+};
+
+/**
  * A founder ruling recorded on the issue, named by the comment it lives in.
  *
  * It is what opens the type axis on a `type:decision`: once the choosing has happened on the board,
@@ -179,11 +228,13 @@ export const parseCitation = (value: string, repo: string, issue: number): Citat
 	};
 };
 
-/** Everything either axis reads off an issue — no derived field, and nothing else. */
+/** Everything the axes read off an issue — no derived field, and nothing else. */
 export interface IssueFacts {
 	readonly number: number;
 	readonly labels: ReadonlyArray<string>;
 	readonly milestone: number | null;
+	/** The issue body, `""` when the payload carried none — the criteria axis's whole input. */
+	readonly body: string;
 }
 
 /** What a subject read needs off the target — the PR/issue split, and the body the link lives in. */
@@ -452,6 +503,20 @@ export const typeAxisBinds = (purpose: ClaimPurpose, repair: RepairClaim = NOT_R
 	purpose === "build" && repair._tag === "NotRepair";
 
 /**
+ * The criteria axis binds a **fresh build** and nothing else — {@link typeAxisBinds}'s shape, for two
+ * reasons of its own.
+ *
+ * A `plan` or `gate` claim targets an epic, whose criteria arrive per child from the plan ledger and
+ * never in its own body, so reading the block there would refuse exactly the claims that are supposed
+ * to precede it (#6025). And a repair claim names a PR that already exists: refusing that would strand
+ * the branch, because repairing an issue body is not something a build lane may do from one.
+ */
+export const criteriaAxisBinds = (
+	purpose: ClaimPurpose,
+	repair: RepairClaim = NOT_REPAIR,
+): boolean => purpose === "build" && repair._tag === "NotRepair";
+
+/**
  * Whether a cited ruling opens the type axis on this label.
  *
  * One label has an arm and the rest do not: a `type:decision` whose choice is already recorded is
@@ -482,6 +547,7 @@ export type Admission =
 			readonly scope: ScopeAxis;
 			readonly audience: AudienceAxis;
 			readonly type: TypeAxis;
+			readonly criteria: CriteriaAxis;
 			/** The ruling that opened the type axis, or `None` — so an arm taken is read, not inferred. */
 			readonly citation: Citation;
 	  }
@@ -490,18 +556,28 @@ export type Admission =
 			readonly scope: Extract<ScopeAxis, {readonly _tag: "OutOfScope"}>;
 			readonly audience: AudienceAxis;
 			readonly type: TypeAxis;
+			readonly criteria: CriteriaAxis;
 	  }
 	| {
 			readonly _tag: "TypeNotBuildable";
 			readonly scope: ScopeAxis;
 			readonly audience: AudienceAxis;
 			readonly type: Extract<TypeAxis, {readonly _tag: "NotBuildable"}>;
+			readonly criteria: CriteriaAxis;
 	  }
 	| {
 			readonly _tag: "AudienceNotAgent";
 			readonly scope: ScopeAxis;
 			readonly audience: Extract<AudienceAxis, {readonly _tag: "NotAgent"}>;
 			readonly type: TypeAxis;
+			readonly criteria: CriteriaAxis;
+	  }
+	| {
+			readonly _tag: "NoCriteria";
+			readonly scope: ScopeAxis;
+			readonly audience: AudienceAxis;
+			readonly type: TypeAxis;
+			readonly criteria: Extract<CriteriaAxis, {readonly _tag: "NoContract"}>;
 	  }
 	/**
 	 * A pull request with no readable served issue, while some campaign is `active`.
@@ -560,24 +636,34 @@ export const admissionOf = (
 	const scope = scopeAxisOf(dispatch, issue);
 	const audience = audienceAxisOf(issue);
 	const type = typeAxisOf(issue);
-	if (scope._tag === "OutOfScope") return {_tag: "OutOfScope", scope, audience, type};
+	const criteria = criteriaAxisOf(issue);
+	if (scope._tag === "OutOfScope") return {_tag: "OutOfScope", scope, audience, type, criteria};
 	if (
 		type._tag === "NotBuildable" &&
 		typeAxisBinds(purpose, repair) &&
 		!citationOpens(type.label, citation)
 	) {
-		return {_tag: "TypeNotBuildable", scope, audience, type};
+		return {_tag: "TypeNotBuildable", scope, audience, type, criteria};
 	}
 	if (audience._tag === "NotAgent" && audienceAxisBinds(purpose, repair)) {
-		return {_tag: "AudienceNotAgent", scope, audience, type};
+		return {_tag: "AudienceNotAgent", scope, audience, type, criteria};
 	}
-	return {_tag: "Admitted", scope, audience, type, citation};
+	if (criteria._tag === "NoContract" && criteriaAxisBinds(purpose, repair)) {
+		return {_tag: "NoCriteria", scope, audience, type, criteria};
+	}
+	return {_tag: "Admitted", scope, audience, type, criteria, citation};
 };
 
 /** The word `build pick` reports per excluded issue; `null` for an admitted one. */
 export const exclusionReasonOf = (
 	admission: Admission,
-): "out-of-scope" | "audience-not-agent" | "type-not-buildable" | "unreadable" | null => {
+):
+	| "out-of-scope"
+	| "audience-not-agent"
+	| "type-not-buildable"
+	| typeof NO_CRITERIA_REASON
+	| "unreadable"
+	| null => {
 	switch (admission._tag) {
 		case "Admitted":
 			return null;
@@ -590,6 +676,8 @@ export const exclusionReasonOf = (
 			return "audience-not-agent";
 		case "TypeNotBuildable":
 			return "type-not-buildable";
+		case "NoCriteria":
+			return NO_CRITERIA_REASON;
 		default:
 			return "unreadable";
 	}
@@ -624,6 +712,11 @@ export const ADMISSION_EXIT_CODES: ReadonlyArray<{
 	{
 		code: AUDIENCE_NOT_AGENT,
 		condition: `proven: not admitted on the audience axis — the issue's ${READY_FOR_PREFIX} label is not ${READY_FOR_AGENT}, or is absent; reachable only under purpose build, and never when an open PR serves a ${DECISION_TYPE_LABEL} issue`,
+	},
+	{
+		code: NO_ACCEPTANCE_CRITERIA,
+		condition:
+			"proven: not admitted on the criteria axis — the body carries no readable ### Acceptance criteria block, absent or malformed; reachable only under purpose build against an issue",
 	},
 ];
 
@@ -730,6 +823,15 @@ export const admissionRefusal = (verb: string, admission: Admission): VerbOutcom
 					admission.audience.label ??
 					`no ${READY_FOR_PREFIX} label, and absence is an unknown audience`
 				}, not ${READY_FOR_AGENT}.`,
+			);
+		case "NoCriteria":
+			return refuse(
+				NO_ACCEPTANCE_CRITERIA,
+				`${verb}: no acceptance criteria — ${admission.criteria.reason}, so there is no contract to build against and nothing downstream could grade a PR against one; ${
+					admission.criteria.state === "absent"
+						? "author the block with `fabrika triage enrich <n>` — an absent block has nothing to repair mechanically"
+						: "straighten the heading with `fabrika triage repair-criteria <n>`, which repairs exactly this drift"
+				}. The repair belongs on the issue, not on a branch, so no lane opens here.`,
 			);
 		default:
 			return refuse(admission.code, `${verb}: ${admission.reason} — admission is UNKNOWN.`);

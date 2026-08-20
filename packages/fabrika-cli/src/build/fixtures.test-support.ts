@@ -32,7 +32,7 @@ export const issue = (overrides: Record<string, unknown> = {}): ExecResult =>
 		JSON.stringify({
 			number: 4312,
 			title: "Editor loses focus after save",
-			body: "## Acceptance criteria\n",
+			body: CRITERIA_BODY,
 			state: "open",
 			labels: [{name: "type:bug"}, {name: "p1"}, {name: "status:triaged"}],
 			html_url: "https://github.com/o/r/issues/4312",
@@ -99,7 +99,13 @@ export const NO_BLOCKERS: readonly [RegExp, ExecResult] = [
 export const blockedBy = (...blockers: ReadonlyArray<number>): ExecResult =>
 	okOut(JSON.stringify(blockers.map((number) => ({number, state: "open"}))));
 
-/** A body carrying the conforming block — what a triaged, agent-ready issue looks like. */
+/**
+ * A body carrying the conforming block — what a triaged, agent-ready issue looks like.
+ *
+ * Both {@link issue} and {@link candidates} default to it, because the admission test's criteria axis
+ * reads the body at the pool AND at the claim seam (#6554): a fixture omitting the block is refused,
+ * so every caller not testing that axis would otherwise have to restate it.
+ */
 export const CRITERIA_BODY =
 	"## Summary\n\ns\n\n### Acceptance criteria\n\n- [ ] the one criterion\n";
 

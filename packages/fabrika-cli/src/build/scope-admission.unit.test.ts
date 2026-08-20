@@ -5,6 +5,7 @@ import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {
 	AUDIENCE_NOT_AGENT,
 	BAD_SECTIONS,
+	NO_ACCEPTANCE_CRITERIA,
 	OUT_OF_SCOPE,
 	PRECONDITION_UNKNOWN,
 	TYPE_NOT_BUILDABLE,
@@ -21,6 +22,8 @@ import {
 	type Citation,
 	CLAIM_PURPOSES,
 	citationOpens,
+	criteriaAxisBinds,
+	criteriaAxisOf,
 	DECISION_TYPE_LABEL,
 	DEFAULT_CLAIM_PURPOSE,
 	type Dispatch,
@@ -31,6 +34,7 @@ import {
 	homeOf,
 	type IssueFacts,
 	NO_CITATION,
+	NO_CRITERIA_REASON,
 	NOT_REPAIR,
 	noServedIssue,
 	parseCitation,
@@ -84,10 +88,14 @@ const activeBoth: Dispatch = {
 };
 const noneActive: Dispatch = {_tag: "None"};
 
+/** A body the criteria axis contracts on, so a fixture is admissible unless a case says otherwise. */
+const CONTRACTED_BODY = "## What this is\n\nprose\n\n### Acceptance criteria\n\n- [ ] one thing\n";
+
 const issue = (over: Partial<IssueFacts> = {}): IssueFacts => ({
 	number: 1,
 	labels: ["status:triaged", "p0", "ready-for:agent"],
 	milestone: 44,
+	body: CONTRACTED_BODY,
 	...over,
 });
 
@@ -576,9 +584,87 @@ describe("admissionOf", () => {
 			OUT_OF_SCOPE,
 			TYPE_NOT_BUILDABLE,
 			AUDIENCE_NOT_AGENT,
+			NO_ACCEPTANCE_CRITERIA,
 		]);
-		expect(new Set(ADMISSION_EXIT_CODES.map((row) => row.code)).size).toBe(5);
+		expect(new Set(ADMISSION_EXIT_CODES.map((row) => row.code)).size).toBe(6);
 		expect(ADMISSION_EXIT_CODES.every((row) => row.condition.trim() !== "")).toBe(true);
+	});
+});
+
+describe("the criteria axis — a contract to build against (#6554)", () => {
+	const ABSENT = "## What this is\n\nprose and pointers, and no contract anywhere.\n";
+	const MALFORMED = "## What this is\n\n### Acceptance Criteria:\n\n- [ ] the heading drifted\n";
+
+	it("contracts on a body carrying the conforming block", () => {
+		expect(criteriaAxisOf(issue())).toEqual({_tag: "Contracted"});
+	});
+
+	it("keeps the wire read's two defects apart rather than flattening them to one", () => {
+		expect(criteriaAxisOf(issue({body: ABSENT}))).toMatchObject({
+			_tag: "NoContract",
+			state: "absent",
+		});
+		expect(criteriaAxisOf(issue({body: MALFORMED}))).toMatchObject({
+			_tag: "NoContract",
+			state: "malformed",
+		});
+	});
+
+	it("refuses a fresh build claim over an absent block on 32, and names the enrich route", () => {
+		const out = admissionOf(active, issue({body: ABSENT}));
+		expect(out._tag).toBe("NoCriteria");
+		const refusal = admissionRefusal("build claim", out);
+		expect(refusal?.code).toBe(NO_ACCEPTANCE_CRITERIA);
+		expect(refusal?.stderr.join("\n")).toContain("triage enrich");
+		expect(refusal?.stdout).toBe("");
+	});
+
+	it("names the mechanical repair on a drifted heading — the two routes out are not one act", () => {
+		const refusal = admissionRefusal("build claim", admissionOf(active, issue({body: MALFORMED})));
+		expect(refusal?.code).toBe(NO_ACCEPTANCE_CRITERIA);
+		expect(refusal?.stderr.join("\n")).toContain("triage repair-criteria");
+		expect(refusal?.stderr.join("\n")).not.toContain("triage enrich");
+	});
+
+	it("reports the same word the pool has always reported, so an operator sees no rename", () => {
+		expect(exclusionReasonOf(admissionOf(active, issue({body: ABSENT})))).toBe(NO_CRITERIA_REASON);
+		expect(NO_CRITERIA_REASON).toBe("no-acceptance-criteria");
+	});
+
+	it("carries every other axis's verdict on the refusal, so none is lost behind it", () => {
+		expect(admissionOf(active, issue({body: ABSENT}))).toMatchObject({
+			_tag: "NoCriteria",
+			scope: {_tag: "InScope", milestone: 44},
+			audience: {_tag: "Agent"},
+			type: {_tag: "Buildable"},
+		});
+	});
+
+	it("ranks after the audience axis — a mislabelled issue is told about its label first", () => {
+		const out = admissionOf(active, issue({body: ABSENT, labels: ["ready-for:human"]}));
+		expect(out._tag).toBe("AudienceNotAgent");
+		expect(out).toMatchObject({criteria: {_tag: "NoContract", state: "absent"}});
+	});
+
+	it("does not bind a plan or gate claim — an epic's criteria arrive per child (#6025)", () => {
+		for (const purpose of ["plan", "gate"] as const) {
+			expect(criteriaAxisBinds(purpose)).toBe(false);
+			expect(admissionOf(active, issue({body: ABSENT}), purpose)._tag).toBe("Admitted");
+		}
+		expect(criteriaAxisBinds("build")).toBe(true);
+	});
+
+	it("does not bind a repair claim — a build lane cannot repair an issue body from its branch", () => {
+		const repair = {_tag: "OrdinaryRepair", pr: 4318} as const;
+		expect(criteriaAxisBinds("build", repair)).toBe(false);
+		expect(admissionOf(active, issue({body: ABSENT}), "build", repair)._tag).toBe("Admitted");
+	});
+
+	it("still carries the axis verdict on an admitted claim it did not bind", () => {
+		expect(admissionOf(active, issue({body: ABSENT}), "plan")).toMatchObject({
+			_tag: "Admitted",
+			criteria: {_tag: "NoContract", state: "absent"},
+		});
 	});
 });
 

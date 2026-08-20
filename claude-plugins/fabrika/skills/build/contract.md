@@ -123,8 +123,8 @@ Every verb obeys these; stated once.
 <a id="admission-test--scope-admission-and-the-audience-axis"></a>
 ### The admission test — scope admission composed with the audience axis, one module, two seams
 
-**Two axes, composed — not one widened term.** What both seams run is an **admission test** built
-from two separate questions, computed together and answered together:
+**Four axes, composed — not one widened term.** What both seams run is an **admission test** built
+from four separate questions, computed together and answered together:
 
 - **Scope admission** — is the issue's home pinned by an `active` campaign? This is the term
   [ADR 0245](../../../../.decisions/0245-campaign-scope-fence-binds-both-seams.md) coins, and it
@@ -142,8 +142,19 @@ from two separate questions, computed together and answered together:
   it lived in `build pick`'s private type set, where a number handed straight to `build claim` met
   no type check at all and an in-lane `type:decision` carrying `ready-for:agent` was admitted with
   no refusal (#5490).
+- **The criteria axis** — does the body carry a readable `### Acceptance criteria` block, through the
+  `wire/acceptance-criteria` read every seam shares? Refusal is `32`, on either of that read's two
+  negative answers: `absent` (no heading reaches for the block) and `malformed` (one drifted). The two
+  are kept apart on the outcome and route to different repairs — `triage enrich` authors a block that
+  is absent, `triage repair-criteria` straightens one that drifted — but both refuse, because a
+  heading off by one character is no more gradeable than no heading at all. It binds a **fresh build**
+  and nothing else, for the type axis's two reasons plus one of its own: an epic's criteria arrive per
+  child from the plan ledger (#6025), and a repair claim's branch cannot write an issue body. This
+  rule is older than the axis too, and it leaked the same way the type rule did — it lived as
+  `build pick`'s private read, so `build issue <n>` built a no-AC issue the pool would have refused
+  and `review criteria` was the first thing to catch it, a whole lane later (#6554).
 
-**Keep the two names apart.** *Scope admission* is a different question from the audience axis (who
+**Keep the names apart.** *Scope admission* is a different question from the audience axis (who
 the work is for), from dependency eligibility (`build eligible` asks whether an issue's `blocked_by`
 blockers are done), from priority (a home confers no band, ADR 0219), and from the milestone pick-order
 tiebreaker (ADR 0072) — the same not-this list ADR 0245 draws. Among admitted issues the ranking is
@@ -153,14 +164,14 @@ test (ADR 0301) — and no scope outcome borrows it. This section is the term AD
 contract to carry, at exactly the width the ADR gives it; the composition with the audience axis is
 stated here so no reader has to infer that the coined term swallowed a second question.
 
-**One module, two call sites.** Both axes are evaluated in exactly one place —
+**One module, two call sites.** All four axes are evaluated in exactly one place —
 `packages/fabrika-cli/src/build/scope-admission.ts` — and that module is **imported** by `build pick`
 and `build claim`. Neither seam re-derives either axis, and no verb exists whose only behaviour is
 relaying them (the wrapper shape ADR 0238 bans). A second implementation is banned outright: a board
 where the picker and the claim step disagree about what is admissible is worse than no fence at all.
-The file is named for the axis this contract adds; it **hosts** the audience axis rather than
-redefining it, and the two axes stay separately named, separately seated and separately reported
-everywhere the module is consumed.
+The file is named for the axis this contract adds; it **hosts** the audience and criteria axes rather
+than redefining them, and the four axes stay separately named, separately seated and separately
+reported everywhere the module is consumed.
 
 **Both seams, because the pool filter alone has a hole.** Filtering the offered pool is the browse
 path. An operator can hand a verb an issue number directly, and a directly-handed number passes
@@ -176,7 +187,10 @@ route decisions to `ready-for:human`, not because it is a decision. Where that c
 hold the claim was simply admitted, and where it did the refusal named the wrong objection: an
 operator sent to fix `audience-not-agent` would re-label the issue `ready-for:agent`, satisfy the
 fence, and build the wrong artifact. So the type axis sits in the module with the other two, and
-refusals are reported **scope, then type, then audience** — the order an operator's remedies run in.
+refusals are reported **scope, then type, then audience, then criteria** — the order an operator's
+remedies run in. #6554 is the second instalment of the same bill and cost the same thing: the
+criteria read was the pool's own, so a number handed straight to `build claim` met no criteria check,
+built end to end, and failed a review gate no branch could repair.
 
 **The type axis has one arm, and a citation is the only thing that opens it.** A `type:decision`
 whose choice a founder has already recorded on the issue is buildable, because the deliverable is
@@ -232,8 +246,8 @@ nothing else: the issue still has to carry `ready-for:agent`, which triage stamp
   an issue carrying a standing-lane label, that label.
 - **The issue's audience** — its `ready-for:` label.
 
-**The outcomes — state words, never a boolean.** The admission test returns exactly one across
-both axes, and every refusal carries its reason and names which axis refused:
+**The outcomes — state words, never a boolean.** The admission test returns exactly one across all
+four axes, and every refusal carries its reason and names which axis refused:
 
 | Outcome | Trigger | Seat |
 |---|---|---|
@@ -241,12 +255,13 @@ both axes, and every refusal carries its reason and names which axis refused:
 | `refused: out-of-scope` | some campaign is active, the issue's home is a milestone none of them pins or no milestone, and no standing-lane label exempts it | `20` |
 | `refused: no-served-issue` | some campaign is active and the target is a pull request whose body names no readable issue — neither a closing keyword nor `Part of #<n>`, or one naming an issue proven absent | `20` |
 | `refused: audience-not-agent` | the issue carries a `ready-for:` label other than `ready-for:agent`, or carries none at all — absence is an unknown audience, never an agent audience (#4780) | `21` |
+| `refused: no-acceptance-criteria` | the body carries no readable `### Acceptance criteria` block — the wire read answers `absent` (no heading reaches for it) or `malformed` (one drifted), and the outcome carries which — on a claim the criteria axis binds, a fresh build and nothing else (#6554) | `32` |
 | `unknown` | the campaigns table or the issue's home could not be read (`11`), or any of its rows is malformed (`4`) | `11` / `4` |
 
-**The two refusals are separately named and separately seated**, never one collapsed "refused": they
-come from the two different axes, they have different remedies (flip the campaign's state cell, or
-re-label the audience), and the per-issue exclusion reason `build pick` reports is derivable only if the outcome
-set keeps them apart.
+**Each refusal is separately named and separately seated**, never one collapsed "refused": they come
+from different axes, they have different remedies (flip the campaign's state cell, re-label the
+audience, or author the missing criteria block), and the per-issue exclusion reason `build pick`
+reports is derivable only if the outcome set keeps them apart.
 
 **The standing-lane exemption, named.** Exactly two labels — `wayfinder:backlog` and
 `axis:pipeline-hardening` (ADR 0208) — are **admitted on the scope axis whatever the table says**, and carrying no milestone is not an exclusion for them. A standing lane is milestone-less by
@@ -322,6 +337,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `24` | proven: `git commit` ran and HEAD did not move — no commit was created |
 | `30` | proven: not admitted on the type axis — the issue is `type:decision` or `type:epic`, whose deliverable is not a pull request a build lane produces |
 | `31` | proven: the claim's mode and the child's standing range verdict disagree — a fresh build over a child holding a `FAIL`, or a `--resume` over a child holding none |
+| `32` | proven: not admitted on the criteria axis — the issue body carries no readable `### Acceptance criteria` block, absent or malformed, so there is no contract to build against |
 | `127` | the verb never ran at all (unresolved binary — the shell's code, not this process's) |
 
 **`7` versus `11` is the split the whole group rests on** (the `wire` group's `ABSENT` vs
@@ -440,8 +456,8 @@ issue, its value the count — keys ordered count-descending, ties on the reason
 always prints the same bytes. (Those two counts are the #5641 measurement, taken before #6325
 renamed the reason `out-of-focus` to `out-of-scope`; the key is the current one, the numbers are
 the older board.) A reason is one of `out-of-scope` / `audience-not-agent` /
-`unreadable` — the outcome set of the [admission test](#admission-test--scope-admission-and-the-audience-axis),
-one reason per outcome — or `no-acceptance-criteria` or `blocked`, this verb's own two axes (below).
+`no-acceptance-criteria` / `unreadable` — the outcome set of the [admission test](#admission-test--scope-admission-and-the-audience-axis),
+one reason per outcome — or `blocked`, this verb's own axis (below).
 The scanned counts alone cannot tell a working fence from a broken one; the reasons can, and the
 reason vocabulary is the whole of what a reader acts on — no skill reads a per-issue row, so the
 rows collapse to counts under ADR 0308 (`excluded` is an evidence-array, `pool` the answer-array
@@ -475,15 +491,18 @@ The filter, fail-closed on every axis:
   picked — a blind pick has no ruling to cite, which is why the exclusion here stands. A
   rendered-visual deliverable is excluded by the *skill* at reading time, not by this verb, because
   modality is not a label.
-- **a body carrying an acceptance-criteria block the wire reader answers `Found` on.** A candidate
-  with no contract can only fail at `review criteria`, once a branch, a build, a push, a PR and a CI
-  run are already spent, and neither the builder nor the reviewer can repair it — so the pool
-  excludes it with reason `no-acceptance-criteria` and the body travels on the listing read the
-  filter already performs, costing no second call. The axis is this verb's own rather than the
-  admission test's: that test is shared with `build claim`, where a `plan` or `gate` claim targets an
-  epic, whose criteria arrive per child from the plan ledger
-  ([#6025](https://github.com/kamp-us/phoenix/issues/6025)). The matching refusal at the stamp is
-  `triage apply`'s `16`.
+- **a body carrying an acceptance-criteria block the wire reader answers `Found` on** — the
+  admission test's **criteria axis**, not this verb's own. A candidate with no contract can only fail
+  at `review criteria`, once a branch, a build, a push, a PR and a CI run are already spent, and
+  neither the builder nor the reviewer can repair it — so the pool excludes it with reason
+  `no-acceptance-criteria`, and the body travels on the listing read the filter already performs,
+  costing no second call. The axis used to be this verb's own, which is what made it no fence: a
+  number handed straight to `build claim` passes through no pool, so the same no-AC issue reached
+  construction by number and the review gate was the first thing to catch it
+  ([#6554](https://github.com/kamp-us/phoenix/issues/6554)). It binds a **fresh build** only — a
+  `plan` or `gate` claim targets an epic, whose criteria arrive per child from the plan ledger
+  ([#6025](https://github.com/kamp-us/phoenix/issues/6025)), and a repair claim names a PR whose
+  branch cannot repair an issue body. The matching refusal at the stamp is `triage apply`'s `16`.
 - **no open `blocked_by` edge**, read off GitHub's native graph and nothing else (ADR 0301) through
   the same `packages/fabrika-cli/src/build/blockedness.ts` reader `build eligible` uses. A candidate
   with any blocker still open is excluded with reason `blocked`, and one whose edge list could not
@@ -777,13 +796,14 @@ fabrika build adopt 4312 --session <dead-session> --reason <text> [--repo <owner
 **`claim` runs the fence before it writes anything.** After the target-open check and **before
 any marker is posted**, `claim` puts `<number>` through the
 [admission test](#admission-test--scope-admission-and-the-audience-axis) — the same imported
-module `build pick` filters on, both axes, never a second derivation. In repair, `<number>` is a PR,
+module `build pick` filters on, every axis, never a second derivation. In repair, `<number>` is a PR,
 and the test judges the issue that PR serves rather than the PR's own empty home — a PR naming no
 readable issue is `refused: no-served-issue` at `20`. A `refused: out-of-scope` is
 `20` and a
-`refused: audience-not-agent` is `21`, each named on stderr; an unreadable declaration or home is
-`11` and a malformed declaration is `4`, and neither ever proceeds. Nothing is written on any of the
-four: the issue carries no marker, so a refused claim leaves no trace to retract.
+`refused: audience-not-agent` is `21`, a `refused: no-acceptance-criteria` is `32`, each named on
+stderr; an unreadable declaration or home is `11` and a malformed declaration is `4`, and neither
+ever proceeds. Nothing is written on any refusal: the issue carries no marker, so a refused claim
+leaves no trace to retract.
 
 **Then the blockedness gate, and only then the marker.** ADR
 [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes GitHub's native
@@ -798,16 +818,16 @@ remedy is neither an edit nor a re-label but waiting, and there is no unblock ac
 the blocker closes, and the next read answers unblocked. In repair `<number>` is a PR, which carries
 no edges of its own and names a lane that has already started, so the gate does not run.
 
-**The purpose decides whether the audience axis binds — it never enters either axis.** `--purpose`
-says why this lane claims: `build` (the default) is bound by both axes, while `plan` and `gate` are
+**The purpose decides which axes bind — it never enters an axis.** `--purpose`
+says why this lane claims: `build` (the default) is bound by all four, while `plan` and `gate` are
 bound by the scope axis alone. The audience axis asks whether an agent should pick the issue up to
 *build*, and an epic earns `ready-for:agent` only after it has been planned and gated, so fencing
 the planner and the gate on it is circular (founder ruling,
 [#5175](https://github.com/kamp-us/phoenix/issues/5175); 19 of 20 open epics carried no such label).
-The purpose rides **beside** the two axes rather than widening either — each axis still reads the
+The purpose rides **beside** the axes rather than widening any — each axis still reads the
 issue exactly as it did, and only the composition consults the purpose, which is the shape ADR 0245's
-repair round settled. A `21` is therefore reachable under `--purpose build` only, and `20` is
-reachable under every purpose. `claim`'s purpose line names which reading applied, and the audience
+repair round settled. A `21`, a `30` and a `32` are therefore reachable under `--purpose build` only,
+and `20` is reachable under every purpose. `claim`'s purpose line names which reading applied, and the audience
 it saw either way, so a claim admitted over a non-agent audience is readable as one afterwards.
 
 **Repair of a decision PR is admitted on its own, with no flag and no override.** When `<number>` is
@@ -919,6 +939,7 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written. Unreachable when the target is an open PR serving a `type:decision` issue (#5914) |
 | `30` | `claim --purpose build` against an **issue** only, proven: the issue is `type:decision` or `type:epic` — no marker was written. Not overridable: a decision opens it with `--cites <ruling-comment-url>`, an epic with `--purpose plan` or `--purpose gate` |
 | `31` | `claim --purpose build` against an **issue** only, proven: the claim's mode disagrees with the child's standing range verdicts — a fresh claim over a child holding a `FAIL`, or `--resume` over a child holding none. No marker was written, and neither direction is overridable: `--override` admits a *scope* refusal, and this is not one |
+| `32` | `claim --purpose build` against an **issue** only, proven: the body carries no readable `### Acceptance criteria` block — absent, or a heading that drifted. No marker was written. Not overridable: the repair belongs on the issue (`triage enrich` for an absent block, `triage repair-criteria` for a drifted one), not on a branch |
 
 **The prior-build gate — "no lane holds this" is not "this has no reviewed build"**
 
@@ -1092,10 +1113,12 @@ fabrika build issue 4312 [--repo <owner/name>]
 ```
 
 `criteria` comes from the imported `acceptance-criteria` wire read and carries its three answers
-as positive tokens: `found` (with `items`), `absent` (no block reaches for the heading — a fact
-the skill judges), `malformed` (something reaches for it and misses — a *defect* the skill must
-surface, never silently treat as absent). The distinction is the wire module's whole design;
-this verb transports it, it does not flatten it. The body passes through the content gate.
+as positive tokens: `found` (with `items`), `absent` (no block reaches for the heading),
+`malformed` (something reaches for it and misses — never silently treated as absent). The
+distinction is the wire module's whole design; **this verb transports it and refuses nothing**, and
+that is deliberate: the fence is the admission test's criteria axis at `build claim`, which refuses
+both negative answers on `32` before a lane opens (#6554). A read verb that refused would leave the
+operator repairing a body unable to print it. The body passes through the content gate.
 
 **Exit status** (beyond the universal four)
 
