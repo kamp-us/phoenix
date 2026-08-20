@@ -887,11 +887,14 @@ runs          <n>          measuredRuns <n>
 skipped       <n>          skippedMalformed <n>   skippedNewerVersion <n>
 undatedRows   <n>
 day        <YYYY-MM-DD>        <billed> <exCacheRead> <assistantTurns> <runs> <measuredRuns>
+dayMore       <n>
 skill      <name>              …
+skillMore     <n>
 stage-arm  <stage> <arm>       …
+stageArmMore  <n>
 ```
 
-Two things about that output are load-bearing:
+Three things about that output are load-bearing:
 
 - **Every number it could not count is a number it reports.** The unread-line counts ride on the
   answer itself, not just on stderr, because a total that quietly omits 40 unreadable lines is
@@ -899,6 +902,10 @@ Two things about that output are load-bearing:
 - **The skipped count is split, because the halves ask for opposite things.** `skippedMalformed` is
   damage — those measurements are gone. `skippedNewerVersion` is intact data written by a newer row
   shape, and the fix is to upgrade this CLI.
+- **The three breakdowns are bounded evidence, not the whole row set** (ADR 0308). Each prints its
+  ten biggest-billing rows and then a `…More` count of the rows the cap dropped — `0` included, so a
+  missing remainder never looks like a breakdown that fit. The scalar totals above them are whole.
+  `--json` carries the same shape: `byDay`, `bySkill` and `byStageArm` are each `{rows, more}`.
 
 ## The `spike` group
 

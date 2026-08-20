@@ -14,6 +14,7 @@
  * hold are four different facts, and none of them is a zero total.
  */
 import {Effect, type FileSystem, Result} from "effect";
+import {type CapAndCount, capAndCount} from "../evidence.ts";
 import {exists, readFile} from "../io/fs.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -24,14 +25,55 @@ import {
 } from "./codes.ts";
 import {readSpendLedger} from "./ledger.ts";
 import {
+	type DayTotals,
 	type ResolvedWindow,
 	type Rollup,
 	resolveBound,
 	rollUp,
+	type SkillTotals,
 	type SpendTotals,
+	type StageArmTotals,
 } from "./rollup.ts";
 
 const VERB = "fabrika spend rollup";
+
+/**
+ * How many rows of each breakdown reach the answer channel before the rest become a count.
+ *
+ * The three breakdowns are evidence-arrays under ADR 0308 — they make the scalar totals auditable,
+ * and no skill in `claude-plugins/fabrika/skills/` reads a row of any of them by name. Ten each
+ * bounds the answer at thirty rows however long the ledger runs; `byDay` alone was unbounded in
+ * time, and `bySkill`/`byStageArm` already ran to roughly the whole skill and stage-arm corpus.
+ */
+const EVIDENCE_CAP = 10;
+
+/** The answer-channel payload: {@link Rollup} with its three evidence-arrays bounded. */
+export interface BoundedRollup extends Omit<Rollup, "byDay" | "bySkill" | "byStageArm"> {
+	readonly byDay: CapAndCount<DayTotals>;
+	readonly bySkill: CapAndCount<SkillTotals>;
+	readonly byStageArm: CapAndCount<StageArmTotals>;
+}
+
+/**
+ * The breakdown's biggest spenders, plus how many rows the cap dropped.
+ *
+ * Billed-descending, not the key order {@link rollUp} builds in: once a breakdown is capped, keeping
+ * its first rows by key would surface the alphabetically-earliest skill or the oldest day, which is
+ * the least informative slice of a spend answer. Ties keep that key order, because `sort` is stable
+ * (ES2019) over rows this function receives already key-sorted.
+ */
+const topSpenders = <A extends SpendTotals>(rows: ReadonlyArray<A>): CapAndCount<A> =>
+	capAndCount(
+		[...rows].sort((left, right) => right.billed - left.billed),
+		EVIDENCE_CAP,
+	);
+
+const bound = (rollup: Rollup): BoundedRollup => ({
+	...rollup,
+	byDay: topSpenders(rollup.byDay),
+	bySkill: topSpenders(rollup.bySkill),
+	byStageArm: topSpenders(rollup.byStageArm),
+});
 
 export interface RollupOptions {
 	/** Path to the durable spend ledger. */
@@ -54,8 +96,12 @@ const totalsFields = (totals: SpendTotals): ReadonlyArray<string> => [
 /**
  * One record per line, first field naming the record's kind — so `grep '^day'` is the breakdown and
  * the unread counts sit in the same answer as the total they qualify.
+ *
+ * Each breakdown's `…More` count prints even at `0`, so "capped at exactly its length" and "the
+ * remainder line is missing" never look alike, and it prints beside its own rows rather than in a
+ * block of its own so one grep still reads a whole breakdown.
  */
-const render = (rollup: Rollup): string => {
+const render = (rollup: BoundedRollup): string => {
 	const t = rollup.totals;
 	return [
 		`billed\t${t.billed}`,
@@ -67,11 +113,14 @@ const render = (rollup: Rollup): string => {
 		`skippedMalformed\t${rollup.skipped.malformed}`,
 		`skippedNewerVersion\t${rollup.skipped.newerVersion}`,
 		`undatedRows\t${rollup.undatedRows}`,
-		...rollup.byDay.map((b) => [`day\t${b.day}`, ...totalsFields(b)].join("\t")),
-		...rollup.bySkill.map((b) => [`skill\t${b.skill}`, ...totalsFields(b)].join("\t")),
-		...rollup.byStageArm.map((b) =>
+		...rollup.byDay.rows.map((b) => [`day\t${b.day}`, ...totalsFields(b)].join("\t")),
+		`dayMore\t${rollup.byDay.more}`,
+		...rollup.bySkill.rows.map((b) => [`skill\t${b.skill}`, ...totalsFields(b)].join("\t")),
+		`skillMore\t${rollup.bySkill.more}`,
+		...rollup.byStageArm.rows.map((b) =>
 			[`stage-arm\t${b.stage}\t${b.arm}`, ...totalsFields(b)].join("\t"),
 		),
+		`stageArmMore\t${rollup.byStageArm.more}`,
 	].join("\n");
 };
 
@@ -146,6 +195,7 @@ export const runRollup = (
 			);
 		}
 
+		const bounded = bound(rollup);
 		const scope = `${VERB}: summed ${rollup.totals.runs} run(s) from ${path} within ${bounds}; ${rollup.totals.measuredRuns} carried a reconstructed spend. ${skippedNote(skipped)}${rollup.undatedRows === 0 ? "" : ` ${rollup.undatedRows} row(s) carry no readable timestamp and this bounded window excluded them.`}`;
-		return answer(options.json ? JSON.stringify(rollup) : render(rollup), [scope]);
+		return answer(options.json ? JSON.stringify(bounded) : render(bounded), [scope]);
 	});
