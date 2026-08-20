@@ -13,6 +13,7 @@ import type {TargetKind} from "../../db/target-kind.ts";
 import {Denied} from "../kunye/errors.ts";
 import {Kunye} from "../kunye/Kunye.ts";
 import {Moderate, requireModeration} from "../kunye/moderate.ts";
+import {moderatorSandboxViewer} from "../kunye/sandbox.ts";
 import {VouchLedger} from "../kunye/VouchLedger.ts";
 import {Pano} from "../pano/Pano.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
@@ -114,8 +115,10 @@ const resolveResolverHandles = Effect.fn("report.resolveResolverHandles")(functi
 	return handles;
 });
 
-// A target the batched read doesn't return (missing / sandbox-hidden) simply has no
-// entry — the merge renders that row with null context, never drops it.
+// A target the batched read doesn't return (missing / removed) simply has no entry — the
+// merge renders that row with null context, never drops it. A still-SANDBOXED target is
+// no longer in that set: these reads run under the moderator's own sandbox viewer, so the
+// çaylak reports the sandbox exists to make reviewable are the ones that hydrate (#6472).
 const resolveTargetContexts = Effect.fn("report.resolveTargetContexts")(function* (
 	groups: ReadonlyArray<{targetKind: TargetKind; targetId: string}>,
 ) {
@@ -129,9 +132,10 @@ const resolveTargetContexts = Effect.fn("report.resolveTargetContexts")(function
 	const contexts = new Map<string, ReportTargetContext>();
 	const pano = yield* Pano;
 	const sozluk = yield* Sozluk;
+	const sandboxViewer = yield* moderatorSandboxViewer;
 
 	if (idsByKind.post.length > 0) {
-		const rows = yield* pano.getPostsByIds(idsByKind.post);
+		const rows = yield* pano.getPostsByIds(idsByKind.post, {sandboxViewer});
 		for (const r of rows) {
 			contexts.set(contextKeyOf("post", r.id), {
 				excerpt: r.title,
@@ -143,7 +147,7 @@ const resolveTargetContexts = Effect.fn("report.resolveTargetContexts")(function
 	}
 
 	if (idsByKind.comment.length > 0) {
-		const rows = yield* pano.getCommentsByIds(idsByKind.comment);
+		const rows = yield* pano.getCommentsByIds(idsByKind.comment, {sandboxViewer});
 		for (const r of rows) {
 			// A comment routes to its PARENT post's detail page.
 			const postId = yield* pano.lookupCommentPostId(r.id);
@@ -158,7 +162,7 @@ const resolveTargetContexts = Effect.fn("report.resolveTargetContexts")(function
 	}
 
 	if (idsByKind.definition.length > 0) {
-		const rows = yield* sozluk.getDefinitionsByIds(idsByKind.definition);
+		const rows = yield* sozluk.getDefinitionsByIds(idsByKind.definition, {sandboxViewer});
 		for (const r of rows) {
 			// A definition routes to its term page, keyed by slug.
 			const slug = yield* sozluk.lookupDefinitionTermSlug(r.id);
