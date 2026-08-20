@@ -1060,7 +1060,7 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			"a gate's head-bound record that this PR owes it no verdict — the namespace it resolves, the head it inspected, and why nothing was owed",
 		module: "packages/fabrika-cli/src/wire/routed-elsewhere.ts",
 		producers: ["review-ui"],
-		consumers: ["ship"],
+		consumers: ["ship", "operate"],
 		emit: routedElsewhere.emitFromFields,
 		read: routedElsewhere.readToLines,
 		fixtures: {
