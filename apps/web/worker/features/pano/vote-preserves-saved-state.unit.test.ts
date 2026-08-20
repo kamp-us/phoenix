@@ -1,11 +1,15 @@
 /**
  * Regression coverage for #2213: voting an already-saved post must not clobber its
- * saved state or author identity, in the client cache or the fanned live frame.
+ * saved state or author identity.
  *
  * The defect was that both resolvers shaped their return from the write result, which
  * carries neither `isSaved` nor resolved author identity, so the client cache-merge
  * overwrote the real values with nulls. The fix re-resolves the post through the same
  * batched read `post.save`/`post.unsave` use.
+ *
+ * The fanned frame used to be checked for the same whole projection. Since #6585 it
+ * is narrowed to the vote's `score`, so the frame assertions pin THAT — carrying the
+ * mutator's `isSaved` to every other subscriber was the leak, not the fix.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
@@ -98,10 +102,13 @@ const recordingLive = (frames: PublishMessage[]): Layer.Layer<LivePublisher> =>
 		}),
 	);
 
-const publishedData = (frames: PublishMessage[]): Record<string, unknown> | undefined => {
+const publishedFrame = (frames: PublishMessage[]) => {
 	const entity = frames.find((m) => m.kind === "entity");
 	if (!entity || entity.kind !== "entity" || "delete" in entity.frame) return undefined;
-	return entity.frame.data as Record<string, unknown> | undefined;
+	return {
+		data: entity.frame.data as Record<string, unknown> | undefined,
+		select: entity.frame.select,
+	};
 };
 
 // The vote path fires the flag-gated `notifyContentVote` emitter and re-resolves the
@@ -168,30 +175,31 @@ describe("post.vote — voting a saved post preserves isSaved + author identity 
 		}),
 	);
 
-	it.effect(
-		"the published /fate/live frame carries the same resolved projection (no null leak)",
-		() =>
-			Effect.gen(function* () {
-				const frames: PublishMessage[] = [];
-				yield* drive(
-					mutations["post.vote"],
-					panoStub({
-						voteOnPost: () => Effect.succeed(writeResult()),
-						getPostsByIds: () => Effect.succeed([savedRow()]),
-					}),
-					frames,
-				);
-				const data = publishedData(frames);
-				assert.isDefined(data, "an entity update frame was published");
-				assert.strictEqual(data?.isSaved, true, "the fanned frame keeps isSaved, not null");
-				assert.strictEqual(data?.authorUsername, "elif", "the fanned frame keeps author identity");
-				assert.strictEqual(data?.authorDisplayName, "Elif Yılmaz");
-			}),
+	it.effect("the published /fate/live frame narrows to the re-resolved score (#6585)", () =>
+		Effect.gen(function* () {
+			const frames: PublishMessage[] = [];
+			yield* drive(
+				mutations["post.vote"],
+				panoStub({
+					voteOnPost: () => Effect.succeed(writeResult()),
+					getPostsByIds: () => Effect.succeed([savedRow()]),
+				}),
+				frames,
+			);
+			const frame = publishedFrame(frames);
+			assert.isDefined(frame, "an entity update frame was published");
+			assert.deepStrictEqual(
+				frame?.data,
+				{id: "post_1", score: 1},
+				"a vote fans its score and nothing else",
+			);
+			assert.deepStrictEqual(frame?.select, ["id", "score"]);
+		}),
 	);
 });
 
 describe("post.retractVote — shares the fix (#2213)", () => {
-	it.effect("returned + published projection both keep isSaved:true and identity", () =>
+	it.effect("the returned projection keeps isSaved + identity; the frame narrows", () =>
 		Effect.gen(function* () {
 			const frames: PublishMessage[] = [];
 			const post = (yield* drive(
@@ -204,9 +212,12 @@ describe("post.retractVote — shares the fix (#2213)", () => {
 			)) as Record<string, unknown>;
 			assert.strictEqual(post.isSaved, true, "retractVote also preserves isSaved");
 			assert.strictEqual(post.authorUsername, "elif");
-			const data = publishedData(frames);
-			assert.strictEqual(data?.isSaved, true, "the fanned retract frame keeps isSaved too");
-			assert.strictEqual(data?.authorDisplayName, "Elif Yılmaz");
+			const frame = publishedFrame(frames);
+			assert.deepStrictEqual(
+				frame?.data,
+				{id: "post_1", score: 0},
+				"the fanned retract frame narrows to the re-resolved score (#6585)",
+			);
 		}),
 	);
 });

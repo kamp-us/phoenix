@@ -154,18 +154,19 @@ export const broadcastIf = (
  * Drop the reader-facing çaylak marker from an entity-update payload (#6462).
  *
  * `decidePublish` guards the NODE broadcasts, but an entity `live.update` carries the
- * whole re-resolved wire node and is ungated — and phoenix's `entityFrame` puts no
- * `select` on the frame, so fate merges that node shallowly over every subscriber's
- * cached record (`{...previous, ...partial}`) and the published `changed` narrows
- * nothing. `sandboxedInPlace` is resolved against the MUTATOR's `SandboxViewer` (#6425),
- * so on that path an opted-in yazar's vote broadcasts `true` to viewers holding no
- * entitlement, and every other voter's `false` erases the badge a subscriber correctly
- * read. Both directions are the #4313 failure mode on the newer field.
+ * whole re-resolved wire node and is ungated. `sandboxedInPlace` is resolved against the
+ * MUTATOR's `SandboxViewer` (#6425), so an opted-in yazar's vote broadcasts `true` to
+ * viewers holding no entitlement, and every other voter's `false` erases the badge a
+ * subscriber correctly read. Both directions are the #4313 failure mode on the newer field.
  *
  * Omitting the key beats stamping `false`, because fate copies only the keys the payload
  * carries: an absent one leaves each subscriber's own read-derived value standing. The
  * owner-scoped `sandboxed` rides the same hazard and is deliberately left alone — #4313
  * owns that half.
+ *
+ * Since #6585 the publisher also trims the payload to the mutation's `changed` keys, which
+ * drops the marker on every narrowed publish. This stays because it is the belt to that
+ * brace: it covers the frames that carry no `changed`, where the whole node still rides.
  */
 export const withoutInPlaceMarker = <T extends {readonly sandboxedInPlace?: boolean | undefined}>(
 	node: T,
