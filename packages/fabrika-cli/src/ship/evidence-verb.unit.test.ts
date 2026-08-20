@@ -99,7 +99,7 @@ describe("readManifest", () => {
 });
 
 describe("runEvidence", () => {
-	it("reports present with the lookup evidence and one line per manifest check", async () => {
+	it("reports present with the lookup evidence and the manifest checks as a status tally", async () => {
 		const out = await run([
 			...upToArtifact,
 			[
