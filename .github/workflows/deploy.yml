@@ -612,12 +612,17 @@ jobs:
           # E2E_FORCED_FLAGS, so darkship OFF-assertion specs can skip/invert against a
           # forced-ON preview. Empty when no `preview-flag:<key>` labels forced anything.
           FORCED_FLAGS: ${{ steps.force-flags.outputs.forced }}
+          # Empty on a push to main; the script falls back to `context.sha` there.
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         with:
           script: |
             const marker = "<!-- preview-deploy -->";
             const app = process.env.APP;
             const appMark = `<!-- preview-deploy:${app} -->`;
-            const sha = context.sha.slice(0, 7);
+            // Under `pull_request` the checkout is refs/pull/N/merge, so `context.sha` names the
+            // merge commit, not the branch head. `review-ui render` compares this stamp to the PR's
+            // live head, and a merge sha never matches it (#6507).
+            const sha = (process.env.PR_HEAD_SHA || context.sha).slice(0, 7);
             // Hidden, machine-parseable tokens the e2e job reads. Only web resolves a D1 id
             // (#522) and a forced-flag set (#2951); other apps omit both. Kept in HTML
             // comments so they don't clutter the human-facing line.
