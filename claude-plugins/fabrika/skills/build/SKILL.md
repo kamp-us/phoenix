@@ -115,6 +115,16 @@ and the verb can prove no more than that, so citing a comment that does not rule
 the tool cannot catch and you must not tell. Passing `--cites` on a decision whose audience is still
 `ready-for:human` lands on `21`, because the citation opens the type axis and nothing else.
 
+Exit `32` (no acceptance criteria) is the fourth refusal, and it is the one you are most likely to
+meet: the verb reads the issue's body itself, so a body with no readable `### Acceptance criteria`
+block — or one whose heading drifted — is refused here, before any branch, commit or write.
+**It is not overridable either, and the remedy is on the refusal line**: `fabrika triage enrich <n>`
+for an absent block, `fabrika triage repair-criteria <n>` for a drifted one. **Do not run either
+from this lane** — the repair belongs on the issue body, which a build lane may not write from a
+branch; a human or triage does it. End `BACKED-OFF` and take the next candidate. The axis binds a
+fresh build claim only: a repair claim is exempt so an in-flight PR is not stranded, which is why §3
+still hands a repair lane the token instead of stopping it.
+
 Before **every** later mutation addressed to an issue or PR number, re-confirm:
 
 ```bash
@@ -138,7 +148,7 @@ block, `malformed` says one drifted, and in both cases nothing downstream can gr
 building anyway spends the whole lane on work `review criteria` refuses (exit `7`) from a seat that
 cannot fix an issue body.
 
-**In the ordinary run you never see either here, because `build claim` already refused.** The
+**In the ordinary run you never see either here, because `build claim` already refused at §2.** The
 criteria axis is the fourth axis of the shared admission test, beside scope, type and audience, so
 it refuses on `32` at the claim seam before any branch, commit or write — the pool and the
 by-number route (an operator naming a lane, `operate`, a resume) hit the one fence rather than the
