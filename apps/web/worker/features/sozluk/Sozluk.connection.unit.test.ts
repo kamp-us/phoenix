@@ -9,6 +9,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
+import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
 import {PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
 import {ReactionStub} from "../reaction/Reaction.testing.ts";
 import {Vote} from "../vote/Vote.ts";
@@ -85,7 +86,10 @@ describe("Sozluk.listDefinitionsKeyset — `first` clamp [1,200] (no SQL engine 
 			const {access, queries} = scriptedAccess([0 /* count */, [] /* fetch */]);
 			return Effect.gen(function* () {
 				const sozluk = yield* Sozluk;
-				yield* sozluk.listDefinitionsKeyset("a-term", {first: input});
+				yield* sozluk.listDefinitionsKeyset("a-term", {
+					first: input,
+					sandboxViewer: anonymousViewer,
+				});
 				assert.strictEqual(fetchQuery(queries).params.at(-1), expectedLimit);
 			}).pipe(Effect.provide(sozlukLayer(access)));
 		});
@@ -103,7 +107,11 @@ describe("Sozluk.listTermSummariesConnection — `first` clamp [1,100] (no SQL e
 			const {access, queries} = scriptedAccess([0 /* count */, [] /* fetch */]);
 			return Effect.gen(function* () {
 				const sozluk = yield* Sozluk;
-				yield* sozluk.listTermSummariesConnection(input === undefined ? {} : {first: input});
+				yield* sozluk.listTermSummariesConnection(
+					input === undefined
+						? {sandboxViewer: anonymousViewer}
+						: {first: input, sandboxViewer: anonymousViewer},
+				);
 				assert.strictEqual(fetchQuery(queries).params.at(-1), expectedLimit);
 			}).pipe(Effect.provide(sozlukLayer(access)));
 		});
@@ -125,7 +133,11 @@ describe("Sozluk.listDefinitionsKeyset — MIXED-direction keyset (score desc, c
 				const {access, queries} = scriptedAccess([1, {score: 5, createdAt: created}, []]);
 				yield* Effect.gen(function* () {
 					const sozluk = yield* Sozluk;
-					yield* sozluk.listDefinitionsKeyset("a-term", {first: 10, after: "d7"});
+					yield* sozluk.listDefinitionsKeyset("a-term", {
+						first: 10,
+						after: "d7",
+						sandboxViewer: anonymousViewer,
+					});
 				}).pipe(Effect.provide(sozlukLayer(access)));
 				const {sql, params} = fetchQuery(queries);
 				// desc lead → `<`, asc tiebreak → `>`. Per-arm equalities precede each strict cmp.
@@ -169,7 +181,11 @@ describe("Sozluk.listDefinitionsKeyset — cursor-miss → empty page, NO furthe
 		};
 		return Effect.gen(function* () {
 			const sozluk = yield* Sozluk;
-			const page = yield* sozluk.listDefinitionsKeyset("a-term", {first: 10, after: "ghost"});
+			const page = yield* sozluk.listDefinitionsKeyset("a-term", {
+				first: 10,
+				after: "ghost",
+				sandboxViewer: anonymousViewer,
+			});
 			assert.deepStrictEqual(page.rows, [], "miss → no rows");
 			assert.strictEqual(page.hasNextPage, false);
 			assert.strictEqual(page.endCursor, null);
@@ -183,7 +199,11 @@ describe("Sozluk.listDefinitionsKeyset — mute read-mask (author_id NOT IN …)
 		const {access, queries} = scriptedAccess([1 /* count */, [] /* fetch */]);
 		return Effect.gen(function* () {
 			const sozluk = yield* Sozluk;
-			yield* sozluk.listDefinitionsKeyset("a-term", {first: 10, mutedIds: new Set(["u-muted"])});
+			yield* sozluk.listDefinitionsKeyset("a-term", {
+				first: 10,
+				mutedIds: new Set(["u-muted"]),
+				sandboxViewer: anonymousViewer,
+			});
 			const {sql, params} = fetchQuery(queries);
 			assert.match(sql, /"definition_record"\."author_id" not in \(\?\)/, "muted author excluded");
 			assert.include(params, "u-muted");
@@ -194,7 +214,7 @@ describe("Sozluk.listDefinitionsKeyset — mute read-mask (author_id NOT IN …)
 		const {access, queries} = scriptedAccess([1 /* count */, [] /* fetch */]);
 		return Effect.gen(function* () {
 			const sozluk = yield* Sozluk;
-			yield* sozluk.listDefinitionsKeyset("a-term", {first: 10});
+			yield* sozluk.listDefinitionsKeyset("a-term", {first: 10, sandboxViewer: anonymousViewer});
 			assert.notMatch(fetchQuery(queries).sql, /not in/, "no mask ⇒ today's definition read");
 		}).pipe(Effect.provide(sozlukLayer(access)));
 	});

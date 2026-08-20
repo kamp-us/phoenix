@@ -13,6 +13,7 @@ import {DefinitionId, UserId} from "../../lib/ids.ts";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
+import {inPlaceVisibilityStores, moderatorAxisLayer} from "../kunye/sandbox.testing.ts";
 import {EMPTY_REACTION_AGGREGATE} from "../reaction/Reaction.ts";
 import {mutations} from "./mutations.ts";
 import type {DefinitionRow, ReactDefinitionInput} from "./Sozluk.ts";
@@ -82,6 +83,12 @@ const requestCtx = (
 		sozluk,
 		flagsStub(on),
 		liveStub,
+		// The inert (flag-off) branch re-resolves the definition through the real sandbox
+		// viewer (#6586), so both axes it probes have to be on the context. `flagsStub`
+		// answers every key with `on`, so the çaylak tier is what keeps the in-place axis
+		// `false` when this file's own flag is ON.
+		moderatorAxisLayer({viewerId: user?.id ?? "anon", isModerator: false}),
+		inPlaceVisibilityStores({tier: "çaylak"}),
 		Layer.succeed(CurrentUser, {user}),
 		Layer.succeed(RuntimeContext, runtimeContextStub),
 	);

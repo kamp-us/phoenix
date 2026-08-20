@@ -11,6 +11,8 @@ import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
 import type * as schema from "../../db/drizzle/schema.ts";
+import {memberSandboxViewer} from "../kunye/sandbox.testing.ts";
+import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
 import {makePasaportStub, PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
 import type {Pasaport, ProfileIdentityRow} from "../pasaport/Pasaport.ts";
 import {ReactionStub} from "../reaction/Reaction.testing.ts";
@@ -104,7 +106,11 @@ describe("Pano.listPostsConnection — `first` clamp [1,100] (no SQL engine boot
 			const {access, queries} = scriptedAccess([0 /* count */, [] /* fetch */]);
 			return Effect.gen(function* () {
 				const pano = yield* Pano;
-				yield* pano.listPostsConnection(input === undefined ? {} : {first: input});
+				yield* pano.listPostsConnection(
+					input === undefined
+						? {sandboxViewer: anonymousViewer}
+						: {first: input, sandboxViewer: anonymousViewer},
+				);
 				const {params} = fetchQuery(queries);
 				assert.strictEqual(
 					params.at(-1),
@@ -128,7 +134,12 @@ describe("Pano.listPostsConnection — single-direction keyset, lead column by s
 	const sqlOf = (sort: "hot" | "new" | "top" | "discuss") =>
 		Effect.gen(function* () {
 			const pano = yield* Pano;
-			yield* pano.listPostsConnection({sort, first: 10, after: "p9"});
+			yield* pano.listPostsConnection({
+				sort,
+				first: 10,
+				after: "p9",
+				sandboxViewer: anonymousViewer,
+			});
 		});
 
 	const run = (sort: "hot" | "new" | "top" | "discuss") => {
@@ -199,7 +210,11 @@ describe("Pano.listPostsConnection — cursor-miss → empty page, NO second DB 
 		};
 		return Effect.gen(function* () {
 			const pano = yield* Pano;
-			const page = yield* pano.listPostsConnection({first: 10, after: "ghost"});
+			const page = yield* pano.listPostsConnection({
+				first: 10,
+				after: "ghost",
+				sandboxViewer: anonymousViewer,
+			});
 			assert.deepStrictEqual(page.rows, [], "miss → no rows");
 			assert.strictEqual(page.hasNextPage, false, "miss → no next page");
 			assert.strictEqual(page.endCursor, null, "miss → no cursor");
@@ -221,7 +236,7 @@ describe("Pano.listPostsConnection — cursor-miss → empty page, NO second DB 
 		};
 		return Effect.gen(function* () {
 			const pano = yield* Pano;
-			const page = yield* pano.listPostsConnection({first: 10});
+			const page = yield* pano.listPostsConnection({first: 10, sandboxViewer: anonymousViewer});
 			assert.strictEqual(page.totalCount, 0);
 		}).pipe(Effect.provide(panoLayer(access)));
 	});
@@ -267,7 +282,11 @@ describe("Pano.listPostsConnection — stamps the LIVE author identity on the pa
 			const {access} = scriptedAccess([1 /* count */, [fetchRow] /* fetch */]);
 			return Effect.gen(function* () {
 				const pano = yield* Pano;
-				const page = yield* pano.listPostsConnection({sort: "new", first: 10});
+				const page = yield* pano.listPostsConnection({
+					sort: "new",
+					first: 10,
+					sandboxViewer: anonymousViewer,
+				});
 				assert.strictEqual(page.rows.length, 1, "head page returns the one row");
 				const row = page.rows[0];
 				assert.isDefined(row, "head page returns the one row");
@@ -303,7 +322,11 @@ describe("Pano.listPostsConnection — stamps the LIVE author identity on the pa
 		const {access} = scriptedAccess([3 /* count */, rows /* fetch */]);
 		return Effect.gen(function* () {
 			const pano = yield* Pano;
-			yield* pano.listPostsConnection({sort: "new", first: 10});
+			yield* pano.listPostsConnection({
+				sort: "new",
+				first: 10,
+				sandboxViewer: anonymousViewer,
+			});
 			assert.deepStrictEqual(
 				[...(readSpy.ids ?? [])].sort(),
 				["user-1", "user-2"],
@@ -404,12 +427,19 @@ describe("Pano — authed feed: parallelized listPostsConnection composes with t
 			]);
 			return Effect.gen(function* () {
 				const pano = yield* Pano;
-				const page = yield* pano.listPostsConnection({sort: "new", first: 10});
+				const page = yield* pano.listPostsConnection({
+					sort: "new",
+					first: 10,
+					sandboxViewer: anonymousViewer,
+				});
 				assert.strictEqual(page.totalCount, 1, "parallelized count still lands on the page");
 				const ids = page.rows.map((row) => row.id);
 				assert.deepStrictEqual(ids, ["post-1"], "the keyset page carries the id to re-hydrate");
 
-				const hydrated = yield* pano.getPostsByIds(ids, {viewerId: VIEWER});
+				const hydrated = yield* pano.getPostsByIds(ids, {
+					viewerId: VIEWER,
+					sandboxViewer: memberSandboxViewer(VIEWER),
+				});
 				const row = hydrated[0];
 				assert.isDefined(row, "the re-hydrate returns the viewer-scoped row");
 				assert.strictEqual(row.myVote, true, "the viewer's vote survives the re-hydrate stamp");
@@ -431,7 +461,12 @@ describe("Pano feed + thread — mute read-mask (author_id NOT IN …)", () => {
 		const {access, queries} = scriptedAccess([1 /* count */, [] /* fetch */]);
 		return Effect.gen(function* () {
 			const pano = yield* Pano;
-			yield* pano.listPostsConnection({sort: "new", first: 10, mutedIds: new Set(["u-muted"])});
+			yield* pano.listPostsConnection({
+				sort: "new",
+				first: 10,
+				mutedIds: new Set(["u-muted"]),
+				sandboxViewer: anonymousViewer,
+			});
 			const {sql, params} = fetchQuery(queries);
 			assert.match(sql, /"post_record"\."author_id" not in \(\?\)/, "muted author excluded");
 			assert.include(params, "u-muted");
@@ -442,7 +477,11 @@ describe("Pano feed + thread — mute read-mask (author_id NOT IN …)", () => {
 		const {access, queries} = scriptedAccess([1 /* count */, [] /* fetch */]);
 		return Effect.gen(function* () {
 			const pano = yield* Pano;
-			yield* pano.listPostsConnection({sort: "new", first: 10});
+			yield* pano.listPostsConnection({
+				sort: "new",
+				first: 10,
+				sandboxViewer: anonymousViewer,
+			});
 			assert.notMatch(fetchQuery(queries).sql, /not in/, "no mask ⇒ byte-for-byte today's feed");
 		}).pipe(Effect.provide(panoLayer(access)));
 	});
@@ -451,7 +490,11 @@ describe("Pano feed + thread — mute read-mask (author_id NOT IN …)", () => {
 		const {access, queries} = scriptedAccess([0 /* count */, [] /* fetch */]);
 		return Effect.gen(function* () {
 			const pano = yield* Pano;
-			yield* pano.listCommentsKeyset("post-1", {first: 10, mutedIds: new Set(["u-muted"])});
+			yield* pano.listCommentsKeyset("post-1", {
+				first: 10,
+				mutedIds: new Set(["u-muted"]),
+				sandboxViewer: anonymousViewer,
+			});
 			const {sql, params} = fetchQuery(queries);
 			assert.match(sql, /"comment_record"\."author_id" not in \(\?\)/, "muted author excluded");
 			assert.include(params, "u-muted");
@@ -462,7 +505,7 @@ describe("Pano feed + thread — mute read-mask (author_id NOT IN …)", () => {
 		const {access, queries} = scriptedAccess([0 /* count */, [] /* fetch */]);
 		return Effect.gen(function* () {
 			const pano = yield* Pano;
-			yield* pano.listCommentsKeyset("post-1", {first: 10});
+			yield* pano.listCommentsKeyset("post-1", {first: 10, sandboxViewer: anonymousViewer});
 			assert.notMatch(fetchQuery(queries).sql, /not in/, "no mask ⇒ byte-for-byte today's thread");
 		}).pipe(Effect.provide(panoLayer(access)));
 	});

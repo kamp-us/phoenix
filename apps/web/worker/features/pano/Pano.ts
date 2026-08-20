@@ -10,8 +10,8 @@ import {Context, Effect, Layer} from "effect";
 import type {PostSort} from "../../../src/lib/panoFeedSort.ts";
 import {POST_TAG_KINDS, type PostTagKind, tagLabel} from "../../../src/lib/panoTags.ts";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
-import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import type * as Removal from "../lifecycle/removal.ts";
+import type {MaskedReadOptions} from "../lifecycle/SandboxVisibility.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 import {Reaction} from "../reaction/Reaction.ts";
 import type {ReportId} from "../report/ids.ts";
@@ -121,31 +121,30 @@ export class Pano extends Context.Service<
 	{
 		readonly getPost: (
 			postId: string,
-			opts?: {
+			opts: MaskedReadOptions & {
 				viewerId?: string | null | undefined;
-				sandboxViewer?: SandboxViewer | undefined;
 				/** Mute read-mask (#3113): a muted author's post reads as not-found. */
 				mutedIds?: ReadonlySet<string> | undefined;
 			},
 		) => Effect.Effect<PostPage | null>;
 
-		readonly listPostsConnection: (opts?: {
-			sort?: PostSort;
-			first?: number;
-			after?: string | null;
-			host?: string | null;
-			sandboxViewer?: SandboxViewer | undefined;
-			mutedIds?: ReadonlySet<string> | undefined;
-		}) => Effect.Effect<PostConnectionPage>;
+		readonly listPostsConnection: (
+			opts: MaskedReadOptions & {
+				sort?: PostSort;
+				first?: number;
+				after?: string | null;
+				host?: string | null;
+				mutedIds?: ReadonlySet<string> | undefined;
+			},
+		) => Effect.Effect<PostConnectionPage>;
 
 		/** Keyset page over a post's comments, `(created_at asc, id asc)` (ADR 0019). */
 		readonly listCommentsKeyset: (
 			postId: string,
-			opts?: {
+			opts: MaskedReadOptions & {
 				first?: number | undefined;
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
-				sandboxViewer?: SandboxViewer | undefined;
 				mutedIds?: ReadonlySet<string> | undefined;
 				/** Collapse the finalize stamps into one concurrent wave (#2710). Default off. */
 				parallelStamps?: boolean | undefined;
@@ -155,9 +154,8 @@ export class Pano extends Context.Service<
 		/** Post source `byIds` — batched read avoiding the relation N+1. */
 		readonly getPostsByIds: (
 			ids: ReadonlyArray<string>,
-			opts?: {
+			opts: MaskedReadOptions & {
 				viewerId?: string | null | undefined;
-				sandboxViewer?: SandboxViewer | undefined;
 				mutedIds?: ReadonlySet<string> | undefined;
 			},
 		) => Effect.Effect<ReadonlyArray<PostSummaryRow>>;
@@ -176,9 +174,8 @@ export class Pano extends Context.Service<
 		/** Comment source `byIds` — batched read avoiding the relation N+1. */
 		readonly getCommentsByIds: (
 			ids: ReadonlyArray<string>,
-			opts?: {
+			opts: MaskedReadOptions & {
 				viewerId?: string | null | undefined;
-				sandboxViewer?: SandboxViewer | undefined;
 				mutedIds?: ReadonlySet<string> | undefined;
 				/** Collapse the finalize stamps into one concurrent wave (#2710). Default off. */
 				parallelStamps?: boolean | undefined;
