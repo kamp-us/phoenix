@@ -213,19 +213,27 @@ A criterion carries two independent properties, and conflating them costs one of
 > Source: [#4644](https://github.com/kamp-us/phoenix/issues/4644) adopt-list item 2 (the
 > completion-criterion lever from the reference's glossary at `2ab9580`).
 
-## 7. The scope law — `.out-of-scope/`
+## 7. The scope law — recording a rejection
 
-**A rejected proposal is recorded, with its reasoning, so it stops being re-proposed.** fabrika
-keeps an `.out-of-scope/` directory at the plugin root: one file per rejected proposal, named for
-the proposal, stating what is out of scope, **why**, and what prior requests asked for it.
+**A rejected proposal is recorded, with its reasoning, so it stops being re-proposed.** One entry
+per rejected proposal, named for the proposal, stating what is out of scope, **why**, and what prior
+requests asked for it.
 
 This is a first-class scope law rather than a courtesy. An unrecorded rejection is one the next
 session re-derives from zero and may re-decide differently; a recorded one is a decision that holds
 without anyone remembering it. It is the same instinct as `.decisions/` — the repo's ADRs record
-what *was* decided, and `.out-of-scope/` records what was decided **against** at the skill layer.
+what *was* decided, and this records what was decided **against** at the skill layer.
 
 A rejection belongs here when it is a real proposal someone could plausibly make again — not every
 idea that was passed over in an authoring session.
+
+**An entry lives in its skill's own [`contract.md`](../skills/report/contract.md), under a
+*Considered and deliberately not derived* section.** The adoption source below names a plugin-root
+`.out-of-scope/` directory instead — one file per rejection — and that directory does not exist:
+the corpus-wide build was declined once
+([#5667](https://github.com/kamp-us/phoenix/issues/5667), closed not-planned), so the contract
+sections are the home until a founder re-opens it. What a build would move is where an entry lives,
+never whether one is written.
 
 > Source: [#4644](https://github.com/kamp-us/phoenix/issues/4644) adopt-list item 4, grounded in
 > the reference's `.out-of-scope/` at `2ab9580`.
