@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * `migrations-guard` CLI (issue #1435, ADR 0108). Two commands over the flat D1 migrations tree:
+ * `migrations-guard` CLI (issue #1435; ADR 0108, re-grounded by ADR 0309). Two commands over the
+ * committed D1 migrations tree — the frozen flat `NNNN_*.sql` history plus the
+ * `<prefix>_<name>/migration.sql` directories drizzle-kit writes from the v7 cutover on:
  *
  *   check     — the fail-closed CI gate. Loads the tree + committed baseline, evaluates
  *               consistency / ordering / immutability, prints the verdict, and EXITS NON-ZERO
  *               on any violation so a CI step fails loudly (mirrors leak-guard/readme-guard).
  *   baseline  — regenerate the committed immutability baseline (tag → current SQL sha256) after
- *               a DELIBERATE, audited re-baseline (e.g. the #1306 flat→per-dir cutover). Writing
+ *               a DELIBERATE, audited re-baseline (e.g. the #6438 v7 cutover). Writing
  *               the baseline is a human-reviewed control-plane act, not something CI does.
  *
  * The thin `effect/unstable/cli` shell over the core + `fs.ts` boundary
@@ -32,7 +34,7 @@ const VIOLATION_EXIT_CODE = 1;
 
 const migrationsFlag = Flag.string("migrations").pipe(
 	Flag.withDefault(DEFAULT_MIGRATIONS_DIR),
-	Flag.withDescription("path to the flat migrations directory (default apps/web/…/migrations)"),
+	Flag.withDescription("path to the migrations directory (default apps/web/…/migrations)"),
 );
 
 const baselineFlag = Flag.string("baseline").pipe(
@@ -55,7 +57,7 @@ const check = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Fail-closed gate: assert the flat D1 migrations tree is consistent, ordered, and immutable vs the committed baseline",
+		"Fail-closed gate: assert the D1 migrations tree is consistent, ordered, and immutable vs the committed baseline",
 	),
 );
 
@@ -66,7 +68,7 @@ const baselineCmd = Command.make(
 		const tree = loadMigrationTree(migrations);
 		writeFileSync(baseline, serializeBaseline(deriveBaseline(tree)));
 		yield* Console.log(
-			`migrations-guard: wrote baseline for ${tree.sqlTags.length} migration(s) → ${baseline}`,
+			`migrations-guard: wrote baseline for ${tree.migrations.length} migration(s) → ${baseline}`,
 		);
 	}),
 ).pipe(
@@ -77,9 +79,7 @@ const baselineCmd = Command.make(
 
 const migrationsGuard = Command.make("migrations-guard").pipe(
 	Command.withSubcommands([check, baselineCmd]),
-	Command.withDescription(
-		"Fail-closed guard over the hand-authored flat D1 migrations tree (issue #1435)",
-	),
+	Command.withDescription("Fail-closed guard over the committed D1 migrations tree (issue #1435)"),
 );
 
 migrationsGuard.pipe(

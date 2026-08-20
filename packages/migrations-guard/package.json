@@ -2,7 +2,7 @@
 	"name": "@kampus/migrations-guard",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Fail-closed CI gate over the hand-authored flat D1 migrations tree (ADR 0108): consistency (.sql ↔ journal ↔ snapshots), ordering (contiguous-unique idx/tag/number), and immutability (a journaled migration's SQL never changes vs a committed baseline) — issue #1435",
+	"description": "Fail-closed CI gate over the committed D1 migrations tree (ADR 0309): consistency (frozen flat history, one migration.sql + snapshot.json per directory, unique apply prefixes), ordering (contiguous flat numbers, directories sorting after them), and immutability (a landed migration's SQL never changes vs a committed baseline) — issue #1435",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts"

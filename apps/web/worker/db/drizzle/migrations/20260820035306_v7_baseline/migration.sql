@@ -1,0 +1,11 @@
+-- No-op baseline for the drizzle-kit v7 cutover (issue #6438, ADR 0309).
+--
+-- The 33 flat `NNNN_*.sql` migrations beside this directory already built this
+-- schema on every live D1, and their ids are unchanged, so alchemy skips them.
+-- This directory exists only so drizzle-kit has a v7 snapshot to diff future
+-- `generate` runs against. Its body is deliberately empty: alchemy sees one new
+-- id here and will run whatever this file holds against a database that already
+-- has every object `snapshot.json` describes.
+--
+-- The generated body was removed by hand before the first commit. `snapshot.json`
+-- beside this file is the real artifact and is byte-for-byte as the tool wrote it.

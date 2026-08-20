@@ -1,27 +1,52 @@
 import {describe, expect, it} from "vitest";
 import {
+	alchemyPrefix,
 	type Baseline,
 	deriveBaseline,
 	evaluate,
+	type Migration,
 	type MigrationTree,
 	migrationNumber,
 } from "./migrations-guard.ts";
 
-// A minimal well-formed tree: 3 migrations, journal + snapshots + hashes all agree, and a
-// baseline matching the current hashes. Every case below perturbs one property off this base.
-const tree = (over: Partial<MigrationTree> = {}): MigrationTree => ({
-	sqlTags: ["0000_a", "0001_b", "0002_c"],
-	journal: [
-		{idx: 0, tag: "0000_a"},
-		{idx: 1, tag: "0001_b"},
-		{idx: 2, tag: "0002_c"},
-	],
-	snapshotStems: ["0000", "0001_b", "0002_c"],
-	sqlHashes: {"0000_a": "h0", "0001_b": "h1", "0002_c": "h2"},
+const flat = (tag: string, hash: string): Migration => ({
+	tag,
+	id: `${tag}.sql`,
+	layout: "flat",
+	hash,
+	hasSnapshot: false,
+	straySqlFiles: [],
+});
+
+const dir = (tag: string, hash: string, over: Partial<Migration> = {}): Migration => ({
+	tag,
+	id: `${tag}/migration.sql`,
+	layout: "directory",
+	hash,
+	hasSnapshot: true,
+	straySqlFiles: [],
 	...over,
 });
 
-const baseline: Baseline = {"0000_a": "h0", "0001_b": "h1", "0002_c": "h2"};
+// The post-cutover shape: three frozen flat migrations plus one directory migration whose
+// timestamp prefix sorts after them. Every case below perturbs one property off this base.
+const tree = (over: Partial<MigrationTree> = {}): MigrationTree => ({
+	migrations: [
+		flat("0000_a", "h0"),
+		flat("0001_b", "h1"),
+		flat("0002_c", "h2"),
+		dir("20260820035306_v7_baseline", "hb"),
+	],
+	metaDirPresent: false,
+	...over,
+});
+
+const baseline: Baseline = {
+	"0000_a": "h0",
+	"0001_b": "h1",
+	"0002_c": "h2",
+	"20260820035306_v7_baseline": "hb",
+};
 
 const kinds = (t: MigrationTree, b: Baseline = baseline) =>
 	evaluate(t, b).violations.map((v) => v.kind);
@@ -37,123 +62,125 @@ describe("migrationNumber", () => {
 	});
 });
 
-describe("a valid tree passes", () => {
-	it("tolerates the bare-vs-tagged snapshot naming (0000 vs 0002_c)", () => {
+describe("alchemyPrefix mirrors alchemy's own getPrefix", () => {
+	it("parses the segment before the first underscore", () => {
+		expect(alchemyPrefix("0032_user_role_event.sql")).toBe(32);
+		expect(alchemyPrefix("20260820035306_v7_baseline/migration.sql")).toBe(20260820035306);
+	});
+	it("is null when that segment is not a number", () => {
+		expect(alchemyPrefix("baseline/migration.sql")).toBeNull();
+	});
+});
+
+describe("a valid post-cutover tree passes", () => {
+	it("accepts frozen flat history beside a directory migration", () => {
 		const v = evaluate(tree(), baseline);
 		expect(v.ok).toBe(true);
 		expect(v.violations).toEqual([]);
 	});
 });
 
-describe("consistency (AC 1)", () => {
-	it("flags a .sql file with no journal entry (count + missing-entry)", () => {
-		const t = tree({
-			sqlTags: ["0000_a", "0001_b", "0002_c", "0003_d"],
-			sqlHashes: {"0000_a": "h0", "0001_b": "h1", "0002_c": "h2", "0003_d": "h3"},
-		});
-		expect(kinds(t)).toContain("consistency");
+describe("consistency", () => {
+	it("fails closed on zero scope (ADR 0092)", () => {
+		const v = evaluate(tree({migrations: []}), baseline);
+		expect(v.ok).toBe(false);
+		expect(v.violations).toHaveLength(1);
+		expect(v.violations[0]?.message).toContain("zero scope");
 	});
-	it("flags a renamed file (journal entry with no .sql)", () => {
-		const t = tree({
-			sqlTags: ["0000_a", "0001_RENAMED", "0002_c"],
-			sqlHashes: {"0000_a": "h0", "0001_RENAMED": "h1", "0002_c": "h2"},
-		});
-		// 0001 present in .sql and journal by number, so this surfaces as an immutability
-		// miss on the baselined "0001_b" tag, plus consistency stays clean by number.
-		expect(evaluate(t, baseline).ok).toBe(false);
+	it("flags the retired meta/ layout coming back", () => {
+		expect(kinds(tree({metaDirPresent: true}))).toContain("consistency");
 	});
-	it("flags a duplicate migration number in the .sql set", () => {
+	it("flags a migration directory with no snapshot.json", () => {
 		const t = tree({
-			sqlTags: ["0000_a", "0001_b", "0001_dup"],
-			journal: [
-				{idx: 0, tag: "0000_a"},
-				{idx: 1, tag: "0001_b"},
+			migrations: [
+				flat("0000_a", "h0"),
+				flat("0001_b", "h1"),
+				flat("0002_c", "h2"),
+				dir("20260820035306_v7_baseline", "hb", {hasSnapshot: false}),
 			],
-			snapshotStems: ["0000", "0001_b"],
-			sqlHashes: {"0000_a": "h0", "0001_b": "h1", "0001_dup": "hx"},
 		});
 		expect(kinds(t)).toContain("consistency");
 	});
-	it("flags a missing snapshot", () => {
-		const t = tree({snapshotStems: ["0000", "0001_b"]});
+	it("flags a second .sql beside migration.sql — alchemy would apply it too", () => {
+		const t = tree({
+			migrations: [
+				flat("0000_a", "h0"),
+				flat("0001_b", "h1"),
+				flat("0002_c", "h2"),
+				dir("20260820035306_v7_baseline", "hb", {straySqlFiles: ["extra.sql"]}),
+			],
+		});
+		expect(kinds(t)).toContain("consistency");
+	});
+	it("flags a NEW flat migration — the flat layout is frozen history", () => {
+		const t = tree({migrations: [...tree().migrations, flat("0003_new", "hNEW")]});
+		const v = evaluate(t, baseline);
+		expect(v.ok).toBe(false);
+		expect(v.violations.some((x) => x.message.includes("frozen history"))).toBe(true);
+	});
+	it("flags a duplicate apply prefix", () => {
+		const t = tree({
+			migrations: [...tree().migrations, dir("20260820035306_again", "hx")],
+		});
+		expect(kinds(t)).toContain("consistency");
+	});
+	it("flags a prefix-less directory alchemy would sort last by name", () => {
+		const t = tree({
+			migrations: [...tree().migrations, dir("baseline", "hx")],
+		});
 		expect(kinds(t)).toContain("consistency");
 	});
 });
 
-describe("ordering (AC 2)", () => {
-	it("flags a non-contiguous journal idx (gap)", () => {
-		const t = tree({
-			journal: [
-				{idx: 0, tag: "0000_a"},
-				{idx: 1, tag: "0001_b"},
-				{idx: 3, tag: "0002_c"},
-			],
-		});
+describe("ordering", () => {
+	it("flags a gap in the flat numbers", () => {
+		const t = tree({migrations: [flat("0000_a", "h0"), flat("0002_c", "h2")]});
+		expect(kinds(t, {"0000_a": "h0", "0002_c": "h2"})).toContain("ordering");
+	});
+	it("flags a directory whose prefix sorts at or below the flat history", () => {
+		const t = tree({migrations: [...tree().migrations, dir("0001_squeezed", "hx")]});
 		expect(kinds(t)).toContain("ordering");
 	});
-	it("flags a duplicate journal idx", () => {
-		const t = tree({
-			journal: [
-				{idx: 0, tag: "0000_a"},
-				{idx: 1, tag: "0001_b"},
-				{idx: 1, tag: "0002_c"},
-			],
-		});
-		expect(kinds(t)).toContain("ordering");
-	});
-	it("flags a tag number that disagrees with its idx", () => {
-		const t = tree({
-			journal: [
-				{idx: 0, tag: "0000_a"},
-				{idx: 1, tag: "0002_b"},
-				{idx: 2, tag: "0002_c"},
-			],
-			sqlTags: ["0000_a", "0002_b", "0002_c"],
-			snapshotStems: ["0000", "0002_b", "0002_c"],
-			sqlHashes: {"0000_a": "h0", "0002_b": "h1", "0002_c": "h2"},
-		});
-		expect(kinds(t)).toContain("ordering");
+	it("accepts a directory whose prefix sorts after every flat migration", () => {
+		const t = tree({migrations: [...tree().migrations, dir("20260901120000_next", "hx")]});
+		expect(evaluate(t, baseline).violations.filter((v) => v.kind === "ordering")).toEqual([]);
 	});
 });
 
-describe("immutability (AC 3)", () => {
+describe("immutability", () => {
 	it("flags an edited historical migration (hash changed vs baseline)", () => {
-		const t = tree({sqlHashes: {"0000_a": "h0", "0001_b": "EDITED", "0002_c": "h2"}});
+		const t = tree({
+			migrations: [flat("0000_a", "h0"), flat("0001_b", "EDITED"), flat("0002_c", "h2")],
+		});
 		const v = evaluate(t, baseline);
 		expect(v.ok).toBe(false);
 		expect(v.violations.some((x) => x.kind === "immutability")).toBe(true);
 	});
-	it("flags a deleted/renamed baselined migration (missing from tree)", () => {
+	it("flags an edited landed DIRECTORY migration too", () => {
 		const t = tree({
-			sqlTags: ["0000_a", "0002_c"],
-			journal: [
-				{idx: 0, tag: "0000_a"},
-				{idx: 1, tag: "0002_c"},
+			migrations: [
+				flat("0000_a", "h0"),
+				flat("0001_b", "h1"),
+				flat("0002_c", "h2"),
+				dir("20260820035306_v7_baseline", "EDITED"),
 			],
-			snapshotStems: ["0000", "0002_c"],
-			sqlHashes: {"0000_a": "h0", "0002_c": "h2"},
 		});
 		expect(kinds(t)).toContain("immutability");
 	});
-	it("PASSES a new trailing migration absent from the baseline (AC 3 second half)", () => {
+	it("flags a deleted/renamed baselined migration (missing from tree)", () => {
 		const t = tree({
-			sqlTags: ["0000_a", "0001_b", "0002_c", "0003_new"],
-			journal: [
-				{idx: 0, tag: "0000_a"},
-				{idx: 1, tag: "0001_b"},
-				{idx: 2, tag: "0002_c"},
-				{idx: 3, tag: "0003_new"},
-			],
-			snapshotStems: ["0000", "0001_b", "0002_c", "0003_new"],
-			sqlHashes: {"0000_a": "h0", "0001_b": "h1", "0002_c": "h2", "0003_new": "hNEW"},
+			migrations: [flat("0000_a", "h0"), flat("0002_c", "h2")],
 		});
-		const v = evaluate(t, baseline);
-		expect(v.ok).toBe(true);
+		expect(kinds(t)).toContain("immutability");
+	});
+	it("PASSES a new trailing directory migration absent from the baseline", () => {
+		const t = tree({migrations: [...tree().migrations, dir("20260901120000_next", "hNEW")]});
+		expect(evaluate(t, baseline).ok).toBe(true);
 	});
 });
 
 describe("deriveBaseline", () => {
 	it("maps every present tag to its current hash", () => {
-		expect(deriveBaseline(tree())).toEqual({"0000_a": "h0", "0001_b": "h1", "0002_c": "h2"});
+		expect(deriveBaseline(tree())).toEqual(baseline);
 	});
 });
