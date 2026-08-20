@@ -68,9 +68,13 @@ different mechanism than the one it named.
 `meta/_journal.json` directly, so it would have thrown the moment `meta/` went. It now
 loads both layouts, keys the immutability baseline on the same tags (so the 33 recorded
 hashes carry over unchanged), and reds on a new flat migration, a directory missing its
-`snapshot.json`, a stray second `.sql` inside a migration directory, a duplicate apply
-prefix, and a directory whose prefix would sort into applied history. It still fails
-closed on zero scope (ADR [0092](0092-gates-fail-closed-on-zero-scope.md)).
+`snapshot.json`, a duplicate apply prefix, and a directory whose prefix would sort into
+applied history. Its walk matches alchemy's reach rather than approximating it: it
+collects every `.sql` under `migrationsDir` at any depth, exactly as `listSqlFiles` does,
+and reds on each one that is neither a top-level flat migration nor a
+`<prefix>_<name>/migration.sql` — so a file alchemy would apply can never be one no check
+covers. It still fails closed on zero scope (ADR
+[0092](0092-gates-fail-closed-on-zero-scope.md)).
 
 ## Consequences
 

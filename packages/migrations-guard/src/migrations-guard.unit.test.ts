@@ -15,7 +15,6 @@ const flat = (tag: string, hash: string): Migration => ({
 	layout: "flat",
 	hash,
 	hasSnapshot: false,
-	straySqlFiles: [],
 });
 
 const dir = (tag: string, hash: string, over: Partial<Migration> = {}): Migration => ({
@@ -24,7 +23,6 @@ const dir = (tag: string, hash: string, over: Partial<Migration> = {}): Migratio
 	layout: "directory",
 	hash,
 	hasSnapshot: true,
-	straySqlFiles: [],
 	...over,
 });
 
@@ -38,6 +36,7 @@ const tree = (over: Partial<MigrationTree> = {}): MigrationTree => ({
 		dir("20260820035306_v7_baseline", "hb"),
 	],
 	metaDirPresent: false,
+	unrecognizedSqlFiles: [],
 	...over,
 });
 
@@ -101,16 +100,15 @@ describe("consistency", () => {
 		});
 		expect(kinds(t)).toContain("consistency");
 	});
-	it("flags a second .sql beside migration.sql — alchemy would apply it too", () => {
-		const t = tree({
-			migrations: [
-				flat("0000_a", "h0"),
-				flat("0001_b", "h1"),
-				flat("0002_c", "h2"),
-				dir("20260820035306_v7_baseline", "hb", {straySqlFiles: ["extra.sql"]}),
-			],
-		});
+	it("flags a .sql outside the two known layouts — alchemy would apply it too", () => {
+		const t = tree({unrecognizedSqlFiles: ["20260820035306_v7_baseline/extra.sql"]});
 		expect(kinds(t)).toContain("consistency");
+	});
+	it("flags an unrecognized .sql even when the tree is otherwise zero scope", () => {
+		const t = tree({migrations: [], unrecognizedSqlFiles: ["0001_x/evil.sql"]});
+		const v = evaluate(t, baseline);
+		expect(v.ok).toBe(false);
+		expect(v.violations.some((x) => x.message.includes("0001_x/evil.sql"))).toBe(true);
 	});
 	it("flags a NEW flat migration — the flat layout is frozen history", () => {
 		const t = tree({migrations: [...tree().migrations, flat("0003_new", "hNEW")]});

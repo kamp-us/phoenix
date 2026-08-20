@@ -4,10 +4,10 @@
  * per migration with its alchemy apply id, its content hash and its layout — plus a committed
  * immutability baseline, and returns the set of violations across three properties:
  *
- *   1. consistency  — the tree is a shape alchemy can apply and drizzle-kit can diff: every
- *                     directory migration carries a `migration.sql` and a `snapshot.json` and
- *                     no second `.sql`, the retired `meta/` layout is gone, no two migrations
- *                     share an apply prefix, and the frozen flat history gained no new member;
+ *   1. consistency  — the tree is a shape alchemy can apply and drizzle-kit can diff: no `.sql`
+ *                     at any depth outside the two known layouts, every directory migration
+ *                     carries a `snapshot.json`, the retired `meta/` layout is gone, no two
+ *                     migrations share an apply prefix, and the flat history gained no member;
  *   2. ordering     — the flat `NNNN_` numbers run contiguous from 0, and every directory
  *                     migration sorts after all of them under alchemy's own prefix sort;
  *   3. immutability — every migration already recorded in the baseline has an unchanged SQL
@@ -31,10 +31,9 @@ export interface Migration {
 	readonly id: string;
 	readonly layout: MigrationLayout;
 	readonly hash: string;
-	// Directory migrations only: whether `snapshot.json` sits beside `migration.sql`, and any
-	// `.sql` in the directory that is not `migration.sql`. Both are false/empty for flat rows.
+	// Directory migrations only: whether `snapshot.json` sits beside `migration.sql`. False for
+	// flat rows, which have no snapshot of their own.
 	readonly hasSnapshot: boolean;
-	readonly straySqlFiles: readonly string[];
 }
 
 // The loaded, IO-free view of the migrations tree. The fs boundary populates it; the core never
@@ -43,6 +42,10 @@ export interface Migration {
 export interface MigrationTree {
 	readonly migrations: readonly Migration[];
 	readonly metaDirPresent: boolean;
+	// Every `.sql` under the migrations dir, at any depth, that is neither a top-level flat file
+	// nor a `<prefix>_<name>/migration.sql`. alchemy lists the dir recursively and applies each
+	// `.sql` it finds, so these are migrations that would run unjudged by the three checks below.
+	readonly unrecognizedSqlFiles: readonly string[];
 }
 
 // The committed immutability baseline: tag → the sha256 the migration's SQL had when it landed.
@@ -86,6 +89,15 @@ const isFlat = (m: Migration): boolean => m.layout === "flat";
 const checkConsistency = (tree: MigrationTree, baseline: Baseline): Violation[] => {
 	const v: Violation[] = [];
 
+	// Judged before zero scope, because a tree holding only unrecognized `.sql` files has no
+	// migration rows yet is exactly the fail-open this check exists to close.
+	for (const id of tree.unrecognizedSqlFiles) {
+		v.push({
+			kind: "consistency",
+			message: `"${id}" is neither a top-level flat migration nor a <prefix>_<name>/migration.sql — alchemy lists the migrations dir recursively and applies every .sql at any depth, so this would run as a migration no check here covers`,
+		});
+	}
+
 	// Fail closed on zero scope (ADR 0092): an empty tree means the guard is reading the wrong
 	// directory, and "nothing to check" must never read as "everything is fine".
 	if (tree.migrations.length === 0) {
@@ -110,12 +122,6 @@ const checkConsistency = (tree: MigrationTree, baseline: Baseline): Violation[] 
 				v.push({
 					kind: "consistency",
 					message: `migration directory "${m.tag}" has no snapshot.json — drizzle-kit cannot diff the next generate against it`,
-				});
-			}
-			for (const stray of m.straySqlFiles) {
-				v.push({
-					kind: "consistency",
-					message: `migration directory "${m.tag}" holds a second .sql file "${stray}" — alchemy applies every .sql it finds, so this would run as its own migration`,
 				});
 			}
 		} else if (baseline[m.tag] === undefined) {

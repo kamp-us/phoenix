@@ -42,10 +42,13 @@ both loud:
 The pure core ([`src/migrations-guard.ts`](src/migrations-guard.ts)) evaluates a loaded
 `MigrationTree` + a committed baseline and returns every violation:
 
-1. **Consistency** — the tree is a shape both tools accept: every migration directory
-   carries a `snapshot.json` and exactly one `.sql`, no `meta/` directory is back, no two
-   migrations share an apply prefix, every migration has a numeric prefix, and no **new**
-   flat migration was hand-added (the flat layout is frozen history). A tree with zero
+1. **Consistency** — the tree is a shape both tools accept: every `.sql` under
+   `migrationsDir` is one of the two layouts above, every migration directory carries a
+   `snapshot.json`, no `meta/` directory is back, no two migrations share an apply prefix,
+   every migration has a numeric prefix, and no **new** flat migration was hand-added (the
+   flat layout is frozen history). The `.sql` sweep matches alchemy's reach exactly —
+   `listSqlFiles` recurses, so the guard recurses, and `0001_x/evil.sql` (which would sort
+   *into* applied history) or `<dir>/sub/y.sql` reds rather than passing unseen. A tree with zero
    migrations is a violation, not a pass — fail-closed on zero scope, ADR
    [0092](../../.decisions/0092-gates-fail-closed-on-zero-scope.md).
 2. **Ordering** — the flat `NNNN` numbers run contiguous from 0, and every migration

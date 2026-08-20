@@ -49,7 +49,37 @@ describe("loadMigrationTree", () => {
 
 	it("sees a stray .sql beside migration.sql", () => {
 		writeFileSync(join(dir, "20260820035306_v7_baseline", "extra.sql"), "DROP TABLE a;\n");
-		expect(loadMigrationTree(dir).migrations[2]?.straySqlFiles).toEqual(["extra.sql"]);
+		expect(loadMigrationTree(dir).unrecognizedSqlFiles).toEqual([
+			"20260820035306_v7_baseline/extra.sql",
+		]);
+	});
+
+	// alchemy's `listSqlFiles` reads migrationsDir with `{recursive: true}`, so each of these three
+	// shapes is applied at deploy time; the guard has to see every one of them (#6438).
+	it("sees a .sql in a directory that carries no migration.sql", () => {
+		mkdirSync(join(dir, "0001_x"));
+		writeFileSync(join(dir, "0001_x", "evil.sql"), "DROP TABLE a;\n");
+		const tree = loadMigrationTree(dir);
+		expect(tree.unrecognizedSqlFiles).toEqual(["0001_x/evil.sql"]);
+		expect(tree.migrations.map((m) => m.id)).not.toContain("0001_x/evil.sql");
+	});
+
+	it("sees a .sql nested deeper than one level", () => {
+		mkdirSync(join(dir, "20260820035306_v7_baseline", "sub"));
+		writeFileSync(join(dir, "20260820035306_v7_baseline", "sub", "y.sql"), "DROP TABLE a;\n");
+		expect(loadMigrationTree(dir).unrecognizedSqlFiles).toEqual([
+			"20260820035306_v7_baseline/sub/y.sql",
+		]);
+	});
+
+	it("sees a .sql that came back under meta/", () => {
+		mkdirSync(join(dir, "meta"));
+		writeFileSync(join(dir, "meta", "0000_a.sql"), "DROP TABLE a;\n");
+		expect(loadMigrationTree(dir).unrecognizedSqlFiles).toEqual(["meta/0000_a.sql"]);
+	});
+
+	it("the two known layouts are recognized, so a clean tree has none", () => {
+		expect(loadMigrationTree(dir).unrecognizedSqlFiles).toEqual([]);
 	});
 
 	it("hashes are content-derived — editing a .sql changes its hash", () => {
@@ -84,6 +114,15 @@ describe("baseline round-trip drives the immutability check", () => {
 		writeFileSync(join(next, "migration.sql"), "ALTER TABLE a ADD COLUMN x TEXT;\n");
 		writeFileSync(join(next, "snapshot.json"), '{"version":"7"}');
 		expect(evaluate(loadMigrationTree(dir), loadBaseline(baselinePath())).ok).toBe(true);
+	});
+
+	it("a .sql sorting into applied history reds instead of slipping past the checks", () => {
+		writeBaseline();
+		mkdirSync(join(dir, "0001_x"));
+		writeFileSync(join(dir, "0001_x", "evil.sql"), "DROP TABLE a;\n");
+		const verdict = evaluate(loadMigrationTree(dir), loadBaseline(baselinePath()));
+		expect(verdict.ok).toBe(false);
+		expect(verdict.violations.some((v) => v.message.includes("0001_x/evil.sql"))).toBe(true);
 	});
 
 	it("an empty directory is zero scope, not a pass (ADR 0092)", () => {

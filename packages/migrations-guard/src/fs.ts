@@ -12,15 +12,29 @@ const sha256 = (bytes: Buffer): string => createHash("sha256").update(bytes).dig
 const stripSuffix = (name: string, suffix: string): string =>
 	name.endsWith(suffix) ? name.slice(0, -suffix.length) : name;
 
-// The one file inside a migration directory alchemy is meant to apply; anything else ending in
-// `.sql` beside it would apply as a second migration, which the core reds on.
+// The one file inside a migration directory alchemy is meant to apply. Any other `.sql` anywhere
+// under the migrations dir is unrecognized, and the core reds on it.
 const MIGRATION_SQL = "migration.sql";
+
+/**
+ * Every `.sql` under `migrationsDir`, at any depth, as a forward-slash id relative to it. This
+ * mirrors alchemy's `listSqlFiles`, which reads the dir with `{recursive: true}` and applies every
+ * `.sql` it finds — a walk that stopped one level down would leave applied files unjudged (#6438).
+ */
+const collectSqlIds = (dir: string, prefix: string, out: string[]): void => {
+	for (const entry of readdirSync(dir, {withFileTypes: true})) {
+		const id = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+		if (entry.isDirectory()) collectSqlIds(join(dir, entry.name), id, out);
+		else if (entry.name.endsWith(".sql")) out.push(id);
+	}
+};
 
 /**
  * Load the tree from `migrationsDir`. Two layouts coexist (ADR 0309): the frozen flat
  * `NNNN_name.sql` files at the top level, and `<prefix>_<name>/migration.sql` directories.
  * The apply `id` is the path relative to `migrationsDir` — the string alchemy records — so it is
  * built with a forward slash regardless of platform, matching `readSqlFile`'s own `id: name`.
+ * Every other `.sql` in reach of alchemy's recursive listing lands in `unrecognizedSqlFiles`.
  */
 export const loadMigrationTree = (migrationsDir: string): MigrationTree => {
 	const entries = readdirSync(migrationsDir, {withFileTypes: true}).sort((a, b) =>
@@ -28,6 +42,7 @@ export const loadMigrationTree = (migrationsDir: string): MigrationTree => {
 	);
 
 	const migrations: Migration[] = [];
+	const recognized = new Set<string>();
 	let metaDirPresent = false;
 
 	for (const entry of entries) {
@@ -39,32 +54,38 @@ export const loadMigrationTree = (migrationsDir: string): MigrationTree => {
 			const dir = join(migrationsDir, entry.name);
 			const inner = readdirSync(dir);
 			if (!inner.includes(MIGRATION_SQL)) continue;
+			const id = `${entry.name}/${MIGRATION_SQL}`;
+			recognized.add(id);
 			migrations.push({
 				tag: entry.name,
-				id: `${entry.name}/${MIGRATION_SQL}`,
+				id,
 				layout: "directory",
 				hash: sha256(readFileSync(join(dir, MIGRATION_SQL))),
 				hasSnapshot: inner.includes("snapshot.json"),
-				straySqlFiles: inner.filter((f) => f.endsWith(".sql") && f !== MIGRATION_SQL).sort(),
 			});
 			continue;
 		}
 		if (!entry.name.endsWith(".sql")) continue;
+		recognized.add(entry.name);
 		migrations.push({
 			tag: stripSuffix(entry.name, ".sql"),
 			id: entry.name,
 			layout: "flat",
 			hash: sha256(readFileSync(join(migrationsDir, entry.name))),
 			hasSnapshot: false,
-			straySqlFiles: [],
 		});
 	}
 
-	return {migrations, metaDirPresent};
+	const everySql: string[] = [];
+	collectSqlIds(migrationsDir, "", everySql);
+	const unrecognizedSqlFiles = everySql.filter((id) => !recognized.has(id)).sort();
+
+	return {migrations, metaDirPresent, unrecognizedSqlFiles};
 };
 
-// Read the committed baseline; a missing file is an empty baseline (the pre-baseline state —
-// every migration then reads as new, so immutability has nothing to compare yet).
+// Read the committed baseline; a missing file is an empty baseline, which fails closed rather than
+// passing: the flat layout is frozen, so every flat migration absent from the baseline is itself a
+// consistency violation, and an empty baseline reds the whole flat history.
 export const loadBaseline = (baselinePath: string): Baseline => {
 	let text: string;
 	try {
