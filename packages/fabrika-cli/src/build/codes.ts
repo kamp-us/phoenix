@@ -170,3 +170,19 @@ export const TYPE_NOT_BUILDABLE = 30;
  * not read its input must never resolve to "no prior build".
  */
 export const PRIOR_BUILD_MISMATCH = 31;
+/**
+ * Proven: not admitted on the **criteria axis** — the issue's body carries no readable
+ * `### Acceptance criteria` block, so there is no contract to build against (#6554).
+ *
+ * The fourth sibling of {@link OUT_OF_SCOPE}, {@link AUDIENCE_NOT_AGENT} and
+ * {@link TYPE_NOT_BUILDABLE}, seated apart from all three because the remedy is unlike any of them:
+ * `20` says flip a campaign's state cell, `21` says re-label the audience, `30` says take the work
+ * to another skill, and this one says the issue body itself has to be repaired — `triage enrich` to
+ * author a block that is absent, `triage repair-criteria` to straighten one whose heading drifted.
+ * Nothing a build lane may do from its own branch, which is exactly why it refuses before one is cut.
+ *
+ * Never {@link PRECONDITION_UNKNOWN}: the body was read in full and the wire's three-answer read
+ * returned a positive token, so the refusal is a fact about the issue. A body that could not be read
+ * never reaches this axis.
+ */
+export const NO_ACCEPTANCE_CRITERIA = 32;

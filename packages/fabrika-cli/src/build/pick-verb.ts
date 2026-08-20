@@ -5,17 +5,16 @@
  * The filter is fail-closed on every axis, and two of them are negative tests rather than positive
  * ones:
  *
- * - **The admission test decides the scope, audience and type axes**, imported from
+ * - **The admission test decides all four axes** — scope, type, audience, criteria — imported from
  *   [`./scope-admission.ts`](./scope-admission.ts) and re-derived nowhere (ADR 0245). An issue with
  *   no `ready-for:` label is excluded — absence is an unknown audience, never an agent audience
- *   (#4780) — and one homed outside every active campaign is excluded with its own reason. The type
- *   set used to be this file's private constant, which is how a directly-handed `type:decision`
- *   reached `claim` with nothing to refuse it (#5490).
+ *   (#4780) — and one homed outside every active campaign is excluded with its own reason. Two of
+ *   those axes used to be this file's private business, and both leaked the same way: the type set
+ *   as a private constant, which is how a directly-handed `type:decision` reached `claim` with
+ *   nothing to refuse it (#5490), and the criteria read as a private call, which is how
+ *   `build issue <n>` built a no-AC issue this pool would have refused (#6554).
  * - **Any assignee excludes.** Assignment is the one attribute that keeps a human's live document out
  *   of an agent's pool (#4764, #4693).
- * - **A body with no readable acceptance-criteria block excludes**, reported on the same
- *   excluded-with-axis channel: `ready-for:agent` over no contract is a lane that can only be
- *   discovered at the review gate, once a whole build has been spent (#6025).
  * - **A candidate with an open `blocked_by` edge excludes**, on the same channel, read off the
  *   native graph and nothing else (ADR 0301). It runs last because it is the only axis that costs a
  *   network call, and an unreadable graph excludes the candidate with its reason on stderr — the
@@ -37,7 +36,6 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {reasonHistogram} from "../evidence.ts";
 import {TRIAGED} from "../labels.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
-import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {readBlockedGate} from "./blockedness.ts";
 import {BAD_SECTIONS, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {type CandidateIssue, listLabelled} from "./github.ts";
@@ -48,6 +46,7 @@ import {
 	dispatchScopeLine,
 	exclusionReasonOf,
 	homeOf,
+	NO_CRITERIA_REASON,
 	readDeclaredDispatch,
 	typeAxisOf,
 } from "./scope-admission.ts";
@@ -76,17 +75,6 @@ interface PoolEntry {
 }
 
 /**
- * The word for a candidate whose body carries no contract to build against.
- *
- * It is reported on the same channel as the admission test's axes but lives here rather than in
- * `./scope-admission.ts`, because that module is shared with the claim seam, where a `plan` or
- * `gate` claim targets an epic — a document whose criteria arrive per child from the plan ledger,
- * never in its own body. Reading the block there would refuse exactly the claims that are supposed
- * to precede it (#6025).
- */
-const NO_CRITERIA = "no-acceptance-criteria";
-
-/**
  * The word for a candidate the native `blocked_by` graph says must not start yet (ADR 0301).
  *
  * It is not an admission axis and does not live in `./scope-admission.ts`: that module is pure and
@@ -106,10 +94,7 @@ const BLOCKED_REASON = "blocked";
 interface ExclusionEntry {
 	readonly number: number;
 	readonly home: string | null;
-	readonly reason:
-		| NonNullable<ReturnType<typeof exclusionReasonOf>>
-		| typeof NO_CRITERIA
-		| typeof BLOCKED_REASON;
+	readonly reason: NonNullable<ReturnType<typeof exclusionReasonOf>> | typeof BLOCKED_REASON;
 }
 
 /**
@@ -191,14 +176,10 @@ export const runPick = (
 					excluded.push({number: issue.number, home: homeOf(issue), reason});
 					continue;
 				}
-				if (readCriteria(issue.body)._tag !== "Found") {
-					excluded.push({number: issue.number, home: homeOf(issue), reason: NO_CRITERIA});
-					continue;
-				}
-				// Last of the three, because it is the only one that costs a network call: the admission
-				// test and the criteria block are both answered off facts already in hand, so a candidate
-				// they refuse is never paid for here. An unreadable graph excludes with its reason stated
-				// rather than refusing the whole pool (ADR 0301) — the candidate is dropped, never kept.
+				// Last of the two, because it is the only one that costs a network call: every admission
+				// axis is answered off facts already in hand, so a candidate they refuse is never paid
+				// for here. An unreadable graph excludes with its reason stated rather than refusing the
+				// whole pool (ADR 0301) — the candidate is dropped, never kept.
 				const gate = yield* readBlockedGate(resolved.repo, issue.number);
 				if (gate._tag === "Unknown") {
 					unreadableEdges.push(
@@ -225,7 +206,7 @@ export const runPick = (
 			pool.push(...entries.sort(rankWithinBucket));
 		}
 
-		const criteriaExcluded = excluded.filter((row) => row.reason === NO_CRITERIA).length;
+		const criteriaExcluded = excluded.filter((row) => row.reason === NO_CRITERIA_REASON).length;
 		const graphExcluded = blockedEdges.length + unreadableEdges.length;
 
 		return answer(

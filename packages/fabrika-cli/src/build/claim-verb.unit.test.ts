@@ -10,6 +10,7 @@ import {
 	BAD_SECTIONS,
 	BLOCKED,
 	CLAIM_NOT_MINE,
+	NO_ACCEPTANCE_CRITERIA,
 	OFF_VOCABULARY,
 	OUT_OF_SCOPE,
 	PRECONDITION_UNKNOWN,
@@ -22,6 +23,7 @@ import {
 import {
 	adoptMarker,
 	blockedBy,
+	CRITERIA_BODY,
 	campaignsTable,
 	candidates,
 	comments,
@@ -398,6 +400,56 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		expect(out.stderr.some((line) => line.includes("ready-for:human"))).toBe(true);
 	});
 
+	/**
+	 * The dispatch route's own regression. `build pick` has always excluded a body with no readable
+	 * contract, but the pool is the browse path: a number handed straight to `claim` — an operator
+	 * naming a lane, an `operate` lane, a resume — passed through no pool, so the same issue reached
+	 * construction and `review criteria` was the first thing to catch it, a whole build later
+	 * (#6554, on #6462 → PR #6552).
+	 */
+	const NO_CONTRACT = issue({
+		milestone: {number: 44},
+		labels: labelled("type:bug", "p1", "status:triaged", "ready-for:agent"),
+		body: "## What this is\n\nprose and pointers, and no contract anywhere.\n",
+	});
+	const DRIFTED_HEADING = issue({
+		milestone: {number: 44},
+		labels: labelled("type:bug", "p1", "status:triaged", "ready-for:agent"),
+		body: "## What this is\n\n### Acceptance Criteria:\n\n- [ ] the heading drifted\n",
+	});
+
+	it("refuses a body with no acceptance-criteria block on 32, and posts NOTHING", async () => {
+		const {out, shell} = await claimWith(NO_CONTRACT);
+		expect(out.code).toBe(NO_ACCEPTANCE_CRITERIA);
+		expect(out.stdout).toBe("");
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(out.stderr.join("\n")).toContain("no acceptance criteria");
+		expect(out.stderr.join("\n")).toContain("triage enrich");
+		expect(out.stderr.at(-1)).toContain("nothing was written");
+	});
+
+	it("keeps that refusal off the override path — the repair belongs on the issue", async () => {
+		const {out, shell} = await claimWith(NO_CONTRACT, IN_SCOPE, {
+			override: "I would like to build it anyway",
+			overrideLane: "build",
+		});
+		expect(out.code).toBe(NO_ACCEPTANCE_CRITERIA);
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(out.stderr.at(-1)).not.toContain("--override");
+	});
+
+	it("refuses a drifted heading on the same code and names the mechanical repair instead", async () => {
+		const {out} = await claimWith(DRIFTED_HEADING);
+		expect(out.code).toBe(NO_ACCEPTANCE_CRITERIA);
+		expect(out.stderr.join("\n")).toContain("triage repair-criteria");
+	});
+
+	it("does not fence a plan claim on it — an epic's criteria arrive per child (#6025)", async () => {
+		const {out} = await claimWith(NO_CONTRACT, IN_SCOPE, {purpose: "plan"});
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).answer).toBe("won");
+	});
+
 	it("refuses an unreadable declaration on 11 — scope is UNKNOWN, never admitted", async () => {
 		const {out, shell} = await claimWith(
 			CLAIMABLE,
@@ -557,7 +609,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			JSON.stringify({
 				number: 5553,
 				title: "The ticket the lane serves",
-				body: "## Acceptance criteria\n",
+				body: CRITERIA_BODY,
 				state: "open",
 				labels,
 				html_url: "https://github.com/o/r/issues/5553",
