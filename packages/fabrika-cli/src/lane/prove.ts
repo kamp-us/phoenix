@@ -272,16 +272,21 @@ export const traceDiagnosis = (
 		: {_tag: "Posted", commentId: latest.id};
 };
 
-/** One verdict claim in force for a namespace, already ordered by the caller. */
+/** One claim in force for a namespace, already ordered by the caller. */
 export interface VerdictFact {
 	readonly namespace: string;
-	readonly polarity: "PASS" | "FAIL";
+	/**
+	 * `ROUTED` is a `routed-elsewhere` record rather than a verdict, so it borrows neither
+	 * polarity — folding it into `PASS` would ship "I judged nothing" as "I judged it and it
+	 * passed" (ADR 0316).
+	 */
+	readonly polarity: "PASS" | "FAIL" | "ROUTED";
 	/** Whether the claim still binds this head — head equality, or the content it bound (ADR 0276). */
 	readonly binding: "current" | "stale" | "unknown";
 	readonly commentId: number;
 }
 
-export type NamespaceState = "pass" | "fail" | "absent" | "stale" | "unknown";
+export type NamespaceState = "pass" | "fail" | "absent" | "stale" | "unknown" | "routed";
 
 export interface NamespaceRow {
 	readonly namespace: string;
@@ -293,6 +298,9 @@ const stateOf = (verdict: VerdictFact | undefined): NamespaceState => {
 	if (verdict === undefined) return "absent";
 	if (verdict.binding === "stale") return "stale";
 	if (verdict.binding === "unknown") return "unknown";
+	// The binding question is asked first, so a route at a head this claim no longer binds rows
+	// `stale` exactly as a verdict does — a route that survived a push would attest a tree nobody read.
+	if (verdict.polarity === "ROUTED") return "routed";
 	return verdict.polarity === "PASS" ? "pass" : "fail";
 };
 
@@ -324,6 +332,12 @@ export type Proof =
  * a range-scoped one. One fold serves both, so the bar a child's review must clear cannot drift
  * from the bar the tail's does. That is also why the strings say "still binds" rather than
  * "current-head": a range has no head, and only the caller knows which binding it asked for.
+ *
+ * `routed` satisfies beside `pass`, and for `ship gate`'s reason (`../ship/gate-verb.ts`): the
+ * question is whether every required namespace has answered, and "this diff is not mine to judge"
+ * is an answer — the one `review-ui`'s evidence-required emit path cannot give for a diff that
+ * renders nothing (ADR 0316). Without it a lane that ships clean stalls here forever, because no
+ * further work can fill the namespace.
  */
 export const foldNamespaces = (rows: ReadonlyArray<NamespaceRow>, subject: string): Proof => {
 	const failed = rows.filter((row) => row.state === "fail");
@@ -333,7 +347,7 @@ export const foldNamespaces = (rows: ReadonlyArray<NamespaceRow>, subject: strin
 			what: `${subject} holds a FAIL that still binds in ${failed.map((row) => row.namespace).join(", ")} — the artifact says FAIL, so PASS is not the event this outcome earns`,
 		};
 	}
-	const pending = rows.filter((row) => row.state !== "pass");
+	const pending = rows.filter((row) => row.state !== "pass" && row.state !== "routed");
 	if (pending.length > 0) {
 		return {
 			_tag: "InFlight",
@@ -342,6 +356,6 @@ export const foldNamespaces = (rows: ReadonlyArray<NamespaceRow>, subject: strin
 	}
 	return {
 		_tag: "Proven",
-		note: `every derived namespace holds a PASS that still binds on ${subject}: ${rows.map((row) => row.namespace).join(", ")}`,
+		note: `every derived namespace has answered on ${subject}: ${rows.map((row) => `${row.namespace} (${row.state})`).join(", ")}`,
 	};
 };

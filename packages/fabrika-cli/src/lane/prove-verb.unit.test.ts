@@ -218,6 +218,88 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			{namespace: "review-code", state: "pass", commentId: 1},
 		]);
 	});
+
+	it("proves a ui lane whose review-ui is filled by a head-bound routed-elsewhere record", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, UI_FILE],
+			[
+				PR_COMMENTS,
+				comments(
+					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
+					{
+						id: 2,
+						body: `routed-elsewhere: review-ui @ ${HEAD} — nothing under apps/web/src renders differently`,
+					},
+				),
+			],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
+			{namespace: "review-code", state: "pass", commentId: 1},
+			{namespace: "review-ui", state: "routed", commentId: 2},
+		]);
+		expect(out.stderr.join("\n")).toContain("is routed rather than judged");
+	});
+
+	it("holds the same lane when the route was attested at a head the branch has moved past", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, UI_FILE],
+			[
+				PR_COMMENTS,
+				comments(
+					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
+					{
+						id: 2,
+						body: "routed-elsewhere: review-ui @ deadbeefcafe — nothing under apps/web/src renders differently",
+					},
+				),
+			],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.stderr.join("\n")).toContain("review-ui (stale)");
+	});
+
+	it("lets a FAIL written after a route win, so a route is no shield", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, UI_FILE],
+			[
+				PR_COMMENTS,
+				comments(
+					{id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`},
+					{
+						id: 2,
+						body: `routed-elsewhere: review-ui @ ${HEAD} — nothing under apps/web/src renders differently`,
+						createdAt: "2026-01-01T00:00:00Z",
+					},
+					{
+						id: 3,
+						body: `review-ui: FAIL @ ${HEAD} — the header contrast broke`,
+						createdAt: "2026-01-02T00:00:00Z",
+					},
+				),
+			],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(PROOF_CONTRADICTED);
+		expect(out.stderr.join("\n")).toContain("review-ui");
+	});
 });
 
 describe("lane prove — the refusals, each on its own remedy", () => {
@@ -1029,6 +1111,40 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 		expect(
 			JSON.parse(out.stdout).evidence.namespaces.map((row: {namespace: string}) => row.namespace),
 		).toEqual(["review-code", "review-ui"]);
+	});
+
+	it("proves that same ui child when a routed-elsewhere record at the range tip fills review-ui", async () => {
+		const shell = uiRanged(
+			{id: 1, body: rangeMarker("PASS", UI_DIGEST)},
+			{
+				id: 2,
+				body: `routed-elsewhere: review-ui @ ${CHILD_TIP} — nothing this range touches renders differently`,
+			},
+		);
+
+		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
+			{namespace: "review-code", state: "pass", commentId: 1},
+			{namespace: "review-ui", state: "routed", commentId: 2},
+		]);
+		expect(out.stderr.join("\n")).toContain("is routed rather than judged");
+	});
+
+	it("refuses that ui child when the route was attested at a tip the branch has moved past", async () => {
+		const shell = uiRanged(
+			{id: 1, body: rangeMarker("PASS", UI_DIGEST)},
+			{
+				id: 2,
+				body: `routed-elsewhere: review-ui @ ${EPIC_BASE} — nothing this range touches renders differently`,
+			},
+		);
+
+		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.stderr.join("\n")).toContain("review-ui (stale)");
 	});
 
 	it("leaves a child PASS UNKNOWN when the range's own content cannot be read", async () => {

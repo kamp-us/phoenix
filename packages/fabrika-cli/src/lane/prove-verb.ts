@@ -31,8 +31,10 @@ import {bindRange, contentDigestAt, rangeContentAt} from "../review/content-bind
 import {bindHead} from "../review/head.ts";
 import {CODEOWNERS_PATH, readBoundary} from "../ship/boundary.ts";
 import {classify} from "../ship/codeowners.ts";
+import {ROUTABLE} from "../ship/gate-verb.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
+import {readNamespaced as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
 import {
 	LANE_UNREADABLE,
@@ -64,10 +66,10 @@ import {type LaneRef, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane prove";
 
-/** One namespace's newest verdict claim, before the binding question is asked of it. */
+/** One namespace's newest claim, before the binding question is asked of it. */
 interface Claim {
 	readonly namespace: string;
-	readonly polarity: "PASS" | "FAIL";
+	readonly polarity: "PASS" | "FAIL" | "ROUTED";
 	readonly commentId: number;
 	readonly sha: string;
 	readonly content: string | null;
@@ -376,6 +378,12 @@ const proveNoPull = (
  * row treated as fail (an invalid emission, reported) — and admitted only after the diff itself
  * classifies control-plane through the shipped `classify` over CODEOWNERS at the PR's base ref,
  * never a caller assertion. On any other PR a marker-less comment stays no verdict.
+ *
+ * The third carrier is the `routed-elsewhere` record, read for `ROUTABLE` alone and admitted for
+ * the reason `ship gate` admits it: `review-ui`'s emit path cannot answer a diff that renders
+ * nothing, so requiring the namespace without reading the route would hold such a lane at `review`
+ * with no work left that could free it (ADR 0316). It is read exactly as `candidateOf` reads it —
+ * head-bound, no content binding, one namespace.
  */
 const proveVerdicts = (
 	repo: string,
@@ -410,39 +418,62 @@ const proveVerdicts = (
 		const latest = new Map<string, Claim>();
 		const stamps = new Map<string, string>();
 		const advisories: {readonly claim: Claim; readonly stamp: string}[] = [];
+		const standing = (claim: Claim, stamp: string): void => {
+			const seen = stamps.get(claim.namespace);
+			if (seen !== undefined && seen > stamp) return;
+			stamps.set(claim.namespace, stamp);
+			latest.set(claim.namespace, claim);
+		};
 		for (const comment of commented.value) {
 			const parsed = readMarker(comment.body);
-			if (parsed._tag !== "Found") {
-				const advisory = readAdvisory(comment.body);
-				if (advisory !== null && required.includes(advisory.namespace)) {
-					advisories.push({
-						claim: {
-							namespace: advisory.namespace,
-							// ADR 0226 makes the advisory carrier PASS-only; a [FAIL] row inside one is an
-							// invalid emission — treated as fail below, never read as a pass.
-							polarity: /\[FAIL\]/.test(comment.body) ? "FAIL" : "PASS",
-							commentId: comment.id,
-							sha: advisory.sha,
-							// The advisory withholds a content binding by design (ADR 0276) — head-bound only.
-							content: null,
-						},
-						stamp: comment.updatedAt,
-					});
-				}
+			if (parsed._tag === "Found") {
+				const marker = parsed.value;
+				if (!required.includes(marker.namespace)) continue;
+				standing(
+					{
+						namespace: marker.namespace,
+						polarity: marker.polarity,
+						commentId: comment.id,
+						sha: marker.sha,
+						content: marker.content,
+					},
+					comment.updatedAt,
+				);
 				continue;
 			}
-			const marker = parsed.value;
-			if (!required.includes(marker.namespace)) continue;
-			const seen = stamps.get(marker.namespace);
-			if (seen !== undefined && seen > comment.updatedAt) continue;
-			stamps.set(marker.namespace, comment.updatedAt);
-			latest.set(marker.namespace, {
-				namespace: marker.namespace,
-				polarity: marker.polarity,
-				commentId: comment.id,
-				sha: marker.sha,
-				content: marker.content,
-			});
+			const route = readRoute(comment.body, ROUTABLE);
+			if (route !== null) {
+				if (!required.includes(route.namespace)) continue;
+				standing(
+					{
+						namespace: route.namespace,
+						polarity: "ROUTED",
+						commentId: comment.id,
+						sha: route.sha,
+						// Head-bound, never content-bound (ADR 0316) — a push re-opens the question, so the
+						// route takes the pre-0276 binding and can never gain survival it did not earn.
+						content: null,
+					},
+					comment.updatedAt,
+				);
+				continue;
+			}
+			const advisory = readAdvisory(comment.body);
+			if (advisory !== null && required.includes(advisory.namespace)) {
+				advisories.push({
+					claim: {
+						namespace: advisory.namespace,
+						// ADR 0226 makes the advisory carrier PASS-only; a [FAIL] row inside one is an
+						// invalid emission — treated as fail below, never read as a pass.
+						polarity: /\[FAIL\]/.test(comment.body) ? "FAIL" : "PASS",
+						commentId: comment.id,
+						sha: advisory.sha,
+						// The advisory withholds a content binding by design (ADR 0276) — head-bound only.
+						content: null,
+					},
+					stamp: comment.updatedAt,
+				});
+			}
 		}
 
 		const notes = [...diagnostics];
@@ -474,6 +505,12 @@ const proveVerdicts = (
 			}
 		}
 		const claims = [...latest.values()];
+		for (const claim of claims) {
+			if (claim.polarity !== "ROUTED") continue;
+			notes.push(
+				`${VERB}: ${claim.namespace} on #${pr} is routed rather than judged — a routed-elsewhere record at ${claim.sha} states this PR owes no verdict (ADR 0316).`,
+			);
+		}
 		// A verdict survives a head move only through the content it bound (ADR 0276), so the digest
 		// is computed exactly when a head-only read would call a content-bearing verdict stale.
 		let digest: string | null = null;
@@ -554,14 +591,29 @@ const located = (
 		};
 	});
 
-/** One namespace's newest range-scoped verdict claim, before the binding question is asked of it. */
-interface RangeClaim {
-	readonly namespace: string;
-	readonly polarity: "PASS" | "FAIL";
-	readonly commentId: number;
-	readonly content: string;
-	readonly range: string;
-}
+/**
+ * One namespace's newest range-scoped claim, before the binding question is asked of it.
+ *
+ * Two carriers, two bindings, so the union rather than a nullable `content`: a range verdict binds
+ * the digest its reviewer judged (ADR 0276), a `routed-elsewhere` record binds the tip it was
+ * attested at and nothing else (ADR 0316). A field that could hold either would let the wrong
+ * binding be asked of a claim silently.
+ */
+type RangeClaim =
+	| {
+			readonly _tag: "Verdict";
+			readonly namespace: string;
+			readonly polarity: "PASS" | "FAIL";
+			readonly commentId: number;
+			readonly content: string;
+			readonly range: string;
+	  }
+	| {
+			readonly _tag: "Route";
+			readonly namespace: string;
+			readonly commentId: number;
+			readonly sha: string;
+	  };
 
 /**
  * The child arm of the `PASS` claim: a range-bound verdict on the child issue that still binds.
@@ -577,6 +629,11 @@ interface RangeClaim {
  * A comment carrying a PR-scoped marker is `Malformed` to this reader rather than absent, and is
  * counted into the diagnostics instead of dropped: a verdict posted in the wrong format is the one
  * failure that would otherwise present as "the reviewer never ran".
+ *
+ * A `routed-elsewhere` record resolves `ROUTABLE` here too — a child's `apps/web/src` diff can
+ * render nothing exactly as a PR's can — and it binds the range's **tip**, not the range digest.
+ * The record's format is head-bound by construction (ADR 0316) and carries no digest to compare, so
+ * the tip is the one object name the tree it attested has; every push moves it and voids the route.
  */
 const proveRangeVerdicts = (
 	repo: string,
@@ -607,29 +664,56 @@ const proveRangeVerdicts = (
 		const latest = new Map<string, RangeClaim>();
 		const stamps = new Map<string, string>();
 		const malformed: string[] = [];
+		const standing = (claim: RangeClaim, stamp: string): void => {
+			const seen = stamps.get(claim.namespace);
+			if (seen !== undefined && seen > stamp) return;
+			stamps.set(claim.namespace, stamp);
+			latest.set(claim.namespace, claim);
+		};
 		for (const comment of commented.value) {
 			const parsed = readRangeMarker(comment.body);
 			if (parsed._tag === "Malformed") {
 				malformed.push(`#${comment.id}: ${parsed.reason}`);
 				continue;
 			}
-			if (parsed._tag !== "Found") continue;
-			const marker = parsed.value;
-			if (!required.includes(marker.namespace)) continue;
-			const seen = stamps.get(marker.namespace);
-			if (seen !== undefined && seen > comment.updatedAt) continue;
-			stamps.set(marker.namespace, comment.updatedAt);
-			latest.set(marker.namespace, {
-				namespace: marker.namespace,
-				polarity: marker.polarity,
-				commentId: comment.id,
-				content: marker.content,
-				range: `${marker.range.base}..${marker.range.tip}`,
-			});
+			if (parsed._tag === "Found") {
+				const marker = parsed.value;
+				if (!required.includes(marker.namespace)) continue;
+				standing(
+					{
+						_tag: "Verdict",
+						namespace: marker.namespace,
+						polarity: marker.polarity,
+						commentId: comment.id,
+						content: marker.content,
+						range: `${marker.range.base}..${marker.range.tip}`,
+					},
+					comment.updatedAt,
+				);
+				continue;
+			}
+			const route = readRoute(comment.body, ROUTABLE);
+			if (route === null || !required.includes(route.namespace)) continue;
+			standing(
+				{_tag: "Route", namespace: route.namespace, commentId: comment.id, sha: route.sha},
+				comment.updatedAt,
+			);
 		}
 
 		const claims = [...latest.values()];
 		const inForce: VerdictFact[] = claims.map((claim) => {
+			if (claim._tag === "Route") {
+				// A route binds the tip it was attested at, never the range digest: the record is a claim
+				// about pixels at one tree, and the child's tip is the only object name that tree has.
+				const binding = bindToContent({sha: claim.sha, content: null}, read.range.tip, null);
+				return {
+					namespace: claim.namespace,
+					polarity: "ROUTED" as const,
+					binding:
+						binding._tag === "Current" ? "current" : binding._tag === "Stale" ? "stale" : "unknown",
+					commentId: claim.commentId,
+				};
+			}
 			const binding = bindRange(claim, {_tag: "Digest", digest: content.value.digest});
 			return {
 				namespace: claim.namespace,
@@ -643,9 +727,10 @@ const proveRangeVerdicts = (
 		const notes = [
 			...read.notes,
 			`${VERB}: ${range} changes ${content.value.paths.length} path(s) at content ${content.value.digest} and derives ${required.join(", ")}; read ${commented.value.length} comment(s) on #${issue}.`,
-			...claims.map(
-				(claim) =>
-					`${VERB}: ${claim.namespace} claims ${claim.polarity} over range ${claim.range} bound to content ${claim.content}.`,
+			...claims.map((claim) =>
+				claim._tag === "Verdict"
+					? `${VERB}: ${claim.namespace} claims ${claim.polarity} over range ${claim.range} bound to content ${claim.content}.`
+					: `${VERB}: ${claim.namespace} is routed rather than judged — a routed-elsewhere record at ${claim.sha} states this range owes no verdict (ADR 0316).`,
 			),
 			...malformed.map(
 				(reason) =>
