@@ -17,7 +17,7 @@
 
 import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
-import {decisionsDirOr} from "../config/paths.ts";
+import {corpusOverride, decisionsDirOr} from "../config/paths.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
@@ -84,7 +84,7 @@ const corpusFor = (
 		const read = yield* decisionsDirOr(
 			verb,
 			process.cwd(),
-			Option.getOrNull(declared),
+			corpusOverride("--dir", Option.getOrNull(declared)),
 			"there is no contradiction check to run and this verb will not answer no-overlap over a corpus that does not exist — `governance guards`, the weakens-a-guard half, is the whole of what this repo's governance run can derive.",
 		);
 		switch (read._tag) {

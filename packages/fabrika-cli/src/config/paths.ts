@@ -68,7 +68,7 @@ export const readDecisionsDir = (
  * verb that reads the corpus must say that rather than scan a directory that was never meant to
  * exist and report what it found there as the whole truth (R11.1 on #5603).
  *
- * An explicit `--dir` wins over all of it. The flag names a directory the operator is pointing at,
+ * An explicit override wins over all of it. The flag names a directory the operator is pointing at,
  * and a config key cannot overrule an argument typed at the shell — including in a repo that
  * declined the key, where the flag is how you read a corpus that is not the repo's own.
  */
@@ -77,15 +77,47 @@ export type CorpusRead =
 	| {readonly _tag: "Declined"; readonly message: string}
 	| {readonly _tag: "Refused"; readonly message: string};
 
+/**
+ * How this caller lets an operator point at a corpus by hand — the flag's own name, and what was
+ * typed after it.
+ *
+ * The name travels with the value because the `Declined` message advertises it, and a shared
+ * literal cannot: `--dir` is `adr`'s and `governance`'s spelling, `glossary check` spells the same
+ * override `--decisions` and means the register directory by `--dir`, and `guard decisions-index
+ * validate` has no override at all. All three inheriting one hardcoded clause sent two of them
+ * after a flag their verb does not accept (#6433). Pairing the two halves in one value leaves no
+ * way to accept a directory without naming the flag it came from, or to advertise one the verb
+ * does not have.
+ */
+export type CorpusOverride =
+	| {readonly _tag: "NoFlag"}
+	| {readonly _tag: "Flag"; readonly flag: string; readonly given: string | null};
+
+/** For a verb that offers no way to point at a corpus: the remedy clause is omitted, not faked. */
+export const noCorpusOverride: CorpusOverride = {_tag: "NoFlag"};
+
+export const corpusOverride = (flag: string, given: string | null): CorpusOverride => ({
+	_tag: "Flag",
+	flag,
+	given,
+});
+
+const remedy = (override: CorpusOverride): string =>
+	override._tag === "Flag" ? ` Point ${override.flag} at a corpus to read one anyway.` : "";
+
 export const decisionsDirOr = (
 	verb: string,
 	cwd: string,
-	override: string | null,
+	override: CorpusOverride,
 	declinedConsequence: string,
 ): Effect.Effect<CorpusRead, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
-		if (override !== null) {
-			return {_tag: "Dir" as const, dir: override, note: `--dir ${override}`};
+		if (override._tag === "Flag" && override.given !== null) {
+			return {
+				_tag: "Dir" as const,
+				dir: override.given,
+				note: `${override.flag} ${override.given}`,
+			};
 		}
 		const read = yield* readDecisionsDir(cwd);
 		if (read._tag === "Refused") {
@@ -98,7 +130,7 @@ export const decisionsDirOr = (
 			? {_tag: "Dir" as const, dir: read.value.path, note: read.note}
 			: {
 					_tag: "Declined" as const,
-					message: `${verb}: ${CONFIG_PATH} declines \`${DECISIONS_DIR}\` — this repo keeps no decision corpus, so ${declinedConsequence} Point --dir at a corpus to read one anyway.`,
+					message: `${verb}: ${CONFIG_PATH} declines \`${DECISIONS_DIR}\` — this repo keeps no decision corpus, so ${declinedConsequence}${remedy(override)}`,
 				};
 	});
 

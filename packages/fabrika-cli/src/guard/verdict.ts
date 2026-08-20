@@ -17,12 +17,20 @@ import {type Annotation, fallbackAnnotations, renderAnnotations} from "./annotat
 import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
 
 /**
- * A guard's answer. Four states, and the split between the last three is the point: CI reds on all
- * of them, a human fixing one needs to know which.
+ * A guard's answer. Five states: two exit 0, three red, and the split between the three reds is the
+ * point — CI reds on all of them, a human fixing one needs to know which.
+ *
+ * `Skipped` and `ZeroScope` both mean the guard scanned nothing, and they are not the same answer.
+ * `ZeroScope` is a scan that resolved empty when it should have resolved to something — the ADR 0092
+ * red. `Skipped` is the repo having declared the guard's subject does not exist here, so there was
+ * never anything to resolve; reporting that as a red would make a valid config a permanent CI
+ * failure.
  */
 export type GuardVerdict =
 	/** The scan ran over `scanned` real units of scope and found nothing to report. */
 	| {readonly _tag: "Clean"; readonly summary: string; readonly scanned: number}
+	/** The repo declared this guard's subject absent, so there was nothing to scan. */
+	| {readonly _tag: "Skipped"; readonly summary: string}
 	/** The rule is broken. `report` names every offender; `annotations` locate them on the diff. */
 	| {
 			readonly _tag: "Violation";
@@ -40,6 +48,12 @@ export const clean = (summary: string, scanned: number): GuardVerdict => ({
 	summary,
 	scanned,
 });
+
+/**
+ * A guard whose subject this repo declared it does not keep. `summary` must name the declaration,
+ * so nobody reads the exit 0 as a scan that passed.
+ */
+export const skipped = (summary: string): GuardVerdict => ({_tag: "Skipped", summary});
 
 export const violation = (
 	report: string,
@@ -71,6 +85,7 @@ export const annotationsOrNone = (
 export const verdictCode = (verdict: GuardVerdict): number => {
 	switch (verdict._tag) {
 		case "Clean":
+		case "Skipped":
 			return 0;
 		case "Violation":
 			return VIOLATION;
@@ -90,7 +105,7 @@ export const emitVerdict = (
 	verdict: GuardVerdict,
 	env: Readonly<Record<string, string | undefined>>,
 ): VerbOutcome => {
-	if (verdict._tag === "Clean") return answer(verdict.summary);
+	if (verdict._tag === "Clean" || verdict._tag === "Skipped") return answer(verdict.summary);
 	const annotations = verdict._tag === "Violation" ? verdict.annotations : [];
 	const lines = renderAnnotations(fallbackAnnotations(verdict.report, annotations), env);
 	const refusal = refuse(verdictCode(verdict), verdict.report);

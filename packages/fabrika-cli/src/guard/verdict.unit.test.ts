@@ -5,6 +5,7 @@ import {
 	annotationsOrNone,
 	clean,
 	emitVerdict,
+	skipped,
 	unknown,
 	verdictCode,
 	violation,
@@ -25,6 +26,18 @@ describe("verdictCode", () => {
 
 	it("never collapses zero scope onto the clean exit (ADR 0092)", () => {
 		expect(verdictCode(zeroScope("nothing scanned"))).not.toBe(0);
+	});
+
+	// A declared absence is the repo answering the question, not the scan failing to (#6433) — the
+	// one shape ADR 0092's floor is not about.
+	it("exits a skipped guard 0, and puts its declaration on stdout", () => {
+		const verdict = skipped("guard x: this repo declares it keeps none");
+		expect(verdictCode(verdict)).toBe(0);
+		expect(emitVerdict(verdict, ACTIONS)).toEqual({
+			code: 0,
+			stdout: "guard x: this repo declares it keeps none\n",
+			stderr: [],
+		});
 	});
 });
 

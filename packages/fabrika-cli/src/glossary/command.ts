@@ -205,22 +205,30 @@ const check = leafCommand(
 		register: registerFlag("both", "terms, language, both"),
 		dir: dirFlag,
 		decisions: Flag.string("decisions").pipe(
-			Flag.withDefault(".decisions"),
+			Flag.optional,
 			Flag.withDescription(
-				"the decision-record directory a row's four-digit citations resolve against",
+				"the decision-record directory a row's four-digit citations resolve against (default: the `decisionsDir` this repo declares)",
 			),
 		),
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({register, dir, decisions, json}) {
-		yield* emit(yield* runCheck({register, dir, decisions, json, cwd: process.cwd()}));
+		yield* emit(
+			yield* runCheck({
+				register,
+				dir,
+				decisions: Option.getOrNull(decisions),
+				json,
+				cwd: process.cwd(),
+			}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription(
 		"The shape, duplicate, ordering and citation defects in a register.",
 	),
 	Command.withDescription(
-		"Row-shape, duplicate-key, cross-register, ordering and citation-liveness defects in a register. Prints `clean`, `defects` or `bootstrap` on the first line — all three on exit 0 — then one `<kind>\\t<register>\\t<section>\\t<term>\\t<detail>` line per finding. Machine-local paths and dead links are deliberately not computed: a merge-blocking gate already decides each. Exits 4 (no parseable term table), 7 (a selected register is present and holds 0 rows), 10 (off-enum --register), 11 (a selected register could not be read). Example: fabrika glossary check --register both",
+		"Row-shape, duplicate-key, cross-register, ordering and citation-liveness defects in a register. Prints `clean`, `defects` or `bootstrap` on the first line — all three on exit 0 — then one `<kind>\\t<register>\\t<section>\\t<term>\\t<detail>` line per finding. Machine-local paths and dead links are deliberately not computed: a merge-blocking gate already decides each. A row's four-digit citations resolve against the `decisionsDir` this repo declares unless --decisions names a directory; a repo that declines the key gets one `citations-unverified` finding naming the declaration, never a silent clean — unless no row cites anything, in which case no corpus is consulted and the run is clean. Exits 4 (no parseable term table), 7 (a selected register is present and holds 0 rows), 10 (off-enum --register), 11 (a selected register, or `.fabrika.jsonc`, could not be read). Example: fabrika glossary check --register both",
 	),
 );
 

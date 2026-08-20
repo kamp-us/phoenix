@@ -8,7 +8,7 @@
  */
 import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
-import {decisionsDirOr} from "../config/paths.ts";
+import {corpusOverride, decisionsDirOr} from "../config/paths.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {CORPUS_DECLINED, DIR_UNREADABLE} from "./codes.ts";
@@ -61,7 +61,7 @@ const corpusFor = (
 		const read = yield* decisionsDirOr(
 			verb,
 			process.cwd(),
-			Option.getOrNull(declared),
+			corpusOverride("--dir", Option.getOrNull(declared)),
 			"there is nothing to read and nothing to write into.",
 		);
 		switch (read._tag) {

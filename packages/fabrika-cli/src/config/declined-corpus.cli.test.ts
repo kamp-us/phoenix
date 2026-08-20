@@ -1,15 +1,19 @@
 /**
- * A repo that declines `decisionsDir`, end to end: what `adr` and `governance` do about it.
+ * A repo that declines `decisionsDir`, end to end: what `adr`, `governance`, the ADR number guard
+ * and `glossary check` do about it.
  *
- * The behaviour only exists at the process boundary — both verbs resolve the key from the **cwd**
- * they are run in, so an in-process test would have to fake the one thing under test. Two spawns,
- * one per half of the ruling (R11.1 on #5603): `adr` refuses to write, and `governance`'s
- * contradiction half refuses rather than answering `no-overlap` over a corpus that does not exist.
+ * The behaviour only exists at the process boundary — each verb resolves the key from the **cwd**
+ * it is run in, so an in-process test would have to fake the one thing under test. Four spawns:
+ * per the ruling (R11.1 on #5603) `adr` refuses to write and `governance`'s contradiction half
+ * refuses rather than answering `no-overlap` over a corpus that does not exist, and per #6433
+ * `guard decisions-index validate` skips on exit 0 rather than reporting the ADR 0092 zero-scope
+ * red at a repo whose config is valid, while `glossary check` reports clean over a register that
+ * cites nothing rather than a finding the repo could only clear by keeping a corpus.
  *
- * Neither spawn reaches the network: both refuse at the config read, ahead of any `gh` call.
+ * No spawn reaches the network: each answers at the config read, ahead of any `gh` call.
  */
 import {execFileSync} from "node:child_process";
-import {mkdtempSync, readdirSync, rmSync, writeFileSync} from "node:fs";
+import {mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -60,7 +64,45 @@ describe("a repo that keeps no decision corpus", {timeout: SUBPROCESS_TEST_TIMEO
 		expect(out.code).toBe(CORPUS_DECLINED);
 		expect(out.stdout).toBe("");
 		expect(out.stderr).toContain("declines `decisionsDir`");
+		// This verb does carry `--dir`, so the remedy clause is true here — it is the reference the
+		// two flagless/differently-flagged callers below must not inherit (#6433).
+		expect(out.stderr).toContain("Point --dir at a corpus to read one anyway.");
 		expect(readdirSync(root)).toEqual([".fabrika.jsonc"]);
+	});
+
+	// The whole point of #6433: an ADR 0092 red here would make a valid config a permanent CI
+	// failure, and its wording ("Is the repo root correct?") would send the reader after a defect
+	// that is not there.
+	it("skips `guard decisions-index validate` on exit 0 rather than reporting zero scope", () => {
+		// --root because the fixture is a bare directory with no `package.json` for root discovery
+		// to find, and this test is about the config read, not about that walk.
+		const out = run(root, ["guard", "decisions-index", "validate", "--root", root]);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("declines `decisionsDir`");
+		// `--root` is this verb's only flag; there is no override to point anywhere, so the skip
+		// message must offer none rather than send the reader after `adr`'s `--dir` (#6433).
+		expect(out.stdout).not.toContain("Point ");
+		expect(out.stderr).toBe("");
+	});
+
+	// A declined corpus is only an answer about citations, and a register with none asks no
+	// question — so the run is clean, not a `citations-unverified` the repo cannot ever clear.
+	it("reports `glossary check` clean over a register that cites nothing", () => {
+		// Its own root: the `adr new` case above pins this fixture's directory listing exactly.
+		const own = mkdtempSync(join(tmpdir(), "fabrika-declined-glossary-"));
+		writeFileSync(join(own, ".fabrika.jsonc"), '{\n\t"decisionsDir": null\n}\n', "utf8");
+		const registers = join(own, ".glossary");
+		mkdirSync(registers, {recursive: true});
+		writeFileSync(
+			join(registers, "TERMS.md"),
+			"# terms\n\n## Products\n\n| Term | Definition | Not |\n|---|---|---|\n| depo | The internal asset store. | |\n",
+			"utf8",
+		);
+		const out = run(own, ["glossary", "check", "--register", "terms", "--dir", registers]);
+		rmSync(own, {recursive: true, force: true});
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("clean\n");
+		expect(out.stdout).not.toContain("citations-unverified");
 	});
 
 	it("refuses `governance sweep` and names the half this repo can still run", () => {
