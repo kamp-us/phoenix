@@ -11,8 +11,9 @@
  * at all refuses it too, since an unusable root list un-governs the config just as effectively
  * (#6314).
  *
- * This module ships the key, its default and that refusal. Threading it into `review/classes.ts` and
- * `governance scope`, and the rest of the path surface, is #6296's.
+ * This module ships the key, its default and that refusal, and every path surface that derives the
+ * namespace reads it from here through `config/paths.ts`'s `governedRootsOr` — `review scope`,
+ * `governance scope` and `post`, the three `ship` verbs, `heal-ci`, `lane prove`.
  */
 
 import {CONFIG_PATH} from "../document.ts";
@@ -22,9 +23,9 @@ import type {Decoded, KeyGroup} from "../key-group.ts";
 export const GOVERNED_ROOTS = "governedRoots";
 
 /**
- * Phoenix's four roots, plus the config file. Kept in step with
- * `packages/fabrika-cli/src/review/classes.ts`'s `GOVERNANCE_ROOTS` until #6296 threads that site
- * onto this key and the literal goes away.
+ * Phoenix's four roots, plus the config file — the one copy of the list.
+ * `packages/fabrika-cli/src/review/classes.ts` re-exports this binding rather than holding a second
+ * literal, so a caller with no config load in reach still lands on this value.
  */
 export const SHIPPED_GOVERNED_ROOTS: ReadonlyArray<string> = [
 	".decisions/",
