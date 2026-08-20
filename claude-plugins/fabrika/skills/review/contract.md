@@ -22,7 +22,7 @@ Named because a spec that leaves the substrate open makes the implementer guess 
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `review scope` | the PR's head SHA, linked issue, artifact-class partition of its changed files, the namespace set that partition requires and which of those are routed to another gate, the `self` / `harness` flags, and whether the diff requires the `governance` namespace | partitioning paths against a fixed class map, deriving the merge gate's own required set from it, and failing closed on an empty file list is mechanical; what to do with each class is judgment |
+| `review scope` | the PR's head SHA, linked issue, artifact-class partition of its changed files, the `self` / `harness` flags, and whether the diff requires the `governance` namespace | partitioning paths against a fixed class map and failing closed on an empty file list is mechanical; what to do with each class is judgment |
 | `review diff` | the PR's diff bytes, with truncation refused rather than silently passed through | fetching and proving completeness is mechanical; reading the diff is the whole judgment layer |
 | `review criteria` | the linked issue's acceptance-criteria block, read through the registered `acceptance-criteria` wire format | fetch + registered parse + checkbox states are mechanical; grading a criterion is judgment |
 | `review ci` | the live CI check-run rollup at a head, fail-closed on incomplete enumeration | classifying check runs and proving the enumeration complete is mechanical (#4552, #3999); weighing a red check is judgment |
@@ -134,7 +134,6 @@ sibling contract.md — the checked-in `/report` contract is behind its own bina
 | `13` | refused: the read was completed but its scope is **provably incomplete** — a truncated file list or diff, a check-run enumeration short of `total_count` | ✓ | ✓ | — | ✓ | ✓ | ✓ | — | — |
 | `14` | refused: the invoking token resolves below `write`, or the ACL lookup failed — authorization denied, fail-closed (ADR 0055) | — | — | — | — | — | — | — | ✓ |
 | `15` | refused: the write is not provably the prior rows plus one — the append-only fence, whose causes carry distinct messages | — | — | — | — | — | — | — | ✓ |
-| `16` | refused: the enumeration is complete and **no gate inspected the bytes** — the rollup is not `red`, yet no workflow this repo authors produced a run at the head, so a `green` would report coverage that does not exist | — | — | — | ✓ | — | — | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb
@@ -239,34 +238,19 @@ fabrika review scope 4321 [--sha <head>] [--repo <owner/name>] [--json]
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
-**Output** — machine channel, in this line order. First line:
-`scoped\t<head-sha>\t<fixes:n|part-of:n|->`, where the head is the commit the file list was actually
-read out of and the third field is the issue reference — the same token `ship scope` prints. Then one
-line per present class — `class\t<name>\t<file-count>` where `<name>` is one of `code`, `doc`,
-`skill`, `ui`. Then one `namespace\t<ns>` line per namespace the diff requires, then one
-`routed\t<ns>` line per required namespace this gate may not emit — a subset of the `namespace` rows,
-re-printed rather than removed. Then two flag lines `self\t<true|false>` and
-`harness\t<true|false>`, then `governance\t<required|not-required>`.
+**Output** — machine channel. First line: `scoped\t<head-sha>\t<fixes:n|part-of:n|->`, where the
+head is the commit the file list was actually read out of and the third field is the issue
+reference — the same token `ship scope` prints. Then one line per
+present class — `class\t<name>\t<file-count>` where `<name>` is one of `code`, `doc`, `skill` —
+then two flag lines `self\t<true|false>` and `harness\t<true|false>`, then
+`governance\t<required|not-required>`.
 
 With `--json`, an object with keys `outcome`, `head` (full 40-hex), `issue` (an object
 `{kind, number}` where `kind` is `fixes` / `part-of` / `none` and `number` is an integer, or `null`
 on `none`), `classes` (array of `{name, files}`), `self` (boolean), `harness` (boolean), `governance`
 (the string `required` or `not-required`), `scanned`
-(changed files seen), `namespaces` (array — the required set, e.g. `["review-code","review-doc"]`),
-and `routed` (array — the subset of `namespaces` routed to another gate).
-
-**The required set is `ship scope`'s own.** Both verbs call one pair of functions over one file list
-(`partitionWithUi` + `shipNamespacesOf` in
-[`packages/fabrika-cli/src/review/classes.ts`](../../../../packages/fabrika-cli/src/review/classes.ts)),
-so they cannot report different sets for the same diff. That is why `ui` is a class here at all: the
-reviewer's set was short one namespace and the merge gate refused, once per rendered-surface PR
-(#6664). `self` and `harness` still come off the three-class partition.
-
-**`routed` is what the wider set costs, and it costs nothing else.** Today the one routed namespace
-is `review-ui`: `review` derives it, prints it, and still may not emit it — `review post`'s fence is
-the three text classes, unchanged. `governance` is never routed; it is derived-required and fired
-inside the review run (ADR 0293). What a reviewer does with a `routed` row is `SKILL.md` §1's, not
-this verb's.
+(changed files seen), and `namespaces` (array — the derived namespace per present class, e.g.
+`["review-code","review-doc"]`).
 
 **The class map is a fixed path partition, stated here so two runs cannot disagree:**
 
@@ -275,9 +259,8 @@ this verb's.
 | `skill` | `claude-plugins/**` (SKILL.md, rubric/reference files, contract specs), `.claude/**` agent and skill definitions, `skills/**`, and any file named `SKILL.md` wherever it sits — the last two rows are what keep the map honest on a repo that homes its skills elsewhere (found live by an eval run: a toy repo's `skills/deploy-notes/SKILL.md` partitioned to `doc` under the first two rows alone) |
 | `doc` | `*.md` outside `claude-plugins/**` — `.decisions/`, `.patterns/`, `.glossary/`, `reports/`, `README`/`DEVELOPMENT`, docs directories |
 | `code` | everything else — source, tests, config, workflows, manifests |
-| `ui` | a rendered `apps/web/src/**` surface — an **overlay**, not a fourth bucket: such a file is `code` as well, and is counted in both rows. It is the only class a file can hold beside another, which is why the row counts can exceed `scanned` |
 
-Every changed file maps to exactly one class of the first three, `code` the residual — a file the map cannot place
+Every changed file maps to exactly one class, `code` the residual — a file the map cannot place
 is `code`, never dropped, because an unclassified file silently excluded from every rubric is a
 review that never saw it. `self` is true when any changed path is under
 `claude-plugins/fabrika/skills/review/`. `harness` is true when any changed path is under
@@ -346,25 +329,16 @@ $ fabrika review scope 4321
 scoped	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	fixes:4287
 class	code	3
 class	doc	1
-namespace	review-code
-namespace	review-doc
 self	false
 harness	false
 governance	not-required
 ```
-
-A rendered surface raises `ui` beside `code`, and its namespace comes back on a `routed` row:
 
 ```
 $ fabrika review scope 4322
 scoped	6f7b834bcf1cf16fc465389d8f45cc21bd23a3fe	part-of:5434
 class	code	5
 class	doc	1
-class	ui	2
-namespace	review-code
-namespace	review-doc
-namespace	review-ui
-routed	review-ui
 self	false
 harness	false
 governance	not-required
@@ -374,8 +348,6 @@ governance	not-required
 $ fabrika review scope 4323
 scoped	6a562f751a5d4d0e2efa277286f793b7ece3a008	fixes:5599
 class	doc	1
-namespace	review-doc
-namespace	governance
 self	false
 harness	false
 governance	required
@@ -383,7 +355,7 @@ governance	required
 
 ```
 $ fabrika review scope 4321 --json
-{"outcome":"scoped","head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","issue":{"kind":"fixes","number":4287},"classes":[{"name":"code","files":3},{"name":"doc","files":1}],"self":false,"harness":false,"governance":"not-required","scanned":4,"namespaces":["review-code","review-doc"],"routed":[]}
+{"outcome":"scoped","head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","issue":{"kind":"fixes","number":4287},"classes":[{"name":"code","files":3},{"name":"doc","files":1}],"self":false,"harness":false,"governance":"not-required","scanned":4,"namespaces":["review-code","review-doc"]}
 ```
 
 **Grounding**
@@ -391,9 +363,7 @@ $ fabrika review scope 4321 --json
 - #4060 — v1's `class-probe` read 0 files and silently classified `has-code` exit 0; the zero-file
   case here is a `7` refusal.
 - #3170 — one namespace filled on a mixed diff; `namespaces` is printed as a set precisely so the
-  emission checklist is machine-derived, not remembered. It is that set minus the `routed` rows.
-- #6664 — the two verbs derived different required sets from one map, so the reviewer PASSed one
-  namespace short and the merge gate refused. `namespace` and `routed` are that fix's output.
+  emission checklist is machine-derived, not remembered.
 - v1's `classify-skills-only.sh` prints nothing on its code-PR branch and falls off the end (the
   S10 else-less classifier) — every outcome here is a token.
 - ADR 0052 — `self` is the input the skill's BASE-revision fence keys on.
@@ -589,13 +559,27 @@ fabrika review ci 4321 [--sha <head>] [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line: `ci\t<sha>\t<green|red|pending|no-producer>`. Second line:
-`check\t<count>` — the number of check-run lines that follow, so the line channel carries its
-own completeness proof. Then one line per check run —
-`<name>\t<success|failure|neutral|cancelled|skipped|timed_out|action_required|in_progress|queued>` —
-so a red or still-running check is in the gate's context by name, not as a rollup boolean.
+`run\t<count>` — how many check runs were enumerated, so the line channel carries its own
+completeness proof. Then one line per status present —
+`check\t<success|failure|neutral|cancelled|skipped|timed_out|action_required|in_progress|queued>\t<count>`.
 
-With `--json`:
-`{"outcome":"ci","sha":…,"rollup":…,"checks":[{name,status}…],"scanned":<n>,"declared":<m>,"gates":{"declared":<g>,"covered":<c>}|null}`.
+With `--json`: `{"outcome":"ci","sha":…,"rollup":…,"checks":{<status>:<count>…},"scanned":<n>,"declared":<m>}`.
+
+`checks` is an **evidence-array collapsed to a status tally** under ADR
+[0308](../../../../.decisions/0308-bounded-evidence-output-shape.md): this skill acts on `rollup`,
+and nothing here or in `SKILL.md` iterates a check row. What the rows carried that a reader does act
+on — **which** check is red or still running — moves to the notes channel, where the verb names the
+failing runs and the in-flight runs on their own lines. A passing check's name was the bulk of the
+old payload and no reader ever wanted it.
+
+**The one caller that did want a passing name reads it elsewhere now.** `review-ui`'s §5 named three
+design gates and read their live state here; a green name reaches neither channel after the collapse,
+so it would have read a gate that never ran as a gate that passed. That read moved to
+`fabrika heal-ci surface`, which prints every declared required context as `producing` or `absent`
+and every undeclared gating run as `extra`. That is an answer this verb could never give even
+uncollapsed: a check run that does not exist has no row here, so a required gate that never ran and
+a gate the repo does not declare at all were always the same silence. This verb answers "is the head
+green"; `heal-ci surface` answers "is the gate armed and did it post".
 
 **The rollup is total over the status vocabulary, fail-closed on the ambiguous rows:** `red`
 when any completed run concluded `failure`, `timed_out`, `action_required` or `cancelled` (a
@@ -611,20 +595,9 @@ still going to report, and a repo with no Actions workflows never will. The evid
 workflow *inventory* and nothing else: **existence is the whole test, and nothing inspects what a
 workflow does** (#5603, R17.1 — "only if workflows exist is fine dude"). Zero workflows refuses on
 `7`, unless the repo declares `ci.noProducer: "degrade"` in `.fabrika.jsonc`, which rolls up
-`no-producer` at exit `0` with `check\t0` — its own token, never `green` and never `pending`. The
+`no-producer` at exit `0` with `run\t0` — its own token, never `green` and never `pending`. The
 inventory is read only when the enumeration came back empty: a check run that reported already
 proves a producer.
-
-**A passing check set is not gate coverage, and the verb no longer lets the two share a word.**
-A complete, all-green enumeration that came from no workflow this repo authors is refused on `16`
-— not `green`, not `pending`. The set of gates is the **live workflow inventory**: a workflow
-checked into the repo is addressed by its file path (`.github/workflows/ci.yml`), one the platform
-provides on the repo's behalf by a synthetic `dynamic/<provider>/<name>`, and coverage is the
-intersection of the first with the workflows that actually produced a run at this head. No job
-names, no expected set — nothing here knows what a gate is called. A repo that authors no workflow
-of its own has no gate to have missed, and says so on stderr at exit `0`. The read is skipped over a
-`red` rollup, which is already the answer a caller must act on; `green` and `pending` are the two
-words that read as "nothing to do here", and both are wrong over bytes no gate inspected (#6522).
 
 If `--sha` is given and does not prefix-match the PR's live head, a stderr notice names both —
 the caller is enumerating a head that has moved, which is a fact worth seeing at the read even
@@ -635,9 +608,8 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | Code | Trigger |
 |---|---|
 | `7` | the PR or the `--sha` is proven absent — no commit to enumerate; **or zero check runs are declared at the commit** — a vacuous green is the ADR 0092 fail-open and is refused; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
-| `11` | the check-run read, the workflow-inventory read, the runs-at-head read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green` |
+| `11` | the check-run read, the workflow-inventory read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green` |
 | `13` | entries received < declared `total_count` — the enumeration is provably incomplete and is never read as "no red checks" |
-| `16` | the rollup is not `red` and **no workflow this repo authors produced a run at the head** — the enumeration is complete, no gate inspected the bytes, and the CI state is UNKNOWN, never `green` |
 
 **Errors**
 
@@ -652,15 +624,9 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | `review ci: cannot read \`ci\` from the repo config (<reason>) — whether <repo> produces CI is UNKNOWN, never green.` | 11 | refusal |
 | `review ci: <repo> declares \`ci.noProducer: degrade\` and has zero workflows — no producer, so there is nothing to roll up.` | 0 | notice |
 | `review ci: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration (#3999).` | 13 | refusal |
-| `review ci: none of the <g> workflow(s) <repo> authors produced a run at <sha> — the <n> check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green (#6522).` | 16 | refusal |
-| `review ci: cannot enumerate the workflow inventory of <repo>: <reason> — which gates exist is UNKNOWN, never green.` | 11 | refusal |
-| `review ci: cannot enumerate the workflow runs at <sha>: <reason> — which gates ran is UNKNOWN, never green.` | 11 | refusal |
-| `review ci: <c> of <g> workflow(s) <repo> authors produced a run at <sha>.` | 0 | notice |
-| `review ci: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
 | `review ci: the live head is <live>, you are enumerating at <sha> — the head moved; a verdict still binds only what was inspected.` | 0 | notice |
 
-**Scope** — the check runs at one commit, paginated, count-verified against `total_count`, and the
-workflows that produced a run there, against the repo's live inventory.
+**Scope** — the check runs at one commit, paginated, count-verified against `total_count`.
 
 **Examples**
 
@@ -680,10 +646,6 @@ leak-guard	success
   structural.
 - #3999 / ship-it's pagination-honesty rule — received < declared is an explicit refusal, the
   same shape reused rather than a divergent second CI read.
-- #6522 — a conflicted branch stops producing `pull_request` runs while CodeQL's default setup
-  keeps reporting on its own trigger. The verb read `green` over four CodeQL runs at an epic
-  assembly head that `ci.yml`, `migrations-guard` and `design-token-guard` had never seen. `green`
-  and "no gate ran" were one word, and the second is the dangerous one.
 
 ---
 
