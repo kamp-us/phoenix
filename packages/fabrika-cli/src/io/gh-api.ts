@@ -14,13 +14,13 @@
  *   read proves completeness by `total_count`, a bare-array read declares no count at all and its
  *   proof is exhausted pagination — a terminal page carrying no `rel="next"` link.
  *
- * REST throughout, with two carves recorded in ADR 0314: {@link graphqlRead} for review threads and
+ * REST throughout, with two carves recorded in ADR 0315: {@link graphqlRead} for review threads and
  * their mutations, and the auto-merge mutation. Issue queries stay REST — this org's
  * Projects-classic integration errors GraphQL issue queries out.
  *
  * The credential is an argument to every leg, never something a leg resolves. {@link resolveToken}
  * is the one producer, and a caller that could not resolve one holds no `token` to pass — so an
- * anonymous request has no way to be constructed (ADR 0314).
+ * anonymous request has no way to be constructed (ADR 0315).
  */
 import {Effect} from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
@@ -56,7 +56,7 @@ const definedOnly = (env: Readonly<Record<string, string | undefined>>): Record<
 };
 
 /**
- * The credential, in the order ADR 0314 rules: `GITHUB_TOKEN`, `GH_TOKEN`, then `gh auth token`
+ * The credential, in the order ADR 0315 rules: `GITHUB_TOKEN`, `GH_TOKEN`, then `gh auth token`
  * **only when `gh` is present**.
  *
  * The env path is the contract and is what keeps this package binary-free. The `gh` leg resolves a
@@ -254,7 +254,7 @@ export const pagedEnvelope = (
 	});
 
 /**
- * The one non-REST leg, and it is a carve rather than a default (ADR 0314).
+ * The one non-REST leg, and it is a carve rather than a default (ADR 0315).
  *
  * Three things need it and nothing else may: review-thread resolution state, the reply and resolve
  * mutations, and `enablePullRequestAutoMerge`. Issue queries stay REST — this org's Projects-classic

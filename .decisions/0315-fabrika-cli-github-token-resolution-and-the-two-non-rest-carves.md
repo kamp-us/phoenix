@@ -1,12 +1,12 @@
 ---
-id: 0314
+id: 0315
 title: fabrika-cli resolves its GitHub token from the environment first, and GraphQL is a two-item carve
 status: accepted
 date: 2026-08-20
 tags: [fabrika-cli, github, http, credentials]
 ---
 
-# 0314 — fabrika-cli resolves its GitHub token from the environment first, and GraphQL is a two-item carve
+# 0315 — fabrika-cli resolves its GitHub token from the environment first, and GraphQL is a two-item carve
 
 **What this decides:** the package's GitHub transport is a fetch client whose credential comes from
 `GITHUB_TOKEN`, then `GH_TOKEN`, then `gh auth token` only when `gh` is on `PATH`; an unresolvable

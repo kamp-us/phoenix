@@ -3,7 +3,7 @@
  * branch. An evidence comment on a PR whose head is some *other* lane's branch is a cross-lane
  * write, so the check needs the ref itself, not the head SHA the record already holds.
  *
- * The tracer for the fetch client (ADR 0314): this read goes through `../io/gh-api.ts` rather than
+ * The tracer for the fetch client (ADR 0315): this read goes through `../io/gh-api.ts` rather than
  * `gh api`, so the client is proved by a running verb and not only by its own tests. A shape that is
  * not a branch name is a failure rather than an empty string — an unreadable ref must not compare
  * equal to a detached HEAD.

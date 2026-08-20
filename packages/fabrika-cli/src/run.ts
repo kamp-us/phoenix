@@ -30,7 +30,7 @@ if (unknown !== undefined) {
 fabrikaCommand.pipe(
 	Command.run({version: VERSION}),
 	// `NodeServices.layer` carries the spawner, filesystem, path and terminal but no HTTP client, so
-	// the GitHub fetch client (ADR 0314) needs its transport merged in here.
+	// the GitHub fetch client (ADR 0315) needs its transport merged in here.
 	Effect.provide(Layer.merge(NodeServices.layer, FetchHttpClient.layer)),
 	NodeRuntime.runMain,
 );

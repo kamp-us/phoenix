@@ -93,7 +93,7 @@ const uploads: Pick<EvidenceOptions, "storeUpload" | "attachmentUpload"> = {
 		}),
 };
 
-/** The head-branch read moved onto the fetch client (ADR 0314); the rest of the verb is still `gh`. */
+/** The head-branch read moved onto the fetch client (ADR 0315); the rest of the verb is still `gh`. */
 const HTTP = fakeHttp([
 	[/pulls\/4318/, {status: 200, body: JSON.stringify({head: {ref: LANE}})}],
 ]).layer;
