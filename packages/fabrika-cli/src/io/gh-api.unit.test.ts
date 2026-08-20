@@ -2,14 +2,18 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeHttp, fakeShell, linkNext, okOut} from "../fakes.test-support.ts";
 import {
+	ambientToken,
 	existenceOf,
 	graphqlRead,
 	NO_TOKEN,
+	onTransport,
 	PAGE_CAP,
 	pagedEnvelope,
+	pagedExistence,
 	pagedWithLinkProof,
 	type Rest,
 	resolveToken,
+	restCall,
 	restRead,
 } from "./gh-api.ts";
 import {fail, ok} from "./git.ts";
@@ -258,5 +262,135 @@ describe("no token, no request", () => {
 		);
 		expect(issued).toBeNull();
 		expect(http.calls).toEqual([]);
+	});
+});
+
+describe("restCall — the write leg", () => {
+	it("sends the method, the JSON body and the default Accept", async () => {
+		const http = fakeHttp([[/comments\/77/, served(200, {id: 77})]]);
+		await Effect.runPromise(
+			Effect.provide(
+				restCall(TOKEN, {
+					method: "PATCH",
+					path: "repos/o/r/issues/comments/77",
+					body: {body: "amended"},
+				}),
+				http.layer,
+			),
+		);
+		expect(http.calls).toEqual(["PATCH https://api.github.com/repos/o/r/issues/comments/77"]);
+		expect(JSON.parse(http.bodies[0] ?? "{}")).toEqual({body: "amended"});
+		expect(http.headers[0]?.accept).toBe("application/vnd.github+json");
+	});
+
+	it("omits the body entirely when none is given — never sends `null`", async () => {
+		const http = fakeHttp([[/comments\/77/, served(204, null)]]);
+		await Effect.runPromise(
+			Effect.provide(
+				restCall(TOKEN, {method: "DELETE", path: "repos/o/r/issues/comments/77"}),
+				http.layer,
+			),
+		);
+		expect(http.calls).toEqual(["DELETE https://api.github.com/repos/o/r/issues/comments/77"]);
+		expect(http.bodies[0]).toBe("");
+	});
+
+	it("overrides Accept, and keeps non-JSON bytes in `text` with `body` null", async () => {
+		const http = fakeHttp([
+			[/pulls\/4318/, {status: 200, body: "diff --git a/x b/x\n", headers: {}}],
+		]);
+		const result = await Effect.runPromise(
+			Effect.provide(
+				restCall(TOKEN, {
+					method: "GET",
+					path: "repos/o/r/pulls/4318",
+					accept: "application/vnd.github.v3.diff",
+				}),
+				http.layer,
+			),
+		);
+		expect(http.headers[0]?.accept).toBe("application/vnd.github.v3.diff");
+		expect(result._tag === "Response" && result.body).toBeNull();
+		expect(result._tag === "Response" && result.text).toContain("diff --git");
+	});
+});
+
+describe("pagedExistence — 404 is a verdict", () => {
+	const blockedBy = "repos/o/r/issues/9/dependencies/blocked_by";
+
+	it("answers Absent on a 404 rather than an empty list", async () => {
+		const http = fakeHttp([[/&page=1$/, served(404, {message: "Not Found"})]]);
+		const result = await Effect.runPromise(
+			Effect.provide(pagedExistence(TOKEN, blockedBy), http.layer),
+		);
+		expect(result).toEqual({_tag: "Absent"});
+	});
+
+	it("answers Present with an exhausted empty proof for a real issue with no edges", async () => {
+		const http = fakeHttp([[/&page=1$/, served(200, [])]]);
+		const result = await Effect.runPromise(
+			Effect.provide(pagedExistence(TOKEN, blockedBy), http.layer),
+		);
+		expect(result).toEqual({_tag: "Present", value: {entries: [], exhausted: true}});
+	});
+
+	it("walks every page the Link header declares", async () => {
+		const http = fakeHttp([
+			[/&page=1$/, served(200, [1], linkNext("https://api.github.com/x?page=2"))],
+			[/&page=2$/, served(200, [2])],
+		]);
+		const result = await Effect.runPromise(
+			Effect.provide(pagedExistence(TOKEN, "repos/o/r/x"), http.layer),
+		);
+		expect(result).toEqual({_tag: "Present", value: {entries: [1, 2], exhausted: true}});
+	});
+
+	it("reports non-exhaustion at the page cap instead of answering over unknown scope", async () => {
+		const http = fakeHttp([
+			[/page=/, served(200, [1], linkNext("https://api.github.com/x?page=9"))],
+		]);
+		const result = await Effect.runPromise(
+			Effect.provide(pagedExistence(TOKEN, "repos/o/r/x"), http.layer),
+		);
+		expect(result._tag === "Present" && result.value.exhausted).toBe(false);
+		expect(http.calls).toHaveLength(PAGE_CAP);
+	});
+
+	it("keeps a non-404 refusal Unknown, apart from Absent", async () => {
+		const http = fakeHttp([[/&page=1$/, served(502, {message: "Bad gateway"})]]);
+		const result = await Effect.runPromise(
+			Effect.provide(pagedExistence(TOKEN, "repos/o/r/x"), http.layer),
+		);
+		expect(result._tag).toBe("Unknown");
+	});
+});
+
+describe("onTransport", () => {
+	it("runs on the caller's client whenever one was provided", async () => {
+		const http = fakeHttp([[/pulls\/1/, served(200, {number: 1})]]);
+		const result = await Effect.runPromise(
+			Effect.provide(onTransport(restRead(TOKEN, "GET", "repos/o/r/pulls/1")), http.layer),
+		);
+		expect(result._tag === "Response" && result.status).toBe(200);
+		expect(http.calls).toEqual(["GET https://api.github.com/repos/o/r/pulls/1"]);
+	});
+});
+
+describe("ambientToken", () => {
+	it("resolves once off process.env and answers the same after the env moves", async () => {
+		const before = process.env.GITHUB_TOKEN;
+		try {
+			process.env.GITHUB_TOKEN = "ghp_ambient";
+			const shell = fakeShell([]);
+			const first = await Effect.runPromise(Effect.provide(ambientToken, shell.layer));
+			process.env.GITHUB_TOKEN = "ghp_changed";
+			const second = await Effect.runPromise(Effect.provide(ambientToken, shell.layer));
+			expect(first).toEqual(ok("ghp_ambient"));
+			expect(second).toEqual(first);
+			expect(shell.calls).toEqual([]);
+		} finally {
+			if (before === undefined) delete process.env.GITHUB_TOKEN;
+			else process.env.GITHUB_TOKEN = before;
+		}
 	});
 });
