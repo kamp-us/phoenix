@@ -53,7 +53,7 @@ export const treeOf = (...paths: ReadonlyArray<string>): ExecResult =>
 export const SHOW_AT = (sha: string, path: string): RegExp =>
 	new RegExp(`^git show ${sha}:${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
 
-/** A tree that carries all four governance roots plus one install of this skill. */
+/** A tree that carries all four governance root directories plus one install of this skill. */
 export const FULL_TREE: ReadonlyArray<string> = [
 	".decisions/0240-only-landed-adrs-may-be-cited.md",
 	".claude/settings.json",

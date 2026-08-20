@@ -24,7 +24,7 @@ const ACL = /^gh api repos\/o\/r\/collaborators\/[^ ]+\/permission/;
 
 /** The default two-file diff, under no governance root — the floor stays off unless a test asks. */
 const ORDINARY = [FILES, files("apps/web/src/a.ts", "apps/web/src/b.ts")] as const;
-/** A fabrika-tree diff: `claude-plugins/` is one of the four governance roots. */
+/** A fabrika-tree diff: `claude-plugins/` is one of the shipped governance roots. */
 const FABRIKA_TREE = [
 	FILES,
 	files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/web/src/b.ts"),

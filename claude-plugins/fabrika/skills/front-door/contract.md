@@ -513,7 +513,7 @@ carries**, not in the shape the package decodes to: `capClearAuthors` prints `["
 `asOfKind: "read-now"`, the same instant on every row because every row comes off it.
 
 <a id="provenance-is-the-column"></a>**Provenance is the load-bearing column.** "the governance
-roots are the four shipped defaults" and "the governance roots are four values this repo declared"
+roots are the five shipped defaults" and "the governance roots are five values this repo declared"
 are different facts, and an agent reading a bare value cannot tell whether the repo made a choice.
 
 | Provenance | Meaning |
