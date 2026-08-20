@@ -234,6 +234,30 @@ export const authedExistence = <A>(
 	});
 
 /**
+ * One REST call carrying a JSON body — the write half of {@link restRead}.
+ *
+ * The body travels as JSON on the wire, which is what retires the `gh`-era `-f key=value` argv
+ * shape and the `-f body=@file` scar with it: `@` made `gh` read the value as a *path*, so a
+ * four-character body posted the four characters of the path and read back as success (#4683). A
+ * JSON body has no such form, so the hazard is gone rather than guarded.
+ */
+export const restWrite = (
+	token: string,
+	method: "POST" | "PATCH" | "PUT" | "DELETE",
+	path: string,
+	body: Readonly<Record<string, unknown>>,
+): Api<Rest> =>
+	send(
+		HttpClientRequest.make(method)(endpoint(path)).pipe(
+			HttpClientRequest.setHeaders(headersFor(token)),
+			HttpClientRequest.bodyJsonUnsafe(body),
+		),
+	);
+
+const refusalFor = (outcome: Rest & {_tag: "Response"}): string =>
+	`GitHub answered HTTP ${outcome.status}`;
+
+/**
  * The three-arm {@link Existence} construction, off the status the response carried.
  *
  * 404 is `Absent`, any other non-2xx is `Unknown` carrying the reason, 2xx is `Present` — the same
@@ -250,6 +274,21 @@ export const existenceOf = <A>(
 	}
 	const value = read(outcome.body);
 	return value._tag === "Failure" ? unknown<A>(value.reason) : present<A>(value.value);
+};
+
+/**
+ * The two-arm read, for a caller that has no absent arm to tell apart — {@link existenceOf}'s
+ * sibling, and the split between them is exactly whether 404 means something to the caller.
+ *
+ * A repository's default branch, a created pull request, a closed issue: for each of these a 404 is
+ * as unreadable as a 500, so fusing them costs nothing and inventing an `Absent` arm to discard
+ * would cost a reader. Any non-2xx is a failure carrying the status; 2xx hands the parsed body to
+ * `read`, whose own refusal passes straight through.
+ */
+export const attemptOf = <A>(outcome: Rest, read: (body: unknown) => Attempt<A>): Attempt<A> => {
+	if (outcome._tag === "Unreachable") return fail(outcome.reason);
+	if (outcome.status < 200 || outcome.status >= 300) return fail(refusalFor(outcome));
+	return read(outcome.body);
 };
 
 /** What a bare-array read holds, beside the one fact that says whether it holds all of it. */
@@ -270,9 +309,6 @@ const declaresNextPage = (headers: Readonly<Record<string, string>>): boolean =>
 
 const paged = (path: string, page: number): string =>
 	`${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${page}`;
-
-const refusalFor = (outcome: Rest & {_tag: "Response"}): string =>
-	`GitHub answered HTTP ${outcome.status}`;
 
 /**
  * A list read whose completeness proof is **exhausted pagination**, not a declared count.

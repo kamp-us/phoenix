@@ -20,6 +20,7 @@
  * the repair path.
  */
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {capNote, capReached} from "../cap-clearance.ts";
 import {getIssue, listComments} from "../io/issues.ts";
@@ -68,7 +69,11 @@ interface Row {
 
 export const runVerdicts = (
 	options: VerdictsOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const {pr} = options;
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
@@ -92,7 +97,7 @@ export const runVerdicts = (
 				`${VERB}: cannot read the comments (page 1): ${listed.reason} — the verdict state is UNKNOWN, never "none".`,
 			);
 		}
-		const reviews = yield* listReviews(repo, pr);
+		const reviews = yield* listReviews(options.env, repo, pr);
 		if (reviews._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -180,7 +185,11 @@ export const runVerdicts = (
  */
 export const runChildVerdicts = (
 	options: ChildVerdictsOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const {issue} = options;
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);

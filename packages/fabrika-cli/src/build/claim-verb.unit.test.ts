@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeSeams, okOut, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {FAILED} from "../verb.ts";
@@ -25,8 +25,9 @@ import {
 	blockedBy,
 	CRITERIA_BODY,
 	campaignsTable,
-	candidates,
+	candidatePage,
 	comments,
+	GH_TOKEN_ENV,
 	issue,
 	LANE_TOKEN,
 	LANE_UUID,
@@ -34,6 +35,7 @@ import {
 	NO_BLOCKERS,
 	SIBLING_TOKEN,
 	SIBLING_UUID,
+	served,
 	truncatedComments,
 } from "./fixtures.test-support.ts";
 import {runPick} from "./pick-verb.ts";
@@ -88,14 +90,13 @@ const NO_CAMPAIGNS = fakeFs({files: {}});
  * axis would otherwise hit an unscripted read and refuse on `11`. A test about blockedness scripts
  * those edges itself and wins on first match.
  */
-const unblocked = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
-	fakeShell([...script, NO_BLOCKERS]);
+const unblocked = (script: ReadonlyArray<Scripted>) => fakeSeams([...script, NO_BLOCKERS]);
 
 const options = {
 	number: 4312,
 	repo: null,
 	cwd: "/repo",
-	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
+	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e", ...GH_TOKEN_ENV} as Record<
 		string,
 		string | undefined
 	>,
@@ -111,7 +112,7 @@ const options = {
 
 const run = (
 	verb: (given: typeof options) => ReturnType<typeof runClaim>,
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	fs = NO_CAMPAIGNS,
 ) =>
@@ -318,7 +319,7 @@ describe("runClaim", () => {
 	});
 
 	it("refuses a missing session id on 1, NOT on 15 — the two were fused in v1", async () => {
-		const out = await run(runClaim, [], {env: {CLAUDE_PIPELINE_REPO: "o/r"}});
+		const out = await run(runClaim, [], {env: {CLAUDE_PIPELINE_REPO: "o/r", ...GH_TOKEN_ENV}});
 		expect(out.code).toBe(FAILED);
 	});
 
@@ -553,8 +554,8 @@ describe("runClaim — the admission test runs before any marker is written", ()
 				runPick({repo: null, limit: 20, cwd: "/repo", env: options.env}),
 				Layer.merge(
 					unblocked([
-						[/labels=status%3Atriaged%2Cp0/, candidates(row)],
-						[/labels=status%3Atriaged%2Cp[12]/, okOut("[]")],
+						[/labels=status%3Atriaged%2Cp0/, candidatePage(row)],
+						[/labels=status%3Atriaged%2Cp[12]/, served([])],
 					]).layer,
 					IN_SCOPE.layer,
 				),
@@ -570,7 +571,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	});
 
 	it("leaves confirm and release outside the fence — a mid-lane pause strands no lane", async () => {
-		const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		const script: ReadonlyArray<Scripted> = [
 			[ISSUE, OUT_OF_CAMPAIGN],
 			[COMMENTS, comments({id: 9001, body: MINE})],
 			[perm("agent"), okOut("write\n")],
@@ -765,9 +766,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		const claimInert = (body: string, servedRecord: ExecResult | null) => {
 			const shell = unblocked([
 				[ISSUE, pull(body)],
-				...(servedRecord === null
-					? []
-					: ([[SERVED, servedRecord]] as ReadonlyArray<readonly [RegExp, ExecResult]>)),
+				...(servedRecord === null ? [] : ([[SERVED, servedRecord]] as ReadonlyArray<Scripted>)),
 				unclaimed(),
 				[POST, POSTED],
 				[GET_COMMENT, ECHO],
@@ -1176,7 +1175,7 @@ describe("the claim protocol", () => {
 	];
 
 	const on = (
-		shell: ReturnType<typeof fakeShell>,
+		shell: ReturnType<typeof fakeSeams>,
 		verb: (given: typeof options) => ReturnType<typeof runClaim>,
 	) =>
 		Effect.runPromise(Effect.provide(verb(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)));
@@ -1289,7 +1288,7 @@ describe("runAdopt / succession", () => {
 	};
 
 	const runAdoptWith = (
-		script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+		script: ReadonlyArray<Scripted>,
 		overrides: Partial<typeof adoptOptions> = {},
 	) =>
 		Effect.runPromise(
@@ -1544,8 +1543,8 @@ describe("runClaim — the blockedness gate", () => {
 	const EDGES = /^gh api --paginate repos\/o\/r\/issues\/4312\/dependencies\/blocked_by/;
 	const blocker = (n: number) => new RegExp(`^gh api repos/o/r/issues/${n}$`);
 
-	const claimAgainst = (graph: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
-		const shell = fakeShell([
+	const claimAgainst = (graph: ReadonlyArray<Scripted>) => {
+		const shell = fakeSeams([
 			[ISSUE, CLAIMABLE],
 			...graph,
 			unclaimed(),
@@ -1614,7 +1613,7 @@ describe("runClaim — the blockedness gate", () => {
 	 * refuses must never cost the graph read. The proof is the absent call, not the exit code.
 	 */
 	it("reads no edges at all when a pure axis already refused", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			[
 				ISSUE,
 				issue({

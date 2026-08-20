@@ -1,9 +1,8 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {GIT_DIRS} from "../build/fixtures.test-support.ts";
+import {GIT_DIRS, served} from "../build/fixtures.test-support.ts";
 import {CONFIG_PATH} from "../config/document.ts";
-import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeFs, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {runChild} from "./child-verb.ts";
 import {
@@ -32,9 +31,9 @@ import {
 } from "./fixtures.test-support.ts";
 import {manifestPath, parseManifest, renderRunRecord, runJsonPath} from "./run.ts";
 
-const CREATE = /^gh api --method POST repos\/o\/r\/issues /;
-const LINK = /^gh api --method POST repos\/o\/r\/issues\/4300\/sub_issues/;
-const READBACK = /^gh api repos\/o\/r\/issues\/4301$/;
+const CREATE = /^POST https:\/\/api\.github\.com\/repos\/o\/r\/issues$/;
+const LINK = /^POST https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issues$/;
+const READBACK = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4301$/;
 const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
 const LABELS = /^gh api --paginate repos\/o\/r\/labels/;
 const MILESTONES = /^gh api --paginate repos\/o\/r\/milestones/;
@@ -54,16 +53,16 @@ const RUN_JSON = (cycleDoc: "present" | "absent" | "unknown" = "present") =>
 		bodyDigest: bodyDigest("An epic brief about the moderation queue.\n"),
 	});
 
-const CREATED = okOut(JSON.stringify({number: 4301, id: 90210}));
+const CREATED = served({number: 4301, id: 90210});
 
-const HAPPY: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const HAPPY: ReadonlyArray<Scripted> = [
 	[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
 	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	...CLAIMED,
 	[LABELS, labelSet(...DEFAULT_LABELS)],
 	[MILESTONES, milestones([44, "fabrika campaign"])],
 	[CREATE, CREATED],
-	[LINK, okOut("{}")],
+	[LINK, served({})],
 	[READBACK, childIssue({number: 4301, labels: MINTED_LABELS, milestone: HOME})],
 	[SUBS, okOut(JSON.stringify([{number: 4301, id: 90210, state: "open", state_reason: null}]))],
 ];
@@ -85,11 +84,11 @@ const options = {
 
 const run = (
 	overrides: Partial<typeof options> = {},
-	script: ReadonlyArray<readonly [RegExp, ExecResult]> = HAPPY,
+	script: ReadonlyArray<Scripted> = HAPPY,
 	files: Readonly<Record<string, string | null>> = {[runJsonPath(DIR)]: RUN_JSON()},
 	body: string = childBody(),
 ) => {
-	const shell = fakeShell(script);
+	const shell = fakeSeams(script);
 	const fs = fakeFs({files});
 	const stdin: Effect.Effect<StdinRead> = Effect.succeed({_tag: "Text", text: body});
 	return Effect.runPromise(
@@ -97,7 +96,22 @@ const run = (
 			runChild({...options, ...overrides, stdin}),
 			Layer.mergeAll(shell.layer, fs.layer),
 		),
-	).then((outcome) => ({outcome, written: fs.written, calls: shell.calls}));
+	).then((outcome) => ({
+		outcome,
+		written: fs.written,
+		calls: shell.calls,
+		requests: shell.requests,
+		bodies: shell.bodies,
+	}));
+};
+
+/** The JSON a matching request carried — where every write's fields travel now (ADR 0315). */
+const sent = (
+	run: {requests: ReadonlyArray<string>; bodies: ReadonlyArray<string>},
+	pattern: RegExp,
+): Record<string, unknown> => {
+	const at = run.requests.findIndex((line) => pattern.test(line));
+	return at < 0 ? {} : (JSON.parse(run.bodies[at] ?? "{}") as Record<string, unknown>);
 };
 
 describe("runChild", () => {
@@ -135,7 +149,7 @@ describe("runChild", () => {
 	 * opens a window in which the child exists with no `ready-for:` value at all.
 	 */
 	it("puts every birth attribute in the one POST", async () => {
-		const {calls} = await run({milestone: "fabrika campaign", labels: ["fabrika"]}, [
+		const minted = await run({milestone: "fabrika campaign", labels: ["fabrika"]}, [
 			...HAPPY.filter(([pattern]) => pattern !== LABELS && pattern !== READBACK),
 			[LABELS, labelSet(...DEFAULT_LABELS, "fabrika")],
 			[
@@ -147,17 +161,13 @@ describe("runChild", () => {
 				}),
 			],
 		]);
-		const create = calls.find((line) => CREATE.test(line)) ?? "";
-		for (const label of [...MINTED_LABELS, "fabrika"]) {
-			expect(create).toContain(`labels[]=${label}`);
-		}
-		expect(create).toContain("milestone=44");
-		expect(calls.filter((line) => line.startsWith("gh api --method PATCH")).length).toBe(0);
+		expect(sent(minted, CREATE).labels).toEqual([...MINTED_LABELS, "fabrika"]);
+		expect(sent(minted, CREATE).milestone).toBe(44);
+		expect(minted.requests.some((line) => line.startsWith("PATCH "))).toBe(false);
 	});
 
 	it("links on the child's id, not its number", async () => {
-		const {calls} = await run();
-		expect(calls.find((line) => LINK.test(line))).toContain("sub_issue_id=90210");
+		expect(sent(await run(), LINK).sub_issue_id).toBe(90210);
 	});
 
 	/** #4780: a child must never inherit its audience by omission. */
@@ -193,24 +203,23 @@ describe("runChild", () => {
 	});
 
 	it("mints a milestone-homed child", async () => {
-		const {outcome, calls} = await run({milestone: HOME});
-		expect(outcome.code).toBe(0);
-		expect(calls.find((line) => CREATE.test(line)) ?? "").toContain("milestone=44");
+		const minted = await run({milestone: HOME});
+		expect(minted.outcome.code).toBe(0);
+		expect(sent(minted, CREATE).milestone).toBe(44);
 	});
 
 	/** ADR 0208's lane exemption holds here too — homing is never collapsed into "milestone required". */
 	it("mints a lane-homed child carrying no milestone", async () => {
-		const {outcome, calls} = await run({milestone: null, labels: [LANE]}, [
+		const minted = await run({milestone: null, labels: [LANE]}, [
 			...HAPPY.filter(([pattern]) => pattern !== LABELS && pattern !== READBACK),
 			[LABELS, labelSet(...DEFAULT_LABELS, LANE)],
 			[READBACK, childIssue({number: 4301, labels: [...MINTED_LABELS, LANE]})],
 		]);
-		expect(outcome.code).toBe(0);
-		expect(JSON.parse(outcome.stdout).observed.milestone).toBe(null);
-		const create = calls.find((line) => CREATE.test(line)) ?? "";
-		expect(create).toContain(`labels[]=${LANE}`);
-		expect(create).not.toContain("milestone=");
-		expect(calls.some((line) => MILESTONES.test(line))).toBe(false);
+		expect(minted.outcome.code).toBe(0);
+		expect(JSON.parse(minted.outcome.stdout).observed.milestone).toBe(null);
+		expect(sent(minted, CREATE).labels).toContain(LANE);
+		expect(sent(minted, CREATE)).not.toHaveProperty("milestone");
+		expect(minted.calls.some((line) => MILESTONES.test(line))).toBe(false);
 	});
 
 	it("refuses a retired priority", async () => {
@@ -307,9 +316,8 @@ describe("runChild", () => {
 	});
 
 	it("drops the containment line when the run's cycle-doc read is absent", async () => {
-		const {calls} = await run({}, HAPPY, {[runJsonPath(DIR)]: RUN_JSON("absent")});
-		const create = calls.find((line) => CREATE.test(line)) ?? "";
-		expect(create).not.toContain("**Containment:**");
+		const minted = await run({}, HAPPY, {[runJsonPath(DIR)]: RUN_JSON("absent")});
+		expect(String(sent(minted, CREATE).body)).not.toContain("**Containment:**");
 	});
 
 	it("refuses an empty pipe on its own code", async () => {
@@ -387,7 +395,7 @@ describe("runChild", () => {
 	});
 
 	it("seats a manifest it could not write on 26, naming the number that now exists", async () => {
-		const shell = fakeShell(HAPPY);
+		const shell = fakeSeams(HAPPY);
 		const fs = fakeFs({
 			files: {[runJsonPath(DIR)]: RUN_JSON()},
 			unwritable: [manifestPath(DIR)],

@@ -28,6 +28,7 @@
  * known.
  */
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {readBlockedness} from "./blockedness.ts";
@@ -71,7 +72,11 @@ export interface EligibleOptions {
 
 export const runEligible = (
 	options: EligibleOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const {number} = options;
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
@@ -87,7 +92,7 @@ export const runEligible = (
 		);
 		if (target._tag === "Refused") return target.outcome;
 
-		const parent = yield* getParent(repo, number);
+		const parent = yield* getParent(options.env, repo, number);
 		if (parent._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -122,7 +127,8 @@ export const runEligible = (
 		// The branch is read only when an edge is still undischarged, and only when there is an epic
 		// whose assembly branch could carry it — a standalone issue's blockers land nowhere derivable.
 		const undischarged = open.length + unread.length > 0;
-		const assembly = undischarged && epic !== null ? yield* readAssembly(repo, epic) : null;
+		const assembly =
+			undischarged && epic !== null ? yield* readAssembly(options.env, repo, epic) : null;
 		const landed = assembly?._tag === "Read" ? assembly.landed : new Set<number>();
 		const carries = (edge: Edge) => landed.has(edge.number);
 		const stillOpen = open.filter((edge) => !carries(edge));

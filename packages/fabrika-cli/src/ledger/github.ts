@@ -13,24 +13,40 @@
  * together, which no shipped shape does — and a read-back that cannot see all three cannot prove the
  * one create call landed every birth attribute.
  *
- * The package's two standing disciplines hold throughout: every list read pages in full, and a shape
- * that is not what was asked for is a failure, never an empty result.
+ * The package's two standing disciplines hold throughout, unchanged by the move off `gh` (ADR 0315):
+ * every list read pages in full and hands back the proof it did, and a shape that is not what was
+ * asked for is a failure, never an empty result. Every write here still proves itself by a read-back
+ * or by the caller's own re-read — a write's own response echo is not evidence anywhere it was not
+ * evidence before.
  */
 
 import {Effect} from "effect";
-import {execCapture} from "../io/exec.ts";
-import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
+import type {ChildProcessSpawner} from "effect/unstable/process";
 import {
-	absent,
-	type Existence,
-	httpStatusOf,
-	type IssueRow,
-	pagedJson,
-	parseIssueRows,
-	present,
-	unknown,
-} from "../io/issues.ts";
-import {isRecord, parseJson} from "../io/json.ts";
+	attemptOf,
+	existenceOf,
+	pagedWithLinkProof,
+	resolveToken,
+	restRead,
+	restWrite,
+} from "../io/gh-api.ts";
+import {type Attempt, fail, ok} from "../io/git.ts";
+import {type Existence, type IssueRow, unknown} from "../io/issues.ts";
+import {isRecord} from "../io/json.ts";
+
+/**
+ * What these functions need: the HTTP client they call over, and the spawner `resolveToken` may
+ * reach for when neither env var names a credential.
+ */
+type Called<A> = Effect.Effect<
+	A,
+	never,
+	HttpClient.HttpClient | ChildProcessSpawner.ChildProcessSpawner
+>;
+
+const truncated = (what: string): string =>
+	`the ${what} read stopped at the page cap with another page outstanding`;
 
 /** One existing child, with the id the sub-issue relation is keyed on. */
 export interface SubIssueEntry {
@@ -58,29 +74,21 @@ const toSubIssueEntry = (value: unknown): SubIssueEntry | null => {
 
 /** The epic's children from the native sub-issue list, paginated in full, with their ids. */
 export const listSubIssueEntries = (
+	env: Readonly<Record<string, string | undefined>>,
 	repo: string,
 	epic: number,
-): Shell<Attempt<ReadonlyArray<SubIssueEntry>>> =>
+): Called<Attempt<ReadonlyArray<SubIssueEntry>>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/issues/${epic}/sub_issues?per_page=100`,
-		]);
-		if (!r.ok) return fail(r.reason);
-		const pages = pagedJson(r.stdout);
-		if (pages._tag === "Failure") return pages;
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return token;
+		const read = yield* pagedWithLinkProof(token.value, `repos/${repo}/issues/${epic}/sub_issues`);
+		if (read._tag === "Failure") return read;
+		if (!read.value.exhausted) return fail(truncated("sub-issue"));
 		const entries: SubIssueEntry[] = [];
-		for (const page of pages.value) {
-			const parsed = parseJson(page);
-			if (!Array.isArray(parsed)) {
-				return fail("`gh api` exited 0 but its output is not a list of sub-issues");
-			}
-			for (const value of parsed) {
-				const entry = toSubIssueEntry(value);
-				if (entry === null) return fail("`gh api` exited 0 but one entry is not a sub-issue");
-				entries.push(entry);
-			}
+		for (const value of read.value.entries) {
+			const entry = toSubIssueEntry(value);
+			if (entry === null) return fail("GitHub answered 200 but one entry is not a sub-issue");
+			entries.push(entry);
 		}
 		return ok(entries);
 	});
@@ -93,20 +101,25 @@ export const listSubIssueEntries = (
  * asks is "does this work already exist anywhere in the open backlog", and a label-scoped read would
  * answer a narrower one while looking like an answer to the wider.
  */
-export const openBacklog = (repo: string): Shell<Attempt<ReadonlyArray<IssueRow>>> =>
+export const openBacklog = (
+	env: Readonly<Record<string, string | undefined>>,
+	repo: string,
+): Called<Attempt<ReadonlyArray<IssueRow>>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/issues?state=open&per_page=100`,
-			"--jq",
-			'.[] | select(.pull_request | not) | "\\(.number)\t\\(.title)"',
-		]);
-		if (!r.ok) return fail(r.reason);
-		const rows = parseIssueRows(r.stdout);
-		return rows === null
-			? fail("`gh api` exited 0 but its output is not a list of issue rows")
-			: ok(rows);
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return token;
+		const read = yield* pagedWithLinkProof(token.value, `repos/${repo}/issues?state=open`);
+		if (read._tag === "Failure") return read;
+		if (!read.value.exhausted) return fail(truncated("open backlog"));
+		const rows: IssueRow[] = [];
+		for (const value of read.value.entries) {
+			if (!isRecord(value) || typeof value.number !== "number" || typeof value.title !== "string") {
+				return fail("GitHub answered 200 but one entry is not an issue row");
+			}
+			if (value.pull_request !== undefined && value.pull_request !== null) continue;
+			rows.push({number: value.number, title: value.title});
+		}
+		return ok(rows);
 	});
 
 export interface ChildCreate {
@@ -132,71 +145,82 @@ export interface CreatedChild {
  * window in which the child exists with **no** `ready-for:` value, which is the fail-open shape the
  * #4780 ruling forbids.
  */
-export const createChildIssue = (repo: string, input: ChildCreate): Shell<Attempt<CreatedChild>> =>
+export const createChildIssue = (
+	env: Readonly<Record<string, string | undefined>>,
+	repo: string,
+	input: ChildCreate,
+): Called<Attempt<CreatedChild>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"POST",
-			`repos/${repo}/issues`,
-			"-f",
-			`title=${input.title}`,
-			"-f",
-			`body=${input.body}`,
-			...input.labels.flatMap((label) => ["-f", `labels[]=${label}`]),
-			...input.assignees.flatMap((login) => ["-f", `assignees[]=${login}`]),
-			...(input.milestone === null ? [] : ["-F", `milestone=${input.milestone}`]),
-		]);
-		if (!r.ok) return fail(r.reason);
-		const parsed = parseJson(r.stdout);
-		if (!isRecord(parsed) || typeof parsed.number !== "number" || typeof parsed.id !== "number") {
-			return fail("`gh api` exited 0 but its output is not a created issue");
-		}
-		return ok({number: parsed.number, id: parsed.id});
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return token;
+		const outcome = yield* restWrite(token.value, "POST", `repos/${repo}/issues`, {
+			title: input.title,
+			body: input.body,
+			labels: input.labels,
+			assignees: input.assignees,
+			...(input.milestone === null ? {} : {milestone: input.milestone}),
+		});
+		return attemptOf(outcome, (payload) =>
+			isRecord(payload) && typeof payload.number === "number" && typeof payload.id === "number"
+				? ok({number: payload.number, id: payload.id})
+				: fail("GitHub answered 2xx but its body is not a created issue"),
+		);
 	});
 
 /** Link a child to its epic. The relation takes the child's `id`, never its number. */
-export const linkSubIssue = (repo: string, epic: number, id: number): Shell<Attempt<void>> =>
+export const linkSubIssue = (
+	env: Readonly<Record<string, string | undefined>>,
+	repo: string,
+	epic: number,
+	id: number,
+): Called<Attempt<void>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return token;
+		const outcome = yield* restWrite(
+			token.value,
 			"POST",
 			`repos/${repo}/issues/${epic}/sub_issues`,
-			"-F",
-			`sub_issue_id=${id}`,
-		]);
-		return r.ok ? ok<void>(undefined) : fail(r.reason);
+			{
+				sub_issue_id: id,
+			},
+		);
+		return attemptOf(outcome, () => ok<void>(undefined));
 	});
 
 /** Unlink a child from its epic — the same `id`-not-number shape the link uses. */
-export const unlinkSubIssue = (repo: string, epic: number, id: number): Shell<Attempt<void>> =>
+export const unlinkSubIssue = (
+	env: Readonly<Record<string, string | undefined>>,
+	repo: string,
+	epic: number,
+	id: number,
+): Called<Attempt<void>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return token;
+		const outcome = yield* restWrite(
+			token.value,
 			"DELETE",
 			`repos/${repo}/issues/${epic}/sub_issue`,
-			"-F",
-			`sub_issue_id=${id}`,
-		]);
-		return r.ok ? ok<void>(undefined) : fail(r.reason);
+			{sub_issue_id: id},
+		);
+		return attemptOf(outcome, () => ok<void>(undefined));
 	});
 
 /** Close a child as `not_planned` — the only close spelling a supersede may use. */
-export const closeAsNotPlanned = (repo: string, child: number): Shell<Attempt<void>> =>
+export const closeAsNotPlanned = (
+	env: Readonly<Record<string, string | undefined>>,
+	repo: string,
+	child: number,
+): Called<Attempt<void>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"PATCH",
-			`repos/${repo}/issues/${child}`,
-			"-f",
-			"state=closed",
-			"-f",
-			"state_reason=not_planned",
-		]);
-		return r.ok ? ok<void>(undefined) : fail(r.reason);
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return token;
+		const outcome = yield* restWrite(token.value, "PATCH", `repos/${repo}/issues/${child}`, {
+			state: "closed",
+			state_reason: "not_planned",
+		});
+		return attemptOf(outcome, () => ok<void>(undefined));
 	});
 
 /** What a create's read-back has to be able to see, so every birth attribute is provable. */
@@ -233,16 +257,19 @@ const toChildReadback = (value: unknown): ChildReadback | null => {
 };
 
 /** One child re-read from the API. The create response's own echo is never evidence. */
-export const readChildBack = (repo: string, child: number): Shell<Existence<ChildReadback>> =>
+export const readChildBack = (
+	env: Readonly<Record<string, string | undefined>>,
+	repo: string,
+	child: number,
+): Called<Existence<ChildReadback>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", ["api", `repos/${repo}/issues/${child}`]);
-		if (!r.ok) {
-			return httpStatusOf(r.reason) === 404
-				? absent<ChildReadback>()
-				: unknown<ChildReadback>(r.reason);
-		}
-		const payload = toChildReadback(parseJson(r.stdout));
-		return payload === null
-			? unknown<ChildReadback>("`gh api` exited 0 but its output is not an issue")
-			: present(payload);
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return unknown<ChildReadback>(token.reason);
+		const outcome = yield* restRead(token.value, "GET", `repos/${repo}/issues/${child}`);
+		return existenceOf(outcome, (body) => {
+			const payload = toChildReadback(body);
+			return payload === null
+				? fail("GitHub answered 200 but its body is not an issue")
+				: ok(payload);
+		});
 	});

@@ -1,21 +1,30 @@
-import {Effect, Layer} from "effect";
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeHttp, fakeShell, type HttpReply, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {comments, HEAD, issue, OLD_HEAD, PRIOR_HEADS, pull} from "./fixtures.test-support.ts";
+import {
+	comments,
+	GATEWAY,
+	GH_TOKEN_ENV,
+	HEAD,
+	issue,
+	OLD_HEAD,
+	PRIOR_HEADS,
+	pull,
+	served,
+} from "./fixtures.test-support.ts";
 import {runChildVerdicts, runVerdicts} from "./verdicts-verb.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4310$/;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4310\/comments/;
-const REVIEWS = /^gh api --paginate repos\/o\/r\/pulls\/4310\/reviews/;
+const REVIEWS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4310\/reviews/;
 const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
 
 const FAIL_NOW = `review-code: FAIL @ ${HEAD} — the debounce fix races the unmount`;
 const failAt = (sha: string) => `review-code: FAIL @ ${sha} — the debounce fix races the unmount`;
 const PASS_STALE = `review-doc: PASS @ ${OLD_HEAD} — guide matches shipped behavior`;
 
-const NO_REVIEWS = okOut("[]");
+const NO_REVIEWS = served([]);
 const PR = pull({number: 4310, body: "Fixes #4312\n\n## Deviations\nNone.\n"});
 const PR_ON_MAIN = pull({
 	number: 4310,
@@ -26,19 +35,11 @@ const PR_ON_MAIN = pull({
 const options = {
 	pr: 4310,
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	env: {CLAUDE_PIPELINE_REPO: "o/r", ...GH_TOKEN_ENV} as Record<string, string | undefined>,
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
-) =>
-	Effect.runPromise(
-		Effect.provide(
-			runVerdicts(options),
-			Layer.merge(fakeShell(script).layer, fakeHttp(http).layer),
-		),
-	);
+const run = (script: ReadonlyArray<Scripted>) =>
+	Effect.runPromise(Effect.provide(runVerdicts(options), fakeSeams(script).layer));
 
 describe("runVerdicts", () => {
 	it("binds each marker to the live head and keeps the latest per gate", async () => {
@@ -73,12 +74,7 @@ describe("runVerdicts", () => {
 		const out = await run([
 			[PULL, PR],
 			[COMMENTS, okOut("[]")],
-			[
-				REVIEWS,
-				okOut(
-					JSON.stringify([{id: 98001, state: "CHANGES_REQUESTED", body: "the debounce races"}]),
-				),
-			],
+			[REVIEWS, served([{id: 98001, state: "CHANGES_REQUESTED", body: "the debounce races"}])],
 			[ISSUE, issue()],
 		]);
 		const parsed = JSON.parse(out.stdout);
@@ -215,27 +211,30 @@ describe("runVerdicts", () => {
 		const out = await run([
 			[PULL, PR],
 			[COMMENTS, okOut("[]")],
-			[REVIEWS, errOut("gh: Bad gateway (HTTP 502)")],
+			[REVIEWS, GATEWAY],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
+	// One assertion per seam, because the two list reads no longer sit on the same one: the comments
+	// still page through `gh --paginate`, the reviews page over the client (ADR 0315).
 	it("paginates both list reads", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[PULL, PR],
 			[COMMENTS, okOut("[]")],
 			[REVIEWS, NO_REVIEWS],
 			[ISSUE, issue()],
 		]);
-		await Effect.runPromise(Effect.provide(runVerdicts(options), shell.layer));
-		expect(shell.calls.filter((line) => line.includes("--paginate")).length).toBeGreaterThanOrEqual(
-			2,
+		await Effect.runPromise(Effect.provide(runVerdicts(options), seams.layer));
+		expect(seams.calls.filter((line) => line.includes("--paginate")).length).toBeGreaterThanOrEqual(
+			1,
 		);
+		expect(seams.requests.filter((line) => line.includes("per_page=100")).length).toBe(1);
 	});
 	describe("the founder's cleared rounds", () => {
-		const CONFIG = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
-		const CONFIGURED: HttpReply = {status: 200, body: '{"capClearAuthors": ["@usirin"]}'};
-		const GRANT_AUTHORS: ReadonlyArray<readonly [RegExp, HttpReply]> = [[CONFIG, CONFIGURED]];
+		const CONFIG =
+			/^gh api -H Accept: application\/vnd\.github\.raw repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
+		const CONFIGURED = okOut('{"capClearAuthors": ["@usirin"]}');
 		const PERMISSION = /^gh api repos\/o\/r\/collaborators\/usirin\/permission/;
 		const WRITES = okOut("admin\n");
 		const AUTHORIZATION = 'Founder ruling 2026-08-18: "one more round."';
@@ -280,16 +279,14 @@ describe("runVerdicts", () => {
 		});
 
 		it("folds an honoured clearance as budget, so the granted round proceeds", async () => {
-			const out = await run(
-				[
-					[PULL, PR_ON_MAIN],
-					[COMMENTS, comments(...CAPPED, ...GRANT)],
-					[PERMISSION, WRITES],
-					[REVIEWS, NO_REVIEWS],
-					[ISSUE, issue()],
-				],
-				GRANT_AUTHORS,
-			);
+			const out = await run([
+				[PULL, PR_ON_MAIN],
+				[COMMENTS, comments(...CAPPED, ...GRANT)],
+				[CONFIG, CONFIGURED],
+				[PERMISSION, WRITES],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
 			const parsed = JSON.parse(out.stdout);
 			expect(parsed.capReached).toBe(false);
 			expect(parsed.clearances).toHaveLength(1);
@@ -297,23 +294,21 @@ describe("runVerdicts", () => {
 		});
 
 		it("spends the grant on the next round — it never re-arms", async () => {
-			const out = await run(
+			const out = await run([
+				[PULL, PR_ON_MAIN],
 				[
-					[PULL, PR_ON_MAIN],
-					[
-						COMMENTS,
-						comments(...CAPPED, ...GRANT, {
-							id: 6,
-							body: `review-code: FAIL @ ${HEAD} — four`,
-							createdAt: "2026-08-18T04:00:00Z",
-						}),
-					],
-					[PERMISSION, WRITES],
-					[REVIEWS, NO_REVIEWS],
-					[ISSUE, issue()],
+					COMMENTS,
+					comments(...CAPPED, ...GRANT, {
+						id: 6,
+						body: `review-code: FAIL @ ${HEAD} — four`,
+						createdAt: "2026-08-18T04:00:00Z",
+					}),
 				],
-				GRANT_AUTHORS,
-			);
+				[CONFIG, CONFIGURED],
+				[PERMISSION, WRITES],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
 			const parsed = JSON.parse(out.stdout);
 			expect(parsed.rounds).toBe(4);
 			expect(parsed.capReached).toBe(true);
@@ -325,33 +320,27 @@ describe("runVerdicts", () => {
 		 * the first is authorized by nothing (#4938).
 		 */
 		it("refuses a second marker whose only precedent is the first grant's marker", async () => {
-			const out = await run(
+			const out = await run([
+				[PULL, PR_ON_MAIN],
 				[
-					[PULL, PR_ON_MAIN],
-					[
-						COMMENTS,
-						comments(
-							...CAPPED,
-							...GRANT,
-							{
-								id: 6,
-								body: `review-code: FAIL @ ${HEAD} — four`,
-								createdAt: "2026-08-18T04:00:00Z",
-							},
-							{
-								id: 7,
-								body: "cap-cleared: round 4 · 2026-08-18T05:00:00Z",
-								author: "usirin",
-								createdAt: "2026-08-18T05:00:00Z",
-							},
-						),
-					],
-					[PERMISSION, WRITES],
-					[REVIEWS, NO_REVIEWS],
-					[ISSUE, issue()],
+					COMMENTS,
+					comments(
+						...CAPPED,
+						...GRANT,
+						{id: 6, body: `review-code: FAIL @ ${HEAD} — four`, createdAt: "2026-08-18T04:00:00Z"},
+						{
+							id: 7,
+							body: "cap-cleared: round 4 · 2026-08-18T05:00:00Z",
+							author: "usirin",
+							createdAt: "2026-08-18T05:00:00Z",
+						},
+					),
 				],
-				GRANT_AUTHORS,
-			);
+				[CONFIG, CONFIGURED],
+				[PERMISSION, WRITES],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
 			const parsed = JSON.parse(out.stdout);
 			const bare = parsed.clearances.find((row: {round: number}) => row.round === 4);
 			expect(bare).toMatchObject({honoured: false, authorization: null});
@@ -361,16 +350,14 @@ describe("runVerdicts", () => {
 
 		/** A committed set narrows the ACL; it never stands in for one (ADR 0055, ADR 0294). */
 		it("refuses a configured author who resolves below write at the ACL", async () => {
-			const out = await run(
-				[
-					[PULL, PR_ON_MAIN],
-					[COMMENTS, comments(...CAPPED, ...GRANT)],
-					[PERMISSION, okOut("read\n")],
-					[REVIEWS, NO_REVIEWS],
-					[ISSUE, issue()],
-				],
-				GRANT_AUTHORS,
-			);
+			const out = await run([
+				[PULL, PR_ON_MAIN],
+				[COMMENTS, comments(...CAPPED, ...GRANT)],
+				[CONFIG, CONFIGURED],
+				[PERMISSION, okOut("read\n")],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
 			const parsed = JSON.parse(out.stdout);
 			expect(parsed.capReached).toBe(true);
 			expect(parsed.clearances[0]).toMatchObject({honoured: false});
@@ -378,38 +365,34 @@ describe("runVerdicts", () => {
 		});
 
 		it("holds the fold UNKNOWN when a configured author's permission cannot be read", async () => {
-			const out = await run(
-				[
-					[PULL, PR_ON_MAIN],
-					[COMMENTS, comments(...CAPPED, ...GRANT)],
-					[PERMISSION, errOut("gh: Bad gateway (HTTP 502)")],
-					[REVIEWS, NO_REVIEWS],
-					[ISSUE, issue()],
-				],
-				GRANT_AUTHORS,
-			);
+			const out = await run([
+				[PULL, PR_ON_MAIN],
+				[COMMENTS, comments(...CAPPED, ...GRANT)],
+				[CONFIG, CONFIGURED],
+				[PERMISSION, errOut("gh: Bad gateway (HTTP 502)")],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
 			expect(out.stdout).toBe("");
 		});
 
 		it("keeps an unauthorized marker visible as a refused row, never as budget", async () => {
-			const out = await run(
+			const out = await run([
+				[PULL, PR_ON_MAIN],
 				[
-					[PULL, PR_ON_MAIN],
-					[
-						COMMENTS,
-						comments(...CAPPED, {
-							id: 5,
-							body: "cap-cleared: round 3 · 2026-08-18T03:11:00Z",
-							author: "an-agent",
-							createdAt: "2026-08-18T03:11:00Z",
-						}),
-					],
-					[REVIEWS, NO_REVIEWS],
-					[ISSUE, issue()],
+					COMMENTS,
+					comments(...CAPPED, {
+						id: 5,
+						body: "cap-cleared: round 3 · 2026-08-18T03:11:00Z",
+						author: "an-agent",
+						createdAt: "2026-08-18T03:11:00Z",
+					}),
 				],
-				GRANT_AUTHORS,
-			);
+				[CONFIG, CONFIGURED],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
 			const parsed = JSON.parse(out.stdout);
 			expect(parsed.capReached).toBe(true);
 			expect(parsed.clearances[0]).toMatchObject({honoured: false});
@@ -417,15 +400,13 @@ describe("runVerdicts", () => {
 		});
 
 		it("holds the whole fold UNKNOWN when the grant-author set cannot be read", async () => {
-			const out = await run(
-				[
-					[PULL, PR_ON_MAIN],
-					[COMMENTS, comments(...CAPPED, ...GRANT)],
-					[REVIEWS, NO_REVIEWS],
-					[ISSUE, issue()],
-				],
-				[[CONFIG, {status: 502, body: '{"message":"Bad Gateway"}'}]],
-			);
+			const out = await run([
+				[PULL, PR_ON_MAIN],
+				[COMMENTS, comments(...CAPPED, ...GRANT)],
+				[CONFIG, errOut("gh: Bad gateway (HTTP 502)")],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
 			expect(out.stdout).toBe("");
 		});
@@ -444,15 +425,15 @@ describe("runChildVerdicts", () => {
 	const range = (polarity: string, tip = TIP) =>
 		`review-code: ${polarity} range:${BASE}..${tip} content:2f1a9c4e0b7d — the child's range`;
 
-	const runChild = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
+	const runChild = (script: ReadonlyArray<Scripted>) =>
 		Effect.runPromise(
 			Effect.provide(
 				runChildVerdicts({
 					issue: 4312,
 					repo: null,
-					env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+					env: {CLAUDE_PIPELINE_REPO: "o/r", ...GH_TOKEN_ENV} as Record<string, string | undefined>,
 				}),
-				fakeShell(script).layer,
+				fakeSeams(script).layer,
 			),
 		);
 

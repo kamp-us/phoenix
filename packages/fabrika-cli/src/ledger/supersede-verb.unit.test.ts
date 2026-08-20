@@ -1,7 +1,15 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {GIT_DIRS} from "../build/fixtures.test-support.ts";
-import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {GATEWAY, GIT_DIRS, served} from "../build/fixtures.test-support.ts";
+import {
+	errOut,
+	fakeFs,
+	fakeSeams,
+	type HttpReply,
+	okOut,
+	once,
+	type Scripted,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	BARE_AT_PATH,
@@ -23,11 +31,11 @@ import {
 } from "./run.ts";
 import {runSupersede} from "./supersede-verb.ts";
 
-const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
-const CHILD = /^gh api repos\/o\/r\/issues\/4288$/;
+const SUBS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issues/;
+const CHILD = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4288$/;
 const COMMENT = /^gh api --method POST repos\/o\/r\/issues\/4288\/comments/;
-const UNLINK = /^gh api --method DELETE repos\/o\/r\/issues\/4300\/sub_issue /;
-const CLOSE = /^gh api --method PATCH repos\/o\/r\/issues\/4288/;
+const UNLINK = /^DELETE https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issue$/;
+const CLOSE = /^PATCH https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4288$/;
 
 const RUN_JSON = renderRunRecord({
 	epic: 4300,
@@ -63,33 +71,33 @@ const COMMENTED = okOut(
 const happy = (
 	overrides: {
 		comment?: ExecResult;
-		unlink?: ExecResult;
-		close?: ExecResult;
-		after?: ExecResult;
-		afterSubs?: ExecResult;
+		unlink?: HttpReply;
+		close?: HttpReply;
+		after?: HttpReply;
+		afterSubs?: HttpReply;
 	} = {},
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+): ReadonlyArray<Scripted> => [
 	[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
 	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	...CLAIMED,
 	[once(SUBS), subIssues({number: 4288, id: 42880})],
 	[once(CHILD), childIssue({number: 4288})],
 	[COMMENT, overrides.comment ?? COMMENTED],
-	[UNLINK, overrides.unlink ?? okOut("{}")],
-	[CLOSE, overrides.close ?? okOut("{}")],
+	[UNLINK, overrides.unlink ?? served({})],
+	[CLOSE, overrides.close ?? served({})],
 	[
 		CHILD,
 		overrides.after ?? childIssue({number: 4288, state: "closed", stateReason: "not_planned"}),
 	],
-	[SUBS, overrides.afterSubs ?? okOut("[]")],
+	[SUBS, overrides.afterSubs ?? served([])],
 ];
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]> = happy(),
+	script: ReadonlyArray<Scripted> = happy(),
 	fsFiles: Readonly<Record<string, string | null>> = files(record(4288, false)),
 	options: {child?: number; reason?: string} = {},
 ) => {
-	const shell = fakeShell(script);
+	const shell = fakeSeams(script);
 	const fs = fakeFs({files: fsFiles});
 	return Effect.runPromise(
 		Effect.provide(
@@ -104,7 +112,13 @@ const run = (
 			}),
 			Layer.mergeAll(shell.layer, fs.layer),
 		),
-	).then((outcome) => ({outcome, calls: shell.calls}));
+	).then((outcome) => ({
+		outcome,
+		calls: shell.calls,
+		log: shell.log,
+		bodies: shell.bodies,
+		requests: shell.requests,
+	}));
 };
 
 describe("runSupersede", () => {
@@ -125,11 +139,11 @@ describe("runSupersede", () => {
 	 * Closing before unlinking leaves a closed issue still counted as a sub-issue, which the gate reads
 	 * as a child in scope that can never carry a live assignee (#5026).
 	 */
+	// The three legs no longer share a seam — the journal is a `gh` comment, the unlink and close are
+	// requests — so the order is read off the combined log rather than off either one.
 	it("unlinks before it closes, and journals before either", async () => {
-		const {calls} = await run();
-		const order = calls.filter(
-			(line) => COMMENT.test(line) || UNLINK.test(line) || CLOSE.test(line),
-		);
+		const {log} = await run();
+		const order = log.filter((line) => COMMENT.test(line) || UNLINK.test(line) || CLOSE.test(line));
 		expect(
 			order.map((line) =>
 				COMMENT.test(line) ? "comment" : UNLINK.test(line) ? "unlink" : "close",
@@ -138,8 +152,9 @@ describe("runSupersede", () => {
 	});
 
 	it("unlinks on the child's id, not its number", async () => {
-		const {calls} = await run();
-		expect(calls.find((line) => UNLINK.test(line))).toContain("sub_issue_id=42880");
+		const {requests, bodies} = await run();
+		const at = requests.findIndex((line) => UNLINK.test(line));
+		expect(JSON.parse(bodies[at] ?? "null")).toEqual({sub_issue_id: 42880});
 	});
 
 	it("refuses a child this run minted — a re-plan does not retire its own work", async () => {
@@ -192,7 +207,7 @@ describe("runSupersede", () => {
 
 	/** The journal is posted first so the reason survives even if a later leg fails. */
 	it("reports how many legs landed when one could not be proven", async () => {
-		const {outcome} = await run(happy({unlink: errOut("gh: Bad Gateway (HTTP 502)")}));
+		const {outcome} = await run(happy({unlink: GATEWAY}));
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toBe(
 			"ledger supersede: wrote 1 of 3 legs on #4288 and could not prove the rest — the child is UNKNOWN.",

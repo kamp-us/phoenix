@@ -25,6 +25,7 @@
  * shape and its deliberate limits live in `prose-baseline.ts` (#5755).
  */
 import {Effect, FileSystem} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import type {Resolution} from "../config/key-group.ts";
 import {type CiSurface, ciKey} from "../config/keys/ci.ts";
@@ -523,7 +524,7 @@ const runCodeSurface = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | HttpClient.HttpClient
 > =>
 	Effect.gen(function* () {
 		const declared = yield* readCodeScope(root);
@@ -636,7 +637,7 @@ const runWorkflowSurface = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | HttpClient.HttpClient
 > =>
 	Effect.gen(function* () {
 		const declared = yield* readValidatorScope(fs, root);
@@ -735,7 +736,7 @@ export const runCheck = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | HttpClient.HttpClient
 > =>
 	Effect.gen(function* () {
 		const surface = options.surface.trim().toLowerCase();
@@ -754,7 +755,7 @@ export const runCheck = (
 		const lane = yield* requireLane(VERB, resolved.repo, session.id, null);
 		if (lane._tag === "Refused") return lane.outcome;
 
-		const branch = yield* defaultBranch(resolved.repo);
+		const branch = yield* defaultBranch(options.env, resolved.repo);
 		if (branch._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,

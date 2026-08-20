@@ -217,6 +217,8 @@ export const fakeShell = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	fallback: ExecResult = {ok: false, stdout: "", reason: "unscripted command"},
 	unstartable: ReadonlyArray<RegExp> = [],
+	/** A shared sink both seams push to, so an ordering assertion can span them ({@link fakeSeams}). */
+	log: Array<string> = [],
 ): FakeShell => {
 	const calls: string[] = [];
 	const inputs: string[] = [];
@@ -228,6 +230,7 @@ export const fakeShell = (
 				const line =
 					cmd._tag === "StandardCommand" ? [cmd.command, ...cmd.args].join(" ") : "<piped>";
 				calls.push(line);
+				log.push(line);
 				inputs.push(
 					yield* pipedInput(cmd._tag === "StandardCommand" ? cmd.options.stdin : undefined),
 				);
@@ -417,6 +420,8 @@ export const fakeHttp = (
 	script: ReadonlyArray<readonly [RegExp, HttpReply]>,
 	fallback: HttpReply = {status: 500, body: '{"message":"unscripted request"}'},
 	unreachable: ReadonlyArray<RegExp> = [],
+	/** The same shared sink {@link fakeShell} takes — see {@link fakeSeams}. */
+	log: Array<string> = [],
 ): FakeHttp => {
 	const calls: string[] = [];
 	const bodies: string[] = [];
@@ -425,6 +430,7 @@ export const fakeHttp = (
 		HttpClient.make((request, url) => {
 			const line = `${request.method} ${url.toString()}`;
 			calls.push(line);
+			log.push(line);
 			bodies.push(requestBody(request.body));
 			headers.push(request.headers);
 			if (unreachable.some((pattern) => pattern.test(line))) {
@@ -456,3 +462,53 @@ export const fakeHttp = (
 
 /** A served page of a bare-array read, with the `Link` header that says another page follows. */
 export const linkNext = (url: string): Record<string, string> => ({link: `<${url}>; rel="next"`});
+
+/**
+ * One scripted answer for either seam. Which seam a row belongs to is not a field: the reply's own
+ * shape says it, and the pattern reads it back — `gh …`/`git …` for a spawn, `METHOD <url>` for a
+ * request.
+ */
+export type Scripted = readonly [RegExp, ExecResult | HttpReply];
+
+const isReply = (answer: ExecResult | HttpReply): answer is HttpReply => "status" in answer;
+
+/**
+ * Both fakes off one script.
+ *
+ * A verb that reads over HTTP and shells out for git in the same run has one ordered account of
+ * what the world answered, not two lists a reader has to zip back together — and a row moved from
+ * one seam to the other during the `gh`-to-fetch port (ADR 0315) changes its reply, never its
+ * place.
+ */
+export const fakeSeams = (
+	script: ReadonlyArray<Scripted>,
+	fallback?: ExecResult,
+	unstartable: ReadonlyArray<RegExp> = [],
+): {
+	readonly layer: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient>;
+	readonly calls: ReadonlyArray<string>;
+	readonly requests: ReadonlyArray<string>;
+	readonly bodies: ReadonlyArray<string>;
+	/** Both seams' traffic in one order — the only place a "X happened before Y" claim can be read. */
+	readonly log: ReadonlyArray<string>;
+} => {
+	const spawns: Array<readonly [RegExp, ExecResult]> = [];
+	const replies: Array<readonly [RegExp, HttpReply]> = [];
+	for (const [pattern, answer] of script) {
+		if (isReply(answer)) replies.push([pattern, answer]);
+		else spawns.push([pattern, answer]);
+	}
+	const log: Array<string> = [];
+	const shell =
+		fallback === undefined
+			? fakeShell(spawns, undefined, unstartable, log)
+			: fakeShell(spawns, fallback, unstartable, log);
+	const http = fakeHttp(replies, undefined, [], log);
+	return {
+		layer: Layer.merge(shell.layer, http.layer),
+		calls: shell.calls,
+		requests: http.calls,
+		bodies: http.bodies,
+		log,
+	};
+};
