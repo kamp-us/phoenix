@@ -230,6 +230,24 @@ Two things here do not follow the ordinary verb shape, and both are forced:
   installs no dependencies, so nothing on its entry path may import `effect`. The job set it covers
   is declared once, in `ci.yml`'s `CI_REQUIRED_JOBS`, beside the `needs:` list it must match.
 
+## The `config` group
+
+Own the derived shape of `.fabrika.jsonc` — the per-key JSON Schema fragments assembled into the one
+document an editor validates the config file against, kept rendered from the config-key registry in
+[`src/config/registry.ts`](./src/config/registry.ts) rather than hand-synced.
+
+| Verb | Answers |
+|---|---|
+| `config schema` | whether the committed `.fabrika.schema.json` agrees with that registry — and, with `--write`, the document rendered from it |
+
+Stdout is the single line `schema\t<agrees|written>\t<keys>`; `--json` emits the full result object
+instead of that line grammar.
+
+**Exit codes.** This group seats its own table, not the shared one: `4` the committed schema is
+stale, or was never committed · `6` the repo root could not be resolved, or the file could not be
+read or written — UNKNOWN, never a drift · `7` a registered key carries no schema fragment, so the
+assembled schema would green a typo under it.
+
 ## The `glossary` group
 
 Maintain the repo's canonical vocabulary registers — `.glossary/TERMS.md` for the domain nouns and
