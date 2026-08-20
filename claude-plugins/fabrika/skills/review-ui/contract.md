@@ -237,7 +237,7 @@ this grammar refuses to pretend until a consumer builds the proof.
  "previewUrl": "https://phoenix-pr-4321.kampus.workers.dev",
  "captures": [
    {"surface": "/pano", "path": "<abs>/judged/pano.png", "width": 1280, "height": 2140,
-    "sha256": "…", "pageErrors": []}
+    "sha256": "…", "pageErrors": {"rows": [], "more": 0}}
  ]}
 ```
 
@@ -253,7 +253,10 @@ and validate (exists, non-zero bytes, decodable, non-zero area — `15` on any f
 `console.error` output is **recorded per capture in `pageErrors`, never a gate outcome** — the
 crash/advisory split is the machinery's page-error module, and an empty list is only ever
 written from a successfully-read error channel (v1's extractor returned empty on a parse failure,
-fusing "no crashes" with "never looked"). **Write the set manifest** `<set>/manifest.json`,
+fusing "no crashes" with "never looked"). Because nothing reads a row by name, it is an
+evidence-array and prints collapsed (ADR 0308): `{"rows": [<first 3>], "more": <the rest>}`, with
+`more` always present so a list capped at exactly its length reads as whole. The stderr
+per-surface line counts the **whole** tally, not the kept rows. **Write the set manifest** `<set>/manifest.json`,
 byte-identical to the stdout JSON — `post` reads the set through it, and a set without its
 manifest is not a set.
 
@@ -301,7 +304,7 @@ per-surface outcome enumeration goes to stderr on every path, success included.
 
 ```
 $ fabrika review-ui render --pr 4321 --out judged --surface /pano
-{"set":"judged","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/pano","path":"/tmp/fabrika-review-ui/4321-03135b91/judged/pano.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":[]}]}
+{"set":"judged","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/pano","path":"/tmp/fabrika-review-ui/4321-03135b91/judged/pano.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 ```

@@ -17,7 +17,8 @@ import {captureShots} from "../capture/capture.ts";
 import {isRenderCrash} from "../capture/page-errors.ts";
 import {buildCapturePlan, DEFAULT_VIEWPORT, parseSurfaceSpec} from "../capture/plan.ts";
 import {validateCaptureBytes} from "../capture/png.ts";
-import {sha256Hex} from "./manifest.ts";
+import {capAndCount} from "../evidence.ts";
+import {PAGE_ERROR_CAP, sha256Hex} from "./manifest.ts";
 import type {RenderLeg, SurfaceRender} from "./render-verb.ts";
 
 /**
@@ -94,8 +95,9 @@ export const makeCaptureRenderLeg =
 					sha256: sha256Hex(shot.pngBytes),
 					// `console.error` output is recorded, never a gate outcome — and this list is only ever
 					// written from a successfully-read error channel (v1's extractor returned empty on a
-					// parse failure, fusing "no crashes" with "never looked").
-					pageErrors: shot.pageErrors,
+					// parse failure, fusing "no crashes" with "never looked"). It is collapsed at the one
+					// point an entry is built, so neither output channel can hold the uncollapsed rows.
+					pageErrors: capAndCount(shot.pageErrors, PAGE_ERROR_CAP),
 				},
 			} satisfies SurfaceRender;
 		});
