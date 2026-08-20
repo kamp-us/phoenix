@@ -210,6 +210,30 @@ export const restRead = (token: string, method: "GET" | "POST", path: string): A
 	restCall(token, {method, path});
 
 /**
+ * Run `use` under the ambient credential and the ambient transport, or hand back the refusal that
+ * says there is no credential.
+ *
+ * Every adapter leg needs the same two lines in front of it, and writing them out per call site is
+ * how one of them eventually resolves a token it does not check.
+ */
+export const authed = <A>(use: (token: string) => Api<Attempt<A>>): Shell<Attempt<A>> =>
+	Effect.gen(function* () {
+		const token = yield* ambientToken;
+		return token._tag === "Failure" ? token : yield* onTransport(use(token.value));
+	});
+
+/** {@link authed} for a read whose answer is an {@link Existence}: no credential is `Unknown`. */
+export const authedExistence = <A>(
+	use: (token: string) => Api<Existence<A>>,
+): Shell<Existence<A>> =>
+	Effect.gen(function* () {
+		const token = yield* ambientToken;
+		return token._tag === "Failure"
+			? unknown<A>(token.reason)
+			: yield* onTransport(use(token.value));
+	});
+
+/**
  * The three-arm {@link Existence} construction, off the status the response carried.
  *
  * 404 is `Absent`, any other non-2xx is `Unknown` carrying the reason, 2xx is `Present` — the same
@@ -266,19 +290,13 @@ const refusalFor = (outcome: Rest & {_tag: "Response"}): string =>
  * reach.
  */
 export const pagedWithLinkProof = (token: string, path: string): Api<Attempt<PagedProof>> =>
-	Effect.gen(function* () {
-		const entries: unknown[] = [];
-		for (let page = 1; page <= PAGE_CAP; page++) {
-			const outcome = yield* restRead(token, "GET", paged(path, page));
-			if (outcome._tag === "Unreachable") return fail(outcome.reason);
-			if (outcome.status < 200 || outcome.status >= 300) return fail(refusalFor(outcome));
-			if (!Array.isArray(outcome.body))
-				return fail("GitHub answered 200 but its body is not a list");
-			entries.push(...outcome.body);
-			if (!declaresNextPage(outcome.headers)) return ok({entries, exhausted: true});
-		}
-		return ok({entries, exhausted: false});
-	});
+	pagedExistence(token, path).pipe(
+		Effect.map((read) =>
+			read._tag === "Present"
+				? ok(read.value)
+				: fail(read._tag === "Absent" ? "GitHub answered HTTP 404" : read.reason),
+		),
+	);
 
 /**
  * {@link pagedWithLinkProof}, but a 404 is a verdict rather than an error.
