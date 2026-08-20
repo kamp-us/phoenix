@@ -16,10 +16,22 @@
  *   that is a settings fact a human fixes, never a method to guess at.
  */
 import {Effect} from "effect";
-import {execCapture} from "../io/exec.ts";
-import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
-import {isRecord, parseJson} from "../io/json.ts";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
+import type {ChildProcessSpawner} from "effect/unstable/process";
+import {resolveToken, restRead, restWrite} from "../io/gh-api.ts";
+import {type Attempt, fail, ok} from "../io/git.ts";
+import {isRecord} from "../io/json.ts";
 import {isQueueGoverned} from "./github.ts";
+
+/** An authenticated GitHub read: the transport, plus the spawner the `gh auth token` leg needs. */
+type Authed<A> = Effect.Effect<
+	A,
+	never,
+	HttpClient.HttpClient | ChildProcessSpawner.ChildProcessSpawner
+>;
+
+/** The environment a read resolves its credential from — the caller's, never `process`'s. */
+type Env = Readonly<Record<string, string | undefined>>;
 
 /** The three values GitHub's merge endpoint accepts for `merge_method`. */
 export type MergeMethod = "squash" | "merge" | "rebase";
@@ -43,12 +55,17 @@ export const preferredMethod = (allowed: AllowedMethods): MergeMethod | null =>
 	METHOD_PREFERENCE.find((method) => allowed[method]) ?? null;
 
 /** What the repository permits. An absent flag reads `false` — never a method assumed available. */
-export const readAllowedMethods = (repo: string): Shell<Attempt<AllowedMethods>> =>
+export const readAllowedMethods = (repo: string, env: Env): Authed<Attempt<AllowedMethods>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", ["api", `repos/${repo}`]);
-		if (!r.ok) return fail(r.reason);
-		const parsed = parseJson(r.stdout);
-		if (!isRecord(parsed)) return fail("`gh api` exited 0 but its output is not a repository");
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return token;
+		const outcome = yield* restRead(token.value, "GET", `repos/${repo}`);
+		if (outcome._tag === "Unreachable") return fail(outcome.reason);
+		if (outcome.status < 200 || outcome.status >= 300) {
+			return fail(`GitHub answered HTTP ${outcome.status}`);
+		}
+		const parsed = outcome.body;
+		if (!isRecord(parsed)) return fail("GitHub answered 200 but its body is not a repository");
 		return ok({
 			squash: parsed.allow_squash_merge === true,
 			merge: parsed.allow_merge_commit === true,
@@ -70,12 +87,12 @@ export const landingOf = (queueGoverned: boolean, allowed: AllowedMethods | null
 	return method === null ? {path: "none", method: null} : {path: "direct", method};
 };
 
-export const readLanding = (repo: string, base: string): Shell<Attempt<Landing>> =>
+export const readLanding = (repo: string, base: string, env: Env): Authed<Attempt<Landing>> =>
 	Effect.gen(function* () {
 		const governed = yield* isQueueGoverned(repo, base);
 		if (governed._tag === "Failure") return governed;
 		if (governed.value) return ok(landingOf(true, null));
-		const allowed = yield* readAllowedMethods(repo);
+		const allowed = yield* readAllowedMethods(repo, env);
 		return allowed._tag === "Failure" ? allowed : ok(landingOf(false, allowed.value));
 	});
 
@@ -85,26 +102,34 @@ export interface MergeProof {
 	readonly mergeCommitSha: string;
 }
 
-const PROOF_FILTER = '{merged: .merged, commit: (.merge_commit_sha // "")}';
-
 /**
  * Read the landing back off the pull request.
  *
  * Separate from `../io/pulls.ts`'s `PullRecord`, which carries `merged` and not the merge SHA: a
  * `merged: true` with no commit behind it is a claim with no evidence, and the pair is what makes
- * the landing falsifiable. The projection is asked for by name rather than filtered out of the full
- * payload, so the read that confirms the write is a different request from the read that resolved
- * the head — one endpoint answering two questions is one request nobody can tell apart in a log.
+ * the landing falsifiable. It stays its own request rather than a second reading of the head read's
+ * payload — one endpoint answering two questions is one request nobody can tell apart in a log.
+ *
+ * A payload carrying no `merged` key at all is a shape nobody asked for, not an unmerged PR: the
+ * `--jq` era projected the two fields out server-side and refused a projection that named neither,
+ * and reading `merged !== true` off a body that never had the key would report every broken read as
+ * a clean "not landed".
  */
-export const readMergeProof = (repo: string, pr: number): Shell<Attempt<MergeProof>> =>
+export const readMergeProof = (repo: string, pr: number, env: Env): Authed<Attempt<MergeProof>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", ["api", `repos/${repo}/pulls/${pr}`, "--jq", PROOF_FILTER]);
-		if (!r.ok) return fail(r.reason);
-		const parsed = parseJson(r.stdout);
-		if (!isRecord(parsed) || typeof parsed.commit !== "string") {
-			return fail("`gh api` exited 0 but named no merge state");
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return token;
+		const outcome = yield* restRead(token.value, "GET", `repos/${repo}/pulls/${pr}`);
+		if (outcome._tag === "Unreachable") return fail(outcome.reason);
+		if (outcome.status < 200 || outcome.status >= 300) {
+			return fail(`GitHub answered HTTP ${outcome.status}`);
 		}
-		return ok({merged: parsed.merged === true, mergeCommitSha: parsed.commit});
+		const parsed = outcome.body;
+		if (!isRecord(parsed) || typeof parsed.merged !== "boolean") {
+			return fail("GitHub answered 200 but named no merge state");
+		}
+		const commit = parsed.merge_commit_sha;
+		return ok({merged: parsed.merged, mergeCommitSha: typeof commit === "string" ? commit : ""});
 	});
 
 /**
@@ -119,17 +144,17 @@ export const mergePull = (
 	pr: number,
 	sha: string,
 	method: MergeMethod,
-): Shell<Attempt<void>> =>
+	env: Env,
+): Authed<Attempt<void>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"PUT",
-			`repos/${repo}/pulls/${pr}/merge`,
-			"-f",
-			`sha=${sha}`,
-			"-f",
-			`merge_method=${method}`,
-		]);
-		return r.ok ? ok(undefined) : fail(r.reason);
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return token;
+		const outcome = yield* restWrite(token.value, "PUT", `repos/${repo}/pulls/${pr}/merge`, {
+			sha,
+			merge_method: method,
+		});
+		if (outcome._tag === "Unreachable") return fail(outcome.reason);
+		return outcome.status >= 200 && outcome.status < 300
+			? ok(undefined)
+			: fail(`GitHub answered HTTP ${outcome.status}`);
 	});

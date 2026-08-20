@@ -19,6 +19,7 @@
  * `unknown`, so a degraded read here can never license a landing.
  */
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {governedRootsOr} from "../config/paths.ts";
 import {listPullFiles} from "../io/pulls.ts";
@@ -50,7 +51,10 @@ export const runScope = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		const {pr, json} = options;
@@ -123,7 +127,7 @@ export const runScope = (
 		const state = lifecycleOf(pull.merged, pull.draft, pull.state);
 		const issue = issueRefOf(pull.body);
 
-		const read = yield* readLanding(repo, pull.baseRef);
+		const read = yield* readLanding(repo, pull.baseRef, options.env);
 		if (read._tag === "Failure") {
 			diagnostics.push(
 				`${VERB}: cannot read ${pull.baseRef}'s landing path: ${read.reason} — reporting it unknown; \`ship merge\` refuses on the same read rather than landing.`,

@@ -1,8 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {comments, LANE_UUID, marker, LANE_TOKEN as TOKEN} from "../build/fixtures.test-support.ts";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {type HttpReply, okOut} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {read as readMarker} from "../wire/verdict-marker.ts";
 import {runCheck} from "./check-verb.ts";
@@ -15,21 +14,26 @@ import {
 	READBACK_MISMATCH,
 } from "./codes.ts";
 import {
+	CHILD as CHILD_AT,
 	CWD,
+	CYCLE_DOC,
 	child,
 	childBody,
+	cycleDoc,
 	epic,
 	epicBody,
-	planContext,
+	planSeams,
+	type Scripted,
 	SESSION,
+	SUB_ISSUES,
 	subIssues,
 } from "./fixtures.test-support.ts";
 import {runVerdict} from "./verdict-verb.ts";
 
 const EPIC = /^gh api repos\/o\/r\/issues\/4300$/;
-const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
-const CHILD = /^gh api repos\/o\/r\/issues\/4301$/;
-const CYCLE = /^gh api repos\/o\/r\/contents\/product-development-cycle\.md$/;
+const SUBS = SUB_ISSUES;
+const CHILD = CHILD_AT(4301);
+const CYCLE = CYCLE_DOC;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4300\/comments/;
 const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
 const POST = /^gh api --method POST repos\/o\/r\/issues\/4300\/comments/;
@@ -39,32 +43,33 @@ const ONE_CHILD_EPIC = epic({body: epicBody({dependencies: "- phase 1: #4301"})}
 const CLEAN_CHILD = child({number: 4301});
 const DEFECTIVE_CHILD = child({number: 4301, body: childBody({criteria: "no boxes"})});
 
-const env = {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: SESSION} as Record<
-	string,
-	string | undefined
->;
+const env = {
+	CLAUDE_PIPELINE_REPO: "o/r",
+	CLAUDE_CODE_SESSION_ID: SESSION,
+	GITHUB_TOKEN: "ghp_scripted",
+} as Record<string, string | undefined>;
 
-const CLAIMED: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const CLAIMED: ReadonlyArray<Scripted> = [
 	[COMMENTS, comments({id: 1, body: marker(SESSION, LANE_UUID)})],
 	[PERM, okOut("write\n")],
 ];
 
-const ledger = (childPayload: ExecResult): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+const ledger = (childPayload: HttpReply): ReadonlyArray<Scripted> => [
 	[EPIC, ONE_CHILD_EPIC],
 	[SUBS, subIssues(4301)],
 	[CHILD, childPayload],
-	[CYCLE, okOut("{}")],
+	[CYCLE, cycleDoc],
 ];
 
 const POSTED = okOut(
 	JSON.stringify({id: 512346, html_url: "https://github.com/o/r/issues/4300#c"}),
 );
 
-const digestOf = async (childPayload: ExecResult): Promise<string> => {
+const digestOf = async (childPayload: HttpReply): Promise<string> => {
 	const out = await Effect.runPromise(
 		Effect.provide(
-			runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}, cwd: CWD}),
-			planContext(fakeShell(ledger(childPayload))),
+			runCheck({number: 4300, repo: null, env, cwd: CWD}),
+			planSeams(ledger(childPayload)).layer,
 		),
 	);
 	return JSON.parse(out.stdout).digest as string;
@@ -72,10 +77,10 @@ const digestOf = async (childPayload: ExecResult): Promise<string> => {
 
 const run = (
 	digest: string,
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: {caveats?: string; polarity?: string | null} = {},
 ) => {
-	const shell = fakeShell(script);
+	const seams = planSeams(script);
 	const stdin: StdinRead =
 		overrides.caveats === undefined
 			? {_tag: "NoStdin", reason: "a TTY"}
@@ -92,9 +97,9 @@ const run = (
 				cwd: CWD,
 				stdin: Effect.succeed(stdin),
 			}),
-			planContext(shell),
+			seams.layer,
 		),
-	).then((outcome) => ({outcome, calls: shell.calls}));
+	).then((outcome) => ({outcome, calls: seams.shell.calls}));
 };
 
 /** The bytes the verb handed `gh` — the `-f body=` operand is last on the POST line. */
@@ -280,7 +285,7 @@ describe("runVerdict", () => {
 					cwd: CWD,
 					stdin: Effect.succeed<StdinRead>({_tag: "Failed", reason: "EIO"}),
 				}),
-				planContext(fakeShell([])),
+				planSeams([]).layer,
 			),
 		);
 		expect(outcome.code).toBe(11);
@@ -292,13 +297,10 @@ describe("runVerdict", () => {
 			[EPIC, ONE_CHILD_EPIC],
 			[SUBS, subIssues(4301)],
 			[CHILD, CLEAN_CHILD],
-			[CYCLE, errOut("gh: Bad gateway (HTTP 502)")],
-		] as ReadonlyArray<readonly [RegExp, ExecResult]>;
+			[CYCLE, {status: 502, body: '{"message":"Bad gateway"}'}],
+		] as ReadonlyArray<Scripted>;
 		const out = await Effect.runPromise(
-			Effect.provide(
-				runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}, cwd: CWD}),
-				planContext(fakeShell(script)),
-			),
+			Effect.provide(runCheck({number: 4300, repo: null, env, cwd: CWD}), planSeams(script).layer),
 		);
 		const digest = JSON.parse(out.stdout).digest as string;
 		const {calls} = await run(digest, [...CLAIMED, ...script, [POST, POSTED]]);

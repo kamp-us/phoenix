@@ -19,6 +19,7 @@
  * after the call, because the merge call's own response is a claim and not evidence.
  */
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -52,7 +53,11 @@ export interface MergeOptions {
 
 export const runMerge = (
 	options: MergeOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const {pr, json} = options;
 		const bad = badNumber(VERB, "a pull-request number", pr);
@@ -79,7 +84,7 @@ export const runMerge = (
 			);
 		}
 
-		const landing = yield* readLanding(repo, pull.baseRef);
+		const landing = yield* readLanding(repo, pull.baseRef, options.env);
 		if (landing._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -132,7 +137,7 @@ export const runMerge = (
 			`${VERB}: mergeable_state is ${mergeability.value.state} (mergeable: true) — a definite read; merging.`,
 		);
 
-		const written = yield* mergePull(repo, pr, pull.headSha, method);
+		const written = yield* mergePull(repo, pr, pull.headSha, method, options.env);
 		if (written._tag === "Failure") {
 			return refuse(
 				WRITE_UNKNOWN,
@@ -141,7 +146,7 @@ export const runMerge = (
 			);
 		}
 
-		const proof = yield* readMergeProof(repo, pr);
+		const proof = yield* readMergeProof(repo, pr, options.env);
 		if (proof._tag === "Failure") {
 			return refuse(
 				WRITE_UNKNOWN,

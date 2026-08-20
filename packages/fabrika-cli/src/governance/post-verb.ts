@@ -23,6 +23,7 @@
  * the same harness-touching rule is asked of the range's own changed paths.
  */
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {governedRootsOr} from "../config/paths.ts";
 import {diffRangePaths} from "../io/git.ts";
@@ -160,7 +161,10 @@ export const runPost = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		const {pr, json} = options;
@@ -363,7 +367,7 @@ export const runPost = (
 		// nothing re-fires it, so the gate that just wrote the verdict is the actor that re-derives the
 		// check (#5585). It never gates the post: the verdict is landed and read back by here, and a
 		// floor that could not be asserted is a red check, not an unwritten verdict.
-		const floor = yield* assertFloorAt(repo, head.sha);
+		const floor = yield* assertFloorAt(repo, head.sha, options.env);
 		diagnostics.push(floorLine(VERB, floor));
 
 		return json

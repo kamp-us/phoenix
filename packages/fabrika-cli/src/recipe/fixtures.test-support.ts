@@ -4,6 +4,7 @@
  * The PR shape itself is `ship/fixtures.test-support.ts`'s — the §CP clearance is that group's verb
  * relayed, so a second PR fixture here would let the two disagree about what the platform returns.
  */
+import type {HttpReply} from "../fakes.test-support.ts";
 import {okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
@@ -109,11 +110,22 @@ const runBody = (shape: RunShape): Record<string, unknown> => ({
 });
 
 /** The Actions list endpoint's page — rows under `workflow_runs`, never a bare array. */
-export const runsAtHead = (...shapes: ReadonlyArray<RunShape>): ExecResult =>
-	okOut(JSON.stringify({total_count: shapes.length, workflow_runs: shapes.map(runBody)}));
+export const runsAtHead = (...shapes: ReadonlyArray<RunShape>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({total_count: shapes.length, workflow_runs: shapes.map(runBody)}),
+});
 
 /** One run, re-read. */
-export const oneRun = (shape: RunShape): ExecResult => okOut(JSON.stringify(runBody(shape)));
+export const oneRun = (shape: RunShape): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(runBody(shape)),
+});
+
+/** A served refusal — the status is the fact, and the message is what GitHub prints beside it. */
+export const httpError = (status: number, message = "refused"): HttpReply => ({
+	status,
+	body: JSON.stringify({message}),
+});
 
 /** A `governance` verdict comment body at `sha`. */
 export const governanceMarker = (polarity: "PASS" | "FAIL", sha: string): string =>

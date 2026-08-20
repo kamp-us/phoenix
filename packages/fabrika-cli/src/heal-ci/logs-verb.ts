@@ -9,6 +9,7 @@
  * pattern-matching for failure signatures matched heal-ci's own prose as if it were CI output.
  */
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {commitExists} from "../io/pulls.ts";
 import {isInformational, statusOf} from "../review/rollup.ts";
@@ -52,7 +53,11 @@ export const tailBytes = (
 
 export const runLogs = (
 	options: LogsOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "a pull-request number", options.pr);
 		if (bad !== null) return bad;
@@ -152,7 +157,7 @@ export const runLogs = (
 		for (const check of selected) {
 			let job: {readonly id: number; readonly name: string} | null = null;
 			for (const run of runs.value.runs) {
-				const jobs = yield* listRunJobs(repo, run.id);
+				const jobs = yield* listRunJobs(repo, run.id, options.env);
 				if (jobs._tag === "Failure") {
 					return refuse(
 						PRECONDITION_UNKNOWN,
@@ -191,7 +196,7 @@ export const runLogs = (
 				continue;
 			}
 
-			const log = yield* fetchJobLog(repo, job.id);
+			const log = yield* fetchJobLog(repo, job.id, options.env);
 			if (log._tag === "Expired") {
 				return refuse(
 					LOGS_EXPIRED,

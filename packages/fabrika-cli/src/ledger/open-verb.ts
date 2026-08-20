@@ -108,7 +108,7 @@ export const runOpen = (
 			"where the cycle doc lives is unread, so the containment class cannot be derived.",
 		);
 		if (cycle._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, cycle.message, notes);
-		const cycleDoc = yield* probeCycleDoc(repo, cycle.path);
+		const cycleDoc = yield* probeCycleDoc(repo, cycle.path, options.env);
 
 		const tokens = tokenize(epic.title);
 		const backlog = yield* openBacklog(options.env, repo);

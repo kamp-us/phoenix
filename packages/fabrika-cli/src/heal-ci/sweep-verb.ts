@@ -9,6 +9,7 @@
  * rate limit exhausted mid-scan refuses with nothing partial emitted.
  */
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveCi} from "../config/ci-producer.ts";
 import {governedRootsOr} from "../config/paths.ts";
@@ -43,7 +44,10 @@ export const runSweep = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
@@ -59,7 +63,7 @@ export const runSweep = (
 		);
 		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
 
-		const listed = yield* listOpenPulls(repo);
+		const listed = yield* listOpenPulls(repo, options.env);
 		if (listed._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -85,7 +89,7 @@ export const runSweep = (
 		const found: Diagnosis[] = [];
 		let scanned = 0;
 		for (const row of open) {
-			const limit = yield* readRateLimit();
+			const limit = yield* readRateLimit(options.env);
 			if (limit._tag === "Ok" && limit.value.remaining < RATE_FLOOR) {
 				return refuse(
 					PRECONDITION_UNKNOWN,
@@ -93,7 +97,15 @@ export const runSweep = (
 					notices,
 				);
 			}
-			const result = yield* diagnoseOne(repo, row.number, "", options, governed.roots, ci);
+			const result = yield* diagnoseOne(
+				repo,
+				row.number,
+				"",
+				options,
+				options.env,
+				governed.roots,
+				ci,
+			);
 			scanned += 1;
 			if (result._tag === "Refused") {
 				return refuse(

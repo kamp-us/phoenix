@@ -281,7 +281,7 @@ export const runChild = (
 			);
 		}
 
-		const siblings = yield* listSubIssues(repo, epic.number);
+		const siblings = yield* listSubIssues(repo, epic.number, options.env);
 		if (
 			siblings._tag === "Failure" ||
 			!siblings.value.some((link) => link.number === child.number)

@@ -1,7 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {comments, LANE_UUID, marker, LANE_TOKEN as TOKEN} from "../build/fixtures.test-support.ts";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {errOut, type HttpReply, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {runCheck} from "./check-verb.ts";
 import {
@@ -14,22 +14,27 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {
+	CHILD as CHILD_AT,
 	CWD,
+	CYCLE_DOC,
 	child,
 	childBody,
+	cycleDoc,
 	epic,
 	epicBody,
 	labelSet,
-	planContext,
+	planSeams,
+	type Scripted,
 	SESSION,
+	SUB_ISSUES,
 	subIssues,
 } from "./fixtures.test-support.ts";
 import {childrenEvidence, runFlip} from "./flip-verb.ts";
 
 const EPIC = /^gh api repos\/o\/r\/issues\/4300$/;
-const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
-const CHILD = /^gh api repos\/o\/r\/issues\/4301$/;
-const CYCLE = /^gh api repos\/o\/r\/contents\/product-development-cycle\.md$/;
+const SUBS = SUB_ISSUES;
+const CHILD = CHILD_AT(4301);
+const CYCLE = CYCLE_DOC;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4300\/comments/;
 const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
 const LABELS = /^gh api --paginate repos\/o\/r\/labels/;
@@ -48,12 +53,13 @@ const ONE_CHILD_EPIC = oneChildEpic(["type:epic", "ready-for:human"]);
 /** The epic as the read-back finds it once the audience flip landed. */
 const AGENT_EPIC = oneChildEpic(["type:epic", "ready-for:agent"]);
 
-const env = {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: SESSION} as Record<
-	string,
-	string | undefined
->;
+const env = {
+	CLAUDE_PIPELINE_REPO: "o/r",
+	CLAUDE_CODE_SESSION_ID: SESSION,
+	GITHUB_TOKEN: "ghp_scripted",
+} as Record<string, string | undefined>;
 
-const CLAIMED: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const CLAIMED: ReadonlyArray<Scripted> = [
 	[COMMENTS, comments({id: 1, body: marker(SESSION, LANE_UUID)})],
 	[PERM, okOut("write\n")],
 ];
@@ -63,43 +69,40 @@ const TRIAGED = child({number: 4301, labels: ["type:feature", "p1", "status:tria
 
 /** The ledger reads, in the order the flip issues them; `once` lets each re-read differ. */
 const ledger = (
-	first: ExecResult,
-	reread: ExecResult,
+	first: HttpReply,
+	reread: HttpReply,
 	epics: {first?: ExecResult; reread?: ExecResult} = {},
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+): ReadonlyArray<Scripted> => [
 	[once(EPIC), epics.first ?? ONE_CHILD_EPIC],
 	[SUBS, subIssues(4301)],
 	[once(CHILD), first],
-	[CYCLE, okOut("{}")],
+	[CYCLE, cycleDoc],
 	[CHILD, reread],
 	[EPIC, epics.reread ?? AGENT_EPIC],
 ];
 
-const digestOf = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>): Promise<string> => {
+const digestOf = async (script: ReadonlyArray<Scripted>): Promise<string> => {
 	const out = await Effect.runPromise(
-		Effect.provide(
-			runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}, cwd: CWD}),
-			planContext(fakeShell(script)),
-		),
+		Effect.provide(runCheck({number: 4300, repo: null, env, cwd: CWD}), planSeams(script).layer),
 	);
 	return JSON.parse(out.stdout).digest as string;
 };
 
-const CLEAN_READ: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const CLEAN_READ: ReadonlyArray<Scripted> = [
 	[EPIC, ONE_CHILD_EPIC],
 	[SUBS, subIssues(4301)],
 	[CHILD, PLANNED],
-	[CYCLE, okOut("{}")],
+	[CYCLE, cycleDoc],
 ];
 
-const run = (digest: string, script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
-	const shell = fakeShell(script);
+const run = (digest: string, script: ReadonlyArray<Scripted>) => {
+	const seams = planSeams(script);
 	return Effect.runPromise(
 		Effect.provide(
 			runFlip({number: 4300, digest, token: TOKEN, repo: null, env, cwd: CWD}),
-			planContext(shell),
+			seams.layer,
 		),
-	).then((outcome) => ({outcome, calls: shell.calls}));
+	).then((outcome) => ({outcome, calls: seams.shell.calls, reads: seams.http.calls}));
 };
 
 describe("runFlip", () => {
@@ -135,7 +138,7 @@ describe("runFlip", () => {
 	 */
 	it("writes the epic's audience label last, after every child re-read", async () => {
 		const digest = await digestOf(CLEAN_READ);
-		const {calls} = await run(digest, [
+		const script: ReadonlyArray<Scripted> = [
 			...CLAIMED,
 			...ledger(PLANNED, TRIAGED),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
@@ -143,13 +146,27 @@ describe("runFlip", () => {
 			[REMOVE, okOut("[]")],
 			[ADD_EPIC, okOut("[]")],
 			[REMOVE_EPIC, okOut("[]")],
-		]);
-		const childReread = calls.findIndex((line) => /^gh api repos\/o\/r\/issues\/4301$/.test(line));
+		];
+		const {calls, reads} = await run(digest, script);
+		const childWrite = calls.findIndex((line) => REMOVE.test(line));
 		const epicAdd = calls.findIndex((line) => ADD_EPIC.test(line));
 		const epicRemove = calls.findIndex((line) => REMOVE_EPIC.test(line));
-		expect(childReread).toBeGreaterThanOrEqual(0);
-		expect(epicAdd).toBeGreaterThan(childReread);
+		expect(reads.filter((line) => CHILD.test(line)).length).toBe(2);
+		expect(epicAdd).toBeGreaterThan(childWrite);
 		expect(epicRemove).toBeGreaterThan(epicAdd);
+
+		// The re-read and the epic write live at different seams, so the ordering is proven by what an
+		// unreadable re-read leaves undone: an epic nobody proved pickable is never admitted.
+		const unread = await run(digest, [
+			...CLAIMED,
+			...ledger(PLANNED, {status: 502, body: '{"message":"Bad gateway"}'}),
+			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
+			[ADD, okOut("[]")],
+			[REMOVE, okOut("[]")],
+			[ADD_EPIC, okOut("[]")],
+			[REMOVE_EPIC, okOut("[]")],
+		]);
+		expect(unread.calls.some((line) => ADD_EPIC.test(line))).toBe(false);
 	});
 
 	it("refuses 22 when the re-read proves the epic did not reach ready-for:agent", async () => {
@@ -191,7 +208,7 @@ describe("runFlip", () => {
 			[EPIC, ONE_CHILD_EPIC],
 			[SUBS, subIssues(4301)],
 			[CHILD, already],
-			[CYCLE, okOut("{}")],
+			[CYCLE, cycleDoc],
 		]);
 		const {outcome, calls} = await run(digest, [
 			...CLAIMED,
@@ -239,7 +256,7 @@ describe("runFlip", () => {
 			[EPIC, ONE_CHILD_EPIC],
 			[SUBS, subIssues(4301)],
 			[CHILD, defective],
-			[CYCLE, okOut("{}")],
+			[CYCLE, cycleDoc],
 		]);
 		const {outcome, calls} = await run(digest, [
 			...CLAIMED,
@@ -285,7 +302,7 @@ describe("runFlip", () => {
 			[EPIC, AGENT_EPIC],
 			[SUBS, subIssues(4301)],
 			[CHILD, already],
-			[CYCLE, okOut("{}")],
+			[CYCLE, cycleDoc],
 		]);
 		const {outcome, calls} = await run(digest, [
 			...CLAIMED,
@@ -309,7 +326,7 @@ describe("runFlip", () => {
 			[EPIC, ONE_CHILD_EPIC],
 			[SUBS, subIssues(4301)],
 			[CHILD, already],
-			[CYCLE, okOut("{}")],
+			[CYCLE, cycleDoc],
 		]);
 		const {outcome, calls} = await run(digest, [
 			...CLAIMED,
@@ -355,7 +372,7 @@ describe("runFlip", () => {
 		const digest = await digestOf(CLEAN_READ);
 		const {outcome} = await run(digest, [
 			...CLAIMED,
-			...ledger(PLANNED, errOut("gh: Bad gateway (HTTP 502)")),
+			...ledger(PLANNED, {status: 502, body: '{"message":"Bad gateway"}'}),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
 			[ADD, okOut("[]")],
 			[REMOVE, okOut("[]")],

@@ -16,6 +16,7 @@
  * skill's and is exercised before this verb is called.
  */
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {createComment, getComment, listComments} from "../io/issues.ts";
 import {normalizeForReadback} from "../report/compose.ts";
@@ -59,7 +60,11 @@ export interface RerunOptions {
 
 export const runRerun = (
 	options: RerunOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "a pull-request number", options.pr);
 		if (bad !== null) return bad;
@@ -102,7 +107,7 @@ export const runRerun = (
 		}
 
 		// 2. Re-derive the failure state.
-		const found = yield* getWorkflowRun(repo, options.run);
+		const found = yield* getWorkflowRun(repo, options.run, options.env);
 		if (found._tag === "Absent") {
 			return refuse(ZERO_SCOPE, `${VERB}: PR #${pr} or run ${options.run} not found in ${repo}.`);
 		}
@@ -155,7 +160,7 @@ export const runRerun = (
 		];
 
 		// 4. Request the rerun of the failed jobs only.
-		const requested = yield* rerunFailedJobs(repo, options.run);
+		const requested = yield* rerunFailedJobs(repo, options.run, options.env);
 		if (requested._tag === "Failure") {
 			return refuse(
 				WRITE_UNKNOWN,
@@ -167,7 +172,7 @@ export const runRerun = (
 		// 5. Read back the run. A 2xx that materialised no new attempt writes NO marker — v1 wrote one
 		//    on the strength of the dispatch response and blocked every future rerun of a run that
 		//    never re-ran.
-		const after = yield* getWorkflowRun(repo, options.run);
+		const after = yield* getWorkflowRun(repo, options.run, options.env);
 		if (after._tag !== "Present") {
 			return refuse(
 				WRITE_UNKNOWN,

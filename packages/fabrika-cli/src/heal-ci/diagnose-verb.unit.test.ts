@@ -6,7 +6,6 @@ import {
 	fakeHttp,
 	fakeShell,
 	type HttpReply,
-	linkNext,
 	okOut,
 	unconfigured,
 } from "../fakes.test-support.ts";
@@ -14,9 +13,12 @@ import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {runDiagnose} from "./diagnose-verb.ts";
 import {
+	behind,
+	CHECK_RUNS,
 	COMMENTS,
 	COMMIT_DATE,
 	COMMIT_EXISTS,
+	COMPARE,
 	checkRuns,
 	comments,
 	commitDate,
@@ -24,56 +26,25 @@ import {
 	FILES,
 	files,
 	HEAD,
+	httpError,
 	PERMISSION,
 	PROTECTION,
 	PULL,
 	permission,
 	protection,
 	pull,
+	REVIEWS,
+	RULES,
+	RUN_COUNT,
 	reviews,
 	rules,
 	runsTotal,
+	TIMELINE,
 	timeline,
 	unexhaustedPage,
+	WORKFLOWS,
 	workflows,
 } from "./fixtures.test-support.ts";
-
-// The reads `ship/github.ts` carries went over to HTTP (ADR 0315); `heal-ci/github.ts`'s own reads
-// — the commit date, the branch protection surface — still shell out, as do `io/`'s.
-const API = "https://api\\.github\\.com/repos/o/r";
-const CHECK_RUNS = new RegExp(`^GET ${API}/commits/[0-9a-f]+/check-runs`);
-const WORKFLOWS = new RegExp(`^GET ${API}/actions/workflows\\?`);
-const RUN_COUNT = new RegExp(`^GET ${API}/actions/runs\\?head_sha=[0-9a-f]+&per_page=1$`);
-const RULES = new RegExp(`^GET ${API}/rules/branches/main`);
-const TIMELINE = new RegExp(`^GET ${API}/issues/4321/timeline`);
-const REVIEWS = new RegExp(`^GET ${API}/pulls/4321/reviews`);
-const COMPARE = new RegExp(`^GET ${API}/compare/main\\.\\.\\.[0-9a-f]+$`);
-
-/** An envelope payload, served as the body of the 200 the ported read now issues. */
-const served = (result: ExecResult): HttpReply => ({status: 200, body: result.stdout});
-
-/**
- * A `gh api -i` fixture, re-served as the HTTP reply its bytes describe.
- *
- * The `Link` header the fixture declared is the completeness proof either way — the transport reads
- * it off the response now instead of out of a printed status line — so the fixtures stay the one
- * source for these payloads rather than being copied into this file at a second shape.
- */
-const paged = (result: ExecResult): HttpReply => {
-	const at = result.stdout.indexOf("\r\n\r\n");
-	const headers = result.stdout.slice(0, at);
-	const body = result.stdout.slice(at + 4);
-	const next = /link: <([^>]*)>; rel="next"/.exec(headers)?.[1];
-	return next === undefined ? {status: 200, body} : {status: 200, body, headers: linkNext(next)};
-};
-
-/** How far the inspected head sits behind its base, as the compare endpoint reports it. */
-const behind = (by: number): HttpReply => ({status: 200, body: JSON.stringify({behind_by: by})});
-
-const gone = (status: number, message: string): HttpReply => ({
-	status,
-	body: JSON.stringify({message}),
-});
 
 const NOW = Date.parse("2026-08-08T01:00:00Z");
 const PUSHED = "2026-08-08T00:25:00Z";
@@ -91,52 +62,57 @@ const options = {
 	now: NOW,
 };
 
-const green = (name = "ci-required") => ({name, status: "completed", conclusion: "success"});
-
-/** The HTTP-served half of the happy read set. Cases override the row they are about. */
-const api = (
+/** The three reads this verb makes over the HTTP client; cases override the row they are about. */
+const served = (
 	overrides: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
 ): ReadonlyArray<readonly [RegExp, HttpReply]> => [
 	...overrides,
-	[CHECK_RUNS, served(checkRuns(1, [green()]))],
-	[WORKFLOWS, served(workflows("active"))],
-	[RUN_COUNT, served(runsTotal(3))],
-	[RULES, paged(rules("ci-required"))],
-	[TIMELINE, paged(timeline())],
-	[REVIEWS, paged(reviews())],
-	[COMPARE, behind(0)],
+	[COMMIT_DATE, commitDate(PUSHED)],
+	[RULES, rules("ci-required")],
+	[PROTECTION, protection()],
 ];
 
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]> = api(),
 	overrides: Partial<typeof options> = {},
-) => runWith(script, http, unconfigured, overrides);
+	http: ReadonlyArray<readonly [RegExp, HttpReply]> = served(),
+) =>
+	Effect.runPromise(
+		Effect.provide(
+			runDiagnose({...options, ...overrides}),
+			Layer.mergeAll(fakeShell(script).layer, unconfigured, fakeHttp(http).layer),
+		),
+	);
 
 /** The same run against a repo that declared something — the config arm `unconfigured` cannot reach. */
 const runWith = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]>,
 	config: Layer.Layer<FileSystem.FileSystem | Path.Path>,
 	overrides: Partial<typeof options> = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runDiagnose({...options, ...overrides}),
-			Layer.mergeAll(fakeShell(script).layer, fakeHttp(http).layer, config),
+			Layer.mergeAll(fakeShell(script).layer, config, fakeHttp(served()).layer),
 		),
 	);
 
-/** The `gh`-served half of the happy read set. Cases override the row they are about. */
+const green = (name = "ci-required") => ({name, status: "completed", conclusion: "success"});
+
+/** The whole happy read set, in the order the verb walks it. Cases override the row they are about. */
 const script = (
 	overrides: ReadonlyArray<readonly [RegExp, ExecResult]> = [],
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	...overrides,
 	[PULL, pull({updatedAt: PUSHED})],
 	[FILES, files("apps/web/worker/a.ts", "apps/web/worker/b.ts")],
-	[COMMIT_DATE, commitDate(PUSHED)],
-	[PROTECTION, protection()],
+	[CHECK_RUNS, checkRuns(1, [green()])],
+	[WORKFLOWS, workflows("active")],
+	[RUN_COUNT, runsTotal(3)],
 	[COMMENTS, comments()],
+	[TIMELINE, timeline()],
+	[REVIEWS, reviews()],
+	[COMPARE, behind(0)],
 	[COMMIT_EXISTS, okOut(HEAD)],
 	[PERMISSION, permission("write")],
 ];
@@ -161,11 +137,10 @@ describe("runDiagnose answers", () => {
 
 	it("reads a red gating rollup as `red`, an answer at exit 0", async () => {
 		const out = await run(
-			script(),
-			api([
+			script([
 				[
 					CHECK_RUNS,
-					served(checkRuns(1, [{name: "ci-required", status: "completed", conclusion: "failure"}])),
+					checkRuns(1, [{name: "ci-required", status: "completed", conclusion: "failure"}]),
 				],
 			]),
 		);
@@ -175,28 +150,28 @@ describe("runDiagnose answers", () => {
 
 	it("reports check-surface above red when a required context has no producing run", async () => {
 		const out = await run(
-			script(),
-			api([
-				[RULES, paged(rules("ci-required", "code-scanning/codeql"))],
+			script([
 				[
 					CHECK_RUNS,
-					served(checkRuns(1, [{name: "ci-required", status: "completed", conclusion: "failure"}])),
+					checkRuns(1, [{name: "ci-required", status: "completed", conclusion: "failure"}]),
 				],
 			]),
+			{},
+			served([[RULES, rules("ci-required", "code-scanning/codeql")]]),
 		);
 		expect(out.stdout.split("\n")[0]).toBe(`stall\tcheck-surface\t${HEAD}\t35`);
 	});
 
 	it("skips the surface arm on an unprobeable protection surface rather than passing it", async () => {
 		const out = await run(
-			script(),
-			api([
-				[RULES, gone(403, "Must have admin rights to Repository collaborators.")],
+			script([
 				[
 					CHECK_RUNS,
-					served(checkRuns(1, [{name: "ci-required", status: "completed", conclusion: "failure"}])),
+					checkRuns(1, [{name: "ci-required", status: "completed", conclusion: "failure"}]),
 				],
 			]),
+			{},
+			served([[RULES, httpError(403, "Must have admin rights")]]),
 		);
 		expect(out.stdout.split("\n")[0]).toBe(`stall\tred\t${HEAD}\t35`);
 		expect(out.stderr.join("\n")).toContain("UNPROBEABLE");
@@ -232,19 +207,17 @@ describe("runDiagnose answers", () => {
 
 	it("keeps the two zero-signal CI tokens apart", async () => {
 		const noRuns = await run(
-			script(),
-			api([
-				[CHECK_RUNS, served(checkRuns(0, []))],
-				[RUN_COUNT, served(runsTotal(0))],
+			script([
+				[CHECK_RUNS, checkRuns(0, [])],
+				[RUN_COUNT, runsTotal(0)],
 			]),
 		);
 		expect(noRuns.stdout).toContain("ci\tno-runs\t0");
 		const noCi = await runWith(
-			script(),
-			api([
-				[CHECK_RUNS, served(checkRuns(0, []))],
-				[WORKFLOWS, served(workflows())],
-				[RUN_COUNT, served(runsTotal(0))],
+			script([
+				[CHECK_RUNS, checkRuns(0, [])],
+				[WORKFLOWS, workflows()],
+				[RUN_COUNT, runsTotal(0)],
 			]),
 			fakeFs({files: {"/repo/.fabrika.jsonc": '{"ci": {"noProducer": "degrade"}}'}}).layer,
 		);
@@ -256,11 +229,10 @@ describe("runDiagnose answers", () => {
 	// third compiled-in reading here is how the three drift apart.
 	it("refuses zero workflows rather than reading `none` off a repo that declared nothing", async () => {
 		const out = await run(
-			script(),
-			api([
-				[CHECK_RUNS, served(checkRuns(0, []))],
-				[WORKFLOWS, served(workflows())],
-				[RUN_COUNT, served(runsTotal(0))],
+			script([
+				[CHECK_RUNS, checkRuns(0, [])],
+				[WORKFLOWS, workflows()],
+				[RUN_COUNT, runsTotal(0)],
 			]),
 		);
 		expect(out.code).toBe(ZERO_SCOPE);
@@ -270,11 +242,10 @@ describe("runDiagnose answers", () => {
 
 	it("refuses zero workflows as UNKNOWN when the config itself could not be decoded", async () => {
 		const out = await runWith(
-			script(),
-			api([
-				[CHECK_RUNS, served(checkRuns(0, []))],
-				[WORKFLOWS, served(workflows())],
-				[RUN_COUNT, served(runsTotal(0))],
+			script([
+				[CHECK_RUNS, checkRuns(0, [])],
+				[WORKFLOWS, workflows()],
+				[RUN_COUNT, runsTotal(0)],
 			]),
 			fakeFs({files: {"/repo/.fabrika.jsonc": '{"ci": {"noProducer": "maybe"}}'}}).layer,
 		);
@@ -286,7 +257,7 @@ describe("runDiagnose answers", () => {
 
 describe("runDiagnose refuses rather than guessing a class", () => {
 	it("refuses an unreadable check-run read on 11 — never `attended`", async () => {
-		const out = await run(script(), api([[CHECK_RUNS, gone(502, "Bad gateway")]]));
+		const out = await run(script([[CHECK_RUNS, errOut("gh: Bad gateway (HTTP 502)")]]));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain('UNKNOWN, never "attended"');
@@ -304,7 +275,7 @@ describe("runDiagnose refuses rather than guessing a class", () => {
 	});
 
 	it("refuses an unexhausted timeline read on 13 — a queue entry could sit on an unread page", async () => {
-		const out = await run(script(), api([[TIMELINE, paged(unexhaustedPage())]]));
+		const out = await run(script([[TIMELINE, unexhaustedPage()]]));
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.stderr.at(-1)).toContain("never reached a terminal page");
 	});
@@ -316,7 +287,7 @@ describe("runDiagnose refuses rather than guessing a class", () => {
 	});
 
 	it("refuses a --sha this PR never had on 7", async () => {
-		const out = await run(script([[COMMIT_EXISTS, errOut("gh: Not Found (HTTP 404)")]]), api(), {
+		const out = await run(script([[COMMIT_EXISTS, errOut("gh: Not Found (HTTP 404)")]]), {
 			sha: "deadbee",
 		});
 		expect(out.code).toBe(ZERO_SCOPE);
@@ -324,7 +295,7 @@ describe("runDiagnose refuses rather than guessing a class", () => {
 	});
 
 	it("refuses a malformed --sha as a usage error, never as a wildcard", async () => {
-		const out = await run(script(), api(), {sha: "zz"});
+		const out = await run(script(), {sha: "zz"});
 		expect(out.code).toBe(1);
 		expect(out.stdout).toBe("");
 	});

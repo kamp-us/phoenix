@@ -29,7 +29,7 @@ import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import {execRecord} from "./exec.ts";
-import {type Attempt, fail, ok, type Shell} from "./git.ts";
+import {type Attempt, type Failure, fail, type Ok, ok, type Shell} from "./git.ts";
 import {absent, type Existence, present, unknown} from "./issues.ts";
 import {isRecord, parseJson} from "./json.ts";
 
@@ -246,15 +246,9 @@ export const restWrite = (
 	method: "POST" | "PATCH" | "PUT" | "DELETE",
 	path: string,
 	body: Readonly<Record<string, unknown>>,
-): Api<Rest> =>
-	send(
-		HttpClientRequest.make(method)(endpoint(path)).pipe(
-			HttpClientRequest.setHeaders(headersFor(token)),
-			HttpClientRequest.bodyJsonUnsafe(body),
-		),
-	);
+): Api<Rest> => restCall(token, {method, path, body});
 
-const refusalFor = (outcome: Rest & {_tag: "Response"}): string =>
+const refusalText = (outcome: Rest & {_tag: "Response"}): string =>
 	`GitHub answered HTTP ${outcome.status}`;
 
 /**
@@ -287,7 +281,7 @@ export const existenceOf = <A>(
  */
 export const attemptOf = <A>(outcome: Rest, read: (body: unknown) => Attempt<A>): Attempt<A> => {
 	if (outcome._tag === "Unreachable") return fail(outcome.reason);
-	if (outcome.status < 200 || outcome.status >= 300) return fail(refusalFor(outcome));
+	if (outcome.status < 200 || outcome.status >= 300) return fail(refusalText(outcome));
 	return read(outcome.body);
 };
 
@@ -311,6 +305,27 @@ const paged = (path: string, page: number): string =>
 	`${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${page}`;
 
 /**
+ * A paged read's answer: an {@link Attempt} whose failure also names the status GitHub served.
+ *
+ * A caller telling a permission denial apart from any other unreadable answer needs the number. A
+ * single read gets it from {@link existenceOf}; a paged read walks many responses, so the one it
+ * stopped on carries its status here rather than leaving the caller to scrape it back out of the
+ * reason — which is the `httpStatusOf` habit this client exists to end.
+ */
+export type PagedAttempt<A> = Ok<A> | (Failure & {readonly status: number | null});
+
+/** A read that produced no status at all — GitHub was never reached, or answered a shape nobody asked for. */
+const statusless = (reason: string): Failure & {readonly status: null} => ({
+	...fail(reason),
+	status: null,
+});
+
+const refusalFor = (outcome: Rest & {_tag: "Response"}): Failure & {readonly status: number} => ({
+	...fail(`GitHub answered HTTP ${outcome.status}`),
+	status: outcome.status,
+});
+
+/**
  * A list read whose completeness proof is **exhausted pagination**, not a declared count.
  *
  * Reviews and timeline events arrive as bare arrays and the platform declares no `total_count` for
@@ -325,14 +340,20 @@ const paged = (path: string, page: number): string =>
  * value the caller can refuse on; it does not become implicit because the header got easier to
  * reach.
  */
-export const pagedWithLinkProof = (token: string, path: string): Api<Attempt<PagedProof>> =>
-	pagedExistence(token, path).pipe(
-		Effect.map((read) =>
-			read._tag === "Present"
-				? ok(read.value)
-				: fail(read._tag === "Absent" ? "GitHub answered HTTP 404" : read.reason),
-		),
-	);
+export const pagedWithLinkProof = (token: string, path: string): Api<PagedAttempt<PagedProof>> =>
+	Effect.gen(function* () {
+		const entries: unknown[] = [];
+		for (let page = 1; page <= PAGE_CAP; page++) {
+			const outcome = yield* restRead(token, "GET", paged(path, page));
+			if (outcome._tag === "Unreachable") return statusless(outcome.reason);
+			if (outcome.status < 200 || outcome.status >= 300) return refusalFor(outcome);
+			if (!Array.isArray(outcome.body))
+				return statusless("GitHub answered 200 but its body is not a list");
+			entries.push(...outcome.body);
+			if (!declaresNextPage(outcome.headers)) return ok({entries, exhausted: true});
+		}
+		return ok({entries, exhausted: false});
+	});
 
 /**
  * {@link pagedWithLinkProof}, but a 404 is a verdict rather than an error.
@@ -351,7 +372,7 @@ export const pagedExistence = (token: string, path: string): Api<Existence<Paged
 			if (outcome._tag === "Unreachable") return unknown<PagedProof>(outcome.reason);
 			if (outcome.status === 404) return absent<PagedProof>();
 			if (outcome.status < 200 || outcome.status >= 300) {
-				return unknown<PagedProof>(refusalFor(outcome));
+				return unknown<PagedProof>(refusalText(outcome));
 			}
 			if (!Array.isArray(outcome.body)) {
 				return unknown<PagedProof>("GitHub answered 200 but its body is not a list");
@@ -375,21 +396,21 @@ export const pagedEnvelope = (
 	token: string,
 	path: string,
 	key: string,
-): Api<Attempt<EnvelopeRead>> =>
+): Api<PagedAttempt<EnvelopeRead>> =>
 	Effect.gen(function* () {
 		const entries: unknown[] = [];
 		let declared: number | null = null;
 		for (let page = 1; page <= PAGE_CAP; page++) {
 			const outcome = yield* restRead(token, "GET", paged(path, page));
-			if (outcome._tag === "Unreachable") return fail(outcome.reason);
-			if (outcome.status < 200 || outcome.status >= 300) return fail(refusalFor(outcome));
+			if (outcome._tag === "Unreachable") return statusless(outcome.reason);
+			if (outcome.status < 200 || outcome.status >= 300) return refusalFor(outcome);
 			const body = outcome.body;
 			if (!isRecord(body) || !Array.isArray(body[key])) {
-				return fail(`GitHub answered 200 but its body carries no ${key} list`);
+				return statusless(`GitHub answered 200 but its body carries no ${key} list`);
 			}
 			if (declared === null) {
 				if (typeof body.total_count !== "number") {
-					return fail("GitHub answered 200 but the envelope declares no total_count");
+					return statusless("GitHub answered 200 but the envelope declares no total_count");
 				}
 				declared = body.total_count;
 			}
@@ -397,7 +418,7 @@ export const pagedEnvelope = (
 			if (!declaresNextPage(outcome.headers)) return ok({declared, entries});
 		}
 		return declared === null
-			? fail("GitHub answered 200 and printed no envelope at all")
+			? statusless("GitHub answered 200 and printed no envelope at all")
 			: ok({declared, entries});
 	});
 

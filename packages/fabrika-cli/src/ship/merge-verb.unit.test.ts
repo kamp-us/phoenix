@@ -16,96 +16,76 @@ import {
 	ENV,
 	HEAD,
 	MERGE_COMMIT,
-	mergeProof,
+	mergeProofServed,
 	OTHER_HEAD,
-	type PullShape,
 	pull,
-	repository,
+	repositoryServed,
 } from "./fixtures.test-support.ts";
 import {runMerge} from "./merge-verb.ts";
 
-/** The live-head read and the landing write still shell out to `gh`. */
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-const PROOF = /^gh api repos\/o\/r\/pulls\/4321 --jq /;
-const REPO = /^gh api repos\/o\/r$/;
-const MERGE = /^gh api --method PUT repos\/o\/r\/pulls\/4321\/merge/;
-
-/** The rules read and the mergeability read go over HTTP. */
-const RULES = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/rules\/branches\/main$/;
-const MERGEABILITY = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4321$/;
-
-const rules = (...types: ReadonlyArray<string>): HttpReply => ({
-	status: 200,
-	body: branchRules(...types).stdout,
-});
-
-/** The mergeability payload, off the same canned pull shape the shell read serves. */
-const mergeable = (shape: PullShape = {}): HttpReply => ({status: 200, body: pull(shape).stdout});
-
-const UNQUEUED: readonly [RegExp, HttpReply] = [RULES, rules("pull_request")];
+const RULES = /^gh api repos\/o\/r\/rules\/branches\/main$/;
+const REPO = /^GET https:\/\/api\.github\.com\/repos\/o\/r$/;
+const PROOF = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4321$/;
+const MERGE = /^PUT https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4321\/merge$/;
+const UNQUEUED: readonly [RegExp, ExecResult] = [RULES, branchRules("pull_request")];
+const MERGED: readonly [RegExp, HttpReply] = [MERGE, {status: 200, body: "{}"}];
 
 const options = {pr: 4321, sha: HEAD, repo: null, json: false, env: ENV};
 
 const land = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]>,
+	served: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
 	overrides: Partial<typeof options> = {},
 ) => {
 	const shell = fakeShell(script);
+	const http = fakeHttp(served);
 	return Effect.runPromise(
-		Effect.provide(
-			runMerge({...options, ...overrides}),
-			Layer.merge(shell.layer, fakeHttp(http).layer),
-		),
-	).then((outcome) => ({outcome, calls: shell.calls}));
+		Effect.provide(runMerge({...options, ...overrides}), Layer.merge(shell.layer, http.layer)),
+	).then((outcome) => ({outcome, calls: http.calls, bodies: http.bodies}));
 };
 
 /** Every read the happy path makes, in the order the verb makes them. */
-const HAPPY: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[PULL, pull()],
-	[REPO, repository()],
-	[MERGE, okOut("")],
-	[PROOF, mergeProof()],
-];
-
+const HAPPY_SHELL: ReadonlyArray<readonly [RegExp, ExecResult]> = [[PULL, pull()], UNQUEUED];
 const HAPPY_HTTP: ReadonlyArray<readonly [RegExp, HttpReply]> = [
-	UNQUEUED,
-	[MERGEABILITY, mergeable()],
+	[REPO, repositoryServed()],
+	MERGED,
+	[PROOF, mergeProofServed()],
 ];
 
 const withoutWrite = (calls: ReadonlyArray<string>): boolean =>
-	calls.every((line) => !line.includes("--method PUT"));
+	calls.every((line) => !line.startsWith("PUT "));
 
 describe("runMerge", () => {
 	it("lands on an unqueued base with the repo's preferred method and proves the commit", async () => {
-		const {outcome, calls} = await land(HAPPY, HAPPY_HTTP);
+		const {outcome, calls, bodies} = await land(HAPPY_SHELL, HAPPY_HTTP);
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout).toBe(`merged\t${MERGE_COMMIT}\tsquash\n`);
-		expect(calls).toContain(
-			`gh api --method PUT repos/o/r/pulls/4321/merge -f sha=${HEAD} -f merge_method=squash`,
-		);
+		const at = calls.findIndex((line) => line.startsWith("PUT "));
+		expect(calls[at]).toBe("PUT https://api.github.com/repos/o/r/pulls/4321/merge");
+		expect(JSON.parse(bodies[at] as string)).toEqual({sha: HEAD, merge_method: "squash"});
 	});
 
 	it("hands the platform the FULL live head, not the caller's abbreviation", async () => {
-		const {calls} = await land(HAPPY, HAPPY_HTTP, {sha: HEAD.slice(0, 8)});
-		expect(calls.some((line) => line.includes(`-f sha=${HEAD} `))).toBe(true);
+		const {calls, bodies} = await land(HAPPY_SHELL, HAPPY_HTTP, {sha: HEAD.slice(0, 8)});
+		const at = calls.findIndex((line) => line.startsWith("PUT "));
+		expect(JSON.parse(bodies[at] as string).sha).toBe(HEAD);
 	});
 
 	it("falls to the merge commit when the repository has squash disabled", async () => {
-		const {outcome} = await land(
-			[
-				[PULL, pull()],
-				[REPO, repository({squash: false})],
-				[MERGE, okOut("")],
-				[PROOF, mergeProof()],
-			],
-			HAPPY_HTTP,
-		);
+		const {outcome} = await land(HAPPY_SHELL, [
+			[REPO, repositoryServed({squash: false})],
+			MERGED,
+			[PROOF, mergeProofServed()],
+		]);
 		expect(outcome.stdout).toBe(`merged\t${MERGE_COMMIT}\tmerge\n`);
 	});
 
 	it("refuses on 16 when a merge queue governs the base, and points at `ship enqueue`", async () => {
-		const {outcome, calls} = await land([[PULL, pull()]], [[RULES, rules("merge_queue")]]);
+		const {outcome, calls} = await land([
+			[PULL, pull()],
+			[RULES, branchRules("merge_queue")],
+		]);
 		expect(outcome.code).toBe(PROVEN_NOT_IN_STATE);
 		expect(outcome.stderr.at(-1)).toBe(
 			"ship merge: a merge queue governs main — the queue owns the method and the landing; run `fabrika ship enqueue` instead.",
@@ -117,9 +97,9 @@ describe("runMerge", () => {
 		const {outcome, calls} = await land(
 			[
 				[PULL, pull()],
-				[REPO, repository({squash: false, merge: false, rebase: false})],
+				[RULES, okOut("[]")],
 			],
-			[[RULES, {status: 200, body: "[]"}]],
+			[[REPO, repositoryServed({squash: false, merge: false, rebase: false})]],
 		);
 		expect(outcome.code).toBe(NO_LANDING_METHOD);
 		expect(outcome.stderr.at(-1)).toContain("permits no merge method");
@@ -127,10 +107,10 @@ describe("runMerge", () => {
 	});
 
 	it("refuses on 11 when the landing path cannot be read — never landing on an unread regime", async () => {
-		const {outcome, calls} = await land(
-			[[PULL, pull()]],
-			[[RULES, {status: 503, body: '{"message":"Service unavailable"}'}]],
-		);
+		const {outcome, calls} = await land([
+			[PULL, pull()],
+			[RULES, errOut("HTTP 503")],
+		]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toContain("cannot read main's landing path");
 		expect(withoutWrite(calls)).toBe(true);
@@ -138,11 +118,8 @@ describe("runMerge", () => {
 
 	it("refuses on 11 when mergeability stays indefinite — an unknown read is never green", async () => {
 		const {outcome, calls} = await land(
-			[
-				[PULL, pull()],
-				[REPO, repository()],
-			],
-			[UNQUEUED, [MERGEABILITY, mergeable({mergeable: null, mergeableState: "unknown"})]],
+			[[PULL, pull({mergeable: null, mergeableState: "unknown"})], UNQUEUED],
+			[[REPO, repositoryServed()]],
 		);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toBe(
@@ -153,11 +130,8 @@ describe("runMerge", () => {
 
 	it("refuses on 16 on a definite `dirty` — the endpoint would reject it indistinguishably", async () => {
 		const {outcome, calls} = await land(
-			[
-				[PULL, pull()],
-				[REPO, repository()],
-			],
-			[UNQUEUED, [MERGEABILITY, mergeable({mergeable: false, mergeableState: "dirty"})]],
+			[[PULL, pull({mergeable: false, mergeableState: "dirty"})], UNQUEUED],
+			[[REPO, repositoryServed()]],
 		);
 		expect(outcome.code).toBe(PROVEN_NOT_IN_STATE);
 		expect(outcome.stderr.at(-1)).toBe(
@@ -167,77 +141,69 @@ describe("runMerge", () => {
 	});
 
 	it("refuses on 12 when the live head moved past --sha", async () => {
-		const {outcome, calls} = await land([[PULL, pull({head: OTHER_HEAD})]], []);
+		const {outcome, calls} = await land([[PULL, pull({head: OTHER_HEAD})]]);
 		expect(outcome.code).toBe(STALE_HEAD);
 		expect(outcome.stderr.at(-1)).toContain("refusing to merge a tree nobody verified");
 		expect(withoutWrite(calls)).toBe(true);
 	});
 
 	it("refuses an already-merged PR on 7 — an idempotent success is `ship scope`'s answer", async () => {
-		const {outcome} = await land([[PULL, pull({merged: true, state: "closed"})]], []);
+		const {outcome} = await land([[PULL, pull({merged: true, state: "closed"})]]);
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.at(-1)).toBe("ship merge: PR #4321 is merged — nothing to merge.");
 	});
 
-	it("refuses on 8 when the merge call fails, quoting the error", async () => {
-		const {outcome} = await land(
-			[
-				[PULL, pull()],
-				[REPO, repository()],
-				[MERGE, errOut("HTTP 405: Pull Request is not mergeable")],
-			],
-			HAPPY_HTTP,
-		);
+	it("refuses on 8 when the merge call fails, quoting the status", async () => {
+		const {outcome} = await land(HAPPY_SHELL, [
+			[REPO, repositoryServed()],
+			[MERGE, {status: 405, body: '{"message":"Pull Request is not mergeable"}'}],
+		]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
-		expect(outcome.stderr.at(-1)).toContain(
-			'the merge failed: "HTTP 405: Pull Request is not mergeable"',
-		);
+		expect(outcome.stderr.at(-1)).toContain('the merge failed: "GitHub answered HTTP 405"');
 	});
 
 	it("refuses on 8 when the confirming read-back fails — the landing is UNKNOWN", async () => {
-		const {outcome} = await land(
-			[
-				[PULL, pull()],
-				[REPO, repository()],
-				[MERGE, okOut("")],
-				[PROOF, errOut("HTTP 503")],
-			],
-			HAPPY_HTTP,
-		);
+		const {outcome} = await land(HAPPY_SHELL, [
+			[REPO, repositoryServed()],
+			MERGED,
+			[PROOF, {status: 503, body: '{"message":"unavailable"}'}],
+		]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toContain("the confirming read-back failed");
 	});
 
 	it("refuses on 9 when the read-back names no merge commit — a claim is not evidence", async () => {
-		const {outcome} = await land(
-			[
-				[PULL, pull()],
-				[REPO, repository()],
-				[MERGE, okOut("")],
-				[PROOF, mergeProof({commit: ""})],
-			],
-			HAPPY_HTTP,
-		);
+		const {outcome} = await land(HAPPY_SHELL, [
+			[REPO, repositoryServed()],
+			MERGED,
+			[PROOF, mergeProofServed({commit: ""})],
+		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
 		expect(outcome.stderr.at(-1)).toContain("the landing is not proven");
 	});
 
 	it("refuses on 9 when the read-back shows the PR is still not merged", async () => {
-		const {outcome} = await land(
-			[
-				[PULL, pull()],
-				[REPO, repository()],
-				[MERGE, okOut("")],
-				[PROOF, mergeProof({merged: false})],
-			],
-			HAPPY_HTTP,
-		);
+		const {outcome} = await land(HAPPY_SHELL, [
+			[REPO, repositoryServed()],
+			MERGED,
+			[PROOF, mergeProofServed({merged: false})],
+		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
 		expect(outcome.stderr.at(-1)).toContain("merged: false");
 	});
 
+	it("refuses on 8 when the read-back names no merge state at all — never reading it unmerged", async () => {
+		const {outcome} = await land(HAPPY_SHELL, [
+			[REPO, repositoryServed()],
+			MERGED,
+			[PROOF, {status: 200, body: '{"number":4321}'}],
+		]);
+		expect(outcome.code).toBe(WRITE_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain("the confirming read-back failed");
+	});
+
 	it("emits the landing object under --json", async () => {
-		const {outcome} = await land(HAPPY, HAPPY_HTTP, {json: true});
+		const {outcome} = await land(HAPPY_SHELL, HAPPY_HTTP, {json: true});
 		expect(JSON.parse(outcome.stdout)).toEqual({
 			outcome: "merged",
 			sha: HEAD,

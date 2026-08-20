@@ -7,6 +7,7 @@
  * different remedy: plan the epic, fix the reference, break the cycle.
  */
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {badNumber, openIssue, resolveTargetRepo} from "../build/target.ts";
 import {listSubIssues} from "../plan/github.ts";
@@ -71,7 +72,10 @@ export const runEmit = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "an issue number", options.epic);
@@ -85,7 +89,7 @@ export const runEmit = (
 			(reason) => `${VERB}: cannot read #${options.epic}: ${reason} — nothing was emitted.`,
 		);
 		if (target._tag === "Refused") return target.outcome;
-		const listed = yield* listSubIssues(resolved.repo, options.epic);
+		const listed = yield* listSubIssues(resolved.repo, options.epic, options.env);
 		if (listed._tag === "Failure") {
 			return refuse(
 				LANE_UNREADABLE,

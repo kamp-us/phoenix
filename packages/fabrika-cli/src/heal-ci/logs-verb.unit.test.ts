@@ -1,32 +1,23 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeHttp, fakeShell, type HttpReply, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeHttp, fakeShell, type HttpReply} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, LOGS_EXPIRED, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
+	CHECK_RUNS,
 	checkRuns,
 	ENV,
 	HEAD,
+	httpError,
 	JOB_LOG,
 	JOBS,
 	jobs,
 	PULL,
 	pull,
+	RUNS_AT_HEAD,
 	runsAtHead,
 } from "./fixtures.test-support.ts";
 import {runLogs, tailBytes} from "./logs-verb.ts";
-
-/** The two enumerations moved to the fetch client; the pull, the job list and the log text did not. */
-const CHECK_RUNS = /repos\/o\/r\/commits\/[0-9a-f]+\/check-runs/;
-const RUNS_AT_HEAD = /repos\/o\/r\/actions\/runs\?head_sha=/;
-
-/**
- * A canned payload, served over HTTP rather than printed by a subprocess.
- *
- * The fixtures stay the one source for every payload shape — only the transport around them changed,
- * so a second literal here is how this test would come to disagree with the rest of the group.
- */
-const served = (result: ExecResult): HttpReply => ({status: 200, body: result.stdout});
 
 const options = {
 	pr: 4321,
@@ -39,16 +30,19 @@ const options = {
 };
 
 const run = (
-	shell: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	http: ReadonlyArray<readonly [RegExp, HttpReply]>,
+	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	served: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
 	overrides: Partial<typeof options> = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runLogs({...options, ...overrides}),
-			Layer.merge(fakeShell(shell).layer, fakeHttp(http).layer),
+			Layer.merge(fakeShell(script).layer, fakeHttp(served).layer),
 		),
 	);
+
+/** A served log body: the bytes GitHub's signed URL answers with, not JSON. */
+const logText = (text: string): HttpReply => ({status: 200, body: text});
 
 const failed = (name: string) => ({name, status: "completed", conclusion: "failure"});
 const passed = (name: string) => ({name, status: "completed", conclusion: "success"});
@@ -68,6 +62,10 @@ describe("runLogs reads every failing gating context, not the first", () => {
 		const out = await run(
 			[
 				[PULL, pull()],
+				[CHECK_RUNS, checkRuns(3, [failed("unit tests"), failed("typecheck"), passed("lint")])],
+				[RUNS_AT_HEAD, runsAtHead(1, [{id: 77}])],
+			],
+			[
 				[
 					JOBS,
 					jobs(2, [
@@ -75,14 +73,7 @@ describe("runLogs reads every failing gating context, not the first", () => {
 						{id: 442, name: "typecheck"},
 					]),
 				],
-				[JOB_LOG, okOut("AssertionError: expected 3 to be 2")],
-			],
-			[
-				[
-					CHECK_RUNS,
-					served(checkRuns(3, [failed("unit tests"), failed("typecheck"), passed("lint")])),
-				],
-				[RUNS_AT_HEAD, served(runsAtHead(1, [{id: 77}]))],
+				[JOB_LOG, logText("AssertionError: expected 3 to be 2")],
 			],
 		);
 		expect(out.code).toBe(0);
@@ -92,25 +83,21 @@ describe("runLogs reads every failing gating context, not the first", () => {
 	});
 
 	it("answers `logs 0` when nothing gating is failing — a proven answer, not a refusal", async () => {
-		const out = await run(
-			[[PULL, pull()]],
-			[
-				[CHECK_RUNS, served(checkRuns(1, [passed("ci-required")]))],
-				[RUNS_AT_HEAD, served(runsAtHead(0, []))],
-			],
-		);
+		const out = await run([
+			[PULL, pull()],
+			[CHECK_RUNS, checkRuns(1, [passed("ci-required")])],
+			[RUNS_AT_HEAD, runsAtHead(0, [])],
+		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(`logs\t0\t${HEAD}\n`);
 	});
 
 	it("excludes an informational context before anything is fetched (ADR 0061)", async () => {
-		const out = await run(
-			[[PULL, pull()]],
-			[
-				[CHECK_RUNS, served(checkRuns(1, [failed("deploy (web)")]))],
-				[RUNS_AT_HEAD, served(runsAtHead(0, []))],
-			],
-		);
+		const out = await run([
+			[PULL, pull()],
+			[CHECK_RUNS, checkRuns(1, [failed("deploy (web)")])],
+			[RUNS_AT_HEAD, runsAtHead(0, [])],
+		]);
 		expect(out.stdout).toBe(`logs\t0\t${HEAD}\n`);
 	});
 
@@ -118,12 +105,12 @@ describe("runLogs reads every failing gating context, not the first", () => {
 		const out = await run(
 			[
 				[PULL, pull()],
-				[JOBS, jobs(1, [{id: 441, name: "unit tests"}])],
-				[JOB_LOG, okOut("AssertionError")],
+				[CHECK_RUNS, checkRuns(2, [failed("external scan"), failed("unit tests")])],
+				[RUNS_AT_HEAD, runsAtHead(1, [{id: 77}])],
 			],
 			[
-				[CHECK_RUNS, served(checkRuns(2, [failed("external scan"), failed("unit tests")]))],
-				[RUNS_AT_HEAD, served(runsAtHead(1, [{id: 77}]))],
+				[JOBS, jobs(1, [{id: 441, name: "unit tests"}])],
+				[JOB_LOG, logText("AssertionError")],
 			],
 		);
 		expect(out.code).toBe(0);
@@ -136,12 +123,12 @@ describe("runLogs reads every failing gating context, not the first", () => {
 		const out = await run(
 			[
 				[PULL, pull()],
-				[JOBS, jobs(1, [{id: 441, name: "unit tests"}])],
-				[JOB_LOG, okOut("0123456789")],
+				[CHECK_RUNS, checkRuns(1, [failed("unit tests")])],
+				[RUNS_AT_HEAD, runsAtHead(1, [{id: 77}])],
 			],
 			[
-				[CHECK_RUNS, served(checkRuns(1, [failed("unit tests")]))],
-				[RUNS_AT_HEAD, served(runsAtHead(1, [{id: 77}]))],
+				[JOBS, jobs(1, [{id: 441, name: "unit tests"}])],
+				[JOB_LOG, logText("0123456789")],
 			],
 			{maxBytes: 4},
 		);
@@ -155,12 +142,12 @@ describe("runLogs refuses rather than answering `no failed steps`", () => {
 		const out = await run(
 			[
 				[PULL, pull()],
-				[JOBS, jobs(1, [{id: 441, name: "unit tests"}])],
-				[JOB_LOG, errOut("gh: Gone (HTTP 410)")],
+				[CHECK_RUNS, checkRuns(1, [failed("unit tests")])],
+				[RUNS_AT_HEAD, runsAtHead(1, [{id: 77}])],
 			],
 			[
-				[CHECK_RUNS, served(checkRuns(1, [failed("unit tests")]))],
-				[RUNS_AT_HEAD, served(runsAtHead(1, [{id: 77}]))],
+				[JOBS, jobs(1, [{id: 441, name: "unit tests"}])],
+				[JOB_LOG, httpError(410, "Gone")],
 			],
 		);
 		expect(out.code).toBe(LOGS_EXPIRED);
@@ -171,12 +158,12 @@ describe("runLogs refuses rather than answering `no failed steps`", () => {
 		const out = await run(
 			[
 				[PULL, pull()],
-				[JOBS, jobs(1, [{id: 441, name: "unit tests"}])],
-				[JOB_LOG, errOut("gh: Not Found (HTTP 404)")],
+				[CHECK_RUNS, checkRuns(1, [failed("unit tests")])],
+				[RUNS_AT_HEAD, runsAtHead(1, [{id: 77}])],
 			],
 			[
-				[CHECK_RUNS, served(checkRuns(1, [failed("unit tests")]))],
-				[RUNS_AT_HEAD, served(runsAtHead(1, [{id: 77}]))],
+				[JOBS, jobs(1, [{id: 441, name: "unit tests"}])],
+				[JOB_LOG, httpError(404, "Not Found")],
 			],
 		);
 		expect(out.code).toBe(LOGS_EXPIRED);
@@ -184,10 +171,10 @@ describe("runLogs refuses rather than answering `no failed steps`", () => {
 	});
 
 	it("refuses an unreadable check-run read on 11", async () => {
-		const out = await run(
-			[[PULL, pull()]],
-			[[CHECK_RUNS, {status: 502, body: '{"message":"Bad gateway"}'}]],
-		);
+		const out = await run([
+			[PULL, pull()],
+			[CHECK_RUNS, errOut("gh: Bad gateway (HTTP 502)")],
+		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain('UNKNOWN, never "no failed steps"');
 	});
@@ -196,20 +183,21 @@ describe("runLogs refuses rather than answering `no failed steps`", () => {
 		const out = await run(
 			[
 				[PULL, pull()],
-				[JOBS, jobs(9, [{id: 441, name: "unit tests"}])],
+				[CHECK_RUNS, checkRuns(1, [failed("unit tests")])],
+				[RUNS_AT_HEAD, runsAtHead(1, [{id: 77}])],
 			],
-			[
-				[CHECK_RUNS, served(checkRuns(1, [failed("unit tests")]))],
-				[RUNS_AT_HEAD, served(runsAtHead(1, [{id: 77}]))],
-			],
+			[[JOBS, jobs(9, [{id: 441, name: "unit tests"}])]],
 		);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 	});
 
 	it("refuses a --context naming no failing gating context on 7, listing the ones there are", async () => {
 		const out = await run(
-			[[PULL, pull()]],
-			[[CHECK_RUNS, served(checkRuns(1, [failed("unit tests")]))]],
+			[
+				[PULL, pull()],
+				[CHECK_RUNS, checkRuns(1, [failed("unit tests")])],
+			],
+			[],
 			{context: "typecheck"},
 		);
 		expect(out.code).toBe(ZERO_SCOPE);
