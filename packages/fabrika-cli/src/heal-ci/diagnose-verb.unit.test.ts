@@ -7,7 +7,6 @@ import {runDiagnose} from "./diagnose-verb.ts";
 import {
 	behind,
 	CHECK_RUNS,
-	COMMENT_LINE,
 	COMMENTS,
 	COMMIT_DATE,
 	COMMIT_EXISTS,
@@ -15,8 +14,6 @@ import {
 	checkRuns,
 	comments,
 	commitDate,
-	DIFF,
-	diffOf,
 	ENV,
 	FILES,
 	files,
@@ -27,7 +24,6 @@ import {
 	permission,
 	protection,
 	pull,
-	RENDERED_LINE,
 	REVIEWS,
 	RULES,
 	RUN_COUNT,
@@ -105,27 +101,6 @@ const script = (
 ];
 
 describe("runDiagnose answers", () => {
-	// The same seam `ship scope` reads it through, so a comment-only UI edit does not strand a PR on a
-	// `review-ui` gate nobody can honestly clear (#6687).
-	it("counts the gates a comment-only UI edit really requires, not the path-only ones", async () => {
-		const app = "apps/web/src/App.tsx";
-		const commentOnly = await run(
-			script([
-				[FILES, files(app, "README.md")],
-				[DIFF, diffOf({file: app, added: COMMENT_LINE})],
-			]),
-		);
-		expect(commentOnly.stdout).toContain("gates\tblocked\t0/2");
-
-		const rendered = await run(
-			script([
-				[FILES, files(app, "README.md")],
-				[DIFF, diffOf({file: app, added: RENDERED_LINE})],
-			]),
-		);
-		expect(rendered.stdout).toContain("gates\tblocked\t0/3");
-	});
-
 	it("prints the class, the head, the age and every evidence line, always", async () => {
 		const out = await run(script());
 		expect(out.code).toBe(0);

@@ -444,7 +444,7 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404), or `--sha` names no commit on this PR |
-| `11` | the PR, its comments, its check runs, its verdicts, its timeline, its base, or its diff (read only when a UI path is present) could not be read — the stall class is UNKNOWN, never `attended` |
+| `11` | the PR, its comments, its check runs, its verdicts, its timeline or its base could not be read — the stall class is UNKNOWN, never `attended` |
 | `13` | the comment, check-run or timeline enumeration is provably short of its declared count, or the timeline read never reached a terminal page |
 
 **Errors**
@@ -460,8 +460,7 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 | `heal-ci diagnose: claim-stale fired on <inactivity\|ground-drift> — last activity <ts>, behind base <k>.` | 0 | notice |
 
 **Scope** — one PR's metadata, changed files, comments, check runs, workflow runs, reviews and
-timeline, each paginated and count-checked, plus its base branch's declared required contexts, plus
-its diff when and only when the changed files hold a UI path.
+timeline, each paginated and count-checked, plus its base branch's declared required contexts.
 Review *threads* are not read: arm 6 is REST-only, per the out-of-scope entry above. The predicate
 chain is total over what was read; a read that could not complete is `11`, never a class.
 

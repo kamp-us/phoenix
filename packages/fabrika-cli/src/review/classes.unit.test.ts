@@ -11,9 +11,7 @@ import {
 	SHIP_NAMESPACES,
 	shipNamespacesOf,
 	touchesGovernanceRoot,
-	uiFilesOf,
 } from "./classes.ts";
-import type {DiffLine} from "./diff.ts";
 
 describe("classOf", () => {
 	it("puts every claude-plugins and .claude path in skill", () => {
@@ -113,69 +111,6 @@ describe("touchesGovernanceRoot", () => {
 	});
 });
 
-/** One added line in a file, the only shape these tests need out of a real diff walk. */
-const added = (file: string, text: string): DiffLine => ({file, line: 1, kind: "added", text});
-
-/** A line that unambiguously renders — the evidence a genuine UI change carries. */
-const renders = (file: string): DiffLine => added(file, '\t\t\t<p className="mt-2">Merhaba</p>');
-
-describe("uiFilesOf", () => {
-	const app = "apps/web/src/App.tsx";
-
-	it("raises ui on rendered markup, styling and a rendered string", () => {
-		for (const text of [
-			"\t\t\t<p>Merhaba</p>",
-			'\t\t\t<div className="flex gap-2">',
-			'\t\t\t<button title="Kaydet">',
-			'\t\tconst label = mode === "edit" ? "Kaydet" : "Gönder";',
-		]) {
-			expect(uiFilesOf([app], [added(app, text)])).toEqual([app]);
-		}
-	});
-
-	it("raises nothing when every changed line is a comment or a docblock", () => {
-		const commentOnly = [
-			"\t// the focus steal lives here",
-			"\t/**",
-			"\t * What this component is, and the one non-obvious thing.",
-			"\t */",
-			"\t/* a one-line block comment */",
-			"",
-			"\t\t",
-		].map((text) => added(app, text));
-		expect(uiFilesOf([app], commentOnly)).toEqual([]);
-	});
-
-	it("raises nothing when every changed line is a wrapped prose string", () => {
-		const proseOnly = [
-			'\t\t\t"the editor lost focus while the draft was saving",',
-			"\t\t\t'aynı hata yorum kutusunda da var';",
-			'\t\t\t"a message with an \\"escaped\\" quote",',
-		].map((text) => added(app, text));
-		expect(uiFilesOf([app], proseOnly)).toEqual([]);
-	});
-
-	it("raises on one rendered line among many that are not", () => {
-		const mixed = [added(app, "\t// a note"), renders(app), added(app, '\t\t"a message",')];
-		expect(uiFilesOf([app], mixed)).toEqual([app]);
-	});
-
-	it("keeps the test-file exclusion — a rendered line in a spec still raises nothing", () => {
-		for (const test of ["apps/web/src/App.test.tsx", "apps/web/src/App.spec.tsx"]) {
-			expect(uiFilesOf([test], [renders(test)])).toEqual([]);
-		}
-	});
-
-	it("keeps a UI path the diff shows no changed lines for — a renamed or binary asset renders", () => {
-		expect(uiFilesOf(["apps/web/src/logo.png"], [])).toEqual(["apps/web/src/logo.png"]);
-	});
-
-	it("never raises off a path outside the UI root, whatever its lines say", () => {
-		const worker = "apps/web/worker/index.ts";
-		expect(uiFilesOf([worker], [renders(worker)])).toEqual([]);
-	});
-});
-
 describe("shipNamespacesOf", () => {
 	// The one property that keeps this function from moving any existing PR's merge bar: for a diff
 	// under no governance root the answer is byte-identical to the class-only derivation (#5199).
@@ -186,7 +121,7 @@ describe("shipNamespacesOf", () => {
 			["apps/web/src/App.tsx", "apps/web/src/App.test.tsx"],
 			["skills/deploy-notes/SKILL.md"],
 		]) {
-			const result = partitionWithUi(files, GOVERNANCE_ROOTS, files.map(renders));
+			const result = partitionWithUi(files, GOVERNANCE_ROOTS);
 			expect(result.governance).toBe(false);
 			expect(shipNamespacesOf(result)).toEqual(result.classes.map((c) => `review-${c.name}`));
 		}
@@ -200,7 +135,6 @@ describe("shipNamespacesOf", () => {
 				"apps/web/src/App.tsx",
 			],
 			GOVERNANCE_ROOTS,
-			[renders("apps/web/src/App.tsx")],
 		);
 		expect(shipNamespacesOf(result)).toEqual([
 			"review-code",
@@ -210,16 +144,8 @@ describe("shipNamespacesOf", () => {
 		]);
 	});
 
-	it("derives no review-ui from a comment-only edit under the UI root (#6687)", () => {
-		const app = "apps/web/src/App.tsx";
-		const result = partitionWithUi([app], GOVERNANCE_ROOTS, [
-			added(app, "\t// the focus steal lives here"),
-		]);
-		expect(shipNamespacesOf(result)).toEqual(["review-code"]);
-	});
-
 	it("derives governance off a decision-corpus edit no class map marks", () => {
-		const result = partitionWithUi([".decisions/0244-corpus-review.md"], GOVERNANCE_ROOTS, []);
+		const result = partitionWithUi([".decisions/0244-corpus-review.md"], GOVERNANCE_ROOTS);
 		expect(shipNamespacesOf(result)).toEqual(["review-doc", "governance"]);
 	});
 
@@ -227,7 +153,6 @@ describe("shipNamespacesOf", () => {
 		const result = partitionWithUi(
 			[".github/workflows/ci.yml", "apps/web/src/App.tsx"],
 			GOVERNANCE_ROOTS,
-			[renders("apps/web/src/App.tsx")],
 		);
 		for (const namespace of shipNamespacesOf(result)) {
 			expect(SHIP_NAMESPACES).toContain(namespace);
