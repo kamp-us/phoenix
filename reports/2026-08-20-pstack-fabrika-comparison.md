@@ -105,13 +105,13 @@ fabrika's skill ship gate lost its eval third when the eval layer was removed. p
 
 ## 6. Side findings: fabrika doc drift noticed during this read
 
-Spotted while mapping fabrika for the comparison; each is a `/report` candidate (this session lacks the fabrika CLI + auth to file them the sanctioned way):
+Spotted while mapping fabrika for the comparison; all filed or routed on 2026-08-20 at the founder's request (dedup by hand — this session lacks the fabrika CLI's `gh` transport):
 
-1. `claude-plugins/fabrika/README.md` and `docs/agent-shells.md` both say **four** agent shells ("Why exactly four"); there are five — `triager.md` is unaccounted for in both.
-2. `docs/agent-shells.md` says a shell declares an `effort:` setting; no agent file does.
-3. skill-conventions §13 is headed "Six skills fork" but lists five, and says "the other twenty" against a 25-skill roster.
-4. `.out-of-scope/` is cited as a first-class scope law (skill-conventions §7, `wayfinding` §7) but the directory does not exist in the plugin.
-5. `graduate` still references the deleted `pipeline-cli tracker graduate` (deleted per ADR 0303/0305).
-6. `docs/README.md` still frames the docs as pending landings of #4648's children; all seven exist.
-7. `operate`'s "lane open/emit exist only as spec on #5688" line is stale — both verbs exist in `src/lane/`.
-8. The CLI README documents 27 of 28 groups; `config` (one verb, `config schema`) has no section.
+1. `claude-plugins/fabrika/README.md` and `docs/agent-shells.md` both say **four** agent shells; there are five — already owned by open [#6437](https://github.com/kamp-us/phoenix/issues/6437); a note there adds the third surface (`docs/README.md`'s "exactly three").
+2. `docs/agent-shells.md` says a shell declares an `effort:` setting; no agent file does → [#6558](https://github.com/kamp-us/phoenix/issues/6558) (priors #5696/#5697 closed).
+3. skill-conventions §13 is headed "Six skills fork" but lists five — already owned by open [#5941](https://github.com/kamp-us/phoenix/issues/5941).
+4. `.out-of-scope/` is cited as a first-class scope law but the directory does not exist → [#6561](https://github.com/kamp-us/phoenix/issues/6561) (prior #5667 closed in the 2026-08-19 p2 purge).
+5. `graduate` still routes source-closing to the deleted `pipeline-cli tracker graduate` → [#6559](https://github.com/kamp-us/phoenix/issues/6559).
+6. `docs/README.md` still frames the docs as pending landings of #4648's children; all seven exist → [#6560](https://github.com/kamp-us/phoenix/issues/6560).
+7. `operate`'s "lane open/emit exist only as spec on #5688" line is stale — both verbs shipped → [#6562](https://github.com/kamp-us/phoenix/issues/6562) (prior #5880 closed in the purge).
+8. The CLI README documents 27 of 28 groups; `config` has no section → [#6563](https://github.com/kamp-us/phoenix/issues/6563).
