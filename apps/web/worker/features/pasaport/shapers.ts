@@ -139,7 +139,7 @@ export function toContributionRow(node: ContributionNode): ContributionRow {
 	const variantColumns = Object.fromEntries(
 		CONTRIBUTION_VARIANT_FIELD_NAMES.map((name) => [name, null]),
 	);
-	const {kind, id, score, createdAt, sandboxed, ...variantFields} = node;
+	const {kind, id, score, createdAt, sandboxed, sandboxedInPlace, ...variantFields} = node;
 	return {
 		...variantColumns,
 		kind,
@@ -147,6 +147,7 @@ export function toContributionRow(node: ContributionNode): ContributionRow {
 		score,
 		createdAt,
 		sandboxed,
+		sandboxedInPlace,
 		...variantFields,
 	} as ContributionRow;
 }

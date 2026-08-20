@@ -128,7 +128,7 @@ function SignalList({profile, username}: {profile: ViewRef<"Profile">; username:
 		<>
 			<ul className="kp-user-profile__list kp-signal__list">
 				{items.map(({cursor, node}) => (
-					<ContributionRow key={cursor} node={node} />
+					<ContributionRow key={cursor} node={node} isOwn />
 				))}
 			</ul>
 			{loadNext ? (
