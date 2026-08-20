@@ -8,7 +8,9 @@
 import {RelationStore} from "@kampus/authz";
 import {LivePublisher} from "@kampus/fate-effect";
 import {Effect, Layer} from "effect";
+import {noopPanoFeedCache} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
+import type {PanoFeedCache} from "../pano/feed-cache.ts";
 
 /** Delivery is a no-op and `waitUntil` drops the detached work — a publish into the void. */
 export const noopLive: Layer.Layer<LivePublisher> = Layer.succeed(LivePublisher)(
@@ -30,9 +32,8 @@ export const relationStoreNoModerators: Layer.Layer<RelationStore> = Layer.succe
 
 /**
  * `Pasaport.getUsersByIds` is provided by the case's own `makePasaportStub` (the record the
- * flip promoted), so only the other two seams are bundled here.
+ * flip promoted), so only the other seams are bundled here. The feed cache rides along
+ * because the sandbox sweep's invalidations purge it (#6462).
  */
-export const livePromoteContext: Layer.Layer<LivePublisher | RelationStore> = Layer.mergeAll(
-	noopLive,
-	relationStoreNoModerators,
-);
+export const livePromoteContext: Layer.Layer<LivePublisher | RelationStore | PanoFeedCache> =
+	Layer.mergeAll(noopLive, relationStoreNoModerators, noopPanoFeedCache);

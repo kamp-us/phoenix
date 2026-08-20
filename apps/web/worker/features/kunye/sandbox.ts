@@ -144,9 +144,17 @@ export const withoutInPlaceMarker = <T extends {readonly sandboxedInPlace?: bool
 };
 
 /**
- * The one consumer of {@link withoutInPlaceMarker} — every feature's `live.ts` routes its
- * entity `update` options through this, so a resolver cannot hand a marked node to a
- * viewer-blind entity topic. A `data`-less update (a bare `changed` signal) passes through.
+ * The one consumer of {@link withoutInPlaceMarker}. A `data`-less update (a bare `changed`
+ * signal) passes through untouched.
+ *
+ * A convention, NOT a type — unlike {@link PublishDecision}, which makes an ungated node
+ * broadcast a compile error. It covers the entity classes that carry the marker: `panoLive`
+ * (`Post`, `Comment`) and `sozlukLive` (`Definition`) route every `update` through it.
+ * `pasaportLive` (`User`) and bildirim's `Notification` call `live.update` raw, which is
+ * harmless because neither node has a `sandboxedInPlace` to leak — but nothing stops a
+ * future `live.ts` publishing a `Post`/`Comment`/`Definition` update around this. Branding
+ * the update payload the way `PublishDecision` brands the node broadcast is the fix that
+ * would earn the stronger sentence; #6557 tracks it.
  */
 export const viewerBlindUpdate = <
 	T extends {readonly sandboxedInPlace?: boolean | undefined},

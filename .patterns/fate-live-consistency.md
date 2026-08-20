@@ -50,6 +50,16 @@ The fix for a viewer-derived field is to **leave the key off the payload**, not 
 
 This is a separate hazard from `decidePublish`: that gate stops a *sandboxed node* from being broadcast at all, and it only guards `appendNode`/`prependNode`. An `update` fans an already-public entity, so it is ungated by design — the payload, not the decision to publish, is what needs the care.
 
+### When the derivation itself moves, invalidate — omitting the key repairs nothing {#viewer-derived-transitions}
+
+Omitting the key is the right answer while a row's own sandbox state holds still: each subscriber keeps the value they read, and that value is still correct. It is the *wrong* answer when the row moves, because the cached value every subscriber is keeping has just gone stale and there is no payload that could fix it — the true new value differs per reader, which is exactly why it may not be broadcast.
+
+The reachable instance is the çaylak→yazar promotion: one batch clears `sandboxed_at` across the author's whole backlog ([`Pasaport.ts`](../apps/web/worker/features/pasaport/Pasaport.ts)), so every opted-in yazar holding those rows holds a `sandboxedInPlace: true` that is now false. The seam is a connection **invalidation**, not a payload — `publishPromotion` ([`promote-live.ts`](../apps/web/worker/features/pasaport/promote-live.ts)) invalidates the `posts` feed, each swept comment's `Post.comments` thread and each swept definition's `Term.definitions` topic, and fate answers by dropping the connection and calling `loadConnection` again. That re-read runs the normal read path, so every viewer-derived field is re-derived against the subscriber's *own* viewer.
+
+The topics have to be captured **before** the batch: afterwards `sandboxed_at` is null and a swept row is indistinguishable from one the author already had live.
+
+The rule generalizes past the marker. A viewer-blind broadcast can carry a change to a field every reader agrees on; a change to what a *derivation* produces has to be re-read, because the wire has no way to say "recompute this per reader" other than making them ask again.
+
 ## The invalidation invariant — a mutation over a live view MUST publish {#invalidation-invariant}
 
 **A state-mutation that writes an entity or list backing a `/fate/live` view MUST publish

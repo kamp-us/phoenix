@@ -16,13 +16,14 @@ import {Kunye} from "../kunye/Kunye.ts";
 import {makeVouchLedgerStub} from "../kunye/VouchLedger.testing.ts";
 import {makePasaportStub} from "./Pasaport.testing.ts";
 import {livePromoteContext} from "./promote-live.testing.ts";
+import {NO_SANDBOX_SWEEP} from "./sandbox-sweep.ts";
 import {resolveTandem} from "./tandem.ts";
 
 // A landed flip re-resolves the promoted `User` (#1886), so the stub must answer
 // `getUsersByIds`. `promoted: false` cases never reach it.
 const promotedYazar = (id: string) =>
 	makePasaportStub({
-		promoteToYazar: () => Effect.succeed({promoted: true}),
+		promoteToYazar: () => Effect.succeed({promoted: true, sweep: NO_SANDBOX_SWEEP}),
 		getUsersByIds: () =>
 			Effect.succeed([
 				{id, email: `${id}@kamp.us`, name: id, image: null, username: id, tier: "yazar" as const},
@@ -143,7 +144,9 @@ describe("resolveTandem — order-independent promotion", () => {
 				Layer.mergeAll(
 					makeVouchLedgerStub({hasActiveFor: () => Effect.succeed(true)}),
 					kunyeKarma(50),
-					makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: false})}),
+					makePasaportStub({
+						promoteToYazar: () => Effect.succeed({promoted: false, sweep: NO_SANDBOX_SWEEP}),
+					}),
 					bildirimContext(),
 					livePromoteContext,
 				),
@@ -202,7 +205,9 @@ describe("resolveTandem — promotion ceremony bildirimi (#1696)", () => {
 				Layer.mergeAll(
 					makeVouchLedgerStub({hasActiveFor: () => Effect.succeed(true)}),
 					kunyeKarma(50),
-					makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: false})}),
+					makePasaportStub({
+						promoteToYazar: () => Effect.succeed({promoted: false, sweep: NO_SANDBOX_SWEEP}),
+					}),
 					bildirimContext(layer),
 					livePromoteContext,
 				),

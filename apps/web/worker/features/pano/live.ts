@@ -47,6 +47,12 @@ const onTopic = (
 	) => withPurge(feedCache, broadcastIf(decision, topic.prependNode(nodeType, id, options))),
 	deleteEdge: (id: string | number, options?: {eventId?: string}) =>
 		withPurge(feedCache, topic.deleteEdge(nodeType, id, options)),
+	/**
+	 * Re-read, don't re-state: the subscriber drops the connection and loads it again
+	 * through the normal read path, so every viewer-derived field is re-derived against
+	 * their OWN viewer. The seam for a change no viewer-blind payload can carry (#6462).
+	 */
+	invalidate: (options?: {eventId?: string}) => withPurge(feedCache, topic.invalidate(options)),
 });
 
 /**

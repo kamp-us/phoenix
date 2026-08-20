@@ -54,6 +54,7 @@ import {
 } from "./errors.ts";
 import {contributionOrdering} from "./ordering.ts";
 import type {ProfileRow} from "./profile-fields.ts";
+import {NO_SANDBOX_SWEEP, type SandboxSweep} from "./sandbox-sweep.ts";
 import {toUserRow, type UserRow} from "./user-fields.ts";
 import {checkUsername, normalizeUsername} from "./username-rule.ts";
 
@@ -227,8 +228,12 @@ export class Pasaport extends Context.Service<
 
 		// Tier flip + sandbox-backlog sweep in ONE atomic D1 batch, idempotent (#1206).
 		// The AUTHORITY (a mod, or a valid vouch) is discharged at the resolver, never
-		// here. `promoted: true` iff the tier flip actually fired.
-		readonly promoteToYazar: (input: {userId: string}) => Effect.Effect<{promoted: boolean}>;
+		// here. `promoted: true` iff the tier flip actually fired, and `sweep` names the
+		// live topics whose subscribers must re-read the rows it un-sandboxed (#6462) —
+		// empty on a no-op flip, since nothing moved.
+		readonly promoteToYazar: (input: {
+			userId: string;
+		}) => Effect.Effect<{promoted: boolean; sweep: SandboxSweep}>;
 
 		// A FRESH read of the append-only `user_ban_event` log, never a cached session
 		// flag (epic #968).
@@ -973,11 +978,13 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 
 				promoteToYazar: Effect.fn("Pasaport.promoteToYazar")(function* (input: {userId: string}) {
 					const now = new Date();
+					const sweep = yield* run((db) => readSandboxSweep(db, input.userId));
 					// One atomic batch, so a half-swept promotion is unrepresentable (ADR
 					// 0014). The first statement is the conditional tier UPDATE; its
 					// `changes` count is `1` iff the account was a çaylak.
 					const result = yield* batch((db) => buildPromotionStatements(db, input.userId, now));
-					return {promoted: result[0].meta.changes > 0};
+					const promoted = result[0].meta.changes > 0;
+					return {promoted, sweep: promoted ? sweep : NO_SANDBOX_SWEEP};
 				}),
 
 				getBanState: Effect.fn("Pasaport.getBanState")(function* (userId: string) {
@@ -1281,6 +1288,45 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
  *
  * Query-builder statements only, per `buildAnonymizeStatements`.
  */
+/**
+ * The topics the sweep below is about to un-hide content on, captured BEFORE the batch:
+ * afterwards `sandboxed_at` is null and a swept row is indistinguishable from one the
+ * author already had live. Same pre-batch capture as `anonymizeAccount`'s email (ADR 0097 §2).
+ *
+ * Sequential, not `Promise.all`: these ride one D1 connection.
+ */
+async function readSandboxSweep(db: DrizzleDb, userId: string): Promise<SandboxSweep> {
+	const sweptWhere = (
+		table: typeof schema.definitionRecord | typeof schema.postRecord | typeof schema.commentRecord,
+	) =>
+		sandboxBacklogWhere(
+			{sandboxedAt: table.sandboxedAt, removedAt: table.removedAt, authorId: table.authorId},
+			{authorId: userId},
+		);
+
+	// The global `posts` connection is ONE topic however many posts are swept, so its
+	// whole question is "any?" — `limit(1)` rather than a list this discards.
+	const posts = await db
+		.select({id: schema.postRecord.id})
+		.from(schema.postRecord)
+		.where(sweptWhere(schema.postRecord))
+		.limit(1);
+	const comments = await db
+		.select({postId: schema.commentRecord.postId})
+		.from(schema.commentRecord)
+		.where(sweptWhere(schema.commentRecord));
+	const definitions = await db
+		.select({termSlug: schema.definitionRecord.termSlug})
+		.from(schema.definitionRecord)
+		.where(sweptWhere(schema.definitionRecord));
+
+	return {
+		feed: posts.length > 0,
+		commentThreads: [...new Set(comments.map((row) => row.postId))],
+		definitionTerms: [...new Set(definitions.map((row) => row.termSlug))],
+	};
+}
+
 function buildPromotionStatements(db: DrizzleDb, userId: string, now: Date) {
 	const promoteTier = db
 		.update(schema.user)

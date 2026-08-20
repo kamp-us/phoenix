@@ -34,6 +34,13 @@ export const sozlukLive = (live: WorkerLivePublisher) => ({
 				) => broadcastIf(decision, topic.appendNode(DEFINITION, id, options)),
 				deleteEdge: (id: string | number, options?: {eventId?: string}) =>
 					topic.deleteEdge(DEFINITION, id, options),
+				/**
+				 * Re-read, don't re-state: the subscriber drops the connection and loads it
+				 * again through the normal read path, so every viewer-derived field is
+				 * re-derived against their OWN viewer. The seam for a change no viewer-blind
+				 * payload can carry (#6462).
+				 */
+				invalidate: (options?: {eventId?: string}) => topic.invalidate(options),
 			};
 		},
 	},

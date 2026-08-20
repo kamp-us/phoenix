@@ -26,6 +26,7 @@ import {Mute} from "../mute/Mute.ts";
 import {mutations} from "./mutations.ts";
 import {makePasaportStub} from "./Pasaport.testing.ts";
 import {noopLive, relationStoreNoModerators} from "./promote-live.testing.ts";
+import {NO_SANDBOX_SWEEP} from "./sandbox-sweep.ts";
 
 // A landed flip re-resolves the promoted `User` for the #1886 live-publish, so a
 // `promoted: true` stub must answer `getUsersByIds`.
@@ -129,7 +130,7 @@ describe("user.promote — direct moderator promotion", () => {
 			Effect.provide(
 				Layer.mergeAll(
 					makePasaportStub({
-						promoteToYazar: () => Effect.succeed({promoted: true}),
+						promoteToYazar: () => Effect.succeed({promoted: true, sweep: NO_SANDBOX_SWEEP}),
 						...promotedUsersByIds("u-target"),
 					}),
 					relationStoreOf(["u-mod"]),
@@ -177,7 +178,7 @@ describe("user.vouch — author-vouch tandem", () => {
 					Layer.mergeAll(
 						relationStoreNoModerators,
 						makePasaportStub({
-							promoteToYazar: () => Effect.succeed({promoted: true}),
+							promoteToYazar: () => Effect.succeed({promoted: true, sweep: NO_SANDBOX_SWEEP}),
 							...promotedUsersByIds("u-caylak"),
 						}),
 						makeVouchLedgerStub({
@@ -436,7 +437,7 @@ describe("user.promote — terfi bildirimi (#1696)", () => {
 	) =>
 		Layer.mergeAll(
 			makePasaportStub({
-				promoteToYazar: () => Effect.succeed({promoted}),
+				promoteToYazar: () => Effect.succeed({promoted, sweep: NO_SANDBOX_SWEEP}),
 				...promotedUsersByIds("u-target"),
 			}),
 			relationStoreOf(["u-mod"]),
