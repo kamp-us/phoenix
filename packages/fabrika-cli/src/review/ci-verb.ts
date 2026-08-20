@@ -3,8 +3,9 @@
  *
  * v1's CI-at-head read was dispatch-prompt-dependent: a gate ruled on a live RED check as a prose
  * question because one sentence was omitted (#4552). This verb is that read made structural, and its
- * two refusals are what keep it honest — zero declared runs is a vacuous green (ADR 0092), and an
- * enumeration short of `total_count` is never read as "no red checks" (#3999).
+ * refusals are what keep it honest — zero declared runs is a vacuous green (ADR 0092), an
+ * enumeration short of `total_count` is never read as "no red checks" (#3999), and a complete
+ * enumeration that no gate of this repo produced is not green either (#6522, `gate-coverage.ts`).
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -12,9 +13,10 @@ import {producerFor, resolveCi} from "../config/ci-producer.ts";
 import {commitExists, listCheckRuns} from "../io/pulls.ts";
 // The workflow inventory is read through the `ship` group's reader for the same reason `ship checks`
 // rolls up through this group's `rollup.ts`: one read, so the two verbs cannot drift on the fact.
-import {listWorkflows} from "../ship/github.ts";
+import {listRunsAtHead, listWorkflowPaths, listWorkflows} from "../ship/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {gateCoverageOf} from "./gate-coverage.ts";
 import {rollupOf, statusOf} from "./rollup.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 
@@ -55,6 +57,7 @@ const noProducerAnswer = (
 					checks: [],
 					scanned: 0,
 					declared: 0,
+					gates: null,
 				}),
 				diagnostics,
 			)
@@ -149,6 +152,49 @@ export const runCi = (
 		}
 
 		const rollup = rollupOf(runs);
+		// A red rollup is already the answer a caller must act on, so the coverage question is asked
+		// only where it changes one: `green` and `pending` are the two words that read as "nothing to
+		// do here", and both are wrong over bytes no gate inspected.
+		let gates: {readonly declared: number; readonly covered: number} | null = null;
+		if (rollup !== "red") {
+			const inventory = yield* listWorkflowPaths(repo);
+			if (inventory._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot enumerate the workflow inventory of ${repo}: ${inventory.reason} — which gates exist is UNKNOWN, never green.`,
+					diagnostics,
+				);
+			}
+			const atHead = yield* listRunsAtHead(repo, sha);
+			if (atHead._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot enumerate the workflow runs at ${sha}: ${atHead.reason} — which gates ran is UNKNOWN, never green.`,
+					diagnostics,
+				);
+			}
+			const coverage = gateCoverageOf(
+				inventory.value,
+				atHead.value.runs.map((run) => run.path),
+			);
+			if (coverage._tag === "Uncovered") {
+				return refuse(
+					NO_GATE_COVERAGE,
+					`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha} — the ${runs.length} check run(s) here came from elsewhere, so no gate inspected these bytes (#6522).`,
+					diagnostics,
+				);
+			}
+			if (coverage._tag === "NoGates") {
+				diagnostics.push(
+					`${VERB}: ${repo} authors no workflow of its own — every run at ${sha} is platform-provided, so there is no gate coverage to judge.`,
+				);
+			} else {
+				gates = {declared: coverage.declared, covered: coverage.covered};
+				diagnostics.push(
+					`${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha}.`,
+				);
+			}
+		}
 		return json
 			? answer(
 					JSON.stringify({
@@ -158,6 +204,7 @@ export const runCi = (
 						checks: runs.map((run) => ({name: run.name, status: statusOf(run)})),
 						scanned: runs.length,
 						declared,
+						gates,
 					}),
 					diagnostics,
 				)

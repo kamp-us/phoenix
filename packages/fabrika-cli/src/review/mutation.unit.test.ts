@@ -23,7 +23,13 @@ import {afterEach, describe, expect, it, vi} from "vitest";
 import {errOut, fakeShell, okOut, once, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {APPEND_ONLY, INCOMPLETE_SCAN, LEAKED_PATH, READBACK_MISMATCH} from "./codes.ts";
+import {
+	APPEND_ONLY,
+	INCOMPLETE_SCAN,
+	LEAKED_PATH,
+	NO_GATE_COVERAGE,
+	READBACK_MISMATCH,
+} from "./codes.ts";
 import {
 	binding,
 	CONTENT,
@@ -33,11 +39,13 @@ import {
 	DIFF_AT,
 	files,
 	HEAD,
+	inventory,
 	issue,
 	OLD_HEAD,
 	PATHS_AT,
 	paths,
 	pull,
+	runsAtHead,
 } from "./fixtures.test-support.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
@@ -93,9 +101,15 @@ describe("the CI rollup's fail-closed buckets", () => {
 	const CANCELLED = checkRuns(1, [
 		{name: "unit tests", status: "completed", conclusion: "cancelled"},
 	]);
+	const CI_YML = ".github/workflows/ci.yml";
+	// Scripted so the mutant reaches the exact wrong answer this case pins. The real verb short-
+	// circuits on `red` and never issues these two reads; only the mutant, having dropped the
+	// cancelled run, gets far enough to ask which gates ran.
 	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 		[PULL, pull()],
 		[RUNS, CANCELLED],
+		[/^gh api --paginate repos\/o\/r\/actions\/workflows/, inventory(CI_YML)],
+		[/^gh api --paginate repos\/o\/r\/actions\/runs\?head_sha=/, runsAtHead(CI_YML)],
 	];
 
 	it("reds a cancelled check — a check that proved nothing must not read green", async () => {
@@ -117,6 +131,42 @@ describe("the CI rollup's fail-closed buckets", () => {
 			script,
 		);
 		// The intended death, named exactly: the answer flips to the permissive token, at exit 0.
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tgreen`);
+	});
+});
+
+describe("the CI rollup's gate-coverage refusal", () => {
+	const CI_YML = ".github/workflows/ci.yml";
+	const CODEQL = "dynamic/github-code-scanning/codeql";
+	/** The #6522 head: a complete, all-passed enumeration that no gate of this repo produced. */
+	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		[PULL, pull()],
+		[RUNS, checkRuns(1, [{name: "CodeQL", status: "completed", conclusion: "success"}])],
+		[/^gh api --paginate repos\/o\/r\/actions\/workflows/, inventory(CI_YML, CODEQL)],
+		[/^gh api --paginate repos\/o\/r\/actions\/runs\?head_sha=/, runsAtHead(CODEQL)],
+	];
+
+	it("refuses a head no gate inspected — a passing check set is not gate coverage", async () => {
+		const {runCi} = await import("./ci-verb.ts");
+		const out = await withShell(
+			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV, cwd: "/repo"}),
+			script,
+		);
+		expect(out.code).toBe(NO_GATE_COVERAGE);
+		expect(out.stdout).toBe("");
+	});
+
+	it("MUTANT: calling every head covered makes the same PR report GREEN", async () => {
+		await mutate<typeof import("./gate-coverage.ts")>("./gate-coverage.ts", () => ({
+			gateCoverageOf: () => ({_tag: "Covered", declared: 1, covered: 1}),
+		}));
+		const {runCi} = await import("./ci-verb.ts");
+		const out = await withShell(
+			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV, cwd: "/repo"}),
+			script,
+		);
+		// The intended death: the ungated head reports the permissive token, at exit 0.
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tgreen`);
 	});

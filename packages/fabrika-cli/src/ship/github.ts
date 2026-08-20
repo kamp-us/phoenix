@@ -268,8 +268,14 @@ export const latestPerContext = (
 	return [...byName.values()];
 };
 
-/** The repository's workflow inventory — the `no-runs` state's first discriminator. */
-export const listWorkflows = (repo: string): Shell<Attempt<number>> =>
+/**
+ * The repository's active workflow inventory, each entry as the platform addresses it: its `path`.
+ *
+ * A repo-authored workflow carries its file path (`.github/workflows/ci.yml`); one the platform
+ * provides on the repo's behalf carries a synthetic `dynamic/<provider>/<name>`. Telling those two
+ * apart is what `../review/gate-coverage.ts` needs, and the path is the only field that says it.
+ */
+export const listWorkflowPaths = (repo: string): Shell<Attempt<ReadonlyArray<string>>> =>
 	Effect.gen(function* () {
 		const r = yield* execCapture("gh", [
 			"api",
@@ -282,8 +288,19 @@ export const listWorkflows = (repo: string): Shell<Attempt<number>> =>
 		const active = enveloped.value.entries.filter(
 			(value) => isRecord(value) && value.state === "active",
 		);
-		return ok(active.length);
+		return ok(active.map((value) => str((value as Record<string, unknown>).path)));
 	});
+
+/**
+ * The repository's workflow inventory — the `no-runs` state's first discriminator.
+ *
+ * Derived from {@link listWorkflowPaths} rather than issuing its own read: the count and the paths
+ * are one fact about the repo, and two readers of one endpoint are two answers that can disagree.
+ */
+export const listWorkflows = (repo: string): Shell<Attempt<number>> =>
+	Effect.map(listWorkflowPaths(repo), (read) =>
+		read._tag === "Failure" ? read : ok(read.value.length),
+	);
 
 /**
  * Whether one workflow file exists in the repository.
@@ -338,6 +355,8 @@ export interface WorkflowRun {
 	readonly conclusion: string | null;
 	/** When the run finished, or `null` while it has not — the freshness window's left operand. */
 	readonly completedAt: string | null;
+	/** The workflow this run came from, as {@link listWorkflowPaths} addresses it. */
+	readonly path: string;
 }
 
 /** The runs at exactly this head — `head_sha` match only, never a name or a date heuristic. */
@@ -365,6 +384,7 @@ export const listRunsAtHead = (
 				status: str(value.status),
 				conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
 				completedAt: typeof value.completed_at === "string" ? value.completed_at : null,
+				path: str(value.path),
 			});
 		}
 		return ok({declared: enveloped.value.declared, runs});

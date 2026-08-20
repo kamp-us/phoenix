@@ -107,6 +107,14 @@ incomplete enumerations:
 fabrika review ci $pr_number --sha 03135b91
 ```
 
+**Its `green` now carries gate coverage, and the absence of coverage is its own answer.** A head
+where the checks all passed but no workflow this repo authors ever ran is refused on `16`, never
+reported as `green` or `pending` — the enumeration was complete and not one gate inspected the
+bytes, which reads as safety while carrying none (#6522). The ordinary way in is a branch gone
+conflicted: GitHub stops making `pull_request` runs while a platform-provided check keeps
+reporting on its own trigger. Treat that `16` as a blocked read, not a verdict — the head needs
+runs before anything can be judged on it, so say so and stop rather than grading around it.
+
 No class checks out the head: content arrives through the verbs as bytes, so the PR's own
 instructions are never loaded to judge the PR. Every namespace's verdict is **comment-only** — no
 namespace posts a native APPROVE.

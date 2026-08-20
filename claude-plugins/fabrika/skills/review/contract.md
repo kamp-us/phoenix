@@ -564,7 +564,8 @@ own completeness proof. Then one line per check run —
 `<name>\t<success|failure|neutral|cancelled|skipped|timed_out|action_required|in_progress|queued>` —
 so a red or still-running check is in the gate's context by name, not as a rollup boolean.
 
-With `--json`: `{"outcome":"ci","sha":…,"rollup":…,"checks":[{name,status}…],"scanned":<n>,"declared":<m>}`.
+With `--json`:
+`{"outcome":"ci","sha":…,"rollup":…,"checks":[{name,status}…],"scanned":<n>,"declared":<m>,"gates":{"declared":<g>,"covered":<c>}|null}`.
 
 **The rollup is total over the status vocabulary, fail-closed on the ambiguous rows:** `red`
 when any completed run concluded `failure`, `timed_out`, `action_required` or `cancelled` (a
@@ -584,6 +585,17 @@ workflow does** (#5603, R17.1 — "only if workflows exist is fine dude"). Zero 
 inventory is read only when the enumeration came back empty: a check run that reported already
 proves a producer.
 
+**A passing check set is not gate coverage, and the verb no longer lets the two share a word.**
+A complete, all-green enumeration that came from no workflow this repo authors is refused on `16`
+— not `green`, not `pending`. The set of gates is the **live workflow inventory**: a workflow
+checked into the repo is addressed by its file path (`.github/workflows/ci.yml`), one the platform
+provides on the repo's behalf by a synthetic `dynamic/<provider>/<name>`, and coverage is the
+intersection of the first with the workflows that actually produced a run at this head. No job
+names, no expected set — nothing here knows what a gate is called. A repo that authors no workflow
+of its own has no gate to have missed, and says so on stderr at exit `0`. The read is skipped over a
+`red` rollup, which is already the answer a caller must act on; `green` and `pending` are the two
+words that read as "nothing to do here", and both are wrong over bytes no gate inspected (#6522).
+
 If `--sha` is given and does not prefix-match the PR's live head, a stderr notice names both —
 the caller is enumerating a head that has moved, which is a fact worth seeing at the read even
 though the `12` stale-refusal seat belongs to `review post`, the write seam.
@@ -593,8 +605,9 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | Code | Trigger |
 |---|---|
 | `7` | the PR or the `--sha` is proven absent — no commit to enumerate; **or zero check runs are declared at the commit** — a vacuous green is the ADR 0092 fail-open and is refused; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
-| `11` | the check-run read, the workflow-inventory read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green` |
+| `11` | the check-run read, the workflow-inventory read, the runs-at-head read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green` |
 | `13` | entries received < declared `total_count` — the enumeration is provably incomplete and is never read as "no red checks" |
+| `16` | the rollup is not `red` and **no workflow this repo authors produced a run at the head** — the enumeration is complete and no gate inspected the bytes |
 
 **Errors**
 
@@ -609,9 +622,15 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | `review ci: cannot read \`ci\` from the repo config (<reason>) — whether <repo> produces CI is UNKNOWN, never green.` | 11 | refusal |
 | `review ci: <repo> declares \`ci.noProducer: degrade\` and has zero workflows — no producer, so there is nothing to roll up.` | 0 | notice |
 | `review ci: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration (#3999).` | 13 | refusal |
+| `review ci: none of the <g> workflow(s) <repo> authors produced a run at <sha> — the <n> check run(s) here came from elsewhere, so no gate inspected these bytes (#6522).` | 16 | refusal |
+| `review ci: cannot enumerate the workflow inventory of <repo>: <reason> — which gates exist is UNKNOWN, never green.` | 11 | refusal |
+| `review ci: cannot enumerate the workflow runs at <sha>: <reason> — which gates ran is UNKNOWN, never green.` | 11 | refusal |
+| `review ci: <c> of <g> workflow(s) <repo> authors produced a run at <sha>.` | 0 | notice |
+| `review ci: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
 | `review ci: the live head is <live>, you are enumerating at <sha> — the head moved; a verdict still binds only what was inspected.` | 0 | notice |
 
-**Scope** — the check runs at one commit, paginated, count-verified against `total_count`.
+**Scope** — the check runs at one commit, paginated, count-verified against `total_count`, and the
+workflows that produced a run there, against the repo's live inventory.
 
 **Examples**
 
@@ -631,6 +650,10 @@ leak-guard	success
   structural.
 - #3999 / ship-it's pagination-honesty rule — received < declared is an explicit refusal, the
   same shape reused rather than a divergent second CI read.
+- #6522 — a conflicted branch stops producing `pull_request` runs while CodeQL's default setup
+  keeps reporting on its own trigger. The verb read `green` over four CodeQL runs at an epic
+  assembly head that `ci.yml`, `migrations-guard` and `design-token-guard` had never seen. `green`
+  and "no gate ran" were one word, and the second is the dangerous one.
 
 ---
 
