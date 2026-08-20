@@ -31,10 +31,19 @@ export const present = <A>(value: A): Existence<A> => ({_tag: "Present", value})
 export const absent = <A>(): Existence<A> => ({_tag: "Absent"});
 export const unknown = <A>(reason: string): Existence<A> => ({_tag: "Unknown", reason});
 
-/** The HTTP status `gh` names in `gh: Not Found (HTTP 404)`, or `null` when it named none. */
+/**
+ * The HTTP status a failure names, or `null` when it named none.
+ *
+ * Two shapes, because the package is mid-port: `gh` says `gh: Not Found (HTTP 404)`, and an adapter
+ * already on `../io/gh-api.ts` says `GitHub answered HTTP 404`. A reader that knew only the
+ * parenthesised one read a ported 403 as "no status at all", which collapsed `heal-ci`'s
+ * proven-unprobeable surface into UNKNOWN (#6644). The bare form goes away with this function, once
+ * every caller reads the status off the response instead of scraping it.
+ */
 export const httpStatusOf = (reason: string): number | null => {
-	const m = /\(HTTP (\d{3})\)/.exec(reason);
-	return m?.[1] === undefined ? null : Number.parseInt(m[1], 10);
+	const m = /\(HTTP (\d{3})\)|\bHTTP (\d{3})\b/.exec(reason);
+	const status = m?.[1] ?? m?.[2];
+	return status === undefined ? null : Number.parseInt(status, 10);
 };
 
 /** One issue as the dedup ranking sees it. */

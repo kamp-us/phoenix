@@ -20,7 +20,15 @@
 import {Effect, type FileSystem, Layer, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {afterEach, describe, expect, it, vi} from "vitest";
-import {errOut, fakeShell, okOut, once, unconfigured} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeHttp,
+	fakeShell,
+	type HttpReply,
+	okOut,
+	once,
+	unconfigured,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
@@ -73,8 +81,21 @@ const withShell = <A>(
 		ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 	>,
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	http: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
 ): Promise<A> =>
-	Effect.runPromise(Effect.provide(effect, Layer.merge(fakeShell(script).layer, unconfigured)));
+	Effect.runPromise(
+		Effect.provide(
+			effect,
+			Layer.mergeAll(fakeShell(script).layer, fakeHttp(http).layer, unconfigured),
+		),
+	);
+
+/** A canned payload, served as the body of the 200 the ported `ship/github.ts` read now issues. */
+const served = (result: ExecResult): HttpReply => ({status: 200, body: result.stdout});
+
+/** The two Actions reads that moved to HTTP; every other read in this file still shells out. */
+const WORKFLOWS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/workflows\?/;
+const AT_HEAD = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/runs\?head_sha=/;
 
 afterEach(() => {
 	vi.resetModules();
@@ -108,8 +129,10 @@ describe("the CI rollup's fail-closed buckets", () => {
 	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 		[PULL, pull()],
 		[RUNS, CANCELLED],
-		[/^gh api --paginate repos\/o\/r\/actions\/workflows/, inventory(CI_YML)],
-		[/^gh api --paginate repos\/o\/r\/actions\/runs\?head_sha=/, runsAtHead(CI_YML)],
+	];
+	const http: ReadonlyArray<readonly [RegExp, HttpReply]> = [
+		[WORKFLOWS, served(inventory(CI_YML))],
+		[AT_HEAD, served(runsAtHead(CI_YML))],
 	];
 
 	it("reds a cancelled check — a check that proved nothing must not read green", async () => {
@@ -117,6 +140,7 @@ describe("the CI rollup's fail-closed buckets", () => {
 		const out = await withShell(
 			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV, cwd: "/repo"}),
 			script,
+			http,
 		);
 		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tred`);
 	});
@@ -129,6 +153,7 @@ describe("the CI rollup's fail-closed buckets", () => {
 		const out = await withShell(
 			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV, cwd: "/repo"}),
 			script,
+			http,
 		);
 		// The intended death, named exactly: the answer flips to the permissive token, at exit 0.
 		expect(out.code).toBe(0);
@@ -143,8 +168,10 @@ describe("the CI rollup's gate-coverage refusal", () => {
 	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 		[PULL, pull()],
 		[RUNS, checkRuns(1, [{name: "CodeQL", status: "completed", conclusion: "success"}])],
-		[/^gh api --paginate repos\/o\/r\/actions\/workflows/, inventory(CI_YML, CODEQL)],
-		[/^gh api --paginate repos\/o\/r\/actions\/runs\?head_sha=/, runsAtHead(CODEQL)],
+	];
+	const http: ReadonlyArray<readonly [RegExp, HttpReply]> = [
+		[WORKFLOWS, served(inventory(CI_YML, CODEQL))],
+		[AT_HEAD, served(runsAtHead(CODEQL))],
 	];
 
 	it("refuses a head no gate inspected — a passing check set is not gate coverage", async () => {
@@ -152,6 +179,7 @@ describe("the CI rollup's gate-coverage refusal", () => {
 		const out = await withShell(
 			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV, cwd: "/repo"}),
 			script,
+			http,
 		);
 		expect(out.code).toBe(NO_GATE_COVERAGE);
 		expect(out.stdout).toBe("");
@@ -165,6 +193,7 @@ describe("the CI rollup's gate-coverage refusal", () => {
 		const out = await withShell(
 			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV, cwd: "/repo"}),
 			script,
+			http,
 		);
 		// The intended death: the ungated head reports the permissive token, at exit 0.
 		expect(out.code).toBe(0);

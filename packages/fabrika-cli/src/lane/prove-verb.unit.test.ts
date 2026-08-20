@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeHttp, fakeShell, okOut} from "../fakes.test-support.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {contentDigest, parseRaw} from "../review/content-binding.ts";
@@ -106,7 +106,12 @@ const issue = (labels: ReadonlyArray<string>): ExecResult =>
 		}),
 	);
 
-const run = (fs: ReturnType<typeof fakeFs>, shell: ReturnType<typeof fakeShell>, event: string) =>
+const run = (
+	fs: ReturnType<typeof fakeFs>,
+	shell: ReturnType<typeof fakeShell>,
+	event: string,
+	http: ReturnType<typeof fakeHttp> = fakeHttp([]),
+) =>
 	Effect.runPromise(
 		Effect.provide(
 			runProve({
@@ -118,7 +123,7 @@ const run = (fs: ReturnType<typeof fakeFs>, shell: ReturnType<typeof fakeShell>,
 				cwd: "/repo",
 				env: {CLAUDE_PIPELINE_REPO: "o/r"},
 			}),
-			Layer.mergeAll(fs.layer, shell.layer),
+			Layer.mergeAll(fs.layer, shell.layer, http.layer),
 		),
 	);
 
@@ -305,10 +310,8 @@ describe("lane prove — the union of the two nomination reads", () => {
 });
 
 describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
-	const CODEOWNERS =
-		/^gh api -H Accept: application\/vnd\.github\.raw repos\/o\/r\/contents\/\.github\/CODEOWNERS\?ref=main$/;
-	const CONFIG =
-		/^gh api -H Accept: application\/vnd\.github\.raw repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
+	const CODEOWNERS = /^GET \S+\/repos\/o\/r\/contents\/\.github\/CODEOWNERS\?ref=main$/;
+	const CONFIG = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
 	const advisory = (rows = ""): string =>
 		`review-code: advisory — merge stays human-gated\n${rows}\nReviewed-head: @ ${HEAD}\n`;
 	const codeFile = okOut(JSON.stringify([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]));
@@ -320,10 +323,12 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory()})],
-			[CODEOWNERS, okOut("/packages/fabrika-cli/ @kamp-us/control-plane\n")],
+		]);
+		const http = fakeHttp([
+			[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"}],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), shell, "PASS", http);
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
@@ -340,10 +345,12 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory()})],
-			[CODEOWNERS, okOut("/claude-plugins/ @kamp-us/control-plane\n")],
+		]);
+		const http = fakeHttp([
+			[CODEOWNERS, {status: 200, body: "/claude-plugins/ @kamp-us/control-plane\n"}],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), shell, "PASS", http);
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-code (absent)");
@@ -357,10 +364,12 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory("\n- [FAIL] the guard is bypassed\n")})],
-			[CODEOWNERS, okOut("/packages/fabrika-cli/ @kamp-us/control-plane\n")],
+		]);
+		const http = fakeHttp([
+			[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"}],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), shell, "PASS", http);
 
 		expect(out.code).toBe(PROOF_CONTRADICTED);
 		expect(out.stderr.join("\n")).toContain("invalid emission (ADR 0226)");
@@ -374,10 +383,12 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: stale})],
-			[CODEOWNERS, okOut("/packages/fabrika-cli/ @kamp-us/control-plane\n")],
+		]);
+		const http = fakeHttp([
+			[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"}],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), shell, "PASS", http);
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-code (stale)");
@@ -390,10 +401,10 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory()})],
-			[CODEOWNERS, errOut("HTTP 502")],
 		]);
+		const http = fakeHttp([[CODEOWNERS, {status: 502, body: '{"message":"Bad Gateway"}'}]]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), shell, "PASS", http);
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain(".github/CODEOWNERS");
@@ -406,11 +417,13 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 			[PULL, pull()],
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: advisory()})],
-			[CODEOWNERS, errOut("HTTP 502")],
-			[CONFIG, okOut('{"unreadableCodeowners": "ship"}')],
+		]);
+		const http = fakeHttp([
+			[CODEOWNERS, {status: 502, body: '{"message":"Bad Gateway"}'}],
+			[CONFIG, {status: 200, body: '{"unreadableCodeowners": "ship"}'}],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), shell, "PASS", http);
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 	});
@@ -423,11 +436,12 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 			[FILES, codeFile],
 			[PR_COMMENTS, comments({id: 1, body: "looks good to me"})],
 		]);
+		const http = fakeHttp([]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), shell, "PASS", http);
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
-		expect(shell.calls.some((line) => CODEOWNERS.test(line))).toBe(false);
+		expect(http.calls.some((line) => CODEOWNERS.test(line))).toBe(false);
 	});
 });
 

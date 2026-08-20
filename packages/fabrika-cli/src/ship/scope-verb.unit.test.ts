@@ -1,6 +1,13 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeHttp,
+	fakeShell,
+	type HttpReply,
+	okOut,
+	unconfigured,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
@@ -16,42 +23,62 @@ import {runScope} from "./scope-verb.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
 const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
-const OWNERS = /contents\/\.github\/CODEOWNERS/;
-const RULES = /^gh api repos\/o\/r\/rules\/branches\/main$/;
 const REPO = /^gh api repos\/o\/r$/;
 const CONFIG = /contents\/\.fabrika\.jsonc/;
+/** The boundary and the branch rules are HTTP now; the two PR reads still shell out to `gh`. */
+const OWNERS = /contents\/\.github\/CODEOWNERS/;
+const RULES = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/rules\/branches\/main$/;
+
+/** A served file, through the raw media type the boundary read asks for. */
+const served = (body: string): HttpReply => ({status: 200, body});
+
+/** The branch's active rules, as the endpoint serves them. */
+const rules = (...types: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: branchRules(...types).stdout,
+});
+
+const ABSENT: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
+const UNREADABLE: HttpReply = {status: 502, body: '{"message":"Bad gateway"}'};
 
 const options = {pr: 4321, repo: null, json: false, cwd: "/repo", env: ENV};
 
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	http: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
 	overrides: Partial<typeof options> = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runScope({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, unconfigured),
+			Layer.mergeAll(fakeShell(script).layer, fakeHttp(http).layer, unconfigured),
 		),
 	);
 
 describe("runScope", () => {
 	it("renders a partial split as `part-of:<n>` — the marker resolves at this seam as it does at review's", async () => {
-		const out = await run([
-			[PULL, pull({body: "does things\n\nPart of #4000\n"})],
-			[FILES, files("apps/web/worker/cart.ts", "README.md")],
-			[OWNERS, okOut(CODEOWNERS)],
-		]);
+		const out = await run(
+			[
+				[PULL, pull({body: "does things\n\nPart of #4000\n"})],
+				[FILES, files("apps/web/worker/cart.ts", "README.md")],
+			],
+			[[OWNERS, served(CODEOWNERS)]],
+		);
 		expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\topen\tpart-of:4000`);
 	});
 
 	it("prints one derivation: state, issue ref, classes, the namespaces they require, cp, landing and count", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[FILES, files("apps/web/src/App.tsx", "README.md")],
-			[OWNERS, okOut(CODEOWNERS)],
-			[RULES, branchRules("pull_request")],
-			[REPO, repository()],
-		]);
+		const out = await run(
+			[
+				[PULL, pull()],
+				[FILES, files("apps/web/src/App.tsx", "README.md")],
+				[REPO, repository()],
+			],
+			[
+				[OWNERS, served(CODEOWNERS)],
+				[RULES, rules("pull_request")],
+			],
+		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
 			[
@@ -71,12 +98,16 @@ describe("runScope", () => {
 	});
 
 	it("names the queue path when a queue governs the base — the shipper's route, read once", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[FILES, files("README.md", "DEVELOPMENT.md")],
-			[OWNERS, okOut(CODEOWNERS)],
-			[RULES, branchRules("merge_queue")],
-		]);
+		const out = await run(
+			[
+				[PULL, pull()],
+				[FILES, files("README.md", "DEVELOPMENT.md")],
+			],
+			[
+				[OWNERS, served(CODEOWNERS)],
+				[RULES, rules("merge_queue")],
+			],
+		);
 		expect(out.stdout).toContain(`landing\tqueue\t-\n`);
 	});
 
@@ -85,112 +116,136 @@ describe("runScope", () => {
 	 * refuses `11` on the same failed read, so a printed `unknown` can never license a landing.
 	 */
 	it("prints `unknown` and still answers when the landing path cannot be read", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[FILES, files("README.md", "DEVELOPMENT.md")],
-			[OWNERS, okOut(CODEOWNERS)],
-			[RULES, errOut("HTTP 503")],
-		]);
+		const out = await run(
+			[
+				[PULL, pull()],
+				[FILES, files("README.md", "DEVELOPMENT.md")],
+			],
+			[
+				[OWNERS, served(CODEOWNERS)],
+				[RULES, {status: 503, body: '{"message":"Service unavailable"}'}],
+			],
+		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain(`landing\tunknown\t-\n`);
 		expect(out.stderr.some((line) => line.includes("cannot read main's landing path"))).toBe(true);
 	});
 
 	it("derives review-ui from a rendered surface but not from its own test file", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[FILES, files("apps/web/src/App.tsx", "apps/web/src/App.test.tsx")],
-			[OWNERS, okOut(CODEOWNERS)],
-		]);
+		const out = await run(
+			[
+				[PULL, pull()],
+				[FILES, files("apps/web/src/App.tsx", "apps/web/src/App.test.tsx")],
+			],
+			[[OWNERS, served(CODEOWNERS)]],
+		);
 		expect(out.stdout).toContain("class\tui\t1");
 	});
 
 	it("prints governance beside the class namespaces when the diff touches a governance root", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[FILES, files(".decisions/0244-corpus-review.md", "README.md")],
-			[OWNERS, okOut(CODEOWNERS)],
-		]);
+		const out = await run(
+			[
+				[PULL, pull()],
+				[FILES, files(".decisions/0244-corpus-review.md", "README.md")],
+			],
+			[[OWNERS, served(CODEOWNERS)]],
+		);
 		expect(out.stdout).toContain("namespace\tgovernance");
 		// One class here, so the whole namespace block is exactly these two lines, in this order.
 		expect(out.stdout).toContain(["namespace\treview-doc", "namespace\tgovernance"].join("\n"));
 	});
 
 	it("prints no governance line for a diff under no governance root", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[FILES, files("apps/web/src/App.tsx", "README.md")],
-			[OWNERS, okOut(CODEOWNERS)],
-		]);
+		const out = await run(
+			[
+				[PULL, pull()],
+				[FILES, files("apps/web/src/App.tsx", "README.md")],
+			],
+			[[OWNERS, served(CODEOWNERS)]],
+		);
 		expect(out.stdout).not.toContain("governance");
 	});
 
 	it("reports a merged PR as an ANSWER, not a refusal", async () => {
-		const out = await run([
-			[PULL, pull({merged: true, state: "closed", changedFiles: 1})],
-			[FILES, files("README.md")],
-			[OWNERS, okOut(CODEOWNERS)],
-		]);
+		const out = await run(
+			[
+				[PULL, pull({merged: true, state: "closed", changedFiles: 1})],
+				[FILES, files("README.md")],
+			],
+			[[OWNERS, served(CODEOWNERS)]],
+		);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toContain("\tmerged\t");
 	});
 
 	it("reports a draft PR as an answer too", async () => {
-		const out = await run([
-			[PULL, pull({draft: true, changedFiles: 1})],
-			[FILES, files("README.md")],
-			[OWNERS, okOut(CODEOWNERS)],
-		]);
+		const out = await run(
+			[
+				[PULL, pull({draft: true, changedFiles: 1})],
+				[FILES, files("README.md")],
+			],
+			[[OWNERS, served(CODEOWNERS)]],
+		);
 		expect(out.stdout.split("\n")[0]).toContain("\tdraft\t");
 	});
 
 	it("classifies a control-plane path off CODEOWNERS itself", async () => {
-		const out = await run([
-			[PULL, pull({changedFiles: 1})],
-			[FILES, files(".github/workflows/ci.yml")],
-			[OWNERS, okOut(CODEOWNERS)],
-		]);
+		const out = await run(
+			[
+				[PULL, pull({changedFiles: 1})],
+				[FILES, files(".github/workflows/ci.yml")],
+			],
+			[[OWNERS, served(CODEOWNERS)]],
+		);
 		expect(out.stdout).toContain("cp\tcontrol-plane");
 	});
 
 	it("holds on unknown when the boundary is proven absent — never match-everything", async () => {
-		const out = await run([
-			[PULL, pull({changedFiles: 1})],
-			[FILES, files("README.md")],
-			[OWNERS, errOut("gh: Not Found (HTTP 404)")],
-		]);
+		const out = await run(
+			[
+				[PULL, pull({changedFiles: 1})],
+				[FILES, files("README.md")],
+			],
+			[[OWNERS, ABSENT]],
+		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("cp\tunknown");
 	});
 
 	it("still holds on unknown for a boundary that reads fine and bounds nothing", async () => {
-		const out = await run([
-			[PULL, pull({changedFiles: 1})],
-			[FILES, files("README.md")],
-			[OWNERS, okOut("/a/ owner@example.test\n")],
-		]);
+		const out = await run(
+			[
+				[PULL, pull({changedFiles: 1})],
+				[FILES, files("README.md")],
+			],
+			[[OWNERS, served("/a/ owner@example.test\n")]],
+		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("cp\tunknown");
 	});
 
 	it("refuses an UNREADABLE boundary on 11 — a failed read is not `unknown`", async () => {
-		const out = await run([
-			[PULL, pull({changedFiles: 1})],
-			[FILES, files("README.md")],
-			[OWNERS, errOut("gh: Bad gateway (HTTP 502)")],
-		]);
+		const out = await run(
+			[
+				[PULL, pull({changedFiles: 1})],
+				[FILES, files("README.md")],
+			],
+			[[OWNERS, UNREADABLE]],
+		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("the scope is UNKNOWN");
 	});
 
 	it("refuses a failed read whatever the repo's config says — never `not-control-plane`", async () => {
-		const out = await run([
-			[PULL, pull({changedFiles: 1})],
-			[FILES, files("README.md")],
-			[OWNERS, errOut("gh: Bad gateway (HTTP 502)")],
-			[CONFIG, okOut('{"unreadableCodeowners": "ship"}')],
-		]);
+		const out = await run(
+			[
+				[PULL, pull({changedFiles: 1})],
+				[FILES, files("README.md")],
+				[CONFIG, okOut('{"unreadableCodeowners": "ship"}')],
+			],
+			[[OWNERS, UNREADABLE]],
+		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 	});

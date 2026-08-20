@@ -1,44 +1,59 @@
-import {Effect} from "effect";
+import {mkdtempSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeHttp, fakeShell, type HttpReply, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {readManifest, runEvidence} from "./evidence-verb.ts";
 import {ENV, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
 
+/** The live-head reads and the scratch/unzip legs still shell out. */
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
 const COMMIT = /^gh api repos\/o\/r\/commits\/[0-9a-f]+ --jq \.sha$/;
-const WORKFLOW = /^gh api repos\/o\/r\/actions\/workflows\/run-evidence\.yml/;
-const RUNS = /^gh api --paginate repos\/o\/r\/actions\/runs\?head_sha=/;
-const ARTIFACTS = /^gh api --paginate repos\/o\/r\/actions\/runs\/\d+\/artifacts/;
 const MKTEMP = /^mktemp -d$/;
-const DOWNLOAD = /^sh -c gh api repos\/o\/r\/actions\/artifacts\/\d+\/zip/;
-const MAGIC = /^sh -c head -c 2 /;
 const UNZIP = /^sh -c unzip -p /;
+
+/** Everything the verb reads off GitHub now goes over HTTP. */
+const WORKFLOW =
+	/^GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/workflows\/run-evidence\.yml$/;
+const RUNS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/runs\?head_sha=/;
+const ARTIFACTS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/runs\/\d+\/artifacts/;
+const ZIP = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/artifacts\/\d+\/zip$/;
+
+/**
+ * A real directory, because `fetchManifest` writes the fetched bytes there for real — the download
+ * no longer goes through a shelled redirect, so a fictional `mktemp -d` path would fail the write.
+ */
+const scratch = (): string => mkdtempSync(join(tmpdir(), "fabrika-test-"));
 
 const runsAt = (
 	...rows: ReadonlyArray<{id: number; name: string; status: string; completedAt?: string | null}>
-): ExecResult =>
-	okOut(
-		JSON.stringify({
-			total_count: rows.length,
-			workflow_runs: rows.map(({completedAt, ...row}) => ({
-				...row,
-				conclusion: "success",
-				completed_at: completedAt === undefined ? new Date().toISOString() : completedAt,
-			})),
-		}),
-	);
+): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		total_count: rows.length,
+		workflow_runs: rows.map(({completedAt, ...row}) => ({
+			...row,
+			conclusion: "success",
+			completed_at: completedAt === undefined ? new Date().toISOString() : completedAt,
+		})),
+	}),
+});
 
 const artifactsFor = (
 	...rows: ReadonlyArray<{id: number; name: string; expired?: boolean}>
-): ExecResult =>
-	okOut(
-		JSON.stringify({
-			total_count: rows.length,
-			artifacts: rows.map((row) => ({...row, expired: row.expired ?? false})),
-		}),
-	);
+): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		total_count: rows.length,
+		artifacts: rows.map((row) => ({...row, expired: row.expired ?? false})),
+	}),
+});
+
+/** The bundle's bytes. Only the `PK` magic number is read in memory before the write. */
+const zipBody = (): HttpReply => ({status: 200, body: "PKfabrika-test-bundle"});
 
 const manifest = (commit: string, checks: ReadonlyArray<{name: string; status: string}>): string =>
 	JSON.stringify({schemaVersion: 1, commit, checks});
@@ -65,21 +80,38 @@ const options = {pr: 4321, sha: HEAD, repo: null, json: false, env: ENV};
 
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	http: ReadonlyArray<readonly [RegExp, HttpReply]>,
 	overrides: Partial<typeof options> = {},
 ) =>
 	Effect.runPromise(
-		Effect.provide(runEvidence({...options, ...overrides}), fakeShell(script).layer),
+		Effect.provide(
+			runEvidence({...options, ...overrides}),
+			Layer.merge(fakeShell(script).layer, fakeHttp(http).layer),
+		),
 	);
 
-const upToArtifact: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const shellUpToArtifact = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[PULL, pull()],
 	[COMMIT, okOut(HEAD)],
-	[WORKFLOW, okOut(".github/workflows/run-evidence.yml")],
+	[MKTEMP, okOut(scratch())],
+];
+
+const HTTP_UP_TO_ARTIFACT: ReadonlyArray<readonly [RegExp, HttpReply]> = [
+	[WORKFLOW, {status: 200, body: JSON.stringify({path: ".github/workflows/run-evidence.yml"})}],
 	[RUNS, runsAt({id: 9182736450, name: "run-evidence", status: "completed"})],
 	[ARTIFACTS, artifactsFor({id: 2211334455, name: "run-evidence"})],
-	[MKTEMP, okOut("/scratch/x")],
-	[DOWNLOAD, okOut("")],
-	[MAGIC, okOut("PK")],
+	[ZIP, zipBody()],
+];
+
+/** The shell rows for a run that never reaches the download. */
+const SHELL_HEAD: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+	[PULL, pull()],
+	[COMMIT, okOut(HEAD)],
+];
+
+const WORKFLOW_PRESENT: readonly [RegExp, HttpReply] = [
+	WORKFLOW,
+	{status: 200, body: JSON.stringify({path: ".github/workflows/run-evidence.yml"})},
 ];
 
 describe("readManifest", () => {
@@ -100,18 +132,21 @@ describe("readManifest", () => {
 
 describe("runEvidence", () => {
 	it("reports present with the lookup evidence and the manifest checks as a status tally", async () => {
-		const out = await run([
-			...upToArtifact,
+		const out = await run(
 			[
-				UNZIP,
-				okOut(
-					manifest(HEAD, [
-						{name: "typecheck", status: "pass"},
-						{name: "unit", status: "pass"},
-					]),
-				),
+				...shellUpToArtifact(),
+				[
+					UNZIP,
+					okOut(
+						manifest(HEAD, [
+							{name: "typecheck", status: "pass"},
+							{name: "unit", status: "pass"},
+						]),
+					),
+				],
 			],
-		]);
+			HTTP_UP_TO_ARTIFACT,
+		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
 			[
@@ -126,19 +161,22 @@ describe("runEvidence", () => {
 	// ADR 0308: `checks` is an evidence-array, so the manifest's rows collapse to a status tally. The
 	// names behind a non-passing tally stay readable — the verb already lists them on stderr.
 	it("tallies the manifest's checks by status instead of printing a row per check", async () => {
-		const out = await run([
-			...upToArtifact,
+		const out = await run(
 			[
-				UNZIP,
-				okOut(
-					manifest(HEAD, [
-						{name: "typecheck", status: "pass"},
-						{name: "unit", status: "fail"},
-						{name: "lint", status: "fail"},
-					]),
-				),
+				...shellUpToArtifact(),
+				[
+					UNZIP,
+					okOut(
+						manifest(HEAD, [
+							{name: "typecheck", status: "pass"},
+							{name: "unit", status: "fail"},
+							{name: "lint", status: "fail"},
+						]),
+					),
+				],
 			],
-		]);
+			HTTP_UP_TO_ARTIFACT,
+		);
 		expect(out.stdout.split("\n")[0]).toBe(`evidence\tfailed\t${HEAD}`);
 		expect(out.stdout).toContain("check\tfail\t2");
 		expect(out.stdout).toContain("check\tpass\t1");
@@ -149,7 +187,7 @@ describe("runEvidence", () => {
 	it("mirrors the same collapsed tally into the --json payload", async () => {
 		const out = await run(
 			[
-				...upToArtifact,
+				...shellUpToArtifact(),
 				[
 					UNZIP,
 					okOut(
@@ -160,6 +198,7 @@ describe("runEvidence", () => {
 					),
 				],
 			],
+			HTTP_UP_TO_ARTIFACT,
 			{json: true},
 		);
 		expect(JSON.parse(out.stdout).checks).toEqual({pass: 2});
@@ -168,25 +207,26 @@ describe("runEvidence", () => {
 	// #5563: the consumer read the bundle against GitHub's conclusion vocabulary, which the producer
 	// never writes, so every real bundle read `failed` and no PR could ship on green evidence.
 	it("reports present for a manifest in the producer's own published shape", async () => {
-		const out = await run([...upToArtifact, [UNZIP, okOut(producerManifest(HEAD))]]);
+		const out = await run(
+			[...shellUpToArtifact(), [UNZIP, okOut(producerManifest(HEAD))]],
+			HTTP_UP_TO_ARTIFACT,
+		);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe(`evidence\tpresent\t${HEAD}`);
 	});
 
 	it("reports failed for a check carrying GitHub's `success` — an unknown word is not passing", async () => {
-		const out = await run([
-			...upToArtifact,
-			[UNZIP, okOut(manifest(HEAD, [{name: "unit", status: "success"}]))],
-		]);
+		const out = await run(
+			[...shellUpToArtifact(), [UNZIP, okOut(manifest(HEAD, [{name: "unit", status: "success"}]))]],
+			HTTP_UP_TO_ARTIFACT,
+		);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe(`evidence\tfailed\t${HEAD}`);
 	});
 
 	it("reports pending for an in-flight producer run — pending is NOT absent (#3913)", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[COMMIT, okOut(HEAD)],
-			[WORKFLOW, okOut(".github/workflows/run-evidence.yml")],
+		const out = await run(SHELL_HEAD, [
+			WORKFLOW_PRESENT,
 			[RUNS, runsAt({id: 9182736999, name: "run-evidence", status: "in_progress"})],
 		]);
 		expect(out.stdout).toBe(
@@ -199,11 +239,7 @@ describe("runEvidence", () => {
 	});
 
 	it("reports absent on the foreign-repo degradation, proven by a SUCCESSFUL inventory read", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[COMMIT, okOut(HEAD)],
-			[WORKFLOW, errOut("gh: Not Found (HTTP 404)")],
-		]);
+		const out = await run(SHELL_HEAD, [[WORKFLOW, {status: 404, body: '{"message":"Not Found"}'}]]);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe(`evidence\tabsent\t${HEAD}`);
 	});
@@ -211,10 +247,8 @@ describe("runEvidence", () => {
 	// Clause 6: "completed, zero artifacts" is two facts in one shape. The 120s window against the
 	// local clock is what separates a listing lag from a producer that published nothing.
 	it("reports pending for a JUST-completed run with zero artifacts — listing lag, not a CI gap", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[COMMIT, okOut(HEAD)],
-			[WORKFLOW, okOut(".github/workflows/run-evidence.yml")],
+		const out = await run(SHELL_HEAD, [
+			WORKFLOW_PRESENT,
 			[RUNS, runsAt({id: 9182736450, name: "run-evidence", status: "completed"})],
 			[ARTIFACTS, artifactsFor()],
 		]);
@@ -224,10 +258,8 @@ describe("runEvidence", () => {
 	});
 
 	it("reports absent once that run is older than the window — the producer published nothing", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[COMMIT, okOut(HEAD)],
-			[WORKFLOW, okOut(".github/workflows/run-evidence.yml")],
+		const out = await run(SHELL_HEAD, [
+			WORKFLOW_PRESENT,
 			[
 				RUNS,
 				runsAt({
@@ -245,10 +277,8 @@ describe("runEvidence", () => {
 	});
 
 	it("reports absent when the run never reports a completion time at all", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[COMMIT, okOut(HEAD)],
-			[WORKFLOW, okOut(".github/workflows/run-evidence.yml")],
+		const out = await run(SHELL_HEAD, [
+			WORKFLOW_PRESENT,
 			[
 				RUNS,
 				runsAt({id: 9182736450, name: "run-evidence", status: "completed", completedAt: null}),
@@ -260,10 +290,10 @@ describe("runEvidence", () => {
 
 	// Clause 5: `failed` is the most DEFINITE answer this verb has; `unknown` means the opposite.
 	it("reports failed for a bundle that binds this head and attests a failing run", async () => {
-		const out = await run([
-			...upToArtifact,
-			[UNZIP, okOut(manifest(HEAD, [{name: "unit", status: "fail"}]))],
-		]);
+		const out = await run(
+			[...shellUpToArtifact(), [UNZIP, okOut(manifest(HEAD, [{name: "unit", status: "fail"}]))]],
+			HTTP_UP_TO_ARTIFACT,
+		);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe(`evidence\tfailed\t${HEAD}`);
 		expect(out.stderr.some((line) => line.includes("it attests a run, not a passing one"))).toBe(
@@ -272,36 +302,41 @@ describe("runEvidence", () => {
 	});
 
 	it("reports unknown when the bundle attests another tree", async () => {
-		const out = await run([...upToArtifact, [UNZIP, okOut(manifest(OTHER_HEAD, []))]]);
+		const out = await run(
+			[...shellUpToArtifact(), [UNZIP, okOut(manifest(OTHER_HEAD, []))]],
+			HTTP_UP_TO_ARTIFACT,
+		);
 		expect(out.stdout.split("\n")[0]).toBe(`evidence\tunknown\t${HEAD}`);
 		expect(out.stderr.some((line) => line.includes("is not evidence about this one"))).toBe(true);
 	});
 
 	it("refuses a body that is not a zip on 11 — a 503 saved as .zip is not a bundle (#3716)", async () => {
-		const out = await run([
-			...upToArtifact.filter(([pattern]) => pattern !== MAGIC),
-			[MAGIC, okOut("<h")],
+		const out = await run(shellUpToArtifact(), [
+			...HTTP_UP_TO_ARTIFACT.filter(([pattern]) => pattern !== ZIP),
+			[ZIP, {status: 200, body: "<html>service unavailable</html>"}],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("the fetched artifact is not a zip");
 		expect(out.stderr.at(-1)).toContain('whether a bundle exists is UNKNOWN, never "absent"');
 	});
 
 	it("refuses an unreadable run list on 11, never `absent`", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[COMMIT, okOut(HEAD)],
-			[WORKFLOW, okOut(".github/workflows/run-evidence.yml")],
-			[RUNS, errOut("gh: Service unavailable (HTTP 503)")],
+		const out = await run(SHELL_HEAD, [
+			WORKFLOW_PRESENT,
+			[RUNS, {status: 503, body: '{"message":"Service unavailable"}'}],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
 	it("refuses a --sha proven absent on 7", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[COMMIT, errOut("gh: Not Found (HTTP 404)")],
-		]);
+		const out = await run(
+			[
+				[PULL, pull()],
+				[COMMIT, errOut("gh: Not Found (HTTP 404)")],
+			],
+			[],
+		);
 		expect(out.code).toBe(ZERO_SCOPE);
 	});
 });
