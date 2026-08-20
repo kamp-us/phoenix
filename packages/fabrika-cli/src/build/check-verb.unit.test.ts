@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	classifyDiff,
@@ -20,12 +20,14 @@ import {
 } from "./codes.ts";
 import {
 	comments,
+	GH_TOKEN_ENV,
 	GIT_DIRS,
 	HEAD,
 	issue,
 	LANE_UUID,
 	marker,
 	NONCE,
+	served,
 } from "./fixtures.test-support.ts";
 
 /** Every regex metacharacter escaped, so a scripted path matches itself and nothing else. */
@@ -39,7 +41,7 @@ const BRANCH = /^git rev-parse --abbrev-ref HEAD$/;
 const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
 const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
-const REPO_META = /^gh api repos\/o\/r --jq \.default_branch$/;
+const REPO_META = /^GET https:\/\/api\.github\.com\/repos\/o\/r$/;
 const MERGE_BASE = /^git merge-base HEAD origin\/main$/;
 const DIFF = /^git diff --name-only /;
 const UNTRACKED_ARGV = "git ls-files --others --exclude-standard --full-name -- :/";
@@ -79,9 +81,7 @@ const untracked = (stdout: string): readonly [RegExp, ExecResult] => [UNTRACKED,
  * Placed ahead of `LANE_OK`, whose default is an empty base tree — i.e. every changed markdown file
  * is new, so its whole text is this diff's and the leak baseline subtracts nothing.
  */
-const atBase = (
-	files: Readonly<Record<string, string>>,
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+const atBase = (files: Readonly<Record<string, string>>): ReadonlyArray<Scripted> => [
 	[LS_TREE, okOut(`${Object.keys(files).join("\0")}\0`)],
 	...Object.entries(files).map(
 		([path, text]) =>
@@ -92,13 +92,13 @@ const atBase = (
 	),
 ];
 
-const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const LANE_OK: ReadonlyArray<Scripted> = [
 	[REV_PARSE, GIT_DIRS],
 	[BRANCH, okOut(`${LANE}\n`)],
 	[ISSUE, issue()],
 	[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
 	[PERM, okOut("write\n")],
-	[REPO_META, okOut("main\n")],
+	[REPO_META, served({default_branch: "main"})],
 	[MERGE_BASE, okOut(`${HEAD}\n`)],
 	untracked(""),
 	[LS_TREE, okOut("")],
@@ -107,14 +107,14 @@ const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 const options = {
 	surface: "code",
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
+	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e", ...GH_TOKEN_ENV} as Record<
 		string,
 		string | undefined
 	>,
 };
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	files: Record<string, string> = {},
 	unreadable: ReadonlyArray<string> = [],
@@ -123,7 +123,7 @@ const run = (
 		Effect.provide(
 			runCheck({...options, ...overrides}),
 			Layer.merge(
-				fakeShell(script).layer,
+				fakeSeams(script).layer,
 				fakeFs({files: {...CODE_CONFIG, ...files}, unreadable}).layer,
 			),
 		),
@@ -221,7 +221,7 @@ describe("notCoveredBy — a green discloses what THIS surface did not read", ()
 
 describe("runCheck", () => {
 	it("runs the exact CI commands with the cache bypassed, and reports what ran", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			...LANE_OK,
 			[DIFF, okOut("apps/web/src/App.tsx\n")],
 			[TYPECHECK, okOut("")],
@@ -276,7 +276,7 @@ describe("runCheck", () => {
 	});
 
 	it("refuses an off-enum surface on 10, before touching the tree", async () => {
-		const shell = fakeShell([]);
+		const shell = fakeSeams([]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runCheck({...options, surface: "design"}),
@@ -360,7 +360,7 @@ describe("runCheck", () => {
 	});
 
 	it("refuses the same diff on 22 under --surface code, naming the honest reason", async () => {
-		const shell = fakeShell([...LANE_OK, [DIFF, NO_SURFACE]]);
+		const shell = fakeSeams([...LANE_OK, [DIFF, NO_SURFACE]]);
 		const out = await Effect.runPromise(
 			Effect.provide(runCheck(options), Layer.merge(shell.layer, fakeFs({}).layer)),
 		);
@@ -416,7 +416,7 @@ describe("runCheck", () => {
 	});
 
 	it("names the code a --surface plan green did not read — same rule, mirrored", async () => {
-		const shell = fakeShell([...LANE_OK, [DIFF, okOut("apps/web/src/App.tsx\nplans/epic.md\n")]]);
+		const shell = fakeSeams([...LANE_OK, [DIFF, okOut("apps/web/src/App.tsx\nplans/epic.md\n")]]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runCheck({...options, surface: "plan"}),
@@ -769,7 +769,7 @@ describe("the enumeration unions the untracked files with the diff", () => {
 	// subdirectory that drops untracked files elsewhere in the tree and misresolves the rest against
 	// `lane.root`. Only the argv proves the two reads cover the same tree, so assert the argv.
 	it("reads the untracked list repo-wide and root-relative", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			untracked("apps/web/src/New.tsx\n"),
 			...LANE_OK,
 			[DIFF, okOut("apps/web/src/App.tsx\n")],
@@ -920,7 +920,7 @@ describe("the leak scan reds this diff's leaks, not the file's", () => {
 	// every one of them", which restored the exact false red this feature removes. Only the argv
 	// proves the anchor; a matcher that stops before the operands passes under both shapes.
 	it("pins both base reads to the lane root, operands and all", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			...atBase({[FILE]: TAXONOMY}),
 			...LANE_OK,
 			[DIFF, okOut(`${FILE}\n`)],
@@ -1005,11 +1005,11 @@ describe("--surface workflows", () => {
 	const NO_ACTIONLINT = [ACTIONLINT];
 
 	const workflows = (
-		script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+		script: ReadonlyArray<Scripted>,
 		files: Record<string, string> = DECLARED,
 		unstartable: ReadonlyArray<RegExp> = [],
 	) => {
-		const shell = fakeShell([...LANE_OK, [DIFF, WORKFLOWS], ...script], undefined, unstartable);
+		const shell = fakeSeams([...LANE_OK, [DIFF, WORKFLOWS], ...script], undefined, unstartable);
 		return Effect.runPromise(
 			Effect.provide(
 				runCheck({...options, surface: "workflows"}),
@@ -1157,7 +1157,7 @@ describe("--surface workflows", () => {
 	});
 
 	it("refuses on 11 when the config cannot be read — the validator set is UNKNOWN", async () => {
-		const shell = fakeShell([...LANE_OK, [DIFF, WORKFLOWS], [ACTIONLINT, okOut("")]]);
+		const shell = fakeSeams([...LANE_OK, [DIFF, WORKFLOWS], [ACTIONLINT, okOut("")]]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runCheck({...options, surface: "workflows"}),
@@ -1169,7 +1169,7 @@ describe("--surface workflows", () => {
 	});
 
 	it("refuses on 10 over a diff with no workflow file", async () => {
-		const shell = fakeShell([...LANE_OK, [DIFF, okOut("apps/web/src/App.tsx\n")]]);
+		const shell = fakeSeams([...LANE_OK, [DIFF, okOut("apps/web/src/App.tsx\n")]]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runCheck({...options, surface: "workflows"}),
@@ -1194,7 +1194,7 @@ describe("a mixed workflow-plus-code diff — each surface reads its own class a
 	});
 
 	it("lints the workflow under --surface workflows, disclosing the code it did not read", async () => {
-		const shell = fakeShell([...LANE_OK, [DIFF, MIXED], [/^actionlint /, okOut("")]]);
+		const shell = fakeSeams([...LANE_OK, [DIFF, MIXED], [/^actionlint /, okOut("")]]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runCheck({...options, surface: "workflows"}),
@@ -1217,11 +1217,11 @@ describe("--surface code reads its validators from the config", () => {
 	const CODE = okOut("apps/web/src/App.tsx\n");
 
 	const codeRun = (
-		script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+		script: ReadonlyArray<Scripted>,
 		config: string | null,
 		unstartable: ReadonlyArray<RegExp> = [],
 	) => {
-		const shell = fakeShell([...LANE_OK, [DIFF, CODE], ...script], undefined, unstartable);
+		const shell = fakeSeams([...LANE_OK, [DIFF, CODE], ...script], undefined, unstartable);
 		return Effect.runPromise(
 			Effect.provide(
 				runCheck(options),
@@ -1298,7 +1298,7 @@ describe("--surface code reads its validators from the config", () => {
 	});
 
 	it("refuses UNKNOWN on a config file it cannot open", async () => {
-		const shell = fakeShell([...LANE_OK, [DIFF, CODE]]);
+		const shell = fakeSeams([...LANE_OK, [DIFF, CODE]]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runCheck(options),

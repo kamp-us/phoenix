@@ -1,11 +1,11 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import {runBranch} from "./branch-verb.ts";
 import {CLAIM_NOT_MINE, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
 	comments,
+	GH_TOKEN_ENV,
 	GIT_DIRS,
 	HEAD,
 	issue,
@@ -13,6 +13,8 @@ import {
 	LANE_UUID,
 	marker,
 	NONCE,
+	pullPayload,
+	served,
 } from "./fixtures.test-support.ts";
 
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
@@ -35,28 +37,25 @@ const options = {
 	resumeLane: false,
 	token: LANE_TOKEN,
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
+	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e", ...GH_TOKEN_ENV} as Record<
 		string,
 		string | undefined
 	>,
 };
 
-const CLAIMED: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const CLAIMED: ReadonlyArray<Scripted> = [
 	[REV_PARSE, GIT_DIRS],
 	[ISSUE, issue()],
 	[COMMENTS, MINE],
 	[PERM, okOut("write\n")],
 ];
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
-	Effect.runPromise(Effect.provide(runBranch({...options, ...overrides}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runBranch({...options, ...overrides}), fakeSeams(script).layer));
 
 describe("runBranch — create mode", () => {
 	it("cuts the lane branch off FETCH_HEAD and prints its name", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			...CLAIMED,
 			[REMOTES, okOut("origin\n")],
 			[FETCH, okOut("")],
@@ -71,7 +70,7 @@ describe("runBranch — create mode", () => {
 	});
 
 	it("fetches BEFORE it cuts — never off a stale local ref (#1920)", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			...CLAIMED,
 			[REMOTES, okOut("origin\n")],
 			[FETCH, okOut("")],
@@ -86,7 +85,7 @@ describe("runBranch — create mode", () => {
 	});
 
 	it("resumes an existing branch of the same nonce instead of failing — a re-run is idempotent", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			...CLAIMED,
 			[REMOTES, okOut("origin\n")],
 			[FETCH, okOut("")],
@@ -100,7 +99,7 @@ describe("runBranch — create mode", () => {
 	});
 
 	it("refuses a flag-shaped slug on 10, before touching git (#4854)", async () => {
-		const shell = fakeShell([]);
+		const shell = fakeSeams([]);
 		const out = await Effect.runPromise(
 			Effect.provide(runBranch({...options, slug: "-rf"}), shell.layer),
 		);
@@ -120,7 +119,7 @@ describe("runBranch — create mode", () => {
 	});
 
 	it("refuses a foreign claim on 15 — nothing is cut", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			[REV_PARSE, GIT_DIRS],
 			[ISSUE, issue()],
 			[COMMENTS, comments({id: 1, body: marker("s-77aa", LANE_UUID)})],
@@ -152,16 +151,16 @@ describe("runBranch — create mode", () => {
 describe("runBranch — resume mode", () => {
 	const RESUME_ISSUE = /^gh api repos\/o\/r\/issues\/4310$/;
 	const RESUME_COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4310\/comments/;
-	const PULL_HEAD = /^gh api repos\/o\/r\/pulls\/4310 --jq/;
+	const PULL_HEAD = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4310$/;
 	const resumeOptions = {number: null, slug: null, resume: 4310};
 
 	it("checks the PR's head out under this claim's own local lane name, with the upstream set", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			[REV_PARSE, GIT_DIRS],
 			[RESUME_ISSUE, issue({number: 4310})],
 			[RESUME_COMMENTS, MINE],
 			[PERM, okOut("write\n")],
-			[PULL_HEAD, okOut(`umut/fix-focus\t${HEAD}\topen\tfalse\n`)],
+			[PULL_HEAD, served(pullPayload({number: 4310, head: {ref: "umut/fix-focus", sha: HEAD}}))],
 			[REMOTES, okOut("origin\n")],
 			[/^git fetch --quiet origin umut\/fix-focus$/, okOut("")],
 			[RESOLVE, okOut(`${HEAD}\n`)],
@@ -186,7 +185,17 @@ describe("runBranch — resume mode", () => {
 				[RESUME_ISSUE, issue({number: 4310})],
 				[RESUME_COMMENTS, MINE],
 				[PERM, okOut("write\n")],
-				[PULL_HEAD, okOut(`umut/fix-focus\t${HEAD}\tclosed\ttrue\n`)],
+				[
+					PULL_HEAD,
+					served(
+						pullPayload({
+							number: 4310,
+							head: {ref: "umut/fix-focus", sha: HEAD},
+							state: "closed",
+							merged: true,
+						}),
+					),
+				],
 			],
 			resumeOptions,
 		);
@@ -222,10 +231,10 @@ describe("runBranch — --resume-lane", () => {
 	const SAFE_TO_REKEY = [
 		[WORKTREES, FREE],
 		[SHOW_CURRENT, ON_MAIN],
-	] as ReadonlyArray<readonly [RegExp, ExecResult]>;
+	] as ReadonlyArray<Scripted>;
 
 	it("re-keys the prior lane's branch to this claim's nonce and checks it out", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			...CLAIMED,
 			[FOR_EACH_REF, okOut(`main\n${PRIOR}\nepic/5631\n`)],
 			...SAFE_TO_REKEY,
@@ -245,7 +254,7 @@ describe("runBranch — --resume-lane", () => {
 	});
 
 	it("fetches nothing — a child's branch is local, and the remote knows none of it", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			...CLAIMED,
 			[FOR_EACH_REF, okOut(`${PRIOR}\n`)],
 			...SAFE_TO_REKEY,
@@ -259,7 +268,7 @@ describe("runBranch — --resume-lane", () => {
 	});
 
 	it("renames nothing on a re-run under the same nonce — the name already resolves", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			...CLAIMED,
 			[FOR_EACH_REF, okOut(`${RESUMED}\n`)],
 			[SWITCH, okOut("")],
@@ -298,7 +307,7 @@ describe("runBranch — --resume-lane", () => {
 	 * that landed under another lane (#6386, review round 1).
 	 */
 	it("refuses on 11 BEFORE renaming when another worktree holds the branch, naming that worktree", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			...CLAIMED,
 			[FOR_EACH_REF, okOut(`${PRIOR}\n`)],
 			[WORKTREES, HELD],
@@ -314,7 +323,7 @@ describe("runBranch — --resume-lane", () => {
 	});
 
 	it("re-keys anyway when the tree holding the branch is this one — nobody else's HEAD moves", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			...CLAIMED,
 			[FOR_EACH_REF, okOut(`${PRIOR}\n`)],
 			[WORKTREES, okOut(`worktree /repo\nHEAD ${HEAD}\nbranch refs/heads/${PRIOR}\n`)],
@@ -330,7 +339,7 @@ describe("runBranch — --resume-lane", () => {
 	});
 
 	it("refuses on 11 when who holds the branch cannot be read — never 'free'", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			...CLAIMED,
 			[FOR_EACH_REF, okOut(`${PRIOR}\n`)],
 			[WORKTREES, errOut("fatal: not a git repository")],

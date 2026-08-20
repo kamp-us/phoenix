@@ -19,6 +19,7 @@
  * exists to remove.
  */
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {mergeBase, rangeCommits, resolveCommit} from "../io/git.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
@@ -56,14 +57,19 @@ export type Assembly =
  * is a caller-chosen answer to "has this landed".
  */
 export const readAssembly = (
+	env: Readonly<Record<string, string | undefined>>,
 	repo: string,
 	epic: number,
-): Effect.Effect<Assembly, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	Assembly,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const branch = epicBranch(epic);
 		const tip = yield* resolveCommit(branch, " — the epic run's assembly branch");
 		if (tip._tag === "Failure") return {_tag: "Unreadable" as const, branch, reason: tip.reason};
-		const trunk = yield* defaultBranch(repo);
+		const trunk = yield* defaultBranch(env, repo);
 		if (trunk._tag === "Failure")
 			return {
 				_tag: "Unreadable" as const,

@@ -17,6 +17,7 @@
  * before any write, which is the invariant the ordering is for.
  */
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {getPullRequest} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
@@ -122,7 +123,11 @@ const classificationRefusal = (verb: string, body: string): VerbOutcome | null =
 
 export const runPr = (
 	options: PrOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const {number, partial} = options;
 
@@ -157,7 +162,7 @@ export const runPr = (
 		const lane = yield* requireLane(VERB, repo, session.id, number);
 		if (lane._tag === "Refused") return lane.outcome;
 
-		const existing = yield* openPullForHead(repo, lane.branch);
+		const existing = yield* openPullForHead(options.env, repo, lane.branch);
 		if (existing._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -176,7 +181,7 @@ export const runPr = (
 			);
 		}
 
-		const base = yield* defaultBranch(repo);
+		const base = yield* defaultBranch(options.env, repo);
 		if (base._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -186,6 +191,7 @@ export const runPr = (
 		}
 
 		const created = yield* createPull(
+			options.env,
 			repo,
 			conventionalTitleOf(target.issue.title, target.issue.labels),
 			lane.branch,
@@ -231,7 +237,11 @@ const servedIssueOf = (headRef: string): number | null => {
 
 export const runPrBody = (
 	options: PrBodyOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const {pr, partial} = options;
 
@@ -252,7 +262,7 @@ export const runPrBody = (
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
 
-		const head = yield* getPullHead(repo, pr);
+		const head = yield* getPullHead(options.env, repo, pr);
 		if (head._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -289,7 +299,7 @@ export const runPrBody = (
 			);
 		}
 
-		const updated = yield* updatePullBody(repo, pr, body);
+		const updated = yield* updatePullBody(options.env, repo, pr, body);
 		if (updated._tag === "Failure") {
 			return refuse(
 				WRITE_UNKNOWN,

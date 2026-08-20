@@ -1,7 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeFs, fakeSeams, linkNext, type Scripted} from "../fakes.test-support.ts";
 import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {FAILED} from "../verb.ts";
 import {BAD_SECTIONS, PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -9,18 +8,21 @@ import {
 	blockedBy,
 	CRITERIA_BODY,
 	campaignsTable,
-	candidates,
+	candidatePage,
+	GATEWAY,
+	GH_TOKEN_ENV,
 	issue,
 	NO_BLOCKERS,
+	served,
 } from "./fixtures.test-support.ts";
 import {runPick} from "./pick-verb.ts";
 
 const bucket = (priority: string) =>
 	new RegExp(
-		`^gh api --paginate repos/o/r/issues\\?state=open&labels=status%3Atriaged%2C${priority}`,
+		`^GET https://api\\.github\\.com/repos/o/r/issues\\?state=open&labels=status%3Atriaged%2C${priority}`,
 	);
 
-const EMPTY = okOut("[]");
+const EMPTY = served([]);
 const TRIAGED = ["status:triaged", "ready-for:agent", "type:bug"];
 
 /** A report-shaped body — prose only, no contract anywhere. kamp-us/demlik#4's shape (#6025). */
@@ -30,21 +32,21 @@ const options = {
 	repo: null,
 	limit: 20,
 	cwd: "/repo",
-	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	env: {CLAUDE_PIPELINE_REPO: "o/r", ...GH_TOKEN_ENV} as Record<string, string | undefined>,
 };
 
 /** No `ROADMAP.md` at all: a well-formed "nothing active", so the scope axis admits everything. */
 const NO_CAMPAIGNS = fakeFs({files: {}});
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	fs = NO_CAMPAIGNS,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runPick({...options, ...overrides}),
-			Layer.merge(fakeShell([...script, NO_BLOCKERS]).layer, fs.layer),
+			Layer.merge(fakeSeams([...script, NO_BLOCKERS]).layer, fs.layer),
 		),
 	);
 
@@ -60,12 +62,12 @@ describe("runPick", () => {
 		const out = await run([
 			[
 				bucket("p0"),
-				candidates(
+				candidatePage(
 					{number: 500, labels: [...TRIAGED, "p0"], milestone: 44},
 					{number: 400, labels: [...TRIAGED, "p0"], milestone: null},
 				),
 			],
-			[bucket("p1"), candidates({number: 300, labels: [...TRIAGED, "p1"]})],
+			[bucket("p1"), candidatePage({number: 300, labels: [...TRIAGED, "p1"]})],
 			[bucket("p2"), EMPTY],
 		]);
 		expect(out.code).toBe(0);
@@ -74,7 +76,7 @@ describe("runPick", () => {
 
 	it("excludes an issue with NO ready-for: label — absence is an unknown audience (#4780)", async () => {
 		const out = await run([
-			[bucket("p0"), candidates({number: 500, labels: ["status:triaged", "type:bug", "p0"]})],
+			[bucket("p0"), candidatePage({number: 500, labels: ["status:triaged", "type:bug", "p0"]})],
 			[bucket("p1"), EMPTY],
 			[bucket("p2"), EMPTY],
 		]);
@@ -88,7 +90,7 @@ describe("runPick", () => {
 	 */
 	it("excludes a candidate whose body carries no acceptance-criteria block, with its axis", async () => {
 		const out = await run([
-			[bucket("p0"), candidates({number: 500, labels: [...TRIAGED, "p0"], body: REPORT_BODY})],
+			[bucket("p0"), candidatePage({number: 500, labels: [...TRIAGED, "p0"], body: REPORT_BODY})],
 			[bucket("p1"), EMPTY],
 			[bucket("p2"), EMPTY],
 		]);
@@ -101,7 +103,7 @@ describe("runPick", () => {
 		const out = await run([
 			[
 				bucket("p0"),
-				candidates({
+				candidatePage({
 					number: 500,
 					labels: [...TRIAGED, "p0"],
 					body: CRITERIA_BODY.replace("### Acceptance", "## Acceptance"),
@@ -117,7 +119,7 @@ describe("runPick", () => {
 		const out = await run([
 			[
 				bucket("p0"),
-				candidates(
+				candidatePage(
 					{number: 500, labels: [...TRIAGED, "p0"]},
 					{number: 501, labels: [...TRIAGED, "p0"], body: REPORT_BODY},
 				),
@@ -137,7 +139,7 @@ describe("runPick", () => {
 		const out = await run([
 			[
 				bucket("p0"),
-				candidates(
+				candidatePage(
 					{number: 500, labels: [...TRIAGED, "p0"], body: REPORT_BODY},
 					{number: 501, labels: ["status:triaged", "p0"]},
 				),
@@ -158,7 +160,7 @@ describe("runPick", () => {
 		const out = await run([
 			[
 				bucket("p0"),
-				candidates(
+				candidatePage(
 					{number: 500, labels: [...TRIAGED, "p0"]},
 					...[501, 502, 503].map((number) => ({
 						number,
@@ -181,7 +183,10 @@ describe("runPick", () => {
 
 	it("excludes an assigned issue — assignment keeps a human's document out (#4764)", async () => {
 		const out = await run([
-			[bucket("p0"), candidates({number: 500, labels: [...TRIAGED, "p0"], assignees: ["usirin"]})],
+			[
+				bucket("p0"),
+				candidatePage({number: 500, labels: [...TRIAGED, "p0"], assignees: ["usirin"]}),
+			],
 			[bucket("p1"), EMPTY],
 			[bucket("p2"), EMPTY],
 		]);
@@ -192,7 +197,7 @@ describe("runPick", () => {
 		const out = await run([
 			[
 				bucket("p0"),
-				candidates(
+				candidatePage(
 					{number: 500, labels: ["status:triaged", "ready-for:agent", "type:epic", "p0"]},
 					{number: 501, labels: [...TRIAGED, "p0"], pull: true},
 				),
@@ -207,7 +212,7 @@ describe("runPick", () => {
 		const out = await run([
 			[
 				bucket("p0"),
-				candidates({number: 500, labels: [...TRIAGED, "p0", "axis:pipeline-hardening"]}),
+				candidatePage({number: 500, labels: [...TRIAGED, "p0", "axis:pipeline-hardening"]}),
 			],
 			[bucket("p1"), EMPTY],
 			[bucket("p2"), EMPTY],
@@ -219,7 +224,7 @@ describe("runPick", () => {
 		const out = await run([
 			[bucket("p0"), EMPTY],
 			[bucket("p1"), EMPTY],
-			[bucket("p2"), candidates({number: 9, labels: ["status:triaged", "p2"]})],
+			[bucket("p2"), candidatePage({number: 9, labels: ["status:triaged", "p2"]})],
 		]);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({
@@ -232,27 +237,27 @@ describe("runPick", () => {
 
 	it("refuses a failed bucket read on 11 — a 5xx on p0 never reads as 'no p0s'", async () => {
 		const out = await run([
-			[bucket("p0"), errOut("gh: Bad gateway (HTTP 502)")],
+			[bucket("p0"), GATEWAY],
 			[bucket("p1"), EMPTY],
 			[bucket("p2"), EMPTY],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"build pick: cannot read the p0 bucket: gh: Bad gateway (HTTP 502) — the pool is UNKNOWN, never partial.",
+			"build pick: cannot read the p0 bucket: GitHub answered HTTP 502 — the pool is UNKNOWN, never partial.",
 		);
 	});
 
 	it("paginates every bucket", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[bucket("p0"), EMPTY],
 			[bucket("p1"), EMPTY],
 			[bucket("p2"), EMPTY],
 		]);
 		await Effect.runPromise(
-			Effect.provide(runPick(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
+			Effect.provide(runPick(options), Layer.merge(seams.layer, NO_CAMPAIGNS.layer)),
 		);
-		expect(shell.calls.filter((line) => line.includes("--paginate"))).toHaveLength(3);
+		expect(seams.requests.filter((line) => line.includes("per_page=100"))).toHaveLength(3);
 	});
 
 	it("refuses a non-positive --limit as a plain usage error", async () => {
@@ -261,32 +266,23 @@ describe("runPick", () => {
 		expect(out.stderr.at(-1)).toBe('build pick: --limit "0" is not a positive integer.');
 	});
 
-	it("refuses a bucket whose paginated output stops mid-page on 11 — a partial board never reads as the whole board", async () => {
-		const whole = candidates(
-			{number: 1, labels: [...TRIAGED, "p0"]},
-			{number: 2, labels: [...TRIAGED, "p0"]},
-		).stdout;
+	// A full page that still declares a `next` is the truncation this transport can produce: the walk
+	// reaches the page cap holding rows and no terminal page, so the bucket's completeness is unproven
+	// and the pool refuses rather than answering "no p0s" over a board it only partly read.
+	it("refuses a bucket whose pagination never reaches a terminal page on 11 — a partial board never reads as the whole board", async () => {
+		const page = {
+			...candidatePage({number: 1, labels: [...TRIAGED, "p0"]}),
+			headers: linkNext("https://api.github.com/repos/o/r/issues?page=2"),
+		};
 		const out = await run([
-			[bucket("p0"), okOut(whole.slice(0, whole.length - 30))],
+			[bucket("p0"), page],
 			[bucket("p1"), EMPTY],
 			[bucket("p2"), EMPTY],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toContain("does not end on a page boundary");
+		expect(out.stderr.at(-1)).toContain("stopped at the page cap with another page outstanding");
 		expect(out.stderr.at(-1)).toContain("the pool is UNKNOWN, never partial");
-	});
-
-	it("refuses a bucket whose SECOND page is cut short — the complete first page is not the answer", async () => {
-		const first = candidates({number: 1, labels: [...TRIAGED, "p0"]}).stdout;
-		const second = candidates({number: 2, labels: [...TRIAGED, "p0"]}).stdout;
-		const out = await run([
-			[bucket("p0"), okOut(first + second.slice(0, 20))],
-			[bucket("p1"), EMPTY],
-			[bucket("p2"), EMPTY],
-		]);
-		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stdout).toBe("");
 	});
 
 	it("excludes an out-of-scope issue with its reason, and keeps the in-scope one", async () => {
@@ -294,7 +290,7 @@ describe("runPick", () => {
 			[
 				[
 					bucket("p0"),
-					candidates(
+					candidatePage(
 						{number: 500, labels: [...TRIAGED, "p0"], milestone: 44},
 						{number: 400, labels: [...TRIAGED, "p0"], milestone: 39},
 					),
@@ -316,7 +312,7 @@ describe("runPick", () => {
 			[
 				[
 					bucket("p0"),
-					candidates(
+					candidatePage(
 						{number: 500, labels: [...TRIAGED, "p0"], milestone: 44},
 						{number: 400, labels: [...TRIAGED, "p0"], milestone: 39},
 						{number: 300, labels: [...TRIAGED, "p0"], milestone: 46},
@@ -337,7 +333,10 @@ describe("runPick", () => {
 	it("admits a standing-lane issue under an active campaign — a lane is milestone-less by design", async () => {
 		const out = await run(
 			[
-				[bucket("p0"), candidates({number: 500, labels: [...TRIAGED, "p0", "wayfinder:backlog"]})],
+				[
+					bucket("p0"),
+					candidatePage({number: 500, labels: [...TRIAGED, "p0", "wayfinder:backlog"]}),
+				],
 				[bucket("p1"), EMPTY],
 				[bucket("p2"), EMPTY],
 			],
@@ -388,7 +387,7 @@ describe("runPick", () => {
 			[
 				[
 					bucket("p0"),
-					candidates(
+					candidatePage(
 						{number: 1, labels: [...TRIAGED, "p0"]},
 						{number: 2, labels: [...TRIAGED, "p0"]},
 					),
@@ -414,7 +413,7 @@ describe("runPick — the blocked_by graph", () => {
 
 	it("excludes a candidate with an open blocker, with `blocked` as its named reason", async () => {
 		const out = await run([
-			[bucket("p0"), candidates({number: 500, labels: [...TRIAGED, "p0"]})],
+			[bucket("p0"), candidatePage({number: 500, labels: [...TRIAGED, "p0"]})],
 			[bucket("p1"), EMPTY],
 			[bucket("p2"), EMPTY],
 			[edges(500), blockedBy(210)],
@@ -428,7 +427,7 @@ describe("runPick — the blocked_by graph", () => {
 
 	it("keeps a candidate whose every blocker is closed", async () => {
 		const out = await run([
-			[bucket("p0"), candidates({number: 500, labels: [...TRIAGED, "p0"]})],
+			[bucket("p0"), candidatePage({number: 500, labels: [...TRIAGED, "p0"]})],
 			[bucket("p1"), EMPTY],
 			[bucket("p2"), EMPTY],
 			[edges(500), blockedBy(210)],
@@ -440,7 +439,7 @@ describe("runPick — the blocked_by graph", () => {
 
 	it("excludes a candidate whose edge list could not be read, naming why on stderr", async () => {
 		const out = await run([
-			[bucket("p0"), candidates({number: 500, labels: [...TRIAGED, "p0"]})],
+			[bucket("p0"), candidatePage({number: 500, labels: [...TRIAGED, "p0"]})],
 			[bucket("p1"), EMPTY],
 			[bucket("p2"), EMPTY],
 			[edges(500), errOut("gh: Bad gateway (HTTP 502)")],
@@ -453,10 +452,10 @@ describe("runPick — the blocked_by graph", () => {
 
 	/** The graph read is last because it is the only axis that costs a call — nothing else does. */
 	it("reads no edges for a candidate an earlier axis already excluded", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			[
 				bucket("p0"),
-				candidates(
+				candidatePage(
 					{number: 500, labels: ["status:triaged", "type:bug", "p0"]},
 					{number: 501, labels: [...TRIAGED, "p0"], body: REPORT_BODY},
 				),

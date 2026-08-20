@@ -16,6 +16,7 @@
  */
 
 import {Effect, type FileSystem} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {scannedLine} from "../build/target.ts";
 import {createComment} from "../io/issues.ts";
@@ -51,7 +52,7 @@ export const runSupersede = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | HttpClient.HttpClient
 > =>
 	Effect.gen(function* () {
 		if (isBareAtReference(options.reason)) {
@@ -81,7 +82,7 @@ export const runSupersede = (
 			);
 		}
 
-		const children = yield* listSubIssueEntries(repo, epic.number);
+		const children = yield* listSubIssueEntries(options.env, repo, epic.number);
 		if (children._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -98,7 +99,7 @@ export const runSupersede = (
 			);
 		}
 
-		const before = yield* readChildBack(repo, options.child);
+		const before = yield* readChildBack(options.env, repo, options.child);
 		if (before._tag === "Absent" || (before._tag === "Present" && before.value.state !== "open")) {
 			return refuse(
 				ZERO_SCOPE,
@@ -128,15 +129,15 @@ export const runSupersede = (
 		);
 		if (journal._tag === "Failure") return unproven(0, journal.reason);
 
-		const unlinked = yield* unlinkSubIssue(repo, epic.number, entry.id);
+		const unlinked = yield* unlinkSubIssue(options.env, repo, epic.number, entry.id);
 		if (unlinked._tag === "Failure") return unproven(1, unlinked.reason);
 
-		const closed = yield* closeAsNotPlanned(repo, options.child);
+		const closed = yield* closeAsNotPlanned(options.env, repo, options.child);
 		if (closed._tag === "Failure") return unproven(2, closed.reason);
 
-		const after = yield* readChildBack(repo, options.child);
+		const after = yield* readChildBack(options.env, repo, options.child);
 		if (after._tag !== "Present") return unproven(3, "the confirming read failed");
-		const siblings = yield* listSubIssueEntries(repo, epic.number);
+		const siblings = yield* listSubIssueEntries(options.env, repo, epic.number);
 		if (siblings._tag === "Failure") return unproven(3, siblings.reason);
 
 		const stillLinked = siblings.value.some((row) => row.number === options.child);

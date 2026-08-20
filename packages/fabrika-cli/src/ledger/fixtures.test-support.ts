@@ -7,8 +7,16 @@
  * for the same reason the link and unlink take it: it is the field the relation is keyed on.
  */
 
-import {comments, LANE_TOKEN, LANE_UUID, marker, NONCE} from "../build/fixtures.test-support.ts";
-import {okOut} from "../fakes.test-support.ts";
+import {
+	comments,
+	GH_TOKEN_ENV,
+	LANE_TOKEN,
+	LANE_UUID,
+	marker,
+	NONCE,
+	served,
+} from "../build/fixtures.test-support.ts";
+import {type HttpReply, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PLAN_SECTIONS} from "./plan-block.ts";
 import {runDir, runKey} from "./run.ts";
@@ -22,10 +30,11 @@ export const GIT_DIR = `${TREE_ROOT}/.git`;
 export const DIR = runDir(TREE_ROOT, runKey(EPIC, NONCE));
 export const EXCLUDE_PATH = `${GIT_DIR}/info/exclude`;
 
-export const env = {CLAUDE_PIPELINE_REPO: REPO, CLAUDE_CODE_SESSION_ID: SESSION} as Record<
-	string,
-	string | undefined
->;
+export const env = {
+	CLAUDE_PIPELINE_REPO: REPO,
+	CLAUDE_CODE_SESSION_ID: SESSION,
+	...GH_TOKEN_ENV,
+} as Record<string, string | undefined>;
 
 export const epic = (overrides: Record<string, unknown> = {}): ExecResult =>
 	okOut(
@@ -51,18 +60,16 @@ export interface SubIssueFixture {
 	readonly stateReason?: string | null;
 }
 
-export const subIssues = (...rows: ReadonlyArray<SubIssueFixture>): ExecResult =>
-	okOut(
-		JSON.stringify(
-			rows.map((row) => ({
-				number: row.number,
-				id: row.id ?? row.number * 1000,
-				title: row.title ?? `child ${row.number}`,
-				labels: (row.labels ?? ["type:feature", "p1"]).map((name) => ({name})),
-				state: row.state ?? "open",
-				state_reason: row.stateReason ?? null,
-			})),
-		),
+export const subIssues = (...rows: ReadonlyArray<SubIssueFixture>): HttpReply =>
+	served(
+		rows.map((row) => ({
+			number: row.number,
+			id: row.id ?? row.number * 1000,
+			title: row.title ?? `child ${row.number}`,
+			labels: (row.labels ?? ["type:feature", "p1"]).map((name) => ({name})),
+			state: row.state ?? "open",
+			state_reason: row.stateReason ?? null,
+		})),
 	);
 
 export const childIssue = (options: {
@@ -73,20 +80,18 @@ export const childIssue = (options: {
 	state?: string;
 	stateReason?: string | null;
 	body?: string;
-}): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: options.number,
-			title: `child ${options.number}`,
-			body: options.body ?? "a child body\n",
-			state: options.state ?? "open",
-			state_reason: options.stateReason ?? null,
-			labels: (options.labels ?? []).map((name) => ({name})),
-			assignees: (options.assignees ?? []).map((login) => ({login})),
-			milestone: options.milestone == null ? null : {number: 44, title: options.milestone},
-			html_url: `https://github.com/o/r/issues/${options.number}`,
-		}),
-	);
+}): HttpReply =>
+	served({
+		number: options.number,
+		title: `child ${options.number}`,
+		body: options.body ?? "a child body\n",
+		state: options.state ?? "open",
+		state_reason: options.stateReason ?? null,
+		labels: (options.labels ?? []).map((name) => ({name})),
+		assignees: (options.assignees ?? []).map((login) => ({login})),
+		milestone: options.milestone == null ? null : {number: 44, title: options.milestone},
+		html_url: `https://github.com/o/r/issues/${options.number}`,
+	});
 
 /** A plan block that clears the section set and the story grammar. */
 export const planBlock = (overrides: {stories?: string; drop?: string} = {}): string =>
@@ -142,9 +147,13 @@ export const DEFAULT_LABELS: ReadonlyArray<string> = [
 export const milestones = (...rows: ReadonlyArray<readonly [number, string]>): ExecResult =>
 	okOut(rows.map(([number, title]) => `${number}\t${title}`).join("\n"));
 
-/** `<number>\t<title>` rows, the shape both dedup sources are read in. */
+/** `<number>\t<title>` rows — the shape the `search/issues` dedup source is still read in. */
 export const issueRows = (...rows: ReadonlyArray<readonly [number, string]>): ExecResult =>
 	okOut(rows.map(([number, title]) => `${number}\t${title}`).join("\n"));
+
+/** The same rows as one served page of `issues?state=open` — the backlog dedup source. */
+export const backlogPage = (...rows: ReadonlyArray<readonly [number, string]>): HttpReply =>
+	served(rows.map(([number, title]) => ({number, title})));
 
 /** The claim on the epic, held by the lane `TOKEN` names — the one the run key is derived from. */
 export const CLAIMED: ReadonlyArray<readonly [RegExp, ExecResult]> = [

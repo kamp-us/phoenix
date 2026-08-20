@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, okOut, once, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
 	BAD_SECTIONS,
@@ -18,12 +17,17 @@ import {
 } from "./codes.ts";
 import {
 	comments,
+	GATEWAY,
+	GH_TOKEN_ENV,
 	GIT_DIRS,
+	HEAD,
 	issue,
 	LANE_UUID,
 	marker,
 	NONCE,
 	pull,
+	pullPayload,
+	served,
 } from "./fixtures.test-support.ts";
 import {runPr, runPrBody} from "./pr-verb.ts";
 
@@ -32,15 +36,15 @@ const BRANCH = /^git rev-parse --abbrev-ref HEAD$/;
 const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
 const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
-const OPEN_PULLS = /^gh api --paginate repos\/o\/r\/pulls\?state=open&head=/;
-const REPO_META = /^gh api repos\/o\/r --jq \.default_branch$/;
-const CREATE = /^gh api --method POST repos\/o\/r\/pulls/;
+const OPEN_PULLS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\?state=open&head=/;
+const REPO_META = /^GET https:\/\/api\.github\.com\/repos\/o\/r$/;
+const CREATE = /^POST https:\/\/api\.github\.com\/repos\/o\/r\/pulls$/;
 const READ_BACK = /^gh api repos\/o\/r\/pulls\/4318$/;
 
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
 const BODY = "Fixes #4312\n\nEditor focus now survives a save.\n\n## Deviations\nNone.\n";
 
-const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const LANE_OK: ReadonlyArray<Scripted> = [
 	[ISSUE, issue()],
 	[REV_PARSE, GIT_DIRS],
 	[BRANCH, okOut(`${LANE}\n`)],
@@ -52,23 +56,21 @@ const options = {
 	number: 4312,
 	partial: false,
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
+	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e", ...GH_TOKEN_ENV} as Record<
 		string,
 		string | undefined
 	>,
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) => Effect.runPromise(Effect.provide(runPr({...options, ...overrides}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runPr({...options, ...overrides}), fakeSeams(script).layer));
 
 const withBody = (text: string) => ({stdin: Effect.succeed<StdinRead>({_tag: "Text", text})});
 
 describe("runPr — the body guards run before any write", () => {
 	it("refuses empty stdin on 3, and touches nothing", async () => {
-		const shell = fakeShell([]);
+		const shell = fakeSeams([]);
 		const out = await Effect.runPromise(
 			Effect.provide(runPr({...options, ...withBody("   \n")}), shell.layer),
 		);
@@ -133,9 +135,9 @@ describe("runPr — the write path", () => {
 	it("opens the PR and reads its body back", async () => {
 		const out = await run([
 			...LANE_OK,
-			[OPEN_PULLS, okOut("")],
-			[REPO_META, okOut("main\n")],
-			[CREATE, okOut(JSON.stringify({number: 4318, html_url: "https://github.com/o/r/pull/4318"}))],
+			[OPEN_PULLS, served([])],
+			[REPO_META, served({default_branch: "main"})],
+			[CREATE, served({number: 4318, html_url: "https://github.com/o/r/pull/4318"})],
 			[READ_BACK, pull({body: BODY})],
 		]);
 		expect(out.code).toBe(0);
@@ -146,12 +148,12 @@ describe("runPr — the write path", () => {
 		});
 	});
 
-	it("never posts the body through the `-f body=@file` form (#4683)", async () => {
-		const shell = fakeShell([
+	it("sends the body as the request's own JSON, never a path the transport would read (#4683)", async () => {
+		const shell = fakeSeams([
 			...LANE_OK,
-			[OPEN_PULLS, okOut("")],
-			[REPO_META, okOut("main\n")],
-			[CREATE, okOut(JSON.stringify({number: 4318, html_url: "https://github.com/o/r/pull/4318"}))],
+			[OPEN_PULLS, served([])],
+			[REPO_META, served({default_branch: "main"})],
+			[CREATE, served({number: 4318, html_url: "https://github.com/o/r/pull/4318"})],
 			[READ_BACK, pull({body: BODY})],
 		]);
 		await Effect.runPromise(Effect.provide(runPr(options), shell.layer));
@@ -159,22 +161,22 @@ describe("runPr — the write path", () => {
 	});
 
 	it("answers `existing` on exit 0 when this head already has an open PR — no duplicate", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			...LANE_OK,
-			[OPEN_PULLS, okOut("4310\thttps://github.com/o/r/pull/4310\n")],
+			[OPEN_PULLS, served([{number: 4310, html_url: "https://github.com/o/r/pull/4310"}])],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runPr(options), shell.layer));
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).answer).toBe("existing");
-		expect(shell.calls.some((line) => CREATE.test(line))).toBe(false);
+		expect(shell.requests.some((line) => CREATE.test(line))).toBe(false);
 	});
 
 	it("refuses a failed create on 8, pointing at the idempotent re-run", async () => {
 		const out = await run([
 			...LANE_OK,
-			[OPEN_PULLS, okOut("")],
-			[REPO_META, okOut("main\n")],
-			[CREATE, errOut("gh: Gateway timeout (HTTP 504)")],
+			[OPEN_PULLS, served([])],
+			[REPO_META, served({default_branch: "main"})],
+			[CREATE, served({message: "Gateway timeout"}, 504)],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("re-run, the verb re-checks for an existing PR first");
@@ -183,9 +185,9 @@ describe("runPr — the write path", () => {
 	it("refuses a body that does not read back on 9", async () => {
 		const out = await run([
 			...LANE_OK,
-			[OPEN_PULLS, okOut("")],
-			[REPO_META, okOut("main\n")],
-			[CREATE, okOut(JSON.stringify({number: 4318, html_url: "https://github.com/o/r/pull/4318"}))],
+			[OPEN_PULLS, served([])],
+			[REPO_META, served({default_branch: "main"})],
+			[CREATE, served({number: 4318, html_url: "https://github.com/o/r/pull/4318"})],
 			[READ_BACK, pull({body: "something else"})],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
@@ -195,9 +197,9 @@ describe("runPr — the write path", () => {
 	it("compares the read-back through normalizeForReadback, not byte-for-byte", async () => {
 		const out = await run([
 			...LANE_OK,
-			[OPEN_PULLS, okOut("")],
-			[REPO_META, okOut("main\n")],
-			[CREATE, okOut(JSON.stringify({number: 4318, html_url: "https://github.com/o/r/pull/4318"}))],
+			[OPEN_PULLS, served([])],
+			[REPO_META, served({default_branch: "main"})],
+			[CREATE, served({number: 4318, html_url: "https://github.com/o/r/pull/4318"})],
 			[READ_BACK, pull({body: `${BODY.replace(/\n/g, "\r\n")}\r\n\r\n`})],
 		]);
 		expect(out.code).toBe(0);
@@ -209,27 +211,25 @@ describe("runPr — the write path", () => {
 	});
 });
 
-const PULL_HEAD = /^gh api repos\/o\/r\/pulls\/4318 --jq/;
-const PATCH_BODY = /^gh api --method PATCH repos\/o\/r\/pulls\/4318/;
+const PULL_HEAD = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4318$/;
+const PATCH_BODY = /^PATCH https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4318$/;
 
-const head = (
-	overrides: {ref?: string; state?: string; merged?: boolean} = {},
-): readonly [RegExp, ExecResult] => [
+const head = (overrides: {ref?: string; state?: string; merged?: boolean} = {}): Scripted => [
 	PULL_HEAD,
-	okOut(
-		[
-			overrides.ref ?? LANE,
-			"03135b9188d2be6c0a4b7bd0b7a3ff9c53f0f2b1",
-			overrides.state ?? "open",
-			String(overrides.merged ?? false),
-		].join("\t"),
+	served(
+		pullPayload({
+			number: 4318,
+			head: {ref: overrides.ref ?? LANE, sha: HEAD},
+			state: overrides.state ?? "open",
+			merged: overrides.merged ?? false,
+		}),
 	),
 ];
 
-const PATCHED = okOut(JSON.stringify({number: 4318, html_url: "https://github.com/o/r/pull/4318"}));
+const PATCHED = served({number: 4318, html_url: "https://github.com/o/r/pull/4318"});
 
 /** The lane reads `runPrBody` makes — `build pr`'s minus the served issue, which it never fetches. */
-const LANE_ONLY: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const LANE_ONLY: ReadonlyArray<Scripted> = [
 	[REV_PARSE, GIT_DIRS],
 	[BRANCH, okOut(`${LANE}\n`)],
 	[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
@@ -240,24 +240,21 @@ const bodyOptions = {
 	pr: 4318,
 	partial: false,
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
+	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e", ...GH_TOKEN_ENV} as Record<
 		string,
 		string | undefined
 	>,
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
 };
 
-const runBody = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof bodyOptions> = {},
-) =>
+const runBody = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof bodyOptions> = {}) =>
 	Effect.runPromise(
-		Effect.provide(runPrBody({...bodyOptions, ...overrides}), fakeShell(script).layer),
+		Effect.provide(runPrBody({...bodyOptions, ...overrides}), fakeSeams(script).layer),
 	);
 
 describe("runPrBody — the guarded body-only repair (#5618)", () => {
 	it("replaces an open PR's body and reads it back, moving no ref", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			...LANE_ONLY,
 			head(),
 			[PATCH_BODY, PATCHED],
@@ -270,23 +267,24 @@ describe("runPrBody — the guarded body-only repair (#5618)", () => {
 			number: 4318,
 			url: "https://github.com/o/r/pull/4318",
 		});
-		expect(shell.calls.some((line) => CREATE.test(line))).toBe(false);
+		expect(shell.requests.some((line) => CREATE.test(line))).toBe(false);
 		expect(shell.calls.some((line) => line.startsWith("git push"))).toBe(false);
 	});
 
-	it("never posts the body through the `-f body=@file` form (#4683)", async () => {
-		const shell = fakeShell([
+	it("sends the body as the request's own JSON, never a path the transport would read (#4683)", async () => {
+		const shell = fakeSeams([
 			...LANE_ONLY,
 			head(),
 			[PATCH_BODY, PATCHED],
 			[READ_BACK, pull({body: BODY})],
 		]);
 		await Effect.runPromise(Effect.provide(runPrBody(bodyOptions), shell.layer));
-		expect(shell.calls.some((line) => line.includes("body=@"))).toBe(false);
+		const patch = shell.requests.findIndex((line) => PATCH_BODY.test(line));
+		expect(JSON.parse(shell.bodies[patch] ?? "null")).toEqual({body: BODY});
 	});
 
 	it("refuses empty stdin on 3, and touches nothing", async () => {
-		const shell = fakeShell([]);
+		const shell = fakeSeams([]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runPrBody({...bodyOptions, stdin: Effect.succeed<StdinRead>({_tag: "Text", text: " \n"})}),
@@ -305,7 +303,7 @@ describe("runPrBody — the guarded body-only repair (#5618)", () => {
 	});
 
 	it("refuses a machine-local path on 5, before any read", async () => {
-		const shell = fakeShell([]);
+		const shell = fakeSeams([]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runPrBody({
@@ -323,7 +321,7 @@ describe("runPrBody — the guarded body-only repair (#5618)", () => {
 	});
 
 	it("refuses a malformed Deviations section on 4 — the FAIL this verb exists for", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			...LANE_ONLY,
 			head(),
 			[PATCH_BODY, PATCHED],
@@ -343,7 +341,7 @@ describe("runPrBody — the guarded body-only repair (#5618)", () => {
 		);
 		expect(out.code).toBe(BAD_SECTIONS);
 		expect(out.stderr.at(-1)).toContain('build pr-body: the body\'s "## Deviations" section');
-		expect(shell.calls.some((line) => PATCH_BODY.test(line))).toBe(false);
+		expect(shell.requests.some((line) => PATCH_BODY.test(line))).toBe(false);
 	});
 
 	it("refuses a stray closing keyword on 4, naming the issue read off the head branch", async () => {
@@ -368,7 +366,7 @@ describe("runPrBody — the guarded body-only repair (#5618)", () => {
 	});
 
 	it("refuses a control-plane classification on 10, before any read", async () => {
-		const shell = fakeShell([]);
+		const shell = fakeSeams([]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runPrBody({
@@ -394,7 +392,7 @@ describe("runPrBody — the guarded body-only repair (#5618)", () => {
 	});
 
 	it("refuses an unreadable PR on 11, never on 7", async () => {
-		const out = await runBody([...LANE_ONLY, [PULL_HEAD, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const out = await runBody([...LANE_ONLY, [PULL_HEAD, GATEWAY]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
@@ -421,7 +419,7 @@ describe("runPrBody — the guarded body-only repair (#5618)", () => {
 	});
 
 	it("refuses without a held claim on 15, before any write", async () => {
-		const shell = fakeShell([
+		const shell = fakeSeams([
 			[REV_PARSE, GIT_DIRS],
 			[BRANCH, okOut(`${LANE}\n`)],
 			[COMMENTS, comments()],
@@ -431,14 +429,14 @@ describe("runPrBody — the guarded body-only repair (#5618)", () => {
 		]);
 		const out = await Effect.runPromise(Effect.provide(runPrBody(bodyOptions), shell.layer));
 		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(shell.calls.some((line) => PATCH_BODY.test(line))).toBe(false);
+		expect(shell.requests.some((line) => PATCH_BODY.test(line))).toBe(false);
 	});
 
 	it("refuses a failed update on 8 — UNKNOWN, pointing at a re-read", async () => {
 		const out = await runBody([
 			...LANE_ONLY,
 			head(),
-			[PATCH_BODY, errOut("gh: Gateway timeout (HTTP 504)")],
+			[PATCH_BODY, served({message: "Gateway timeout"}, 504)],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("re-read PR #4318 before retrying");

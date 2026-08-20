@@ -1,21 +1,30 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {comments, HEAD, issue, OLD_HEAD, PRIOR_HEADS, pull} from "./fixtures.test-support.ts";
+import {
+	comments,
+	GATEWAY,
+	GH_TOKEN_ENV,
+	HEAD,
+	issue,
+	OLD_HEAD,
+	PRIOR_HEADS,
+	pull,
+	served,
+} from "./fixtures.test-support.ts";
 import {runChildVerdicts, runVerdicts} from "./verdicts-verb.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4310$/;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4310\/comments/;
-const REVIEWS = /^gh api --paginate repos\/o\/r\/pulls\/4310\/reviews/;
+const REVIEWS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4310\/reviews/;
 const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
 
 const FAIL_NOW = `review-code: FAIL @ ${HEAD} — the debounce fix races the unmount`;
 const failAt = (sha: string) => `review-code: FAIL @ ${sha} — the debounce fix races the unmount`;
 const PASS_STALE = `review-doc: PASS @ ${OLD_HEAD} — guide matches shipped behavior`;
 
-const NO_REVIEWS = okOut("[]");
+const NO_REVIEWS = served([]);
 const PR = pull({number: 4310, body: "Fixes #4312\n\n## Deviations\nNone.\n"});
 const PR_ON_MAIN = pull({
 	number: 4310,
@@ -26,11 +35,11 @@ const PR_ON_MAIN = pull({
 const options = {
 	pr: 4310,
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	env: {CLAUDE_PIPELINE_REPO: "o/r", ...GH_TOKEN_ENV} as Record<string, string | undefined>,
 };
 
-const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
-	Effect.runPromise(Effect.provide(runVerdicts(options), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>) =>
+	Effect.runPromise(Effect.provide(runVerdicts(options), fakeSeams(script).layer));
 
 describe("runVerdicts", () => {
 	it("binds each marker to the live head and keeps the latest per gate", async () => {
@@ -65,12 +74,7 @@ describe("runVerdicts", () => {
 		const out = await run([
 			[PULL, PR],
 			[COMMENTS, okOut("[]")],
-			[
-				REVIEWS,
-				okOut(
-					JSON.stringify([{id: 98001, state: "CHANGES_REQUESTED", body: "the debounce races"}]),
-				),
-			],
+			[REVIEWS, served([{id: 98001, state: "CHANGES_REQUESTED", body: "the debounce races"}])],
 			[ISSUE, issue()],
 		]);
 		const parsed = JSON.parse(out.stdout);
@@ -207,22 +211,25 @@ describe("runVerdicts", () => {
 		const out = await run([
 			[PULL, PR],
 			[COMMENTS, okOut("[]")],
-			[REVIEWS, errOut("gh: Bad gateway (HTTP 502)")],
+			[REVIEWS, GATEWAY],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
+	// One assertion per seam, because the two list reads no longer sit on the same one: the comments
+	// still page through `gh --paginate`, the reviews page over the client (ADR 0315).
 	it("paginates both list reads", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[PULL, PR],
 			[COMMENTS, okOut("[]")],
 			[REVIEWS, NO_REVIEWS],
 			[ISSUE, issue()],
 		]);
-		await Effect.runPromise(Effect.provide(runVerdicts(options), shell.layer));
-		expect(shell.calls.filter((line) => line.includes("--paginate")).length).toBeGreaterThanOrEqual(
-			2,
+		await Effect.runPromise(Effect.provide(runVerdicts(options), seams.layer));
+		expect(seams.calls.filter((line) => line.includes("--paginate")).length).toBeGreaterThanOrEqual(
+			1,
 		);
+		expect(seams.requests.filter((line) => line.includes("per_page=100")).length).toBe(1);
 	});
 	describe("the founder's cleared rounds", () => {
 		const CONFIG =
@@ -418,15 +425,15 @@ describe("runChildVerdicts", () => {
 	const range = (polarity: string, tip = TIP) =>
 		`review-code: ${polarity} range:${BASE}..${tip} content:2f1a9c4e0b7d — the child's range`;
 
-	const runChild = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
+	const runChild = (script: ReadonlyArray<Scripted>) =>
 		Effect.runPromise(
 			Effect.provide(
 				runChildVerdicts({
 					issue: 4312,
 					repo: null,
-					env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+					env: {CLAUDE_PIPELINE_REPO: "o/r", ...GH_TOKEN_ENV} as Record<string, string | undefined>,
 				}),
-				fakeShell(script).layer,
+				fakeSeams(script).layer,
 			),
 		);
 
