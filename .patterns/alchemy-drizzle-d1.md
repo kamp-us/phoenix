@@ -4,7 +4,7 @@
 > Derived from `drizzle-orm@1.0.0-rc.4` — re-verify on pin bump.
 > Derived from `drizzle-kit@1.0.0-rc.4` — re-verify on pin bump.
 
-How the query builder reaches the database. The short answer: bind the D1 connection in the worker's init phase via `Cloudflare.D1.QueryDatabase`, take its `raw` handle onto the **`Database` seam**, and derive the `Drizzle` service from that seam with `createDrizzle` — **once per isolate**, provided as a worker-level layer, never rebuilt per request. Migrations are **hand-authored** in the flat layout under `migrations/` and applied by alchemy through the D1 resource's `migrationsDir`; `drizzle-kit generate` is a scratch SQL aid only, not the incremental path (see [Migrations](#migrations) and [ADR 0108](../.decisions/0108-hand-authored-flat-d1-migrations.md)).
+How the query builder reaches the database. The short answer: bind the D1 connection in the worker's init phase via `Cloudflare.D1.QueryDatabase`, take its `raw` handle onto the **`Database` seam**, and derive the `Drizzle` service from that seam with `createDrizzle` — **once per isolate**, provided as a worker-level layer, never rebuilt per request. Migrations are written by **`drizzle-kit generate` run incrementally against the committed tree** under `migrations/`, and applied by alchemy through the D1 resource's `migrationsDir` (see [Migrations](#migrations) and [ADR 0309](../.decisions/0309-v7-migrations-baseline-cutover.md)).
 
 The `Drizzle.run` / `Drizzle.batch` callback surface that feature code uses (see [feature-services.md](./feature-services.md)) is unchanged. Only how the `drizzle` instance is constructed moves.
 
@@ -61,7 +61,7 @@ Inside a Durable Object there is no D1 at all — the `LiveDO` uses the DO's own
 
 ## Migrations
 
-The schema lives at `worker/db/drizzle/schema.ts`. The author→apply pipeline is split: migrations are **hand-authored** in the flat layout, alchemy applies them on deploy.
+The schema lives at `worker/db/drizzle/schema.ts`. The author→apply pipeline is split: `drizzle-kit generate` writes the migration off a `schema.ts` diff, alchemy applies it on deploy.
 
 ```ts
 // worker/db/resources.ts
@@ -73,15 +73,17 @@ export const PhoenixDb = Cloudflare.D1.Database("phoenix_db", {
 
 The `D1.Database` resource lives in a module both the stack and the worker import (`worker/db/resources.ts`) so there's one definition — the stack ensures the DB exists (and `alchemy.run.ts` re-yields it to surface `databaseId`/`accountId` on the compiled output for the test harness, #692), the worker resolves it through `QueryDatabase`. On deploy, alchemy hashes `migrationsDir`, sorts the `.sql` files, and applies the pending set over the D1 HTTP API into a wrangler-compatible 3-column journal `(id, name, applied_at)` under `migrationsTable` (`alchemy@2.0.0-beta.59` — `src/Cloudflare/D1/Database.ts` update/create paths + `src/Cloudflare/D1/ApplyMigrations.ts`) — replacing the `wrangler d1 migrations apply` step. See [alchemy-stack-deploy.md](./alchemy-stack-deploy.md).
 
-### Authoring a migration — hand-authored flat layout (ADR 0108)
+### Authoring a migration — `drizzle-kit generate` (ADR 0309)
 
-The committed migrations use the **flat layout**: top-level `NNNN_name.sql`, a central `meta/_journal.json`, and per-migration `meta/NNNN_*_snapshot.json` (entries/snapshots `"version": "6"`). **Do not run `drizzle-kit generate` against the committed tree** — the catalog-pinned `drizzle-kit@1.0.0-rc.4` aborts with `Your migrations folder format is outdated, please run drizzle-kit up` because its `assertV3OutFolder` gate trips on the presence of `meta/_journal.json` (drizzle-kit 1.0 expects the per-migration-dir layout, not the legacy central journal; verified present in the rc.4 `bin.cjs`). Running `drizzle-kit up` would restructure **all** committed migrations — a history rewrite deferred to a single coordinated cutover ([ADR 0108](../.decisions/0108-hand-authored-flat-d1-migrations.md)).
+The tree holds **two layouts side by side**. The 34 flat `NNNN_name.sql` files at the top level are frozen history: production's `drizzle_migrations.name` records each one by its path relative to `migrationsDir`, so renaming, moving or editing one makes alchemy treat it as unseen and re-apply it. Everything from the v7 cutover on is a `<timestamp>_<name>/` directory holding `migration.sql` + `snapshot.json` — the layout `drizzle-kit@1.0` writes, which alchemy picks up because `listSqlFiles` reads `migrationsDir` recursively. `20260820113338_v7_baseline/` is the seam between them: a tool-generated snapshot of `schema.ts` whose `migration.sql` is deliberately a comment-only no-op ([ADR 0309](../.decisions/0309-v7-migrations-baseline-cutover.md)).
 
 To add a migration:
 
-1. Author the SQL as a new flat `worker/db/drizzle/migrations/NNNN_name.sql`. `drizzle-kit generate` is usable **only** as a scratch aid — run it against an empty throwaway out-dir to get the SQL for a new table, then hand-place the emitted SQL into the flat file.
-2. Append the entry to `meta/_journal.json` (`idx`, `version: "6"`, `when`, `tag`, `breakpoints`).
-3. Add a `meta/NNNN_*_snapshot.json`. The snapshot JSON is **advisory** — it is read only by drizzle-kit's diff engine, never at apply time, so the load-bearing artifact is the `.sql`.
+1. Edit `worker/db/drizzle/schema.ts`.
+2. Run `pnpm exec drizzle-kit generate --config=worker/db/drizzle.config.ts --name=<name>` in `apps/web`. It diffs against the newest committed `snapshot.json` and writes one new `<timestamp>_<name>/` directory.
+3. Read the emitted `migration.sql`. SQLite has no `ALTER COLUMN`, so a column change comes out as a `__new_*` table rebuild — check that shape is what you want before committing it.
+
+Both files in the directory are committed. `packages/migrations-guard` (the `migrations-guard.yml` job) reds on a hand-added flat migration, a directory missing its `snapshot.json`, a second `.sql` beside `migration.sql`, and any edit to a landed migration.
 
 alchemy applies the committed `.sql` on deploy; the integration tier applies the full set against real D1.
 
@@ -95,6 +97,8 @@ To apply pending migrations short of a full `pnpm deploy`, run **`pnpm --filter 
 CLOUDFLARE_ACCOUNT_ID=… CLOUDFLARE_API_TOKEN=… D1_DATABASE_ID=… \
   pnpm --filter @kampus/web db:migrate
 ```
+
+> **`db:migrate` and `alchemy deploy` keep separate books, and the cutover widened the gap.** `drizzle-kit migrate` records what it applied in its own `__drizzle_migrations` table (the literal in the `drizzle-kit@1.0.0-rc.4` bundle), never the `drizzle_migrations` that `resources.ts` configures and `ApplyMigrations.ts` reads — so the two paths have never agreed on what is applied. Since the v7 cutover ([ADR 0309](../.decisions/0309-v7-migrations-baseline-cutover.md)) `drizzle-kit` walks the snapshot chain, which starts at the no-op baseline directory and does not include the 34 flat files; treat `alchemy deploy` as the path that applies the full set, and see [#6535](https://github.com/kamp-us/phoenix/issues/6535) for the open check on what `db:migrate` does now.
 
 `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` are the same pair `alchemy deploy` uses (see `.github/workflows/deploy.yml`); `D1_DATABASE_ID` is the `phoenix_db` UUID from the Cloudflare dashboard or `wrangler d1 list`. The credential block lives in `worker/db/drizzle.config.ts`'s `dbCredentials` — alchemy itself resolves the DB by name and ignores it; only `drizzle-kit migrate` reads it.
 
@@ -126,4 +130,4 @@ The adapter is shape-only — it speaks the SQLite dialect, so it doesn't care t
 - [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — why `Drizzle` is a worker-level singleton
 - [alchemy-stack-deploy.md](./alchemy-stack-deploy.md) — the D1 resource declaration + how alchemy applies committed migrations
 - [ADR 0014](../.decisions/0014-drizzle-run-batch-as-service-methods.md) — the bound `run`/`batch` shape
-- [ADR 0108](../.decisions/0108-hand-authored-flat-d1-migrations.md) — the hand-authored flat migration layout
+- [ADR 0309](../.decisions/0309-v7-migrations-baseline-cutover.md) — the v7 cutover: frozen flat history + `generate`-written migration directories (superseding [ADR 0108](../.decisions/0108-hand-authored-flat-d1-migrations.md)'s hand-authored flat layout)

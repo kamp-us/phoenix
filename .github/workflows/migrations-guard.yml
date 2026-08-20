@@ -1,15 +1,15 @@
 name: migrations-guard
 
-# Fail-closed CI gate over the hand-authored flat D1 migrations tree (issue #1435).
-# ADR 0108 sanctions hand-authored flat migrations and disabled the only tool that
-# validated the tree (drizzle-kit's assertV3OutFolder); nothing replaced it. This job
-# asserts three properties over apps/web/…/migrations: consistency (.sql ↔ journal ↔
-# snapshots agree), ordering (contiguous-unique idx/tag/number), and immutability (a
-# journaled migration's SQL never changes vs the committed baseline in
-# packages/migrations-guard/migration-hashes.json). It reuses the guard package's own
-# `check` command — the scan lives once in the tool. The guard package is control-plane
-# (ADR 0100). An edited historical migration is green in integration but stale on prod;
-# this gate is what makes that drift visible.
+# Fail-closed CI gate over the committed D1 migrations tree (issue #1435, ADR 0309).
+# alchemy applies whatever `.sql` it finds under `migrationsDir` and skips one it has already
+# applied by exact relative-path match, so both an edit to a landed migration and a rename of
+# one are silent: the edit goes green in integration and leaves prod stale, the rename makes
+# alchemy re-apply history against a database that already ran it. This job asserts three
+# properties over apps/web/…/migrations — consistency (frozen flat history beside well-formed
+# <timestamp>_<name>/ directories), ordering (nothing sorts into applied history), immutability
+# (vs packages/migrations-guard/migration-hashes.json) — reusing the guard package's own `check`
+# command, so the scan lives once in the tool. The guard package is control-plane (ADR 0100).
+
 on:
   pull_request:
   push:
@@ -38,7 +38,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Exit 1 when the migrations tree drifts (inconsistent/mis-ordered set, or an edited
-      # historical migration vs the committed baseline); the report is on stdout. See #1435.
-      - name: Check the flat D1 migrations tree
+      # Exit 1 when the migrations tree drifts (a malformed or mis-ordered set, or an edited
+      # landed migration vs the committed baseline); the report is on stdout. See #1435.
+      - name: Check the D1 migrations tree
         run: node packages/migrations-guard/src/bin.ts check

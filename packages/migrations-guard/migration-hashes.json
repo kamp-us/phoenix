@@ -22,6 +22,18 @@
 		"0019_remove_the_wave": "8f2eb8bd675dfe24fa5a532331eaa9ddb80e5eccf0959a7b7aeaaf7c8beed95c",
 		"0020_drop_imge_object": "7e3f28b166b72f9964048bd79ea34f2180b552f4644aa7d65f9e00b47f1bda9a",
 		"0021_hot_score_backfill": "17f9f786cb2b4b5713037be9bba221863bfea1dcd7f76bdc9d1fd48939ffed44",
-		"0022_display_name_backfill": "ddf4e45b077a6828e7df73be838350e90ca3152eea0d17a98ef37140c706b1c6"
+		"0022_display_name_backfill": "ddf4e45b077a6828e7df73be838350e90ca3152eea0d17a98ef37140c706b1c6",
+		"0023_drop_hot_score_backfill": "24cace4e72c6339c1a0e603b0c590a7fb4f49d2d44265f36bf85c09a678a22ba",
+		"0024_user_ban_event": "b6698b880a39b1cdbba2ecf8728fb3266430e85b7634e3fea34ee00f44b1b0e4",
+		"0025_mecmua_post": "051dfb24331768dde465e8667290c60dc49f211e2cfc887dfce7f30ac63d2d70",
+		"0026_mecmua_subscription": "5aa452a939a9a8bde363115e5160b3c1a755d5edac883c2dfb8de36ad4e858f2",
+		"0027_karma_event": "c699e113e1257e6429f622dde1c75f9348e5a3d7bb5f1e1dbf0694c15e6f349f",
+		"0028_email_delivery_event": "48112ee6e2f2d53c4191cfa97e1412f710d81867fe2fec4f4e8b1a54cb8f8167",
+		"0029_email_delivery_event_actor_id": "5f7f106baa6adb940025285eee7408ccfb6931e50769f10742e3594a02fb4c9e",
+		"0030_api_key_plugin_fields": "5d7566a730ac6264f9d91c456c7365c2b1adc1ef7a40ab60a15543bcab6b1e35",
+		"0031_user_mute": "6eca28cb5ded9a1c6846147bbe9e74c037cb3919fe44adf7e2988b08b12a0d7f",
+		"0032_user_role_event": "fda5671c62478b321c588293a45e2bc468148ec6b0ec568e9099d2641a2b8b41",
+		"0033_caylak_visibility_preference": "140d5b441061820dfea18f2ec849f25d467ae0a09046895557493a83bae062a5",
+		"20260820113338_v7_baseline": "1c8acad69a9ae7a80e576d8df3f11bf460706e5b6143b2dceef9de3af4d80ebb"
 	}
 }

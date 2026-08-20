@@ -1,12 +1,20 @@
 ---
 id: 0108
 title: Hand-Authored Flat D1 Migrations Are the Sanctioned Path; Defer the drizzle-kit v7 Cutover
-status: accepted
+status: superseded by [0309](0309-v7-migrations-baseline-cutover.md)
+superseded_by: 0309
+superseded_date: 2026-08-19
 date: 2026-06-27
 tags: [database, tooling, migrations]
 ---
 
 # 0108 — Hand-Authored Flat D1 Migrations Are the Sanctioned Path; Defer the drizzle-kit v7 Cutover
+
+> **Superseded by [0309](0309-v7-migrations-baseline-cutover.md).** The cutover §3 deferred did happen, but not by `drizzle-kit up`: `up` renames every migration, and alchemy matches an
+> applied migration by the exact relative path it recorded, so a rename replays all 34 against
+> production. 0309 instead deletes `meta/`, leaves the flat `.sql` files untouched, and seeds one
+> no-op v7 baseline directory. §1/§2's hand-authoring path is retired with it — `drizzle-kit
+> generate` run incrementally against the committed tree is the authoring path now.
 
 ## Context
 
