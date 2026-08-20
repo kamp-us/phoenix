@@ -41,7 +41,7 @@ const manifest = (overrides: Partial<CaptureManifest> = {}): CaptureManifest => 
 			width: 1280,
 			height: 2140,
 			sha256: sha256Hex(BYTES),
-			pageErrors: [],
+			pageErrors: {rows: [], more: 0},
 		},
 	],
 	...overrides,

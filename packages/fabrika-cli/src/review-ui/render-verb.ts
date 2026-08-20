@@ -97,8 +97,12 @@ const routeCode = (renders: readonly SurfaceRender[]): number | null => {
 
 const outcomeLine = (surface: string, render: SurfaceRender): string => {
 	switch (render._tag) {
-		case "Rendered":
-			return `${VERB}: surface "${surface}" captured: ${render.entry.width}x${render.entry.height}, ${render.entry.pageErrors.length} page error(s)`;
+		case "Rendered": {
+			// The count is the whole tally, not the kept rows: the payload collapses the list, so a
+			// stderr count read off `rows` alone would under-report exactly when there is most to report.
+			const errors = render.entry.pageErrors;
+			return `${VERB}: surface "${surface}" captured: ${render.entry.width}x${render.entry.height}, ${errors.rows.length + errors.more} page error(s)`;
+		}
 		case "Unreachable":
 			return `${VERB}: surface "${surface}" is unreachable at the preview (${render.reason}) — judge what renders, and hold the gap against the PR's Deviations (#4305).`;
 		case "Crashed":

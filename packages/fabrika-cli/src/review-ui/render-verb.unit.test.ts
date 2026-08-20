@@ -55,7 +55,7 @@ const rendered = (surface: string, outDir: string): SurfaceRender => ({
 		width: 1280,
 		height: 2140,
 		sha256: "9c41",
-		pageErrors: [],
+		pageErrors: {rows: [], more: 0},
 	},
 });
 
@@ -102,6 +102,35 @@ describe("runRender", () => {
 		expect(manifest._tag).toBe("Manifest");
 		expect(written.get("/tmp/fabrika-review-ui/4321-03135b91/judged/manifest.json")).toBe(
 			outcome.stdout.trimEnd(),
+		);
+	});
+
+	it("prints the capped page errors on both channels, so the file reader cannot desync (ADR 0308)", async () => {
+		const noisy: SurfaceRender = {
+			_tag: "Rendered",
+			entry: {
+				surface: "/pano",
+				path: "/tmp/fabrika-review-ui/4321-03135b91/judged/pano.png",
+				width: 1280,
+				height: 2140,
+				sha256: "9c41",
+				pageErrors: {rows: [{kind: "console.error", text: "Warning: a"}], more: 12},
+			},
+		};
+		const {outcome, written} = await run(happy(), {render: legOf({"/pano": noisy})});
+		expect(outcome.code).toBe(0);
+		const read = parseManifest(outcome.stdout);
+		expect(read).toMatchObject({
+			_tag: "Manifest",
+			value: {captures: [{pageErrors: {rows: [{text: "Warning: a"}], more: 12}}]},
+		});
+		expect(outcome.stdout).not.toContain('"pageErrors":[');
+		expect(written.get("/tmp/fabrika-review-ui/4321-03135b91/judged/manifest.json")).toBe(
+			outcome.stdout.trimEnd(),
+		);
+		// The stderr tally is the whole list, not the kept rows — the collapse must not shrink the count.
+		expect(outcome.stderr).toContain(
+			'review-ui render: surface "/pano" captured: 1280x2140, 13 page error(s)',
 		);
 	});
 

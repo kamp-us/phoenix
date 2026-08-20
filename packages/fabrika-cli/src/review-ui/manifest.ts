@@ -14,7 +14,18 @@
 import {createHash} from "node:crypto";
 import {Effect, FileSystem} from "effect";
 import type {PageError} from "../capture/page-errors.ts";
+import type {CapAndCount} from "../evidence.ts";
 import {isRecord, parseJson} from "../io/json.ts";
+
+/**
+ * How many page errors a capture carries in full before the rest become a count (ADR 0308).
+ *
+ * Raw console text carries no reason vocabulary to histogram, so the collapse is a cap-and-count.
+ * Three is enough to recognize what a page is complaining about without paying for a dev-mode
+ * console's whole tail — and a crash never reaches here at all, because an uncaught `pageerror`
+ * routes to the `Crashed` arm before an entry is built.
+ */
+export const PAGE_ERROR_CAP = 3;
 
 /** One captured surface, as both the stdout object and the manifest record it. */
 export interface CaptureEntry {
@@ -23,8 +34,13 @@ export interface CaptureEntry {
 	readonly width: number;
 	readonly height: number;
 	readonly sha256: string;
-	/** Errors thrown into the page during this render — recorded data, never a gate outcome. */
-	readonly pageErrors: readonly PageError[];
+	/**
+	 * Errors thrown into the page during this render — recorded data, never a gate outcome, and so
+	 * an evidence-array bounded at {@link PAGE_ERROR_CAP}. The collapsed shape is the only one the
+	 * type admits, which is what keeps the stdout object and the manifest file from disagreeing:
+	 * they are one serialization, and there is no uncollapsed entry for either to hold.
+	 */
+	readonly pageErrors: CapAndCount<PageError>;
 }
 
 export interface CaptureManifest {
@@ -53,9 +69,11 @@ export const sha256Hex = (bytes: Uint8Array): string =>
 /** The one serialization — `render` prints these bytes and writes these bytes. */
 export const serializeManifest = (manifest: CaptureManifest): string => JSON.stringify(manifest);
 
-const isPageErrorList = (value: unknown): value is readonly PageError[] =>
-	Array.isArray(value) &&
-	value.every(
+const isCollapsedPageErrors = (value: unknown): value is CapAndCount<PageError> =>
+	isRecord(value) &&
+	typeof value.more === "number" &&
+	Array.isArray(value.rows) &&
+	value.rows.every(
 		(entry) =>
 			typeof entry === "object" &&
 			entry !== null &&
@@ -72,7 +90,7 @@ const toEntry = (value: unknown): CaptureEntry | null => {
 		typeof record.width !== "number" ||
 		typeof record.height !== "number" ||
 		typeof record.sha256 !== "string" ||
-		!isPageErrorList(record.pageErrors)
+		!isCollapsedPageErrors(record.pageErrors)
 	) {
 		return null;
 	}
