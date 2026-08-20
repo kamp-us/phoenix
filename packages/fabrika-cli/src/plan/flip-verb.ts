@@ -32,6 +32,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {requireCallerToken, requireClaim, requireSession} from "../build/claim.ts";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
 import {cycleDocOr} from "../config/paths.ts";
+import {type ReasonHistogram, reasonHistogram} from "../evidence.ts";
 import {addLabels, getIssue, listLabels, removeLabel} from "../io/issues.ts";
 import {PLANNED, TRIAGED} from "../labels.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -110,6 +111,22 @@ export const classify = (
 	if (!before.includes(PLANNED)) return before.includes(TRIAGED) ? "already" : "not-planned";
 	return observed.includes(TRIAGED) && !observed.includes(PLANNED) ? "flipped" : "unchanged";
 };
+
+/**
+ * The per-child rows, collapsed for the answer channel (ADR 0308).
+ *
+ * `children` is an evidence-array: the skill is steered to the counters and the `terminal` token
+ * (`check-epic-plan/SKILL.md:124`), and `:133` outright BANS claiming what any child carries after
+ * the flip — so no reader ever names a row. `count` keeps the one thing the rows stated as a set,
+ * that the answer covers **every** child and not only the planned ones; `results` keeps the closed
+ * result vocabulary, which is the whole of what the rows carried past that.
+ */
+export const childrenEvidence = (
+	rows: ReadonlyArray<{readonly result: FlipResult}>,
+): {readonly count: number; readonly results: ReasonHistogram} => ({
+	count: rows.length,
+	results: reasonHistogram(rows, (row) => row.result),
+});
 
 export const runFlip = (
 	options: FlipOptions,
@@ -290,7 +307,7 @@ export const runFlip = (
 				epic: ledger.epic,
 				digest: ledger.digest,
 				terminal: nothingToFlip ? "nothing-to-flip" : "flipped-all",
-				children: rows,
+				children: childrenEvidence(rows),
 				flipped,
 				already,
 				audience: {result: audienceResult, observed: audienceObserved},

@@ -577,12 +577,12 @@ fabrika plan flip 4300 --digest 4d90e1bb27ac --token <claim-token>
 | `--token` | string | yes | — | the claim token `build claim <epic> --purpose gate` printed — which lane is asking (#6060) |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
 
-**Output** — machine. The **observed** result per child and for the epic, never the intended one:
+**Output** — machine. The **observed** results over the children and for the epic, never the
+intended ones:
 
 ```
 {"answer": "flipped", "epic": 4300, "digest": "4d90e1bb27ac", "terminal": "flipped-all",
- "children": [{"number": 4301, "observed": ["p1","status:triaged","type:feature"], "result": "flipped"},
-              {"number": 4302, "observed": ["p2","status:triaged","type:chore"], "result": "already"}],
+ "children": {"count": 2, "results": {"already": 1, "flipped": 1}},
  "flipped": 1, "already": 1,
  "audience": {"result": "flipped", "observed": ["ready-for:agent","type:epic"]}}
 ```
@@ -594,8 +594,12 @@ epic did not carry `ready-for:agent` alone, the labels moved, and the re-read pr
 arm: an epic carrying no audience label at all is still owed `ready-for:agent`, so absence is a
 write, not an exemption.
 
-`children` enumerates **every** child of the epic, not only the planned ones, so the answer states
-the whole set the flip considered. `result` is closed and **total over that set**: `flipped` (the
+`children` covers **every** child of the epic, not only the planned ones, so the answer states the
+whole set the flip considered: `count` is that set's size, `results` tallies it by outcome. The rows
+themselves are gone — `children` is an evidence-array collapsed to a histogram under ADR
+[0308](../../../../.decisions/0308-bounded-evidence-output-shape.md), because this skill steers its
+reader to the counters and then bans any claim about what a child carries after the flip, so nothing
+ever read a row. `result` is closed and **total over that set**: `flipped` (the
 child carried `status:planned`, the labels moved, and the re-read proves it) · `already` (observed
 `status:triaged` with no `status:planned` — an idempotent no-op, outside the write scope) ·
 `unchanged` (the child carried `status:planned` and the write did not take) · `not-planned` (the
@@ -710,7 +714,7 @@ succeeded — and with the epic still owed its label, that one write is the whol
 
 ```
 $ fabrika plan flip 4300 --digest 4d90e1bb27ac --token <claim-token>
-{"answer":"flipped","epic":4300,"digest":"4d90e1bb27ac","terminal":"flipped-all","children":[{"number":4301,"observed":["p1","status:triaged","type:feature"],"result":"flipped"}],"flipped":1,"already":0,"audience":{"result":"flipped","observed":["ready-for:agent","type:epic"]}}
+{"answer":"flipped","epic":4300,"digest":"4d90e1bb27ac","terminal":"flipped-all","children":{"count":1,"results":{"flipped":1}},"flipped":1,"already":0,"audience":{"result":"flipped","observed":["ready-for:agent","type:epic"]}}
 ```
 
 ```
