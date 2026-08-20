@@ -50,11 +50,24 @@ describe("deriveScope", () => {
 			GOVERNANCE_ROOTS,
 		);
 		expect(result.required).toBe(true);
-		expect(result.roots).toEqual([
-			{name: ".decisions/", files: 1},
-			{name: "claude-plugins/", files: 1},
-		]);
+		expect(result.roots).toEqual({".decisions/": 1, "claude-plugins/": 1});
 		expect(result.scanned).toBe(3);
+	});
+
+	it("orders the root histogram count-descending, not by the declared root order (ADR 0308)", () => {
+		const result = deriveScope(
+			changed(
+				["M", "claude-plugins/fabrika/skills/review/SKILL.md"],
+				["M", "claude-plugins/fabrika/skills/ship/SKILL.md"],
+				["A", ".decisions/0240-x.md"],
+			),
+			[],
+			GOVERNANCE_ROOTS,
+		);
+		expect(Object.entries(result.roots)).toEqual([
+			["claude-plugins/", 2],
+			[".decisions/", 1],
+		]);
 	});
 
 	it("does not require it for a diff under no root", () => {
