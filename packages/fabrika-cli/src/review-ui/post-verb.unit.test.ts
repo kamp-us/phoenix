@@ -17,6 +17,7 @@ import {
 } from "./codes.ts";
 import {type CaptureManifest, serializeManifest, sha256Hex} from "./manifest.ts";
 import {runPost, type UploadLeg} from "./post-verb.ts";
+import {classifyProbe} from "./upload-leg.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const OLD_HEAD = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
@@ -254,6 +255,15 @@ describe("runPost", () => {
 		expect(outcome.code).toBe(UPLOAD_FAILED);
 		expect(calls.some((call) => CREATE.test(call))).toBe(false);
 		expect(outcome.stderr.at(-1)).toMatch(/broken evidence channel/);
+	});
+
+	it("still refuses when the AUTHENTICATED probe reads 404 — #6520 does not soften #3925", async () => {
+		const notResolving: UploadLeg = () =>
+			Effect.succeed({_tag: "Failed", reason: classifyProbe(404) ?? ""});
+		const {outcome, calls} = await run(happy(), {upload: notResolving});
+		expect(outcome.code).toBe(UPLOAD_FAILED);
+		expect(calls.some((call) => CREATE.test(call))).toBe(false);
+		expect(outcome.stderr.join("\n")).toMatch(/probed back HTTP 404/);
 	});
 
 	it("edits this namespace's own comment instead of stacking a second marker", async () => {
