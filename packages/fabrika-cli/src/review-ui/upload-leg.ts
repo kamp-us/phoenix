@@ -19,31 +19,29 @@
  * fault — is `Failed`, and the caller refuses on `17` with nothing posted.
  */
 import {Effect} from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import {uploadAsset} from "../capture/upload.ts";
-import {execCapture} from "../io/exec.ts";
-import {isRecord, parseJson} from "../io/json.ts";
+import {existenceOf, resolveToken, restRead} from "../io/gh-api.ts";
+import {fail, ok} from "../io/git.ts";
+import {isRecord} from "../io/json.ts";
 import type {UploadLeg, UploadResult} from "./post-verb.ts";
 
-/** The repo's numeric id, which the undocumented attachment endpoint requires (404 without it). */
-const repositoryId = (repo: string) =>
+/**
+ * The repo's numeric id, which the undocumented attachment endpoint requires (404 without it).
+ *
+ * The token is an argument because the package resolves one and only one (ADR 0315) — this file
+ * keeps no copy of that resolution, and the read that used to run anonymously through `gh api` now
+ * runs authenticated through the same client the probe and the upload use.
+ */
+const repositoryId = (token: string, repo: string) =>
 	Effect.gen(function* () {
-		const result = yield* execCapture("gh", ["api", `repos/${repo}`]);
-		if (!result.ok) return null;
-		const parsed = parseJson(result.stdout);
-		return isRecord(parsed) && typeof parsed.id === "number" ? parsed.id : null;
-	});
-
-/** The token the endpoint authenticates with — the env first, else whatever `gh` is logged in as. */
-const uploadToken = (env: Readonly<Record<string, string | undefined>>) =>
-	Effect.gen(function* () {
-		const fromEnv = env.GITHUB_TOKEN ?? env.GH_TOKEN ?? "";
-		if (fromEnv.trim() !== "") return fromEnv.trim();
-		const result = yield* execCapture("gh", ["auth", "token"]);
-		const token = result.stdout.trim();
-		return result.ok && token !== "" ? token : null;
+		const read = existenceOf(yield* restRead(token, "GET", `repos/${repo}`), (body) =>
+			isRecord(body) && typeof body.id === "number"
+				? ok(body.id)
+				: fail("GitHub answered 200 but named no repository id"),
+		);
+		return read._tag === "Present" ? read.value : null;
 	});
 
 /**
@@ -62,46 +60,45 @@ export const probeRequest = (url: string, token: string): HttpClientRequest.Http
 export const classifyProbe = (status: number): string | null =>
 	status >= 200 && status < 400 ? null : `the hosted asset probed back HTTP ${status}`;
 
-const verify = (url: string, token: string): Effect.Effect<string | null> =>
+const verify = (
+	url: string,
+	token: string,
+): Effect.Effect<string | null, never, HttpClient.HttpClient> =>
 	HttpClient.execute(probeRequest(url, token)).pipe(
 		Effect.map((response) => classifyProbe(response.status)),
 		Effect.catch((error: unknown) =>
 			Effect.succeed(`the hosted asset could not be probed back: ${String(error)}`),
 		),
-		Effect.provide(FetchHttpClient.layer),
 	);
 
 export const githubAttachmentUploadLeg = (
 	env: Readonly<Record<string, string | undefined>>,
 ): UploadLeg =>
 	Effect.fn(function* (request) {
-		const id = yield* repositoryId(request.repo);
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") {
+			return {_tag: "Failed", reason: token.reason} as UploadResult;
+		}
+		const id = yield* repositoryId(token.value, request.repo);
 		if (id === null) {
 			return {
 				_tag: "Failed",
 				reason: `cannot resolve ${request.repo}'s numeric id`,
 			} as UploadResult;
 		}
-		const token = yield* uploadToken(env);
-		if (token === null) {
-			return {
-				_tag: "Failed",
-				reason: "no upload token — set GITHUB_TOKEN or log in with `gh auth login`",
-			} as UploadResult;
-		}
 		const outcome = yield* uploadAsset({
 			pngBytes: request.bytes,
 			repositoryId: id,
-			token,
+			token: token.value,
 			fileName: request.fileName,
-		}).pipe(Effect.provide(FetchHttpClient.layer));
+		});
 		if (outcome.hostedUrl === null) {
 			return {
 				_tag: "Failed",
 				reason: outcome.uploadError ?? "the upload returned no hosted URL",
 			} as UploadResult;
 		}
-		const unverified = yield* verify(outcome.hostedUrl, token);
+		const unverified = yield* verify(outcome.hostedUrl, token.value);
 		return unverified === null
 			? ({_tag: "Hosted", url: outcome.hostedUrl} as UploadResult)
 			: ({_tag: "Failed", reason: unverified} as UploadResult);

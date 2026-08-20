@@ -72,8 +72,20 @@ export interface EvidenceOptions {
 	readonly tmpRoot: string;
 	/** Content-addressed PUT + GET-back into the harness's declared store. */
 	readonly storeUpload: (store: string, target: UploadTarget) => Effect.Effect<Upload>;
-	/** GitHub's user-attachment endpoint plus a HEAD probe of every returned URL. */
-	readonly attachmentUpload: (repo: string, target: UploadTarget) => Effect.Effect<Upload>;
+	/**
+	 * GitHub's user-attachment endpoint plus a HEAD probe of every returned URL.
+	 *
+	 * Wider than {@link UploadLeg} by the two services its credential path needs: the repo id comes
+	 * off the fetch client and the token off `../io/gh-api.ts`, whose `gh` leg spawns.
+	 */
+	readonly attachmentUpload: (
+		repo: string,
+		target: UploadTarget,
+	) => Effect.Effect<
+		Upload,
+		never,
+		HttpClient.HttpClient | ChildProcessSpawner.ChildProcessSpawner
+	>;
 }
 
 /** The posted markdown: one row per surface, before|after side by side, bound to the head SHA. */
