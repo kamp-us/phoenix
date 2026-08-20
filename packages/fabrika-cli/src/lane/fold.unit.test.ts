@@ -6,6 +6,7 @@ import {describe, expect, it} from "vitest";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {coderWorkflow, twoPhaseWorkflow} from "./fixtures.test-support.ts";
 import {
+	applyClearance,
 	applyEvent,
 	deriveStatus,
 	foldLog,
@@ -14,7 +15,7 @@ import {
 	resolveTask,
 	standingCauses,
 } from "./fold.ts";
-import {type CompiledLane, compile} from "./machine.ts";
+import {CLEARED_EVENT, type CompiledLane, compile} from "./machine.ts";
 
 const lane = (workflow: unknown): CompiledLane => {
 	const result = compile(workflow);
@@ -29,8 +30,12 @@ const entry = (task: string, event: string): LogEntry => ({
 });
 
 /** Drive a sequence through applyEvent, asserting every step is accepted. */
-const drive = (compiled: CompiledLane, steps: ReadonlyArray<readonly [string, string]>) => {
-	const log: LogEntry[] = [];
+const drive = (
+	compiled: CompiledLane,
+	steps: ReadonlyArray<readonly [string, string]>,
+	from: ReadonlyArray<LogEntry> = [],
+) => {
+	const log: LogEntry[] = [...from];
 	for (const [task, event] of steps) {
 		const states = statesOf(compiled, log);
 		const applied = applyEvent(compiled, states, task, event, "2026-08-16T00:00:00.000Z");
@@ -48,6 +53,18 @@ const statesOf = (compiled: CompiledLane, log: ReadonlyArray<LogEntry>) => {
 
 const statusOf = (compiled: CompiledLane, log: ReadonlyArray<LogEntry>) =>
 	deriveStatus(compiled, statesOf(compiled, log));
+
+/** Append one founder-cleared round the way `build clear` does — an event, never a context edit. */
+const grant = (
+	compiled: CompiledLane,
+	log: ReadonlyArray<LogEntry>,
+	task: string,
+	round: number,
+): ReadonlyArray<LogEntry> => {
+	const applied = applyClearance(compiled, log, task, round, "2026-08-16T00:00:00.000Z");
+	if (applied._tag !== "Appendable") throw new Error(`grant ${round}: ${applied._tag}`);
+	return [...log, applied.entry];
+};
 
 describe("run 1 — a fresh lane's status shape", () => {
 	it("answers the compound stateValue with future phases waiting and errors empty", () => {
@@ -210,14 +227,6 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 		...Array.from({length: RETRY_BUDGET + 1}, () => round).flat(),
 	];
 
-	/** The coder template with one founder-cleared round recorded on the task's context. */
-	const cleared = (): unknown => {
-		const workflow = coderWorkflow() as {machine: {context: {issue: Record<string, unknown>}}};
-		const issue = workflow.machine.context.issue;
-		workflow.machine.context.issue = {...issue, clearedRounds: [CAP_ROUND]};
-		return workflow;
-	};
-
 	it("trips the lane on the frozen task rather than hanging its phase", () => {
 		const compiled = lane(coderWorkflow());
 
@@ -227,7 +236,7 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 		expect(status.context.issue).toMatchObject({retries: RETRY_BUDGET, maxRetries: RETRY_BUDGET});
 	});
 
-	it("resumes the state the task left, with the spent retries held", () => {
+	it("refuses the door when the state would come back and the budget would not (#6570)", () => {
 		const compiled = lane(coderWorkflow());
 
 		const applied = applyEvent(
@@ -237,38 +246,74 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 			"UNBLOCKED",
 			"2026-08-16T00:00:00.000Z",
 		);
-		expect(applied._tag).toBe("Applied");
-		if (applied._tag !== "Applied") return;
-		expect(applied.current).toMatchObject({
+		// Never a silent `active`/`review` whose only walkable arm is PASS: the resume is refused with
+		// the log unappended, and the refusal names the remedy (ADR 0312).
+		expect(applied).toMatchObject({_tag: "Refused", kind: "unbudgeted-resume"});
+		if (applied._tag !== "Refused") return;
+		expect(applied.reason).toContain("build clear");
+		expect(applied.reason).toContain(`${RETRY_BUDGET}/${RETRY_BUDGET} retries`);
+	});
+
+	it("opens the door once a CLEARED is in the log, in either order", () => {
+		const compiled = lane(coderWorkflow());
+		const frozen = drive(compiled, freeze);
+
+		// Grant then resume, and resume-after-grant on the same log: one order, because the budget is
+		// a fold over the events before each position rather than a value read at replay time.
+		const resumed = drive(
+			compiled,
+			[["issue", "UNBLOCKED"]],
+			grant(compiled, frozen, "issue", CAP_ROUND),
+		);
+		expect(statusOf(compiled, resumed)).toMatchObject({
 			stateValue: {pipeline: {issue: "review"}},
 			status: "active",
 		});
-		expect(applied.current.context.issue).toMatchObject({retries: RETRY_BUDGET});
-		expect(applied.current.context.errors).toEqual([]);
-	});
-
-	it("re-freezes on the next FAIL when no further round was granted", () => {
-		const compiled = lane(coderWorkflow());
-
-		const log = drive(compiled, [...freeze, ["issue", "UNBLOCKED"], ["issue", "FAIL"]]);
-		expect(statusOf(compiled, log)).toMatchObject({stateValue: "tripped", status: "done"});
-	});
-
-	it("hands the door no budget — a recorded grant re-folds the same log into the repair", () => {
-		const compiled = lane(cleared());
-
-		// The clearance widens the budget at compile time, so the FAIL that froze this log now spends
-		// the granted round instead: nothing to unblock, and the door grants nothing of its own.
-		const granted = drive(compiled, freeze);
-		expect(statusOf(compiled, granted).stateValue).toMatchObject({pipeline: {issue: "build"}});
-		expect(statusOf(compiled, granted).context.issue).toMatchObject({
-			retries: RETRY_BUDGET + 1,
+		expect(statusOf(compiled, resumed).context.issue).toMatchObject({
+			retries: RETRY_BUDGET,
 			maxRetries: RETRY_BUDGET + 1,
+			clearedRounds: [CAP_ROUND],
 		});
-		expect(statusOf(compiled, drive(compiled, [...freeze, ...round]))).toMatchObject({
+		expect(statusOf(compiled, resumed).context.errors).toEqual([]);
+	});
+
+	it("spends the granted round exactly once — the next FAIL freezes again", () => {
+		const compiled = lane(coderWorkflow());
+		const resumed = drive(
+			compiled,
+			[["issue", "UNBLOCKED"]],
+			grant(compiled, drive(compiled, freeze), "issue", CAP_ROUND),
+		);
+
+		// The granted round is walkable: FAIL routes to `build`, not straight back to `frozen`.
+		const spent = drive(compiled, [["issue", "FAIL"]], resumed);
+		expect(statusOf(compiled, spent).stateValue).toMatchObject({pipeline: {issue: "build"}});
+		expect(statusOf(compiled, drive(compiled, round, spent))).toMatchObject({
 			stateValue: "tripped",
 			status: "done",
 		});
+	});
+
+	it("re-recording the same grant buys nothing — CLEARED is keyed by its round", () => {
+		const compiled = lane(coderWorkflow());
+		const once = grant(compiled, drive(compiled, freeze), "issue", CAP_ROUND);
+		const twice = [...once, {...once[once.length - 1]} as LogEntry];
+
+		expect(statusOf(compiled, twice).context.issue).toMatchObject({
+			maxRetries: RETRY_BUDGET + 1,
+			clearedRounds: [CAP_ROUND],
+		});
+		expect(
+			applyClearance(compiled, once, "issue", CAP_ROUND, "2026-08-16T00:00:00.000Z"),
+		).toMatchObject({_tag: "AlreadyHeld"});
+	});
+
+	it("a grant landing on the park moves nothing — the door out is still UNBLOCKED (ADR 0297)", () => {
+		const compiled = lane(coderWorkflow());
+		const granted = grant(compiled, drive(compiled, freeze), "issue", CAP_ROUND);
+
+		expect(statusOf(compiled, granted)).toMatchObject({stateValue: "tripped", status: "done"});
+		expect(statusOf(compiled, granted).context.errors).toEqual(["issue"]);
 	});
 
 	it("refuses the door on a region booted in the park — there is no state to resume", () => {
@@ -336,7 +381,7 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 		});
 		const applied = applyEvent(
 			compiled,
-			statesOf(compiled, log),
+			statesOf(compiled, grant(compiled, log, "task_a", CAP_ROUND)),
 			"task_a",
 			"UNBLOCKED",
 			"2026-08-16T00:00:00.000Z",
@@ -344,6 +389,27 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 		expect(applied._tag).toBe("Applied");
 		if (applied._tag !== "Applied") return;
 		expect(applied.current.stateValue).toMatchObject({phase1: {task_a: "checking"}});
+	});
+
+	it("refuses that same park's door with no grant behind it, phase active or not", () => {
+		const compiled = lane(parkedSibling(false));
+		const log = drive(compiled, [
+			["task_a", "DONE"],
+			["task_a", "FAIL"],
+			["task_a", "DONE"],
+			["task_a", "FAIL"],
+			["task_a", "DONE"],
+			["task_a", "FAIL"],
+		]);
+
+		const applied = applyEvent(
+			compiled,
+			statesOf(compiled, log),
+			"task_a",
+			"UNBLOCKED",
+			"2026-08-16T00:00:00.000Z",
+		);
+		expect(applied).toMatchObject({_tag: "Refused", kind: "unbudgeted-resume"});
 	});
 
 	it("still refuses an event the park holds no cell for", () => {
@@ -358,6 +424,85 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 		);
 		expect(applied).toMatchObject({_tag: "Refused"});
 		if (applied._tag === "Refused") expect(applied.reason).toContain("NoCellError");
+	});
+});
+
+/**
+ * The incident this slice closes, driven end to end: lane 6462 / PR #6552, where the two halves of
+ * one frozen-lane resume were applied in the order a human applies them and produced two defects
+ * (#6570, #6578). Both are asserted absent here on the same log.
+ */
+describe("lane 6462 — an UNBLOCKED, then a `build clear` for that round (#6570, #6578)", () => {
+	const round: ReadonlyArray<readonly [string, string]> = [
+		["issue", "DONE"],
+		["issue", "FAIL"],
+	];
+	const freeze: ReadonlyArray<readonly [string, string]> = [
+		["issue", "WIP"],
+		...Array.from({length: RETRY_BUDGET + 1}, () => round).flat(),
+	];
+
+	it("refuses the UNBLOCKED that folded with no budget rather than advertising `active`", () => {
+		const compiled = lane(coderWorkflow());
+		const frozen = drive(compiled, freeze);
+
+		// #6570: the fold restored `review` at retries 2 against maxRetries 2, so `ISSUE.PASS` was the
+		// only non-error arm and the lane still read `active` — the signal an operator routes on.
+		expect(statusOf(compiled, frozen).context.issue).toMatchObject({
+			retries: RETRY_BUDGET,
+			maxRetries: RETRY_BUDGET,
+		});
+		const applied = applyEvent(
+			compiled,
+			statesOf(compiled, frozen),
+			"issue",
+			"UNBLOCKED",
+			"2026-08-20T19:00:00.000Z",
+		);
+		expect(applied).toMatchObject({_tag: "Refused", kind: "unbudgeted-resume"});
+	});
+
+	it("keeps the log replayable when the grant lands after the resume", () => {
+		const compiled = lane(coderWorkflow());
+		// The historical order, now reachable: the grant is what admits the UNBLOCKED, and appending a
+		// second grant afterwards must not re-route either of them.
+		const frozen = drive(compiled, freeze);
+		const resumed = drive(
+			compiled,
+			[["issue", "UNBLOCKED"]],
+			grant(compiled, frozen, "issue", CAP_ROUND),
+		);
+		const later = grant(compiled, resumed, "issue", CAP_ROUND + 1);
+
+		// #6578: the third FAIL used to re-evaluate against the widened budget, route to `build`
+		// instead of `frozen`, and strand the recorded UNBLOCKED in a state with no cell for it —
+		// every verb then refused on exit 4. The fold is clean, and the FAIL kept its routing.
+		const fold = foldLog(compiled, later);
+		expect(fold._tag).toBe("Folded");
+		expect(statusOf(compiled, later)).toMatchObject({
+			stateValue: {pipeline: {issue: "review"}},
+			status: "active",
+		});
+		expect(statusOf(compiled, later).context.issue).toMatchObject({
+			retries: RETRY_BUDGET,
+			maxRetries: RETRY_BUDGET + 2,
+			clearedRounds: [CAP_ROUND, CAP_ROUND + 1],
+		});
+	});
+
+	it("re-folds identically however many times the same log is read", () => {
+		const compiled = lane(coderWorkflow());
+		const log = drive(
+			compiled,
+			[["issue", "UNBLOCKED"]],
+			grant(compiled, drive(compiled, freeze), "issue", CAP_ROUND),
+		);
+
+		expect(statesOf(compiled, log)).toEqual(statesOf(compiled, log));
+		// Every prefix replays too — the property a budget read out of mutable context could not hold.
+		for (let cut = 0; cut <= log.length; cut += 1) {
+			expect(foldLog(compiled, log.slice(0, cut))._tag).toBe("Folded");
+		}
 	});
 });
 
@@ -388,6 +533,22 @@ describe("run 6 — invalid events refuse, producing nothing to append", () => {
 		);
 		expect(applied).toMatchObject({_tag: "Refused"});
 		if (applied._tag === "Refused") expect(applied.reason).toContain("six");
+	});
+
+	it("refuses a CLEARED handed to the operator's path, naming the verb that appends one", () => {
+		const compiled = lane(twoPhaseWorkflow());
+
+		// The cell exists in every state, so nothing in the machine would stop this — the refusal is
+		// what keeps `lane transition` from minting budget nobody granted (ADR 0312).
+		const applied = applyEvent(
+			compiled,
+			statesOf(compiled, []),
+			"task_a",
+			CLEARED_EVENT,
+			"2026-08-16T00:00:00.000Z",
+		);
+		expect(applied).toMatchObject({_tag: "Refused", kind: "event"});
+		if (applied._tag === "Refused") expect(applied.reason).toContain("build clear");
 	});
 
 	it("refuses a task outside the active phase", () => {

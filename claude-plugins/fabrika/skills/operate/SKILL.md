@@ -580,8 +580,12 @@ not yours (ADR [0228](../../../../.decisions/0228-scripts-relay-never-derive.md)
 You cannot clear a park by hand: post on the driven issue what is needed and from whom (the parking
 spawn's report names both; for `human:cp-approval` it is a control-plane approval at the PR's
 current head; for `frozen` it is a founder-cleared repair round, recorded with `build clear`, which
-re-folds the task into `build` on its own — a bare `UNBLOCKED` walks the door back into the same
-review with the budget still spent, so the next `FAIL` freezes it again). One park class names its
+appends a `<TASK>.CLEARED` event to the lane's log and moves the task nowhere — the door out is
+still the human's `UNBLOCKED`, and the two land in either order. Without a `CLEARED` behind it that
+`UNBLOCKED` is **refused** on exit `36`: the resume would restore the state and not the budget, so
+every guarded route out falls straight back to `frozen` (ADR
+[0312](../../../../.decisions/0312-event-anchored-retry-budget.md)). Read that code as "the grant
+has not been recorded yet", never as an event to retype). One park class names its
 owner here, not off the spawn's
 report: **a wire defect on the driven issue's own body** — an acceptance-criteria heading a
 spawned shell fail-louds on, a criteria block that reads as no shape the verbs parse.
