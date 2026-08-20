@@ -229,7 +229,10 @@ export const mutations = {
 			// Re-read the viewer's vote so the edit doesn't blank `myVote`.
 			const [fresh] = yield* sozluk.getDefinitionsByIds([result.definitionId], {viewerId: user.id});
 			const definition = shapeDefinition({...result, myVote: fresh?.myVote ?? null});
-			yield* live.definition.update(definition.id, {changed: ["body"], data: definition});
+			yield* live.definition.update(definition.id, {
+				changed: ["body", "updatedAt"],
+				data: definition,
+			});
 			return definition;
 		}),
 	),

@@ -49,12 +49,44 @@ export interface LivePublisherOptions {
 	readonly waitUntil: (promise: Promise<unknown>) => void;
 }
 
-/** fate's `livePayload` shape. */
-const entityFrame = (
-	type: "update" | "delete",
-	id: string | number,
-	options?: {readonly data?: unknown},
-): EntityFrame => (type === "delete" ? {delete: true, id} : {data: options?.data});
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * fate's `livePayload` update frame, narrowed to the keys the mutation changed (#6585).
+ *
+ * Trimming `data` is the leak fix, not an optimisation: fate's `writeEntity` copies every
+ * scalar key PRESENT ON the payload over each subscriber's cached record, gated by
+ * `hasOwnProperty` and never by `select` — so an untrimmed node, re-resolved against the
+ * MUTATOR's viewer, overwrites everyone else's `myVote`/`isSaved` until they refetch.
+ *
+ * `select` must then name exactly the keys the trimmed payload carries: the client reads
+ * it ahead of the payload and refetches the record whenever the payload cannot cover the
+ * selection (`canUseLivePayloadData`), so a `changed` key the node omits would cost every
+ * subscriber a round trip. `id` joins the selection because fate's own `changed`→select
+ * derivation adds it and `writeEntity` resolves the cache key through it.
+ *
+ * No `changed` leaves the old whole-node frame standing — an unnarrowed publish stays as
+ * loud as it was, rather than silently becoming a no-op.
+ */
+const updateFrame = (options?: {
+	readonly changed?: ReadonlyArray<string>;
+	readonly data?: unknown;
+}): EntityFrame => {
+	const changed = options?.changed?.filter((key) => key.length > 0);
+	const data = options?.data;
+	if (!changed || changed.length === 0) return {data};
+	const select = [...new Set(["id", ...changed])];
+	if (!isRecord(data)) return {data, select};
+	// A payload with no cache key cannot be merged, so it is dropped rather than trimmed:
+	// the subscriber refetches the narrowed `select` instead of receiving a keyless record.
+	if (!("id" in data)) return {data: undefined, select};
+	const trimmed: Record<string, unknown> = {};
+	for (const key of select) {
+		if (key in data) trimmed[key] = data[key];
+	}
+	return {data: trimmed, select: Object.keys(trimmed)};
+};
 
 const nodeFrame = (
 	type: "appendNode" | "prependNode",
@@ -100,7 +132,7 @@ export function livePublisherFor(options: LivePublisherOptions): typeof LivePubl
 				publish({
 					kind: "entity",
 					match: {type, entityId: String(id)},
-					frame: entityFrame("update", id, opts),
+					frame: updateFrame(opts),
 					...(opts?.eventId !== undefined ? {eventId: opts.eventId} : {}),
 				}),
 			),
@@ -109,7 +141,7 @@ export function livePublisherFor(options: LivePublisherOptions): typeof LivePubl
 				publish({
 					kind: "entity",
 					match: {type, entityId: String(id)},
-					frame: entityFrame("delete", id),
+					frame: {delete: true, id},
 					...(opts?.eventId !== undefined ? {eventId: opts.eventId} : {}),
 				}),
 			),

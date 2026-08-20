@@ -226,7 +226,12 @@ export const mutations = {
 			});
 			const post = shapePost({...r, myVote: null});
 			// A draft is private: re-resolve for the author, never prepend to the public topic.
-			yield* live.post.update(post.id, {changed: ["isDraft"], data: post});
+			// A save rewrites the whole draft, so `changed` names every intrinsic field it can
+			// touch — the author's other tab reads them all off this frame.
+			yield* live.post.update(post.id, {
+				changed: ["slug", "title", "url", "host", "body", "tags", "isDraft", "updatedAt"],
+				data: post,
+			});
 			return post;
 		}),
 	),
@@ -417,7 +422,7 @@ export const mutations = {
 			// `myVote` (edit doesn't touch vote state).
 			const [fresh] = yield* pano.getPostsByIds([r.postId], {viewerId: user.id});
 			const post = shapePost({...r, myVote: fresh?.myVote ?? null});
-			yield* live.post.update(post.id, {changed: ["title", "body"], data: post});
+			yield* live.post.update(post.id, {changed: ["title", "body", "updatedAt"], data: post});
 			return post;
 		}),
 	),
@@ -641,9 +646,11 @@ export const mutations = {
 				sandboxed: fresh?.sandboxed ?? false,
 			});
 			// The thread topic is viewer-blind, so the broadcast payload drops the owner-scoped
-			// `sandboxed` flag while the author's own returned node keeps it (#4282).
+			// `sandboxed` flag while the author's own returned node keeps it (#4282). Since
+			// #6585 `changed` trims it off the frame anyway; the explicit `false` stays as the
+			// belt to that brace.
 			yield* live.comment.update(comment.id, {
-				changed: ["body"],
+				changed: ["body", "updatedAt"],
 				data: {...comment, sandboxed: false},
 			});
 			return comment;
