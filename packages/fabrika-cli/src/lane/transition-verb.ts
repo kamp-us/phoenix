@@ -9,7 +9,13 @@
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import {appendText} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {APPEND_UNKNOWN, CAUSE_UNRECOGNISED, EVENT_REFUSED, TASK_UNKNOWN} from "./codes.ts";
+import {
+	APPEND_UNKNOWN,
+	CAUSE_UNRECOGNISED,
+	EVENT_REFUSED,
+	RESUME_UNBUDGETED,
+	TASK_UNKNOWN,
+} from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
 import {isOperatorEvent} from "./machine.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
@@ -68,7 +74,10 @@ export const runTransition = (
 		const classes = options.classes.length === 0 ? null : options.classes;
 		const applied = applyEvent(loaded.lane, fold.states, task.taskId, event, at, classes);
 		if (applied._tag === "Refused") {
-			return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${applied.reason}`);
+			return refuse(
+				applied.kind === "unbudgeted-resume" ? RESUME_UNBUDGETED : EVENT_REFUSED,
+				`${VERB}: refused (log unappended): ${applied.reason}`,
+			);
 		}
 
 		const entry: LogEntry = {

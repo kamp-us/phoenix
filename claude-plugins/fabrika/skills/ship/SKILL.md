@@ -99,7 +99,11 @@ never gated at this head; route to the gate that owns it — `review` for every 
 the `governance` skill for `governance` — and stop. **Absence and staleness are refusals, never
 passes.** A `pass` on a verdict posted at an *earlier* head is not a refusal it missed: the verb
 says so on stderr, having proved this head's content digest is the one that verdict bound. What it
-never does is pass a content binding it could not check — that reads `stale`. The polarity rules, the
+never does is pass a content binding it could not check — that reads `stale`. An `ns review-ui
+routed` line is neither a pass nor a refusal you missed: it is `review-ui` recording that this diff
+moves no pixels, so it owes no verdict (ADR
+[0316](../../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md)); it satisfies, and no
+other namespace can read that way. The polarity rules, the
 content-digest binding and the whole `blocked` taxonomy are the verb's section
 (`fabrika wire doc-section --heading "ship gate" < <skill-base>/contract.md`).
 

@@ -7,7 +7,6 @@ import {runDiagnose} from "./diagnose-verb.ts";
 import {
 	behind,
 	CHECK_RUNS,
-	COMMENT_LINE,
 	COMMENTS,
 	COMMIT_DATE,
 	COMMIT_EXISTS,
@@ -15,19 +14,17 @@ import {
 	checkRuns,
 	comments,
 	commitDate,
-	DIFF,
-	diffOf,
 	ENV,
 	FILES,
 	files,
 	HEAD,
+	OTHER_HEAD,
 	PERMISSION,
 	PROTECTION,
 	PULL,
 	permission,
 	protection,
 	pull,
-	RENDERED_LINE,
 	REVIEWS,
 	RULES,
 	RUN_COUNT,
@@ -105,27 +102,6 @@ const script = (
 ];
 
 describe("runDiagnose answers", () => {
-	// The same seam `ship scope` reads it through, so a comment-only UI edit does not strand a PR on a
-	// `review-ui` gate nobody can honestly clear (#6687).
-	it("counts the gates a comment-only UI edit really requires, not the path-only ones", async () => {
-		const app = "apps/web/src/App.tsx";
-		const commentOnly = await run(
-			script([
-				[FILES, files(app, "README.md")],
-				[DIFF, diffOf({file: app, added: COMMENT_LINE})],
-			]),
-		);
-		expect(commentOnly.stdout).toContain("gates\tblocked\t0/2");
-
-		const rendered = await run(
-			script([
-				[FILES, files(app, "README.md")],
-				[DIFF, diffOf({file: app, added: RENDERED_LINE})],
-			]),
-		);
-		expect(rendered.stdout).toContain("gates\tblocked\t0/3");
-	});
-
 	it("prints the class, the head, the age and every evidence line, always", async () => {
 		const out = await run(script());
 		expect(out.code).toBe(0);
@@ -141,6 +117,69 @@ describe("runDiagnose answers", () => {
 				"",
 			].join("\n"),
 		);
+	});
+
+	// #6376: this verb is the second resolver of the same question `ship gate` answers. A PR the
+	// gate calls satisfied must not classify `ungated` here, or the healer dispatches it back to a
+	// review whose namespace no sanctioned path can fill — the loop the route exists to close.
+	it("counts a head-bound routed-elsewhere record as a filled review-ui namespace", async () => {
+		const out = await run(
+			script([
+				[PULL, pull({updatedAt: PUSHED, comments: 2, changedFiles: 1})],
+				[FILES, files("apps/web/src/flags/shell-keys.ts")],
+				[
+					COMMENTS,
+					comments(
+						{id: 1, body: `review-code: PASS @ ${HEAD} — the clause`},
+						{
+							id: 2,
+							body: `routed-elsewhere: review-ui @ ${HEAD} — no rendered delta; the diff is prose only`,
+						},
+					),
+				],
+			]),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("gates\tsatisfied\t2/2");
+		expect(out.stdout).not.toContain("ungated");
+	});
+
+	it("re-opens the namespace when the route binds a head that has moved", async () => {
+		const out = await run(
+			script([
+				[PULL, pull({updatedAt: PUSHED, comments: 2, changedFiles: 1})],
+				[FILES, files("apps/web/src/flags/shell-keys.ts")],
+				[
+					COMMENTS,
+					comments(
+						{id: 1, body: `review-code: PASS @ ${HEAD} — the clause`},
+						{
+							id: 2,
+							body: `routed-elsewhere: review-ui @ ${OTHER_HEAD} — no rendered delta; the diff is prose only`,
+						},
+					),
+				],
+			]),
+		);
+		expect(out.stdout).toContain("gates\tblocked\t1/2");
+	});
+
+	// The gate admits the record for `review-ui` alone; a route aimed anywhere else resolves nothing,
+	// or a session could decline any gate it liked.
+	it("drops a route aimed at a namespace other than review-ui", async () => {
+		const out = await run(
+			script([
+				[PULL, pull({updatedAt: PUSHED, comments: 1})],
+				[
+					COMMENTS,
+					comments({
+						id: 1,
+						body: `routed-elsewhere: review-code @ ${HEAD} — no rendered delta; the diff is prose only`,
+					}),
+				],
+			]),
+		);
+		expect(out.stdout).toContain("gates\tblocked\t0/1");
 	});
 
 	it("reads a red gating rollup as `red`, an answer at exit 0", async () => {

@@ -15,6 +15,7 @@ import {
 	APPEND_UNKNOWN as LANE_APPEND_UNKNOWN,
 	EVENT_REFUSED as LANE_EVENT_REFUSED,
 	MALFORMED_RECORD as LANE_MALFORMED_RECORD,
+	RESUME_UNBUDGETED as LANE_RESUME_UNBUDGETED,
 	TASK_UNKNOWN as LANE_TASK_UNKNOWN,
 	LANE_UNREADABLE,
 } from "../lane/codes.ts";
@@ -43,7 +44,11 @@ export const laneExit = (code: number): number => {
 			return WRITE_UNKNOWN;
 		case LANE_UNREADABLE:
 			return PRECONDITION_UNKNOWN;
+		// Both are the machine refusing the UNBLOCKED with the log unappended, and a recipe does the
+		// same thing on either: stop and route to a human. They stay two codes on the lane's own table
+		// because only one of them is fixed by recording a clearance (ADR 0312).
 		case LANE_EVENT_REFUSED:
+		case LANE_RESUME_UNBUDGETED:
 			return UNPARK_REFUSED;
 		case LANE_TASK_UNKNOWN:
 			return TASK_UNRESOLVED;

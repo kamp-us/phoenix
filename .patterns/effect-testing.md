@@ -80,7 +80,10 @@ sits above it; a captured argument is the wiring itself.
 Bundle the services the derivation reads as one layer per axis so a shape is one or two lines, not
 seven stubs — [`kunye/sandbox.testing.ts`](../apps/web/worker/features/kunye/sandbox.testing.ts) is
 the worked example (`inPlaceVisibilityLayer` / `moderatorAxisLayer` / `sandboxViewerLayer`), with
-every store dying on contact so a short-circuit shape proves the read never happened. Consumers:
+every store dying on contact so a short-circuit shape proves the read never happened. Its
+`memberSandboxViewer` is the other half: a test that calls a masked read *directly* has to hand it a
+viewer (they are required — see [caylak-content-containment.md](./caylak-content-containment.md)), and
+that constructor names the plain-member one instead of leaving it inline. Consumers:
 [`pano/mutation-rehydrate-viewer.unit.test.ts`](../apps/web/worker/features/pano/mutation-rehydrate-viewer.unit.test.ts),
 [`pano/saved-posts-viewer.unit.test.ts`](../apps/web/worker/features/pano/saved-posts-viewer.unit.test.ts),
 [`search/search-not-widened.unit.test.ts`](../apps/web/worker/features/search/search-not-widened.unit.test.ts).

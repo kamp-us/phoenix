@@ -54,8 +54,10 @@ the same tracked debt the sibling contracts carry.)
   landed content. A fabrika copy of any of these could only agree redundantly or contradict an
   enforced verdict (ADR 0238). Every verb here reads those gates' **results**; none recomputes
   their judgment.
-- **A gate verdict of any kind.** This skill is explicitly outside the SHA-bound verdict contract
-  (ADR 0058), so no verb emits a verdict marker, and this spec requests **no widening** of
+- **A gate verdict of any kind, or a route standing in for one.** This skill is explicitly outside
+  the SHA-bound verdict contract
+  (ADR 0058), so no verb emits a verdict marker or a `routed-elsewhere` record — it reads both and
+  writes neither — and this spec requests **no widening** of
   `NAMESPACE` / `NAMESPACE_PREFIXES` in
   [`wire/verdict-marker.ts`](../../../../packages/fabrika-cli/src/wire/verdict-marker.ts) or of
   `SHIP_NAMESPACES` in
@@ -327,7 +329,8 @@ imported; a second copy is the drift this section exists to prevent.
 | `review/rollup.ts` — `rollupOf`, `statusOf`, `isInformational`, `isStalled` | the check-run rollup, the ADR 0061 informational carve-out, and half the wedge test |
 | `review/classes.ts` — `SHIP_NAMESPACES`, `touchesGovernanceRoot` | which namespaces a diff requires a verdict in |
 | `wire/verdict-marker.ts` — `read`, `bindToHead` | reading whether a verdict exists at the head. **Read only — this group emits none.** |
-| `ship/gate-verb.ts` — `inForce` | head-bound-first, write-stamp-ordered verdict resolution |
+| `wire/routed-elsewhere.ts` — `read` | reading the head-bound record that says a gate owes this PR no verdict. **Read only — this group emits none.** |
+| `ship/gate-verb.ts` — `inForce`, `ROUTABLE` | head-bound-first, write-stamp-ordered verdict resolution, and the one namespace a route may resolve |
 | `ship/queue.ts` — `queueStateOf`, `landedOnBase` | merge-queue entry state off the timeline, with the paired-removal rule |
 | `ship/github.ts` — `listShipCheckRuns`, `listRunsAtHead`, `listWorkflows`, `pullTimeline`, `behindBase`, `readMergeability` | the head-bound REST reads |
 | `ship/target.ts` — `prefixMatch`, `badNumber`, `scannedLine` | argument guards and SHA matching |
@@ -408,8 +411,8 @@ moving it.
 | 6 | `blocked-human` | ≥1 non-`Bot` reviewer's latest decisive review at this head is `CHANGES_REQUESTED`, or the diff touches a control-plane path and no approval stands at this head. REST-derivable signals only — the unresolved-thread axis is out of scope, above |
 | 7 | `attended` | **any positive signal of motion**: an owner whose last activity is inside `--dwell-minutes`, a live merge-queue entry, an armed merge intent, or a gating rollup of `pending` — CI running at this head *is* the PR moving |
 | 8 | `claim-stale` | an owner signal exists and arm 7 did not fire — the claim is there and nothing shows it live. The stderr notice names which of the three proved it: activity older than `--dwell-minutes`, a head more than `--drift-commits` behind the base (`behindBase`), or an activity timestamp that could not be read at all |
-| 9 | `gated-unshipped` | no owner signal, and every required namespace holds an in-force `pass` verdict at this head (`inForce`) |
-| 10 | `ungated` | no owner signal, and ≥1 required namespace holds no in-force verdict at this head |
+| 9 | `gated-unshipped` | no owner signal, and every required namespace is filled at this head (`inForce`) — an in-force `pass` verdict, or for `review-ui` alone a head-bound `routed-elsewhere` record saying the gate owes this PR no verdict (ADR 0316) |
+| 10 | `ungated` | no owner signal, and ≥1 required namespace holds neither at this head |
 
 **Arm 3 fires above arm 4 deliberately.** A required context that no run produces cannot be healed
 by anything a red-log classifier does, so a PR carrying both a config gap and a failing test is
@@ -444,7 +447,7 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404), or `--sha` names no commit on this PR |
-| `11` | the PR, its comments, its check runs, its verdicts, its timeline, its base, or its diff (read only when a UI path is present) could not be read — the stall class is UNKNOWN, never `attended` |
+| `11` | the PR, its comments, its check runs, its verdicts, its timeline or its base could not be read — the stall class is UNKNOWN, never `attended` |
 | `13` | the comment, check-run or timeline enumeration is provably short of its declared count, or the timeline read never reached a terminal page |
 
 **Errors**
@@ -460,8 +463,7 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 | `heal-ci diagnose: claim-stale fired on <inactivity\|ground-drift> — last activity <ts>, behind base <k>.` | 0 | notice |
 
 **Scope** — one PR's metadata, changed files, comments, check runs, workflow runs, reviews and
-timeline, each paginated and count-checked, plus its base branch's declared required contexts, plus
-its diff when and only when the changed files hold a UI path.
+timeline, each paginated and count-checked, plus its base branch's declared required contexts.
 Review *threads* are not read: arm 6 is REST-only, per the out-of-scope entry above. The predicate
 chain is total over what was read; a read that could not complete is `11`, never a class.
 

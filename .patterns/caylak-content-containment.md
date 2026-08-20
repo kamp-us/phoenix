@@ -90,12 +90,19 @@ content table owns its lifecycle, and mask through that.
 
 ## A gated read still has to say who it is
 
-Passing no viewer is not neutral. `resolveSandboxViewer({})` returns `anonymousViewer`, so a
-read with no options is a read *as the public* — the strictest mask there is. That is the
-right default for an unauthenticated path and the wrong one everywhere else, and it fails
-silently: the row is simply absent, and the caller renders whatever it renders for "missing".
+Passing no viewer is not neutral, and every masked Pano/Sözlük read now refuses to let you:
+their options carry `MaskedReadOptions` (`apps/web/worker/features/lifecycle/SandboxVisibility.ts`),
+a **required** resolved `sandboxViewer`, so omitting it is a compile error rather than a
+silent read *as the public*. Anonymity is still available — you write
+`sandboxViewer: anonymousViewer`, which is the RSS feed's and the landing feed's deliberate
+answer — but you have to say it.
 
-The trap is a read that already sits behind an authority gate. Being inside a
+That refusal exists because the omission's failure mode is invisible: the row is simply
+absent, and the caller renders whatever it renders for "missing". A write's own re-read is
+where that hurt most — the mutation committed at D1, then its masked re-read dropped the row
+and the handler answered `null` or `*NotFound` (#6473, #6424, #6586).
+
+The trap the type cannot close is a read that already sits behind an authority gate. Being inside a
 `Moderate`-gated resolver does nothing for the mask; the SQL only widens for a viewer that
 carries `canSeeSandboxed`. The moderation report queue spent six reads this way (#6472): the
 `Moderate` grant was discharged, the reads passed no viewer, and every reported çaylak item —

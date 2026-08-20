@@ -43,6 +43,34 @@ audience axis asks whether an agent should pick the issue up to *build*, and an 
 is admitted without it (founder ruling,
 [#5175](https://github.com/kamp-us/phoenix/issues/5175)). The scope axis is unchanged by the purpose,
 so `20` stays reachable and `21` does not, and `--override` stays the exception it was.
+
+**The grilling session is the `grill` group's, reused the same way**
+([`grilling`'s contract](../grilling/contract.md)). ADR
+[0289](../../../../.decisions/0289-founder-approves-every-epic-plan.md) requires a grilling session
+on every epic, before the plan reaches the epic body; the skill's step 4 runs it with
+`fabrika grill open --ticket <epic>`, `grill round`, `grill answer` and `grill read`, between
+`ledger draft` and `ledger write` (before `ledger child`, so the `NEEDS-INPUT` exit really does mint
+nothing). **This adds no `ledger` verb, no plan section and no exit code**, and it is why: the
+session issue, its round grammar, the `fact`/`decision` split enforced at `grill answer`'s `17`, the
+ACL-gated ruling and the closed-set frontier all already exist and are already tested. Deriving a
+second question-and-answer record here would put two records on one conversation.
+
+**The session is where the grill runs; the epic is where it is kept, and that placement is 0289's,
+not a preference.** That record says in so many words that "The questions and the answers are posted
+as comments on the epic issue, which is where anyone reading the epic later already looks." Reusing
+the `grill` group puts the working thread on a session issue, so step 4 mirrors the settled grill
+back onto the epic through `build note` — question, kind, answer or ruling, and the session number.
+Stated here because the two are easy to confuse: the reuse is a mechanism choice this contract may
+make, while *where the record lands* is 0289's to decide, and a cross-link alone would have quietly
+moved it. Nothing is derived to enforce the mirror — see the paragraph below.
+
+**No `ledger` verb proves the grill happened**, and nothing here derives one. The ordering — a
+session opened, a round posted, the frontier read, the grill mirrored, *then* `ledger write` — is
+convention the skill holds, stated at its `GRILL-IS-CONVENTION` anchor. A verb that read the session before splicing
+would be this group deriving a verdict about a `grill` artifact, which is the same second-answer
+defect that keeps the structural floor out of this group; it would also make an absent session a
+`ledger write` refusal, seating a code for a fact ADR 0289 gives to the founder's checkpoint.
+
 **No second lock is derived**, and v1's `epic-lock` is why: all five of its
 distinct outcomes collapse onto exit `1`
 (`packages/pipeline-cli/src/tools/epic-lock/command.ts:26,43-47`), it `POST`s the

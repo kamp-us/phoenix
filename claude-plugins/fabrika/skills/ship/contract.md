@@ -304,15 +304,8 @@ With `--json`: `{"outcome":"scoped","head":<40-hex>,"state":…,"issue":{"kind":
 **The class map and the namespace derivation are one derivation, printed once.** The class
 partition extends the `review` group's fixed map (code / doc / skill, `code` the residual —
 same rows, same order, shared as one implemented module with `review scope`, never a second
-copy) with the `ui` class. That class is **two** tests, not one: a changed path matching the UI
-surface map (`apps/web/src/**` excluding `*.test.tsx?` / `*.spec.tsx?`) **whose diff carries at
-least one line a user could see rendered** derives `review-ui`. A file whose every changed line
-is a comment, a docblock or a wrapped prose string derives nothing — `review-ui` can emit no
-honest verdict where there is no rendered delta, so raising it there blocks a merge on a gate
-nobody can clear (#6376). Everything the render test cannot read counts as rendering, and a UI
-path the diff shows no changed lines for — a rename, a mode change, a binary asset — raises too;
-the direction that stays closed is the blind one. This costs the verb one extra read: with a UI
-path present the diff is fetched, and an unreadable diff is `11`, never a guess. Namespaces are
+copy) with the `ui` class: a changed path matching the UI surface map (`apps/web/src/**`
+excluding `*.test.tsx?` / `*.spec.tsx?`) additionally derives `review-ui`. Namespaces are
 derived from classes by one table in one module; v1 printed the class set from one derivation
 in one script and hand-copied it in another, and the copy dropped a class on a live PR
 (#4730). A non-empty diff deriving an empty namespace set is refused (`13`-adjacent but
@@ -395,7 +388,7 @@ downstream verb consumes, and that verb guards itself.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404); or it has zero changed files; or its non-empty diff derives zero required namespaces — a vacuous conjunction (#2765, ADR 0092) |
-| `11` | the PR, its file list, its diff (read only when a UI path is present), or the §CP boundary could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
+| `11` | the PR, its file list, or the §CP boundary could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
 | `13` | the changed-file enumeration is provably short (received < declared count) |
 
 **Errors**
@@ -406,13 +399,12 @@ downstream verb consumes, and that verb guards itself.
 | `ship scope: PR #<n> has zero changed files — nothing to ship (ADR 0092).` | 7 | refusal |
 | `ship scope: #<n>'s diff derives zero review namespaces — a merge gated on nothing is vacuously green (#2765); the class map has a hole, file it.` | 7 | refusal |
 | `ship scope: cannot read <what> for #<n>: <reason> — the scope is UNKNOWN.` | 11 | refusal |
-| ``ship scope: cannot read the diff for #<n>: <reason> — whether its `apps/web/src/**` changes render is UNKNOWN, and the scope with it.`` | 11 | refusal |
 | `ship scope: cannot read <base>'s landing path: <reason> — reporting it unknown; `ship merge` refuses on the same read rather than landing.` | 0 | notice |
 | `ship scope: file list shows <k> of <m> declared files — refusing to partition a truncated read.` | 13 | refusal |
 
-**Scope** — one PR's metadata and changed-file list, paginated and count-checked, plus its diff when
-and only when the file list holds a UI path, plus one boundary read from the PR's base ref and one
-`governedRoots` read from the checkout the verb runs in. A boundary read that failed refuses `11` on the spot and reads no config. The partition is total
+**Scope** — one PR's metadata and changed-file list, paginated and count-checked, plus one
+boundary read from the PR's base ref and one `governedRoots` read from the checkout the verb runs
+in. A boundary read that failed refuses `11` on the spot and reads no config. The partition is total
 over what was read.
 
 **Examples**
@@ -589,9 +581,9 @@ fabrika ship gate 4321 --sha 03135b91 --require review-code [--require review-do
 
 **Output** — machine channel. First line: `gate\t<satisfied|blocked>\t<sha>`. Then one line
 per required namespace, in the order required:
-`ns\t<namespace>\t<pass|fail|absent|stale>\t<marker|advisory|review-fold|->` — the fourth
-field names which carrier produced the in-force verdict (`-` on `absent`). `satisfied` iff
-every required namespace reads `pass`.
+`ns\t<namespace>\t<pass|fail|absent|stale|routed>\t<marker|advisory|review-fold|routed-elsewhere|->`
+— the fourth field names which carrier produced the in-force verdict (`-` on `absent`).
+`satisfied` iff every required namespace reads `pass` or `routed`.
 
 With `--json`: `{"outcome":…,"sha":…,"namespaces":[{name,state,carrier,commentId}…],"required":<n>}`.
 
@@ -640,6 +632,18 @@ which wedges the repair loop.
 `absent` and `stale` are distinct tokens because their remedies differ (run the gate vs
 re-run it at this head), and both block — absence-is-refusal is the #3944 law (a PR enqueued
 with no live-head verdict at all).
+
+**`routed` is the fifth state, and it is a gate saying it owes this PR nothing** (ADR
+[0316](../../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md)). It resolves from a
+`routed-elsewhere` record — its own wire format, carrying no polarity, read through the same
+head-binding and the same ADR 0055 ACL as a verdict — and it satisfies beside `pass`, because the
+conjunction asks whether every required gate has answered and "not mine to judge" is an answer.
+**`review-ui` is the only namespace that may resolve this way.** It is the only gate whose emit path
+is structurally unable to answer: `review-ui render` refuses zero surfaces and `review-ui post`
+refuses without captures, so the `ui` class — raised off a path test that cannot see whether pixels
+moved — named a namespace nothing legal could fill, and a prose-only `apps/web/src/**` PR was
+permanently unshippable (#6376). A record aimed at any other namespace is read and ignored; that
+namespace stays `absent`. `ship floor` is unaffected — it asks for `governance` and requires `pass`.
 
 **`--cp` is caller-asserted, deliberately** — the one input in this verb the caller vouches
 for, an exception to the group's re-derive habit and stated as such. Gate is a read: a wrongly

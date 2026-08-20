@@ -21,15 +21,8 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {governedRootsOr} from "../config/paths.ts";
-import {getPullDiff, listPullFiles} from "../io/pulls.ts";
-import {
-	issueRefOf,
-	isUiSurface,
-	partitionWithUi,
-	renderIssueRef,
-	shipNamespacesOf,
-} from "../review/classes.ts";
-import {changedLines} from "../review/diff.ts";
+import {listPullFiles} from "../io/pulls.ts";
+import {issueRefOf, partitionWithUi, renderIssueRef, shipNamespacesOf} from "../review/classes.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {readBoundary} from "./boundary.ts";
 import {classify} from "./codeowners.ts";
@@ -108,22 +101,7 @@ export const runScope = (
 			);
 		}
 
-		// The diff is read only when a UI path is present: on every other PR it decides nothing, and
-		// fetching it anyway would hand `ship scope` a new way to refuse for no answer gained.
-		let changed: ReturnType<typeof changedLines> = [];
-		if (files.some(isUiSurface)) {
-			const diffed = yield* getPullDiff(repo, pr);
-			if (diffed._tag === "Failure") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read the diff for #${pr}: ${diffed.reason} — whether its \`apps/web/src/**\` changes render is UNKNOWN, and the scope with it.`,
-					diagnostics,
-				);
-			}
-			changed = changedLines(diffed.value);
-		}
-
-		const partition = partitionWithUi(files, governed.roots, changed);
+		const partition = partitionWithUi(files, governed.roots);
 		const namespaces = shipNamespacesOf(partition);
 		if (namespaces.length === 0) {
 			return refuse(

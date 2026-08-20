@@ -16,12 +16,12 @@ import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {parallelStampWave} from "../fate/stamp-wave.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import {applyRemovalTransition, swallowRefresh} from "../lifecycle/apply-removal-transition.ts";
-import {anonymousViewer, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
+import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {
+	type MaskedReadOptions,
 	ownSandboxed,
 	publicLiveWhere,
-	resolveSandboxViewer,
 	sandboxBacklogWhere,
 	sandboxedInPlace,
 	sandboxVisibleWhere,
@@ -280,7 +280,7 @@ export class Sozluk extends Context.Service<
 	{
 		readonly getTerm: (
 			slug: string,
-			opts?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
+			opts: MaskedReadOptions & {viewerId?: string | null | undefined},
 		) => Effect.Effect<TermPage | null>;
 
 		/**
@@ -289,11 +289,10 @@ export class Sozluk extends Context.Service<
 		 */
 		readonly listDefinitionsKeyset: (
 			slug: string,
-			opts?: {
+			opts: MaskedReadOptions & {
 				first?: number | undefined;
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
-				sandboxViewer?: SandboxViewer | undefined;
 				/** Mute read-mask (#3113): muted authors' definitions hidden from the muter. */
 				mutedIds?: ReadonlySet<string> | undefined;
 				/**
@@ -310,9 +309,8 @@ export class Sozluk extends Context.Service<
 		 */
 		readonly getDefinitionsByIds: (
 			ids: ReadonlyArray<string>,
-			opts?: {
+			opts: MaskedReadOptions & {
 				viewerId?: string | null | undefined;
-				sandboxViewer?: SandboxViewer | undefined;
 				/** Mute read-mask (#3113): muted authors' definitions dropped from the batch. */
 				mutedIds?: ReadonlySet<string> | undefined;
 				/** See {@link listDefinitionsKeyset}'s `parallelStamps` (#2709). */
@@ -343,13 +341,14 @@ export class Sozluk extends Context.Service<
 		 * Viewer-masked: a term surfaces only when the viewer can read at least one of its
 		 * definitions (#3724), so a sandbox-only term is never a dead-end page.
 		 */
-		readonly listTermSummariesConnection: (opts?: {
-			sort?: ListSort;
-			first?: number;
-			after?: string | null;
-			viewerId?: string | null | undefined;
-			sandboxViewer?: SandboxViewer | undefined;
-		}) => Effect.Effect<TermConnectionPage>;
+		readonly listTermSummariesConnection: (
+			opts: MaskedReadOptions & {
+				sort?: ListSort;
+				first?: number;
+				after?: string | null;
+				viewerId?: string | null | undefined;
+			},
+		) => Effect.Effect<TermConnectionPage>;
 
 		/**
 		 * Public landing terms (#1424), scoped to LIVE content: a term surfaces only via a
@@ -605,12 +604,12 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 		const getTerm = Effect.fn("Sozluk.getTerm")(function* (
 			slug: string,
-			opts: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined} = {},
+			opts: MaskedReadOptions & {viewerId?: string | null | undefined},
 		) {
 			const meta = yield* run((db) => db.query.termRecord.findFirst({where: {slug}}));
 			if (!meta) return null;
 
-			const viewer = resolveSandboxViewer(opts);
+			const viewer = opts.sandboxViewer;
 			const defs = yield* run((db) =>
 				db
 					.select()
@@ -648,19 +647,18 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 		const listDefinitionsKeyset = Effect.fn("Sozluk.listDefinitionsKeyset")(function* (
 			slug: string,
-			opts: {
+			opts: MaskedReadOptions & {
 				first?: number | undefined;
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
-				sandboxViewer?: SandboxViewer | undefined;
 				mutedIds?: ReadonlySet<string> | undefined;
 				parallelStamps?: boolean | undefined;
-			} = {},
+			},
 		) {
 			const first = Math.max(1, Math.min(opts.first ?? 50, 200));
 			const after = opts.after ?? null;
 			const viewerId = opts.viewerId ?? null;
-			const viewer = resolveSandboxViewer(opts);
+			const viewer = opts.sandboxViewer;
 
 			const baseWhere = and(
 				eq(schema.definitionRecord.termSlug, slug),
@@ -742,16 +740,15 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 		const getDefinitionsByIds = Effect.fn("Sozluk.getDefinitionsByIds")(function* (
 			ids: ReadonlyArray<string>,
-			opts: {
+			opts: MaskedReadOptions & {
 				viewerId?: string | null | undefined;
-				sandboxViewer?: SandboxViewer | undefined;
 				mutedIds?: ReadonlySet<string> | undefined;
 				parallelStamps?: boolean | undefined;
-			} = {},
+			},
 		) {
 			if (ids.length === 0) return [];
 			const viewerId = opts.viewerId ?? null;
-			const viewer = resolveSandboxViewer(opts);
+			const viewer = opts.sandboxViewer;
 			const fetched = yield* run((db) =>
 				db
 					.select()
@@ -837,18 +834,17 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		});
 
 		const listTermSummariesConnection = Effect.fn("Sozluk.listTermSummariesConnection")(function* (
-			opts: {
+			opts: MaskedReadOptions & {
 				sort?: ListSort;
 				first?: number;
 				after?: string | null;
 				viewerId?: string | null | undefined;
-				sandboxViewer?: SandboxViewer | undefined;
-			} = {},
+			},
 		) {
 			const sort = opts.sort ?? "recent";
 			const first = Math.max(1, Math.min(opts.first ?? 20, 100));
 			const after = opts.after ?? null;
-			const viewer = resolveSandboxViewer(opts);
+			const viewer = opts.sandboxViewer;
 
 			// The count carries the SAME mask as the page below: an unmasked `count(*)`
 			// would report terms the page can never yield, so the connection would claim

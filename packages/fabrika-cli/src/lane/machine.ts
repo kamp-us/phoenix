@@ -23,6 +23,11 @@
  *
  * Compilation is total over its result type: a document that does not fit comes back as
  * {@link Malformed} with every defect named, never as a machine that half-works.
+ *
+ * One cell is the compiler's rather than the document's: {@link CLEARED_EVENT}, injected into every
+ * state, which raises the retry budget and moves nothing (ADR 0312). A document that declares it is
+ * still a defect — the budget is a fold over recorded events, so a grant is a line in
+ * `events.jsonl`, never a field the compiler reads out of mutable context.
  */
 import type {Machine} from "@demlik/tea";
 import {defineMachine} from "@demlik/tea";
@@ -38,8 +43,16 @@ export const isOperatorEvent = (event: string): event is OperatorEvent =>
 	(OPERATOR_EVENTS as readonly string[]).includes(event);
 
 /**
- * One task's folded state: the leaf, the retry budget, the state it left (`was`), and the lane
- * classes standing over it.
+ * The seventh event, and the one no operator records: a founder's cleared repair round, appended by
+ * `build clear` (ADR 0312). It targets nothing — it raises the budget from its own position in the
+ * log forward — so it opens no door out of a park and leaves 0297's transition vocabulary at six.
+ */
+export const CLEARED_EVENT = "CLEARED";
+
+/**
+ * One task's folded state: the leaf, the retry budget, the state it left (`was`), and the grants
+ * applied so far — `cleared` is the fold's own tally of {@link CLEARED_EVENT} rounds, which is what
+ * makes `maxRetries` a function of the log's prefix rather than of a document anyone can edit.
  *
  * `classes` is the routing fact a `class:<name>` guard reads. It is *not* derived here — the
  * compiler reads no diff and no board — it is carried on the event that observed it and folded in
@@ -51,12 +64,15 @@ export interface TaskState {
 	readonly type: string;
 	readonly retries: number;
 	readonly maxRetries: number;
+	readonly cleared: ReadonlyArray<number>;
 	readonly classes: ReadonlyArray<string>;
 	readonly was?: string;
 }
 
 export interface LaneMsg {
 	readonly type: string;
+	/** The round a {@link CLEARED_EVENT} clears; absent on every operator event. */
+	readonly round?: number;
 	/** The lane classes the recorder observed; absent leaves {@link TaskState.classes} standing. */
 	readonly classes?: ReadonlyArray<string>;
 }
@@ -72,6 +88,18 @@ export interface CompiledTask {
 	readonly errorFinals: ReadonlySet<string>;
 	/** The finals that hold a cell for some event — parks the lane trips on and resumes from. */
 	readonly openFinals: ReadonlySet<string>;
+	/**
+	 * The states holding a guarded cell — the ones whose only non-`PASS` route out is gated on
+	 * `retries < maxRetries`. Read at resume time, where landing in one with the budget spent means
+	 * the state was restored and the budget was not (#6570).
+	 */
+	readonly guardedStates: ReadonlySet<string>;
+	/**
+	 * Rounds a retired `clearedRounds` context field names, which the compiler no longer honours
+	 * (ADR 0312). Carried so a refusal can name the repair — re-record each as a `CLEARED` event —
+	 * rather than leaving an operator staring at a grant that silently buys nothing.
+	 */
+	readonly staleGrants: ReadonlyArray<number>;
 	/** The task's `context` entry minus the retry bookkeeping — passed through to status. */
 	readonly extras: Readonly<Record<string, unknown>>;
 }
@@ -140,8 +168,12 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		defects.push(`task "${taskId}": initial state "${initialState}" is not in \`states\``);
 	}
 
+	const ctx = isRecord(context) ? context : {};
+	const declared = typeof ctx.maxRetries === "number" ? ctx.maxRetries : RETRY_BUDGET;
+
 	const finals = new Set<string>();
 	const errorFinals = new Set<string>();
+	const guardedStates = new Set<string>();
 	for (const [name, node] of Object.entries(states)) {
 		if (nodeType(node) === "final") finals.add(name);
 	}
@@ -162,6 +194,12 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		}
 		for (const [eventName, transition] of Object.entries(on)) {
 			const msg = bareEvent(eventName);
+			if (msg === CLEARED_EVENT) {
+				defects.push(
+					`task "${taskId}": state "${stateName}" declares "${eventName}" — a clearance is the compiler's own cell on every state, never a document's transition (ADR 0312)`,
+				);
+				continue;
+			}
 			if (!isOperatorEvent(msg)) {
 				defects.push(
 					`task "${taskId}": state "${stateName}" listens for "${eventName}" — outside the operator's six (${OPERATOR_EVENTS.join("/")})`,
@@ -194,6 +232,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 					continue;
 				}
 				if (finals.has(fallthrough)) errorFinals.add(fallthrough);
+				guardedStates.add(stateName);
 				cells[msg] = (s, m) => {
 					const c = withClasses(s, m);
 					return c.retries < c.maxRetries
@@ -226,27 +265,47 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	}
 	if (defects.length > 0) return {defects};
 
+	// Read BEFORE the clearance cell is injected: an open final is one the DOCUMENT left a door in.
+	// The injected cell targets nothing, so counting it would read every final as a park (ADR 0312).
 	const openFinals = new Set(
 		Object.entries(table)
 			.filter(([name, cells]) => finals.has(name) && Object.keys(cells).length > 0)
 			.map(([name]) => name),
 	);
 
-	const ctx = isRecord(context) ? context : {};
-	const declared = typeof ctx.maxRetries === "number" ? ctx.maxRetries : RETRY_BUDGET;
 	// The lane guard and `build verdicts`'s `capReached` spend one grant identically, which is why the
 	// budget is derived there rather than tallied here — see `../cap-clearance.ts` (#5959, #6137).
-	const cleared = Array.isArray(ctx.clearedRounds)
+	const clearedCell: Cell = (s, msg) => {
+		const round = msg.round;
+		// Set-semantic by the round it names, so a re-recorded grant buys nothing (ADR 0312).
+		if (round === undefined || s.cleared.includes(round)) return [s, []];
+		const cleared = [...s.cleared, round].sort((a, b) => a - b);
+		return [{...s, cleared, maxRetries: budgetWith(declared, cleared)}, []];
+	};
+	for (const cells of Object.values(table)) cells[CLEARED_EVENT] = clearedCell;
+
+	const staleGrants = Array.isArray(ctx.clearedRounds)
 		? ctx.clearedRounds.filter((round): round is number => typeof round === "number")
 		: [];
-	const maxRetries = budgetWith(declared, cleared);
 	// A document may seed the classes a lane starts under; every later change rides an event, so a
 	// non-array declaration is a silence rather than a defect the compiler could act on.
 	const classes = Array.isArray(ctx.classes)
 		? ctx.classes.filter((name): name is string => typeof name === "string")
 		: [];
-	const {maxRetries: _max, retries: _retries, classes: _classes, ...extras} = ctx;
-	const initial: TaskState = {type: initialState, retries: 0, maxRetries, classes};
+	const {
+		maxRetries: _max,
+		retries: _retries,
+		clearedRounds: _cleared,
+		classes: _classes,
+		...extras
+	} = ctx;
+	const initial: TaskState = {
+		type: initialState,
+		retries: 0,
+		maxRetries: declared,
+		cleared: [],
+		classes,
+	};
 	// The Transitions mapped type demands a cell for every (state × msg) pair; a lane machine is
 	// compiled from data and deliberately partial — the absent cells ARE the refusal contract
 	// (`applyCell` throws `NoCellError` on them). One cast at the construction boundary.
@@ -254,7 +313,10 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		init: (loaded) => [loaded ?? initial, []],
 		update: table as never,
 	});
-	return {task: {machine, initial, finals, errorFinals, openFinals, extras}, defects: []};
+	return {
+		task: {machine, initial, finals, errorFinals, openFinals, guardedStates, staleGrants, extras},
+		defects: [],
+	};
 };
 
 /** The two targets of a phase's `onDone` pair: `[guarded success, fallthrough trip]`. */
@@ -380,7 +442,11 @@ export interface LaneTopology {
 	>;
 }
 
-/** The compiled machines summarized as data — what `lane print` answers with. */
+/**
+ * The compiled machines summarized as data — what `lane print` answers with. Every state lists
+ * {@link CLEARED_EVENT} because every state holds that cell; `maxRetries` is the declared budget,
+ * which is what a fresh lane starts at before any grant is recorded.
+ */
 export const topology = (lane: CompiledLane): LaneTopology => ({
 	phases: lane.phases,
 	terminals: lane.terminals,
