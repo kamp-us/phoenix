@@ -337,6 +337,25 @@ node <fabrika> lane report <lane> --root <root> --token SHIPPED-PR --pr <pr-url>
 
 `--pr` whenever the terminal names one; `--comment` for the diagnosis comment behind a
 `SUCCESS-NO-PR`; a `BUILT-NO-PR` carries neither, because its evidence is the commits themselves.
+
+**Name the cause when your `STOPPED` has one.** `--cause <token>` rides a `STOPPED` and nothing
+else, because only a park has a cause to be gone. The one token that names a stop of yours is
+`worktree-holds-branch`, and it belongs on the `STOPPED` you take when
+`build branch --resume-lane` refuses at exit `11` — another worktree still holds the lane branch:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --token STOPPED --cause worktree-holds-branch
+```
+
+That cause is the whole difference between a park `recipe unpark` clears itself and one that spends
+a person: the recipe table keys on it, so a `BLOCKED` carrying none is novel by construction and
+routes to a human `UNBLOCKED` (#6480, #6590). The vocabulary is closed and lives in code
+([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts));
+`lane report --help` prints it, and a token outside it is exit `35` with the log unappended, so
+there is none to compose and none to guess. Omitting one stays legal and stays right for a stop no
+recipe covers — an isolation, a denied tool call, an UNKNOWN verdict. What is never right is
+reaching for a token because it is nearby rather than because it is what happened.
+
 The verb refuses a token outside this vocabulary (exit `32`) rather than
 interpreting it — never respell one to get past it. It also **proves the event before it records**:
 your `SHIPPED-PR` lands only against an open PR the board shows linking the issue, a
@@ -416,7 +435,9 @@ cleared from inside a worktree. It refuses on `7` when no branch in this clone's
 number — refs are shared across every worktree, so that means the branch is gone, not that you are
 standing in the wrong tree — and on `11` when another worktree still holds the branch, which it
 proves **before** re-keying: `git branch -m` does not refuse there, it renames the branch out from
-under that lane. Releasing that worktree is an operator's act, so end `STOPPED` naming the code. From
+under that lane. Releasing that worktree is an operator's act, so end `STOPPED` naming the code —
+and report that terminal with `--cause worktree-holds-branch`, the park this exact refusal is, so
+`recipe unpark` can clear it without a person. From
 there the loop is the ordinary one minus the publishing half: fix, `build
 check`, `build commit`, no push and no PR, then the `build-deviations` comment and `BUILT-NO-PR`.
 There is no cap clearance on this path — a grant is recorded against a PR's base branch — so a child
