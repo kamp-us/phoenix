@@ -1,6 +1,6 @@
-import {Effect, Layer} from "effect";
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeHttp, fakeShell, type HttpReply, once} from "../fakes.test-support.ts";
+import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {comments, ENV, HEAD, OTHER_HEAD, pull} from "../ship/fixtures.test-support.ts";
 import {
@@ -17,9 +17,9 @@ import {
 import {governanceMarker, httpError, oneRun, runsAtHead} from "./fixtures.test-support.ts";
 import {runRerun} from "./rerun-verb.ts";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
 const API = "https:\\/\\/api\\.github\\.com";
+const PULL = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/pulls\\/4321$`);
+const COMMENTS = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/4321\\/comments\\?`);
 const RUNS = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/actions\\/runs\\?head_sha=`);
 const RERUN = new RegExp(`^POST ${API}\\/repos\\/o\\/r\\/actions\\/runs\\/77\\/rerun$`);
 const ONE_RUN = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/actions\\/runs\\/77$`);
@@ -27,41 +27,28 @@ const ONE_RUN = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/actions\\/runs\\/77$`)
 /** The rerun endpoint answers 201 with no body. */
 const ACCEPTED: HttpReply = {status: 201, body: ""};
 
-const seams = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	served: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
-) => {
-	const shell = fakeShell(script);
-	const http = fakeHttp(served);
-	return {shell, http, layer: Layer.merge(shell.layer, http.layer)};
-};
+/** The shared payload fixtures speak `gh`'s `ExecResult`; the seam now serves the same bytes. */
+const reply = (result: ExecResult, status = 200): HttpReply => ({status, body: result.stdout});
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	served: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
-) =>
+const run = (script: ReadonlyArray<Scripted>) =>
 	Effect.runPromise(
-		Effect.provide(runRerun({pr: 4321, repo: null, env: ENV}), seams(script, served).layer),
+		Effect.provide(runRerun({pr: 4321, repo: null, env: ENV}), fakeSeams(script).layer),
 	);
 
-const PASSING = comments({id: 1, body: governanceMarker("PASS", HEAD)});
+const PASSING = reply(comments({id: 1, body: governanceMarker("PASS", HEAD)}));
 
 describe("recipe rerun — the gate is read before anything moves", () => {
 	it("reruns the failed run and proves it by the run's own new attempt", async () => {
-		const {http, layer} = seams(
-			[
-				[PULL, pull()],
-				[COMMENTS, PASSING],
-			],
-			[
-				[RUNS, runsAtHead({id: 77, name: "ci"}, {id: 78, conclusion: "success"})],
-				[RERUN, ACCEPTED],
-				[ONE_RUN, oneRun({id: 77, attempt: 2, status: "queued", conclusion: null})],
-			],
-		);
+		const seams = fakeSeams([
+			[PULL, reply(pull())],
+			[COMMENTS, PASSING],
+			[RUNS, runsAtHead({id: 77, name: "ci"}, {id: 78, conclusion: "success"})],
+			[RERUN, ACCEPTED],
+			[ONE_RUN, oneRun({id: 77, attempt: 2, status: "queued", conclusion: null})],
+		]);
 
 		const out = await Effect.runPromise(
-			Effect.provide(runRerun({pr: 4321, repo: null, env: ENV}), layer),
+			Effect.provide(runRerun({pr: 4321, repo: null, env: ENV}), seams.layer),
 		);
 
 		expect(out.code).toBe(0);
@@ -72,27 +59,27 @@ describe("recipe rerun — the gate is read before anything moves", () => {
 			rerun: [{id: 77, name: "ci", attempt: 2}],
 		});
 		// The read-back is a real second call, not the POST's own status re-read as evidence.
-		expect(http.calls.filter((line) => ONE_RUN.test(line))).toHaveLength(1);
+		expect(seams.requests.filter((line) => ONE_RUN.test(line))).toHaveLength(1);
 	});
 
 	it("is VERDICT_ABSENT with nothing posted when the PR carries no governance verdict", async () => {
-		const {http, layer} = seams([
-			[PULL, pull()],
-			[COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — ok`})],
+		const seams = fakeSeams([
+			[PULL, reply(pull())],
+			[COMMENTS, reply(comments({id: 1, body: `review-code: PASS @ ${HEAD} — ok`}))],
 		]);
 
 		const out = await Effect.runPromise(
-			Effect.provide(runRerun({pr: 4321, repo: null, env: ENV}), layer),
+			Effect.provide(runRerun({pr: 4321, repo: null, env: ENV}), seams.layer),
 		);
 
 		expect(out.code).toBe(VERDICT_ABSENT);
-		expect(http.calls.some((line) => line.startsWith("POST "))).toBe(false);
+		expect(seams.requests.some((line) => line.startsWith("POST "))).toBe(false);
 	});
 
 	it("is VERDICT_STALE when the verdict is bound to another head — never folded into absent", async () => {
 		const out = await run([
-			[PULL, pull()],
-			[COMMENTS, comments({id: 1, body: governanceMarker("PASS", OTHER_HEAD)})],
+			[PULL, reply(pull())],
+			[COMMENTS, reply(comments({id: 1, body: governanceMarker("PASS", OTHER_HEAD)}))],
 		]);
 
 		expect(out.code).toBe(VERDICT_STALE);
@@ -100,27 +87,29 @@ describe("recipe rerun — the gate is read before anything moves", () => {
 	});
 
 	it("is VERDICT_FAIL on a FAIL at head, and reruns nothing", async () => {
-		const {http, layer} = seams([
-			[PULL, pull()],
-			[COMMENTS, comments({id: 1, body: governanceMarker("FAIL", HEAD)})],
+		const seams = fakeSeams([
+			[PULL, reply(pull())],
+			[COMMENTS, reply(comments({id: 1, body: governanceMarker("FAIL", HEAD)}))],
 		]);
 
 		const out = await Effect.runPromise(
-			Effect.provide(runRerun({pr: 4321, repo: null, env: ENV}), layer),
+			Effect.provide(runRerun({pr: 4321, repo: null, env: ENV}), seams.layer),
 		);
 
 		expect(out.code).toBe(VERDICT_FAIL);
-		expect(http.calls.some((line) => line.startsWith("POST "))).toBe(false);
+		expect(seams.requests.some((line) => line.startsWith("POST "))).toBe(false);
 	});
 
 	it("takes the latest verdict by write stamp, so a FAIL upserted into an older comment wins", async () => {
 		const out = await run([
-			[PULL, pull()],
+			[PULL, reply(pull())],
 			[
 				COMMENTS,
-				comments(
-					{id: 1, body: governanceMarker("FAIL", HEAD), updatedAt: "2026-08-16T02:00:00Z"},
-					{id: 2, body: governanceMarker("PASS", HEAD), updatedAt: "2026-08-16T01:00:00Z"},
+				reply(
+					comments(
+						{id: 1, body: governanceMarker("FAIL", HEAD), updatedAt: "2026-08-16T02:00:00Z"},
+						{id: 2, body: governanceMarker("PASS", HEAD), updatedAt: "2026-08-16T01:00:00Z"},
+					),
 				),
 			],
 		]);
@@ -129,13 +118,13 @@ describe("recipe rerun — the gate is read before anything moves", () => {
 	});
 
 	it("is TARGET_ABSENT on a closed PR", async () => {
-		expect((await run([[PULL, pull({state: "closed"})]])).code).toBe(TARGET_ABSENT);
+		expect((await run([[PULL, reply(pull({state: "closed"}))]])).code).toBe(TARGET_ABSENT);
 	});
 
 	it('is UNKNOWN when the comments cannot be read — never "no verdict"', async () => {
 		const out = await run([
-			[PULL, pull()],
-			[COMMENTS, errOut("api down")],
+			[PULL, reply(pull())],
+			[COMMENTS, httpError(503, "api down")],
 		]);
 
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -144,19 +133,19 @@ describe("recipe rerun — the gate is read before anything moves", () => {
 });
 
 describe("recipe rerun — nothing to do, and writes that do not prove themselves", () => {
-	const gated: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull()],
+	const gated: ReadonlyArray<Scripted> = [
+		[PULL, reply(pull())],
 		[COMMENTS, PASSING],
 	];
 
 	it("is NOTHING_TO_RERUN when no run at the head concluded in failure", async () => {
-		const out = await run(gated, [[RUNS, runsAtHead({id: 78, conclusion: "success"})]]);
+		const out = await run([...gated, [RUNS, runsAtHead({id: 78, conclusion: "success"})]]);
 
 		expect(out.code).toBe(NOTHING_TO_RERUN);
 	});
 
 	it('is UNKNOWN when the run list cannot be read — never "nothing to rerun"', async () => {
-		const out = await run(gated, [[RUNS, httpError(503, "api down")]]);
+		const out = await run([...gated, [RUNS, httpError(503, "api down")]]);
 
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.code).not.toBe(NOTHING_TO_RERUN);
@@ -167,7 +156,8 @@ describe("recipe rerun — nothing to do, and writes that do not prove themselve
 	// re-derived against the platform's own count.
 	it("is UNKNOWN when fewer runs arrived than the endpoint declared", async () => {
 		const short = runsAtHead({id: 77});
-		const out = await run(gated, [
+		const out = await run([
+			...gated,
 			[RUNS, {...short, body: JSON.stringify({...JSON.parse(short.body), total_count: 4})}],
 		]);
 
@@ -175,7 +165,8 @@ describe("recipe rerun — nothing to do, and writes that do not prove themselve
 	});
 
 	it("is WRITE_UNKNOWN when the rerun request itself does not land", async () => {
-		const out = await run(gated, [
+		const out = await run([
+			...gated,
 			[RUNS, runsAtHead({id: 77})],
 			[RERUN, httpError(422, "Unprocessable")],
 		]);
@@ -184,7 +175,8 @@ describe("recipe rerun — nothing to do, and writes that do not prove themselve
 	});
 
 	it("is RERUN_UNKNOWN when the request landed and the run cannot be re-read", async () => {
-		const out = await run(gated, [
+		const out = await run([
+			...gated,
 			[RUNS, runsAtHead({id: 77})],
 			[RERUN, ACCEPTED],
 			[ONE_RUN, httpError(503, "api down")],
@@ -195,7 +187,8 @@ describe("recipe rerun — nothing to do, and writes that do not prove themselve
 	});
 
 	it("is READBACK_MISMATCH when the re-read shows the same attempt on a completed run", async () => {
-		const out = await run(gated, [
+		const out = await run([
+			...gated,
 			[once(RUNS), runsAtHead({id: 77, attempt: 3})],
 			[RERUN, ACCEPTED],
 			[ONE_RUN, oneRun({id: 77, attempt: 3, status: "completed"})],
@@ -206,7 +199,8 @@ describe("recipe rerun — nothing to do, and writes that do not prove themselve
 	});
 
 	it("accepts a run still on its old attempt once it has left `completed`", async () => {
-		const out = await run(gated, [
+		const out = await run([
+			...gated,
 			[RUNS, runsAtHead({id: 77, attempt: 3})],
 			[RERUN, ACCEPTED],
 			[ONE_RUN, oneRun({id: 77, attempt: 3, status: "in_progress", conclusion: null})],
