@@ -45,9 +45,42 @@ fix it — you need a point-in-time restore, not another migration:
   [`0002_search_fts.sql`](../apps/web/worker/db/drizzle/migrations/0002_search_fts.sql) —
   already exists. Restore into the scratch stage, verify, then decide on the production
   cutover.
-- **Capture the current state first.** Record the failing migration id and the current
+- **Capture the current state first.** Record the failing migration and the current
   `drizzle_migrations` applied set before you touch anything, so you know exactly which
-  snapshot you are restoring to.
+  snapshot you are restoring to. Copy each one verbatim out of the table's `name` column —
+  after the v7 cutover those names come in two shapes, below.
+
+## Reading `drizzle_migrations` after the v7 cutover
+
+```bash
+pnpm dlx wrangler d1 execute <prod-d1-name> --remote \
+  --command "SELECT id, name, applied_at FROM drizzle_migrations ORDER BY id;"
+```
+
+The journal is wrangler-compatible `(id TEXT PK, name TEXT, applied_at TEXT)`. **`id` is only a
+zero-padded apply counter** (`00001`, `00002`, …); the thing that identifies a migration is
+`name`, which holds its path **relative to `migrationsDir`** — that is the string alchemy
+matches to decide a migration is already applied (`alchemy@2.0.0-beta.59`,
+`lib/Sql/SqlFile.js` `readSqlFile` sets `id: name` from the relative path, and
+`lib/Cloudflare/D1/ApplyMigrations.js` skips on `applied.has(migration.id)`). Since the v7
+cutover (ADR [0309](../.decisions/0309-v7-migrations-baseline-cutover.md)) `name` comes in both
+layouts: the 34 frozen flat files, `0000_d1_baseline.sql` …
+`0033_caylak_visibility_preference.sql`, then one row per post-cutover directory,
+`<prefix>_<name>/migration.sql`, beginning with `20260820113338_v7_baseline/migration.sql`.
+Three consequences bite mid-restore:
+
+- **Take the failing migration's identity from the `name` column, never re-derive it from a
+  filename.** A directory migration's `name` carries the `/migration.sql` suffix; a flat one
+  does not.
+- **The `v7_baseline` row applied nothing** — its
+  [`migration.sql`](../apps/web/worker/db/drizzle/migrations/20260820113338_v7_baseline/migration.sql)
+  is comment-only, seeded so `drizzle-kit generate` has a v7 snapshot to diff against. It is
+  not a schema snapshot and not a restore point: the schema on the database is the flat
+  history plus whatever directories landed after it.
+- **Never repair a bad migration by editing or renaming its file.** The path *is* the identity,
+  so a rename makes alchemy treat the migration as unseen and re-apply it against a database
+  that already holds its objects (ADR 0309). Roll forward with a new `drizzle-kit generate`
+  migration, or restore with this runbook.
 
 ## The FTS5 export tax — why a naive export fails
 
