@@ -7,6 +7,7 @@
  * the digest re-check makes that disagreement invisible until a read refuses.
  */
 
+import type {Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {emit, instant, packNonce, groundDigest as toGroundDigest} from "../wire/handoff-pack.ts";
 import {digestOf, type GroundState, renderGround} from "./ground.ts";
@@ -151,16 +152,22 @@ export const checkRunsJson = (conclusion: string): string =>
 
 const okOut = (stdout: string): ExecResult => ({ok: true, stdout, reason: ""});
 
+/** `GET https://api.github.com/repos/o/r`, and nothing under it — the default-branch read. */
+export const REPO_READ = new RegExp(`GET .*/repos/${REPO}$`);
+
+/** `GET https://api.github.com/repos/o/r/issues/5021`, and not its comments. */
+export const ISSUE_READ = new RegExp(`GET .*/repos/${REPO}/issues/${ISSUE}$`);
+
 /**
  * The whole happy-path script: the git reads rows 3-13 rest on, the board reads rows 14-19 rest on,
  * the default-branch read, and the issue itself.
  *
- * Ordered most-specific first, because `fakeShell` resolves a call by the **first** pattern that
- * matches its command line.
+ * Ordered most-specific first, because both fakes resolve a call by the **first** pattern that
+ * matches — the spawned command line for a git row, `METHOD <url>` for a board row.
  */
 export const groundScript = (
 	over: {readonly branch?: string; readonly conclusion?: string} = {},
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+): ReadonlyArray<Scripted> => [
 	[/rev-parse --abbrev-ref --symbolic-full-name/, okOut(`origin/${over.branch ?? BRANCH}`)],
 	[/rev-parse --abbrev-ref HEAD$/, okOut(over.branch ?? BRANCH)],
 	[/rev-parse --verify --quiet main\^/, okOut(BASE_HEAD)],
@@ -169,9 +176,9 @@ export const groundScript = (
 	[/rev-list --left-right --count/, okOut("0\t0")],
 	[/status --porcelain/, okOut("")],
 	[/rev-parse --is-inside-work-tree/, okOut("true")],
-	[/check-runs/, okOut(checkRunsJson(over.conclusion ?? "failure"))],
-	[/pulls\?state=all/, okOut(pullsJson())],
-	[new RegExp(`api repos/${REPO} --jq`), okOut(BASE)],
-	[/collaborators\/.*\/permission/, okOut("write")],
-	[new RegExp(`api repos/${REPO}/issues/${ISSUE}$`), okOut(issueJson())],
+	[/check-runs/, {status: 200, body: checkRunsJson(over.conclusion ?? "failure")}],
+	[/pulls\?state=all/, {status: 200, body: pullsJson()}],
+	[REPO_READ, {status: 200, body: JSON.stringify({default_branch: BASE})}],
+	[/collaborators\/.*\/permission/, {status: 200, body: JSON.stringify({permission: "write"})}],
+	[ISSUE_READ, {status: 200, body: issueJson()}],
 ];

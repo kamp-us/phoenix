@@ -111,16 +111,33 @@ export const commentsPayload = (
 		})),
 	);
 
+/** Every label name a `listLabels` read parses out of, as GitHub serves them. */
+export const labelsPayload = (...names: ReadonlyArray<string>): string =>
+	JSON.stringify(names.map((name) => ({name})));
+
+/** The `{number, title}` rows an open-issues-by-label read parses. */
+export const issueRowsPayload = (
+	rows: ReadonlyArray<{readonly number: number; readonly title: string}>,
+): string => JSON.stringify(rows);
+
 /** The command lines the fake spawner is scripted on. */
 export const ROOT = /^git rev-parse --show-toplevel$/;
 export const STATUS = /^git -C \/repo status --porcelain=v1/;
-export const LABELS = /^gh api --paginate repos\/o\/r\/labels\?/;
-export const ISSUE = /^gh api repos\/o\/r\/issues\/9310$/;
-export const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/9310\/comments\?/;
-export const CREATE = /^gh api --method POST repos\/o\/r\/issues -f/;
-export const POST = /^gh api --method POST repos\/o\/r\/issues\/9310\/comments -f/;
-export const READBACK = /^gh api repos\/o\/r\/issues\/comments\/\d+$/;
-export const CLOSE = /^gh api --method PATCH repos\/o\/r\/issues\/9310 -f state=closed/;
-export const VIEWER = /^gh api user --jq \.login$/;
-export const PERMISSION = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
-export const OPEN_SPIKES = /^gh api --paginate repos\/o\/r\/issues\?state=open&labels=/;
+
+/**
+ * The requests the fake transport is scripted on, as `METHOD <url>`.
+ *
+ * A paged read appends `&per_page=100&page=N`, so those patterns anchor on the query's stable head
+ * rather than on `$`. The method carries what the `gh`-era `--method POST` argv did, which is what
+ * keeps {@link CREATE} apart from a read of the same path.
+ */
+export const LABELS = /^GET .*\/repos\/o\/r\/labels\?/;
+export const ISSUE = /^GET .*\/repos\/o\/r\/issues\/9310$/;
+export const COMMENTS = /^GET .*\/repos\/o\/r\/issues\/9310\/comments\?/;
+export const CREATE = /^POST .*\/repos\/o\/r\/issues$/;
+export const POST = /^POST .*\/repos\/o\/r\/issues\/9310\/comments$/;
+export const READBACK = /^GET .*\/repos\/o\/r\/issues\/comments\/\d+$/;
+export const CLOSE = /^PATCH .*\/repos\/o\/r\/issues\/9310$/;
+export const VIEWER = /^GET .*\/user$/;
+export const PERMISSION = /^GET .*\/repos\/o\/r\/collaborators\/agent\/permission/;
+export const OPEN_SPIKES = /^GET .*\/repos\/o\/r\/issues\?state=open&labels=/;
