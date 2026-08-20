@@ -161,6 +161,22 @@ describe("findDefects", () => {
 		]);
 	});
 
+	// #6433: `Empty` is the no-citations answer whatever the corpus, so it can never be a finding.
+	it("reports no citation finding when nothing was cited", () => {
+		const findings = findDefects({
+			registers: [
+				terms(`## S
+
+| Term | Definition | Not |
+|---|---|---|
+| depo | The internal asset store. | |
+`),
+			],
+			citations: {_tag: "Empty"},
+		});
+		expect(findings).toEqual([]);
+	});
+
 	it("finds nothing in a clean register", () => {
 		expect(
 			findDefects({

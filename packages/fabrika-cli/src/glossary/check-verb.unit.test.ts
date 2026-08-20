@@ -123,6 +123,21 @@ describe("runCheck", () => {
 		expect(out.stdout).not.toContain("citation-dead");
 	});
 
+	// #6433: a repo that keeps no corpus and cites nothing has no defect it could ever clear.
+	it("reports clean on a declined corpus when no row cites anything", async () => {
+		const fs = withDecisions(
+			{[TERMS_PATH]: TERMS_CLEAN, [`${REPO}/.fabrika.jsonc`]: '{"decisionsDir": null}'},
+			[],
+		);
+		const out = await run(fs, {decisions: null});
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("clean\n");
+		expect(out.stdout).not.toContain("citations-unverified");
+		expect(out.stderr.join("\n")).toContain(
+			"glossary check: no four-digit citation in scope — no corpus was consulted.",
+		);
+	});
+
 	it("refuses an unreadable register — the outcome is UNKNOWN, never clean", async () => {
 		const out = await run(fakeFs({files: {[TERMS_PATH]: TERMS}, unreadable: [TERMS_PATH]}));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);

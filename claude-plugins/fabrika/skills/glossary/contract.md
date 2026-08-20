@@ -798,7 +798,7 @@ fabrika glossary check [--register <terms|language|both>] [--dir <path>] [--deci
 | `out-of-order` | a row precedes a row that sorts before it within its section |
 | `citation-dead` | a cited `NNNN` decision id has no record under the resolved corpus |
 | `citation-superseded` | a cited record exists and its frontmatter `status:` is not live |
-| `citations-unverified` | the corpus could not be read, or the repo declares `decisionsDir: null` and keeps none — either way no citation in scope was resolved |
+| `citations-unverified` | at least one citation is in scope and the corpus could not be read, or the repo declares `decisionsDir: null` and keeps none — either way no citation in scope was resolved. A register citing **nothing** never fires it: with no citation to settle, no corpus is consulted and the run is `clean` (#6433) |
 
 A citation is a four-digit token in a row's second or third cell. **Live** is decided by importing
 `isLive` from [`src/adr/records.ts`](../../../../packages/fabrika-cli/src/adr/records.ts) rather than

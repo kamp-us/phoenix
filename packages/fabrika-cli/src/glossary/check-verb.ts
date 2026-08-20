@@ -53,7 +53,12 @@ const messages = {
 		`${VERB}: ${path} has no parseable term table (${reason}) — the outcome is UNKNOWN.`,
 };
 
-/** Every cited id resolved against the corpus, or the reason the corpus could not be read. */
+/**
+ * Every cited id resolved against the corpus, or the reason the corpus could not be read.
+ *
+ * `wanted` is non-empty by precondition — `runCheck` answers the no-citations case as `Empty` before
+ * any corpus is consulted, so this never reports an unread corpus nobody asked about (#6433).
+ */
 const resolveCitations = (
 	dir: string,
 	decisionsPath: string,
@@ -62,7 +67,6 @@ const resolveCitations = (
 	Effect.gen(function* () {
 		const states = new Map<string, CitationState>();
 		const resolved = (): CitationScope => ({_tag: "Resolved", dir, states});
-		if (wanted.size === 0) return resolved();
 
 		const listing = yield* Effect.result(readDir(decisionsPath));
 		if (Result.isFailure(listing)) {
@@ -92,6 +96,17 @@ const resolveCitations = (
 		}
 		return resolved();
 	});
+
+const citationScopeLine = (citations: CitationScope, wanted: number): string => {
+	switch (citations._tag) {
+		case "Empty":
+			return `${VERB}: no four-digit citation in scope — no corpus was consulted.`;
+		case "Unverified":
+			return `${VERB}: ${wanted} citation(s) left unverified — ${citations.detail}`;
+		case "Resolved":
+			return `${VERB}: ${citations.states.size} of ${wanted} citation(s) resolved under ${citations.dir}.`;
+	}
+};
 
 export const runCheck = (options: CheckOptions): GlossaryEffect<VerbOutcome> =>
 	Effect.gen(function* () {
@@ -154,19 +169,19 @@ export const runCheck = (options: CheckOptions): GlossaryEffect<VerbOutcome> =>
 			"a row's four-digit citations cannot be resolved against anything.",
 		);
 		if (corpus._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, corpus.message, scope);
+		// The empty-citation answer is decided above the corpus fork, so both arms give it the same
+		// answer: with nothing cited there is nothing a corpus could settle (#6433).
 		const citations: CitationScope =
-			corpus._tag === "Declined"
-				? {_tag: "Unverified", detail: corpus.message}
-				: yield* resolveCitations(
-						corpus.dir,
-						pathService.resolve(dir.value.root, corpus.dir.replace(/\/+$/, "")),
-						wanted,
-					);
-		scope.push(
-			citations._tag === "Unverified"
-				? `${VERB}: ${wanted.size} citation(s) left unverified — ${citations.detail}`
-				: `${VERB}: ${citations.states.size} of ${wanted.size} citation(s) resolved under ${citations.dir}.`,
-		);
+			wanted.size === 0
+				? {_tag: "Empty"}
+				: corpus._tag === "Declined"
+					? {_tag: "Unverified", detail: corpus.message}
+					: yield* resolveCitations(
+							corpus.dir,
+							pathService.resolve(dir.value.root, corpus.dir.replace(/\/+$/, "")),
+							wanted,
+						);
+		scope.push(citationScopeLine(citations, wanted.size));
 
 		const findings = findDefects({registers: present, citations});
 		const scannedRows = present.reduce((total, entry) => total + entry.rows.length, 0);

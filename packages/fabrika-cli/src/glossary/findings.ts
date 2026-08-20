@@ -84,15 +84,20 @@ const rowShape = (register: string, row: Row): Finding | null => {
 };
 
 /**
- * What became of the four-digit citations: they were resolved against a corpus, or they were not
- * resolved at all.
+ * What became of the four-digit citations: there were none, or they were resolved against a corpus,
+ * or they were not resolved at all.
  *
  * One arm each rather than a state map plus a nullable reason, because those two fields could
  * always be set together — and a run that reports both a dead citation and "the corpus was never
  * read" contradicts itself. `detail` is the whole finding line, worded by whoever knows why the
  * corpus went unread (unreadable directory, or a repo that declares it keeps none — #6433).
+ *
+ * `Empty` exists so `Unverified` can never carry a citation set of zero: with nothing cited, why the
+ * corpus went unread is moot, and reporting it hands a repo that keeps no corpus and cites nothing a
+ * defect it can only clear by starting to keep one (#6433).
  */
 export type CitationScope =
+	| {readonly _tag: "Empty"}
 	| {
 			readonly _tag: "Resolved";
 			readonly dir: string;
@@ -165,7 +170,7 @@ export const findDefects = (input: DefectInput): ReadonlyArray<Finding> => {
 			term: "-",
 			detail: input.citations.detail,
 		});
-	} else {
+	} else if (input.citations._tag === "Resolved") {
 		const {dir, states} = input.citations;
 		for (const {register, rows} of input.registers) {
 			for (const row of rows) {
