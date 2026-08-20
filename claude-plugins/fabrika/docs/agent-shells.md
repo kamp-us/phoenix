@@ -5,11 +5,17 @@ An **agent shell** is a behaviour-free agent definition under
 loaded. It is not the phoenix UI `Shell` (`SubnavShell` / `PageShell`, ADR 0182) — that word is
 taken in phoenix prose, so this surface is always written **agent shell** in full.
 
-A shell holds four things and nothing else: a `skills:` preload naming the one plugin-namespaced
-skill it exists to run, a `tools:` set scoped to what that skill actually calls, an `effort:`
-setting, and a `description:` saying when to spawn it. All judgement — every step, rubric,
-acceptance test and terminal token — lives in the preloaded skill, which is the surface the eval
-bar gates.
+A shell holds three things and nothing else, over the `name:` that is its address: a `skills:`
+preload naming the one plugin-namespaced skill it exists to run, a `tools:` set scoped to what that
+skill actually calls, and a `description:` saying when to spawn it. `model:` is the one optional
+field, governed by the allowlist below. All judgement — every step, rubric, acceptance test and
+terminal token — lives in the preloaded skill, which is the surface the eval bar gates.
+
+**No shell pins `effort:`, and no driver passes one when spawning a shell** — ADR
+[0310](../../../.decisions/0310-no-agent-shell-pins-effort.md), founder ruling of 2026-08-15
+extended 2026-08-16. A pinned effort changes model behaviour with nothing surfacing the change: no
+gate reds, no output looks different, and a reader cannot tell the setting was in play. An omitted
+field inherits the spawning session's effort, so the value stays in one place the operator can see.
 
 **A shell that grows opinions is a defect.** An instruction in a shell body is behaviour that never
 faces the evals, and it silently forks from the skill the moment the skill changes. Anything you
@@ -87,28 +93,35 @@ caller's own model whenever the pin is sane.
 
 ## Which shells carry a spawn tool
 
-`reviewer` and `operator` carry the harness spawn tool, `Agent`. For the operator the spawn tool
-is the skill itself: every route in the `operate` loop
-([`../skills/operate/SKILL.md`](../skills/operate/SKILL.md)) is a spawn of one of the other
-shells, so a spawn-less operator drives nothing.
-[#5686](https://github.com/kamp-us/phoenix/issues/5686) records the founder's 2026-08-16
-direction that every role shell should be able to spawn subagents — the retired pipeline-crew's
-over-restricted tool sets are the named failure mode — but builder and shipper keep their current
-sets until that filing is triaged and built.
+Every shell does. `builder`, `reviewer`, `shipper`, `operator` and `triager` each declare the
+harness spawn tool, `Agent`, in `tools:` — founder ruling of 2026-08-16 on
+[#5686](https://github.com/kamp-us/phoenix/issues/5686), that every role shell should be able to
+spawn subagents, with the retired pipeline-crew's over-restricted tool sets as the named failure
+mode. ADR [0311](../../../.decisions/0311-every-agent-shell-carries-the-spawn-tool.md) records it.
+The grant is baseline, so a new shell declares `Agent` at creation rather than arguing for it.
 
-For the reviewer the grant is a tool grant and nothing more: the behaviour stays in
+**Read `tools:` in [`../agents/`](../agents/) for what a shell carries, not this paragraph.** The
+definitions are the statement; a doc is a summary of them, and it is a summary that has already
+drifted once.
+
+The reviewer's grant came first and rests on its own reason, which is why ADR
+[0280](../../../.decisions/0280-review-shell-carries-the-spawn-tool.md) still stands and is only
+amended in part. For the reviewer the grant is a tool grant and nothing more: the behaviour stays in
 [`../skills/review/SKILL.md`](../skills/review/SKILL.md) §6, which makes the `governance` namespace
 **derived-required** on a `governance: required` diff — fire the `governance` skill, wait for it, and never
 emit that namespace yourself. Without a spawn tool the shell derives that requirement mid-run and
 dead-ends, leaving the PR with a governance check nothing in the run can clear. The grant only lets
 the shell obey an instruction it already carried. Founder ruling of 2026-08-14 on
 [#5558](https://github.com/kamp-us/phoenix/issues/5558), verbatim *"yeah, review shell carries the
-spawn tool"*. Its decision record is ADR
-[0280](../../../.decisions/0280-review-shell-carries-the-spawn-tool.md), which predates the noun
-rename and calls this shell `review`.
+spawn tool"*. 0280 predates the noun rename and calls this shell `review`; 0311 widens who holds the
+tool and nothing else.
 
-`builder` and `shipper` get no spawn tool: neither skill invokes another agent. The `ship` skill
-routes by writing a `ship note` and stopping, so `shipper` holds no `Skill` grant either.
+For the operator the spawn tool is the skill itself: every route in the `operate` loop
+([`../skills/operate/SKILL.md`](../skills/operate/SKILL.md)) is a spawn of one of the other shells,
+so a spawn-less operator drives nothing.
+
+A spawn tool is not a `Skill` grant. `shipper` holds none: the `ship` skill routes by writing a
+`ship note` and stopping.
 
 Write the tool's canonical name, `Agent` — the `name` on the spawn tool in the Claude Code 2.1.233
 bundle, which also carries `aliases: ["Task"]`. Both strings grant the tool (a shell built with
