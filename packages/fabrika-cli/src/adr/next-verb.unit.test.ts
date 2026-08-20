@@ -1,6 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, tree} from "../fakes.test-support.ts";
+import {errOut, fakeSeams, okOut, type Scripted, tree} from "../fakes.test-support.ts";
 import {
 	BASE_UNFETCHABLE,
 	DIR_UNREADABLE,
@@ -12,25 +12,38 @@ import {runNext} from "./next-verb.ts";
 
 const SHA = "49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82";
 
-const base = (overrides: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]> = []) =>
-	fakeShell([
+const base = (overrides: ReadonlyArray<Scripted> = []) =>
+	fakeSeams([
 		...overrides,
 		[/^git remote$/, okOut("origin\n")],
 		[/^git remote get-url origin$/, okOut("git@github.com:kamp-us/phoenix.git\n")],
 		[/^git fetch/, okOut("")],
 		[/^git rev-parse/, okOut(`${SHA}\n`)],
 		[/^git ls-tree/, okOut(tree("0234-a.md", "0235-b.md", "0236-c.md"))],
-		[/^gh api --paginate repos\/[^ ]+\/pulls\?/, okOut("11\n12\n")],
-		[/pulls\/11\/files/, okOut("added\t.decisions/0237-x.md\nmodified\tREADME.md\n")],
-		[/pulls\/12\/files/, okOut("added\t.decisions/0239-y.md\n")],
+		[
+			/GET .*\/pulls\?state=open/,
+			{status: 200, body: JSON.stringify([{number: 11}, {number: 12}])},
+		],
+		[
+			/pulls\/11\/files/,
+			{
+				status: 200,
+				body: JSON.stringify([
+					{status: "added", filename: ".decisions/0237-x.md"},
+					{status: "modified", filename: "README.md"},
+				]),
+			},
+		],
+		[
+			/pulls\/12\/files/,
+			{status: 200, body: JSON.stringify([{status: "added", filename: ".decisions/0239-y.md"}])},
+		],
 	]);
 
 const options = {dir: ".decisions", base: "origin/main", repo: null, json: false};
 
-const run = (
-	overrides: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]> = [],
-	opts: Partial<typeof options> = {},
-) => Effect.runPromise(Effect.provide(runNext({...options, ...opts}), base(overrides).layer));
+const run = (overrides: ReadonlyArray<Scripted> = [], opts: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runNext({...options, ...opts}), base(overrides).layer));
 
 describe("runNext", () => {
 	it("answers max(union) + 1 on stdout with the scope line on stderr", async () => {
@@ -60,7 +73,7 @@ describe("runNext", () => {
 
 	it("refuses when the open pull requests cannot be enumerated — never 'nothing reserved'", async () => {
 		const out = await run([
-			[/^gh api --paginate repos\/[^ ]+\/pulls\?/, errOut("gh: Not Found (HTTP 404)")],
+			[/GET .*\/pulls\?state=open/, {status: 404, body: '{"message":"Not Found"}'}],
 		]);
 		expect(out.code).toBe(IN_FLIGHT_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -68,20 +81,22 @@ describe("runNext", () => {
 	});
 
 	it("refuses when ONE pull request's file list cannot be read — incomplete is UNKNOWN", async () => {
-		const out = await run([[/pulls\/12\/files/, errOut("HTTP 502")]]);
+		const out = await run([[/pulls\/12\/files/, {status: 502, body: "{}"}]]);
 		expect(out.code).toBe(IN_FLIGHT_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("PR #12");
 		expect(out.stderr.at(-1)).toContain("INCOMPLETE");
 	});
 
-	it("refuses when gh exits 0 with output that is not a list of numbers", async () => {
-		const out = await run([[/^gh api --paginate repos\/[^ ]+\/pulls\?/, okOut("null\n")]]);
+	it("refuses when GitHub answers 200 with a body that is not a list of pull requests", async () => {
+		const out = await run([[/GET .*\/pulls\?state=open/, {status: 200, body: "null"}]]);
 		expect(out.code).toBe(IN_FLIGHT_UNKNOWN);
 		expect(out.stdout).toBe("");
 	});
 
 	it("refuses when a pull request's file list comes back in an unexpected shape", async () => {
-		const out = await run([[/pulls\/11\/files/, okOut("just-a-filename.md\n")]]);
+		const out = await run([
+			[/pulls\/11\/files/, {status: 200, body: JSON.stringify([{filename: "just-a-filename.md"}])}],
+		]);
 		expect(out.code).toBe(IN_FLIGHT_UNKNOWN);
 		expect(out.stdout).toBe("");
 	});
@@ -92,7 +107,7 @@ describe("runNext", () => {
 	it("answers 0001 on a readable-but-empty --dir, with no open PR claiming an id", async () => {
 		const out = await run([
 			[/^git ls-tree/, okOut("")],
-			[/^gh api --paginate repos\/[^ ]+\/pulls\?/, okOut("")],
+			[/GET .*\/pulls\?state=open/, {status: 200, body: "[]"}],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("0001\n");
