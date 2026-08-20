@@ -676,9 +676,12 @@ this lane, its token named; no ledger emitted, no shell spawned, no marker retra
 posted) · **`STOPPED`** (a verb exit UNKNOWN, a malformed record, an
 unroutable state, or a `BLOCKED` refused with exit `12` — the code or state named, nothing
 guessed, no event recorded, the fold unchanged). An unroutable state ends `STOPPED`, never
-`LANE-PARKED`: a park promises a mechanical `UNBLOCKED` resume from `blocked`/`human:*`/`frozen`,
-which a state this skill does not recognise cannot honour — and appending `BLOCKED` toward cells you do
-not know is exactly the guess step 2's routing table forbids. A park reported as a
+`LANE-PARKED`: a park promises an `UNBLOCKED` resume, which a state this skill does not recognise
+cannot honour — and appending `BLOCKED` toward cells you do not know is exactly the guess step 2's
+routing table forbids. That resume is mechanical from `blocked` and `human:*` only. From `frozen` it
+needs a recorded `CLEARED` behind it first — a bare `UNBLOCKED` is refused on exit `36`, per the
+park-clearing paragraph in step 4 above — so a `frozen` park's promise is "the founder grants the
+round, then the resume walks", not "the next driver records `UNBLOCKED`". A park reported as a
 terminal destroys the caller's routing: the two differ in exactly who acts next. Follow-up
 observations leave through `/report` the moment you see them — never through scope creep in a
 lane you are only driving.

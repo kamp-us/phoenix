@@ -46,10 +46,6 @@ export const isOperatorEvent = (event: string): event is OperatorEvent =>
  */
 export const CLEARED_EVENT = "CLEARED";
 
-/** Every event the fold applies: the operator's six plus the appended clearance. */
-export const isLaneEvent = (event: string): boolean =>
-	isOperatorEvent(event) || event === CLEARED_EVENT;
-
 /**
  * One task's folded state: the leaf, the retry budget, the state it left (`was`), and the grants
  * applied so far — `cleared` is the fold's own tally of {@link CLEARED_EVENT} rounds, which is what

@@ -690,4 +690,38 @@ describe("the park cause a BLOCKED carries (#6480)", () => {
 
 		expect(Object.hasOwn(status.context.issue as object, "cause")).toBe(false);
 	});
+
+	it("leaves a park's cause standing across a grant — CLEARED supersedes nothing", () => {
+		const granted: LogEntry = {...entry("issue", CLEARED_EVENT), round: CAP_ROUND};
+
+		expect(standingCauses([caused("issue", "BLOCKED", "worktree-holds-branch"), granted])).toEqual({
+			issue: "worktree-holds-branch",
+		});
+	});
+});
+
+describe("the parse defects that keep a grant from folding as a silent no-op (ADR 0312)", () => {
+	const line = (fields: string) =>
+		`{"task":"issue","event":"ISSUE.${CLEARED_EVENT}","at":"t"${fields}}\n`;
+
+	it("refuses a CLEARED carrying no round", () => {
+		expect(parseLog(line(""))).toMatchObject({
+			_tag: "Malformed",
+			defects: [`line 1 is a ${CLEARED_EVENT} event carrying no \`round\``],
+		});
+	});
+
+	it("refuses a round that is not an integer", () => {
+		expect(parseLog(line(`,"round":3.5`))).toMatchObject({
+			_tag: "Malformed",
+			defects: ["line 1 carries a non-integer `round` field"],
+		});
+	});
+
+	it("parses the well-formed grant both defects sit beside", () => {
+		expect(parseLog(line(`,"round":3`))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: `ISSUE.${CLEARED_EVENT}`, at: "t", round: 3}],
+		});
+	});
 });
