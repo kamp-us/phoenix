@@ -7,12 +7,13 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
+import {audienceLabel, type BoardVocabulary, statusList, typeLabel} from "../config/board.ts";
 import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {ok} from "../io/git.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {AWAITING_RELEASE, PLANNED, STATUSES} from "../labels.ts";
+import {AWAITING_RELEASE, DEFAULT_STATUS_NAMES, PLANNED, STATUSES} from "../labels.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
 import {DEFAULT_STALE_MINUTES} from "../lane/stale.ts";
 import {runStale} from "../lane/stale-verb.ts";
@@ -34,10 +35,12 @@ import {
 	findSurface,
 	ISSUE_SHAPE_MARKERS,
 	knownIds,
+	LABEL_DESCRIPTION,
 	MARKER_COLOR,
 	roadmapCount,
 	runBootstrap,
 	TAXONOMY,
+	taxonomy as taxonomyFor,
 } from "./bootstrap-verb.ts";
 import {
 	NOT_BUILDABLE,
@@ -860,6 +863,46 @@ describe("the bootstrap taxonomy is derived from the vocabularies the verbs writ
 	it("carries sixteen labels, each named once", () => {
 		expect(TAXONOMY).toHaveLength(16);
 		expect(names.size).toBe(TAXONOMY.length);
+	});
+
+	it("equals the set computed off the four facet lists, in order", () => {
+		expect(TAXONOMY).toEqual(
+			[
+				...statusList(DEFAULT_STATUS_NAMES),
+				...PRIORITIES,
+				...TYPES.map(typeLabel),
+				...AUDIENCES.map(audienceLabel),
+			].map((name) => ({name, description: LABEL_DESCRIPTION, color: null})),
+		);
+	});
+
+	it("follows the board it is handed, never the shipped default", () => {
+		// #6451: published 0.3.0 restated five names while source derived sixteen, and every
+		// assertion above still passed on the restatement because it happened to spell the default
+		// right. A board whose names phoenix does not use is what a restatement cannot fake.
+		const declared: BoardVocabulary = {
+			statuses: {
+				needsTriage: "state:raw",
+				triaged: "state:ready",
+				needsInfo: "state:asked",
+				planned: "state:planned",
+				awaitingRelease: "state:shipping",
+			},
+			types: ["defect"],
+			priorities: ["sev1"],
+			audiences: ["human"],
+			standingLanes: ["lane:whatever"],
+		};
+		expect(taxonomyFor(declared).map((label) => label.name)).toEqual([
+			"state:raw",
+			"state:ready",
+			"state:asked",
+			"state:planned",
+			"state:shipping",
+			"sev1",
+			"type:defect",
+			"ready-for:human",
+		]);
 	});
 });
 
