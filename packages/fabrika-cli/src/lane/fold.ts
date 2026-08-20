@@ -215,6 +215,8 @@ export const deriveStatus = (
 			retries: state.retries,
 			maxRetries: state.maxRetries,
 			...(state.cleared.length === 0 ? {} : {clearedRounds: state.cleared}),
+			waits: state.waits,
+			maxWaits: state.maxWaits,
 			...taskIn(lane, taskId).extras,
 			...(cause === undefined ? {} : {cause}),
 		};

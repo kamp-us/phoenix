@@ -62,6 +62,11 @@ export const laneRef = (key: LaneKey, root: string | null): LaneRef => ({
 	lane: key._tag === "Chore" ? key.name : key.lane,
 });
 
-/** The committed template a key boots from, by file name under `./templates/`. */
-export const templateFile = (key: LaneKey): string =>
-	key._tag === "Chore" ? "chore.workflow.json" : "coder.workflow.json";
+/**
+ * The committed template a lane of this kind boots from, by file name under `./templates/`.
+ *
+ * Keyed on the kind rather than a whole key because `lane migrate` sweeps a *root*, which selects a
+ * kind and names no lane — asking it for a key would mean inventing one nobody addressed.
+ */
+export const templateFile = (kind: LaneKey["_tag"]): string =>
+	kind === "Chore" ? "chore.workflow.json" : "coder.workflow.json";

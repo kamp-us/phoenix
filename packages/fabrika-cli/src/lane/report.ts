@@ -38,7 +38,14 @@ export const SHELL_VOCABULARIES = {
 	},
 	shipper: {
 		"ALREADY-MERGED": "DONE",
-		QUEUED: "DONE",
+		// The two queue terminals are waits, not landings (ADR 0313). Only a merge this pipeline read
+		// back is `DONE`, and neither of these is one: `QUEUED` means the arm took and the shipper did
+		// not watch it to an outcome, `UNRESOLVED` means it watched to its horizon and the PR is still
+		// in the queue. Both used to fold the lane out of the loop — `QUEUED` to `shipped` over a merge
+		// nobody observed, `UNRESOLVED` to a human park over a merge that was always going to land
+		// (#6178, #6462) — and both now route to the machine's wait cell, which a driver re-folds.
+		QUEUED: "WIP",
+		UNRESOLVED: "WIP",
 		LANDED: "DONE",
 		REFUSED: "BLOCKED",
 		"AWAITING-CP-APPROVAL": "BLOCKED",
@@ -49,7 +56,6 @@ export const SHELL_VOCABULARIES = {
 		"ROUTED-REPAIR": "FAIL",
 		"ROUTED-HEAL-CI": "BLOCKED",
 		"ROUTED-REVIEW": "BLOCKED",
-		UNRESOLVED: "BLOCKED",
 		// An ejection is always "routed to repair", so it feeds the machine's `ship` FAIL edge and
 		// spends a retry rather than parking the lane (#5807).
 		EJECTED: "FAIL",
