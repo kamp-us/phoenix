@@ -879,8 +879,9 @@ step 4 routes off the rollup and nothing reads a run by name, so the rows collap
 gating axis stays inside the key because status alone would leave the rollup underivable from the
 answer — a `red` head and a head whose only `failure` is an ADR 0061 informational run would tally
 identically. The two runs the skill's terminals read by name are still **named**, on the notes
-channel, where the skill already reads them: the wedged run, and — on `red` — the failing gating
-runs, `ship checks: failing gating checks: <name>, … — route these to heal-ci.`, name-sorted. Informational
+channel, where the skill already reads them: the wedged run, and — wherever a gating run has failed,
+which is `red` and also the `wedged` head that carries a failure too — the failing gating runs,
+`ship checks: failing gating checks: <name>, … — route these to heal-ci.`, name-sorted. Informational
 failures are excluded from that line for the same reason the gating axis exists: they do not make
 the head red, and naming them there would send the operator to `heal-ci` over a check that gates
 nothing.
@@ -962,9 +963,8 @@ neither prints `pending` — that collapse is what made this state read as *wait
 $ fabrika ship checks 4321 --sha 03135b91
 checks	03135b91	green
 run	3
-ci-required	success	gating
-unit tests	success	gating
-deploy (web)	success	informational
+check	success/gating	2
+check	success/informational	1
 facts	workflows:12	runs:14
 ```
 
@@ -987,9 +987,8 @@ $ fabrika ship checks 4321 --sha 03135b91 --wait
 settle	settled
 checks	03135b91	green
 run	3
-ci-required	success	gating
-unit tests	success	gating
-deploy (web)	success	informational
+check	success/gating	2
+check	success/informational	1
 facts	workflows:12	runs:14
 ```
 
@@ -1117,8 +1116,7 @@ match only), one artifact, one manifest. All fetch intermediates live under a pe
 $ fabrika ship evidence 4321 --sha 03135b91
 evidence	present	03135b91
 lookup	run:9182736450	artifact:2211334455	status:completed
-check	typecheck	pass
-check	unit	pass
+check	pass	2
 ```
 
 ```
@@ -1131,9 +1129,13 @@ lookup	run:9182736999	artifact:-	status:in_progress
 $ fabrika ship evidence 4323 --sha 7c31a0de
 evidence	failed	7c31a0de
 lookup	run:9182737111	artifact:2211334999	status:completed
-check	typecheck	pass
-check	unit	fail
+check	fail	1
+check	pass	1
 ```
+
+The names the collapse drops from stdout ride the notes channel, which is what keeps the tally
+honest: `ship evidence: the bundle binds 7c31a0de and 1 of its checks did not pass (unit) — it
+attests a run, not a passing one.`
 
 **Grounding**
 
