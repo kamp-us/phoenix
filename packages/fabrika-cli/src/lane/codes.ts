@@ -246,3 +246,15 @@ export const CAUSE_UNRECOGNISED = 35;
  * only the code must not be told to retype the transition (ADR 0312).
  */
 export const RESUME_UNBUDGETED = 36;
+
+/**
+ * A booted lane's machine cannot be replaced by the committed template without moving the lane: the
+ * log will not replay through the candidate, or it replays to a different leaf state. Nothing was
+ * written on either arm.
+ *
+ * Its own seat rather than {@link MALFORMED_RECORD}'s: that one says a record on disk is not the
+ * shape and the remedy is fixing the record, while this one says both records are fine and
+ * *disagree* — the remedy is a human deciding what that lane's state should be, never a rewrite the
+ * sweep picks (ADR 0313).
+ */
+export const MIGRATION_UNSAFE = 37;

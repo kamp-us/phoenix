@@ -349,9 +349,24 @@ Relay its answer, never your own reading of the PR:
 
 The escalation bound is the machine's, not yours: **you never count re-folds and never decide the
 wait is over**. Record what the read said and re-fold; the cell escalates when its own budget is
-spent, and that budget is separate from the lane's build/review retries, so a long dwell cannot cost
-a later repair round. A non-zero exit from `reconcile` is UNKNOWN — end `STOPPED` naming the code,
-record nothing.
+spent — to `human:queue-stall`, a park of its own that no recipe clears, so a spent queue wait is
+never swept as a control-plane approval. That budget is separate from the lane's build/review
+retries, so a long dwell cannot cost a later repair round. A non-zero exit from `reconcile` is
+UNKNOWN — end `STOPPED` naming the code, record nothing.
+
+**A lane booted before this cell existed cannot reach it, and will refuse the shipper's ordinary
+`QUEUED` instead.** `lane open` copies the template in at boot and never overwrites it, so a machine
+change reaches new lanes only — while the token map that feeds it is code and reaches every lane at
+once. Bring the lanes on disk up to the committed machine before driving them:
+
+```bash
+node <fabrika> lane migrate --check   # judge every lane, write nothing
+node <fabrika> lane migrate           # migrate the ones the swap provably does not move
+```
+
+It writes only where the lane's own event log folds to the same state through both machines. Exit
+`36` names the lanes it would have moved and leaves them alone — that is a human's call, not a
+re-run's.
 
 **A chore state routes to a verb, not to a shell**, and the routing is a verb's answer too:
 

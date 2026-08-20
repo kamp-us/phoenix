@@ -65,7 +65,7 @@
 											"guard": "waitsRemaining",
 											"actions": "incrementWaits"
 										},
-										{ "target": "human:cp-approval" }
+										{ "target": "human:queue-stall" }
 									],
 									"ISSUE.FAIL": [
 										{
@@ -84,7 +84,11 @@
 							},
 							"human:cp-approval": {
 								"on": {
-									"ISSUE.DONE": "shipped",
+									"ISSUE.UNBLOCKED": "hist"
+								}
+							},
+							"human:queue-stall": {
+								"on": {
 									"ISSUE.UNBLOCKED": "hist"
 								}
 							},

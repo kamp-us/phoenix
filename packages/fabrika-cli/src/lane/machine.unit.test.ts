@@ -1,4 +1,5 @@
 import {describe, expect, it} from "vitest";
+import {classifyPark, isPark} from "../recipe/parks.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 import {
 	choreWorkflow,
@@ -294,14 +295,34 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park (ADR 03
 		]);
 	});
 
-	it("re-enters itself for WAIT_BUDGET re-folds, then escalates to the human park", () => {
+	it("re-enters itself for WAIT_BUDGET re-folds, then escalates to its own human park", () => {
 		const waiting = Array.from({length: WAIT_BUDGET + 2}, () => "WIP");
 
 		expect(leaves(compiled(coderWorkflow()), "issue", [...toShip, ...waiting])).toEqual([
 			...reached,
 			...Array.from({length: WAIT_BUDGET + 1}, () => "ship:queued"),
-			"human:cp-approval",
+			"human:queue-stall",
 		]);
+	});
+
+	// A spent wait carries no park cause — `report.ts` refuses one on any non-BLOCKED event — so
+	// landing it in `human:cp-approval` would key `parks.ts`'s `cause: null` §CP row and clear it by
+	// reading an approval nobody was waiting on. Its own leaf is what makes the sweep read it novel.
+	it("escalates to a park the recipe table reads as novel, never as the §CP row", () => {
+		const stalled = [...toShip, ...Array.from({length: WAIT_BUDGET + 2}, () => "WIP")];
+		const leaf = defined(leaves(compiled(coderWorkflow()), "issue", stalled).at(-1));
+
+		expect(isPark(leaf)).toBe(true);
+		expect(classifyPark(leaf, null)._tag).toBe("Novel");
+		expect(classifyPark("human:cp-approval", null)._tag).toBe("Known");
+	});
+
+	it("lets a human clear the stall back into the wait cell", () => {
+		const stalled = [...toShip, ...Array.from({length: WAIT_BUDGET + 2}, () => "WIP")];
+
+		expect(leaves(compiled(coderWorkflow()), "issue", [...stalled, "UNBLOCKED"]).at(-1)).toBe(
+			"ship:queued",
+		);
 	});
 
 	it("spends `waits`, leaving the repair budget a later FAIL draws on untouched", () => {
@@ -329,11 +350,18 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park (ADR 03
 		]);
 	});
 
-	it("gives an already-parked lane over a merged PR a route out", () => {
-		expect(leaves(compiled(coderWorkflow()), "issue", [...toShip, "BLOCKED", "DONE"])).toEqual([
-			...reached,
-			"human:cp-approval",
-			"shipped",
-		]);
+	// Lane 6462's real route out, and the only one ADR 0302 permits: a park is left by a recorded
+	// `UNBLOCKED` and never by a second exit cell, so the landing is recorded from the state the lane
+	// resumes into rather than from inside the park.
+	it("leaves a park over a merged PR by UNBLOCKED, then records the landing", () => {
+		expect(
+			leaves(compiled(coderWorkflow()), "issue", [...toShip, "BLOCKED", "UNBLOCKED", "DONE"]),
+		).toEqual([...reached, "human:cp-approval", "ship", "shipped"]);
+	});
+
+	it("refuses a DONE inside the park rather than opening a second exit from it", () => {
+		expect(() =>
+			leaves(compiled(coderWorkflow()), "issue", [...toShip, "BLOCKED", "DONE"]),
+		).toThrow(/DONE/);
 	});
 });

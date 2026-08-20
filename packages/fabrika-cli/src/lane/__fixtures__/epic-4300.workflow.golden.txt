@@ -299,7 +299,7 @@
 											"actions": "incrementWaits"
 										},
 										{
-											"target": "human:cp-approval"
+											"target": "human:queue-stall"
 										}
 									],
 									"EPIC_4300.FAIL": [
@@ -321,7 +321,11 @@
 							},
 							"human:cp-approval": {
 								"on": {
-									"EPIC_4300.DONE": "shipped",
+									"EPIC_4300.UNBLOCKED": "hist"
+								}
+							},
+							"human:queue-stall": {
+								"on": {
 									"EPIC_4300.UNBLOCKED": "hist"
 								}
 							},

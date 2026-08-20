@@ -30,8 +30,8 @@ Twice, measurably:
 - [#6178](https://github.com/kamp-us/phoenix/pull/6178) sat ~13m45s in the queue against the ~480s
   horizon and merged ~1.7x past it, long before anyone would have read the park.
 - Lane 6462's PR merged 29 seconds before its `BLOCKED` was written. The follow-up `LANDED` was then
-  refused: `human:cp-approval` held no `DONE` cell, so `NoCellError` left a merged PR's lane stuck in
-  a park with no route out.
+  refused with `NoCellError`, because a park is not a state a landing is recorded from. The lane was
+  cleared by hand with `UNBLOCKED` — the right route, taken late, on a park that was never owed.
 
 The chore machine already drew this line — `recipe route` folds a not-yet-clear known park to `WIP`
 and a driver re-folds it. The coder machine's `ship` had no equivalent.
@@ -65,10 +65,37 @@ relays rather than derives (ADR [0228](0228-scripts-relay-never-derive.md)): `la
 `unresolved` → `UNRESOLVED`, `ejected` → `EJECTED`, `parked` → `UNKNOWN`. The driver never counts
 re-folds and never decides the wait is over; the cell's own budget does that.
 
-**`human:cp-approval` gains a `DONE` cell.** A lane parked there whose PR then merged can record
-`LANDED` and fold to `shipped`. That is lane 6462's named route out, and it weakens nothing: the only
-tokens that reach `DONE` are the two that read a merge back, and a merged control-plane PR is one
-whose approval happened.
+**A park keeps its one exit.** `human:cp-approval` gains nothing here. An already-parked lane whose
+PR then merged leaves the way every park is left — a recorded `UNBLOCKED` back to the state it came
+from, and the landing recorded from there. That is lane 6462's route out, it is the one that lane
+actually took on 2026-08-20, and it is the only one ADR
+[0302](0302-known-parks-clear-novel-routes-human.md) permits: a park is cleared by a registered
+recipe proven by a re-fold, or by a human's `UNBLOCKED`, and never by a second exit cell that skips
+both. A `DONE` cell would have been that second exit, reachable by any driver relaying a `ship`
+token, so what looked like a convenience was a widening of the rule 0302 states — and 0302 says
+widening it needs a table row and a proving read, not an analogy.
+
+**The wait's own escalation gets its own park, `human:queue-stall`.** It could not be
+`human:cp-approval`. The escalation is driven by a `WIP`, and `report.ts` refuses a park cause on any
+non-`BLOCKED` event, so a spent queue wait structurally cannot carry one — which is exactly the key
+`recipe/parks.ts`'s control-plane row matches (`cause: null`). A stall landing there would be swept
+as a §CP park and cleared by reading an approval nobody was waiting on, the failure that table's
+cause key exists to prevent. Its own leaf carries no row, so `classifyPark` reads it as novel and
+routes it to a human, which is what a spent wait needs. A human clears it with `UNBLOCKED` like any
+other park; the lane resumes at `ship:queued` and a re-read decides it from there.
+
+**Lanes already booted are migrated, not left behind.** `lane open` places a byte-identical copy of
+the template into each lane and refuses to overwrite one afterwards, so a template edit reaches lanes
+booted after it and no lane already on disk — while `report.ts`'s token map is code and reaches all
+of them at once. Left alone, that combination is worse than the bug: every booted lane's shipper
+would report `QUEUED`, now mapped to `WIP`, against a frozen `ship` state holding no `WIP` cell, and
+the ordinary success path would refuse. So this change ships with `lane migrate`, which replaces a
+booted lane's `workflow.json` with the committed template **only** where the swap is provably inert:
+state is the event log replayed from scratch with no snapshot, so the swap is safe exactly when the
+existing log folds to the same per-task leaf state through both machines. Anything else — a log that
+will not replay, or one that folds somewhere new — is named and left untouched for a human, because
+relocating a lane is not migrating it. `lane migrate --check` is the same judgement with the write
+withheld.
 
 ## What this costs
 
