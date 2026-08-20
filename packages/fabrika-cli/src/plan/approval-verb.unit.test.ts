@@ -4,9 +4,16 @@ import {comments} from "../build/fixtures.test-support.ts";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {runApproval} from "./approval-verb.ts";
-import {runCheck} from "./check-verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
-import {CWD, child, epic, epicBody, planContext, subIssues} from "./fixtures.test-support.ts";
+import {
+	CWD,
+	child,
+	digestOver,
+	epic,
+	epicBody,
+	planContext,
+	subIssues,
+} from "./fixtures.test-support.ts";
 
 const EPIC = /^gh api repos\/o\/r\/issues\/4300$/;
 const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
@@ -45,15 +52,7 @@ const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
 		),
 	);
 
-const derivedDigest = async (): Promise<string> => {
-	const out = await Effect.runPromise(
-		Effect.provide(
-			runCheck({number: 4300, repo: null, env, cwd: CWD}),
-			planContext(fakeShell(ledger)),
-		),
-	);
-	return JSON.parse(out.stdout).digest as string;
-};
+const derivedDigest = (): Promise<string> => digestOver(ledger, {env});
 
 describe("runApproval", () => {
 	it("answers current with the author and both digests", async () => {

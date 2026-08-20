@@ -1,5 +1,6 @@
 /**
- * The two reads both approval verbs share: who may approve, and what approval already stands.
+ * The two reads both approval verbs share — who may approve, and what approval already stands — plus
+ * the one gate the three re-deriving verbs enforce them through.
  *
  * The roster is resolved from `.github/CODEOWNERS` on the repository's default branch, through the
  * same `../ship/codeowners.ts` + `../ship/github.ts` pair `ship cp-approval` uses. One ACL module,
@@ -30,11 +31,14 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {defaultBranch} from "../build/github.ts";
-import type {CommentRecord} from "../io/issues.ts";
+import {type CommentRecord, listComments} from "../io/issues.ts";
 import {readBoundary} from "../ship/boundary.ts";
 import {controlPlaneOwnersOf, splitTeam} from "../ship/codeowners.ts";
 import {listTeamMembers} from "../ship/github.ts";
+import {refuse, type VerbOutcome} from "../verb.ts";
 import {approves, type PlanApproval, read as readApproval} from "../wire/plan-approval.ts";
+import {PLAN_UNAPPROVED, PRECONDITION_UNKNOWN} from "./codes.ts";
+import type {PlanMessages} from "./load.ts";
 
 export type RosterRead =
 	| {readonly _tag: "Unknown"; readonly reason: string}
@@ -154,3 +158,77 @@ export const stateOf = (scan: ApprovalScan, epic: number, derived: string): Appr
 	if (scan.standing === null) return "absent";
 	return approves(scan.standing.approval, epic, derived) ? "current" : "stale";
 };
+
+export type ApprovalGate =
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {readonly _tag: "Approved"; readonly standing: StandingApproval};
+
+/**
+ * The approval **enforcement** the three re-deriving verbs share — ADR 0289's fail-closed
+ * precondition, seated ahead of the floor so a defective unapproved plan refuses on the approval and
+ * not on its defects.
+ *
+ * `derived` is the digest taken from the plan as this run has just read it, never one a caller
+ * carried: an approval is a statement about a scope, so measuring it against a scope the caller
+ * supplied would attest whatever the caller pleased. Same discipline as the `--digest` re-gate.
+ *
+ * `absent` and `stale` share {@link PLAN_UNAPPROVED} and the stderr line names which, because the two
+ * need different repairs — one needs a founder to read the plan, the other to read it *again*.
+ */
+export const requireApproval = (
+	messages: PlanMessages,
+	repo: string,
+	epic: number,
+	derived: string,
+	notes: ReadonlyArray<string>,
+): Effect.Effect<ApprovalGate, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const {verb} = messages;
+		const refused = (
+			code: number,
+			message: string,
+			lines: ReadonlyArray<string>,
+		): ApprovalGate => ({
+			_tag: "Refused" as const,
+			outcome: refuse(code, message, lines),
+		});
+
+		const roster = yield* controlPlaneRoster(repo);
+		if (roster._tag === "Unknown") {
+			return refused(
+				PRECONDITION_UNKNOWN,
+				`${verb}: cannot read ${roster.reason} — who may approve is unread, so the approval is UNKNOWN, not absent.`,
+				notes,
+			);
+		}
+		const listed = yield* listComments(repo, epic);
+		if (listed._tag === "Failure") {
+			return refused(
+				PRECONDITION_UNKNOWN,
+				messages.unreadable(`the comments on #${epic}`, listed.reason),
+				notes,
+			);
+		}
+
+		const scan = scanApprovals(listed.value, epic, roster.logins);
+		const evidence = [
+			...notes,
+			`${verb}: read ${listed.value.length} comment(s) on #${epic}; ${scan.disregarded} disregarded marker(s), ${scan.unauthorized} from an account off the ${roster.logins.size}-account control-plane roster at ${roster.ref}.`,
+		];
+		const standing = scan.standing;
+		if (standing === null) {
+			return refused(
+				PLAN_UNAPPROVED,
+				`${verb}: #${epic} carries no founder approval of this plan (state absent) — refusing ahead of the floor (ADR 0289).`,
+				evidence,
+			);
+		}
+		if (!approves(standing.approval, epic, derived)) {
+			return refused(
+				PLAN_UNAPPROVED,
+				`${verb}: #${epic}'s approval binds digest ${standing.approval.digest} but the plan now derives ${derived} (state stale) — it moved after it was approved; re-approve (ADR 0289).`,
+				evidence,
+			);
+		}
+		return {_tag: "Approved" as const, standing};
+	});

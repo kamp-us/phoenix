@@ -102,7 +102,7 @@ as the sibling contracts do):
 | `plan flip` | flip every `status:planned` child to `status:triaged` and the epic itself to `ready-for:agent`, re-gating first, reporting the **observed** result for each | a guarded batch write with a read-back — no judgment; *what a partial flip means* stays in the skill |
 | `plan verdict` | post the gate's verdict comment, bound to the scope digest, and read it back | marker composition + a guarded write; the caveats are the skill's judgment, taken as input |
 | `plan approve` | post the approval marker on the epic, bound to a scope digest the verb derives itself, and read it back | an ACL-checked guarded write with a read-back — no judgment; **no `--digest` flag exists**, because an approval whose scope its caller supplies attests whatever the caller pleased |
-| `plan approval` | report the epic's approval state — `current` / `stale` / `absent`, with the marker's author and both digests, honouring only a marker whose author the control-plane roster resolves **at read time** | a total read that never refuses on a missing approval; the enforcement will be seated in the three verbs that re-derive the floor, never in this report |
+| `plan approval` | report the epic's approval state — `current` / `stale` / `absent`, with the marker's author and both digests, honouring only a marker whose author the control-plane roster resolves **at read time** | a total read that never refuses on a missing approval; the enforcement lives in the three verbs that re-derive the floor, never in this report |
 
 **The author gate is in the read, not only in `plan approve`'s write.** Posting a `plan-approved:`
 line takes nothing but the ability to comment on the epic, and the digest it must carry is on `plan
@@ -115,11 +115,15 @@ off-roster account therefore reads `absent` and is counted in `unauthorized`, wh
 union closed at three. A roster nobody could read is `11`, never `absent` — the #4223 collapse, on
 this side too.
 
-**Nothing refuses on an approval yet.** No `plan` verb other than these two references an approval at
-all; seating the refusal in `plan check` / `plan flip` / `plan verdict` is a later slice of epic
-[#5843](https://github.com/kamp-us/phoenix/issues/5843). Read the future tense above literally — the
-gate precondition is not live, so a caller that needs it enforced today must call `plan approval`
-itself and act on the state.
+**The refusal is seated in the three verbs that re-derive the floor**, on `25` `PLAN_UNAPPROVED`.
+Each reads the epic's comments and resolves the roster itself, against the digest it has just
+derived — never one a caller carried, since an approval measured against a caller-supplied scope
+attests whatever the caller pleased. `plan check` runs it **before** it derives the floor, so a plan
+that is both unapproved and defective refuses on the approval: reporting its defects would hand a
+founder who never read the plan a reading of it. `plan flip` and `plan verdict` run it inside their
+own re-derive, so an approval that lapses between the check and a write is caught at the write.
+`stale` and `absent` share the code and the stderr line names which — one needs a founder to read the
+plan, the other to read it again.
 
 **Considered and not derived: a `plan defects --explain` verb.** A defect's *remedy* is the
 planner's judgment, and a verb that authored one would be minting advice the floor cannot check.
@@ -365,6 +369,7 @@ nothing, since `epic` already seats `20`–`24` over the same two `build` codes.
 | `22` | proven: at least one child is `unchanged` — the flip did not fully apply; the observed set is on stderr | — | — | ✓ | — | — | — |
 | `23` | proven: a label the flip must write is absent from the repository's taxonomy | — | — | ✓ | — | — | — |
 | `24` | proven: the invoking account may not approve this epic's plan — it is outside the `@kamp-us/control-plane` roster resolved from CODEOWNERS at write time, or that roster names nobody | — | — | — | — | ✓ | — |
+| `25` | proven: the plan is not approved as it now stands — the epic carries no standing approval marker, or the marker's digest names a plan the epic has since moved off | — | ✓ | ✓ | ✓ | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 `3` is a seat no `plan` verb reaches: the only stdin-taking verb is `plan verdict`, whose stdin is
@@ -532,9 +537,13 @@ trusted a caller-supplied ledger would grade a document the caller could edit.
 | `4` | the ledger grammar refused, exactly as `plan read` |
 | `7` | zero scope — the epic is proven absent or closed, or it has zero children |
 | `10` | the issue is not a `type:epic` |
-| `11` | any read the floor depends on failed — nothing is graded, and no verdict is implied |
+| `11` | any read the floor depends on failed — nothing is graded, and no verdict is implied; the control-plane roster is one such read, so an unreadable roster is `11` and never `25` |
+| `25` | proven: the epic carries no standing approval, or the standing one binds a digest the plan has moved off — refused **before** the floor is derived |
 
-There is no `20` here: a defective floor is this verb's **answer**, not its refusal.
+There is no `20` here: a defective floor is this verb's **answer**, not its refusal. `25` is the one
+refusal that outranks the answer, and its position is the point: a plan that is both unapproved and
+defective refuses on the approval, because a floor reading of a plan no founder has seen is a reading
+nobody asked for.
 
 **Errors**
 
@@ -544,6 +553,9 @@ There is no `20` here: a defective floor is this verb's **answer**, not its refu
 | `plan check: #<n> is not a type:epic — refusing to gate it.` | 10 | refusal |
 | `plan check: the ledger grammar refused: <reason>` | 4 | refusal |
 | `plan check: cannot read <what>: <reason> — the floor is UNKNOWN, not clean.` | 11 | refusal |
+| `plan check: cannot read <what>: <reason> — who may approve is unread, so the approval is UNKNOWN, not absent.` | 11 | refusal |
+| `plan check: #<n> carries no founder approval of this plan (state absent) — refusing ahead of the floor (ADR 0289).` | 25 | refusal |
+| `plan check: #<n>'s approval binds digest <a> but the plan now derives <b> (state stale) — it moved after it was approved; re-approve (ADR 0289).` | 25 | refusal |
 
 **Scope** — every child of the epic, no sampling and no cap. The stderr `scannedLine` names the
 scanned set on **both** arms, so a clean answer states the scope it rests on. Zero scope is `7`.
@@ -705,11 +717,14 @@ comparable to `plan check`'s directly, and a verdict posted afterwards binds the
 | `21` | proven: the recomputed digest differs from `--digest` — the plan moved since the check |
 | `22` | proven: at least one child is `unchanged`, or the epic did not reach `ready-for:agent` — the refs are on stderr |
 | `23` | proven: a label this run would post — `status:triaged`, `status:planned` or `ready-for:agent` — is absent from the repository's labels |
+| `25` | proven: the epic carries no standing approval, or the standing one binds a digest the plan has moved off — the re-gate covers the human decision too, so a `plan check` that passed before a re-plan cannot be carried past this write |
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
+| `plan flip: #<n> carries no founder approval of this plan (state absent) — refusing ahead of the floor (ADR 0289).` | 25 | refusal |
+| `plan flip: #<n>'s approval binds digest <a> but the plan now derives <b> (state stale) — it moved after it was approved; re-approve (ADR 0289).` | 25 | refusal |
 | `plan flip: the floor is not clean (<k> defect(s)) — refusing to flip.` | 20 | refusal |
 | `plan flip: the plan moved since the check (digest <a> → <b>) — re-check before flipping.` | 21 | refusal |
 | `plan flip: <a> of <n> children flipped; <b> unchanged (#<x>, #<y>) — the epic is half-flipped and needs a human.` | 22 | refusal |
@@ -827,9 +842,12 @@ the only emit path; a hand-posted marker is how v1's corpus carried a fake-looki
 | `11` | a read the verdict depends on failed — nothing is posted |
 | `15` | proven: this lane does not hold the epic's claim |
 | `21` | proven: the recomputed digest differs from `--digest` — the plan moved since the check |
+| `25` | proven: the epic carries no standing approval, or the standing one binds a digest the plan has moved off — nothing is posted |
 
 There is no `20` here. A defective floor is not a refusal for this verb — it posts the `FAIL`
-verdict, which is the deliverable. **Every** `--polarity` disagreement, in either direction, is a
+verdict, which is the deliverable. `25` is not that shape: an unapproved plan gets no verdict at all,
+not even a `FAIL`, because a posted verdict is the gate saying it ran and on an unapproved plan the
+gate is exactly what did not run. **Every** `--polarity` disagreement, in either direction, is a
 `10`: a supplied value that contradicts the derived floor is a value off its closed vocabulary,
 which is what `10` means.
 
@@ -837,6 +855,8 @@ which is what `10` means.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
+| `plan verdict: #<n> carries no founder approval of this plan (state absent) — refusing ahead of the floor (ADR 0289).` | 25 | refusal |
+| `plan verdict: #<n>'s approval binds digest <a> but the plan now derives <b> (state stale) — it moved after it was approved; re-approve (ADR 0289).` | 25 | refusal |
 | `plan verdict: --digest must be 12 lowercase hex — got "<v>".` | 10 | refusal |
 | `plan verdict: --polarity <v> disagrees with the derived floor (<derived>) — a verdict relays the floor, it does not form one.` | 10 | refusal |
 | `plan verdict: caveat kind "<v>" is not in the closed set (ac-not-checkable, brief-fidelity, slice-too-broad, dependency-implied-not-declared).` | 10 | refusal |
