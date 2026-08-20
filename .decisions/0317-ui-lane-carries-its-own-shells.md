@@ -1,12 +1,12 @@
 ---
-id: 0316
+id: 0317
 title: A UI-class lane carries its own build and review shells, and the lane state carries the class
 status: accepted
 date: 2026-08-20
 tags: [fabrika, lane, pipeline, review, state-machine]
 ---
 
-# 0316 — A UI-class lane carries its own build and review shells, and the lane state carries the class
+# 0317 — A UI-class lane carries its own build and review shells, and the lane state carries the class
 
 **What this decides:** a lane whose diff raises the `ui` class runs its build and review rounds in
 `build-ui` and `review-ui` shells of its own, reached from lane states named `build:ui` and
