@@ -27,7 +27,7 @@ import {EditedIndicator} from "../ui/EditedIndicator";
 import {Textarea} from "../ui/Form";
 import {MetaRow} from "../ui/MetaRow";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
-import {ReviewBadge} from "../ui/ReviewBadge";
+import {SandboxMarker} from "../ui/SandboxMarker";
 import {useVoteFlash} from "../useVoteFlash";
 import {VoteTriangle} from "../VoteTriangle";
 
@@ -43,6 +43,7 @@ export const DefinitionView = view<Definition>()({
 	authorUsername: true,
 	authorDisplayName: true,
 	sandboxed: true,
+	sandboxedInPlace: true,
 	reactions: {counts: true, myReaction: true},
 });
 
@@ -303,9 +304,14 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					<DefinitionBody text={definition.body} />
 				)}
 				<MetaRow as="footer" className="kp-sozluk-definition__foot">
-					{/* Owner-only in-review signal (#2200): `sandboxed` is owner-scoped server-side,
-					    re-gated on `isAuthor` so only the author sees their own pending definition's state. */}
-					{isAuthor && definition.sandboxed ? <ReviewBadge /> : null}
+					{/* The entry's one sandbox badge (#6427): the author's own "incelemede" (#2200,
+					    re-gated on `isAuthor` since `sandboxed` is owner-scoped server-side), else the
+					    reader-facing çaylak marker (#6425) on somebody else's hazırlık-stage entry. */}
+					<SandboxMarker
+						isOwn={isAuthor}
+						sandboxed={definition.sandboxed}
+						sandboxedInPlace={definition.sandboxedInPlace}
+					/>
 					{/* Live author identity via `actorLabel` (#2139): CURRENT displayName → @username,
 					    falling back to the write-time `author` snapshot for an unstamped/legacy row. */}
 					<span className="author">

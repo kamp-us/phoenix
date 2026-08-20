@@ -18,7 +18,7 @@ import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {MetaRow} from "../ui/MetaRow";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
-import {ReviewBadge} from "../ui/ReviewBadge";
+import {SandboxMarker} from "../ui/SandboxMarker";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 
 /**
@@ -55,6 +55,7 @@ export const PanoPostHeaderView = view<Post>()({
 	createdAt: true,
 	updatedAt: true,
 	sandboxed: true,
+	sandboxedInPlace: true,
 	tags: true,
 	reactions: {counts: true, myReaction: true},
 });
@@ -75,9 +76,14 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 		<div>
 			<h1 className="kp-pano-postpage__title kp-prose">
 				{post.title}
-				{/* Owner-only in-review signal (#2200): `sandboxed` is owner-scoped server-side,
-				    re-gated on `isAuthor` so only the author sees their own pending post's state. */}
-				{props.isAuthor && post.sandboxed ? <ReviewBadge /> : null}
+				{/* The item's one sandbox badge (#6427): the author's own "incelemede" (#2200,
+				    re-gated on `isAuthor` since `sandboxed` is owner-scoped server-side), else the
+				    reader-facing çaylak marker (#6425) on somebody else's hazırlık-stage post. */}
+				<SandboxMarker
+					isOwn={props.isAuthor}
+					sandboxed={post.sandboxed}
+					sandboxedInPlace={post.sandboxedInPlace}
+				/>
 			</h1>
 			{post.url ? (
 				<a
