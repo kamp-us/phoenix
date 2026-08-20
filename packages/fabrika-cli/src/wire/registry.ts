@@ -32,6 +32,7 @@ import * as grillSupersede from "./grill-supersede.ts";
 import * as handoffPack from "./handoff-pack.ts";
 import * as laneBrief from "./lane-brief.ts";
 import * as mapTicket from "./map-ticket.ts";
+import * as planApproval from "./plan-approval.ts";
 import * as rangeVerdictMarker from "./range-verdict-marker.ts";
 import * as verdictMarker from "./verdict-marker.ts";
 
@@ -923,6 +924,50 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			],
 		},
 		brands: brandWitnesses<cameFrom.CameFrom>({binding: true}),
+	},
+	{
+		key: "plan-approval",
+		purpose:
+			"a control-plane human's approval of one epic's plan, carried as a marker comment on the epic and bound to the ledger scope digest the plan gate re-derives (ADR 0289)",
+		module: "packages/fabrika-cli/src/wire/plan-approval.ts",
+		producers: ["check-epic-plan"],
+		consumers: ["check-epic-plan"],
+		emit: planApproval.emitFromFields,
+		read: planApproval.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: "epic: 5843\ndigest: 4d90e1bb27ac\nat: 2026-08-16T07:16:03Z\n",
+				values: ["5843", "4d90e1bb27ac", "2026-08-16T07:16:03Z"],
+			},
+			found: [
+				{
+					shape: "the marker over the plan it approves, as `plan approve` posts it",
+					artifact:
+						"plan-approved: #5843 @ 4d90e1bb27ac \u00b7 2026-08-16T07:16:03Z\n\nRead the ledger. The four slices are the split I want.\n",
+					values: ["5843", "4d90e1bb27ac", "2026-08-16T07:16:03Z"],
+				},
+			],
+			absent: "Re-planned the third slice — the topology is smaller now.\n",
+			malformed: [
+				{
+					drift: "the digest is not 12 lowercase hex, so it binds no scope",
+					artifact: "plan-approved: #5843 @ 4D90E1BB \u00b7 2026-08-16T07:16:03Z\n",
+				},
+				{
+					drift: "the marker names no digest, so the approval survives any re-plan",
+					artifact: "plan-approved: #5843 \u00b7 2026-08-16T07:16:03Z\n",
+				},
+				{
+					drift: "the epic reference lost its #, so it is a number rather than a reference",
+					artifact: "plan-approved: 5843 @ 4d90e1bb27ac \u00b7 2026-08-16T07:16:03Z\n",
+				},
+				{
+					drift: "the timestamp is not an ISO-8601 UTC instant",
+					artifact: "plan-approved: #5843 @ 4d90e1bb27ac \u00b7 last Thursday\n",
+				},
+			],
+		},
+		brands: brandWitnesses<planApproval.PlanApproval>({digest: true, at: true}),
 	},
 ];
 
