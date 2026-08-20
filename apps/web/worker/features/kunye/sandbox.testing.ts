@@ -1,14 +1,15 @@
 /**
- * Test doubles for the four services `currentSandboxViewer`'s in-place-visibility
- * resolution (#6423) reads: the flag, the per-request flag plumbing, the künye tier,
- * and the #6422 opt-in store. Bundled as ONE layer so a unit test that only cares
- * about the moderator/author axes states "in-place off" in a single line instead of
- * re-stubbing four services.
+ * Test doubles for every service `currentSandboxViewer` reads, bundled by axis so a
+ * unit test states a viewer shape in a line or two instead of re-stubbing seven
+ * services: the in-place axis (#6423 — the flag, the per-request flag plumbing, the
+ * künye tier, the #6422 opt-in store), the moderator axis (#6424 — the actor, the
+ * fail-closed agent authority, the `moderates` tuple store), and both together.
  *
  * The stores fail on contact by default, so a test that expects a short-circuit
  * (flag off, anonymous, or a non-yazar tier) proves the read never happened rather
  * than asserting on a value nobody produced.
  */
+import {AgentAuthority, CurrentActor, human, RelationStore} from "@kampus/authz";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
 import {
@@ -37,21 +38,16 @@ export interface InPlaceVisibilityStubs {
 	readonly preference?: CaylakVisibilityState;
 }
 
-export const inPlaceVisibilityLayer = ({
-	flagOn,
+/**
+ * The two stores the in-place probe reads once past the flag, WITHOUT the flag itself —
+ * for a test that already stubs `Flags` for a different gate (a resolver dark-shipped
+ * behind its own key) and only needs the probe's residual context discharged.
+ */
+export const inPlaceVisibilityStores = ({
 	tier,
 	preference,
-}: InPlaceVisibilityStubs): Layer.Layer<
-	CaylakVisibility | Flags | Kunye | RequestFlagOverrides | RuntimeContext
-> =>
+}: Omit<InPlaceVisibilityStubs, "flagOn">): Layer.Layer<CaylakVisibility | Kunye> =>
 	Layer.mergeAll(
-		Layer.succeed(Flags, {
-			getBoolean: () => Effect.succeed(flagOn),
-			getString: () => Effect.die("getString not exercised"),
-			getNumber: () => Effect.die("getNumber not exercised"),
-			getObject: () => Effect.die("getObject not exercised"),
-		} as typeof Flags.Service),
-		Layer.succeed(RequestFlagOverrides, {cookieHeader: null, overridesAllowed: false}),
 		Layer.succeed(Kunye, {
 			tierOf: () =>
 				tier === undefined
@@ -67,8 +63,74 @@ export const inPlaceVisibilityLayer = ({
 					: Effect.succeed(preference),
 			set: () => Effect.die("CaylakVisibility.set not exercised"),
 		}),
+	);
+
+export const inPlaceVisibilityLayer = ({
+	flagOn,
+	tier,
+	preference,
+}: InPlaceVisibilityStubs): Layer.Layer<
+	CaylakVisibility | Flags | Kunye | RequestFlagOverrides | RuntimeContext
+> =>
+	Layer.mergeAll(
+		Layer.succeed(Flags, {
+			getBoolean: () => Effect.succeed(flagOn),
+			getString: () => Effect.die("getString not exercised"),
+			getNumber: () => Effect.die("getNumber not exercised"),
+			getObject: () => Effect.die("getObject not exercised"),
+		} as typeof Flags.Service),
+		Layer.succeed(RequestFlagOverrides, {cookieHeader: null, overridesAllowed: false}),
+		inPlaceVisibilityStores({
+			...(tier !== undefined ? {tier} : {}),
+			...(preference !== undefined ? {preference} : {}),
+		}),
 		Layer.succeed(RuntimeContext, runtimeContextStub),
 	);
 
 /** The dark-flag default: nothing downstream of the flag may be touched. */
 export const inPlaceVisibilityOff = inPlaceVisibilityLayer({flagOn: false});
+
+/**
+ * The moderator axis `currentSandboxViewer` probes through `requireModeration` —
+ * `CurrentActor`, the fail-closed `AgentAuthority`, and the `moderates` tuple store —
+ * bundled so a test states "a moderator" or "not a moderator" in one line.
+ */
+export const moderatorAxisLayer = ({
+	viewerId,
+	isModerator,
+}: {
+	readonly viewerId: string;
+	readonly isModerator: boolean;
+}): Layer.Layer<AgentAuthority | CurrentActor | RelationStore> =>
+	Layer.mergeAll(
+		Layer.succeed(CurrentActor, {actor: human(viewerId)}),
+		Layer.succeed(AgentAuthority, {admits: () => Effect.succeed(false)}),
+		Layer.succeed(RelationStore, {
+			has: () => Effect.succeed(isModerator),
+			hasSubjects: () => Effect.die("RelationStore.hasSubjects not exercised"),
+			subjectsOf: () => Effect.die("RelationStore.subjectsOf not exercised"),
+		}),
+	);
+
+/**
+ * Every service `currentSandboxViewer` reads, in one layer: the in-place axis
+ * ({@link inPlaceVisibilityLayer}) and the moderator axis ({@link moderatorAxisLayer}).
+ * A test that drives a resolver through the real viewer resolution states both axes
+ * here instead of re-stubbing seven services.
+ */
+export const sandboxViewerLayer = (
+	stubs: InPlaceVisibilityStubs & {readonly viewerId: string; readonly isModerator: boolean},
+): Layer.Layer<
+	| AgentAuthority
+	| CaylakVisibility
+	| CurrentActor
+	| Flags
+	| Kunye
+	| RelationStore
+	| RequestFlagOverrides
+	| RuntimeContext
+> =>
+	Layer.mergeAll(
+		inPlaceVisibilityLayer(stubs),
+		moderatorAxisLayer({viewerId: stubs.viewerId, isModerator: stubs.isModerator}),
+	);
