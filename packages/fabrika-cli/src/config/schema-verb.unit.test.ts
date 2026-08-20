@@ -4,27 +4,39 @@ import {INCOMPLETE_REGISTRY, IO_UNKNOWN, SCHEMA_DRIFT} from "./codes.ts";
 import {assembleSchema, serializeSchema} from "./json-schema.ts";
 import {type KeyGroup, register} from "./key-group.ts";
 import {KEY_GROUPS} from "./registry.ts";
-import {runSchema, type SchemaRead, type SchemaSave} from "./schema-verb.ts";
+import {runSchema, type SchemaRead, type SchemaRoot, type SchemaSave} from "./schema-verb.ts";
 
 const complete = assembleSchema(KEY_GROUPS);
 if (complete._tag !== "Complete") throw new Error("fixture: registry is not complete");
 const committed = serializeSchema(complete.schema);
 
-const run = (opts: {write: boolean; read: SchemaRead; save?: (text: string) => SchemaSave}) => {
+const AT_ROOT: SchemaRoot = {_tag: "Root", root: "/repo"};
+
+const run = (opts: {
+	write: boolean;
+	read: SchemaRead;
+	save?: (text: string) => SchemaSave;
+	root?: SchemaRoot;
+}) => {
 	const saves: string[] = [];
+	const reads: string[] = [];
 	const outcome = Effect.runSync(
 		runSchema({
 			write: opts.write,
 			json: false,
 			registrations: KEY_GROUPS,
-			read: Effect.succeed(opts.read),
-			save: (text) => {
+			root: opts.root ?? AT_ROOT,
+			read: (root) => {
+				reads.push(root);
+				return Effect.succeed(opts.read);
+			},
+			save: (_root, text) => {
 				saves.push(text);
 				return Effect.succeed(opts.save ? opts.save(text) : ({_tag: "Saved"} satisfies SchemaSave));
 			},
 		}),
 	);
-	return {outcome, saves};
+	return {outcome, saves, reads};
 };
 
 const noFragment: KeyGroup<string> = {
@@ -90,6 +102,24 @@ describe("write", () => {
 	});
 });
 
+describe("a repo root nobody located", () => {
+	const unlocated: SchemaRoot = {_tag: "Unlocated", reason: "EACCES walking above /somewhere"};
+
+	it("is UNKNOWN on the reconcile, never drift, and reads no file", () => {
+		const {outcome, reads} = run({write: false, read: {_tag: "Absent"}, root: unlocated});
+		expect(outcome.code).toBe(IO_UNKNOWN);
+		expect(outcome.code).not.toBe(SCHEMA_DRIFT);
+		expect(outcome.stderr.some((line) => line.includes("EACCES walking above"))).toBe(true);
+		expect(reads).toHaveLength(0);
+	});
+
+	it("is UNKNOWN on --write, and renders the file nowhere", () => {
+		const {outcome, saves} = run({write: true, read: {_tag: "Absent"}, root: unlocated});
+		expect(outcome.code).toBe(IO_UNKNOWN);
+		expect(saves).toHaveLength(0);
+	});
+});
+
 describe("an incomplete registry refuses before touching the file", () => {
 	it("names the key with no fragment", () => {
 		const saves: string[] = [];
@@ -98,8 +128,9 @@ describe("an incomplete registry refuses before touching the file", () => {
 				write: true,
 				json: false,
 				registrations: [...KEY_GROUPS, register(noFragment)],
-				read: Effect.succeed({_tag: "Absent"} satisfies SchemaRead),
-				save: (text) => {
+				root: AT_ROOT,
+				read: () => Effect.succeed({_tag: "Absent"} satisfies SchemaRead),
+				save: (_root, text) => {
 					saves.push(text);
 					return Effect.succeed({_tag: "Saved"} satisfies SchemaSave);
 				},

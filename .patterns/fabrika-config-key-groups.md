@@ -59,7 +59,7 @@ silently disables a gate.
 2. Add one `register(yourKey)` line to `registry.ts`.
 3. Add a `render` **only if** the decoded shape is not the shape a repo writes (see below).
 4. Add a `jsonSchema` fragment describing a declared value's shape (see below). Then regenerate the
-   committed schema with `fabrika config schema --write` — the reconcile reds if you skip it.
+   committed schema with `fabrika config schema --write` — CI reds if you skip it.
 
 Nothing else is touched. That is the point — concurrent slices each add a key without serializing
 on one growing reader.
@@ -249,11 +249,15 @@ ids off `SURFACE_REGISTRY`, `boardVocabulary` builds its status roles off `STATU
 **An incomplete registry refuses the assembly whole.** The `jsonSchema` field is optional on the
 type but required in practice: `assembleSchema` names any registered key that carries no fragment and
 emits nothing, because a schema missing a key's subtree greens a typo under it — the exact gap the
-schema exists to close. `schema-verb.unit.test.ts` asserts the real registry is complete.
+schema exists to close. `json-schema.unit.test.ts` asserts the real registry is complete.
 
-**The committed file is generated, and the reconcile keeps it honest.** `config schema` compares the
-committed `.fabrika.schema.json` to the freshly assembled document — by content, not bytes, so the
-repo's formatter may reformat it freely — and reds drift (exit 4) so the file can never fall behind a
-new key. `--write` renders it. It mirrors `wire index`, the sibling generated-file reconcile, and is
-unaligned from the exit-code base for the same reason (`exit-code-alignment.ts`). The file is
-excluded from biome (`biome.jsonc`), so a regenerate leaves the committed output stable.
+**The committed file is generated, and CI keeps it honest.** `config schema` compares the committed
+`.fabrika.schema.json` to the freshly assembled document — by content, not bytes, so the repo's
+formatter may reformat it freely, though the key order is the generator's — and reds drift (exit 4).
+`--write` renders it. What runs that check on a PR is `config/schema.cli.test.ts`, which spawns the
+no-flag verb at the repo root; it rides the `packages unit tests` job, whose path filter lists both
+`packages/**` and `.fabrika.schema.json`, so neither side of the pair can be edited without the job
+firing. A root the verb could not locate exits `6` (UNKNOWN), never `4` — an unlocatable file is not
+a file that disagrees. The verb mirrors `wire index`, the sibling generated-file reconcile, and is
+unaligned from the exit-code base as `wire` is (`exit-code-alignment.ts`). The file is excluded from
+biome (`biome.jsonc`), so a regenerate leaves the committed output stable.

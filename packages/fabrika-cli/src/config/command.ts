@@ -16,7 +16,7 @@ import {exists, readFile, writeFile} from "../io/fs.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {CONFIG_SCHEMA_FILE} from "./json-schema.ts";
 import {KEY_GROUPS} from "./registry.ts";
-import {runSchema, type SchemaRead, type SchemaSave} from "./schema-verb.ts";
+import {runSchema, type SchemaRead, type SchemaRoot, type SchemaSave} from "./schema-verb.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
 const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
@@ -30,11 +30,24 @@ const jsonFlag = Flag.boolean("json").pipe(
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
-/** The repository root the schema file sits at, falling back to the cwd when discovery cannot run. */
-const repositoryRoot: Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> = Effect.gen(
+/**
+ * The root the schema file sits at — or the reason nobody located one.
+ *
+ * A discovery that failed is handed on as `Unlocated` rather than swallowed into the cwd, because
+ * `runSchema` is the module that decides what a root nobody located means, and it answers UNKNOWN.
+ * A discovery that succeeded and found no repo root still falls to the cwd: that is a real
+ * directory, and its answer is a proven one either way (the shape `repoConfigSource` already uses).
+ */
+const schemaRoot: Effect.Effect<SchemaRoot, never, FileSystem.FileSystem | Path.Path> = Effect.gen(
 	function* () {
-		const found = yield* Effect.result(discoverRepoRoot(process.cwd()));
-		return found._tag === "Success" ? (found.success ?? process.cwd()) : process.cwd();
+		const cwd = process.cwd();
+		const found = yield* Effect.result(discoverRepoRoot(cwd));
+		return found._tag === "Failure"
+			? {
+					_tag: "Unlocated",
+					reason: `cannot resolve the repo root above ${cwd}: ${found.failure.reason}`,
+				}
+			: {_tag: "Root", root: found.success ?? cwd};
 	},
 );
 
@@ -72,21 +85,21 @@ const schema = leafCommand(
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({write, json}) {
-		const root = yield* repositoryRoot;
 		yield* emit(
 			yield* runSchema<FileSystem.FileSystem | Path.Path>({
 				write,
 				json,
 				registrations: KEY_GROUPS,
-				read: readSchemaFile(root),
-				save: (content) => saveSchemaFile(root, content),
+				root: yield* schemaRoot,
+				read: readSchemaFile,
+				save: saveSchemaFile,
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription(`Reconcile ${CONFIG_SCHEMA_FILE} with the config-key registry.`),
 	Command.withDescription(
-		`Reconcile the committed ${CONFIG_SCHEMA_FILE} with the JSON Schema assembled from the config-key fragments — and, with --write, render it from the registry rather than by hand, so an editor validates .fabrika.jsonc against it. Stdout is the single line \`schema\\t<agrees|written>\\t<keys>\`. Exits 4 (the committed file is stale or not committed — regenerate with --write), 6 (the file could not be read or written — UNKNOWN, never drift), 7 (a registered key carries no schema fragment, so the schema would be incomplete). Example: fabrika config schema --write`,
+		`Reconcile the committed ${CONFIG_SCHEMA_FILE} with the JSON Schema assembled from the config-key fragments — and, with --write, render it from the registry rather than by hand, so an editor validates .fabrika.jsonc against it. Stdout is the single line \`schema\\t<agrees|written>\\t<keys>\`. Exits 4 (the committed file is stale or not committed — regenerate with --write), 6 (the repo root could not be resolved, or the file could not be read or written — UNKNOWN, never drift), 7 (a registered key carries no schema fragment, so the schema would be incomplete). Example: fabrika config schema --write`,
 	),
 );
 

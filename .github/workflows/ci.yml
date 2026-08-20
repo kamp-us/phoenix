@@ -358,9 +358,15 @@ jobs:
             # the declaration — the one place a hook command can stop being a plain
             # literal, or start naming something outside fabrika — skips the only gate
             # that would catch it.
+            # `.fabrika.schema.json` is listed for the same reason in the other
+            # direction (#6488): `config/schema.cli.test.ts` reconciles that committed
+            # document against the config-key registry, and the registry-side edit is
+            # already covered by `packages/**` — a hand-edit of the generated file is
+            # the half that would otherwise skip the only job that reds on it.
             packages:
               - 'packages/**'
               - 'infra/**'
+              - '.fabrika.schema.json'
               - 'claude-plugins/fabrika/docs/**'
               - 'claude-plugins/fabrika/hooks.json'
               - 'pnpm-workspace.yaml'

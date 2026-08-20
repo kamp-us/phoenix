@@ -63,9 +63,8 @@ export const capClearAuthorsKey: KeyGroup<ReadonlyArray<GrantAuthor>> = {
 		type: "array",
 		description:
 			"Who may clear one extra repair round on a PR (`fabrika build clear`). Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means nobody may grant.",
-		items: {
-			type: "string",
-			pattern: "^@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?|[^/\\s]+/[^/\\s]+)$",
-		},
+		// Composed from the two regexes `decode` runs, never restated: a hand-copied alternation is
+		// free to drift from the decoder it claims to describe.
+		items: {type: "string", pattern: `${USER.source}|${TEAM.source}`},
 	},
 };

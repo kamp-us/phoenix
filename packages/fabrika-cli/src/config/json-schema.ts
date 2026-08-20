@@ -104,9 +104,11 @@ export const serializeSchema = (schema: ConfigSchemaDocument): string =>
 	`${JSON.stringify(schema, null, "\t")}\n`;
 
 /**
- * Whether a committed schema document matches the assembled one, compared by content rather than
- * bytes: the file is re-formatted by the repo's own JSON formatter, so a whitespace difference is
- * not drift. Two documents agree when their compact serializations are equal.
+ * Whether a committed schema document matches the assembled one.
+ *
+ * Whitespace-insensitive, key-order sensitive: the two compact serializations are compared, so a
+ * re-indented file still agrees while a re-ordered one reds. That is the strict direction, and the
+ * generator is the only writer — `--write` emits the registry's order every time.
  */
 export const schemaMatches = (committed: unknown, assembled: ConfigSchemaDocument): boolean =>
 	JSON.stringify(committed) === JSON.stringify(assembled);

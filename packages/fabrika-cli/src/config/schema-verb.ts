@@ -9,6 +9,11 @@
  * a test without a filesystem. A file that could not be read is UNKNOWN (`6`), never "the schema
  * drifts": those two are the pair this reconcile keeps apart. An absent file, by contrast, is a
  * proven drift — the schema was never committed — not an UNKNOWN.
+ *
+ * A repo root nobody located sits on the UNKNOWN side of that same pair, and is refused ahead of
+ * either leg: probing under a root the discovery failed to resolve would report whatever directory
+ * the caller stood in as "the schema is not committed", and `--write` would render the file there.
+ * `repoConfigSource` (`./working-root.ts`) keeps the pair apart the same way for `.fabrika.jsonc`.
  */
 
 import {Effect} from "effect";
@@ -19,6 +24,16 @@ import {assembleSchema, CONFIG_SCHEMA_FILE, schemaMatches, serializeSchema} from
 import type {Registration} from "./key-group.ts";
 
 const VERB = "config schema";
+
+/**
+ * Where the committed file sits, or the reason nobody located a root to look under.
+ *
+ * A discovery that *failed* is `Unlocated`. A discovery that succeeded and found no repo root is
+ * not: that is a real directory holding no schema file, and an answer about it is a proven one.
+ */
+export type SchemaRoot =
+	| {readonly _tag: "Root"; readonly root: string}
+	| {readonly _tag: "Unlocated"; readonly reason: string};
 
 /** The committed file's bytes, its proven absence, or the reason they were never seen. */
 export type SchemaRead =
@@ -34,8 +49,9 @@ export interface SchemaOptions<R> {
 	readonly write: boolean;
 	readonly json: boolean;
 	readonly registrations: ReadonlyArray<Registration>;
-	readonly read: Effect.Effect<SchemaRead, never, R>;
-	readonly save: (text: string) => Effect.Effect<SchemaSave, never, R>;
+	readonly root: SchemaRoot;
+	readonly read: (root: string) => Effect.Effect<SchemaRead, never, R>;
+	readonly save: (root: string, text: string) => Effect.Effect<SchemaSave, never, R>;
 }
 
 const verdict = (json: boolean, outcome: "agrees" | "written", keys: number): string =>
@@ -47,6 +63,7 @@ export const runSchema = <R>({
 	write,
 	json,
 	registrations,
+	root,
 	read,
 	save,
 }: SchemaOptions<R>): Effect.Effect<VerbOutcome, never, R> =>
@@ -62,10 +79,18 @@ export const runSchema = <R>({
 			);
 		}
 
+		if (root._tag === "Unlocated") {
+			return refuse(
+				IO_UNKNOWN,
+				`${VERB}: the repository root could not be resolved — UNKNOWN, never "the schema drifts": ${root.reason}`,
+				[scope],
+			);
+		}
+
 		const keys = registrations.length;
 
 		if (write) {
-			const saved = yield* save(serializeSchema(assembly.schema));
+			const saved = yield* save(root.root, serializeSchema(assembly.schema));
 			if (saved._tag === "Failed") {
 				return refuse(
 					IO_UNKNOWN,
@@ -76,7 +101,7 @@ export const runSchema = <R>({
 			return answer(verdict(json, "written", keys), [scope]);
 		}
 
-		const source = yield* read;
+		const source = yield* read(root.root);
 		if (source._tag === "Failed") {
 			return refuse(
 				IO_UNKNOWN,
