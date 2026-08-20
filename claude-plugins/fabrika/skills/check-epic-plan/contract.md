@@ -102,7 +102,24 @@ as the sibling contracts do):
 | `plan flip` | flip every `status:planned` child to `status:triaged` and the epic itself to `ready-for:agent`, re-gating first, reporting the **observed** result for each | a guarded batch write with a read-back — no judgment; *what a partial flip means* stays in the skill |
 | `plan verdict` | post the gate's verdict comment, bound to the scope digest, and read it back | marker composition + a guarded write; the caveats are the skill's judgment, taken as input |
 | `plan approve` | post the approval marker on the epic, bound to a scope digest the verb derives itself, and read it back | an ACL-checked guarded write with a read-back — no judgment; **no `--digest` flag exists**, because an approval whose scope its caller supplies attests whatever the caller pleased |
-| `plan approval` | report the epic's approval state — `current` / `stale` / `absent`, with the marker's author and both digests | a total read that never refuses on a missing approval; the enforcement is seated in the three verbs that re-derive the floor, never in this report |
+| `plan approval` | report the epic's approval state — `current` / `stale` / `absent`, with the marker's author and both digests, honouring only a marker whose author the control-plane roster resolves **at read time** | a total read that never refuses on a missing approval; the enforcement will be seated in the three verbs that re-derive the floor, never in this report |
+
+**The author gate is in the read, not only in `plan approve`'s write.** Posting a `plan-approved:`
+line takes nothing but the ability to comment on the epic, and the digest it must carry is on `plan
+check`'s stdout — so a read honouring the format alone would let any agent token approve a plan. ADR
+[0289](../../../../.decisions/0289-founder-approves-every-epic-plan.md) forbids that outright, and
+`build clear`'s sibling read refuses the same shape under ADR
+[0055](../../../../.decisions/0055-acl-sourced-review-authz.md) over
+[0051](../../../../.decisions/0051-author-bind-pass-marker.md). A conforming marker from an
+off-roster account therefore reads `absent` and is counted in `unauthorized`, which keeps the state
+union closed at three. A roster nobody could read is `11`, never `absent` — the #4223 collapse, on
+this side too.
+
+**Nothing refuses on an approval yet.** No `plan` verb other than these two references an approval at
+all; seating the refusal in `plan check` / `plan flip` / `plan verdict` is a later slice of epic
+[#5843](https://github.com/kamp-us/phoenix/issues/5843). Read the future tense above literally — the
+gate precondition is not live, so a caller that needs it enforced today must call `plan approval`
+itself and act on the state.
 
 **Considered and not derived: a `plan defects --explain` verb.** A defect's *remedy* is the
 planner's judgment, and a verb that authored one would be minting advice the floor cannot check.

@@ -3,9 +3,16 @@
  *
  * **A reporting surface, never the enforcement.** It exits `0` on `absent` exactly as it does on
  * `current`, because a missing approval is this verb's *answer*. The refusal that keeps an
- * unapproved plan out of the gate is seated inside `plan check` / `plan flip` / `plan verdict`,
- * which re-derive rather than trusting any caller — the same discipline that makes `plan check`'s
- * defective floor an answer and `plan flip`'s re-gate the guard.
+ * unapproved plan out of the gate will be seated inside `plan check` / `plan flip` / `plan verdict`
+ * by a later slice of epic #5843; no `plan` verb refuses on an approval today. Those three will
+ * re-derive rather than trust any caller — the same discipline that makes `plan check`'s defective
+ * floor an answer and `plan flip`'s re-gate the guard.
+ *
+ * **What the state is nevertheless safe to be read as.** `current` means a marker whose author the
+ * control-plane roster resolves *at this read* — the author gate lives here, in the read, not only
+ * in `plan approve`'s write, because bytes carrying the right digest can reach the epic from any
+ * account that can comment on it (ADR 0289; `./approval.ts` says why). A later gate may honour
+ * `current` without re-checking who wrote it.
  *
  * Both digests are printed, the marker's and the freshly derived one, so a `stale` answer shows what
  * moved rather than asserting that something did.
@@ -17,7 +24,7 @@ import {badNumber, resolveTargetRepo} from "../build/target.ts";
 import {cycleDocOr} from "../config/paths.ts";
 import {listComments} from "../io/issues.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {scanApprovals, stateOf} from "./approval.ts";
+import {controlPlaneRoster, scanApprovals, stateOf} from "./approval.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {
 	loadLedger,
@@ -79,6 +86,20 @@ export const runApproval = (
 		if (read._tag === "Refused") return read.outcome;
 		const ledger = read.ledger;
 
+		const roster = yield* controlPlaneRoster(repo);
+		if (roster._tag === "Unknown") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read ${roster.reason} — who may approve is unread, so the approval state is UNKNOWN, not absent.`,
+				[
+					scannedChildren(
+						VERB,
+						ledger.children.map((child) => child.number),
+					),
+				],
+			);
+		}
+
 		const listed = yield* listComments(repo, options.number);
 		if (listed._tag === "Failure") {
 			return refuse(
@@ -93,14 +114,15 @@ export const runApproval = (
 			);
 		}
 
-		const scan = scanApprovals(listed.value, ledger.epic);
+		const scan = scanApprovals(listed.value, ledger.epic, roster.logins);
 		const state = stateOf(scan, ledger.epic, ledger.digest);
 		const notes = [
 			scannedChildren(
 				VERB,
 				ledger.children.map((child) => child.number),
 			),
-			`${VERB}: read ${listed.value.length} comment(s) on #${options.number}; ${scan.disregarded} disregarded marker(s).`,
+			`${VERB}: ${roster.logins.size} control-plane account(s) from ${roster.owners.join(", ") || "no owner"} at ${roster.ref}.`,
+			`${VERB}: read ${listed.value.length} comment(s) on #${options.number}; ${scan.disregarded} disregarded marker(s), ${scan.unauthorized} from an account off that roster.`,
 		];
 
 		return answer(
@@ -114,6 +136,7 @@ export const runApproval = (
 				at: scan.standing?.approval.at ?? null,
 				comment: scan.standing?.comment ?? null,
 				disregarded: scan.disregarded,
+				unauthorized: scan.unauthorized,
 			}),
 			notes,
 		);

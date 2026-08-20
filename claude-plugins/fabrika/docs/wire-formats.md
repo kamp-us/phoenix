@@ -294,8 +294,11 @@ gate re-derives, so a plan rewritten after the founder read it no longer matches
 the approval (ADR 0289). A label carries no scope, which is why one was rejected on the record. The
 epic is named on the marker too, because bytes travel — a comment quoting another epic's approval
 must never read as this one's, and `approves` checks both halves as equality rather than either as a
-courtesy. Like the ruling and clearance markers, it is not authority on its own: the writer resolves
-the `@<org>/<team>` roster at write time, and an agent-authored marker approves nothing.
+courtesy. Like the ruling and clearance markers, it is not authority on its own, and both sides of
+the format are what makes that true: the writer resolves the `@<org>/<team>` roster before it posts,
+and the reader resolves it again over the marker's author before it reports `current`. Only the
+second half covers the bytes that reach the epic some other way, which is every account that can
+comment on it — so an off-roster marker reads `absent` however fresh its digest.
 
 ## Adding a format
 

@@ -1,19 +1,30 @@
 /**
  * The two reads both approval verbs share: who may approve, and what approval already stands.
  *
- * The roster is resolved **at write time** from `.github/CODEOWNERS` on the repository's default
- * branch, through the same `../ship/codeowners.ts` + `../ship/github.ts` pair `ship cp-approval`
- * uses. One ACL module, not two — a second reading of "who is on the control plane" would drift from
- * the one the merge gate enforces, and drift here is an approval nobody with authority gave.
+ * The roster is resolved from `.github/CODEOWNERS` on the repository's default branch, through the
+ * same `../ship/codeowners.ts` + `../ship/github.ts` pair `ship cp-approval` uses. One ACL module,
+ * not two — a second reading of "who is on the control plane" would drift from the one the merge
+ * gate enforces, and drift here is an approval nobody with authority gave.
+ *
+ * **Both sides resolve it, because a marker is bytes.** The write resolves it to decide whether this
+ * invocation may post, and the read resolves it again to decide whose posted bytes count: posting a
+ * `plan-approved:` line takes nothing but the ability to comment on the epic, and the digest it must
+ * carry is printed on `plan check`'s stdout. A read honouring the format alone would let any agent
+ * token in this pipeline approve a plan, which ADR 0289 forbids in as many words and which the
+ * sibling `../build/clearances.ts` refuses under its clause 2 (ADR 0055 over 0051: a committed list
+ * with no author gate is exactly the shape 0055 supersedes 0051 to forbid).
  *
  * The one collapse this module refuses to make is #4223's: a roster that could not be read is
  * `Unknown`, never an empty roster and never a permissive one. An empty roster is a *proven* fact and
  * a separate answer.
  *
- * **What the roster proves, exactly.** That the invoking token authenticates as an account the
- * control-plane owners resolve to. It does not prove a human typed the command; nothing mechanical
- * can, and the residue is the same one `build clear` carries. ADR 0289 asks for a human on
- * `@kamp-us/control-plane`, and this is the mechanical half of that.
+ * **What the roster proves, exactly.** That the invoking token (on the write) or the marker's author
+ * (on the read) is an account the control-plane owners resolve to. It does not prove a human typed
+ * the command; nothing mechanical can, and the residue is the same one `build clear` carries. ADR
+ * 0289 asks for a human on `@kamp-us/control-plane`, and this is the mechanical half of that. The
+ * founder's grilling-Q1 ruling on epic #5843 keeps the driver-records-the-ruling pattern inside that
+ * half rather than outside it: a driver writing on his behalf posts from a roster account, so its
+ * marker is honoured for the same reason a founder-typed one is.
  */
 
 import {Effect} from "effect";
@@ -92,10 +103,21 @@ export interface ApprovalScan {
 	 * that he never did.
 	 */
 	readonly disregarded: number;
+	/**
+	 * Conforming markers naming this epic whose author is off the roster.
+	 *
+	 * Counted for the same reason as `disregarded`, and it matters more: someone posted an approval
+	 * that does not count, and a scan that dropped it silently would report the epic as never
+	 * approved to the very account that tried.
+	 */
+	readonly unauthorized: number;
 }
 
 /**
  * The standing approval among an epic's comments, newest last.
+ *
+ * `roster` is the read-time author gate — a marker from an account outside it is not an approval,
+ * however fresh its digest. Empty means nobody may approve here, so nothing stands.
  *
  * Ordered by `updatedAt` and then by id, never by `createdAt`: a marker edited after a later one was
  * posted is the newer statement, and only the write stamp says so (#4200).
@@ -103,12 +125,14 @@ export interface ApprovalScan {
 export const scanApprovals = (
 	comments: ReadonlyArray<CommentRecord>,
 	epic: number,
+	roster: ReadonlySet<string>,
 ): ApprovalScan => {
 	const ordered = [...comments].sort((a, b) =>
 		a.updatedAt === b.updatedAt ? a.id - b.id : a.updatedAt < b.updatedAt ? -1 : 1,
 	);
 	let standing: StandingApproval | null = null;
 	let disregarded = 0;
+	let unauthorized = 0;
 	for (const comment of ordered) {
 		const found = readApproval(comment.body);
 		if (found._tag === "Malformed") {
@@ -116,9 +140,13 @@ export const scanApprovals = (
 			continue;
 		}
 		if (found._tag !== "Found" || found.value.epic !== epic) continue;
+		if (!roster.has(comment.author)) {
+			unauthorized += 1;
+			continue;
+		}
 		standing = {approval: found.value, by: comment.author, comment: comment.id};
 	}
-	return {standing, disregarded};
+	return {standing, disregarded, unauthorized};
 };
 
 /** The state a scan resolves to against the digest derived from the plan as it now stands. */
