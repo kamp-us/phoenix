@@ -1,0 +1,186 @@
+name: heal-ci-sweep
+
+# The scheduled stuck-PR watcher: every 6 hours, `fabrika heal-ci sweep` classifies every open pull
+# request and this job publishes the result. Restores the coverage that retired with
+# `orphan-heal.yml` (#6097), which was the only cron that ever looked at whether a PR was stranded.
+# Filed as #6146; ruled by the founder at
+# https://github.com/kamp-us/phoenix/issues/6146#issuecomment-5360291677.
+#
+# DETECTION ONLY. This workflow opens no issue, assigns nobody, merges nothing, re-runs nothing and
+# spawns no agent or model. Its single write is the durable note below, on a pull request the sweep
+# itself flagged. Acting on a flag stays with drivers (ADR 0205, founder ruling #3532); the verb
+# behind it writes nothing at all (packages/fabrika-cli/src/heal-ci/sweep-verb.ts).
+#
+# SUPPRESSION. `fabrika heal-ci note` posts a NEW comment every call by design — a strand's history
+# is a history, not a state (claude-plugins/fabrika/skills/heal-ci/contract.md, section
+# `heal-ci note`) — so on a 6-hourly cron an unattended strand would collect a note per cycle. The
+# key is `<pr>:<stall-class>:<head-sha>`, carried in an HTML-comment marker inside each note, and
+# the window is unbounded: the whole comment history of the pull request is searched, so one key
+# earns exactly one note for as long as that pull request is open. A strand is re-noticed only when
+# its class changes or a new commit lands on its head — the two events that make the earlier note
+# stale.
+#
+# NO `lane stale` HERE, deliberately. The lane ledger lives in `.fabrika/lanes` on the machine that
+# ran the lane; CI has no copy and cannot read one. Stale-lane detection in CI is blocked on the
+# ledger-provider decision (local vs GitHub ledger adapters) and joins this schedule only after that
+# lands. Adding `lane stale` to this workflow builds against the ruling above.
+#
+# Every `run:` block follows .patterns/skill-script-shell-shape.md, including its workflow-step
+# clause: GitHub runs a block under `bash -e` whatever the block says, so a step that records a
+# status after the command whose failure it is recording writes `set +e` before `set -uo pipefail`
+# (#5560).
+on:
+  schedule:
+    # Every 6 hours at :37 — off the top of the hour (the GitHub scheduler congests there) and
+    # offset from the other sweeps (`orphan-sweep` 03:17, `glossary-drift` Mon 04:23) so they never
+    # contend for the same runner minute. Six-hourly is the cadence `orphan-heal` ran and the one
+    # the ruling names.
+    - cron: "37 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  # Two sweeps racing would each read the other's un-posted notes as absent and double-post.
+  group: heal-ci-sweep
+  cancel-in-progress: false
+
+permissions:
+  contents: read # checkout, and the commit reads behind each strand age
+  pull-requests: write # classify every open PR, and post the durable note on a stranded one
+  issues: read # each PR's linked issue, read as a fact by the classifier
+  checks: read # the check runs at each head
+  actions: read # the workflow runs those checks belong to
+
+jobs:
+  sweep:
+    name: classify every open pull request and note the stranded ones
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # A 60-minute grace on top of the 6-hourly cadence: a pull request stranded for less than an
+      # hour is still inside the ordinary lane rhythm, and the strands this exists to catch ran 9 to
+      # 10.5 hours (#5272, #5307, #5333).
+      - name: Sweep every open pull request
+        id: sweep
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          set -uo pipefail
+          node packages/fabrika-cli/src/bin.ts heal-ci sweep --min-age-minutes 60 --json \
+            > sweep.json 2> sweep-diagnostics.txt
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+          cat sweep-diagnostics.txt
+
+      # Written on both paths: a zero-stall run reports the scope it rests on, and an unread sweep
+      # says so here rather than leaving a blank summary that reads like a clean board.
+      - name: Publish the classification as the job summary
+        env:
+          CODE: ${{ steps.sweep.outputs.code }}
+        run: |
+          set +e
+          set -uo pipefail
+          {
+            echo "## heal-ci sweep"
+            echo
+            if [ "${CODE-}" != "0" ]; then
+              echo "**UNREAD** — \`fabrika heal-ci sweep\` exited \`${CODE:-<none recorded>}\`. The board was not"
+              echo "classified, so nothing here is a claim about it. No notes were posted."
+            else
+              SCANNED="$(jq -r '.scanned' sweep.json)"
+              STALLED="$(jq -r '.stalled' sweep.json)"
+              echo "\`scanned\`: **${SCANNED}** open pull request(s) · \`stalled\`: **${STALLED}**"
+              echo
+              if [ "$STALLED" = "0" ]; then
+                echo "No open pull request is stranded past the 60-minute grace window."
+              else
+                echo "| PR | class | strand age (min) | head |"
+                echo "| --- | --- | --- | --- |"
+                jq -r '.prs[] | select(.token != "attended") | "| #\(.number) | `\(.token)` | \(.ageMinutes) | `\(.head[0:12])` |"' sweep.json
+              fi
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Placed BEFORE the note step on purpose: an 11 or a 13 means the board is UNKNOWN, never
+      # "none stranded", so the job reds here and the note step never runs at all. Decided in bash
+      # against the recorded code, so an empty code — the sweep step never having written one — is
+      # red like any other unreadable answer (ADR 0092).
+      - name: Fail the job on an unread sweep
+        env:
+          CODE: ${{ steps.sweep.outputs.code }}
+        run: |
+          set +e
+          set -uo pipefail
+          if [ "${CODE-}" = "0" ]; then
+            echo "heal-ci-sweep: the sweep classified the whole board."
+            exit 0
+          fi
+          echo "heal-ci-sweep: exit '${CODE-}' — 11 is an UNKNOWN sweep (a list or per-PR read failed, or the rate limit was exhausted mid-scan), 13 a non-terminal enumeration or an open-PR count over --limit, and an empty code means the sweep step never recorded one. No notes were posted. See the sweep step output above." >&2
+          exit 1
+
+      # The only write this workflow makes. One note per stranded row whose suppression key is not
+      # already on the pull request; a run with zero stalled rows posts nothing anywhere.
+      - name: Post the durable note on each stranded pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set +e
+          set -uo pipefail
+
+          ROWS="$(jq -r '.prs[] | select(.token != "attended") | [.number, .token, .ageMinutes, .head] | @tsv' sweep.json)"
+          if [ -z "$ROWS" ]; then
+            echo "heal-ci-sweep: no stranded rows — posting nothing."
+            exit 0
+          fi
+
+          failed=0
+          while IFS=$'\t' read -r PR TOKEN AGE HEAD; do
+            if [ -z "${PR-}" ]; then
+              continue
+            fi
+            KEY="${PR}:${TOKEN}:${HEAD}"
+
+            # An unreadable comment list is UNKNOWN suppression state, not an absent note: posting
+            # anyway is how one strand collects a note per cycle. Skip the write and red the job.
+            if ! BODIES="$(gh api --paginate "repos/${REPO}/issues/${PR}/comments?per_page=100" --jq '.[].body' </dev/null)"; then
+              echo "::error::heal-ci-sweep: cannot read #${PR}'s comments — suppression state is UNKNOWN, so nothing was posted for it."
+              failed=1
+              continue
+            fi
+            case "$BODIES" in
+              *"heal-ci-sweep key=${KEY} "*)
+                echo "heal-ci-sweep: #${PR} already carries a note at key ${KEY} — suppressed."
+                continue
+                ;;
+            esac
+
+            # The backticks in the printf formats below are markdown code spans, not command
+            # substitution.
+            # shellcheck disable=SC2016
+            {
+              printf '<!-- heal-ci-sweep key=%s -->\n' "$KEY"
+              printf 'Scheduled stall sweep: this pull request classifies as `%s`, stranded %s minute(s) at head `%s`.\n\n' "$TOKEN" "$AGE" "$HEAD"
+              printf 'Detection only — this run merged nothing, re-ran nothing and spawned nothing. What to do about the flag is a driver decision; `/fabrika:heal-ci %s` reads the full diagnosis.\n\n' "$PR"
+              printf 'Posted by the `heal-ci-sweep` workflow (#6146). Suppression key `<pr>:<class>:<head>` over the whole comment history: no further note lands here until this pull request changes class or gains a new head commit.\n'
+            } > note.md
+
+            if ! node packages/fabrika-cli/src/bin.ts heal-ci note "$PR" < note.md; then
+              echo "::error::heal-ci-sweep: the note on #${PR} did not land — see the verb's output above."
+              failed=1
+            fi
+          done <<< "$ROWS"
+
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+          exit 0
