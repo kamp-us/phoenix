@@ -8,8 +8,7 @@ import {
 	marker,
 	NONCE,
 } from "../build/fixtures.test-support.ts";
-import {fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {
 	BAD_SECTIONS,
@@ -29,15 +28,18 @@ const HARNESS = `${ROOT}/design-harness.json`;
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
 const SET_DIR = `/tmp/fabrika-build/s-9f2e/4312-${NONCE}/after`;
 
-const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const LANE_OK: ReadonlyArray<Scripted> = [
 	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	[/^git rev-parse --abbrev-ref HEAD$/, okOut(`${LANE}\n`)],
-	[/^gh api repos\/o\/r\/issues\/4312$/, issue()],
+	[/GET .*\/repos\/o\/r\/issues\/4312$/, issue()],
 	[
-		/^gh api --paginate repos\/o\/r\/issues\/4312\/comments/,
+		/GET .*\/repos\/o\/r\/issues\/4312\/comments/,
 		comments({id: 1, body: marker("s-9f2e", LANE_UUID)}),
 	],
-	[/^gh api repos\/o\/r\/collaborators\/agent\/permission/, okOut("write\n")],
+	[
+		/GET .*\/repos\/o\/r\/collaborators\/agent\/permission/,
+		{status: 200, body: '{"permission":"write"}'},
+	],
 ];
 
 const PNG = encodePng(4, 4, solid(4, 4, [0, 0, 0, 255]));
@@ -64,7 +66,7 @@ const browsing =
 		Effect.succeed(outcome(request.url));
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	fs: FakeBytesFsOptions,
 	overrides: Partial<typeof options> & {browse?: BrowseLeg} = {},
 ) =>
@@ -75,7 +77,7 @@ const run = (
 				browse: browsing(() => ({_tag: "Captured"})),
 				...overrides,
 			}),
-			Layer.merge(fakeShell(script).layer, fakeBytesFs(fs).layer),
+			Layer.merge(fakeSeams(script).layer, fakeBytesFs(fs).layer),
 		),
 	);
 
@@ -109,7 +111,7 @@ describe("runRender", () => {
 		const outcome = await Effect.runPromise(
 			Effect.provide(
 				runRender({...options, browse: browsing(() => ({_tag: "Captured"}))}),
-				Layer.merge(fakeShell(LANE_OK).layer, fs.layer),
+				Layer.merge(fakeSeams(LANE_OK).layer, fs.layer),
 			),
 		);
 		expect(outcome.code).toBe(0);
@@ -202,9 +204,9 @@ describe("runRender", () => {
 	});
 
 	it("refuses a foreign lane on 18", async () => {
-		const foreign = LANE_OK.map((row) =>
+		const foreign: ReadonlyArray<Scripted> = LANE_OK.map((row) =>
 			row[0].source.includes("comments")
-				? ([row[0], comments({id: 1, body: marker("other-session", LANE_UUID)})] as const)
+				? [row[0], comments({id: 1, body: marker("other-session", LANE_UUID)})]
 				: row,
 		);
 		const outcome = await run(foreign, captured);
@@ -213,10 +215,8 @@ describe("runRender", () => {
 	});
 
 	it("refuses on 11 when the claim state cannot be read", async () => {
-		const unreadable = LANE_OK.map((row) =>
-			row[0].source.includes("comments")
-				? ([row[0], {ok: false, stdout: "", reason: "HTTP 502"}] as const)
-				: row,
+		const unreadable: ReadonlyArray<Scripted> = LANE_OK.map((row) =>
+			row[0].source.includes("comments") ? [row[0], {status: 502, body: "{}"}] : row,
 		);
 		const outcome = await run(unreadable, captured);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);

@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, once, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
 	ALREADY_DESCOPED,
@@ -21,15 +20,25 @@ import {runOpen} from "./open-verb.ts";
 const LABELS = /repos\/o\/r\/labels/;
 const OPEN_MAPS = /issues\?state=open&labels=/;
 const SEARCH = /search\/issues/;
-const CREATE = /--method POST repos\/o\/r\/issues -f/;
-const ADD_LABEL = /--method POST repos\/o\/r\/issues\/9140\/labels/;
+const CREATE = /POST .*\/repos\/o\/r\/issues$/;
+const ADD_LABEL = /POST .*\/issues\/9140\/labels/;
 const NEW_MAP = /issues\/9140$/;
 const EXISTING_MAP = /issues\/9200$/;
+
+const served = (body: string) => ({status: 200, body}) as const;
+
+/** The label list as `repos/<repo>/labels` really answers it: one object per label. */
+const labelList = (...names: ReadonlyArray<string>) =>
+	JSON.stringify(names.map((name) => ({name})));
+
+/** An `is:issue` search envelope — `search/issues` declares its count beside its items. */
+const searchHits = (...rows: ReadonlyArray<{readonly number: number; readonly title: string}>) =>
+	JSON.stringify({total_count: rows.length, items: rows});
 
 const QUESTIONS = "does a suspended account keep its weight?\nwhat clock does weight decay on?\n";
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	stdin: StdinRead = {_tag: "Text", text: QUESTIONS},
 	destination = "how moderation weight is earned",
 ) =>
@@ -41,13 +50,13 @@ const run = (
 				env: {CLAUDE_PIPELINE_REPO: REPO},
 				stdin: Effect.succeed(stdin),
 			}),
-			fakeShell(script).layer,
+			fakeSeams(script).layer,
 		),
 	);
 
-const labelsOk = [LABELS, okOut("wayfinding:map\nstatus:needs-triage")] as const;
-const noMaps = [OPEN_MAPS, okOut("")] as const;
-const noHits = [SEARCH, okOut("")] as const;
+const labelsOk: Scripted = [LABELS, served(labelList("wayfinding:map", "status:needs-triage"))];
+const noMaps: Scripted = [OPEN_MAPS, served("[]")];
+const noHits: Scripted = [SEARCH, served(searchHits())];
 const minted = issueJson({number: 9140, body: "", labels: ["wayfinding:map"]});
 
 describe("runOpen — the checks before it mints", () => {
@@ -78,13 +87,13 @@ describe("runOpen — the checks before it mints", () => {
 	});
 
 	it("exits 7 when the wayfinding:map label does not exist", async () => {
-		const out = await run([[LABELS, okOut("status:needs-triage")]]);
+		const out = await run([[LABELS, served(labelList("status:needs-triage"))]]);
 		expect(out.code).toBe(NO_TARGET);
 		expect(out.stderr.join("\n")).toContain("no later run could find");
 	});
 
 	it("exits 11 when the map search fails — nothing was written and charting is UNKNOWN", async () => {
-		const out = await run([labelsOk, [OPEN_MAPS, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const out = await run([labelsOk, [OPEN_MAPS, {status: 502, body: "{}"}]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 	});
@@ -93,10 +102,10 @@ describe("runOpen — the checks before it mints", () => {
 		const out = await run(
 			[
 				labelsOk,
-				[OPEN_MAPS, okOut("9200\twayfinding: something else")],
+				[OPEN_MAPS, served(JSON.stringify([{number: 9200, title: "wayfinding: something else"}]))],
 				[
 					EXISTING_MAP,
-					okOut(
+					served(
 						issueJson({number: 9200, body: MAP_BODY_WITH_REJECTION, labels: ["wayfinding:map"]}),
 					),
 				],
@@ -109,14 +118,22 @@ describe("runOpen — the checks before it mints", () => {
 	});
 
 	it("exits 16 when two open maps match, refusing to guess which", async () => {
-		const body = okOut(issueJson({number: 9200, body: MAP_BODY, labels: ["wayfinding:map"]}));
+		const body = served(issueJson({number: 9200, body: MAP_BODY, labels: ["wayfinding:map"]}));
 		const out = await run([
 			labelsOk,
-			[OPEN_MAPS, okOut("9200\twayfinding: a\n9201\twayfinding: b")],
+			[
+				OPEN_MAPS,
+				served(
+					JSON.stringify([
+						{number: 9200, title: "wayfinding: a"},
+						{number: 9201, title: "wayfinding: b"},
+					]),
+				),
+			],
 			[/issues\/9200$/, body],
 			[
 				/issues\/9201$/,
-				okOut(issueJson({number: 9201, body: MAP_BODY, labels: ["wayfinding:map"]})),
+				served(issueJson({number: 9201, body: MAP_BODY, labels: ["wayfinding:map"]})),
 			],
 		]);
 		expect(out.code).toBe(MAP_AMBIGUOUS);
@@ -130,9 +147,12 @@ describe("runOpen — minting and resuming", () => {
 			labelsOk,
 			noMaps,
 			noHits,
-			[CREATE, okOut('{"number":9140,"html_url":"https://github.com/o/r/issues/9140"}')],
-			[ADD_LABEL, okOut("{}")],
-			[NEW_MAP, okOut(minted)],
+			[
+				CREATE,
+				{status: 201, body: '{"number":9140,"html_url":"https://github.com/o/r/issues/9140"}'},
+			],
+			[ADD_LABEL, served("{}")],
+			[NEW_MAP, served(minted)],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 		expect(out.stdout).toBe("");
@@ -158,9 +178,12 @@ describe("runOpen — minting and resuming", () => {
 			labelsOk,
 			noMaps,
 			noHits,
-			[CREATE, okOut('{"number":9140,"html_url":"https://github.com/o/r/issues/9140"}')],
-			[ADD_LABEL, okOut("{}")],
-			[NEW_MAP, okOut(issueJson({number: 9140, body: composed, labels: ["wayfinding:map"]}))],
+			[
+				CREATE,
+				{status: 201, body: '{"number":9140,"html_url":"https://github.com/o/r/issues/9140"}'},
+			],
+			[ADD_LABEL, served("{}")],
+			[NEW_MAP, served(issueJson({number: 9140, body: composed, labels: ["wayfinding:map"]}))],
 		]);
 		expect(out.code).toBe(0);
 		const answer = JSON.parse(out.stdout);
@@ -174,8 +197,11 @@ describe("runOpen — minting and resuming", () => {
 			labelsOk,
 			noMaps,
 			noHits,
-			[CREATE, okOut('{"number":9140,"html_url":"https://github.com/o/r/issues/9140"}')],
-			[ADD_LABEL, errOut("gh: Bad gateway (HTTP 502)")],
+			[
+				CREATE,
+				{status: 201, body: '{"number":9140,"html_url":"https://github.com/o/r/issues/9140"}'},
+			],
+			[ADD_LABEL, {status: 502, body: "{}"}],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -183,10 +209,15 @@ describe("runOpen — minting and resuming", () => {
 	});
 
 	it("resumes an already-charted destination without touching its body", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			labelsOk,
-			[OPEN_MAPS, okOut("9200\twayfinding: how moderation weight is earned")],
-			[EXISTING_MAP, okOut(issueJson({number: 9200, body: MAP_BODY, labels: ["wayfinding:map"]}))],
+			[
+				OPEN_MAPS,
+				served(
+					JSON.stringify([{number: 9200, title: "wayfinding: how moderation weight is earned"}]),
+				),
+			],
+			[EXISTING_MAP, served(issueJson({number: 9200, body: MAP_BODY, labels: ["wayfinding:map"]}))],
 			noHits,
 		]);
 		const out = await Effect.runPromise(
@@ -197,12 +228,12 @@ describe("runOpen — minting and resuming", () => {
 					env: {CLAUDE_PIPELINE_REPO: REPO},
 					stdin: Effect.succeed({_tag: "Text", text: QUESTIONS} as StdinRead),
 				}),
-				shell.layer,
+				seams.layer,
 			),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({map: 9200, created: false, questions: 2});
-		expect(shell.calls.some((line) => line.includes("--method PATCH"))).toBe(false);
+		expect(seams.requests.some((line) => line.startsWith("PATCH"))).toBe(false);
 	});
 
 	it("reports ranked candidates as evidence and charts every question anyway", async () => {
@@ -224,11 +255,22 @@ describe("runOpen — minting and resuming", () => {
 		const out = await run([
 			labelsOk,
 			noMaps,
-			[once(SEARCH), okOut("9098\tA suspended account keeps its moderation weight")],
-			[SEARCH, okOut("")],
-			[CREATE, okOut('{"number":9140,"html_url":"https://github.com/o/r/issues/9140"}')],
-			[ADD_LABEL, okOut("{}")],
-			[NEW_MAP, okOut(issueJson({number: 9140, body: composed, labels: ["wayfinding:map"]}))],
+			[
+				once(SEARCH),
+				served(
+					searchHits({
+						number: 9098,
+						title: "A suspended account keeps its moderation weight",
+					}),
+				),
+			],
+			[SEARCH, served(searchHits())],
+			[
+				CREATE,
+				{status: 201, body: '{"number":9140,"html_url":"https://github.com/o/r/issues/9140"}'},
+			],
+			[ADD_LABEL, served("{}")],
+			[NEW_MAP, served(issueJson({number: 9140, body: composed, labels: ["wayfinding:map"]}))],
 		]);
 		expect(out.code).toBe(0);
 		const answer = JSON.parse(out.stdout);

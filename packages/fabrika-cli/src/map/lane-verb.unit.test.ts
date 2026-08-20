@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import {
 	KIND_MISMATCH,
 	LANE_NOT_MINE,
@@ -23,7 +22,7 @@ import {
 import {runLane} from "./lane-verb.ts";
 import {composeLaneMarker, composeRetiredMarker, composeTicketMarker} from "./markers.ts";
 
-const POST = /--method POST repos\/o\/r\/issues\/9142\/comments/;
+const POST = /POST .*\/issues\/9142\/comments/;
 const GET_COMMENT = /issues\/comments\/\d+/;
 const PERMISSION = /collaborators\/.*\/permission/;
 const CHILDREN = /issues\/9140\/sub_issues/;
@@ -31,6 +30,8 @@ const TICKET_COMMENTS = /issues\/9142\/comments/;
 const EDGES = /issues\/9142\/dependencies\//;
 const TICKET_ISSUE = /issues\/9142$/;
 const MAP_ISSUE = /issues\/9140$/;
+
+const served = (body: string) => ({status: 200, body}) as const;
 
 const ticketMarker = (kind: "research" | "decision" | "prototype" = "research") =>
 	composeTicketMarker({map: MAP, kind, nonce: NONCE});
@@ -43,23 +44,20 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: REPO},
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	over: Partial<typeof options> = {},
-) => Effect.runPromise(Effect.provide(runLane({...options, ...over}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, over: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runLane({...options, ...over}), fakeSeams(script).layer));
 
 const frontier = (
 	comments: ReadonlyArray<{readonly id: number; readonly body: string}>,
 	ticketState = "open",
-) =>
-	[
-		[PERMISSION, okOut("write")],
-		[CHILDREN, okOut(`[{"number":${TICKET}}]`)],
-		[TICKET_COMMENTS, okOut(commentsJson(comments))],
-		[EDGES, okOut("[]")],
-		[TICKET_ISSUE, okOut(issueJson({number: TICKET, body: "which table?", state: ticketState}))],
-		[MAP_ISSUE, okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]}))],
-	] as const;
+): ReadonlyArray<Scripted> => [
+	[PERMISSION, served('{"permission":"write"}')],
+	[CHILDREN, served(`[{"number":${TICKET}}]`)],
+	[TICKET_COMMENTS, served(commentsJson(comments))],
+	[EDGES, served("[]")],
+	[TICKET_ISSUE, served(issueJson({number: TICKET, body: "which table?", state: ticketState}))],
+	[MAP_ISSUE, served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]}))],
+];
 
 describe("runLane", () => {
 	it("exits 1 on a lane key two runs would collide on, before any read", async () => {
@@ -72,8 +70,8 @@ describe("runLane", () => {
 	it("exits 0 and holds the lane when it is free", async () => {
 		const body = composeLaneMarker({map: MAP, ticket: TICKET, nonce: NONCE});
 		const out = await run([
-			[POST, okOut('{"id":7,"html_url":"u"}')],
-			[GET_COMMENT, okOut(JSON.stringify({body}))],
+			[POST, {status: 201, body: '{"id":7,"html_url":"u"}'}],
+			[GET_COMMENT, served(JSON.stringify({body}))],
 			...frontier([{id: 1, body: ticketMarker()}]),
 		]);
 		expect(out.code).toBe(0);
@@ -139,10 +137,10 @@ describe("runLane", () => {
 
 	it("exits 11 when the comment read fails — whether a lane is held is UNKNOWN, never free", async () => {
 		const out = await run([
-			[TICKET_COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
+			[TICKET_COMMENTS, {status: 502, body: "{}"}],
 			...frontier([{id: 1, body: ticketMarker()}]).slice(3),
-			[PERMISSION, okOut("write")],
-			[CHILDREN, okOut(`[{"number":${TICKET}}]`)],
+			[PERMISSION, served('{"permission":"write"}')],
+			[CHILDREN, served(`[{"number":${TICKET}}]`)],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -150,7 +148,7 @@ describe("runLane", () => {
 
 	it("exits 8 when the claim write fails — whether the lane is held is UNKNOWN", async () => {
 		const out = await run([
-			[POST, errOut("gh: Bad gateway (HTTP 502)")],
+			[POST, {status: 502, body: "{}"}],
 			...frontier([{id: 1, body: ticketMarker()}]),
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
@@ -159,8 +157,8 @@ describe("runLane", () => {
 
 	it("exits 9 when the posted marker does not read back — the stamp is verified, never assumed", async () => {
 		const out = await run([
-			[POST, okOut('{"id":7,"html_url":"u"}')],
-			[GET_COMMENT, okOut(JSON.stringify({body: "something else entirely"}))],
+			[POST, {status: 201, body: '{"id":7,"html_url":"u"}'}],
+			[GET_COMMENT, served(JSON.stringify({body: "something else entirely"}))],
 			...frontier([{id: 1, body: ticketMarker()}]),
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
