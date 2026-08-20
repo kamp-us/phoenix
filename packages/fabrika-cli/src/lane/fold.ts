@@ -25,11 +25,11 @@ import {
  * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
  * event a shell reported through `lane report`, the artifact refs its terminal named (#5712), on a
  * `BLOCKED`, the closed-set cause of the park (#6480), and the lane classes the recorder observed
- * at that moment (ADR 0316). Those three refs are evidence carried verbatim.
+ * at that moment (ADR 0317). Those three refs are evidence carried verbatim.
  *
  * `round` and `classes` are not evidence — they are the two payloads the fold reads. A `CLEARED`
  * line without a `round` names no round to clear (ADR 0312), and `classes` is what a `class:<name>`
- * guard routes on (ADR 0316).
+ * guard routes on (ADR 0317).
  */
 export interface LogEntry {
 	readonly task: string;

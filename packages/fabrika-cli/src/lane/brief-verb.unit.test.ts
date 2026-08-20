@@ -212,7 +212,7 @@ describe("lane brief", () => {
 		});
 	});
 
-	it("briefs the build-ui shell on a `build:ui` state, still with no PR", async () => {
+	it("briefs the ui-builder shell on a `build:ui` state, still with no PR", async () => {
 		const out = await run(lane("5751", ["WIP"], ["ui"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
 			[PR_CLOSERS, closingPulls()],
@@ -221,11 +221,11 @@ describe("lane brief", () => {
 		expect(out.code).toBe(0);
 		expect(readBrief(out.stdout)).toMatchObject({
 			_tag: "Found",
-			value: {state: "build:ui", shell: "build-ui", ground: {_tag: "Pull", pr: null}},
+			value: {state: "build:ui", shell: "ui-builder", ground: {_tag: "Pull", pr: null}},
 		});
 	});
 
-	it("briefs the review-ui shell on a `review:ui` state, over the same one PR", async () => {
+	it("briefs the ui-reviewer shell on a `review:ui` state, over the same one PR", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE", "PASS"], ["ui"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
 			[PR_CLOSERS, closingPulls([5790, PR_URL])],
@@ -234,7 +234,7 @@ describe("lane brief", () => {
 		expect(out.code).toBe(0);
 		expect(readBrief(out.stdout)).toMatchObject({
 			_tag: "Found",
-			value: {state: "review:ui", shell: "review-ui", ground: {_tag: "Pull", pr: PR_URL}},
+			value: {state: "review:ui", shell: "ui-reviewer", ground: {_tag: "Pull", pr: PR_URL}},
 		});
 	});
 

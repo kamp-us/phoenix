@@ -364,21 +364,21 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			found: [
 				{
 					shape: "a UI-class construction brief, routed to the shell that owns rendered work",
-					artifact: `## Task\nlane: 5751\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: build:ui\nshell: build-ui\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5751\n## Rules\n${laneBrief.RULES}\n`,
+					artifact: `## Task\nlane: 5751\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: build:ui\nshell: ui-builder\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5751\n## Rules\n${laneBrief.RULES}\n`,
 					values: [
 						"5751",
 						"build:ui",
-						"build-ui",
+						"ui-builder",
 						"https://github.com/kamp-us/phoenix/issues/5751",
 					],
 				},
 				{
 					shape: "a UI-class review brief — the rendered round, over the same one PR",
-					artifact: `## Task\nlane: 5751\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: review:ui\nshell: review-ui\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5751\npr: https://github.com/kamp-us/phoenix/pull/5788\n## Rules\n${laneBrief.RULES}\n`,
+					artifact: `## Task\nlane: 5751\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: review:ui\nshell: ui-reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5751\npr: https://github.com/kamp-us/phoenix/pull/5788\n## Rules\n${laneBrief.RULES}\n`,
 					values: [
 						"5751",
 						"review:ui",
-						"review-ui",
+						"ui-reviewer",
 						"https://github.com/kamp-us/phoenix/issues/5751",
 						"https://github.com/kamp-us/phoenix/pull/5788",
 					],
@@ -443,7 +443,7 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				},
 				{
 					drift: "a UI review brief names no PR — the rendered round has nothing to render",
-					artifact: `## Task\nlane: 5751\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: review:ui\nshell: review-ui\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5751\n## Rules\n${laneBrief.RULES}\n`,
+					artifact: `## Task\nlane: 5751\nroot: /checkout/.fabrika/lanes\nfabrika: /checkout/node_modules/@kampus/fabrika-cli/dist/bin.js\ntask: issue\nstate: review:ui\nshell: ui-reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5751\n## Rules\n${laneBrief.RULES}\n`,
 				},
 				{
 					drift: "the shell disagrees with the state it was routed from",

@@ -46,7 +46,7 @@ export interface ReportOptions extends LaneRef {
 	readonly comment: string | null;
 	/** Why the lane parked, from the closed set in [`report.ts`](report.ts); `BLOCKED` only. */
 	readonly cause: string | null;
-	/** The lane classes standing at this event, relayed onto the event line (ADR 0316). */
+	/** The lane classes standing at this event, relayed onto the event line (ADR 0317). */
 	readonly classes: ReadonlyArray<string>;
 	/** The target repo the proof reads against, resolved exactly as `lane prove` resolves it. */
 	readonly repo: string | null;

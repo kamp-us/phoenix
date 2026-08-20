@@ -80,9 +80,9 @@ describe("the five shell states route through one table", () => {
 	it("routes every state the format admits, and nothing else", () => {
 		expect(SHELL_STATES.map((state) => [state, shellOf(state)])).toEqual([
 			["build", "builder"],
-			["build:ui", "build-ui"],
+			["build:ui", "ui-builder"],
 			["review", "reviewer"],
-			["review:ui", "review-ui"],
+			["review:ui", "ui-reviewer"],
 			["ship", "shipper"],
 		]);
 	});

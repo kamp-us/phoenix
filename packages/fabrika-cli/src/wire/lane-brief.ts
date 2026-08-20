@@ -115,7 +115,7 @@ export type ReviewRange = CommitRange<HeadSha>;
 /**
  * The five leaf states that route to a shell. Every other state is a refusal, never a guess.
  *
- * A UI-class lane runs its construction and its rendered review in shells of their own (ADR 0316),
+ * A UI-class lane runs its construction and its rendered review in shells of their own (ADR 0317),
  * and the state name is what carries the class — the routing stays a 1:1 state → shell map rather
  * than a diff a brief would have to read, which a `build` state has no PR to read anyway.
  */
@@ -123,13 +123,16 @@ export const SHELL_STATES = ["build", "build:ui", "review", "review:ui", "ship"]
 
 export type ShellState = (typeof SHELL_STATES)[number];
 
-export type LaneShell = "builder" | "build-ui" | "reviewer" | "review-ui" | "shipper";
+export type LaneShell = "builder" | "ui-builder" | "reviewer" | "ui-reviewer" | "shipper";
 
+// The two UI shells are named for the actor, not the skill they preload: `build-ui` / `review-ui`
+// are the SKILL names, and an agent whose `name:` is the bare spelling of its skill is the ADR 0281
+// violation #6684's repair removed. `claude-plugins/fabrika/agents/` is authoritative here.
 const SHELLS: Readonly<Record<ShellState, LaneShell>> = {
 	build: "builder",
-	"build:ui": "build-ui",
+	"build:ui": "ui-builder",
 	review: "reviewer",
-	"review:ui": "review-ui",
+	"review:ui": "ui-reviewer",
 	ship: "shipper",
 };
 

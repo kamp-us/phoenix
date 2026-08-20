@@ -167,7 +167,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | Leaf state | Action |
 | --- | --- |
 | `queued` | record `WIP` — the task enters build |
-| `build` / `review` / `ship` | dispatch through `lane brief` — below |
+| `build` / `build:ui` / `review` / `review:ui` / `ship` | dispatch through `lane brief` — below |
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
 | a task's own final — `landed`, `shipped` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final |
@@ -184,7 +184,7 @@ node <fabrika> lane brief $lane_key --task <name>
 
 Its stdout is the whole prompt — send those bytes to the spawn verbatim and add nothing to them. It
 derives every value: the state from the same fold you just read, the shell from its own routing
-table (`build` → builder, `build:ui` → build-ui, `review` → reviewer, `review:ui` → review-ui,
+table (`build` → builder, `build:ui` → ui-builder, `review` → reviewer, `review:ui` → ui-reviewer,
 `ship` → shipper), the issue and PR URLs off the
 board, your lanes root resolved absolute so the shell's `lane report` addresses this ledger rather
 than its own worktree's (#5736), the fabrika entrypoint resolved for this repo so the shell runs a

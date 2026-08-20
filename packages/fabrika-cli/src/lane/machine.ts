@@ -11,7 +11,7 @@
  *     class the event carried (see {@link TaskState}); every other spelling is the retry guard, the
  *     one inline `retries < maxRetries` in the compiled cell, whose fallthrough target, when final,
  *     is the task's error final (`frozen`, `tripped`). A class arm spends no retry: it picks which
- *     shell serves the round, and picking is not repairing (ADR 0316).
+ *     shell serves the round, and picking is not repairing (ADR 0317).
  *   - A transition **targeting a `history` node** resumes the state the task left, carried as the
  *     `was` field in {@link TaskState} — history-state semantics as data, no pseudo-state.
  *   - A phase's **`onDone` pair** `[{target, guard}, {target}]` names the two workflow terminals

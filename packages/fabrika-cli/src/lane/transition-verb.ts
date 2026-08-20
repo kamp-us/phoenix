@@ -38,7 +38,7 @@ export interface TransitionOptions extends LaneRef {
 	 */
 	readonly cause: string | null;
 	/**
-	 * The lane classes standing at this event, which the `class:<name>` arms route on (ADR 0316).
+	 * The lane classes standing at this event, which the `class:<name>` arms route on (ADR 0317).
 	 *
 	 * The driver relays a shipped verb's answer here and never derives one (ADR 0228): `lane prove`
 	 * writes nothing by design and the append path stays offline, so the class rides the event line
