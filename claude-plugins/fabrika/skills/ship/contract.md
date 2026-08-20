@@ -395,7 +395,7 @@ downstream verb consumes, and that verb guards itself.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404); or it has zero changed files; or its non-empty diff derives zero required namespaces — a vacuous conjunction (#2765, ADR 0092) |
-| `11` | the PR, its file list, or the §CP boundary could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
+| `11` | the PR, its file list, its diff (read only when a UI path is present), or the §CP boundary could not be read — the scope is UNKNOWN. **Not** the landing read, which degrades to `unknown` |
 | `13` | the changed-file enumeration is provably short (received < declared count) |
 
 **Errors**
@@ -406,12 +406,13 @@ downstream verb consumes, and that verb guards itself.
 | `ship scope: PR #<n> has zero changed files — nothing to ship (ADR 0092).` | 7 | refusal |
 | `ship scope: #<n>'s diff derives zero review namespaces — a merge gated on nothing is vacuously green (#2765); the class map has a hole, file it.` | 7 | refusal |
 | `ship scope: cannot read <what> for #<n>: <reason> — the scope is UNKNOWN.` | 11 | refusal |
+| ``ship scope: cannot read the diff for #<n>: <reason> — whether its `apps/web/src/**` changes render is UNKNOWN, and the scope with it.`` | 11 | refusal |
 | `ship scope: cannot read <base>'s landing path: <reason> — reporting it unknown; `ship merge` refuses on the same read rather than landing.` | 0 | notice |
 | `ship scope: file list shows <k> of <m> declared files — refusing to partition a truncated read.` | 13 | refusal |
 
-**Scope** — one PR's metadata and changed-file list, paginated and count-checked, plus one
-boundary read from the PR's base ref and one `governedRoots` read from the checkout the verb runs
-in. A boundary read that failed refuses `11` on the spot and reads no config. The partition is total
+**Scope** — one PR's metadata and changed-file list, paginated and count-checked, plus its diff when
+and only when the file list holds a UI path, plus one boundary read from the PR's base ref and one
+`governedRoots` read from the checkout the verb runs in. A boundary read that failed refuses `11` on the spot and reads no config. The partition is total
 over what was read.
 
 **Examples**
