@@ -4,7 +4,7 @@ Recover the single production D1 from a bad migration or accidental data loss: e
 known-good snapshot and restore it into a fresh stage. Grounded in phoenix's real stack — the
 alchemy-managed D1 (one per app/stage, ADR
 [0057](../.decisions/0057-multi-app-multi-worker-repo.md)), the two-layout migrations tree
-applied on deploy — 33 flat `NNNN_*.sql` frozen as applied history, new migrations written by
+applied on deploy — 34 flat `NNNN_*.sql` frozen as applied history, new migrations written by
 `drizzle-kit generate` as `<prefix>_<name>/migration.sql` (ADR
 [0309](../.decisions/0309-v7-migrations-baseline-cutover.md)), and the deploy-infra-to-cloud
 dev model (ADR [0032](../.decisions/0032-alchemy-beta45-and-dev-model.md)) — not generic

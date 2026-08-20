@@ -33,8 +33,8 @@ and the id is the path relative to `migrationsDir`:
   path.
 
 Production's `drizzle_migrations.name` holds `0000_d1_baseline.sql` …
-`0032_user_role_event.sql`. After `up`, not one of those strings matches, so the next
-deploy re-applies all 33 against prod and every stage — and `0000_d1_baseline.sql`
+`0033_caylak_visibility_preference.sql`. After `up`, not one of those strings matches, so the next
+deploy re-applies all 34 against prod and every stage — and `0000_d1_baseline.sql`
 alone carries 16 bare `CREATE TABLE` with no `IF NOT EXISTS`, with 15 later migrations
 carrying `DROP TABLE` / `DROP COLUMN`. `up` also leaves the tree in a state where a
 `generate` with `schema.ts` untouched emits a destructive `__new_*` table-swap diff,
@@ -44,13 +44,13 @@ so it does not even buy a clean floor.
 
 **Baseline instead of rename.** Three moves, landed together:
 
-1. **Delete `migrations/meta/` in full** — all 34 files including `_journal.json`.
+1. **Delete `migrations/meta/` in full** — all 35 files including `_journal.json`.
    The snapshots are advisory (ADR 0108 §1) and alchemy reads only `.sql`, so this is
    invisible at apply time; removing `_journal.json` is exactly what clears
    `assertV3OutFolder`.
-2. **Leave all 33 flat `NNNN_*.sql` byte-identical and in place.** Their apply ids are
+2. **Leave all 34 flat `NNNN_*.sql` byte-identical and in place.** Their apply ids are
    unchanged strings, so the applied record stays valid and nothing replays.
-3. **Seed one v7 baseline directory** — `20260820035306_v7_baseline/` — holding the
+3. **Seed one v7 baseline directory** — `20260820113338_v7_baseline/` — holding the
    tool-generated `snapshot.json` of the current `schema.ts`, with its `migration.sql`
    neutered to a comment-only no-op before committing. alchemy sees one new id and will
    run that file, so its generated body (a 371-line create-everything script) must never
@@ -66,7 +66,7 @@ different mechanism than the one it named.
 
 `packages/migrations-guard` is re-grounded on the new tree rather than deleted: it read
 `meta/_journal.json` directly, so it would have thrown the moment `meta/` went. It now
-loads both layouts, keys the immutability baseline on the same tags (so the 33 recorded
+loads both layouts, keys the immutability baseline on the same tags (so the 34 recorded
 hashes carry over unchanged), and reds on a new flat migration, a directory missing its
 `snapshot.json`, a duplicate apply prefix, and a directory whose prefix would sort into
 applied history. Its walk matches alchemy's reach rather than approximating it: it
@@ -78,8 +78,8 @@ covers. It still fails closed on zero scope (ADR
 
 ## Consequences
 
-- **Nothing replays.** The 33 applied ids are untouched strings; the only id alchemy has
-  not seen is `20260820035306_v7_baseline/migration.sql`, whose body is comments. The
+- **Nothing replays.** The 34 applied ids are untouched strings; the only id alchemy has
+  not seen is `20260820113338_v7_baseline/migration.sql`, whose body is comments. The
   guard's immutability check is what keeps that true on every later PR.
 - **`generate` works again**, and with it the drift check that came free with it: a
   schema change that is not migrated now shows up as a non-empty `generate`.
@@ -92,10 +92,10 @@ covers. It still fails closed on zero scope (ADR
   work.
 - **The advisory-snapshot era ends.** A hand-written snapshot no longer exists to be
   subtly wrong; the snapshot chain is tool-written from here.
-- **The baseline file grew by 11 rows.** The committed
+- **The baseline file grew by 12 rows.** The committed
   `packages/migrations-guard/migration-hashes.json` covered `0000`–`0022` only —
-  migrations `0023`–`0032` had landed unbaselined, because the old guard let any new
-  trailing migration pass. Re-baselining brings all 33 flat migrations plus the new
+  migrations `0023`–`0033` had landed unbaselined, because the old guard let any new
+  trailing migration pass. Re-baselining brings all 34 flat migrations plus the new
   directory under the immutability check.
 - `.patterns/alchemy-drizzle-d1.md` and `DEVELOPMENT.md` are updated to the `generate`
   path; ADR 0108 is marked superseded and points here.

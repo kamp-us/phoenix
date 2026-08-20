@@ -16,7 +16,7 @@ thin `effect/unstable/cli` bin — wired as a fail-closed CI job. Per ADR
 Two layouts sit side by side after the v7 cutover (ADR
 [0309](../../.decisions/0309-v7-migrations-baseline-cutover.md)):
 
-- **Frozen flat history** — 33 top-level `NNNN_name.sql` files. Production recorded each
+- **Frozen flat history** — 34 top-level `NNNN_name.sql` files. Production recorded each
   one by its path relative to `migrationsDir`, so their names are load-bearing strings.
 - **Migration directories** — `<timestamp>_<name>/migration.sql` + `snapshot.json`, what
   `drizzle-kit generate` writes from the cutover on. alchemy finds them because

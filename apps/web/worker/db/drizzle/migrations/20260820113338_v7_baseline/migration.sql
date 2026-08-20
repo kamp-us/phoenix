@@ -1,6 +1,6 @@
 -- No-op baseline for the drizzle-kit v7 cutover (issue #6438, ADR 0309).
 --
--- The 33 flat `NNNN_*.sql` migrations beside this directory already built this
+-- The 34 flat `NNNN_*.sql` migrations beside this directory already built this
 -- schema on every live D1, and their ids are unchanged, so alchemy skips them.
 -- This directory exists only so drizzle-kit has a v7 snapshot to diff future
 -- `generate` runs against. Its body is deliberately empty: alchemy sees one new

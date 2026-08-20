@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "c161ffb5-6ca9-418e-afa4-43715159f547",
+  "id": "a645b8ca-f2e9-46dd-bd23-393745326ac5",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -16,6 +16,10 @@
     },
     {
       "name": "authorship_vouch",
+      "entityType": "tables"
+    },
+    {
+      "name": "caylak_visibility_preference",
       "entityType": "tables"
     },
     {
@@ -501,6 +505,26 @@
       "name": "created_at",
       "entityType": "columns",
       "table": "authorship_vouch"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "table": "caylak_visibility_preference"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "set_at",
+      "entityType": "columns",
+      "table": "caylak_visibility_preference"
     },
     {
       "type": "text",
@@ -2647,6 +2671,15 @@
       "nameExplicit": false,
       "name": "apiKey_pk",
       "table": "apiKey",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "user_id"
+      ],
+      "nameExplicit": false,
+      "name": "caylak_visibility_preference_pk",
+      "table": "caylak_visibility_preference",
       "entityType": "pks"
     },
     {

@@ -18,7 +18,7 @@
  * unit-testable.
  */
 
-// The two layouts that coexist in the tree after the v7 cutover (ADR 0309): the 33 frozen flat
+// The two layouts that coexist in the tree after the v7 cutover (ADR 0309): the 34 frozen flat
 // `NNNN_name.sql` files whose apply ids production already recorded, and the per-migration
 // `<prefix>_<name>/migration.sql` directories drizzle-kit writes from here on.
 export type MigrationLayout = "flat" | "directory";
