@@ -1,5 +1,5 @@
 /**
- * The one exit table all six `status` verbs allocate from, so a code means one thing across this
+ * The one exit table all seven `status` verbs allocate from, so a code means one thing across this
  * group whichever verb produced it
  * (`claude-plugins/fabrika/skills/front-door/contract.md`, "The shared exit taxonomy").
  *

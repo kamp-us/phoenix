@@ -40,10 +40,12 @@ import {
 	readoutField,
 	runOpen,
 	settingsField,
+	wiringField,
 } from "./open-verb.ts";
 import {badIssueRefusal, issueNumberOf, readReadout, runReadout} from "./readout-verb.ts";
 import {type RosterSources, readRoster} from "./roster.ts";
 import {runSettings, settingRows} from "./settings-verb.ts";
+import {readWiringSource, repoWiringSource, runWiring, wiringOf} from "./wiring-verb.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
 const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
@@ -164,6 +166,32 @@ const settings = leafCommand(
 	Command.withShortDescription("The resolved config surface, every key with its provenance."),
 	Command.withDescription(
 		"Print every key on the config surface with its resolved value and where that value came from — the one place a skill asks what `.fabrika.jsonc` resolves to, so no document has to restate a value. First stdout line is `settings\\t<resolved|unknown>\\t<keys>\\t<declared>\\t<unknown>\\t<as-of>`, then one `setting\\t<key>\\t<declared|default|unknown>\\t<value-as-json>\\t<detail>\\t<as-of>` line each. A repo with no `.fabrika.jsonc` prints the full shipped-default set at exit 0; a key whose value could not be established makes the whole readout a refusal that names each UNKNOWN key on stderr, never the default it did not resolve to. Pass --surfaces to expand `surfaceDispositions` into one `surface\\t<id>\\t<fail-loud|degrade|bootstrap>\\t<what the surface is>` line per repo surface, appended to the same readout — the id-to-word value alone says nothing about what a surface is, and that half is what an operator relays. This verb writes nothing. Exits 7 (the config surface registers zero keys, or --surfaces was passed and no `surfaceDispositions` key is registered — ADR 0092), 11 (the repository root could not be resolved, or `.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green). Example: fabrika status settings",
+	),
+);
+
+const wiring = leafCommand(
+	"wiring",
+	{
+		root: Flag.string("root").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the directory holding .claude/settings.json (default: the repository root above the cwd)",
+			),
+		),
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({root, json}) {
+		const named = Option.getOrNull(root);
+		const source =
+			named === null ? yield* repoWiringSource(process.cwd()) : yield* readWiringSource(named);
+		yield* emit(
+			runWiring({source, read: wiringOf(source), asOf: readNow(instant(new Date())), json}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Whether this repo's sessions load fabrika's skills at all."),
+	Command.withDescription(
+		"Answer whether the fabrika plugin is wired into this repo — the meta-precondition no other status verb covers, because every one of them answers about something the CLI reads and the CLI answers fine in a repo where no fabrika skill can load (#6443). Reads `.claude/settings.json` at the repository root and reports the `enabledPlugins` entry naming fabrika together with the marketplace source that key's `plugin@marketplace` form carries. Stdout is the single line `wiring\t<wired|unwired>\t<entry>\t<marketplace>\t<detail>\t<as-of>`. An absent settings.json, a file declaring no enabledPlugins block, an entry switched off, and a bare `fabrika` key naming no marketplace are all the proven negative `unwired` at exit 0 — a fact the caller acts on, never a green. This verb writes nothing; creating the file is `status bootstrap`'s. Exits 11 (the repository root could not be resolved, or settings.json exists and could not be read, is not JSON, is not an object, declares a non-object enabledPlugins, or carries a fabrika entry that is neither true nor false — UNKNOWN, never unwired). Example: fabrika status wiring",
 	),
 );
 
@@ -292,6 +320,10 @@ const open = leafCommand(
 				const source = yield* configSurface(null);
 				fields.push(settingsField(settingRows(source), CONFIG_PATH, asOf));
 			}
+			if (name === "wiring") {
+				const source = yield* repoWiringSource(process.cwd());
+				fields.push(wiringField(wiringOf(source), asOf));
+			}
 			if (name === "board") {
 				fields.push(
 					boardField(
@@ -333,10 +365,10 @@ const open = leafCommand(
 	}),
 ).pipe(
 	Command.withShortDescription(
-		"The composite front-door readout: menu, settings, board, readout, lanes.",
+		"The composite readout: menu, settings, wiring, board, readout, lanes.",
 	),
 	Command.withDescription(
-		"The composite front-door readout: five fields — menu, settings, board, readout, lanes — each with its own state, source and freshness. The lanes field renders `fabrika lane stale`'s sweep over both default roots at its documented threshold: `stale` names the silent lanes, zero stale lanes is the proven negative `empty` (no lanes on disk is `empty` too), and an unreadable root or lane record is `unknown` with its reason — it reports, it never resumes. Every unreadable source becomes a field state, so this verb has no zero-scope seat and no failed-read seat: it is injected before the session reads a token and a refusal would write zero bytes. First stdout line is `open\\t<field-count>`, then one `field\\t<name>\\t<state>\\t<detail>\\t<source>\\t<as-of>` line each. Exits 10 (--field is off the closed vocabulary). Example: fabrika status open",
+		"The composite front-door readout: six fields — menu, settings, wiring, board, readout, lanes — each with its own state, source and freshness. The wiring field says whether this repo's `.claude/settings.json` enables the fabrika plugin at all, which is what makes the difference between a repo the CLI answers in and a repo whose sessions can load a skill. The lanes field renders `fabrika lane stale`'s sweep over both default roots at its documented threshold: `stale` names the silent lanes, zero stale lanes is the proven negative `empty` (no lanes on disk is `empty` too), and an unreadable root or lane record is `unknown` with its reason — it reports, it never resumes. Every unreadable source becomes a field state, so this verb has no zero-scope seat and no failed-read seat: it is injected before the session reads a token and a refusal would write zero bytes. First stdout line is `open\\t<field-count>`, then one `field\\t<name>\\t<state>\\t<detail>\\t<source>\\t<as-of>` line each. Exits 10 (--field is off the closed vocabulary). Example: fabrika status open",
 	),
 );
 
@@ -346,6 +378,7 @@ export const statusCommand = Command.make("status").pipe(
 		// one. The comment is what keeps the formatter from collapsing the list back.
 		open,
 		settings,
+		wiring,
 		menu,
 		readout,
 		board,
@@ -353,6 +386,6 @@ export const statusCommand = Command.make("status").pipe(
 	]),
 	Command.withShortDescription("Answer what state the factory is in."),
 	Command.withDescription(
-		"Answer what state the factory is in — the composite front-door readout, the resolved `.fabrika.jsonc` config surface, the derived skill roster, the landed-decision digest, the board's bucket counts, and the one primitive that creates a missing surface",
+		"Answer what state the factory is in — the composite front-door readout, the resolved `.fabrika.jsonc` config surface, whether the plugin carrying the skills is enabled here, the derived skill roster, the landed-decision digest, the board's bucket counts, and the one primitive that creates a missing surface",
 	),
 );

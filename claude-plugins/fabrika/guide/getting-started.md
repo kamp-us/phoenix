@@ -59,19 +59,25 @@ fabrika status open
 ```
 
 ```
-status open: roster claude-plugins/fabrika/skills (repo); repo kamp-us/phoenix; 5 field(s) rendered, 0 unknown.
-open	5
+status open: roster claude-plugins/fabrika/skills (repo); repo kamp-us/phoenix; 6 field(s) rendered, 0 unknown.
+open	6
 field	menu	ready	25 skills	claude-plugins/fabrika/skills	2026-08-19T03:23:01Z
-field	config	gaps	20 declared, 3 missing, 5 undeclared	claude-plugins/fabrika/skills	2026-08-19T03:23:01Z
+field	settings	resolved	15 keys, 4 declared	.fabrika.jsonc	2026-08-19T03:23:01Z
+field	wiring	wired	fabrika@kampus is enabled — sessions in this repo load fabrika's skills	.claude/settings.json	2026-08-19T03:23:01Z
 field	board	counted	3 needs-triage, 367 triaged	kamp-us/phoenix	2026-08-19T03:23:02Z
 field	readout	absent	no digest block in kamp-us/phoenix#5616	kamp-us/phoenix#5616	unknown
 field	lanes	empty	no lanes on disk	.fabrika/lanes,.fabrika/chores	2026-08-19T03:23:01Z
 ```
 
 That output is from a repo already set up, so yours will differ — the `board` row will report a
-board with no fabrika labels on it yet, and the `readout` row will say `absent`. Read the five
-fields as: which skills are installed, which repo surfaces they need, what is on the board, whether
-the decision digest exists, and which runs are in flight on this machine.
+board with no fabrika labels on it yet, and the `readout` row will say `absent`. Read the six
+fields as: which skills are installed, what this repo declares, whether the plugin carrying the
+skills is switched on here, what is on the board, whether the decision digest exists, and which runs
+are in flight on this machine.
+
+**Watch the `wiring` row first.** `unwired` means the CLI works and no fabrika skill can load in a
+session in this repo — every other row can read green while that one does, which is how a repo ran
+half-adopted for two days.
 
 ## 4. Create the labels
 

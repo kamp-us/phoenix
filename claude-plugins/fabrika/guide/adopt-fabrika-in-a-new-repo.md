@@ -271,8 +271,16 @@ reasoning for each value in comments.
 fabrika status open
 ```
 
-Five fields: the installed skill roster, the config gaps from step 2, your board's counts, the
-decision digest, and any lanes on this machine. The `readout` field reads `absent` with the detail
+Six fields: the installed skill roster, what this repo declares from step 2, whether the plugin
+carrying the skills is enabled here, your board's counts, the decision digest, and any lanes on this
+machine.
+
+**Read the `wiring` field first.** It is the only one that answers about the plugin rather than
+about something the CLI reads, so it is the only one that catches a repo where every verb answers
+and no fabrika skill can load in a session. `unwired` means `.claude/settings.json` does not enable
+`fabrika@<marketplace>`, and until it does nothing in this guide's pipeline can start.
+
+The `readout` field reads `absent` with the detail
 `no readout artifact` until you run `fabrika status bootstrap readout-artifact`, which opens the
 durable issue the digest is upserted into, and then `absent` with `no digest block` until
 `fabrika governance readout` writes one. Both are facts, not failed reads.

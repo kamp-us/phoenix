@@ -24,8 +24,9 @@ access per
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `status open` | the composite front-door readout: five fields, each with its own state, source and freshness | assembling five independent reads and rendering each one's three-state outcome is a total function; deciding what to *do* about a gap is the skill's |
+| `status open` | the composite front-door readout: six fields, each with its own state, source and freshness | assembling six independent reads and rendering each one's three-state outcome is a total function; deciding what to *do* about a gap is the skill's |
 | `status settings` | every key on the `.fabrika.jsonc` config surface, its resolved value, and where that value came from | resolving a key against a shipped default and naming its provenance is a total function; deciding what a repo *should* declare is judgment |
+| `status wiring` | whether `.claude/settings.json` enables the fabrika plugin — the precondition under every other verb | reading one `enabledPlugins` key and reporting what it says is mechanical; deciding to *wire* the repo is the operator's, and creating the file is `status bootstrap`'s |
 | `status menu` | the landed skill roster with each skill's invocation and one-line description | reading a directory and each file's frontmatter is a total function; choosing which skill fits the work at hand is judgment |
 | `status readout` | the landed-decision digest as published in the durable artifact | fetching an artifact and decoding a registered wire format is mechanical; ranking the rows is `governance`'s judgment and is not recomputed here |
 | `status board` | counts of the board's decided buckets, each with its own freshness | counting labelled issues over named REST endpoints is arithmetic; ranking or picking from them is `build pick`'s |
@@ -234,6 +235,9 @@ purpose — keeping proven-empty apart from unread — to chance.
 | `settings` | every key resolved, declared or defaulted | `resolved` | `<n> keys, <d> declared` |
 | `settings` | ≥1 key `unknown` | `unknown` | which keys are unread — a repo whose config will not parse has no known value for anything, and printing the shipped default there is the collapse the surface exists to prevent |
 | `settings` | the surface registers zero keys | `unknown` | `the config surface registers zero keys` — vacuously-resolved is not resolved (ADR 0092) |
+| `wiring` | `enabledPlugins` carries a `fabrika@<marketplace>` key set to `true` | `wired` | which key is enabled |
+| `wiring` | no settings file, no `enabledPlugins` block, no fabrika key, a key switched off, or a key naming no marketplace | `unwired` | which of those it was. **Never `unknown`**: the repo proved each of them, and folding them into `unknown` hides the one gap this field exists to name |
+| `wiring` | the settings file, or the repo root above the cwd, could not be read; the bytes are not a JSON object; `enabledPlugins` is not an object; the fabrika key is neither `true` nor `false` | `unknown` | the raw failure. **Never `unwired`**: a probe nobody could perform proves nothing about what loads |
 | `board` | every bucket counted | `counted` | the two headline counts |
 | `board` | ≥1 bucket `unknown`, or the repo unresolvable/unreadable | `unknown` | the raw failure, or the absent labels |
 | `readout` | digest block found | `found` | `<n> rows` |
@@ -254,7 +258,7 @@ that both yield `absent` are both facts about the repository, and only a failed 
 
 ### The shared exit taxonomy
 
-All six verbs allocate from one internal table (`packages/fabrika-cli/src/status/codes.ts`), so a
+All seven verbs allocate from one internal table (`packages/fabrika-cli/src/status/codes.ts`), so a
 code means one thing across *this group*. Every shared seat is **imported**, never restated as a
 numeral — a restated numeral is a second source that can drift silently, and an import cannot. The
 group registers as an aligned group claiming `SHARED_SEATS`:
@@ -371,7 +375,7 @@ fabrika status open [--field <name>] [--repo <owner/name>] [--skills-dir <path>]
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--field` | string | no | all five | render one field only — `menu`, `settings`, `board`, `readout` or `lanes`; any other value is off-vocabulary |
+| `--field` | string | no | all six | render one field only — `menu`, `settings`, `wiring`, `board`, `readout` or `lanes`; any other value is off-vocabulary |
 | `--repo` | string | no | resolved | the repository the board and digest fields read |
 | `--skills-dir` | string | no | [resolved](#roster-location) | the roster root the menu field reads |
 | `--json` | boolean | no | `false` | emit the result object |
@@ -383,28 +387,30 @@ open	<field-count>
 field	<name>	<state>	<detail>	<source>	<as-of>
 ```
 
-`<name>` ∈ `menu` · `settings` · `board` · `readout` · `lanes`. `<state>` is drawn from that field's closed set,
+`<name>` ∈ `menu` · `settings` · `wiring` · `board` · `readout` · `lanes`. `<state>` is drawn from that field's closed set,
 **every one of which includes `unknown`**, and is produced by [the mapping](#core-to-field):
 
 | Field | Closed state set |
 |---|---|
 | `menu` | `ready` · `empty` · `unknown` |
 | `settings` | `resolved` · `unknown` |
+| `wiring` | `wired` · `unwired` · `unknown` |
 | `board` | `counted` · `unknown` |
 | `readout` | `found` · `absent` · `malformed` · `unknown` |
 
 `<source>` names where the answer came from so the session can re-run one read instead of adopting
-the render: the resolved roster path for `menu`, `.fabrika.jsonc` for `settings`, `<owner>/<name>` for `board`, and
+the render: the resolved roster path for `menu`, `.fabrika.jsonc` for `settings`,
+`.claude/settings.json` for `wiring`, `<owner>/<name>` for `board`, and
 `<owner>/<name>#<issue>` for `readout` when an artifact resolved — otherwise `<owner>/<name>`.
 
-**No aggregate state, deliberately.** A roll-up over five independently-sourced fields would need a
+**No aggregate state, deliberately.** A roll-up over six independently-sourced fields would need a
 rule for "three fine, one unknown", and every such rule either hides the unknown or drowns the three.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
-| `10` | `--field` is not one of `menu`, `settings`, `board`, `readout`, `lanes` |
+| `10` | `--field` is not one of `menu`, `settings`, `wiring`, `board`, `readout`, `lanes` |
 
 **That is the whole table, and it is the point** ([why](#open-is-total)). An unresolvable repo, an
 unreachable GitHub, an unreadable roster, an absent roster and an unregistered digest format each
@@ -415,7 +421,7 @@ token; a refusal would write zero bytes on the cold start it exists for.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `status open: --field "<v>" is not one of menu, settings, board, readout, lanes.` | 10 | usage error |
+| `status open: --field "<v>" is not one of menu, settings, wiring, board, readout, lanes.` | 10 | usage error |
 | `status open: roster <path> (<tier>), <n> skills; repo <owner/name>; <k> field(s) rendered, <u> unknown.` | 0 | notice |
 
 **Scope** — the fields requested, each named on the scope line with the source it resolved and the
@@ -425,20 +431,27 @@ roster tier that served it.
 
 ```
 $ fabrika status open
-open	4
+open	6
 field	menu	ready	12 skills	claude-plugins/fabrika/skills	2026-08-09T14:22:03Z
 field	settings	resolved	15 keys, 4 declared	.fabrika.jsonc	2026-08-09T14:22:03Z
+field	wiring	wired	fabrika@kampus is enabled — sessions in this repo load fabrika's skills	.claude/settings.json	2026-08-09T14:22:03Z
 field	board	counted	7 needs-triage, 23 triaged	kamp-us/phoenix	2026-08-09T14:22:05Z
 field	readout	found	6 rows	kamp-us/phoenix#9412	2026-08-08T09:00:00Z
+field	lanes	empty	no lanes on disk	.fabrika/lanes,.fabrika/chores	2026-08-09T14:22:05Z
 ```
+
+The adopter case, where the CLI answers and no skill can load — the shape that went unseen for two
+days in kamp-us/demlik#26:
 
 ```
 $ fabrika status open
-open	4
+open	6
 field	menu	ready	12 skills	claude-plugins/fabrika/skills	2026-08-09T14:22:03Z
-field	settings	resolved	15 keys, 4 declared	.fabrika.jsonc	2026-08-09T14:22:03Z
+field	settings	resolved	15 keys, 0 declared	.fabrika.jsonc	2026-08-09T14:22:03Z
+field	wiring	unwired	no .claude/settings.json — no fabrika skill can load in a session here	.claude/settings.json	2026-08-09T14:22:03Z
 field	board	unknown	cannot reach api.github.com: EAI_AGAIN — a failed read, not zero issues	kamp-us/phoenix	unknown
 field	readout	unknown	the governance-digest format is not registered — a failed read, not an absent digest	kamp-us/phoenix	unknown
+field	lanes	empty	no lanes on disk	.fabrika/lanes,.fabrika/chores	2026-08-09T14:22:05Z
 $ echo $?
 0
 ```
@@ -628,6 +641,101 @@ $ echo $?
 - #6290 — the loader this verb reads through. The `Default` / `Unknown` split is that module's, and
   is why a readout can say which without re-deriving it.
 - ADR 0092 — zero scope reds; an unread value is UNKNOWN, never a negative answer.
+
+## `status wiring`
+
+**Invocation**
+
+```
+fabrika status wiring [--root <dir>] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--root` | string | no | the repo root above the cwd | the directory holding `.claude/settings.json` |
+| `--json` | boolean | no | `false` | emit the result object |
+
+**Output** — machine channel, [tab-separated](#separator). One line:
+
+```
+wiring	<wired|unwired>	<entry>	<marketplace>	<detail>	<as-of>
+```
+
+`<entry>` is the `enabledPlugins` key naming fabrika and `<marketplace>` is that key's source half;
+each is `-` when the file names none.
+
+<a id="wiring-is-the-other-half"></a>**Every other verb in this group answers about something the
+CLI reads. This one answers about the plugin that carries the skills.** A repo can have the CLI
+installed and answering while no fabrika skill can load in a session there, and nothing said so
+until this verb existed — kamp-us/demlik#26 ran that way for two days with every other status
+surface green ([#6443](https://github.com/kamp-us/phoenix/issues/6443)).
+
+**The gating fact is `enabledPlugins`, and the marketplace source is the key's own suffix.** A
+Claude Code `enabledPlugins` key is `plugin@marketplace`, so one entry carries both halves the
+wiring needs; a bare `fabrika` key names no source and resolves to no plugin, so it is `unwired`.
+`extraKnownMarketplaces` is **deliberately not read**: ADR
+[0273](../../../../.decisions/0273-fabrika-ships-as-an-installed-plugin.md)'s 2026-08-16 amendment
+records that Claude Code never registers a project-scope `extraKnownMarketplaces` block (verified
+live on [#5705](https://github.com/kamp-us/phoenix/issues/5705)), so a repo carrying one is no more
+wired than a repo without, and reading it as evidence would green a session that loads nothing.
+
+**`unwired` is an answer at exit `0`, and `unknown` is a refusal.** A proven-off plugin is a fact
+the caller acts on — the seat `status board`'s proven `0` and `status readout`'s `absent` take —
+while a probe that could not be performed has no answer to seat.
+
+**It detects; it never writes.** Creating `.claude/settings.json` is `status bootstrap`'s registry
+work under epic [#5979](https://github.com/kamp-us/phoenix/issues/5979). A probe that repaired what
+it measured could never report the state it found, and a repo that never ran bootstrap would still
+need this answer.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `11` | the repo root could not be resolved; `.claude/settings.json` exists and could not be read; its bytes are not JSON or not a JSON object; `enabledPlugins` is not an object; the fabrika entry is neither `true` nor `false` |
+
+**No `7` seat.** An absent settings file is a *proven* negative and a legitimate answer at exit `0`;
+there is no zero-scope refusal for a verb whose scope is "this repository's settings file".
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `status wiring: <what failed> — whether a session here loads fabrika's skills is UNKNOWN, never unwired and never green.` | 11 | refusal |
+| `status wiring: <how the file was found>; plugin fabrika is <state>.` | 0 | notice |
+
+**Scope** — one file, `.claude/settings.json`, under `--root` or the repository root above the cwd.
+
+**Examples**
+
+```
+$ fabrika status wiring
+wiring	wired	fabrika@kampus	kampus	fabrika@kampus is enabled — sessions in this repo load fabrika's skills	2026-08-20T16:41:45Z
+```
+
+```
+$ fabrika status wiring
+wiring	unwired	-	-	no .claude/settings.json — no fabrika skill can load in a session here	2026-08-20T16:41:58Z
+$ echo $?
+0
+```
+
+```
+$ fabrika status wiring --json
+{"outcome":"unwired","path":".claude/settings.json","entry":"fabrika@kampus","marketplace":"kampus","detail":"enabledPlugins carries fabrika@kampus switched off","asOf":"2026-08-20T16:42:10Z","asOfKind":"read-now"}
+```
+
+**Grounding**
+
+- #6443 / kamp-us/demlik#26 — the CLI half answered and the skill half silently did not exist; no
+  status surface said so for two days.
+- ADR 0273 (2026-08-16 amendment) / #5705 — project-scope `extraKnownMarketplaces` is inert, which
+  is why the marketplace source is read off the `enabledPlugins` key instead.
+- #5979 — the emit side. This verb is its detection companion and stays out of its registry.
+
+---
 
 ## `status menu`
 

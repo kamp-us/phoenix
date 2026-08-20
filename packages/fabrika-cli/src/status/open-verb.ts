@@ -1,5 +1,5 @@
 /**
- * `status open` — the composite front-door readout: five fields, each with its own state, source
+ * `status open` — the composite front-door readout: six fields, each with its own state, source
  * and freshness.
  *
  * **This verb has no zero-scope seat and no failed-read seat at all.** It is the command the skill
@@ -14,7 +14,7 @@
  * implementer, because that mapping *is* the group's purpose: keeping proven-empty apart from
  * unread.
  *
- * **No aggregate state, deliberately.** A roll-up over four independently-sourced fields would need
+ * **No aggregate state, deliberately.** A roll-up over independently-sourced fields would need
  * a rule for "three fine, one unknown", and every such rule either hides the unknown or drowns the
  * three.
  */
@@ -27,11 +27,12 @@ import {menuState} from "./menu-verb.ts";
 import {type ReadoutRead, readingOf} from "./readout-verb.ts";
 import type {RosterRead} from "./roster.ts";
 import {type SettingRow, settingsState} from "./settings-verb.ts";
+import {SETTINGS_PATH, type WiringRead} from "./wiring-verb.ts";
 
 const VERB = "status open";
 
 /** The closed `--field` vocabulary. Any other value is off-vocabulary. */
-export const FIELDS = ["menu", "settings", "board", "readout", "lanes"] as const;
+export const FIELDS = ["menu", "settings", "wiring", "board", "readout", "lanes"] as const;
 export type FieldName = (typeof FIELDS)[number];
 
 export interface Field {
@@ -97,6 +98,22 @@ export const settingsField = (
 		asOf: rows.length === 0 ? noAsOf : asOf,
 	};
 };
+
+/**
+ * Whether this repo's sessions load fabrika's skills at all — the field the CLI half cannot imply.
+ *
+ * Every other field answers about something the CLI reads, and all of them answered green in the
+ * repo where no skill could load (#6443). A proven-off plugin is `unwired` rather than `unknown`:
+ * the repo proved it, and collapsing it into `unknown` would hide the one gap this field exists to
+ * name.
+ */
+export const wiringField = (read: WiringRead, asOf: AsOf): Field => ({
+	name: "wiring",
+	state: read.state === "unknown" ? UNKNOWN : read.state,
+	detail: read.detail,
+	source: SETTINGS_PATH,
+	asOf: read.state === "unknown" ? noAsOf : asOf,
+});
 
 export const boardField = (read: BoardRead): Field => {
 	if (read._tag === "Failed") {
