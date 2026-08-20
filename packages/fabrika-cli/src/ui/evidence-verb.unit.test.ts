@@ -10,7 +10,7 @@ import {
 	NONCE,
 	pull,
 } from "../build/fixtures.test-support.ts";
-import {fakeShell, okOut} from "../fakes.test-support.ts";
+import {fakeHttp, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {isBareAtReference} from "../report/leaks.ts";
 import {
@@ -74,7 +74,6 @@ const script = (
 		comments({id: 1, body: marker("s-9f2e", LANE_UUID)}),
 	],
 	[/^gh api repos\/o\/r\/collaborators\/agent\/permission/, okOut("write\n")],
-	[/^gh api repos\/o\/r\/pulls\/4318 --jq \.head\.ref$/, okOut(`${LANE}\n`)],
 	[/^gh api repos\/o\/r\/pulls\/4318$/, pull({head: {sha: HEAD, ref: LANE}})],
 	[
 		/^gh api --method POST repos\/o\/r\/issues\/4318\/comments/,
@@ -94,12 +93,21 @@ const uploads: Pick<EvidenceOptions, "storeUpload" | "attachmentUpload"> = {
 		}),
 };
 
+/** The head-branch read moved onto the fetch client (ADR 0315); the rest of the verb is still `gh`. */
+const HTTP = fakeHttp([
+	[/pulls\/4318/, {status: 200, body: JSON.stringify({head: {ref: LANE}})}],
+]).layer;
+
 const options: EvidenceOptions = {
 	pr: 4318,
 	before: "before",
 	after: "after",
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"},
+	env: {
+		CLAUDE_PIPELINE_REPO: "o/r",
+		CLAUDE_CODE_SESSION_ID: "s-9f2e",
+		GITHUB_TOKEN: "ghp_scripted",
+	},
 	tmpRoot: "/tmp",
 	...uploads,
 };
@@ -128,11 +136,12 @@ const run = (
 	rows: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	fs: FakeBytesFsOptions,
 	overrides: Partial<EvidenceOptions> = {},
+	http = HTTP,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runEvidence({...options, ...overrides}),
-			Layer.merge(fakeShell(rows).layer, fakeBytesFs(fs).layer),
+			Layer.mergeAll(fakeShell(rows).layer, fakeBytesFs(fs).layer, http),
 		),
 	);
 
@@ -200,7 +209,7 @@ describe("runEvidence", () => {
 								: {_tag: "Ok", url: "https://github.com/user-attachments/assets/x"},
 						),
 				}),
-				Layer.merge(calls.layer, fakeBytesFs({files: files()}).layer),
+				Layer.mergeAll(calls.layer, fakeBytesFs({files: files()}).layer, HTTP),
 			),
 		);
 		expect(outcome.code).toBe(UPLOAD_FAILED);
@@ -244,13 +253,15 @@ describe("runEvidence", () => {
 
 	it("refuses another lane's PR on 18 — an evidence comment there is a cross-lane write", async () => {
 		const outcome = await run(
-			script([
-				[
-					/^gh api repos\/o\/r\/pulls\/4318 --jq \.head\.ref$/,
-					okOut("build/9999-other-aaaaaaaa\n"),
-				],
-			]),
+			script(),
 			{files: files()},
+			{},
+			fakeHttp([
+				[
+					/pulls\/4318/,
+					{status: 200, body: JSON.stringify({head: {ref: "build/9999-other-aaaaaaaa"}})},
+				],
+			]).layer,
 		);
 		expect(outcome.code).toBe(LANE_NOT_MINE);
 	});
@@ -316,7 +327,7 @@ describe("runEvidence", () => {
 						});
 					},
 				}),
-				Layer.merge(shell.layer, fakeBytesFs({files: tampered}).layer),
+				Layer.mergeAll(shell.layer, fakeBytesFs({files: tampered}).layer, HTTP),
 			),
 		);
 		expect(outcome.code).toBe(CAPTURE_INVALID);
@@ -336,7 +347,7 @@ describe("runEvidence", () => {
 							url: `/Users/someone/captures/${target.fileName}`,
 						}),
 				}),
-				Layer.merge(shell.layer, fakeBytesFs({files: files()}).layer),
+				Layer.mergeAll(shell.layer, fakeBytesFs({files: files()}).layer, HTTP),
 			),
 		);
 		expect(outcome.code).toBe(LEAKED_PATH);
