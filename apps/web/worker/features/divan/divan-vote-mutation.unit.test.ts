@@ -28,6 +28,7 @@ import {Mute} from "../mute/Mute.ts";
 import {makePasaportStub} from "../pasaport/Pasaport.testing.ts";
 import type {Pasaport} from "../pasaport/Pasaport.ts";
 import {noopLive} from "../pasaport/promote-live.testing.ts";
+import {NO_SANDBOX_SWEEP} from "../pasaport/sandbox-sweep.ts";
 import type {VoteInput, VoteResult} from "../vote/Vote.ts";
 import {Vote} from "../vote/Vote.ts";
 import {mutations} from "./mutations.ts";
@@ -84,7 +85,7 @@ const pasaportRecording = (): {layer: Layer.Layer<Pasaport>; promoted: string[]}
 	const layer = makePasaportStub({
 		promoteToYazar: ({userId}: {userId: string}) => {
 			promoted.push(userId);
-			return Effect.succeed({promoted: true});
+			return Effect.succeed({promoted: true, sweep: NO_SANDBOX_SWEEP});
 		},
 		getUsersByIds: () =>
 			Effect.succeed([

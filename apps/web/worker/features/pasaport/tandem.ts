@@ -25,12 +25,12 @@ export const resolveTandem = Effect.fn("pasaport.resolveTandem")(function* (cand
 	if (karma < VOUCH_PROMOTION_KARMA_BAR) return {promoted: false};
 
 	const pasaport = yield* Pasaport;
-	const {promoted} = yield* pasaport.promoteToYazar({userId: candidateId});
+	const {promoted, sweep} = yield* pasaport.promoteToYazar({userId: candidateId});
 	// Both keyed on `promoted`, so an idempotent re-fire notifies and publishes nothing.
 	// Both are infallible, so neither can fail this committed tier flip.
 	if (promoted) {
 		yield* notifyPromotion({userId: candidateId});
-		yield* publishPromotion(candidateId);
+		yield* publishPromotion(candidateId, sweep);
 	}
 	return {promoted};
 });

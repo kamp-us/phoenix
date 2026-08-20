@@ -11,6 +11,7 @@ import {
 	Drizzle,
 	type DrizzleAccess,
 	type DrizzleDb,
+	DrizzleError,
 	relations,
 	type Stmt,
 } from "../../db/Drizzle.ts";
@@ -51,7 +52,15 @@ function capturingBatch(tierChanges: number): {
 } {
 	const captured: {sql: string; params: unknown[]}[] = [];
 	const access: DrizzleAccess = {
-		run: () => Effect.die(new Error("promoteToYazar must not run a single statement — it batches")),
+		// The one permitted single statement is the pre-batch READ that captures which live
+		// topics the sweep is about to un-hide content on (#6462) — it must precede the batch,
+		// because afterwards `sandboxed_at` is null. The WRITES are still all-or-nothing, which
+		// is what every case below asserts by counting `statements()`.
+		run: <A>(fn: (db: DrizzleDb) => Promise<A>) =>
+			Effect.tryPromise({
+				try: () => fn(renderDb),
+				catch: (cause) => new DrizzleError({cause}),
+			}),
 		batch: <T extends Readonly<[Stmt, ...Stmt[]]>>(fn: (db: DrizzleDb) => T) => {
 			const stmts = fn(renderDb);
 			for (const s of stmts) {

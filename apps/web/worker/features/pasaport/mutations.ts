@@ -392,13 +392,13 @@ const clearEmailFailingGated = Effect.fn("emailDelivery.clearGated")(function* (
 const promoteGated = Effect.fn("user.promoteGated")(function* (input: typeof PromoteInput.Type) {
 	yield* Moderate;
 	const pasaport = yield* Pasaport;
-	const {promoted} = yield* pasaport.promoteToYazar({userId: input.userId});
+	const {promoted, sweep} = yield* pasaport.promoteToYazar({userId: input.userId});
 	// Both keyed on `promoted`, so an already-yazar no-op notifies and publishes nothing.
 	// Both are infallible (failures swallowed inside the emitter/publisher), so neither
 	// can fail the committed flip.
 	if (promoted) {
 		yield* notifyPromotion({userId: input.userId});
-		yield* publishPromotion(input.userId);
+		yield* publishPromotion(input.userId, sweep);
 	}
 	return toPromotionReceipt({userId: input.userId, promoted, vouchRecorded: false});
 });

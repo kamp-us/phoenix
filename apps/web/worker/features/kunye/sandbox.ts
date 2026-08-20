@@ -20,6 +20,9 @@
  *     content cannot leak to non-author/anonymous subscribers via the (viewer-blind)
  *     live topics — and a create path cannot *forget* the check (ADR 0107's
  *     make-the-mistake-untypeable, applied to the sandbox/fate-live boundary, #1280).
+ *   - {@link viewerBlindUpdate} / {@link withoutInPlaceMarker} — the sibling gate for the
+ *     UPDATE direction: `decidePublish` decides whether a node is broadcast at all, this
+ *     decides what a broadcast node may carry (#6462).
  */
 
 import {CurrentUser} from "@kampus/fate-effect";
@@ -146,3 +149,48 @@ export const broadcastIf = (
 	decision: PublishDecision,
 	publish: Effect.Effect<void>,
 ): Effect.Effect<void> => (decision.broadcast ? publish : Effect.void);
+
+/**
+ * Drop the reader-facing çaylak marker from an entity-update payload (#6462).
+ *
+ * `decidePublish` guards the NODE broadcasts, but an entity `live.update` carries the
+ * whole re-resolved wire node and is ungated — and phoenix's `entityFrame` puts no
+ * `select` on the frame, so fate merges that node shallowly over every subscriber's
+ * cached record (`{...previous, ...partial}`) and the published `changed` narrows
+ * nothing. `sandboxedInPlace` is resolved against the MUTATOR's `SandboxViewer` (#6425),
+ * so on that path an opted-in yazar's vote broadcasts `true` to viewers holding no
+ * entitlement, and every other voter's `false` erases the badge a subscriber correctly
+ * read. Both directions are the #4313 failure mode on the newer field.
+ *
+ * Omitting the key beats stamping `false`, because fate copies only the keys the payload
+ * carries: an absent one leaves each subscriber's own read-derived value standing. The
+ * owner-scoped `sandboxed` rides the same hazard and is deliberately left alone — #4313
+ * owns that half.
+ */
+export const withoutInPlaceMarker = <T extends {readonly sandboxedInPlace?: boolean | undefined}>(
+	node: T,
+): Omit<T, "sandboxedInPlace"> => {
+	const {sandboxedInPlace: _viewerDerived, ...viewerBlind} = node;
+	return viewerBlind;
+};
+
+/**
+ * The one consumer of {@link withoutInPlaceMarker}. A `data`-less update (a bare `changed`
+ * signal) passes through untouched.
+ *
+ * A convention, NOT a type — unlike {@link PublishDecision}, which makes an ungated node
+ * broadcast a compile error. It covers the entity classes that carry the marker: `panoLive`
+ * (`Post`, `Comment`) and `sozlukLive` (`Definition`) route every `update` through it.
+ * `pasaportLive` (`User`) and bildirim's `Notification` call `live.update` raw, which is
+ * harmless because neither node has a `sandboxedInPlace` to leak — but nothing stops a
+ * future `live.ts` publishing a `Post`/`Comment`/`Definition` update around this. Branding
+ * the update payload the way `PublishDecision` brands the node broadcast is the fix that
+ * would earn the stronger sentence; #6557 tracks it.
+ */
+export const viewerBlindUpdate = <
+	T extends {readonly sandboxedInPlace?: boolean | undefined},
+>(options?: {
+	readonly changed?: ReadonlyArray<string>;
+	readonly data?: T;
+}): {readonly changed?: ReadonlyArray<string>; readonly data?: unknown} | undefined =>
+	options?.data ? {...options, data: withoutInPlaceMarker(options.data)} : options;
