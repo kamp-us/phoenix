@@ -12,6 +12,7 @@ import {
 	MECMUA_WRITE,
 	MEMBER_MUTE,
 	PHOENIX_BILDIRIM,
+	PHOENIX_CAYLAK_VISIBILITY,
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
 	PHOENIX_EMAIL_DELIVERY_NOTICE,
 	PHOENIX_KARMA_GATES,
@@ -247,3 +248,36 @@ export const MEMBER_MUTE_FLAG = {
 
 export const memberMuteFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("member_mute", {appId, ...MEMBER_MUTE_FLAG});
+
+/**
+ * The çaylak in-place visibility dark-ship flag config (#6421, epic #4306). The SINGLE
+ * seam the whole vertical gates behind — the yazar opt-in preference read + its mutation,
+ * the third viewer class the sandbox read masks grow (distinct from the moderator class),
+ * the çaylak marker field on the content wire shape, and both client surfaces (the
+ * settings toggle and the marker render). Default-OFF so the feature reaches production
+ * dark and ADR 0206's containment wall behaves exactly as today; flipping it on is the
+ * human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
+ * WITHOUT constructing the alchemy resource (mirrors `MEMBER_MUTE_FLAG`).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           künye (the çaylak/yazar authorship surface)
+ *   - originating:     #6421 (epic: çaylak in-place visibility, #4306)
+ *   - removal trigger: once çaylak in-place visibility graduates to on at 100% and stable
+ *                      for one release, retire the flag and inline the now-permanent path.
+ */
+export const CAYLAK_VISIBILITY_FLAG = {
+	key: PHOENIX_CAYLAK_VISIBILITY,
+	description:
+		"çaylak in-place visibility (yazar opt-in preference + third viewer class + çaylak marker + both client surfaces) dark-ship (#6421, epic #4306). owner: künye. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const caylakVisibilityFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_caylak_visibility", {appId, ...CAYLAK_VISIBILITY_FLAG});

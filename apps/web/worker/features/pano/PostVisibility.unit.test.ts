@@ -25,9 +25,9 @@ const removed = L.remove({
 
 const viewers = {
 	anonymous: L.anonymousViewer,
-	author: {viewerId: AUTHOR, canSeeSandboxed: false},
-	otherMember: {viewerId: OTHER, canSeeSandboxed: false},
-	moderator: {viewerId: "a-mod", canSeeSandboxed: true},
+	author: {viewerId: AUTHOR, canSeeSandboxed: false, seesSandboxedInPlace: false},
+	otherMember: {viewerId: OTHER, canSeeSandboxed: false, seesSandboxedInPlace: false},
+	moderator: {viewerId: "a-mod", canSeeSandboxed: true, seesSandboxedInPlace: false},
 } satisfies Record<string, L.SandboxViewer>;
 
 // Content is always authored by AUTHOR; each cell is the expectation per viewer kind.

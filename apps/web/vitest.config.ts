@@ -138,14 +138,16 @@ export default defineConfig({
 					disableConsoleIntercept: true,
 					// No fork cap: ADR 0104 step 7 (#1027) collapsed the per-run deploy
 					// surface from ~24 ephemeral `it-*` stages to ~6 — one shared
-					// `globalSetup` deploy plus the 5 by-design dedicated files
+					// `globalSetup` deploy plus the 6 by-design dedicated files
 					// (fate-live-posts / fts-backfill / search-error-vs-empty, plus
 					// search / sozluk-keyset — the keyset paged-walk files, #1143: their
 					// lead-sort statistic is a cross-file-global corpus stat (bm25 corpus
 					// stats / total_score), so a parallel fork's writes between page requests
 					// re-rank the walk mid-cursor → skips/dupes; a dedicated stage gives a
 					// stable corpus across the walk, per ADR 0104 — paged-walk files stay
-					// dedicated). The ~9 shared-stage files no longer deploy; they reuse the already-deployed
+					// dedicated; plus caylak-in-place-visibility, #6424, whose term-reachability
+					// assertion reads global list membership and needs the same stable corpus).
+					// The ~9 shared-stage files no longer deploy; they reuse the already-deployed
 					// shared worker over HTTP. The retired fork cap of 4 (#1010) only
 					// existed to throttle the ~24 concurrent create/destroy storm that raced
 					// CF's eventually-consistent registry; that storm is structurally gone, so

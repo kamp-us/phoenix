@@ -23,6 +23,7 @@ import {
 	publicLiveWhere,
 	resolveSandboxViewer,
 	sandboxBacklogWhere,
+	sandboxedInPlace,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
 import {mutedAuthorsWhere} from "../mute/read-mask.ts";
@@ -719,8 +720,11 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.limit(first + 1),
 			);
 
-			// `sandboxed` is owner-scoped (#2200): only the author ever receives the
-			// "incelemede" signal on their own in-review definition.
+			// `sandboxed` is the owner-scoped in-review flag (#2200): computed off the fetched
+			// record against the viewer, so a çaylak sees the "incelemede" signal on their OWN
+			// still-in-review definition and no other viewer ever receives it.
+			// `sandboxedInPlace` (#6425) is the other audience's marker off the SAME resolved
+			// viewer — the opted-in in-place reader's honest "this is çaylak work" signal.
 			const page = forwardPage(
 				fetched,
 				first,
@@ -728,6 +732,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				(d) => ({
 					...toDefinitionRow(d),
 					sandboxed: ownSandboxed(d, viewerId),
+					sandboxedInPlace: sandboxedInPlace(d, viewer),
 				}),
 			);
 			const rows = yield* stampDefinitions(page.rows, viewerId, opts.parallelStamps ?? false);
@@ -770,6 +775,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const base = fetched.map((d) => ({
 				...toDefinitionRow(d),
 				sandboxed: ownSandboxed(d, viewerId),
+				sandboxedInPlace: sandboxedInPlace(d, viewer),
 			}));
 			return yield* stampDefinitions(base, viewerId, opts.parallelStamps ?? false);
 		});

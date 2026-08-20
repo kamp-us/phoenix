@@ -43,6 +43,7 @@ import {searchTarget} from "./lib/searchTarget";
 import {ThemeProvider, useTheme} from "./lib/theme";
 import {AuthPage} from "./pages/AuthPage";
 import {BildirimlerPage} from "./pages/BildirimlerPage";
+import {CAYLAK_VISIBILITY_PATH, CaylakVisibilityPage} from "./pages/CaylakVisibilityPage";
 import {DivanPage} from "./pages/DivanPage";
 import {FunnelPage} from "./pages/FunnelPage";
 import {LandingPage} from "./pages/LandingPage";
@@ -397,6 +398,9 @@ export function App() {
 						<Route path="/lab/atolye/:exhibit" element={<AtolyeExhibitPage />} />
 						<Route path="/profile" element={<ProfilePage />} />
 						<Route path="/susturduklarim" element={<MutesPage />} />
+						{/* The yazar's çaylak in-place visibility setting (#6426) — beside the other
+						    per-member preference routes; self-404s behind phoenix-caylak-visibility. */}
+						<Route path={CAYLAK_VISIBILITY_PATH} element={<CaylakVisibilityPage />} />
 						<Route path="/u/:username" element={<UserProfilePage />} />
 						{/* The admin console (#2740, epic #2711) — the route element self-gates on
 						    the server-authoritative admin probe (denied ⇒ the ordinary not-found

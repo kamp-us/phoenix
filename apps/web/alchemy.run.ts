@@ -42,6 +42,7 @@ import {resolveStateMode} from "./worker/env.ts";
 import {isProductionDeploy} from "./worker/environment.ts";
 import {
 	bildirimFlag,
+	caylakVisibilityFlag,
 	demoTargetingFlag,
 	emailDeliveryAdminFlag,
 	emailDeliveryNoticeFlag,
@@ -133,6 +134,11 @@ export default Alchemy.Stack(
 		// #2035) — the single seam `mute.set` / `mute.remove` gate behind until a human
 		// release, so the whole mute primitive ships dark.
 		yield* memberMuteFlag(flagship.appId);
+		// The çaylak in-place visibility dark-ship flag, default-off (#6421, epic #4306) —
+		// the single seam the yazar opt-in preference, the third (opted-in-yazar) viewer
+		// class, the çaylak marker field and both client surfaces gate behind until a human
+		// release, so the whole vertical ships dark and ADR 0206 containment is unchanged.
+		yield* caylakVisibilityFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

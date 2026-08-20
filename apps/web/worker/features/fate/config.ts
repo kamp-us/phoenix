@@ -15,6 +15,7 @@
 import {FateServer} from "@kampus/fate-effect";
 import {fateModule as adminConsoleModule} from "../admin-console/fate-module.ts";
 import {fateModule as bildirimModule} from "../bildirim/fate-module.ts";
+import {fateModule as caylakVisibilityModule} from "../caylak-visibility/fate-module.ts";
 import {fateModule as divanModule} from "../divan/fate-module.ts";
 import {liveBusConfig} from "../fate-live/event-bus.ts";
 import {fateModule as funnelModule} from "../funnel/fate-module.ts";
@@ -44,6 +45,7 @@ export const modules = [
 	bildirimModule,
 	mecmuaModule,
 	muteModule,
+	caylakVisibilityModule,
 	userAdminModule,
 ];
 

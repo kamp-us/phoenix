@@ -319,4 +319,19 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 		rationale:
 			"clears the caller's private (muter,muted) mute relation; per-viewer own-read mask, same no-fan rationale as `mute.set`",
 	},
+	// caylak-visibility — the yazar's own in-place-visibility opt-in row (#6422, epic
+	// #4306). Per-account private preference in no subscribed connection, and its only
+	// reader is the owning viewer's own read (the `mute.set` per-viewer precedent).
+	{
+		key: "caylakVisibility.optIn",
+		fanned: false,
+		rationale:
+			"writes the caller's own çaylak-visibility preference row; no Post/Comment/Definition in a subscribed connection is touched, and the only view over it is the owner's own read, so a publish onto the login-blind shared topic would over-fan to every viewer. No cross-viewer fan-out",
+	},
+	{
+		key: "caylakVisibility.optOut",
+		fanned: false,
+		rationale:
+			"clears the caller's own çaylak-visibility preference row; same owner-private, no-fanned-entity rationale as `caylakVisibility.optIn`",
+	},
 ];

@@ -178,7 +178,7 @@ describe("Sozluk.listTermSummariesConnection — the /sozluk lists exclude sandb
 		Effect.gen(function* () {
 			const {page} = yield* runList({
 				sort: "recent",
-				sandboxViewer: {viewerId: "u-mod", canSeeSandboxed: true},
+				sandboxViewer: {viewerId: "u-mod", canSeeSandboxed: true, seesSandboxedInPlace: false},
 			});
 			assert.match(page, EXISTS_OVER_DEFINITIONS, "still gated on having a readable definition");
 			assert.match(page, /"definition_record"\."removed_at" is null/, "removal guard stays");

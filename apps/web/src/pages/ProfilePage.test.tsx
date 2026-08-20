@@ -6,11 +6,14 @@
 import {render, screen} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
+import {CAYLAK_VISIBILITY_PATH} from "./CaylakVisibilityPage";
 import {ProfilePage} from "./ProfilePage";
 
 // `sessionUsername === undefined` models the post-setUsername lag window.
 let sessionUsername: string | null | undefined;
 let meUsername: string | null;
+// The viewer's tier — the çaylak-visibility entry row (#6426) is yazar-only.
+let meTier: string | null = null;
 
 vi.mock("../auth/client", () => ({
 	useSession: () => ({
@@ -30,7 +33,7 @@ vi.mock("../auth/useMe", () => ({
 			name: "Owner",
 			image: null,
 			username: meUsername,
-			tier: null,
+			tier: meTier,
 			isModerator: false,
 		},
 		status: "ok",
@@ -81,6 +84,7 @@ function renderProfile() {
 describe("ProfilePage readUsername precedence (#2188 — the me-hop removal)", () => {
 	beforeEach(() => {
 		statsCalls.length = 0;
+		meTier = null;
 	});
 	afterEach(() => {
 		vi.clearAllMocks();
@@ -135,5 +139,35 @@ describe("ProfilePage appearance controls", () => {
 		renderProfile();
 
 		expect(screen.getByTestId("delete-account-btn").getAttribute("data-variant")).toBe("primary");
+	});
+});
+
+// The çaylak-visibility route is otherwise an orphan URL: settings is the only surface a yazar
+// reaches it from, and the row is gated so a çaylak is never sent to a page that refuses them.
+describe("ProfilePage — the çaylak-visibility entry (#6426)", () => {
+	afterEach(() => {
+		meTier = null;
+	});
+
+	it("offers a yazar the way into the çaylak-visibility setting", () => {
+		sessionUsername = "session-uname";
+		meUsername = "session-uname";
+		meTier = "yazar";
+
+		renderProfile();
+
+		expect(screen.getByTestId("caylak-visibility-link").getAttribute("href")).toBe(
+			CAYLAK_VISIBILITY_PATH,
+		);
+	});
+
+	it("shows a çaylak no entry at all", () => {
+		sessionUsername = "session-uname";
+		meUsername = "session-uname";
+		meTier = "çaylak";
+
+		renderProfile();
+
+		expect(screen.queryByTestId("caylak-visibility-link")).toBeNull();
 	});
 });

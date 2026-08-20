@@ -8,6 +8,7 @@ import {AgentAuthority, CurrentActor, human, RelationStore, unauthenticated} fro
 import {CurrentUser, type CurrentUserInfo} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import {assert} from "vitest";
+import {inPlaceVisibilityOff} from "../kunye/sandbox.testing.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import type {ProfileRow, UserRow} from "./Pasaport.ts";
 import {Pasaport} from "./Pasaport.ts";
@@ -101,6 +102,11 @@ const moderatesStore = (holders: ReadonlySet<string>) =>
 			),
 	}) as never;
 
+// The full request context `currentSandboxViewer` resolves from: the signed-in user
+// (`CurrentUser`), the actor + moderation ports the `Moderate.over(platform)` probe
+// discharges against (`CurrentActor`/`AgentAuthority`/`RelationStore`), plus the
+// in-place-visibility deps with the flag dark (#6423). Anonymous ⇒ `{user: undefined}`
+// + the `unauthenticated` actor.
 const withRequestViewer = <A, E, R>(
 	effect: Effect.Effect<A, E, R>,
 	user: CurrentUserInfo | undefined,
@@ -111,6 +117,7 @@ const withRequestViewer = <A, E, R>(
 		Effect.provideService(CurrentActor, {actor: user ? human(user.id) : unauthenticated}),
 		Effect.provideService(AgentAuthority, {admits: () => Effect.succeed(false)}),
 		Effect.provideService(RelationStore, moderatesStore(moderatorIds)),
+		Effect.provide(inPlaceVisibilityOff),
 	);
 
 it.effect("userSource.byIds joins isModerator per row off the moderates tuple (ADR 0107)", () =>
@@ -231,6 +238,7 @@ it.effect(
 			assert.deepStrictEqual(captured.viewer?.sandboxViewer, {
 				viewerId: "u1",
 				canSeeSandboxed: false,
+				seesSandboxedInPlace: false,
 			});
 		}),
 );
@@ -245,6 +253,7 @@ it.effect("profileSource.byId resolves an anonymous viewer when no user is signe
 		assert.deepStrictEqual(captured.viewer?.sandboxViewer, {
 			viewerId: null,
 			canSeeSandboxed: false,
+			seesSandboxedInPlace: false,
 		});
 	}),
 );
@@ -260,6 +269,7 @@ it.effect("profileSource.byId resolves canSeeSandboxed for a moderator viewer", 
 		assert.deepStrictEqual(captured.viewer?.sandboxViewer, {
 			viewerId: "mod",
 			canSeeSandboxed: true,
+			seesSandboxedInPlace: false,
 		});
 	}),
 );

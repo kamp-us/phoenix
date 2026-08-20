@@ -25,6 +25,7 @@ import {
 	ownSandboxed,
 	resolveSandboxViewer,
 	sandboxBacklogWhere,
+	sandboxedInPlace,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
 import {isMutedAuthor, mutedAuthorsWhere} from "../mute/read-mask.ts";
@@ -615,6 +616,7 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 	) {
 		if (ids.length === 0) return [];
 		const viewerId = opts.viewerId ?? null;
+		const viewer = resolveSandboxViewer(opts);
 		const fetched = yield* run((db) =>
 			db
 				.select()
@@ -629,17 +631,27 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 								authorId: schema.postRecord.authorId,
 								isDraft: schema.postRecord.isDraft,
 							},
-							resolveSandboxViewer(opts),
+							viewer,
 						),
 						mutedAuthorsWhere(schema.postRecord.authorId, opts.mutedIds),
 					),
 				),
 		);
-		// `sandboxed` is owner-scoped (#2200): it lands `true` only for the author's own
-		// still-in-review post and must never leak to another viewer.
+		// `myVote`/`isSaved` are the viewer scalars, finalized via `stampViewerScalars`
+		// (one `user_vote` + one `post_bookmark` read for the whole batch); the row's
+		// intrinsic fields come from the `post-fields.ts` column→field map. The
+		// draft/ownership gate is enforced in SQL by `postVisibleWhere` above — a draft
+		// the viewer doesn't own never reaches this batch — so a surviving `isDraft` row
+		// is the author's own: read-your-writes, now verified rather than assumed.
+		// `sandboxed` is the owner-scoped in-review flag (#2200): computed off the fetched
+		// record (`sandboxed_at` + `author_id`) against the viewer, so it lands `true` only
+		// for the author's own still-in-review post and never leaks to another viewer.
+		// `sandboxedInPlace` (#6425) is the OTHER audience's marker off the SAME resolved
+		// viewer — the opted-in in-place reader's honest "this is çaylak work" signal.
 		const intrinsic = fetched.map((p) => ({
 			...toPostSummaryRow(p),
 			sandboxed: ownSandboxed(p, viewerId),
+			sandboxedInPlace: sandboxedInPlace(p, viewer),
 		}));
 		const scalared = yield* stampViewerScalars(intrinsic, viewerId, postViewerScalars);
 		const reacted = yield* stampReactionAggregate(reactionSvc, "post", scalared, viewerId);
