@@ -392,7 +392,11 @@ export interface FakeHttp {
 	readonly calls: ReadonlyArray<string>;
 	/** What each request carried as its body, aligned with {@link FakeHttp.calls}; `""` when none. */
 	readonly bodies: ReadonlyArray<string>;
+	/** What each request carried as headers, aligned with {@link FakeHttp.calls}. */
+	readonly headers: ReadonlyArray<Readonly<Record<string, string>>>;
 }
+
+const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
 
 const requestBody = (body: HttpBody.HttpBody): string => {
 	if (body._tag === "Uint8Array") return new TextDecoder().decode(body.body);
@@ -416,11 +420,13 @@ export const fakeHttp = (
 ): FakeHttp => {
 	const calls: string[] = [];
 	const bodies: string[] = [];
+	const headers: Array<Readonly<Record<string, string>>> = [];
 	const layer = Layer.succeed(HttpClient.HttpClient)(
 		HttpClient.make((request, url) => {
 			const line = `${request.method} ${url.toString()}`;
 			calls.push(line);
 			bodies.push(requestBody(request.body));
+			headers.push(request.headers);
 			if (unreachable.some((pattern) => pattern.test(line))) {
 				return Effect.fail(
 					new HttpClientError.HttpClientError({
@@ -435,12 +441,17 @@ export const fakeHttp = (
 			return Effect.succeed(
 				HttpClientResponse.fromWeb(
 					request,
-					new Response(reply.body, {status: reply.status, headers: {...reply.headers}}),
+					// undici throws on a body at a null-body status, so `204` — what GitHub answers a
+					// successful delete with — is only scriptable if the body is dropped here.
+					new Response(NULL_BODY_STATUSES.has(reply.status) ? null : reply.body, {
+						status: reply.status,
+						headers: {...reply.headers},
+					}),
 				),
 			);
 		}),
 	);
-	return {layer, calls, bodies};
+	return {layer, calls, bodies, headers};
 };
 
 /** A served page of a bare-array read, with the `Link` header that says another page follows. */

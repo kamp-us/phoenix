@@ -18,11 +18,14 @@
  * their mutations, and the auto-merge mutation. Issue queries stay REST — this org's
  * Projects-classic integration errors GraphQL issue queries out.
  *
- * The credential is an argument to every leg, never something a leg resolves. {@link resolveToken}
- * is the one producer, and a caller that could not resolve one holds no `token` to pass — so an
- * anonymous request has no way to be constructed (ADR 0315).
+ * The credential is an argument to every leg *of this module*, never something a leg resolves —
+ * {@link resolveToken} is the one producer, and a caller holding no `token` cannot construct a
+ * request at all. Adapters outside this file take `(repo, …)` and reach {@link ambientToken} for
+ * theirs, and they erase the transport requirement with {@link onTransport} rather than publishing
+ * `HttpClient` up through 45 verb annotations (ADR 0315, as amended).
  */
-import {Effect} from "effect";
+import {Effect, Option} from "effect";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import {execRecord} from "./exec.ts";
@@ -86,6 +89,45 @@ export const resolveToken = (
 		return outcome.exitCode === 0 && token !== "" ? ok(token) : fail(NO_TOKEN);
 	});
 
+let memoisedToken: Attempt<string> | null = null;
+
+/**
+ * The credential an adapter reaches for, resolved once per process off `process.env`.
+ *
+ * An adapter's signature is `(repo, …)` and has nowhere to take an `env`, so the resolution happens
+ * here rather than being threaded through every verb (ADR 0315, as amended). The memo is not a
+ * micro-optimisation: without it the `gh auth token` leg spawns a subprocess per request, which is
+ * the cost this whole port exists to remove. A refusal memoises too — the env does not change
+ * mid-run, so re-asking a logged-out `gh` fifty times only reprints one answer.
+ */
+export const ambientToken: Shell<Attempt<string>> = Effect.suspend(() =>
+	memoisedToken !== null
+		? Effect.succeed(memoisedToken)
+		: Effect.map(resolveToken(process.env), (attempt) => {
+				memoisedToken = attempt;
+				return attempt;
+			}),
+);
+
+/**
+ * Run an {@link Api} against the caller's `HttpClient` when there is one, and a fetch client
+ * otherwise — erasing the requirement so an adapter's effect type stays what its callers annotate.
+ *
+ * A provided client always wins, which is the whole point: `HttpClient.HttpClient` is a
+ * `Context.Service` and not a defaulted `Context.Reference`, so `Effect.serviceOption` answers
+ * `None` only when nothing above provided one (`Context.getOption` over the fiber's context —
+ * `effect@4.0.0-beta.92`, `src/internal/effect.ts`). A test that provides `fakeHttp`'s layer is
+ * therefore still testing the seam production runs on; the fallback is reached only by a caller who
+ * provided nothing, and `FetchHttpClient.layer` is exactly what `src/run.ts` provides there.
+ */
+export const onTransport = <A>(api: Api<A>): Effect.Effect<A> =>
+	Effect.gen(function* () {
+		const provided = yield* Effect.serviceOption(HttpClient.HttpClient);
+		return yield* Option.isSome(provided)
+			? Effect.provideService(api, HttpClient.HttpClient, provided.value)
+			: Effect.provide(api, FetchHttpClient.layer);
+	});
+
 /** One served response, or the reason the request never produced one. */
 export type Rest =
 	| {
@@ -101,9 +143,11 @@ export type Rest =
 const endpoint = (path: string): string =>
 	path.startsWith("http") ? path : `${API_ROOT}/${path.replace(/^\//, "")}`;
 
-const headersFor = (token: string): Record<string, string> => ({
+const JSON_ACCEPT = "application/vnd.github+json";
+
+const headersFor = (token: string, accept: string = JSON_ACCEPT): Record<string, string> => ({
 	authorization: `token ${token}`,
-	accept: "application/vnd.github+json",
+	accept,
 	"x-github-api-version": "2022-11-28",
 	"user-agent": "fabrika-cli",
 });
@@ -131,19 +175,39 @@ const send = (request: HttpClientRequest.HttpClientRequest): Api<Rest> =>
 		),
 	);
 
+/** What a call is, beyond its path: the method, an optional JSON body, an optional `Accept`. */
+export interface RestCall {
+	readonly method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+	readonly path: string;
+	/**
+	 * Serialised as the JSON request body. Omitted entirely when absent — GitHub reads an empty
+	 * `DELETE` and a `DELETE` carrying `null` differently, so "no body" must not become `null`.
+	 */
+	readonly body?: unknown;
+	/** Overrides `application/vnd.github+json`; `…diff` and `…patch` are the ones in use. */
+	readonly accept?: string;
+}
+
 /**
  * One REST call, handing back the parsed body, the numeric status and the response headers.
  *
  * The status and the headers are structural, not decoration: the status is what
  * {@link existenceOf} splits absent from unreadable on, and `Link` is what {@link pagedWithLinkProof}
- * reads its completeness proof off.
+ * reads its completeness proof off. A non-JSON `Accept` still parses to `null` in `body` and keeps
+ * its bytes in `text`, which is how the diff read gets at them.
  */
-export const restRead = (token: string, method: "GET" | "POST", path: string): Api<Rest> =>
-	send(
-		(method === "GET" ? HttpClientRequest.get : HttpClientRequest.post)(endpoint(path)).pipe(
-			HttpClientRequest.setHeaders(headersFor(token)),
-		),
+export const restCall = (token: string, call: RestCall): Api<Rest> => {
+	const request = HttpClientRequest.make(call.method)(endpoint(call.path)).pipe(
+		HttpClientRequest.setHeaders(headersFor(token, call.accept)),
 	);
+	return send(
+		call.body === undefined ? request : HttpClientRequest.bodyJsonUnsafe(request, call.body),
+	);
+};
+
+/** {@link restCall}'s read arm, kept as its own name because most call sites are reads. */
+export const restRead = (token: string, method: "GET" | "POST", path: string): Api<Rest> =>
+	restCall(token, {method, path});
 
 /**
  * The three-arm {@link Existence} construction, off the status the response carried.
@@ -214,6 +278,36 @@ export const pagedWithLinkProof = (token: string, path: string): Api<Attempt<Pag
 			if (!declaresNextPage(outcome.headers)) return ok({entries, exhausted: true});
 		}
 		return ok({entries, exhausted: false});
+	});
+
+/**
+ * {@link pagedWithLinkProof}, but a 404 is a verdict rather than an error.
+ *
+ * The dependency and sub-issue endpoints answer `200 []` for a real issue with no edges and `404`
+ * for an issue that does not exist. Collapsing those two would print "no blocking edges" over an
+ * issue nobody proved exists — a proven negative over zero scope — which is the `404-IS-A-VERDICT`
+ * discipline anchored at the top of `./edges.ts`, and why this leg answers {@link Existence} rather
+ * than {@link Attempt}. Everything else, including the exhaustion proof, is that leg's unchanged.
+ */
+export const pagedExistence = (token: string, path: string): Api<Existence<PagedProof>> =>
+	Effect.gen(function* () {
+		const entries: unknown[] = [];
+		for (let page = 1; page <= PAGE_CAP; page++) {
+			const outcome = yield* restRead(token, "GET", paged(path, page));
+			if (outcome._tag === "Unreachable") return unknown<PagedProof>(outcome.reason);
+			if (outcome.status === 404) return absent<PagedProof>();
+			if (outcome.status < 200 || outcome.status >= 300) {
+				return unknown<PagedProof>(refusalFor(outcome));
+			}
+			if (!Array.isArray(outcome.body)) {
+				return unknown<PagedProof>("GitHub answered 200 but its body is not a list");
+			}
+			entries.push(...outcome.body);
+			if (!declaresNextPage(outcome.headers)) {
+				return present<PagedProof>({entries, exhausted: true});
+			}
+		}
+		return present<PagedProof>({entries, exhausted: false});
 	});
 
 /**

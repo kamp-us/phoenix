@@ -76,3 +76,54 @@ Anything else reaching for GraphQL is a new decision, not an application of this
   from `PATH`. Every other adapter still spawns `gh` and every existing helper stays exported, so the
   two transports coexist until the remaining adapters are ported.
 - The `gh` binary stops being a hard requirement for the ported reads and stays one for the rest.
+
+## Amendment, 2026-08-20 — the argument-passed rule binds the client's own legs, not every adapter
+
+Founder ruling on [#6704](https://github.com/kamp-us/phoenix/issues/6704), recorded at
+[this comment](https://github.com/kamp-us/phoenix/issues/6704#issuecomment-5361592162): *"yeah, token
+from env so that we can actually inject whatever token we want."*
+
+**What changed.** The rule above reads "every leg of the client takes the token as an argument". Read
+as binding every *adapter* signature too, it does not survive contact with the port. The six phase-2
+adapters take `(repo, …)` and have nowhere to accept an `env`, and publishing
+`HttpClient.HttpClient` up out of an `io/` adapter reds 45 verb modules that annotate themselves as
+`Shell<…>` or `Effect<…, ChildProcessSpawner>`. Each of the six hit that wall separately and each
+invented its own way round it.
+
+**The amended rule.** The argument-passed credential binds `gh-api.ts`'s own legs and nothing else.
+Inside that file a leg still takes `token` and cannot construct an anonymous request. Outside it,
+`ambientToken` resolves the credential once per process off `process.env`, in the same order §"The
+credential resolves in one order" rules, and memoises the answer — including a refusal, because the
+env does not move mid-run and re-asking a logged-out `gh` per request is the subprocess cost this
+port removes. The transport requirement is erased at the same boundary: `onTransport` reads the
+caller's `HttpClient` through `Effect.serviceOption` and falls back to `FetchHttpClient.layer`.
+Adapters keep their `(repo, …)` signatures and publish neither `HttpClient` nor an `env` parameter.
+
+**The test seam is unchanged, and that is the load-bearing part.** `HttpClient.HttpClient` is a
+`Context.Service`, not a defaulted `Context.Reference`, so `Effect.serviceOption` is
+`Context.getOption` over the fiber's context and answers `None` only when nothing above provided one
+(`effect@4.0.0-beta.92`, `src/internal/effect.ts`, `serviceOption`; `src/unstable/http/HttpClient.ts`
+declares `HttpClient` via `Context.Service`). A provided `fakeHttp` therefore always wins, and the
+fallback is reached only by a caller who provided nothing — which in the shipped CLI never happens,
+since `src/run.ts` provides `FetchHttpClient.layer` at the root.
+
+**The founder's reason, which is wider than this package.** One env var is what lets any context —
+iOS, CI, a consumer repo — inject the token it wants. A credential threaded through 45 signatures is
+a credential only this repo's call graph can supply.
+
+**What did not change.** The resolution order, the refusal naming both env vars, the `gh auth token`
+leg being a developer convenience rather than a request-path fallback, and the two-item GraphQL
+carve all stand exactly as ruled above.
+
+### The write leg, landed with this amendment
+
+`gh-api.ts` gains the two calls the adapters cannot be ported without:
+
+- `restCall(token, {method, path, body?, accept?})` — `GET | POST | PATCH | PUT | DELETE`, an
+  optional JSON body **omitted entirely rather than sent as `null`**, and an optional `Accept`
+  override for the diff and patch reads. `restRead` becomes its read arm.
+- `pagedExistence(token, path)` — `pagedWithLinkProof`'s walk, answering `Existence` so a **404 stays
+  a verdict about the issue** rather than collapsing into an empty list. That is the
+  `404-IS-A-VERDICT` discipline `src/io/edges.ts` anchors: the dependency endpoints answer `200 []`
+  for a real issue with no edges and `404` for an issue that does not exist, and fusing the two
+  prints a proven negative over zero scope (ADR 0092).
