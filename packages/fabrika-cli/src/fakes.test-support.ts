@@ -392,6 +392,14 @@ export interface FakeHttp {
 	readonly calls: ReadonlyArray<string>;
 	/** What each request carried as its body, aligned with {@link FakeHttp.calls}; `""` when none. */
 	readonly bodies: ReadonlyArray<string>;
+	/**
+	 * The headers each request carried, aligned with {@link FakeHttp.calls}.
+	 *
+	 * A media type is part of what was asked for, not decoration: `application/vnd.github.diff` is
+	 * the difference between a diff and a JSON record at one route, and a test that could not see
+	 * the header could not tell the two requests apart.
+	 */
+	readonly headers: ReadonlyArray<Readonly<Record<string, string>>>;
 }
 
 const requestBody = (body: HttpBody.HttpBody): string => {
@@ -416,11 +424,13 @@ export const fakeHttp = (
 ): FakeHttp => {
 	const calls: string[] = [];
 	const bodies: string[] = [];
+	const headers: Record<string, string>[] = [];
 	const layer = Layer.succeed(HttpClient.HttpClient)(
 		HttpClient.make((request, url) => {
 			const line = `${request.method} ${url.toString()}`;
 			calls.push(line);
 			bodies.push(requestBody(request.body));
+			headers.push({...request.headers});
 			if (unreachable.some((pattern) => pattern.test(line))) {
 				return Effect.fail(
 					new HttpClientError.HttpClientError({
@@ -440,7 +450,7 @@ export const fakeHttp = (
 			);
 		}),
 	);
-	return {layer, calls, bodies};
+	return {layer, calls, bodies, headers};
 };
 
 /** A served page of a bare-array read, with the `Link` header that says another page follows. */

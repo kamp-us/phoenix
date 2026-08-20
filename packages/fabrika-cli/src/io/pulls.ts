@@ -13,10 +13,20 @@
  * that is to be handed both numbers. The reads below never narrow to the received list alone.
  */
 import {Effect} from "effect";
-import {execCapture} from "./exec.ts";
+import {
+	type Api,
+	authed,
+	authedExistence,
+	existenceOf,
+	graphqlRead,
+	pagedEnvelope,
+	pagedWithLinkProof,
+	type Rest,
+	restCall,
+} from "./gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "./git.ts";
-import {absent, type Existence, httpStatusOf, pagedJson, present, unknown} from "./issues.ts";
-import {isRecord, parseJson} from "./json.ts";
+import type {Existence} from "./issues.ts";
+import {isRecord} from "./json.ts";
 
 export interface PullRecord {
 	readonly number: number;
@@ -72,61 +82,59 @@ const toPullRecord = (value: unknown): PullRecord | null => {
 
 /** One pull request, probed three ways — the 404 that seats a proven refusal is split from a 5xx. */
 export const getPullRequest = (repo: string, pr: number): Shell<Existence<PullRecord>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", ["api", `repos/${repo}/pulls/${pr}`]);
-		if (!r.ok) {
-			return httpStatusOf(r.reason) === 404 ? absent<PullRecord>() : unknown<PullRecord>(r.reason);
-		}
-		const record = toPullRecord(parseJson(r.stdout));
-		return record === null
-			? unknown<PullRecord>("`gh api` exited 0 but its output is not a pull request")
-			: present(record);
-	});
+	authedExistence((token) =>
+		restCall(token, {method: "GET", path: `repos/${repo}/pulls/${pr}`}).pipe(
+			Effect.map((outcome) =>
+				existenceOf(outcome, (body) => {
+					const record = toPullRecord(body);
+					return record === null
+						? fail("GitHub answered 200 but its output is not a pull request")
+						: ok(record);
+				}),
+			),
+		),
+	);
 
 /**
  * Every changed path on the PR, paged.
  *
- * Read as typed JSON rather than through `--jq .filename`: the count of entries is the completeness
- * proof, and a `jq` filter that errors mid-stream on one odd entry would shorten the list silently —
- * which is the truncation the caller is trying to detect.
+ * Read as typed JSON rather than through a `--jq .filename` projection: the count of entries is the
+ * completeness proof, and a filter that errored mid-stream on one odd entry would shorten the list
+ * silently — which is the truncation the caller is trying to detect.
  */
 export const listPullFiles = (repo: string, pr: number): Shell<Attempt<ReadonlyArray<string>>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/pulls/${pr}/files?per_page=100`,
-		]);
-		if (!r.ok) return fail(r.reason);
-		const pages = pagedJson(r.stdout);
-		if (pages._tag === "Failure") return pages;
-		const files: string[] = [];
-		for (const page of pages.value) {
-			const parsed = parseJson(page);
-			if (!Array.isArray(parsed)) {
-				return fail("`gh api` exited 0 but its output is not a list of changed files");
-			}
-			for (const value of parsed) {
+	authed((token) =>
+		Effect.gen(function* () {
+			const page = yield* pagedWithLinkProof(token, `repos/${repo}/pulls/${pr}/files`);
+			if (page._tag === "Failure") return page;
+			if (!page.value.exhausted) return fail(`PR #${pr}'s file list was not read to its end`);
+			const files: string[] = [];
+			for (const value of page.value.entries) {
 				if (!isRecord(value) || typeof value.filename !== "string") {
-					return fail("`gh api` exited 0 but one entry is not a changed file");
+					return fail("GitHub answered 200 but one entry is not a changed file");
 				}
 				files.push(value.filename);
 			}
-		}
-		return ok(files);
-	});
+			return ok(files);
+		}),
+	);
 
 /** The unified diff bytes, served by the platform's diff media type. */
 export const getPullDiff = (repo: string, pr: number): Shell<Attempt<string>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"-H",
-			"Accept: application/vnd.github.diff",
-			`repos/${repo}/pulls/${pr}`,
-		]);
-		return r.ok ? ok(r.stdout) : fail(r.reason);
-	});
+	authed((token) =>
+		restCall(token, {
+			method: "GET",
+			path: `repos/${repo}/pulls/${pr}`,
+			accept: "application/vnd.github.diff",
+		}).pipe(
+			Effect.map((outcome) => {
+				if (outcome._tag === "Unreachable") return fail(outcome.reason);
+				return outcome.status >= 200 && outcome.status < 300
+					? ok(outcome.text)
+					: fail(`GitHub answered HTTP ${outcome.status}`);
+			}),
+		),
+	);
 
 /** One check run at a commit. `conclusion` is `null` until `status` reaches `completed`. */
 export interface CheckRun {
@@ -144,40 +152,26 @@ export interface CheckRunPage {
 /**
  * The check runs at one commit, paged, carrying the platform's own `total_count` beside them.
  *
- * `--paginate` concatenates one `{total_count, check_runs}` object per page, so the runs accumulate
- * across pages while the declared total is read from the first — a later page's total is the same
- * number, and taking the first keeps a zero-run trailing page from lowering it.
+ * The runs accumulate across pages while the declared total is read from the first — a later page's
+ * total is the same number, and taking the first keeps a zero-run trailing page from lowering it.
  */
 export const listCheckRuns = (repo: string, sha: string): Shell<Attempt<CheckRunPage>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/commits/${sha}/check-runs?per_page=100`,
-		]);
-		if (!r.ok) return fail(r.reason);
-		const pages = pagedJson(r.stdout);
-		if (pages._tag === "Failure") return pages;
-		const runs: CheckRun[] = [];
-		let declared: number | null = null;
-		for (const page of pages.value) {
-			const parsed = parseJson(page);
-			if (!isRecord(parsed) || !Array.isArray(parsed.check_runs)) {
-				return fail("`gh api` exited 0 but its output is not a check-run rollup");
-			}
-			if (declared === null) {
-				if (typeof parsed.total_count !== "number") {
-					return fail("`gh api` exited 0 but the check-run rollup declares no total_count");
-				}
-				declared = parsed.total_count;
-			}
-			for (const value of parsed.check_runs) {
+	authed((token) =>
+		Effect.gen(function* () {
+			const page = yield* pagedEnvelope(
+				token,
+				`repos/${repo}/commits/${sha}/check-runs`,
+				"check_runs",
+			);
+			if (page._tag === "Failure") return page;
+			const runs: CheckRun[] = [];
+			for (const value of page.value.entries) {
 				if (
 					!isRecord(value) ||
 					typeof value.name !== "string" ||
 					typeof value.status !== "string"
 				) {
-					return fail("`gh api` exited 0 but one entry is not a check run");
+					return fail("GitHub answered 200 but one entry is not a check run");
 				}
 				runs.push({
 					name: value.name,
@@ -185,32 +179,39 @@ export const listCheckRuns = (repo: string, sha: string): Shell<Attempt<CheckRun
 					conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
 				});
 			}
-		}
-		return declared === null
-			? fail("`gh api` exited 0 and printed no check-run rollup at all")
-			: ok({declared, runs});
-	});
+			return ok({declared: page.value.declared, runs});
+		}),
+	);
 
 /** Whether a commit exists in the repository — the proven-absent half of `review ci`'s `7`. */
 export const commitExists = (repo: string, sha: string): Shell<Existence<string>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", ["api", `repos/${repo}/commits/${sha}`, "--jq", ".sha"]);
-		if (!r.ok) {
-			return httpStatusOf(r.reason) === 404 ? absent<string>() : unknown<string>(r.reason);
-		}
-		const resolved = r.stdout.trim();
-		return resolved === ""
-			? unknown<string>("`gh api` exited 0 but named no commit")
-			: present(resolved);
-	});
+	authedExistence((token) =>
+		restCall(token, {method: "GET", path: `repos/${repo}/commits/${sha}`}).pipe(
+			Effect.map((outcome) =>
+				existenceOf(outcome, (body) => {
+					const resolved = isRecord(body) && typeof body.sha === "string" ? body.sha : "";
+					return resolved === "" ? fail("GitHub answered 200 but named no commit") : ok(resolved);
+				}),
+			),
+		),
+	);
 
 /** The login the invoking token authenticates as — half of the ACL lookup, and the upsert's key. */
-export const viewerLogin: Shell<Attempt<string>> = Effect.gen(function* () {
-	const r = yield* execCapture("gh", ["api", "user", "--jq", ".login"]);
-	if (!r.ok) return fail(r.reason);
-	const login = r.stdout.trim();
-	return login === "" ? fail("`gh api` exited 0 but named no login") : ok(login);
-});
+export const viewerLogin: Shell<Attempt<string>> = authed((token) =>
+	restCall(token, {method: "GET", path: "user"}).pipe(
+		Effect.map((outcome) => {
+			if (outcome._tag === "Unreachable") return fail(outcome.reason);
+			if (outcome.status < 200 || outcome.status >= 300) {
+				return fail(`GitHub answered HTTP ${outcome.status}`);
+			}
+			const login =
+				isRecord(outcome.body) && typeof outcome.body.login === "string"
+					? outcome.body.login.trim()
+					: "";
+			return login === "" ? fail("GitHub answered 200 but named no login") : ok(login);
+		}),
+	),
+);
 
 /**
  * One collaborator's repository permission — `admin` / `maintain` / `write` / `triage` / `read`.
@@ -220,39 +221,42 @@ export const viewerLogin: Shell<Attempt<string>> = Effect.gen(function* () {
  * two refusals say different true things.
  */
 export const permissionFor = (repo: string, login: string): Shell<Existence<string>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			`repos/${repo}/collaborators/${login}/permission`,
-			"--jq",
-			".permission",
-		]);
-		if (!r.ok) {
-			return httpStatusOf(r.reason) === 404 ? absent<string>() : unknown<string>(r.reason);
-		}
-		const permission = r.stdout.trim();
-		return permission === ""
-			? unknown<string>("`gh api` exited 0 but named no permission")
-			: present(permission);
-	});
+	authedExistence((token) =>
+		restCall(token, {
+			method: "GET",
+			path: `repos/${repo}/collaborators/${login}/permission`,
+		}).pipe(
+			Effect.map((outcome) =>
+				existenceOf(outcome, (body) => {
+					const permission =
+						isRecord(body) && typeof body.permission === "string" ? body.permission.trim() : "";
+					return permission === ""
+						? fail("GitHub answered 200 but named no permission")
+						: ok(permission);
+				}),
+			),
+		),
+	);
 
 /** Replace one issue comment's body — the edit half of the one-comment-per-namespace upsert. */
 export const patchComment = (repo: string, id: number, body: string): Shell<Attempt<string>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"PATCH",
-			`repos/${repo}/issues/comments/${id}`,
-			"-f",
-			`body=${body}`,
-		]);
-		if (!r.ok) return fail(r.reason);
-		const parsed = parseJson(r.stdout);
-		return isRecord(parsed) && typeof parsed.html_url === "string"
-			? ok(parsed.html_url)
-			: fail("`gh api` exited 0 but its output is not an edited comment");
-	});
+	authed((token) =>
+		restCall(token, {
+			method: "PATCH",
+			path: `repos/${repo}/issues/comments/${id}`,
+			body: {body},
+		}).pipe(
+			Effect.map((outcome) => {
+				if (outcome._tag === "Unreachable") return fail(outcome.reason);
+				if (outcome.status < 200 || outcome.status >= 300) {
+					return fail(`GitHub answered HTTP ${outcome.status}`);
+				}
+				return isRecord(outcome.body) && typeof outcome.body.html_url === "string"
+					? ok(outcome.body.html_url)
+					: fail("GitHub answered 200 but its output is not an edited comment");
+			}),
+		),
+	);
 
 /**
  * The open pull requests the search index nominates for `tokens` — candidate numbers, never a proof.
@@ -273,27 +277,21 @@ export const searchOpenPulls = (
 	repo: string,
 	tokens: ReadonlyArray<string>,
 ): Shell<Attempt<ReadonlyArray<number>>> =>
-	Effect.gen(function* () {
-		const q = `repo:${repo} is:pr is:open ${tokens.join(" ")}`;
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`search/issues?q=${encodeURIComponent(q)}&per_page=100`,
-			"--jq",
-			".items[].number",
-		]);
-		if (!r.ok) return fail(r.reason);
-		const numbers: number[] = [];
-		for (const line of r.stdout.split("\n")) {
-			const text = line.trim();
-			if (text === "") continue;
-			if (!/^\d+$/.test(text)) {
-				return fail("`gh api` exited 0 but its output is not a list of pull-request numbers");
+	authed((token) =>
+		Effect.gen(function* () {
+			const q = `repo:${repo} is:pr is:open ${tokens.join(" ")}`;
+			const page = yield* pagedEnvelope(token, `search/issues?q=${encodeURIComponent(q)}`, "items");
+			if (page._tag === "Failure") return page;
+			const numbers: number[] = [];
+			for (const item of page.value.entries) {
+				if (!isRecord(item) || typeof item.number !== "number") {
+					return fail("GitHub answered 200 but its output is not a list of pull requests");
+				}
+				numbers.push(item.number);
 			}
-			numbers.push(Number.parseInt(text, 10));
-		}
-		return ok(numbers);
-	});
+			return ok(numbers);
+		}),
+	);
 
 /** One open pull request that declares it closes the issue: the number and the link to hand on. */
 export interface ClosingPull {
@@ -325,58 +323,60 @@ export const openPullsClosing = (
 	repo: string,
 	issue: number,
 ): Shell<Attempt<ReadonlyArray<ClosingPull>>> =>
-	Effect.gen(function* () {
-		const [owner, name] = repo.split("/");
-		if (owner === undefined || name === undefined) return fail(`\`${repo}\` is not owner/name`);
-		const out: ClosingPull[] = [];
-		let cursor: string | null = null;
-		for (let page = 0; page < 50; page++) {
-			const args = [
-				"api",
-				"graphql",
-				"-f",
-				`query=${CLOSERS_QUERY}`,
-				"-F",
-				`owner=${owner}`,
-				"-F",
-				`name=${name}`,
-				"-F",
-				`number=${issue}`,
-			];
-			if (cursor !== null) args.push("-F", `cursor=${cursor}`);
-			const r = yield* execCapture("gh", args);
-			if (!r.ok) return fail(r.reason);
-			const parsed = parseJson(r.stdout);
-			const data = isRecord(parsed) && isRecord(parsed.data) ? parsed.data : null;
-			const repository = data !== null && isRecord(data.repository) ? data.repository : null;
-			const issueNode = repository !== null && isRecord(repository.issue) ? repository.issue : null;
-			const set =
-				issueNode !== null && isRecord(issueNode.closedByPullRequestsReferences)
-					? issueNode.closedByPullRequestsReferences
-					: null;
-			if (set === null || !Array.isArray(set.nodes)) {
-				return fail("`gh api graphql` exited 0 but its output is not a closing-pull page");
-			}
-			for (const node of set.nodes) {
-				if (
-					!isRecord(node) ||
-					typeof node.number !== "number" ||
-					typeof node.url !== "string" ||
-					node.url === "" ||
-					typeof node.state !== "string"
-				) {
-					return fail("`gh api graphql` exited 0 but one node is not a pull request");
+	authed(
+		(token): Api<Attempt<ReadonlyArray<ClosingPull>>> =>
+			Effect.gen(function* () {
+				const [owner, name] = repo.split("/");
+				if (owner === undefined || name === undefined) return fail(`\`${repo}\` is not owner/name`);
+				const out: ClosingPull[] = [];
+				let cursor: string | null = null;
+				for (let page = 0; page < 50; page++) {
+					const outcome: Rest = yield* graphqlRead(token, CLOSERS_QUERY, {
+						owner,
+						name,
+						number: issue,
+						cursor,
+					});
+					if (outcome._tag === "Unreachable") return fail(outcome.reason);
+					if (outcome.status < 200 || outcome.status >= 300) {
+						return fail(`GitHub answered HTTP ${outcome.status}`);
+					}
+					const parsed: unknown = outcome.body;
+					if (isRecord(parsed) && Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+						return fail("GitHub answered 200 and the GraphQL query carried errors");
+					}
+					const data = isRecord(parsed) && isRecord(parsed.data) ? parsed.data : null;
+					const repository = data !== null && isRecord(data.repository) ? data.repository : null;
+					const issueNode =
+						repository !== null && isRecord(repository.issue) ? repository.issue : null;
+					const set =
+						issueNode !== null && isRecord(issueNode.closedByPullRequestsReferences)
+							? issueNode.closedByPullRequestsReferences
+							: null;
+					if (set === null || !Array.isArray(set.nodes)) {
+						return fail("GitHub answered 200 but its output is not a closing-pull page");
+					}
+					for (const node of set.nodes) {
+						if (
+							!isRecord(node) ||
+							typeof node.number !== "number" ||
+							typeof node.url !== "string" ||
+							node.url === "" ||
+							typeof node.state !== "string"
+						) {
+							return fail("GitHub answered 200 but one node is not a pull request");
+						}
+						if (node.state !== "OPEN") continue;
+						out.push({number: node.number, url: node.url});
+					}
+					const info = isRecord(set.pageInfo) ? set.pageInfo : null;
+					if (info === null || info.hasNextPage !== true) break;
+					cursor = typeof info.endCursor === "string" ? info.endCursor : "";
+					if (cursor === "") return fail("GitHub declared another page and named no cursor");
 				}
-				if (node.state !== "OPEN") continue;
-				out.push({number: node.number, url: node.url});
-			}
-			const info = isRecord(set.pageInfo) ? set.pageInfo : null;
-			if (info === null || info.hasNextPage !== true) break;
-			cursor = typeof info.endCursor === "string" ? info.endCursor : "";
-			if (cursor === "") return fail("`gh api graphql` declared another page and named no cursor");
-		}
-		return ok(out);
-	});
+				return ok(out);
+			}),
+	);
 
 /** One pull request as a branch lookup sees it — enough to pick the newest and state what it is. */
 export interface BranchPull {
@@ -398,27 +398,21 @@ export const pullsForBranch = (
 	repo: string,
 	branch: string,
 ): Shell<Attempt<ReadonlyArray<BranchPull>>> =>
-	Effect.gen(function* () {
-		const owner = repo.split("/")[0] ?? "";
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/pulls?state=all&per_page=100&head=${encodeURIComponent(`${owner}:${branch}`)}`,
-		]);
-		if (!r.ok) return fail(r.reason);
-		const pages = pagedJson(r.stdout);
-		if (pages._tag === "Failure") return pages;
-		const out: BranchPull[] = [];
-		for (const page of pages.value) {
-			const parsed = parseJson(page);
-			if (!Array.isArray(parsed)) {
-				return fail("`gh api` exited 0 but its output is not a list of pull requests");
+	authed((token) =>
+		Effect.gen(function* () {
+			const owner = repo.split("/")[0] ?? "";
+			const head = encodeURIComponent(`${owner}:${branch}`);
+			const page = yield* pagedWithLinkProof(token, `repos/${repo}/pulls?state=all&head=${head}`);
+			if (page._tag === "Failure") return page;
+			if (!page.value.exhausted) {
+				return fail(`the pull request list for \`${branch}\` was not read to its end`);
 			}
-			for (const value of parsed) {
-				const head = isRecord(value) ? value.head : null;
-				const sha = isRecord(head) && typeof head.sha === "string" ? head.sha : null;
+			const out: BranchPull[] = [];
+			for (const value of page.value.entries) {
+				const headNode = isRecord(value) ? value.head : null;
+				const sha = isRecord(headNode) && typeof headNode.sha === "string" ? headNode.sha : null;
 				if (!isRecord(value) || typeof value.number !== "number" || sha === null) {
-					return fail("`gh api` exited 0 but one entry is not a pull request");
+					return fail("GitHub answered 200 but one entry is not a pull request");
 				}
 				out.push({
 					number: value.number,
@@ -428,6 +422,6 @@ export const pullsForBranch = (
 					createdAt: typeof value.created_at === "string" ? value.created_at : "",
 				});
 			}
-		}
-		return ok(out);
-	});
+			return ok(out);
+		}),
+	);

@@ -1,21 +1,21 @@
 /**
  * The GitHub half of the in-flight read: which open pull requests already claim a `.decisions/` id.
  *
- * Reads go through `gh api` REST and **never GraphQL** — the org's Projects-classic integration
- * errors out GraphQL issue queries — and **every list read pages**: a pull request that adds its
- * `.decisions/` file past file #100 still claims its number (#725), so a single unpaginated page is
- * a silently short answer, not a shorter one.
+ * Reads go through the `gh-api` client's REST leg and **never GraphQL** — the org's Projects-classic
+ * integration errors out GraphQL issue queries — and **every list read pages**: a pull request that
+ * adds its `.decisions/` file past file #100 still claims its number (#725), so a single unpaginated
+ * page is a silently short answer, not a shorter one.
  *
- * Both parsers below validate the SHAPE of what they read before anything interprets it, and hand
- * back `null` on a shape they did not expect. That is deliberate: `gh` can exit 0 having printed
- * something other than what was asked for, and a permissive parse would turn that into an empty
- * in-flight set — which a caller reads as "nothing reserved", the exact collision this exists to
- * remove.
+ * Both reads below validate the SHAPE of what arrived before anything interprets it, and refuse a
+ * payload that is not it. That discipline predates the port and survives it: a permissive read would
+ * turn a wrong-shape payload into an empty in-flight set — which a caller reads as "nothing
+ * reserved", the exact collision this module exists to remove.
  */
 
 import {Effect} from "effect";
-import {execCapture} from "./exec.ts";
+import {authed, pagedWithLinkProof} from "./gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "./git.ts";
+import {isRecord} from "./json.ts";
 
 /** A `.decisions/NNNN[a]-slug.md` path an open pull request adds. */
 export interface ClaimedId {
@@ -35,34 +35,6 @@ const FILE_STATUS = new Set([
 	"unchanged",
 ]);
 
-/** Pull request numbers from `--jq '.[].number'` output, or `null` when a line is not a number. */
-export const parsePrNumbers = (stdout: string): ReadonlyArray<number> | null => {
-	const lines = stdout.split("\n").filter((l) => l.trim() !== "");
-	const out: number[] = [];
-	for (const line of lines) {
-		if (!/^\d+$/.test(line.trim())) return null;
-		out.push(Number.parseInt(line.trim(), 10));
-	}
-	return out;
-};
-
-/** `status\tfilename` rows, or `null` when a row is not that shape. */
-export const parseFileRows = (
-	stdout: string,
-): ReadonlyArray<{readonly status: string; readonly filename: string}> | null => {
-	const lines = stdout.split("\n").filter((l) => l !== "");
-	const out: {status: string; filename: string}[] = [];
-	for (const line of lines) {
-		const parts = line.split("\t");
-		const status = parts[0];
-		const filename = parts[1];
-		if (parts.length !== 2 || status === undefined || filename === undefined) return null;
-		if (!FILE_STATUS.has(status)) return null;
-		out.push({status, filename});
-	}
-	return out;
-};
-
 /** The record id a `.decisions/NNNN[a]-slug.md` path claims, or `null` for any other path. */
 export const claimedIdOf = (path: string, dir: string): {id: string; file: string} | null => {
 	const prefix = `${dir.replace(/\/+$/, "")}/`;
@@ -75,20 +47,21 @@ export const claimedIdOf = (path: string, dir: string): {id: string; file: strin
 
 /** Every open pull request number in `repo`, paged. */
 export const openPullRequests = (repo: string): Shell<Attempt<ReadonlyArray<number>>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/pulls?state=open&per_page=100`,
-			"--jq",
-			".[].number",
-		]);
-		if (!r.ok) return fail(r.reason);
-		const numbers = parsePrNumbers(r.stdout);
-		return numbers === null
-			? fail("`gh api` exited 0 but its output is not a list of pull request numbers")
-			: ok(numbers);
-	});
+	authed((token) =>
+		Effect.gen(function* () {
+			const page = yield* pagedWithLinkProof(token, `repos/${repo}/pulls?state=open`);
+			if (page._tag === "Failure") return page;
+			if (!page.value.exhausted) return fail("the open pull request list was not read to its end");
+			const numbers: number[] = [];
+			for (const entry of page.value.entries) {
+				if (!isRecord(entry) || typeof entry.number !== "number") {
+					return fail("GitHub answered 200 but its output is not a list of pull requests");
+				}
+				numbers.push(entry.number);
+			}
+			return ok(numbers);
+		}),
+	);
 
 /** The `.decisions/` ids one open pull request ADDS, paged over its file list. */
 export const idsClaimedByPr = (
@@ -96,22 +69,26 @@ export const idsClaimedByPr = (
 	pr: number,
 	dir: string,
 ): Shell<Attempt<ReadonlyArray<ClaimedId>>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/pulls/${pr}/files?per_page=100`,
-			"--jq",
-			'.[] | "\\(.status)\t\\(.filename)"',
-		]);
-		if (!r.ok) return fail(r.reason);
-		const rows = parseFileRows(r.stdout);
-		if (rows === null) return fail("`gh api` exited 0 but its output is not a list of file rows");
-		const claimed: ClaimedId[] = [];
-		for (const row of rows) {
-			if (row.status !== "added") continue;
-			const hit = claimedIdOf(row.filename, dir);
-			if (hit !== null) claimed.push({id: hit.id, file: hit.file, pr});
-		}
-		return ok(claimed);
-	});
+	authed((token) =>
+		Effect.gen(function* () {
+			const page = yield* pagedWithLinkProof(token, `repos/${repo}/pulls/${pr}/files`);
+			if (page._tag === "Failure") return page;
+			if (!page.value.exhausted) return fail(`PR #${pr}'s file list was not read to its end`);
+			const claimed: ClaimedId[] = [];
+			for (const entry of page.value.entries) {
+				const status = isRecord(entry) ? entry.status : undefined;
+				const filename = isRecord(entry) ? entry.filename : undefined;
+				if (
+					typeof status !== "string" ||
+					typeof filename !== "string" ||
+					!FILE_STATUS.has(status)
+				) {
+					return fail("GitHub answered 200 but its output is not a list of file entries");
+				}
+				if (status !== "added") continue;
+				const hit = claimedIdOf(filename, dir);
+				if (hit !== null) claimed.push({id: hit.id, file: hit.file, pr});
+			}
+			return ok(claimed);
+		}),
+	);

@@ -23,6 +23,7 @@
  * anonymous request has no way to be constructed (ADR 0315).
  */
 import {Effect} from "effect";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import {execRecord} from "./exec.ts";
@@ -86,6 +87,27 @@ export const resolveToken = (
 		return outcome.exitCode === 0 && token !== "" ? ok(token) : fail(NO_TOKEN);
 	});
 
+let resolved: string | null = null;
+
+/**
+ * The credential for an adapter that cannot be handed one: `resolveToken(process.env)`, memoised.
+ *
+ * The `io/` adapters are called from ~45 verb modules with `(repo, …)` signatures that predate the
+ * client, and threading `env` down to each of them would rewrite every one of those callers. So the
+ * process environment is read here instead — still through {@link resolveToken}, so ADR 0315's
+ * order has exactly one implementation. A verb that already holds an `env` (the `ui` surface) keeps
+ * passing it explicitly; this is the seat for the ones that do not.
+ *
+ * Only a resolved token is remembered. Caching the refusal would pin a run to a credential state it
+ * has since left, and re-deriving the refusal costs one spawn.
+ */
+export const ambientToken: Shell<Attempt<string>> = Effect.gen(function* () {
+	if (resolved !== null) return ok(resolved);
+	const outcome = yield* resolveToken(process.env);
+	if (outcome._tag === "Ok") resolved = outcome.value;
+	return outcome;
+});
+
 /** One served response, or the reason the request never produced one. */
 export type Rest =
 	| {
@@ -139,11 +161,78 @@ const send = (request: HttpClientRequest.HttpClientRequest): Api<Rest> =>
  * reads its completeness proof off.
  */
 export const restRead = (token: string, method: "GET" | "POST", path: string): Api<Rest> =>
-	send(
-		(method === "GET" ? HttpClientRequest.get : HttpClientRequest.post)(endpoint(path)).pipe(
-			HttpClientRequest.setHeaders(headersFor(token)),
-		),
+	restCall(token, {method, path});
+
+/** One REST call's shape: the route, and the two things a write or a media-typed read adds to it. */
+export interface RestCall {
+	readonly method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+	readonly path: string;
+	/** Sent as a JSON object body. A write's fields, typed, rather than `gh`'s `-f key=value`. */
+	readonly body?: Readonly<Record<string, unknown>> | undefined;
+	/**
+	 * Overrides the JSON media type. `application/vnd.github.diff` serves a diff, whose bytes are not
+	 * JSON at all — {@link Rest.text} is where such a body is read, and `body` stays `null` rather
+	 * than the response pretending to a shape it does not have.
+	 */
+	readonly accept?: string | undefined;
+}
+
+/** {@link restRead}'s general form: any method, an optional JSON body, an optional media type. */
+export const restCall = (token: string, call: RestCall): Api<Rest> => {
+	const headers = {
+		...headersFor(token),
+		...(call.accept === undefined ? {} : {accept: call.accept}),
+	};
+	const request = HttpClientRequest.make(call.method)(endpoint(call.path)).pipe(
+		HttpClientRequest.setHeaders(headers),
 	);
+	return send(
+		call.body === undefined ? request : HttpClientRequest.bodyJsonUnsafe(call.body)(request),
+	);
+};
+
+/**
+ * Run one HTTP leg on whatever transport the caller provided, falling back to `fetch`.
+ *
+ * The requirement is **erased here rather than propagated**, and that is a constraint from outside
+ * this module: the `io/` adapters are typed `Shell<…>` and are called from ~45 verb modules that
+ * annotate their own effects the same way, so an adapter publishing an `HttpClient` requirement
+ * would red every one of them — including the other in-flight ports of this epic. So the transport
+ * is ambient, exactly as {@link ambientToken} makes the credential ambient. A provided client still
+ * wins, which is what keeps a unit test's scripted seam the seam production runs on; a run that
+ * provided none gets the platform's `fetch`, which is what `run.ts` provides anyway.
+ */
+export const onTransport = <A>(api: Api<A>): Effect.Effect<A> =>
+	Effect.gen(function* () {
+		const provided = yield* Effect.serviceOption(HttpClient.HttpClient);
+		return yield* provided._tag === "Some"
+			? Effect.provideService(api, HttpClient.HttpClient, provided.value)
+			: Effect.provide(api, FetchHttpClient.layer);
+	});
+
+/**
+ * Run `use` under the ambient credential and the ambient transport, or hand back the refusal that
+ * says there is no credential.
+ *
+ * Every adapter leg needs the same two lines in front of it, and writing them out per call site is
+ * how one of them eventually resolves a token it does not check.
+ */
+export const authed = <A>(use: (token: string) => Api<Attempt<A>>): Shell<Attempt<A>> =>
+	Effect.gen(function* () {
+		const token = yield* ambientToken;
+		return token._tag === "Failure" ? token : yield* onTransport(use(token.value));
+	});
+
+/** {@link authed} for a read whose answer is an {@link Existence}: no credential is `Unknown`. */
+export const authedExistence = <A>(
+	use: (token: string) => Api<Existence<A>>,
+): Shell<Existence<A>> =>
+	Effect.gen(function* () {
+		const token = yield* ambientToken;
+		return token._tag === "Failure"
+			? unknown<A>(token.reason)
+			: yield* onTransport(use(token.value));
+	});
 
 /**
  * The three-arm {@link Existence} construction, off the status the response carried.
@@ -202,18 +291,37 @@ const refusalFor = (outcome: Rest & {_tag: "Response"}): string =>
  * reach.
  */
 export const pagedWithLinkProof = (token: string, path: string): Api<Attempt<PagedProof>> =>
+	pagedExistence(token, path).pipe(
+		Effect.map((read) =>
+			read._tag === "Present"
+				? ok(read.value)
+				: fail(read._tag === "Absent" ? "GitHub answered HTTP 404" : read.reason),
+		),
+	);
+
+/**
+ * {@link pagedWithLinkProof} for a list whose 404 is a verdict about its owner rather than about the
+ * read: the sub-issue and dependency endpoints answer `200 []` for a real issue with no edges and
+ * `404` for an issue that does not exist, so collapsing the two would print a proven negative over
+ * zero scope (`./edges.ts`'s `404-IS-A-VERDICT`).
+ */
+export const pagedExistence = (token: string, path: string): Api<Existence<PagedProof>> =>
 	Effect.gen(function* () {
 		const entries: unknown[] = [];
 		for (let page = 1; page <= PAGE_CAP; page++) {
 			const outcome = yield* restRead(token, "GET", paged(path, page));
-			if (outcome._tag === "Unreachable") return fail(outcome.reason);
-			if (outcome.status < 200 || outcome.status >= 300) return fail(refusalFor(outcome));
-			if (!Array.isArray(outcome.body))
-				return fail("GitHub answered 200 but its body is not a list");
+			if (outcome._tag === "Unreachable") return unknown<PagedProof>(outcome.reason);
+			if (outcome.status === 404) return absent<PagedProof>();
+			if (outcome.status < 200 || outcome.status >= 300) {
+				return unknown<PagedProof>(refusalFor(outcome));
+			}
+			if (!Array.isArray(outcome.body)) {
+				return unknown<PagedProof>("GitHub answered 200 but its body is not a list");
+			}
 			entries.push(...outcome.body);
-			if (!declaresNextPage(outcome.headers)) return ok({entries, exhausted: true});
+			if (!declaresNextPage(outcome.headers)) return present({entries, exhausted: true});
 		}
-		return ok({entries, exhausted: false});
+		return present({entries, exhausted: false});
 	});
 
 /**
