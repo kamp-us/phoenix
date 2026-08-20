@@ -1282,13 +1282,6 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
 }
 
 /**
- * The atomic çaylak→yazar promotion (#1206). The `tier = 'çaylak'` WHERE is the
- * idempotency guard — an already-yazar account matches 0 rows — and `promoted_at`
- * rides that same guarded UPDATE deliberately, so a non-promoting call stamps nothing.
- *
- * Query-builder statements only, per `buildAnonymizeStatements`.
- */
-/**
  * The topics the sweep below is about to un-hide content on, captured BEFORE the batch:
  * afterwards `sandboxed_at` is null and a swept row is indistinguishable from one the
  * author already had live. Same pre-batch capture as `anonymizeAccount`'s email (ADR 0097 §2).
@@ -1327,6 +1320,13 @@ async function readSandboxSweep(db: DrizzleDb, userId: string): Promise<SandboxS
 	};
 }
 
+/**
+ * The atomic çaylak→yazar promotion (#1206). The `tier = 'çaylak'` WHERE is the
+ * idempotency guard — an already-yazar account matches 0 rows — and `promoted_at`
+ * rides that same guarded UPDATE deliberately, so a non-promoting call stamps nothing.
+ *
+ * Query-builder statements only, per `buildAnonymizeStatements`.
+ */
 function buildPromotionStatements(db: DrizzleDb, userId: string, now: Date) {
 	const promoteTier = db
 		.update(schema.user)
