@@ -32,6 +32,7 @@ const recordingPublisher = () => {
 				updates.push({type, id, data: opts?.data});
 			}),
 		delete: () => Effect.void,
+		invalidate: () => Effect.void,
 		topic: () => {
 			throw new Error("recordingPublisher.topic unused");
 		},
