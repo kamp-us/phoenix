@@ -16,10 +16,15 @@ and lowercase kebab-case even where the product noun they serve is Turkish
 Routes fall into two visibility classes:
 
 - **Public product routes** — mounted plainly, live for everyone (`/pano`, `/sozluk`,
-  `/search`, `/u/:username`).
-- **Dark feature routes** — mounted behind a flag the page self-gates on (off ⇒ 404):
-  `/divan`, `/funnel`, `/bildirimler`. These ship dark by default and a human flips
-  the flag to release them (the agents-deploy / humans-release contract, ADR 0083).
+  `/search`, `/u/:username`). `/divan` and `/funnel` belong here too: they carry no flag and no
+  client-side role check, because their fate roots deny an unentitled reader `UNAUTHORIZED` and
+  `<Screen>` renders that as "yetkin yok".
+- **Dark feature routes** — mounted plainly, but the page self-gates on a default-off flag
+  (off ⇒ 404): `/bildirimler`, `/susturduklarim`, `/caylak-gorunurlugu`, and the `/mecmua/*`
+  routes. These ship dark by default and a human flips the flag to release them (the
+  agents-deploy / humans-release contract, ADR 0083). The gate's shape — the self-404 and the
+  placeholder that keeps the 404 from flashing before the flag settles — is
+  [flag-dark-page-gate.md](./flag-dark-page-gate.md).
 
 `/lab/*` is a third, deliberately-public class — see below.
 

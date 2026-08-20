@@ -1,4 +1,7 @@
-/** `/susturduklarim` — ships dark behind the default-off `member-mute` flag (ADR 0083). */
+/**
+ * `/susturduklarim` — ships dark behind the default-off `member-mute` flag. The gate's shape is
+ * `.patterns/flag-dark-page-gate.md`.
+ */
 import {Navigate} from "react-router";
 import {useSession} from "../auth/client";
 import {MutedMembersList} from "../components/mute/MutedMembersList";
@@ -14,7 +17,6 @@ export function MutesPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MEMBER_MUTE, false);
 	const session = useSession();
 
-	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first.
 	if (flagLoading || session.isPending) {
 		return (
 			<div className="kp-mutes">
