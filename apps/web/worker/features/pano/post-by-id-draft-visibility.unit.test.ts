@@ -11,6 +11,8 @@ import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
 import type * as schema from "../../db/drizzle/schema.ts";
+import {memberSandboxViewer} from "../kunye/sandbox.testing.ts";
+import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
 import {PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
 import {ReactionStub} from "../reaction/Reaction.testing.ts";
 import {Vote} from "../vote/Vote.ts";
@@ -119,7 +121,10 @@ describe("Pano.getPost — draft is author-only (the by-id leak gate, #1405)", (
 	it.effect("a non-owner by-id read of a draft resolves not-found (the leak case)", () =>
 		Effect.gen(function* () {
 			const pano = yield* Pano;
-			const got = yield* pano.getPost(draftRow.id, {viewerId: OTHER});
+			const got = yield* pano.getPost(draftRow.id, {
+				viewerId: OTHER,
+				sandboxViewer: memberSandboxViewer(OTHER),
+			});
 			assert.isNull(got, "another author's draft must not disclose to a viewer holding its id");
 		}).pipe(Effect.provide(panoLayer(scriptedAccess([draftRow]).access))),
 	);
@@ -127,7 +132,10 @@ describe("Pano.getPost — draft is author-only (the by-id leak gate, #1405)", (
 	it.effect("the author reads their OWN draft by id (read-your-writes)", () =>
 		Effect.gen(function* () {
 			const pano = yield* Pano;
-			const got = yield* pano.getPost(draftRow.id, {viewerId: AUTHOR});
+			const got = yield* pano.getPost(draftRow.id, {
+				viewerId: AUTHOR,
+				sandboxViewer: memberSandboxViewer(AUTHOR),
+			});
 			assert.isNotNull(got, "the author must read their own draft back");
 			assert.strictEqual(got?.id, draftRow.id);
 		}).pipe(Effect.provide(panoLayer(scriptedAccess([draftRow]).access))),
@@ -136,7 +144,7 @@ describe("Pano.getPost — draft is author-only (the by-id leak gate, #1405)", (
 	it.effect("an anonymous by-id read of a draft resolves not-found", () =>
 		Effect.gen(function* () {
 			const pano = yield* Pano;
-			const got = yield* pano.getPost(draftRow.id, {});
+			const got = yield* pano.getPost(draftRow.id, {sandboxViewer: anonymousViewer});
 			assert.isNull(got);
 		}).pipe(Effect.provide(panoLayer(scriptedAccess([draftRow]).access))),
 	);
@@ -149,7 +157,10 @@ describe("Pano.getPostsByIds — batch routes through the seam's draft arm (#140
 			const {access, queries} = scriptedAccess([[] /* fetched */]);
 			return Effect.gen(function* () {
 				const pano = yield* Pano;
-				yield* pano.getPostsByIds([draftRow.id], {viewerId: OTHER});
+				yield* pano.getPostsByIds([draftRow.id], {
+					viewerId: OTHER,
+					sandboxViewer: memberSandboxViewer(OTHER),
+				});
 				const {sql, params} = queries[0]!;
 				assert.match(sql, /"post_record"\."is_draft" is not 1/, "draft arm from the seam");
 				assert.match(
@@ -166,7 +177,7 @@ describe("Pano.getPostsByIds — batch routes through the seam's draft arm (#140
 		const {access, queries} = scriptedAccess([[] /* fetched */]);
 		return Effect.gen(function* () {
 			const pano = yield* Pano;
-			yield* pano.getPostsByIds([draftRow.id], {});
+			yield* pano.getPostsByIds([draftRow.id], {sandboxViewer: anonymousViewer});
 			const {sql} = queries[0]!;
 			assert.match(
 				sql,

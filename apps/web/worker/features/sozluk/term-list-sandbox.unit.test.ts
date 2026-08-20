@@ -12,6 +12,7 @@ import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
+import {resolveSandboxViewer} from "../lifecycle/SandboxVisibility.ts";
 import {PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
 import {ReactionStub} from "../reaction/Reaction.testing.ts";
 import {Vote} from "../vote/Vote.ts";
@@ -106,7 +107,10 @@ const runList = (opts: {
 		);
 		yield* Effect.gen(function* () {
 			const sozluk = yield* Sozluk;
-			yield* sozluk.listTermSummariesConnection(opts);
+			yield* sozluk.listTermSummariesConnection({
+				...opts,
+				sandboxViewer: resolveSandboxViewer(opts),
+			});
 		}).pipe(Effect.provide(sozlukLayer(access)));
 
 		const count = prepared[0];

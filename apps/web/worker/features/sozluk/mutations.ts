@@ -20,7 +20,7 @@ import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {InsufficientKarma} from "../kunye/errors.ts";
 import {gateContentOnKarma} from "../kunye/privilege.ts";
-import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {currentSandboxViewer, decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {authorDisplayLabel} from "../pasaport/author-label.ts";
 import {SelfVoteNotAllowed, VoterNotEligible} from "../vote/errors.ts";
 import {
@@ -183,7 +183,11 @@ export const mutations = {
 			const flags = yield* Flags;
 			const on = yield* flags.getBoolean(PHOENIX_REACTIONS, false).pipe(provideRequestFlags);
 			if (!on) {
-				const [current] = yield* sozluk.getDefinitionsByIds([input.id], {viewerId: user.id});
+				const sandboxViewer = yield* currentSandboxViewer;
+				const [current] = yield* sozluk.getDefinitionsByIds([input.id], {
+					viewerId: user.id,
+					sandboxViewer,
+				});
 				if (!current) {
 					return yield* new DefinitionNotFound({
 						definitionId: input.id,
@@ -227,7 +231,11 @@ export const mutations = {
 				body: input.body,
 			});
 			// Re-read the viewer's vote so the edit doesn't blank `myVote`.
-			const [fresh] = yield* sozluk.getDefinitionsByIds([result.definitionId], {viewerId: user.id});
+			const sandboxViewer = yield* currentSandboxViewer;
+			const [fresh] = yield* sozluk.getDefinitionsByIds([result.definitionId], {
+				viewerId: user.id,
+				sandboxViewer,
+			});
 			const definition = shapeDefinition({...result, myVote: fresh?.myVote ?? null});
 			yield* live.definition.update(definition.id, {
 				changed: ["body", "updatedAt"],
@@ -255,7 +263,8 @@ export const mutations = {
 				yield* live.definition.term(slug).deleteEdge(input.id);
 			}
 			if (!slug) return null;
-			const page = yield* sozluk.getTerm(slug, {viewerId: user.id});
+			const sandboxViewer = yield* currentSandboxViewer;
+			const page = yield* sozluk.getTerm(slug, {viewerId: user.id, sandboxViewer});
 			if (!page) return null;
 			return toTermFromPage(page);
 		}),
@@ -278,7 +287,8 @@ export const mutations = {
 			});
 			const slug = yield* sozluk.lookupDefinitionTermSlug(input.id);
 			if (!slug) return null;
-			const page = yield* sozluk.getTerm(slug, {viewerId: user.id});
+			const sandboxViewer = yield* currentSandboxViewer;
+			const page = yield* sozluk.getTerm(slug, {viewerId: user.id, sandboxViewer});
 			if (!page) return null;
 			const restored = page.definitions.find((d) => d.id === input.id);
 			if (restored) {

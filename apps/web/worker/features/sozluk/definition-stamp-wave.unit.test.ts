@@ -8,6 +8,7 @@ import {Effect, Layer} from "effect";
 import type {Concurrency} from "effect/Types";
 import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
+import {memberSandboxViewer} from "../kunye/sandbox.testing.ts";
 import {makePasaportStub} from "../pasaport/Pasaport.testing.ts";
 import {Reaction, type ReactionAggregate} from "../reaction/Reaction.ts";
 import {Vote} from "../vote/Vote.ts";
@@ -96,6 +97,7 @@ describe("Sozluk.getDefinitionsByIds — stamp-wave behavior equivalence (#2709)
 				const sozluk = yield* Sozluk;
 				return yield* sozluk.getDefinitionsByIds(["d1", "d2"], {
 					viewerId: "viewer-1",
+					sandboxViewer: memberSandboxViewer("viewer-1"),
 					parallelStamps: false,
 				});
 			}).pipe(Effect.provide(sozlukLayer(byIdAccess(), serialCalls)));
@@ -104,6 +106,7 @@ describe("Sozluk.getDefinitionsByIds — stamp-wave behavior equivalence (#2709)
 				const sozluk = yield* Sozluk;
 				return yield* sozluk.getDefinitionsByIds(["d1", "d2"], {
 					viewerId: "viewer-1",
+					sandboxViewer: memberSandboxViewer("viewer-1"),
 					parallelStamps: true,
 				});
 			}).pipe(Effect.provide(sozlukLayer(byIdAccess(), parallelCalls)));
@@ -129,16 +132,27 @@ describe("Sozluk.getDefinitionsByIds — stamp-wave behavior equivalence (#2709)
 		return Effect.gen(function* () {
 			yield* Effect.gen(function* () {
 				const sozluk = yield* Sozluk;
-				yield* sozluk.getDefinitionsByIds(["d1"], {viewerId: "v", parallelStamps: true});
+				yield* sozluk.getDefinitionsByIds(["d1"], {
+					viewerId: "v",
+					sandboxViewer: memberSandboxViewer("v"),
+					parallelStamps: true,
+				});
 			}).pipe(Effect.provide(sozlukLayer(byIdAccess(), onCalls)));
 			yield* Effect.gen(function* () {
 				const sozluk = yield* Sozluk;
-				yield* sozluk.getDefinitionsByIds(["d1"], {viewerId: "v", parallelStamps: false});
+				yield* sozluk.getDefinitionsByIds(["d1"], {
+					viewerId: "v",
+					sandboxViewer: memberSandboxViewer("v"),
+					parallelStamps: false,
+				});
 			}).pipe(Effect.provide(sozlukLayer(byIdAccess(), offCalls)));
 			yield* Effect.gen(function* () {
 				const sozluk = yield* Sozluk;
 				// No `parallelStamps` → the default-off path (today's behavior).
-				yield* sozluk.getDefinitionsByIds(["d1"], {viewerId: "v"});
+				yield* sozluk.getDefinitionsByIds(["d1"], {
+					viewerId: "v",
+					sandboxViewer: memberSandboxViewer("v"),
+				});
 			}).pipe(Effect.provide(sozlukLayer(byIdAccess(), offCalls)));
 
 			assert.deepStrictEqual(onCalls, [{concurrency: "unbounded"}], "flag on → unbounded");
@@ -167,6 +181,7 @@ describe("Sozluk.listDefinitionsKeyset — stamp-wave behavior equivalence (#270
 					return yield* sozluk.listDefinitionsKeyset("a-term", {
 						first: 10,
 						viewerId: "viewer-1",
+						sandboxViewer: memberSandboxViewer("viewer-1"),
 						parallelStamps: false,
 					});
 				}).pipe(Effect.provide(sozlukLayer(keysetAccess(), serialCalls)));
@@ -176,6 +191,7 @@ describe("Sozluk.listDefinitionsKeyset — stamp-wave behavior equivalence (#270
 					return yield* sozluk.listDefinitionsKeyset("a-term", {
 						first: 10,
 						viewerId: "viewer-1",
+						sandboxViewer: memberSandboxViewer("viewer-1"),
 						parallelStamps: true,
 					});
 				}).pipe(Effect.provide(sozlukLayer(keysetAccess(), parallelCalls)));

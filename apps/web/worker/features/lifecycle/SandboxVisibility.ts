@@ -14,6 +14,22 @@ import {
 } from "./EntityLifecycle.ts";
 
 /**
+ * The viewer axis of a sandbox-masked read: a RESOLVED {@link SandboxViewer}, required.
+ * Every masked Pano/Sözlük read's options carry this, so a call site cannot reach the
+ * mask without first resolving who is asking — the omission is a compile error rather
+ * than something a reviewer has to grep for (#6586).
+ *
+ * That mattered because omitting it was silent and wrong in one direction only: the
+ * degraded viewer {@link resolveSandboxViewer} used to synthesize reads `false` on both
+ * elevated axes, so a write's re-read masked out the very row the write had just
+ * committed — `null` back from a landed mutation (#6473 for the author arm, #6424 for
+ * the moderator/in-place arms).
+ */
+export interface MaskedReadOptions {
+	readonly sandboxViewer: SandboxViewer;
+}
+
+/**
  * Resolve the {@link SandboxViewer} a domain read applies from its options. A read
  * that was handed a fully-resolved `sandboxViewer` (the resolver probed moderator
  * authority) uses it; otherwise it degrades to a non-moderator viewer keyed by the
@@ -23,6 +39,11 @@ import {
  * The degraded path claims neither elevated class: `seesSandboxedInPlace` (#6423) is
  * resolved from the flag + the opt-in preference, which a bare `{viewerId}` cannot
  * witness, so it degrades `false` exactly as `canSeeSandboxed` does.
+ *
+ * The Pano/Sözlük content reads no longer reach this: their viewer is
+ * {@link MaskedReadOptions}-required, so there is nothing to degrade FROM. It survives
+ * for `Pasaport`'s profile reads, whose options are shaped by the profile being viewed
+ * rather than by a resolved reader.
  */
 export const resolveSandboxViewer = (opts: {
 	readonly viewerId?: string | null | undefined;
