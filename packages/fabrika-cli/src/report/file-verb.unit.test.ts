@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
 	BAD_SECTIONS,
@@ -17,8 +16,8 @@ import {
 import {composeBody, REQUIRED_SECTIONS, renderFooter} from "./compose.ts";
 import {runFile} from "./file-verb.ts";
 
-const READBACK = /^gh api repos\/o\/r\/issues\/\d+$/;
-const CREATE = /--method POST repos\/o\/r\/issues -f/;
+const READBACK = /^GET .*\/repos\/o\/r\/issues\/\d+$/;
+const CREATE = /^POST .*\/repos\/o\/r\/issues$/;
 const LABELS = /repos\/o\/r\/labels/;
 const BRANCH = /git rev-parse/;
 
@@ -34,19 +33,25 @@ const composed = composeBody(
 	renderFooter({session: null, model: null, branch: null, timestamp: "2026-08-01T14:22:07Z"}),
 );
 
-const created = okOut(JSON.stringify({number: 4732, html_url: "https://example.test/issues/4732"}));
+const created: HttpReply = {
+	status: 201,
+	body: JSON.stringify({number: 4732, html_url: "https://example.test/issues/4732"}),
+};
 
-const landed = (body: string, labels: ReadonlyArray<string> = ["status:needs-triage"]) =>
-	okOut(
-		JSON.stringify({
-			number: 4732,
-			title: "t",
-			body,
-			state: "open",
-			labels: labels.map((name) => ({name})),
-			html_url: "https://example.test/issues/4732",
-		}),
-	);
+const landed = (
+	body: string,
+	labels: ReadonlyArray<string> = ["status:needs-triage"],
+): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: 4732,
+		title: "t",
+		body,
+		state: "open",
+		labels: labels.map((name) => ({name})),
+		html_url: "https://example.test/issues/4732",
+	}),
+});
 
 const options = {
 	title: "Retry helper in the http worker swallows the abort reason",
@@ -59,21 +64,23 @@ const options = {
 	now: () => NOW,
 };
 
-const labelsOk = [LABELS, okOut("status:needs-triage\ntype:bug\np0")] as const;
+const labelSet = (...names: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(names.map((name) => ({name}))),
+});
+
+const labelsOk = [LABELS, labelSet("status:needs-triage", "type:bug", "p0")] as const;
 const branchDetached = [BRANCH, errOut("detached")] as const;
 
-const happy: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const happy: ReadonlyArray<Scripted> = [
 	[READBACK, landed(composed)],
 	[CREATE, created],
 	labelsOk,
 	branchDetached,
 ];
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
-	Effect.runPromise(Effect.provide(runFile({...options, ...overrides}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runFile({...options, ...overrides}), fakeSeams(script).layer));
 
 describe("runFile", () => {
 	it("files, reads back, and prints a bare tab-separated number and url", async () => {
@@ -95,9 +102,9 @@ describe("runFile", () => {
 	});
 
 	it("appends the footer itself, with the never-dropped marker", async () => {
-		const shell = fakeShell(happy);
-		await Effect.runPromise(Effect.provide(runFile(options), shell.layer));
-		const create = shell.calls.find((c) => CREATE.test(c)) ?? "";
+		const seams = fakeSeams(happy);
+		await Effect.runPromise(Effect.provide(runFile(options), seams.layer));
+		const create = seams.bodies[seams.requests.findIndex((c) => CREATE.test(c))] ?? "";
 		expect(create).toContain("Filed by an agent");
 		expect(create).toContain("2026-08-01T14:22:07Z");
 	});
@@ -178,16 +185,16 @@ describe("runFile", () => {
 	});
 
 	it("refuses an UNREADABLE label set as UNKNOWN, and files nothing", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[READBACK, landed(composed)],
 			[CREATE, created],
-			[LABELS, errOut("gh: Bad gateway (HTTP 502)")],
+			[LABELS, {status: 502, body: "{}"}],
 			branchDetached,
 		]);
-		const out = await Effect.runPromise(Effect.provide(runFile(options), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runFile(options), seams.layer));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
-		expect(shell.calls.some((c) => CREATE.test(c))).toBe(false);
+		expect(seams.requests.some((c) => CREATE.test(c))).toBe(false);
 	});
 
 	it("refuses a --label that classifies", async () => {
@@ -205,7 +212,7 @@ describe("runFile", () => {
 	it("reports a failed create as UNKNOWN, with the re-run-dedup recovery", async () => {
 		const out = await run([
 			[READBACK, landed(composed)],
-			[CREATE, errOut("gh: Service unavailable (HTTP 503)")],
+			[CREATE, {status: 503, body: "{}"}],
 			labelsOk,
 			branchDetached,
 		]);

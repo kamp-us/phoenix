@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
 	BARE_AT_PATH,
@@ -14,40 +13,36 @@ import {
 } from "./codes.ts";
 import {runNote} from "./note-verb.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
-const POST = /repos\/o\/r\/issues\/4312\/comments -f/;
-const COMMENT = /^gh api repos\/o\/r\/issues\/comments\/\d+$/;
+const ISSUE = /^GET .*\/repos\/o\/r\/issues\/4312$/;
+const POST = /^POST .*\/repos\/o\/r\/issues\/4312\/comments$/;
+const COMMENT = /^GET .*\/repos\/o\/r\/issues\/comments\/\d+$/;
 
 const NOTE = "Also reproduces on the streaming path, not just the buffered one.";
 
-const issueOpen = okOut(
-	JSON.stringify({
+const issue = (state: string): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
 		number: 4312,
 		title: "t",
 		body: "b",
-		state: "open",
+		state,
 		labels: [],
 		html_url: "https://example.test/issues/4312",
 	}),
-);
+});
 
-const issueClosed = okOut(
-	JSON.stringify({
-		number: 4312,
-		title: "t",
-		body: "b",
-		state: "closed",
-		labels: [],
-		html_url: "https://example.test/issues/4312",
-	}),
-);
+const issueOpen = issue("open");
+const issueClosed = issue("closed");
 
-const posted = okOut(
-	JSON.stringify({
+const comment = (body: string): HttpReply => ({status: 200, body: JSON.stringify({body})});
+
+const posted: HttpReply = {
+	status: 201,
+	body: JSON.stringify({
 		id: 5154891644,
 		html_url: "https://example.test/issues/4312#issuecomment-5154891644",
 	}),
-);
+};
 
 const options = {
 	issue: 4312,
@@ -58,17 +53,14 @@ const options = {
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: NOTE}),
 };
 
-const happy: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[COMMENT, okOut(JSON.stringify({body: NOTE}))],
+const happy: ReadonlyArray<Scripted> = [
+	[COMMENT, comment(NOTE)],
 	[ISSUE, issueOpen],
 	[POST, posted],
 ];
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
-	Effect.runPromise(Effect.provide(runNote({...options, ...overrides}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runNote({...options, ...overrides}), fakeSeams(script).layer));
 
 describe("runNote", () => {
 	it("posts, reads back, and prints a bare tab-separated id and url", async () => {
@@ -91,7 +83,7 @@ describe("runNote", () => {
 	it("validates nothing about the note's structure — a note is free prose", async () => {
 		const out = await run(
 			[
-				[COMMENT, okOut(JSON.stringify({body: "one line, no headings"}))],
+				[COMMENT, comment("one line, no headings")],
 				[ISSUE, issueOpen],
 				[POST, posted],
 			],
@@ -101,16 +93,16 @@ describe("runNote", () => {
 	});
 
 	it("appends no footer — the note lands byte-for-byte as sent", async () => {
-		const shell = fakeShell(happy);
-		await Effect.runPromise(Effect.provide(runNote(options), shell.layer));
-		const post = shell.calls.find((c) => POST.test(c)) ?? "";
-		expect(post).toContain(`body=${NOTE}`);
+		const seams = fakeSeams(happy);
+		await Effect.runPromise(Effect.provide(runNote(options), seams.layer));
+		const post = seams.bodies[seams.requests.findIndex((c) => POST.test(c))] ?? "";
+		expect(post).toBe(JSON.stringify({body: NOTE}));
 		expect(post).not.toContain("Filed by an agent");
 	});
 
 	it("posts on a CLOSED issue but says so — never a surprise about where it landed", async () => {
 		const out = await run([
-			[COMMENT, okOut(JSON.stringify({body: NOTE}))],
+			[COMMENT, comment(NOTE)],
 			[ISSUE, issueClosed],
 			[POST, posted],
 		]);
@@ -157,7 +149,7 @@ describe("runNote", () => {
 		const masked = "reproduced from /Users/<redacted>";
 		const out = await run(
 			[
-				[COMMENT, okOut(JSON.stringify({body: masked}))],
+				[COMMENT, comment(masked)],
 				[ISSUE, issueOpen],
 				[POST, posted],
 			],
@@ -174,22 +166,22 @@ describe("runNote", () => {
 	});
 
 	it("refuses an issue that does not exist", async () => {
-		const out = await run([[ISSUE, errOut("gh: Not Found (HTTP 404)")]]);
+		const out = await run([[ISSUE, {status: 404, body: '{"message":"Not Found"}'}]]);
 		expect(out.code).toBe(NO_TARGET);
 		expect(out.stderr.at(-1)).toBe("report note: o/r has no issue #4312.");
 	});
 
 	it("separates an UNREADABLE issue from an absent one, and posts nothing", async () => {
-		const shell = fakeShell([[ISSUE, errOut("gh: Bad gateway (HTTP 502)")]]);
-		const out = await Effect.runPromise(Effect.provide(runNote(options), shell.layer));
+		const seams = fakeSeams([[ISSUE, {status: 502, body: "{}"}]]);
+		const out = await Effect.runPromise(Effect.provide(runNote(options), seams.layer));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(shell.calls.some((c) => POST.test(c))).toBe(false);
+		expect(seams.requests.some((c) => POST.test(c))).toBe(false);
 	});
 
 	it("reports a failed post as UNKNOWN, with the re-read recovery", async () => {
 		const out = await run([
 			[ISSUE, issueOpen],
-			[POST, errOut("gh: timeout")],
+			[POST, {status: 502, body: "{}"}],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -198,7 +190,7 @@ describe("runNote", () => {
 
 	it("refuses when the landed comment is not what was sent (#3173)", async () => {
 		const out = await run([
-			[COMMENT, okOut(JSON.stringify({body: "something else entirely"}))],
+			[COMMENT, comment("something else entirely")],
 			[ISSUE, issueOpen],
 			[POST, posted],
 		]);
@@ -208,7 +200,7 @@ describe("runNote", () => {
 
 	it("refuses when the read-back itself fails — a post that is not verified is not finished", async () => {
 		const out = await run([
-			[COMMENT, errOut("gh: Bad gateway (HTTP 502)")],
+			[COMMENT, {status: 502, body: "{}"}],
 			[ISSUE, issueOpen],
 			[POST, posted],
 		]);
