@@ -40,7 +40,8 @@ const SPAWNED =
 /**
  * `"gh"` / `'gh'` on its own: the binary named in argv position, whatever spawns it —
  * `execCapture("gh", …)`, `execFileSync("gh", …)`, `{file: "gh"}`. This one needs no context, because
- * a bare `gh` string literal in TypeScript is a command name and nothing else.
+ * a quoted `gh` in TypeScript is a command name and nothing else. The backtick spelling of the same
+ * argv is {@link GH_ARGV_TEMPLATE}, which does need context.
  */
 const GH_ARGV = /(['"])gh\1/g;
 
@@ -56,6 +57,16 @@ const GH_ARGV = /(['"])gh\1/g;
  */
 const GH_SHELL_STRING = /(['"`])\s*gh\s+[a-z][a-z-]*/g;
 const GH_CHAINED = /(?:&&|\|\||;|\|)\s*gh\s+[a-z][a-z-]*/g;
+
+/**
+ * `` `gh` `` in argv position — ``execCapture(`gh`, …)`` spawns exactly as `execCapture("gh", …)` does.
+ *
+ * Gated on {@link EXEC_MARKER} rather than folded into {@link GH_ARGV}, because backticked `gh` is
+ * also how this package spells the binary in prose, and prose is not only in comments {@link codeOf}
+ * strips: `config/keys/surface-dispositions.ts` names the surface in a `note:` string, and a widened
+ * {@link GH_ARGV} would red that sentence.
+ */
+const GH_ARGV_TEMPLATE = /`gh`/g;
 
 /** A line that spawns something, or hands `-c` to a shell — where a command string is a command. */
 const EXEC_MARKER =
@@ -174,7 +185,9 @@ export const scanFile = (file: string, content: string): ReadonlyArray<Finding> 
 	const lines = codeOf(content);
 	for (let i = 0; i < lines.length; i++) {
 		const text = lines[i] ?? "";
-		const patterns = isRunnable(lines, i) ? [GH_ARGV, GH_SHELL_STRING, GH_CHAINED] : [GH_ARGV];
+		const patterns = isRunnable(lines, i)
+			? [GH_ARGV, GH_ARGV_TEMPLATE, GH_SHELL_STRING, GH_CHAINED]
+			: [GH_ARGV];
 		for (const pattern of patterns) {
 			pattern.lastIndex = 0;
 			for (const match of text.matchAll(pattern)) {

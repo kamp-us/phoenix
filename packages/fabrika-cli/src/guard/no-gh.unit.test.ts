@@ -21,6 +21,17 @@ describe("scanFile catches every spelling of a call", () => {
 		expect(matched('const spec = {file: "gh", args: ["auth", "token"]};')).toEqual(['"gh"']);
 	});
 
+	it("catches the backtick spelling of that same argv, which lint does not red either", () => {
+		expect(matched('execCapture(`gh`, ["pr", "view", "1", "--json", "number"]);')).toEqual([
+			"`gh`",
+		]);
+	});
+
+	it("leaves a backticked `gh` in a string that no spawn stands beside — this is how prose spells it", () => {
+		const note = 'const note = "a GitHub repo reachable over `gh` REST with `issues: write`";';
+		expect(scanFile(FILE, note)).toEqual([]);
+	});
+
 	it("catches the shell-string spelling a -c argument hides", () => {
 		const findings = scanFile(FILE, `execFileSync("sh", ["-c", "gh api repos/o/r --jq .id"]);`);
 		expect(findings.map((f) => f.matched)).toContain('"gh api');
