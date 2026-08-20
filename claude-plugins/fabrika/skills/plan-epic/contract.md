@@ -55,9 +55,18 @@ session issue, its round grammar, the `fact`/`decision` split enforced at `grill
 ACL-gated ruling and the closed-set frontier all already exist and are already tested. Deriving a
 second question-and-answer record here would put two records on one conversation.
 
+**The session is where the grill runs; the epic is where it is kept, and that placement is 0289's,
+not a preference.** That record says in so many words that "The questions and the answers are posted
+as comments on the epic issue, which is where anyone reading the epic later already looks." Reusing
+the `grill` group puts the working thread on a session issue, so step 4 mirrors the settled grill
+back onto the epic through `build note` — question, kind, answer or ruling, and the session number.
+Stated here because the two are easy to confuse: the reuse is a mechanism choice this contract may
+make, while *where the record lands* is 0289's to decide, and a cross-link alone would have quietly
+moved it. Nothing is derived to enforce the mirror — see the paragraph below.
+
 **No `ledger` verb proves the grill happened**, and nothing here derives one. The ordering — a
-session opened, a round posted, the frontier read, *then* `ledger write` — is convention the skill
-holds, stated at its `GRILL-IS-CONVENTION` anchor. A verb that read the session before splicing
+session opened, a round posted, the frontier read, the grill mirrored, *then* `ledger write` — is
+convention the skill holds, stated at its `GRILL-IS-CONVENTION` anchor. A verb that read the session before splicing
 would be this group deriving a verdict about a `grill` artifact, which is the same second-answer
 defect that keeps the structural floor out of this group; it would also make an absent session a
 `ledger write` refusal, seating a code for a fact ADR 0289 gives to the founder's checkpoint.

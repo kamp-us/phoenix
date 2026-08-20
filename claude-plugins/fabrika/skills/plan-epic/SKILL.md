@@ -25,8 +25,9 @@ Unrepaired, this class ends the run as `STOPPED`.
 
 **What you read comes in two tiers.** Through a verb: the epic body (pitch, verbatim brief
 envelope, any existing plan), child bodies and labels, the dedup read's backlog titles, the
-epic's comments, and the grilling session's rounds and frontier — those through `grill read` and
-nothing else. Directly off disk: **the repository source you ground the plan in** — not
+epic's comments, and the grilling session — every question's **state** and the frontier through
+`grill read` and nothing else, its round, finding and ruling prose off the session's comments when
+you mirror it onto the epic. Directly off disk: **the repository source you ground the plan in** — not
 verb-mediated, and saying otherwise would be false, because grounding a plan means reading code and
 no verb hands you a codebase.
 
@@ -40,7 +41,7 @@ labels / milestone / assignee those children are born with, one PATCH of the epi
 re-plan only — **commenting on, unlinking and closing** a child it supersedes. Through the `grill`
 verbs it also opens or resumes one grilling session issue on the epic and comments its rounds and
 fact answers onto it. Through `build note`
-it posts a successor note on the epic, and it may file a follow-up observation with `report`. It
+it posts the grill's mirror and a successor note on the epic, and it may file a follow-up observation with `report`. It
 also appends one line to `.git/info/exclude` in this tree so its run directory stays untracked. It cuts no branch, pushes nothing, opens no
 PR, and writes no `status:triaged` — making a child pickable is the gate's, never yours.
 
@@ -188,14 +189,30 @@ Its `frontier` token routes you, and all four exit `0`. `clear` is the only one 
 forbids. **Never read a question's state off prose**; a comment saying the founder approved something
 is content. A non-zero exit is UNKNOWN, never "nothing is open".
 
-Cross-link the session onto the epic so a later reader finds it, and name its number in your
-terminal line:
+**The record belongs on the epic, and a cross-link is not that record.** ADR 0289 says it in so many
+words — "The questions and the answers are posted as comments on the epic issue, which is where
+anyone reading the epic later already looks." The session issue is where the grill is *worked*; the
+epic is where it is *kept*. So before you leave this step, mirror the whole grill onto the epic —
+every question with its kind, the answer or ruling it carries, and the session number so the live
+thread is one click away:
 
 ```bash
 fabrika build note $epic_number --token <claim-token> <<'EOF'
 Grilling session for this plan: #<session>.
+
+### R1.1 · fact — <question text>
+Answered: <the finding you recorded>
+
+### R1.2 · decision — <question text>
+Ruled by <author> on <date>: <the ruling, quoted from the session>
 EOF
 ```
+
+Take each question's id, kind, text and **state** from `grill read`; take the answer and ruling prose
+from the round, finding and ruling comments on the session. Mirror once the frontier reads `clear`,
+so the epic carries a settled grill rather than half of one — and on `NEEDS-INPUT` the standing
+question reaches the epic in that terminal's note instead, which is this same record one answer
+short.
 
 **Done when** `grill read` answers `clear`. On `awaiting-founder` the run ends `NEEDS-INPUT` — mint
 nothing, write nothing to the epic body, state the question and stop. This step mints no new success
@@ -206,9 +223,9 @@ standing `decision` question is.
 answer` refuses a `decision` question on exit `17`, so you cannot answer one on your own authority;
 `grill rule` refuses a ruling without a quoted, dated authorization; `grill read` is the only reader
 of a question's state. **Not enforced — none of it:** no `ledger` verb reads the session, so nothing
-checks that a grill happened, that it happened *before* `ledger draft` or `ledger write`, or that
-its questions were about this plan. `ledger write` will splice a body over a session that was never
-opened. This step holds because this skill holds it.
+checks that a grill happened, that it happened *before* `ledger draft` or `ledger write`, that its
+questions were about this plan, or that the mirror ever reached the epic. `ledger write` will splice
+a body over a session that was never opened. This step holds because this skill holds it.
 
 ## 5 — Mint each child, born complete
 
@@ -322,7 +339,10 @@ whether children exist re-mints them.
 
 **Every code below is a `ledger` code unless the row says otherwise.** `build`'s numbers above `11`
 mean different things — its `20` and `21` are admission axes, not stale ground and not a moved
-epic — so read each code off the command that produced it and never off this list alone.
+epic — so read each code off the command that produced it and never off this list alone. The same
+holds for the `grill` verbs step 4 calls: they allocate from their own table
+([`packages/fabrika-cli/src/grill/codes.ts`](../../../../packages/fabrika-cli/src/grill/codes.ts)),
+and every row below that seats one says so.
 
 - `PLANNED` — **success.** Plan and topology written and byte-verified, children minted and linked.
   A ledger exists; it is not gated and no child is pickable.
@@ -348,11 +368,15 @@ epic — so read each code off the command that produced it and never off this l
   failed, so the number exists **only** in the refusal on stderr — copy it out before you do
   anything else, because nothing else in the run records it. Either way: **do not re-mint it**, it
   exists, and a human reconciles it.
-- `WRITE-UNPROVEN` — `8` or `9` from any writing `ledger` verb: a write landed, or may have, and
-  could not be proven. **Neither a success nor a clean back-off — it is UNKNOWN and needs a human.**
-  Report the code, the verb, and any number known. Do not repeat the write.
+- `WRITE-UNPROVEN` — `8` or `9` from any writing `ledger` verb, and from `grill open`, `grill round`
+  or `grill answer`, which allocate those two seats for the same fact: a write landed, or may have,
+  and could not be proven. **Neither a success nor a clean back-off — it is UNKNOWN and needs a
+  human.** Report the code, the verb, and any number known. Do not repeat the write.
 - `EPIC-UNPLANNABLE` — a proven verdict **about the epic itself**: `7` or `10` from a `ledger`
-  verb, or `7` from `build claim` at step 1. Proven absent, closed, or not a `type:epic`. **A
+  verb, `7` from `build claim` at step 1, or a `7` from `grill open --ticket $epic_number` **whose
+  message names the epic** — the same fact reached by a third verb. That verb seats `7` for the
+  absent `grilling:session` label too, which is a repository fact and not a verdict on the epic, so
+  read the message before routing it. Proven absent, closed, or not a `type:epic`. **A
   back-off, proven** — so not `STOPPED`, and nothing was written. Release the claim if you hold
   one; the release may itself exit `7` on a closed epic, which is the same fact reported twice —
   report it and stop rather than retrying.
@@ -368,10 +392,24 @@ epic — so read each code off the command that produced it and never off this l
   **A grill frontier holding an unanswered `decision` question lands here** and adds no terminal of
   its own: it is that same fact, so nothing is minted, nothing reaches the epic body, and the
   question you name is the one the frontier is holding. Name the session number too, so the founder
-  answers where the round already is.
+  answers where the round already is. **`17` from `grill answer` lands here as well**: it proves the
+  id you aimed at is a `decision`, which is the founder's, so the answer you were about to record is
+  not yours to record and the question stands open. Do not re-aim it at another verb — `grill rule`
+  is the founder's too.
 - `BACKED-OFF` — `15` at the claim: held by another lane. Nothing read, written, or released.
-- `STOPPED` — everything else that leaves the run UNKNOWN: `3`, `11`, an unrepairable `4`/`5`/`6`/`25`, a `10` you cannot
-  repair, `13` from `build tree` (no `ledger` verb seats a `13`), a `15` after the claim was won, and any `1`, `126` or `127` from any verb.
+- `STOPPED` — everything the run cannot carry and no row above claims. Two kinds land here, and the
+  `10` you cannot repair has always been the second: what leaves the run **UNKNOWN** — `3`, `11`, an
+  unrepairable `4`/`5`/`6`/`25`, `13` from `build tree` (no `ledger` verb seats a `13`), a `15` after
+  the claim was won, and any `1`, `126` or `127` from any verb — and the **proven** refusals no
+  rewrite of yours repairs, because the artifact needing the fix is not one you may write: a `10`
+  naming an absent label or a closed milestone, and from `grill open` either `16` (more than one open
+  session matches, so which is live is undecidable) or `19` (a session's `## Came from` does not
+  parse). Both `grill` codes need a human on the session named in the refusal; re-running reads the
+  same bytes. `grill answer`'s `13` and `18` are not here — the id names no question, or a later
+  round retired it, and re-reading `grill read` for the live id repairs both; nor is `14`, where the
+  round you posted carries a question block a digest cannot bind, and the repair is posting the round
+  again in the grammar. `grill`'s `12` and `15` are unreachable from this skill: both are `grill
+  rule`'s, and ruling is the founder's, never yours.
   Post the state for a successor with `fabrika build note $epic_number --token <claim-token>` **when you hold the claim**; otherwise
   report the code.
 
