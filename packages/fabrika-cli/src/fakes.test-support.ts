@@ -9,6 +9,10 @@
  * a test replaces is therefore the same seam production uses.
  */
 import {Effect, FileSystem, Layer, Option, Path, PlatformError, Sink, Stream} from "effect";
+import type * as HttpBody from "effect/unstable/http/HttpBody";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientError from "effect/unstable/http/HttpClientError";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import {ChildProcessSpawner} from "effect/unstable/process";
 import type {ExecResult} from "./io/exec.ts";
 
@@ -374,3 +378,70 @@ tags: []
 
 **Something is decided.** ${extra}
 `;
+
+/** One scripted HTTP answer. `headers` is where a `Link` completeness proof is scripted. */
+export interface HttpReply {
+	readonly status: number;
+	readonly body: string;
+	readonly headers?: Readonly<Record<string, string>> | undefined;
+}
+
+export interface FakeHttp {
+	readonly layer: Layer.Layer<HttpClient.HttpClient>;
+	/** Every request issued, as `METHOD url`, in order — how a test asserts a read never happened. */
+	readonly calls: ReadonlyArray<string>;
+	/** What each request carried as its body, aligned with {@link FakeHttp.calls}; `""` when none. */
+	readonly bodies: ReadonlyArray<string>;
+}
+
+const requestBody = (body: HttpBody.HttpBody): string => {
+	if (body._tag === "Uint8Array") return new TextDecoder().decode(body.body);
+	if (body._tag === "Raw") return typeof body.body === "string" ? body.body : "";
+	return "";
+};
+
+/**
+ * An `HttpClient` scripted on `METHOD url`, substituting the **service** the production path uses —
+ * the same move {@link fakeShell} makes for `ChildProcessSpawner`, so the seam a test replaces is
+ * the seam production runs on rather than a hand-rolled function double.
+ *
+ * `unreachable` is the third answer and it is not expressible as a reply: a transport fault produces
+ * no status at all, where a served `500` does. A caller that tells "GitHub said no" from "GitHub was
+ * never reached" reads exactly that difference.
+ */
+export const fakeHttp = (
+	script: ReadonlyArray<readonly [RegExp, HttpReply]>,
+	fallback: HttpReply = {status: 500, body: '{"message":"unscripted request"}'},
+	unreachable: ReadonlyArray<RegExp> = [],
+): FakeHttp => {
+	const calls: string[] = [];
+	const bodies: string[] = [];
+	const layer = Layer.succeed(HttpClient.HttpClient)(
+		HttpClient.make((request, url) => {
+			const line = `${request.method} ${url.toString()}`;
+			calls.push(line);
+			bodies.push(requestBody(request.body));
+			if (unreachable.some((pattern) => pattern.test(line))) {
+				return Effect.fail(
+					new HttpClientError.HttpClientError({
+						reason: new HttpClientError.TransportError({
+							request,
+							cause: new Error(`${url.host} could not be reached`),
+						}),
+					}),
+				);
+			}
+			const reply = script.find(([pattern]) => pattern.test(line))?.[1] ?? fallback;
+			return Effect.succeed(
+				HttpClientResponse.fromWeb(
+					request,
+					new Response(reply.body, {status: reply.status, headers: {...reply.headers}}),
+				),
+			);
+		}),
+	);
+	return {layer, calls, bodies};
+};
+
+/** A served page of a bare-array read, with the `Link` header that says another page follows. */
+export const linkNext = (url: string): Record<string, string> => ({link: `<${url}>; rel="next"`});

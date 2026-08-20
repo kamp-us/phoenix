@@ -13,8 +13,9 @@
  * cannot do for itself — see `unknown-subcommand.ts` for why (#4822).
  */
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {Command} from "effect/unstable/cli";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {fabrikaCommand} from "./root-command.ts";
 import {findUnknownSubcommand, refusal} from "./unknown-subcommand.ts";
 import {FAILED} from "./verb.ts";
@@ -28,6 +29,8 @@ if (unknown !== undefined) {
 
 fabrikaCommand.pipe(
 	Command.run({version: VERSION}),
-	Effect.provide(NodeServices.layer),
+	// `NodeServices.layer` carries the spawner, filesystem, path and terminal but no HTTP client, so
+	// the GitHub fetch client (ADR 0314) needs its transport merged in here.
+	Effect.provide(Layer.merge(NodeServices.layer, FetchHttpClient.layer)),
 	NodeRuntime.runMain,
 );
