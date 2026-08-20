@@ -1,9 +1,7 @@
 /**
- * `throttleMutations` seam coverage (ADR 0177) — the wrapper is transparent to a
- * mutation's handler when the actor is under budget (its write AND its
- * `/fate/live` publish still fire), and short-circuits with `RATE_LIMIT_EXCEEDED`
- * BEFORE the handler when over budget (so a throttled write never publishes — the
- * fanout invariant is preserved because the handler simply doesn't run).
+ * `throttleMutations` seam coverage (ADR 0177). Over budget it short-circuits BEFORE the
+ * handler, which is what preserves the fanout invariant — a throttled write never
+ * publishes because the handler simply does not run.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentActor, human} from "@kampus/authz";
@@ -22,11 +20,7 @@ import {throttleMutations} from "./throttle-mutations.ts";
 const TestRateLimiter = RateLimiterLive.pipe(Layer.provide(InIsolateRateLimitStoreLive));
 const CAPACITY = DEFAULT_MUTATION_POLICY.capacity;
 
-/**
- * A stand-in fanned mutation whose `resolve` records a "publish" — the
- * `/fate/live` invalidation a real fanned mutation fires after its write. The
- * `published` array is the observable proof of whether the handler ran.
- */
+/** The `published` array is the observable proof of whether the handler ran. */
 const makeFannedMutations = (published: Array<string>): FateMutationsRecord => ({
 	"post.submit": {
 		kind: "mutation",
@@ -41,8 +35,7 @@ const makeFannedMutations = (published: Array<string>): FateMutationsRecord => (
 	},
 });
 
-/** Drive the throttled `post.submit` resolve, re-pinning its erased `R` to the
- * services the wrapper truly needs (both provided by {@link runAsWriter}). */
+/** Re-pins the erased `R` to the services the wrapper actually needs. */
 const submit = (published: Array<string>) => {
 	const entry = throttleMutations(makeFannedMutations(published))["post.submit"] as AnyFateMutation;
 	return entry.resolve({input: {}, select: []}) as Effect.Effect<

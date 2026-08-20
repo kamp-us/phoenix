@@ -1,14 +1,7 @@
 /**
- * Sözlük term page — fate. One batched `useRequest` resolves header + first page
- * of definitions; `TermView` spreads `TermHeaderView` and adds the nested
- * `definitions` connection (see `.patterns/fate-connections.md`). `definition.add`
- * is server-driven live; the fresh-slug branch (no term yet, so no list to append
- * to) forces a `network-only` re-read of `term(slug)` before remounting — the
- * remount's own render-path read reuses the first mount's fulfilled `data:null`
- * handle WITHOUT refetching (#817), so the re-read must precede it — then arms the
- * deterministic read-back with the mutation's own returned id, so the just-created
- * definition is guaranteed to materialize even if the live `appendNode` push was
- * lost (#730/#714, epic #713).
+ * Sözlük term page. One batched `useRequest` resolves the header + first page of
+ * definitions (see `.patterns/fate-connections.md`). The page has two branches: an
+ * existing term, and a slug with no term yet, where the first definition creates it.
  */
 import * as React from "react";
 import {
@@ -47,7 +40,6 @@ import "./SozlukTermPage.css";
 const PAGE_SIZE = 50;
 const BODY_MAX = 10_000;
 
-/** The client-side autosave draft for the definition composer (localStorage, keyed by `/sozluk/<slug>`). */
 interface DefinitionDraft {
 	body: string;
 }
@@ -62,39 +54,24 @@ function isDefinitionDraft(value: unknown): value is DefinitionDraft {
 
 const isDefinitionDraftEmpty = (d: DefinitionDraft): boolean => d.body.trim() === "";
 
-/**
- * `live: {append: "visible"}` makes a server-pushed `appendNode` (a new
- * definition, this client's own included) appear immediately, instead of fate's
- * default `"edge"` mode buffering it until a page load. See `.patterns/fate-live-views.md`.
- */
+// `append: "visible"` overrides fate's default `"edge"` buffering — see `.patterns/fate-live-views.md`.
 const DefinitionConnectionView = {
 	items: {node: DefinitionView},
 	live: {append: "visible"},
 } as const;
 
-/**
- * The term-page view. fate masks by **view identity**: a child's
- * `useView(ChildView, ref)` works only if `ChildView` was **spread** into the
- * view the ref was built from — overlapping field names is not enough.
- */
+// A child's `useView(ChildView, ref)` works only if `ChildView` was SPREAD in here —
+// fate masks by view identity, so matching field names is not enough.
 const TermView = view<Term>()({
 	...TermHeaderView,
 	definitions: DefinitionConnectionView,
 });
 
-/** Definition-composer copy that overrides the shared {@link WIRE_MESSAGES} base. */
 const SOZLUK_OVERRIDES: WireMessageOverrides = {
 	BODY_REQUIRED: "tanım boş olamaz",
 	BODY_TOO_LONG: `tanım en fazla ${BODY_MAX} karakter olabilir`,
 };
 
-/**
- * Layout-preserving Suspense fallback for the term page: a header block (crumbs +
- * title + meta) over a few definition-shaped rows, so the page doesn't jump when the
- * real term resolves into the same {@link SozlukTermHeader} + {@link DefinitionCard}
- * shape. The precedent is `LandingColsSkeleton` — a placeholder mirroring the real
- * content, built from the shared {@link Skeleton} atom.
- */
 function SozlukTermSkeleton() {
 	return (
 		<div role="status" aria-busy="true" aria-label="yükleniyor…" data-testid="sozluk-term-loading">
@@ -126,12 +103,9 @@ function SozlukTermSkeleton() {
 export function SozlukTermPage() {
 	const {slug} = useParams<{slug: string}>();
 	const safeSlug = slug ?? "";
-	// Bumped when the fresh-slug composer auto-creates the term: remounts the content
-	// so it reads the now-existing term and flips to the connection branch — no full
-	// reload. The composer force-refetches `term(slug)` before bumping this, since the
-	// remount's own render read reuses the stale fulfilled-null handle (#817).
-	// `createdDefinitionId` carries the mutation's own authoritative result across the
-	// remount so the now-list branch can arm its deterministic read-back on it (#730).
+	// Bumping `reloadKey` remounts the content onto the now-existing term. The composer
+	// must force-refetch `term(slug)` BEFORE bumping it, or the remount's render read
+	// reuses the stale fulfilled-null handle (#817).
 	const [{reloadKey, createdDefinitionId}, setRemount] = React.useState<{
 		reloadKey: number;
 		createdDefinitionId: string | null;
@@ -186,8 +160,6 @@ function SozlukTermContent({
 	const signedIn = !!session.data?.user;
 
 	if (!term) {
-		// Signed-out viewers can't auto-create a term, so they get the 404;
-		// signed-in viewers get the composer that auto-creates it on first define.
 		if (!signedIn) {
 			return (
 				<NotFoundPage
@@ -207,11 +179,6 @@ function SozlukTermContent({
 	);
 }
 
-/**
- * Header + composer for the slug-doesn't-exist-yet branch. The first definition
- * auto-creates the term, then `onCreated` remounts the content — carrying the new
- * definition's id so the list branch confirms it deterministically (#730).
- */
 function NewTermComposer({
 	slug,
 	onCreated,
@@ -242,12 +209,7 @@ function NewTermComposer({
 interface DefinitionsListProps {
 	term: ViewRef<"Term">;
 	slug: string;
-	/**
-	 * The id `definition.add` returned on the fresh-slug remount, or `null` on a
-	 * plain load. When set, the list arms its read-back on this id at mount so the
-	 * just-created definition materializes even if the live `appendNode` push was
-	 * lost (#730/#714).
-	 */
+	// Set only on the fresh-slug remount: the id the list arms its read-back on (#730).
 	seedDefinitionId: string | null;
 }
 
@@ -275,19 +237,15 @@ export function DefinitionsList(props: DefinitionsListProps) {
 		refetch: refetchTerm,
 	});
 
-	// Delete-side read-back (#1687): if the `deleteEdge` push for the author's own
-	// delete is lost server-side, the row lingers — refetch `network-only` so it
-	// reconciles away, mirroring the add-side self-heal above.
+	// Delete-side twin of the read-back above: a lost `deleteEdge` push would otherwise
+	// leave the deleted row rendered forever (#1687).
 	const confirmDefinitionGone = useConfirmGone({
 		presentIds: items.map(({node}) => String(node.id)),
 		refetch: refetchTerm,
 	});
 
-	// Fresh-slug arrival: this list mounted because a `definition.add` just created the
-	// term (the composer already force-refetched the term, so it resolved non-null).
-	// Confirm the mutation's own returned id once on mount; the read-back settles
-	// instantly if the term re-read already carried the definition, else deterministically
-	// refetches it in. Without this the just-created definition silently dropped (#730).
+	// On the fresh-slug remount, confirm the mutation's own returned id once; without it
+	// the just-created definition silently dropped (#730).
 	const {seedDefinitionId} = props;
 	React.useEffect(() => {
 		if (seedDefinitionId != null) confirmDefinition(seedDefinitionId);
@@ -319,12 +277,6 @@ export function DefinitionsList(props: DefinitionsListProps) {
 	);
 }
 
-/**
- * Anon affordance for an existing term: a logged-out visitor can't add a definition,
- * so the live composer is replaced by a sign-in prompt — mirroring the new-term
- * branch ({@link SozlukTermContent}) and pano, instead of inviting an action anon
- * can't complete (#2211).
- */
 function DefinitionSignInPrompt({slug}: {slug: string}) {
 	return (
 		<div className="kp-sozluk-composer" data-testid="sozluk-composer-signin">
@@ -338,20 +290,9 @@ function DefinitionSignInPrompt({slug}: {slug: string}) {
 	);
 }
 
-/**
- * Definition composer wired to `fate.mutations.definition.add`. Membership in the
- * *nested* `Term.definitions` connection is server-driven (fate's declarative
- * `insert` only targets registered root lists), so an optimistic node is injected
- * by a phoenix client helper rather than `insert` (ADR 0125, #1679): the new
- * definition shows instantly, temp-node reconciled to the server id (dedup by
- * canonical id vs the live append). `onTermCreated` is passed only on the fresh-slug
- * branch, where there's no list yet to append to (so the optimistic append is skipped
- * there); it force-refetches `term(slug)` then carries the new definition's id across
- * the remount so the list branch arms its read-back on it. On the list branch
- * `onConfirm` hands the new id to the same deterministic read-back — narrowed to the
- * append-loss healer, since the optimistic node is already present — so a lost live
- * `appendNode` self-heals (see {@link useReadbackRefetch}).
- */
+// fate's declarative `insert` only targets registered ROOT lists, and `Term.definitions`
+// is nested, so the optimistic node goes in through a client helper instead (ADR 0125).
+// Exactly one of `onTermCreated` (fresh slug) / `onConfirm` (existing term) is passed.
 function Composer({
 	slug,
 	onTermCreated,
@@ -398,16 +339,11 @@ function Composer({
 		}
 		if (disabled) return;
 		const user = session.data.user;
-		// Optimistic nested-append (ADR 0125) only on the existing-term branch: the
-		// fresh-slug branch (onTermCreated) has no loaded definitions list to append
-		// to and drives its own force-refetch + remount, left untouched.
+		// Optimistic append only on the existing-term branch — the fresh-slug branch has no
+		// loaded list to append to.
 		const optimistic = buildOptimisticDefinition(!onTermCreated, {
 			body,
-			// Route through the shared actor-label rule (#2126): display name, falling
-			// back to a fixed noun, NEVER the email — the old `?? user.email` could
-			// surface a user's email in the optimistic author line (a PII leak). The
-			// session user carries no typed `username`, so the middle @username tier is
-			// unreachable here; the server round-trip replaces this optimistic value.
+			// Never fall back to `user.email` here — it would render in the author line (#2126).
 			author: actorLabel(user.name, null, "kullanıcı"),
 			authorId: user.id,
 		});
@@ -419,12 +355,9 @@ function Composer({
 					...(optimistic ? {optimistic, insert: "none" as const} : {}),
 				});
 				if (optimistic) {
-					// fate wrote the temp record synchronously inside `.add`; append its
-					// edge into the nested list now so it renders instantly. The HTTP
-					// result triggers fate's resolveOptimisticEntity (temp→server id),
-					// which dedups against the live appendNode by canonical id. Roll the
-					// edge back on any failure — fate restores its own record write, but
-					// not this nested-list insert.
+					// fate wrote the temp record synchronously inside `.add`, so the edge can go
+					// in now. Roll it back on failure by hand: fate restores its own record
+					// write but not this nested-list insert.
 					const rollback = appendOptimisticDefinitionEdge(
 						fate.store,
 						toEntityId("Term", slug),
@@ -442,22 +375,17 @@ function Composer({
 			"tanım eklenemedi",
 			async (result) => {
 				setBody("");
-				draft.clear(); // submitted successfully — the autosaved draft is spent
+				draft.clear();
 				const createdId = result?.id != null ? String(result.id) : null;
 				if (onTermCreated) {
-					// Fresh-slug branch: the term now exists, but the first mount's render-path
-					// `useRequest({term…}, network-only)` left a fulfilled `data:null` handle for
-					// this requestKey, and the remount's render path (`revalidateExisting:false`)
-					// reuses it WITHOUT refetching — so a bare remount reads back the cached null
-					// and the list branch never mounts (#817). Force a real network re-read first
-					// (imperative `request` passes `revalidateExisting:true`, re-executing the
-					// handle and repopulating the store), THEN remount so it reads the real term.
+					// The first mount left a fulfilled `data:null` handle for this requestKey, and
+					// a remount's render path reuses it WITHOUT refetching — so the re-read has to
+					// be imperative and has to happen BEFORE the remount, or the list branch never
+					// mounts (#817).
 					await fate.request(
 						{term: {view: TermView, args: {slug, definitions: {first: PAGE_SIZE}}}},
 						{mode: "network-only"},
 					);
-					// Carry the mutation's own returned id across the remount so the list branch
-					// arms its deterministic read-back on it (#730).
 					onTermCreated(createdId);
 				} else if (createdId != null) {
 					onConfirm?.(createdId);

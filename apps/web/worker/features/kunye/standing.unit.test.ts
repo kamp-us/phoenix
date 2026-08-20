@@ -1,9 +1,7 @@
 /**
- * The pure promotion-bar rule (#1316) — `promotionBarFor` decides WHICH karma bar a
- * çaylak faces from a single fact: do they hold an active vouch. Kept pure (no
- * service, no Effect) so the "which bar applies" rule the çaylak-self standing read
- * exposes is testable in isolation (ADR 0082 unit tier) — the frontend never
- * hardcodes a bar because the live bar depends on vouch-exists.
+ * `promotionBarFor` decides WHICH karma bar a çaylak faces from one fact: whether they
+ * hold an active vouch (#1316). The frontend must never hardcode a bar, since the live
+ * bar depends on vouch-exists.
  */
 import {describe, it} from "@effect/vitest";
 import {assert} from "vitest";
@@ -29,10 +27,9 @@ describe("promotionBarFor", () => {
 });
 
 /**
- * The create-time sandbox rule, shared by BOTH sides of a write (#4282): the server's
- * `sandboxedAtForAuthor` and the client's optimistic comment node. They must agree —
- * a client that guesses differently renders a çaylak's comment as published for the
- * whole optimistic window, which is exactly the false-publish being closed.
+ * The create-time sandbox rule is shared by BOTH sides of a write (#4282). They must
+ * agree: a client that guesses differently renders a çaylak's comment as published for
+ * the whole optimistic window — the false-publish this closes.
  */
 describe("sandboxesNewContent", () => {
 	it("a çaylak's new content lands sandboxed", () => {
@@ -43,9 +40,8 @@ describe("sandboxesNewContent", () => {
 		assert.strictEqual(sandboxesNewContent("yazar"), false);
 	});
 
-	// A visitor authors nothing, and an unresolved tier (the `me` read still settling on
-	// the client) must not guess `true` — an unwarranted `incelemede` on a yazar's comment
-	// is as dishonest as the missing one on a çaylak's.
+	// An unresolved tier must not guess `true` — an unwarranted `incelemede` on a
+	// yazar's comment is as dishonest as a missing one on a çaylak's.
 	it("a visitor and an unresolved tier both read false", () => {
 		assert.strictEqual(sandboxesNewContent("visitor"), false);
 		assert.strictEqual(sandboxesNewContent(undefined), false);

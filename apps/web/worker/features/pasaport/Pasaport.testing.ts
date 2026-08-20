@@ -1,15 +1,8 @@
 /**
- * `makePasaportStub` — the shared `Pasaport` test double. Defaults every one of
- * the `Pasaport` methods to fail-on-contact (`Effect.die`) and takes a partial
- * override of the method(s) under test, returning the `Layer.succeed(Pasaport, …)`
- * layer. One place the interface shape lives — adding a method to `Pasaport` is a
- * single edit here, not shotgun surgery across every hand-rolled stub.
- *
- * A `layerStub` (fail-on-contact), not a `layerNoop` (silently-succeed): an
- * un-overridden method, if reached, dies and fails the test — the discipline that
- * proves the path under test touched only the method(s) it was scripted with.
- *
- * A **factory, not a shared instance** (`.patterns/effect-testing.md`).
+ * The shared `Pasaport` test double. Fail-on-contact, not silently-succeed: an
+ * un-overridden method dies if reached, which is what proves the path under test touched
+ * only the methods it was scripted with. A factory, not a shared instance
+ * (`.patterns/effect-testing.md`).
  */
 import {Effect, Layer} from "effect";
 import {Pasaport} from "./Pasaport.ts";
@@ -50,15 +43,9 @@ export const makePasaportStub = (overrides: Partial<PasaportShape> = {}): Layer.
 	Layer.succeed(Pasaport, {...failOnContact, ...overrides});
 
 /**
- * `PasaportIdentityStub` — the `Pasaport` double for unit tests that build
- * `PanoLive` / `SozlukLive` over a substituted `Drizzle` seam. Those services now
- * stamp the live author identity on their reads (`getProfileIdentitiesByIds`, #2139,
- * mirroring the `ReactionStub` shape for `Reaction.readAggregate`, #1862), so a test
- * that provides only `Vote`/`Bookmark`/`Reaction`/`Drizzle` leaves `Pasaport`
- * unsatisfied in `R`. This stub discharges it: `getProfileIdentitiesByIds` returns
- * `[]`, so the stamp leaves `authorUsername`/`authorDisplayName` null and the client
- * `actorLabel` degrades. Every other method dies if reached — the resolve/identity
- * write paths are the pasaport domain tests' concern, not these connection tests.
+ * The double for tests that build `PanoLive` / `SozlukLive` over a substituted `Drizzle`
+ * seam, which need `Pasaport` only for the author-identity stamp. Returning `[]` leaves
+ * the identity fields null and the client label degraded, which those tests do not assert.
  */
 export const PasaportIdentityStub: Layer.Layer<Pasaport> = makePasaportStub({
 	getProfileIdentitiesByIds: () => Effect.succeed([]),

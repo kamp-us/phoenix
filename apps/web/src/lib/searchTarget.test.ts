@@ -20,7 +20,6 @@ describe("searchTarget", () => {
 
 	it("returns null for a single-char query (below the 2-char minimum, ADR 0080)", () => {
 		expect(searchTarget("a")).toBeNull();
-		// a query that trims down to one char is also below the floor
 		expect(searchTarget("  x ")).toBeNull();
 	});
 

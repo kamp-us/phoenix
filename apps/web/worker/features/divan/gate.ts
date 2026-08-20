@@ -1,30 +1,16 @@
 /**
- * The divan access gate (#1287, epic #1202) — the capability framework's first
- * **disjunctive** gate (ADR 0107): the right to view the çaylak proving ground is
- * earned by EITHER yazar standing OR platform-moderation authority (collapse-to-allow,
- * mirroring `kunye/sandbox.ts`'s `currentSandboxViewer` probe shape).
+ * The divan access gate — the capability framework's first **disjunctive** gate (ADR
+ * 0107): the right to view the çaylak proving ground is earned by EITHER yazar standing
+ * OR platform-moderation authority.
  *
- * How the OR is modeled (so it reads as a real disjunction, NOT an
- * `if (tier === "yazar" || isMod)` bypass):
+ * The OR is not an `if (tier === "yazar" || isMod)` bypass. {@link standsInDivan} runs
+ * TWO real capability discharges — {@link DivanStanding} and `Moderate.over(platform)` —
+ * each collapsed to a boolean and OR-ed, and {@link ViewDivan}`.authorize` mints one grant
+ * from the result. The read requires that grant in its R channel (ADR 0107 §3), so a divan
+ * read that forgets the gate is a compile error, not a forgotten `if`.
  *
- *   - {@link ViewDivan} is a generic `Capability.Class` — its discharge verb
- *     `.authorize(check)` mints ONE `Grant<ViewDivan>` when a boolean `check`
- *     passes. The disjunction lives in {@link standsInDivan}, the check it runs.
- *   - {@link standsInDivan} runs TWO genuine capability discharges through the real
- *     framework seams — {@link DivanStanding}`.require` (the divan's OWN yazar-floor
- *     `Level`: actor-match + agent-attenuation + `Kunye` standing read) and
- *     `Moderate.over(platform)` (the ReBAC `Relation` discharge over the
- *     `moderates` tuple) — each collapsed to a boolean (`Denied`/`RequiresLevel`
- *     → `false`) and OR-ed: allow if EITHER mints, deny otherwise.
- *
- * So the two axes keep their own real discharge logic; the gate is their union, and
- * the two proof types collapse into one `ViewDivan` grant the read requires in its R
- * channel (enforcement-by-R, ADR 0107 §3) — a divan read that forgets the gate is a
- * compile error, not a forgotten `if`.
- *
- * Denial is the invisible {@link Denied} (`UNAUTHORIZED`): a denied çaylak/visitor
- * cannot distinguish "not standing" from "not signed in" — the divan is a private
- * destination, like the moderation queue.
+ * Denial is the invisible {@link Denied}: the divan is a private destination, like the
+ * moderation queue.
  */
 import {Capability, Grant, type Principal, platform} from "@kampus/authz";
 import {Effect} from "effect";
@@ -38,12 +24,9 @@ const standingOf = (principal: Principal) =>
 	Effect.flatMap(Kunye, (kunye) => kunye.tierOf(principal.id));
 
 /**
- * The divan's OWN yazar-standing right (ADR 0107 §2: one class = one right, the tag
- * IS the right). A `Capability.Level` floored at `yazar` over the same
- * {@link authorshipLadder}, read from {@link Kunye} — but named and owned by the
- * divan, so divan access no longer borrows the sözlük `OpenTerm` write-path right as
- * a yazar litmus. The two yazar-floored rights (sözlük `OpenTerm`, this) now move
- * independently: a later change to one floor leaves the other untouched.
+ * The divan's OWN yazar-standing right (ADR 0107 §2), so divan access no longer borrows
+ * the sözlük `OpenTerm` write-path right as a yazar litmus and the two floors move
+ * independently.
  */
 export class DivanStanding extends Capability.Level<DivanStanding>()("divan/DivanStanding", {
 	scale: authorshipLadder,
@@ -53,10 +36,8 @@ export class DivanStanding extends Capability.Level<DivanStanding>()("divan/Diva
 }) {}
 
 /**
- * The disjunctive check: TRUE iff the current actor discharges the yazar-floor
- * {@link DivanStanding} capability OR holds `Moderate.over(platform)`. Each arm is a
- * real discharge whose denial (`RequiresLevel` / `Denied`) is collapsed to `false` —
- * the collapse-to-allow shape of `currentSandboxViewer`, here OR-ed across two axes.
+ * TRUE iff the actor discharges {@link DivanStanding} OR holds `Moderate.over(platform)`;
+ * each arm's denial collapses to `false`.
  */
 const standsInDivan = Effect.gen(function* () {
 	const asYazar = yield* DivanStanding.require.pipe(
@@ -71,22 +52,14 @@ const standsInDivan = Effect.gen(function* () {
 });
 
 /**
- * The divan-view right, discharged by EITHER axis (see module docblock). A generic
- * `Capability.Class` because the right is a union of two heterogeneous proofs —
- * neither a single `Level` floor nor a single `Relation` can express the OR, so the
- * disjunction is the `.authorize` check and the result is one collapsed grant.
+ * A generic `Capability.Class` because the right is a union of two heterogeneous proofs —
+ * neither a single `Level` floor nor a single `Relation` can express the OR.
  */
 export class ViewDivan extends Capability.Class<ViewDivan>()("divan/ViewDivan", {
 	deny: () => new Denied({message: "Divanı görmek için yazar ya da moderatör olmalısın."}),
 }) {}
 
-/**
- * Gate `body` behind divan access: discharge {@link ViewDivan} (the invisible
- * {@link Denied} on failure) and thread the resulting grant into `body`'s R channel
- * via `Grant.provide`. So `body` reads `yield* ViewDivan` for the gate proof,
- * and "reading the divan without a grant" is a compile error — the same shape as
- * `requireModeration`, here over the disjunctive capability.
- */
+/** Gate `body` behind divan access, threading the grant into its R channel. */
 export const requireDivanAccess = <A, E, R>(body: Effect.Effect<A, E, ViewDivan | R>) =>
 	ViewDivan.authorize(standsInDivan).pipe(
 		Effect.flatMap((grant) => body.pipe(Grant.provide(grant))),

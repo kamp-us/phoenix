@@ -1,7 +1,6 @@
 import * as React from "react";
 import {clearDraft, readDraft, writeDraft} from "./draftStorage";
 
-/** `window.localStorage`, or `undefined` when it's unavailable (SSR, private mode, blocked). */
 function browserStorage(): Storage | undefined {
 	try {
 		return typeof window !== "undefined" ? window.localStorage : undefined;
@@ -11,34 +10,29 @@ function browserStorage(): Storage | undefined {
 }
 
 export interface DraftAutosave<T> {
-	/** A draft found in storage at mount — the one carried across the auth round-trip — or `null`. Offer it, never silently re-inject it. */
+	/** A draft found at mount. Offer it, never silently re-inject it. */
 	readonly offered: T | null;
-	/** Accept the offer: hide the affordance. The value is now in the form, so autosave keeps persisting it. */
+	/** Accept the offer: hide the affordance. Autosave keeps persisting the value. */
 	readonly accept: () => void;
-	/** Discard the offer: drop the persisted draft and hide the affordance. */
 	readonly dismiss: () => void;
-	/** Clear the persisted draft — call on a successful submit. */
+	/** Call on a successful submit. */
 	readonly clear: () => void;
 }
 
 export interface UseDraftAutosaveArgs<T> {
-	/** The route the draft is keyed by — the same path used as `returnTo` in the auth redirect. */
+	/** Keys the draft — the same path used as `returnTo` in the auth redirect. */
 	route: string;
-	/** The current form value, autosaved as it changes. Memoize it so autosave fires only on real edits. */
+	/** Memoize this, or autosave fires on every render rather than on real edits. */
 	value: T;
-	/** Whether `value` is empty — an empty value is never persisted and never offered. */
 	isEmpty: (value: T) => boolean;
-	/** Type guard for a stored payload — a shape mismatch is treated as no draft. */
 	isValid: (value: unknown) => value is T;
-	/** Injectable for tests; defaults to `window.localStorage`. */
 	storage?: Storage | undefined;
 }
 
 /**
- * Autosave in-progress writing to localStorage keyed by route and offer it back after
- * the auth round-trip. The offer is captured ONCE at mount (the draft from before the
- * redirect); autosave only ever *writes* non-empty values, so a fresh empty mount can't
- * clobber that captured draft — clearing is the explicit submit/dismiss act alone.
+ * Autosave keyed by route, offered back after the auth round-trip. The offer is captured
+ * ONCE at mount, and autosave only ever writes non-empty values, so a fresh empty mount
+ * cannot clobber it — clearing is the explicit submit/dismiss act alone.
  */
 export function useDraftAutosave<T>({
 	route,
@@ -53,8 +47,8 @@ export function useDraftAutosave<T>({
 	});
 
 	React.useEffect(() => {
-		// Persist only non-empty writing: never clobber the captured offer on a fresh
-		// (empty) mount, and never clear here — clearing belongs to submit/dismiss.
+		// Never clear here, and never write an empty value: that would clobber the
+		// captured offer on a fresh mount. Clearing belongs to submit/dismiss.
 		if (!isEmpty(value)) writeDraft(storage, route, value);
 	}, [storage, route, value, isEmpty]);
 

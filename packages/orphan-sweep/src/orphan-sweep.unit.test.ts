@@ -63,7 +63,6 @@ describe("computeSweepPlan — orphan it-* matching", () => {
 	});
 
 	it("decodes the stage off the physical name for the audit trail", () => {
-		// worker("it-pasaport") → phoenix-phoenix-it-pasaport-<suffix>; stage decodes to it-pasaport.
 		const plan = computeSweepPlan([worker("it-pasaport")], protection());
 		assert.strictEqual(plan.toDelete[0]?.stage, "it-pasaport");
 	});
@@ -86,13 +85,11 @@ describe("computeSweepPlan — prod is NEVER swept (the catastrophic case)", () 
 	});
 
 	it("never matches prod via the it- anchor (no false-positive on the prefix)", () => {
-		// A pathological stage literally starting `it` but NOT `it-` must not match.
 		const plan = computeSweepPlan([worker("italy"), worker("items")], protection());
 		assert.strictEqual(plan.toDelete.length, 0);
 	});
 
 	it("a stage merely CONTAINING it- as a substring is not an integration stage", () => {
-		// `prod-it-x` does not START with `it-`, so it is never swept.
 		const plan = computeSweepPlan([worker("prod-it-x")], protection());
 		assert.strictEqual(plan.toDelete.length, 0);
 		assert.strictEqual(keptReasonFor(plan, worker("prod-it-x").name), "unrecognized");
@@ -101,7 +98,7 @@ describe("computeSweepPlan — prod is NEVER swept (the catastrophic case)", () 
 
 describe("computeSweepPlan — named-dev stages are protected", () => {
 	it("keeps any stage in protectedStages even if it otherwise looked sweepable", () => {
-		// A named-dev stage named `it-umut` would match the it- anchor — protection wins FIRST.
+		// `it-umut` matches the it- anchor — protection wins FIRST.
 		const w = worker("it-umut");
 		const plan = computeSweepPlan([w], protection({protectedStages: ["prod", "it-umut"]}));
 		assert.strictEqual(plan.toDelete.length, 0);
@@ -178,7 +175,6 @@ describe("computeSweepPlan — named-dev (dev-*) stages are a protected category
 	});
 
 	it("never matches `dev` via a substring — `development` is not a dev stage", () => {
-		// A stage merely CONTAINING dev is unrecognized, never named-dev, never swept.
 		const w = worker("development");
 		const plan = computeSweepPlan([w], protection({sweepDevTestStages: true}));
 		assert.strictEqual(plan.toDelete.length, 0);
@@ -228,8 +224,6 @@ describe("computeSweepPlan — stale test-* stages sweep only under the opt-in (
 	});
 
 	it("the dev/test opt-in NEVER reaches prod, it-*, or pr-<n> — those keep their own reasons", () => {
-		// The new flag widens coverage to test-* ONLY; it must not perturb the existing
-		// classifications. it-* still deletes (its own mandate), prod stays protected.
 		const resources = [worker("prod"), worker("it-report-aaaa"), worker("pr-5")];
 		const plan = computeSweepPlan(
 			[...resources],
@@ -263,11 +257,9 @@ describe("computeSweepPlan — foreign / unrecognized resources are never touche
 
 	it("a name with no suffix segment is unrecognized (no stage guess)", () => {
 		const w: CfResource = {kind: "worker", name: "phoenix-phoenix-it-report"};
-		// `it-report` has internal dashes; the LAST dash splits stage `it` + suffix
-		// `report`, which still starts with `it-`? No: stage decodes to `it`, not `it-…`.
 		const plan = computeSweepPlan([w], protection());
-		// stage `it` does not start with `it-`, so it is kept unrecognized — a malformed
-		// name never enters the delete set.
+		// The LAST dash splits stage `it` + suffix `report`; stage `it` does not start
+		// with `it-`, so a malformed name never enters the delete set.
 		assert.strictEqual(plan.toDelete.length, 0);
 	});
 });
@@ -371,7 +363,6 @@ describe("computeSweepPlan — Flagship apps/flags flow through the SAME protect
 	});
 
 	it("dev/test classification flows through flagship kinds too (#2340)", () => {
-		// A leaked test-stage flagship app + flag sweep under the opt-in; a named-dev one never does.
 		const testApp = flagshipApp("test");
 		const testFlag = flagshipFlag("test");
 		const devApp = flagshipApp("dev-usirin");

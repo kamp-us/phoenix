@@ -1,13 +1,7 @@
 /**
- * The on-ramp's gating + copy contracts (#1210), asserted DOM-free — `apps/web/src`
- * has no jsdom, so the gate and the per-surface copy are factored out of the
- * component and tested as pure functions (the pure-extraction idiom of
- * `flagGateChild`).
- *
- * The load-bearing invariant is the gate: the on-ramp shows ONLY for a çaylak,
- * because only a çaylak's first entry is sandboxed — so the honest-framing copy is
- * truthful for a çaylak alone. A gate that showed for a yazar (whose entries publish
- * directly) would falsify the framing; these tests pin it.
+ * The on-ramp's gating + copy contracts (#1210). The load-bearing one is the gate:
+ * showing for a yazar (whose entries publish directly) would falsify the
+ * honest-framing copy.
  */
 import {describe, expect, it} from "vitest";
 import {onrampCopy, shouldShowOnramp} from "./FirstContributionOnramp";

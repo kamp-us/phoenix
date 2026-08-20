@@ -1,11 +1,11 @@
 import {describe, expect, it} from "vitest";
 import {
 	classify,
+	controlPlaneOwnersOf,
 	matcherFor,
 	ownersOf,
 	parseCodeowners,
 	splitTeam,
-	teamOwnersOf,
 } from "./codeowners.ts";
 
 const TEAM = "@kamp-us/control-plane";
@@ -67,13 +67,24 @@ describe("ownersOf", () => {
 	});
 });
 
-describe("teamOwnersOf", () => {
+describe("controlPlaneOwnersOf", () => {
 	it("reads the team off the file rather than carrying a hardcoded name", () => {
-		expect(teamOwnersOf(ROWS)).toEqual([TEAM]);
+		expect(controlPlaneOwnersOf(ROWS)).toEqual([TEAM]);
 	});
 
-	it("ignores individual owners — only an @org/team row bounds the §CP surface", () => {
-		expect(teamOwnersOf(parseCodeowners("/a/ @someone\n"))).toEqual([]);
+	it("counts an individual @login owner exactly as an @org/team owner (#6299)", () => {
+		expect(controlPlaneOwnersOf(parseCodeowners("/a/ @someone\n"))).toEqual(["@someone"]);
+	});
+
+	it("takes both shapes off one file, distinct and in first-appearance order", () => {
+		expect(controlPlaneOwnersOf(parseCodeowners(`/a/ @someone ${TEAM}\n/b/ @someone\n`))).toEqual([
+			"@someone",
+			TEAM,
+		]);
+	});
+
+	it("ignores an email owner — it names no account a roster or an approval resolves against", () => {
+		expect(controlPlaneOwnersOf(parseCodeowners("/a/ owner@example.test\n"))).toEqual([]);
 	});
 });
 
@@ -98,19 +109,29 @@ describe("classify", () => {
 		);
 	});
 
-	it("still holds on unknown for a .decisions/-only set the boundary cannot bound", () => {
-		expect(classify(parseCodeowners("/a/ @someone\n"), [".decisions/0240-a.md"])).toBe("unknown");
+	it("is not-control-plane for a .decisions/-only set an individual-owner boundary bounds", () => {
+		expect(classify(parseCodeowners("/a/ @someone\n"), [".decisions/0240-a.md"])).toBe(
+			"not-control-plane",
+		);
 	});
 
-	it("holds on unknown for a boundary with zero team-owned rows — never match-everything (#4401)", () => {
-		expect(classify(parseCodeowners("/a/ @someone\n"), ["a/b.ts"])).toBe("unknown");
+	it("is control-plane when a changed path resolves to an individual @login owner (#6299)", () => {
+		expect(classify(parseCodeowners("/a/ @someone\n"), ["a/b.ts"])).toBe("control-plane");
+	});
+
+	it("holds on unknown for a boundary whose only owners are emails — never match-everything (#4401)", () => {
+		expect(classify(parseCodeowners("/a/ owner@example.test\n"), ["a/b.ts"])).toBe("unknown");
+	});
+
+	it("holds on unknown for a match-everything individual-owner row too", () => {
+		expect(classify(parseCodeowners("* @someone\n"), ["a/b.ts"])).toBe("unknown");
 	});
 
 	it("holds on unknown for a match-everything row — the #4336 adopter sentinel", () => {
 		expect(classify(parseCodeowners(`* ${TEAM}\n`), ["apps/web/src/App.tsx"])).toBe("unknown");
 	});
 
-	it("holds on unknown for an absent CODEOWNERS, which parses to zero rows", () => {
+	it("holds on unknown for a boundary with zero rows — a PRESENT but empty file, not an absent one", () => {
 		expect(classify([], ["apps/web/src/App.tsx"])).toBe("unknown");
 	});
 });
@@ -120,7 +141,7 @@ describe("splitTeam", () => {
 		expect(splitTeam(TEAM)).toEqual({org: "kamp-us", team: "control-plane"});
 	});
 
-	it("refuses an individual owner", () => {
+	it("answers null for an individual owner — the discriminator cp-approval routes the roster on", () => {
 		expect(splitTeam("@someone")).toBeNull();
 	});
 });

@@ -1,7 +1,7 @@
 /**
- * View-shaped tree node for the post-detail comment thread. The page assembles
- * the `parentId` → children map and hands each node its children array, so a
- * level renders its subtree without re-walking the flat connection.
+ * View-shaped tree node for the post-detail comment thread. The page hands each
+ * node its children, so a level renders its subtree without re-walking the
+ * flat connection.
  */
 import * as React from "react";
 import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
@@ -41,31 +41,26 @@ export const CommentTreeNodeView = view<Comment>()({
 	reactions: {counts: true, myReaction: true},
 });
 
-/**
- * Write-back view for a comment vote. Masking is by view identity, so the
- * write-back must reuse a view the node ref carries — `CommentTreeNodeView`
- * already selects these fields, so we reuse it.
- */
+/** Masking is by view identity, so the write-back must reuse the node's own view. */
 const CommentVoteView = CommentTreeNodeView;
 
 export interface CommentTreeNodeProps {
 	comment: ViewRef<"Comment">;
-	/** Parent post's canonical path (`/pano/:slug`); the node appends the `#comment-<id>` anchor. */
+	/** `/pano/:slug` — the node appends the `#comment-<id>` anchor. */
 	postPath: string;
-	/** Direct children, already filtered + ordered by the page. */
+	/** Already filtered + ordered by the page. */
 	children: ReadonlyArray<{id: string; ref: ViewRef<"Comment">}>;
-	/** comment id → its children list, for resolving grandchildren in recursion. */
 	childrenForId: (id: string) => ReadonlyArray<{id: string; ref: ViewRef<"Comment">}>;
 	depth?: number;
-	/** Comment id the URL hash currently targets — that node renders highlighted. */
+	/** The URL hash's target — that node renders highlighted. */
 	activeCommentId?: string | null;
 	currentUserId: string | null;
 	onReply?: (id: string) => void;
 	onEdit?: (id: string) => void;
 	onDelete?: (id: string) => void;
-	/** Reports this comment; the page owns `report.submit` + the signed-out redirect. */
+	/** The page owns `report.submit` + the signed-out redirect. */
 	onReport?: (id: string) => Promise<ReportOutcome>;
-	/** comment id → its own composers, so the root node is not a special case. */
+	/** Per-id, so the root node is not a special case. */
 	composerFor: (id: string) => {
 		replyComposer?: React.ReactNode;
 		editComposer?: React.ReactNode;
@@ -113,9 +108,6 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 				{isDeleted ? (
 					<span className="kp-comment__author kp-comment__author--deleted">[silindi]</span>
 				) : (
-					// Live author identity via `actorLabel` (#2139): current displayName → @username,
-					// falling back to the write-time `author` snapshot for an unstamped/legacy row.
-					// The profile link targets the live username when present, else the snapshot.
 					<a className="kp-comment__author" href={`/u/${data.authorUsername ?? data.author}`}>
 						{actorLabel(data.authorDisplayName ?? null, data.authorUsername ?? null, data.author)}
 					</a>

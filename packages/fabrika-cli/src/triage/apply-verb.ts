@@ -9,7 +9,7 @@
  * The reconcile itself — which labels are owned, what is removed, what is preserved, and the shape
  * the read-back asserts — lives in `./facets.ts` and is shared with `triage park`.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {getIssue, listLabels, listOpenMilestones, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -22,19 +22,13 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
+import {guardConfig} from "./config-guard.ts";
 import {applyChanges} from "./facet-writes.ts";
 import {
-	AUDIENCES,
 	decodeMember,
-	PRIORITIES,
 	planReconcile,
 	renderShape,
-	STANDING_LANES,
-	type StandingLane,
 	shapeViolations,
-	type TriageAudience,
-	type TriageType,
-	TYPES,
 	triagedFacets,
 } from "./facets.ts";
 import {scannedLine} from "./scope.ts";
@@ -50,6 +44,8 @@ export interface ApplyOptions {
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** Where the run stands. The repo root above it is where `.fabrika.jsonc` is read. */
+	readonly cwd: string;
 }
 
 const unreadable = (what: string, repo: string, reason: string): VerbOutcome =>
@@ -72,8 +68,8 @@ const unreadable = (what: string, repo: string, reason: string): VerbOutcome =>
  */
 const criteriaRefusal = (
 	issue: number,
-	type: TriageType,
-	readyFor: TriageAudience,
+	type: string,
+	readyFor: string,
 	body: string,
 ): VerbOutcome | null => {
 	if (readyFor !== "agent" || type === "epic") return null;
@@ -89,13 +85,23 @@ const criteriaRefusal = (
 
 export const runApply = (
 	options: ApplyOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const {issue, json} = options;
 
 		if (!Number.isInteger(issue) || issue <= 0) {
 			return refuse(FAILED, `triage apply: ${issue} is not an issue number.`);
 		}
+
+		const gate = yield* guardConfig("triage apply", options.cwd);
+		if (gate._tag === "Refused") return gate.outcome;
+		const resolved = gate.resolved;
+		const {types, priorities, audiences, standingLanes} = resolved.board;
+
 		if ((options.home === null) === (options.lane === null)) {
 			return refuse(
 				FAILED,
@@ -103,34 +109,45 @@ export const runApply = (
 			);
 		}
 
-		const type = decodeMember(TYPES, options.type);
+		const type = decodeMember(types, options.type);
 		if (type === null) {
 			return refuse(
 				OFF_VOCABULARY,
-				`triage apply: --type must be one of ${TYPES.join(", ")} — got "${options.type}".`,
+				`triage apply: --type must be one of ${types.join(", ")} — got "${options.type}".`,
 			);
 		}
-		const priority = decodeMember(PRIORITIES, options.priority);
+		const priority = decodeMember(priorities, options.priority);
 		if (priority === null) {
 			return refuse(
 				OFF_VOCABULARY,
-				`triage apply: --priority must be one of ${PRIORITIES.join(", ")} — got "${options.priority}". Refusing to apply it as a label.`,
+				`triage apply: --priority must be one of ${priorities.join(", ")} — got "${options.priority}". Refusing to apply it as a label.`,
 			);
 		}
-		const readyFor = decodeMember(AUDIENCES, options.readyFor);
+		const readyFor = decodeMember(audiences, options.readyFor);
 		if (readyFor === null) {
 			return refuse(
 				OFF_VOCABULARY,
-				`triage apply: --ready-for must be human or agent — got "${options.readyFor}".`,
+				`triage apply: --ready-for must be one of ${audiences.join(", ")} — got "${options.readyFor}".`,
 			);
 		}
-		let lane: StandingLane | null = null;
+		// The lanes are an open set once they are configuration, so the compile-time narrowing is
+		// gone and this decode against the resolved list is the whole refusal (#6294).
+		let lane: string | null = null;
 		if (options.lane !== null) {
-			lane = decodeMember(STANDING_LANES, options.lane);
+			// A repo that declares `standingLanes: []` runs none, so the enumerating message below
+			// would read `--lane must be  — got "x"` and send the caller looking for a value to
+			// type. There is none: the answer is a milestone (#6440).
+			if (standingLanes.length === 0) {
+				return refuse(
+					OFF_VOCABULARY,
+					`triage apply: this repo declares no standing lane — \`boardVocabulary.standingLanes\` in \`.fabrika.jsonc\` is empty, so every issue homes on a milestone. Got "${options.lane}".`,
+				);
+			}
+			lane = decodeMember(standingLanes, options.lane);
 			if (lane === null) {
 				return refuse(
 					OFF_VOCABULARY,
-					`triage apply: --lane must be ${STANDING_LANES.join(" or ")} — got "${options.lane}".`,
+					`triage apply: --lane must be ${standingLanes.join(" or ")} — got "${options.lane}".`,
 				);
 			}
 		}
@@ -170,7 +187,7 @@ export const runApply = (
 
 		// Only the labels THIS invocation writes, not the whole vocabulary: checking all six types
 		// would refuse a good `--type bug` in a repo that merely lacks `type:investigation`.
-		const facets = triagedFacets({type, priority, readyFor, lane});
+		const facets = triagedFacets({type, priority, readyFor, lane}, resolved);
 		const willWrite = facets.flatMap((facet) => facet.keep);
 		const missing = willWrite.find((label) => !vocabulary.value.includes(label));
 		if (missing !== undefined) {
@@ -210,7 +227,7 @@ export const runApply = (
 			);
 		}
 
-		const expected = `expected exactly one type, one priority, status:triaged, one ready-for, and ${
+		const expected = `expected exactly one type, one priority, ${resolved.board.statuses.triaged}, one ready-for, and ${
 			home === null ? "no milestone" : `milestone ${home}`
 		}`;
 		const back = yield* getIssue(repo, issue);

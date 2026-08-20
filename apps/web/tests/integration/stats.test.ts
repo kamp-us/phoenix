@@ -2,12 +2,6 @@
  * landing stats — black-box against the deployed worker `/fate` route
  * (ADR 0026–0031).
  *
- * Ports `landing-stats.test.ts`, which drove the `Sozluk` / `Pano` / `Stats`
- * services directly inside workerd and asserted the `sozluk_stats` / `pano_stats`
- * single-row aggregates against direct-D1 `COUNT` parity reads. Over HTTP the
- * only observable surface is the `landingStats` query (four counters + the
- * build `version`).
- *
  * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1
  * is shared across every migrated file — concurrent writers can only INFLATE the global
  * `landingStats` counters between this file's snapshots. Every assertion here is a
@@ -17,18 +11,6 @@
  * widens the gap, never narrows it, so no `>=` ever breaks. The delta form is independent
  * of the absolute baseline, which is never fixed (the harness seeds its own author/voter
  * users for sign-up and seeding).
- *
- * not portable black-box: the `landing-stats.test.ts` direct-D1 COUNT parity
- * assertions (`total_definitions === COUNT(*) FROM definition_record`, distinct
- * `total_authors` across view tables, `pano_stats` post/comment parity) — the
- * raw view tables aren't on the wire; re-expressed as observable deltas.
- * not portable black-box: the soft-delete decrement probe (`deleteDefinition`
- * → `total_definitions` ticks down) read the `sozluk_stats` row directly; the
- * raw `sozluk_stats` row isn't on the wire, so here we only assert the delete is
- * accepted and re-resolves its parent Term.
- * not portable black-box: `Stats.getLandingStats` service-method call + its
- * cross-product `COUNT` parity — covered by the `landingStats` fate query delta
- * (the seam test already asserts `health.definitions` flows from this service).
  */
 import {beforeAll, describe, expect, it} from "vitest";
 import {sharedStack} from "./_integration.ts";
@@ -74,7 +56,6 @@ describe("landing stats — /fate", () => {
 	it("each counter increases by AT LEAST the amount added under a fresh author", async () => {
 		const before = await landingStats();
 
-		// 2 definitions on distinct slugs.
 		for (let i = 0; i < 2; i++) {
 			const def = await h.fate(
 				{
@@ -88,7 +69,6 @@ describe("landing stats — /fate", () => {
 			expect(def.ok).toBe(true);
 		}
 
-		// 1 post.
 		const post = await h.fate(
 			{
 				kind: "mutation",
@@ -102,7 +82,6 @@ describe("landing stats — /fate", () => {
 		if (!post.ok) return;
 		const postId = (post.data as {id: string}).id;
 
-		// 3 comments on that post.
 		for (let i = 0; i < 3; i++) {
 			const comment = await h.fate(
 				{
@@ -118,9 +97,6 @@ describe("landing stats — /fate", () => {
 
 		const after = await landingStats();
 
-		// Deltas: at least what we added. These are lower-bound `>=` deltas on the shared
-		// stage's global counters — concurrent writers can only inflate them between our two
-		// snapshots, which only widens the gap, so `>=` holds without depending on a baseline.
 		expect(after.totalDefinitions).toBeGreaterThanOrEqual(before.totalDefinitions + 2);
 		expect(after.totalPosts).toBeGreaterThanOrEqual(before.totalPosts + 1);
 		expect(after.totalComments).toBeGreaterThanOrEqual(before.totalComments + 3);
@@ -148,7 +124,6 @@ describe("landing stats — /fate", () => {
 		if (!added.ok) return;
 		const id = (added.data as {id: string}).id;
 
-		// After our add, the total is at least baseline + our 1.
 		const afterAdd = await landingStats();
 		expect(afterAdd.totalDefinitions).toBeGreaterThanOrEqual(baseline.totalDefinitions + 1);
 

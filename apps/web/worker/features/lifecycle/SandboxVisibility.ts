@@ -1,14 +1,8 @@
 /**
- * The SQL side of the çaylak sandbox (#1205): the read-query predicates that mirror
- * `EntityLifecycle.isVisibleTo` at the persisted layer — applied at the SAME place
- * the ADR 0096 `removed_at IS NULL` guard already lives in each content read, so a
- * viewer never sees sandboxed content they aren't entitled to.
- *
- * Two predicates, both pure (no service): {@link sandboxVisibleWhere} is the
- * per-viewer read filter; {@link sandboxBacklogWhere} is the moderator
- * sandbox-queue / promotion-backlog read model (#1206's read seam). Neither carries
- * the `removed_at IS NULL` clause — callers keep their own (the removal guard is
- * orthogonal), `and()`-ing this predicate beside it.
+ * The SQL side of the çaylak sandbox — the read predicates mirroring
+ * `EntityLifecycle.isVisibleTo` at the persisted layer. Neither predicate carries the
+ * ADR 0096 `removed_at IS NULL` clause: removal is orthogonal, so callers `and()` their
+ * own guard beside these.
  */
 import {and, eq, isNotNull, isNull, or, type SQL, type SQLWrapper} from "drizzle-orm";
 import {
@@ -39,7 +33,6 @@ export const resolveSandboxViewer = (opts: {
 		? {viewerId: opts.viewerId, canSeeSandboxed: false, seesSandboxedInPlace: false}
 		: anonymousViewer);
 
-/** The two lifecycle columns a content read filters the sandbox dimension on. */
 export interface SandboxColumns {
 	readonly sandboxedAt: SQLWrapper;
 	readonly authorId: SQLWrapper;
@@ -120,43 +113,26 @@ export const sandboxVisibleWhere = (
 	return arms.length === 1 ? arms[0] : or(...arms);
 };
 
-/**
- * The columns the public-live aggregate predicate filters on: the sandbox pair plus
- * the ADR 0096 `removed_at`, so the removal guard folds into the same predicate
- * rather than being hand-written beside it at every count call site.
- */
 export interface PublicLiveColumns extends SandboxColumns {
 	readonly removedAt: SQLWrapper;
 }
 
 /**
- * The single public-live aggregate filter (#1359 seam): removed-excluded AND
- * sandbox-masked-for-this-viewer, in one predicate. This is the `and()` of the
- * caller's former `isNull(removedAt)` guard with {@link sandboxVisibleWhere} — for an
- * anonymous viewer it reduces to exactly `removed_at IS NULL AND sandboxed_at IS NULL`,
- * the form the landing-count paths (#1407) re-derive by hand today and fold onto this.
- *
- * For the **post** table the draft dimension is excluded too — that arm is pano-local
- * (ADR 0113: `is_draft` lives only on `post_record`), so the post-aware aggregate
- * `publicLivePostWhere` in `features/pano/PostVisibility.ts` `and()`s the draft arm onto
- * this. Definition/comment reads, which have no draft concept, route through this directly.
+ * Removed-excluded AND sandbox-masked, in one predicate. Carries NO draft arm: `is_draft`
+ * is pano-local (ADR 0113), so `publicLivePostWhere` `and()`s that arm onto this.
  */
 export const publicLiveWhere = (cols: PublicLiveColumns, viewer: SandboxViewer): SQL | undefined =>
 	and(isNull(cols.removedAt), sandboxVisibleWhere(cols, viewer));
 
-/** The two record fields the owner-scoped in-review flag reads. */
 export interface OwnerSandboxRecord {
 	readonly sandboxedAt: Date | null;
 	readonly authorId: string;
 }
 
 /**
- * The in-memory owner-scoped in-review flag (#2200): `true` iff the row is still
- * sandboxed (#1205) AND the viewer is its author — the `sandboxed` wire signal a
- * çaylak sees on their OWN in-review content. Owner-only by construction: any other
- * viewer (anonymous, another member, a moderator) reads `false`, so the flag never
- * leaks review state beyond the author. The in-memory dual of {@link sandboxArm}'s
- * `Sandboxed` author branch, for the read paths that have already fetched the record.
+ * The `sandboxed` wire signal a çaylak sees on their OWN in-review content. Owner-only
+ * by construction — every other viewer, moderators included, reads `false`, so the flag
+ * never leaks review state beyond the author.
  */
 export const ownSandboxed = (
 	record: OwnerSandboxRecord,
@@ -201,10 +177,8 @@ export interface SandboxBacklogColumns {
 }
 
 /**
- * The moderator sandbox-queue / promotion-backlog read model (#1206 seam): the
- * still-sandboxed, not-removed content — optionally scoped to one author's backlog
- * (what the promotion path flips on çaylak→yazar). Carries its own `removed_at IS
- * NULL` because it is a standalone queue read, not layered on a content read.
+ * The moderator sandbox queue. Unlike the predicates above it DOES carry its own
+ * `removed_at IS NULL`, because it is a standalone read and not layered on a content read.
  */
 export const sandboxBacklogWhere = (
 	cols: SandboxBacklogColumns,

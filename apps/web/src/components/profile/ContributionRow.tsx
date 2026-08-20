@@ -1,6 +1,5 @@
-// `Contribution` is a single discriminant view (ADR 0018): one node carries `kind`
-// plus the nullable union of all three variants' fields, so this row switches on
-// `kind` with no union type.
+// `Contribution` is one discriminant view carrying every variant's fields as
+// nullables, so this row switches on `kind` with no union type. See ADR 0018.
 import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Contribution} from "../../../worker/features/fate/views";
@@ -16,10 +15,8 @@ export const ContributionView = view<Contribution>()({
 	id: true,
 	score: true,
 	createdAt: true,
-	// The per-item review-state flag (#1316): `true` for a still-sandboxed item, so
-	// the owner's profile can badge it "incelemede" (#1291). A bare boolean — carries
-	// no reviewer identity (one-way glass). Sent only to the author/moderator, so a
-	// non-owner viewer never receives a sandboxed row in the first place.
+	// A bare boolean carrying no reviewer identity (one-way glass), and sent only to
+	// the author/moderator — a non-owner never receives a sandboxed row at all.
 	sandboxed: true,
 	bodyExcerpt: true,
 	termSlug: true,
@@ -32,11 +29,6 @@ export const ContributionView = view<Contribution>()({
 
 export interface ContributionRowProps {
 	node: ViewRef<"Contribution">;
-	/**
-	 * Render the "incelemede" badge on a still-sandboxed item (#1291). The caller
-	 * gates this on the çaylak-status gate (flag + own profile + çaylak), so the
-	 * badge only appears for the owner's own pending items. Default `false`.
-	 */
 	sandboxBadge?: boolean;
 }
 

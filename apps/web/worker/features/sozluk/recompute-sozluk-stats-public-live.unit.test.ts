@@ -1,18 +1,11 @@
 /**
- * `recomputeSozlukStats` public-live count wiring (#1407). The per-product
- * `sozluk_stats` totals (`total_definitions`, `total_authors`) count LIVE content
- * only: a sandboxed çaylak definition is excluded like a removed one, so a
- * sandbox-only author never inflates `total_authors`. Definitions carry no draft
- * dimension, so the seam's removed+sandbox reduction is the full rule.
+ * `recomputeSozlukStats` public-live count wiring. The `sozluk_stats` totals count LIVE
+ * content only: a sandboxed çaylak definition is excluded like a removed one, so a
+ * sandbox-only author never inflates `total_authors`.
  *
- * #1407 folds these counts onto the shared `publicLiveWhere` for the anonymous
- * viewer, replacing the hand-written `removed_at IS NULL AND sandboxed_at IS NULL`.
- *
- * `recomputeSozlukStats` is a private closure run at the end of `addDefinition`;
- * the counts execute through `.select(...).where(...).then(...)` (Promises, no
- * `.toSQL()`), so the compiled WHERE is captured by driving `SozlukLive.addDefinition`
- * over a RECORDING D1 binding whose `prepare(sql)` records every statement (ADR 0082:
- * row-level behavior is integration's job; the seam WIRING is what's unit-reachable).
+ * The counts execute through `.select(...).where(...).then(...)` (Promises, no `.toSQL()`),
+ * so the compiled WHERE is captured by driving `SozlukLive.addDefinition` over a RECORDING
+ * D1 binding whose `prepare(sql)` records every statement.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";

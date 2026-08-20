@@ -1,13 +1,7 @@
 /**
- * The REAL fate Vite plugin generates a native client from a
- * `FateExecutor.toCodegenServer(...)` schema module, end to end through its
- * actual `runnerImport` path (a programmatic `vite build` in a temp root).
- *
- * Unit-tier in spirit (no worker, no storage), but lives here because the plugin
- * (`react-fate/vite`) and Vite are this app's dependencies — the same plugin
- * instance `vite.config.ts` runs in the real build. The schema module is
- * `codegen-schema.fixture.ts`, whose handlers close over a throw-on-touch Proxy
- * database, so successful generation doubles as the "no D1 at build time" proof.
+ * The REAL fate Vite plugin, driven end to end by a programmatic `vite build` in a temp
+ * root. The fixture's handlers close over a throw-on-touch Proxy database, so successful
+ * generation doubles as the "no D1 at build time" proof.
  */
 import {mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";

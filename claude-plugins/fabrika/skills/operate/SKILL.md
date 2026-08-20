@@ -133,7 +133,7 @@ node <fabrika> lane assembly $lane_key
 ```
 
 Its stdout is the absolute path of that worktree — `.claude/worktrees/epic-<lane-key>`, cut off the
-repository's default branch through git's own `origin/HEAD` pointer — and **every git write this run
+repository's default branch through git's own `origin/HEAD` pointer, tracking nothing — and **every git write this run
 performs on the assembly branch happens there, addressed as `git -C <that path>`**. It is idempotent
 from either side: a later pass finding the tree still there resumes it and re-prints the same path,
 and a pass finding the branch alive with its tree gone — what `--remove` at a terminal leaves behind,
@@ -229,9 +229,8 @@ two children's ranges indistinguishable in the history the epic reviewer reads. 
 `FAIL` that re-enters `build` under the retry budget — that route is why a cross-child collision
 resolves inside this run instead of at a merge queue. A clean merge is only half the answer: the
 **semantic** collision is two ranges that each passed alone and do not hold together, and it reads
-as the merged tree failing the repo's own checks (`pnpm typecheck` and `pnpm lint:worktree` — the
-same two every child's `build check --surface code` ran in its worktree, now run once over the
-assembly, in the assembly worktree). Non-zero there is the same `FAIL`.
+as the merged tree failing the repo's own checks — the same commands every child's `build check
+--surface code` ran in its worktree, now run once over the assembly, in the assembly worktree. Non-zero there is the same `FAIL`.
 
 **The assembly branch moves only on a `DONE`.** On either `FAIL`, put it back where it was, in the
 same tree the merge happened in — `git -C <assembly path> merge --abort` on a conflict,
@@ -265,6 +264,12 @@ bare push cannot say that, which is why the corpus forbids one ([#4213](https://
 and `build push` cannot serve here because the assembly branch carries no build claim's nonce. There
 is no force flag to reach for: the branch only ever grows, so exit `29` means fetch and re-merge, and
 exit `30` is a proven "the remote did not move" — never a `MOVED` you assume.
+
+**Its target is `refs/heads/epic/<n>`, spelled out, never the branch's recorded upstream.** Reading
+it there aimed every push in a run at `refs/heads/main`, and branch protection was the only thing
+refusing them ([#6435](https://github.com/kamp-us/phoenix/issues/6435)). A seat whose branch still
+tracks another ref is cleared before the push, because a bare `git push` there would fire at that
+branch; exit `34` is that clear failing to take.
 
 **It is also the run's isolation gate, and it is fail-closed.** Invoked in the repository's main
 working tree it refuses on `33` and pushes nothing, whatever the branch says — so an assembly that
@@ -648,21 +653,3 @@ not know is exactly the guess step 2's routing table forbids. A park reported as
 terminal destroys the caller's routing: the two differ in exactly who acts next. Follow-up
 observations leave through `/report` the moment you see them — never through scope creep in a
 lane you are only driving.
-
-## Required repo files
-
-fabrika installs into repos that are not phoenix, so every repo surface this skill leans on is
-declared here: what must exist, why this skill needs it, and the one named outcome when it is
-absent. The when-missing vocabulary is closed — **fail-loud** (stop, name the missing surface by
-its repo-relative path, point at front-door, **and file the gap**), **degrade** (continue with a
-narrower answer, stated), **bootstrap** (front-door creates it) — and it is the same table in every
-fabrika skill, so one reader parses all of them. No row here dead-ends on a bare error.
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| The lane verb group — `<fabrika>` routing `lane status`/`transition`/`report` (#5736)/`prove` (#5747)/`history`/`print` plus `open`/`emit` (#5688), `brief` (#5751), `stale` (#5897), `assembly` (#6163) and `claim`/`release` (#5761) | Every state read, every proof, every event write, every spawn prompt, the dead-operator sweep and the driver's own exclusivity in this skill is one of these verbs; there is no other path to the ledger, none to a prompt, and none to knowing whether a second driver is already here | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming the entrypoint it could not run and points at front-door. |
-| The recipe verb group — `<fabrika>` routing `recipe route` plus the recipes it names (`unpark`, `rerun`), and the chore template at `packages/fabrika-cli/src/lane/templates/chore.workflow.json` | A chore drive routes and folds through `recipe route`, runs the recipe it names, and boots from that template; there is no other path to either answer | **fail-loud** — a chore drive whose routing verb cannot be executed knows neither what to run nor what an exit meant; the run ends `STOPPED` naming `packages/fabrika-cli/src/recipe/`, records no event, and points at front-door. An issue lane is unaffected. |
-| The agent shells — `claude-plugins/fabrika/agents/builder.md`, `reviewer.md`, `shipper.md` | Step 2's routing table spawns exactly these three by their bare noun names | **fail-loud** — a route whose shell does not exist cannot spawn; the run ends `STOPPED` naming the absent shell file, and no event is recorded for a spawn that never started. |
-| The `package.json` scripts `typecheck` and `lint:worktree` | An epic run's `integrate` reads the semantic collision off them — two ranges that each passed alone and fail together show up as the merged assembly failing the checks, and a clean `git merge` alone cannot see that | **degrade** — a clean merge is then the whole `DONE` answer and a semantic collision only surfaces at the epic review; say so in the transcript comment and file the gap via `/report`. An epic run still drives; a single-issue lane is unaffected. |
-| `git` 2.31 or newer, and a repository whose main working tree is not the assembly seat | An epic run assembles in a linked worktree, and the isolation guard reads `git rev-parse --path-format=absolute --git-dir --git-common-dir` to prove the tree it stands in is not the main one — that flag is 2.31's | **fail-loud** — an unreadable pair is UNKNOWN, so `lane assembly` refuses on `11` and `lane push` pushes nothing; the run ends `STOPPED` naming the git version it read. A single-issue lane is unaffected. |
-| `id:gitignore-row` `.gitignore` covering `.fabrika/` | The ledger is a disposable machine-local artifact, regenerable from the board — committed, it would smuggle one machine's lane state into every checkout | **bootstrap** — `fabrika status bootstrap gitignore-row` appends the row and reads it back; until then the verbs still work, so state the uncovered `.fabrika/` in the park or transcript comment. |

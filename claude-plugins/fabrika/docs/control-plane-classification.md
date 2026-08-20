@@ -9,8 +9,15 @@ spec or a verb implementer can cite a file instead of a comment
 ## The model
 
 1. **CODEOWNERS is the single source of truth.** A change is control-plane **iff** it touches paths
-   owned by the control-plane team in [`.github/CODEOWNERS`](../../../.github/CODEOWNERS). There is
-   no second source.
+   owned by a control-plane owner in [`.github/CODEOWNERS`](../../../.github/CODEOWNERS). There is
+   no second source. **An owner is either an `@org/team` or an individual `@login`, and the two count
+   the same** — founder ruling on
+   [#5603](https://github.com/kamp-us/phoenix/issues/5603) comment 16, built as
+   [#6299](https://github.com/kamp-us/phoenix/issues/6299). A team-only reading deadlocked every PR
+   in a repo whose boundary names people rather than a team, and sent `cp-approval` to a team-roster
+   endpoint a personal repo has no org for. An owner that is neither shape — a bare email — names no
+   account an approval resolves against, so it bounds nothing. In this repo nothing moves: every
+   CODEOWNERS row here names `@kamp-us/control-plane`.
 2. **A verb computes it, from two inputs and nothing else** — the CODEOWNERS file and the diff's
    changed paths. **No agent judgement, and no content regex.** A skill may state the expectation;
    it never asserts the answer.
@@ -18,14 +25,32 @@ spec or a verb implementer can cite a file instead of a comment
 
    | value | means |
    |---|---|
-   | `§CP` | a changed path is owned by the control-plane team |
-   | `not-§CP` | CODEOWNERS was read, and no changed path is owned |
-   | `UNKNOWN` | the classification could not be made — unreadable/unparseable CODEOWNERS, empty path set |
+   | `§CP` | a changed path is owned by a control-plane owner |
+   | `not-§CP` | CODEOWNERS was read, it bounds somebody, and no changed path is owned |
+   | `UNKNOWN` | the classification could not be made over the boundary — a file that parses to no usable row, a file proven absent, an empty path set |
+
+   **A proven-absent file and a failed read are different facts, and neither is `not-§CP`.**
+   *Proven absent* (a 404) is an empty row set, which classifies as the `UNKNOWN` hold. *Present* is
+   parsed and classified, and a file that reads fine but bounds nobody is the `UNKNOWN` hold too.
+   *Unreadable* is neither, and §4 says what happens to it.
 
 4. **`UNKNOWN` is treated as §CP — fail closed.** A read that failed and a change that is genuinely
    ordinary are different facts, and collapsing them is this repo's dominant defect class (a check
    that cannot see its subject answering confidently instead of erroring). A false §CP costs one
    approval; a false ordinary reaches `main` with none.
+
+   **An unreadable CODEOWNERS is not that `UNKNOWN` either — it is exit `11`, in every repo.** A
+   failed read proves nothing, so the verb refuses rather than answering. This is unconditional: no
+   config value waives it. ADR
+   [0220](../../../.decisions/0220-cp-surface-declared-at-standup.md) §4 names collapsing `UNKNOWN` →
+   `not-§CP` the recurring fail-open defect, and §CP has no residual gate behind it — under a ruleset
+   with `required_approving_review_count: 0`, CODEOWNERS is the only source of required human review.
+
+   A per-repo `unreadableCodeowners` key briefly made this behaviour configurable
+   ([#6299](https://github.com/kamp-us/phoenix/issues/6299), ADR
+   [0307](../../../.decisions/0307-unreadable-codeowners-is-per-repo.md)); the founder reverted it on
+   [#5631](https://github.com/kamp-us/phoenix/issues/5631). The key still exists in
+   `.fabrika.jsonc`'s vocabulary and nothing reads it.
 5. **Enforcement is GitHub's, not the verb's.** The block is the native code-owner review
    requirement on the `main` ruleset (ADR
    [0135](../../../.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md),

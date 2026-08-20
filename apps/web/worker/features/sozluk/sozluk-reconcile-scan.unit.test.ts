@@ -1,15 +1,11 @@
 /**
- * The backstop-reconciliation keyset-chunk sweep (`scanReconcileChunks`, #2558), unit-reachable
- * over in-memory ports — the cursor-advance + full-coverage control flow is wrong-or-right with
- * no SQL engine (ADR 0082 litmus), so it is driven here over a JS-array table, never real D1.
- * The real-D1 chunk EXECUTION (the paged walk over `term_record` + the actual re-convergence of
- * a term left stale by a swallowed refresh) stays integration-tier (`sozluk-cache-reconcile.test.ts`).
+ * The backstop-reconciliation keyset-chunk sweep (`scanReconcileChunks`, #2558): the
+ * cursor-advance + full-coverage control flow is wrong-or-right with no SQL engine
+ * (ADR 0082), so it is driven over a JS-array table. Real-D1 chunk EXECUTION stays
+ * integration-tier (`sozluk-cache-reconcile.test.ts`).
  *
- * The two properties this guards, both the point of #2558's bounded full sweep:
- *   - FULL coverage: the sweep visits EVERY term across its pages, so a term beyond the first
- *     chunk is still re-refreshed — chunking is not a recency/subset window.
- *   - BOUNDED pages: each `fetchChunk` asks for at most `chunkSize` rows and resumes at a cursor
- *     strictly past the previous page's last slug — no single unbounded scan.
+ * Two properties: FULL coverage (a term beyond the first chunk is still refreshed —
+ * chunking is not a recency window) and BOUNDED pages (no single unbounded scan).
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
@@ -19,17 +15,13 @@ const term = (slug: string): TermRef => ({slug, title: slug});
 
 interface Harness {
 	readonly ports: SozlukReconcileScanPorts;
-	/** Every `fetchChunk(afterSlug, limit)` call, in order — the paging trace. */
 	readonly fetchCalls: Array<{afterSlug: string | null; limit: number}>;
-	/** Every slug passed to `refreshTerm`, across all pages — the coverage trace. */
 	readonly refreshed: string[];
 }
 
 /**
- * In-memory ports over a fixed, slug-sorted table: `fetchChunk` serves the keyset page
- * (`slug > afterSlug`, capped at `limit`) and records the cursor + limit it was asked for;
- * `refreshTerm` records every re-refreshed slug. This is the exact contract `reconcileCaches`
- * wires D1 into — so the driver's paging behavior is proven without a database.
+ * In-memory ports over a fixed, slug-sorted table — the exact contract `reconcileCaches`
+ * wires D1 into, so the driver's paging behavior is proven without a database.
  */
 function harness(table: ReadonlyArray<string>): Harness {
 	const sorted = [...table].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
@@ -73,8 +65,7 @@ describe("scanReconcileChunks — keyset-chunks the full reconciliation sweep (#
 			const h = harness(["a", "b", "c", "d", "e"]);
 			yield* scanReconcileChunks(h.ports, 2);
 
-			// Pages of [a,b],[c,d],[e] — the short third page (1 < 2) marks the tail, so no fourth
-			// fetch. Each call asks for at most `chunkSize`, resuming at the prior last slug.
+			// Pages of [a,b],[c,d],[e] — the short third page marks the tail, so no fourth fetch.
 			assert.deepStrictEqual(
 				h.fetchCalls,
 				[

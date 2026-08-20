@@ -1,18 +1,11 @@
 /**
  * Report unit coverage — the decisions that are wrong-or-right with no database
- * (ADR 0082). The `Drizzle` seam is substituted directly (`Drizzle.test.ts`
- * half-A idiom): a `run` that THROWS proves a short-circuit never touched the
- * DB; a stubbed `run` feeds `assertTargetLive`'s presence read and the insert's
- * `meta.changes` envelope to the decision without an engine.
+ * (ADR 0082). A `run` that THROWS proves a short-circuit never touched the DB.
  *
- * Report has no fate/HTTP surface yet (`report.submit` is a future epic-#82
- * child — see `report/errors.ts`), so the engine-fidelity assertions the old
- * faked-engine suite ran — that real D1 actually returns `changes === 0`
- * on the composite-PK `onConflictDoNothing`, and that `deletedAt IS NULL`
- * filters a soft-deleted row — have no integration-reachable surface and move to
- * real D1 once that mutation lands (tracked follow-up). What is testable today is
- * the pure decision layer over a mocked seam: which `meta.changes` value maps to
- * `created`, and which presence read maps to `ReportTargetNotFound`.
+ * Report has no fate/HTTP surface yet, so the engine-fidelity assertions (real D1's
+ * `changes === 0` on the composite-PK `onConflictDoNothing`, `deletedAt IS NULL`
+ * filtering a soft-deleted row) have nowhere integration-reachable to live and move
+ * to real D1 once `report.submit` lands.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
@@ -46,12 +39,8 @@ function scriptedAccess(results: ReadonlyArray<unknown>): DrizzleAccess {
 const reportLayer = (access: DrizzleAccess) =>
 	ReportLive.pipe(Layer.provide(Layer.succeed(Drizzle, access)));
 
-// A capturing `Drizzle` seam over a fake D1 that records every `prepare(sql).bind(...)`:
-// the REAL `ReportLive` write path (drizzle's update builder) renders against it, so the
-// captured `{sql, params}` is the actual statement the service issues — the wave-grouping
-// column landing (#1855) proven without an engine, the `pano-stats` capturing idiom (ADR
-// 0082) generalized to `.update().set().where().run()` (executeMethod "run" ⇒
-// `stmt.bind(...params).run()`, drizzle-orm/d1 session).
+// The REAL write path renders against this fake D1, so the captured `{sql, params}` is
+// the actual statement the service issues (#1855).
 function capturingDrizzle(): {
 	access: DrizzleAccess;
 	captured: Array<{sql: string; params: unknown[]}>;
@@ -112,7 +101,6 @@ describe("Report.submit — target-liveness decision (mocked Drizzle seam)", () 
 	it.effect("a missing target raises ReportTargetNotFound before the insert", () =>
 		Effect.gen(function* () {
 			const report = yield* Report;
-			// assertTargetLive's presence read resolves `undefined` → not-found.
 			const exit = yield* Effect.exit(
 				report.submit({reporterId: "r1", targetKind: "post", targetId: "ghost"}),
 			);
@@ -122,9 +110,8 @@ describe("Report.submit — target-liveness decision (mocked Drizzle seam)", () 
 	);
 
 	it.effect("a soft-deleted target reads as absent → ReportTargetNotFound", () =>
-		// The `deletedAt IS NULL` predicate is the engine's job (integration, once a
-		// surface exists); the DECISION is: a presence read that returns nothing →
-		// not-found. Modeling the filtered row as absent (`undefined`) proves it.
+		// The predicate itself is the engine's job; the DECISION under test is that a
+		// presence read returning nothing means not-found.
 		Effect.gen(function* () {
 			const report = yield* Report;
 			const exit = yield* Effect.exit(
@@ -140,9 +127,8 @@ describe("Report.listResolved — row→group mapping decision (mocked Drizzle s
 	it.effect(
 		"maps each aggregate row to a ResolvedReportGroup (seconds→Date, Number coercions)",
 		() =>
-			// The engine's GROUP BY / ORDER BY is integration-tier; the DECISION here is the
-			// pure row→group shape: `resolved_at` seconds reconstruct a Date, COUNT coerces to
-			// number, and the resolution/resolver pass through verbatim.
+			// The engine's GROUP BY / ORDER BY is integration-tier; what is under test is
+			// the pure row→group shape.
 			Effect.gen(function* () {
 				const report = yield* Report;
 				const groups = yield* report.listResolved({limit: 10});
@@ -206,7 +192,6 @@ describe("Report.listResolved — row→group mapping decision (mocked Drizzle s
 
 describe("Report.submit — created/no-op decision maps meta.changes (mocked Drizzle seam)", () => {
 	it.effect("changes > 0 → created", () =>
-		// run #1 assertTargetLive → a live row; run #2 the insert → its meta envelope.
 		Effect.gen(function* () {
 			const report = yield* Report;
 			const result = yield* report.submit({
@@ -233,9 +218,7 @@ describe("Report.submit — created/no-op decision maps meta.changes (mocked Dri
 	);
 });
 
-// AC4 (#1855): a wave-remove resolves every selected target AND writes ONE grouping
-// identity that restores as a unit. The write-side stamping + the reopen-as-a-unit
-// primitive, proven over the real render (capturing D1).
+// A wave-remove must write ONE grouping identity that restores as a unit (#1855).
 describe("Report.resolveTarget — wave grouping stamp (#1855, captured render)", () => {
 	it.effect("a resolve carrying a waveId stamps wave_id with that shared id (batch)", () =>
 		Effect.gen(function* () {

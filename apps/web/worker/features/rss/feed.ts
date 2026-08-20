@@ -1,15 +1,8 @@
-/**
- * Pure RSS 2.0 rendering — no Effect, no I/O. The route (`route.ts`) loads recent
- * pano posts and hands them here as {@link FeedItem}s; this module renders a
- * well-formed `<rss>` document. Kept side-effect-free so the channel/item shaping
- * and XML escaping are unit-testable without a worker.
- */
+/** Pure RSS 2.0 rendering, kept side-effect-free so it is unit-testable without a worker. */
 
 export interface FeedItem {
-	/** Stable item identity → `<guid>`. The post id (also the permalink basis). */
 	readonly id: string;
 	readonly title: string;
-	/** Absolute permalink → `<link>`/`<guid>`. */
 	readonly link: string;
 	readonly description: string | null;
 	readonly pubDate: Date;
@@ -19,7 +12,6 @@ export interface FeedChannel {
 	readonly title: string;
 	readonly link: string;
 	readonly description: string;
-	/** Absolute self-reference for `<atom:link rel="self">`. */
 	readonly feedUrl: string;
 	readonly items: ReadonlyArray<FeedItem>;
 }
@@ -55,11 +47,7 @@ function renderItem(item: FeedItem): string {
 	return `<item>${parts.join("")}</item>`;
 }
 
-/**
- * Render a channel as an RSS 2.0 document string. Declares the `atom` namespace
- * for the `rel="self"` link (a feed-validator best practice) while staying RSS
- * 2.0 at the root.
- */
+/** The `atom` namespace is declared for the `rel="self"` link; the root stays RSS 2.0. */
 export function renderFeed(channel: FeedChannel): string {
 	const head = [
 		`<title>${escapeXml(channel.title)}</title>`,

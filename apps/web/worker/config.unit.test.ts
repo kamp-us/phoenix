@@ -1,14 +1,8 @@
 /**
- * Guards the single-sourced worker env binding NAMES (#1432): the binding key the
- * worker `env:` block uses and the name the `Config` constructor reads under are the
- * SAME `ENV_BINDINGS` literal, so a key↔name drift can't sneak in. Two halves:
- *
- *  - `envBindings` (the object `index.ts` spreads into `env:`) is keyed by exactly the
- *    declared binding names — so the worker binds under nothing else.
- *  - each `Config` constant actually RESOLVES a value provided under that same name —
- *    so the read and the bind agree end to end. If a constructor's name string ever
- *    drifted from `ENV_BINDINGS`, the value provided under the binding name would not
- *    reach the read (environment falls back to its default; the secret errors).
+ * Guards the single-sourced worker env binding NAMES (#1432): the key the worker
+ * `env:` block binds under and the name the `Config` constructor reads under must be
+ * the SAME `ENV_BINDINGS` literal. If one drifted, the bound value would silently not
+ * reach the read — environment would fall back to its default, the secret would error.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
@@ -35,9 +29,8 @@ describe("ENV_BINDINGS — the single binding-name source", () => {
 	});
 
 	it("envBindings binds only the always-on names (SENTRY_DSN is bound conditionally, not here)", () => {
-		// `sentryDsn` is in ENV_BINDINGS (single-sourced name) but deliberately NOT in
-		// `envBindings`: it's added to the env block conditionally at deploy (index.ts)
-		// only when a DSN is provisioned, so an unset DSN produces no binding (ADR 0118).
+		// `sentryDsn` is deliberately NOT in `envBindings`: it is added to the env block
+		// conditionally at deploy, so an unset DSN produces no binding (ADR 0118).
 		assert.deepStrictEqual(
 			Object.keys(envBindings).sort(),
 			[ENV_BINDINGS.environment, ENV_BINDINGS.betterAuthSecret].sort(),

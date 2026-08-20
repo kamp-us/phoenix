@@ -1,13 +1,7 @@
 /**
- * Search-results page — fate (ADR 0080). Reads `q` from the URL (`/search?q=…`)
- * and resolves both per-type search roots in ONE batched
- * `useRequest({searchTerms, searchPosts})` — no unified result type: terms render
- * with the verbatim `TermRow`, posts with `PanoPostCard` (`worker/features/search/lists.ts`).
- * The backend ranks by bm25 and owns the keyset; this page only declares the
- * connections and paginates them via `useListView` `loadNext`.
- *
- * A query shorter than the backend minimum (2 chars) never reaches the resolver —
- * the prompt state renders before `<Screen>`, so no request is issued.
+ * Search-results page — see ADR 0080. Two per-type roots, no unified result type; the
+ * backend ranks and owns the keyset. A query under the backend's minimum renders the
+ * prompt outside `<Screen>`, so it issues no request at all.
  */
 import {useListView, useRequest} from "react-fate";
 import {useSearchParams} from "react-router";
@@ -58,7 +52,6 @@ export function SearchPage() {
 	);
 }
 
-/** Shown when there's no query (or it's below the backend's 2-char minimum). */
 function SearchPrompt() {
 	return <p className="kp-search__rail">aramak için en az {MIN_QUERY_LENGTH} harf girin.</p>;
 }

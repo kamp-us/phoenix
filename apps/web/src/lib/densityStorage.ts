@@ -8,7 +8,6 @@ function isDensity(value: string | null): value is Density {
 	return value !== null && VALID.has(value);
 }
 
-/** Read the persisted density, falling back to `fallback` for missing/garbage/unavailable storage. */
 export function readStoredDensity(storage: Storage | undefined, fallback: Density): Density {
 	if (!storage) return fallback;
 	try {
@@ -19,7 +18,6 @@ export function readStoredDensity(storage: Storage | undefined, fallback: Densit
 	}
 }
 
-/** Persist the density. A throwing/unavailable storage (private mode, quota) is swallowed. */
 export function writeStoredDensity(storage: Storage | undefined, density: Density): void {
 	if (!storage) return;
 	try {

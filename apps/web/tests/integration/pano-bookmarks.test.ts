@@ -4,12 +4,9 @@
  *
  * Drives the `isSaved` viewer scalar + the `post.save` / `post.unsave` mutations
  * #128 adds, the structural twin of `post.vote` / `post.retractVote` with score
- * stripped to pure presence. Everything is observed over HTTP: `isSaved` is read
- * back off `post(id)` per viewer, the mutations are exercised for the toggle round
- * trip, idempotent repeat, the anonymous rejection, and the missing-post error.
- * The no-N+1 batch stamp is asserted indirectly the way `myVote` is — a viewer's
- * saves resolve correctly across a set of posts in one read, with each viewer
- * seeing only their own.
+ * stripped to pure presence. Everything is observed over HTTP. The no-N+1 batch
+ * stamp is asserted indirectly the way `myVote` is — a viewer's saves resolve
+ * correctly across a set of posts in one read, each viewer seeing only their own.
  *
  * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027): its one D1 is
  * shared with every migrated file. It isolates by NS — every email/title it seeds carries
@@ -39,7 +36,6 @@ let other: {userId: string; cookie: string};
 
 const POST_SELECT = ["id", "title", "score", "myVote", "isSaved"];
 
-/** Submit a post under the saver cookie; assert success; return its id. */
 async function seedPost(title: string): Promise<string> {
 	const r = await h.fate(
 		{
@@ -55,7 +51,6 @@ async function seedPost(title: string): Promise<string> {
 	return (r.data as PostNode).id;
 }
 
-/** Re-resolve a post's `isSaved` for the given cookie (anonymous when omitted). */
 async function readIsSaved(id: string, cookie?: string): Promise<boolean | null> {
 	const r = await h.fate(
 		{kind: "query", name: "post", args: {idOrSlug: id}, select: ["id", "isSaved"]},
@@ -87,7 +82,6 @@ describe("pano bookmarks — isSaved view scalar", () => {
 		const b = await seedPost(`${NS} set b`);
 		const c = await seedPost(`${NS} set c`);
 
-		// saver saves a + c; `other` saves b.
 		for (const [id, cookie] of [
 			[a, saver.cookie],
 			[c, saver.cookie],
@@ -100,7 +94,6 @@ describe("pano bookmarks — isSaved view scalar", () => {
 			expect(r.ok).toBe(true);
 		}
 
-		// saver sees a,c saved and b not; `other` sees the mirror image.
 		expect(await readIsSaved(a, saver.cookie)).toBe(true);
 		expect(await readIsSaved(b, saver.cookie)).toBe(false);
 		expect(await readIsSaved(c, saver.cookie)).toBe(true);
@@ -155,7 +148,6 @@ describe("pano bookmarks — post.save / post.unsave", () => {
 		if (!again.ok) return;
 		expect((again.data as PostNode).isSaved).toBe(true);
 
-		// And re-unsaving an already-unsaved post stays false.
 		await h.fate(
 			{kind: "mutation", name: "post.unsave", input: {id}, select: ["id"]},
 			{cookie: saver.cookie},

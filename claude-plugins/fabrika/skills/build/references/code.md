@@ -1,7 +1,9 @@
 # Surface rubric — code
 
-Compiled, tested text. `fabrika build check` runs the exact CI commands here (`pnpm typecheck`,
-`pnpm lint:worktree`), cache-bypassed, in this tree.
+Compiled, tested text. `fabrika build check` runs the commands this repo declares under
+`.fabrika.jsonc`'s `codeValidators` here, cache-bypassed, in this tree — in phoenix, the pair it
+declares there, `pnpm typecheck --force` and `pnpm lint:worktree`. A repo that declares none refuses
+UNKNOWN rather than running someone else's script names.
 
 - **Match the surrounding code's idiom** — comment density, naming, bracket style. A diff that
   reads as a different author is a defect before it is a style choice.

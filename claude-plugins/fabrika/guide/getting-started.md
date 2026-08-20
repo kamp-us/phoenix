@@ -148,6 +148,7 @@ fabrika triage homes
 
 ```
 triage homes: scanned 5 open milestones in kamp-us/phoenix.
+triage homes: standing lanes: 2 of 2 declared carry a label in kamp-us/phoenix.
 triage homes: campaigns: 2 active — fabrika fast follows (#46), fabrika everywhere (#47).
 homes
 milestone	24	Geçit
@@ -160,24 +161,27 @@ lane	axis:pipeline-hardening	the standing pipeline and reliability lane
 ```
 
 That output is from a repo already set up, so yours will differ: one `milestone` row, the one you
-just created, and a second line reading `campaigns: none active — scope fence inert.` because your
-roadmap has no campaigns table. The two `lane` rows are phoenix's own standing lanes and print in
-every repo — [the how-to](adopt-fabrika-in-a-new-repo.md) explains why you ignore them.
+just created, and a line reading `campaigns: none active — scope fence inert.` because your roadmap
+has no campaigns table. You get no `lane` rows either — those are phoenix's own standing lanes, and a
+lane is offered only where your board carries its label
+([the how-to](adopt-fabrika-in-a-new-repo.md) covers them).
 
 Your milestone should be in that list. Commit `ROADMAP.md`.
 
 ## 7. See what is still missing
 
 ```bash
-fabrika status config
+fabrika status settings --surfaces
 ```
 
-The first line is the summary — how many surfaces the installed skills declare, how many are
-missing, and how many skills declare none. This is the verb that tells you whether the setup is
-finished; a `created` from step 4 says one surface landed, not that the repo is ready.
+One row per config key, with its resolved value and whether that value is yours or the shipped
+default. `--surfaces` is what you want here: it expands `surfaceDispositions` into one row per repo
+surface, each naming what the surface is and what happens when it is absent — `fail-loud`, `degrade`
+or `bootstrap`. Without the flag that key prints as one raw id-to-word value and none of the notes. A `created` from
+step 4 says one surface landed, not that the repo is ready.
 
-Some rows will say `missing`. That is fine for now — every one of them belongs to a skill this
-lesson does not use.
+Plenty of surfaces will still be absent. That is fine for now — every one of them belongs to a skill
+this lesson does not use.
 
 ## 8. File your first issue
 

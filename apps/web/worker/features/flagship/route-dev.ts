@@ -1,20 +1,11 @@
 /**
- * Dev-only flag-override settings surface (#622):
+ * The dev-only flag-override settings page + its apply POST (#622).
  *
- * - `GET  /api/flags/dev` — an HTML page listing the declared boolean flags with
- *   on / off / clear toggles, reflecting the current `phoenix_flag_overrides`
- *   cookie state.
- * - `POST /api/flags/dev` — applies one toggle (`key` + `state`) to the override
- *   map and replays it into the cookie, then redirects back to the page.
- *
- * **HARD INVARIANT (load-bearing, the #622 review's primary check):** both verbs
- * fail-closed to `404` unless `environment === "development"`. The route is
- * statically mounted (it lives in `worker-routes.ts` so the SPA-shadow glob can't
- * drift, #861), but it answers nothing in any deployed stage: `ENVIRONMENT`
- * defaults to `"production"` (`config.ts`), so an unset/any non-`development` env
- * never reaches the page or sets the cookie. This is the same gate
- * `makeRequestFlagsContext` uses to decide whether to read the override cookie at
- * all — so even a hand-set cookie is inert in prod.
+ * **HARD INVARIANT:** both verbs fail-closed to `404` unless
+ * `environment === "development"`. The route is statically mounted, so the gate is
+ * the only thing keeping it dark in a deployed stage; `ENVIRONMENT` defaults to
+ * `"production"`. `makeRequestFlagsContext` uses the same gate to decide whether to
+ * read the override cookie, so even a hand-set cookie is inert in prod.
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
@@ -34,19 +25,17 @@ import {
 
 const DEV_ROUTE_PATH = "/api/flags/dev";
 
-/** Reading the request form body failed — an unexpected infra failure, so it dies. */
 class RequestBodyReadError extends Schema.TaggedErrorClass<RequestBodyReadError>()(
 	"flagship/RequestBodyReadError",
 	{cause: Schema.Defect()},
 ) {}
 
-/** A `404` body that names why — the route exists but is dev-only. */
 const notInDevelopment = HttpServerResponse.text(
 	"flag dev overrides are available only under `alchemy dev` (ENVIRONMENT=development)",
 	{status: 404},
 );
 
-/** Is this request running under local `alchemy dev`? The fail-closed gate for the whole surface. */
+/** The fail-closed gate for this whole surface. */
 const isDevelopment = Effect.gen(function* () {
 	const {environment} = yield* AppConfig.pipe(Effect.orDie);
 	return environment === "development";
@@ -74,9 +63,8 @@ export const handleFlagsDevApply = Effect.gen(function* () {
 	const action = parseOverrideAction(form);
 	const current = parseOverrideCookie(raw.headers.get("cookie"));
 	const next = action ? applyOverride(current, action) : current;
-	// `Path=/` so the override cookie rides every request (the flag reads happen on
-	// `/api/flags/evaluate`, not this path). `SameSite=Lax`; no `Secure` — local dev
-	// is plain http. Dev-only, so no hardening beyond keeping it same-site.
+	// `Path=/` because the flag reads happen on `/api/flags/evaluate`, not this path.
+	// No `Secure` — local dev is plain http, and this surface is dev-only.
 	const cookie = `${FLAG_OVERRIDE_COOKIE}=${encodeOverrideCookieValue(next)}; Path=/; SameSite=Lax`;
 	return HttpServerResponse.redirect(DEV_ROUTE_PATH, {
 		status: 303,
@@ -86,7 +74,6 @@ export const handleFlagsDevApply = Effect.gen(function* () {
 
 export const flagsDevApplyRoute = HttpRouter.add("POST", DEV_ROUTE_PATH, handleFlagsDevApply);
 
-/** Render the dev settings page — declared flags with their current override state + toggles. */
 function renderDevPage(overrides: FlagOverrides): string {
 	const rows = DEV_OVERRIDABLE_FLAGS.map((key) => renderRow(key, overrides[key])).join("\n");
 	return `<!doctype html>
@@ -123,7 +110,6 @@ ${rows}
 </html>`;
 }
 
-/** One flag's row: its key, current override state, and the on/off/clear toggle forms. */
 function renderRow(key: string, override: boolean | undefined): string {
 	const state =
 		override === undefined
@@ -138,7 +124,6 @@ function renderRow(key: string, override: boolean | undefined): string {
 </tr>`;
 }
 
-/** A single-button form that POSTs one `{key, state}` toggle back to the route. */
 function toggle(key: string, state: "on" | "off" | "clear"): string {
 	return `<form method="post" action="${DEV_ROUTE_PATH}">
 	<input type="hidden" name="key" value="${escapeHtml(key)}" />
@@ -147,7 +132,6 @@ function toggle(key: string, state: "on" | "off" | "clear"): string {
 </form>`;
 }
 
-/** Escape a flag key for safe HTML interpolation (keys are code-declared, but cheap insurance). */
 function escapeHtml(value: string): string {
 	return value
 		.replace(/&/g, "&amp;")

@@ -1,7 +1,6 @@
 /**
- * `* /api/auth/*` — better-auth, as a raw-`Request` `HttpRouter.add` route (ADR
- * 0027). Delegates to the `BetterAuth` tag's `.fetch` `HttpEffect`, which forwards
- * the request to `auth.handler(...)` — same auth realm and D1 tables as
+ * `* /api/auth/*` — better-auth, as a raw-`Request` `HttpRouter.add` route (ADR 0027). Delegates
+ * to the `BetterAuth` tag's `.fetch`, so it shares the auth realm and D1 tables with
  * `Pasaport.validateSession`.
  */
 import * as BetterAuth from "@alchemy.run/better-auth";

@@ -3,27 +3,7 @@ import {signUp} from "./_helpers/auth";
 import {randomSuffix} from "./_helpers/rand";
 import {expectScoreConsistent} from "./_helpers/wait-for-consistency";
 
-/**
- * Pano voteOnComment end-to-end.
- *
- * Sign up a fresh user, complete the username bootstrap, submit a brand new
- * post, add a comment, then exercise the optimistic comment-vote flip:
- *   1. Vote → score becomes 1, button reflects pressed state.
- *   2. Click again → retract → score back to 0.
- *   3. Vote again → score 1.
- *
- * The PanoComment vote button uses Relay `optimisticResponse` to flip
- * `myVote` + `score` synchronously; on success the projection lands in <1s
- * and the page reads the new state on subsequent renders.
- *
- * Mirrors `15-pano-vote-post.spec.ts` (post-vote round-trip).
- *
- * The historical `page.reload()` workarounds before vote interactions are
- * gone — `usePaginationFragment` +
- * `commitLocalUpdate` keep the post-detail tree mounted on every mutation
- * and live event, so the Suspense double-mount race they were dodging no
- * longer fires.
- */
+/** The comment-vote twin of `15-pano-vote-post.spec.ts`. */
 test.describe("Pano voteOnComment", () => {
 	// QUARANTINED — un-quarantine blocked on #1838 (e2e can't establish yazar tier); see #1903.
 	// Vote score-propagation flake tracked at #1903. Tracking: #1885/#1903.
@@ -34,7 +14,6 @@ test.describe("Pano voteOnComment", () => {
 	// re-vote round-trip. No vote-GATE (#1828) coverage lives here.
 	// Re-enable = revert to plain test(...).
 	test.fixme("vote → unvote → vote round-trip on a fresh comment", async ({page}) => {
-		// Fresh sign-up + bootstrap.
 		const localPart = `vc${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});
 		const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
@@ -44,7 +23,6 @@ test.describe("Pano voteOnComment", () => {
 			timeout: 10_000,
 		});
 
-		// Submit a brand-new post and let the page navigate to /pano/<id>.
 		await page.goto("/pano/yeni");
 		await expect(page.locator('[data-testid="pano-submit-title"]')).toBeVisible({
 			timeout: 10_000,
@@ -70,7 +48,6 @@ test.describe("Pano voteOnComment", () => {
 			timeout: 10_000,
 		});
 
-		// Add a top-level comment.
 		const commentBody = `vote target yorum ${Date.now().toString(36)}`;
 		await page.locator('[data-testid="pano-comment-input"]').fill(commentBody);
 		await page.locator('[data-testid="pano-comment-submit"]').click();
@@ -92,19 +69,16 @@ test.describe("Pano voteOnComment", () => {
 		// a11y: the accessible name toggles with vote state (#2215).
 		await expect(voteBtn).toHaveAttribute("aria-label", "Yukarı oy");
 
-		// Cast vote — optimistic flip lands first.
 		await voteBtn.click();
 		await expectScoreConsistent(page, score, "1");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "true", {timeout: 5_000});
 		await expect(voteBtn).toHaveAttribute("aria-label", "Oyunu geri al");
 
-		// Retract.
 		await voteBtn.click();
 		await expectScoreConsistent(page, score, "0");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "false");
 		await expect(voteBtn).toHaveAttribute("aria-label", "Yukarı oy");
 
-		// Re-vote.
 		await voteBtn.click();
 		await expectScoreConsistent(page, score, "1");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "true");

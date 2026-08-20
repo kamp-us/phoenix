@@ -1,12 +1,7 @@
 /**
- * Maps a flat list of element names to BEM class strings under a single block.
- *
- *   bem('kp-dialog', ['popup', 'head'])
- *     → { root: 'kp-dialog', popup: 'kp-dialog__popup', head: 'kp-dialog__head' }
- *
- * Component CSS files use literal BEM class names (`.kp-dialog__popup`) and are
- * imported as side-effect global stylesheets next to each component, so this
- * helper just gives a typed `styles.popup`-style accessor.
+ * Component CSS files carry literal BEM class names and are imported as side-effect
+ * global stylesheets, so this only gives a typed `styles.popup`-style accessor —
+ * nothing here scopes or hashes a class name.
  */
 export function bem(block: string, elements: string[]): Record<string, string> {
 	const out: Record<string, string> = {root: block};

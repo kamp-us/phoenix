@@ -18,9 +18,7 @@ export function Tag({
 	children,
 	className = "",
 }: {
-	/** Category role driving the chip color (`discuss` · `ask` · `show` · …). */
 	kind?: TagKind;
-	/** When set, render the chip as a link to this URL. */
 	href?: string;
 	children: React.ReactNode;
 	className?: string;
@@ -82,9 +80,9 @@ export function Skeleton({
 	height = 12,
 	className = "",
 }: {
-	/** Placeholder width; a bare number is treated as pixels. */
+	/** A bare number is treated as pixels. */
 	width?: number | string;
-	/** Placeholder height; a bare number is treated as pixels. Defaults to 12. */
+	/** A bare number is treated as pixels. */
 	height?: number | string;
 	className?: string;
 }) {

@@ -1,9 +1,7 @@
 /**
- * Pasaport root query resolvers — `me`, `profile(username)`,
- * `myAuthorshipStanding`. `Fate.query` def + `Effect.fn` pairs
- * (`.patterns/fate-effect-operations.md`); they return shaped output directly (not
- * masked through a source), so the resolver builds the selected wire shape including
- * nested connections.
+ * Pasaport's root query resolvers (see .patterns/fate-effect-operations.md). They
+ * return shaped output directly rather than masking through a source, so each
+ * resolver builds the selected wire shape itself, nested connections included.
  */
 
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
@@ -29,7 +27,6 @@ import {AuthorshipStandingView, BanStateView, ProfileView, UserView} from "./vie
 
 const CONTRIBUTIONS_PAGE_SIZE = 20;
 
-/** Is the #970 user-ban dark-ship flag on for this request? Safe-default `false` (dark). */
 const userBanOn = Effect.gen(function* () {
 	const flags = yield* Flags;
 	return yield* flags.getBoolean(PHOENIX_USER_BAN, false).pipe(provideRequestFlags);
@@ -49,34 +46,27 @@ const ProfileArgs = Schema.Struct({
 export const queries = {
 	me: Fate.query(
 		{type: UserView, error: Unauthorized},
-		// The current user, resolved through the shared {@link resolveMeUser} seam (ADR 0185):
-		// the canonical row read fresh (so a just-set `username` round-trips before better-auth's
-		// session inference), the SELF failing-delivery signal (#2693), and the trusted tier +
-		// moderator standing — the SAME resolution the edge `__BOOT__.user` injection reuses.
+		// Shared with the edge `__BOOT__.user` injection (ADR 0185). The row is read fresh
+		// so a just-set `username` round-trips before better-auth infers it.
 		Effect.fn("me")(function* () {
 			const user = yield* CurrentUser.required;
 			return yield* resolveMeUser(user);
 		}),
 	),
-	// `contributions` is delivered inline (not via a source `connection`
-	// capability) because the native path doesn't auto-invoke a hand-built
-	// source's nested `connection` (see fate-connections.md). Returns `null` for
-	// an unknown username; the SPA renders its 404.
+	// `contributions` is delivered inline rather than through a source `connection`
+	// capability, because the native path doesn't auto-invoke a hand-built source's
+	// nested connection. See .patterns/fate-connections.md.
 	profile: Fate.query(
 		{args: ProfileArgs, type: ProfileView},
 		Effect.fn("profile")(function* ({args, select}) {
 			const pasaport = yield* Pasaport;
-			// Resolve the sandbox viewer once (identity + moderator probe) and thread
-			// the SAME viewer into BOTH the headline counts (`lookupProfile` ->
-			// `hydrateProfile`, #1312) and the contribution feed (#1309), so a visitor
-			// never sees this author's sandboxed content and the header counts agree
-			// with the feed for that viewer. Only the author + a moderator see the full
-			// (live + sandboxed) counts.
+			// The SAME viewer must thread into both the headline counts and the
+			// contribution feed, or the header disagrees with the feed for that viewer
+			// (#1309/#1312). Only the author and a moderator see sandboxed content.
 			const sandboxViewer = yield* currentSandboxViewer;
 			const row = yield* pasaport.lookupProfile(args.username, {sandboxViewer});
 			if (!row) return null;
 
-			// `id` === `userId` is stamped once, in `toProfile`.
 			const base = toProfile(row);
 
 			if (!hasNestedSelection(select, "contributions")) {
@@ -97,19 +87,11 @@ export const queries = {
 			return {...base, contributions};
 		}),
 	),
-	// The çaylak-SELF "yazarlığa giden yol" aggregate (#1316, epic #1202) — the
-	// read the #1291 status block consumes. The subject is ALWAYS the authenticated
-	// reader (`CurrentUser.required`, no input arg), so it can only ever describe the
-	// reader's own standing — reading another user's self-status is unrepresentable.
-	//
-	// It is additive and does NOT relax `requireDivanAccess` — a çaylak still cannot
-	// read `divan.roster`/`divan.backlog`.
-	//
-	// One-way-glass is structural (`AuthorshipStanding` carries no identity field):
-	// `vouchExists` is a bare boolean off `VouchLedger.hasActiveFor` (never WHO
-	// vouched), `inReviewCount` a bare count off `Pasaport.countInReview` (never which
-	// items / who is reviewing), `bar` the vouch-aware promotion bar so the frontend
-	// never hardcodes it.
+	// The subject is always the authenticated reader and there is no input arg, so
+	// reading another user's standing is unrepresentable. The one-way glass is
+	// structural too: the view carries no identity field, only a bare `vouchExists`
+	// boolean (never who vouched) and a bare count (never which items, or who is
+	// reviewing them).
 	myAuthorshipStanding: Fate.query(
 		{type: AuthorshipStandingView, error: Unauthorized},
 		Effect.fn("myAuthorshipStanding")(function* () {
@@ -133,10 +115,8 @@ export const queries = {
 		}),
 	),
 
-	// The admin ban-state read (#970, epic #968) — `requireAdmin`-gated, behind the
-	// `phoenix-user-ban` dark-ship flag. The moderator UI reads it to show whether the
-	// focused actor is banned + the reason. With the flag off it fails the invisible
-	// `Denied` (like a non-admin call), so the read never leaks ban-state until release.
+	// With the dark-ship flag off this fails the same invisible `Denied` a non-admin
+	// call gets, so the read leaks no ban-state before release (#970).
 	"user.banState": Fate.query(
 		{args: BanStateArgs, type: BanStateView, error: Schema.Union([Denied])},
 		Effect.fn("user.banState")(function* ({args}) {
@@ -148,9 +128,8 @@ export const queries = {
 	),
 };
 
-// The post-gate ban-state read — runnable only with an `Admin` `Grant` in R
-// (`requireAdmin` provides it); `yield* Admin` requires the proof, so reading an
-// account's ban-state without a discharged grant is a compile error (ADR 0107).
+// `yield* Admin` requires the grant proof in R, so reading an account's ban-state
+// without a discharged grant is a compile error (ADR 0107).
 const banStateGated = Effect.fn("user.banStateGated")(function* (userId: UserId) {
 	yield* Admin;
 	const pasaport = yield* Pasaport;

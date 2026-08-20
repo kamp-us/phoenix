@@ -1,7 +1,7 @@
 /**
- * Pasaport wire-entity shapers. Every `{__typename, …}` literal is built here,
- * once, so the read/write paths can't drift out of byte-for-byte agreement
- * (`.patterns/fate-effect-operations.md`).
+ * Pasaport wire-entity shapers. Every `{__typename, …}` literal is built here, once,
+ * so the read and write paths can't drift apart
+ * (.patterns/fate-effect-operations.md).
  */
 
 import type {PlatformRole} from "../kunye/moderate.ts";
@@ -26,10 +26,8 @@ import type {
 	User,
 } from "./views.ts";
 
-// `emailFailing` (#2693) rides here like the other resolver-stamped fields: truthful on
-// the self `me` read, a flat `false` on every other `User` (the by-id batch stamps it),
-// so a non-self row never carries another account's delivery-state. Its single home is
-// `user-fields.ts`'s `UserFields.emailFailing`.
+// `emailFailing` is truthful only on the self `me` read and a flat `false` on every
+// other `User`, so a row never carries another account's delivery-state (#2693).
 export const toUser = (r: UserFields): User => ({
 	__typename: "User",
 	id: r.id,
@@ -42,9 +40,8 @@ export const toUser = (r: UserFields): User => ({
 	emailFailing: r.emailFailing,
 });
 
-// Stamps the client normalization key `id` === `userId` (a `Profile` is
-// one-to-one with its user; codegen hardcodes `getId` to `record.id`). This is
-// the one and only spelling of that invariant.
+// `id` === `userId`: a `Profile` is one-to-one with its user, and codegen hardcodes
+// `getId` to `record.id`. This is the only spelling of that invariant.
 export const toProfile = (r: ProfileRow): Profile => ({
 	__typename: "Profile",
 	id: r.userId,
@@ -58,16 +55,14 @@ export const toProfile = (r: ProfileRow): Profile => ({
 	commentCount: r.commentCount,
 });
 
-// The single spelling of the `account.delete` ack literal. The `id` is constant
-// (`account:deleted`) — the receipt carries no per-user payload to leak.
+// The `id` is constant on purpose — the receipt carries no per-user payload to leak.
 export const toAccountDeletionReceipt = (): AccountDeletionReceipt => ({
 	__typename: "AccountDeletionReceipt",
 	id: "account:deleted",
 	deleted: true,
 });
 
-// The single spelling of the çaylak→yazar promotion ack (#1206). The `id` carries
-// the target user so two targets resolve as distinct receipts.
+// The `id` carries the target user, so two targets resolve as distinct receipts.
 export const toPromotionReceipt = (r: {
 	userId: string;
 	promoted: boolean;
@@ -80,10 +75,8 @@ export const toPromotionReceipt = (r: {
 	vouchRecorded: r.vouchRecorded,
 });
 
-// The single spelling of the çaylak-self authorship-standing aggregate (#1316).
-// `id` === the user id (the client normalization key). Aggregate scalars only — the
-// one-way-glass invariant is structural in `AuthorshipStanding` (no identity field
-// exists to fill here).
+// Aggregate scalars only — the one-way-glass invariant is structural in
+// `AuthorshipStanding`, which has no identity field to fill (#1316).
 export const toAuthorshipStanding = (r: {
 	userId: string;
 	karma: number;
@@ -99,11 +92,8 @@ export const toAuthorshipStanding = (r: {
 	inReviewCount: r.inReviewCount,
 });
 
-// The single spelling of the ban-state entity (epic #968) — the admin read AND the
-// ban/unban ack resolve the SAME entity, keyed on the target user id, so a mutation
-// ack reconciles the surface's earlier read. `expiresAt` crosses the wire as
-// epoch-millis (or null = permanent / not-banned), so the domain `Date | null`
-// projects to a plain scalar here at the one seam.
+// The admin read and the ban/unban ack resolve the SAME entity, keyed on the target
+// user id, so an ack reconciles the surface's earlier read (epic #968).
 export const toBanState = (userId: string, state: BanState): BanStateEntity => ({
 	__typename: "BanState",
 	id: userId,
@@ -112,19 +102,16 @@ export const toBanState = (userId: string, state: BanState): BanStateEntity => (
 	expiresAt: state.expiresAt === null ? null : state.expiresAt.getTime(),
 });
 
-// The single spelling of the role-assignment ack (#3522) — keyed on the target user
-// id, so the `user.setRole` ack reconciles the SAME account the roster (`UserAdmin`)
-// lists. Carries only the newly-assigned `role`.
+// Keyed on the target user id, so the ack reconciles the SAME account the roster
+// lists (#3522).
 export const toRoleState = (userId: string, role: PlatformRole): RoleStateEntity => ({
 	__typename: "RoleState",
 	id: userId,
 	role,
 });
 
-// The single spelling of the email-delivery-state ack (epic #2687) — the mark AND the
-// clear resolve the SAME entity, keyed on the target address, so a mutation ack
-// reconciles the roll-up's earlier read. Carries only the projected state (`failing` +
-// `reason`), never the log rows.
+// Mark and clear resolve the SAME entity, keyed on the target address, so an ack
+// reconciles the roll-up's earlier read. Never the log rows (epic #2687).
 export const toEmailDeliveryState = (
 	address: string,
 	state: EmailDeliveryState,
@@ -135,9 +122,7 @@ export const toEmailDeliveryState = (
 	reason: state.reason,
 });
 
-// The single spelling of one failing-address roll-up item (epic #2687). `id` === the
-// address (the client normalization key); `since` crosses the wire as epoch-millis, so
-// the domain `Date` projects to a plain scalar here at the one seam.
+// `id` === the address, the client normalization key.
 export const toFailingAddress = (row: FailingAddress): FailingAddressEntity => ({
 	__typename: "FailingAddress",
 	id: row.address,
@@ -147,11 +132,9 @@ export const toFailingAddress = (row: FailingAddress): FailingAddressEntity => (
 	since: row.since.getTime(),
 });
 
-// Flatten a discriminated `ContributionNode` onto the flat `ContributionRow`
-// (ADR 0018: fate has no union type). Every variant column starts `null`, then
-// the node's own fields overlay — so the null-padding is derived from the
-// `CONTRIBUTION_VARIANT_FIELD_NAMES` manifest, not hand-written per `case`. A
-// forgotten field is a compile error at the manifest, not a silent wrong shape.
+// Null-padding is derived from the `CONTRIBUTION_VARIANT_FIELD_NAMES` manifest, never
+// hand-written per `case`, so a forgotten field is a compile error at the manifest
+// rather than a silent wrong shape. See ADR 0018.
 export function toContributionRow(node: ContributionNode): ContributionRow {
 	const variantColumns = Object.fromEntries(
 		CONTRIBUTION_VARIANT_FIELD_NAMES.map((name) => [name, null]),

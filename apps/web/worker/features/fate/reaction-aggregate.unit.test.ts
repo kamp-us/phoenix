@@ -1,16 +1,9 @@
 /**
- * `stampReactionAggregate` — the fate-view stamping seam (#1862). These pin the
- * two properties the acceptance criteria name, above any SQL engine (ADR 0082):
+ * `stampReactionAggregate` (#1862). Two properties, above any SQL engine: the
+ * aggregate lands on EVERY row, and a target absent from the batch gets the EMPTY
+ * aggregate rather than a hole — so the wire field is never missing.
  *
- *   - the aggregate lands on EVERY row alongside its intrinsic fields (a `score`
- *     twin) — an agent reading the view sees `reactions` the same way it sees
- *     `score`, never a missing field;
- *   - a target absent from the batch (no reactions, no viewer reaction) gets the
- *     EMPTY aggregate, not a hole — so the wire field is always present.
- *
- * The batched `Reaction.readAggregate` is substituted by a recording double that
- * asserts ONE read over the whole page (the N+1-avoidance contract) — the real
- * `GROUP BY` fidelity lives on `Reaction.unit.test.ts` / integration.
+ * The real `GROUP BY` fidelity lives in `Reaction.unit.test.ts` / integration.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
@@ -18,9 +11,7 @@ import type {ReactionAggregate} from "../reaction/Reaction.ts";
 import {EMPTY_REACTION_AGGREGATE, type Reaction} from "../reaction/Reaction.ts";
 import {stampReactionAggregate} from "./reaction-aggregate.ts";
 
-// A `Reaction` double whose `readAggregate` answers from a fixed per-id map and
-// records the ids it was called with, so the "one read for the whole batch" and
-// "empty aggregate for an absent target" contracts are asserted with no engine.
+// Answers from a fixed per-id map and records the ids it was called with.
 const stubReaction = (
 	answers: ReadonlyMap<string, ReactionAggregate>,
 	calls: string[][],
@@ -60,8 +51,6 @@ describe("stampReactionAggregate — the fate-view aggregate stamp (#1862)", () 
 			assert.strictEqual(calls.length, 1, "exactly one batched aggregate read");
 			assert.deepStrictEqual(calls[0], ["d1", "d2"], "the read covers the whole page's ids");
 
-			// The aggregate rides alongside the intrinsic `score` — an agent sees
-			// `reactions` the same way it sees `score`.
 			assert.deepStrictEqual(stamped[0], {
 				id: "d1",
 				score: 5,
@@ -76,7 +65,6 @@ describe("stampReactionAggregate — the fate-view aggregate stamp (#1862)", () 
 	});
 
 	it.effect("a target ABSENT from the batch gets the empty aggregate, never a hole", () => {
-		// Only `d1` has reactions; `d2` is absent from the aggregate map.
 		const answers = new Map<string, ReactionAggregate>([
 			["d1", agg([{emoji: "😂", count: 4}], null)],
 		]);

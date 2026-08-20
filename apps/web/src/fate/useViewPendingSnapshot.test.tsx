@@ -1,14 +1,7 @@
 /**
- * Regression for #1686: react-fate `useView`'s `getSnapshot` must return a STABLE
- * thenable while a view snapshot is non-fulfilled. Unpatched 1.3.1 built a fresh
- * `Promise.resolve(snapshot).then(…)` on every call in that branch, so
- * `useSyncExternalStore` saw a new snapshot per check → infinite re-render
- * (React #185, "getSnapshot should be cached") → the fate `Screen` boundary swapped
- * the whole term page for its error branch whenever an entity-delete live frame
- * landed while a `DefinitionCard` was still mounted. Fixed by
- * `patches/react-fate@1.3.1.patch` (ADR 0038), which mirrors the deferred branch's
- * `pendingRef` caching. This drives the hook through a mounted component whose
- * record goes non-fulfilled mid-flight and asserts it suspends instead of looping.
+ * Regression for #1686: `useView`'s `getSnapshot` must return a STABLE thenable while
+ * a view snapshot is non-fulfilled, else `useSyncExternalStore` loops (React #185).
+ * Fixed by `patches/react-fate@1.3.1.patch` (ADR 0038).
  */
 
 import {act, render, screen, waitFor} from "@testing-library/react";
@@ -84,8 +77,6 @@ class Boundary extends React.Component<{children: React.ReactNode}, {error: Erro
 
 describe("useView on a record whose snapshot goes non-fulfilled while mounted (#1686)", () => {
 	beforeEach(() => {
-		// React logs the boundary-caught error (and, unpatched, the getSnapshot
-		// caching warning) via console.error; keep the run output clean.
 		vi.spyOn(console, "error").mockImplementation(() => {});
 	});
 	afterEach(() => {

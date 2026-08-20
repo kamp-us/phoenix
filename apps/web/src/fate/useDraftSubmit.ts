@@ -1,13 +1,6 @@
 /**
- * The shared form-submit envelope, lifted out of `PanoPostDetail` (#1421) so the
- * uniform mutation forms (pano submit/save-draft, sözlük definition add/edit/delete,
- * pano post edit/delete + comments) no longer hand-roll the same try/catch. It is
- * the write-side analogue of {@link useVoteToggle}'s already-lifted toggle envelope.
- *
- * The envelope: flip `inFlight`, fire the mutation, map a returned `{error}` to its
- * inline message via the shared {@link messageForCode} registry, redirect to auth on
- * an `UNAUTHORIZED` boundary throw, and fall any other throw back to the surface's
- * generic `failureFallback`. See `.patterns/fate-mutations-client.md`.
+ * The shared form-submit envelope for the uniform mutation forms. See
+ * `.patterns/fate-mutations-client.md`.
  *
  * NOT for the divan/profile gating sites (`CaylakDetail`, `VouchSheet`,
  * `PromotionActions`): those classify the error into a *domain outcome*
@@ -21,18 +14,11 @@ import {authRedirectPath} from "../lib/returnTo";
 import {codeOf} from "./wire";
 import {messageForCode, type WireMessageOverrides} from "./wireMessages";
 
-/** The shape a fate mutation call resolves to: an optional `{error}` plus its result. */
 export interface MutationResult<R> {
 	error?: {message: string} | null;
 	result?: R;
 }
 
-/**
- * The "in-flight + error + UNAUTHORIZED-redirect" submit envelope. `run` flips
- * `inFlight`, maps a returned wire error through `overrides`/the shared registry,
- * and on an `UNAUTHORIZED` throw navigates to the auth redirect. `redirectPath`
- * is the post-auth return path; `overrides` is the surface's per-code copy.
- */
 export function useDraftSubmit(options: {
 	overrides?: WireMessageOverrides;
 	redirectPath: () => string;
@@ -73,11 +59,6 @@ export function useDraftSubmit(options: {
 	return {error, setError, inFlight, run};
 }
 
-/**
- * Single-body draft composer (validated textarea over the {@link useDraftSubmit}
- * envelope), used by the comment add/edit forms. `validate` returns one of the
- * surface's inline messages or `null`; messages are not restated here.
- */
 export function useDraft(options: {
 	initialBody: string;
 	validate: (trimmed: string, body: string) => string | null;

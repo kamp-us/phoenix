@@ -1,16 +1,11 @@
 /**
  * Domain-boundary error pins — infra failures never escape a feature service
- * (`.patterns/feature-services.md`, `.patterns/effect-errors.md`). Each service
- * collapses `DrizzleError` into the defect channel internally (`orDieAccess`),
- * so public method signatures carry DOMAIN errors only and the fate layer never
- * names Drizzle.
+ * (`.patterns/feature-services.md`, `.patterns/effect-errors.md`). Two pins per service:
+ * a sweep proving no method's `E` channel contains `DrizzleError`, and an exact-union pin
+ * catching a silently widened or narrowed domain union.
  *
- * Two pins per service: (1) a SWEEP proving no method's `E` channel contains
- * `DrizzleError`, (2) an exact-union pin catching a silently widened/narrowed
- * domain union. Type-only assertions, unit tier (ADR 0082).
- *
- * Uses expectTypeOf, not `@ts-expect-error` — the effect LSP plugin's TS377003
- * escapes the directive (recurring finding).
+ * Uses `expectTypeOf`, NOT `@ts-expect-error` — the effect LSP plugin's TS377003 escapes
+ * the directive.
  */
 
 import type {Effect} from "effect";
@@ -49,8 +44,8 @@ type ErrorsOf<F> = F extends (...args: never[]) => Effect.Effect<infer _A, infer
 	? E
 	: never;
 
-// Resolves to `never` when the service is leak-free, else to the offending
-// method name(s) — so a re-leak fails the pin AND names the culprit.
+// Resolves to `never` when leak-free, else to the offending method name(s), so a re-leak
+// fails the pin AND names the culprit.
 type InfraLeaks<S> = {
 	[K in keyof S]: [Extract<ErrorsOf<S[K]>, DrizzleError>] extends [never] ? never : K;
 }[keyof S];
@@ -94,9 +89,8 @@ it("Stats: no method leaks DrizzleError", () => {
 it("Vote: no method leaks DrizzleError; exact domain unions hold", () => {
 	type Svc = typeof Vote.Service;
 	expectTypeOf<InfraLeaks<Svc>>().toEqualTypeOf<never>();
-	// `cast` rejects a sandboxed TARGET (inline path) AND a below-floor VOTER
-	// (`VoterNotEligible`, #1810's "earn to vote" gate); `castOnSandboxed` (the divan-gated
-	// path, #1288) permits both, so its only domain error is the not-found race.
+	// `castOnSandboxed` permits both rejections `cast` raises, so its only domain error is
+	// the not-found race.
 	expectTypeOf<ErrorsOf<Svc["cast"]>>().toEqualTypeOf<
 		VoteTargetNotFound | VoteTargetSandboxed | VoterNotEligible
 	>();

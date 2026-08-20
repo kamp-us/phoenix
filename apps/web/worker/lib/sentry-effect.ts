@@ -1,16 +1,12 @@
 /**
- * The Sentry Effect Tracer + Logger as an isolate-level layer (ADR 0029, ADR 0118,
- * issue #1502). Captures typed failures AND `Cause` defects as Sentry spans/events —
- * the surface plain exception capture (the `wrapRequestHandler` seam in `index.ts`)
- * does not see. Inert until a client is bound: both leaves route through `@sentry/core`,
- * which no-ops without `getClient()`, so nothing is sent until the DSN path installs
- * the client — correct, per ADR 0118.
+ * The Sentry Effect Tracer + Logger as an isolate-level layer (ADR 0029/0118, #1502).
+ * Captures typed failures AND `Cause` defects — the surface plain exception capture
+ * does not see. Inert until a client is bound: both leaves no-op without `getClient()`.
  *
- * Import surface is deliberately the two clean, `@sentry/core`-only leaves — NOT
- * `init`, `effectLayer`, or any `@sentry/node-core` symbol — so the bundler can
- * tree-shake the workerd-hostile node-core subgraph the `@sentry/effect/server` barrel
- * also re-exports (`export *`, `sideEffects: false`). Kept in its own module so this
- * surface stays auditable. Bundle proof is deploy-time (ADR 0118 impl).
+ * The import surface is deliberately the two `@sentry/core`-only leaves — NOT `init`,
+ * `effectLayer`, or any `@sentry/node-core` symbol — so the bundler can tree-shake the
+ * workerd-hostile node-core subgraph the `@sentry/effect/server` barrel re-exports.
+ * Kept in its own module so that surface stays auditable.
  */
 import {SentryEffectLogger, SentryEffectTracer} from "@sentry/effect/server";
 import * as Layer from "effect/Layer";

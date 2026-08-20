@@ -1,20 +1,11 @@
 /**
- * Sozluk definition-validation WIRING coverage (ADR 0082) — the definition body
- * checks driven THROUGH their only caller, the mutation, not the extracted
- * `validateBody` helper in isolation.
+ * Definition-body validation driven THROUGH its only caller, the mutation, not the extracted
+ * helper in isolation. `addDefinition` / `editDefinition` run `validateBody` BEFORE any DB
+ * read, so a throwing `Drizzle` is the proof: a refactor that reorders the call after a read,
+ * or drops it, dies here instead of rejecting.
  *
- * `addDefinition` / `editDefinition` run `validateBody` BEFORE any DB read, so a
- * throwing `Drizzle` (every `run`/`batch` `die`s) is the "no DB call" proof: a
- * typed validation failure surfacing instead of a defect means the gate fired
- * before the seam was reached. A refactor that reorders the `validateBody` call
- * after a DB read, or drops it, would die here instead of rejecting — closing
- * the interface-as-test-surface hole the
- * `pasaport/username-validation.unit.test.ts` pattern already closes.
- *
- * The DB-state-dependent rejections of the same mutations
- * (`DEFINITION_NOT_FOUND`, `UNAUTHORIZED`) and the slug→title fallback derivation
- * stay on real D1 in `tests/integration/sozluk-mutations.test.ts`. The validator
- * helpers are module-private; this file reaches them only through the mutation.
+ * The DB-state-dependent rejections of the same mutations stay on real D1 in
+ * `tests/integration/sozluk-mutations.test.ts`.
  */
 
 import {it} from "@effect/vitest";
@@ -27,9 +18,8 @@ import {Reaction} from "../reaction/Reaction.ts";
 import {Vote} from "../vote/Vote.ts";
 import {DEFINITION_BODY_MAX, Sozluk, SozlukLive} from "./Sozluk.ts";
 
-// Every DB call dies, so any path that reaches the seam fails the test: the
-// `validateBody` gate short-circuits before any read/write, and running to a
-// typed failure against this access is the "no DB call" proof.
+// Every DB call dies, so any path that reaches the seam fails the test: running to a typed
+// failure against this access is the "no DB call" proof.
 const throwingAccess: DrizzleAccess = {
 	run: () =>
 		Effect.die(new Error("a sozluk mutation read the DB on a path that must short-circuit")),
@@ -37,9 +27,8 @@ const throwingAccess: DrizzleAccess = {
 		Effect.die(new Error("a sozluk mutation wrote a batch on a path that must short-circuit")),
 };
 
-// Sozluk's validation gate doesn't touch Vote (it's consulted only on the
-// vote/aggregate paths), so a never-cast inert instance satisfies the layer's
-// dependency type without a real implementation.
+// Sozluk's validation gate doesn't touch Vote, so an inert never-cast instance satisfies the
+// layer's dependency type.
 const inertVote = Layer.succeed(Vote, {} as Context.Service.Shape<typeof Vote>);
 const inertReaction = Layer.succeed(Reaction, {} as Context.Service.Shape<typeof Reaction>);
 const inertPasaport = Layer.succeed(Pasaport, {} as Context.Service.Shape<typeof Pasaport>);

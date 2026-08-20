@@ -115,6 +115,7 @@ const run = (fs: ReturnType<typeof fakeFs>, shell: ReturnType<typeof fakeShell>,
 				event,
 				task: null,
 				repo: null,
+				cwd: "/repo",
 				env: {CLAUDE_PIPELINE_REPO: "o/r"},
 			}),
 			Layer.mergeAll(fs.layer, shell.layer),
@@ -306,6 +307,8 @@ describe("lane prove — the union of the two nomination reads", () => {
 describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 	const CODEOWNERS =
 		/^gh api -H Accept: application\/vnd\.github\.raw repos\/o\/r\/contents\/\.github\/CODEOWNERS\?ref=main$/;
+	const CONFIG =
+		/^gh api -H Accept: application\/vnd\.github\.raw repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
 	const advisory = (rows = ""): string =>
 		`review-code: advisory — merge stays human-gated\n${rows}\nReviewed-head: @ ${HEAD}\n`;
 	const codeFile = okOut(JSON.stringify([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]));
@@ -394,6 +397,22 @@ describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain(".github/CODEOWNERS");
+	});
+
+	it("still refuses a failed boundary read when the repo's config says ship (ADR 0220 §4)", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, codeFile],
+			[PR_COMMENTS, comments({id: 1, body: advisory()})],
+			[CODEOWNERS, errOut("HTTP 502")],
+			[CONFIG, okOut('{"unreadableCodeowners": "ship"}')],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(LANE_UNREADABLE);
 	});
 
 	it("never reads the boundary while no comment reaches for the advisory carrier", async () => {
@@ -531,6 +550,7 @@ const runEpic = (
 				event,
 				task,
 				repo: null,
+				cwd: "/repo",
 				env: {CLAUDE_PIPELINE_REPO: "o/r"},
 			}),
 			Layer.mergeAll(fs.layer, shell.layer),

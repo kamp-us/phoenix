@@ -1,10 +1,7 @@
 /**
- * The optional-`__BOOT__` client contract (#2931, ADR 0179 §4): the shell renders correctly when
- * `window.__BOOT__` is ABSENT — the never-hang outage fallback or a flag-off render served the
- * untransformed asset — by resolving to `undefined` so the caller falls back to its fetch path,
- * never assuming injection happened. Runs in the node unit tier where `window` is undefined by
- * default (the exact absence the contract must tolerate); the present-payload cases set a stub
- * `window` and restore it.
+ * The optional-`__BOOT__` client contract (ADR 0179 §4). Runs in the node unit tier where `window`
+ * is undefined by default — the exact absence the contract must tolerate; the present-payload
+ * cases set a stub `window` and restore it.
  */
 import {afterEach, describe, expect, it} from "vitest";
 import type {BootPayload} from "./boot.ts";

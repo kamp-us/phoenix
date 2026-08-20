@@ -55,6 +55,19 @@ const LS_TREE = new RegExp(
 const TYPECHECK = /^pnpm typecheck --force$/;
 const LINT = /^pnpm lint:worktree$/;
 
+/** The config path every read of this lane's declarations resolves to. */
+const CONFIG_FILE = `${ROOT}/.fabrika.jsonc`;
+
+/**
+ * The code validators these tests declare — phoenix's own pair, read off a config file the way any
+ * repo's is. The CLI ships no pair to fall back on, so a code-surface test that declared nothing
+ * would be exercising the "no validator is present" refusal rather than the runner (#6015).
+ */
+const CODE_CONFIG: Record<string, string> = {
+	[CONFIG_FILE]:
+		'{"codeValidators": [{"command": ["pnpm", "typecheck", "--force"]}, {"command": ["pnpm", "lint:worktree"]}]}',
+};
+
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
 
 /** A scripted untracked-file list. Placed ahead of `LANE_OK`, whose default is an empty one. */
@@ -109,7 +122,10 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			runCheck({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, fakeFs({files, unreadable}).layer),
+			Layer.merge(
+				fakeShell(script).layer,
+				fakeFs({files: {...CODE_CONFIG, ...files}, unreadable}).layer,
+			),
 		),
 	);
 
@@ -212,7 +228,10 @@ describe("runCheck", () => {
 			[LINT, okOut("")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runCheck(options), Layer.merge(shell.layer, fakeFs({}).layer)),
+			Effect.provide(
+				runCheck(options),
+				Layer.merge(shell.layer, fakeFs({files: CODE_CONFIG}).layer),
+			),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({
@@ -758,7 +777,10 @@ describe("the enumeration unions the untracked files with the diff", () => {
 			[LINT, okOut("")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runCheck(options), Layer.merge(shell.layer, fakeFs({}).layer)),
+			Effect.provide(
+				runCheck(options),
+				Layer.merge(shell.layer, fakeFs({files: CODE_CONFIG}).layer),
+			),
 		);
 		expect(out.code).toBe(0);
 		expect(shell.calls).toContain(UNTRACKED_ARGV);
@@ -1049,6 +1071,37 @@ describe("--surface workflows", () => {
 		expect(JSON.parse(out.stdout).ran).toEqual([GUARD.join(" ")]);
 		expect(JSON.parse(out.stdout).unvalidated).toEqual([]);
 		expect(out.stderr.some((line) => line.includes("actionlint did NOT run"))).toBe(true);
+		expect(out.stderr.some((line) => line.includes("ci.yml's actionlint job supersedes"))).toBe(
+			true,
+		);
+	});
+
+	it("names the gate workflow the repo declares, not phoenix's (#6026)", async () => {
+		const {out} = await workflows(
+			[[GUARD_LINE, okOut("")]],
+			{
+				[CONFIG]: JSON.stringify({
+					workflowValidators: [{command: GUARD, reads: [".github/workflows/ci.yml"]}],
+					ci: {gateWorkflow: "build.yml"},
+				}),
+			},
+			NO_ACTIONLINT,
+		);
+		expect(out.code).toBe(0);
+		expect(out.stderr.some((line) => line.includes("build.yml's actionlint job supersedes"))).toBe(
+			true,
+		);
+	});
+
+	it("refuses on 11 when `ci` is declared off-vocabulary — never the shipped gate name", async () => {
+		const {out} = await workflows([[GUARD_LINE, okOut("")]], {
+			[CONFIG]: JSON.stringify({
+				workflowValidators: [{command: GUARD, reads: [".github/workflows/ci.yml"]}],
+				ci: {gateWorkflow: ".github/workflows/build.yml"},
+			}),
+		});
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("bare workflow filename");
 	});
 
 	// The finding on #6220's first round: `ran.length > 0` proves a validator ran, never that it
@@ -1154,5 +1207,106 @@ describe("a mixed workflow-plus-code diff — each surface reads its own class a
 		expect(verdict.unvalidated).toEqual(["apps/web/src/App.tsx"]);
 		expect(shell.calls).toContain("actionlint .github/workflows/ci.yml");
 		expect(out.stderr.some((line) => line.includes("NOT covered by this verdict"))).toBe(true);
+	});
+});
+
+// #6297: the code surface's commands are the repo's declaration, and "no validator is present" is a
+// third answer — not the `VALIDATION_RED` that says the code failed, and not a green either.
+describe("--surface code reads its validators from the config", () => {
+	const CONFIG = "/repo/trees/lane-a/.fabrika.jsonc";
+	const CODE = okOut("apps/web/src/App.tsx\n");
+
+	const codeRun = (
+		script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+		config: string | null,
+		unstartable: ReadonlyArray<RegExp> = [],
+	) => {
+		const shell = fakeShell([...LANE_OK, [DIFF, CODE], ...script], undefined, unstartable);
+		return Effect.runPromise(
+			Effect.provide(
+				runCheck(options),
+				Layer.merge(shell.layer, fakeFs({files: {[CONFIG]: config}}).layer),
+			),
+		).then((out) => ({out, calls: shell.calls}));
+	};
+
+	it("runs what the repo declared, and none of the shipped pair", async () => {
+		const {out, calls} = await codeRun(
+			[[/^make check$/, okOut("")]],
+			'{"codeValidators": [{"command": ["make", "check"]}]}',
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).ran).toEqual(["make check"]);
+		expect(calls).toContain("make check");
+		expect(calls).not.toContain("pnpm typecheck --force");
+	});
+
+	// The demlik reproduction on #6015: a repo that never declared these ran phoenix's script names
+	// and got a red, which says its code is broken. Nothing is compiled in for it to inherit.
+	it("refuses UNKNOWN when the file declares no `codeValidators`", async () => {
+		const {out, calls} = await codeRun([], "{}");
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"build check: .fabrika.jsonc declares no `codeValidators` — no code validator is present here, so nothing ran and the verdict is UNKNOWN, never green and never red.",
+		);
+		expect(calls).not.toContain("pnpm typecheck --force");
+		expect(calls).not.toContain("pnpm lint:worktree");
+	});
+
+	it("refuses UNKNOWN when the repo has no config file at all", async () => {
+		const {out, calls} = await codeRun([], null);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toBe(
+			"build check: this repo has no .fabrika.jsonc — no code validator is present here, so nothing ran and the verdict is UNKNOWN, never green and never red.",
+		);
+		expect(calls).not.toContain("pnpm typecheck --force");
+	});
+
+	it("refuses UNKNOWN on an explicitly empty list — never green, never red", async () => {
+		const {out} = await codeRun([], '{"codeValidators": []}');
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"build check: .fabrika.jsonc declares an empty `codeValidators` — no code validator is present here, so nothing ran and the verdict is UNKNOWN, never green and never red.",
+		);
+	});
+
+	it("refuses UNKNOWN naming a declared validator that cannot be spawned", async () => {
+		const {out} = await codeRun([], '{"codeValidators": [{"command": ["biome", "ci"]}]}', [
+			/^biome ci$/,
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("build check: biome ci could not be executed:");
+		expect(out.stderr.at(-1)).toContain("UNKNOWN, never green");
+	});
+
+	it("still reds on a declared validator that ran and failed", async () => {
+		const {out} = await codeRun(
+			[[/^make check$/, errOut("Makefile:3: recipe for target 'check' failed")]],
+			'{"codeValidators": [{"command": ["make", "check"]}]}',
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.at(-1)).toBe("build check: red — make check failed; diagnostics above.");
+		expect(out.stderr).toContain("Makefile:3: recipe for target 'check' failed");
+	});
+
+	it("refuses UNKNOWN on a malformed declaration rather than guessing a command", async () => {
+		const {out} = await codeRun([], '{"codeValidators": [{"command": []}]}');
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("`codeValidators` holds an entry that is not");
+	});
+
+	it("refuses UNKNOWN on a config file it cannot open", async () => {
+		const shell = fakeShell([...LANE_OK, [DIFF, CODE]]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runCheck(options),
+				Layer.merge(shell.layer, fakeFs({files: {[CONFIG]: "{}"}, unreadable: [CONFIG]}).layer),
+			),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("is UNKNOWN, never green");
+		expect(shell.calls).not.toContain("pnpm typecheck --force");
 	});
 });

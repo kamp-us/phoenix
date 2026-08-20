@@ -1,16 +1,9 @@
 /**
- * `BildirimPopover` — the topbar status-zone bell as an INTERACTIVE disclosure
- * (#2787). #2613 placed a display-only bell + unread count in the status/signal
- * zone; this turns it into a proper button that opens an in-place popover of
- * recent bildirimler (reusing {@link BildirimList} as the body), with a
- * "tümünü gör" footer to the full `/bildirimler` center page — which stays the
- * canonical "see all" destination, not replaced.
+ * `BildirimPopover` — the topbar status-zone bell as an interactive disclosure (#2787).
  *
- * a11y: the trigger keeps the unread count as its accessible NAME (#2613 / ADR
- * 0166), and a polite visually-hidden live region preserves the announcement the
- * old `role="status"` bell gave — a button can't also be a live region, so the
- * two roles split. Manti Popover supplies the rest (aria-haspopup/expanded on
- * the trigger, Escape-to-close, focus trap + restore).
+ * A button can't also be a live region, so the two roles split: the trigger keeps the
+ * unread count as its accessible name, and the separate visually-hidden `role="status"`
+ * span preserves the announcement the old display-only bell gave (#2613).
  */
 import {Bell} from "lucide-react";
 import {useState} from "react";
@@ -33,8 +26,6 @@ export function BildirimPopover({to, unread}: {to: string; unread: number}) {
 
 	return (
 		<>
-			{/* The live-unread announcement #2613's status bell carried — preserved as a
-			    polite region since the interactive trigger below is a button, not a status. */}
 			<span role="status" className="kp-visually-hidden">
 				{label}
 			</span>

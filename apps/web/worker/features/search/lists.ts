@@ -1,10 +1,7 @@
 /**
- * Search root list resolvers — `searchTerms` / `searchPosts` (ADR 0080). Per-type
- * roots (no unified `SearchResult`), each reusing the existing `Term` / `Post`
- * view + shaper so #122 renders results with the verbatim `TermRow` / post-card
- * components. The service owns the FTS5 MATCH + bm25 keyset SQL (ADR 0019); this
- * layer validates the `query` arg and reshapes the page onto a `ConnectionResult`.
- * See `.patterns/fate-connections.md`.
+ * Search root list resolvers (ADR 0080). Per-type roots with no unified `SearchResult`,
+ * each reusing the existing `Term` / `Post` view + shaper so results render with the
+ * verbatim components. See `.patterns/fate-connections.md`.
  */
 
 import {Fate} from "@kampus/fate-effect";

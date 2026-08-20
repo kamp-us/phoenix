@@ -1,22 +1,12 @@
-/**
- * Shared keyset-pagination primitives (ADR 0019). Five service methods page
- * forward over a DB keyset; each used to hand-roll the lexicographic
- * "rows strictly after the cursor" predicate and the `LIMIT first+1` page
- * envelope. The mixed-direction copies (`(score desc, createdAt asc, id asc)`)
- * silently break on a field change, so the predicate is single-sourced here and
- * unit-tested.
- */
+/** Shared keyset-pagination primitives. See ADR 0019. */
 
 import {and, eq, gt, lt, or, type SQL, type SQLWrapper} from "drizzle-orm";
 
 export type KeysetDir = "asc" | "desc";
 
 /**
- * One column of a keyset tuple. A `null` `value` drops the column from the
- * comparison entirely (no inequality arm, no equality term in later arms) —
- * reproducing the term-summary `recent` fallback where a null `lastActivityAt`
- * cursor degrades to the tiebreaker-only predicate. The value type is loose
- * because keyset columns span dates, numbers, and strings.
+ * One column of a keyset tuple. A `null` `value` drops the column from the comparison
+ * entirely — no inequality arm, and no equality term in the later arms either.
  */
 export interface KeysetKey {
 	readonly column: SQLWrapper;
@@ -25,15 +15,8 @@ export interface KeysetKey {
 }
 
 /**
- * Build the lexicographic "strictly after the cursor" predicate for a keyset
- * tuple ordered by `keys`. For columns `(c1 dir1, …, cn dirn)` with cursor
- * values `(v1, …, vn)` the predicate is
- *
- *   OR_i ( c1 = v1 AND … AND c_{i-1} = v_{i-1} AND cmp_i(c_i, v_i) )
- *
- * where `cmp` is `<` for `desc` and `>` for `asc`. Columns whose cursor `value`
- * is `null` are skipped. Returns `undefined` when no cursor column is usable (no
- * keys, or every value null), so callers apply only their base `WHERE`.
+ * The lexicographic "strictly after the cursor" predicate. Returns `undefined` when no
+ * cursor column is usable, so the caller applies only its base `WHERE`.
  */
 export function keysetAfter(keys: ReadonlyArray<KeysetKey>): SQL | undefined {
 	const usable = keys.filter((k) => k.value !== null && k.value !== undefined);
@@ -52,33 +35,13 @@ export function keysetAfter(keys: ReadonlyArray<KeysetKey>): SQL | undefined {
 	return or(...arms) as SQL;
 }
 
-/**
- * The cursor-resolution decision, lifted above the DB read so it is pure and
- * unit-testable with no SQL engine (ADR 0082: cursor resolution is a *port*, the
- * keyset/cursor-miss decision is pure). A keyset page first resolves an opaque
- * `after` cursor to the row's keyset tuple via a thin DB-read port; this type is
- * the *outcome* of that resolution, and `resolveCursor` is the pure decision over
- * `(after, resolved-row-or-null)`:
- *
- *   - no cursor — `after` was absent: page from the head, no predicate.
- *   - miss      — `after` was present but resolved to no row: the shared
- *                 cursor-miss-empty-page semantic (the cursor no longer points at
- *                 a live row / matching doc).
- *   - hit       — `after` resolved to `row`: page strictly after it.
- */
+/** The cursor-resolution outcome, lifted above the DB read so it stays pure (ADR 0082). */
 export type CursorResolution<TRow> =
 	| {readonly kind: "no-cursor"}
 	| {readonly kind: "miss"}
 	| {readonly kind: "hit"; readonly row: TRow};
 
-/**
- * The pure cursor-miss decision. Given the requested `after` and the row the port
- * read for it (`null`/`undefined` when the port found none), decide the branch:
- * absent `after` → `no-cursor` (head page); present `after` + no row → `miss`
- * (caller returns the empty page); present `after` + row → `hit` (caller builds
- * the keyset predicate). The DB read that produces `resolvedRow` stays below the
- * seam as the port; this is the decision, callable with no database.
- */
+/** A present `after` that resolves to no row is a `miss`, not a head page. */
 export function resolveCursor<TRow>(
 	after: string | null | undefined,
 	resolvedRow: TRow | null | undefined,
@@ -88,7 +51,6 @@ export function resolveCursor<TRow>(
 	return {kind: "hit", row: resolvedRow};
 }
 
-/** The page returned on a cursor miss — pure, so the miss branch carries no DB read. */
 export interface EmptyKeysetPage {
 	readonly rows: never[];
 	readonly hasNextPage: false;
@@ -102,11 +64,8 @@ export const emptyKeysetPage: EmptyKeysetPage = {
 };
 
 /**
- * The single assembly point for the `{rows, hasNextPage, endCursor}` forward
- * keyset page envelope — shared by all five keyset methods (each adds its own
- * `totalCount`) and by the `toConnection` adapter, which imports this same
- * declaration (`features/fate/connection.ts`) so producer and adapter agree by a
- * shared type, not by structural coincidence.
+ * The forward page envelope. `features/fate/connection.ts` imports this same
+ * declaration, so producer and adapter agree by type, not structural coincidence.
  */
 export interface KeysetPage<TRow> {
 	readonly rows: TRow[];
@@ -115,13 +74,10 @@ export interface KeysetPage<TRow> {
 }
 
 /**
- * Slice a `LIMIT first + 1` probe into a forward page; `first` is clamped to at
- * least 1 defensively.
+ * Slice a `LIMIT first + 1` probe into a forward page. Two overloads: without `mapRow`
+ * the fetched row IS the page row, so `TRow` collapses to `TFetched` and the identity
+ * default stays well-typed with no cast.
  */
-// Identity-default overload: when no `mapRow` is given the fetched row IS the
-// page row, so `TRow` collapses to `TFetched` and the default identity is
-// well-typed (no cast). The two-type-param overload is for callers that map
-// `TFetched → TRow` and always pass `mapRow` explicitly.
 export function forwardPage<TRow>(
 	fetched: ReadonlyArray<TRow>,
 	first: number,

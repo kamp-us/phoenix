@@ -4,19 +4,13 @@ import {promoteToYazar} from "./_helpers/promote";
 import {randomSuffix} from "./_helpers/rand";
 
 /**
- * T17 auth-redirect E2E: signed-out vote on a definition routes to
- * `/auth?returnTo=<term-url>`; after sign-up the user lands back on the
- * term page and the vote click now succeeds (score becomes 1).
- *
- * We seed the term by signing up a first user, adding a definition, then
- * signing them out — that leaves a real definition with a real id we can
- * vote on as the second (still-signed-out) user.
+ * T17 auth-redirect E2E. The term is seeded by a first user who adds a definition and then signs
+ * out, which leaves a real definition the second (still-signed-out) user can vote on.
  */
 test.describe("T17 auth-redirect with returnTo", () => {
 	test("signed-out vote → /auth?returnTo=... → sign-up → return → vote succeeds", async ({
 		page,
 	}) => {
-		// --- seed: sign up author A, drop a definition, sign out -------------
 		const slug = `t17-${Date.now().toString(36)}${randomSuffix(4)}`;
 		const emailA = `author-${slug}@kamp.us`;
 		await signUp(page, {email: emailA});
@@ -42,26 +36,23 @@ test.describe("T17 auth-redirect with returnTo", () => {
 		await page.locator('[data-testid="sozluk-composer-submit"]').click();
 		await expect(page.getByText(body)).toBeVisible({timeout: 10_000});
 
-		// Sign A out via the topbar user pill.
 		const pill = page.locator(".kp-topbar__user").first();
 		await pill.click();
 		await page.getByRole("button", {name: /çıkış/i}).click();
 		await expect(page.locator(".kp-topbar__user")).toHaveCount(0, {timeout: 5_000});
 
-		// --- act: signed-out user navigates to the term + clicks vote --------
 		await page.goto(`/sozluk/${slug}`);
 		const voteBtn = page.locator('[data-testid^="definition-vote-"]').first();
 		await expect(voteBtn).toBeVisible({timeout: 5_000});
 		await voteBtn.click();
 
-		// Lands on /auth with `returnTo` = the term URL.
 		await page.waitForURL(/\/auth\?returnTo=/, {timeout: 5_000});
 		const url = new URL(page.url());
 		const returnTo = url.searchParams.get("returnTo");
 		expect(returnTo).toBe(`/sozluk/${slug}`);
 
-		// --- sign up user B from the same /auth page (returnTo is preserved
-		//     through the form submission because the URL doesn't change). --
+		// User B signs up from the same /auth page: `returnTo` survives the submit because the URL
+		// never changes.
 		await page.getByRole("button", {name: /^kayıt ol$/i}).click();
 		const emailB = `voter-${slug}@kamp.us`;
 		await page.getByLabel("görünen ad").fill("voter b");
@@ -69,7 +60,6 @@ test.describe("T17 auth-redirect with returnTo", () => {
 		await page.getByLabel("parola", {exact: true}).fill("hunter222!");
 		await page.getByRole("button", {name: /hesap aç/i}).click();
 
-		// Layout's effect navigates off /auth honoring `returnTo` (T17).
 		await page.waitForURL(`**/sozluk/${slug}`, {timeout: 10_000});
 
 		// Bootstrap form WILL render — voter B has just signed up with no username.
@@ -82,9 +72,8 @@ test.describe("T17 auth-redirect with returnTo", () => {
 			timeout: 10_000,
 		});
 
-		// --- assert: vote click now lands the +1 ------------------------------
-		// Wait for the term heading first — the page may briefly render the
-		// Suspense fallback while the term query lands after the redirect.
+		// Wait for the term heading first — the page may briefly render the Suspense fallback while
+		// the term query lands after the redirect.
 		await expect(page.getByRole("heading", {level: 1})).toContainText(slug.replace(/-/g, " "), {
 			timeout: 10_000,
 		});
@@ -104,11 +93,9 @@ test.describe("T17 auth-redirect with returnTo", () => {
 	});
 
 	test("404 page renders for an unknown profile", async ({page}) => {
-		// Smoke check — the NotFoundPage stays wired through the auth-redirect flow.
 		await page.goto(`/u/nobody-${Date.now().toString(36)}`);
 		await expect(page.getByTestId("not-found-page")).toBeVisible({timeout: 5_000});
 		await expect(page.getByRole("heading", {name: /bulunamadı/i})).toBeVisible();
-		// Three nav links.
 		await expect(page.locator('.kp-not-found__links a[href="/"]')).toBeVisible();
 		await expect(page.locator('.kp-not-found__links a[href="/sozluk"]')).toBeVisible();
 		await expect(page.locator('.kp-not-found__links a[href="/pano"]')).toBeVisible();

@@ -19,7 +19,6 @@ import {CAYLAK_VISIBILITY_PATH} from "./CaylakVisibilityPage";
 import {useProfileStats} from "./useProfileStats";
 import "./ProfilePage.css";
 
-/** The `User` write-back selection for the `setDisplayName` result. */
 const SetDisplayNameView = view<User>()({
 	id: true,
 	email: true,
@@ -42,13 +41,9 @@ export function ProfilePage() {
 	const {me, status: meStatus, refetch: refetchMe} = useMe();
 	const fate = useFateClient();
 	const u = session.data?.user;
-	// The username the profile READS (counts + Katkıların contributions) key on. Prefer
-	// the settled session identity — available the instant `FateProvider` commits — so
-	// the read fires WITHOUT the extra canonical-`me` round-trip that used to gate it,
-	// the third serial hop that made Katkıların land ~1.8s late (#2188). `username` is
-	// server-managed + immutable once set (`better-auth-live.ts`), so the session value
-	// equals `me.username`; fall back to `me` only for the brief post-`setUsername`
-	// window where the session row still lags the just-written username (see `useMe`).
+	// Session first, so the reads don't wait on the canonical `me` round-trip (#2188);
+	// `username` is immutable once set, so `me` is only the fallback for the brief window
+	// where the session row lags a just-written username.
 	const readUsername = u?.username ?? me?.username ?? null;
 	const statsState = useProfileStats(readUsername);
 	// A failed stats (or `me`) fetch must NOT render as `0` — that's the silent
@@ -65,33 +60,19 @@ export function ProfilePage() {
 	const [revokeAllError, setRevokeAllError] = useState<string | null>(null);
 	const [deleteOpen, setDeleteOpen] = useState(false);
 
-	// Route the identity mirror through the shared actor-label rule (#2126): the
-	// display name, falling back to the chosen @username, never the email-derived
-	// local-part the old code leaked. `me` (the canonical row) is the source for the
-	// display username — the session user's `username` can briefly lag right after a
-	// setUsername write (see useMe); `me.name` is the display name.
+	// Both fall back to the fixed noun, never the email local-part (#2126).
 	const username = me?.username ?? null;
 	const name = actorLabel(me?.name ?? u?.name ?? null, username, "kullanıcı");
-	// The handle line is the chosen username; on the settings page the account is
-	// always booted, so `username` is set — the `kullanıcı` fallback is only the
-	// defensive not-yet-booted degenerate, never the email local-part.
 	const handle = username ?? "kullanıcı";
-	// The handle-line standing label, derived from the trusted tier (#1302) instead
-	// of the old hard-coded `· yeni üye` lie. `null` (no honest tier) → handle-only,
-	// never a placeholder.
+	// `null` (no honest tier) renders handle-only rather than a placeholder standing.
 	const standingLabel = profileStandingLabel(me?.tier);
 
 	const [draftName, setDraftName] = useState(name);
 	const [saveState, setSaveState] = useState<SaveState>("idle");
 
-	// better-auth's session atom starts {data:null, isPending:true} and resolves
-	// asynchronously with no synchronous hydration, so on a hard load these hooks run
-	// before the session is known and `name` is the "user" fallback — draftName would
-	// lock to it and never re-seed. Re-seed the draft when the server name changes out
-	// from under the draft we're still showing (initial resolution, or another tab's
-	// edit), so a refresh shows the saved name. A draft the user has since edited away
-	// from the old server name is left alone, and a save's own refetch doesn't fire the
-	// reset because draftName already equals the new name — preserving the "saved" note.
+	// The session resolves after first render, so `name` starts as the fallback and the
+	// draft has to re-seed when the real name lands. Only re-seed an untouched draft: one
+	// the user has edited away from the old server name is left alone.
 	const serverName = useRef(name);
 	useEffect(() => {
 		if (draftName === serverName.current) setDraftName(name);
@@ -104,13 +85,9 @@ export function ProfilePage() {
 	const trimmed = draftName.trim();
 	const canSave = saveState !== "saving" && trimmed.length > 0 && trimmed !== name;
 
-	// Save the görünen ad through the WORKER mutation, not `authClient.updateUser`
-	// (#2154): `user.setDisplayName` writes `user.name` AND the stamped
-	// `user_profile.display_name` in lockstep, so a rename reaches every author
-	// byline. `authClient.updateUser` only touched better-auth `user.name`, which
-	// never propagated to the stamped column — the one-shot-sync bug. Refetch `me`
-	// (the canonical header row) and the session (better-auth's cached `user.name`)
-	// so both surfaces show the saved name.
+	// Must go through the worker mutation, NOT `authClient.updateUser`: only the mutation
+	// also writes the stamped `user_profile.display_name` a rename needs to reach every
+	// byline (#2154). Both `me` and the session cache the name, so both get refetched.
 	async function onSaveName() {
 		const next = draftName.trim();
 		if (!next || next === name) return;
@@ -154,9 +131,8 @@ export function ProfilePage() {
 		clearBearerToken();
 	}
 
-	// account.delete already tore down every session row server-side, so this only
-	// drops the now-dead local bearer + refetches the (now empty) session; the
-	// <Navigate to="/auth"> guard lands the sessionless user on auth.
+	// `account.delete` already tore down every session row server-side; this is only the
+	// local cleanup, and the `<Navigate>` guard above lands the sessionless user on auth.
 	async function onAccountDeleted() {
 		clearBearerToken();
 		setDeleteOpen(false);
@@ -176,15 +152,10 @@ export function ProfilePage() {
 					showKarma
 				/>
 
-				{/* The çaylak's own "yazarlığa giden yol" tracker (#1291), surfaced on the
-				    self-service profile too (#2203) so promotion progress is reachable from
-				    settings, not only the public /u/ page. Reuses the existing block, which
-				    self-gates on own-profile + çaylak. */}
 				{me?.id ? <CaylakStatusBlock profileUserId={me.id} /> : null}
 
-				{/* Thin contribution signal (#1209) — the owner's own track record. The
-				    owner sees their OWN sandboxed content here (the feed keys on authorId
-				    with no sandbox filter). */}
+				{/* The owner sees their OWN sandboxed content here: this feed keys on authorId
+				    with no sandbox filter. */}
 				{readUsername ? <ProfileContributionSignal username={readUsername} /> : null}
 
 				<section className="kp-profile__section">

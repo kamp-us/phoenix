@@ -1,13 +1,7 @@
 /**
- * Post-detail page — fate. One batched `useRequest` resolves the header + first
- * page of comments; `PostDetailView` spreads `PanoPostHeaderView` and adds the
- * nested `comments` connection (node: `CommentTreeNodeView`), so children mask
- * their slice off the same refs. See `.patterns/fate-connections.md`.
- *
- * One non-obvious mutation: `comment.delete` returns the parent **`Post`** (the
- * leaf-hard-delete vs parent-soft-delete-tombstone decision is the server's), so
- * fate's `delete: true` can't be used and the resolver drives the thread live.
- * Error routing is the call-site catch — see `.patterns/fate-mutations-client.md`.
+ * Post-detail page. One batched `useRequest` resolves the header + first page of
+ * comments; children mask their slice off the same refs — see
+ * `.patterns/fate-connections.md` and `.patterns/fate-mutations-client.md`.
  */
 import {toEntityId, type ViewData, type ViewEntity, type ViewSelection} from "@nkzw/fate";
 import {ArrowLeft} from "lucide-react";
@@ -59,52 +53,31 @@ const TITLE_MAX = 200;
 const BODY_MAX = 10_000;
 const PAGE_SIZE = 50;
 
-/**
- * `live: {append: "visible"}` makes a server-pushed `appendNode` (a comment from
- * another client) appear immediately, instead of fate's default `"edge"` mode
- * buffering it until a page load. See `.patterns/fate-live-views.md`.
- */
+// `append: "visible"` overrides fate's default `"edge"` buffering — see `.patterns/fate-live-views.md`.
 const CommentConnectionView = {
 	items: {node: CommentTreeNodeView},
 	live: {append: "visible"},
 } as const;
 
-/**
- * The masked data a `CommentTreeNodeView` ref resolves to. The page reads this
- * off each node ref synchronously (`client.readView`) to build the tree, so the
- * type must match `useView(CommentTreeNodeView, ref)` exactly.
- */
+// Must stay exactly what `useView(CommentTreeNodeView, ref)` yields — the tree build
+// reads it off each node ref synchronously via `client.readView`.
 type CommentNodeData = ViewData<
 	ViewEntity<typeof CommentTreeNodeView> & {__typename: "Comment"},
 	ViewSelection<typeof CommentTreeNodeView>
 >;
 
-/**
- * The detail-page view. fate masks by view identity, so the page **spreads**
- * `PanoPostHeaderView` and `CommentTreeNodeView` (via the connection) for the
- * children to mask their slice off the same refs.
- */
 const PostDetailView = view<Post>()({
 	...PanoPostHeaderView,
 	comments: CommentConnectionView,
 });
 
-/**
- * Client view for the `report.submit` ack (ADR 0082 — a report has no read view, so
- * the mutation returns this small receipt). `created` is `false` on the idempotent
- * re-report no-op, which the button surfaces as "zaten bildirildi".
- */
+// A report has no read view, so `report.submit` returns this receipt; `created: false`
+// is the idempotent re-report no-op.
 const ReportReceiptView = view<ReportReceipt>()({
 	id: true,
 	created: true,
 });
 
-/**
- * The page's `bildir` handler factory: submits a report for one target, mapping the
- * outcome to the `ReportButton`'s feedback states and routing a signed-out click to
- * auth. The shared content components stay report-logic-free — they only render the
- * button and forward this handler.
- */
 function useReportHandler() {
 	const fate = useFateClient();
 	const navigate = useNavigate();
@@ -141,7 +114,6 @@ function useReportHandler() {
 	);
 }
 
-/** Post-form copy that overrides the shared {@link WIRE_MESSAGES} base. */
 const POST_OVERRIDES: WireMessageOverrides = {
 	TITLE_REQUIRED: "başlık boş olamaz",
 	TITLE_TOO_LONG: `başlık en fazla ${TITLE_MAX} karakter olabilir`,
@@ -149,7 +121,6 @@ const POST_OVERRIDES: WireMessageOverrides = {
 	POST_NOT_FOUND: "başlık bulunamadı",
 };
 
-/** Comment-form copy that overrides the shared {@link WIRE_MESSAGES} base. */
 const COMMENT_OVERRIDES: WireMessageOverrides = {
 	BODY_REQUIRED: "yorum boş olamaz",
 	BODY_TOO_LONG: `yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`,
@@ -159,27 +130,20 @@ const COMMENT_OVERRIDES: WireMessageOverrides = {
 
 const currentLocationPath = () => `${window.location.pathname}${window.location.search}`;
 
-/**
- * Router-state key the optimistic delete uses to carry a rejection's inline error
- * back to the detail page it navigated away from (see `onDeleteConfirm`).
- */
 const DELETE_ERROR_STATE_KEY = "postDeleteError";
 
-/** Reads a carried delete-error message off opaque router state, or `null`. */
 function readDeleteError(state: unknown): string | null {
 	if (state == null || typeof state !== "object") return null;
 	const value = (state as Record<string, unknown>)[DELETE_ERROR_STATE_KEY];
 	return typeof value === "string" ? value : null;
 }
 
-/** Client-side comment-body validation. Messages come from the shared registry. */
 const validateCommentBody = (trimmed: string, body: string): string | null => {
 	if (trimmed.length === 0) return messageForCode("BODY_REQUIRED", COMMENT_OVERRIDES);
 	if (body.length > COMMENT_BODY_MAX) return messageForCode("BODY_TOO_LONG", COMMENT_OVERRIDES);
 	return null;
 };
 
-/** Client-side post-edit validation. Messages come from the shared registry. */
 const validatePostFields = (trimmedTitle: string, body: string): string | null => {
 	if (trimmedTitle.length === 0) return messageForCode("TITLE_REQUIRED", POST_OVERRIDES);
 	if (trimmedTitle.length > TITLE_MAX) return messageForCode("TITLE_TOO_LONG", POST_OVERRIDES);
@@ -296,14 +260,9 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 	}
 
 	async function onDeleteConfirm() {
-		// `delete: true` evicts the post by id across all connections (incl. the feed
-		// root list) — declarative, no imperative updater. fate applies the eviction
-		// SYNCHRONOUSLY, before the round-trip, and rolls it back before a boundary
-		// throw (see `.patterns/fate-mutations-client.md`). The sync eviction already
-		// dropped the row, so navigate to /pano at once — the removal is perceived
-		// instantly and the server `feed.deleteEdge` frame reconciles it away for good
-		// (no reappear). Reconcile the outcome in the background; on rejection fate has
-		// restored the post, so return to it with the inline error.
+		// fate applies `delete: true` synchronously, before the round-trip, so navigating
+		// away immediately is safe; on rejection it restores the post and we navigate back
+		// with the inline error. See `.patterns/fate-mutations-client.md`.
 		setConfirmDelete(false);
 		const promise = fate.mutations.post.delete({input: {id: data.id}, delete: true});
 		const path = postRedirectPath();
@@ -451,30 +410,17 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 interface CommentsProps {
 	post: ViewRef<"Post">;
 	postId: string;
-	/** The `idOrSlug` the page request resolved under — the read-back refetch re-runs it verbatim. */
 	idOrSlug: string;
-	/** Parent post's canonical path; threaded into each node for its comment-anchor share URL. */
 	postPath: string;
 	signedIn: boolean;
 	currentUserId: string | null;
-	/** Author label (`actorLabel`: display name → @username, never email) for the optimistic comment node; null when signed out. */
 	currentUserName: string | null;
 }
 
-/**
- * Resolves the `#comment-<id>` permalink anchor: returns the targeted comment id and
- * scrolls its node into view once it's rendered. Comments arrive async (fate
- * connection), so the native browser hash-jump misses — and the node mounts only when
- * its `CommentTreeNodeView` snapshot *fulfills*, a store update independent of list
- * membership (#649). Keying a retry on `items.length` therefore races: membership can
- * settle before the target node fulfills, and the effect never re-fires. A
- * MutationObserver watches the thread subtree until `#comment-<id>` exists, scrolls it
- * once, then disconnects — so the cold-load path no longer depends on a reactive key
- * happening to change at the right moment.
- *
- * A permalinked comment on a not-yet-loaded pagination page is never observed (it's
- * not in the DOM) — an accepted product limit.
- */
+// A MutationObserver, not a retry keyed on `items.length`: a node mounts when its view
+// snapshot fulfills, which is independent of list membership, so a reactive key can settle
+// before the target exists and never re-fire (#649). A comment on a not-yet-paginated page
+// is never in the DOM and so never scrolled to — an accepted limit.
 function useCommentAnchor(): string | null {
 	const {hash} = useLocation();
 	const activeId = hash.startsWith("#comment-") ? hash.slice("#comment-".length) : null;
@@ -551,12 +497,8 @@ function Comments(props: CommentsProps) {
 		redirectPath: () => `/pano/${props.postId}`,
 	});
 
-	// The connection resolved every node against `CommentTreeNodeView`, so each
-	// node's masked data is already in the store — read it synchronously (no
-	// per-node hook) and build the tree in the same render the nodes arrive in. A
-	// not-yet-fulfilled node is skipped this frame; membership and node data arrive
-	// together in practice. Re-derives only on `items` change: `parentId` is
-	// immutable and a soft-delete reloads the page.
+	// Read each node's masked data synchronously (no per-node hook) so the tree builds in
+	// the same render the nodes arrive in; a not-yet-fulfilled node is skipped this frame.
 	const {roots, childrenByParent, bodyById, refById, visibleCount, visibleIds, repliedToIds} =
 		React.useMemo(() => {
 			const nodes: Array<CommentNode<ViewRef<"Comment">>> = [];
@@ -572,23 +514,20 @@ function Comments(props: CommentsProps) {
 					ref: node,
 				});
 			}
-			// Non-tombstoned ids, for the delete-side read-back: a hard delete drops the
-			// id from membership, a soft delete tombstones it (deletedAt) — either way
-			// the id leaves this set when the delete reconciled.
+			// The delete-side read-back watches this set: a hard delete drops the id from
+			// membership, a soft delete tombstones it — either way it leaves here.
 			const visibleIds = nodes.filter((n) => n.deletedAt == null).map((n) => n.id);
-			// Every id that some LOADED node names as its parent — the optimistic-delete
-			// branch (ADR 0125 D1) reads this to decide edge-drop (leaf) vs tombstone.
-			// Includes deleted parents so the reply-aware branch mirrors the server's.
+			// Every id some LOADED node names as its parent — the optimistic-delete branch
+			// (ADR 0125) reads it to pick edge-drop vs tombstone. Deleted parents are
+			// included so that branch mirrors the server's.
 			const repliedToIds = new Set(
 				nodes.map((n) => n.parentId).filter((id): id is string => id != null),
 			);
 			return {...buildCommentTree(nodes), visibleIds, repliedToIds};
 		}, [items, fate]);
 
-	// Delete-side read-back (#1687): if the `deleteEdge` (or soft-delete tombstone)
-	// push for the author's own delete is lost server-side, the thread keeps rendering
-	// the deleted comment — refetch `network-only` so it reconciles away, mirroring
-	// the add-side self-heal above.
+	// Delete-side twin of the read-back above: a lost `deleteEdge` push would otherwise
+	// leave the deleted comment rendered forever (#1687).
 	const confirmCommentGone = useConfirmGone({
 		presentIds: visibleIds,
 		refetch: refetchPost,
@@ -610,11 +549,9 @@ function Comments(props: CommentsProps) {
 		await runDelete(
 			() => {
 				const promise = fate.mutations.comment.delete({input: {id: deletedId}});
-				// Optimistic (ADR 0125 D1): mirror the server branch from the loaded tree —
-				// a client-certain leaf drops its edge, a reply parent OR an incompletely-
-				// loaded thread (uncertain) tombstones. `loadNext == null` ⇒ the whole
-				// thread is loaded, so an empty reply set is a true leaf. Roll the write
-				// back on any failure — the server frame reconciles it away otherwise.
+				// Mirror the server's branch from the loaded tree (ADR 0125): an empty reply set
+				// only proves a leaf when `loadNext == null` (whole thread loaded); otherwise
+				// tombstone, because the reply may sit on an unloaded page.
 				const strategy = decideCommentDelete({
 					hasLoadedReply: repliedToIds.has(deletedId),
 					threadComplete: loadNext == null,
@@ -641,13 +578,9 @@ function Comments(props: CommentsProps) {
 		);
 	}
 
-	// The optimistic-add bundle both composers share (top-level + every reply insert
-	// into the SAME nested `Post.comments` connection). Null unless the author identity
-	// is known — the temp node mirrors the author, so a missing name/id degrades cleanly
-	// to the non-optimistic round-trip.
-	// `sandboxed` comes from the trusted account tier on the fate `me` view (#1297), the
-	// same signal `FirstContributionOnramp` gates on — so the temp node predicts the
-	// server's create-time answer instead of flashing as published (#4282).
+	// Null unless the author identity is known — the temp node mirrors the author, so a
+	// missing name/id degrades to the plain round-trip. `sandboxed` predicts the server's
+	// create-time answer so a çaylak's comment never flashes as published (#4282).
 	const {me} = useMe();
 	const optimisticComment = React.useMemo(
 		() =>
@@ -790,17 +723,9 @@ function Comments(props: CommentsProps) {
 	);
 }
 
-/**
- * Top-level + nested comment composer — fate. Submits `comment.add`; the server's
- * `appendNode` live event merges the new comment into the thread in place (the
- * author's own view included), since nested-connection membership is server-driven.
- *
- * When `optimistic` is set (the author identity is known, ADR 0125 A1),
- * the temp node also appears in the thread *before* the round-trip: fate's
- * `optimistic` payload writes + reconciles the temp entity, and
- * {@link beginOptimisticCommentMembership} appends the temp id into the nested
- * `Post.comments` connection and rolls it back on reject.
- */
+// Nested-connection membership is server-driven, so the thread updates off the
+// `appendNode` push; the optimistic path (ADR 0125) only front-runs it. See
+// `.patterns/fate-mutations-client.md`.
 function CommentComposer({
 	postId,
 	parentId,
@@ -816,14 +741,11 @@ function CommentComposer({
 	signedIn: boolean;
 	onPosted: () => void;
 	onCancel?: () => void;
-	/** Hands the created comment's id to the deterministic read-back (see {@link useReadbackRefetch}). */
 	onConfirm?: (commentId: string) => void;
-	/** Optimistic-add bundle (flag on + known author); null ⇒ non-optimistic round-trip. */
 	optimistic?: {
 		connection: unknown;
 		author: string;
 		authorId: string;
-		/** Whether this author's comment lands in the çaylak sandbox (#4282). */
 		sandboxed: boolean;
 	} | null;
 	autoFocus?: boolean;
@@ -862,13 +784,9 @@ function CommentComposer({
 			});
 			const rollback =
 				optimistic && optimisticRecord
-					? // Qualify the temp id: runtime `Post.comments.list.ids` are `toEntityId`-
-						// qualified (`Comment:<id>`) — fate stores every list id via `toEntityId`
-						// (writeEntity/insertConnectionEdge), and both reconcile paths key off the
-						// qualified id (`resolveOptimisticEntity` rewrites the qualified `previousId`;
-						// the SSE `appendNode` dedups by `toEntityId(nodeType, id)`). A BARE
-						// `optimistic:<ts>` would neither rewrite nor dedup, leaving a duplicated /
-						// non-reconciling temp node (#1714). Matches #1679 definition.add + #1680 delete.
+					? // The temp id MUST be `toEntityId`-qualified: both reconcile paths key off the
+						// qualified id, so a bare `optimistic:<ts>` neither rewrites nor dedups and
+						// leaves a duplicated temp node (#1714).
 						beginOptimisticCommentMembership(
 							fate.store,
 							optimistic.connection,
@@ -879,13 +797,11 @@ function CommentComposer({
 			try {
 				const {result, error: callError} = await promise;
 				createdId.current = result?.id != null ? String(result.id) : null;
-				// callSite reject: fate rolled the temp record back but not this nested
-				// membership — undo it so no phantom row is left (rollback AC).
+				// fate rolls the temp record back but not this nested membership, so both
+				// failure paths have to undo it by hand or a phantom row is left behind.
 				if (callError) rollback?.();
 				return {error: callError};
 			} catch (caught) {
-				// boundary throw: same — roll the membership back, then let useDraftSubmit
-				// classify the throw (UNAUTHORIZED redirect / inline error).
 				rollback?.();
 				throw caught;
 			}
@@ -972,12 +888,6 @@ function CommentComposer({
 	);
 }
 
-/**
- * Inline comment edit composer — fate. `comment.edit` writes the new body back
- * through `CommentTreeNodeView` (the view the node reads), so it re-renders in
- * place; it also passes an optimistic `{body, updatedAt}` so the edit renders
- * before the round-trip (#1675).
- */
 function CommentEditComposer({
 	commentId,
 	initialBody,

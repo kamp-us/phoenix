@@ -1,18 +1,11 @@
 /**
- * `user.banUser` / `user.unbanUser` WIRE-boundary coverage (#970, admin epic #968) —
- * the authority + dark-ship decisions that are wrong-or-right with no database (ADR
- * 0082), driven through the real external interface (`resolveWire`: decode + the
- * `encodeWireError` class→wire-code seam), so a denial's wire `code` is what a client
- * gets.
+ * `user.banUser` / `user.unbanUser` WIRE-boundary coverage (#970, admin epic #968) — the
+ * authority + dark-ship decisions, with no database (ADR 0082).
  *
- * The load-bearing AC (#970): ban and unban each FAIL CLOSED for a non-admin caller
- * — a non-holder of the `admin` relation and the anonymous actor both get the
- * invisible `UNAUTHORIZED` (they can't tell "not admin" from "not signed in", ADR
- * 0098 §2), and neither reaches the write (the `Pasaport` stub is fail-on-contact).
- * Plus the dark-ship: with the `phoenix-user-ban` flag OFF the path is inert (fails
- * `Denied` before any authority check or write), so an unreleased ban never runs. The
- * real-D1 write→read + session-refusal round-trip is
- * `apps/web/tests/integration/pasaport-ban.test.ts`.
+ * The load-bearing AC: both FAIL CLOSED for a non-admin caller — a non-holder of the `admin`
+ * relation and the anonymous actor get the SAME invisible `UNAUTHORIZED` (they can't tell "not
+ * admin" from "not signed in", ADR 0098 §2), and neither reaches the write. The real-D1
+ * write→read round-trip is `apps/web/tests/integration/pasaport-ban.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {

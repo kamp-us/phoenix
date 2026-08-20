@@ -30,6 +30,7 @@ import {runStale} from "./stale-verb.ts";
 import {runStatus} from "./status-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT, type LaneRef} from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
+import {DEFAULT_VIEW_PORT, listeningAt, runView} from "./view-verb.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
 const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
@@ -147,6 +148,7 @@ const report = leafCommand(
 						pr: Option.getOrNull(pr),
 						comment: Option.getOrNull(comment),
 						repo: Option.getOrNull(repo),
+						cwd: process.cwd(),
 						env: process.env,
 					},
 					runProve,
@@ -188,6 +190,7 @@ const prove = leafCommand(
 					event,
 					task: Option.getOrNull(task),
 					repo: Option.getOrNull(repo),
+					cwd: process.cwd(),
 					env: process.env,
 				}),
 			),
@@ -465,6 +468,34 @@ const stale = leafCommand(
 	),
 );
 
+const view = leafCommand(
+	"view",
+	{
+		root: rootFlag,
+		port: Flag.integer("port").pipe(
+			Flag.optional,
+			Flag.withDescription(`the port to serve on (default: ${DEFAULT_VIEW_PORT})`),
+		),
+	},
+	Effect.fn(function* ({root, port}) {
+		const chosen = Option.getOrElse(port, () => DEFAULT_VIEW_PORT);
+		yield* Effect.logInfo(listeningAt(chosen));
+		yield* emit(
+			yield* runView({
+				root: Option.getOrElse(root, () => DEFAULT_LANES_ROOT),
+				port: chosen,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Every lane on disk, on one screen, the ones needing a person first.",
+	),
+	Command.withDescription(
+		"Serve every lane under the root as one page and keep it current while lanes move. `lane status` answers one lane and `lane stale` answers liveness across the fleet; neither answers the question a driver opens a terminal to ask, which is which of these needs ME — a driver reading twelve stateValue blocks to find the one task a human has to unblock is doing by hand what the fold already knows (#6131). Lanes are ordered by attention: waiting on a human, then tripped, then gone quiet, then moving, then finished. Opening one shows its phases, each task's leaf, what it is waiting on, its retry budget and its region drawn with the edges the log walked. The page can send the operator's six events, and every one goes through `lane transition` — validated against the folded state and appended only if the machine accepts it, so a refusal is that verb's own words and `events.jsonl` has exactly one writer, as it did before this verb existed. It serves on localhost and reads the disk it was started on: nothing is uploaded and no lane leaves the machine. Runs until interrupted. Exits 11 (the root is there and could not be listed — the lane set is UNKNOWN, never a short list). Examples: fabrika lane view · fabrika lane view --port 6000",
+	),
+);
+
 export const laneCommand = Command.make("lane").pipe(
 	Command.withSubcommands([
 		status,
@@ -481,6 +512,7 @@ export const laneCommand = Command.make("lane").pipe(
 		stale,
 		claim,
 		release,
+		view,
 	]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
 	Command.withDescription(

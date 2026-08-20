@@ -1,9 +1,6 @@
 /**
- * The signup→setUsername path (#1888). The reported bug: a chosen handle is
- * silently dropped when the post-signup `setUsername` fails, because the session is
- * already established and the redirect buries the failure. These pin the fix — a
- * failure parks on a visible, retryable surface and holds the redirect gate; a
- * success releases it; the chosen handle is never swallowed.
+ * #1888: a chosen handle was silently dropped when the post-signup `setUsername` failed,
+ * because the session already existed and the redirect buried the failure.
  */
 import {fireEvent, render, screen, waitFor} from "@testing-library/react";
 import type {ReactNode} from "react";
@@ -30,8 +27,6 @@ function makeWrapper(setUsername: ReturnType<typeof vi.fn>) {
 	};
 }
 
-// A probe that surfaces the module-level redirect gate into the DOM so a test can
-// assert whether the Layout redirect would be held.
 function GateProbe() {
 	return <span data-testid="gate">{useUsernameResolutionPending() ? "held" : "clear"}</span>;
 }
@@ -77,12 +72,9 @@ describe("AuthPage — signup→setUsername (#1888)", () => {
 		fireEvent.submit(screen.getByRole("button", {name: "hesap aç"}).closest("form")!);
 
 		await waitFor(() => expect(setUsername).toHaveBeenCalledTimes(1));
-		// The failure is visible, not swallowed: the blocking retry surface renders,
-		// naming the chosen handle. (getByText throws if absent — presence is the assert.)
+		// getByText throws if absent — presence is the assert.
 		await waitFor(() => screen.getByText("kullanıcı adı ayarlanamadı"));
 		expect(screen.getByText("elif-kaya")).toBeTruthy();
-		// And the redirect gate is HELD, so the Layout can't carry the user off /auth
-		// into the email-prefill bootstrap while the chosen handle is unresolved.
 		expect(screen.getByTestId("gate").textContent).toBe("held");
 	});
 
@@ -99,7 +91,6 @@ describe("AuthPage — signup→setUsername (#1888)", () => {
 
 		fireEvent.click(screen.getByRole("button", {name: "tekrar dene"}));
 		await waitFor(() => expect(setUsername).toHaveBeenCalledTimes(2));
-		// Handle landed → gate released → the Layout redirect proceeds.
 		await waitFor(() => expect(screen.getByTestId("gate").textContent).toBe("clear"));
 	});
 
@@ -134,8 +125,7 @@ describe("AuthPage — signup→setUsername (#1888)", () => {
 		const setUsername = vi.fn(async () => ({error: null}));
 		renderAuth(setUsername);
 		switchToSignUp();
-		// noValidate → the browser suppresses its English constraint bubble, so an empty
-		// submit reaches onSubmit and the Turkish field message surfaces instead.
+		// `noValidate` is what lets an empty submit reach onSubmit at all.
 		fireEvent.submit(screen.getByRole("button", {name: "hesap aç"}).closest("form")!);
 		await waitFor(() => screen.getByText("görünen ad gerekli"));
 		expect(signUpEmail).not.toHaveBeenCalled();

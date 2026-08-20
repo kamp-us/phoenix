@@ -1,30 +1,19 @@
 /**
- * Real-store regression for optimistic `comment.add` reconciliation (#1714, ADR
- * 0125 A1). The shipped unit test (`optimisticCommentAdd.test.ts`) drives a FAKE
- * `CommentListStore` with literal `"temp"` ids, so an id-FORMAT mismatch between the
- * optimistic append and fate's reconcile paths cannot bite — which is exactly why
- * #1714 (a BARE `optimistic:<ts>` appended into a `toEntityId`-qualified list) shipped
- * uncaught. This suite closes that gap by driving the REAL `@nkzw/fate` `Store` (via a
- * minimal `FateClient`) through the reconcile seam the ADR's no-divergence guarantee
- * rests on: the mutation HTTP result — `client.resolveOptimisticEntity(tempId,
- * serverId)`, which rewrites the temp id in every backing list
- * (`store.replaceListEntityId`).
+ * Real-store regression for optimistic `comment.add` reconciliation (#1714, ADR 0125
+ * A1). The sibling unit test drives a FAKE store with literal `"temp"` ids, so an
+ * id-FORMAT mismatch cannot bite there — which is exactly why #1714 shipped uncaught.
+ * This one drives the REAL `@nkzw/fate` `Store`.
  *
  * Grounding for the qualified-id claim (verified against `@nkzw/fate@1.3.1`
- * `lib/index.mjs`): `writeEntity` returns `toEntityId(type, getId(record))` and both
+ * `lib/index.mjs`): `writeEntity` returns `toEntityId(type, getId(record))`, and both
  * the load and the SSE `insertConnectionEdge` path store that qualified id in
- * `list.ids`; `replaceListEntityId(previousId, …)` rewrites only when
- * `list.ids.includes(previousId)`, and the mutation callsite invokes it with the
- * qualified `toEntityId(entity, optimisticRecordId)` (index.mjs L820/842); the SSE
- * append dedups by canonical id `toEntityId(nodeType, id)`. So the list stores
- * `Comment:<id>` and both reconcile paths compare against `Comment:<id>` — a bare temp
- * id reconciles to neither.
+ * `list.ids`; `replaceListEntityId` rewrites only when `list.ids.includes(previousId)`,
+ * and the mutation callsite passes the qualified id (L820/842). A bare temp id
+ * reconciles to neither path.
  *
- * The live SSE `appendNode` dedup is `FateClient.insertConnectionEdge` — a PRIVATE
- * method (untypable from a test). It collapses a redundant append by canonical id:
- * an id already in `list.ids` short-circuits. We model that collapse at the public
- * seam via the production `appendOptimisticEdge`, whose idempotency is the same
- * canonical-id rule (an already-present id returns the list unchanged).
+ * The SSE dedup itself is `FateClient.insertConnectionEdge`, a PRIVATE method untypable
+ * from a test, so its canonical-id short-circuit is modelled through the production
+ * `appendOptimisticEdge`, which is idempotent by the same rule.
  */
 import {ConnectionTag, createClient, type EntityId, type List, toEntityId} from "@nkzw/fate";
 import {describe, expect, it} from "vitest";
@@ -38,12 +27,7 @@ const POST_ID = "post_1";
 const CONNECTION_KEY = `Post:${POST_ID}.comments`;
 const now = new Date("2026-07-02T12:00:00.000Z");
 
-/**
- * A minimal real `FateClient` — enough to exercise the real `Store` + the public
- * `resolveOptimisticEntity` reconcile against fate's actual store, without a live
- * transport. No query/mutation/list resolvers are called by this test's paths, so the
- * transport is a never-invoked stub.
- */
+/** No resolver is reached by this test's paths, so the transport is a never-invoked stub. */
 function realClient() {
 	return createClient({
 		hydrationScope: "test",
@@ -66,7 +50,6 @@ function realClient() {
 	});
 }
 
-/** The store slice `beginOptimisticCommentMembership` drives (the real `client.store` satisfies it). */
 function membershipStore(client: ReturnType<typeof realClient>) {
 	const store = client.store;
 	return {
@@ -82,12 +65,11 @@ function membershipStore(client: ReturnType<typeof realClient>) {
 	};
 }
 
-/** A fate connection carrying the `ConnectionTag` metadata key `connectionKey` reads. */
 function connectionFor(key: string): unknown {
 	return {[ConnectionTag]: {key}};
 }
 
-/** Seed a qualified `Post.comments` list — the runtime shape fate loads (`toEntityId`-qualified). */
+/** Seeds the `toEntityId`-qualified list shape fate loads at runtime. */
 function seedQualifiedList(client: ReturnType<typeof realClient>, ids: ReadonlyArray<EntityId>) {
 	client.store.setList(CONNECTION_KEY, {ids: [...ids]});
 }
@@ -170,9 +152,7 @@ describe("optimistic comment.add — real-store reconciliation (#1714)", () => {
 		);
 		client.resolveOptimisticEntity(tempId, serverId);
 
-		// The live SSE frame appendNode(serverId) dedups by canonical id — modelled here
-		// by the production idempotent append (fate's private insertConnectionEdge uses the
-		// same canonical-id short-circuit). The already-present server id collapses.
+		// Models the SSE appendNode(serverId) dedup with the production idempotent append.
 		const after = appendOptimisticEdge(client.store.getListState(CONNECTION_KEY), serverId);
 		client.store.setList(CONNECTION_KEY, after);
 
@@ -181,9 +161,8 @@ describe("optimistic comment.add — real-store reconciliation (#1714)", () => {
 		expect(ids.filter((id) => id === serverId)).toHaveLength(1);
 	});
 
-	// The regression: the SHIPPED bug — appending a BARE `optimistic:<ts>` — leaves a
-	// non-reconciling, duplicated temp node. This is what the fake-store test could not
-	// catch (#1714) and is the exact failure the qualified fix at the call site prevents.
+	// Reproduces the shipped #1714 bug on purpose: a BARE `optimistic:<ts>` reconciles to
+	// nothing and duplicates. Deliberately wrong input, not a stale test.
 	it("BARE temp id fails to reconcile — the #1714 defect, now guarded against", () => {
 		const client = realClient();
 		seedQualifiedList(client, []);
@@ -197,7 +176,7 @@ describe("optimistic comment.add — real-store reconciliation (#1714)", () => {
 			sandboxed: false,
 			now,
 		});
-		// The pre-fix id: the bare record id, NOT toEntityId-qualified.
+		// The pre-fix id: bare, NOT toEntityId-qualified.
 		const bareTempId = record.id as EntityId;
 		const serverId = toEntityId("Comment", "comm_server");
 		beginOptimisticCommentMembership(
@@ -207,11 +186,8 @@ describe("optimistic comment.add — real-store reconciliation (#1714)", () => {
 			bareTempId,
 		);
 
-		// HTTP result reconcile is invoked with the QUALIFIED previousId (as the mutation
-		// callsite does) — it does not match the bare stored id, so nothing is rewritten.
+		// Called with the QUALIFIED previousId, as the mutation callsite does.
 		client.resolveOptimisticEntity(toEntityId("Comment", record.id), serverId);
-		// The live appendNode(serverId) keys off the qualified id — it does not dedup the
-		// bare temp, so it lands as a SECOND edge.
 		const after = appendOptimisticEdge(client.store.getListState(CONNECTION_KEY), serverId);
 		client.store.setList(CONNECTION_KEY, after);
 

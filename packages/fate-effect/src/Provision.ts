@@ -1,20 +1,11 @@
 /**
- * `provideRequestPair` — THE per-request provision pipeline, spelled once
- * (consumed by `Executor.ts` `runResolve`, `Interpreter.ts` `runOperation`,
- * and `Walk.ts` `provide`).
+ * `provideRequestPair` — THE per-request provision pipeline, spelled once (consumed by
+ * `Executor.ts`, `Interpreter.ts` and `Walk.ts`).
  *
- * The invariant, in one place: the two genuinely per-request services come
- * off the request context as VALUES — `CurrentUser` from the session,
- * `LivePublisher` from the request's execution context — provided innermost
- * so the request values always win; the build-time services captured by
- * `FateServer.layer` (`service.services`) sit beneath. No per-request layer,
- * no runtime rebuild, no context smuggling.
- *
- * Between the pair and the build-time services sits the generic per-request
- * provision seam (ADR 0107 §7): `context.requestServices`, an opaque bag of
- * EXTRA per-request service VALUES the app provides, provided over the
- * build-time `services` so a per-request value wins there too. See
- * `RequestContext.ts` for the contract.
+ * The invariant: the per-request services come off the request context as VALUES and are provided
+ * innermost, so a request value always wins over the build-time services `FateServer.layer`
+ * captured. No per-request layer, no runtime rebuild, no context smuggling. The generic
+ * `context.requestServices` seam between them is ADR 0107 §7; `RequestContext.ts` has the contract.
  *
  * erased→kernel: the trailing cast re-pins the erased entry effect's
  * requirements to `never` so a runtime can run it. The erased shapes carry
@@ -35,20 +26,10 @@ import {CurrentUser} from "./CurrentUser.ts";
 import {LivePublisher} from "./LivePublisher.ts";
 import type {FateRequestContext} from "./RequestContext.ts";
 
-/**
- * The applied form: what one request's provision pipeline looks like to a
- * call site (`Walk.ts` builds it once per request; the dispatch loop and the
- * v1 compiler apply it per operation).
- */
 export type ProvideRequestPair = <A, E>(
 	effect: Effect.Effect<A, E, unknown>,
 ) => Effect.Effect<A, E>;
 
-/**
- * Close over one request's pair + the captured build-time services; the
- * returned function takes an erased entry effect to a runnable one
- * (`R: unknown → never`, see the module doc).
- */
 export const provideRequestPair =
 	(context: FateRequestContext, services: Context.Context<never>): ProvideRequestPair =>
 	<A, E>(effect: Effect.Effect<A, E, unknown>): Effect.Effect<A, E> =>

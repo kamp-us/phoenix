@@ -1,14 +1,8 @@
 /**
- * The depo client core — content-address a body, present the apiKey, call the
- * doorman, and return the public URL. This is the whole write path (ADR 0144
- * decision 5), and it is the surface server-side products `import` directly (no
- * CLI). The network is behind the `DoormanClient` seam so the core unit-tests end
- * to end with the seam substituted and no live worker (`.patterns/effect-testing.md`
- * unit tier).
- *
- * `putBytes` is the seam-testable core (bytes in); `put(path)` is the fs-reading
- * wrapper the bin calls. The mapping from the doorman's HTTP status to a typed
- * failure is the acceptance contract (#1970); it lives in `putBytes` below.
+ * The depo client core — content-address a body, present the apiKey, call the doorman,
+ * return the public URL. The whole write path (ADR 0144 decision 5), imported directly by
+ * server-side products. The network sits behind the `DoormanClient` seam so the core
+ * unit-tests end to end with no live worker.
  */
 import {readFile} from "node:fs/promises";
 import * as Context from "effect/Context";
@@ -29,7 +23,6 @@ import {
 	UploadFailed,
 } from "./errors.ts";
 
-/** The one PUT the doorman exposes and its outcome — the seam the core is tested against. */
 export interface DoormanRequest {
 	readonly apiKey: string;
 	readonly contentType: AllowedContentType;
@@ -38,16 +31,13 @@ export interface DoormanRequest {
 
 export interface DoormanResponse {
 	readonly status: number;
-	/** The response body text — a JSON `{key,url}` on 2xx, a plain reason on 4xx. */
+	/** A JSON `{key,url}` on 2xx, a plain reason on 4xx. */
 	readonly body: string;
 }
 
 /**
- * The doorman HTTP seam. Its `send` performs the single `PUT` to the doorman host
- * and hands back the raw status + body; all status→error mapping lives in the core
- * (`putBytes`), never in the seam, so the seam is a dumb transport a test can
- * replace with a canned response. `DoormanClientLive` (`live.ts`) implements it
- * over `HttpClient`; the bin provides that layer, a test provides a stub.
+ * All status→error mapping lives in the core (`putBytes`), never in this seam, so the seam
+ * stays a dumb transport a test can replace with a canned response.
  */
 export interface DoormanClientService {
 	readonly send: (req: DoormanRequest) => Effect.Effect<DoormanResponse, UploadFailed>;
@@ -57,7 +47,6 @@ export class DoormanClient extends Context.Service<DoormanClient, DoormanClientS
 	"depo/DoormanClient",
 ) {}
 
-/** The doorman's `{key,url}` success body. */
 interface DoormanSuccessBody {
 	readonly key: string;
 	readonly url: string;
@@ -77,15 +66,10 @@ const parseSuccess = (body: string): DoormanSuccessBody | null => {
 };
 
 /**
- * Upload already-read bytes: content-address, call the doorman, map the status.
- * The `contentType` must already be an allowlisted type (the caller resolved it
- * from the filename via `contentTypeForFile`), so a 415 here means the server's
- * allowlist and the client's disagree — still mapped to `UnsupportedMediaType`.
- *
- * On 2xx the returned URL is the doorman's own `{url}` when present, else the
- * client re-derives `https://depo.kamp.us/<key>` from the content address — the
- * two are equal by construction (the key IS `<sha256>.<ext>`), so a caller can
- * rely on the URL with no live worker in a test.
+ * `contentType` is already allowlisted by the caller, so a 415 here means the server's
+ * allowlist and the client's disagree. On 2xx the doorman's `{url}` and the client-derived
+ * `publicUrl(key)` are equal by construction (the key IS `<sha256>.<ext>`), so a test can
+ * rely on the URL with no live worker.
  */
 export const putBytes = (input: {
 	readonly apiKey: string;
@@ -132,12 +116,6 @@ export const putBytes = (input: {
 		});
 	});
 
-/**
- * Upload a file by path: resolve its content-type from the extension (refusing a
- * non-image before any network call), read the bytes, then `putBytes`. This is the
- * bin's entry point and the server-side `import` surface — it returns the permanent
- * `https://depo.kamp.us/<sha256>.<ext>` URL.
- */
 export const put = (input: {readonly path: string; readonly apiKey: string}) =>
 	Effect.gen(function* () {
 		const filename = input.path.split("/").pop() ?? input.path;

@@ -32,9 +32,6 @@
  * in #3081 live outside this harness: a GitHub Actions `concurrency:` group (a workflow change)
  * and 429 backoff inside alchemy's own deploy path (a `pnpm patch`, ADR 0038). This throttle is
  * the run-agnostic backoff applied to the slice the harness DOES own — its own D1 REST calls.
- *
- * A pure leaf: `sleep` / `now` / `random` are injectable, no `fetch`/creds dependency, so the
- * pacing logic is unit-testable offline (matches `_d1-rest-retry.ts` / `_deploy-transient.ts`).
  */
 
 /** Max CF API calls this throttle keeps in flight at once (tunable via env). */
@@ -45,15 +42,10 @@ export const CF_API_MIN_SPACING_MS = 100;
 const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 export interface CfApiThrottleOptions {
-	/** Cap on concurrently in-flight calls (default {@link CF_API_MAX_CONCURRENT}). */
 	maxConcurrent?: number;
-	/** Minimum spacing between call starts, ms (default {@link CF_API_MIN_SPACING_MS}). */
 	minSpacingMs?: number;
-	/** Injected for tests — real sleep by default. */
 	sleep?: (ms: number) => Promise<void>;
-	/** Injected for tests — `Date.now` by default. */
 	now?: () => number;
-	/** Injected for tests — `Math.random` by default. */
 	random?: () => number;
 }
 

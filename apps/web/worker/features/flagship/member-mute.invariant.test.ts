@@ -1,8 +1,7 @@
 /**
- * The dark-ship default-=-safe-state invariant for the member-mute (sustur) flag
- * (#3112, epic #2035). Inspected off the exported `MEMBER_MUTE_FLAG` record (the same
- * object the factory spreads into `FlagshipFlag`), so no alchemy resource is
- * constructed — mirrors `mecmua-write.invariant.test.ts`.
+ * The dark-ship default-is-the-safe-state invariant for the member-mute (sustur) flag
+ * (#3112). Inspected off the exported record the factory spreads into `FlagshipFlag`, so
+ * no alchemy resource is constructed.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {MEMBER_MUTE} from "../../../src/flags/keys.ts";

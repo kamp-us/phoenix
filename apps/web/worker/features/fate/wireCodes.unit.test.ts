@@ -1,19 +1,8 @@
 /**
- * SPA wire-code list ⇄ server config guard (unit tier).
- *
- * The server derives wire codes from each error class's `FateWireCode`
- * annotation (`.patterns/fate-effect-wire-errors.md`); the SPA's
- * `FATE_WIRE_CODES` (`src/lib/fateWireCodes.ts`) is the literal authored source
- * the decoder narrows to. The two ends are bound by this guard, not by hope: if
- * the SPA list omits a code the server can emit, `decodeFateWireCode` would drift
- * that code to its `INTERNAL_SERVER_ERROR` fallback at runtime — so this test
- * fails CI on that drift before it ships. The closed server set comes from the
- * package walker `declaredWireCodes(fateConfig)`; the AST walk and its drift
- * canary live package-side (`Server.unit.test.ts`), so this owns only the
- * phoenix-level assertions.
- *
- * The worker tsconfig cross-includes `src/lib/`, so this worker-side test imports
- * the SPA constant + decoder directly.
+ * SPA wire-code list ⇄ server config guard. If the SPA list omits a code the server
+ * can emit, `decodeFateWireCode` silently drifts that code to its
+ * `INTERNAL_SERVER_ERROR` fallback at runtime — this fails CI on that drift instead.
+ * The AST walk behind `declaredWireCodes` is tested package-side.
  */
 
 import * as FateEffect from "@kampus/fate-effect";
@@ -26,29 +15,24 @@ import {fateConfig} from "./config.ts";
 describe("wire-code contract", () => {
 	const spaCodes: ReadonlySet<string> = new Set(FATE_WIRE_CODES);
 
-	// The server can emit two flavors: codes from a mutation's DECLARED error union
-	// (what `declaredWireCodes` walks) PLUS the throttle codes injected at the fate
-	// composition seam (ADR 0177) — the latter have no declared union to walk, so
-	// they are unioned in here so the SPA-coverage assertion still binds them.
+	// The throttle codes are injected at the fate composition seam (ADR 0177) and have
+	// no declared error union to walk, so they must be unioned in by hand.
 	const serverCodes: ReadonlySet<string> = new Set([
 		...declaredWireCodes(fateConfig),
 		...THROTTLE_WIRE_CODES,
 	]);
 
 	it("the annotation key is exported under its one canonical name `FateWireCode`", () => {
-		// Names drift under a value-only guard (#1032): the codec reads the
-		// annotation by the `FateWireCode` *symbol* every author site spells, so a
-		// rename of the export — back to `ErrorCode` or any other — must fail CI
-		// here, not just silently work because the underlying string is unchanged.
+		// A value-only guard would let the export be renamed while the string stays
+		// the same, and every author site spells the symbol (#1032).
 		expect(FateEffect).toHaveProperty("FateWireCode");
 		expect(FateEffect.FateWireCode).toBe("fate-effect/wireCode");
 		expect(FateEffect).not.toHaveProperty("ErrorCode");
 	});
 
 	it("the walk finds phoenix's declared vocabulary (sanity floor)", () => {
-		// One code per error surface (package gate, sozluk, pano, pasaport): if a
-		// feature's error union drops from a registered operation, this names the
-		// hole instead of the subset check below passing over a shrunken set.
+		// One code per error surface, so a dropped error union names the hole instead
+		// of the subset check below quietly passing over a shrunken set.
 		for (const floor of [
 			"UNAUTHORIZED",
 			"VALIDATION_ERROR",
@@ -66,16 +50,12 @@ describe("wire-code contract", () => {
 	});
 
 	it("every server-emittable code decodes to itself, never the INTERNAL_SERVER_ERROR fallback", () => {
-		// The behavioral pin behind the coverage check: a real wire code must
-		// render as its OWN code, not drift to the generic fallback. `UNAUTHORIZED`
-		// is the canonical case — a known domain code the SPA must surface verbatim.
 		expect(decodeFateWireCode("UNAUTHORIZED")).toBe("UNAUTHORIZED");
 		for (const code of serverCodes) {
 			expect(decodeFateWireCode(code)).toBe(code);
 		}
-		// An unknown code is the ONLY thing that falls through to null (the
-		// `?? "INTERNAL_SERVER_ERROR"` fallback at the call site) — proving the
-		// fallback is reserved for genuinely-unrecognized codes, not real ones.
+		// An unknown code must be the ONLY thing reaching the call site's
+		// `?? "INTERNAL_SERVER_ERROR"` fallback.
 		expect(decodeFateWireCode("DEFINITELY_NOT_A_WIRE_CODE")).toBeNull();
 	});
 });

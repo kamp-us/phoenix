@@ -9,17 +9,12 @@ import {postDataView} from "./views.ts";
 
 const roots: FateRootsRecord = {
 	post: postDataView,
-	// The feed with no filter args is the registered root list a `post.submit`
-	// `insert` reaches (filtered feeds are distinct, independently-paginated
-	// connections). See `.patterns/fate-mutations-client.md`.
+	// The feed with NO filter args is the registered root list a `post.submit` `insert`
+	// reaches; filtered feeds are distinct, independently-paginated connections.
 	posts: list(postDataView, {orderBy: [{createdAt: "desc"}, {id: "desc"}]}),
-	// The viewer's saved posts; the `savedPosts` resolver owns the order (the
-	// `post_bookmark` keyset, ADR 0019). Reuses `postDataView` so `isSaved`/`myVote`
-	// come for free.
+	// The viewer's saved posts; the resolver owns the `post_bookmark` keyset (ADR 0019).
 	savedPosts: list(postDataView),
-	// The public landing posts (#1424) — live-only recent posts, batched into the
-	// landing screen's one `useRequest` beside `landingStats` (ADR 0021). The
-	// `landingPosts` resolver owns the recency order + the sandbox mask.
+	// The public landing posts (#1424); the resolver owns the recency order + sandbox mask.
 	landingPosts: list(postDataView, {orderBy: [{createdAt: "desc"}, {id: "desc"}]}),
 };
 

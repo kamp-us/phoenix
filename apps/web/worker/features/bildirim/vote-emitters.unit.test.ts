@@ -1,12 +1,9 @@
 /**
- * Vote-emitter coverage (#1698) — the decisions that are wrong-or-right with no
- * database (ADR 0082 T1/T2; `.patterns/effect-testing.md`): recipient resolution /
- * self-suppression, the flag containment (dark by default), the aggregate write
- * routing ("N yeni oy", never one-per-vote), and the swallow-at-the-seam guarantee —
- * a DYING `Notification` (the `orDieAccess` defect shape) cannot fail the caller.
- * The `Notification` seam is the fail-on-contact stub with only the expected method
- * overridden, so "touched the wrong write surface" (e.g. `record` instead of
- * `recordAggregate`) is a test failure.
+ * Vote-emitter coverage — the decisions that are wrong-or-right with no database: recipient
+ * resolution / self-suppression, the flag containment (dark by default), the aggregate write
+ * routing ("N yeni oy", never one-per-vote), and the swallow-at-the-seam guarantee — a DYING
+ * `Notification` cannot fail the caller. The `Notification` seam is a fail-on-contact stub
+ * with only the expected method overridden, so touching the wrong write surface fails.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
@@ -39,11 +36,8 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 		} as unknown as typeof Flags.Service,
 	);
 
-// A no-op `LivePublisher`: `Notification.record`/`recordAggregate` yield the
-// per-request publisher for the fire-and-forget live fan-out (#1700, PR #2076). The
-// `Notification` seam is a stub here, so a do-nothing publisher satisfies the
-// requirement without asserting on it (the live publish is covered at the spine /
-// integration tier). Mirrors the rite-emitters test context.
+// A no-op `LivePublisher`: the `Notification` seam is a stub here, so a do-nothing publisher
+// satisfies the requirement without asserting on it (the live publish is covered further up).
 const noopLivePublisher = Layer.succeed(LivePublisher)({
 	update: () => Effect.void,
 	delete: () => Effect.void,
@@ -52,9 +46,8 @@ const noopLivePublisher = Layer.succeed(LivePublisher)({
 	},
 } as typeof LivePublisher.Service);
 
-// A `Mute` returning no mutes: the emitters now consult `bildirimMutedBy`, which reads
-// `readMutedIds` — an empty set means no member is muted, so these cases exercise the
-// unchanged (deliver) path. Muted-suppression itself is covered in mute-suppression.unit.test.ts.
+// No mutes, so these cases exercise the unchanged deliver path. Muted-suppression itself is
+// covered in mute-suppression.unit.test.ts.
 const noMutes = Layer.succeed(Mute, {
 	set: () => Effect.die("Mute.set not exercised"),
 	listMine: () => Effect.die("Mute.listMine not exercised"),
@@ -131,8 +124,7 @@ describe("notifyContentVote — the aggregated live-content vote emit", () => {
 					targetId: "d1",
 				}).pipe(Effect.provide(Layer.mergeAll(stub, requestContext(true))));
 			}
-			// three votes → three emits, all carrying the SAME (recipient, kind, target)
-			// aggregate key with no per-voter identity — the spine rolls them into one row.
+			// Three votes → three emits on the SAME aggregate key with no per-voter identity.
 			assert.strictEqual(calls.length, 3);
 			for (const c of calls) {
 				assert.deepStrictEqual(c, {
@@ -192,9 +184,8 @@ describe("notifyContentVote — the aggregated live-content vote emit", () => {
 		"a DYING notification write is swallowed — the vote caller still succeeds (the seam AC)",
 		() =>
 			Effect.gen(function* () {
-				// The default stub DIES on contact — the exact defect shape `orDieAccess`
-				// raises on a D1 failure. The emitter must swallow it, not surface it, so a
-				// notification hiccup can never fail the committed vote mutation (ADR 0039).
+				// The default stub DIES on contact — the defect shape `orDieAccess` raises on a D1
+				// failure. The emitter must swallow it, so a hiccup can't fail the committed mutation.
 				const exit = yield* notifyContentVote({
 					authorId: "u-author",
 					voterId: "u-voter",

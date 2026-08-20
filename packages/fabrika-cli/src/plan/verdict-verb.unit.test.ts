@@ -14,7 +14,16 @@ import {
 	PLAN_MOVED,
 	READBACK_MISMATCH,
 } from "./codes.ts";
-import {child, childBody, epic, epicBody, SESSION, subIssues} from "./fixtures.test-support.ts";
+import {
+	CWD,
+	child,
+	childBody,
+	epic,
+	epicBody,
+	planContext,
+	SESSION,
+	subIssues,
+} from "./fixtures.test-support.ts";
 import {runVerdict} from "./verdict-verb.ts";
 
 const EPIC = /^gh api repos\/o\/r\/issues\/4300$/;
@@ -54,8 +63,8 @@ const POSTED = okOut(
 const digestOf = async (childPayload: ExecResult): Promise<string> => {
 	const out = await Effect.runPromise(
 		Effect.provide(
-			runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}}),
-			fakeShell(ledger(childPayload)).layer,
+			runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}, cwd: CWD}),
+			planContext(fakeShell(ledger(childPayload))),
 		),
 	);
 	return JSON.parse(out.stdout).digest as string;
@@ -80,9 +89,10 @@ const run = (
 				polarity: overrides.polarity ?? null,
 				repo: null,
 				env,
+				cwd: CWD,
 				stdin: Effect.succeed(stdin),
 			}),
-			shell.layer,
+			planContext(shell),
 		),
 	).then((outcome) => ({outcome, calls: shell.calls}));
 };
@@ -267,9 +277,10 @@ describe("runVerdict", () => {
 					polarity: null,
 					repo: null,
 					env,
+					cwd: CWD,
 					stdin: Effect.succeed<StdinRead>({_tag: "Failed", reason: "EIO"}),
 				}),
-				fakeShell([]).layer,
+				planContext(fakeShell([])),
 			),
 		);
 		expect(outcome.code).toBe(11);
@@ -285,8 +296,8 @@ describe("runVerdict", () => {
 		] as ReadonlyArray<readonly [RegExp, ExecResult]>;
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}}),
-				fakeShell(script).layer,
+				runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}, cwd: CWD}),
+				planContext(fakeShell(script)),
 			),
 		);
 		const digest = JSON.parse(out.stdout).digest as string;

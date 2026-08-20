@@ -198,17 +198,3 @@ are left in the working tree for the surrounding lane to carry.
 - **`STOPPED-UNKNOWN`** — a verb answered UNKNOWN and nothing was written; working tree untouched.
 
 Name the terms and the register. Do not restate the definitions you just wrote.
-
-## Required repo files
-
-Dispositions are **fail-loud** (stop, naming the error), **degrade** (continue with less, and
-disclose it in the report), or **bootstrap** (absent is day one — create it and carry on). A missing
-file is never a silent wrong answer. Where a row points at setup, that is
-[front-door](../front-door/SKILL.md)'s lane.
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| `.glossary/TERMS.md` | the domain-noun register this skill maintains and the corpus every lookup resolves against | **bootstrap** — absent or empty is day one in an adopting repo, not a failed read: `drift` and `check` answer `bootstrap` on exit `0`, and `glossary init` writes the file. |
-| `.glossary/LANGUAGE.md` | the architecture-vocabulary register, and the other half of the routing judgement in step 3 | **bootstrap** — `glossary init --register language` creates it. Until it exists, `--register both` reports the absent register as `bootstrap` beside the present one's answer rather than failing, and the run discloses that it ran single-register. |
-| `.decisions/` | resolves the citations a row carries, so `check` can tell a live decision from a superseded one | **degrade** — `check` reports `citations-unverified` beside its other findings instead of `clean`, so an unchecked corpus never reads as a checked one. |
-| A merge-blocking leak gate and dead-link gate over changed markdown | step 5's two carve-outs defer to them, so their absence is what makes the carve-outs unsafe | **degrade** — the carve-outs still hold (this skill does not recompute a gate's verdict), and the report names the two unchecked classes explicitly so nobody reads silence as coverage. |

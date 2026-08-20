@@ -1,9 +1,7 @@
 /**
- * Cross-feature connection envelope — a leaf module (imports no feature code,
- * so no feature's import graph transitively pulls another's shapers). Services
- * page forward only, so `hasPrevious` is always `false` and the cursor is the
- * opaque service keyset. See `.patterns/fate-connections.md`,
- * `.patterns/fate-effect-operations.md`.
+ * Cross-feature connection envelope — a leaf module: it imports no feature code, so no feature's
+ * import graph transitively pulls another's shapers. Services page forward only, so `hasPrevious`
+ * is always `false`. See `.patterns/fate-connections.md`.
  */
 
 import type {ConnectionResult} from "@nkzw/fate/server";
@@ -21,10 +19,7 @@ export type ConnectionArgs = Schema.Schema.Type<typeof ConnectionArgsSchema> | u
 
 export const connectionArgs = () => Schema.optional(ConnectionArgsSchema);
 
-/**
- * `after` is spread in only when the client actually paged, so services see the
- * cursor key only when one exists.
- */
+/** `after` is spread in only when the client actually paged, so services see no phantom cursor. */
 export const keysetInput = (
 	cArgs: ConnectionArgs,
 	defaultFirst: number,

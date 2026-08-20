@@ -1,21 +1,9 @@
 /**
- * `CaylakDetail` — one çaylak's review surface in the divan (#1290): their
- * sandboxed backlog rendered as it appears live, each item per-item up-votable
- * (`divan.vote`, #1288) and carrying `bildir` (`report.submit`), plus the
- * reviewer's two affordances — the mod **"yazar yap"** (`user.promote`) and the
- * yazar **"kefil ol"** (`user.vouch`, via the stake-confirm {@link VouchSheet}).
- *
- * All reads are the gated `divan.backlog` DESTINATION (the `sandboxBacklogWhere`
- * read model, #1205) — the one-way glass: çaylak work is visible ONLY here, never
- * a widening of the inline `{mod, author}` filter. The backlog item view carries
- * no live score, so a per-item upvote shows its count only after the cast returns
- * a receipt; the up-vote is the affordance, the count is the confirmation.
- *
- * a11y: a labelled region per çaylak; the backlog is a real `<ul>`; each item is a
- * group with a Manti Button upvote (full keyboard path, visible focus, AA
- * contrast) whose pressed state is `aria-pressed` (not color); the "incelemede"
- * status is text, never color; copy is lowercase Turkish; mutation outcomes are
- * `role="status"` live regions.
+ * `CaylakDetail` — one çaylak's review surface in the divan (#1290). Every read is the
+ * gated `divan.backlog` destination (#1205) — the one-way glass: çaylak work is visible
+ * ONLY here, never a widening of the inline `{mod, author}` filter. The backlog item view
+ * carries no live score, so a per-item upvote shows its count only after the cast returns a
+ * receipt.
  */
 import {useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -120,7 +108,6 @@ export function CaylakDetail({
 	);
 }
 
-/** The mod (yazar-yap) + yazar (kefil-ol) affordances — visibility per the gates. */
 function ReviewerActions({
 	authorId,
 	viewerTier,
@@ -208,7 +195,6 @@ function ReviewerActions({
 	);
 }
 
-/** One sandboxed backlog item: per-item upvote (`divan.vote`) + `bildir`. */
 function BacklogItemRow({node}: {readonly node: ViewRef<"DivanBacklogItem">}) {
 	const data = useView(BacklogItemView, node);
 	const fate = useFateClient();

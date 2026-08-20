@@ -1,16 +1,11 @@
 /**
- * fate data views — the SPA's one stable type-import surface: a barrel
- * re-exporting every feature's entity types + view consts. The cross-feature
- * client-exposed `Root` is no longer hand-listed here — it derives from the same
- * `config.ts` feature registry that drives the served config, so a feature's roots
- * are named once (on its `fate-module.ts`), not twice (barrel + `Root`). See
+ * fate data views — the SPA's one stable type-import surface. See
  * `.patterns/fate-data-views.md`, `.patterns/per-feature-fate-aggregators.md`.
  */
 
 import type {AssertFieldMapResolved} from "@kampus/fate-effect";
-// Every client-facing entity's View class, imported (type-only) so the loud-fail
-// field-map guard can be asserted over the full shipping surface at the bottom of
-// this file. See the `AssertFieldMapResolved` block below (#2808/#2811).
+// Every View class is imported type-only so the field-map guard at the bottom of this
+// file can assert over the full shipping surface.
 import type {AdminProbeView} from "../admin-console/probe-view.ts";
 import type {
 	NotificationChannelView,
@@ -127,39 +122,26 @@ export type {UserAdminEntity as UserAdmin, UserAdminRole} from "../user-admin/vi
 export {userAdminDataView} from "../user-admin/views.ts";
 
 /**
- * The client-exposed root map the fate Vite plugin turns into typed client roots
- * at build time (`createSchema(views, Root)`); a `list(...)`-wrapped entry is a
- * `list` root, a bare view is a `query` root. Each feature owns its slice on its
- * `fate-module.ts` `roots`, and this merges them off the `config.ts` registry — so
- * a root's custom name + load-bearing constraints (the request-key→root-name
- * mapping, the reused Term/Post search views) live next to the feature's views.
- * Only custom-resolver roots appear — byId roots are generated from the source
- * registry, and `Root` is not passed to `createFateServer` (`roots` stays empty
- * there; `mergeFateModules` does not thread it).
+ * The client-exposed root map the fate Vite plugin turns into typed client roots at
+ * build time. Only custom-resolver roots appear — byId roots are generated from the
+ * source registry.
  *
- * Annotated `Record<string, unknown>` to stay nameable: a precise type would
- * surface fate's internal `DataView` symbol (TS2883/TS4023); the plugin only
- * inspects this value at runtime.
+ * Annotated `Record<string, unknown>` to stay nameable: a precise type would surface
+ * fate's internal `DataView` symbol (TS2883/TS4023). The plugin only inspects this
+ * value at runtime.
  */
 export const Root: Record<string, unknown> = mergeFateRoots(modules);
 
-// --- Loud-fail field-map guard, adopted onto every shipping entity (#2808/#2811) ---
+// The loud-fail field-map guard. `AssertFieldMapResolved` resolves to the view itself
+// while fate's `dataViewFieldsKey` symbol recovery is healthy, or to a named
+// `FieldMapRecoveryFailed<Name>` brand when the symbol identity slips. The
+// `Guarded extends Resolved` slot turns that brand into a NAMED compile error here,
+// instead of a silent `never` at a far-away `view<>()` selection (#2805).
 //
-// `AssertFieldMapResolved<typeof XView>` (the #2810 machinery) resolves to the view
-// itself when fate's `dataViewFieldsKey` symbol recovery is healthy, or to the named
-// `FieldMapRecoveryFailed<Name>` brand when the symbol identity slips and the field map
-// degrades to the wide `Record<string, DataField>` fallback (the #2805 failure). The
-// `Guarded extends Resolved` slot below makes that brand a NAMED compile error HERE, at
-// the barrel next to the entity — instead of a silent `never` at a far-away `view<>()`
-// selection, which is exactly the silent degrade that cost the #2805 investigation cycle.
-//
-// This is intentionally NOT exported: surfacing fate's internal `DataView` types on this
-// composite worker project's declaration boundary would trip the TS2883/TS4020 nameability
-// checks (the same portability cost that keeps `Root` above annotated `Record<string,
-// unknown>`). Kept local, the assertions type-check without emitting any declaration.
+// Must NOT be exported: surfacing fate's internal `DataView` types on this composite
+// project's declaration boundary trips the TS2883/TS4020 nameability checks.
 type AssertResolved<Resolved, Guarded extends Resolved> = Guarded;
 
-// One entry per client-exposed entity; a slip on any one fails this list loudly.
 type _FateViewsFieldMapResolved = [
 	AssertResolved<typeof AdminProbeView, AssertFieldMapResolved<typeof AdminProbeView>>,
 	AssertResolved<typeof NotificationView, AssertFieldMapResolved<typeof NotificationView>>,

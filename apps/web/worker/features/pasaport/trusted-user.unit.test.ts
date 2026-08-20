@@ -1,15 +1,7 @@
 /**
- * `trusted-user` compose coverage (#1360) — the one home for the trusted `User`
- * wire shape (`me` / `setUsername` / the by-id loader all route through it):
- *
- * - `toTrustedUser` resolves the SELF standing (tier via `Kunye.tierOf`, the
- *   moderator signal via the `moderates` tuple) and stamps the `toUser` shape.
- * - `getUsersWithModerationByIds` joins moderator standing onto a batch of user
- *   rows through ONE `RelationStore.hasSubjects` read — no per-row probe — and each
- *   row already carries its stored `tier`.
- *
- * The three ports are scripted (`Pasaport` the rows, `Kunye` the tier, `RelationStore`
- * the membership); the real D1 reads live in their own integration/adapter tiers.
+ * `trusted-user` compose coverage (#1360) — the one home for the trusted `User` wire
+ * shape. The batch join goes through ONE `RelationStore.hasSubjects` read, never a
+ * per-row probe.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {RelationStore} from "@kampus/authz";
@@ -27,22 +19,19 @@ const row = (over: Partial<UserRow> & {id: string}): UserRow => ({
 	...over,
 });
 
-// A `Pasaport` answering `getUsersByIds` off a fixed row set, in id order.
 const pasaportOf = (rows: ReadonlyArray<UserRow>): Layer.Layer<Pasaport> =>
 	Layer.succeed(Pasaport, {
 		getUsersByIds: (ids: ReadonlyArray<string>) =>
 			Effect.succeed(ids.flatMap((id) => rows.filter((r) => r.id === id))),
 	} as never);
 
-// A `Kunye` whose `tierOf` answers by id (visitor when absent), exercising the SELF
-// trusted-tier read; the other methods are unreached.
+// `tierOf` answers by id (visitor when absent); the other methods are unreached.
 const kunyeOf = (tierById: Record<string, "çaylak" | "yazar">): Layer.Layer<Kunye> =>
 	Layer.succeed(Kunye, {
 		tierOf: (id: string) => Effect.succeed(tierById[id] ?? "visitor"),
 	} as never);
 
-// A `RelationStore` where exactly `mods` hold the `(moderates, platform)` tuple,
-// answering both the single `has` and the batched `hasSubjects`.
+// Exactly `mods` hold the `(moderates, platform)` tuple.
 const relationStoreOf = (mods: ReadonlyArray<string>): Layer.Layer<RelationStore> =>
 	Layer.succeed(RelationStore, {
 		has: (tuple) => Effect.succeed(tuple.relation === "moderates" && mods.includes(tuple.subject)),

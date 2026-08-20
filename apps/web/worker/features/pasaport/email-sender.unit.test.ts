@@ -1,16 +1,4 @@
-/**
- * Unit coverage for the `EmailSender` port (ADR 0101). Drives both adapters
- * over substituted seams — no binding, no network:
- *
- *   - `EmailSenderCloudflareLive` over a FAKE `Email.Send`: asserts it
- *     calls the binding's `.send` with the correct from/to/subject/body shape,
- *     and that a binding `SendEmailError` is recorded to the delivery log AND
- *     swallowed (the public `send` is `E = never`, so a delivery failure never
- *     throws into better-auth — epic #2687, Child #2691);
- *   - `EmailSenderLog`: the dev/preview sink resolves without a binding;
- *   - `emailSenderLayerFor`: the ENVIRONMENT gate picks the log sink for
- *     development/preview and the CF adapter for production.
- */
+/** Drives both `EmailSender` adapters (ADR 0101) over substituted seams — no binding, no network. */
 import {assert, describe, it} from "@effect/vitest";
 import {RuntimeContext} from "alchemy";
 import {Email} from "alchemy/Cloudflare";
@@ -34,10 +22,7 @@ const runtimeContext = Layer.succeed(RuntimeContext)({
 
 type RecordedFailure = {address: string; reason: string};
 
-/**
- * A fake `EmailDeliveryLog` that captures every `recordSendFailure` call into `sink`,
- * so the CF adapter's send-time capture is assertable without a `Drizzle`/D1.
- */
+/** Captures `recordSendFailure` calls so the adapter is assertable without a `Drizzle`/D1. */
 const fakeDeliveryLog = (sink: RecordedFailure[]): Layer.Layer<EmailDeliveryLog> =>
 	Layer.succeed(EmailDeliveryLog)(
 		EmailDeliveryLog.of({
@@ -47,11 +32,7 @@ const fakeDeliveryLog = (sink: RecordedFailure[]): Layer.Layer<EmailDeliveryLog>
 
 type SentMessage = Parameters<Email.SendClient["send"]>[0];
 
-/**
- * A fake `Email.Send`: `SendEmail.bind(descriptor)` resolves to a client
- * whose `send` is supplied by the test. `raw`/`sendRaw` die so an accidental
- * call is loud.
- */
+/** `raw`/`sendRaw` die so an accidental call is loud. */
 const fakeBinding = (
 	onSend: (message: SentMessage) => Effect.Effect<{messageId: string}, Email.SendEmailError>,
 ): Layer.Layer<Email.Send> =>
@@ -137,9 +118,8 @@ describe("EmailSenderCloudflareLive", () => {
 				sender.send({to: "user@example.com", subject: "x", text: "y"}),
 			);
 
-			// The send is REJECTED at the binding. The adapter must (1) append the rejection
-			// to the delivery log for that recipient, and (2) still complete with void — the
-			// public `send` is E = never, so a delivery failure never fails the auth flow.
+			// The public `send` is E = never, so a rejected delivery must still complete with
+			// void — it can never fail the auth flow.
 			const result = yield* program.pipe(
 				Effect.provide(
 					EmailSenderCloudflareLive.pipe(

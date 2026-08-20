@@ -1,10 +1,8 @@
 /**
- * bildirim data views (#1694). `Notification` is delivered inline by the
- * `bildirim.list` resolver (which stamps `targetUrl` — the server-resolved
- * client link, `null` = tombstone); `NotificationUnread` is a synthetic
- * singleton (`id: "unread"`, the `FunnelSummary` idiom); `NotificationMarkReceipt`
- * is the mark-read ack carrying the fresh unread count so the badge updates on
- * the same round-trip. None is read by id. See `.patterns/fate-effect-data-views.md`.
+ * bildirim data views (#1694). `NotificationUnread` is a synthetic singleton
+ * (`id: "unread"`, the `FunnelSummary` idiom) and `NotificationMarkReceipt` is the
+ * mark-read ack carrying the fresh unread count, so the badge updates on the same
+ * round-trip. None is read by id. See `.patterns/fate-effect-data-views.md`.
  */
 import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
@@ -20,7 +18,6 @@ export type NotificationViewRow = ViewRow<{
 	actorId: string | null;
 	/** Aggregate count (#1698); 1 for a plain notification. */
 	count: number;
-	/** ISO stamp when read, `null` while unread. */
 	readAt: string | null;
 	createdAt: string;
 }>;
@@ -60,19 +57,14 @@ export type NotificationUnread = WorkerEntity<typeof NotificationUnreadView>;
 export type NotificationChannelViewRow = ViewRow<{
 	/** The recipient's user id — the per-recipient live topic key (#1700). */
 	id: string;
-	/** The recipient's live unread count, republished on every recorded notification. */
 	unreadCount: number;
 }>;
 
 /**
- * `NotificationChannel` — the per-recipient live entity (#1700, epic #1666). Keyed
- * by the recipient's user id, it carries the live unread count the topbar badge +
- * center reconcile to over `/fate/live`: `Notification.record`/`recordAggregate`
- * republishes `live.update("NotificationChannel", recipientId, …)` after the write,
- * so a subscribed client's badge moves without a refresh. The entity topic is
- * recipient-scoped by construction — the id IS the recipient — and the subscribe
- * route rejects an entity subscription whose id is not the session user's own
- * (route.ts), so a user cannot watch another user's channel.
+ * `NotificationChannel` — the per-recipient live entity (#1700). Keyed by the
+ * recipient's user id, so the entity topic is recipient-scoped by construction; the
+ * subscribe route additionally rejects an entity subscription whose id is not the
+ * session user's own, so nobody can watch another user's channel.
  */
 export class NotificationChannelView extends FateDataView<NotificationChannelViewRow>()(
 	"NotificationChannel",
@@ -90,7 +82,6 @@ export type NotificationMarkReceiptViewRow = ViewRow<{
 	id: string;
 	/** How many rows flipped unread→read (0 = idempotent no-op). */
 	marked: number;
-	/** The recipient's unread count AFTER the write. */
 	unreadCount: number;
 }>;
 

@@ -1,10 +1,3 @@
-/**
- * The lifted form-submit envelope (#1421). Drives `useDraftSubmit.run` through its
- * four branches against a fake mutation, pinning the behavior the ~6 migrated sites
- * now share: a returned `{error}` maps through the registry, an `UNAUTHORIZED`
- * throw redirects to auth, any other throw falls to the surface `failureFallback`,
- * and a clean result calls `onSuccess` with the mutation result.
- */
 import {act, renderHook} from "@testing-library/react";
 import {describe, expect, it, vi} from "vitest";
 import {authRedirectPath} from "../lib/returnTo";

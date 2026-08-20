@@ -1,9 +1,3 @@
-/**
- * SubnavShell recipe (#2972, ADR 0182) — the shell owns the whole bar, filters row included.
- * Two properties are load-bearing: (1) the sub-destinations zone renders INSIDE the bar (no
- * detached sibling row — the structural fix for sözlük's orphaned alphabet), and (2) the flat
- * element-props make a single-orphan-slot composition a TYPE error, not a lint finding.
- */
 import {render, screen} from "@testing-library/react";
 import {describe, expect, it} from "vitest";
 import {SubnavShell} from "./SubnavShell";
@@ -22,9 +16,7 @@ describe("SubnavShell — the shell owning the whole bar (#2972)", () => {
 		const bar = container.querySelector(".kp-subnav");
 		const alphabet = screen.getByTestId("alphabet");
 		expect(bar).toBeTruthy();
-		// The composed destinations node lives INSIDE the bar (a detached sibling would fail this)…
 		expect(bar?.contains(alphabet)).toBe(true);
-		// …specifically inside the filters row, where the sub-destinations zone belongs.
 		expect(bar?.querySelector(".kp-subnav__filters")?.contains(alphabet)).toBe(true);
 		// It is not the shell's direct sibling — there is no "next to the bar" row to orphan into.
 		expect(container.firstElementChild).toBe(bar);

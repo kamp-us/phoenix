@@ -25,6 +25,13 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {readAuthored} from "../build/authored.ts";
 import {STANDING_LANE_LABELS, type StandingLaneLabel} from "../build/scope-admission.ts";
 import {scannedLine} from "../build/target.ts";
+import {CONFIG_PATH} from "../config/document.ts";
+import {
+	CONTAINMENT_VOCABULARY,
+	containmentVocabularyKey,
+} from "../config/keys/containment-vocabulary.ts";
+import {resolve} from "../config/load.ts";
+import {loadRepoConfig} from "../config/working-root.ts";
 import {listLabels, listOpenMilestones} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {PLANNED} from "../labels.ts";
@@ -82,6 +89,8 @@ export interface ChildOptions extends OpenOptions {
 	readonly assignee: string | null;
 	readonly milestone: string | null;
 	readonly labels: ReadonlyArray<string>;
+	/** Where the verb is standing — the repo whose `.fabrika.jsonc` this run resolves. */
+	readonly cwd: string;
 	readonly stdin: Effect.Effect<StdinRead>;
 }
 
@@ -147,10 +156,20 @@ export const runChild = (
 		const run = yield* loadRun(MESSAGES, dir, notes);
 		if (run._tag === "Refused") return run.outcome;
 
+		const vocabulary = resolve(yield* loadRepoConfig(options.cwd), containmentVocabularyKey);
+		if (vocabulary._tag === "Malformed" || vocabulary._tag === "Unknown") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				MESSAGES.unreadable(`${CONFIG_PATH}'s \`${CONTAINMENT_VOCABULARY}\``, vocabulary.reason),
+				notes,
+			);
+		}
+
 		const composed = composeChildBody({
 			text: authored.text,
 			cycleDoc: run.value.cycleDoc,
 			type: options.type,
+			vocabulary: vocabulary.value,
 		});
 		if (composed._tag === "Bad") return refuse(BAD_SECTIONS, `${VERB}: ${composed.reason}`, notes);
 

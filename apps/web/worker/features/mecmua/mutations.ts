@@ -1,18 +1,10 @@
 /**
- * mecmua write-path mutation resolvers (#2497, epic #2467, #2463) — the publish +
- * save-draft acts, gated behind the default-off `mecmua-write` flag (ADR 0083, the
- * pano `post.saveDraft` dark-ship shape): with the flag off both fail
- * {@link MecmuaDisabled}, so the write path is unreachable even if a client bypasses
- * the (not-yet-built) UI. Domain validation + the DB write live in {@link Mecmua}
- * (ADR 0013); this layer resolves the identity, the flag, and the capability.
+ * mecmua write-path mutation resolvers, gated behind the default-off `mecmua-write`
+ * flag (ADR 0083) so the path is unreachable even if a client bypasses the UI.
  *
- * The authority split is the ticket's load-bearing rule:
- *   - `mecmua.publish` is floored at **yazar** via {@link requirePublishMecmua} — a
- *     çaylak is refused with the `FORBIDDEN` `RequiresLevel` (the earned-authorship
- *     gate, ADR 0107 §7). It stamps `publishedAt`; the byline is the LIVE identity
- *     resolved from `authorId` at read (#2463), not a snapshot.
- *   - `mecmua.saveDraft` is NOT yazar-gated — a private draft write is normal-auth
- *     only (`CurrentUser.required`), and multiple drafts per author are allowed.
+ * The authority split is load-bearing: `publish` is floored at YAZAR via
+ * {@link requirePublishMecmua} (ADR 0107 §7), while `saveDraft` is NOT yazar-gated —
+ * a private draft write is normal-auth only, and multiple drafts per author are fine.
  *
  * Neither publishes a `/fate/live` invalidation: mecmua Post lives in no subscribed
  * connection yet, so both are `fanned: false` in `fate-live/fanned-mutations.ts`.
@@ -33,22 +25,20 @@ import type {MecmuaPostRow} from "./post-fields.ts";
 import type {MecmuaPost, MecmuaSubscriptionReceipt} from "./views.ts";
 import {MecmuaPostView, MecmuaSubscriptionReceiptView} from "./views.ts";
 
-/** Is the mecmua write path on for this request? Safe-default `false` (ships dark). */
+// Safe-default `false` — ships dark.
 const mecmuaOn = Effect.gen(function* () {
 	const flags = yield* Flags;
 	return yield* flags.getBoolean(MECMUA_WRITE, false).pipe(provideRequestFlags);
 });
 
-/** Is the mecmua feed (subscribe/unsubscribe) on for this request? Safe-default `false`. */
+// Safe-default `false`.
 const feedOn = Effect.gen(function* () {
 	const flags = yield* Flags;
 	return yield* flags.getBoolean(MECMUA_FEED, false).pipe(provideRequestFlags);
 });
 
-/** Stamp the wire `__typename` onto a service row — the one mecmua write-path shaper. */
 const toMecmuaPost = (r: MecmuaPostRow): MecmuaPost => ({__typename: "MecmuaPost", ...r});
 
-/** The subscribe/unsubscribe receipt shaper — the target author + the post-write edge state. */
 const toSubscriptionReceipt = (
 	authorId: UserId,
 	subscribed: boolean,
@@ -92,9 +82,8 @@ export const mutations = {
 			if (!(yield* mecmuaOn)) {
 				return yield* new MecmuaDisabled({message: "mecmua şu an kapalı"});
 			}
-			// The yazar floor: `requirePublishMecmua` discharges `PublishMecmua` and threads
-			// the grant into the body, so `yield* PublishMecmua` is the compile-error gate —
-			// a çaylak is refused the `FORBIDDEN` `RequiresLevel` before any write (ADR 0107 §3).
+			// `yield* PublishMecmua` IS the gate: without the grant threaded in by
+			// `requirePublishMecmua` this is a compile error (ADR 0107 §3).
 			return yield* requirePublishMecmua(
 				Effect.gen(function* () {
 					yield* PublishMecmua;

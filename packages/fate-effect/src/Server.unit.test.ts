@@ -1,25 +1,4 @@
 /**
- * Unit — `declaredWireCodes`: the canonical "every wire code this config can
- * emit" walker.
- *
- * The contract under test:
- *
- *   1. **The package fallbacks are always present** — `INTERNAL_WIRE_CODE`
- *      (defects / un-annotated failures) and `InputValidationError`'s
- *      annotated code (Schema rejections) can be emitted independent of any
- *      declaration, so even an empty config carries them.
- *   2. **Declared error unions are walked across all three category
- *      records** — every union member's `FateWireCode` annotation lands in the
- *      set; a bare (non-union) annotated error class is collected off its own
- *      AST node; entries without an `error:` contribute nothing. Sources are
- *      excluded by construction: loaders have `E = never`, nothing to walk.
- *   3. **The AST-drift canary** (moved here from the worker's
- *      `wireCodes.unit.test.ts`, where it hedged the hand-rolled copy of this
- *      walker): the walk reads annotations off `ast.annotations` and union
- *      members off `ast.types` with structural guards — if an effect Schema
- *      internals change moves either, the canary fails loudly instead of
- *      downstream subset checks passing vacuously over a fallback-only set.
- *
  * Like the sibling suites, this module **exports** its fixture consts on
  * purpose: the package tsconfig is `composite`, so tsgo's declaration
  * nameability checks (TS2883) run over the inferred types.
@@ -157,9 +136,7 @@ describe("declaredWireCodes", () => {
 
 	it("un-annotated union members and error-less entries contribute nothing", () => {
 		const codes = declaredWireCodes(noteConfig);
-		// `Unannotated` is declared on `noteQueries.note` but carries no code;
-		// `health` declares no error at all. The exact-set assertions above
-		// already pin this — this spells the negative space out.
+		// The exact-set assertions above already pin this; this spells the negative space out.
 		expect([...codes].every((code) => typeof code === "string")).toBe(true);
 		expect(codes.size).toBe(5);
 	});
@@ -198,8 +175,6 @@ describe("declaredWireCodes", () => {
 	});
 });
 
-// The generic per-request provision seam (ADR 0107 §7).
-
 /**
  * A stand-in for an app's EXTRA per-request service (the künye `CurrentActor`
  * shape). The package names none of it: it appears here only as a handler
@@ -237,10 +212,7 @@ describe("FateServerRequirements — generic per-request provision exclusion (AD
 	});
 
 	it("a REGISTERED per-request service is excluded from R (provided per request, not at build time)", () => {
-		// `PR = Actor` drops it out alongside the pair…
 		expectTypeOf<FateServerRequirements<typeof actorConfig, Actor>>().toEqualTypeOf<never>();
-		// …and the registration overload infers `PR` from the key list, so the
-		// composed layer needs nothing extra at `Layer.provide` time.
 		expectTypeOf(FateServer.layer(actorConfig, [Actor])).toEqualTypeOf<
 			Layer.Layer<FateServer, never, never>
 		>();

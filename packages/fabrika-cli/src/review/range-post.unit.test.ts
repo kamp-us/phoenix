@@ -4,9 +4,9 @@
  * folds. The fail-closed direction gets its own cases: a namespace the range did not derive and a
  * range touching no governance root both refuse, so growing the range mode narrowed neither guard.
  */
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeShell, okOut} from "../fakes.test-support.ts";
+import {fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
 import {NOT_HARNESS_TOUCHING} from "../governance/codes.ts";
 import {
 	type PostOptions as GovernancePostOptions,
@@ -78,6 +78,7 @@ const governanceOptions: GovernancePostOptions = {
 	tip: HEAD,
 	repo: null,
 	json: false,
+	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
 };
@@ -105,7 +106,10 @@ const runReview = (
 	overrides: Partial<typeof reviewOptions> = {},
 ) =>
 	Effect.runPromise(
-		Effect.provide(runReviewPost({...reviewOptions, ...overrides}), fakeShell(script).layer),
+		Effect.provide(
+			runReviewPost({...reviewOptions, ...overrides}),
+			Layer.merge(fakeShell(script).layer, unconfigured),
+		),
 	);
 
 const runGovernance = (
@@ -115,7 +119,7 @@ const runGovernance = (
 	Effect.runPromise(
 		Effect.provide(
 			runGovernancePost({...governanceOptions, ...overrides}),
-			fakeShell(script).layer,
+			Layer.merge(fakeShell(script).layer, unconfigured),
 		),
 	);
 
@@ -128,7 +132,9 @@ describe("review post --base/--tip", () => {
 
 	it("composes the exact marker the epic-child prove arm reads back", async () => {
 		const shell = fakeShell(reviewHappy());
-		await Effect.runPromise(Effect.provide(runReviewPost(reviewOptions), shell.layer));
+		await Effect.runPromise(
+			Effect.provide(runReviewPost(reviewOptions), Layer.merge(shell.layer, unconfigured)),
+		);
 		const write = shell.calls.find((call) => CREATE.test(call)) ?? "";
 		const body = write.slice(write.indexOf("body=") + "body=".length);
 		expect(body.split("\n")[0]).toBe(MARKER);
@@ -214,7 +220,9 @@ describe("governance post --base/--tip", () => {
 
 	it("composes the governance marker through the range wire format", async () => {
 		const shell = fakeShell(governanceHappy());
-		await Effect.runPromise(Effect.provide(runGovernancePost(governanceOptions), shell.layer));
+		await Effect.runPromise(
+			Effect.provide(runGovernancePost(governanceOptions), Layer.merge(shell.layer, unconfigured)),
+		);
 		const write = shell.calls.find((call) => CREATE.test(call)) ?? "";
 		const body = write.slice(write.indexOf("body=") + "body=".length);
 		const parsed = readRangeMarker(body);

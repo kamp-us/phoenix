@@ -1,8 +1,6 @@
 /**
- * The pure divan roster shaping (#1287) — `buildRoster` grouping, with no DB
- * (ADR 0082 unit tier). Proves the unit is the PERSON: items group by author, the
- * per-kind counts are correct, only authors with ≥1 pending item appear, and the
- * blank-author (author-deleted placeholder) row is skipped.
+ * The pure divan roster shaping (#1287): the unit of the roster is the PERSON, not the
+ * item.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {UserId} from "../../lib/ids.ts";

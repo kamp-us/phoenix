@@ -917,17 +917,3 @@ $ echo $?
 - #4465 — one term, one register, one row. `cross-register` is that rule made mechanical.
 - The leak and link carve-outs are the interface convention's rule 6 consequence — where a question is
   already enforced, state the expectation and leave the verdict where it is enforced.
-
-## Required repo files
-
-The skill's table is the declaration front-door parses; this one states the **code each disposition
-fires**, which is the half an implementer needs. Every path is resolved against the target repo's
-root, never against the installed plugin, because a register is the adopting repo's artifact and not
-fabrika's.
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| `.glossary/TERMS.md` | the domain-noun register every verb reads and `add` writes | **bootstrap** — `drift`, `check` and `sections` answer `bootstrap` on exit `0`; `lookup` answers `absent` for every term; `add` refuses `11` until `init` creates it. A `--dir` that cannot be read is `11` throughout. |
-| `.glossary/LANGUAGE.md` | the architecture-vocabulary register, and the second half of `--register both` | **bootstrap** — under `both` the absent register contributes `bootstrap` and the present one still answers on exit `0`; the scope line names which register degraded. Never `11` for absence alone. |
-| `.decisions/` | resolves the four-digit citations a row carries, so `check` can separate a live decision from a superseded one | **degrade** — `check` emits a `citations-unverified` finding carrying `cannot read <dir>: <reason>` and still reports its other findings, landing on `defects` rather than `clean`. It never reports `clean` over an unresolved corpus. |
-| A merge-blocking leak gate and dead-link gate over changed markdown | `check` deliberately computes neither, deferring both to whichever gate enforces them | **degrade** — no verb changes behaviour; the two classes simply go unchecked, and the skill's report is where that is disclosed. There is no code, because there is nothing for a verb to detect. |

@@ -1,27 +1,16 @@
 /**
- * The fate screen rails — `Suspense` + an error boundary, paired, so a screen
- * only declares its fallback + error UI. fate reads suspend and throw a
- * `FateRequestError` on boundary-class failures.
- *
- * This boundary catches **thrown** errors only; mutation errors a call site
- * handles inline never reach here (that split lives in the mutation hooks — see
- * `.patterns/fate-mutations-client.md`). It surfaces the error's `code` so
- * screens can branch on it (e.g. `UNAUTHORIZED` vs `POST_NOT_FOUND`).
- *
- * See `.patterns/fate-client-setup.md`.
+ * The fate screen rails — `Suspense` + an error boundary, paired. Catches **thrown**
+ * errors only; mutation errors a call site handles inline never reach here. See
+ * `.patterns/fate-client-setup.md` and `.patterns/fate-mutations-client.md`.
  */
 import {Component, type ErrorInfo, type ReactNode, Suspense} from "react";
 import type {FateWireCode} from "../lib/fateWireCodes";
 import {captureBoundaryError} from "../lib/sentry";
 
 /**
- * The fate wire `code` a screen branches on — the same {@link FateWireCode}
- * vocabulary, read un-narrowed: the known literals keep autocompletion, but the
- * open `string & {}` arm stays on purpose, because the boundary forwards the
- * thrown `code` verbatim (no `decodeFateWireCode`). A fate-internal throw
- * bypasses the annotation codec and carries fate's own protocol fallback
- * `INTERNAL_ERROR` — a real code `FATE_WIRE_CODES` omits (it lists
- * `INTERNAL_SERVER_ERROR`) — so the read must not be closed to that set.
+ * The open `string & {}` arm stays on purpose: a fate-internal throw bypasses the
+ * annotation codec and carries fate's own `INTERNAL_ERROR`, a code `FATE_WIRE_CODES`
+ * omits, so this read must not be closed to that set.
  */
 type FallbackRender = (error: {code: FateWireCode | (string & {}); error: Error}) => ReactNode;
 
@@ -51,17 +40,15 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
 	override componentDidCatch(error: Error, info: ErrorInfo): void {
 		console.error("[fate Screen] caught error", error, info);
-		// Forward to Sentry too (ADR 0118); inert until a DSN is set, so this is a
-		// no-op alongside the console.error above until then.
+		// ADR 0118; inert until a DSN is set.
 		captureBoundaryError(error, info.componentStack);
 	}
 
 	override render(): ReactNode {
 		const {error} = this.state;
 		if (error) {
-			// Forward the wire `code` verbatim — wider than the SPA's narrowed set
-			// (a fate-internal throw carries `INTERNAL_ERROR`), so this does NOT
-			// narrow through `decodeFateWireCode` the way `wire.codeOf` does.
+			// Deliberately does NOT narrow through `decodeFateWireCode` the way
+			// `wire.codeOf` does — the code is forwarded verbatim.
 			const code = isFateError(error) ? error.code : "INTERNAL_SERVER_ERROR";
 			return this.props.fallback({code, error});
 		}

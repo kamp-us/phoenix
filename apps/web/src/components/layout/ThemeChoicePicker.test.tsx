@@ -29,8 +29,6 @@ describe("ThemeChoicePicker (#2612)", () => {
 	it("ignores a deselect click on the active option — one choice is always set", () => {
 		const onChange = vi.fn();
 		render(<ThemeChoicePicker choice="dark" onChange={onChange} testId="tp" />);
-		// Clicking the already-active option would empty a Toggle track's value; the
-		// picker drops that so it never resolves to "no theme".
 		fireEvent.click(screen.getByRole("radio", {name: "koyu"}));
 		expect(onChange).not.toHaveBeenCalled();
 	});

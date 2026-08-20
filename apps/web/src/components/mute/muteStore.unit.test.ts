@@ -1,9 +1,3 @@
-/**
- * The client muted-member overlay (#3117), tested off its pure reducer + the external-store
- * contract — no DOM (`apps/web/src` has no jsdom). Covers the immutable set transforms and
- * the subscribe/snapshot/notify behavior `useSyncExternalStore` relies on: a real change
- * swaps the snapshot reference and notifies; a no-op keeps it stable and stays silent.
- */
 import {afterEach, assert, describe, it} from "@effect/vitest";
 import {
 	muteStoreSnapshot,
@@ -22,7 +16,7 @@ describe("muteStore pure set transforms", () => {
 		const next = withMember(base, "b");
 		assert.notStrictEqual(next, base);
 		assert.deepStrictEqual([...next].sort(), ["a", "b"]);
-		assert.deepStrictEqual([...base], ["a"]); // input untouched
+		assert.deepStrictEqual([...base], ["a"]);
 	});
 
 	it("withMember is identity when the id is already present", () => {

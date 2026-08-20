@@ -1,28 +1,10 @@
 /**
- * `post.react` wire-boundary unit coverage (#1863, epic #1840) — the pano-post
- * reaction mutation's four AC proofs, driven through its real external interface
- * (`resolveWire`: the `resolve` decode + the `encodeWireError` class→wire-code
- * seam), so a decode rejection surfaces as a WIRE `code` (an off-palette emoji →
- * `VALIDATION_ERROR`). The `Pano` / `Flags` /
- * `LivePublisher` seams are substituted directly — no DB, no Flagship binding. The
- * react/change/retract write semantics themselves (probe-then-write, cardinality
- * one, NO karma, NO tier gate) are proven over the real service in
- * `../reaction/Reaction.unit.test.ts` (#1861); here we prove the MUTATION wiring:
+ * `post.react` wire-boundary unit coverage (#1863, epic #1840) — the mutation WIRING only,
+ * driven through its real external interface (`resolveWire`), so a decode rejection surfaces as a
+ * wire `code`. The `Pano` / `Flags` / `LivePublisher` seams are substituted: no DB, no Flagship.
  *
- *   1. delegation — `post.react` calls `Pano.reactToPost` with `targetKind: post`
- *      threading the decoded emoji, and echoes the re-resolved post's `reactions`
- *      aggregate. Cast / change / retract are the three intents threaded (a palette
- *      emoji, a different palette emoji, `null`).
- *   2. non-palette rejection — an off-palette emoji FAILS to decode at the wire
- *      boundary (`ReactionEmojiSchema`), so the service is NEVER reached.
- *   3. flag gate (dark ship, ADR 0083) — with `Flags` OFF the mutation is inert: no
- *      react lands (`Pano.reactToPost` is never called), the post is re-resolved
- *      unchanged via `getPostsByIds` and returned with no error — a merged-but-
- *      unflipped feature is invisible, matching `comment.react` / `definition.react`;
- *      with it ON the delegation runs.
- *   4. ungated — a çaylak/newcomer (any authenticated user) reacts with no tier
- *      gate: the mutation carries no `VOTE_REQUIRES_YAZAR` arm, so a plain user
- *      succeeds exactly like any other.
+ * The react/change/retract write semantics live over the real service in
+ * `../reaction/Reaction.unit.test.ts` (#1861). The four describe blocks below are the four ACs.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
@@ -36,7 +18,6 @@ import {EMPTY_REACTION_AGGREGATE, type ReactionAggregate} from "../reaction/Reac
 import {mutations} from "./mutations.ts";
 import {Pano, type PostSummaryRow, type ReactToPostResult} from "./Pano.ts";
 
-// A plain member — the newcomer/çaylak the ungated proof needs (no tier fields).
 const CAYLAK = {id: "u-caylak", email: "yeni@example.com", name: "yeni"};
 
 const runtimeContextStub: BaseRuntimeContext = {
@@ -47,8 +28,7 @@ const runtimeContextStub: BaseRuntimeContext = {
 	set: (id) => Effect.succeed(id),
 };
 
-// A `Flags` whose `getBoolean` returns a fixed value — the only method the gate
-// calls; every typed read dies so an accidental call is loud.
+// `getBoolean` returns a fixed value; every other typed read dies so a stray call is loud.
 const flagsStub = (value: boolean): Layer.Layer<Flags> =>
 	Layer.succeed(Flags, {
 		getBoolean: () => Effect.succeed(value),
@@ -57,15 +37,13 @@ const flagsStub = (value: boolean): Layer.Layer<Flags> =>
 		getObject: () => Effect.die("getObject not exercised"),
 	} as typeof Flags.Service);
 
-// A `LivePublisher` that records nothing — the publish is fire-and-forget and its
-// error channel is `never`, so it can never fail the mutation.
+// The publish is fire-and-forget with a `never` error channel — it can never fail the mutation.
 const liveStub = Layer.succeed(LivePublisher)(
 	livePublisherFor({publish: () => Effect.void, waitUntil: () => {}}),
 );
 
-// A `Pano` whose named methods are scripted; every OTHER method dies on contact, so
-// a passing test proves the resolver reached only the method its path routes to (the
-// flag-ON path routes to `reactToPost`, the inert flag-OFF path to `getPostsByIds`).
+// Named methods are scripted; every OTHER method dies on contact, so a passing test proves the
+// resolver reached only the method its path routes to.
 const panoProxy = (methods: Partial<typeof Pano.Service>): Layer.Layer<Pano> =>
 	Layer.succeed(
 		Pano,
@@ -77,8 +55,6 @@ const panoProxy = (methods: Partial<typeof Pano.Service>): Layer.Layer<Pano> =>
 		}) as typeof Pano.Service,
 	);
 
-// A `PostSummaryRow` the scripted `reactToPost` re-resolves — the reaction bar it
-// carries (counts + the viewer's own `myReaction`) is what the mutation echoes.
 const postRowWith = (reactions: ReactionAggregate): PostSummaryRow => ({
 	id: "post_1",
 	slug: "post-1",
@@ -99,8 +75,6 @@ const postRowWith = (reactions: ReactionAggregate): PostSummaryRow => ({
 	reactions,
 });
 
-// Drive `post.react` through its real external interface (`resolveWire`), selecting
-// the `reactions` aggregate so the echoed field is asserted on the wire shape.
 const react = (
 	pano: Layer.Layer<Pano>,
 	flags: Layer.Layer<Flags>,
@@ -223,8 +197,7 @@ describe("post.react — (3) flag OFF is inert (dark ship)", () => {
 	it.effect("inert: no react lands, the unchanged post is re-resolved and returned", () =>
 		Effect.gen(function* () {
 			const post = yield* react(
-				// reactToPost fail-on-contact: the write must never land when dark; the inert
-				// path re-resolves the current post via `getPostsByIds`.
+				// `reactToPost` is absent, so it dies on contact: the write must never land while dark.
 				panoProxy({
 					getPostsByIds: () => Effect.succeed([postRowWith(EMPTY_REACTION_AGGREGATE)]),
 				}),
@@ -232,7 +205,6 @@ describe("post.react — (3) flag OFF is inert (dark ship)", () => {
 				{id: "post_1", emoji: "👍"},
 			);
 			assert.strictEqual((post as {id: string}).id, "post_1");
-			// The current, unreacted aggregate — the react write never happened while dark.
 			assert.deepStrictEqual((post as {reactions?: unknown}).reactions, EMPTY_REACTION_AGGREGATE);
 		}),
 	);
@@ -246,8 +218,6 @@ describe("post.react — (4) reactions are ungated (a çaylak reacts, no tier ga
 				const post = yield* react(
 					panoProxy({
 						reactToPost: (i) => {
-							// The mutation carries no tier gate: a plain user's react reaches the
-							// service exactly like any other — the ungated/social-only model.
 							assert.strictEqual(i.userId, CAYLAK.id);
 							return Effect.succeed({
 								post: postRowWith({counts: [{emoji: "❤️", count: 1}], myReaction: "❤️"}),

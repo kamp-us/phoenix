@@ -1,12 +1,7 @@
 /**
- * `MecmuaPost`'s one column→field map — the single structure the view field
- * declaration (`MecmuaPostView` in `views.ts`) and the record→row mapper
- * (`toMecmuaPostRow`) both derive from, so a one-field change touches this map
- * instead of two hand-synced restatements (the pano `post-fields.ts` idiom, #1166).
- *
- * mecmua carries none of pano's link-sharing / viewer-scalar fields — it is a lean
- * long-form row: identity + başlık + markdown body + the `publishedAt` lifecycle
- * marker.
+ * `MecmuaPost`'s one column→field map — the single structure the view field declaration and
+ * the record→row mapper both derive from, so a one-field change touches this map instead of
+ * two hand-synced restatements.
  */
 import type * as schema from "../../db/drizzle/schema.ts";
 
@@ -24,12 +19,8 @@ export interface MecmuaPostRow {
 	updatedAt: Date;
 }
 
-/**
- * The view/wire field selection — a static literal fate reads off `MecmuaPostView`.
- * `satisfies Record<keyof MecmuaPostRow, true>` pins it to exactly the row's fields:
- * dropping one here (or adding one to the row without listing it) is a compile
- * error, so the view can't drift from the row mapper.
- */
+// `satisfies Record<keyof MecmuaPostRow, true>` pins this to exactly the row's fields:
+// dropping one (or adding one to the row without listing it) is a compile error.
 export const mecmuaPostViewFields = {
 	id: true,
 	slug: true,
@@ -41,7 +32,6 @@ export const mecmuaPostViewFields = {
 	updatedAt: true,
 } as const satisfies Record<keyof MecmuaPostRow, true>;
 
-/** Map a `mecmua_post` record onto its wire row — the single record→row seam. */
 export const toMecmuaPostRow = (p: MecmuaPostRecord): MecmuaPostRow => ({
 	id: p.id,
 	slug: p.slug,

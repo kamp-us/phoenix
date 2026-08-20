@@ -1,22 +1,18 @@
 /**
- * depo client's tagged errors — one file for the whole put path (the
- * `.patterns/effect-errors.md` one-`errors.ts`-per-surface rule). Each is a
- * `Schema.TaggedErrorClass` (the repo-wide error constructor — #2736). These are
- * CLI-only and never reach the fate wire, so they carry no `FateWireCode`
- * annotation. The set is the client-side image of the doorman's HTTP contract
- * (#1970): every 4xx the doorman can return maps to exactly one error here (each
- * class documents its own status below), so a caller `catch`es a typed failure
- * rather than parsing a status code.
+ * depo client's tagged errors — see `.patterns/effect-errors.md`.
+ *
+ * These are CLI-only and never reach the fate wire, so they carry no `FateWireCode`
+ * annotation. The set is the client-side image of the doorman's HTTP contract: every
+ * 4xx the doorman can return maps to exactly one error here, so a caller `catch`es a
+ * typed failure rather than parsing a status code.
  */
 import * as Schema from "effect/Schema";
 
-/** No apiKey could be resolved (flag / `KAMPUS_TOKEN` / stored credential all empty). */
 export class MissingCredential extends Schema.TaggedErrorClass<MissingCredential>()(
 	"depo/MissingCredential",
 	{reason: Schema.String},
 ) {}
 
-/** The local file could not be read (missing / unreadable). */
 export class FileReadError extends Schema.TaggedErrorClass<FileReadError>()("depo/FileReadError", {
 	path: Schema.String,
 	cause: Schema.Unknown,
@@ -54,7 +50,6 @@ export class ContentAddressConflict extends Schema.TaggedErrorClass<ContentAddre
 	{message: Schema.String},
 ) {}
 
-/** The SHA-256 content address could not be computed (`crypto.subtle.digest` rejected). */
 export class DigestError extends Schema.TaggedErrorClass<DigestError>()("depo/DigestError", {
 	cause: Schema.Unknown,
 }) {}

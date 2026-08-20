@@ -1,9 +1,8 @@
 /**
- * Pano root query resolver — `post(idOrSlug)`, the detail page. Query resolvers
- * return shaped output directly (NOT masked through a source), so this builds
- * the exact wire shape the client selected, including the nested `comments`
- * connection. See `.patterns/fate-effect-operations.md`,
- * `.patterns/fate-connections.md`.
+ * Pano root query resolver — `post(idOrSlug)`, the detail page. Query resolvers return
+ * shaped output directly (NOT masked through a source), so this builds the exact wire
+ * shape the client selected, including the nested `comments` connection. See
+ * `.patterns/fate-effect-operations.md`, `.patterns/fate-connections.md`.
  */
 
 import {Fate} from "@kampus/fate-effect";
@@ -35,18 +34,15 @@ export const queries = {
 		{args: PostArgs, type: PostView},
 		Effect.fn("post")(function* ({args, select}) {
 			const pano = yield* Pano;
-			// Resolve the sandbox viewer once (identity + moderator probe); a
-			// sandboxed post is hidden from anyone but its author + a moderator (#1205).
+			// A sandboxed post is hidden from anyone but its author + a moderator (#1205).
 			const sandboxViewer = yield* currentSandboxViewer;
 			const viewerId = sandboxViewer.viewerId;
-			// Mute read-mask (#3113): a muted author's post + its thread read as
-			// not-found for the muter (default-off `member-mute` ⇒ empty set ⇒ unchanged).
+			// Mute read-mask (#3113): default-off `member-mute` ⇒ empty set ⇒ unchanged.
 			const mutedIds = yield* currentMutedIds;
 			const page = yield* pano.getPost(args.idOrSlug, {sandboxViewer, mutedIds});
 			if (!page) return null;
 
-			// Stamp `myVote` + `isSaved` by batching the single post through the same
-			// `user_vote` / `post_bookmark` read — no per-row resolver.
+			// Batch the single post through the same read — no per-row resolver.
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId, sandboxViewer, mutedIds});
 
 			const base = toPostFromPage(
@@ -64,16 +60,14 @@ export const queries = {
 				},
 			);
 
-			// The native path doesn't auto-invoke a nested relation's `connection`
-			// executor for a hand-built source, so deliver `comments` inline; the
-			// keyset, cursor, and node shape match the source executor exactly (see
-			// fate-connections.md).
+			// The native path does not auto-invoke a nested relation's `connection` executor for
+			// a hand-built source, so `comments` is delivered inline; the keyset, cursor and node
+			// shape match the source executor exactly (`.patterns/fate-connections.md`).
 			if (!hasNestedSelection(select, "comments")) {
 				return base;
 			}
 
-			// The thread read's stamp collapse is contained behind its default-off flag
-			// (#2710): off ⇒ the stamps run serially (today), on ⇒ one concurrent wave.
+			// Off ⇒ the thread stamps run serially (today); on ⇒ one concurrent wave (#2710).
 			const flags = yield* Flags;
 			const parallelStamps = yield* flags
 				.getBoolean(PHOENIX_PANO_STAMP_WAVE, false)

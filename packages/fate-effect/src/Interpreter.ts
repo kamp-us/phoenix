@@ -1,45 +1,11 @@
 /**
  * `FateInterpreter` — the v2 native dispatch loop: fate's `handleRequest` as
- * an Effect program (ADR 0042 "What v2 changes").
+ * an Effect program. See ADR 0042 and ADR 0043 (the v2 cutover — this is the
+ * serving path; `Executor.ts` survives only as the differential oracle's
+ * baseline).
  *
- * The loop is decode → run → encode, every stage byte-faithful to the v1
- * compiled server (the differential oracle in the `Interpreter*.test.ts` suites enforces
- * it):
- *
- *   1. **Decode** — the request body parses as JSON (fate's exact
- *      `BAD_REQUEST` on failure) and gates through
- *      `decodeProtocolRequest` (fate's `assertProtocolRequest` as staged
- *      Schema decodes, `Protocol.ts`).
- *   2. **Run** — operations dispatch CONCURRENTLY via `Effect.forEach` with
- *      `concurrency: "unbounded"` (effect-smol `Effect.ts` § `forEach` —
- *      the order-preserving collector; fate's own loop is `Promise.all`).
- *      Each operation runs through the ONE shared provision pipeline
- *      (`provideRequestPair`, `Provision.ts`: the per-request pair as VALUES
- *      off the request context, captured build-time services beneath) — the
- *      v1 compiler's `runResolve` minus the Promise hop: no runtime here,
- *      the program stays an Effect and the caller (the worker route's
- *      request fiber; the oracle's test runtime) owns the run.
- *   3. **Encode** — per-operation outcomes map through `encodeWireError`
- *      (the ONE annotation codec both backends share) onto the protocol
- *      error shape, and the response encodes through the canonical
- *      `ProtocolResponse` codec — field order is the schema's, which is
- *      fate's serialization order.
- *
- * Interpreter coverage: the DISPATCH plane — query, mutation, and
- * custom-list operations (phoenix has no root lists — ADR 0016/0019) — plus
- * the BYID plane (`Walk.ts`: the Effect selection walk over
- * `RequestResolver`-batched sources; the walk is constructed once per
- * request, BEFORE the dispatch loop, so its batch window spans every
- * operation in the request) and its CONNECTION plane (`Connection.ts`:
- * Schema-decoded pagination args + fate's in-array windowing for raw arrays
- * under selected list-kind fields).
- *
- * **This IS the serving path since the v2 cutover (ADR 0043)**: the worker's
- * `POST /fate` route yields `handleRequest` on the request fiber — no
- * per-request runtime, spans nest under the platform's request span, and
- * the route wires the request's abort signal to fiber interruption. The v1
- * compiled server (`Executor.ts`) remains only as the differential oracle's
- * baseline.
+ * Every stage is byte-faithful to the v1 compiled server; the oracle in the
+ * `Interpreter*.test.ts` suites enforces it.
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import {Effect, Exit} from "effect";
@@ -95,11 +61,9 @@ const toProtocolErrorValue = (error: unknown): ProtocolErrorValue => {
 };
 
 /**
- * Resolve a named operation to its entry's effect — fate's `executeOperation`
- * dispatch order and NOT_FOUND messages, against the package's config
- * records. `Object.hasOwn` guards the lookup (fate indexes the raw record and
- * would trip over prototype names like `"constructor"`; that divergence is
- * deliberate — a prototype name is NOT a registered operation).
+ * `Object.hasOwn` guards each lookup: fate indexes the raw record and would
+ * trip over prototype names like `"constructor"`. That divergence from fate is
+ * deliberate — a prototype name is NOT a registered operation.
  */
 const namedOperationEffect = (
 	server: FateServerService,
@@ -133,14 +97,12 @@ const namedOperationEffect = (
 	}
 };
 
-/** fate's `executeOperation` preamble: byId first, then the name gate. */
 const operationEffect = (
 	server: FateServerService,
 	walk: FateWalk,
 	operation: DecodedProtocolOperation,
 ): Effect.Effect<unknown, unknown, unknown> => {
 	if (operation.kind === "byId") {
-		// The selection walk: masking, authorize gates, batched source loads.
 		return walk.byId(operation);
 	}
 	if (operation.name === "") {
@@ -152,13 +114,7 @@ const operationEffect = (
 	return namedOperationEffect(server, operation);
 };
 
-/**
- * Run ONE operation to its wire result. Never fails: success carries the
- * handler value; any failure or defect maps through `encodeWireError` (the
- * annotation codec — the v1 path's exact taxonomy: annotated code, fixed
- * internal message for defects, `FateRequestError` passthrough) onto the
- * protocol error arm.
- */
+/** Never fails: every failure and defect maps onto the protocol error arm. */
 const runOperation = (
 	server: FateServerService,
 	walk: FateWalk,
@@ -179,14 +135,12 @@ const runOperation = (
 		),
 	);
 
-/** Parse the request body — fate's `parseJSON`, message and code included. */
 const parseBody = (request: Request): Effect.Effect<unknown, FateRequestError> =>
 	Effect.tryPromise({
 		try: () => request.json(),
 		catch: () => new FateRequestError("BAD_REQUEST", "Request body must be valid JSON."),
 	});
 
-/** Encode results onto the wire response — fate's `Response.json`, bound. */
 const respond = (
 	results: ReadonlyArray<OperationResultValue>,
 	status: number,
@@ -196,16 +150,9 @@ const respond = (
 	);
 
 /**
- * The interpreter's request handler — fate's `handleRequest` as one Effect:
- * decode, dispatch concurrently, encode; a request-level failure (malformed
- * JSON/protocol) serializes as fate's single `id: "request"` error result
- * with the error's own status.
- *
- * No runtime is owned here: the caller runs the program — the worker route
- * yields it on the request fiber (the platform layer's `runPromiseExit` is
- * the conversion point); the oracle runs it through a test ManagedRuntime.
- * Interrupts/abort signals are the caller's concern for the same reason
- * (the route wires the request's abort signal to fiber interruption).
+ * No runtime is owned here: the caller runs the program, so interrupts and
+ * abort signals are the caller's concern too (the worker route wires the
+ * request's abort signal to fiber interruption).
  */
 const handleRequest = (
 	request: Request,
@@ -216,8 +163,6 @@ const handleRequest = (
 		// ONE walk per request — its RequestResolver instance IS the batch
 		// window, so it must exist before the dispatch loop fans out.
 		const walk = makeWalk(server, context);
-		// ONE provision pipeline per request (`Provision.ts` — the pair as
-		// request VALUES over the captured services); every operation applies it.
 		const provide = provideRequestPair(context, server.services);
 		const exit = yield* Effect.exit(
 			Effect.gen(function* () {
@@ -234,8 +179,6 @@ const handleRequest = (
 		if (Exit.isSuccess(exit)) {
 			return exit.value;
 		}
-		// fate's handleRequest catch: toProtocolError + the FateRequestError's
-		// own status (500 for anything else).
 		const failure = failureOf(exit.cause);
 		const status = failure instanceof FateRequestError ? failure.status : 500;
 		return yield* respond(
@@ -244,11 +187,6 @@ const handleRequest = (
 		);
 	});
 
-/**
- * The v2 interpreter surface — the request handler the worker's `/fate`
- * route serves (and the differential oracle exercises against the v1
- * compiled baseline).
- */
 export const FateInterpreter = {
 	handleRequest,
 };

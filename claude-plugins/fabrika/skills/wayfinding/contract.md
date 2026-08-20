@@ -1285,23 +1285,6 @@ $ echo $?
 
 ---
 
-## Required repo files (verb-level)
-
-The skill's own table ([SKILL.md](SKILL.md)) carries the run-level rows; these are the reads and
-writes this contract's verbs make, so an implementer sees the dependency set in one place.
-Vocabulary: **fail-loud** / **degrade** / **bootstrap** (front-door, #4952).
-
-| Must exist | Why | When missing |
-| --- | --- | --- |
-| `gh` authenticated to `--repo` with `issues: write` | every verb reads or writes an issue, a comment or an edge over REST | **fail-loud** — `11` before any write, `8` after one; never a silent empty answer |
-| The `wayfinding:map` label | `map open` applies it on mint and resumes on it | **bootstrap** — `fabrika status bootstrap issue-shape-markers`; until it is run, `map open` exits `7` naming the label |
-| The native issue-dependency endpoints (`.../dependencies/blocked_by`, `.../dependencies/blocking`) enabled for the repository | `map ticket` writes the frontier's edges and `map read` derives blockedness from them | **fail-loud** — `11`. The alternative is prose topology in the body, which is the v1 shape this group replaces; degrading to it silently would rebuild the scar |
-| The native sub-issue endpoint (`.../sub_issues`) | the ticket-to-map link, and the child enumeration `map read` derives the frontier from | **fail-loud** — `11`, and the frontier is UNKNOWN, never empty |
-| `repos/<repo>/collaborators/<login>/permission` readable | resolves a lane claim's author (ADR 0055, `map lane`) | **fail-loud** — `11`. A permission read that fails is UNKNOWN, never a demotion that would free another run's lane |
-| The `wayfinder:backlog` label | where a destination `map open` refuses with `17` or `19` parks (ADR 0210) | **degrade** — the refusal already carries the verdict and names the label it could not apply; the routing is then the caller's to place |
-
-Nothing else. No `.decisions/`, no `.patterns/`, no CODEOWNERS, no merge-queue configuration, no
-design manifest: this group opens no pull request and gates no merge.
 
 ## Completeness self-test
 

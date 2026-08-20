@@ -1,18 +1,11 @@
 /**
- * Create-path partial-failure guard (#2556, the create twin of #2012). A create's
- * post-commit cache refresh is a recomputable cache (ADR 0011/0117), so a die there must
- * NOT flip an already-committed insert into a raw 500: the id is minted server-side per
- * call, so a caller that retries the 500 (agent clients retry mechanically) mints a SECOND
- * row — a duplicate that reads as user intent. Both create paths — sözlük `addDefinition`
- * and pano `submitPost` — route their post-commit refresh through the shared
- * `swallowRefresh` ceremony, so a refresh die returns success and no retry (hence no
- * duplicate) is provoked.
+ * Create-path partial-failure guard (#2556). A post-commit cache refresh is
+ * recomputable (ADR 0011/0117), so a die there must NOT flip an already-committed
+ * insert into a 500: ids are minted server-side per call, so a caller that retries
+ * the 500 mints a SECOND row that reads as user intent.
  *
- * Driven at the SERVICE seam over a scripted `Drizzle` whose commit lands but whose
- * post-commit refresh dies (the same shape as `post-delete-undeclared-failure` part b).
- * The teeth: a client that retries on failure is modeled explicitly and the committed-row
- * counter is asserted to stay at 1 — without the swallow the first attempt would 500, the
- * client would retry, and the counter would climb past 1 (the duplicate).
+ * The teeth: a retrying client is modeled explicitly and the committed-row counter
+ * must stay at 1. Without the swallow it climbs past 1 — that is the duplicate.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {type Context, Effect, Exit, Layer} from "effect";
@@ -25,15 +18,13 @@ import {Reaction} from "../reaction/Reaction.ts";
 import {Sozluk, SozlukLive} from "../sozluk/Sozluk.ts";
 import {Vote} from "../vote/Vote.ts";
 
-// A refresh over the raw `Drizzle` fails with `DrizzleError`, which `orDieAccess` collapses
-// to a die inside the feature service — the exact channel `swallowRefresh` must absorb.
+// `orDieAccess` collapses this `DrizzleError` to a die inside the feature service —
+// the exact channel `swallowRefresh` must absorb.
 const refreshDies = <A>(): Effect.Effect<A, DrizzleError> =>
 	Effect.fail(new DrizzleError({cause: new Error("post-commit cache refresh dies")}));
 
-// Sözlük `addDefinition` reaches the DB as: run#1 existing-term lookup → run#2 the
-// `definitionRecord` insert (the commit) → run#3+ the `persistTermSummary` /
-// `recomputeSozlukStats` refresh. Fresh per attempt so the order counter resets; the shared
-// `onCommit` accumulates committed rows across a client's retries.
+// run#1 term lookup → run#2 the insert (the commit) → run#3+ the refresh. Fresh per
+// attempt so the counter resets; `onCommit` accumulates across a client's retries.
 const sozlukCommitThenRefreshDies = (onCommit: () => void): DrizzleAccess => {
 	let runs = 0;
 	return {
@@ -50,9 +41,8 @@ const sozlukCommitThenRefreshDies = (onCommit: () => void): DrizzleAccess => {
 	} as DrizzleAccess;
 };
 
-// Pano `submitPost` commits through its only `batch` (the `postRecord` insert + `post_search`
-// dual-write) and refreshes through `persistPanoStats`' `run` — so method alone discriminates
-// commit from refresh, no order counter needed.
+// Pano `submitPost` commits through its only `batch` and refreshes through a `run`, so
+// the method alone discriminates commit from refresh — no order counter needed.
 const panoCommitThenRefreshDies = (onCommit: () => void): DrizzleAccess =>
 	({
 		run: () => refreshDies<never>(),
@@ -84,8 +74,7 @@ const panoLayer = (access: DrizzleAccess) =>
 		Layer.provide(inertPasaport),
 	);
 
-// A caller that retries a failed create up to `maxAttempts` (an agent client's mechanical
-// retry), returning the first success or the last failure.
+// Models an agent client's mechanical retry of a failed create.
 const clientRetries = <A, E>(
 	attempt: () => Effect.Effect<A, E>,
 	maxAttempts: number,

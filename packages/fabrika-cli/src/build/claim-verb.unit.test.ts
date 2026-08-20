@@ -2,6 +2,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {FAILED} from "../verb.ts";
 import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
 import {
@@ -34,7 +35,6 @@ import {
 	truncatedComments,
 } from "./fixtures.test-support.ts";
 import {runPick} from "./pick-verb.ts";
-import {DEFAULT_ROADMAP} from "./scope-admission.ts";
 
 const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
@@ -92,6 +92,7 @@ const unblocked = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
 const options = {
 	number: 4312,
 	repo: null,
+	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
 		string,
 		string | undefined
@@ -333,7 +334,7 @@ describe("runClaim", () => {
  * that posted and then refused would leave a marker on the issue with nothing to retract it.
  */
 describe("runClaim — the admission test runs before any marker is written", () => {
-	const IN_SCOPE = fakeFs({files: {[DEFAULT_ROADMAP]: campaignsTable(44)}});
+	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
 
 	const claimWith = (
 		target: ExecResult,
@@ -374,7 +375,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	it("claims an issue homed in the SECOND declared milestone, off the same predicate (#6005)", async () => {
 		const {out} = await claimWith(
 			OUT_OF_CAMPAIGN,
-			fakeFs({files: {[DEFAULT_ROADMAP]: campaignsTable([44, 39])}}),
+			fakeFs({files: {[ROADMAP_FILE]: campaignsTable([44, 39])}}),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).answer).toBe("won");
@@ -384,7 +385,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	it("refuses an out-of-scope issue naming the whole active set in the remedy", async () => {
 		const {out} = await claimWith(
 			OUT_OF_CAMPAIGN,
-			fakeFs({files: {[DEFAULT_ROADMAP]: campaignsTable([44, 46])}}),
+			fakeFs({files: {[ROADMAP_FILE]: campaignsTable([44, 46])}}),
 		);
 		expect(out.code).toBe(OUT_OF_SCOPE);
 		expect(out.stderr.some((line) => line.includes("milestones #44, #46"))).toBe(true);
@@ -400,7 +401,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	it("refuses an unreadable declaration on 11 — scope is UNKNOWN, never admitted", async () => {
 		const {out, shell} = await claimWith(
 			CLAIMABLE,
-			fakeFs({files: {[DEFAULT_ROADMAP]: null}, unprobeable: [DEFAULT_ROADMAP]}),
+			fakeFs({files: {[ROADMAP_FILE]: null}, unprobeable: [ROADMAP_FILE]}),
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
@@ -410,7 +411,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	it("refuses a malformed campaigns table on 4 — never read as 'nothing active'", async () => {
 		const {out, shell} = await claimWith(
 			CLAIMABLE,
-			fakeFs({files: {[DEFAULT_ROADMAP]: campaignsTable(44).replace("| active |", "| activ |")}}),
+			fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44).replace("| active |", "| activ |")}}),
 		);
 		expect(out.code).toBe(BAD_SECTIONS);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
@@ -441,7 +442,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	it("never lets --override past an UNKNOWN admission — a failed read has proven nothing", async () => {
 		const {out, shell} = await claimWith(
 			CLAIMABLE,
-			fakeFs({files: {[DEFAULT_ROADMAP]: null}, unprobeable: [DEFAULT_ROADMAP]}),
+			fakeFs({files: {[ROADMAP_FILE]: null}, unprobeable: [ROADMAP_FILE]}),
 			{override: "I know what I am doing", overrideLane: "build-ui"},
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -497,7 +498,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		};
 		const picked = await Effect.runPromise(
 			Effect.provide(
-				runPick({repo: null, limit: 20, env: options.env}),
+				runPick({repo: null, limit: 20, cwd: "/repo", env: options.env}),
 				Layer.merge(
 					unblocked([
 						[/labels=status%3Atriaged%2Cp0/, candidates(row)],
@@ -538,7 +539,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
  * read is the issue the PR's lane serves.
  */
 describe("runClaim — a PR number is judged by the issue it serves", () => {
-	const IN_SCOPE = fakeFs({files: {[DEFAULT_ROADMAP]: campaignsTable(44)}});
+	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
 	const SERVED = /^gh api repos\/o\/r\/issues\/5553$/;
 
 	const pull = (body: string) =>
@@ -897,7 +898,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
  * gated. Every case runs that one issue and varies nothing but the purpose.
  */
 describe("runClaim — the purpose axis", () => {
-	const IN_SCOPE = fakeFs({files: {[DEFAULT_ROADMAP]: campaignsTable(44)}});
+	const IN_SCOPE = fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}});
 
 	const claimWith = (target: ExecResult, overrides: Partial<typeof options> = {}) => {
 		const shell = unblocked([
@@ -1575,7 +1576,7 @@ describe("runClaim — the blockedness gate", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runClaim(options),
-				Layer.merge(shell.layer, fakeFs({files: {[DEFAULT_ROADMAP]: campaignsTable(44)}}).layer),
+				Layer.merge(shell.layer, fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}}).layer),
 			),
 		);
 		expect(out.code).toBe(OUT_OF_SCOPE);

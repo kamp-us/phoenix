@@ -31,19 +31,31 @@ non-obvious.
 ## 2. Find out what your repo is missing
 
 ```bash
-fabrika status config
+fabrika status settings --surfaces
 ```
 
-This is the completeness answer, and it is the one to keep re-running. **A `read-back conformed`
-from `status bootstrap` means one surface landed — it does not mean the setup is finished**, and
-nothing in that verb's output says so ([#5772](https://github.com/kamp-us/phoenix/issues/5772);
-`status config`'s per-skill rows are what closed the gap,
-[#5779](https://github.com/kamp-us/phoenix/issues/5779)).
+Every key on the config surface, with what it resolves to here and whether that came from your file
+or the shipped default. `--surfaces` is what expands `surfaceDispositions` into one row per repo
+surface with a note saying what each surface *is*; without it you get the raw id-to-word value,
+which does not tell you what you are missing. **A `read-back conformed` from `status bootstrap` means one surface landed —
+it does not mean the setup is finished**, and nothing in that verb's output says so
+([#5772](https://github.com/kamp-us/phoenix/issues/5772)).
 
-Each row is one surface a landed skill declares, with the disposition that skill takes when it is
-absent: `fail-loud`, `degrade` or `bootstrap`. Act on `fail-loud` rows for skills you will use.
-`degrade` rows are optional by declaration. `unprobeable` means the declared subject is not a path or
-a label — a `package.json` script, a running dev server — so the verb cannot check it for you.
+The `surfaceDispositions` key is the list of every repo surface fabrika reads, each with what happens
+when it is missing:
+
+- **fail-loud** — a verb refuses and names the surface. Build these for the skills you will use.
+- **degrade** — fabrika continues with a narrower answer and says so. Optional by declaration.
+- **bootstrap** — the verb answers `bootstrap` at exit 0: you have not adopted that surface yet.
+
+**A `fail-loud` surface can still be one the CLI builds for you.** The two are separate questions —
+what happens to a run, and who can create the thing — and step 3 below is the answer to the second.
+
+The dispositions are yours to change. A repo that runs no design system declares
+`"surfaceDispositions": {"design-manifest": "degrade"}` and stops being told to build one; every key
+you do not name keeps its shipped value. The registry itself is
+[`packages/fabrika-cli/src/config/keys/surface-dispositions.ts`](../../../packages/fabrika-cli/src/config/keys/surface-dispositions.ts),
+which says in one line what each surface is.
 
 ## 3. Create the surfaces the CLI can create
 
@@ -113,18 +125,25 @@ spelling reads as `exists`. Commit the change before running a lane
 
 ## 6. Write a `ROADMAP.md`
 
-**Write one even though the corpus calls it optional.** The `build` skill's required-files table
-declares `ROADMAP.md` **degrade** — an absent file means no focus is declared and the scope fence is
-inert. But `triage homes` refuses `PRECONDITION_UNKNOWN` (exit 11) when the file is absent, because
-its read cannot tell an absent file from an unreadable one:
+**Write one even though the config calls it optional.** `roadmapFile` resolves to `ROADMAP.md`
+unless you say otherwise, and an absent file means no focus is declared and the scope fence is
+inert.
+
+An absent roadmap no longer stops you: `triage homes` degrades on it
+([#5773](https://github.com/kamp-us/phoenix/issues/5773)). A file proven not to exist is a proven
+negative, so every open milestone lists with no arc name, any standing lane your board carries lists
+beside them, and stderr says so:
 
 ```
-triage homes: cannot read the roadmap at NO-SUCH-ROADMAP.md: NotFound: FileSystem.readFile (NO-SUCH-ROADMAP.md) — the home list is UNKNOWN, never empty.
+triage homes: no roadmap at ROADMAP.md — every milestone lists with no arc name.
 ```
 
-That is [#5773](https://github.com/kamp-us/phoenix/issues/5773), still open. Writing the file is the
-whole workaround — there is nothing to configure around it, and `triage homes` stands between a fresh
-repo and its first triaged issue.
+The campaigns fence reads the absent file as an empty document, so its scope line is
+`campaigns: none active — scope fence inert.` The two refusals that remain are narrower: a roadmap
+that *exists* and parses to zero arc rows is a grammar drift and refuses, and a filesystem probe or
+a read that could not be performed is exit `11`. Writing the file is still what you want — without
+it nothing is homed to an arc and the scope fence never fires — but it is a first-triage quality
+step, not a blocker.
 
 The file's grammar is a real parse contract, not a convention
 ([`packages/fabrika-cli/src/triage/roadmap.ts`](../../../packages/fabrika-cli/src/triage/roadmap.ts)):
@@ -176,31 +195,40 @@ fabrika triage homes
 Your milestone should appear as a `milestone` row. If it does not, the roadmap row's second cell does
 not match `^#(\d+)$`.
 
-## 8. Ignore the two `lane` rows
+## 8. The `lane` rows, if you get any
 
-`triage homes` will also print these, in your repo, whatever your board looks like:
+`triage homes` also prints a `lane` row per **standing lane** — a label that is a home in its own
+right, for work no milestone owns. You get one only where your repo both declares the lane and
+carries its label. A fresh repo declares both — phoenix's pair is the shipped default — but carries
+neither label, so you get none, and stderr says so:
 
 ```
-lane	wayfinder:backlog	fog — uncharted work upstream of any arc
-lane	axis:pipeline-hardening	the standing pipeline and reliability lane
+triage homes: standing lanes: 0 of 2 declared carry a label in you/your-repo — not offered: wayfinder:backlog, axis:pipeline-hardening.
 ```
 
-Those are phoenix's own standing lanes, compiled into
-[`packages/fabrika-cli/src/triage/homes-verb.ts`](../../../packages/fabrika-cli/src/triage/homes-verb.ts)
-and printed unconditionally. Taking either at its word fails one step later at a different verb
-citing a different missing label.
+That is the correct answer, not a gap to fix. Home everything to a milestone and skip `--lane`.
 
-[ADR 0286](../../../.decisions/0286-standing-lanes-come-from-config.md) ruled that lanes come from
-your repo's own `.fabrika.jsonc` under a `lanes` key, and that a repo declaring none has none. **That
-key is not read yet** — the literal still has three copies in the CLI
-([#5785](https://github.com/kamp-us/phoenix/issues/5785)). Today: treat the two `lane` rows as noise,
-home everything to a milestone, and do not pass `--lane` to `triage apply` unless you have actually
-created those two labels on your board.
+If you do want a standing lane: create the label on your board, then declare it under
+`boardVocabulary.standingLanes` in `.fabrika.jsonc` (next section). Both halves are required — a
+declared lane whose label does not exist is not offered, which is what stops `triage apply --lane`
+from failing a write at the end of a full triage run.
+
+If you want none at all, say so: `"standingLanes": []` under `boardVocabulary`. Then `triage homes`
+reads no labels, offers no lane, and prints `standing lanes: this repo declares none.` — every issue
+homes on a milestone, and `triage apply --lane` refuses. Leaving the key out is a different answer:
+it falls to phoenix's pair, which then gets filtered against your board.
+
+[ADR 0286](../../../.decisions/0286-standing-lanes-come-from-config.md) rules that lanes come from
+your repo, never from a CLI literal. `boardVocabulary.standingLanes` still ships phoenix's pair as
+the default for an absent key, which 0286 says it should not; evicting that default is
+[#6469](https://github.com/kamp-us/phoenix/issues/6469). Until then the default reaches no board that
+has not created the labels, and the empty declaration is how you opt out of it entirely.
 
 ## 9. Add the config file
 
-`.fabrika.jsonc` at your repo root carries the keys the CLI reads
-([`packages/fabrika-cli/src/repo-config.ts`](../../../packages/fabrika-cli/src/repo-config.ts)).
+`.fabrika.jsonc` at your repo root carries the keys the CLI reads — the whole surface is one
+`register(...)` line per key in
+([`packages/fabrika-cli/src/config/registry.ts`](../../../packages/fabrika-cli/src/config/registry.ts)).
 Every key is fail-closed: an absent file, an absent key, an empty array and a malformed entry all
 give the narrowest behaviour, never the permissive one.
 
@@ -210,9 +238,32 @@ give the narrowest behaviour, never the permissive one.
   the prose leak scan. Declare none and nothing is exempt.
 - `workflowValidators` — your repo's own commands that machine-read `.github/workflows/**`. Declare
   none and that surface stands on `actionlint` alone.
+- `unreadableCodeowners` — `"ship"` or `"refuse"`. **Nothing reads it.** A §CP read that fails is
+  exit `11` in every repo and an absent `.github/CODEOWNERS` is the `unknown` hold, whatever you
+  declare here: the founder reverted the per-repo policy on #5631, back to ADR 0220 §4.
 
-phoenix's own file at [`.fabrika.jsonc`](../../../.fabrika.jsonc) is a worked example of all three,
-with the reasoning for each value in comments.
+The path keys say where your repo keeps the files fabrika reads by name. **Leave a key out and you
+get phoenix's value**, which is what every repo ran on before these keys existed:
+
+- `governedRoots` — the roots a diff derives the `governance` namespace over. Default:
+  `.decisions/`, `.claude/`, `.github/`, `claude-plugins/` and `.fabrika.jsonc` itself. An empty
+  list is refused rather than read as "nothing is governed", and a list that does not cover
+  `.fabrika.jsonc` is refused too — a config cannot un-govern itself.
+- `decisionsDir` — your decision corpus. Default `.decisions`. **Write `null` to say your repo keeps
+  none**: `adr` then refuses to write, and `governance` runs only its weakens-a-guard half
+  (`governance guards`) and says so, rather than reporting a clean contradiction check over a corpus
+  that is not there.
+- `roadmapFile` — the file whose `## Arcs` / `## Campaigns` tables the scope fence reads. Default
+  `ROADMAP.md`.
+- `cycleDoc` — the doc the containment class is gated on. Default `product-development-cycle.md`.
+- `designHarness` — your headless render config. Default `design-harness.json`.
+
+An absent key and a declined one are different answers: absent is "this repo said nothing", declined
+is "this repo has no such surface". Only `decisionsDir` can be declined; the other paths name files
+whose absence the filesystem already reports.
+
+phoenix's own file at [`.fabrika.jsonc`](../../../.fabrika.jsonc) is a worked example, with the
+reasoning for each value in comments.
 
 ## 10. Re-run the front door
 

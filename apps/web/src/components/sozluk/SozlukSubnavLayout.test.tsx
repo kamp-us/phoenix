@@ -1,13 +1,3 @@
-/**
- * sözlük's persistent product Subnav zone, composed through `SubnavShell` (ADR 0182, on the
- * #2602 zone / #2587 placement law). Pins: (1) the zone is a persistent layout — its
- * `.kp-subnav` node survives a within-sozluk navigation (no remount); (2) the alphabet fills
- * the shell's `destinations` zone so it renders INSIDE the bar's filters row — never the
- * detached sibling it was before #2974 (the orphan-row regression this file pins closed);
- * (3) there is NO local search box — the "go to a term" search folded into the global ⌘K `ara`
- * (#2995) — only a `+ yeni tanım` create CTA in the `primaryAction` (`.kp-subnav__cta`) zone,
- * which opens a dialog and routes a typed term to the fresh-slug composer (`/sozluk/:slug`).
- */
 import {fireEvent, render, screen} from "@testing-library/react";
 import {Link, MemoryRouter, Route, Routes, useParams} from "react-router";
 import {describe, expect, it} from "vitest";
@@ -74,7 +64,6 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 		const cta = container.querySelector(".kp-subnav__cta");
 		expect(cta).toBeTruthy();
 		expect(cta?.querySelector('[data-scope="button"][data-variant="primary"]')).toBeTruthy();
-		// the CTA slot is not the filter/input slot, and no search input leaks onto the bar
 		expect(container.querySelector(".kp-subnav__cta .kp-subnav__filter")).toBeNull();
 	});
 
@@ -89,16 +78,11 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 		const form = field.closest("form");
 		if (!form) throw new Error("the create field is not inside a form");
 		fireEvent.submit(form);
-		// slugifyTerm("yeni terim") === "yeni-terim" — a mid-browse jump to the fresh-slug composer.
 		expect(screen.getByTestId("term-leaf").textContent).toContain("term:yeni-terim");
 	});
 
-	/**
-	 * #3746: a submit the create flow cannot act on must not dismiss the dialog. `required`
-	 * alone is no defence: a non-empty punctuation term passes native required validation
-	 * on its way to slugifying into
-	 * nothing. That used to close the dialog while navigating nowhere.
-	 */
+	// #3746: `required` alone is no defence — a non-empty punctuation term passes native
+	// validation on its way to slugifying into nothing.
 	it("keeps the create dialog open when the term slugifies to nothing — never a silent dismiss", async () => {
 		renderZone("/sozluk/mevcut-terim");
 		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
@@ -111,11 +95,6 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 		expect(screen.getByTestId("term-leaf").textContent).toContain("term:mevcut-terim");
 	});
 
-	/**
-	 * #3789: an unslugifiable term is no longer a silent no-op — it surfaces a Turkish field
-	 * error through Manti Input's error affordance, so the user learns why `oluştur`
-	 * did nothing instead of only being able to `vazgeç`.
-	 */
 	it("surfaces a Turkish field error when the term slugifies to nothing — not a silent no-op", async () => {
 		renderZone("/sozluk/mevcut-terim");
 		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
@@ -125,7 +104,6 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 		if (!form) throw new Error("the create field is not inside a form");
 		fireEvent.submit(form);
 		expect(await screen.findByText("Terim en az bir harf ya da rakam içermeli.")).toBeTruthy();
-		// still no navigation — the dialog stays put on the unusable term
 		expect(screen.getByTestId("term-leaf").textContent).toContain("term:mevcut-terim");
 	});
 

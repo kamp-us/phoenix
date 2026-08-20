@@ -1,14 +1,9 @@
 /**
- * The divan root list resolvers (#1287, epic #1202) — the gated proving-ground read
- * model every other divan slice (voting #1288, vouch/tandem #1289, the `/divan`
- * surface #1290, the çaylak status block #1291) reads off.
+ * The divan root list resolvers. The service reads are unconditional, so the
+ * disjunctive {@link requireDivanAccess} gate (yazar OR mod) is enforced HERE:
+ * `yield* ViewDivan` makes each read unreachable without the discharged grant.
  *
- * The disjunctive {@link requireDivanAccess} capability gate — yazar OR mod — is
- * enforced HERE (the service reads are unconditional): `yield* ViewDivan` makes each
- * read unreachable without the discharged grant.
- *
- * Both are single-page private reads (no live view, no cursor pagination), so the
- * `ConnectionResult` is `hasNext: false`, mirroring `report.listOpen`.
+ * Both are single-page private reads, so the `ConnectionResult` is `hasNext: false`.
  */
 import {Fate} from "@kampus/fate-effect";
 import type {ConnectionResult} from "@nkzw/fate/server";
@@ -36,8 +31,8 @@ const BacklogArgs = Schema.Struct({
 	first: Schema.optional(Schema.Number),
 });
 
-// The handler stamps `__typename` (the inline-resolved entity carries no source that
-// would stamp it) — the one spelling of each literal. See `report/shapers.ts`.
+// The handler stamps `__typename` itself: an inline-resolved entity has no source
+// that would stamp it.
 const toCaylak = (e: DivanRosterRow): DivanCaylak => ({
 	__typename: "DivanCaylak",
 	id: e.authorId,
@@ -60,9 +55,6 @@ const toItem = (i: DivanItem): DivanBacklogItem => ({
 	preview: i.preview,
 });
 
-// The post-gate roster read — `ViewDivan`-gated in R (`requireDivanAccess` provides
-// the grant). `yield* ViewDivan` requires the proof; the roster is unreachable
-// without a discharged grant.
 const rosterGated = Effect.fn("divan.rosterGated")(function* () {
 	yield* ViewDivan;
 	const divan = yield* Divan;

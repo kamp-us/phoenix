@@ -14,24 +14,18 @@ import {
 	mecmuaSubscriptionReceiptDataView,
 } from "./views.ts";
 
-// The write path + feed both return `MecmuaPostView` inline, so the entity needs a
-// source to be view-reachable in codegen. A `syntheticSource` (no by-id fetch path) is
-// the minimal footprint — the mutation/feed resolver delivers the rows in its response.
+// Both paths return `MecmuaPostView` inline, so the entity needs a source to be
+// view-reachable in codegen; a `syntheticSource` (no by-id fetch path) is the minimum.
 const mecmuaPostSource = Fate.syntheticSource(MecmuaPostView);
 // The subscribe/unsubscribe receipt is delivered inline by its mutation (#2500).
 const mecmuaSubscriptionReceiptSource = Fate.syntheticSource(MecmuaSubscriptionReceiptView);
 
 const roots: FateRootsRecord = {
-	// The subscribed-author time feed (#2500). The `mecmuaFeed` resolver owns the order
-	// (`publishedAt desc, id desc`, single-sourced from `MECMUA_FEED_ORDERING`) + the
-	// published mask + the subscribed-author selection.
+	// The subscribed-author time feed (#2500).
 	mecmuaFeed: list(mecmuaPostDataView, {orderBy: viewOrderBy(MECMUA_FEED_ORDERING)}),
-	// The author's own posts — drafts + published (#2544). `CurrentUser`-scoped, ordered
-	// `createdAt desc, id desc` (single-sourced from `MECMUA_MINE_ORDERING`), so the
-	// private drafts list has a stable retrieval surface.
+	// The author's own posts — drafts + published (#2544), `CurrentUser`-scoped.
 	mecmuaMyPosts: list(mecmuaPostDataView, {orderBy: viewOrderBy(MECMUA_MINE_ORDERING)}),
-	// The subscribe-affordance state read (#2527) — whether the reader follows a given
-	// author. Resolved inline by the `mecmuaSubscription` query keyed on `CurrentUser`.
+	// Resolved inline by the `mecmuaSubscription` query, keyed on `CurrentUser`.
 	mecmuaSubscription: mecmuaSubscriptionReceiptDataView,
 };
 

@@ -5,24 +5,17 @@ import {randomSuffix} from "./_helpers/rand";
 /**
  * Sözlük addDefinition end-to-end.
  *
- * Sign up a fresh user, complete the username bootstrap, navigate to a brand
- * new term URL, write a definition, submit. The new term + definition appear
- * via re-fetched `term(slug)` (auto-create-term behaviour from
- * SozlukTerm.addDefinition).
- *
- * The fresh-slug create is a read-your-own-write seam (#730, epic #713 Family B):
- * the auto-create remounts the content and re-reads `term(slug)` `network-only`,
- * a *second* request that can race the just-committed write. The fix carries
- * `definition.add`'s own returned id across the remount and confirms it via the
- * deterministic read-back, so the **persisted** `definition-card-def_*` card must
- * materialize — asserting on it (not just the body text, which an optimistic echo
- * or a transient render could satisfy) is what guards the race.
+ * The fresh-slug create is a read-your-own-write race (#730): the auto-create remounts
+ * the content and re-reads `term(slug)` `network-only`, a *second* request that can
+ * race the just-committed write. The fix carries `definition.add`'s own returned id
+ * across the remount and confirms it via the deterministic read-back, so the
+ * **persisted** `definition-card-def_*` card must materialize — asserting on it, not
+ * just the body text an optimistic echo could satisfy, is what guards the race.
  */
 test.describe("Sözlük addDefinition", () => {
 	test("adding a definition to a new slug auto-creates the term and renders the entry", async ({
 		page,
 	}) => {
-		// Fresh sign-up + bootstrap so the user is fully authenticated.
 		const localPart = `bs${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});
 		const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
@@ -32,7 +25,6 @@ test.describe("Sözlük addDefinition", () => {
 			timeout: 10_000,
 		});
 
-		// Navigate to a slug that doesn't exist yet.
 		const slug = `e2e-${Date.now().toString(36)}${randomSuffix(4)}`;
 		await page.goto(`/sozluk/${slug}`);
 
@@ -55,7 +47,6 @@ test.describe("Sözlük addDefinition", () => {
 			timeout: 10_000,
 		});
 
-		// The term head shows the slug-derived title and a "1 tanım" counter.
 		await expect(page.getByRole("heading", {level: 1})).toContainText(slug.replace(/-/g, " "));
 	});
 
@@ -78,14 +69,11 @@ test.describe("Sözlük addDefinition", () => {
 		const submit = page.locator('[data-testid="sozluk-composer-submit"]');
 		await expect(composerBody).toBeVisible({timeout: 5_000});
 
-		// Empty body → submit disabled.
 		await expect(submit).toBeDisabled();
 
-		// Whitespace-only → still disabled (trim).
 		await composerBody.fill("   ");
 		await expect(submit).toBeDisabled();
 
-		// Body length over 10 000 → length warning visible.
 		await composerBody.fill("x".repeat(10_001));
 		await expect(page.getByText(/en fazla 10000 karakter/i)).toBeVisible();
 	});

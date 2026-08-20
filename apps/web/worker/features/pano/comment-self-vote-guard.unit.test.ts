@@ -1,14 +1,9 @@
 /**
- * `Pano.applyCommentVote` self-vote guard (#2216, founder-ruled) — the comment twin of
- * `self-vote-guard.unit.test.ts`, proven over the real `makeCommentOperations` closures
- * with a substituted `Drizzle` `run` (the comment load) + a RECORDING `Vote`, so three
- * things are wrong-or-right with no SQL engine:
- *
- *   1. self-cast rejected — `voteOnComment` where `voterId === comment.authorId` fails
- *      `SelfVoteNotAllowed` and NEVER reaches `Vote.cast` (no score/karma write).
- *   2. other-author cast lands — a non-author vote reaches `Vote.cast` exactly as before.
- *   3. self-retract exempt — `retractCommentVote` on one's own comment reaches `Vote.cast`
- *      (the guard is cast-only; a blocked cast leaves nothing to retract).
+ * `Pano.applyCommentVote` self-vote guard (#2216, founder-ruled), proven over the real
+ * `makeCommentOperations` closures with a substituted `Drizzle` `run` and a RECORDING
+ * `Vote`: a self-cast is rejected and never reaches `Vote.cast`, a non-author cast
+ * lands, and a self-RETRACT is exempt (the guard is cast-only — a blocked cast leaves
+ * nothing to retract).
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit} from "effect";
@@ -22,8 +17,7 @@ const AUTHOR = UserId.make("u-author");
 const OTHER = UserId.make("u-other");
 const COMMENT_ID = CommentId.make("comment_1");
 
-// The `comment_record` the up-front load returns. Only `authorId` drives the guard; the
-// rest satisfy the fields the return projection reads.
+// Only `authorId` drives the guard; the rest satisfy the return projection.
 const commentRow = {
 	id: COMMENT_ID,
 	postId: "post_1",
@@ -36,9 +30,8 @@ const commentRow = {
 	removedAt: null,
 };
 
-// A `Vote` double that RECORDS every cast and replays a no-op result — so "did the cast
-// path run" is observable with no engine. Only `cast` is on the vote path; every other
-// method dies on contact via the Proxy, so an off-path call is loud (the post twin's idiom).
+// A `Vote` double that RECORDS every cast, so "did the cast path run" is observable
+// with no engine. Every other method dies on contact via the Proxy.
 const recordingVote = (casts: VoteInput[]): typeof Vote.Service =>
 	new Proxy(
 		{
@@ -62,8 +55,8 @@ const recordingVote = (casts: VoteInput[]): typeof Vote.Service =>
 		},
 	) as typeof Vote.Service;
 
-// Only `run` (the comment load) + `voteSvc` are on the vote path; the other deps are captured
-// but never invoked, so they die on contact if the guard ever falls through to them.
+// Only `run` (the comment load) + `voteSvc` are on the vote path; the other deps are
+// captured but never invoked, so they die on contact if the guard falls through.
 const deps = (voteSvc: typeof Vote.Service): CommentOperationsDeps =>
 	({
 		run: (<A>(_fn: unknown) => Effect.succeed(commentRow as A)) as DrizzleAccessOrDie["run"],

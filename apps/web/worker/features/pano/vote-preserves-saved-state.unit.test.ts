@@ -1,20 +1,11 @@
 /**
- * `post.vote` / `post.retractVote` wire-boundary regression coverage (#2213) —
- * proof that voting an already-SAVED post no longer clobbers its saved state or
- * author identity in the client cache (nor in the fanned `/fate/live` frame).
+ * Regression coverage for #2213: voting an already-saved post must not clobber its
+ * saved state or author identity, in the client cache or the fanned live frame.
  *
- * The defect: both resolvers shaped their return from the write result
- * (`VoteOnPostResult`), which carries NO `isSaved` and NO resolved author
- * identity — so the returned/published `Post` reported `isSaved: null` +
- * `authorUsername/authorDisplayName: null`, and the client cache-merge overwrote
- * the true saved state (and identity) of a saved post. The fix re-resolves the
- * post via the same batched `getPostsByIds` read `post.save`/`post.unsave` use, so
- * BOTH the return value and the published live frame carry the real projection.
- *
- * Driven through the real external interface (`resolveWire`), with `Pano` +
- * `LivePublisher` substituted directly (no DB): the recording publisher captures
- * the published `/fate/live` frame so the fanned projection is asserted, not just
- * the return.
+ * The defect was that both resolvers shaped their return from the write result, which
+ * carries neither `isSaved` nor resolved author identity, so the client cache-merge
+ * overwrote the real values with nulls. The fix re-resolves the post through the same
+ * batched read `post.save`/`post.unsave` use.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
@@ -39,9 +30,8 @@ const runtimeContextStub: BaseRuntimeContext = {
 	set: (id) => Effect.succeed(id),
 };
 
-// The write result `voteOnPost`/`retractPostVote` return — deliberately carries
-// NEITHER `isSaved` NOR resolved author identity, exactly the shape that used to
-// leak `null` into the cache. `authorName` is only the write-time snapshot.
+// Deliberately carries neither `isSaved` nor resolved author identity: this is the
+// exact shape that used to leak nulls into the cache.
 const writeResult = (overrides: Partial<VoteOnPostResult> = {}): VoteOnPostResult => ({
 	postId: "post_1",
 	title: "başlık",
@@ -60,9 +50,7 @@ const writeResult = (overrides: Partial<VoteOnPostResult> = {}): VoteOnPostResul
 	...overrides,
 });
 
-// The re-resolved row `getPostsByIds` returns for the SAVED post: a real
-// `isSaved: true` plus the live-stamped author identity — the projection the fix
-// must echo back (return + publish) instead of the null-bearing write shape.
+// The projection the fix must echo back on both the return and the publish.
 const savedRow = (): PostSummaryRow => ({
 	id: "post_1",
 	slug: "post-1",
@@ -84,9 +72,8 @@ const savedRow = (): PostSummaryRow => ({
 	isDraft: null,
 });
 
-// A `Pano` stub whose vote + re-resolve reads are scripted; every other method
-// dies loudly. The vote path only ever reaches `voteOnPost`/`retractPostVote`
-// then `getPostsByIds`.
+// Every unscripted method dies loudly, pinning the vote path to `voteOnPost` /
+// `retractPostVote` then `getPostsByIds`.
 const panoStub = (methods: Partial<typeof Pano.Service>): Layer.Layer<Pano> =>
 	Layer.succeed(
 		Pano,
@@ -98,9 +85,8 @@ const panoStub = (methods: Partial<typeof Pano.Service>): Layer.Layer<Pano> =>
 		}) as typeof Pano.Service,
 	);
 
-// A recording `LivePublisher` — captures each published frame so the fanned
-// `/fate/live` projection is asserted, not just the return. Pushing in the
-// `publish` builder body captures synchronously (before `waitUntil` detaches it).
+// Pushing inside the `publish` builder body captures synchronously, before
+// `waitUntil` detaches the work.
 const recordingLive = (frames: PublishMessage[]): Layer.Layer<LivePublisher> =>
 	Layer.succeed(LivePublisher)(
 		livePublisherFor({
@@ -135,8 +121,7 @@ const notificationStub = makeNotificationStub({
 	recordAggregate: () => Effect.succeed({aggregated: false}),
 });
 
-// The vote emit now consults `bildirimMutedBy` (#3238), which reads `Mute` — an
-// empty-set stub means no member is muted, so the deliver path is unchanged.
+// An empty-set `Mute` stub means nobody is muted, so the deliver path is unchanged.
 const noMutes = Layer.succeed(Mute, {
 	set: () => Effect.die("Mute.set not exercised"),
 	listMine: () => Effect.die("Mute.listMine not exercised"),

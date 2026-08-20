@@ -6,22 +6,12 @@ import {Dialog} from "../ui/Dialog";
 import {Form, Input} from "../ui/Form";
 import {useSozlukCreateDialog} from "./SozlukCreateDialogState";
 
-/**
- * sözlük's contextual create CTA — the `+ yeni tanım` promoted verb in its Subnav
- * `primaryAction` zone (design-system-manifest: a product-scoped create CTA is a
- * contextual primary action; placement law #2587). It replaces the old go-to-or-create
- * box, whose "go to a term" search half folded into the global ⌘K `ara` (#2995, the #2412
- * single-search contract) leaving only the create half here as a plain action, never a
- * second search surface.
- *
- * A dialog collects the term name because the composer is slug-addressed (`/sozluk/:slug`):
- * the submit slugifies the typed term (`slugifyTerm`) and routes to the fresh-slug composer
- * branch — the exact target the old box reached, create dead-end handled there (#97).
- */
+// sözlük's create CTA — never a second search surface; the "go to a term" search folded
+// into the global ⌘K `ara` (#2995). The dialog exists because the composer is
+// slug-addressed: submit slugifies the typed term and routes to `/sozluk/:slug`.
 export function SozlukSubnavCta() {
-	// `open` is hoisted above the FateProvider/needsBootstrap unmounting boundary (#3840) —
-	// see `SozlukCreateDialogState`. A component-local `useState` here is the exact fragility
-	// #3600 pinned: an ancestor unmount would silently reset it, vanishing the dialog.
+	// `open` is hoisted above the unmounting boundary — see `SozlukCreateDialogState` (#3840).
+	// A component-local `useState` here is the exact fragility that vanished the dialog.
 	const {open, setOpen} = useSozlukCreateDialog();
 	const navigate = useNavigate();
 	const [term, setTerm] = React.useState("");

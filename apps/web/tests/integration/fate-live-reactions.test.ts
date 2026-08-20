@@ -68,8 +68,6 @@ describe("live views — /fate/live (reaction-count reconcile)", () => {
 		const connected = await readFrame(reader, decoder, buffer);
 		expect(connected).toContain("connected");
 
-		// Subscribe to the single definition ENTITY — the exact topic
-		// `live.definition.update(id, …)` publishes the reaction-count delta to.
 		const sub = await h.liveControl(
 			connectionId,
 			[
@@ -92,9 +90,7 @@ describe("live views — /fate/live (reaction-count reconcile)", () => {
 		const subResult = (await sub.json()) as {results: Array<{id: string; ok: boolean}>};
 		expect(subResult.results[0]?.ok).toBe(true);
 
-		// React on the definition — the flag-override cookie unlocks the dark-shipped
-		// write + live-publish path; the mutation publishes an entity `update` frame
-		// carrying the fresh per-emoji aggregate to the subscribed connection.
+		// The flag-override cookie unlocks the dark-shipped write + live-publish path.
 		const reacted = await h.fate(
 			{
 				kind: "mutation",

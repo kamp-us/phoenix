@@ -274,7 +274,7 @@ export const PATTERN_SEATS: SharedSeats = {
  * did not land (`APPEND_UNKNOWN`), and the read that failed before any of that could be proven
  * (`LANE_UNREADABLE`). `lane claim` adds the fifth: it posts a marker and reads it back, so alone in
  * this group it can establish *the write landed and the read-back contradicts it* (`MARKER_READBACK`,
- * #5761). The private band runs `12`-`31`, skipping `27` and `28` because the base already speaks for
+ * #5761). The private band runs `12`-`34`, skipping `27` and `28` because the base already speaks for
  * both.
  */
 export const LANE_SEATS: SharedSeats = {
@@ -366,6 +366,8 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
  */
 export const UNALIGNED_GROUPS: Readonly<Record<string, string>> = {
 	wire: "3-6 are ABSENT / MALFORMED / EMPTY_ARTIFACT / ARTIFACT_UNKNOWN — a different vocabulary about artifacts, not about writes",
+	config:
+		"4/6/7 are SCHEMA_DRIFT / IO_UNKNOWN / INCOMPLETE_REGISTRY — `wire`'s generated-file vocabulary, seat for seat, because the two reconciles answer one question (does a file derived from a registry still agree with it) and should read alike. 7 does land on the base's NO_TARGET seat, but 4 is private (the base seats 4 as BAD_SECTIONS, a body section) and 6 sits where `wire` puts ARTIFACT_UNKNOWN rather than the base's 11 PRECONDITION_UNKNOWN — one coinciding seat is not an alignment",
 };
 
 /**

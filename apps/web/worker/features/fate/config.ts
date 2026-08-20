@@ -1,30 +1,16 @@
 /**
- * The one fate server config, consumed at both edges from this single
- * declaration: the `/fate` serving path (`layers.ts` → native interpreter,
- * ADR 0043) and build-time codegen (`schema.ts` → inert handlers, no database).
- * See `.patterns/fate-effect-server.md`, `.patterns/fate-effect-compiler.md`.
+ * The one fate server config, consumed at both edges from this single declaration: the
+ * `/fate` serving path (ADR 0043) and build-time codegen. See
+ * `.patterns/fate-effect-server.md`, `.patterns/fate-effect-compiler.md`,
+ * `.patterns/per-feature-fate-aggregators.md`.
  *
- * Each feature contributes its whole fate surface as one `fateModule` (its own
- * `queries`/`lists`/`mutations`/`sources`); the root merges the `modules` array
- * once (`mergeFateModules`) instead of threading every feature through a separate
- * central barrel per category. Registering a feature is this one array entry —
- * see `.patterns/per-feature-fate-aggregators.md`.
+ * Import-pure by construction: the modules capture resolver functions only (services are
+ * reached per request), so importing this evaluates pure data — codegen depends on that.
  *
- * Import-pure by construction: the record modules capture resolver functions
- * (services are reached per request through the runtime), so importing this
- * module evaluates pure data — the codegen path depends on that.
- *
- * `live` is the publish-only `LiveEventBus` (ADR 0023): fate detects a custom
- * bus by `"subscribe" in live` (the property exists but throws — the SSE
- * protocol is served by the `/fate/live` route + DO, not by fate's
- * `handleLiveRequest`).
- *
- * Sources carry NO `connection` executor or `orderBy` contract: every connection
- * — root and nested — is delivered by a custom resolver in a feature's
- * `queries.ts` / `lists.ts` calling the service keyset method directly (ADR
- * 0019). `Contribution`/`ReportReceipt`/`OpenReport`/`ResolveReceipt` are
- * capability-less `Fate.syntheticSource` entries (view-reachable, no fetch path).
- * See `.patterns/fate-connections.md`, `.patterns/fate-effect-sources.md`.
+ * `live` is the publish-only `LiveEventBus` (ADR 0023): fate detects a custom bus by
+ * `"subscribe" in live` — the property exists but throws, since SSE is served by the
+ * `/fate/live` route + DO. Sources carry NO `connection` executor or `orderBy`: every
+ * connection is delivered by a feature resolver calling the service keyset method (ADR 0019).
  */
 import {FateServer} from "@kampus/fate-effect";
 import {fateModule as adminConsoleModule} from "../admin-console/fate-module.ts";
@@ -44,9 +30,8 @@ import {fateModule as statsModule} from "../stats/fate-module.ts";
 import {fateModule as userAdminModule} from "../user-admin/fate-module.ts";
 import {mergeFateModules} from "./module.ts";
 
-// The one feature registry. Drives BOTH the served config (`mergeFateModules` below)
-// and the client `Root` map (`views.ts` → `mergeFateRoots`), so registering a feature
-// is this single array entry — its queries/lists/mutations/sources AND its roots.
+// The one feature registry, driving BOTH the served config and the client `Root` map, so
+// registering a feature is this single array entry.
 export const modules = [
 	statsModule,
 	adminConsoleModule,

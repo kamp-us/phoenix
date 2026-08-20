@@ -978,23 +978,6 @@ $ fabrika spike status --nonce 0badf00d
 - v1 scar: `packages/pipeline-cli/src/tools/wayfinder-map/command.ts:72-79` prints a malformed-map
   line and **returns normally**, so exit status cannot separate malformed from valid. Here malformed is `4`.
 
----
-
-## Required repo files (verb-level)
-
-The skill's run-level works-here checklist is [`SKILL.md`](SKILL.md)'s `## Required repo files`
-table, and front-door's detection parses that one. This table is the same shape, scoped to the reads
-**these verbs** make, so an implementer sees the dependency set in one place; it adds no row the
-skill's table does not already carry.
-
-| Must exist | Why this group needs it | When missing |
-| --- | --- | --- |
-| A GitHub repository reachable over `gh` REST with `issues: write` | `spike open` creates the issue; `spike capture` comments and closes; `spike dispose --forfeit` comments and closes; `spike status` reads state | **fail-loud** — `11`, and no outcome is proven. `spike run` and a non-forfeit `spike dispose` are unaffected: neither touches GitHub |
-| The `prototyping:spike` label | `spike open` sends it in the create call; `spike capture`, `spike dispose` and `spike status` need spikes to be findable as a class | **bootstrap** — `fabrika status bootstrap issue-shape-markers` creates it; until then `spike open` exits `7` naming the label. A fresh repo on day one hits exactly this, and the way forward is named rather than left as a refusal |
-| A git working tree — the repo root resolves and `git status --porcelain=v1 --untracked-files=all --ignored=matching` answers | `spike open` takes `treeDigest`; `spike dispose` recomputes and compares it; `spike status` reports `treeMatched` | **fail-loud** — `11`. An unreadable tree is UNKNOWN, never "clean". A directory that is not a repository at all is the same `11`, and the way forward is to run from inside one |
-| A writable OS temp root that resolves outside the repository tree | the workspace, the manifest, the evidence log and the capture files all live there | **fail-loud** — `11` if it cannot be written, `13` if it resolves inside the tree. There is no in-repo fallback: an in-tree workspace is the defect this group exists to prevent |
-| Readable collaborator permissions — `repos/<owner>/<repo>/collaborators/<login>/permission` | `spike capture` resolves the author against them before recording a decision (ADR 0055) | **fail-loud** — `11`. A permission read that fails is UNKNOWN, never a grant |
-
 ## Completeness self-test
 
 Per the [interface convention](../../docs/cli-interface-convention.md) Part 2: every flag carries a

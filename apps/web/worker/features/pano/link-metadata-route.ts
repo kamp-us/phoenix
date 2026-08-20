@@ -1,16 +1,10 @@
 /**
- * `GET /api/pano/link-metadata?url=…` (#1642) — the pano submit form's
- * title/description prefill seam. The browser can't fetch cross-origin HTML,
- * so the worker does it: given an SSRF-safe `http(s)` URL it fetches the page
- * (timeout- and size-bounded, following redirects manually so every hop is
- * re-screened for SSRF), parses its metadata, and returns {@link LinkMetadata}
- * as JSON. See `.patterns/alchemy-http-router.md`.
+ * `GET /api/pano/link-metadata?url=…` — the pano submit form's title/description
+ * prefill seam, fetched worker-side because the browser can't fetch cross-origin
+ * HTML. See `.patterns/alchemy-http-router.md`.
  *
- * Every failure mode is a graceful no-op, never a 5xx: an unsafe/rejected URL,
- * a fetch error, a timeout, an over-cap body, a non-2xx upstream, or a page
- * with no usable metadata all return `{}` (200) — the client then leaves the
- * form fields untouched. The route holds no per-request services; it only
- * reads the raw `Request` for the `url` query param.
+ * Every failure mode is a graceful no-op, never a 5xx: unsafe URL, fetch error,
+ * timeout, over-cap body, non-2xx upstream, or no usable metadata all return `{}`.
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
@@ -27,20 +21,14 @@ import {
 } from "./link-metadata.ts";
 import type {LinkMetadata} from "./link-metadata-contract.ts";
 
-/** The empty result — the safe-default this route returns on every failure. */
 const EMPTY: LinkMetadata = {};
 
-/** An unexpected `fetchMetadata` rejection — mapped then recovered to {@link EMPTY}. */
 class LinkMetadataFetchError extends Schema.TaggedErrorClass<LinkMetadataFetchError>()(
 	"pano/LinkMetadataFetchError",
 	{cause: Schema.Defect()},
 ) {}
 
-/**
- * Read up to {@link MAX_METADATA_BYTES} of the response body as UTF-8, then
- * stop — never buffer an unbounded body. Returns the decoded prefix (enough to
- * hold the `<head>` metadata for any sane page).
- */
+/** Stops at {@link MAX_METADATA_BYTES} — never buffer an unbounded body. */
 async function readCapped(res: Response): Promise<string> {
 	const reader = res.body?.getReader();
 	if (!reader) return "";
@@ -61,14 +49,10 @@ async function readCapped(res: Response): Promise<string> {
 }
 
 /**
- * Fetch `start` following up to {@link MAX_REDIRECT_HOPS} 3xx redirects
- * MANUALLY (`redirect: "manual"`), re-screening every hop's `Location` through
- * {@link isSafeFetchUrl} BEFORE following it. `redirect: "follow"` would chase a
- * `302 Location: http://169.254.169.254/…` blindly, defeating the initial-URL
- * guard — so each hop is resolved against the current URL and re-validated, and
- * a hop that fails the guard (or a chain past the cap) returns `null` (refused).
- * The single `signal` spans the whole chain, so the route's 5s timeout bounds
- * every hop. `fetchImpl` is injectable so the loop is unit-testable offline.
+ * Redirects are followed MANUALLY so every hop's `Location` is re-screened through
+ * {@link isSafeFetchUrl} BEFORE it is followed. `redirect: "follow"` would chase a
+ * `302 Location: http://169.254.169.254/…` blindly, defeating the initial-URL guard.
+ * The single `signal` spans the whole chain, so one timeout bounds every hop.
  */
 async function fetchFollowingSafeRedirects(
 	start: URL,
@@ -95,7 +79,7 @@ async function fetchFollowingSafeRedirects(
 	}
 }
 
-/** Fetch + parse a safe URL's metadata. Any failure collapses to `{}` (no throw). */
+/** Any failure collapses to `{}` — this never throws. */
 async function fetchMetadata(url: URL): Promise<LinkMetadata> {
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -120,9 +104,8 @@ export const handleLinkMetadata = Effect.gen(function* () {
 	const requested = new URL(raw.url).searchParams.get("url") ?? "";
 	const safe = isSafeFetchUrl(requested);
 	if (safe === null) return HttpServerResponse.jsonUnsafe(EMPTY);
-	// `fetchMetadata` never rejects — it maps every failure to `EMPTY` — so the
-	// mapped-then-recovered `catch` is unreachable and the route can't surface a
-	// defect to the client.
+	// `fetchMetadata` never rejects, so this `catch` is unreachable — it is here so
+	// the route structurally cannot surface a defect to the client.
 	const metadata = yield* Effect.tryPromise({
 		try: () => fetchMetadata(safe),
 		catch: (cause) => new LinkMetadataFetchError({cause}),

@@ -1,8 +1,6 @@
 /**
- * `resolveEmailDeliveryState` — the pure failing-address projection (epic #2687). Latest
- * event wins, exactly like `resolveBanState`: no events → deliverable, a `fail` →
- * failing, a `fail` then a `clear` → deliverable again. No I/O, driven directly over
- * hand-built latest events.
+ * `resolveEmailDeliveryState` — the pure failing-address projection. Latest event wins,
+ * exactly like `resolveBanState`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {DELIVERABLE, type EmailDeliveryEvent, resolveEmailDeliveryState} from "./email-delivery.ts";
@@ -29,8 +27,6 @@ describe("resolveEmailDeliveryState", () => {
 	});
 
 	it("fail then clear → deliverable (a clear lifts a fail, latest-event-wins)", () => {
-		// The projection only ever sees the single newest event; a `clear` newer than the
-		// `fail` is what the caller passes, and it projects to deliverable.
 		const latest = event("clear", null, new Date("2026-01-01T06:00:00Z"));
 		assert.deepStrictEqual(resolveEmailDeliveryState(latest, NOW), DELIVERABLE);
 	});

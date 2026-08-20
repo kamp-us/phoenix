@@ -7,9 +7,8 @@ function Probe() {
 	return <div data-testid="probe" data-choice={choice} data-resolved={resolved} />;
 }
 
-// jsdom ships no matchMedia, so stub one whose `(prefers-color-scheme: light)` match is
-// driven by `prefersLight` — this is what lets an `auto` choice resolve to a *system*
-// value under test rather than systemPrefers()'s dark fallback.
+// jsdom ships no matchMedia; without this stub an `auto` choice resolves to
+// systemPrefers()'s dark fallback instead of a system value.
 function mockMatchMedia(prefersLight: boolean) {
 	vi.stubGlobal("matchMedia", (query: string) => ({
 		matches: query.includes("light") ? prefersLight : !prefersLight,
@@ -29,7 +28,6 @@ describe("theme default resolution (#2612)", () => {
 	});
 
 	it("a first-visit user with no stored choice defaults to auto → the system preference", () => {
-		// No storage is written in this env, so the provider takes its DEFAULT_CHOICE.
 		mockMatchMedia(true); // system prefers light
 		render(
 			<ThemeProvider>

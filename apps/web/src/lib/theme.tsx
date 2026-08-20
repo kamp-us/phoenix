@@ -13,7 +13,6 @@ function browserStorage(): Storage | undefined {
 }
 
 interface ThemeContextValue {
-	/** The user's selection — the single source of truth both controls drive. */
 	choice: ThemeChoice;
 	/** `choice` with `auto` collapsed to what the system currently prefers. */
 	resolved: ResolvedTheme;
@@ -41,16 +40,13 @@ export function ThemeProvider({children}: {children: React.ReactNode}) {
 	);
 	const [system, setSystem] = React.useState<ResolvedTheme>(systemPrefers);
 
-	// Every choice change persists, so a reload rehydrates it (#697). Both the
-	// explicit picker and `toggle` route through here.
 	const setChoice = React.useCallback((next: ThemeChoice) => {
 		writeStoredChoice(browserStorage(), next);
 		setChoiceState(next);
 	}, []);
 
-	// Track the system preference only while it can actually affect the document
-	// — i.e. while the choice is `auto`. The listener is also what makes an `auto`
-	// page repaint when the OS flips light/dark out from under it.
+	// Subscribed only while the choice is `auto` — that is also what repaints the page
+	// when the OS flips light/dark out from under it.
 	React.useEffect(() => {
 		if (choice !== "auto" || typeof window === "undefined" || !window.matchMedia) return;
 		const mq = window.matchMedia(SYSTEM_LIGHT);
@@ -62,8 +58,8 @@ export function ThemeProvider({children}: {children: React.ReactNode}) {
 
 	const resolved = resolve(choice, system);
 
-	// The DOM is the render target: tokens.css keys every color off
-	// [data-theme="light"|"dark"], so the resolved (never `auto`) value lands here.
+	// tokens.css keys every color off [data-theme], so the resolved (never `auto`) value
+	// has to land on the document root.
 	React.useEffect(() => {
 		document.documentElement.dataset.theme = resolved;
 	}, [resolved]);

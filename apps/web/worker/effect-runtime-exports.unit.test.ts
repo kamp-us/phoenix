@@ -1,13 +1,8 @@
 /**
- * Runtime-existence guard for the effect value symbols the backend calls (#1672).
- *
- * The forcing fact: effect is pinned to a fast-moving 4.x beta (`effect@4.0.0-beta.92`,
- * `catalog:` in `pnpm-workspace.yaml`) whose surface churns bump-to-bump — the repo has
- * already ridden several coordinated pins (#1578 / #1582 / #1588). A bump that *drops or
- * renames* a value combinator the backend depends on is the live risk this guard covers:
- * it imports every effect submodule the backend uses and asserts each value symbol it
- * calls is still present at runtime, so such a regression fails the `unit` CI gate here
- * (with the exact missing name) instead of throwing `"X is not a function"` in production.
+ * Runtime-existence guard for the effect value symbols the backend calls (#1672). effect is
+ * pinned to a fast-moving 4.x beta whose surface churns bump-to-bump; a bump that drops or
+ * renames a value combinator the backend depends on fails the `unit` gate here, with the
+ * exact missing name, instead of throwing "X is not a function" in production.
  *
  * On the reported "type↔runtime export skew" (#1672 was filed as an investigation): it does
  * NOT reproduce under the pinned beta.92 + the repo's real typecheck gate. The report's
@@ -22,16 +17,11 @@
  * typecheck can't see — a future beta shipping a `.d.ts` that declares a value symbol its
  * `.js` omits (a mismatched-artifact bump) — not a fix for a live skew (there is none).
  *
- * Scope note: only *runtime-value* symbols are listed. Type-level references the backend
- * writes in annotations (`Effect.Effect<…>`, `Layer.Layer<…>`, `Schema.Schema<…>`,
- * `Match.ts`, …) live solely in `.d.ts` and are correctly `undefined` at runtime — they are
- * excluded, since asserting their runtime presence would false-fail.
+ * Scope note: only *runtime-value* symbols are listed. Type-level references live solely in
+ * `.d.ts` and are correctly `undefined` at runtime, so asserting them would false-fail.
  *
- * Maintenance: the manifest is the backend's effect value surface at authoring time. When a
- * backend module reaches for a new effect combinator, add it to the matching module's list
- * so the bump guard covers it. Regenerate the candidate set by grepping `worker/` for
- * `<Namespace>.<member>` accesses of the imported effect namespaces and keeping those whose
- * `typeof !== "undefined"` under the pinned effect.
+ * Maintenance: when a backend module reaches for a new effect combinator, add it to the
+ * matching module's list so the bump guard covers it.
  */
 import * as Cause from "effect/Cause";
 import * as Config from "effect/Config";
@@ -56,9 +46,8 @@ import * as Stream from "effect/Stream";
 import {describe, expect, it} from "vitest";
 
 // Each entry: [module namespace object, its import specifier, the value symbols the backend
-// calls from it]. `namespace` is asserted `!== "undefined"` — the precise negative of the
-// reported failure mode ("symbol is `undefined` at runtime"), and correct for both function
-// and non-function value exports.
+// calls from it]. Asserted `!== "undefined"`, which is correct for both function and
+// non-function value exports.
 const BACKEND_EFFECT_SURFACE: ReadonlyArray<{
 	readonly module: string;
 	readonly namespace: object;

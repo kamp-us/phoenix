@@ -6,14 +6,10 @@
  * boundary lives in `cloudflare.ts`/`github.ts`, and this module never deletes
  * anything itself.
  *
- * Why a leak exists (#690, carved out of #689): integration teardown is
- * `afterAll(destroy(...))`. A partial `beforeAll` deploy can orphan its remote D1; the
- * #689 run-unique stage names mean a later run never overwrites it, so orphans
- * ACCUMULATE on the one shared account. This sweep is the bound: it deletes the
- * ephemeral integration (`it-*`) resources, the preview (`pr-<n>`) resources of
- * CLOSED PRs, and — behind a separate opt-in — the stale `test`/`test-*` dev/test
- * stage resources (#2340), and protects everything else. The `dev`/`dev-*` named-dev
- * stages are deny-by-protection and never swept, flag or not.
+ * Why a leak exists: see #690 (carved out of #689). The sweep deletes ephemeral
+ * integration (`it-*`) resources, CLOSED-PR preview (`pr-<n>`) resources, and — behind a
+ * separate opt-in — stale `test`/`test-*` stage resources (#2340). `dev`/`dev-*`
+ * named-dev stages are deny-by-protection and never swept, flag or not.
  *
  * The safety property is the whole point. A sweep that deletes a prod, named-dev, or
  * open-PR resource is catastrophic and irreversible (ADR 0032: these are REAL remote
@@ -22,16 +18,9 @@
  */
 
 /**
- * A Cloudflare resource as listed at the boundary, reduced to what the plan needs — a
- * discriminated union so each kind carries exactly the identity its delete path needs and
- * nothing it doesn't (a flagship-flag can't exist without its parent app's id; a worker
- * never carries one). The pure core only ever reads the stage-bearing name; the extra
- * `appId`/`appName` coordinates are boundary delete-keys it ignores.
- *
- * Worker scripts and D1 databases leak by stage in their OWN physical name. Flagship
- * resources leak the same way per closed PR preview, but a flag's KEY is stage-invariant
- * (the same `key` declared on every stage's app — `apps/web/worker/features/flagship/resources.ts`),
- * so a flag's stage lives in its PARENT app's physical name (`appName`), never in `name`.
+ * A Cloudflare resource as listed at the boundary. The pure core only ever reads the
+ * stage-bearing name; the extra `appId`/`appName` coordinates are boundary delete-keys it
+ * ignores.
  */
 export type CfResource =
 	| {readonly kind: "worker"; readonly name: string}
@@ -51,9 +40,8 @@ export type CfResource =
 	  };
 
 /**
- * The protection set: the resources that must NEVER be deleted, expressed as the
- * stage-shaped facts the matcher needs. The plan is deny-by-default for anything that
- * matches a protected pattern, BEFORE any allow-pattern is consulted.
+ * The protection set. The plan is deny-by-default for anything that matches a protected
+ * pattern, BEFORE any allow-pattern is consulted.
  *
  * Physical name shape (grounded in `.github/workflows/deploy.yml` "Resolve web preview
  * D1 id" + `apps/web/alchemy.run.ts`): alchemy names a resource
@@ -93,7 +81,6 @@ export interface Protection {
 	readonly sweepDevTestStages: boolean;
 }
 
-/** Why a resource is in the plan — the audit trail, so the plan is never an opaque list. */
 export type DeleteReason = "orphan-integration" | "closed-preview" | "stale-dev-test";
 
 export type KeepReason =
@@ -107,7 +94,6 @@ export type KeepReason =
 export interface PlannedDelete {
 	readonly resource: CfResource;
 	readonly reason: DeleteReason;
-	/** The stage the physical name decoded to, for the report. */
 	readonly stage: string;
 }
 
@@ -129,8 +115,6 @@ const D1_PREFIX = `${STACK}-${STACK}-db-`;
  * (`apps/web/worker/features/flagship/resources.ts`), so alchemy's `createPhysicalName`
  * yields the same `${stack}-${id}-${stage}-${suffix}` shape as workers/D1, `_`→`-`
  * lowercased: id `phoenix_flags` → `phoenix-flags`, giving prefix `phoenix-phoenix-flags-`.
- * Both flagship kinds decode their stage off this one app prefix — a flag's stage is its
- * parent app's, never in the flag key.
  */
 export const FLAGSHIP_APP_NAME_PREFIX = `${STACK}-${STACK}-flags-`;
 
@@ -169,43 +153,22 @@ const decodeStage = (resource: CfResource): string | undefined => {
 	return rest.slice(0, lastDash);
 };
 
-/** A stage is an ephemeral integration stage iff it is `it-…` (anchored, never a substring). */
 const isIntegrationStage = (stage: string): boolean => stage.startsWith("it-");
 
-/**
- * If the stage is a preview `pr-<n>`, return `n`; else `undefined`. Anchored so only a
- * literal `pr-<digits>` with NOTHING after the number matches — `pr-12` yes, `prod` no,
- * `pr-12-foo` no, `pr-` no.
- */
 const previewPrNumber = (stage: string): number | undefined => {
 	const m = /^pr-(\d+)$/.exec(stage);
 	return m ? Number(m[1]) : undefined;
 };
 
-/**
- * The two halves of the dev/test stage family (#2340), both anchored (a match on the
- * exact stage or a `<fam>-` prefix, never a substring — `development`/`testing` match
- * neither). See the `sweepDevTestStages` docblock for why the split is where it is.
- */
+/** Why the dev/test family splits here: see the `sweepDevTestStages` docblock (#2340). */
 const isNamedDevStage = (stage: string): boolean => stage === "dev" || stage.startsWith("dev-");
 const isEphemeralTestStage = (stage: string): boolean =>
 	stage === "test" || stage.startsWith("test-");
 
 /**
- * Compute the deletion plan. The order of checks IS the safety policy:
- *
- *   1. Unrecognized (not one of our resources) → KEPT. Nothing foreign is ever swept.
- *   2. The decoded stage is in `protectedStages` (prod, `--protect`-ed) → KEPT. This wins
- *      even over an `it-`/`pr-`/`test-` allow-match, so a stage someone deliberately
- *      protected can never be swept regardless of its name shape.
- *   3. `dev`/`dev-*` named-dev stage → KEPT (`named-dev`). A protection that wins before
- *      any sweep: `dev-usirin`-shaped stages are NEVER deleted, flag or not (#2340).
- *   4. `it-*` integration stage → DELETE (`orphan-integration`).
- *   5. `pr-<n>` preview: open PR → KEPT (`open-pr`). Closed PR → DELETE only if
- *      `sweepClosedPreviews`, else KEPT (`preview-sweep-disabled`).
- *   6. `test`/`test-*` ephemeral stage → DELETE (`stale-dev-test`) only if
- *      `sweepDevTestStages`, else KEPT (`dev-test-sweep-disabled`) (#2340).
- *   7. Anything else recognized but not matched → KEPT (`unrecognized`).
+ * Compute the deletion plan. The order of checks IS the safety policy: every protection
+ * (unrecognized, `protectedStages`, named-dev) is tested BEFORE any allow-match, so a
+ * protected stage can never be swept regardless of its name shape.
  */
 export const computeSweepPlan = (
 	resources: ReadonlyArray<CfResource>,

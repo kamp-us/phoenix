@@ -234,16 +234,3 @@ Three judgements that table cannot make for you:
 **The smallest path is first-class, not a shortcut**: one-session work skips `wayfinding` entirely —
 `grilling` → `graduate` → one issue. This skill must work with no map in existence, and usually
 does. The verb inventory, every grammar and every exit code live in [`contract.md`](contract.md).
-
-## Required repo files
-
-fabrika installs into repos that are not phoenix, so three surfaces must exist before a session can
-run: a repository reachable over `gh` REST with `issues: write`, the `grilling:session` label, and
-readable collaborator permissions for a ruling's author. Each row's **when-missing** disposition —
-the closed **fail-loud** / **degrade** / **bootstrap** vocabulary every fabrika skill shares — is
-stated with the code it fires in the contract's own table
-(`fabrika wire doc-section --heading "Required repo files (verb-level)" < <skill-base>/contract.md`). The one to
-hold in mind while running: the label is **bootstrap**, and `fabrika status bootstrap
-issue-shape-markers` creates it; an unreadable ACL is `11` and every question's state is
-UNKNOWN — never `open`, never `ruled`. Nothing else is required, and that is stated rather than
-left blank, because an absent row reads as nobody checked.

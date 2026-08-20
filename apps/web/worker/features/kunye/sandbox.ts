@@ -29,11 +29,6 @@ import {Kunye} from "./Kunye.ts";
 import {requireModeration} from "./moderate.ts";
 import {sandboxesNewContent} from "./standing.ts";
 
-/**
- * The `sandboxed_at` timestamp a new piece of content by `authorId` is created
- * with, or `null` to create it live. Sandboxed only when the author is a `çaylak`;
- * a yazar's content is always live.
- */
 export const sandboxedAtForAuthor = (
 	authorId: string,
 	now: Date,
@@ -85,67 +80,37 @@ export const currentSandboxViewer = Effect.gen(function* () {
 
 /**
  * Whether a brand-new content node may be broadcast to a public (viewer-blind)
- * fate-live topic. The type-level form of the #1205 gate: every node-broadcasting
- * publish (`appendNode` / `prependNode`, in each feature's `live.ts`) takes one, and
- * it is constructible ONLY from {@link decidePublish} (the sandbox-gated create path)
- * or {@link alwaysLive} (the explicit always-Live escape hatch). So a future create
- * mutation cannot broadcast a node without first discharging the sandbox check —
- * ADR 0107's make-the-mistake-untypeable, applied here (the #1280 hardening).
- *
- * Branded via effect-smol's standard `Brand` vocabulary (`Brand.Branded`, grounded
- * in effect-smol `Brand.ts`) — NOT a hand-rolled `unique symbol` phantom. The brand
- * is type-only: a `PublishDecision` is byte-identical to `{broadcast}` at runtime,
- * nominal only at the type level. Unconstructibility rests on the private
- * {@link makePublishDecision} constructor below staying module-local, so
- * {@link decidePublish} / {@link alwaysLive} remain the only exported constructors.
+ * fate-live topic. Every node-broadcasting publish takes one, and it is constructible
+ * ONLY from {@link decidePublish} or {@link alwaysLive} — so a create mutation cannot
+ * broadcast without first discharging the sandbox check (#1280, ADR 0107's
+ * make-the-mistake-untypeable). That rests on {@link makePublishDecision} staying
+ * module-local.
  */
 export type PublishDecision = Brand.Branded<{readonly broadcast: boolean}, "PublishDecision">;
 
-// `Brand.nominal` is the type-only constructor, kept PRIVATE so the module retains the
-// only two exported ways to mint a `PublishDecision` (decidePublish / alwaysLive). It
-// applies no runtime check (per effect-smol `Brand.ts`) — it returns its input.
+// Kept PRIVATE: it is the only way to mint a `PublishDecision`, and `Brand.nominal`
+// applies no runtime check (effect-smol `Brand.ts`) — it returns its input.
 const makePublishDecision = Brand.nominal<PublishDecision>();
 const branded = (broadcast: boolean): PublishDecision => makePublishDecision({broadcast});
 
 /**
- * The sandbox-gated decision a create path discharges: broadcast iff the new row is
- * live (`sandboxedAt === null`); a sandboxed row resolves to suppress.
- *
- * The fate-live fan-out is the leak surface (#1205 AC#2): a node publish relays a
- * full-payload frame to EVERY subscriber of a public topic — keyed only by
- * `{id: slug}` / `{id: postId}` / the global feed, never by viewer identity, with no
- * per-viewer re-resolution (ADRs 0023/0025/0037). The static read paths filter
- * sandboxed content (`sandboxVisibleWhere` / `isVisibleTo`), but the create-time
- * broadcast bypasses them, so a sandboxed çaylak's node would reach non-author
- * members and anonymous viewers. Routing every node broadcast through a
- * `PublishDecision` makes that unreachable by type.
- *
- * The author and moderators still see sandboxed content through the sandbox-aware
- * READ paths and the promotion-backlog queue (`listSandboxed*`); the live echo is an
- * optimization, not the source of truth. Suppressing it for sandboxed rows costs the
- * author an instant own-content echo (they see it on next read) — a deliberate
- * trade: the viewer-blind topic model can't deliver an author-only live push without
- * also leaking to others, and correctness outranks the echo. A viewer-keyed live
- * delivery is a deferred optimization, not in scope for #1205.
+ * The fate-live fan-out is the leak surface (#1205): a node publish relays a full
+ * payload to EVERY subscriber of a public topic, keyed by id and never by viewer
+ * (ADRs 0023/0025/0037), so it bypasses the read paths' sandbox filters. Suppressing
+ * the broadcast costs a sandboxed author their instant own-content echo — a deliberate
+ * trade, since a viewer-blind topic cannot push to the author alone.
  */
 export const decidePublish = (sandboxedAt: Date | null): PublishDecision =>
 	branded(sandboxedAt === null);
 
 /**
- * The always-Live escape hatch — a node broadcast that has no sandbox state to
- * discharge because it is Live by construction: the `Removed → Live` restore paths
- * (`EntityLifecycle.restore`, ADR 0096 §4), which re-enter already-public content.
- * Named + greppable on purpose: it is the deliberate, reviewable opt-out, not an
- * omission a create path can fall into (a create path has a `sandboxedAt` and must
- * route through {@link decidePublish}).
+ * The escape hatch for content that is Live by construction — the `Removed → Live`
+ * restore paths (ADR 0096 §4), which re-enter already-public content. Named + greppable
+ * on purpose: a deliberate, reviewable opt-out, never something a create path falls into.
  */
 export const alwaysLive: PublishDecision = branded(true);
 
-/**
- * Run a node broadcast only when the decision permits it; suppress otherwise. The
- * `appendNode` / `prependNode` wrappers in each feature's `live.ts` gate every
- * create-time broadcast through this — the one place the decision is consumed.
- */
+/** The one place a `PublishDecision` is consumed — every feature's `live.ts` gates through it. */
 export const broadcastIf = (
 	decision: PublishDecision,
 	publish: Effect.Effect<void>,

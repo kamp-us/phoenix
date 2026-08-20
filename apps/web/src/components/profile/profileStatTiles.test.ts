@@ -1,10 +1,3 @@
-/**
- * The canonical profile activity-tile order (#2203), asserted DOM-free — the ONE
- * ordering shared by `/profile` and `/u/:username` is factored to a pure function
- * and pinned here (the pure-extraction idiom of `profileStandingLabel`). Before
- * this the two hand-derived headers rendered the same scalars in two orders; the
- * test is what keeps them from drifting apart again.
- */
 import {describe, expect, it} from "vitest";
 import {profileStatTiles} from "./profileStatTiles";
 

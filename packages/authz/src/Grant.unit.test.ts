@@ -24,7 +24,6 @@ describe("Grant seal", () => {
 	it("ships no Schema/decode path — a decodable proof would be forgeable", () => {
 		expect("GrantSchema" in surface).toBe(false);
 		expect("decodeGrant" in surface).toBe(false);
-		// the only Grant-named runtime export is the structural guard
 		expect(typeof surface.isGrant).toBe("function");
 	});
 

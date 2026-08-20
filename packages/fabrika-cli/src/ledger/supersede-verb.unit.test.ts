@@ -99,6 +99,7 @@ const run = (
 				reason: options.reason ?? "folded into the loader slice",
 				token: TOKEN,
 				repo: null,
+				cwd: "/repo",
 				env,
 			}),
 			Layer.mergeAll(shell.layer, fs.layer),

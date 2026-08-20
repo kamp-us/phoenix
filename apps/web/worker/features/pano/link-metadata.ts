@@ -1,48 +1,33 @@
 /**
- * The pure core of the pano link-metadata prefill route (#1642): the SSRF
- * guard that decides whether a user-supplied URL is safe to fetch, and the
- * HTML metadata parser that lifts `og:title`/`<title>` and
- * `og:description`/`meta[name=description]` out of a fetched page. Both are
- * pure and unit-testable without a worker or a live network.
+ * The pure core of the pano link-metadata prefill route (#1642): the SSRF guard and
+ * the HTML metadata parser.
  *
- * A public worker that fetches arbitrary user-supplied URLs is the classic
- * SSRF surface, so {@link isSafeFetchUrl} is fail-closed: it admits ONLY
- * `http(s)` URLs whose host is not a private/loopback/link-local/CGNAT/
- * cloud-metadata address (IPv4 or IPv6 literal) and not a local-only hostname
- * (`localhost`, `*.localhost`, `*.local`, `*.internal`). A hostname that is
- * not an IP literal still can't be pre-resolved to an IP from inside the
- * worker, so the DNS-rebinding residue is accepted as a known bound — the
- * literal-IP + local-suffix screen blocks the direct-address SSRF vectors,
- * and the fetch itself is timeout- and size-bounded by the route.
+ * {@link isSafeFetchUrl} is fail-closed: it admits only `http(s)` URLs whose host is
+ * not a private/loopback/link-local/CGNAT/cloud-metadata literal and not a local-only
+ * hostname. A non-literal hostname cannot be pre-resolved inside the worker, so the
+ * DNS-rebinding residue is a known, accepted bound.
  */
 
 import type {LinkMetadata} from "./link-metadata-contract.ts";
 
-/** Max bytes of the response body the route buffers before giving up (a graceful no-op). */
 export const MAX_METADATA_BYTES = 512 * 1024;
 
-/** How long the server-side fetch may run before it's aborted (a graceful no-op). */
 export const FETCH_TIMEOUT_MS = 5_000;
 
 /**
- * Max 3xx redirects the server-side fetch follows before giving up. The route
- * follows redirects MANUALLY and re-screens every hop's `Location` through
- * {@link isSafeFetchUrl}, so a public URL that 302s to `169.254.169.254` (or any
- * private/loopback/link-local/metadata target) is refused — the SSRF-via-redirect
- * vector a blind `redirect: "follow"` would chase. A chain longer than this cap
- * is also refused (a graceful no-op).
+ * Max 3xx redirects the server-side fetch follows. The route follows redirects
+ * MANUALLY and re-screens every hop through {@link isSafeFetchUrl}, so a public URL
+ * that 302s to `169.254.169.254` is refused — the SSRF-via-redirect vector a blind
+ * `redirect: "follow"` would chase.
  */
 export const MAX_REDIRECT_HOPS = 5;
 
-/** Longest title/description the route returns — prefill stays editable and bounded. */
 export const MAX_FIELD_LEN = 300;
 
-/** Hostname suffixes that only ever resolve to a local/internal host. */
 const LOCAL_HOST_SUFFIXES = [".localhost", ".local", ".internal"];
 
 const isDottedIPv4 = (host: string): boolean => /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
 
-/** A private/loopback/link-local/CGNAT/broadcast/unspecified IPv4 literal. */
 function isBlockedIPv4(host: string): boolean {
 	const parts = host.split(".").map((p) => Number(p));
 	if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
@@ -63,10 +48,8 @@ function isBlockedIPv4(host: string): boolean {
 }
 
 /**
- * The IPv4 embedded in an IPv4-mapped IPv6 tail, as dotted-quad. The tail is
- * either dotted (`127.0.0.1`) or the two hex hextets WHATWG normalizes it to
- * (`7f00:1`). An unrecognized tail returns `"256.0.0.0"` — an out-of-range
- * sentinel {@link isBlockedIPv4} treats as blocked (fail-closed).
+ * The IPv4 embedded in an IPv4-mapped IPv6 tail, as dotted-quad. An unrecognized tail
+ * returns the out-of-range sentinel `"256.0.0.0"`, which {@link isBlockedIPv4} blocks.
  */
 function mappedTailToIPv4(tail: string): string {
 	if (/^\d{1,3}(\.\d{1,3}){3}$/.test(tail)) return tail;
@@ -78,12 +61,6 @@ function mappedTailToIPv4(tail: string): string {
 	return [(hi >> 8) & 255, hi & 255, (lo >> 8) & 255, lo & 255].join(".");
 }
 
-/**
- * A blocked IPv6 literal (as it appears inside `URL.hostname`, i.e. without the
- * `[...]` brackets). Covers loopback, unspecified, unique-local (`fc00::/7`),
- * link-local (`fe80::/10`), and IPv4-mapped addresses whose embedded IPv4 is
- * itself blocked.
- */
 function isBlockedIPv6(host: string): boolean {
 	const h = host.toLowerCase();
 	if (h === "::1" || h === "::") return true; // loopback / unspecified
@@ -98,13 +75,9 @@ function isBlockedIPv6(host: string): boolean {
 }
 
 /**
- * Parse `raw` and return the {@link URL} only if it parses AND carries an
- * `http:`/`https:` scheme; otherwise `null`. This is the **protocol allowlist**
- * alone — no host screen — so a `javascript:`/`data:`/`file:` URL (or an
- * unparseable one) is rejected while a public-host `http(s)` URL passes. It is
- * the shared source of the http(s) rule reused by {@link isSafeFetchUrl} (which
- * layers the SSRF host screen on top) and by pano's submit-URL persistence gate,
- * which needs the protocol allowlist without the fetch-time host block.
+ * The **protocol allowlist alone** — no host screen. Rejects `javascript:`/`data:`/
+ * `file:` and unparseable URLs. {@link isSafeFetchUrl} layers the SSRF host screen on
+ * top; pano's submit-URL persistence gate wants this one without it.
  */
 export function isHttpUrl(raw: string): URL | null {
 	let url: URL;
@@ -118,11 +91,8 @@ export function isHttpUrl(raw: string): URL | null {
 }
 
 /**
- * Resolve a (possibly relative) redirect `Location` against `base`, returning
- * `null` for an unparseable ref. Lives here (a non-Effect helper) so the base-aware
- * `new URL` parse — which throws on a malformed ref — stays a plain guarded parse
- * rather than an `Effect.try` in the route; the caller re-screens the result through
- * {@link isSafeFetchUrl}.
+ * Resolve a (possibly relative) redirect `Location` against `base`; `null` if
+ * unparseable. The caller MUST re-screen the result through {@link isSafeFetchUrl}.
  */
 export function resolveUrl(location: string, base: URL): URL | null {
 	try {
@@ -133,10 +103,8 @@ export function resolveUrl(location: string, base: URL): URL | null {
 }
 
 /**
- * Parse `raw` and return the {@link URL} only if it is safe to fetch
- * server-side; otherwise `null`. Fail-closed: an unparseable URL, a
- * non-`http(s)` scheme, or a private/loopback/link-local/CGNAT/metadata IP
- * literal or local-only hostname all return `null`.
+ * Parse `raw` and return the {@link URL} only if it is safe to fetch server-side.
+ * Fail-closed: unparseable, non-`http(s)`, or a blocked host all return `null`.
  */
 export function isSafeFetchUrl(raw: string): URL | null {
 	const url = isHttpUrl(raw);
@@ -146,8 +114,7 @@ export function isSafeFetchUrl(raw: string): URL | null {
 	if (host === "" || host === "localhost") return null;
 	if (LOCAL_HOST_SUFFIXES.some((s) => host.endsWith(s))) return null;
 
-	// `URL.hostname` keeps the `[...]` around an IPv6 literal (WHATWG URL) —
-	// strip them before the address screen.
+	// `URL.hostname` keeps the `[...]` around an IPv6 literal (WHATWG URL).
 	if (host.startsWith("[") && host.endsWith("]")) {
 		return isBlockedIPv6(host.slice(1, -1)) ? null : url;
 	}
@@ -156,7 +123,6 @@ export function isSafeFetchUrl(raw: string): URL | null {
 	return url;
 }
 
-/** Decode the handful of HTML entities that show up in title/description text. */
 function decodeEntities(text: string): string {
 	return text
 		.replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
@@ -169,12 +135,10 @@ function decodeEntities(text: string): string {
 		.replace(/&amp;/g, "&");
 }
 
-/** Normalize extracted text: decode entities, collapse whitespace, trim, cap length. */
 function clean(text: string): string {
 	return decodeEntities(text).replace(/\s+/g, " ").trim().slice(0, MAX_FIELD_LEN);
 }
 
-/** Parse one `<meta …>` tag's attributes into a lowercase-keyed map. */
 function metaAttrs(tag: string): Record<string, string> {
 	const attrs: Record<string, string> = {};
 	const re = /([a-zA-Z:_-]+)\s*=\s*("([^"]*)"|'([^']*)')/g;
@@ -187,10 +151,8 @@ function metaAttrs(tag: string): Record<string, string> {
 }
 
 /**
- * The first non-empty `<meta>` content matching a key, honoring KEY PRIORITY
- * over document order: each key in `keys` is tried in turn (`og:*` before the
- * plain fallback), and the whole document is scanned per key. Attribute order
- * within a tag is irrelevant — `content` may precede or follow `property`.
+ * The first non-empty `<meta>` content matching a key, honoring KEY PRIORITY over
+ * document order: the whole document is scanned once per key, in `keys` order.
  */
 function metaContent(html: string, keys: readonly string[]): string | undefined {
 	const tags = html.match(/<meta\b[^>]*>/gi) ?? [];
@@ -211,10 +173,9 @@ function metaContent(html: string, keys: readonly string[]): string | undefined 
 }
 
 /**
- * Lift the page title and description out of raw HTML. Title prefers
- * `og:title`, falling back to `<title>`; description prefers `og:description`,
- * falling back to `meta[name=description]`. A field with no source is absent —
- * the client then leaves that form field untouched.
+ * Lift title + description out of raw HTML: `og:title` then `<title>`;
+ * `og:description` then `meta[name=description]`. A field with no source is absent,
+ * so the client leaves that form field untouched.
  */
 export function parseLinkMetadata(html: string): LinkMetadata {
 	const result: {title?: string; description?: string} = {};

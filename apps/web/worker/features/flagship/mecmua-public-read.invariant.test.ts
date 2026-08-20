@@ -1,8 +1,6 @@
 /**
- * The dark-ship default-=-safe-state invariant for mecmua public read (#2498, epic
- * #2467). Inspected off the exported `MECMUA_PUBLIC_READ_FLAG` record (the same object
- * the factory spreads into `FlagshipFlag`), so no alchemy resource is constructed —
- * mirrors `funnel-readout.invariant.test.ts` (#1589).
+ * The dark-ship default-is-the-safe-state invariant for mecmua public read (#2498).
+ * Inspected off the exported record, so no alchemy resource is constructed.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {MECMUA_PUBLIC_READ} from "../../../src/flags/keys.ts";

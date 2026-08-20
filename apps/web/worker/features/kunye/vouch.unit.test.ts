@@ -1,14 +1,9 @@
 /**
- * `Vouch` capability coverage (ADR 0107 §2-3, #1206) — the author-vouch right, a
- * `Capability.Level` floored at `yazar`. A yazar discharges `Vouch.require` to a
- * `Grant`; a çaylak, a visitor, and the anonymous actor all fail the public
- * `RequiresLevel` (`FORBIDDEN`, `need: "yazar"`). This is the structural reason a
- * çaylak cannot vouch — and, with a yazar self-vouch being inert (already yazar),
- * the reason self-promotion is impossible across both authority paths.
+ * `Vouch` — the author-vouch right, a `Capability.Level` floored at `yazar`. This is the
+ * structural reason a çaylak cannot vouch and — with a yazar self-vouch being inert (already
+ * yazar) — the reason self-promotion is impossible across both authority paths.
  *
- * The two ports are scripted (`Kunye` the standing read, `AgentAuthority` fail-closed,
- * `CurrentActor` the actor) — no DB; the real-D1 tier read lives behind `Kunye.tierOf`
- * (its own integration coverage).
+ * The ports are scripted, no DB; the real-D1 tier read lives behind `Kunye.tierOf`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
@@ -26,8 +21,7 @@ import {Kunye} from "./Kunye.ts";
 import type {Tier} from "./standing.ts";
 import {Vouch, voucherOf} from "./vouch.ts";
 
-// A `Kunye` whose `tierOf` answers the scripted standing for every id; the other
-// reads are unreached on the `Vouch.require` path.
+// The other `Kunye` reads are unreached on the `Vouch.require` path.
 const kunyeAt = (tier: Tier): Layer.Layer<Kunye> =>
 	Layer.succeed(Kunye, {
 		tierOf: () => Effect.succeed(tier),

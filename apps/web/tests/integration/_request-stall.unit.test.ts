@@ -88,7 +88,7 @@ describe("convergeAfterStall", () => {
 		});
 		const landed = vi.fn(async () => "adopted" as string | undefined);
 		await expect(convergeAfterStall(send, landed, {sleep: noSleep})).resolves.toBe("adopted");
-		expect(send).toHaveBeenCalledTimes(1); // the stalled one only — never re-sent
+		expect(send).toHaveBeenCalledTimes(1);
 	});
 
 	it("RE-SENDS once the probe proves the write did not land", async () => {

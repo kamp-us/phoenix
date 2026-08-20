@@ -1,15 +1,7 @@
 /**
- * Branded id pins (#2712, epic #2700). Two tiers:
- *
- *  - TYPE tier: nominal distinctness is compile-enforced — a `UserId` is not
- *    assignable where a `DefinitionId` is expected, and transposing the two at
- *    the `voteDefinition` arg surface fails to type. Assignability is encoded as
- *    a conditional-type boolean checked with `expectTypeOf` (not
- *    `@ts-expect-error`, which the effect LSP plugin's TS377003 escapes — the
- *    recurring finding in `domain-error-boundary.unit.test.ts`).
- *  - RUNTIME tier: the brand is type-only — `.make` and decode return the input
- *    string unchanged, so wire/D1 bytes are byte-identical (no allocation or
- *    serialization delta).
+ * Branded id pins. Assignability is encoded as a conditional-type boolean checked with
+ * `expectTypeOf`, NOT `@ts-expect-error` — the effect LSP plugin's TS377003 escapes
+ * those (the recurring finding in `domain-error-boundary.unit.test.ts`).
  */
 import * as Schema from "effect/Schema";
 import {describe, expect, expectTypeOf, it} from "vitest";
@@ -21,7 +13,6 @@ type Assignable<A, B> = [A] extends [B] ? true : false;
 
 describe("branded ids — nominal distinctness is compile-enforced", () => {
 	it("a wrong-branded id is not assignable where a specific branded id is expected", () => {
-		// The core guarantee: distinct brands are mutually unassignable.
 		expectTypeOf<Assignable<UserId, DefinitionId>>().toEqualTypeOf<false>();
 		expectTypeOf<Assignable<DefinitionId, UserId>>().toEqualTypeOf<false>();
 		expectTypeOf<Assignable<TermSlug, DefinitionId>>().toEqualTypeOf<false>();
@@ -36,8 +27,6 @@ describe("branded ids — nominal distinctness is compile-enforced", () => {
 	});
 
 	it("transposing definitionId/voterId at the voteDefinition surface fails to type", () => {
-		// The correct shape is a VoteDefinitionInput; the swapped shape is not —
-		// this is the #2712 arg-swap, now a compile error at every call site.
 		expectTypeOf<
 			Assignable<{definitionId: DefinitionId; voterId: UserId}, VoteDefinitionInput>
 		>().toEqualTypeOf<true>();

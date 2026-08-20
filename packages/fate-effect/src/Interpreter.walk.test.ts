@@ -1,14 +1,10 @@
 /**
- * `FateInterpreter` — the WALK plane of the differential oracle: byId
- * operations + nested ref selections, byte-equal against fate's own walk.
+ * The WALK plane of the differential oracle: byId operations + nested ref
+ * selections, byte-equal against fate's own walk.
  *
- * The dual-stack harness (`assertParity` and friends) comes from
- * `Oracle.fixture.ts`; the walk corpus gets its OWN entity family
- * (books/authors) over static in-memory tables, declared here — byId
- * operations never mutate, so no per-backend database service is needed and
- * the shared sozluk world stays untouched. byId rides the selection walk
- * with its connection plane: scoped pagination args, in-array windowing,
- * cursor round-trips across pages.
+ * The corpus gets its OWN entity family (books/authors) over static in-memory
+ * tables: byId operations never mutate, so no per-backend database service is
+ * needed and the shared sozluk world stays untouched.
  */
 import type {ConnectionResult, FieldSelection} from "@nkzw/fate/server";
 import {
@@ -159,7 +155,6 @@ class WalkBookView extends FateDataView<WalkBookRow>()("WalkBook")({
 	id: true,
 	title: true,
 	year: true,
-	// One-kind nested refs: a record-valued ref and an array of refs.
 	author: WalkAuthorView.view,
 	coAuthors: WalkAuthorView.view,
 	// The connection plane: a list-kind field over raw arrays (chapters) and
@@ -284,7 +279,6 @@ const makeWalkV1 = async (): Promise<OracleBackend> => {
 	};
 };
 
-/** The v2 side over the same walk config (the standard interpreter backend). */
 const makeWalkV2 = (): OracleBackend => {
 	const runtime = ManagedRuntime.make(FateServer.layer(walkConfig));
 	return {
@@ -294,15 +288,10 @@ const makeWalkV2 = (): OracleBackend => {
 	};
 };
 
-/** A structural record guard for digging into observed wire JSON. */
 const isWireRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
 
-/**
- * Read a nested connection envelope off a byId observation's wire text (first
- * result, first row). Throws loudly on shape mismatch — a corpus step that
- * needs this helper is asserting the envelope EXISTS.
- */
+/** Throws loudly on shape mismatch: a step reaching for this asserts the envelope EXISTS. */
 const connectionOf = (
 	observation: OracleObservation,
 	field: string,
@@ -719,7 +708,6 @@ describe("the walk oracle corpus — byId operations + nested ref selections", (
 					},
 				],
 			});
-			// Page 2 is the remaining window (sanity: the round-trip moved).
 			const connection = connectionOf(pageTwo, "chapters");
 			expect(connection.items.map((entry) => entry.cursor)).toEqual(["ch3", "ch4"]);
 			expect(connection.pagination).toEqual({

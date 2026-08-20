@@ -35,10 +35,8 @@ describe("resolveStateMode", () => {
 	});
 
 	it("the integration harness (CI, no dev flag) uses the Cloudflare store — real remote D1 (ADR 0082)", () => {
-		// ADR 0082: integration deploys to real remote Cloudflare via Test.make, so a
-		// Vitest run resolves to the shared store like a real deploy. `VITEST` is no
-		// longer an offline signal (it isn't even read), so a CI test run with no dev
-		// flag resolves to cloudflare exactly like a real deploy.
+		// `VITEST` is deliberately NOT an offline signal (it isn't read): integration
+		// deploys to real remote Cloudflare, so a test run must resolve like a real deploy.
 		expect(resolveStateMode({CI: "true"})).toBe("cloudflare");
 	});
 

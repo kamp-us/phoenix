@@ -1,11 +1,7 @@
 /**
- * `/lab/atolye` — the public index of atölye, the in-product museum of craft (epic #2473).
- * Lists every exhibit the headless registry enumerates; each row deep-links to that exhibit's
- * detail route (#3093). The registry is the seam (`.patterns/atolye-exhibit-harness.md`) — a new
- * exhibit appears here by landing one `*.exhibit.tsx` + one registry line, never a route edit.
- *
- * Route/slug are ASCII English (`/lab/atolye`, matching this dir + the routes-are-English
- * convention); the visible brand copy stays Turkish (`atölye`, with the ö).
+ * The route/slug stay ASCII English (`/lab/atolye`, per the routes-are-English convention) while
+ * the visible brand copy stays Turkish (`atölye`, with the ö).
+ * See .patterns/atolye-exhibit-harness.md
  */
 
 import {Link} from "react-router";

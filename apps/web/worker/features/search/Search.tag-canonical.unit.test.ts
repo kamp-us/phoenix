@@ -1,16 +1,10 @@
 /**
- * `Search.searchPosts` hydrates through the SHARED pano mapper, so a post tagged
- * with a legacy seed-era alias (`show`) renders the canonical Turkish label
- * (`göster`) in search — exactly as the feed does (#2015). Before the fix, the
- * search hydrator kept a private `parsePostTags` that set `label = kind` (the raw
- * value), so `show` rendered as `show` in search while `tagLabel` resolved it to
- * `göster` everywhere else — a real user-visible drift. Routing the hydrate through
- * `toPostSummaryKeysetRow` (which calls `parseTags` → `tagLabel`) is the fix; this
- * test is the drift regression, asserting the resolved label off the real service.
+ * The drift regression for #2015: search must hydrate through the SHARED pano mapper,
+ * so a legacy alias (`show`) renders its canonical Turkish label (`göster`) exactly as
+ * the feed does. A private search-side tag parser once set `label = kind`, and the two
+ * surfaces disagreed.
  *
- * Driven over a recording D1 *client* (no SQL engine, ADR 0082) that returns a
- * single matching post row carrying `tags: "show"`, so the service runs the real
- * hydrate and shapes the row through the shared mapper.
+ * Driven over a recording D1 *client* — no SQL engine, ADR 0082.
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
@@ -19,17 +13,11 @@ import {Search, SearchLive} from "./Search.ts";
 
 const POST_ID = "post-1";
 
-/**
- * A recording D1 client that answers each query shape the searchPosts read issues:
- * the `count(*)` (1 match), the keyset keys fetch (one key = POST_ID), and the
- * hydrate select (one `post_record` row tagged with the legacy `show` alias). The
- * cursor-rank query never runs (no `after`).
- */
+/** Answers each query shape the searchPosts read issues; the cursor-rank query never runs. */
 const taggedPostD1 = (tagsCsv: string) => {
-	// The hydrate row, in the exact select-column order the searchPosts hydrate lists
-	// (id, slug, title, url, host, bodyExcerpt, authorId, authorName, score,
-	// commentCount, createdAt, tags) — drizzle's d1 select reads it column-mode via
-	// `.raw()`, so it's returned as a value array in that order.
+	// Must stay in the searchPosts hydrate's exact select-column order (id, slug, title,
+	// url, host, bodyExcerpt, authorId, authorName, score, commentCount, createdAt,
+	// tags): drizzle's d1 select reads column-mode via `.raw()`, positionally.
 	const hydrateRow = [
 		POST_ID,
 		"a-post",
@@ -48,7 +36,6 @@ const taggedPostD1 = (tagsCsv: string) => {
 		/from\s+"post_record"/i.test(sql) && / as key /i.test(sql) === false;
 	const answer = (sql: string): {results: unknown[]} => {
 		if (/count\(\*\)/i.test(sql)) return {results: [{n: 1}]};
-		// keyset keys fetch: `SELECT id AS key ... ORDER BY ... LIMIT`
 		if (/ as key /i.test(sql)) return {results: [{key: POST_ID}]};
 		return {results: []};
 	};
@@ -64,7 +51,6 @@ const taggedPostD1 = (tagsCsv: string) => {
 			return {...answer(stmt._sql), success: true, meta: {}};
 		},
 		async raw() {
-			// drizzle's d1 `.select()` reads column-mode via `.raw()` (arrays of values).
 			return isHydrate(stmt._sql) ? [hydrateRow] : [];
 		},
 		async first() {

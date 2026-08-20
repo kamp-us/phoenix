@@ -1,20 +1,9 @@
 /**
  * Unit — the `FateWireCode` annotation key and the wire-error codec.
  *
- * The contract under test — define a domain error once with an `FateWireCode`
- * annotation on the error class and have the wire codec derived from it,
- * one edit instead of three:
- *
- *   1. Annotating a `Schema.TaggedErrorClass` with `FateWireCode` is
- *      *sufficient* for {@link encodeWireError} to produce the correct wire
- *      code + message. No registry, no second edit.
- *   2. Un-annotated errors and defects (arbitrary thrown values) map to the
- *      internal-error wire code without throwing — and without leaking the
- *      original value's details onto the wire.
- *   3. The enumeration suite at the bottom pins every error-class ↔ wire-code
- *      pair the package ships, so silent codec drift is impossible: shipping a
- *      new annotated class (or changing a code) fails the pin until the table
- *      row is updated.
+ * The contract: annotating the error class is SUFFICIENT — no registry, no
+ * second edit. Everything un-annotated collapses to the internal code without
+ * leaking details.
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import * as Schema from "effect/Schema";
@@ -28,21 +17,18 @@ import {
 	wireCodeOfClass,
 } from "./WireError.ts";
 
-/** A representative annotated domain error — the one-edit authoring shape. */
 class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 	"test/BodyRequired",
 	{message: Schema.String},
 	{[FateWireCode]: "BODY_REQUIRED"},
 ) {}
 
-/** An annotated error with extra fields beyond `message`. */
 class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
 	"test/DefinitionNotFound",
 	{definitionId: Schema.String, message: Schema.String},
 	{[FateWireCode]: "DEFINITION_NOT_FOUND"},
 ) {}
 
-/** A tagged error WITHOUT the annotation — must fall back to internal. */
 class Unannotated extends Schema.TaggedErrorClass<Unannotated>()("test/Unannotated", {
 	message: Schema.String,
 }) {}

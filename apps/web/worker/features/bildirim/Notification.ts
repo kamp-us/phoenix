@@ -1,15 +1,10 @@
 /**
- * `Notification` — the bildirim spine's domain service (#1694, epic #1666): the
- * one write surface sibling emitters call (`record`) and the recipient-scoped
- * read/mutate surface the fate resolvers consume (`listForRecipient`,
- * `unreadCount`, `markRead`, `markAllRead`, `resolveTargets`).
+ * `Notification` — the bildirim spine's domain service (#1694, epic #1666).
  *
  * Recipient scoping is structural: every read and every write predicate carries
- * `recipient_id` in its WHERE, so "mutate someone else's notification" matches
- * zero rows by construction — the query builders are exported pure (the
- * `tierPopulationQuery` idiom) so that predicate is `.toSQL()`-inspectable with
- * no engine (ADR 0082 T1/T2). Reads reach D1 only through the `Drizzle` seam and
- * die on infra errors (`orDieAccess`), so public signatures carry no error.
+ * `recipient_id` in its WHERE, so "mutate someone else's notification" matches zero
+ * rows by construction — the query builders are exported pure so that predicate is
+ * `.toSQL()`-inspectable with no engine (ADR 0082).
  */
 import {LivePublisher} from "@kampus/fate-effect";
 import {and, count, desc, eq, gte, inArray, isNull, sql} from "drizzle-orm";
@@ -35,13 +30,10 @@ import {
 
 export interface NotificationRecordInput {
 	recipientId: string;
-	/** The closed notification-kind discriminant (single-sourced from `NOTIFICATION_KINDS`). */
 	kind: NotificationKind;
 	targetKind: NotificationTargetKind;
 	targetId: string;
-	/** Who triggered it, or null for system events. */
 	actorId?: string | null;
-	/** Aggregate slot (#1698); defaults to 1. */
 	count?: number;
 }
 
@@ -74,7 +66,6 @@ export interface NotificationRow {
 	createdAt: Date;
 }
 
-/** The unread-count read — recipient-scoped, unread = `read_at IS NULL`. */
 export const unreadCountQuery = (db: DrizzleDb, recipientId: string) =>
 	db
 		.select({count: count()})
@@ -113,7 +104,6 @@ const unreadAggregateWhere = (input: NotificationAggregateInput) =>
 		isNull(schema.notification.readAt),
 	);
 
-/** Bump the existing UNREAD aggregate row (`count + 1`, `updated_at` refreshed). */
 export const bumpUnreadAggregateStatement = (
 	db: DrizzleDb,
 	input: NotificationAggregateInput,
@@ -163,7 +153,6 @@ const openDigestWhere = (input: NotificationDigestInput, since: Date) =>
 		gte(schema.notification.createdAt, since),
 	);
 
-/** Bump the recipient's open digest page for this actor/window (`count + 1`). */
 export const bumpOpenDigestStatement = (
 	db: DrizzleDb,
 	input: NotificationDigestInput,
@@ -199,7 +188,6 @@ export const insertUnlessOpenDigestStatement = (
 		);
 };
 
-/** Flip EVERY unread notification of the recipient read. */
 export const markAllReadStatement = (db: DrizzleDb, recipientId: string, now: Date) =>
 	db
 		.update(schema.notification)
@@ -211,74 +199,50 @@ export const markAllReadStatement = (db: DrizzleDb, recipientId: string, now: Da
 export class Notification extends Context.Service<
 	Notification,
 	{
-		/**
-		 * Record one notification (the emitter siblings' single write surface).
-		 * After the committed insert it republishes the recipient's live unread
-		 * count on the `NotificationChannel` entity topic (#1700) — the ONE publish
-		 * seam every emitter inherits with zero per-emitter code. The publish rides
-		 * the per-request `LivePublisher`, whose methods are `Effect<void>`
-		 * (swallow-with-log, ADR 0039), so it can never fail the recording write.
-		 */
+		/** Record one notification — the emitter siblings' single write surface. */
 		readonly record: (
 			input: NotificationRecordInput,
 		) => Effect.Effect<{id: string}, never, LivePublisher>;
 
 		/**
-		 * Aggregate-upsert (#1695, the anti-hype voice): bump the recipient's
-		 * existing UNREAD row for `(kind, target)` — `count + 1`, `updated_at`
-		 * refreshed — or insert a fresh unread row when none exists (so activity
-		 * after a mark-read surfaces as NEW unread, never a rewrite of read
-		 * history). N repeat events on one target therefore never mint N rows.
-		 * `aggregated: true` ⇔ an existing row was bumped. Republishes the
-		 * recipient's live unread count after the write (#1700), same seam as
-		 * {@link record}.
+		 * Bump the recipient's existing UNREAD row for `(kind, target)` or insert a fresh one, so
+		 * activity after a mark-read surfaces as NEW unread and N repeat events never mint N rows.
+		 * `aggregated: true` ⇔ an existing row was bumped.
 		 */
 		readonly recordAggregate: (
 			input: NotificationAggregateInput,
 		) => Effect.Effect<{aggregated: boolean}, never, LivePublisher>;
 
 		/**
-		 * Windowed digest-upsert (#3641): coalesce every event ONE actor causes inside
-		 * `window` into a single unread page per recipient — bump the open page's count,
-		 * or mint one carrying this event's target when the actor has none. Unlike
-		 * {@link recordAggregate} the target is NOT part of the key, so an actor spraying
-		 * N distinct targets still costs one row per recipient per window: this is the
-		 * fan-out BOUND, not a display roll-up. `digested: true` ⇔ an open page was
-		 * bumped. Same live-publish seam as {@link record}.
+		 * Coalesce every event ONE actor causes inside `window` into a single unread page per
+		 * recipient. The target is NOT part of the key, so an actor spraying N targets still costs
+		 * one row per recipient per window: this is the fan-out BOUND, not a display roll-up.
 		 */
 		readonly recordDigest: (
 			input: NotificationDigestInput,
 			window: Duration.Duration,
 		) => Effect.Effect<{digested: boolean}, never, LivePublisher>;
 
-		/**
-		 * The recipient's notifications, newest-first, forward keyset pagination
-		 * (ADR 0019; cursor = notification id, keyset `(created_at desc, id desc)`).
-		 */
+		/** Newest-first, forward keyset pagination (ADR 0019; cursor = notification id). */
 		readonly listForRecipient: (
 			recipientId: string,
 			opts?: {first?: number | undefined; after?: string | null | undefined},
 		) => Effect.Effect<KeysetPage<NotificationRow>>;
 
-		/** How many of the recipient's notifications are unread. */
 		readonly unreadCount: (recipientId: string) => Effect.Effect<number>;
 
 		/**
-		 * Mark one notification read. `marked: 0` on a foreign, unknown, or
-		 * already-read id — an idempotent no-op, never an existence oracle.
+		 * `marked: 0` on a foreign, unknown, or already-read id — an idempotent no-op, never an
+		 * existence oracle.
 		 */
 		readonly markRead: (
 			recipientId: string,
 			notificationId: string,
 		) => Effect.Effect<{marked: number}>;
 
-		/** Mark every unread notification of the recipient read. */
 		readonly markAllRead: (recipientId: string) => Effect.Effect<{marked: number}>;
 
-		/**
-		 * Batch-resolve target refs to client hrefs (`null` = tombstone) — one
-		 * `IN (...)` read per kind present, folded by `foldTargetHrefs`.
-		 */
+		/** Batch-resolve target refs to client hrefs; `null` = tombstone. */
 		readonly resolveTargets: (
 			refs: ReadonlyArray<TargetRef>,
 		) => Effect.Effect<ReadonlyMap<string, string | null>>;
@@ -289,12 +253,8 @@ export const NotificationLive = Layer.effect(Notification)(
 	Effect.gen(function* () {
 		const {run, batch} = orDieAccess(yield* Drizzle);
 
-		// Republish the recipient's fresh unread count on their entity topic after a
-		// recorded notification — the ONE live seam every emitter inherits (#1700).
-		// Re-reads the count and fans it out inline as the `NotificationChannel`
-		// entity data (the reactions `live.definition.update` idiom). The publish
-		// rides `LivePublisher` (swallow-with-log, ADR 0039), so it can never fail
-		// the recording write — a fan-out failure is logged, not raised.
+		// The ONE live seam every emitter inherits (#1700). Rides `LivePublisher`
+		// (swallow-with-log, ADR 0039), so a fan-out failure can never fail the write.
 		const publishChannel = Effect.fn("Notification.publishChannel")(function* (
 			recipientId: string,
 		) {
@@ -313,10 +273,8 @@ export const NotificationLive = Layer.effect(Notification)(
 			const first = Math.max(1, Math.min(opts.first ?? 20, 100));
 			const after = opts.after ?? null;
 
-			// The DB read is the port; `resolveCursor` is the pure cursor-miss
-			// decision (the Bookmark idiom). The cursor is a notification id,
-			// resolved to its `created_at` for the keyset tuple — recipient-scoped,
-			// so a foreign cursor is a miss, not a probe into someone else's list.
+			// The cursor is a notification id resolved to its `created_at` for the keyset tuple,
+			// recipient-scoped — a foreign cursor is a miss, not a probe into someone else's list.
 			const resolvedRow = after
 				? ((yield* run((db) =>
 						db
@@ -466,9 +424,8 @@ export const NotificationLive = Layer.effect(Notification)(
 				yield* publishChannel(input.recipientId);
 				return {id};
 			}),
-			// Bump-then-guarded-insert in ONE batch (one D1 transaction): if the bump
-			// matched an unread row the insert's NOT EXISTS is false; if none existed
-			// the insert fires — atomic, so concurrent emits can't mint two unread rows.
+			// Bump-then-guarded-insert in ONE batch (one D1 transaction), so concurrent emits
+			// can't mint two unread rows.
 			recordAggregate: Effect.fn("Notification.recordAggregate")(function* (
 				input: NotificationAggregateInput,
 			) {
@@ -484,8 +441,6 @@ export const NotificationLive = Layer.effect(Notification)(
 				yield* publishChannel(input.recipientId);
 				return {aggregated: bumped.meta.changes > 0};
 			}),
-			// The actor/window-keyed twin of `recordAggregate` — same one-batch
-			// bump-then-guarded-insert, so two concurrent emits can't mint two pages.
 			recordDigest: Effect.fn("Notification.recordDigest")(function* (
 				input: NotificationDigestInput,
 				window: Duration.Duration,

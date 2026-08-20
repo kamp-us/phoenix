@@ -1,12 +1,7 @@
 /**
- * `/lab/atolye/:exhibit` — the exhibit detail route (#3093). Resolves the slug against the
- * headless registry and renders that exhibit through the knobs harness, with knob state reflected
- * into the URL so a specific component state is shareable (story 6). An unknown/stale slug renders
- * a graceful atölye-scoped not-found — in-page, never the global 404 — so a dead deep-link can't
- * crash the harness (story 8).
- *
- * Route/slug are ASCII English (`/lab/atolye/:exhibit`, matching the dir + routes-are-English
- * convention); the visible brand copy stays Turkish (`atölye`, with the ö).
+ * An unknown slug renders an in-page atölye not-found, never the global 404, so a dead deep-link
+ * cannot crash the harness. The route/slug stay ASCII English (routes-are-English convention)
+ * while the visible brand copy stays Turkish (`atölye`, with the ö).
  */
 
 import {Link, useParams} from "react-router";

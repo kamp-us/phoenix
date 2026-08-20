@@ -1,9 +1,3 @@
-/**
- * The bildirim render decisions (#1694) asserted without a DOM — the ACs the
- * badge + center rows answer to: badge only when unread > 0; a dead target is a
- * tombstone, never a broken link; a row marked read this session stops reading
- * as unread.
- */
 import {describe, expect, it} from "vitest";
 import {
 	bildirimCopy,

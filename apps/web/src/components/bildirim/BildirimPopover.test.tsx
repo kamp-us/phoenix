@@ -1,10 +1,6 @@
 /**
- * BildirimPopover (#2787) — the interactive status-zone bell. These pin the
- * popover SHELL: the trigger opens on click, the popover renders the reused list
- * body + a "tümünü gör → /bildirimler" footer, Escape closes it, and the unread
- * count is the trigger's accessible name (+ a live region). `BildirimList` is
- * stubbed — its fate-backed data path is covered by its own suite; this measures
- * the disclosure behavior, not the list internals.
+ * The popover SHELL (#2787), with `BildirimList` stubbed — its fate-backed data path is
+ * covered by its own suite.
  */
 import {fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
@@ -32,10 +28,8 @@ describe("BildirimPopover (#2787)", () => {
 		expect(trigger.getAttribute("aria-label")).toBe("3 okunmamış bildirim");
 		expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
 		expect(trigger.getAttribute("aria-expanded")).toBe("false");
-		// The bell glyph + count are both present; the count is not the accessible name.
 		expect(trigger.querySelector("svg")).not.toBeNull();
 		expect(trigger.textContent).toContain("3");
-		// The live region preserves the #2613 unread announcement now the trigger is a button.
 		expect(screen.getByRole("status").textContent).toBe("3 okunmamış bildirim");
 	});
 
@@ -45,7 +39,6 @@ describe("BildirimPopover (#2787)", () => {
 		fireEvent.click(screen.getByTestId("topbar-bildirim-badge"));
 		const popover = await screen.findByTestId("topbar-bildirim-popover");
 		expect(popover).toBeTruthy();
-		// The popover reuses BildirimList (stubbed here) as its body, under a "bildirimler" title.
 		expect(screen.getByTestId("bildirim-list-stub")).toBeTruthy();
 		expect(screen.getByText("bildirimler")).toBeTruthy();
 		expect(screen.getByTestId("topbar-bildirim-badge").getAttribute("aria-expanded")).toBe("true");

@@ -1,39 +1,12 @@
 /**
- * `Search.searchPosts` visibility wiring — site search must NOT leak a çaylak's
- * sandboxed (pre-review) post nor another author's draft to a searcher not entitled to
- * see it. `searchPosts` is a fourth read into `post_record`; like the other three pano
- * reads it sources its mask from the one pano seam — {@link postVisibleWhere} (ADR
- * 0113), the sandbox arm AND the author-only draft arm — resolved against the request
- * viewer. This subsumes the #1358 hand-written sandbox-only mask: the sandbox masking
- * is now sourced from the seam (not a search-local predicate) and the draft dimension
- * rides along with it.
+ * Proves `searchPosts` WIRES `postVisibleWhere` (ADR 0113) into BOTH the count and the
+ * keyset — not just the hydrate, or `totalCount` and pagination would count rows the
+ * viewer can't see (the #1312 leak). The predicate's semantics are proven elsewhere
+ * (`SandboxVisibility.unit.test.ts`, `PostVisibility.unit.test.ts`); only the wiring is
+ * under test here.
  *
- * The FTS index keeps sandboxed/draft rows (so an author CAN find their own via
- * search), so the mask is a read-time filter — and it must ride EVERY query over the
- * FTS table, not just the hydrate: `totalCount` and the keyset would otherwise count
- * and slot rows the viewer can't see (the #1312 count/pagination leak). This test
- * drives the real `SearchLive` service over a recording D1 *client* (no SQL engine,
- * ADR 0082) and asserts the rendered SQL of the count + keyset queries carries the
- * viewer's predicate. The predicate SEMANTICS (who sees what) are already proven by
- * `SandboxVisibility.unit.test.ts` and `PostVisibility.unit.test.ts`; what THIS proves
- * is that `searchPosts` WIRES that predicate into both the count and the keyset for
- * every viewer kind.
- *
- * The sandbox viewer matrix (the leak is closed iff):
- *   - anonymous / public — `sandboxed_at IS NULL` (live only, no viewer arm).
- *   - other member — `sandboxed_at IS NULL OR author_id = :viewerId`; the viewer is
- *     not the çaylak, so the author arm matches none of their rows → live only.
- *   - the author — same predicate, but `author_id = :viewerId` now matches their own
- *     rows → they DO find their own sandboxed posts.
- *   - moderator — no sandbox arm at all (`canSeeSandboxed` ⇒ `undefined`, dropped by
- *     `and()`) → sees everything. The always-on filter is a no-op for them; every
- *     viewer still excludes removed posts.
- *
- * The draft arm rides the SAME read but has NO moderator exemption (ADR 0113 §2): a
- * draft is `is_draft IS NOT 1` (public) OR `author_id = :viewerId` (own) for every
- * signed-in viewer including a moderator, and `is_draft IS NOT 1` for anonymous — so a
- * moderator does NOT surface another author's draft, the cell that distinguishes draft
- * from sandbox.
+ * The FTS index deliberately KEEPS sandboxed/draft rows so an author can find their own,
+ * which is why the mask has to be a read-time filter.
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
@@ -42,9 +15,9 @@ import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {Search, SearchLive} from "./Search.ts";
 
 /**
- * A recording D1 *client* (no SQL engine, ADR 0082): it records the SQL string of
- * every statement drizzle's d1 driver prepares and returns empty results, so the
- * service runs to completion (empty page) while we inspect the rendered queries.
+ * A recording D1 client with NO SQL engine (ADR 0082): it records each prepared SQL
+ * string and returns empty results, so the service runs to completion while we inspect
+ * the rendered queries.
  */
 const recordingD1 = () => {
 	const prepared: string[] = [];
@@ -79,7 +52,6 @@ const recordingD1 = () => {
 	return {db, prepared};
 };
 
-/** Render the SQL the searchPosts service emits for `query` under `viewer`. */
 const renderSearchSql = async (viewer: SandboxViewer, query = "yazilim"): Promise<string[]> => {
 	const {db, prepared} = recordingD1();
 	const layer = SearchLive.pipe(Layer.provide(makeDrizzleLayer(db as DrizzleDb)));
@@ -126,7 +98,6 @@ describe("searchPosts — sandbox read-mask wired into BOTH count and keyset (#1
 		for (const q of [count!, keyset!]) {
 			expect(q).toMatch(/in \(+select .*"post_record"/i);
 			expect(q).toMatch(/"sandboxed_at" is null/i);
-			// no per-viewer author arm for an anonymous searcher
 			expect(q).not.toMatch(/"author_id" =/i);
 		}
 	});
@@ -151,9 +122,8 @@ describe("searchPosts — sandbox read-mask wired into BOTH count and keyset (#1
 		const keyset = keysetQuery(sqls);
 		for (const q of [count, keyset]) {
 			expect(q).toBeDefined();
-			// the sandbox dimension is unrestricted for a moderator
 			expect(q).not.toMatch(/"sandboxed_at"/i);
-			// but the removal guard (ADR 0096) holds for every viewer
+			// the removal guard (ADR 0096) holds for every viewer, moderator included
 			expect(q).toMatch(/"removed_at" is null/i);
 		}
 	});

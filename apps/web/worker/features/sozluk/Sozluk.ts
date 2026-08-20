@@ -1,11 +1,6 @@
 /**
  * Sozluk — the dictionary feature service: term reads + definition CRUD +
- * connection-shaped pagination.
- *
- * Vote mutations delegate to the shared `Vote.cast` (atomic vote write + karma)
- * and only recompute `term_record` aggregates afterward, rather than
- * reimplementing the batch-vote logic. Pure validation/derivation is module-private;
- * its wire codes unit-test off-DB THROUGH the mutation (ADR 0013 / 0082).
+ * connection-shaped pagination. See ADR 0013 / 0082.
  */
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, gt, inArray, isNull, sql} from "drizzle-orm";
@@ -64,22 +59,9 @@ import {
 export type {DefinitionConnectionPage, DefinitionRow, TermPage} from "./definition-fields.ts";
 export type {TermConnectionPage, TermSummaryRow} from "./term-fields.ts";
 
-/** Body length cap for definitions — surfaced as `BODY_TOO_LONG` on overflow. */
 export const DEFINITION_BODY_MAX = 10_000;
 
-// Pure validation/derivation lifted off the service (ADR 0013 for *where*, ADR
-// 0082 for *why*): each is wrong-or-right on its input with no DB. They're
-// module-private; the wire codes unit-test off-DB THROUGH the mutation
-// (`definition-validation.unit.test.ts` drives `addDefinition` / `editDefinition`
-// over a throwing `Drizzle`, proving the gate fires before any DB call).
-// `addDefinition` / `editDefinition` call these at the same point the in-factory
-// closure / inline `replace` ran, so observable behavior is unchanged.
-
-/**
- * Per ADR 0013, body validation lives in the domain, not the resolver. Returns
- * the body when valid (empty after trim ⇒ `BodyRequired`, over the cap ⇒
- * `BodyTooLong`).
- */
+/** See ADR 0013 — body validation lives in the domain, not the resolver. */
 const validateBody = Effect.fn("Sozluk.validateBody")(function* (body: string | null | undefined) {
 	const rawBody = body ?? "";
 	if (rawBody.trim().length === 0) {
@@ -94,14 +76,12 @@ const validateBody = Effect.fn("Sozluk.validateBody")(function* (body: string | 
 	return rawBody;
 });
 
-/** Fallback term title when none is supplied: the slug with dashes as spaces. */
 const titleFromSlug = (slug: string): string => slug.replace(/-/g, " ");
 
 const DEFINITION_EXCERPT_LEN = 140;
 
 const excerpt = (body: string): string => excerptText(body, DEFINITION_EXCERPT_LEN);
 
-/** Earliest `createdAt` across a slice (the term's `first_at`), or `null`. */
 const earliestCreatedAt = (defs: ReadonlyArray<{createdAt: Date | null}>): Date | null =>
 	defs.reduce<Date | null>((acc, d) => {
 		const c = d.createdAt;
@@ -109,7 +89,6 @@ const earliestCreatedAt = (defs: ReadonlyArray<{createdAt: Date | null}>): Date 
 		return acc && acc < c ? acc : c;
 	}, null);
 
-/** Latest `updatedAt ?? createdAt` across a slice (the term's `last_edit_at`), or `null`. */
 const latestEditAt = (
 	defs: ReadonlyArray<{createdAt: Date | null; updatedAt: Date | null}>,
 ): Date | null =>
@@ -119,7 +98,6 @@ const latestEditAt = (
 		return acc && acc > u ? acc : u;
 	}, null);
 
-/** One live-definition row the term-summary fold reads (the `recomputeTermSummary` select). */
 export interface TermSummaryDefRow {
 	id: string;
 	body: string;
@@ -129,7 +107,6 @@ export interface TermSummaryDefRow {
 	updatedAt: Date | null;
 }
 
-/** The fully-derived `term_record` aggregate the upsert consumes — no DB, no Effect. */
 export interface TermSummary {
 	slug: string;
 	title: string;
@@ -143,11 +120,9 @@ export interface TermSummary {
 }
 
 /**
- * Pure convergent fold: a term's `term_record` aggregate is fully derived from
- * its live definitions + title (ADR 0082 — the decision lifted above the Drizzle
- * seam). `rows` MUST already be in term-page order `(score desc, created_at asc)`
- * so `rows[0]` is the top definition. `now` is the empty-slice fallback for
- * `firstAt` / `lastEditAt`.
+ * `rows` MUST already be in term-page order `(score desc, created_at asc)` so `rows[0]`
+ * is the top definition. `now` is the empty-slice fallback for `firstAt` / `lastEditAt`.
+ * See ADR 0082.
  */
 export const recomputeTermSummary = (
 	rows: ReadonlyArray<TermSummaryDefRow>,
@@ -169,25 +144,18 @@ export const recomputeTermSummary = (
 	};
 };
 
-/**
- * The backstop-reconciliation chunk size (#2558): the slug-keyset page width the periodic
- * sweep pages `term_record` in. Sized well above the v1 cohort so today's pass is a single
- * short page, while the bound holds as the table grows — mirrors `HOT_SCORE_DECAY_CHUNK`.
- */
+/** Slug-keyset page width for the reconcile sweep (#2558); mirrors `HOT_SCORE_DECAY_CHUNK`. */
 export const SOZLUK_RECONCILE_CHUNK = 200;
 
-/** One term the reconciliation sweep re-converges: the slug + its stored title. */
 export interface TermRef {
 	readonly slug: string;
 	readonly title: string;
 }
 
 /**
- * The DB seam the reconciliation sweep drives (#2558), factored so {@link scanReconcileChunks}'s
- * cursor-advance + full-coverage control flow is unit-testable over in-memory ports (ADR 0082
- * litmus — wrong-or-right with no SQL engine). `fetchChunk(afterSlug, limit)` returns up to
- * `limit` term rows with `slug > afterSlug` in ascending slug order (`null` ⇒ from the head);
- * `refreshTerm` re-runs the convergent cache refresh for one term.
+ * `fetchChunk(afterSlug, limit)` returns up to `limit` term rows with `slug > afterSlug` in
+ * ascending slug order (`null` ⇒ from the head). Factored so {@link scanReconcileChunks} is
+ * unit-testable over in-memory ports (ADR 0082).
  */
 export interface SozlukReconcileScanPorts {
 	readonly fetchChunk: (
@@ -198,12 +166,9 @@ export interface SozlukReconcileScanPorts {
 }
 
 /**
- * Keyset-chunk the backstop reconciliation sweep (#2558): page slug-ordered slices of at most
- * `chunkSize` terms, re-running the convergent refresh for each before fetching the next, so no
- * single query materializes the whole `term_record` table (mirrors the #2559 decay-sweep bound).
- * Every term is visited each pass — the slug-keyset cursor bounds each page, it never excludes a
- * term. Loops until a short (`< chunkSize`) page marks the tail; an exact-multiple table takes
- * one extra empty page to terminate. Returns the pass's scanned count.
+ * Page the sweep in slug-keyset chunks so no single query materializes the whole `term_record`
+ * table (#2558). Every term is visited each pass; a short (`< chunkSize`) page marks the tail,
+ * so an exact-multiple table takes one extra empty page to terminate.
  */
 export const scanReconcileChunks = (
 	ports: SozlukReconcileScanPorts,
@@ -226,7 +191,6 @@ export const scanReconcileChunks = (
 		return {scanned};
 	});
 
-// The term-summary list sort — defined with the orderings it selects (`ordering.ts`).
 export type ListSort = TermSummarySort;
 
 export interface AddDefinitionInput {
@@ -234,12 +198,9 @@ export interface AddDefinitionInput {
 	authorId: UserId;
 	authorName: string;
 	body: string;
-	/** Optional human title. Falls back to slug-with-spaces. */
+	/** Falls back to slug-with-spaces. */
 	termTitle?: string | undefined;
-	/**
-	 * The çaylak mod-only sandbox stamp (#1205), decided by the resolver from the
-	 * authorship flag + author tier. `null`/absent ⇒ created live (today's behavior).
-	 */
+	/** Çaylak sandbox stamp (#1205), decided by the resolver. `null`/absent ⇒ created live. */
 	sandboxedAt?: Date | null | undefined;
 }
 
@@ -254,9 +215,7 @@ export interface AddDefinitionResult {
 	updatedAt: Date;
 }
 
-// `definitionId` and `voterId` are distinct brands (DefinitionId vs UserId), so
-// transposing them at a call site is a compile error — the #2712 arg-swap the
-// bare-`string` shape allowed is now unrepresentable.
+// Distinct brands, so transposing them at a call site is a compile error (#2712).
 export interface VoteDefinitionInput {
 	definitionId: DefinitionId;
 	voterId: UserId;
@@ -270,7 +229,6 @@ export interface VoteDefinitionResult {
 	authorName: string;
 	createdAt: Date;
 	updatedAt: Date;
-	/** `true` if the voter holds an upvote on this definition after the write. */
 	myVote: boolean;
 	/** `true` if the vote-row state changed; `false` on idempotent no-op. */
 	changed: boolean;
@@ -279,12 +237,7 @@ export interface VoteDefinitionResult {
 export interface ReactDefinitionInput {
 	definitionId: DefinitionId;
 	reactorId: UserId;
-	/**
-	 * The reaction intent, a curated-`REACTION_EMOJI` member or a retract. A palette
-	 * emoji sets/changes the reactor's single reaction; `null` retracts it. The type
-	 * only admits a palette member, so a non-palette string is already rejected by
-	 * `ReactionEmojiSchema` at the wire boundary — this method never sees one.
-	 */
+	/** A palette emoji sets/changes the reactor's single reaction; `null` retracts it. */
 	emoji: ReactionEmoji | null;
 }
 
@@ -307,11 +260,7 @@ export interface EditDefinitionResult {
 export interface DeleteDefinitionInput {
 	definitionId: DefinitionId;
 	actorId: UserId;
-	/**
-	 * Why the definition is being removed (ADR 0096). Defaults to `AuthorDeletion`
-	 * — the author-delete mutation passes nothing; account-deletion (0097) and
-	 * moderation (0098) pass `Anonymized` / `Moderated({reportId})`.
-	 */
+	/** Why the definition is being removed (ADR 0096). Defaults to `AuthorDeletion`. */
 	reason?: Removal.RemovalReason;
 }
 
@@ -320,10 +269,8 @@ export interface DeleteDefinitionResult {
 	/** `true` if the row was soft-deleted; `false` on idempotent no-op. */
 	deleted: boolean;
 	/**
-	 * On a restore, the `sandboxedAt` the definition landed back at (#1811): `null` ⇒
-	 * restored to `Live` (broadcast `alwaysLive`); non-null ⇒ restored to the çaylak
-	 * sandbox, so the mutation suppresses the live echo via `decidePublish`. Absent on
-	 * a delete result.
+	 * On a restore, where the definition landed back (#1811): `null` ⇒ `Live`; non-null ⇒ the
+	 * çaylak sandbox, so the mutation suppresses the live echo. Absent on a delete result.
 	 */
 	sandboxedAt?: Date | null;
 }
@@ -337,12 +284,8 @@ export class Sozluk extends Context.Service<
 		) => Effect.Effect<TermPage | null>;
 
 		/**
-		 * DB-keyset page of a term's live definitions in the canonical
-		 * `(score desc, created_at asc, id asc)` term-page order. The cursor is a
-		 * definition id and the keyset predicate fetches the rows after it, so a
-		 * page is a bounded `WHERE … LIMIT`, not a full load. `viewerId` batches
-		 * `myVote` for the whole page in one `user_vote` read; `sandboxViewer`
-		 * filters the çaylak sandbox (#1205) per the same viewer.
+		 * Keyset page of a term's live definitions in `(score desc, created_at asc, id asc)`
+		 * order; the cursor is a definition id.
 		 */
 		readonly listDefinitionsKeyset: (
 			slug: string,
@@ -354,20 +297,15 @@ export class Sozluk extends Context.Service<
 				/** Mute read-mask (#3113): muted authors' definitions hidden from the muter. */
 				mutedIds?: ReadonlySet<string> | undefined;
 				/**
-				 * Route the page's independent stamps (viewer scalars + reaction aggregate +
-				 * author identity) through the concurrent {@link parallelStampWave} instead of
-				 * the serial chain (#2709). Default/off ⇒ the wave runs at `concurrency: 1`
-				 * (serial, byte-for-byte today); the resolver flips it from the containment
-				 * flag. Output is identical either way — only wall time collapses.
+				 * Run the page's independent stamps concurrently (#2709). Output is identical
+				 * either way — only wall time collapses.
 				 */
 				parallelStamps?: boolean | undefined;
 			},
 		) => Effect.Effect<DefinitionConnectionPage>;
 
 		/**
-		 * Batched read of definitions by id (the `Definition` source's `byIds`
-		 * workhorse — avoids the relation N+1). `viewerId` stamps `myVote` for the
-		 * whole batch in one query. Soft-deleted rows skipped; order not guaranteed
+		 * Batched read of definitions by id. Soft-deleted rows skipped; order not guaranteed
 		 * (fate re-associates by id).
 		 */
 		readonly getDefinitionsByIds: (
@@ -383,16 +321,15 @@ export class Sozluk extends Context.Service<
 		) => Effect.Effect<DefinitionRow[]>;
 
 		/**
-		 * The moderator sandbox-queue / promotion-backlog read model (#1205, the
-		 * #1206 seam): a çaylak's still-sandboxed, not-removed definitions — scoped to
-		 * one author when promotion flips their backlog. Authority (moderator) is
-		 * gated at the resolver; the service read itself is unconditional.
+		 * The moderator sandbox-queue read (#1205/#1206): a çaylak's still-sandboxed,
+		 * not-removed definitions. Moderator authority is gated at the resolver; this read
+		 * is unconditional.
 		 */
 		readonly listSandboxedDefinitions: (opts?: {
 			authorId?: string | undefined;
 		}) => Effect.Effect<DefinitionRow[]>;
 
-		/** Batched read of term summaries by slug; order not guaranteed (fate re-associates by id). */
+		/** Order not guaranteed (fate re-associates by id). */
 		readonly getTermSummariesByIds: (
 			slugs: ReadonlyArray<string>,
 		) => Effect.Effect<TermSummaryRow[]>;
@@ -403,11 +340,8 @@ export class Sozluk extends Context.Service<
 		}) => Effect.Effect<TermSummaryRow[]>;
 
 		/**
-		 * The paginated term lists behind `terms` / `recentTerms` / `popularTerms`.
-		 * Viewer-masked: a term surfaces only when the viewer can read at least one of
-		 * its definitions (`termHasVisibleDefinitionWhere`, #3724) — the same live-content
-		 * gate `getLandingTerms` carries, so a çaylak's sandbox-only term never reaches
-		 * the public /sozluk front door as a dead-end page.
+		 * Viewer-masked: a term surfaces only when the viewer can read at least one of its
+		 * definitions (#3724), so a sandbox-only term is never a dead-end page.
 		 */
 		readonly listTermSummariesConnection: (opts?: {
 			sort?: ListSort;
@@ -418,12 +352,9 @@ export class Sozluk extends Context.Service<
 		}) => Effect.Effect<TermConnectionPage>;
 
 		/**
-		 * The public landing "sözlüğe son eklenenler" read (#1424): the most recent
-		 * terms, scoped to LIVE content. A term surfaces only via a not-removed,
-		 * not-sandboxed definition — the same record-level `removed_at IS NULL AND
-		 * sandboxed_at IS NULL` mask the public `landingStats` counts carry (#1391,
-		 * #1205) — so a çaylak's sandbox-only term never leaks onto the public front
-		 * door, even one whose `term_record` summary row exists with a zero live count.
+		 * Public landing terms (#1424), scoped to LIVE content: a term surfaces only via a
+		 * not-removed, not-sandboxed definition, so a sandbox-only term never leaks onto the
+		 * public front door even when its `term_record` row exists with a zero live count.
 		 */
 		readonly getLandingTerms: (limit: number) => Effect.Effect<TermSummaryRow[]>;
 
@@ -450,12 +381,9 @@ export class Sozluk extends Context.Service<
 		) => Effect.Effect<DeleteDefinitionResult, DefinitionNotFound | UnauthorizedDefinitionMutation>;
 
 		/**
-		 * Moderator soft-delete (ADR 0098 §6) — the same 0096 substrate write as
-		 * `deleteDefinition`, but gated on discharged moderator authority (the caller
-		 * holds a `Moderate` grant — the `moderates` relation tuple, ADR 0107 §4), NOT
-		 * author ownership: `removed_by` is the
-		 * resolver and the reason is `Moderated({reportId})`. A missing target is a
-		 * no-op (`removed: false`), so resolving a stale report can't fail.
+		 * Moderator soft-delete (ADR 0098 §6) — gated on a `Moderate` grant, not author
+		 * ownership. A missing target is a no-op (`removed: false`), so resolving a stale
+		 * report can't fail.
 		 */
 		readonly moderateRemoveDefinition: (input: {
 			definitionId: string;
@@ -464,19 +392,15 @@ export class Sozluk extends Context.Service<
 		}) => Effect.Effect<{removed: boolean}>;
 
 		/**
-		 * Moderator restore (ADR 0098 §3) — reopens the report at the resolve layer.
-		 * `sandboxedAt` is the round-tripped sandbox marker (#1811) so report's live
-		 * re-append gates the term-connection broadcast (a sandboxed restore stays
-		 * suppressed, #1205/#1280).
+		 * Moderator restore (ADR 0098 §3). `sandboxedAt` round-trips the sandbox marker
+		 * (#1811) so a sandboxed restore stays suppressed on the live broadcast.
 		 */
 		readonly moderateRestoreDefinition: (input: {
 			definitionId: string;
 		}) => Effect.Effect<{restored: boolean; sandboxedAt: Date | null}>;
 
-		// `VoterNotEligible` (#1810): a çaylak newcomer's cast is rejected by the "earn to
-		// vote" gate in `Vote.castImpl`. `SelfVoteNotAllowed` (#2216): a cast on one's own
-		// definition is rejected at the cast site. Both cast path only — retraction raises
-		// neither, so `retractDefinitionVote` keeps its `DefinitionNotFound` channel.
+		// `VoterNotEligible` (#1810) and `SelfVoteNotAllowed` (#2216) fire on the cast path
+		// only, so `retractDefinitionVote` keeps its `DefinitionNotFound` channel.
 		readonly voteDefinition: (
 			input: VoteDefinitionInput,
 		) => Effect.Effect<
@@ -489,33 +413,17 @@ export class Sozluk extends Context.Service<
 		) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound>;
 
 		/**
-		 * Set / change / retract the reactor's single reaction on a definition (epic
-		 * #1840, #1865) — the cross-product twin of `voteDefinition`, delegating to the
-		 * shared {@link Reaction} engine instead of {@link Vote}. UNGATED and karma-free
-		 * by construction: it takes no voter tier, writes no karma, and dispatches
-		 * through `Reaction.react` (the settled divergence from vote — a çaylak may
-		 * react, #1861). A palette `emoji` sets or replaces the reaction; `null`
-		 * retracts it; cardinality-one (one reaction per (reactor, definition)) is the
-		 * `user_reaction` PK, enforced in the engine. Returns the re-resolved
-		 * `DefinitionRow` carrying the FRESH reaction aggregate + the reactor's own
-		 * reaction (the `myVote`/`reactions` stamps every definition read shares).
-		 * Translates the engine's target-miss into this surface's `DefinitionNotFound`.
+		 * Set / change / retract the reactor's single reaction on a definition (#1865).
+		 * UNGATED and karma-free, unlike `voteDefinition` — a çaylak may react (#1861).
 		 */
 		readonly reactToDefinition: (
 			input: ReactDefinitionInput,
 		) => Effect.Effect<DefinitionRow, DefinitionNotFound>;
 
 		/**
-		 * Backstop reconciliation (#2558): re-run the recomputable-cache refresh
-		 * (`persistTermSummary` — the term summary + its `term_search` FTS dual-write — and
-		 * `recomputeSozlukStats`) for EVERY sözlük term, so a term/stat left stale by a
-		 * swallowed last-write refresh (`swallowRefresh`, #2012) is eventually re-converged
-		 * WITHOUT waiting for a next user write. Driven by a periodic cron trigger
-		 * (`sozluk-reconcile-cron.ts`); the request-path swallow is unchanged — this is the
-		 * additive long-tail backstop. The sweep pages `term_record` in slug-keyset chunks
-		 * (`scanReconcileChunks`). Idempotent: `persistTermSummary` is a pure convergent fold,
-		 * so re-running it on an already-fresh term rewrites the identical row. Returns the
-		 * pass's scanned count for observability.
+		 * Backstop reconciliation (#2558), driven by a cron trigger: re-converge every term's
+		 * cached summary + stats, so anything left stale by a swallowed refresh (#2012) is
+		 * fixed without waiting for a next user write. Idempotent.
 		 */
 		readonly reconcileCaches: (now: Date) => Effect.Effect<{readonly scanned: number}>;
 	}
@@ -523,37 +431,22 @@ export class Sozluk extends Context.Service<
 
 export const SozlukLive = Layer.effect(Sozluk)(
 	Effect.gen(function* () {
-		// Drizzle is taken through `orDieAccess`: every DB call site dies on
-		// `DrizzleError` (infra failures are defects — the domain-boundary rule),
-		// so public signatures carry domain errors only and every method's `R`
-		// stays `never`.
+		// `orDieAccess`: DB failures are defects, so public signatures carry domain errors only.
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 		const reactionSvc = yield* Reaction;
-		// Live author-identity resolver (#2139): one batched `user_profile` read per page
-		// (`getProfileIdentitiesByIds`) stamps the CURRENT `{username, displayName}` so the
-		// read surfaces render via `actorLabel`, not the write-time `authorName` snapshot.
+		// Live author identity (#2139): reads render the CURRENT profile, never the
+		// write-time `authorName` snapshot.
 		const pasaport = yield* Pasaport;
 
-		// The removal-sequence owner (#1129): the vote-wipe→stamp ordering is the
-		// module's to enforce, not this service's to hand-wire.
 		const removalSeq: Removal.RemovalSequence = {run, batch, clearTarget: voteSvc.clearTarget};
 
-		// `Definition`'s one viewer scalar: `myVote` from the batched `user_vote`
-		// presence read. Every definition read finalizes through `stampViewerScalars`
-		// with this spec, so the batch-read-then-stamp contract can't be forgotten (#1126).
 		const definitionVoteScalar = {
 			field: "myVote",
 			read: (viewerId: string | null | undefined, ids: ReadonlyArray<string>) =>
 				voteSvc.readMine(viewerId, "definition", ids),
 		} as const;
 
-		// The three independent finalize stamps every definition read shares — `myVote`
-		// (viewer scalar), the reaction aggregate, live author identity — each independent
-		// given the fetched rows. `parallelStampWave` runs them over the SAME rows and
-		// merges; `parallelStamps` picks the concurrency: off ⇒ `1` (serial, byte-for-byte
-		// today), on ⇒ `"unbounded"` (one wave, the #2709 collapse). The reaction stamp's
-		// own two D1 reads inherit the same knob so the whole wave is one phase when on.
 		const stampDefinitions = <R extends {id: string; authorId: string}>(
 			rows: ReadonlyArray<R>,
 			viewerId: string | null,
@@ -571,9 +464,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			);
 		};
 
-		// Recompute one slug's `term_record` row from its live `definition_record`
-		// slice. The closure is just the port: read rows via `run`, call the pure
-		// `recomputeTermSummary` fold (module scope), write via `batch`.
 		const persistTermSummary = Effect.fn("Sozluk.recomputeTermSummary")(function* (
 			slug: string,
 			title: string,
@@ -594,9 +484,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						and(
 							eq(schema.definitionRecord.termSlug, slug),
 							isNull(schema.definitionRecord.removedAt),
-							// The public term card (excerpt / top definition / count) must
-							// reflect only LIVE content — a sandboxed çaylak definition (#1205)
-							// is pending, never surfaced in the public denormalized aggregate.
+							// The public term card reflects LIVE content only — a sandboxed
+							// definition (#1205) is pending, never in the public aggregate.
 							isNull(schema.definitionRecord.sandboxedAt),
 						),
 					)
@@ -605,15 +494,10 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			const summary = recomputeTermSummary(defs, slug, title, now);
 
-			// Summary upsert + its FTS dual-write in ONE batch so they move
-			// all-or-none (ADR 0080 lockstep): a crash between the two can never
-			// desync `term_search` from `term_record`. This is the single convergent
-			// point every term write funnels through, so this keeps `term_search`
-			// current across add/edit/delete/vote with one wiring.
-			// Both items are drizzle query builders, NOT `db.run(sql)`: a batch item
-			// must `_prepare()` to a `D1PreparedQuery` with a bound `.stmt`, which a
-			// parametrized `db.run(sql\`…\`)` (a `SQLiteRaw`) lacks — it 500s the whole
-			// batch on real D1 (#863). The builder prepares batch-safe.
+			// Summary upsert + its FTS dual-write in ONE batch so they move all-or-none
+			// (ADR 0080). Both items must be drizzle query builders, NOT `db.run(sql)`: a
+			// batch item must `_prepare()` to a `D1PreparedQuery` with a bound `.stmt`, which
+			// a parametrized `SQLiteRaw` lacks — it 500s the whole batch on real D1 (#863).
 			yield* batch((db) => [
 				db
 					.insert(schema.termRecord)
@@ -646,8 +530,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			]);
 		});
 
-		// Refresh `sozluk_stats` totals; runs after every write that could affect them
-		// (write owned by the source-mutation path, not the query-only stats feature — ADR 0117).
+		// The write is owned by the mutation path, not the query-only stats feature (ADR 0117).
 		const recomputeSozlukStats = Effect.fn("Sozluk.recomputeSozlukStats")(function* (now: Date) {
 			const totalTermsRow = yield* run((db) =>
 				db
@@ -655,9 +538,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.from(schema.termRecord)
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
-			// Public counts are LIVE-only for the anonymous viewer — sourced from the
-			// shared seam (#1359/#1407), not re-derived here. Definitions carry no draft
-			// dimension, so `publicLiveWhere` (removed + sandbox) is the full rule.
+			// Public counts are LIVE-only, from the shared seam (#1359/#1407) rather than
+			// re-derived here.
 			const publicDefWhere = publicLiveWhere(
 				{
 					removedAt: schema.definitionRecord.removedAt,
@@ -695,24 +577,13 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			);
 		});
 
-		// The recomputable-cache refresh (ADR 0011) every definition remove/restore runs
-		// after the substrate write — the term summary + sözlük stats, the `refresh` the
-		// shared transition swallows uniformly (#2012). Sequenced summary-then-stats, as
-		// each arm did inline before the factoring.
+		// The recomputable-cache refresh (ADR 0011) the shared removal transition swallows.
 		const refreshSozlukCaches = (slug: string, title: string, now: Date) =>
 			Effect.gen(function* () {
 				yield* persistTermSummary(slug, title, now);
 				yield* recomputeSozlukStats(now);
 			});
 
-		// The backstop reconciliation sweep (#2558): re-run the convergent cache refresh for
-		// EVERY term so a term/stat left stale by a swallowed last-write refresh
-		// (`swallowRefresh`, #2012) is eventually re-converged without a next user write. Pages
-		// `term_record` in slug-keyset chunks (bounded scan, mirrors #2559) refreshing each term
-		// summary + its FTS row, then refreshes `sozluk_stats` once for the whole pass. Driven by
-		// the cron trigger (`index.ts` → `sozluk-reconcile-cron.ts`). Idempotent by construction —
-		// `persistTermSummary` is a pure convergent fold, so an already-fresh term rewrites the
-		// identical row, meaning a full sweep needs no persisted "refresh failed" flag to target.
 		const reconcileCaches = Effect.fn("Sozluk.reconcileCaches")(function* (now: Date) {
 			const ports: SozlukReconcileScanPorts = {
 				fetchChunk: (afterSlug, limit) =>
@@ -727,8 +598,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				refreshTerm: (term) => persistTermSummary(term.slug, term.title, now),
 			};
 			const {scanned} = yield* scanReconcileChunks(ports, SOZLUK_RECONCILE_CHUNK);
-			// One stats refresh for the whole pass — `sozluk_stats` totals are table-wide, not
-			// per-term, so re-deriving them once after the term sweep is sufficient and cheapest.
+			// `sozluk_stats` totals are table-wide, so one refresh per pass suffices.
 			yield* recomputeSozlukStats(now);
 			return {scanned};
 		});
@@ -814,7 +684,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.then((r) => r?.n ?? 0),
 			);
 
-			// Resolve the opaque `after` to its keyset tuple. The DB read is the port;
 			// `resolveCursor` is the pure cursor-miss decision (ADR 0082).
 			const resolvedRow = after
 				? ((yield* run((db) =>
@@ -834,10 +703,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			}
 			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
 
-			// Mixed-direction keyset; `keysetAfter` builds the lexicographic predicate.
-			// Both the predicate and `orderBy` derive from `DEFINITION_ORDERING`: the
-			// `id` cursor value is the opaque `after` itself (the resolved row carries
-			// only `score`/`createdAt`).
+			// The `id` cursor value is the opaque `after` itself — the resolved row carries
+			// only `score`/`createdAt`.
 			const cursorPredicate = keysetAfter(
 				keysetKeys(DEFINITION_ORDERING, (field) =>
 					field === "id" ? after : ((cursorRow as Record<string, unknown> | null)?.[field] ?? null),
@@ -1018,9 +885,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			}
 			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
 
-			// Lead column + `slug` asc tiebreaker, single-sourced per sort: both the
-			// keyset predicate and `orderBy` derive from `TERM_SUMMARY_ORDERING[sort]`.
-			// A null lastActivityAt cursor value drops the lead column → slug-only keyset.
+			// A null `lastActivityAt` cursor value drops the lead column → slug-only keyset.
 			const ordering = TERM_SUMMARY_ORDERING[sort];
 			const cursorPredicate = keysetAfter(
 				keysetKeys(
@@ -1045,11 +910,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 		const getLandingTerms = Effect.fn("Sozluk.getLandingTerms")(function* (limit: number) {
 			const n = Math.max(1, Math.min(limit, 50));
-			// Rank terms by their most recent LIVE definition. The mask lives on the
-			// `definition_record` arm (`removed_at IS NULL AND sandboxed_at IS NULL`),
-			// mirroring `landingStats` (#1391): a term with only sandboxed definitions
-			// contributes no row here, so its `term_record` summary (which can persist
-			// with a zero live count) never reaches the public front door (#1205, #1424).
+			// The mask lives on the `definition_record` arm, mirroring `landingStats` (#1391):
+			// a term with only sandboxed definitions contributes no row, so its `term_record`
+			// summary never reaches the public front door (#1205, #1424).
 			const slugRows = yield* run((db) =>
 				db
 					.select({
@@ -1128,9 +991,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				}),
 			);
 
-			// The definition row committed above; its convergent cache refreshes are
-			// recomputable, so swallow-and-log a die here rather than 500 the mutation and
-			// provoke a retry that mints a duplicate row (#2556, the create-path twin of #2012).
+			// The row is already committed, so swallow a refresh die rather than 500 the
+			// mutation and provoke a retry that mints a duplicate row (#2556).
 			yield* swallowRefresh(
 				"Sozluk.addDefinition",
 				Effect.gen(function* () {
@@ -1197,11 +1059,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			} satisfies EditDefinitionResult;
 		});
 
-		// Remove → restore both flow through the ADR 0096 substrate: stamp the
-		// `Removed` triad (`Vote.clearTarget` wipes votes, karma KEPT), or clear it
-		// back to `Live`. The lifecycle is the projection of the three columns
-		// (`Removal.fromColumns`); the term summary + sözlük stats are recomputable
-		// caches refreshed outside the cleanup batch (ADR 0011).
+		// Remove → restore both flow through the ADR 0096 substrate; votes are wiped and
+		// karma KEPT. Caches refresh outside the cleanup batch (ADR 0011).
 		const deleteDefinition = Effect.fn("Sozluk.deleteDefinition")(function* (
 			input: DeleteDefinitionInput,
 		) {
@@ -1325,23 +1184,16 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				});
 				if (!outcome.committed) return {restored: false, sandboxedAt: null};
 
-				// `outcome.sandboxedAt` is the round-tripped marker (#1811) — report's live
-				// re-append gates the term-connection broadcast (a sandboxed restore stays
-				// suppressed).
+				// The round-tripped marker (#1811): a sandboxed restore stays suppressed on
+				// the term-connection broadcast.
 				return {restored: true, sandboxedAt: outcome.sandboxedAt};
 			},
 		);
 
-		// Shared body for `voteDefinition` / `retractDefinitionVote`. Delegates to
-		// `Vote.cast` for the atomic batch, then recomputes `term_record`
-		// aggregates after a state change. Translates `VoteTargetNotFound` into
-		// `DefinitionNotFound` so this surface keeps emitting `DEFINITION_NOT_FOUND`.
 		const applyVote = Effect.fn("Sozluk.applyVote")(function* (
 			input: VoteDefinitionInput,
 			isVote: boolean,
 		) {
-			// Load meta up-front so we can return the canonical resolver shape
-			// regardless of the changed/no-op path.
 			const definition = yield* run((db) =>
 				db.query.definitionRecord.findFirst({
 					where: {id: input.definitionId, removedAt: {isNull: true}},
@@ -1354,10 +1206,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				});
 			}
 
-			// Self-vote guard (#2216, founder-ruled): a cast on one's OWN definition is
-			// rejected at the domain, so an inflated self-score is unrepresentable rather
-			// than caught downstream. Cast-only (mirrors the `VoterNotEligible` tier gate) —
-			// a retraction is exempt because a blocked cast leaves nothing to retract.
+			// Self-vote guard (#2216, founder-ruled). Cast-only: a retraction is exempt
+			// because a blocked cast leaves nothing to retract.
 			if (isVote && definition.authorId === input.voterId) {
 				return yield* new SelfVoteNotAllowed({
 					voterId: input.voterId,
@@ -1365,8 +1215,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				});
 			}
 
-			// A Vote miss (raced soft-delete or sandboxed) collapses to this
-			// surface's DefinitionNotFound — see translateVoteMiss.
+			// A Vote miss (raced soft-delete or sandboxed) collapses to `DefinitionNotFound`.
 			const voteResult = yield* voteSvc
 				.cast({
 					userId: input.voterId,
@@ -1386,8 +1235,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			const now = new Date();
 			if (voteResult.changed) {
-				// Vote already wrote definition_record.score in its batch; this re-reads
-				// it to refresh the term aggregates.
 				yield* persistTermSummary(definition.termSlug, definition.termTitle, now);
 			}
 
@@ -1398,8 +1245,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				authorId: definition.authorId,
 				authorName: definition.authorName,
 				createdAt: definition.createdAt ?? now,
-				// A vote is not a content edit, so report the definition's genuine
-				// `updatedAt` — never the vote instant, which would trip the
+				// A vote is not a content edit: the vote instant here would trip the
 				// "düzenlendi" badge on the live-push (#1634).
 				updatedAt: definition.updatedAt ?? definition.createdAt ?? now,
 				myVote: voteResult.myVote,
@@ -1416,9 +1262,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		const retractDefinitionVote = Effect.fn("Sozluk.retractDefinitionVote")(function* (
 			input: VoteDefinitionInput,
 		) {
-			// `VoterNotEligible` + `SelfVoteNotAllowed` both fire on the cast direction only
-			// (`isVote`/`value: true`), so a retraction never raises either — die if one
-			// somehow does, keeping this method's channel to `DefinitionNotFound`.
+			// Both fire on the cast direction only, so a retraction never raises either —
+			// die if one somehow does, keeping this channel to `DefinitionNotFound`.
 			return yield* applyVote(input, false).pipe(
 				Effect.catchTags({
 					"vote/VoterNotEligible": (e) => Effect.die(e),
@@ -1430,9 +1275,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		const reactToDefinition = Effect.fn("Sozluk.reactToDefinition")(function* (
 			input: ReactDefinitionInput,
 		) {
-			// Load the target up-front so a missing/removed definition is this surface's
-			// DefinitionNotFound. No sandbox filter — reactions are ungated, so a live
-			// target is reactable regardless of the reactor's tier.
+			// No sandbox filter — reactions are ungated, so a live target is reactable
+			// regardless of the reactor's tier.
 			const definition = yield* run((db) =>
 				db.query.definitionRecord.findFirst({
 					where: {id: input.definitionId, removedAt: {isNull: true}},
@@ -1445,9 +1289,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				});
 			}
 
-			// Delegate to the ungated, karma-free Reaction engine — no tier gate, no karma
-			// write on this path (the settled #1861 divergence from Vote). A raced
-			// target-miss collapses to this surface's DefinitionNotFound.
+			// No tier gate and no karma write on this path (the settled #1861 divergence
+			// from Vote).
 			yield* reactionSvc
 				.react({
 					userId: input.reactorId,
@@ -1466,10 +1309,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					),
 				);
 
-			// Re-resolve with the FRESH reaction aggregate + the reactor's own reaction,
-			// through the same batched stamps every definition read shares (`myVote` via
-			// stampViewerScalars, `reactions` via stampReactionAggregate, live identity via
-			// stampAuthorIdentity) — so the wire row is shape-identical to a plain read.
+			// Re-resolve through the same stamps every definition read shares, so the wire
+			// row is shape-identical to a plain read.
 			const scalared = yield* stampViewerScalars([toDefinitionRow(definition)], input.reactorId, [
 				definitionVoteScalar,
 			]);

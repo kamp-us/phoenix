@@ -1,14 +1,10 @@
 /**
- * The Analytics Engine read seam — the IO shell the `report` runner resolves its AE query through.
- * ADR 0153 mandates reads go through the external AE SQL API (never from the worker); this is the
- * operator-side client for exactly that. It rides the SAME ambient `Credentials | HttpClient` the
- * Flagship clients do (ADR 0045: one shared scoped operator credential), so `report`
- * inherits the keychain-first least-privilege credential seam and rolls no second token store.
+ * The Analytics Engine read seam — reads go through the external AE SQL API, never from the
+ * worker (ADR 0153), over the same ambient credential the Flagship clients use (ADR 0045).
  *
- * The transport is the CF AE SQL endpoint `POST {apiBaseUrl}/accounts/{id}/analytics_engine/sql`
- * with the raw SQL as the request body, returning a ClickHouse-style JSON envelope `{ data: [...] }`
- * (Cloudflare AE SQL API: https://developers.cloudflare.com/analytics/analytics-engine/sql-api/).
- * The query itself is rendered sampling-correct upstream in `report.ts`; this seam only executes it.
+ * AE answers a raw-SQL POST with a ClickHouse-style `{data: [...]}` envelope
+ * (https://developers.cloudflare.com/analytics/analytics-engine/sql-api/). The query is
+ * rendered sampling-correct upstream in `report.ts`; this seam only executes it.
  */
 
 import {Credentials, type ResolvedCredentials} from "@distilled.cloud/cloudflare/Credentials";
@@ -21,11 +17,7 @@ import type {ReportRow} from "./report.ts";
 
 const accountId = Config.string("CLOUDFLARE_ACCOUNT_ID");
 
-/**
- * Any failure of an AE read, collapsed to one typed `E`-channel fault carrying a human reason —
- * a missing account id, an unresolvable credential, a transport error, a non-2xx from AE, or an
- * unparseable body all surface here rather than a raw stack trace (rendered by `NodeRuntime.runMain`).
- */
+/** Every AE-read failure collapses here, so `NodeRuntime.runMain` renders a reason, not a stack. */
 export class AnalyticsReadError extends Schema.TaggedErrorClass<AnalyticsReadError>()(
 	"@kampus/anka-ops/AnalyticsReadError",
 	{reason: Schema.String},
@@ -35,7 +27,6 @@ export class AnalyticsReadError extends Schema.TaggedErrorClass<AnalyticsReadErr
 	}
 }
 
-/** The `Authorization` header for the resolved credential — Bearer for token/oauth, X-Auth for API-key. */
 const authHeaders = (credentials: ResolvedCredentials): Record<string, string> => {
 	switch (credentials.type) {
 		case "apiToken":
@@ -50,7 +41,6 @@ const authHeaders = (credentials: ResolvedCredentials): Record<string, string> =
 	}
 };
 
-/** Coerce AE's JSON `{ data: [row, …] }` envelope into typed rows, or fail if the shape is wrong. */
 const parseRows = (json: unknown): Effect.Effect<ReadonlyArray<ReportRow>, AnalyticsReadError> => {
 	if (
 		typeof json !== "object" ||
@@ -76,7 +66,6 @@ const parseRows = (json: unknown): Effect.Effect<ReadonlyArray<ReportRow>, Analy
 	return Effect.succeed(rows);
 };
 
-/** `AnalyticsRead` — the injectable AE read seam. `query` runs one SQL read and returns decoded rows. */
 export class AnalyticsRead extends Context.Service<
 	AnalyticsRead,
 	{

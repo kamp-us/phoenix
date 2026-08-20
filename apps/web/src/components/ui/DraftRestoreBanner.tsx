@@ -2,12 +2,6 @@ import {Button} from "./Button";
 import "./DraftRestoreBanner.css";
 
 /**
- * The "you have a saved draft — restore it?" affordance, shown when a draft survived
- * the auth round-trip. The draft is OFFERED, never silently re-injected (issue #1214):
- * the user explicitly restores or discards it. Real semantics — a labelled `<section>`
- * landmark with two native buttons (full keyboard path + visible focus from `kp-btn`);
- * state is conveyed by text, not color alone. Copy is lowercase Turkish.
- *
  * @component DraftRestoreBanner
  * @whenToUse The saved-draft restore prompt. Reach for it after a flow that may have
  *   stashed a draft across the auth round-trip — it OFFERS restore/discard rather
@@ -19,9 +13,7 @@ export function DraftRestoreBanner({
 	onRestore,
 	onDismiss,
 }: {
-	/** Called when the user accepts — restore the stashed draft. */
 	onRestore: () => void;
-	/** Called when the user declines — discard/ignore the stashed draft. */
 	onDismiss: () => void;
 }) {
 	return (

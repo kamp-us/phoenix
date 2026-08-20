@@ -1,22 +1,9 @@
 /**
- * `VouchSheet` — the stake-confirm sheet for the yazar **"kefil ol"** (vouch)
- * affordance (#1290, consumes #1289). Vouching is a stake: the yazar puts their
- * own standing behind the çaylak, and one of their three concurrent vouch slots
- * is held until the çaylak is promoted or the vouch is withdrawn. So the action
- * is never one-click — it opens this sheet, which states the stake plainly and
- * confirms before calling `user.vouch`.
- *
- * The server is the sole authority: `user.vouch` is the `requireVouch` (yazar
- * floor) gate plus the concurrent-vouch cap (#1289). A non-yazar call comes back
- * `FORBIDDEN`, a 4th concurrent vouch `VOUCH_LIMIT_REACHED` — both surfaced as
- * lowercase-Turkish words via {@link vouchOutcome}.
- *
- * a11y: a real modal dialog (`Dialog`, focus-trapped + Esc-closable + labelled
- * title/description from the shared primitive), native `<Button>`s (full keyboard
- * path + visible focus + AA contrast), the outcome a `role="status"
- * aria-live="polite"` text region (state as words, never color); copy is
- * lowercase Turkish; no animation beyond the dialog primitive's own, which the
- * global reduced-motion reset neutralizes.
+ * `VouchSheet` — the stake-confirm sheet for the yazar "kefil ol" (#1290, consumes #1289).
+ * Vouching holds one of the yazar's three concurrent slots until the çaylak is promoted or
+ * the vouch is withdrawn, so the action is never one-click. The server is the sole
+ * authority: a non-yazar call comes back `FORBIDDEN`, a 4th concurrent vouch
+ * `VOUCH_LIMIT_REACHED`.
  */
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
@@ -42,7 +29,6 @@ export function VouchSheet({
 	readonly open: boolean;
 	readonly onOpenChange: (open: boolean) => void;
 	readonly candidateId: string;
-	/** Run after the vouch resolves, so the surface can react to the outcome. */
 	readonly onResolved?: (outcome: VouchOutcome) => void;
 }) {
 	const fate = useFateClient();

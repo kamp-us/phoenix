@@ -104,10 +104,6 @@ const resolveRepo = Effect.fn("Github.resolveRepo")(function* () {
 	});
 });
 
-/**
- * `Github` — reads the OPEN PR numbers (the `pr-<n>` previews the sweep must keep).
- * Built by `GithubLive`, whose `R` is `ChildProcessSpawner`. Read-only.
- */
 export class Github extends Context.Service<
 	Github,
 	{
@@ -134,10 +130,6 @@ const loadOpenPrs = Effect.fn("Github.openPrNumbers")(function* (repo: string) {
  */
 const normalizePaginatedJson = (raw: string): string => raw.replaceAll("][", ",");
 
-/**
- * The live `Github` layer: spawner captured at construction, repo resolution
- * `Effect.cached` and deferred to first use.
- */
 export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildProcessSpawner> =
 	Layer.effect(Github)(
 		Effect.gen(function* () {

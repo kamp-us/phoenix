@@ -1,37 +1,12 @@
 /**
- * Integration-test HTTP harness — the black-box client surface every integration
- * test drives (ADR 0026–0031, ADR 0082, `.patterns/alchemy-test-harness.md`).
- *
- * The harness owns no deploy lifecycle. `integrationStack()` (in `_integration.ts`)
- * deploys the real phoenix stack to **real remote Cloudflare** with a **per-file
- * isolated stage** (`Test.make` + `beforeAll(deploy(Stack, {stage}))` +
- * `afterAll.skipIf(...)(destroy(Stack, {stage}))` + retry-first-request) and hands
- * this factory a `getUrl` accessor resolving to that stage's deployed worker URL.
- * Tests assert **black-box over HTTP** against it. No `cloudflare:test`, no
- * `SELF.fetch`, no `env.PHOENIX_DB`, no `runInDurableObject`, no shared single
- * deploy.
- *
- * D1 is real remote Cloudflare D1, migrated by the existing
- * `D1Database({migrationsDir, migrationsTable: "drizzle_migrations"})` resource
- * (`worker/db/resources.ts`) that `deploy` applies — one migration path, nothing to
- * keep in sync. Per-file isolated stages give every file its own worker + D1, so
- * files run in parallel instead of the prior forced single fork that raced itself
- * (#547 / #220 / #560 — one root cause, ADR 0082).
- *
- * The test-author contract is unchanged from the prior single-shared-deploy harness
- * — `harness(getUrl)` exposes the same surface, only sourced from a per-file URL:
- *   - `h.url()`              — the deployed worker URL for this file's stage
- *   - `h.fate(op, opts)`     — POST one fate operation, return its single result
- *   - `h.fateBatch(...)`     — POST several fate operations at once
- *   - `h.signUp(...)`        — sign up a user through `/api/auth/*`, return cookie
- *   - `h.seedTerm(...)`      — seed a sözlük term+definitions via the PUBLIC fate
- *                             `definition.add` mutation (+ votes for scores)
- *   - `h.setLastActivityAt(...)` — controlled D1 write of a term's `last_activity_at`
- *                             (setup-only, real-D1 REST; the clock the seam can't set)
- *   - `h.execD1(...)`        — one setup-only SQL statement against this stage's real
- *                             D1 (real-D1 REST; e.g. drop an FTS table to inject a fault)
- *   - `h.json(...)` / `h.req(...)` — raw HTTP helpers
- *   - `h.openSse(...)` / `readFrame(...)` — live SSE transport helpers
+ * Integration-test HTTP harness — the black-box client surface every integration test
+ * drives (ADR 0026–0031, ADR 0082, `.patterns/alchemy-test-harness.md`). It owns no
+ * deploy lifecycle; `_integration.ts` deploys the real stack to real remote Cloudflare
+ * on a per-file isolated stage and hands this factory that stage's worker URL. Tests
+ * assert over HTTP only — no `cloudflare:test`, no `SELF.fetch`, no `env.PHOENIX_DB`,
+ * no `runInDurableObject`. Per-file stages give every file its own worker + D1, so
+ * files run in parallel instead of the prior single fork that raced itself (#547 /
+ * #220 / #560 — one root cause, ADR 0082).
  */
 
 import {randomBytes} from "node:crypto";
@@ -50,7 +25,6 @@ import {
 	SAFE_STALL_REPLAYS,
 } from "./_request-stall.ts";
 
-/** A fate wire result for a single operation. */
 export type FateResult =
 	| {ok: true; data: unknown; id: string}
 	| {ok: false; error: {code: string; message?: string}; id: string};
@@ -80,7 +54,6 @@ export type FateOpts =
 	| {cookie?: string; retry?: never; converge: () => Promise<FateResult | undefined>};
 
 export interface Harness {
-	/** The deployed worker URL (published by the global setup). */
 	url(): string;
 	/**
 	 * Raw fetch against the worker; retries transient *connection* failures. Pass
@@ -100,7 +73,6 @@ export interface Harness {
 	fate(op: FateOp, opts?: FateOpts): Promise<FateResult>;
 	/** POST several fate operations; return all results in order. */
 	fateBatch(ops: FateOp[], opts?: {cookie?: string}): Promise<FateResult[]>;
-	/** Sign up a user through better-auth; return `{userId, cookie}`. */
 	signUp(email: string, password: string, name: string): Promise<{userId: string; cookie: string}>;
 	/**
 	 * {@link signUp} + {@link promoteToYazar} — the fixture factory for an ESTABLISHED
@@ -201,9 +173,7 @@ export interface Harness {
 	 * Setup-only, never an assertion.
 	 */
 	d1Target(): Promise<{accountId: string; databaseId: string}>;
-	/** Open a live SSE stream on a connection id (cookie required). */
 	openSse(connectionId: string, cookie: string): Promise<Response>;
-	/** Drive a `/fate/live` control message (subscribe / unsubscribe). */
 	liveControl(
 		connectionId: string,
 		operations: Array<Record<string, unknown>>,
@@ -217,10 +187,6 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 // `addDefinition`'s converge loop can widen its recovery to it without also swallowing a
 // transport failure (`convergeAfterStall` defaults to stalls only).
 class SeedAddRejected extends Error {}
-
-// The Cloudflare edge-placeholder-404 detector + its typed carrier now live in the shared
-// readiness primitive (`_edge-ready.ts`, ADR 0127) — `req` below imports them so its inline
-// placeholder detection and `awaitEdgeReady`'s scoped tolerance share ONE definition.
 
 // One HTTP request that stalls past this is aborted and retried against a fresh connection
 // where that is sound (see `_request-stall.ts` for the stall classification + recovery, and
@@ -312,10 +278,6 @@ async function cloudflareApi(path: string, init?: RequestInit): Promise<Response
 	return res;
 }
 
-/**
- * Read one SSE event (frames are delimited by a blank line) off a stream reader,
- * buffering across reads. Returns the frame text (without the trailing `\n\n`).
- */
 export async function readFrame(
 	reader: ReadableStreamDefaultReader<Uint8Array>,
 	decoder: TextDecoder,
@@ -354,7 +316,6 @@ export async function readEvent(
 	throw new Error("timed out waiting for an SSE event frame (only comments seen)");
 }
 
-/** Parse the `data: …` line of an SSE frame as JSON. */
 export function frameData<T = unknown>(frame: string): T {
 	const line = frame.split("\n").find((l) => l.startsWith("data: "));
 	if (!line) throw new Error(`SSE frame has no data line:\n${frame}`);
@@ -387,17 +348,11 @@ export const signUpDisposition = (status: number, body: string): SignUpDispositi
 			: "terminal";
 
 /**
- * Build the HTTP harness over a deployed-worker URL accessor. The harness does NOT
- * deploy — `integrationStack()` (`_integration.ts`) owns the per-file `Test.make`
- * lifecycle and supplies `getUrl`, which resolves to this file's stage's worker URL
- * (populated by the `beforeAll(deploy(Stack))` hook before any `it` body runs).
- *
- * `getD1Target` resolves this stage's real D1 REST coordinates —
- * `{accountId, databaseId}` — read straight off the deploy's compiled `Stack`
- * output (alchemy `Cloudflare.D1Database` surfaces `databaseId`/`accountId`), the
- * same hook that populates `getUrl`. The harness no longer reconstructs the D1's
- * physical name and prefix-matches the CF list API (#692, retiring #689's
- * `MAX_STAGE_LEN`); it reads the id the deploy already knows.
+ * `getUrl` and `getD1Target` both resolve off the deploy's compiled `Stack` output and are
+ * only populated once `beforeAll(deploy(Stack))` has run, so build the harness through
+ * `integrationStack()`. The D1 coordinates are read from that output rather than
+ * reconstructed from the D1's physical name and prefix-matched against the CF list API
+ * (#692, retiring #689's `MAX_STAGE_LEN`).
  */
 export function harness(
 	getUrl: () => string,
@@ -495,9 +450,6 @@ export function harness(
 		op.kind === "query" || op.kind === "list" || opts?.retry === true;
 
 	const fate: Harness["fate"] = async (op, opts) => {
-		// A non-idempotent mutation that supplied a landed-probe converges instead of
-		// hard-failing on a stall (see `FateOpts`); the union rules out combining this
-		// with the blind-replay mode below.
 		if (opts?.converge) {
 			const probe = opts.converge;
 			return convergeAfterStall(() => fateBatch([op], opts).then(([r]) => r!), probe);
@@ -510,12 +462,9 @@ export function harness(
 				const [result] = await fateBatch([op], opts);
 				lastResult = result;
 				lastErr = undefined;
-				// Success, or a non-retryable op: take the result as-is. A retryable op
-				// that came back `!ok` is a transient failure → loop and try again.
 				if (result!.ok || attempts === 1) return result!;
 			} catch (err) {
 				lastErr = err;
-				// Only a stall is retryable; a real error (or a non-retryable op) surfaces.
 				if (attempts === 1 || !isStall(err)) throw err;
 			}
 			if (i < attempts - 1) await sleep(300 * (i + 1));
@@ -551,9 +500,6 @@ export function harness(
 		throw lastErr;
 	};
 
-	// Extract the session (`name=value` cookie + user id) from a better-auth
-	// sign-up OR sign-in response — the two share a response shape, so both the
-	// fresh-user and existing-user paths converge here.
 	// A better-auth POST that additionally rides a cold per-PR-preview edge's placeholder-404
 	// (the route not yet propagated) out on the shared readiness budget — the auth-signup caller
 	// of `awaitEdgeReady` (ADR 0127; the #1717 point-fix folded into the primitive). `req` already
@@ -667,14 +613,6 @@ export function harness(
 		await promoteToYazar(session.userId);
 		return session;
 	};
-
-	// Per-harness seeding state. A `definition.add` write is identity-bearing
-	// (author = session user) and scores are vote-derived, so seeding drives the
-	// same public surface the app does: one cached session per distinct
-	// `authorName`, and a shared, lazily-grown pool of throwaway voters that each
-	// cast a single up-vote to realize a definition's `score`. The seed-id counter
-	// (`nextSeedId`) is process-global (module scope, above) — never re-declared here,
-	// so emails stay unique across every file's harness instance (#2116).
 
 	// The seeded author identity is uniquified PER RUN at this source: the stored `author_name`
 	// (`user.name ?? user.email`) is the requested base + the per-process `STAMP_SEED`, so no two
@@ -850,11 +788,6 @@ export function harness(
 		return (voted.data as {score: number}).score;
 	};
 
-	// One setup-only statement against this stage's real D1 over the REST query API.
-	// Returns D1's reported affected-row count (0 for DDL); throws on a D1-side SQL
-	// error so a botched setup statement fails the test loudly, never silently. The
-	// `{accountId, databaseId}` come straight off the deploy's compiled output
-	// (`getD1Target`) — the id the deploy already knows, never a reconstructed name (#692).
 	const runD1Query = async (sql: string, params: unknown[]): Promise<number> => {
 		const {accountId: acct, databaseId} = getD1Target();
 		const res = await cloudflareApi(`/accounts/${acct}/d1/database/${databaseId}/query`, {

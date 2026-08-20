@@ -312,8 +312,9 @@ proven, so: the verb reds on `7`'s vacuous-conjunction arm below) — a merge ga
 gates is vacuously green (#2765).
 
 **`governance` is appended to that set, not mapped from a class.** A diff with at least one
-changed path under `.decisions/`, `.claude/`, `.github/` or `claude-plugins/` additionally
-derives `namespace\tgovernance`; a diff under none of those four roots derives exactly the
+changed path under one of the repo's governed roots — `governedRoots` in `.fabrika.jsonc`, shipping
+as `.decisions/`, `.claude/`, `.github/`, `claude-plugins/` and the config file — additionally
+derives `namespace\tgovernance`; a diff under none of those roots derives exactly the
 namespaces it derived before, unchanged. Those paths already carry a file class, so this is a
 second, orthogonal question about the same files rather than a fifth class — and the predicate
 is the one `governance scope` computes, shared as code so the two cannot disagree. A namespace
@@ -332,15 +333,32 @@ Naming a trunk branch literally was the bug: the base ref *is* that branch in th
 the honest generalization in an adopter repo whose trunk is called something else. The #981
 property — a PR must not reclassify itself — holds unchanged, because the base ref is never the
 PR's head. A changed path
-covered by a CODEOWNERS row whose owner is a control-plane team (the `@<org>/<team>` owners
-those rows carry — `@kamp-us/control-plane` in this repo, parsed, never hardcoded) is
-`control-plane`; a change set with no owned-path match — including one entirely under
+covered by a CODEOWNERS row whose owner is a control-plane owner is `control-plane`. A
+control-plane owner is `@<org>/<team>` **or** an individual `@<login>` — both parsed off the file,
+never hardcoded (`@kamp-us/control-plane` in this repo). Individual owners count exactly as team
+owners do (founder ruling on #5603 "rule a", built as #6299): GitHub discharges a row when any
+listed owner approves, and counting only team-shaped owners made every PR in a personal repo
+`unknown` — the HOLD state — so nothing in it could ever ship. A bare email owner is not one:
+it names no account a roster or an approval resolves against.
+A change set with no owned-path match — including one entirely under
 `.decisions/**` — is `not-control-plane` (founder ruling, 2026-08-15 on #5531: ADRs are not
 control-plane; the required `governance` verdict floor is what stands behind an ADR PR, per ADR
-0274 §2). A CODEOWNERS that reads fine but is **trivial** — zero team-owned rows, or a row set that
+0274 §2). A CODEOWNERS that reads fine but is **trivial** — zero owned rows, or a row set that
 covers everything — → `unknown` (a printed hold — the match-everything boundary is the #4336
-adopter incident and the #4401 trivial-pattern class). An **unreadable** CODEOWNERS is not
-`unknown`: a failed read is the `11` refusal, the group's own law. Deriving from CODEOWNERS rather than any prose or regex copy
+adopter incident and the #4401 trivial-pattern class).
+
+**An absent CODEOWNERS and an unreadable one are different answers, and neither is
+`not-control-plane`.** A **proven-absent** (404) boundary parses to zero rows and lands on the
+`unknown` hold. An **unreadable** boundary is the absence of a fact rather than a fact, so it is
+the `11` — unconditionally, in every repo. Here CODEOWNERS *is* the control-plane gate, and a
+transient read fault shipping a control-plane PR unreviewed is the failure #4216 exists to
+prevent; ADR [0220](../../../../.decisions/0220-cp-surface-declared-at-standup.md) §4 names
+collapsing `unknown` → `not-control-plane` the recurring fail-open defect. A per-repo
+`unreadableCodeowners` key briefly made this configurable (#6299, ADR
+[0307](../../../../.decisions/0307-unreadable-codeowners-is-per-repo.md)); the founder reverted it
+on #5631 and nothing reads the key now.
+
+Deriving from CODEOWNERS rather than any prose or regex copy
 means this verb and the merge gate read one artifact and cannot disagree; the
 `codeowners-cp.yml` CI gate keeps that artifact in sync with the rest of the governance
 surface. `unknown` is the one HOLD state, and the skill treats it as §CP until proven otherwise.
@@ -384,7 +402,9 @@ downstream verb consumes, and that verb guards itself.
 | `ship scope: file list shows <k> of <m> declared files — refusing to partition a truncated read.` | 13 | refusal |
 
 **Scope** — one PR's metadata and changed-file list, paginated and count-checked, plus one
-boundary read from the PR's base ref. The partition is total over what was read.
+boundary read from the PR's base ref and one `governedRoots` read from the checkout the verb runs
+in. A boundary read that failed refuses `11` on the spot and reads no config. The partition is total
+over what was read.
 
 **Examples**
 
@@ -457,12 +477,14 @@ approval is never spent on a head that must move (#4477).
 
 With `--json`: `{"outcome":…,"mechanism":…,"sha":…,"roster":<n>,"baseDrift":<k|0>}`.
 
-**The decision is the ADR 0175 cardinality table, verbatim:** roster = **the union of the members
-of every team the CODEOWNERS control-plane rows name**, read fresh via the REST team-members
-endpoint (`/orgs/<org>/teams/<team>/members`, paginated) once per named team, where each
-`<org>/<team>` is an owner parsed from `.github/CODEOWNERS`' control-plane rows — the same
+**The decision is the ADR 0175 cardinality table, verbatim:** roster = **the union of every owner
+the CODEOWNERS control-plane rows name**, over both owner shapes. An `@<org>/<team>` owner is
+expanded through the REST team-members endpoint (`/orgs/<org>/teams/<team>/members`, paginated),
+read fresh once per named team. An individual `@<login>` owner **is** a roster entry and no roster
+is read for it — that endpoint needs an org a personal repo does not have, which is why counting
+only teams left such a repo unable to discharge the gate at all (#6299). The owner set is the same
 derivation `ship scope` uses, one shared module, so the roster this verb consults is the set the
-merge gate actually asks (`@kamp-us/control-plane` is the only such team in this repo, never
+merge gate actually asks (`@kamp-us/control-plane` is the only team in this repo, never
 hardcoded). **The union is not a fabrika policy — it is GitHub's own any-listed-owner semantics**
 ([ruled on #5067](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233188966),
 founder-direct): GitHub discharges a CODEOWNERS row when *any* listed owner approves, so a roster
@@ -471,8 +493,9 @@ platform here rather than adding a rule of its own.
 N=0 → `stop` `zero-owners` (an empty roster is a proven
 stop; an *unreadable* roster for **any** named team is the `11` refusal, never a stop — a union
 missing one arm is not a smaller union, it is an unknown one). A CODEOWNERS parse yielding
-no control-plane team owner at all is N=0 — `stop` `zero-owners`, the
-adopter-repo-without-a-team case — while an unreadable CODEOWNERS is `11`. N=1 and the sole owner authored the PR → discharge only on the
+no control-plane owner of either shape at all is N=0 — `stop` `zero-owners`, and a **proven-absent**
+CODEOWNERS reaches that same branch through its empty row set. An **unreadable** one is `11`, the
+same answer `ship scope` gives it. N=1 and the sole owner authored the PR → discharge only on the
 sole owner's head-bound self-approval marker comment (`control-plane-self-approval @ <sha>`,
 a token deliberately outside every auto-merge namespace). N=1 non-author, or N≥2 → discharge
 only on a non-author member's APPROVED review whose `commit_id` prefix-matches `--sha`. Every
@@ -505,7 +528,7 @@ class, live in v1's approval scan).
 | `ship cp-approval: received <k> of <m> comments — refusing the partial sweep.` | 13 | refusal |
 | `ship cp-approval: the review read never reached a terminal page — pagination is unexhausted, so an approval could sit on a page nobody read; refusing the partial sweep.` | 13 | refusal |
 
-**Scope** — the control-plane team roster (the union over every named team), the PR's changed
+**Scope** — the control-plane roster (the union over every named team and every individual owner), the PR's changed
 files and comments (paginated, count-checked) and its reviews (paginated to exhaustion), and the
 live head. `n/a` is a proven answer computed from the same `cp`
 derivation `ship scope` prints (one shared module).
@@ -572,11 +595,11 @@ narrowed coverage is the defect's signature, so the assertion runs *before* the 
 believed, not after.
 
 **The `governance` requirement is the diff's floor, not the caller's option.** The verb reads the
-PR's changed-file list itself, and a diff with at least one path under `.decisions/`, `.claude/`,
-`.github/` or `claude-plugins/` gates on `governance` **whether or not `--require` named it** — the
-same predicate `ship scope` prints the namespace from, shared as code, so the two cannot disagree.
-Every other namespace stays caller-asserted; the floor only ever *adds*, so a diff under none of the
-four roots requires exactly what it required before. When the floor fires, a stderr notice names it.
+PR's changed-file list itself, and a diff with at least one path under one of the repo's governed
+roots gates on `governance` **whether or not `--require` named it** — the same predicate `ship
+scope` prints the namespace from, over the same declared list, shared as code, so the two cannot
+disagree. Every other namespace stays caller-asserted; the floor only ever *adds*, so a diff under
+none of those roots requires exactly what it required before. When the floor fires, a stderr notice names it.
 
 This is the whole ruling on #5036, and it is what a §CP row would otherwise have had to enforce.
 `claude-plugins/fabrika/**` is deliberately **not** control-plane — no CODEOWNERS row, no boundary
@@ -710,7 +733,7 @@ fabrika ship floor 4321 --sha 03135b91 [--repo <owner/name>] [--json]
 `state` and `scanned`.
 
 **`n/a` is an answer about the diff, never a discharged verdict.** It means the changed files touch
-none of the four governance roots, so the floor does not bind — and the verb says so on stderr, in
+none of this repo's governed roots, so the floor does not bind — and the verb says so on stderr, in
 those words, because "the check was green" is exactly the reading that would make this gate
 decorative for the diffs it does not cover.
 
@@ -730,7 +753,7 @@ table and the choice decides whether `gate-verb.ts` changes at all. **The caller
 - **Rejected — parse `gate\tblocked\t<sha>` in the workflow's `run:` step.** That puts the decision
   in bash, which ADR 0228 forbids: a script relays a verb's answer and never derives the decision
   itself. It would also need a second step to decide whether the floor applies at all, and that step
-  would be a second copy of `GOVERNANCE_ROOTS` that nothing reds when it drifts (#4604).
+  would be a second copy of the governed-root list that nothing reds when it drifts (#4604).
 - **Chosen — `ship floor`, a caller verb whose refusal *is* the decision.** `ship gate` is untouched
   and keeps answering; `ship floor` asks it for the one `governance` namespace, reads the row back
   and seats a non-PASS on `18`. The workflow relays an exit code and derives nothing. The verdict
@@ -845,7 +868,7 @@ fabrika ship checks 4321 --sha 03135b91 [--wait] [--budget-seconds 600] [--caden
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line:
-`checks\t<sha>\t<green|red|pending|wedged|no-runs>`. Second line: `run\t<count>` — the count
+`checks\t<sha>\t<green|red|pending|wedged|no-runs|no-producer>`. Second line: `run\t<count>` — the count
 of latest-per-context check-run lines that follow (gating and informational both), the line
 channel's own completeness proof. Then one line per check run, latest-per-context:
 `<name>\t<success|failure|neutral|cancelled|skipped|timed_out|action_required|in_progress|queued|stale>\t<gating|informational>`.
@@ -856,7 +879,14 @@ parser — [ruled on
 head across all workflows, **pre-dedupe** (which is why it can exceed the `run` line count:
 that one counts latest-per-context check-run rows). These are the zero-checkset
 discriminators (`no-runs` requires workflows ≥ 1 and runs = 0 at this head: Actions exist
-and none fired — the dropped-trigger state `ship nudge` re-derives). With `--wait`, progress goes to stderr and
+and none fired — the dropped-trigger state `ship nudge` re-derives).
+
+**Zero workflows is `no-producer`, and it no longer collapses into `pending`** (#6298). A repo with
+no CI and a repo whose CI has not reported yet are different facts, and printing the second over the
+first tells an operator to wait for a run nothing will ever start. Workflow *existence* is the whole
+test — nothing inspects what a workflow does (#5603, R17.1). That case refuses on `7` unless the
+repo declares `ci.noProducer: "degrade"` in `.fabrika.jsonc`, which prints the `no-producer` rollup
+at exit `0` with the fact on stderr. With `--wait`, progress goes to stderr and
 the final stdout adds `settle\t<settled|budget-exhausted|head-moved>` before the first line's
 shape is emitted at the terminal state.
 
@@ -888,8 +918,8 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR or the `--sha` commit is proven absent |
-| `11` | the check-run or workflow read failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
+| `7` | the PR or the `--sha` commit is proven absent; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
+| `11` | the check-run read, the workflow read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
 | `13` | entries received < declared `total_count` — never read as "no red checks" |
 
 **Errors**
@@ -898,14 +928,20 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 |---|---|---|
 | `ship checks: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship checks: no commit <sha> on PR #<n>.` | 7 | refusal |
+| `ship checks: <repo> has zero workflows — no CI producer, so no head can be evidenced (ADR 0092). A repo that runs no workflows declares \`ci.noProducer: "degrade"\`.` | 7 | refusal |
+| `ship checks: cannot read \`ci\` from the repo config (<reason>) — whether <repo> produces CI is UNKNOWN, never green.` | 11 | refusal |
+| `ship checks: <repo> declares \`ci.noProducer: degrade\` and has zero workflows — no producer, so there is nothing to roll up.` | 0 | notice |
 | `ship checks: cannot enumerate <what> at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
 | `ship checks: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration.` | 13 | refusal |
 | `ship checks: the live head is <live>, you are enumerating <sha> — the head moved.` | 0 | notice |
 
 **Scope** — the check runs and workflow inventory at one commit, paginated,
 count-verified. Zero *declared* check runs with zero workflows is `green`-ineligible and
-reads `no-runs`-ineligible too — it is the foreign-repo/no-Actions case, reported as
-`facts	workflows:0	runs:0` with rollup `pending`, which the skill treats per its own law.
+`no-runs`-ineligible too — it is the repo that produces no CI at all, and what it costs is
+`ci.noProducer`'s answer. Under the shipped `refuse` it is exit `7`: a head whose checks will
+never report is not a head to wait on. Where the repo declared `degrade` it is rollup
+`no-producer` at exit 0, printed with `facts	workflows:0	runs:0`. Neither arm greens, and
+neither prints `pending` — that collapse is what made this state read as *wait longer* forever.
 
 **Examples**
 
@@ -924,6 +960,13 @@ $ fabrika ship checks 4322 --sha 9fe12ab0
 checks	9fe12ab0	no-runs
 run	0
 facts	workflows:12	runs:0
+```
+
+```
+$ fabrika ship checks 4323 --sha 7c04ef19   # a repo declaring "ci": {"noProducer": "degrade"}
+checks	7c04ef19	no-producer
+run	0
+facts	workflows:0	runs:0
 ```
 
 ```

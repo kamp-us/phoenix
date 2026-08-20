@@ -1,16 +1,7 @@
 /**
- * Precedence pins for `ProfilePage`'s `readUsername` — the load-bearing me-hop removal
- * of #2188 (ADR 0167's two-tier decoupling extended to `/profile`). The counts + Katkıların
- * reads key on the SESSION username the instant `FateProvider` commits, dropping the third
- * serial `me?.username` round-trip that made the reads land ~822ms late.
- *
- * `App.test.tsx` mocks both `useMe` and `useProfileStats` inert, so it never exercises
- * `readUsername`'s precedence — a silent revert to `me?.username` (reintroducing the serial
- * waterfall) would pass every test there. These render the REAL `ProfilePage` and read back
- * which username the two identity-scoped reads actually receive: the counts read via the
- * `useProfileStats` argument, and the contributions read via the `ProfileContributionSignal`
- * `username` prop. The precedence test fails on that revert; the fallback test guards the
- * `me` fallback for the brief post-`setUsername` window the session row lags.
+ * Precedence pins for `ProfilePage`'s `readUsername` (#2188). `App.test.tsx` mocks both
+ * `useMe` and `useProfileStats` inert, so a silent revert to `me?.username` — which
+ * reintroduces the serial waterfall — passes every test there but fails here.
  */
 import {render, screen} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
@@ -18,9 +9,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {CAYLAK_VISIBILITY_PATH} from "./CaylakVisibilityPage";
 import {ProfilePage} from "./ProfilePage";
 
-// Controllable session + `me` — the two identity sources `readUsername` chooses between.
-// `sessionUsername === undefined` models the absent session `username` (the post-setUsername
-// lag window); a string models the settled, present-and-correct value.
+// `sessionUsername === undefined` models the post-setUsername lag window.
 let sessionUsername: string | null | undefined;
 let meUsername: string | null;
 // The viewer's tier — the çaylak-visibility entry row (#6426) is yazar-only.
@@ -53,8 +42,6 @@ vi.mock("../auth/useMe", () => ({
 	}),
 }));
 
-// Capture the username the COUNTS read (`useProfileStats`) receives — the arg IS the
-// assertion. Stays `idle` so it touches no wire.
 const statsCalls: (string | null | undefined)[] = [];
 vi.mock("./useProfileStats", () => ({
 	useProfileStats: (username: string | null | undefined) => {
@@ -63,29 +50,24 @@ vi.mock("./useProfileStats", () => ({
 	},
 }));
 
-// Capture the username the CONTRIBUTIONS read receives via the real prop `ProfilePage`
-// passes; rendered inert (its own fate reads are pinned by ProfileContributionSignal's tests).
 vi.mock("../components/profile/ProfileContributionSignal", () => ({
 	ProfileContributionSignal: ({username}: {username: string}) => (
 		<div data-testid="contrib-username">{username}</div>
 	),
 }));
 
-// Inert stubs for the fate-touching / dialog children — not under test here.
 vi.mock("../components/profile/CaylakStatusBlock", () => ({CaylakStatusBlock: () => null}));
 vi.mock("../components/profile/DeleteAccountDialog", () => ({DeleteAccountDialog: () => null}));
 vi.mock("../components/profile/ProfileHeader", () => ({ProfileHeader: () => null}));
 
-// Flag ON so the Katkıların contribution signal renders and its `username` prop is observable;
-// the counts read fires regardless of the flag.
+// Flag ON so the contribution signal renders and its `username` prop is observable.
 vi.mock("../flags/useFlag", () => ({useFlag: () => ({value: true, loading: false})}));
 
-// Appearance controls need their providers; stub the hooks inert — irrelevant to `readUsername`.
 vi.mock("../lib/theme", () => ({useTheme: () => ({choice: "auto", setChoice: vi.fn()})}));
 vi.mock("../lib/density", () => ({useDensity: () => ({choice: "normal", setChoice: vi.fn()})}));
 
-// Keep react-fate's real `view` (used at module load for `SetDisplayNameView`); stub the
-// client hook so no transport is built. `fate.mutations` is only touched by onSaveName, never render.
+// Keep react-fate's real `view` — `SetDisplayNameView` calls it at module load — while
+// stubbing the client hook so no transport is built.
 vi.mock("react-fate", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("react-fate")>();
 	return {...actual, useFateClient: () => ({mutations: {}}) as never};
@@ -109,22 +91,17 @@ describe("ProfilePage readUsername precedence (#2188 — the me-hop removal)", (
 	});
 
 	it("keys the counts + contributions reads on the SESSION username, not the round-tripped me row", () => {
-		// The session username and the canonical `me` row DIVERGE. The win is reading off the
-		// session value (available the instant FateProvider commits), never the later `me` hop.
+		// The two sources DIVERGE, so the assertion names which one won.
 		sessionUsername = "session-uname";
 		meUsername = "stale-me-uname";
 
 		renderProfile();
 
-		// REGRESSION: a silent revert of `readUsername` to `me?.username` reintroduces the serial
-		// waterfall — the counts read would receive "stale-me-uname" and this fails.
 		expect(statsCalls.at(-1)).toBe("session-uname");
 		expect(screen.getByTestId("contrib-username").textContent).toBe("session-uname");
 	});
 
 	it("falls back to me.username when the session username is absent (the post-setUsername lag window)", () => {
-		// Right after a setUsername write the session row still lags the just-written username, so
-		// `session.data.user.username` is absent; the read falls back to the canonical `me` row.
 		sessionUsername = undefined;
 		meUsername = "canonical-me-uname";
 

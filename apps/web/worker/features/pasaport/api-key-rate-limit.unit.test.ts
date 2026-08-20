@@ -1,10 +1,8 @@
 /**
- * The apiKey plugin's per-key `rateLimit` (ADR 0044 Decision 3, #108) — the agent
- * half of the rate mechanism. Asserting the declared config directly is how the
- * "bounded independently" invariant is verified without firing thousands of requests:
- * the shape is the proof. It must be ENABLED with a finite window + max, so a single
- * key's velocity is capped rather than unbounded (a disabled or absent bound would let
- * one runaway key issue without limit). Kept in step with #110's per-user backstop.
+ * The apiKey plugin's per-key `rateLimit` (ADR 0044 Decision 3). Asserting the
+ * declared config IS the proof of the "bounded independently" invariant, without
+ * firing thousands of requests: a disabled or absent bound would let one runaway key
+ * issue without limit.
  */
 import {describe, expect, it} from "vitest";
 import {apiKeyRateLimit} from "./better-auth-live.ts";

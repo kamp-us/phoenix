@@ -1,20 +1,11 @@
 /**
- * `FunnelSummary` — the conversion readout's card (#1589): the three headline rates —
- * the promotion rate (#1593), the first-contribution rate (#1591), and the vouch rate
- * (#1592) — over the two tier counts (çaylak, yazar) the founder/mod front page
- * renders. Reads the gated
- * `funnel.summary` DESTINATION (founder/mod only); a non-mod read denies the
- * invisible `UNAUTHORIZED`, caught by the page's `<Screen>`.
- *
- * a11y (#1202 baseline): each headline rate is a labelled figure (`<figure>` +
- * `<figcaption>`), and the counts are a real description list (`<dl>`) so each number
- * carries an accessible label (the term names the tier, the count is its definition);
- * the numbers are text, never color-coded; copy is lowercase Turkish.
+ * `FunnelSummary` — the conversion readout's card (#1589). Reads the gated
+ * `funnel.summary` (founder/mod only); a non-mod read denies with the invisible
+ * `UNAUTHORIZED`, caught by the page's `<Screen>`.
  */
 import {useRequest, useView, view} from "react-fate";
 import type {FunnelSummary as FunnelSummaryEntity} from "../../../worker/features/fate/views";
 
-/** `FunnelSummary` is a singleton entity (constant `id`), served by `funnel.summary`. */
 const FunnelSummaryView = view<FunnelSummaryEntity>()({
 	id: true,
 	caylakCount: true,
@@ -32,13 +23,11 @@ const funnelRequest = {
 	"funnel.summary": {view: FunnelSummaryView},
 } as const;
 
-/** Turkish thousands separator is `.` (e.g. 1.247). */
 function formatCount(n: number): string {
 	if (n < 1000) return String(n);
 	return n.toLocaleString("tr-TR");
 }
 
-/** The `[0, 1]` rate as a Turkish-locale percent with one decimal (e.g. `%12,5`). */
 function formatRate(rate: number): string {
 	return rate.toLocaleString("tr-TR", {
 		style: "percent",
@@ -47,8 +36,6 @@ function formatRate(rate: number): string {
 	});
 }
 
-/** Median time-to-promotion as a Turkish-locale day count (e.g. `12,3 gün`), or a
- * legible "henüz ölçülemiyor" when no yazar is measurable yet (`null`). */
 function formatMedianDays(medianMs: number | null): string {
 	if (medianMs === null) return "henüz ölçülemiyor";
 	const days = medianMs / MS_PER_DAY;

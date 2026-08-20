@@ -1,9 +1,4 @@
-/**
- * kamp.us's reference report-catalog entry: the `votes-vs-reactions` definition is well-formed
- * against child C's catalog-entry interface, is registered so `report --name` resolves it, and
- * renders into the exact sampling-correct AE query ADR 0153 names verbatim (`sumIf` over
- * `_sample_interval`, never `count()`). Pure — no AE, no keychain.
- */
+/** Pins the rendered SQL against the query ADR 0153 names verbatim. Pure — no AE, no keychain. */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {knownReportIds, renderReportSql, resolveReport} from "../report.ts";

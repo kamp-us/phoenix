@@ -3,17 +3,9 @@ import {WIRE_MESSAGES} from "../../fate/wireMessages";
 import {isAuthRedirectError, voteGateMessage} from "./useVoteToggle";
 
 /**
- * The shared vote-seam error classification (`useVoteToggle` / `useGatedToggle`):
- * a çaylak's earn-to-vote denial (`VOTE_REQUIRES_YAZAR`) is surfaced as a toast
- * instead of a silent no-op (#1879), while the pre-existing `UNAUTHORIZED`→
- * auth-redirect path and the silence of every other code are unchanged.
- *
- * These exercise the REAL exported classifiers — `voteGateMessage` /
- * `isAuthRedirectError`, the same functions the hook's `dispatch` catch routes
- * through — not a re-implemented copy, and model the gate's caught-error branch
- * over the same controllable dispatch idiom the sibling `DefinitionCard.test.ts`
- * uses, so a regression in the classification fails here rather than only in an
- * e2e.
+ * The shared vote-seam error classification (#1879). These run the REAL exported
+ * classifiers, not a re-implemented copy, so a regression fails here and not only
+ * in an e2e.
  */
 
 describe("voteGateMessage — the VOTE_REQUIRES_YAZAR ladder copy (real classifier)", () => {
@@ -38,9 +30,7 @@ describe("voteGateMessage — the VOTE_REQUIRES_YAZAR ladder copy (real classifi
 });
 
 describe("the gate's dispatch catch — redirect vs toast vs silent (real classifiers)", () => {
-	// Model the caught-error branch of useGatedToggle exactly: redirect iff
-	// `isAuthRedirectError`, else toast iff `voteGateMessage`, else stay silent —
-	// using the REAL classifiers so a break in either fails here.
+	// Mirrors useGatedToggle's caught-error branch, over the real classifiers.
 	const guarded = async (
 		dispatch: () => Promise<void>,
 		redirectToAuth: () => void,
@@ -86,8 +76,7 @@ describe("the gate's dispatch catch — redirect vs toast vs silent (real classi
 
 describe("WIRE_MESSAGES exhaustiveness holds for the new code", () => {
 	it("carries a message for VOTE_REQUIRES_YAZAR", () => {
-		// The registry is typed Record<FateWireCode, string>, so a missing entry is a
-		// compile error; this pins the runtime value too (ladder framing, lowercase).
+		// A missing entry is already a compile error; this pins the runtime copy too.
 		expect(WIRE_MESSAGES.VOTE_REQUIRES_YAZAR).toBe("yazar olunca oy verebilirsin");
 	});
 });

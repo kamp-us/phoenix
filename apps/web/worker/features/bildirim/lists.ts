@@ -1,11 +1,8 @@
 /**
- * `bildirim.list` — the current user's notifications, newest-first, forward
- * keyset pagination (ADR 0019; the service owns the cursor). Flag-gated
- * ({@link requireBildirimOn}, the invisible `Denied` while dark); signed-out
- * resolves to an empty connection (the read-path "degrade, never throw"
- * convention of `savedPosts`). Each node carries the server-resolved
- * `targetUrl` — `null` for a target that no longer resolves, so the client
- * renders a tombstone, never a broken link.
+ * The current user's notifications (ADR 0019; the service owns the cursor). Signed-out
+ * resolves to an empty connection rather than throwing, and a target that no longer
+ * resolves gets a null `targetUrl`, so the client renders a tombstone instead of a
+ * broken link.
  */
 import {CurrentUser, Fate} from "@kampus/fate-effect";
 import {Effect} from "effect";

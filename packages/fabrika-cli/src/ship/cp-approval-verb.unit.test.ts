@@ -19,6 +19,7 @@ import {
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
 const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
 const OWNERS = /contents\/\.github\/CODEOWNERS/;
+const CONFIG = /contents\/\.fabrika\.jsonc/;
 const COMPARE = /^gh api repos\/o\/r\/compare\//;
 const ROSTER = /^gh api --paginate orgs\/kamp-us\/teams\/control-plane\/members/;
 const REVIEWS = /^gh api -i repos\/o\/r\/pulls\/4321\/reviews/;
@@ -131,14 +132,78 @@ describe("runCpApproval", () => {
 		expect(out.stdout).toBe(`cp-approval\tdischarge\tself-approval-marker@${HEAD}\n`);
 	});
 
-	it("stops on zero-owners when CODEOWNERS names no team at all", async () => {
+	it("stops on zero-owners when CODEOWNERS names no resolvable owner at all", async () => {
 		const out = await run([
 			[PULL, pull()],
-			[FILES, files(".decisions/0240-a.md", "README.md")],
-			[OWNERS, okOut("/a/ @someone\n")],
+			[FILES, files("a/b.ts", "README.md")],
+			[OWNERS, okOut("/a/ owner@example.test\n")],
 			[COMPARE, okOut("0")],
 		]);
 		expect(out.stdout).toBe("cp-approval\tstop\tzero-owners\n");
+	});
+
+	it("discharges on an individual @login owner's approval, with no roster read at all (#6299)", async () => {
+		const out = await run([
+			[PULL, pull({author: "usirin"})],
+			[FILES, files("a/b.ts", "README.md")],
+			[OWNERS, okOut("/a/ @cansirin\n")],
+			[COMPARE, okOut("0")],
+			[REVIEWS, reviews({login: "cansirin", state: "APPROVED", commit: HEAD})],
+		]);
+		expect(out.stdout).toBe(`cp-approval\tdischarge\tmember-approval:cansirin@${HEAD}\n`);
+	});
+
+	it("takes the self-approval path when the sole individual owner authored the PR", async () => {
+		const out = await run([
+			[PULL, pull({author: "usirin", comments: 1})],
+			[FILES, files("a/b.ts", "README.md")],
+			[OWNERS, okOut("/a/ @usirin\n")],
+			[COMPARE, okOut("0")],
+			[
+				COMMENTS,
+				comments({
+					id: 1,
+					author: "usirin",
+					body: `control-plane-self-approval @ ${HEAD}`,
+				}),
+			],
+		]);
+		expect(out.stdout).toBe(`cp-approval\tdischarge\tself-approval-marker@${HEAD}\n`);
+	});
+
+	it("unions an individual owner with a team roster — GitHub's any-listed-owner semantics", async () => {
+		const out = await run([
+			[PULL, pull({author: "usirin"})],
+			[FILES, CP_FILES],
+			[OWNERS, okOut(`/.github/ @kamp-us/control-plane @outsider\n`)],
+			[COMPARE, okOut("0")],
+			[ROSTER, members("usirin")],
+			[REVIEWS, reviews({login: "outsider", state: "APPROVED", commit: HEAD})],
+		]);
+		expect(out.stdout).toBe(`cp-approval\tdischarge\tmember-approval:outsider@${HEAD}\n`);
+	});
+
+	it("never answers n/a on a proven-absent CODEOWNERS — an empty boundary is the `unknown` hold", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[FILES, CP_FILES],
+			[OWNERS, errOut("gh: Not Found (HTTP 404)")],
+			[COMPARE, okOut("0")],
+		]);
+		expect(out.stdout).not.toContain("not-control-plane");
+		expect(out.stdout).toBe("cp-approval\tstop\tzero-owners\n");
+	});
+
+	it("refuses a failed boundary read on 11 whatever the repo's config says (ADR 0220 §4)", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[FILES, CP_FILES],
+			[OWNERS, errOut("gh: Bad gateway (HTTP 502)")],
+			[CONFIG, okOut('{"unreadableCodeowners": "ship"}')],
+			[COMPARE, okOut("0")],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).not.toContain("not-control-plane");
 	});
 
 	it("refuses an UNREADABLE roster on 11 — never `stop`, never `awaiting approval` (#4223)", async () => {

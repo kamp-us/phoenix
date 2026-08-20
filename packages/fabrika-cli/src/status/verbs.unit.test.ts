@@ -7,6 +7,7 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
+import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {ok} from "../io/git.ts";
@@ -45,17 +46,16 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {configState, countsOf, probeRow, runConfig, type SurfaceRow} from "./config-verb.ts";
 import {noAsOf, oneLine, readNow} from "./fields.ts";
 import {runMenu} from "./menu-verb.ts";
 import {
 	badFieldRefusal,
 	boardField,
-	configField,
 	lanesField,
 	menuField,
 	readoutField,
 	runOpen,
+	settingsField,
 } from "./open-verb.ts";
 import {ARTIFACT_TITLE, digestComment, issueNumberOf, runReadout} from "./readout-verb.ts";
 import {
@@ -81,17 +81,6 @@ const resolvedRoster = (skills: ReadonlyArray<RosterSkill>): RosterRead => ({
 	tier: "repo",
 	skills,
 	unreadableFrontmatter: skills.filter((s) => !s.frontmatterReadable).length,
-});
-
-const surface = (over: Partial<SurfaceRow>): SurfaceRow => ({
-	skill: "build",
-	surfaceId: "-",
-	disposition: "degrade",
-	presence: "present",
-	consequence: "-",
-	detail: "ROADMAP.md",
-	asOf: AS_OF,
-	...over,
 });
 
 describe("the roster row", () => {
@@ -128,7 +117,45 @@ describe("the roster's resolution ladder", () => {
 	const FOREIGN = "/home/dev/demlik";
 	const SKILL_TEXT = "---\nname: build\ndescription: d\n---\n";
 
+	const CACHE = "/home/dev/.claude/plugins/cache";
+	const manifest = (name: string) => JSON.stringify({name});
+
 	const tree = (over: Parameters<typeof fakeFs>[0]) => fakeFs(over);
+
+	/** Every rung's inputs, so a case names only the one it is about. */
+	const sources = (over: Partial<RosterSources>): RosterSources => ({
+		explicit: null,
+		pluginRootEnv: null,
+		pluginCache: null,
+		moduleDir: MODULE_DIR,
+		cwd: FOREIGN,
+		...over,
+	});
+
+	/** One cached plugin version, as Claude Code lays the cache out: marketplace/plugin/version. */
+	const cached = (version: string, declared: string, markers: ReadonlyArray<string> = []) => {
+		const root = `${CACHE}/kampus/fabrika/${version}`;
+		return {
+			root,
+			files: {
+				[`${root}/${PLUGIN_MANIFEST}`]: manifest(declared),
+				...Object.fromEntries(markers.map((marker) => [`${root}/${marker}`, "1786000000000"])),
+			},
+			directories: [`${root}/skills`],
+		};
+	};
+
+	const cacheTree = (versions: ReadonlyArray<ReturnType<typeof cached>>, over = {}) =>
+		tree({
+			dirs: {
+				[CACHE]: ["kampus"],
+				[`${CACHE}/kampus`]: ["fabrika"],
+				[`${CACHE}/kampus/fabrika`]: versions.map((v) => v.root.split("/").pop() as string),
+			},
+			files: Object.assign({}, ...versions.map((v) => v.files)),
+			directories: versions.flatMap((v) => v.directories),
+			...over,
+		});
 
 	const resolve = (sources: RosterSources, fs: ReturnType<typeof fakeFs>) =>
 		Effect.runPromise(Effect.provide(resolveRosterPath(sources), fs.layer));
@@ -139,49 +166,177 @@ describe("the roster's resolution ladder", () => {
 	const checkoutRoster = `${CHECKOUT}/${IN_REPO_ROSTER}`;
 
 	it("resolves the CLI's own checkout when the cwd is a repo carrying no roster", async () => {
-		const resolved = await resolve(
-			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
-			tree({directories: [checkoutRoster]}),
-		);
+		const resolved = await resolve(sources({}), tree({directories: [checkoutRoster]}));
 		expect(resolved?.tier).toBe("checkout");
 		expect(resolved?.path).toBe(checkoutRoster);
 	});
 
 	/** `display` is what a session transcript keeps; an absolute path there is a machine-local leak. */
 	it("prints the checkout rung as a repo-relative path, never the absolute one", async () => {
-		const resolved = await resolve(
-			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
-			tree({directories: [checkoutRoster]}),
-		);
+		const resolved = await resolve(sources({}), tree({directories: [checkoutRoster]}));
 		expect(resolved?.display).toBe(IN_REPO_ROSTER);
 		expect(resolved?.display.startsWith("/")).toBe(false);
 	});
 
 	it("keeps the cwd's own roster ahead of the checkout's when both are there", async () => {
 		const resolved = await resolve(
-			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
+			sources({}),
 			tree({directories: [checkoutRoster, `${FOREIGN}/${IN_REPO_ROSTER}`]}),
 		);
 		expect(resolved?.tier).toBe("repo");
 		expect(resolved?.path).toBe(`${FOREIGN}/${IN_REPO_ROSTER}`);
 	});
 
-	it("keeps an installed plugin ahead of both implicit checkout rungs", async () => {
-		const installed = "/cache/kampus/fabrika/abc123";
+	/**
+	 * The `plugin` rung's one live shape: a CLI vendored *inside* a plugin tree. Neither shape
+	 * fabrika itself ships in packages it that way, so this is the consumer case the rung is kept
+	 * for, constructed here rather than left as coverage nothing exercises (#6448).
+	 */
+	it("keeps a CLI bundled inside a plugin ahead of both implicit checkout rungs", async () => {
+		const installed = "/vendored/fabrika";
 		const resolved = await resolve(
-			{explicit: null, moduleDir: `${installed}/cli/src/status`, cwd: FOREIGN},
+			sources({moduleDir: `${installed}/cli/src/status`}),
 			tree({
-				directories: [checkoutRoster, `${installed}/${PLUGIN_MANIFEST}`],
-				files: {[`${installed}/${PLUGIN_MANIFEST}`]: "{}"},
+				directories: [checkoutRoster],
+				files: {[`${installed}/${PLUGIN_MANIFEST}`]: manifest("fabrika")},
 			}),
 		);
 		expect(resolved?.tier).toBe("plugin");
 		expect(resolved?.path).toBe(`${installed}/skills`);
+		expect(resolved?.display).toBe("fabrika/skills");
+	});
+
+	/**
+	 * The marketplace shape, where the CLI is a global npm package outside the plugin cache: no walk
+	 * from the module or the cwd can reach the roster, so the cache rung is the only answer (#6448).
+	 */
+	it("resolves the installed plugin out of Claude Code's cache when no walk can reach it", async () => {
+		const live = cached("602283e56c60", "fabrika");
+		const resolved = await resolve(
+			sources({pluginCache: CACHE}),
+			cacheTree([cached("0dd9a537e17c", "fabrika", [".orphaned_at", ".in_use"]), live]),
+		);
+		expect(resolved?.tier).toBe("cache");
+		expect(resolved?.path).toBe(`${live.root}/skills`);
+	});
+
+	/** The cache path carries a content hash that changes on every update — never print one. */
+	it("prints the cache rung by the manifest's declared name, never the hashed path", async () => {
+		const resolved = await resolve(
+			sources({pluginCache: CACHE}),
+			cacheTree([cached("602283e56c60", "fabrika")]),
+		);
+		expect(resolved?.display).toBe("fabrika/skills");
+		expect(resolved?.display.includes("602283e56c60")).toBe(false);
+	});
+
+	/** A cache holds every plugin the machine has installed; only fabrika's own roster is fabrika's. */
+	it("skips a cached plugin whose manifest declares another name", async () => {
+		const resolved = await resolve(
+			sources({pluginCache: CACHE}),
+			cacheTree([cached("aaaaaaaaaaaa", "some-other-plugin")]),
+		);
+		expect(resolved).toBeNull();
+	});
+
+	/**
+	 * The cache sits below both walking rungs: a phoenix developer has an installed plugin *and* a
+	 * checkout, and reading the published roster there would render something the working tree does
+	 * not have — the dev shape #5775 was fixed to serve.
+	 */
+	it("keeps the CLI's own checkout ahead of the installed plugin's cache", async () => {
+		const resolved = await resolve(
+			sources({pluginCache: CACHE}),
+			cacheTree([cached("602283e56c60", "fabrika")], {
+				directories: [checkoutRoster, `${CACHE}/kampus/fabrika/602283e56c60/skills`],
+			}),
+		);
+		expect(resolved?.tier).toBe("checkout");
+		expect(resolved?.path).toBe(checkoutRoster);
+	});
+
+	/** `.in_use` is the tiebreak the harness itself writes; the ordering must not be the hash's. */
+	it("prefers a cached version a live session holds when two are unorphaned", async () => {
+		const held = cached("zzzzzzzzzzzz", "fabrika", [".in_use"]);
+		const resolved = await resolve(
+			sources({pluginCache: CACHE}),
+			cacheTree([cached("aaaaaaaaaaaa", "fabrika"), held]),
+		);
+		expect(resolved?.path).toBe(`${held.root}/skills`);
+	});
+
+	/** A half-written cache entry is not a roster: it must not claim one and then fail the read. */
+	it("skips a cached version carrying no skills directory", async () => {
+		const resolved = await resolve(
+			sources({pluginCache: CACHE}),
+			cacheTree([{...cached("602283e56c60", "fabrika"), directories: []}]),
+		);
+		expect(resolved).toBeNull();
+	});
+
+	/** The harness's own answer where it exists — and it does not exist for a plain Bash call. */
+	it("takes $CLAUDE_PLUGIN_ROOT ahead of the cache when the harness set one", async () => {
+		const injected = "/plugins/fabrika-head";
+		const resolved = await resolve(
+			sources({pluginRootEnv: injected, pluginCache: CACHE}),
+			cacheTree([cached("602283e56c60", "fabrika")], {
+				files: {[`${injected}/${PLUGIN_MANIFEST}`]: manifest("fabrika")},
+			}),
+		);
+		expect(resolved?.tier).toBe("env");
+		expect(resolved?.path).toBe(`${injected}/skills`);
+	});
+
+	/** A variable pointing nowhere is not an answer; the ladder below it still has to run. */
+	it("falls through when $CLAUDE_PLUGIN_ROOT names a directory holding no plugin manifest", async () => {
+		const live = cached("602283e56c60", "fabrika");
+		const resolved = await resolve(
+			sources({pluginRootEnv: "/plugins/gone", pluginCache: CACHE}),
+			cacheTree([live]),
+		);
+		expect(resolved?.tier).toBe("cache");
+		expect(resolved?.path).toBe(`${live.root}/skills`);
+	});
+
+	it("still keeps an explicitly-passed path ahead of the env rung", async () => {
+		const injected = "/plugins/fabrika-head";
+		const resolved = await resolve(
+			sources({explicit: "/mine/skills", pluginRootEnv: injected}),
+			tree({files: {[`${injected}/${PLUGIN_MANIFEST}`]: manifest("fabrika")}}),
+		);
+		expect(resolved?.tier).toBe("explicit");
+		expect(resolved?.path).toBe("/mine/skills");
+	});
+
+	/** The `menu` and `config` fields the front door exists to answer — the defect #6448 reported. */
+	it("renders the marketplace shape's roster rather than the unknown #6448 reported", async () => {
+		const live = cached("602283e56c60", "fabrika");
+		const out = await read(
+			sources({pluginCache: CACHE}),
+			cacheTree([live], {
+				dirs: {
+					[CACHE]: ["kampus"],
+					[`${CACHE}/kampus`]: ["fabrika"],
+					[`${CACHE}/kampus/fabrika`]: ["602283e56c60"],
+					[`${live.root}/skills`]: ["build"],
+				},
+				directories: [`${live.root}/skills`, `${live.root}/skills/build`],
+				files: {
+					...live.files,
+					[`${live.root}/skills/build/SKILL.md`]: SKILL_TEXT,
+				},
+			}),
+		);
+		expect(out._tag).toBe("Resolved");
+		if (out._tag !== "Resolved") return;
+		expect(out.tier).toBe("cache");
+		expect(out.skills.map((s) => s.name)).toEqual(["build"]);
+		expect(runMenu({roster: out, asOf: AS_OF, json: false}).code).toBe(ANSWER);
 	});
 
 	it("reads the checkout roster's skills rather than reporting the target repo bare", async () => {
 		const out = await read(
-			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
+			sources({}),
 			tree({
 				directories: [checkoutRoster, `${checkoutRoster}/build`],
 				dirs: {[checkoutRoster]: ["build"]},
@@ -197,7 +352,7 @@ describe("the roster's resolution ladder", () => {
 	/** A resolved roster holding nothing is a fact at exit 0 — the added rung must not change that. */
 	it("keeps a resolved-but-empty checkout roster `empty`, never unknown", async () => {
 		const out = await read(
-			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
+			sources({}),
 			tree({directories: [checkoutRoster], dirs: {[checkoutRoster]: []}}),
 		);
 		expect(out._tag).toBe("Resolved");
@@ -209,7 +364,7 @@ describe("the roster's resolution ladder", () => {
 	/** An explicit path is the caller's claim; no implicit rung may rescue it. */
 	it("still seats an explicitly-passed absent --skills-dir on AbsentExplicit", async () => {
 		const out = await read(
-			{explicit: "/nope", moduleDir: MODULE_DIR, cwd: FOREIGN},
+			sources({explicit: "/nope"}),
 			tree({directories: [checkoutRoster], dirs: {[checkoutRoster]: ["build"]}}),
 		);
 		expect(out._tag).toBe("AbsentExplicit");
@@ -217,7 +372,7 @@ describe("the roster's resolution ladder", () => {
 	});
 
 	it("still fails when no rung answers", async () => {
-		const out = await read({explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN}, tree({}));
+		const out = await read(sources({}), tree({}));
 		expect(out._tag).toBe("Failed");
 		if (out._tag !== "Failed") return;
 		expect(out.reason).toBe("no roster resolved — pass --skills-dir");
@@ -260,47 +415,6 @@ describe("status menu", () => {
 		expect(seven.code).not.toBe(eleven.code);
 		expect(seven.stdout).toBe("");
 		expect(eleven.stdout).toBe("");
-	});
-});
-
-describe("status config", () => {
-	it("is `gaps`, never `satisfied`, over a roster that holds zero skills", () => {
-		expect(configState([], 0)).toBe("gaps");
-	});
-
-	it("is `satisfied` only when every declared surface is proven present", () => {
-		expect(configState([surface({})], 1)).toBe("satisfied");
-		expect(configState([surface({presence: "unprobeable"})], 1)).toBe("gaps");
-		expect(configState([surface({presence: "unknown"})], 1)).toBe("gaps");
-		expect(configState([surface({disposition: "undeclared", presence: "unknown"})], 1)).toBe(
-			"gaps",
-		);
-	});
-
-	it("deduplicates the missing count by id while every declaring row still prints", () => {
-		const counts = countsOf([
-			surface({skill: "build", surfaceId: "taxonomy", presence: "missing"}),
-			surface({skill: "operate", surfaceId: "taxonomy", presence: "missing"}),
-			surface({skill: "review", surfaceId: "other", presence: "missing"}),
-		]);
-		expect(counts.missing).toBe(2);
-		expect(counts.declaredSkills).toBe(3);
-	});
-
-	it("counts a disposition off the canonical three under off-vocabulary rather than refusing", () => {
-		expect(countsOf([surface({disposition: "warn"})]).offVocabulary).toBe(1);
-	});
-
-	it("renders the header and one line per surface", () => {
-		const out = runConfig({
-			roster: resolvedRoster([skill("build", "---\nname: build\ndescription: d\n---\n")]),
-			surfaces: [surface({})],
-			json: false,
-		});
-		expect(out.code).toBe(ANSWER);
-		expect(out.stdout).toBe(
-			"config\tsatisfied\t1\t0\t0\t0\nsurface\tbuild\t-\tdegrade\tpresent\t-\tROADMAP.md\t2026-08-09T14:22:03Z\n",
-		);
 	});
 });
 
@@ -397,6 +511,16 @@ describe("status bootstrap", () => {
 		expect(NOT_BUILDABLE).toBe(12);
 	});
 
+	/**
+	 * Buildability and disposition are separate axes over the same surface, so a surface can be
+	 * buildable here and carry any disposition there — but it cannot be buildable and carry none.
+	 * `roadmap-focus` shipped exactly that way and the gap reached a review round (#6301).
+	 */
+	it("names no surface the disposition registry has never heard of", () => {
+		const registered = new Set(SURFACE_REGISTRY.map((surface) => surface.id));
+		for (const surface of BUILDABLE_SURFACES) expect(registered.has(surface.id)).toBe(true);
+	});
+
 	it("builds every issue-shape marker the ideation skills mint issues with", () => {
 		expect(ISSUE_SHAPE_MARKERS.map((label) => label.name)).toEqual([
 			"wayfinding:map",
@@ -422,48 +546,7 @@ describe("status bootstrap", () => {
 	});
 });
 
-/**
- * #5777: the row declaring `` `.gitignore` covering `.fabrika/` `` was probed by existence alone, so
- * a repo whose `.gitignore` says nothing about `.fabrika/` scored it `present` — a false positive
- * indistinguishable from a correct answer. The buildable surface is the other half: nothing could
- * make the row true.
- */
 describe("the .fabrika/ gitignore row", () => {
-	const declared = {
-		surfaceId: "gitignore-row",
-		disposition: "degrade",
-		consequence: "the verbs still work",
-		subject: {_tag: "PathContaining", path: ".gitignore", contains: ".fabrika/"},
-	} as const;
-
-	const ctx = {
-		repoRoot: "/repo",
-		labels: {_tag: "Known", labels: new Set<string>()} as const,
-		repoName: "o/r",
-		asOf: noAsOf,
-	};
-
-	const probe = (files: Record<string, string | null>, unreadable: ReadonlyArray<string> = []) =>
-		Effect.runPromise(
-			Effect.provide(probeRow("operate", declared, ctx), fakeFs({files, unreadable}).layer),
-		);
-
-	it("reads the file, so an uncovered .fabrika/ is missing and not present", async () => {
-		const row = await probe({"/repo/.gitignore": "node_modules\ndist\n"});
-		expect(row.presence).toBe("missing");
-		expect(row.detail).toBe(".gitignore does not cover .fabrika/");
-	});
-
-	it("reports present only when the row is actually there — phoenix's own answer", async () => {
-		const row = await probe({"/repo/.gitignore": "node_modules\n\n# fabrika\n/.fabrika/\n"});
-		expect(row.presence).toBe("present");
-	});
-
-	it("keeps an absent file missing and an unreadable one unknown", async () => {
-		expect((await probe({})).presence).toBe("missing");
-		expect((await probe({"/repo/.gitignore": "x"}, ["/repo/.gitignore"])).presence).toBe("unknown");
-	});
-
 	const bootstrap = (files: Record<string, string | null>) => {
 		const fs = fakeFs({files});
 		return Effect.runPromise(
@@ -473,6 +556,7 @@ describe("the .fabrika/ gitignore row", () => {
 					path: null,
 					json: true,
 					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
 					repo: ok("o/r"),
 					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
 				}),
@@ -518,6 +602,7 @@ describe("the .fabrika/ gitignore row", () => {
 					path: null,
 					json: true,
 					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
 					repo: ok("o/r"),
 					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
 				}),
@@ -545,6 +630,7 @@ describe("the roadmap-focus row count", () => {
 					path: null,
 					json: true,
 					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
 					repo: ok("o/r"),
 					stdin: Effect.succeed({_tag: "Text", text: content} as StdinRead),
 				}),
@@ -608,6 +694,30 @@ describe("the roadmap-focus row count", () => {
 		expect(roadmapCount(PARSING).clause).toBe("2 arcs, 1 campaign");
 	});
 
+	// #6296: bootstrap must scaffold where the READERS look. A repo declaring `roadmapFile` and
+	// getting `ROADMAP.md` written ends up with two files, one of them inert and unremarked.
+	it("scaffolds at the path `roadmapFile` names", async () => {
+		const fs = fakeFs({
+			files: {"/repo/.fabrika.jsonc": JSON.stringify({roadmapFile: "docs/PLAN.md"})},
+		});
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "roadmap-focus",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "Text", text: PARSING} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({target: "docs/PLAN.md"});
+		expect([...fs.written.keys()]).toEqual(["/repo/docs/PLAN.md"]);
+	});
+
 	it("leaves the other file surface's bytes and notice exactly as they were", async () => {
 		const outcome = await write("# Design system manifest\n", "design-manifest");
 		expect(JSON.parse(outcome.stdout)).toEqual({
@@ -660,6 +770,7 @@ describe("the readout-artifact read-back reads the created issue by number", () 
 					path: null,
 					json: true,
 					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
 					repo: ok("o/r"),
 					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
 				}),
@@ -756,7 +867,11 @@ describe("status open is TOTAL — every unreadable source is a field state, nev
 	it("renders five fields at exit 0 when EVERY source failed", () => {
 		const fields = [
 			menuField({_tag: "Failed", path: "/x", display: "x", reason: "EACCES"}, AS_OF),
-			configField({_tag: "Failed", path: "/x", display: "x", reason: "EACCES"}, [], AS_OF),
+			settingsField(
+				[{key: "governedRoots", provenance: "unknown", detail: "EACCES"}],
+				".fabrika.jsonc",
+				AS_OF,
+			),
 			boardField({_tag: "Failed", repo: "acme/storefront", reason: "EAI_AGAIN"}),
 			readoutField({_tag: "NoFormat"}),
 			lanesField(
@@ -772,11 +887,13 @@ describe("status open is TOTAL — every unreadable source is a field state, nev
 		for (const field of fields) expect(field.state).toBe("unknown");
 	});
 
-	it("renders a resolved-but-empty roster as `empty`/`gaps`, not `unknown` and not `satisfied`", () => {
+	it("renders a resolved-but-empty roster as `empty`, not `unknown`", () => {
 		expect(menuField(resolvedRoster([]), AS_OF).state).toBe("empty");
-		const config = configField(resolvedRoster([]), [], AS_OF);
-		expect(config.state).toBe("gaps");
-		expect(config.detail).toBe("empty roster — nothing declared, nothing proven");
+	});
+
+	// A surface registering zero keys is unread, not resolved: ADR 0092's zero-scope seat as a field.
+	it("renders a settings surface carrying no keys as `unknown`", () => {
+		expect(settingsField([], ".fabrika.jsonc", AS_OF).state).toBe("unknown");
 	});
 
 	it("has exactly one refusal seat, and it is the off-vocabulary `--field`", () => {

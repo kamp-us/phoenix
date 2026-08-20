@@ -1,17 +1,11 @@
 /**
  * `mute.listMine` — the manage-my-mutes read model (#3114, epic #2035): the viewer's
- * own muted members, newest-mute-first, forward keyset-paginated. Gated on
- * `CurrentUser` (an anonymous caller is rejected the invisible `Unauthorized` before
- * any read) and behind the default-off `member-mute` flag (off ⇒ `MuteDisabled`, so
- * the whole mute surface stays dark uniformly — the same containment the `mute.set` /
- * `mute.remove` write path uses, see `errors.ts`).
+ * own muted members, newest-first, forward keyset-paginated. Behind the default-off
+ * `member-mute` flag (off ⇒ `MuteDisabled`), so the whole mute surface stays dark
+ * uniformly with the write path.
  *
  * A member only ever pages their OWN mutes: the muter scope is structural in
- * `Mute.listMine` (`muter_id` rides every predicate). Each row is hydrated with the
- * muted member's profile handle joined from pasaport in ONE batched read (the divan
- * roster idiom) — enough for a UI to render the row and offer a per-row unmute
- * (`mute.remove` keyed on the row `id`). The read model only; the list UI + the
- * unmute button are the reachability sibling, the unmute write is `mute.remove`.
+ * `Mute.listMine` — `muter_id` rides every predicate.
  */
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
@@ -56,9 +50,8 @@ export const lists = {
 				...(args.after !== undefined ? {after: args.after} : {}),
 			});
 
-			// One batched identity read for the whole page (never a per-row by-id): a
-			// member absent from `user_profile` simply has no entry and renders with a
-			// null handle client-side.
+			// One batched identity read for the whole page (never a per-row by-id): a member
+			// absent from `user_profile` renders with a null handle.
 			const pasaport = yield* Pasaport;
 			const identities = yield* pasaport.getProfileIdentitiesByIds(
 				page.rows.map((row) => row.mutedId),

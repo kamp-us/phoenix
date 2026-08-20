@@ -4,16 +4,8 @@
  * feature, success and error paths. The sozluk corpus
  * (`Interpreter.test.ts`, world in `Oracle.fixture.ts`) carries the
  * query/mutation taxonomy; this file adds the OTHER migrated features'
- * distinctive shapes at the level the oracle needs (in-memory, not D1):
- *
- *   - pano   — `tags` as an EMBEDDED SCALAR array on the post row (never a
- *              list relation), threaded comments as a resolver-owned inline
- *              keyset connection, a keyset-cursored feed list, and a
- *              publishing comment mutation.
- *   - pasaport — `profile` stamping `id` === `userId`, the resolver-owned
- *              `contributions` connection, and the CAPABILITY-LESS
- *              `Contribution` source (no byId/byIds/connection by design).
- *   - stats  — plain string-typed queries (`landingStats` has no data view).
+ * distinctive shapes at the level the oracle needs (in-memory, not D1) —
+ * pano, pasaport and stats, each noted at its fixture below.
  */
 import type {ConnectionResult} from "@nkzw/fate/server";
 import {createFateServer, hasNestedSelection, list} from "@nkzw/fate/server";
@@ -429,7 +421,6 @@ describe("the feature-shaped oracle corpus — pano / pasaport / stats", () => {
 		const v1 = makeFxV1();
 		const v2 = makeFxV2();
 		try {
-			// pano: the embedded-scalar tags array rides the post verbatim.
 			await assertParity(v1, v2, {
 				label: "post query without nested selection keeps tags scalar",
 				operations: [
@@ -440,7 +431,6 @@ describe("the feature-shaped oracle corpus — pano / pasaport / stats", () => {
 				label: "post query miss yields null",
 				operations: [{id: "1", kind: "query", name: "fx.post", args: {slug: "yok"}, select: []}],
 			});
-			// pano: the resolver-owned comments connection round-trips cursors.
 			const commentsPageOne = await assertParity(v1, v2, {
 				label: "post comments page 1",
 				operations: [
@@ -469,7 +459,6 @@ describe("the feature-shaped oracle corpus — pano / pasaport / stats", () => {
 				],
 			});
 			expect(JSON.parse(commentsPageTwo.text).results[0].data.comments.items).toHaveLength(1);
-			// pano: the feed list keysets across pages.
 			const feedPageOne = await assertParity(v1, v2, {
 				label: "posts list page 1",
 				operations: [{id: "1", kind: "list", name: "fx.posts", args: {first: 1}, select: []}],
@@ -489,7 +478,6 @@ describe("the feature-shaped oracle corpus — pano / pasaport / stats", () => {
 				],
 			});
 			expect(JSON.parse(feedPageTwo.text).results[0].data.items[0].cursor).toBe("p2");
-			// pano: the comment mutation — anonymous error, authed write + publish.
 			await assertParity(v1, v2, {
 				label: "anonymous comment.add is UNAUTHORIZED",
 				operations: [
@@ -527,7 +515,6 @@ describe("the feature-shaped oracle corpus — pano / pasaport / stats", () => {
 					},
 				],
 			});
-			// pano: invalid nested page args are the shared VALIDATION_ERROR.
 			await assertParity(v1, v2, {
 				label: "invalid nested page args are VALIDATION_ERROR",
 				operations: [
@@ -540,7 +527,6 @@ describe("the feature-shaped oracle corpus — pano / pasaport / stats", () => {
 					},
 				],
 			});
-			// pasaport: profile stamping + the contributions connection.
 			await assertParity(v1, v2, {
 				label: "profile query stamps id === userId",
 				operations: [
@@ -580,7 +566,6 @@ describe("the feature-shaped oracle corpus — pano / pasaport / stats", () => {
 					{id: "1", kind: "query", name: "fx.profile", args: {username: "kimse"}, select: []},
 				],
 			});
-			// stats: the plain string-typed query.
 			await assertParity(v1, v2, {
 				label: "landingStats parity (string-typed, no data view)",
 				operations: [{id: "1", kind: "query", name: "fx.landingStats", select: []}],
@@ -595,7 +580,6 @@ describe("the feature-shaped oracle corpus — pano / pasaport / stats", () => {
 		const v1 = await makeFxWalkV1();
 		const v2 = makeFxV2();
 		try {
-			// pano: the embedded-scalar tags array passes the MASK verbatim too.
 			await assertParity(v1, v2, {
 				label: "post byId keeps the tags scalar through masking",
 				operations: [
@@ -617,14 +601,12 @@ describe("the feature-shaped oracle corpus — pano / pasaport / stats", () => {
 					},
 				],
 			});
-			// pasaport: the capability-less Contribution source is the internal arm.
 			await assertParity(v1, v2, {
 				label: "capability-less Contribution byId is fate's internal arm",
 				operations: [
 					{id: "1", kind: "byId", type: "FxContribution", ids: ["k1"], select: ["kind"]},
 				],
 			});
-			// pasaport: the profile loads through its byId-only source.
 			await assertParity(v1, v2, {
 				label: "profile byId masks through the byId-only source",
 				operations: [

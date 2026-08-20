@@ -1,19 +1,7 @@
 /**
- * Pano's **posts plane** — the post half of the `Pano` service: post CRUD, the
- * draft lifecycle, vote delegation, the moderator soft-delete/restore pair, and the
- * connection-shaped feed/by-id reads. `makePostOperations` is the layer-build
- * factory: `PanoLive` hands it the shared runtime deps and spreads the returned
- * closures into the service object, so the wire surface is unchanged from when these
- * lived inline in `Pano.ts`.
- *
- * Submit-validation lives here as module-private pure functions (ADR 0013 for
- * *where* validation belongs, ADR 0082 for *why* it's lifted off the service): each
- * is wrong-or-right on its input with no DB. The wire codes unit-test off-DB THROUGH
- * the mutation (`submit-validation.unit.test.ts` drives `submitPost` / `saveDraft` /
- * `editPost` over a throwing `Drizzle`, proving the gate fires before any DB call),
- * and the integration tier keeps only the real-DB-miss cases.
- *
- * Validation lives in the service methods, not resolvers (ADR 0013).
+ * Pano's posts plane — post CRUD, drafts, vote/reaction delegation, the moderator
+ * soft-delete/restore pair, and the connection-shaped feed/by-id reads. Validation
+ * lives in the service methods, not resolvers (ADR 0013).
  */
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, gt, inArray, isNull, sql} from "drizzle-orm";
@@ -77,7 +65,6 @@ import {
 export const POST_TITLE_MAX = 200;
 export const POST_BODY_MAX = 10_000;
 
-/** Raw tag shape on submit/draft input — `label` is optional until normalized. */
 export interface PostTagInput {
 	kind: string;
 	label?: string | undefined;
@@ -90,10 +77,7 @@ export interface SubmitPostInput {
 	tags: ReadonlyArray<{kind: string; label?: string | undefined}>;
 	authorId: UserId;
 	authorName: string;
-	/**
-	 * The çaylak mod-only sandbox stamp (#1205), decided by the resolver from the
-	 * authorship flag + author tier. `null`/absent ⇒ posted live (today's behavior).
-	 */
+	/** Decided by the resolver from authorship + author tier (#1205); `null`/absent ⇒ posted live. */
 	sandboxedAt?: Date | null | undefined;
 }
 
@@ -120,7 +104,6 @@ export interface SaveDraftInput {
 	tags?: ReadonlyArray<{kind: string; label?: string | undefined}> | undefined;
 }
 
-/** A draft re-resolves like a fresh post; `isDraft` rides the wire as `true`. */
 export interface SaveDraftResult extends SubmitPostResult {
 	isDraft: true;
 }
@@ -158,21 +141,11 @@ export interface VoteOnPostResult {
 export interface ReactToPostInput {
 	postId: PostId;
 	userId: UserId;
-	/**
-	 * The reaction intent: a curated-palette member sets/changes the user's single
-	 * reaction; `null` retracts it (toggle off). Already decoded against
-	 * `ReactionEmojiSchema` at the wire boundary, so the service never sees a
-	 * non-palette string.
-	 */
+	/** Sets/changes the user's single reaction; `null` retracts it. */
 	emoji: ReactionEmoji | null;
 }
 
-/**
- * `reactToPost` re-resolves the affected post like a read (the `post.save` idiom),
- * so the returned entity carries the freshly-stamped `reactions` aggregate the
- * mutation echoes back. `changed` is the service's idempotency signal (a re-react
- * of the same emoji, or a retract-when-none, is `false`).
- */
+/** `changed` is the idempotency signal: a re-react of the same emoji, or a retract-when-none, is `false`. */
 export interface ReactToPostResult {
 	post: PostSummaryRow;
 	changed: boolean;
@@ -214,11 +187,9 @@ export interface DeletePostResult {
 }
 
 /**
- * A restore's result: whether it acted, and — for the live-broadcast decision — the
- * `sandboxedAt` the content landed back at (#1811). `null` ⇒ restored to `Live`
- * (broadcast via `alwaysLive`); non-null ⇒ restored to the çaylak sandbox, so the
- * mutation must suppress the live echo through `decidePublish`, matching the
- * create-time #1205 gate. Never broadcast a sandboxed restore to a public topic.
+ * `sandboxedAt` drives the live-broadcast decision (#1811): `null` ⇒ restored to `Live`,
+ * non-null ⇒ restored to the çaylak sandbox and the mutation must suppress the live echo
+ * through `decidePublish`. Never broadcast a sandboxed restore to a public topic.
  */
 export interface RestorePostResult {
 	postId: string;
@@ -226,7 +197,6 @@ export interface RestorePostResult {
 	sandboxedAt: Date | null;
 }
 
-/** Returns the normalized body (`null` for empty), or fails `PostBodyTooLong`. */
 const validatePostBody = Effect.fn("Pano.validatePostBody")(function* (rawBody: string) {
 	if (rawBody.length > POST_BODY_MAX) {
 		return yield* new PostBodyTooLong({
@@ -251,11 +221,7 @@ const validatePostTitle = Effect.fn("Pano.validatePostTitle")(function* (raw: st
 	return trimmed;
 });
 
-/**
- * Draft title gate — `saveDraft` has no required title (a half-filled form
- * persists), only the length cap. Returns the trimmed title or fails
- * `TitleTooLong`.
- */
+/** A draft has no required title (a half-filled form persists), only the length cap. */
 const validateDraftTitle = Effect.fn("Pano.validateDraftTitle")(function* (raw: string) {
 	const trimmed = raw.trim();
 	if (trimmed.length > POST_TITLE_MAX) {
@@ -267,16 +233,10 @@ const validateDraftTitle = Effect.fn("Pano.validateDraftTitle")(function* (raw: 
 });
 
 /**
- * Parse an optional submit/draft URL to its normalized form + host. An empty or
- * absent URL yields `{host: null, urlNormalized: null}`; a malformed URL OR one
- * whose scheme isn't `http(s)` fails `UrlInvalid`. Shared by `submitPost` and
- * `saveDraft`.
- *
  * The `http(s)`-only allowlist (via {@link isHttpUrl}) is defense-in-depth at the
- * PERSISTENCE layer: it keeps a `javascript:`/`data:`/`file:` URL from ever
- * reaching `post_record.url`, closing a stored-invariant gap so no consumer —
- * present or future, React or not — can ever read a non-http(s) href back out
- * (#1890). The bare-`new URL()` guard here previously admitted them.
+ * persistence layer: it keeps a `javascript:`/`data:`/`file:` URL from ever reaching
+ * `post_record.url`, so no consumer can read a non-http(s) href back out (#1890). A
+ * bare `new URL()` guard admits them.
  */
 const parseSubmitUrl = Effect.fn("Pano.parseSubmitUrl")(function* (url: string | null | undefined) {
 	if (url == null || url.length === 0) {
@@ -289,11 +249,6 @@ const parseSubmitUrl = Effect.fn("Pano.parseSubmitUrl")(function* (url: string |
 	return {host: parsed.host, urlNormalized: parsed.toString()} as const;
 });
 
-/**
- * `submitPost` tag normalization: at least one tag is required, every kind must
- * be in the fixed enum, duplicate kinds collapse. Fails `TagsRequired` /
- * `TagInvalid`.
- */
 const normalizeSubmitTags = Effect.fn("Pano.normalizeSubmitTags")(function* (
 	tags: ReadonlyArray<PostTagInput> | null | undefined,
 ) {
@@ -318,11 +273,7 @@ const normalizeSubmitTags = Effect.fn("Pano.normalizeSubmitTags")(function* (
 	return normalizedTags;
 });
 
-/**
- * `saveDraft` tag normalization: tags are optional (empty kinds skipped, not
- * rejected), but a non-empty kind outside the fixed enum still fails
- * `TagInvalid`.
- */
+/** Unlike submit, a draft's tags are optional — an empty kind is skipped, not rejected. */
 const normalizeDraftTags = Effect.fn("Pano.normalizeDraftTags")(function* (
 	tags: ReadonlyArray<PostTagInput> | null | undefined,
 ) {
@@ -341,7 +292,6 @@ const normalizeDraftTags = Effect.fn("Pano.normalizeDraftTags")(function* (
 	return normalizedTags;
 });
 
-/** The shared runtime deps `PanoLive` threads into the posts plane. */
 export interface PostOperationsDeps {
 	readonly run: DrizzleAccessOrDie["run"];
 	readonly batch: DrizzleAccessOrDie["batch"];
@@ -350,27 +300,16 @@ export interface PostOperationsDeps {
 	readonly reactionSvc: typeof Reaction.Service;
 	readonly removalSeq: Removal.RemovalSequence;
 	readonly persistPanoStats: PersistPanoStats;
-	/** Batched live author-identity reader (`Pasaport.getProfileIdentitiesByIds`, #2139). */
 	readonly readProfileIdentities: ReadProfileIdentities;
 }
 
 /**
- * Max live-non-draft rows a single decay SELECT materializes before the sweep advances
- * its keyset cursor (#2559). Bounds the isolate's per-query working set so a growing table
- * never loads an unbounded result set into memory in one shot — the sweep still visits
- * EVERY post each tick (windowless, #2133), just in id-ordered pages. Sized well above the
- * v1 cohort's tens-of-posts so today's pass is a single short page (no behavior change at
- * current scale) while the bound holds as the table grows; a named constant, tunable.
+ * Bounds one decay SELECT's working set (#2559). Paging is NOT a recency window — the
+ * sweep still visits every live non-draft post each tick (#2133).
  */
 export const HOT_SCORE_DECAY_CHUNK = 200;
 
-/**
- * The DB seam the chunked decay sweep drives, factored out so {@link scanDecayChunks}'s
- * cursor-advance + full-coverage (windowless) logic is unit-testable with in-memory ports
- * — no D1, mirroring the pure/`decayHotScores` split. `fetchChunk(afterId, limit)` returns
- * up to `limit` live-non-draft rows with `id > afterId` in ascending id order (`afterId`
- * `null` ⇒ from the head); `writeBack` persists the changed `hot_score`s of one page.
- */
+/** `fetchChunk` returns live non-draft rows with `id > afterId` ascending (`null` ⇒ from the head). */
 export interface HotDecayScanPorts {
 	readonly fetchChunk: (
 		afterId: string | null,
@@ -380,13 +319,9 @@ export interface HotDecayScanPorts {
 }
 
 /**
- * Keyset-chunk the windowless decay sweep: page id-ordered slices of at most `chunkSize`
- * rows, decaying + writing back each page before fetching the next, so no single query
- * scans the whole table in one shot (#2559). The sweep still covers every live non-draft
- * post per call — chunking is a mechanical batching of the same full pass, NOT a recency
- * window (#2133): the id-keyset cursor only bounds each page, it never excludes a post by
- * age. Loops until a short (`< chunkSize`) page marks the tail; an exact-multiple table
- * takes one extra empty page to terminate. Returns the pass's scanned/updated totals.
+ * The id-keyset cursor bounds each page only — it never excludes a post by age, so this
+ * covers every live non-draft post per call (#2133) while no single query scans the whole
+ * table (#2559).
  */
 export const scanDecayChunks = (
 	ports: HotDecayScanPorts,
@@ -402,8 +337,6 @@ export const scanDecayChunks = (
 			if (rows.length === 0) break;
 			scanned += rows.length;
 			const updates = decayHotScores(rows, nowMs);
-			// Nothing changed ⇒ no write (the common steady state) — writeBack is skipped, not
-			// called with an empty batch.
 			if (updates.length > 0) {
 				yield* ports.writeBack(updates);
 				updated += updates.length;
@@ -416,31 +349,13 @@ export const scanDecayChunks = (
 	});
 
 /**
- * The periodic sıcak/hot decay-refresh (#2027, WINDOWLESS since #2133, keyset-chunked in
- * #2559), factored to the ONE dep it reads (`run`) so it builds standalone. `hot_score` is
- * a stored, keyset-read column written only at activity sites, so an inactive post's age
- * term freezes and it squats the hot feed. This re-decays the stored column on a schedule
- * (the cron trigger in `index.ts`) so ranking keeps decaying with age WITHOUT a read-time
- * recompute — the READ-PATH keyset-cursor contract and the no-`POW` constraint both need
- * `hot_score` to stay a stored, indexed, monotonic-per-snapshot column. Scoped only to
- * live, non-draft posts (a removed post's `hot_score` is already zeroed by the removal
- * batch); the pure decision (formula reuse + changed-only filter) lives in
- * `db/hotScoreDecay.ts`, and the chunk-sweep control flow in {@link scanDecayChunks}.
- *
- * WINDOWLESS (#2133): earlier this pass scanned only a 72h recency window, so a post that
- * froze high and drifted past 72h was never re-selected and squatted the feed forever (the
- * ~18-day, hot_score=285 post the founder observed). Every live non-draft post is now
- * re-decayed each pass, so age keeps eroding rank at any age.
- *
- * KEYSET-CHUNKED SCAN (#2559): the sweep is bounded by an ascending-id keyset cursor into
- * `HOT_SCORE_DECAY_CHUNK`-sized pages rather than one unbounded SELECT, so the isolate
- * never materializes the whole table at once. The chunking is a WRITE/SCAN-path bound and
- * is distinct from the read-path feed pagination above — it does NOT reintroduce a window:
- * the cursor pages through EVERY post each tick, preserving #2133.
- *
- * Exported (not inlined in `makePostOperations`) so the AC4 integration test can drive the
- * SHIPPED method against real remote D1 built from just a `run` — no full
- * `PostOperationsDeps` graph, no re-implementation of the query.
+ * The periodic sıcak/hot decay-refresh (#2027), driven by the cron trigger in `index.ts`.
+ * `hot_score` is a stored, keyset-read column written only at activity sites, so an
+ * inactive post's age term freezes and it squats the hot feed; the read-path keyset
+ * contract and the no-`POW` constraint both need it to stay stored, so it is re-decayed
+ * on a schedule rather than at read time. Windowless since #2133 — an earlier 72h window
+ * left a frozen-high post squatting the feed forever. Exported so the integration test can
+ * drive the shipped method off just a `run`.
  */
 export const makeRefreshHotScores = (run: DrizzleAccessOrDie["run"]) =>
 	Effect.fn("Pano.refreshHotScores")(function* (now: Date) {
@@ -482,8 +397,6 @@ export const makeRefreshHotScores = (run: DrizzleAccessOrDie["run"]) =>
 							})),
 					),
 				),
-			// One UPDATE per changed row of the page, all in the caller's single clock reading.
-			// `Effect.forEach` sequences them.
 			writeBack: (updates) =>
 				Effect.forEach(
 					updates,
@@ -512,11 +425,8 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		readProfileIdentities,
 	} = deps;
 
-	// The viewer scalars for `Post` (#1126): `myVote` (batched `user_vote`) +
-	// `isSaved` (batched `post_bookmark`). Every read finalizes through
-	// `stampViewerScalars` with these specs — one `IN (...)` read per scalar for the
-	// whole batch, never a per-row N+1 — so a new read path can't silently ship an
-	// always-`null` scalar.
+	// Every read finalizes through `stampViewerScalars` with these specs — one `IN (...)`
+	// read per scalar for the whole batch, never a per-row N+1 (#1126).
 	const postViewerScalars = [
 		{
 			field: "myVote",
@@ -546,14 +456,9 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 			}),
 		);
 		if (!meta) return null;
-		// Mute read-mask (#3113): a muted author's post reads as not-found for the
-		// muter, the in-memory dual of the feed's `mutedAuthorsWhere` SQL arm.
 		if (isMutedAuthor(meta.authorId, opts.mutedIds)) return null;
-		// The in-memory visibility decision via the ADR 0113 seam (`postVisibleTo`) —
-		// the mirror of the SQL `postVisibleWhere` the batch read uses, applied here
-		// because this single-row read uses the relational query builder. It composes
-		// the lifecycle + sandbox gate with the author-only draft arm, so a draft the
-		// viewer doesn't own reads as not-found while the author reads their own.
+		// The in-memory mirror of the SQL `postVisibleWhere` the batch read uses (ADR 0113),
+		// because this single-row read goes through the relational query builder.
 		if (
 			!postVisibleTo(
 				Removal.fromColumns(meta),
@@ -589,13 +494,11 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 			sql`${schema.postRecord.isDraft} is not 1`,
 		];
 		if (host) baseConditions.push(eq(schema.postRecord.host, host));
-		// Filter the çaylak sandbox (#1205) for this viewer at the same layer.
 		const sandboxClause = sandboxVisibleWhere(
 			{sandboxedAt: schema.postRecord.sandboxedAt, authorId: schema.postRecord.authorId},
 			resolveSandboxViewer(opts),
 		);
 		if (sandboxClause) baseConditions.push(sandboxClause);
-		// Mute read-mask (#3113): hide muted authors' posts from the muter's feed.
 		const muteClause = mutedAuthorsWhere(schema.postRecord.authorId, opts.mutedIds);
 		if (muteClause) baseConditions.push(muteClause);
 
@@ -607,18 +510,9 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 			createdAt: Date | null;
 		};
 
-		// The total count and the keyset page are INDEPENDENT reads over the same
-		// base predicate — the page query never consumes the count — so they run
-		// concurrently instead of serially, collapsing two cross-region D1
-		// round-trips into one overlapped batch and cutting the feed's latency floor
-		// (#2275). The combinator is the repo's `Effect.all([...], {concurrency:
-		// "unbounded"})` parallel-reads idiom (Divan.collect). NOT folded into a
-		// single `count(*) OVER()` window: the keyset query's WHERE carries the
-		// cursor predicate (`id < cursor`), so a window count there would total only
-		// the post-cursor slice, not the whole feed — a different result the fold is
-		// forbidden to change. Per-viewer scalars (myVote/isSaved) + reaction
-		// aggregates are NOT read here; they come from the batched `getPostsByIds`
-		// re-hydrate in the resolver, left untouched.
+		// Do NOT fold this into a `count(*) OVER()` window on the keyset query: that WHERE
+		// carries the cursor predicate (`id < cursor`), so the window would count only the
+		// post-cursor slice, not the whole feed (#2275).
 		const countEffect = run((db) =>
 			db
 				.select({n: sql<number>`count(*)`})
@@ -628,9 +522,6 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 				.then((r) => r?.n ?? 0),
 		);
 
-		// The keyset page path: resolve the cursor (a DB read only when `after` is
-		// present), short-circuit to `null` on a cursor miss (the caller renders the
-		// empty page), else fetch the page and stamp the live author identity.
 		const pageEffect = Effect.gen(function* () {
 			const resolvedRow = after
 				? ((yield* run((db) =>
@@ -651,9 +542,7 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 			if (cursor.kind === "miss") return null;
 			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
 
-			// Both the keyset cursor predicate and `orderBy` derive from the one
-			// `POST_SORT_LEAD_COLUMN` map: an optional lead column (descending) +
-			// `id` desc tiebreaker; `new` (no lead column) orders by `id` alone.
+			// The cursor predicate and `orderBy` derive from one map so they cannot drift apart.
 			const leadKey = POST_SORT_LEAD_COLUMN[sort];
 			const leadColumn = leadKey
 				? {column: schema.postRecord[leadKey], value: cursorRow?.[leadKey]}
@@ -697,26 +586,17 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 					.limit(first + 1),
 			);
 
-			// Route the keyset projection through the same `post-fields.ts` column→field
-			// map the by-id path uses, so `body` collapses to `null` for an empty excerpt
-			// (not `""`) — the divergence is unrepresentable, not hand-synced (#1170).
 			const page = forwardPage(fetched, first, (r) => r.id, toPostSummaryKeysetRow);
 
-			// Stamp the LIVE author identity onto the page — one batched
-			// `getProfileIdentitiesByIds` read for the whole page (never per-row), the same
-			// idiom `getPostsByIds` uses. This is the feed's convergence point: the resolver
-			// paths that serve this page WITHOUT re-hydrating through `getPostsByIds` —
-			// `landingPosts` (always anon) and the signed-OUT `posts` feed — would otherwise
-			// render the write-time `authorName` snapshot and degrade to `@username` (#2151,
-			// the last unstamped pano read path from #2139's `stampAuthorIdentity` rollout).
+			// Without this, the paths that serve the page without re-hydrating through
+			// `getPostsByIds` (`landingPosts`, the signed-out `posts` feed) render the
+			// write-time `authorName` snapshot and degrade to `@username` (#2151).
 			const stampedRows = yield* stampAuthorIdentity(readProfileIdentities, page.rows);
 			return {...page, rows: stampedRows};
 		});
 
-		// `countEffect` is element 0 so its read is issued first — the parallelized
-		// reads are order-independent for correctness (each is fully consumed), but
-		// keeping count first preserves the deterministic call order the scripted
-		// unit doubles replay against (count, [cursor], fetch).
+		// `countEffect` stays element 0: correctness is order-independent, but the scripted
+		// unit doubles replay against the call order (count, [cursor], fetch).
 		const [totalCount, pageResult] = yield* Effect.all([countEffect, pageEffect], {
 			concurrency: "unbounded",
 		});
@@ -753,7 +633,6 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 							},
 							viewer,
 						),
-						// Mute read-mask (#3113): drop muted authors' posts from the muter's batch.
 						mutedAuthorsWhere(schema.postRecord.authorId, opts.mutedIds),
 					),
 				),
@@ -779,15 +658,9 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		return yield* stampAuthorIdentity(readProfileIdentities, reacted);
 	});
 
-	// The viewer overlay (#2322, epic #2316 leg B): given the base feed's post ids,
-	// return ONLY the per-viewer scalars (`myVote`/`isSaved`) — the exact slice the
-	// GET-able base projection omits so it can be viewer-invariant + cacheable. Reuses
-	// the SAME `postViewerScalars` batch readers as `getPostsByIds` (one `user_vote` +
-	// one `post_bookmark` `IN (...)` read for the whole id batch, never per-row), so the
-	// split adds no N+1. It reads no `post_record` at all — presence is a property of
-	// the viewer's own vote/bookmark rows, so an id the viewer never touched degrades to
-	// `false` (or `null` for an anonymous viewer, the read-path convention). Nothing here
-	// is viewer-cross-visible: a reader only ever learns its OWN vote/save state.
+	// The per-viewer slice the GET-able base projection omits so it can stay
+	// viewer-invariant + cacheable (#2322). Reads no `post_record` at all, so a reader only
+	// ever learns its OWN vote/save state.
 	const readViewerOverlay = Effect.fn("Pano.readViewerOverlay")(function* (
 		ids: ReadonlyArray<string>,
 		opts: {viewerId?: string | null | undefined} = {},
@@ -802,10 +675,8 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		return stamped.map((row) => ({id: row.id, myVote: row.myVote, isSaved: row.isSaved}));
 	});
 
-	// The moderator sandbox-queue / promotion-backlog read model (#1205, the #1206
-	// seam): a çaylak's still-sandboxed, not-removed posts — scoped to one author when
-	// promotion flips their backlog. Authority is gated at the resolver; the service
-	// read is unconditional.
+	// The moderator sandbox-queue read model (#1205). Authority is gated at the resolver;
+	// this service read is unconditional.
 	const listSandboxedPosts = Effect.fn("Pano.listSandboxedPosts")(function* (
 		opts: {authorId?: string | undefined} = {},
 	) {
@@ -840,9 +711,8 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		const bodyExcerpt = body ? excerpt(body) : null;
 		const tagsCsv = normalizedTags.map((t) => t.kind).join(",");
 
-		// Summary insert + its FTS dual-write in ONE batch — all-or-none, so a
-		// crash mid-write can't orphan a `post_search` row against a missing
-		// `post_record` row (the ADR 0080 lockstep invariant).
+		// Insert + FTS dual-write in ONE batch: all-or-none, so a crash mid-write can't
+		// orphan a `post_search` row (the ADR 0080 lockstep invariant).
 		yield* batch((db) => [
 			db.insert(schema.postRecord).values({
 				id: postId,
@@ -867,9 +737,9 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 			...syncPostSearch(db, postId, title),
 		]);
 
-		// The post row committed in the batch above; its stats refresh is a recomputable
-		// cache, so swallow-and-log a die rather than 500 the mutation and provoke a retry
-		// that mints a duplicate row (#2556, the create-path twin of #2012).
+		// The row is already committed and the stats refresh is a recomputable cache, so a
+		// die is swallowed rather than 500ing the mutation into a duplicate-minting retry
+		// (#2556).
 		yield* swallowRefresh("Pano.submitPost", persistPanoStats(now));
 
 		return {
@@ -887,9 +757,7 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		} satisfies SubmitPostResult;
 	});
 
-	// A draft is a partial post: the only gates are submit's length/sanity caps
-	// (no required title/tags), so a half-filled form persists. One draft per
-	// author is enforced by the partial unique index + this probe-then-upsert.
+	// One draft per author, enforced by the partial unique index + this probe-then-upsert.
 	const saveDraft = Effect.fn("Pano.saveDraft")(function* (input: SaveDraftInput) {
 		const rawTitle = yield* validateDraftTitle(input.title ?? "");
 		const body = yield* validatePostBody(input.body ?? "");
@@ -954,9 +822,8 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 			);
 		}
 
-		// A draft is never in the public FTS table (it never lists publicly), so
-		// no `syncPostSearch` dual-write and no `recomputePanoStats` — both are
-		// public-surface bookkeeping that a private draft must not touch.
+		// No `syncPostSearch` and no `recomputePanoStats` on purpose: both are public-surface
+		// bookkeeping a private draft must not touch.
 
 		return {
 			postId,
@@ -1036,9 +903,8 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		const createdAtMs = meta.createdAt ? meta.createdAt.getTime() : now.getTime();
 		const hotScore = computeHotScore(meta.score, createdAtMs, now.getTime());
 
-		// Summary update + its FTS re-sync in ONE batch so they move all-or-none
-		// (ADR 0080). The body is out of v1 search scope, so a body-only edit
-		// leaves the FTS row untouched — only the summary update batches alone.
+		// Update + FTS re-sync in ONE batch so they move all-or-none (ADR 0080). The body is
+		// out of v1 search scope, so a body-only edit leaves the FTS row untouched.
 		yield* batch((db) => [
 			db
 				.update(schema.postRecord)
@@ -1071,9 +937,8 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		} satisfies EditPostResult;
 	});
 
-	// SOFT delete onto the ADR 0096 substrate: stamp the `Removed` triad, wipe
-	// votes via `Vote.clearTarget` (karma KEPT — the pano karma-reversal is
-	// deleted), drop the FTS row, recompute stats outside. Restore is the inverse.
+	// SOFT delete onto the ADR 0096 substrate. Votes are wiped but karma is KEPT — the pano
+	// karma-reversal is deleted, not forgotten.
 	const deletePost = Effect.fn("Pano.deletePost")(function* (input: DeletePostInput) {
 		const meta = yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}));
 		if (!meta) {
@@ -1177,15 +1042,11 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		});
 		if (!outcome.committed) return {restored: false, sandboxedAt: null};
 
-		// The round-tripped sandbox marker (#1811): a çaylak's post restores to Sandboxed,
-		// so report's live re-append gates the public-feed broadcast on it.
+		// A çaylak's post restores to Sandboxed, so report's live re-append gates the
+		// public-feed broadcast on this marker (#1811).
 		return {restored: true, sandboxedAt: outcome.sandboxedAt};
 	});
 
-	/**
-	 * Shared body for `voteOnPost` / `retractPostVote`. Delegates to
-	 * `Vote.cast` and translates `VoteTargetNotFound` into `PostNotFound`.
-	 */
 	const applyPostVote = Effect.fn("Pano.applyPostVote")(function* (
 		input: VoteOnPostInput,
 		isVote: boolean,
@@ -1227,8 +1088,6 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 			);
 
 		const now = new Date();
-		// Vote.cast wrote score + hot_score inside its batch; re-read for the
-		// converged values.
 		const refreshed = voteResult.changed
 			? yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}))
 			: meta;
@@ -1257,14 +1116,9 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		return yield* applyPostVote(input, true);
 	});
 
-	// Reaction delegation — the karma-free, ungated twin of `voteOnPost` (#1863).
-	// Delegates the write to `Reaction.react` (kind `post`), translates the internal
-	// `ReactionTargetNotFound` into the wire-facing `PostNotFound` (the vote path's
-	// `translateVoteMiss` analogue), then RE-RESOLVES the post via the same batched
-	// `getPostsByIds` read as `post.save` so the returned entity carries the fresh
-	// `reactions` aggregate + `myReaction`. Unlike `voteOnPost` there is NO tier arm
-	// (`VoterNotEligible`) and NO karma path: a çaylak may react, and nothing writes
-	// karma — the settled ungated/social-only model (epic #1840, ADR-referenced).
+	// The karma-free, ungated twin of `voteOnPost` (#1863). Unlike voting there is NO tier
+	// arm and NO karma path on purpose: a çaylak may react, and nothing writes karma — the
+	// settled ungated/social-only model (epic #1840).
 	const reactToPost = Effect.fn("Pano.reactToPost")(function* (input: ReactToPostInput) {
 		const result = yield* reactionSvc
 			.react({
@@ -1284,10 +1138,8 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 				),
 			);
 
-		// Re-resolve like a read so the echoed entity carries the freshly-stamped
-		// `reactions` aggregate (counts + the viewer's own `myReaction`). The react
-		// write already asserted the target is live, so a missing row here is a raced
-		// removal — surface it as `PostNotFound`, same as `post.save`.
+		// The react write already asserted the target is live, so a missing row here is a
+		// raced removal, not a bad input.
 		const [row] = yield* getPostsByIds([input.postId], {viewerId: input.userId});
 		if (!row) {
 			return yield* new PostNotFound({

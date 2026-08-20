@@ -1,25 +1,9 @@
 /**
- * `Flags` — the domain-facing feature-flag service (epic #488, child #508): the
- * boolean dark-ship primitive. Server code reads `flags.getBoolean(key, default)`
- * to gate a code path behind a flag.
+ * `Flags` — the domain-facing feature-flag read surface: .patterns/feature-flags.md.
  *
- * Two contracts are load-bearing here:
- *
- * 1. **Safe-default, baked in.** The caller MUST pass a `default`, and that
- *    default is the off/old/safe path. The read NEVER fails: a `FlagshipError`
- *    (a misconfigured binding, an unreachable Flagship) is caught and collapsed
- *    to the supplied default, so a Flagship outage degrades safe rather than
- *    breaking the request. The public method's error channel is therefore
- *    `never` — no `FlagshipError` leaks to callers.
- * 2. **Clean OpenFeature seam.** Domain code depends on THIS interface, not on
- *    alchemy's `Cloudflare.Flagship*` types, so a future provider swap
- *    (OpenFeature is the hedge — #506) re-wires only `FlagsLive`, not the
- *    call-sites. The alchemy `FlagshipClient` stays an implementation detail
- *    consumed under the `Flagship` Tag (the #507 seam — this never re-binds it).
- *
- * Scope is the read surface — the boolean dark-ship primitive plus the typed
- * variations (string/number/object, #509). The React hook is #510,
- * targeting/percentage is #511.
+ * Every read takes a `default` that is the off/old/safe path, and any evaluation error
+ * collapses to it — so the error channel is `never` and a Flagship outage degrades safe.
+ * Domain code depends on THIS interface, never on alchemy's `Cloudflare.Flagship*` types.
  */
 import type {RuntimeContext} from "alchemy";
 import {type Cause, Context, Effect, Layer} from "effect";
@@ -27,45 +11,27 @@ import {tagFlag} from "../../lib/sentry.ts";
 import {FlagsContext, toEvaluationContext} from "./FlagsContext.ts";
 import {Flagship} from "./Flagship.ts";
 
-/** The domain-facing flag service value — provider-agnostic by construction. */
 export interface FlagsAccess {
 	/**
-	 * Read a boolean flag for the current request, falling back to `defaultValue`
-	 * on any evaluation error. The per-request {@link FlagsContext} (user identity
-	 * for stable bucketing) is read from the environment — supplied per request
-	 * alongside `Auth` (ADR 0029), not captured at isolate scope. `RuntimeContext`
-	 * is the alchemy binding's intrinsic ambient requirement, discharged at worker
-	 * scope (#507); it is generic alchemy, not a leaked Flagship type.
+	 * The per-request {@link FlagsContext} is read from the environment, not captured at
+	 * isolate scope (ADR 0029). `RuntimeContext` is the alchemy binding's ambient
+	 * requirement, discharged at worker scope — generic alchemy, not a leaked Flagship type.
 	 */
 	readonly getBoolean: (
 		key: string,
 		defaultValue: boolean,
 	) => Effect.Effect<boolean, never, FlagsContext | RuntimeContext>;
 
-	/**
-	 * Read a string flag for the current request. Same safe-default/never-throws
-	 * contract as {@link getBoolean}: any evaluation error collapses to
-	 * `defaultValue`, so the error channel is `never`.
-	 */
 	readonly getString: (
 		key: string,
 		defaultValue: string,
 	) => Effect.Effect<string, never, FlagsContext | RuntimeContext>;
 
-	/**
-	 * Read a number flag for the current request. Same safe-default/never-throws
-	 * contract as {@link getBoolean}.
-	 */
 	readonly getNumber: (
 		key: string,
 		defaultValue: number,
 	) => Effect.Effect<number, never, FlagsContext | RuntimeContext>;
 
-	/**
-	 * Read a JSON-object flag for the current request. `T` is constrained to
-	 * `object` to match the provider's typed read; same safe-default/never-throws
-	 * contract as {@link getBoolean}.
-	 */
 	readonly getObject: <T extends object>(
 		key: string,
 		defaultValue: T,
@@ -75,14 +41,9 @@ export interface FlagsAccess {
 export class Flags extends Context.Service<Flags, FlagsAccess>()("@kampus/Flags") {}
 
 /**
- * Collapse any evaluation failure to the caller's safe default — the single site
- * of contract 1 (safe-default, error channel `never`). `catchCause` (not a typed
- * `catch`) so a binding DEFECT degrades safe too, matching the fire-and-forget
- * swallow-with-log idiom of the bildirim emitters (`swallow`). The discarded cause
- * is now LOGGED (`logWarning`) before the default is returned, so a misconfigured
- * or unreachable Flagship binding is observable instead of silently absorbed
- * (#2685) — the safe-default behavior is unchanged, only the silence is removed.
- * A telemetry counter is deliberately out of scope here (it rides #1821).
+ * The single site of the safe-default contract. `catchCause`, not a typed `catch`, so a
+ * binding DEFECT degrades safe too; the discarded cause is logged so a misconfigured or
+ * unreachable Flagship binding is observable instead of silently absorbed.
  */
 const swallowToDefault = <A>(key: string, defaultValue: A) =>
 	Effect.catchCause((cause: Cause.Cause<unknown>) =>
@@ -91,12 +52,7 @@ const swallowToDefault = <A>(key: string, defaultValue: A) =>
 		),
 	);
 
-/**
- * Build the real {@link FlagsAccess} over a resolved `Flagship` client — the
- * per-isolate read surface, captured at layer build so each read's only
- * per-request requirement is the `FlagsContext` it reads at call time. Extracted
- * from the layer so `FlagsDevOverrideLive` can decorate the same surface (#622).
- */
+/** Extracted from the layer so `FlagsDevOverrideLive` can decorate the same surface. */
 const buildRealFlags = (flagship: Flagship["Service"]): FlagsAccess => ({
 	getBoolean: (key, defaultValue) =>
 		Effect.gen(function* () {
@@ -105,15 +61,9 @@ const buildRealFlags = (flagship: Flagship["Service"]): FlagsAccess => ({
 				.getBooleanValue(key, defaultValue, toEvaluationContext(context))
 				.pipe(swallowToDefault(key, defaultValue));
 		}).pipe(
-			// Worker-tier feature-flag error attribution (#1821, the worker half of the SPA
-			// contract PR #2843 established). Stamp the effective gate value as the Sentry tag
-			// `flag.<key>`:`on`/`off` so a flag's worker-side error rate is isolable in the #1822
-			// graduation query, uniformly with the client tier. This is THE per-request boolean
-			// resolution choke point every worker flag gate flows through, so an error in any
-			// flag-gated worker path is attributed — not just the `/api/flags/evaluate` delivery
-			// seam. The tag is the resolved value the request actually saw (including a
-			// degrade-safe default). Inert when Sentry has no active client (`tagFlag` gates on
-			// `Sentry.isEnabled()`); non-PII, orthogonal to the ADR 0118 `dataCollection` scrub.
+			// THE per-request boolean choke point, so stamping the resolved value as the Sentry tag
+			// `flag.<key>` attributes an error in ANY flag-gated worker path, not just the
+			// `/api/flags/evaluate` seam. Inert without an active Sentry client; non-PII.
 			Effect.tap((value) => Effect.sync(() => tagFlag(key, value))),
 		),
 	getString: (key, defaultValue) =>
@@ -139,11 +89,7 @@ const buildRealFlags = (flagship: Flagship["Service"]): FlagsAccess => ({
 		}),
 });
 
-/**
- * Resolved once per isolate from the init-bound `Flagship` client (the #507
- * seam). The client is captured at layer build, so `getBoolean`'s only
- * per-request requirement is the `FlagsContext` it reads at call time.
- */
+/** The client is captured at layer build, so a read's only per-request need is `FlagsContext`. */
 export const FlagsLive = Layer.effect(
 	Flags,
 	Effect.gen(function* () {
@@ -153,16 +99,9 @@ export const FlagsLive = Layer.effect(
 );
 
 /**
- * Decorate a real {@link FlagsAccess} with the dev-only local override (#622): a
- * boolean read whose key is present in the per-request `FlagsContext.overrides`
- * returns the forced value; every other read (and every typed/non-boolean read)
- * delegates unchanged to `inner`. Overrides are boolean-only — the local-flip
- * surface forces a dark-ship boolean on/off; typed variations stay on real eval.
- *
- * Pure decorator (no Layer) so the short-circuit is unit-testable over a stub
- * `FlagsAccess` without a binding. The wrapper this powers (`FlagsDevOverrideLive`)
- * is installed ONLY in development (`http/app.ts`); `inner.getBoolean` still reads
- * `FlagsContext`, so the decorated read's per-request requirement is unchanged.
+ * Dev-only local override: a boolean read whose key is present in `FlagsContext.overrides`
+ * returns the forced value; every other read delegates to `inner`. Overrides are
+ * boolean-only. A pure decorator (no Layer) so the short-circuit is unit-testable.
  */
 export const withDevOverrides = (inner: FlagsAccess): FlagsAccess => ({
 	...inner,
@@ -175,12 +114,9 @@ export const withDevOverrides = (inner: FlagsAccess): FlagsAccess => ({
 });
 
 /**
- * The dev-only override `Flags` layer (#622): `FlagsLive`'s surface decorated with
- * {@link withDevOverrides}. Built from the same init-bound `Flagship` client, so it
- * is a drop-in replacement for `FlagsLive` in the per-request set — `http/app.ts`
- * picks this layer instead of `FlagsLive` ONLY when `environment === "development"`.
- * In any deployed stage this layer is never built, so the override branch is
- * structurally absent from the prod flag path (the load-bearing #622 gate).
+ * `http/app.ts` picks this over `FlagsLive` ONLY when `environment === "development"`, so
+ * in any deployed stage the layer is never built and the override branch is structurally
+ * absent from the prod flag path.
  */
 export const FlagsDevOverrideLive = Layer.effect(
 	Flags,

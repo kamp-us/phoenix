@@ -1,8 +1,5 @@
-/**
- * Unit coverage for `recomputePanoStats` — the pure fold that shapes the
- * `pano_stats` row from the three live COUNTs + the write clock (ADR 0082).
- * No Effect layer, no DB.
- */
+// The pure fold that shapes the `pano_stats` row from the three live COUNTs plus the
+// write clock. No Effect layer, no DB.
 import {describe, expect, it} from "vitest";
 import {type PanoStatsCounts, recomputePanoStats} from "./Pano.ts";
 

@@ -2,13 +2,8 @@ import {describe, expect, it} from "vitest";
 import {bodyEditOptimistic, postEditOptimistic} from "./optimisticEdit";
 
 /**
- * Covers the load-bearing optimistic-edit core the three Class-A edits ship
- * through (`post.edit`/`comment.edit`/`definition.edit` → `postEditOptimistic` /
- * `bodyEditOptimistic`, #1675): the edited field(s) plus a fresh `updatedAt` that
- * drives the "düzenlendi" indicator, inspected off the REAL exported builders —
- * the same functions the call sites route through, not a re-implemented copy.
- * fate's own apply/reconcile/rollback is exercised at the integration tier; this
- * pins the payload shape hook-free.
+ * Pins the optimistic-edit payload shape (#1675). fate's own
+ * apply/reconcile/rollback is covered at the integration tier.
  */
 const fixedNow = () => new Date("2026-07-02T12:00:00.000Z");
 

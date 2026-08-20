@@ -1,8 +1,6 @@
 /**
- * The bildirim target→href fold (#1694) — the tombstone decision asserted with no
- * engine (ADR 0082 T1/T2): a live target maps to its client link, a target absent
- * from the resolved rows (removed / deleted) maps to `null`, and a pre-bootstrap
- * user (no username) tombstones rather than emitting a broken `/u/null`.
+ * The bildirim target→href fold (#1694): a target absent from the resolved rows, or a
+ * pre-bootstrap user with no username, must tombstone rather than emit a broken link.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {emptyResolvedTargetRows, foldTargetHrefs, targetRefKey} from "./target.ts";

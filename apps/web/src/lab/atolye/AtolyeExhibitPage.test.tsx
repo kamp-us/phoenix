@@ -1,8 +1,3 @@
-/**
- * The /lab/atolye/:exhibit detail route (#3093): slug resolution against the registry, the
- * knob-state ↔ URL round-trip (a shareable/landable component state), and the graceful
- * atölye-scoped not-found on an unknown slug — never the global 404, never a crash.
- */
 import {fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {MemoryRouter, Route, Routes, useLocation} from "react-router";
 import {describe, expect, it} from "vitest";
@@ -15,7 +10,6 @@ if (typeof globalThis.PointerEvent === "undefined") {
 	globalThis.PointerEvent = PointerEventShim as typeof PointerEvent;
 }
 
-// Surfaces the live URL search string so the round-trip assertions can read what a knob wrote.
 function LocationProbe() {
 	const location = useLocation();
 	return <output data-testid="search">{location.search}</output>;
@@ -37,7 +31,6 @@ describe("AtolyeExhibitPage — /lab/atolye/:exhibit detail route (#3093)", () =
 		renderAt("/lab/atolye/button");
 		expect(screen.getByTestId("lab-atolye-detail")).toBeTruthy();
 		expect(screen.getByTestId("exhibit-stage")).toBeTruthy();
-		// the exhibit's own component is mounted (the Button host)
 		expect(screen.getByTestId("lab-atolye-detail").querySelector(".kp-btn")).not.toBeNull();
 	});
 
@@ -50,12 +43,11 @@ describe("AtolyeExhibitPage — /lab/atolye/:exhibit detail route (#3093)", () =
 
 	it("reflects a knob change into the URL (deep-link out)", async () => {
 		const {container} = renderAt("/lab/atolye/button");
-		// default variant is primary → no param until it diverges
 		expect(screen.getByTestId("search").textContent).toBe("");
 		const host = container.querySelector(".kp-btn")!;
 		expect(host.getAttribute("data-size")).toBe("md");
 
-		fireEvent.click(screen.getByText("Large")); // size → lg
+		fireEvent.click(screen.getByText("Large"));
 
 		await waitFor(() =>
 			expect(new URLSearchParams(screen.getByTestId("search").textContent ?? "").get("size")).toBe(
@@ -78,7 +70,7 @@ describe("AtolyeExhibitPage — /lab/atolye/:exhibit detail route (#3093)", () =
 			"lg",
 		);
 
-		fireEvent.click(screen.getByText("Medium")); // size → md, the default
+		fireEvent.click(screen.getByText("Medium"));
 
 		await waitFor(() =>
 			expect(new URLSearchParams(screen.getByTestId("search").textContent ?? "").has("size")).toBe(

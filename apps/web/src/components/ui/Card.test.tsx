@@ -8,7 +8,6 @@ describe("Surface / Card — the composite shell primitive (#2163)", () => {
 		const el = container.firstElementChild!;
 		expect(el.classList.contains("kp-surface")).toBe(true);
 		expect(el.classList.contains("kp-surface--tone-default")).toBe(true);
-		// flat / no-radius / no-pad / no-border carry no class
 		expect(el.className).not.toMatch(/kp-surface--elev-/);
 		expect(el.className).not.toMatch(/kp-surface--radius-/);
 		expect(el.className).not.toMatch(/kp-surface--pad-/);

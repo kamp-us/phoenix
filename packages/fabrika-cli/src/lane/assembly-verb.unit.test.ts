@@ -69,7 +69,9 @@ describe("runAssembly", () => {
 
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout.trim()).toBe(EXPECTED);
-		expect(calls).toContain(`git worktree add -b ${BRANCH} ${EXPECTED} origin/HEAD`);
+		// `--no-track`: cut off `origin/HEAD` without it, the branch records `refs/heads/main` as its
+		// upstream and the run's pushes aim at the default branch (#6435).
+		expect(calls).toContain(`git worktree add --no-track -b ${BRANCH} ${EXPECTED} origin/HEAD`);
 		expect(calls.some((line) => line.startsWith("git switch"))).toBe(false);
 	});
 
@@ -170,6 +172,8 @@ describe("runAssembly", () => {
 		expect(calls).toContain(`git worktree add ${EXPECTED} ${BRANCH}`);
 		expect(calls.some((line) => line.includes("worktree add -b"))).toBe(false);
 		expect(calls.some((line) => line.startsWith("git fetch"))).toBe(false);
+		// A branch cut by an older fabrika carries the #6435 upstream into every resume.
+		expect(calls).toContain(`git branch --unset-upstream ${BRANCH}`);
 	});
 
 	it("clears a worktree record whose directory is gone, then places the branch again (#6163)", async () => {
@@ -190,6 +194,7 @@ describe("runAssembly", () => {
 			"git worktree list --porcelain",
 			"git for-each-ref --format=%(refname:short) refs/heads",
 			`git worktree add ${EXPECTED} ${BRANCH}`,
+			`git branch --unset-upstream ${BRANCH}`,
 			"git worktree list --porcelain",
 		]);
 	});

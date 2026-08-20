@@ -18,6 +18,7 @@ import type {Command} from "effect/unstable/cli";
 import {adrCommand} from "./adr/command.ts";
 import {buildCommand} from "./build/command.ts";
 import {ciCommand} from "./ci/command.ts";
+import {configCommand} from "./config/command.ts";
 import {glossaryCommand} from "./glossary/command.ts";
 import {governanceCommand} from "./governance/command.ts";
 import {graduateCommand} from "./graduate/command.ts";
@@ -51,6 +52,7 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	adrCommand,
 	buildCommand,
 	ciCommand,
+	configCommand,
 	glossaryCommand,
 	governanceCommand,
 	graduateCommand,

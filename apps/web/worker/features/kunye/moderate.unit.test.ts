@@ -1,12 +1,7 @@
 /**
- * `Moderate` capability coverage (ADR 0107 §4, carrying ADR 0098 §2 forward) — the
- * prior-art contract of the retired `report/Moderator.unit.test.ts`, re-expressed
- * over the relation tuple instead of `user.role`: a holder of the `moderates`
- * relation discharges `Moderate.over(platform)` to a `Grant`; a non-holder and the
- * anonymous actor both fail the SAME invisible `Denied` (`UNAUTHORIZED`), so a
- * non-moderator cannot tell itself apart from anonymous. The three ports are
- * scripted (`RelationStore` the tuple set, `AgentAuthority` fail-closed,
- * `CurrentActor` the actor) — no DB; the real-D1 write→read seam lives in
+ * `Moderate` capability coverage (ADR 0107 §4, ADR 0098 §2): a non-holder and the
+ * anonymous actor must fail the SAME invisible `Denied`, so a non-moderator cannot tell
+ * itself apart from anonymous. Ports are scripted, no DB; the real-D1 write→read seam is
  * `apps/web/tests/integration/kunye-moderate-seam.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
@@ -25,8 +20,6 @@ import {Effect, Exit} from "effect";
 import {Denied} from "./errors.ts";
 import {allModerators, Moderate, moderatorOf, moderatorsAmong} from "./moderate.ts";
 
-// Provide the three ports off a fixture (the holder set the `moderates` tuple
-// proves membership against) and run `Moderate.over(platform)` to an Exit.
 const discharge = (
 	actor: Actor,
 	holders: ReadonlyArray<string>,
@@ -97,11 +90,8 @@ describe("Moderate.over(platform)", () => {
 	});
 });
 
-// `moderatorsAmong` is the batched form of `isModerator` (#1360): ONE
-// `RelationStore.hasSubjects` read over the `(moderates, platform)` tuple, so the
-// by-id loader joins moderator standing without a per-row probe. The fixture
-// answers membership off the same holder set `has` proves against, keyed on the
-// `moderates` relation and the platform object, so batch and single reads agree.
+// The fixture answers membership off the same holder set `has` proves against, so the
+// batched and single reads agree.
 describe("moderatorsAmong", () => {
 	const storeOf = (holders: ReadonlyArray<string>) =>
 		Effect.provideService(RelationStore, {
@@ -141,10 +131,8 @@ describe("moderatorsAmong", () => {
 	});
 });
 
-// `allModerators` is the OPEN-set enumeration (#1699) the membership pair can't
-// answer: the whole `(moderates, platform)` subject set with no candidates up front —
-// the mod fan-out recipient set. The fixture returns exactly the holders for the
-// moderates/platform tuple, so the enumeration reads off the same key `has` proves.
+// The OPEN-set enumeration (#1699) the membership pair can't answer: the whole subject
+// set with no candidates up front.
 describe("allModerators", () => {
 	const storeOf = (holders: ReadonlyArray<string>) =>
 		Effect.provideService(RelationStore, {

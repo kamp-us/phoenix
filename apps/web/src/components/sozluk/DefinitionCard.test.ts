@@ -2,26 +2,8 @@ import {describe, expect, it, vi} from "vitest";
 import {runToggleLoop, type ToggleAction, type ToggleLoopState} from "../pano/useToggleAction";
 import {isAuthRedirectError, type VoteMutations, voteOptimistic} from "../pano/useVoteToggle";
 
-/**
- * Covers the load-bearing vote logic DefinitionCard ships through `useVoteToggle`
- * (`DefinitionCard.tsx` → `useVoteToggle`): the optimistic `{score, myVote}`
- * delta with the `Math.max(0, score - 1)` retract floor, and the
- * `UNAUTHORIZED`→auth-redirect classification on the dispatch error channel.
- *
- * It exercises the REAL exported seam — `voteOptimistic` / `isAuthRedirectError`
- * from `useVoteToggle`, the same functions the hook's `dispatch` routes through —
- * not a re-implemented copy. The earlier version of this file imported
- * `runToggleLoop` and asserted a `useToggleAction` contract DefinitionCard never
- * had (already owned by `useToggleAction.test.ts`), while the vote delta + the
- * auth-redirect shipped green untested; this drives the actual code, so a break
- * in the score floor, the `myVote` boolean, or the redirect classification fails
- * here rather than only in an e2e.
- *
- * The hook (`useGatedToggle`/`useToggleAction`) is a React ref/`useCallback`
- * wrapper around `runToggleLoop`; the loop itself is the real driver, modelled
- * here over the same controllable dispatch idiom as `useToggleAction.test.ts` so
- * the serialize-and-supersede behavior the hook relies on is real, not mocked.
- */
+// The harness drives the REAL exported seam — `voteOptimistic` / `isAuthRedirectError` /
+// `runToggleLoop`, the same functions the hook routes through — never a re-implemented copy.
 function voteHarness(args: {initialVoted: boolean; initialScore: number}) {
 	let voted = args.initialVoted;
 	const score = args.initialScore;
@@ -30,8 +12,6 @@ function voteHarness(args: {initialVoted: boolean; initialScore: number}) {
 	const optimistic: ReturnType<typeof voteOptimistic>[] = [];
 	let pending: (() => void) | null = null;
 
-	// The exact mutation pair DefinitionCard hands `useVoteToggle`, capturing the
-	// optimistic payload the hook computes via `voteOptimistic`.
 	const mutations: VoteMutations = {
 		vote: (o) =>
 			new Promise<void>((resolve) => {
@@ -53,8 +33,6 @@ function voteHarness(args: {initialVoted: boolean; initialScore: number}) {
 			}),
 	};
 
-	// The hook's real dispatch body (useVoteToggle → useGatedToggle): route the
-	// action through the REAL `voteOptimistic`, then fire the matching mutation.
 	const dispatch = async (action: ToggleAction): Promise<void> => {
 		calls.push(action);
 		const o = voteOptimistic(action, score);
@@ -115,7 +93,6 @@ describe("DefinitionCard vote — optimistic delta via the real useVoteToggle", 
 		h.setDesired(false);
 		const loop = h.run();
 		await tick();
-		// Math.max(0, 0 - 1) === 0, not -1.
 		expect(h.optimistic).toEqual([{score: 0, myVote: false}]);
 		h.settle();
 		await loop;
@@ -125,19 +102,17 @@ describe("DefinitionCard vote — optimistic delta via the real useVoteToggle", 
 	it("does NOT drop a retract issued while the vote mutation is still in flight (#818/#865)", async () => {
 		const h = voteHarness({initialVoted: false, initialScore: 3});
 
-		// Click 1: vote. The vote POST is now in flight.
 		h.setDesired(true);
 		const loop = h.run();
 		await tick();
 		expect(h.calls).toEqual(["set"]);
 		expect(h.hasPending()).toBe(true);
 
-		// Click 2 lands INSIDE the in-flight window — supersede back to "not voted".
+		// The second click lands INSIDE the in-flight window — supersede back to "not voted".
 		h.setDesired(false);
 		h.settle();
 		await tick();
 
-		// The retract MUST fire, with its own floored optimistic payload.
 		expect(h.calls).toEqual(["set", "unset"]);
 		expect(h.optimistic).toEqual([
 			{score: 4, myVote: true},
@@ -160,8 +135,6 @@ describe("DefinitionCard vote — the UNAUTHORIZED→auth-redirect classificatio
 	});
 
 	it("redirects on the UNAUTHORIZED path the gate's dispatch catch takes", async () => {
-		// Model the gate's caught-error branch (useGatedToggle): catch the dispatch
-		// throw, redirect iff `isAuthRedirectError` — using the REAL classifier.
 		const redirectToAuth = vi.fn();
 		const guarded = async (dispatch: () => Promise<void>) => {
 			try {
@@ -175,6 +148,6 @@ describe("DefinitionCard vote — the UNAUTHORIZED→auth-redirect classificatio
 		expect(redirectToAuth).toHaveBeenCalledTimes(1);
 
 		await guarded(() => Promise.reject({code: "INTERNAL_SERVER_ERROR"}));
-		expect(redirectToAuth).toHaveBeenCalledTimes(1); // unchanged — stays silent
+		expect(redirectToAuth).toHaveBeenCalledTimes(1);
 	});
 });

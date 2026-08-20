@@ -1,22 +1,10 @@
 /**
- * Pano connection-resolver pagination DECISIONS, unit-reachable over the
- * substituted-`Drizzle` seam (ADR 0082 litmus: "could this be wrong even if the
- * database behaved perfectly?" → unit). `listPostsConnection`'s `first` clamp,
- * the single-direction keyset (all `desc`) whose lead column varies by sort, the
- * `id desc` tiebreak, the draft-exclusion predicate, and the cursor-miss →
- * empty-page branch are all wrong-or-right with no SQL engine — driven here over
- * a `Drizzle` double, never real D1.
+ * Pano connection-resolver pagination decisions over a substituted `Drizzle` seam, never
+ * real D1 (ADR 0082). Two doubles: `throwingAccess` (every `run` dies, so any path that
+ * reaches the DB seam fails the test) and `scriptedAccess` (replays queued `run` results
+ * in call order and captures the fetch builder's rendered SQL via `.toSQL()`).
  *
- * Two doubles, the `Vote.unit.test.ts` idiom:
- *   - `throwingAccess` — every `run` dies, so any path that actually reaches the
- *     DB seam fails the test (the cursor-miss-no-second-read proof).
- *   - `scriptedAccess` — replays a queued sequence of `run` results in call order
- *     (count, [cursor-resolve], fetch) AND captures the fetch builder's rendered
- *     SQL via `.toSQL()`, so the keyset predicate + `orderBy` + `LIMIT first+1`
- *     are asserted as the actual operators/columns, not a structural shape.
- *
- * Real-D1 keyset EXECUTION fidelity (collation, NULL tiebreaks, the paged walk)
- * stays integration-tier (`tests/integration/`), per ADR 0082's irreducible core.
+ * Real-D1 keyset EXECUTION fidelity stays integration-tier, per ADR 0082.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -31,9 +19,8 @@ import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {Pano, PanoLive} from "./Pano.ts";
 
-// A real drizzle/D1 client over a no-op D1 — used ONLY to run the fetch builder
-// the resolver returns from `run`, so we can render its `.toSQL()`. It never
-// executes (the scripted `run` resolves with queued rows, not the builder).
+// A real drizzle/D1 client over a no-op D1 — used ONLY to render the fetch builder's
+// `.toSQL()`. It never executes (the scripted `run` resolves with queued rows).
 // biome-ignore lint/plugin: `D1Database` is a host binding that can't be structurally constructed in a fake; only `prepare`/`batch` are exercised, and the scripted `run` never lets the no-op queries execute.
 const noopD1 = {
 	prepare: () => ({
@@ -63,11 +50,8 @@ const hasToSQL = (v: unknown): v is {toSQL: () => {sql: string; params: unknown[
 	typeof v === "object" && v !== null && typeof (v as {toSQL?: unknown}).toSQL === "function";
 
 /**
- * Replays `run` results in call order and records each call's rendered SQL when
- * the resolver's `fn` returns a renderable builder (the fetch). The count and
- * cursor-resolve calls chain `.get()/.then()` against the real `renderDb` (no-op
- * D1 → empty), so their queued value is what the resolver folds over; the fetch
- * call returns the builder directly, which we render and answer with rows.
+ * Replays `run` results in call order and records each call's rendered SQL when the
+ * resolver's `fn` returns a renderable builder (the fetch).
  */
 function scriptedAccess(results: ReadonlyArray<unknown>): {
 	access: DrizzleAccess;
@@ -110,14 +94,11 @@ const panoLayer = (access: DrizzleAccess, pasaport: Layer.Layer<Pasaport> = Pasa
 		Layer.provide(Layer.succeed(Drizzle, access)),
 	);
 
-// The fetch query is the LAST recorded one (count is first, cursor-resolve —
-// when `after` is present — is between). On a head page it is `queries[1]`
-// (count, fetch); with a cursor it is `queries[2]`.
+// The fetch query is the LAST recorded one (count is first, cursor-resolve — when `after`
+// is present — is between).
 const fetchQuery = (queries: {sql: string; params: unknown[]}[]) => queries.at(-1)!;
 
 describe("Pano.listPostsConnection — `first` clamp [1,100] (no SQL engine booted)", () => {
-	// The clamp surfaces as the `LIMIT first+1` param on the fetch query, so a
-	// head page (count + fetch) is enough — no cursor read, no real engine.
 	const clampCase = (input: number | undefined, expectedLimit: number) =>
 		it.effect(`first=${String(input)} → LIMIT ${expectedLimit}`, () => {
 			const {access, queries} = scriptedAccess([0 /* count */, [] /* fetch */]);
@@ -151,7 +132,6 @@ describe("Pano.listPostsConnection — single-direction keyset, lead column by s
 		});
 
 	const run = (sort: "hot" | "new" | "top" | "discuss") => {
-		// count, cursor-resolve (the row), fetch.
 		const {access, queries} = scriptedAccess([1, cursorRow, []]);
 		return Effect.runPromise(sqlOf(sort).pipe(Effect.provide(panoLayer(access)))).then(() =>
 			fetchQuery(queries),
@@ -162,7 +142,6 @@ describe("Pano.listPostsConnection — single-direction keyset, lead column by s
 		const {sql, params} = await run("top");
 		assert.match(sql, /"post_record"\."score" < \?/, "score is the lead keyset column, desc → `<`");
 		assert.match(sql, /order by "post_record"\."score" desc, "post_record"\."id" desc/);
-		// keyset params: (score<v) or (score=v and id<v) → [5,5,"p9"], then LIMIT 11.
 		assert.deepStrictEqual(params, [5, 5, "p9", 11]);
 	});
 
@@ -200,8 +179,7 @@ describe("Pano.listPostsConnection — single-direction keyset, lead column by s
 
 describe("Pano.listPostsConnection — cursor-miss → empty page, NO second DB read", () => {
 	it.effect("present `after` resolving to no row → empty page; throwing seam never dies", () => {
-		// count → total, cursor-resolve → null (the miss). The fetch `run` would die
-		// on `throwingAccess`, so reaching it fails the test. We compose: count +
+		// The fetch `run` would die on `throwingAccess`, so reaching it fails the test: count +
 		// cursor-resolve are scripted, the fetch seam throws.
 		let i = 0;
 		const access: DrizzleAccess = {
@@ -230,7 +208,6 @@ describe("Pano.listPostsConnection — cursor-miss → empty page, NO second DB 
 	});
 
 	it.effect("a head page (no `after`) never reads a cursor row", () => {
-		// No `after` → resolveCursor short-circuits to no-cursor: count + fetch only.
 		// Inject a marker after two calls so a stray cursor-resolve read would die.
 		let i = 0;
 		const {access: scripted} = scriptedAccess([0, []]);
@@ -251,8 +228,6 @@ describe("Pano.listPostsConnection — cursor-miss → empty page, NO second DB 
 });
 
 describe("Pano.listPostsConnection — stamps the LIVE author identity on the page (#2151)", () => {
-	// The keyset fetch projects exactly `PostKeysetRow` (post-fields.ts): the resolver
-	// reads only these columns, so a scripted fetch row must carry the same subset.
 	const fetchRow = {
 		id: "post-1",
 		slug: "baslik",
@@ -261,7 +236,6 @@ describe("Pano.listPostsConnection — stamps the LIVE author identity on the pa
 		host: "kamp.us",
 		bodyExcerpt: "özet",
 		authorId: "user-1",
-		// The write-time snapshot — the STALE handle the pre-fix feed rendered.
 		authorName: "eski-ad",
 		score: 3,
 		commentCount: 2,
@@ -269,9 +243,8 @@ describe("Pano.listPostsConnection — stamps the LIVE author identity on the pa
 		tags: "show",
 	};
 
-	// The LIVE `user_profile` identity for `user-1` — deliberately DIVERGENT from the
-	// write-time `authorName` snapshot above, so a stamped row proves the feed read the
-	// current handle rather than echoing the snapshot.
+	// Deliberately DIVERGENT from the write-time `authorName` snapshot above, so a stamped
+	// row proves the feed read the current handle rather than echoing the snapshot.
 	const liveIdentity: ProfileIdentityRow = {
 		userId: "user-1",
 		username: "umut",
@@ -291,7 +264,6 @@ describe("Pano.listPostsConnection — stamps the LIVE author identity on the pa
 		"landingPosts / signed-out feed path: the page row carries the LIVE username + displayName, not the write-time snapshot",
 		() => {
 			readSpy.ids = null;
-			// count + fetch (head page, no cursor). The fetch returns the one live row.
 			const {access} = scriptedAccess([1 /* count */, [fetchRow] /* fetch */]);
 			return Effect.gen(function* () {
 				const pano = yield* Pano;
@@ -299,9 +271,8 @@ describe("Pano.listPostsConnection — stamps the LIVE author identity on the pa
 				assert.strictEqual(page.rows.length, 1, "head page returns the one row");
 				const row = page.rows[0];
 				assert.isDefined(row, "head page returns the one row");
-				// The stamp — the fix's whole point: the resolver paths that DON'T re-hydrate
-				// through `getPostsByIds` (landingPosts, signed-out posts) now get the live
-				// identity here, so `actorLabel` renders the current display name.
+				// The resolver paths that DON'T re-hydrate through `getPostsByIds` get the live
+				// identity here.
 				assert.strictEqual(
 					row.authorDisplayName,
 					"Umut Şirin",
@@ -312,8 +283,7 @@ describe("Pano.listPostsConnection — stamps the LIVE author identity on the pa
 					"umut",
 					"the live username is stamped onto the feed row",
 				);
-				// The write-time `authorName` snapshot still rides as `author` (the intrinsic
-				// field) — the stamp ADDS the live identity, it does not overwrite the snapshot.
+				// The stamp ADDS the live identity; it does not overwrite the write-time snapshot.
 				assert.strictEqual(
 					row.author,
 					"eski-ad",
@@ -328,7 +298,6 @@ describe("Pano.listPostsConnection — stamps the LIVE author identity on the pa
 		const rows = [
 			{...fetchRow, id: "post-1", authorId: "user-1"},
 			{...fetchRow, id: "post-2", authorId: "user-2"},
-			// Two posts by the same author collapse to one id in the batch.
 			{...fetchRow, id: "post-3", authorId: "user-1"},
 		];
 		const {access} = scriptedAccess([3 /* count */, rows /* fetch */]);
@@ -345,16 +314,11 @@ describe("Pano.listPostsConnection — stamps the LIVE author identity on the pa
 });
 
 describe("Pano — authed feed: parallelized listPostsConnection composes with the getPostsByIds re-hydrate (#2275)", () => {
-	// #2275 parallelizes the total-count and keyset-page reads inside
-	// `listPostsConnection`; the per-viewer scalars (`myVote`/`isSaved`) and the
-	// reaction aggregate are deliberately NOT read there — they come from the
-	// batched `getPostsByIds` re-hydrate the `posts` resolver runs for a signed-in
-	// viewer (lists.ts). This drives that exact composition end to end over the
-	// substituted seams and proves a viewer with a vote + a save + a reaction still
-	// sees all three after the parallelization — i.e. the re-hydrate stamps survive.
+	// The per-viewer scalars (`myVote`/`isSaved`) and the reaction aggregate are NOT read
+	// inside `listPostsConnection` — they come from the batched `getPostsByIds` re-hydrate
+	// the `posts` resolver runs for a signed-in viewer.
 	const VIEWER = "user-viewer";
 
-	// The keyset-page projection `listPostsConnection` returns (post-fields subset).
 	const keysetRow = {
 		id: "post-1",
 		slug: "baslik",
@@ -370,8 +334,6 @@ describe("Pano — authed feed: parallelized listPostsConnection composes with t
 		tags: "show",
 	};
 
-	// The full `post_record` the re-hydrate re-reads by id (getPostsByIds does a
-	// `select()` of the whole row, then stamps the viewer scalars + reactions onto it).
 	// biome-ignore lint/plugin: a row fixture standing in for a full `post_record` select; getPostsByIds reads the lifecycle/draft columns + the `toPostSummaryRow` field set off it, enumerating every column adds nothing.
 	const fullRecord = {
 		id: "post-1",
@@ -402,8 +364,6 @@ describe("Pano — authed feed: parallelized listPostsConnection composes with t
 		myReaction: "🔥",
 	};
 
-	// The viewer's state: a vote (Vote.readMine → the id), a save (Bookmark.readMine
-	// → the id), and a reaction (Reaction.readAggregate → the non-empty aggregate).
 	// biome-ignore lint/plugin: a service double — only `readMine` is on the re-hydrate path.
 	const VotedStub = Layer.succeed(Vote, {
 		cast: () => Effect.die(new Error("feed re-hydrate must not cast a vote")),
@@ -437,9 +397,6 @@ describe("Pano — authed feed: parallelized listPostsConnection composes with t
 	it.effect(
 		"a signed-in viewer with a vote + a save + a reaction sees all three on the composed feed row",
 		() => {
-			// The composed authed-feed read order: count + keyset fetch (the two now
-			// parallelized in listPostsConnection), then the getPostsByIds re-hydrate
-			// fetch — the scripted double replays these in call order.
 			const {access} = scriptedAccess([
 				1 /* count */,
 				[keysetRow] /* keyset page fetch */,
@@ -468,8 +425,7 @@ describe("Pano — authed feed: parallelized listPostsConnection composes with t
 });
 
 // Mute read-mask (#3113): the muted-author SQL arm is `and()`ed into the pano feed +
-// thread fetch. Rendered over the same `.toSQL()` seam — present-with-mute emits
-// `author_id not in (…)`, absent/off emits nothing (byte-for-byte today's read).
+// thread fetch — present-with-mute emits `author_id not in (…)`, absent/off emits nothing.
 describe("Pano feed + thread — mute read-mask (author_id NOT IN …)", () => {
 	it.effect("listPostsConnection masks a muted author when `mutedIds` is non-empty", () => {
 		const {access, queries} = scriptedAccess([1 /* count */, [] /* fetch */]);

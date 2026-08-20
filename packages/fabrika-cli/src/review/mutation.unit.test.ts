@@ -17,10 +17,10 @@
  * re-imports the verb. The specifiers below are byte-identical to the ones the verbs themselves
  * import, so no path is re-derived and nothing resolves through a symlink.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, Layer, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {afterEach, describe, expect, it, vi} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut, once, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {APPEND_ONLY, INCOMPLETE_SCAN, LEAKED_PATH, READBACK_MISMATCH} from "./codes.ts";
@@ -59,9 +59,14 @@ const NOW = Effect.succeed(Date.parse("2026-08-09T06:30:00.412Z"));
 const STAMP = "Verdict-written: 2026-08-09T06:30:00Z";
 
 const withShell = <A>(
-	effect: Effect.Effect<A, never, ChildProcessSpawner.ChildProcessSpawner>,
+	effect: Effect.Effect<
+		A,
+		never,
+		ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	>,
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-): Promise<A> => Effect.runPromise(Effect.provide(effect, fakeShell(script).layer));
+): Promise<A> =>
+	Effect.runPromise(Effect.provide(effect, Layer.merge(fakeShell(script).layer, unconfigured)));
 
 afterEach(() => {
 	vi.resetModules();
@@ -96,7 +101,7 @@ describe("the CI rollup's fail-closed buckets", () => {
 	it("reds a cancelled check — a check that proved nothing must not read green", async () => {
 		const {runCi} = await import("./ci-verb.ts");
 		const out = await withShell(
-			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV}),
+			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV, cwd: "/repo"}),
 			script,
 		);
 		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tred`);
@@ -108,7 +113,7 @@ describe("the CI rollup's fail-closed buckets", () => {
 		}));
 		const {runCi} = await import("./ci-verb.ts");
 		const out = await withShell(
-			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV}),
+			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV, cwd: "/repo"}),
 			script,
 		);
 		// The intended death, named exactly: the answer flips to the permissive token, at exit 0.
@@ -230,7 +235,7 @@ describe("the commit binding on the read verbs", () => {
 	it("partitions the bound commit's file list", async () => {
 		const {runScope} = await import("./scope-verb.ts");
 		const out = await withShell(
-			runScope({pr: 4321, sha: HEAD, repo: null, json: true, env: ENV}),
+			runScope({pr: 4321, sha: HEAD, repo: null, json: true, cwd: "/repo", env: ENV}),
 			scopeScript,
 		);
 		expect(out.code).toBe(0);
@@ -243,7 +248,7 @@ describe("the commit binding on the read verbs", () => {
 		}));
 		const {runScope} = await import("./scope-verb.ts");
 		const out = await withShell(
-			runScope({pr: 4321, sha: HEAD, repo: null, json: true, env: ENV}),
+			runScope({pr: 4321, sha: HEAD, repo: null, json: true, cwd: "/repo", env: ENV}),
 			scopeScript,
 		);
 		expect(out.code).toBe(0);
@@ -546,7 +551,7 @@ describe("the empty-read refusal on the changed-file list", () => {
 	it("refuses a partition over an empty read on 13", async () => {
 		const {runScope} = await import("./scope-verb.ts");
 		const out = await withShell(
-			runScope({pr: 4321, sha: null, repo: null, json: false, env: ENV}),
+			runScope({pr: 4321, sha: null, repo: null, json: false, cwd: "/repo", env: ENV}),
 			script,
 		);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
@@ -563,7 +568,7 @@ describe("the empty-read refusal on the changed-file list", () => {
 		}));
 		const {runScope} = await import("./scope-verb.ts");
 		const out = await withShell(
-			runScope({pr: 4321, sha: null, repo: null, json: false, env: ENV}),
+			runScope({pr: 4321, sha: null, repo: null, json: false, cwd: "/repo", env: ENV}),
 			script,
 		);
 		expect(out.code).toBe(0);
@@ -573,7 +578,7 @@ describe("the empty-read refusal on the changed-file list", () => {
 	it("proves the harness itself is live — an unscripted call still fails loudly", async () => {
 		const {runScope} = await import("./scope-verb.ts");
 		const out = await withShell(
-			runScope({pr: 4321, sha: null, repo: null, json: false, env: ENV}),
+			runScope({pr: 4321, sha: null, repo: null, json: false, cwd: "/repo", env: ENV}),
 			[[PULL, errOut("gh: Bad gateway (HTTP 502)")]],
 		);
 		expect(out.code).not.toBe(0);

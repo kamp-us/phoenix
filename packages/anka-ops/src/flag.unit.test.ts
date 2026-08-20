@@ -1,9 +1,7 @@
 /**
- * The `flag` verb group's pure adapter — the operator-verb → serving-lever mapping (#3133). The
- * load-bearing contract: `open`/`close` map onto the EXACT `ServeTarget` levers (100%
- * no-match split / kill) so no serving-plan math is duplicated, and `graduate` only greenlights a
- * flag fully open in prod. No IO: the mapping is a pure value, the graduate decision a pure fold
- * over already-listed `FlagState` rows.
+ * Pins the `flag` verb group's contract (#3133): `open`/`close` map onto the EXACT `ServeTarget`
+ * levers so no serving-plan math is duplicated, and `graduate` only greenlights a flag fully open
+ * in prod.
  */
 
 import {assert, describe, it} from "@effect/vitest";

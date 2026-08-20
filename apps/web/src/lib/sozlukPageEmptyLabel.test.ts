@@ -3,8 +3,6 @@ import {sozlukPageEmptyLabel} from "./sozlukPageEmptyLabel";
 
 describe("sozlukPageEmptyLabel", () => {
 	it("scopes a letter-filter miss to the loaded first page, never the corpus", () => {
-		// The invariant: the copy must NOT assert "<letter> harfinde terim yok" as a fact
-		// about the whole corpus — it must name the "ilk sayfada" (first-page) scope.
 		const label = sozlukPageEmptyLabel("k");
 		expect(label).toContain("ilk sayfada");
 		expect(label).not.toBe('"k" harfinde terim yok.');

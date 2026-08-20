@@ -1,12 +1,9 @@
 /**
- * The dark-ship default-=-safe-state invariant for the sözlük parallel-stamp-wave
- * read collapse (#2709, epic #2567). Inspected off the exported `SOZLUK_STAMP_WAVE_FLAG`
- * record (the same object the factory spreads into `FlagshipFlag`), so no alchemy
- * resource is constructed — mirrors `funnel-readout.invariant.test.ts`.
+ * The dark-ship default-is-the-safe-state invariant for the sözlük stamp wave.
+ * Inspected off the exported flag record, so no alchemy resource is constructed.
  *
- * Load-bearing: with the default OFF the definition reads run their stamp wave at
- * `concurrency: 1` (serial, byte-for-byte today) — so the containment is real, the
- * concurrent wave only reachable after a human flips the flag.
+ * With the default OFF the definition reads stay serial, so the concurrent wave is
+ * reachable only after a human flips the flag.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {PHOENIX_SOZLUK_STAMP_WAVE} from "../../../src/flags/keys.ts";

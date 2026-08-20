@@ -34,8 +34,10 @@ export const instant = (date: Date): string => `${date.toISOString().slice(0, 19
  * Clamping is not cosmetic — the raw failed read is reproduced verbatim *before* it, so a truncated
  * detail is still attributable to the read that produced it.
  */
+export const flatten = (text: string): string => text.replace(/[\t\r\n]+/g, " ").trim();
+
 export const oneLine = (text: string, max: number): string => {
-	const flat = text.replace(/[\t\r\n]+/g, " ").trim();
+	const flat = flatten(text);
 	return flat.length <= max ? flat : flat.slice(0, max);
 };
 
@@ -44,6 +46,16 @@ export const detail = (text: string): string => oneLine(text, 120);
 
 /** A skill description: 200 characters, the roster's clamp. */
 export const description = (text: string): string => oneLine(text, 200);
+
+/**
+ * A surface's note: flattened and **not** clamped.
+ *
+ * Every other prose cell describes something the reader can go and look at, so a clamp costs them
+ * the tail of a pointer. Here the note is the whole answer — it is the only place the registry says
+ * what a surface is and which verb arm its disposition was read off — and a clamped note relays
+ * half a sentence as if it were the fact (#6301).
+ */
+export const surfaceNote = (text: string): string => flatten(text);
 
 /** A row of tab-separated cells, each already tab-free. */
 export const row = (...cells: ReadonlyArray<string>): string => cells.join("\t");

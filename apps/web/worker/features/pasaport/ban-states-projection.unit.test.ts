@@ -1,9 +1,6 @@
 /**
- * `selectBanStates` — the batched ban-state projection (#3200), the roster's join. Latest
- * event-per-user wins (by `createdAt`, tie-broken by `id`), reusing `resolveBanState`: a
- * user whose newest event is a `ban` is banned; a later `unban` lifts it; an expired ban
- * self-lifts; a user with no event is absent (read as not-banned). No I/O, over hand-built
- * rows — the twin of `email-delivery-admin.unit.test.ts`'s `selectFailingAddresses`.
+ * `selectBanStates` (#3200): latest event-per-user wins, by `createdAt` and tie-broken by
+ * `id`. A user with no event is absent from the map, which reads as not-banned.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {selectBanStates, type UserBanEvent} from "./ban.ts";
@@ -77,7 +74,7 @@ describe("selectBanStates", () => {
 			[event("id-1", "u-a", "ban", at), event("id-2", "u-a", "unban", at)],
 			NOW,
 		);
-		// id-2 > id-1 at the same timestamp ⇒ the unban is the latest ⇒ not banned.
+		// id-2 > id-1 at the same timestamp, so the unban is the latest.
 		assert.strictEqual(states.get("u-a")?.banned, false);
 	});
 });

@@ -1,14 +1,7 @@
 /**
- * `/mecmua` — the PUBLIC chronological index of published mecmua posts (#2512, epic
- * #2467), the discovery surface the reader (`/mecmua/:slug`) lacked. It fetches the
- * anonymous `GET /fate/mecmua/index` route (published-only, newest-first) and lists each
- * post as a card linking to its reader. This is the PUBLIC index (all published posts) —
- * distinct from the personalized subscribed-author feed (#2500).
- *
- * The whole surface ships dark behind `MECMUA_PUBLIC_READ` (default-off): the page
- * self-gates (off => 404), mirroring `MecmuaPostPage` / `DivanPage`, so the route is
- * absent until a human flips the flag at release (ADR 0083). The index route itself also
- * 404s while the flag is off — the page gate just avoids a fetch and a flash.
+ * `/mecmua` — the public index of published posts, distinct from the personalized
+ * subscribed-author feed (`/mecmua/akis`). Ships dark behind `MECMUA_PUBLIC_READ`
+ * (default-off; ADR 0083) — the route 404s server-side too, this gate just saves a fetch.
  */
 import {BookOpenText} from "lucide-react";
 import {useEffect, useState} from "react";
@@ -24,12 +17,10 @@ import {formatDateTR} from "../lib/datetime";
 import {NotFoundPage} from "./NotFoundPage";
 import "./MecmuaIndexPage.css";
 
-/** The lean wire shape `GET /fate/mecmua/index` returns — no body, the reader fetches that. */
 interface MecmuaIndexEntry {
 	readonly id: string;
 	readonly slug: string | null;
 	readonly title: string;
-	/** ISO string (a serialized `Date`); always set for a published post. */
 	readonly publishedAt: string | null;
 }
 
@@ -41,8 +32,7 @@ type FetchState =
 export function MecmuaIndexPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_PUBLIC_READ, false);
 
-	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first (the
-	// MecmuaPostPage / DivanPage self-gate idiom).
+	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first.
 	if (flagLoading) {
 		return (
 			<div className="kp-page">

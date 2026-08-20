@@ -2,11 +2,6 @@ import type * as React from "react";
 import {Button} from "../../../components/ui/Button";
 import {defineExhibit} from "../exhibit";
 
-/**
- * The worked exemplar — proves the harness end to end: an enum knob per literal-union prop
- * (`variant`/`size`), a boolean knob per flag, and `children` pinned as a fixed prop because
- * `ReactNode` is not knobbable. Every later exhibit (#3094/#3095) follows this shape.
- */
 export const buttonExhibit = defineExhibit<React.ComponentProps<typeof Button>>({
 	id: "button",
 	title: "Button",

@@ -1,17 +1,13 @@
 /**
- * Pins ADR 0118's worker-tier invariant (issue #1502): the worker Sentry module ships pure
- * options + the flag-attribution tagger — no init, no client of its own. "Inert when no DSN" is
- * enforced at the request seam (`index.ts`), where `wrapRequestHandler` runs only with a DSN; the
- * module's own `tagFlag` gates on `Sentry.isEnabled()`, which is false without an active client.
- * Mirrors the SPA's `src/lib/sentry.unit.test.ts`. Also pins the DSN gate, the
- * native-`dataCollection` shape, and the worker half of the #1821 `flag.<key>`:`on`/`off` tagging.
+ * Pins ADR 0118's worker-tier invariant: the worker Sentry module ships pure options + the
+ * flag-attribution tagger — no init, no client of its own. "Inert when no DSN" is enforced at
+ * the request seam (`index.ts`); the module's own `tagFlag` gates on `Sentry.isEnabled()`.
  */
 import * as Cause from "effect/Cause";
 import {afterEach, describe, expect, it, vi} from "vitest";
 
-// `@sentry/cloudflare` is stubbed so `tagFlag` can be driven across the inert (`isEnabled=false`)
-// and active (`isEnabled=true`) branches without a real client init — mirrors the SPA test's
-// `@sentry/react` mock. Hoisted so the module under test binds these fns at import.
+// `@sentry/cloudflare` is stubbed so `tagFlag` can be driven across both `isEnabled` branches
+// without a real client init. Hoisted so the module under test binds these fns at import.
 const {isEnabled, setTag} = vi.hoisted(() => ({
 	isEnabled: vi.fn(() => false),
 	setTag: vi.fn(),
@@ -42,8 +38,7 @@ describe("decided defaults (ADR 0118)", () => {
 	it("workerOptions is pure native dataCollection with no beforeSend", () => {
 		const opts = workerOptions("https://abc@o0.ingest.de.sentry.io/1");
 		expect(opts.dsn).toBe("https://abc@o0.ingest.de.sentry.io/1");
-		// dataCollection is the whole story; the deprecated `sendDefaultPii` is gone,
-		// and no hand-rolled `beforeSend` scrub remains (server-side scrubbing is the backstop).
+		// dataCollection is the whole story: no `sendDefaultPii`, no hand-rolled `beforeSend`.
 		expect(opts.sendDefaultPii).toBeUndefined();
 		expect(opts.dataCollection).toEqual({
 			userInfo: false,

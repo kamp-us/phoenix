@@ -1,26 +1,11 @@
 /**
- * Report feature-boundary pins — `Report` is a shared low-level service over the
- * three content targets, so it sits below the feature directories and must import
- * none of them. Unlike `Vote`, it owns no inverted contract (no `KarmaBump`), so
- * `ReportLive` requires exactly the `Drizzle` seam. The type-level pin enforces
- * that boundary by asserting what `ReportLive` REQUIRES (its `R` channel) — the
- * service's actual requirement, refactor-proof: a sibling-feature import that
- * widened `R` would fail the pin.
+ * `Report` sits below the feature directories and must import none of them, so the pin
+ * asserts what `ReportLive` REQUIRES: a sibling-feature import that widened `R` fails it.
+ * The pin scopes to the SERVICE only — the wire/gate layer composes OVER the features by
+ * design.
  *
- * The pin scopes to the SERVICE (`Report.ts`); the wire/gate layer
- * (`mutations.ts`, `lists.ts`, `views.ts`, `fate-module.ts`) composes OVER the
- * features by design and is not part of `ReportLive`'s `R` — the
- * `report.submit`/`report.resolve` resolvers translate the service's
- * `ReportTargetNotFound` into the per-feature not-found errors and dispatch
- * act-on-target to the sibling content services, the moderation gate discharges
- * künye's `Moderate` capability over the `moderates` relation (ADR 0107, carrying
- * ADR 0098 §2's invisible denial), and `fate-module.ts` aggregates this feature's
- * fate contribution. The boundary that matters is that the service stays
- * feature-clean; the wire/gate layer reaching siblings is the point of the layer,
- * exactly as `pano/`/`sozluk/` own their vote mutation files.
- *
- * Type pins use expectTypeOf, not `@ts-expect-error` — the effect LSP plugin's
- * TS377003 escapes the directive (recurring finding; the `vote/` precedent).
+ * Type pins use `expectTypeOf`, not `@ts-expect-error`: the effect LSP plugin's TS377003
+ * escapes the directive.
  */
 import type {Layer} from "effect";
 import {describe, expectTypeOf, it} from "vitest";

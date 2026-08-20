@@ -1,6 +1,6 @@
 /**
- * Unit tests for the Turkish search normalization (ADR 0080) — the fold
- * applied symmetrically at write and query time. Pure functions, no SQL.
+ * The Turkish search normalization fold (ADR 0080), applied symmetrically at write and query
+ * time. Pure functions, no SQL.
  */
 import {describe, expect, it} from "vitest";
 import {MIN_QUERY_LENGTH, normalizeSearchText, toMatchExpression} from "./normalize";
@@ -42,7 +42,6 @@ describe("toMatchExpression", () => {
 	});
 
 	it("neutralizes FTS5 operator words and punctuation (no MATCH injection)", () => {
-		// `OR`/`NOT`/`(` become literal quoted tokens, not FTS5 operators.
 		const expr = toMatchExpression("foo OR bar");
 		expect(expr).toBe('"foo"* "or"* "bar"*');
 		const escaped = toMatchExpression('a"b');

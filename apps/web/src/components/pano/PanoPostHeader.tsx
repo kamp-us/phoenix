@@ -1,7 +1,6 @@
 /**
- * fate-shaped post-detail header. The detail page spreads `PanoPostHeaderView`
- * into `PostDetailView` and hands the `Post` ref down. Edit/delete affordances
- * are gated by `isAuthor`, which the page derives and passes in.
+ * fate-shaped post-detail header. The page derives `isAuthor` and passes it in;
+ * the edit/delete affordances hang off it.
  */
 import {useLiveView, type ViewRef, view} from "react-fate";
 import type {Post} from "../../../worker/features/fate/views";
@@ -21,11 +20,7 @@ import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
 import {SandboxMarker} from "../ui/SandboxMarker";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 
-/**
- * Write-back views for the post vote / save toggles. Defined here rather than
- * next to their widgets (in `PanoPost.tsx`) to keep that module free of a
- * back-edge import to the header.
- */
+/** Defined here, away from their widgets, so `PanoPost.tsx` needs no back-edge import. */
 export const PostVoteView = view<Post>()({
 	id: true,
 	score: true,
@@ -65,7 +60,7 @@ export interface PanoPostHeaderProps {
 	isAuthor: boolean;
 	onEdit?: () => void;
 	onDelete?: () => void;
-	/** Reports this post; the page owns `report.submit` + the signed-out redirect. */
+	/** The page owns `report.submit` + the signed-out redirect. */
 	onReport?: () => Promise<ReportOutcome>;
 }
 
@@ -101,8 +96,6 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 						{t.label}
 					</Tag>
 				))}
-				{/* Live author identity via `actorLabel` (#2139): current displayName → @username,
-				    falling back to the write-time `author` snapshot for an unstamped/legacy row. */}
 				<span className="author">
 					{actorLabel(post.authorDisplayName ?? null, post.authorUsername ?? null, post.author)}
 				</span>
@@ -145,8 +138,7 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 					))}
 				</div>
 			) : null}
-			{/* Reactions are scoped to the post detail, not the feed row (#2212) — mirroring
-			    how sözlük scopes them to the definition detail, not the term list. */}
+			{/* Reactions live on the detail only, never the feed row (#2212). */}
 			<ReactionBarSlot>
 				<PostReactionBar postId={post.id} reactions={post.reactions} />
 			</ReactionBarSlot>
@@ -159,7 +151,7 @@ export function PanoPostHeaderVote({
 	isAuthor = false,
 }: {
 	post: ViewRef<"Post">;
-	/** The viewer authored this post — keep the vote visible but disabled (#2216). */
+	/** Viewer authored this post — visible but disabled (#2216). */
 	isAuthor?: boolean;
 }) {
 	const data = useLiveView(PanoPostHeaderView, post);

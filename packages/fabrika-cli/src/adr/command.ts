@@ -6,10 +6,12 @@
  * decision the verbs make lives in the `*-verb.ts` modules beside it, which is what makes each
  * refusal testable without spawning a process.
  */
-import {Effect, Option} from "effect";
+import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {decisionsDirOr} from "../config/paths.ts";
 import {leafCommand} from "../excess-operand.ts";
-import type {VerbOutcome} from "../verb.ts";
+import {refuse, type VerbOutcome} from "../verb.ts";
+import {CORPUS_DECLINED, DIR_UNREADABLE} from "./codes.ts";
 import {runMint} from "./mint-verb.ts";
 import {runNew} from "./new-verb.ts";
 import {runNext} from "./next-verb.ts";
@@ -33,11 +35,44 @@ const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
 	});
 
 const dirFlag = Flag.string("dir").pipe(
-	Flag.withDefault(".decisions"),
+	Flag.optional,
 	Flag.withDescription(
-		"the directory of NNNN-slug.md decision records to scan (default: .decisions)",
+		"the directory of NNNN-slug.md decision records to scan (default: `decisionsDir` in .fabrika.jsonc, itself defaulting to .decisions)",
 	),
 );
+
+/**
+ * The corpus every verb of this group runs over: the flag if given, else the repo's declared one.
+ *
+ * Resolved here rather than inside each verb because the answer is the same question seven times,
+ * and both of its bad arms end the run before any verb starts — there is no corpus to point a read
+ * or a write at, so reaching the verb would only move the same refusal later.
+ */
+const corpusFor = (
+	verb: string,
+	declared: Option.Option<string>,
+): Effect.Effect<
+	| {readonly _tag: "Dir"; readonly dir: string}
+	| {readonly _tag: "Stop"; readonly outcome: VerbOutcome},
+	never,
+	FileSystem.FileSystem | Path.Path
+> =>
+	Effect.gen(function* () {
+		const read = yield* decisionsDirOr(
+			verb,
+			process.cwd(),
+			Option.getOrNull(declared),
+			"there is nothing to read and nothing to write into.",
+		);
+		switch (read._tag) {
+			case "Dir":
+				return {_tag: "Dir" as const, dir: read.dir};
+			case "Declined":
+				return {_tag: "Stop" as const, outcome: refuse(CORPUS_DECLINED, read.message)};
+			case "Refused":
+				return {_tag: "Stop" as const, outcome: refuse(DIR_UNREADABLE, read.message)};
+		}
+	});
 
 const baseFlag = Flag.string("base").pipe(
 	Flag.withDefault("origin/main"),
@@ -63,7 +98,9 @@ const next = leafCommand(
 	"next",
 	{dir: dirFlag, base: baseFlag, repo: repoFlag, json: jsonFlag},
 	Effect.fn(function* ({dir, base, repo, json}) {
-		yield* emit(yield* runNext({dir, base, repo: Option.getOrNull(repo), json}));
+		const corpus = yield* corpusFor("adr next", dir);
+		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
+		yield* emit(yield* runNext({dir: corpus.dir, base, repo: Option.getOrNull(repo), json}));
 	}),
 ).pipe(
 	Command.withShortDescription("The next unused ADR id, merged set and open-PR claims folded."),
@@ -112,11 +149,13 @@ const newCmd = leafCommand(
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({id, slug, dir, status, date, title, tags, json}) {
+		const corpus = yield* corpusFor("adr new", dir);
+		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
 		yield* emit(
 			yield* runNew({
 				id,
 				slug,
-				dir,
+				dir: corpus.dir,
 				status,
 				date: Option.getOrElse(date, today),
 				title: Option.getOrNull(title),
@@ -143,10 +182,12 @@ const mint = leafCommand(
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({slug, dir, base, repo, status, date, title, tags, json}) {
+		const corpus = yield* corpusFor("adr mint", dir);
+		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
 		yield* emit(
 			yield* runMint({
 				slug,
-				dir,
+				dir: corpus.dir,
 				base,
 				repo: Option.getOrNull(repo),
 				status,
@@ -174,7 +215,11 @@ const resolve = leafCommand(
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({ids, dir, base, repo, json}) {
-		yield* emit(yield* runResolve({ids, dir, base, repo: Option.getOrNull(repo), json}));
+		const corpus = yield* corpusFor("adr resolve", dir);
+		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
+		yield* emit(
+			yield* runResolve({ids, dir: corpus.dir, base, repo: Option.getOrNull(repo), json}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("Resolve ADR ids to their real filename and state at a base ref."),
@@ -191,7 +236,9 @@ const supersede = leafCommand(
 	"supersede",
 	{id: idArg, by: byFlag, dir: dirFlag, json: jsonFlag},
 	Effect.fn(function* ({id, by, dir, json}) {
-		yield* emit(yield* runRelate({relationship: "supersede", id, by, dir, json}));
+		const corpus = yield* corpusFor("adr supersede", dir);
+		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
+		yield* emit(yield* runRelate({relationship: "supersede", id, by, dir: corpus.dir, json}));
 	}),
 ).pipe(
 	Command.withShortDescription("Mark an older ADR superseded by this one."),
@@ -204,7 +251,9 @@ const amendInPart = leafCommand(
 	"amend-in-part",
 	{id: idArg, by: byFlag, dir: dirFlag, json: jsonFlag},
 	Effect.fn(function* ({id, by, dir, json}) {
-		yield* emit(yield* runRelate({relationship: "amend-in-part", id, by, dir, json}));
+		const corpus = yield* corpusFor("adr amend-in-part", dir);
+		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
+		yield* emit(yield* runRelate({relationship: "amend-in-part", id, by, dir: corpus.dir, json}));
 	}),
 ).pipe(
 	Command.withShortDescription("Add this ADR to an older one's amended-in-part list."),
@@ -229,7 +278,9 @@ const sweepCmd = leafCommand(
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({new: subject, dir, limit, json}) {
-		yield* emit(yield* runSweep({new: subject, dir, limit, json}));
+		const corpus = yield* corpusFor("adr sweep", dir);
+		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
+		yield* emit(yield* runSweep({new: subject, dir: corpus.dir, limit, json}));
 	}),
 ).pipe(
 	Command.withShortDescription("Rank the live ADRs this one may contradict."),

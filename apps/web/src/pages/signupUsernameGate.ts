@@ -29,17 +29,13 @@ function emit(): void {
 	for (const l of listeners) l();
 }
 
-/** Latch the gate: a chosen-username signup is resolving — hold the redirect. */
 export function beginUsernameResolution(): void {
 	if (pending) return;
 	pending = true;
 	emit();
 }
 
-/**
- * Release the gate: the handle landed, or the user abandoned the chosen handle.
- * Idempotent — safe to call from a `finally`/cleanup path.
- */
+// Idempotent, so a `finally` or cleanup path can call it unconditionally.
 export function endUsernameResolution(): void {
 	if (!pending) return;
 	pending = false;
@@ -55,7 +51,6 @@ function getSnapshot(): boolean {
 	return pending;
 }
 
-/** `true` while a chosen-username signup is still resolving — the redirect holds. */
 export function useUsernameResolutionPending(): boolean {
 	return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

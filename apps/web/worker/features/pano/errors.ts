@@ -1,14 +1,10 @@
 /**
- * Tagged errors raised by the Pano service layer. Each carries its wire `code`
- * as an `FateWireCode` annotation that `encodeWireError` reads at the fate boundary
- * (`.patterns/fate-effect-wire-errors.md`).
- *
- * The retired bridge's `PostValidation` / `CommentValidation` carried a dynamic
- * `code` field the registry upcased per instance; `FateWireCode` is one static code
- * per class, so each former sub-code is now its own class. {@link PostValidation}
- * / {@link CommentValidation} survive as the union aliases the `Pano` signatures
- * name. Wire codes are preserved verbatim from the bridge so SPA pattern-matching
- * keeps working; `errors.unit.test.ts` pins each pair.
+ * Tagged errors raised by the Pano service layer. Each carries its wire `code` as a
+ * `FateWireCode` annotation that `encodeWireError` reads at the fate boundary
+ * (`.patterns/fate-effect-wire-errors.md`). One static code per class, so each former dynamic
+ * sub-code of the retired bridge is its own class; {@link PostValidation} /
+ * {@link CommentValidation} survive as union aliases. Wire codes are preserved verbatim from the
+ * bridge so SPA pattern-matching keeps working — `errors.unit.test.ts` pins each pair.
  */
 import {FateWireCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
@@ -49,8 +45,7 @@ export class TagInvalid extends Schema.TaggedErrorClass<TagInvalid>()(
 	{[FateWireCode]: "TAG_INVALID"},
 ) {}
 
-// Spread into mutation `error:` unions; {@link PostValidation} is derived from
-// this tuple, so the two can't drift.
+// {@link PostValidation} is derived from this tuple, so the two can't drift.
 export const PostValidationErrors = [
 	TitleRequired,
 	TitleTooLong,
@@ -125,13 +120,10 @@ export class UnauthorizedCommentMutation extends Schema.TaggedErrorClass<Unautho
 ) {}
 
 /**
- * A post's removal WRITE failed at the D1 layer — the vote-clear / triad-stamp / FTS
- * commit (`Removal.removeEntity`, over `DrizzleAccessOrDie`) threw. Declared so a
- * genuine removal-commit failure surfaces as a typed, user-readable error the SPA can
- * show, instead of escaping `post.delete`'s union as a squashed defect (a raw
- * `INTERNAL_SERVER_ERROR`, #1639). The post-commit stats refresh is a recomputable
- * cache (ADR 0011/0117) swallowed at its call site — it cannot fail an already-
- * committed removal — so this error means the removal itself did not commit.
+ * The removal WRITE itself failed at D1. Declared so a genuine removal-commit failure surfaces as
+ * a typed, user-readable error instead of escaping `post.delete`'s union as a squashed
+ * `INTERNAL_SERVER_ERROR` (#1639). The post-commit stats refresh is a recomputable cache swallowed
+ * at its call site, so this error never means "the removal committed but something after it".
  */
 export class PostDeleteFailed extends Schema.TaggedErrorClass<PostDeleteFailed>()(
 	"pano/PostDeleteFailed",

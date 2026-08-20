@@ -1,11 +1,3 @@
-/**
- * The on-brand controlled-asset render pass (#2165, pillar cohesiveness): the bar
- * paints each palette member as a monochrome inline-SVG line-icon instead of its
- * raw OS emoji glyph (so it renders identically across OSes and coheres with the
- * monochrome-plus-accent palette), and names each button by ADR 0139's Turkish
- * gloss. These assert the render contract the later ReactionBar convergence passes
- * (#2166 contrast/focus, #2169 systematic focus/ARIA) build on.
- */
 import {render} from "@testing-library/react";
 import {describe, expect, it, vi} from "vitest";
 import {REACTION_EMOJI} from "../../../worker/db/reaction-emoji";
@@ -18,10 +10,8 @@ describe("ReactionBar — on-brand controlled-asset render (#2165)", () => {
 		const {container} = render(
 			<ReactionBar aggregate={null} onReact={vi.fn()} testIdSuffix="t1" />,
 		);
-		// One controlled SVG glyph per palette member — the OS-invariant asset.
 		const glyphs = container.querySelectorAll("svg.kp-reaction-bar__glyph");
 		expect(glyphs).toHaveLength(REACTION_EMOJI.length);
-		// The raw emoji text is no longer painted as a glyph (it stays the key/label only).
 		expect(container.querySelector(".kp-reaction-bar__emoji")).toBeNull();
 	});
 

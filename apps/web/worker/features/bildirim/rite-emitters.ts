@@ -1,27 +1,12 @@
 /**
- * Rite-feedback emitters (#1695/#1696, epic #1666) — the silent rite moments made
- * audible through the spine's {@link Notification} write surface:
+ * Rite-feedback emitters (#1695/#1696) — the silent rite moments made audible
+ * through the spine's {@link Notification} write surface.
  *
- *  - **divan vote** — a divan vote on a çaylak's sandboxed item notifies the
- *    item's author, AGGREGATED per item (`recordAggregate`): repeat votes bump
- *    one unread row's count, never one row per vote (the anti-hype voice). The
- *    aggregate carries no `actor_id` — no per-voter identity drip.
- *  - **kefil** — a recorded vouch notifies the vouched çaylak (one row per
- *    distinct vouch act; an idempotent re-vouch is the caller's `alreadyVouched`
- *    and never reaches here).
- *  - **terfi (promotion)** — the çaylak→yazar tier flip notifies the promoted
- *    member: the single most ceremonial moment in the rite (#1696). Keyed by the
- *    caller on `promoteToYazar`'s `promoted: true`, so a no-op re-promotion
- *    notifies nothing — idempotent by construction. Fired from BOTH promotion
- *    sites (mod-direct and the tandem sweep), the two `promoteToYazar` call sites.
- *
- * Both emitters ride AFTER the committed mutation and can never fail it: the
- * whole effect — flag read included — is swallowed-with-log (`catchCause`, the
- * ADR 0039 fire-and-forget posture; the `persistPanoStats` idiom), which also
- * absorbs the `orDieAccess` DEFECTS a D1 hiccup raises, not just typed errors.
- * Writes are gated on the spine's `phoenix-bildirim` flag (dark by default, one
- * flag for the whole bildirim surface — no per-child flags), and an actor is
- * never notified about their own action ({@link riteRecipient}).
+ * Every emitter rides AFTER the committed mutation and can never fail it: the whole
+ * effect, flag read included, is swallowed with a log (ADR 0039's fire-and-forget
+ * posture), which absorbs the defects a D1 hiccup raises as well as typed errors.
+ * Writes are gated on the one `phoenix-bildirim` flag, and an actor is never notified
+ * about their own action.
  */
 import {Effect} from "effect";
 import type {TargetKind} from "../../db/target-kind.ts";
@@ -34,16 +19,17 @@ export const DIVAN_VOTE_KIND: NotificationKind = "divan-vote";
 export const KEFIL_KIND: NotificationKind = "kefil";
 export const PROMOTION_KIND: NotificationKind = "terfi";
 
-/** Self-suppression, pure: the recipient, or `null` when they ARE the actor. */
+// Self-suppression: `null` when the recipient IS the actor.
 export const riteRecipient = (recipientId: string, actorId: string): string | null =>
 	recipientId === actorId ? null : recipientId;
 
 const swallow = (label: string) =>
 	Effect.catchCause((cause) => Effect.logWarning(`bildirim: ${label} emit swallowed`, cause));
 
-/** Notify a sandboxed item's author of a landed divan vote (aggregated per item). */
+// Aggregated per item, so repeat votes bump one unread row's count instead of dripping
+// one row (and one voter's identity) per vote.
 export const notifyDivanVote = (input: {
-	/** Server-derived item author (`VoteResult.authorId`), never client-supplied. */
+	// Server-derived, never client-supplied.
 	authorId: string;
 	actorId: string;
 	targetKind: TargetKind;
@@ -53,8 +39,8 @@ export const notifyDivanVote = (input: {
 		const recipientId = riteRecipient(input.authorId, input.actorId);
 		if (recipientId === null) return;
 		if (!(yield* bildirimOn)) return;
-		// The aggregate stores `actorId: null`, so the muted check keys on the real
-		// interacting divan voter (`actorId`), the identity that survives only here.
+		// The aggregate stores `actorId: null`, so the mute check has to key on the real
+		// voter here — this is the only place that identity survives.
 		if (yield* bildirimMutedBy(recipientId, input.actorId)) return;
 		const bildirim = yield* Notification;
 		yield* bildirim.recordAggregate({
@@ -66,7 +52,6 @@ export const notifyDivanVote = (input: {
 		});
 	}).pipe(swallow(DIVAN_VOTE_KIND));
 
-/** Notify the vouched çaylak that a yazar vouched for them. */
 export const notifyKefil = (input: {candidateId: string; voucherId: string}) =>
 	Effect.gen(function* () {
 		const recipientId = riteRecipient(input.candidateId, input.voucherId);
@@ -83,13 +68,8 @@ export const notifyKefil = (input: {candidateId: string; voucherId: string}) =>
 		});
 	}).pipe(swallow(KEFIL_KIND));
 
-/**
- * Notify the freshly-promoted member that they crossed çaylak → yazar. No
- * self-suppression question: promotion is a standing the member EARNED, not an
- * act another user did TO them — the recipient IS the subject, `actorId` is null
- * (a ceremonial system event, not a per-actor drip). The target is the member's
- * own account, so the row links to the profile where the new yazar tier shows.
- */
+// No self-suppression here: promotion is a standing the member earned, not something
+// another user did to them, so the recipient is the subject and `actorId` is null.
 export const notifyPromotion = (input: {userId: string}) =>
 	Effect.gen(function* () {
 		if (!(yield* bildirimOn)) return;

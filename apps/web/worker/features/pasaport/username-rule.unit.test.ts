@@ -1,8 +1,6 @@
 /**
- * The single-source username rule (`username-rule.ts`) — the pure predicate behind
- * both `assertUsername` (server) and the SPA forms (client). Pinning the boundaries
- * here keeps the one rule honest; `assertUsername`'s mapping onto typed errors and
- * the no-DB-read proof stay in `username-validation.unit.test.ts`.
+ * The pure username predicate behind both `assertUsername` on the server and the SPA
+ * forms. Its mapping onto typed errors lives in `username-validation.unit.test.ts`.
  */
 import {describe, expect, it} from "vitest";
 import {

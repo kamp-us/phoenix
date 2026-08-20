@@ -1,12 +1,9 @@
 /**
- * The dark-ship default-=-safe-state invariant for the pano parallel-stamp-wave read
- * collapse (#2710, epic #2567). Inspected off the exported `PANO_STAMP_WAVE_FLAG` record
- * (the same object the factory spreads into `FlagshipFlag`), so no alchemy resource is
- * constructed — mirrors `sozluk-stamp-wave.invariant.test.ts`.
+ * The dark-ship default-is-the-safe-state invariant for the pano stamp-wave collapse
+ * (#2710). Inspected off the exported record, so no alchemy resource is constructed.
  *
- * Load-bearing: with the default OFF the pano thread/comment reads run their stamp wave at
- * `concurrency: 1` (serial, byte-for-byte today) — so the containment is real, the
- * concurrent wave only reachable after a human flips the flag.
+ * Load-bearing: with the default OFF the reads stay serial and byte-for-byte as today,
+ * so the concurrent wave is only reachable after a human flips the flag.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {PHOENIX_PANO_STAMP_WAVE} from "../../../src/flags/keys.ts";

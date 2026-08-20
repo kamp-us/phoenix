@@ -309,7 +309,6 @@ describe("FateInterpreter — observability", () => {
 			{id: "id"},
 			{
 				byIds: function* (ids) {
-					// Inside the constructor-owned `Spanned.byIds` span.
 					yield* logSpan;
 					return ids.map((id) => ({id}));
 				},
@@ -323,8 +322,6 @@ describe("FateInterpreter — observability", () => {
 			}),
 		);
 
-		// The runtime context carries the request span — the stand-in for the
-		// route fiber's ambient `ParentSpan`.
 		const runtime = ManagedRuntime.make(
 			Layer.mergeAll(
 				FateServer.layer(FateServer.config({queries: {spanned}, sources: [spannedSource]})),
@@ -350,10 +347,6 @@ describe("FateInterpreter — observability", () => {
 				),
 			);
 			expect(response.status).toBe(200);
-			// Both spans — the operation handler's wire-name span AND the source
-			// handler's constructor-owned span (reached through the
-			// RequestResolver batch window) — parent to the request span, never
-			// a detached root.
 			expect([...spanLog].sort((a, b) => (a.name < b.name ? -1 : 1))).toEqual([
 				{name: "Spanned.byIds", parent: "route-span"},
 				{name: "spanned", parent: "route-span"},

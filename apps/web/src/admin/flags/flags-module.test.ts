@@ -1,9 +1,3 @@
-/**
- * The flags module registers into the admin-console shell (#2742, epic #2711): importing the
- * app-wide composition self-registers the `bayraklar` module as a nav entry with a Turkish label,
- * and the shell's pure `selectActiveModule` resolves it — asserted DOM-free (the panel chunk is
- * `React.lazy`, never evaluated here). It proves the console module contract (#2740) end-to-end.
- */
 import {describe, expect, it} from "vitest";
 import {DECLARED_FLAGS, MEMBER_MUTE} from "../../flags/keys";
 import {consoleRegistry} from "../app-modules";

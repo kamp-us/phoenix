@@ -1,15 +1,8 @@
 /**
- * `userAdmin.list` gate + shaping coverage (#3200) — the roster read run through the REAL
- * `requireAdmin` seam (ADR 0107), not a re-implemented admin check. The post-gate body
- * (`userAdminListGated`) is exercised end to end: an admin discharges the `Admin` grant and
- * gets the mapped roster (role joined off the `moderates` tuple, banned off the batched
- * ban-state); a non-admin and the anonymous actor are denied the invisible `Denied` — and
- * the pasaport reads are NEVER touched, proving the gate blocks before the read (the
- * fail-on-contact stub dies if reached).
- *
- * All ports are scripted (`Pasaport` the roster + ban-state, `RelationStore` the admin +
- * moderates tuples, `AgentAuthority` fail-closed, `CurrentActor` the actor) — no DB; the
- * real-D1 admin write→read seam lives in `apps/web/tests/integration/kunye-admin-seam.test.ts`.
+ * `userAdmin.list` gate + shaping coverage (#3200), run through the REAL `requireAdmin`
+ * seam (ADR 0107) rather than a re-implemented admin check. Denied callers must never
+ * touch the pasaport reads — the fail-on-contact stub dies if the gate let them through.
+ * The real-D1 write→read seam lives in `tests/integration/kunye-admin-seam.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
@@ -54,9 +47,8 @@ const run = (
 	const rows = opts.rows ?? [];
 	const admins = opts.admins ?? [];
 	const mods = opts.mods ?? [];
-	// One `RelationStore` scripting BOTH the `admin` tuple (the requireAdmin gate) and the
-	// `moderates` tuple (the roster's role join) off two holder sets — inlined so TS infers
-	// the port shape from the tag (the `divan/gate.unit.test.ts` idiom, no cast).
+	// One store scripts BOTH the `admin` tuple (the gate) and the `moderates` tuple (the
+	// role join). Inlined so TS infers the port shape from the tag, with no cast.
 	const holdersFor = (relation: string) => (relation === "admin" ? admins : mods);
 	const relevant = (relation: string, objectType: string) =>
 		(relation === "admin" || relation === "moderates") && objectType === "platform";
@@ -122,7 +114,6 @@ describe("userAdmin.list — requireAdmin gate (ADR 0107)", () => {
 				["u2", "member", true, "çaylak"],
 			],
 		);
-		// Every node carries its wire discriminant + the epoch-millis createdAt.
 		assert.strictEqual(nodes[0]?.__typename, "UserAdmin");
 		assert.strictEqual(nodes[0]?.createdAt, at("2026-01-01T00:00:00Z").getTime());
 		assert.strictEqual(exit.value.pagination.hasNext, false);

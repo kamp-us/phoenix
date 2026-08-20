@@ -60,7 +60,11 @@ required namespace, and how the control-plane state is derived, is the verb's se
 `scope` printing `control-plane` or `unknown` puts the PR on the approval-aware path — `unknown` is
 control-plane until proven otherwise: all machine gates still apply, plus a deterministic discharge.
 An ADR-only PR is `not-control-plane` and owes no approval; its required `governance` verdict is
-what still gates it (founder ruling, 2026-08-15 on #5531).
+what still gates it (founder ruling, 2026-08-15 on #5531). A repo with **no** `.github/CODEOWNERS`
+at the base ref is an empty row set, which classifies `unknown` — so it is held, not waved through:
+a boundary nobody declared is not a declaration that nothing is control-plane (ADR 0220 §4). Both
+owner shapes bound the surface: an individual `@login` owner satisfies the gate on its own approval,
+with no team roster involved (#6299).
 
 ```bash
 fabrika ship cp-approval $pr_number --sha 03135b91
@@ -87,7 +91,7 @@ fabrika ship gate $pr_number --sha 03135b91 --require review-code --require revi
 
 `--require` is repeated verbatim from `scope`'s printed namespace set — the verb refuses a
 cleared answer that does not cover exactly that set. It is a **floor, not a ceiling**: a
-diff touching `.decisions/`, `.claude/`, `.github/` or `claude-plugins/` gates on `governance`
+diff touching one of this repo's `governedRoots` gates on `governance`
 whether or not you passed it, because the verb re-derives that requirement from the diff itself —
 so an `ns governance` line you did not ask for is the gate working, not a bug. `blocked`
 naming a FAIL → route to repair (`build`) and stop. `blocked` naming absence → the namespace was
@@ -119,7 +123,9 @@ Terminals: `green` → continue. `red` → disarm, note, route the failed run to
 `wedged` → disarm, note naming the stranded check; **the cancel-and-rerun lever belongs to a
 human** — you diagnose, you never pull it. `no-runs` → one bounded nudge:
 `fabrika ship nudge $pr_number --sha 03135b91` re-derives the dropped-trigger state itself and refuses
-otherwise; after the nudge, re-enter this step once. `budget-exhausted` → disarm, note,
+otherwise; after the nudge, re-enter this step once. `no-producer` → this repo has no CI at all and
+declared `ci.noProducer: "degrade"` for itself: disarm, note that the head carries no CI evidence,
+stop. It is not `pending` and no nudge reaches it — nothing will ever start. `budget-exhausted` → disarm, note,
 stop. `head-moved` → start over at step 1; every answer so far was about a tree that is gone.
 **You never re-run, re-trigger, or locally reproduce a check** — CI's verdict is CI's. Each terminal's
 proof, the `--wait` budget and the nudge's own refusals are their sections
@@ -284,19 +290,3 @@ CI and the ruleset own their own verdicts — this section names each with its o
 `fabrika wire doc-section --heading "Where the eight under-determined clauses were ruled" < <skill-base>/contract.md` —
 name it in your report and leave it open; a run that settles one in the moment has invented a ruling
 nobody made.
-
-## Required repo files
-
-fabrika installs into repos that are not phoenix, so every repo surface this skill leans on is
-declared here. The when-missing vocabulary is closed — **fail-loud** (stop, name the missing
-surface by its repo-relative path, point at front-door, **and file the gap**), **degrade** (continue
-with a narrower answer, stated), **bootstrap** (front-door creates it) — and it is the same table in
-every fabrika skill, so one reader parses all of them. No row here dead-ends on a bare error.
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| `.github/CODEOWNERS`, carrying a control-plane team row | `ship scope`'s control-plane classification and `ship cp-approval`'s roster both derive from it, read at the PR's base ref — the branch the PR targets, never a literal trunk name | **fail-loud** — an unreadable boundary is exit `11`, never "ordinary"; a trivial or empty one is the printed `unknown` hold, and a zero-member roster is `stop zero-owners`. The run names `.github/CODEOWNERS` and points at front-door. |
-| A landing path on the PR's base branch — either a merge queue, or a repository permitting at least one merge method | Step 7 lands the PR through one of exactly two verbs, and `ship scope`'s `landing` line says which (`fabrika wire doc-section --heading "ship merge" < <skill-base>/contract.md`) | **degrade** — a base with no queue is not a missing surface, it is the other path: `ship merge` lands it and `reconcile`'s `parked` never applies. Only a repository permitting *no* merge method has nothing at all, and that ends the run `refused — no landing path on <base>` naming the base branch, because no verb can grant one. |
-| `.github/workflows/ci.yml`, gating the `merge_group` ref | `ship checks` reads its result at the head, and the queue awaits that context on `merge_group` before it merges | **fail-loud** — with no workflows at the head `ship checks` reports `facts workflows:0 runs:0` at rollup `pending` and never green, so the run stops rather than enqueue behind no gate; it names `.github/workflows/ci.yml` and points at front-door. |
-| `.github/workflows/governance-floor.yml`, running `fabrika ship floor` on every PR | it is what makes step 3's governance floor bind on a machine rather than on this prose | **degrade** — the skill still refuses a `blocked` governance namespace itself, so the run is correct without the job; what is lost is enforcement against a run that never happened. Say so, name `.github/workflows/governance-floor.yml`, and point at front-door. |
-| The `status:awaiting-release` label | `ship release` is the dark-ship seam and the label is the whole action | **fail-loud** — a label write or its read-back failing is exit `8`/`9`, never `queued`; the run escalates that a real dark ship may be missing from the release queue, names the `status:awaiting-release` label, and points at front-door. |

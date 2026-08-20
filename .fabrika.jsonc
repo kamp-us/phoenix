@@ -1,4 +1,9 @@
 {
+	// Binds this file to its JSON Schema so an editor autocompletes keys and reds a typo or a
+	// wrong-typed value while you type, instead of at fabrika runtime. The schema is generated from
+	// the config-key fragments by `fabrika config schema --write` — never hand-edited (#6488).
+	"$schema": "./.fabrika.schema.json",
+
 	// Who may clear one extra repair round on a PR (`fabrika build clear`). Founder-ruled 2026-08-18
 	// on #5959: the grant-author set is repo configuration, not a compiled-in "founder" concept —
 	// GitHub usernames and teams, both `@`-prefixed as GitHub writes them. In phoenix it is the
@@ -20,6 +25,22 @@
 		"/skills/report/SKILL.md",
 		"/skills/review-doc/SKILL.md",
 		"/skills/triage/SKILL.md"
+	],
+
+	// NOTHING READS THIS KEY. A §CP read that fails is the caller's exit 11 in every repo, and a
+	// proven-absent CODEOWNERS is the `unknown` hold — the founder reverted the per-repo policy on
+	// #5631, back to ADR 0220 §4. The strict value is kept declared so this repo cannot drift if the
+	// key is ever wired up again; what becomes of the key itself is the founder's to rule.
+	"unreadableCodeowners": "refuse",
+
+	// The repo's own commands that compile and lint its code. `fabrika build check --surface code`
+	// runs each one in the lane's tree, and both flags here are phoenix's: `--force` is turbo's
+	// cache-bypass (a bare `tsc` rejects it), and `lint:worktree` is a phoenix script name. Nothing
+	// is compiled into the CLI, so a repo declaring nothing gets a named refusal rather than these
+	// two commands (#6015).
+	"codeValidators": [
+		{ "command": ["pnpm", "typecheck", "--force"] },
+		{ "command": ["pnpm", "lint:worktree"] }
 	],
 
 	// The repo's own commands that machine-read `.github/workflows/**`. `fabrika build check

@@ -1,33 +1,13 @@
 /**
- * `Pasaport.hydrateProfile` headline-count sandbox-visibility wiring (#1312) — the
- * security fix sibling to #1309. The public profile HEADLINE counts
- * (`definitionCount` / `postCount` / `commentCount` on `ProfileView`) are computed
- * by `hydrateProfile` via `countByAuthor` across the three content tables. Each
- * count must carry the #1205 {@link sandboxVisibleWhere} predicate beside its
- * existing `removed_at IS NULL` guard, resolved against the request viewer — so a
- * visitor never learns HOW MANY un-promoted (sandboxed) contributions a çaylak has,
- * and the header agrees with the (#1309-fixed) feed for the same viewer.
+ * Headline-count sandbox-visibility wiring (#1312) — a visitor must not learn HOW MANY
+ * sandboxed contributions a çaylak has. The predicate SEMANTICS are proven in
+ * `SandboxVisibility.unit.test.ts`; what THIS proves is that every `countByAuthor`
+ * WIRES the predicate in, for every viewer kind, and that the header and the feed's
+ * `totalCount` share one count so they cannot disagree.
  *
- * Unit-tier per ADR 0082: the predicate SEMANTICS (who sees what) are already proven
- * by `SandboxVisibility.unit.test.ts`; what THIS test proves is that the COUNT path
- * WIRES that predicate into every `countByAuthor` for every viewer kind, and that the
- * SAME viewer-aware count backs both the header (`lookupProfile`) and the feed's
- * `totalCount` (`listContributions`), so the two are consistent.
- *
- * `countByAuthor` resolves through `.then()` (a Promise, no `.toSQL()`), so unlike the
- * feed SELECTs its SQL can't be captured off the query builder — instead the count
- * statements execute against a RECORDING D1 binding whose `prepare(sql)` captures the
- * compiled SQL + bound params. The profile-row read (a builder, scripted) never hits
- * the binding, so the recorded set is exactly the three count statements.
- *
- * The viewer matrix (the count leak is closed iff):
- *   - anonymous / public — `sandboxed_at IS NULL` (live only, no viewer arm).
- *   - other member — `sandboxed_at IS NULL OR author_id = :viewerId`: the own arm is
- *     keyed to the VIEWER (not the profiled author), so it counts none of the çaylak's
- *     sandboxed rows ⇒ live-only.
- *   - the author (viewing own profile) — same predicate, but `author_id = :viewerId`
- *     now matches ALL their own rows ⇒ they DO count their own sandboxed content.
- *   - moderator — no sandbox restriction (`undefined` ⇒ dropped by `and()`) ⇒ full count.
+ * `countByAuthor` resolves through `.then()`, so its SQL cannot be captured off the
+ * query builder like the feed SELECTs. Instead the counts execute against a RECORDING
+ * D1 binding; the builder reads never hit it, so `recorded` is exactly the counts.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
@@ -55,10 +35,8 @@ interface RecordedQuery {
 	params: unknown[];
 }
 
-// A D1 binding that records the SQL + bound params of every statement it EXECUTES.
-// The `countByAuthor` reads resolve through `.then()` ⇒ they execute here, so their
-// compiled SQL lands in `recorded`; the feed/profile-row builders are captured off
-// `.toSQL()` and never executed against this binding.
+// Records the SQL + bound params of every statement it EXECUTES — so the `.then()`
+// counts land in `recorded` and the `.toSQL()` builders never do.
 function recordingD1(): {binding: D1Database; recorded: RecordedQuery[]} {
 	const recorded: RecordedQuery[] = [];
 	// biome-ignore lint/plugin: `D1Database` is a host binding that can't be structurally constructed; only SQL compilation + bind recording is exercised, results are inert.
@@ -93,11 +71,9 @@ function recordingD1(): {binding: D1Database; recorded: RecordedQuery[]} {
 	return {binding, recorded};
 }
 
-// Drives a Pasaport method over scripted `run` results: a query BUILDER (the
-// profile-row / feed SELECT) is captured off `.toSQL()` and resolved to its scripted
-// result without executing; a count PROMISE (`countByAuthor`'s `.then()`) is awaited
-// so it executes against the recording binding (firing `prepare`), then resolved to
-// its scripted result. `batch` is unreachable on these read paths.
+// Drives a Pasaport method over scripted `run` results: a query BUILDER is captured
+// off `.toSQL()` without executing; a count PROMISE is awaited so it executes against
+// the recording binding.
 function scriptedAccess(
 	binding: D1Database,
 	results: ReadonlyArray<unknown>,
@@ -146,17 +122,12 @@ const PROFILE_ROW = {
 	totalKarma: 0,
 };
 
-// `lookupProfile` issues: 1 profile-row SELECT (builder, scripted) then 3
-// `countByAuthor` reads (def/post/comment) — four scripted `run` results. Only the
-// three counts execute against the recording binding.
+// `lookupProfile` issues 1 profile-row SELECT then 3 counts — four scripted results.
 const lookupResults = [[PROFILE_ROW], 0, 0, 0] as const;
 
-// `listContributions` issues: 3 feed SELECTs (builders) then 3 `countByAuthor`
-// totals — six scripted results; only the three totals execute against the binding.
+// `listContributions` issues 3 feed SELECTs then 3 count totals — six scripted results.
 const feedResults = [[], [], [], 0, 0, 0] as const;
 
-// Run `lookupProfile` for `AUTHOR` as seen by `sandboxViewer`; return the three
-// recorded headline-count statements.
 const recordHeaderCounts = (sandboxViewer: SandboxViewer) =>
 	Effect.gen(function* () {
 		const {binding, recorded} = recordingD1();
@@ -168,8 +139,6 @@ const recordHeaderCounts = (sandboxViewer: SandboxViewer) =>
 		return recorded;
 	});
 
-// Run `listContributions` for `AUTHOR` as seen by `sandboxViewer`; return the three
-// recorded `totalCount` statements (the feed SELECTs don't hit the binding).
 const recordFeedCounts = (sandboxViewer: SandboxViewer) =>
 	Effect.gen(function* () {
 		const {binding, recorded} = recordingD1();
@@ -181,11 +150,8 @@ const recordFeedCounts = (sandboxViewer: SandboxViewer) =>
 		return recorded;
 	});
 
-// Run `lookupProfileById` (the by-id relation fetch path the `profileSource.byId`
-// loader drives) for `AUTHOR` as seen by `sandboxViewer`; return the three recorded
-// headline-count statements. Same shape as `recordHeaderCounts` (1 profile-row SELECT
-// then 3 counts) — the SAME `hydrateProfile`/`countByAuthor`, reached by id rather than
-// by username (#1406).
+// The by-id relation fetch path (#1406): same shape as `recordHeaderCounts`, reached
+// by id rather than by username.
 const recordByIdCounts = (sandboxViewer: SandboxViewer) =>
 	Effect.gen(function* () {
 		const {binding, recorded} = recordingD1();
@@ -231,8 +197,8 @@ describe("Pasaport headline counts — every count filters the sandbox (the #131
 					/"sandboxed_at" is null[)\s]*or[\s(]*"[a-z_]+"\."author_id" = \?/,
 					"sandboxed-or-own predicate is wired",
 				);
-				// The own arm is keyed to the VIEWER, not the profiled author — so it counts
-				// none of the çaylak's sandboxed rows ⇒ the visitor's count is live-only.
+				// The own arm binds the VIEWER, not the profiled author, so none of the
+				// çaylak's sandboxed rows are counted.
 				assert.include(params as unknown[], OTHER, "own-content arm bound to the viewer id");
 			}
 		}),
@@ -244,8 +210,7 @@ describe("Pasaport headline counts — every count filters the sandbox (the #131
 			for (const {sql, params} of counts) {
 				const s = sql.toLowerCase();
 				assert.match(s, /"sandboxed_at" is null[)\s]*or[\s(]*"[a-z_]+"\."author_id" = \?/);
-				// viewerId === authorId, so `author_id = :viewerId` matches ALL the author's
-				// rows — including sandboxed — so they count their own sandboxed content.
+				// viewerId === authorId here, so the own arm matches all their rows.
 				assert.include(params as unknown[], AUTHOR, "own-content arm bound to the author");
 			}
 		}),
@@ -280,10 +245,8 @@ describe("Pasaport headline counts — every count filters the sandbox (the #131
 });
 
 describe("Pasaport — headline counts AGREE with the feed totalCount per-viewer (#1312 AC#3)", () => {
-	// The header (`lookupProfile`→`hydrateProfile`) and the feed's `totalCount`
-	// (`listContributions`) both flow through the SAME `countByAuthor(table, author,
-	// viewer)`, so for any given viewer the three count statements are byte-identical —
-	// the header total can never disagree with what the feed exposes.
+	// Header and feed both flow through the SAME `countByAuthor`, so per viewer the three
+	// statements are byte-identical and the two totals cannot disagree.
 	for (const [name, sandboxViewer] of Object.entries(viewers)) {
 		it.effect(`${name} — header count SQL === feed totalCount SQL`, () =>
 			Effect.gen(function* () {
@@ -302,8 +265,7 @@ describe("Pasaport — headline counts AGREE with the feed totalCount per-viewer
 
 const normQuery = (qs: RecordedQuery[]) => qs.map((q) => ({sql: q.sql, params: q.params}));
 
-// Length-guarded indexed access (noUncheckedIndexedAccess): the recorded count set
-// fires in def/post/comment order, so index 0/1/2 is the definition/post/comment read.
+// The recorded counts fire in def/post/comment order, so index 0/1/2 is that read.
 const nthQuery = (qs: RecordedQuery[], i: number): RecordedQuery => {
 	const q = qs[i];
 	if (!q) throw new Error(`expected a recorded count statement at index ${i}`);
@@ -311,12 +273,8 @@ const nthQuery = (qs: RecordedQuery[], i: number): RecordedQuery => {
 };
 
 describe("Pasaport — counts AGREE across fetch paths (root by-username vs by-id, #1406)", () => {
-	// `profileSource.byId` (the relation `.ref` path) computes its counts via the SAME
-	// `lookupProfileById`→`hydrateProfile`→`countByAuthor` as the root `queries.profile`
-	// by-username read, so for any given viewer the three count statements are
-	// byte-identical — the by-id path can never disagree with the root query for the same
-	// viewer+profile. This pins AC#1: byId resolves the same definition/post/comment count
-	// as the root query.
+	// The by-id relation path shares `hydrateProfile`/`countByAuthor` with the root
+	// by-username query, so per viewer the two produce byte-identical count statements.
 	for (const [name, sandboxViewer] of Object.entries(viewers)) {
 		it.effect(`${name} — by-username header count SQL === by-id count SQL`, () =>
 			Effect.gen(function* () {
@@ -333,10 +291,8 @@ describe("Pasaport — counts AGREE across fetch paths (root by-username vs by-i
 });
 
 describe("Pasaport — countByAuthor routes through the #1359/0113 seam (#1406)", () => {
-	// The post count carries the draft arm (`is_draft`) via `postVisibleWhere` (ADR 0113),
-	// while definition/comment counts route through `sandboxVisibleWhere` (no draft
-	// dimension on those tables). The three counts fire in def/post/comment order, so the
-	// MIDDLE statement is the post count.
+	// Only the post count carries the draft arm (`postVisibleWhere`, ADR 0113); the other
+	// two tables have no draft dimension. Counts fire def/post/comment, so post is MIDDLE.
 	it.effect("only the post count carries the draft arm (is_draft); def/comment do not", () =>
 		Effect.gen(function* () {
 			const counts = yield* recordByIdCounts(viewers.otherMember);
@@ -356,9 +312,7 @@ describe("Pasaport — countByAuthor routes through the #1359/0113 seam (#1406)"
 			Effect.gen(function* () {
 				const postCount = nthQuery(yield* recordByIdCounts(viewers.otherMember), 1);
 				const s = postCount.sql.toLowerCase();
-				// The draft arm's own-content branch is keyed to the VIEWER (`author_id =
-				// :viewerId`), bound to OTHER — never the profiled author — so none of the
-				// çaylak's drafts are counted for a visitor.
+				// The draft own-arm binds the VIEWER, so none of the çaylak's drafts count.
 				assert.match(s, /"is_draft" is not 1[)\s]*or[\s(]*"[a-z_]+"\."author_id" = \?/);
 				assert.include(
 					postCount.params as unknown[],
@@ -372,8 +326,7 @@ describe("Pasaport — countByAuthor routes through the #1359/0113 seam (#1406)"
 		Effect.gen(function* () {
 			const postCount = nthQuery(yield* recordByIdCounts(viewers.author), 1);
 			const s = postCount.sql.toLowerCase();
-			// viewerId === authorId, so the draft own-arm `author_id = :viewerId` matches
-			// every one of the author's rows — drafts included — so they count their own.
+			// viewerId === authorId here, so the draft own-arm matches their own rows.
 			assert.match(s, /"is_draft" is not 1[)\s]*or[\s(]*"[a-z_]+"\."author_id" = \?/);
 			assert.include(postCount.params as unknown[], AUTHOR, "draft own-arm bound to the author");
 		}),

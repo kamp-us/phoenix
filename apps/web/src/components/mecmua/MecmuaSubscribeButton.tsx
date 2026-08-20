@@ -1,16 +1,5 @@
-/**
- * The mecmua "abone ol / takip ediliyor" subscribe toggle (#2527, epic #2467) — the
- * missing entry point that lets a reader follow a post's author so the subscribed-author
- * feed (#2500) can populate through the product. Rendered on the post reader
- * (`pages/MecmuaPostPage`); wired to the existing `mecmua.subscribe` / `mecmua.unsubscribe`
- * mutations, with the current edge state read off the `mecmuaSubscription` root.
- *
- * Gating mirrors the mutations exactly (`CurrentUser.required`, behind `MECMUA_FEED`):
- * signed-in only — subscribing is not tier-gated (a çaylak may follow), unlike publishing.
- * The toggle only renders when the feed flag is on AND the reader is signed in AND the
- * author isn't the reader themselves, so it appears exactly where it can act. The whole
- * surface stays dark until a human flips `MECMUA_FEED` at release (ADR 0083).
- */
+// Gating mirrors the mutations: signed-in only, NOT tier-gated (a çaylak may follow),
+// unlike publishing. Dark until a human flips `MECMUA_FEED` at release (ADR 0083).
 import {useMemo, useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {MecmuaSubscriptionReceipt} from "../../../worker/features/fate/views";
@@ -28,12 +17,6 @@ const SubscriptionView = view<MecmuaSubscriptionReceipt>()({
 	subscribed: true,
 });
 
-/**
- * The toggle's label, factored DOM-free so the "takip ediliyor → bırak" hover swap is
- * unit-testable without a DOM (the `mecmuaPublishAffordance` pure-core idiom). Not yet
- * following ⇒ "abone ol"; following ⇒ "takip ediliyor", swapping to "bırak" on
- * hover/focus so the unsubscribe intent reads honestly.
- */
 export function mecmuaSubscribeLabel(subscribed: boolean, hovering: boolean): string {
 	if (!subscribed) return "abone ol";
 	return hovering ? "bırak" : "takip ediliyor";
@@ -44,8 +27,6 @@ export function MecmuaSubscribeButton({authorId}: {authorId: string}) {
 	const session = useSession();
 	const {me} = useMe();
 
-	// The toggle can only act when the feed is on and the reader is signed in; a reader
-	// following themselves is meaningless, so hide it on your own post too.
 	if (flagLoading || !feedOn || !session.data) return null;
 	if (me?.id === authorId) return null;
 

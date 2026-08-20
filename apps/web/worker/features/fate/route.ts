@@ -1,14 +1,11 @@
 /**
- * The `POST /fate` route. Since the v2 cutover (ADR 0043) it serves through the
- * native interpreter on its own request fiber — no per-request runtime, no
- * Effect→Promise hop. The `FateServer` service and worker singletons reach the
- * handler through the runtime-derived context layer (`HttpRouter.provideRequest`,
- * `http/app.ts`). See `.patterns/alchemy-http-router.md`,
- * `.patterns/fate-effect-interpreter.md`.
+ * The `POST /fate` route. Since the v2 cutover (ADR 0043) it serves through the native
+ * interpreter on its own request fiber — no per-request runtime, no Effect→Promise hop.
+ * See `.patterns/fate-effect-interpreter.md`.
  *
- * The route edge owns abort→interruption ({@link interruptOnAbort}): alchemy's
- * worker bridge runs the request fiber without abort wiring, so a disconnected
- * client wouldn't interrupt the resolver fibers unless the edge wires it.
+ * The route edge owns abort→interruption ({@link interruptOnAbort}): alchemy's worker
+ * bridge runs the request fiber without abort wiring, so a disconnected client would
+ * not interrupt the resolver fibers unless the edge wires it.
  */
 import {FateInterpreter, type FateRequestContext} from "@kampus/fate-effect";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -38,18 +35,15 @@ export const handleFate = Effect.gen(function* () {
 
 	const session = yield* pasaport.validateSession(raw.headers);
 
-	// `waitUntil` keeps the best-effort live fan-out from blocking the response
-	// (ADR 0028/0029/0039).
+	// `waitUntil` keeps the best-effort live fan-out from blocking the response (ADR 0039).
 	const publishToTopic = (topicKey: string, message: PublishMessage) =>
 		liveTopics.publish(topicKey, message, defaultLiveLimits);
 	const waitUntil = (promise: Promise<unknown>) => {
 		executionCtx.waitUntil(promise);
 	};
 
-	// The base-feed edge-cache purger a fanned pano mutation fires alongside its live
-	// publish (ADR 0170 / #2324). `ctx.cache.purge` is the worker's OWN scoped purge
-	// capability (no zone purge, no API token); it is absent offline / in dev (`cache?`),
-	// where the purge degrades to a no-op.
+	// `ctx.cache.purge` is the worker's OWN scoped purge capability (no zone purge, no API
+	// token); it is absent offline / in dev (`cache?`), where the purge degrades to a no-op.
 	const flagsContext = yield* makeRequestFlagsContext(
 		anonymousFlagsContext,
 		raw.headers.get("cookie"),
@@ -59,21 +53,15 @@ export const handleFate = Effect.gen(function* () {
 		waitUntil,
 	});
 
-	// May this request honor its `phoenix_flag_overrides` cookie (#2741)? Resolved ONCE
-	// at the edge (dev, or an admin) over the request's actor, then threaded on
-	// `RequestFlagOverrides` so `provideRequestFlags` gates every resolver's flag read off
-	// it — the admin verdict can't be recomputed per resolver.
+	// May this request honor its `phoenix_flag_overrides` cookie (#2741)? Resolved ONCE at
+	// the edge, then threaded — the admin verdict cannot be recomputed per resolver.
 	const overridesAllowed = yield* overridesAuthorized(flagsContext).pipe(
 		Effect.provide(currentActorContext(session?.user)),
 	);
 
-	// ONE context object for the whole request — never copy or rebuild it per
-	// resolver. No `signal` field: interruption is wired at this edge (below).
-	// `requestServices` fulfills the `[CurrentActor, RequestFlagOverrides]`
-	// registered in `layers.ts`: `CurrentActor` derived from the validated session
-	// (ADR 0107 §7), `RequestFlagOverrides` carrying the raw `Cookie` header + the
-	// `overridesAllowed` verdict so a flag-gated resolver's `provideRequestFlags` can
-	// source the #622 cookie only when authorized (dev, or admin + flag; #2741).
+	// ONE context object for the whole request — never copy or rebuild it per resolver.
+	// No `signal` field: interruption is wired at this edge (below). This fulfills the
+	// per-request services registered in `layers.ts` (ADR 0107 §7).
 	const requestServices = Context.merge(
 		currentActorContext(session?.user),
 		Context.merge(

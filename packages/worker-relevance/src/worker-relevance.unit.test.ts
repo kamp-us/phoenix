@@ -9,7 +9,6 @@ import {
 	parseTestImportedPackages,
 } from "./worker-relevance.ts";
 
-/** A classify input with no lockfile change unless explicitly supplied. */
 const input = (over: Partial<ClassifyInput>): ClassifyInput => ({
 	changedFiles: [],
 	lockfileChanged: false,

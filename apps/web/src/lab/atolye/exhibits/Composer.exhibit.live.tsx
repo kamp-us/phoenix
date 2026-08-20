@@ -1,17 +1,10 @@
-/**
- * The composer exhibit's live demo — the tiptap-import boundary. `Composer.exhibit.tsx`
- * `React.lazy`-loads this module, so `@kampus/composer` (tiptap/ProseMirror) stays out of
- * the atölye registry/index chunk and only loads when the exhibit actually renders — the
- * same performance-pillar split the composer routes make (#2523).
- */
+// The tiptap-import boundary: a separate module so `Composer.exhibit.tsx` can `React.lazy` it and
+// keep ProseMirror out of the atölye index chunk (#2523).
 
 import {Composer, ReadOnlyComposer, useComposerEditor} from "@kampus/composer";
 import {useState} from "react";
 import {Link} from "react-router";
 
-// A compact sample exercising headings, inline marks, a list, and a blockquote — enough to
-// prove the editor is a real rich surface. The exhaustive round-trip fixture lives at the
-// canonical `/lab/composer` playground (linked below), which this exhibit does not touch.
 const SAMPLE_MARKDOWN = [
 	"## Merhaba, atölye",
 	"",
@@ -24,9 +17,8 @@ const SAMPLE_MARKDOWN = [
 ].join("\n");
 
 /**
- * Editable ⇄ read-only share ONE render path (editor≈reader parity, #2581). The parent
- * remounts this on the knob flip (via `key`), so `editable` is fixed per mount and the
- * read-only branch renders through `ReadOnlyComposer` — the same baseKit path, editing off.
+ * `editable` is fixed per mount (the parent remounts via `key`), so both branches run one baseKit
+ * render path — editor≈reader parity, #2581.
  */
 export function ComposerExhibitLive({readOnly = false}: {readOnly?: boolean}) {
 	if (readOnly) {

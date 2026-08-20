@@ -15,6 +15,7 @@
  * The priority set is exactly `{p0, p1, p2}` — `p3` was ruled *retired*, not widened (#4101, #2413).
  */
 
+import {type ContainmentVocabulary, containmentGap} from "../config/keys/containment-vocabulary.ts";
 import type {LedgerScope} from "./digest.ts";
 import type {ChildLedger} from "./model.ts";
 
@@ -172,9 +173,14 @@ export interface FloorInput {
 	readonly ledger: LedgerScope;
 	/** The refs {@link refsToProbe} named that a 404-discriminating probe proved **absent**. */
 	readonly provenAbsent: ReadonlySet<number>;
+	/**
+	 * The resolved containment vocabulary — config, not ledger, which is why it is an input here
+	 * rather than a field of the ledger the scope digest is taken over.
+	 */
+	readonly vocabulary: ContainmentVocabulary;
 }
 
-export const deriveFloor = ({ledger, provenAbsent}: FloorInput): Floor => {
+export const deriveFloor = ({ledger, provenAbsent, vocabulary}: FloorInput): Floor => {
 	const defects: Defect[] = [];
 
 	if (ledger.dependenciesAbsent) {
@@ -261,15 +267,15 @@ export const deriveFloor = ({ledger, provenAbsent}: FloorInput): Floor => {
 			});
 		}
 
-		if (
-			ledger.cycleDoc === "present" &&
-			child.labels.includes("type:feature") &&
-			(child.containment === null || child.containment === "none")
-		) {
+		const gap =
+			ledger.cycleDoc === "present"
+				? containmentGap(vocabulary, child.labels, child.containment)
+				: null;
+		if (gap !== null) {
 			defects.push({
 				type: "MISSING_CONTAINMENT",
 				refs: [child.number],
-				detail: `type:feature with containment ${child.containment === null ? "unset" : "none"}`,
+				detail: `${gap.type} with containment ${gap.got}`,
 			});
 		}
 

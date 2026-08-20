@@ -1,22 +1,13 @@
 /**
- * The Flagship read/write clients — the load-bearing seam the anka-ops `flag` verb group runs
- * on (relocated from the retired `@kampus/cf-utils` package, ruling #3326). A
- * typed Effect service wrapping `@distilled.cloud/cloudflare`'s canonical flagship read
- * operations (`listApps`, `listAppFlags`, `getAppFlag`) — the SAME transport
- * `@kampus/d1-rest` runs D1 over (already in the tree via alchemy), so this rolls NO new
- * raw-`curl` client (the third-copy bug class, #941). Schema decoding + typed errors
- * (`FlagshipAppNotFound`/`FlagshipFlagNotFound`, `Unauthorized`, …) come from the SDK; they
- * ride the `E` channel so an unreachable/unauthorized CF surfaces a typed error, never a
- * stack trace.
+ * The Flagship read/write clients the anka-ops `flag` verb group runs on. See ADR 0081.
+ *
+ * Wraps `@distilled.cloud/cloudflare`'s canonical flagship ops — the SAME transport
+ * `@kampus/d1-rest` runs D1 over, so this rolls NO new raw-`curl` client (the third-copy
+ * bug class, #941). Every SDK fault rides the `E` channel; nothing throws.
  *
  * Credentials come from the environment at runtime, NEVER from source: the ambient
- * `Credentials | HttpClient` (`CredentialsFromEnv` reads `$CLOUDFLARE_API_TOKEN`,
- * `FetchHttpClient.layer` the transport) is captured at layer build and re-provided into
- * each op; `$CLOUDFLARE_ACCOUNT_ID` is read per call via `Config`.
- *
- * `listFlagStates` is the enumeration `flag list` prints: it lists every Flagship app,
- * decodes each app's stage as its `env` (`decodeEnv`, skipping foreign apps), lists that
- * app's flags, and reduces each to a `key × env` row (`decodeFlagState`).
+ * `Credentials | HttpClient` is captured at layer build and re-provided into each op;
+ * `$CLOUDFLARE_ACCOUNT_ID` is read per call via `Config`.
  */
 import type {Credentials} from "@distilled.cloud/cloudflare/Credentials";
 import * as flagship from "@distilled.cloud/cloudflare/flagship";
@@ -33,17 +24,11 @@ import {
 
 export {FlagshipAppNotFound, FlagshipFlagNotFound} from "@distilled.cloud/cloudflare/flagship";
 
-/** A Flagship app reduced to the identity the client keys on: `id` is the API key, `name` the stage-bearer. */
 export interface FlagshipApp {
 	readonly id: string;
 	readonly name: string;
 }
 
-/**
- * The read client's error channel: every typed fault the wrapped SDK ops surface
- * (transport/auth `DefaultErrors` + `FlagshipAppNotFound`/`FlagshipFlagNotFound`) plus the
- * `ConfigError` from resolving `$CLOUDFLARE_ACCOUNT_ID`. All typed, all in `E` — no throw.
- */
 export type FlagshipReadError =
 	| flagship.ListAppsError
 	| flagship.ListAppFlagsError
@@ -70,11 +55,6 @@ const toRawFlag = (flag: {
 	rules: flag.rules,
 });
 
-/**
- * `FlagshipRead` — the injectable read seam. `listApps`/`listAppFlags`/`getAppFlag` are the
- * thin wrappers over the SDK ops; `listFlagStates` is the `env`-decoding enumeration the bin
- * renders. Built by `FlagshipReadLive`, whose `R` is the ambient `Credentials | HttpClient`.
- */
 export class FlagshipRead extends Context.Service<
 	FlagshipRead,
 	{
@@ -92,25 +72,16 @@ export class FlagshipRead extends Context.Service<
 
 const accountId = Config.string("CLOUDFLARE_ACCOUNT_ID");
 
-/**
- * The write client's error channel: the `updateAppFlag`/`getAppFlag` typed faults
- * (transport/auth + `FlagshipFlagNotFound`/`FlagshipAppNotFound`) plus the `ConfigError`
- * from resolving `$CLOUDFLARE_ACCOUNT_ID`. All typed, all in `E`.
- */
 export type FlagshipWriteError =
 	| flagship.GetAppFlagError
 	| flagship.UpdateAppFlagError
 	| Config.ConfigError;
 
 /**
- * `FlagshipWrite` — the injectable release seam. `setServing` is the ONE mutation the `flag`
- * performs: it reads the flag's current full envelope (so an unknown key fails
- * `FlagshipFlagNotFound` BEFORE any write), computes the next serving state with the pure
- * core (`planNextState` — the no-match split is the release lever, #1726), and re-writes the
- * envelope. `Percent` moves only the split rule (`defaultVariation` keeps its create-time
- * safe value); `Kill` clears the split AND sets `defaultVariation` off — the true kill
- * switch. `enabled`, `variations`, and targeting rules pass through unchanged (#1609). No
- * new transport: it rides the same ambient `Credentials | HttpClient` as `FlagshipReadLive`.
+ * `setServing` is the ONE mutation the `flag` group performs. `Percent` moves only the split
+ * rule and leaves `defaultVariation` at its create-time safe value; `Kill` clears the split
+ * AND sets `defaultVariation` off — the true kill switch. `enabled`, `variations`, and
+ * targeting rules pass through unchanged (#1609).
  */
 export class FlagshipWrite extends Context.Service<
 	FlagshipWrite,
@@ -170,8 +141,7 @@ export const FlagshipWriteLive: Layer.Layer<FlagshipWrite, never, Credentials | 
 export const FlagshipReadLive: Layer.Layer<FlagshipRead, never, Credentials | HttpClient> =
 	Layer.effect(FlagshipRead)(
 		Effect.gen(function* () {
-			// Capture the ambient transport/credentials ONCE, re-provide into each op so the
-			// public methods carry `R = never` (the same shape orphan-sweep's CloudflareLive uses).
+			// Captured ONCE and re-provided into each op so the public methods carry `R = never`.
 			const context = yield* Effect.context<Credentials | HttpClient>();
 			const withCtx = <A, E>(
 				effect: Effect.Effect<A, E, Credentials | HttpClient>,

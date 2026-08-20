@@ -14,11 +14,13 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {
+	CWD,
 	child,
 	childBody,
 	epic,
 	epicBody,
 	labelSet,
+	planContext,
 	SESSION,
 	subIssues,
 } from "./fixtures.test-support.ts";
@@ -76,8 +78,8 @@ const ledger = (
 const digestOf = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>): Promise<string> => {
 	const out = await Effect.runPromise(
 		Effect.provide(
-			runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}}),
-			fakeShell(script).layer,
+			runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}, cwd: CWD}),
+			planContext(fakeShell(script)),
 		),
 	);
 	return JSON.parse(out.stdout).digest as string;
@@ -93,7 +95,10 @@ const CLEAN_READ: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 const run = (digest: string, script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
 	const shell = fakeShell(script);
 	return Effect.runPromise(
-		Effect.provide(runFlip({number: 4300, digest, token: TOKEN, repo: null, env}), shell.layer),
+		Effect.provide(
+			runFlip({number: 4300, digest, token: TOKEN, repo: null, env, cwd: CWD}),
+			planContext(shell),
+		),
 	).then((outcome) => ({outcome, calls: shell.calls}));
 };
 

@@ -208,7 +208,8 @@ bullet**; criteria are `- [ ] ` checkbox rows; a single trailing newline.
 or a comma-separated integer list. The refusal is worth having because **v1** harvested every digit
 run in the value, so `1, 3 (see #4021)` silently claimed a story 4021 no epic declared. The
 downstream gate does not repeat that: it reads a non-conforming value as *absent* and reports it in
-`detail`. Refusing at authoring time is what keeps the two from disagreeing. `**Containment:**`'s **leading keyword** is one of `flag` / `exempt` / `none`, a trailing
+`detail`. Refusing at authoring time is what keeps the two from disagreeing. `**Containment:**`'s **leading keyword** is one the repo's `containmentVocabulary` declares,
+or the reserved `none` (phoenix's set is `flag` / `exempt`); a trailing
 parenthetical is preserved verbatim (`flag (default-off)` is the ordinary form), and the field is
 emitted **only** when the cycle-doc probe reads `present` — v1's documented spec template omitted
 the field entirely while its skill body required it, so an author following the template dropped
@@ -721,9 +722,10 @@ link, deliberately** — see step 5.
    `readContainment`, criteria through the imported acceptance-criteria reader — the same readers
    the gate uses, so a body that composes here cannot fail the gate on grammar. A `Malformed` or
    zero-criteria read is `4`. `**Containment:**` is emitted **only** when `run.json`'s `cycleDoc` is
-   `present`; a `type:feature` child whose containment is missing, unset **or `none`** while `cycleDoc` is
-   `present` is `4` — the gate's `MISSING_CONTAINMENT` treats `none` exactly as unset, so admitting
-   it here would author a defect the floor then reds.
+   `present`; a child of a type the repo's `containmentVocabulary` asks, whose containment is off
+   that vocabulary's values — including the reserved `none` — while `cycleDoc` is `present` is `4`.
+   The gate's `MISSING_CONTAINMENT` derives from the same key, so admitting one here would author a
+   defect the floor then reds.
 3. **Vocabulary precondition.** Confirm every label and the milestone exist in the repository.
    `POST .../labels` **creates** an unknown label rather than rejecting it (#4285), and a closed
    milestone is off-vocabulary; refuse on `10` rather than minting taxonomy.
@@ -760,7 +762,7 @@ link, deliberately** — see step 5.
 | Code | Trigger |
 |---|---|
 | `3` | stdin was read and held nothing |
-| `4` | the composed body's fields or sections do not parse: a field line present more than once, a malformed `**Stories:**` value, an absent or malformed `### Acceptance criteria`, zero criteria, or a `type:feature` child whose `**Containment:**` is missing, unset or `none` while `cycleDoc` is `present` |
+| `4` | the composed body's fields or sections do not parse: a field line present more than once, a malformed `**Stories:**` value, an absent or malformed `### Acceptance criteria`, zero criteria, or a child of an asked type whose `**Containment:**` is off the resolved `containmentVocabulary` while `cycleDoc` is `present` |
 | `5` | the composed body carries a machine-local path |
 | `6` | the composed body is a bare `@` path reference |
 | `7` | the epic is proven absent or closed |
@@ -780,7 +782,7 @@ link, deliberately** — see step 5.
 | `ledger child: **<field>:** appears <k> times — a child field line has one value, and the gate refuses a duplicate.` | 4 | refusal |
 | `ledger child: **Stories:** value does not conform: "<v>" — bare integers or "none".` | 4 | refusal |
 | `ledger child: acceptance criteria read as <absent\|malformed> — a child with no checkable criteria is not buildable.` | 4 | refusal |
-| `ledger child: type:feature child needs **Containment:** flag or exempt — got "<v>", and the cycle doc is present.` | 4 | refusal |
+| `ledger child: <asked type> child needs **Containment:** <the resolved legal values> — got "<v>", and the cycle doc is present.` | 4 | refusal |
 | `ledger child: the child body carries a machine-local path (<masked>).` | 5 | refusal |
 | `ledger child: the child body carries a bare @ path reference — it cannot be redacted.` | 6 | refusal |
 | `ledger child: issue #<n> is proven absent or closed.` | 7 | refusal |
@@ -1162,21 +1164,6 @@ $ echo $?
 
 ---
 
-## Required repo files (verb-level)
-
-The skill's own table ([SKILL.md](SKILL.md)) carries the run-level rows; these are the reads and
-writes this contract's verbs make, so an implementer sees the dependency set in one place.
-Vocabulary: **fail-loud** / **degrade** / **bootstrap** (front-door, #4952).
-
-| Must exist | Why | When missing |
-| --- | --- | --- |
-| A `type:epic` issue, open | every verb's subject | **fail-loud** — exit `7` / `10` naming the gap. |
-| A git checkout with a reachable `origin/main` | the run directory lives in it, and `ledger open` proves freshness there | **fail-loud** — `11` at any `ledger` verb whose tree root will not read, and `13` from `build tree` at step 1; an unprovable freshness read is `11`, never `20`. |
-| Labels `status:planned`, `ready-for:human`, `ready-for:agent`, `type:*`, `p0`/`p1`/`p2` | every child is born carrying them | **fail-loud** — `ledger child` exits `10` rather than creating a label (#4285); taxonomy creation is the front door's. |
-| At least one open milestone, or a standing-lane exemption | `--milestone` is validated against the open set | **degrade** — a child is minted unhomed; the repo's own homing guard reds it at the labelling seam. This contract computes no second answer. |
-| `product-development-cycle.md` at the repo root | decides whether `**Containment:**` is required | **degrade** — *absent* means containment is not required; an *unreadable* probe is `11`. Never silently dropped. |
-| The `<!-- fabrika:enriched … -->` marker on the epic body | `ledger write` resolves the plan region by it | **degrade** — a body with no marker is treated as `fresh` and the plan is appended; the marker is what makes a *re-plan* resolvable, and its absence on a re-plan is `22`. |
-| Repository permissions readable | `build claim`'s ACL-sourced ownership resolution (ADR 0055) | **fail-loud** — as declared in [`build`'s contract](../build/contract.md); an unreadable permission is `Unknown`, never a demotion. |
 
 ---
 
