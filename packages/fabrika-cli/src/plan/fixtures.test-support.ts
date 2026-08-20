@@ -9,11 +9,12 @@
  */
 
 import type {FileSystem, Path} from "effect";
-import {Layer} from "effect";
+import {Effect, Layer} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {CONFIG_PATH} from "../config/document.ts";
-import {fakeFs, okOut} from "../fakes.test-support.ts";
+import {fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {runRead} from "./read-verb.ts";
 
 export const EPIC = 4300;
 export const SESSION = "s-9f2e";
@@ -120,4 +121,67 @@ export const planContext = (
 	const files = config === undefined ? {} : {[path]: typeof config === "string" ? config : ""};
 	const unreadable = config === undefined || typeof config === "string" ? [] : [path];
 	return Layer.merge(shell.layer, fakeFs({files, unreadable}).layer);
+};
+
+export const APPROVER = "usirin";
+
+/**
+ * The control-plane roster reads the ADR 0289 approval precondition makes before it looks for a
+ * marker — the same three `plan approve`'s write resolves the actor through.
+ */
+export const ROSTER: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+	[/^gh api repos\/o\/r --jq \.default_branch$/, okOut("main\n")],
+	[
+		/contents\/\.github\/CODEOWNERS\?ref=main$/,
+		okOut("/packages/fabrika-cli/ @kamp-us/control-plane\n"),
+	],
+	[
+		/^gh api --paginate orgs\/kamp-us\/teams\/control-plane\/members/,
+		okOut(JSON.stringify([{login: APPROVER}])),
+	],
+];
+
+/**
+ * A standing approval on the epic, as a `comments` row.
+ *
+ * A row rather than a whole scripted response, because the epic's comments are one read: the claim
+ * marker `plan flip` and `plan verdict` prove ownership through arrives in the same payload, and a
+ * second scripted `COMMENTS` entry would simply never be reached.
+ */
+export const approvalRow = (
+	digest: string,
+	overrides: {id?: number; author?: string; epic?: number} = {},
+): {id: number; body: string; author: string} => ({
+	id: overrides.id ?? 90,
+	body: `plan-approved: #${overrides.epic ?? EPIC} @ ${digest} · 2026-08-16T07:16:03Z\n`,
+	author: overrides.author ?? APPROVER,
+});
+
+/**
+ * The scope digest a ledger script derives, read off `plan read`.
+ *
+ * `plan read` and not `plan check`, which is the older route: the gate now refuses ahead of its floor
+ * on an unapproved plan, so deriving the digest through it would need the very marker the digest is
+ * being derived to write.
+ */
+export const digestOver = async (
+	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	options: {
+		readonly env?: Readonly<Record<string, string | undefined>>;
+		readonly config?: string | {readonly unreadable: true} | undefined;
+	} = {},
+): Promise<string> => {
+	const out = await Effect.runPromise(
+		Effect.provide(
+			runRead({
+				number: EPIC,
+				repo: null,
+				env: options.env ?? {CLAUDE_PIPELINE_REPO: "o/r"},
+				cwd: CWD,
+			}),
+			planContext(fakeShell(script), options.config),
+		),
+	);
+	// A script the read itself refuses has no digest, and no case that scripts one reaches the gate.
+	return out.stdout === "" ? "" : (JSON.parse(out.stdout).digest as string);
 };

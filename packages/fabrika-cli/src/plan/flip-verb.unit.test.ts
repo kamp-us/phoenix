@@ -3,7 +3,6 @@ import {describe, expect, it} from "vitest";
 import {comments, LANE_UUID, marker, LANE_TOKEN as TOKEN} from "../build/fixtures.test-support.ts";
 import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {runCheck} from "./check-verb.ts";
 import {
 	CLAIM_NOT_MINE,
 	FLOOR_DEFECTIVE,
@@ -11,16 +10,20 @@ import {
 	OFF_VOCABULARY,
 	PARTIAL_FLIP,
 	PLAN_MOVED,
+	PLAN_UNAPPROVED,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {
+	approvalRow,
 	CWD,
 	child,
 	childBody,
+	digestOver,
 	epic,
 	epicBody,
 	labelSet,
 	planContext,
+	ROSTER,
 	SESSION,
 	subIssues,
 } from "./fixtures.test-support.ts";
@@ -53,9 +56,15 @@ const env = {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: SESSION} as Re
 	string | undefined
 >;
 
-const CLAIMED: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[COMMENTS, comments({id: 1, body: marker(SESSION, LANE_UUID)})],
+/**
+ * The epic's comments as a lane that may flip finds them: this lane's claim marker, and a standing
+ * founder approval of the plan the script derives. Both come off **one** read, so the approval has to
+ * be a row here rather than a second scripted `COMMENTS` entry nothing would reach.
+ */
+const claimed = (digest: string): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+	[COMMENTS, comments({id: 1, body: marker(SESSION, LANE_UUID)}, approvalRow(digest))],
 	[PERM, okOut("write\n")],
+	...ROSTER,
 ];
 
 const PLANNED = child({number: 4301, labels: ["type:feature", "p1", "status:planned"]});
@@ -75,15 +84,8 @@ const ledger = (
 	[EPIC, epics.reread ?? AGENT_EPIC],
 ];
 
-const digestOf = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>): Promise<string> => {
-	const out = await Effect.runPromise(
-		Effect.provide(
-			runCheck({number: 4300, repo: null, env: {CLAUDE_PIPELINE_REPO: "o/r"}, cwd: CWD}),
-			planContext(fakeShell(script)),
-		),
-	);
-	return JSON.parse(out.stdout).digest as string;
-};
+const digestOf = (script: ReadonlyArray<readonly [RegExp, ExecResult]>): Promise<string> =>
+	digestOver(script);
 
 const CLEAN_READ: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[EPIC, ONE_CHILD_EPIC],
@@ -106,7 +108,7 @@ describe("runFlip", () => {
 	it("flips a planned child and reports the OBSERVED results as a count plus histogram", async () => {
 		const digest = await digestOf(CLEAN_READ);
 		const {outcome} = await run(digest, [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(PLANNED, TRIAGED),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent", "type:feature")],
 			[ADD, okOut("[]")],
@@ -136,7 +138,7 @@ describe("runFlip", () => {
 	it("writes the epic's audience label last, after every child re-read", async () => {
 		const digest = await digestOf(CLEAN_READ);
 		const {calls} = await run(digest, [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(PLANNED, TRIAGED),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
 			[ADD, okOut("[]")],
@@ -155,7 +157,7 @@ describe("runFlip", () => {
 	it("refuses 22 when the re-read proves the epic did not reach ready-for:agent", async () => {
 		const digest = await digestOf(CLEAN_READ);
 		const {outcome} = await run(digest, [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(PLANNED, TRIAGED, {reread: ONE_CHILD_EPIC}),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
 			[ADD, okOut("[]")],
@@ -173,7 +175,7 @@ describe("runFlip", () => {
 	it("refuses 8 when the epic's audience write cannot be proven", async () => {
 		const digest = await digestOf(CLEAN_READ);
 		const {outcome} = await run(digest, [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(PLANNED, TRIAGED, {reread: errOut("gh: Bad gateway (HTTP 502)")}),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
 			[ADD, okOut("[]")],
@@ -194,7 +196,7 @@ describe("runFlip", () => {
 			[CYCLE, okOut("{}")],
 		]);
 		const {outcome, calls} = await run(digest, [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(already, already),
 			[LABELS, labelSet("status:planned", "status:triaged", "type:feature")],
 		]);
@@ -211,7 +213,7 @@ describe("runFlip", () => {
 	it("adds before it removes", async () => {
 		const digest = await digestOf(CLEAN_READ);
 		const {calls} = await run(digest, [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(PLANNED, TRIAGED),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
 			[ADD, okOut("[]")],
@@ -242,7 +244,7 @@ describe("runFlip", () => {
 			[CYCLE, okOut("{}")],
 		]);
 		const {outcome, calls} = await run(digest, [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(defective, defective),
 			[LABELS, labelSet("status:planned", "status:triaged")],
 		]);
@@ -253,8 +255,9 @@ describe("runFlip", () => {
 
 	/** The TOCTOU answer: the gap between deciding and writing is closed by re-deciding. */
 	it("refuses 21 when the recomputed digest differs from --digest", async () => {
+		const digest = await digestOf(CLEAN_READ);
 		const {outcome, calls} = await run("000000000000", [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(PLANNED, TRIAGED),
 			[LABELS, labelSet("status:planned", "status:triaged")],
 		]);
@@ -270,7 +273,7 @@ describe("runFlip", () => {
 	it("refuses 23 when a label it must write is absent from the taxonomy", async () => {
 		const digest = await digestOf(CLEAN_READ);
 		const {outcome, calls} = await run(digest, [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(PLANNED, TRIAGED),
 			[LABELS, labelSet("status:planned", "type:feature")],
 		]);
@@ -288,7 +291,7 @@ describe("runFlip", () => {
 			[CYCLE, okOut("{}")],
 		]);
 		const {outcome, calls} = await run(digest, [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(already, already, {first: AGENT_EPIC}),
 		]);
 		expect(outcome.code).toBe(0);
@@ -312,7 +315,7 @@ describe("runFlip", () => {
 			[CYCLE, okOut("{}")],
 		]);
 		const {outcome, calls} = await run(digest, [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(already, already),
 			[LABELS, labelSet("ready-for:agent")],
 			[ADD_EPIC, okOut("[]")],
@@ -339,7 +342,7 @@ describe("runFlip", () => {
 			labels: ["type:feature", "p1", "status:planned", "status:triaged"],
 		});
 		const {outcome, calls} = await run(digest, [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(PLANNED, stuck),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
 			[ADD, okOut("[]")],
@@ -354,7 +357,7 @@ describe("runFlip", () => {
 	it("refuses 8 when a write landed and no re-read can prove its outcome", async () => {
 		const digest = await digestOf(CLEAN_READ);
 		const {outcome} = await run(digest, [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(PLANNED, errOut("gh: Bad gateway (HTTP 502)")),
 			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
 			[ADD, okOut("[]")],
@@ -379,6 +382,37 @@ describe("runFlip", () => {
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toContain("--digest must be 12 lowercase hex");
 		expect(calls).toEqual([]);
+	});
+
+	/**
+	 * The re-gate covers the human decision too: a lane holding a `plan check` that passed before a
+	 * re-plan must not carry it past this write (ADR 0289).
+	 */
+	it("refuses 25 on an unapproved plan, writing nothing", async () => {
+		const digest = await digestOf(CLEAN_READ);
+		const {outcome, calls} = await run(digest, [
+			[COMMENTS, comments({id: 1, body: marker(SESSION, LANE_UUID)})],
+			[PERM, okOut("write\n")],
+			...ROSTER,
+			...ledger(PLANNED, TRIAGED),
+			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
+		]);
+		expect(outcome.code).toBe(PLAN_UNAPPROVED);
+		expect(outcome.stdout).toBe("");
+		expect(calls.some((line) => /--method (POST|DELETE) .*labels/.test(line))).toBe(false);
+	});
+
+	it("refuses 25 on a stale approval — a re-plan does not inherit the old one", async () => {
+		const digest = await digestOf(CLEAN_READ);
+		const {outcome} = await run(digest, [
+			[COMMENTS, comments({id: 1, body: marker(SESSION, LANE_UUID)}, approvalRow("0000000000ff"))],
+			[PERM, okOut("write\n")],
+			...ROSTER,
+			...ledger(PLANNED, TRIAGED),
+			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
+		]);
+		expect(outcome.code).toBe(PLAN_UNAPPROVED);
+		expect(outcome.stderr.at(-1)).toContain("state stale");
 	});
 });
 
