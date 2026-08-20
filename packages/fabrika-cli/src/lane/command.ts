@@ -504,10 +504,14 @@ const migrate = leafCommand(
 			yield* runMigrate({
 				roots: Option.match(root, {
 					onNone: () => [
-						{root: DEFAULT_LANES_ROOT, templatePath: templatePath("Issue")},
-						{root: DEFAULT_CHORES_ROOT, templatePath: templatePath("Chore")},
+						{root: DEFAULT_LANES_ROOT, templatePaths: [templatePath("Issue")]},
+						{root: DEFAULT_CHORES_ROOT, templatePaths: [templatePath("Chore")]},
 					],
-					onSome: (only) => [{root: only, templatePath: templatePath("Issue")}],
+					// A relocated root holds whatever was opened into it, so both templates are
+					// candidates and the lane's own machine id picks — never the root's position.
+					onSome: (only) => [
+						{root: only, templatePaths: [templatePath("Issue"), templatePath("Chore")]},
+					],
 				}),
 				check,
 			}),
@@ -516,7 +520,7 @@ const migrate = leafCommand(
 ).pipe(
 	Command.withShortDescription("Bring every booted lane's machine up to the committed template."),
 	Command.withDescription(
-		'Bring each booted lane\'s workflow.json up to the committed template its root selects, but only where the swap provably moves nothing. `lane open` places a byte-identical copy at boot and refuses to overwrite one afterwards, so a template edit reaches lanes booted after it and no lane already on disk — safe until a token→event map in code changes with it, at which point every booted lane is asked for a cell its frozen machine does not have (ADR 0313). Two things are kept: the lane\'s own `machine.context`, which is per-lane DATA (the task\'s maxRetries, and whatever else a lane declares) and would be erased by a verbatim copy, and any lane whose machine was GENERATED rather than booted — an emitted epic document has no committed template to be brought up to, and is reported, never touched. State is the event log replayed from scratch with no snapshot, so the swap is safe exactly when the existing events.jsonl folds to the same per-task leaf state through both machines; anything else is a rewritten history, not a migration. Each lane carries one verdict: "current" (already what this verb would write), "migrated" (judged safe and written), "stale" (judged safe, --check withheld the write), "generated" (not booted from this template), "unsafe" (the log will not replay through one of the two machines, or it folds to a different state — named, never written) or "unreadable". stdout is {check, scanned, summary, lanes}. Both default roots are swept unless --root names one, which is read as a relocated lanes root and takes the coder template; an absent root holds no lanes and is not a fault. Exits 11 (a template could not be read, or a root is there and could not be listed — the lane set is UNKNOWN, never empty), 37 (at least one lane cannot take the template without moving; those lanes are named on stderr and none of them was written, and so are the ones that were). Examples: fabrika lane migrate --check · fabrika lane migrate',
+		'Bring each booted lane\'s workflow.json up to the committed template its root selects, but only where the swap provably moves nothing. `lane open` places a byte-identical copy at boot and refuses to overwrite one afterwards, so a template edit reaches lanes booted after it and no lane already on disk — safe until a token→event map in code changes with it, at which point every booted lane is asked for a cell its frozen machine does not have (ADR 0313). Two things are kept: the lane\'s own `machine.context`, which is per-lane DATA (the task\'s maxRetries, and whatever else a lane declares) and would be erased by a verbatim copy, and any lane whose machine was GENERATED rather than booted — an emitted epic document has no committed template to be brought up to, and is reported, never touched. State is the event log replayed from scratch with no snapshot, so the swap is safe exactly when the existing events.jsonl folds to the same per-task leaf state through both machines; anything else is a rewritten history, not a migration. Each lane carries one verdict: "current" (already the machine this verb would write, read past formatting), "migrated" (judged safe and written), "stale" (judged safe, --check withheld the write), "generated" (not booted from this template), "unsafe" (the log will not replay through one of the two machines, or it folds to a different state — named, never written) or "unreadable". stdout is {check, scanned, summary, lanes}. Both default roots are swept unless --root names one, which is read as a relocated root whose lanes may have booted from either committed template — the lane\'s own machine id picks, never the root\'s position; an absent root holds no lanes and is not a fault. Exits 11 (a template could not be read, or a root is there and could not be listed — the lane set is UNKNOWN, never empty), 37 (at least one lane cannot take the template without moving; those lanes are named on stderr and none of them was written, and so are the ones that were). Examples: fabrika lane migrate --check · fabrika lane migrate',
 	),
 );
 

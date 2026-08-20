@@ -366,7 +366,7 @@ node <fabrika> lane migrate           # migrate the ones the swap provably does 
 ```
 
 It writes only where the lane's own event log folds to the same state through both machines. Exit
-`36` names the lanes it would have moved and leaves them alone — that is a human's call, not a
+`37` names the lanes it would have moved and leaves them alone — that is a human's call, not a
 re-run's.
 
 **A chore state routes to a verb, not to a shell**, and the routing is a verb's answer too:

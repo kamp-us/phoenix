@@ -70,7 +70,25 @@ describe("the compiler — structural recognition", () => {
 		expect([...defined(lane.tasks.issue).finals].sort()).toEqual(["frozen", "shipped"]);
 		expect([...defined(lane.tasks.issue).errorFinals]).toEqual(["frozen"]);
 		expect([...defined(lane.tasks.issue).openFinals]).toEqual(["frozen"]);
-		expect([...defined(lane.tasks.issue).guardedStates].sort()).toEqual(["review", "ship"]);
+		expect([...defined(lane.tasks.issue).guardedStates].sort()).toEqual([
+			"review",
+			"ship",
+			"ship:queued",
+		]);
+	});
+
+	it("counts a state as guarded only for the retry budget, never for the wait budget", () => {
+		const workflow = twoPhaseWorkflow();
+		// A WIP-guarded array spends `waits`, and its spent fallthrough is a park that names the stall
+		// — not a fall back into the error final a resume just left, so it is no resume hazard (#6570).
+		stateNode(workflow, "task_a", "doing").on["TASK_A.WIP"] = [
+			{target: "doing"},
+			{target: "tripped"},
+		];
+
+		const lane = compiled(workflow);
+
+		expect([...defined(lane.tasks.task_a).guardedStates]).toEqual(["checking"]);
 	});
 
 	it("leaves every final an end but `frozen`, though all of them take a clearance", () => {

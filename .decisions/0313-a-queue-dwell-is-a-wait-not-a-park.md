@@ -40,7 +40,7 @@ and a driver re-folds it. The coder machine's `ship` had no equivalent.
 
 **`ship:queued` is the wait cell.** It is reachable from `ship` on `WIP`, re-enters itself on a
 further wait, reaches `shipped` on a landing, routes an ejection back into `build`, and escalates to
-`human:cp-approval` when its own budget is spent. It is not a park: the name carries no `human:`
+`human:queue-stall` when its own budget is spent. It is not a park: the name carries no `human:`
 prefix, so `recipe/parks.ts`'s `isPark` reads it as ordinary work and no park sweep touches it.
 
 **Both queue terminals record `WIP`.** `UNRESOLVED` no longer maps to `BLOCKED`, and `QUEUED` no
@@ -58,6 +58,18 @@ spends `waits` (`WAIT_BUDGET`, 3). Riding one counter would have let a PR that d
 arrive at its first real FAIL with no repair rounds left — a repair budget spent on the queue's clock
 rather than on the work. The recognition stays structural, off the event's own polarity: no guard or
 action name is dereferenced, which is the property `lane/machine.ts` has held since #5673.
+
+**A founder's cleared round buys a repair round and never a longer wait.** ADR
+[0312](0312-event-anchored-retry-budget.md) anchors the repair budget to a recorded
+`CLEARED` event, and that event raises `maxRetries` alone. `maxWaits` is a declared constant no
+recorded event moves — which is the same separation from the other side: the founder is clearing a
+review round, and handing the merge queue three more turns of the crank is not what they granted.
+
+Splitting the counters also narrows what a *state* being guarded means. `guardedStates` — the set
+0312's resume refusal reads, where the state comes back and the budget does not — now holds only the
+states whose guarded route out spends `retries`. A wait-guarded cell is no resume hazard: its spent
+fallthrough is a park that names the stall, not a fall back into the error final the resume just
+left.
 
 **The shipper's horizon does not move.** `ship reconcile` polls exactly as far as it did. The waiting
 moved out to the driver, one read per pass — `ship reconcile <pr> --polls 1`, whose answer the driver

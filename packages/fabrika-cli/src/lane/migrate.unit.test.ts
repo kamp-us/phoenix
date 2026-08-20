@@ -3,7 +3,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {MIGRATION_UNSAFE} from "./codes.ts";
-import {coderTemplateText} from "./fixtures.test-support.ts";
+import {choreTemplateText, coderTemplateText} from "./fixtures.test-support.ts";
 import type {LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
 import {graftContext, judgeMigration} from "./migrate.ts";
@@ -11,6 +11,7 @@ import {runMigrate} from "./migrate-verb.ts";
 
 const ROOT = ".fabrika/lanes";
 const TEMPLATE = "/repo/templates/coder.workflow.json";
+const CHORE_TEMPLATE = "/repo/templates/chore.workflow.json";
 
 const compiled = (text: string): CompiledLane => {
 	const result = compileText(text);
@@ -126,16 +127,23 @@ const migratedText = (): string => {
 describe("lane migrate", () => {
 	const sweep = (
 		files: Record<string, string | null>,
-		options: {check?: boolean; dirs?: Record<string, ReadonlyArray<string> | null>} = {},
+		options: {
+			check?: boolean;
+			dirs?: Record<string, ReadonlyArray<string> | null>;
+			templatePaths?: ReadonlyArray<string>;
+		} = {},
 	) => {
 		const fs = fakeFs({
-			files: {[TEMPLATE]: coderTemplateText(), ...files},
+			files: {[TEMPLATE]: coderTemplateText(), [CHORE_TEMPLATE]: choreTemplateText(), ...files},
 			dirs: options.dirs ?? {[ROOT]: ["42", "43"]},
 			directories: [ROOT],
 		});
 		return Effect.runPromise(
 			Effect.provide(
-				runMigrate({roots: [{root: ROOT, templatePath: TEMPLATE}], check: options.check ?? false}),
+				runMigrate({
+					roots: [{root: ROOT, templatePaths: options.templatePaths ?? [TEMPLATE]}],
+					check: options.check ?? false,
+				}),
 				fs.layer,
 			),
 		).then((outcome) => ({outcome, written: fs.written}));
@@ -151,6 +159,28 @@ describe("lane migrate", () => {
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout).summary).toMatchObject({migrated: 1, current: 1, unsafe: 0});
 		expect(written.get(`${ROOT}/42/workflow.json`)).toBe(migratedText());
+	});
+
+	it("reads a booted lane as current past the formatting `lane open` copied in", async () => {
+		// `lane open` places the template's biome-formatted bytes and a graft re-serializes with a tab
+		// indent, so comparing text called every un-migrated lane stale whatever machine it carried.
+		const {outcome, written} = await sweep({
+			[`${ROOT}/42/workflow.json`]: coderTemplateText(),
+			[`${ROOT}/43/workflow.json`]: migratedText(),
+		});
+
+		expect(coderTemplateText()).not.toBe(migratedText());
+		expect(JSON.parse(outcome.stdout).summary).toMatchObject({current: 2, stale: 0, migrated: 0});
+		expect(written.size).toBe(0);
+	});
+
+	it("picks a lane's template by its own machine id, not by the root it sits under", async () => {
+		const {outcome} = await sweep(
+			{[`${ROOT}/42/workflow.json`]: choreTemplateText()},
+			{dirs: {[ROOT]: ["42"]}, templatePaths: [TEMPLATE, CHORE_TEMPLATE]},
+		);
+
+		expect(JSON.parse(outcome.stdout).summary).toMatchObject({generated: 0, current: 1});
 	});
 
 	it("withholds every write under --check and still names the stale lanes", async () => {

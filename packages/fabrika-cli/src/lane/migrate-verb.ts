@@ -20,16 +20,23 @@ import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_UNREADABLE, MIGRATION_UNSAFE} from "./codes.ts";
 import {CHORE_PREFIX} from "./key.ts";
 import {compileText} from "./machine.ts";
-import {type Drift, graftContext, judgeMigration} from "./migrate.ts";
+import {type Drift, graftContext, judgeMigration, sameMachine} from "./migrate.ts";
 import {DEFAULT_CHORES_ROOT, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane migrate";
 
-/** One root to sweep, bound to the committed template its lanes boot from. */
+/**
+ * One root to sweep, bound to the committed templates its lanes may have booted from.
+ *
+ * A *list* rather than one path, and the lane's own document `id` picks among them: a relocated root
+ * holds whatever lanes were opened into it, so binding a root to a single template made every chore
+ * lane under a `--root` read as `generated` — a lying row, since it was booted from the other
+ * committed template.
+ */
 export interface MigrateRoot {
 	readonly root: string;
-	/** The template's on-disk path — resolved by the adapter, so this verb joins no paths of its own. */
-	readonly templatePath: string;
+	/** The templates' on-disk paths — resolved by the adapter, so this verb joins no paths of its own. */
+	readonly templatePaths: ReadonlyArray<string>;
 }
 
 export interface MigrateOptions {
@@ -65,7 +72,7 @@ const keyOf = (root: string, name: string): string =>
 const migrateLane = (
 	root: string,
 	name: string,
-	templateText: string,
+	templateTexts: ReadonlyArray<string>,
 	check: boolean,
 ): Effect.Effect<LaneRow | null, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
@@ -88,12 +95,16 @@ const migrateLane = (
 		if (Result.isFailure(onDisk)) {
 			return unreadable(`cannot re-read ${workflowPath}: ${onDisk.failure.reason}`);
 		}
-		const graft = graftContext(templateText, onDisk.success);
-		if (graft._tag === "Ungraftable") return unreadable(graft.reason);
-		if (graft._tag === "Foreign") {
-			return {key, root, verdict: "generated", reason: `machine "${graft.id}" was generated`};
+		const grafts = templateTexts.map((text) => graftContext(text, onDisk.success));
+		const ungraftable = grafts.find((candidate) => candidate._tag === "Ungraftable");
+		if (ungraftable !== undefined) return unreadable(ungraftable.reason);
+		const graft = grafts.find((candidate) => candidate._tag === "Grafted");
+		if (graft === undefined) {
+			const foreign = grafts.find((candidate) => candidate._tag === "Foreign");
+			const id = foreign === undefined ? name : foreign.id;
+			return {key, root, verdict: "generated", reason: `machine "${id}" was generated`};
 		}
-		if (onDisk.success === graft.text) return {key, root, verdict: "current"};
+		if (sameMachine(onDisk.success, graft.text)) return {key, root, verdict: "current"};
 
 		const candidate = compileText(graft.text);
 		if (candidate._tag === "Malformed") {
@@ -136,13 +147,17 @@ export const runMigrate = (
 	Effect.gen(function* () {
 		const lanes: LaneRow[] = [];
 		const scanned: Array<{root: string; present: boolean; lanes: number}> = [];
-		for (const {root, templatePath} of options.roots) {
-			const template = yield* Effect.result(readFile(templatePath));
-			if (Result.isFailure(template)) {
-				return refuse(
-					LANE_UNREADABLE,
-					`${VERB}: cannot read the committed template at ${templatePath}: ${template.failure.reason} — nothing was migrated.`,
-				);
+		for (const {root, templatePaths} of options.roots) {
+			const templateTexts: string[] = [];
+			for (const templatePath of templatePaths) {
+				const template = yield* Effect.result(readFile(templatePath));
+				if (Result.isFailure(template)) {
+					return refuse(
+						LANE_UNREADABLE,
+						`${VERB}: cannot read the committed template at ${templatePath}: ${template.failure.reason} — nothing was migrated.`,
+					);
+				}
+				templateTexts.push(template.success);
 			}
 			const probe = yield* Effect.result(exists(root));
 			if (Result.isFailure(probe)) {
@@ -164,7 +179,7 @@ export const runMigrate = (
 			}
 			let found = 0;
 			for (const name of [...names.success].sort()) {
-				const row = yield* migrateLane(root, name, template.success, options.check);
+				const row = yield* migrateLane(root, name, templateTexts, options.check);
 				if (row === null) continue;
 				found += 1;
 				lanes.push(row);

@@ -82,6 +82,22 @@ export const graftContext = (templateText: string, laneText: string): Graft => {
 	};
 };
 
+/**
+ * Whether two documents are the same machine once formatting is read past.
+ *
+ * `lane open` copies the committed template's biome-formatted bytes, with inline objects a tab
+ * indent expands, so comparing text calls every un-booted-since lane stale whatever machine it
+ * carries — the opposite of the question `--check` is asked. The comparison is order-sensitive on
+ * purpose: a grafted document is built from the template, so a key order that differs is a template
+ * that differs.
+ */
+export const sameMachine = (a: string, b: string): boolean => {
+	const left = parseJson(a);
+	const right = parseJson(b);
+	if (left === null || right === null) return false;
+	return JSON.stringify(left) === JSON.stringify(right);
+};
+
 /** One task whose folded state would move if the machine were swapped under it. */
 export interface Drift {
 	readonly task: string;
