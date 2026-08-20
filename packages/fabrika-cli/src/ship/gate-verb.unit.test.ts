@@ -1,26 +1,48 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeHttp,
+	fakeShell,
+	type HttpReply,
+	linkNext,
+	okOut,
+	unconfigured,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {SHIPPED_GOVERNED_ROOTS} from "../review/classes.ts";
 import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {
-	comments,
-	ENV,
-	files,
-	HEAD,
-	OTHER_HEAD,
-	pull,
-	reviews,
-	unexhaustedPage,
-} from "./fixtures.test-support.ts";
+import {comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
 import {inForce, requiredWithFloor, runGate} from "./gate-verb.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
 const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
-const REVIEWS = /^gh api -i repos\/o\/r\/pulls\/4321\/reviews/;
+const REVIEWS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4321\/reviews/;
 const ACL = /^gh api repos\/o\/r\/collaborators\/[^ ]+\/permission/;
+
+/**
+ * A served page of the reviews read — a bare array whose completeness proof is the ABSENCE of a
+ * `rel="next"` link, so `next` is how a test scripts a read that can never prove itself complete.
+ */
+const reviewPage = (
+	rows: ReadonlyArray<{login: string; state: string; commit: string; at?: string}> = [],
+	options: {next?: boolean} = {},
+): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(
+		rows.map((row) => ({
+			user: {login: row.login},
+			state: row.state,
+			commit_id: row.commit,
+			submitted_at: row.at ?? "2026-08-08T00:00:00Z",
+		})),
+	),
+	headers: options.next === true ? linkNext("https://api.github.com/next?page=2") : undefined,
+});
+
+/** No reviews at all — the answer every test that is not about the native fold reads. */
+const NO_REVIEWS = [REVIEWS, reviewPage()] as const;
 
 /** The default two-file diff, under no governance root — the floor stays off unless a test asks. */
 const ORDINARY = [FILES, files("apps/web/src/a.ts", "apps/web/src/b.ts")] as const;
@@ -42,17 +64,23 @@ const options = {
 };
 
 /**
- * `ORDINARY` is appended, not prepended: `fakeShell` resolves on the FIRST matching pattern, so a
- * test that scripts its own file list still wins and every other test reads an ordinary diff.
+ * `ORDINARY` and `NO_REVIEWS` are appended, not prepended: both fakes resolve on the FIRST matching
+ * pattern, so a test that scripts its own file list or its own reviews page still wins and every
+ * other test reads an ordinary diff with no native review on it.
  */
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
+	http: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runGate({...options, ...overrides}),
-			Layer.merge(fakeShell([...script, ORDINARY]).layer, unconfigured),
+			Layer.mergeAll(
+				fakeShell([...script, ORDINARY]).layer,
+				fakeHttp([...http, NO_REVIEWS]).layer,
+				unconfigured,
+			),
 		),
 	);
 
@@ -102,7 +130,6 @@ describe("runGate", () => {
 						{id: 2, body: marker("review-doc", "PASS", HEAD)},
 					),
 				],
-				[REVIEWS, reviews()],
 				[ACL, okOut("write")],
 			],
 			{require: ["review-code", "review-doc"]},
@@ -129,7 +156,6 @@ describe("runGate", () => {
 						{id: 2, body: marker("review-doc", "FAIL", HEAD)},
 					),
 				],
-				[REVIEWS, reviews()],
 				[ACL, okOut("write")],
 			],
 			{require: ["review-code", "review-doc"]},
@@ -142,7 +168,6 @@ describe("runGate", () => {
 		const out = await run([
 			[PULL, pull()],
 			[COMMENTS, comments()],
-			[REVIEWS, reviews()],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
@@ -154,7 +179,6 @@ describe("runGate", () => {
 		const out = await run([
 			[PULL, pull({comments: 1})],
 			[COMMENTS, comments({id: 1, body: marker("review-code", "PASS", OTHER_HEAD)})],
-			[REVIEWS, reviews()],
 			[ACL, okOut("write")],
 		]);
 		expect(out.stdout).toContain("ns\treview-code\tstale\tmarker");
@@ -164,7 +188,6 @@ describe("runGate", () => {
 		const out = await run([
 			[PULL, pull({comments: 1})],
 			[COMMENTS, comments({id: 1, body: marker("review-code", "PASS", HEAD)})],
-			[REVIEWS, reviews()],
 			[ACL, okOut("read")],
 		]);
 		expect(out.stdout).toContain("ns\treview-code\tabsent\t-");
@@ -174,7 +197,6 @@ describe("runGate", () => {
 		const out = await run([
 			[PULL, pull({comments: 1})],
 			[COMMENTS, comments({id: 1, body: marker("review-code", "PASS", HEAD)})],
-			[REVIEWS, reviews()],
 			[ACL, errOut("gh: Bad gateway (HTTP 502)")],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -182,11 +204,14 @@ describe("runGate", () => {
 	});
 
 	it("folds a decisive native review at this head into the code namespace", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[COMMENTS, comments()],
-			[REVIEWS, reviews({login: "cansirin", state: "APPROVED", commit: HEAD})],
-		]);
+		const out = await run(
+			[
+				[PULL, pull()],
+				[COMMENTS, comments()],
+			],
+			{},
+			[[REVIEWS, reviewPage([{login: "cansirin", state: "APPROVED", commit: HEAD}])]],
+		);
 		expect(out.stdout).toContain("ns\treview-code\tpass\treview-fold");
 	});
 
@@ -201,7 +226,6 @@ describe("runGate", () => {
 						body: `review-code: advisory — a clause\n\nReviewed-head: @ ${HEAD}\n\n- [FAIL] a criterion`,
 					}),
 				],
-				[REVIEWS, reviews()],
 				[ACL, okOut("write")],
 			],
 			{cp: true},
@@ -221,7 +245,6 @@ describe("runGate", () => {
 			[
 				[PULL, pull()],
 				[COMMENTS, comments()],
-				[REVIEWS, reviews()],
 			],
 			{require: ["governance"]},
 		);
@@ -239,7 +262,6 @@ describe("runGate", () => {
 			[
 				[PULL, pull({comments: 1})],
 				[COMMENTS, comments({id: 1, body: marker("governance", "PASS", HEAD)})],
-				[REVIEWS, reviews()],
 				[ACL, okOut("write")],
 			],
 			{require: ["governance"]},
@@ -254,7 +276,6 @@ describe("runGate", () => {
 			[
 				[PULL, pull({comments: 1})],
 				[COMMENTS, comments({id: 1, body: marker("governance", "FAIL", HEAD)})],
-				[REVIEWS, reviews()],
 				[ACL, okOut("write")],
 			],
 			{require: ["governance"]},
@@ -274,11 +295,14 @@ describe("runGate", () => {
 
 	// Reviews declare no total, so the completeness proof is a terminal page with no `next` link.
 	it("refuses an unexhausted review read on 13 — pagination is the reviews' only proof", async () => {
-		const out = await run([
-			[PULL, pull()],
-			[COMMENTS, comments()],
-			[REVIEWS, unexhaustedPage()],
-		]);
+		const out = await run(
+			[
+				[PULL, pull()],
+				[COMMENTS, comments()],
+			],
+			{},
+			[[REVIEWS, reviewPage([], {next: true})]],
+		);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.stderr.at(-1)).toBe(
 			"ship gate: the review read never reached a terminal page — pagination is unexhausted, so the native-review fold would rest on a truncated set; refusing the partial resolution.",
@@ -317,7 +341,6 @@ describe("runGate — the governance floor (#5036)", () => {
 				[PULL, pull({comments: 1})],
 				FABRIKA_TREE,
 				[COMMENTS, comments({id: 1, body: marker("review-skill", "PASS", HEAD)})],
-				[REVIEWS, reviews()],
 				[ACL, okOut("write")],
 			],
 			{require: ["review-skill"]},
@@ -348,7 +371,6 @@ describe("runGate — the governance floor (#5036)", () => {
 						{id: 2, body: marker("governance", "PASS", HEAD)},
 					),
 				],
-				[REVIEWS, reviews()],
 				[ACL, okOut("write")],
 			],
 			{require: ["review-skill"]},
@@ -364,10 +386,10 @@ describe("runGate — the governance floor (#5036)", () => {
 	});
 
 	it("counts the floored namespace in --json `required`, so coverage cannot narrow silently", async () => {
-		const out = await run(
-			[[PULL, pull()], FABRIKA_TREE, [COMMENTS, comments()], [REVIEWS, reviews()]],
-			{require: ["review-skill"], json: true},
-		);
+		const out = await run([[PULL, pull()], FABRIKA_TREE, [COMMENTS, comments()]], {
+			require: ["review-skill"],
+			json: true,
+		});
 		expect(JSON.parse(out.stdout)).toMatchObject({outcome: "blocked", required: 2});
 	});
 
@@ -377,7 +399,6 @@ describe("runGate — the governance floor (#5036)", () => {
 				[PULL, pull({comments: 1})],
 				ORDINARY,
 				[COMMENTS, comments({id: 1, body: marker("review-code", "PASS", HEAD)})],
-				[REVIEWS, reviews()],
 				[ACL, okOut("write")],
 			],
 			{require: ["review-code"]},
@@ -461,7 +482,6 @@ describe("runGate — staleness is the content question", () => {
 	): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 		[PULL, pull({comments: 1})],
 		[COMMENTS, comments({id: 1, body: bindingMarker(OTHER_HEAD, content)})],
-		[REVIEWS, reviews()],
 		[ACL, okOut("write")],
 		...bound(raw),
 	];
@@ -483,12 +503,14 @@ describe("runGate — staleness is the content question", () => {
 		const shell = fakeShell([
 			[PULL, pull({comments: 1})],
 			[COMMENTS, comments({id: 1, body: bindingMarker(OTHER_HEAD, null)})],
-			[REVIEWS, reviews()],
 			[ACL, okOut("write")],
 			ORDINARY,
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runGate(options), Layer.merge(shell.layer, unconfigured)),
+			Effect.provide(
+				runGate(options),
+				Layer.mergeAll(shell.layer, fakeHttp([NO_REVIEWS]).layer, unconfigured),
+			),
 		);
 		expect(out.stdout).toContain("ns\treview-code\tstale\tmarker");
 		expect(shell.calls.some((call) => call.startsWith("git "))).toBe(false);
@@ -505,12 +527,14 @@ describe("runGate — staleness is the content question", () => {
 		const shell = fakeShell([
 			[PULL, pull({comments: 1})],
 			[COMMENTS, comments({id: 1, body: bindingMarker(HEAD, DIGEST)})],
-			[REVIEWS, reviews()],
 			[ACL, okOut("write")],
 			ORDINARY,
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runGate(options), Layer.merge(shell.layer, unconfigured)),
+			Effect.provide(
+				runGate(options),
+				Layer.mergeAll(shell.layer, fakeHttp([NO_REVIEWS]).layer, unconfigured),
+			),
 		);
 		expect(out.stdout).toContain("ns\treview-code\tpass\tmarker");
 		expect(shell.calls.some((call) => call.startsWith("git "))).toBe(false);

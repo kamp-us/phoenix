@@ -1,6 +1,6 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeHttp, fakeShell, type HttpReply, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {comments, HEAD, issue, OLD_HEAD, PRIOR_HEADS, pull} from "./fixtures.test-support.ts";
@@ -29,8 +29,16 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
-const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
-	Effect.runPromise(Effect.provide(runVerdicts(options), fakeShell(script).layer));
+const run = (
+	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	http: ReadonlyArray<readonly [RegExp, HttpReply]> = [],
+) =>
+	Effect.runPromise(
+		Effect.provide(
+			runVerdicts(options),
+			Layer.merge(fakeShell(script).layer, fakeHttp(http).layer),
+		),
+	);
 
 describe("runVerdicts", () => {
 	it("binds each marker to the live head and keeps the latest per gate", async () => {
@@ -225,9 +233,9 @@ describe("runVerdicts", () => {
 		);
 	});
 	describe("the founder's cleared rounds", () => {
-		const CONFIG =
-			/^gh api -H Accept: application\/vnd\.github\.raw repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
-		const CONFIGURED = okOut('{"capClearAuthors": ["@usirin"]}');
+		const CONFIG = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
+		const CONFIGURED: HttpReply = {status: 200, body: '{"capClearAuthors": ["@usirin"]}'};
+		const GRANT_AUTHORS: ReadonlyArray<readonly [RegExp, HttpReply]> = [[CONFIG, CONFIGURED]];
 		const PERMISSION = /^gh api repos\/o\/r\/collaborators\/usirin\/permission/;
 		const WRITES = okOut("admin\n");
 		const AUTHORIZATION = 'Founder ruling 2026-08-18: "one more round."';
@@ -272,14 +280,16 @@ describe("runVerdicts", () => {
 		});
 
 		it("folds an honoured clearance as budget, so the granted round proceeds", async () => {
-			const out = await run([
-				[PULL, PR_ON_MAIN],
-				[COMMENTS, comments(...CAPPED, ...GRANT)],
-				[CONFIG, CONFIGURED],
-				[PERMISSION, WRITES],
-				[REVIEWS, NO_REVIEWS],
-				[ISSUE, issue()],
-			]);
+			const out = await run(
+				[
+					[PULL, PR_ON_MAIN],
+					[COMMENTS, comments(...CAPPED, ...GRANT)],
+					[PERMISSION, WRITES],
+					[REVIEWS, NO_REVIEWS],
+					[ISSUE, issue()],
+				],
+				GRANT_AUTHORS,
+			);
 			const parsed = JSON.parse(out.stdout);
 			expect(parsed.capReached).toBe(false);
 			expect(parsed.clearances).toHaveLength(1);
@@ -287,21 +297,23 @@ describe("runVerdicts", () => {
 		});
 
 		it("spends the grant on the next round — it never re-arms", async () => {
-			const out = await run([
-				[PULL, PR_ON_MAIN],
+			const out = await run(
 				[
-					COMMENTS,
-					comments(...CAPPED, ...GRANT, {
-						id: 6,
-						body: `review-code: FAIL @ ${HEAD} — four`,
-						createdAt: "2026-08-18T04:00:00Z",
-					}),
+					[PULL, PR_ON_MAIN],
+					[
+						COMMENTS,
+						comments(...CAPPED, ...GRANT, {
+							id: 6,
+							body: `review-code: FAIL @ ${HEAD} — four`,
+							createdAt: "2026-08-18T04:00:00Z",
+						}),
+					],
+					[PERMISSION, WRITES],
+					[REVIEWS, NO_REVIEWS],
+					[ISSUE, issue()],
 				],
-				[CONFIG, CONFIGURED],
-				[PERMISSION, WRITES],
-				[REVIEWS, NO_REVIEWS],
-				[ISSUE, issue()],
-			]);
+				GRANT_AUTHORS,
+			);
 			const parsed = JSON.parse(out.stdout);
 			expect(parsed.rounds).toBe(4);
 			expect(parsed.capReached).toBe(true);
@@ -313,27 +325,33 @@ describe("runVerdicts", () => {
 		 * the first is authorized by nothing (#4938).
 		 */
 		it("refuses a second marker whose only precedent is the first grant's marker", async () => {
-			const out = await run([
-				[PULL, PR_ON_MAIN],
+			const out = await run(
 				[
-					COMMENTS,
-					comments(
-						...CAPPED,
-						...GRANT,
-						{id: 6, body: `review-code: FAIL @ ${HEAD} — four`, createdAt: "2026-08-18T04:00:00Z"},
-						{
-							id: 7,
-							body: "cap-cleared: round 4 · 2026-08-18T05:00:00Z",
-							author: "usirin",
-							createdAt: "2026-08-18T05:00:00Z",
-						},
-					),
+					[PULL, PR_ON_MAIN],
+					[
+						COMMENTS,
+						comments(
+							...CAPPED,
+							...GRANT,
+							{
+								id: 6,
+								body: `review-code: FAIL @ ${HEAD} — four`,
+								createdAt: "2026-08-18T04:00:00Z",
+							},
+							{
+								id: 7,
+								body: "cap-cleared: round 4 · 2026-08-18T05:00:00Z",
+								author: "usirin",
+								createdAt: "2026-08-18T05:00:00Z",
+							},
+						),
+					],
+					[PERMISSION, WRITES],
+					[REVIEWS, NO_REVIEWS],
+					[ISSUE, issue()],
 				],
-				[CONFIG, CONFIGURED],
-				[PERMISSION, WRITES],
-				[REVIEWS, NO_REVIEWS],
-				[ISSUE, issue()],
-			]);
+				GRANT_AUTHORS,
+			);
 			const parsed = JSON.parse(out.stdout);
 			const bare = parsed.clearances.find((row: {round: number}) => row.round === 4);
 			expect(bare).toMatchObject({honoured: false, authorization: null});
@@ -343,14 +361,16 @@ describe("runVerdicts", () => {
 
 		/** A committed set narrows the ACL; it never stands in for one (ADR 0055, ADR 0294). */
 		it("refuses a configured author who resolves below write at the ACL", async () => {
-			const out = await run([
-				[PULL, PR_ON_MAIN],
-				[COMMENTS, comments(...CAPPED, ...GRANT)],
-				[CONFIG, CONFIGURED],
-				[PERMISSION, okOut("read\n")],
-				[REVIEWS, NO_REVIEWS],
-				[ISSUE, issue()],
-			]);
+			const out = await run(
+				[
+					[PULL, PR_ON_MAIN],
+					[COMMENTS, comments(...CAPPED, ...GRANT)],
+					[PERMISSION, okOut("read\n")],
+					[REVIEWS, NO_REVIEWS],
+					[ISSUE, issue()],
+				],
+				GRANT_AUTHORS,
+			);
 			const parsed = JSON.parse(out.stdout);
 			expect(parsed.capReached).toBe(true);
 			expect(parsed.clearances[0]).toMatchObject({honoured: false});
@@ -358,34 +378,38 @@ describe("runVerdicts", () => {
 		});
 
 		it("holds the fold UNKNOWN when a configured author's permission cannot be read", async () => {
-			const out = await run([
-				[PULL, PR_ON_MAIN],
-				[COMMENTS, comments(...CAPPED, ...GRANT)],
-				[CONFIG, CONFIGURED],
-				[PERMISSION, errOut("gh: Bad gateway (HTTP 502)")],
-				[REVIEWS, NO_REVIEWS],
-				[ISSUE, issue()],
-			]);
+			const out = await run(
+				[
+					[PULL, PR_ON_MAIN],
+					[COMMENTS, comments(...CAPPED, ...GRANT)],
+					[PERMISSION, errOut("gh: Bad gateway (HTTP 502)")],
+					[REVIEWS, NO_REVIEWS],
+					[ISSUE, issue()],
+				],
+				GRANT_AUTHORS,
+			);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
 			expect(out.stdout).toBe("");
 		});
 
 		it("keeps an unauthorized marker visible as a refused row, never as budget", async () => {
-			const out = await run([
-				[PULL, PR_ON_MAIN],
+			const out = await run(
 				[
-					COMMENTS,
-					comments(...CAPPED, {
-						id: 5,
-						body: "cap-cleared: round 3 · 2026-08-18T03:11:00Z",
-						author: "an-agent",
-						createdAt: "2026-08-18T03:11:00Z",
-					}),
+					[PULL, PR_ON_MAIN],
+					[
+						COMMENTS,
+						comments(...CAPPED, {
+							id: 5,
+							body: "cap-cleared: round 3 · 2026-08-18T03:11:00Z",
+							author: "an-agent",
+							createdAt: "2026-08-18T03:11:00Z",
+						}),
+					],
+					[REVIEWS, NO_REVIEWS],
+					[ISSUE, issue()],
 				],
-				[CONFIG, CONFIGURED],
-				[REVIEWS, NO_REVIEWS],
-				[ISSUE, issue()],
-			]);
+				GRANT_AUTHORS,
+			);
 			const parsed = JSON.parse(out.stdout);
 			expect(parsed.capReached).toBe(true);
 			expect(parsed.clearances[0]).toMatchObject({honoured: false});
@@ -393,13 +417,15 @@ describe("runVerdicts", () => {
 		});
 
 		it("holds the whole fold UNKNOWN when the grant-author set cannot be read", async () => {
-			const out = await run([
-				[PULL, PR_ON_MAIN],
-				[COMMENTS, comments(...CAPPED, ...GRANT)],
-				[CONFIG, errOut("gh: Bad gateway (HTTP 502)")],
-				[REVIEWS, NO_REVIEWS],
-				[ISSUE, issue()],
-			]);
+			const out = await run(
+				[
+					[PULL, PR_ON_MAIN],
+					[COMMENTS, comments(...CAPPED, ...GRANT)],
+					[REVIEWS, NO_REVIEWS],
+					[ISSUE, issue()],
+				],
+				[[CONFIG, {status: 502, body: '{"message":"Bad Gateway"}'}]],
+			);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
 			expect(out.stdout).toBe("");
 		});
