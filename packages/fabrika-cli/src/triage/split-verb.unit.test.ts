@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {type HttpReply, okOut, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {renderFooter} from "../report/compose.ts";
 import {COMMENTS, claimPage, EXPIRED, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
@@ -18,13 +17,52 @@ import {composeChildBody} from "./split.ts";
 import {runSplit} from "./split-verb.ts";
 
 const BRANCH = /^git rev-parse/;
-const PARENT = /^gh api repos\/o\/r\/issues\/4312$/;
-const LABELS = /repos\/o\/r\/labels/;
-const QUEUE = /repos\/o\/r\/issues\?state=open/;
-const TIMELINE = /repos\/o\/r\/issues\/4312\/timeline/;
-const CREATE = /--method POST repos\/o\/r\/issues -f/;
-const CROSSLINK = /--method POST repos\/o\/r\/issues\/4312\/comments/;
-const issueRead = (n: number) => new RegExp(`^gh api repos/o/r/issues/${n}$`);
+const PARENT = /GET .*\/repos\/o\/r\/issues\/4312$/;
+const LABELS = /GET .*\/repos\/o\/r\/labels\?/;
+const QUEUE = /GET .*\/repos\/o\/r\/issues\?state=open/;
+const TIMELINE = /GET .*\/repos\/o\/r\/issues\/4312\/timeline\?/;
+const CREATE = /POST .*\/repos\/o\/r\/issues$/;
+const CROSSLINK = /POST .*\/repos\/o\/r\/issues\/4312\/comments$/;
+const issueRead = (n: number) => new RegExp(`GET .*/repos/o/r/issues/${n}$`);
+
+const UNREADABLE: HttpReply = {status: 502, body: "{}"};
+const NOT_FOUND: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
+const WRITE_FAILED: HttpReply = {status: 500, body: "{}"};
+
+const labels = (...names: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(names.map((name) => ({name}))),
+});
+
+/** Open issues carrying the queue label, as the list endpoint answers them. */
+const queue = (
+	...rows: ReadonlyArray<{readonly number: number; readonly title: string}>
+): HttpReply => ({status: 200, body: JSON.stringify(rows)});
+
+/** `cross-referenced` timeline entries — the only event shape the adapter reads. */
+const timeline = (
+	...refs: ReadonlyArray<{readonly number: number; readonly pull?: boolean}>
+): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(
+		refs.map((ref) => ({
+			event: "cross-referenced",
+			source: {
+				issue: {number: ref.number, ...(ref.pull === true ? {pull_request: {url: "x"}} : {})},
+			},
+		})),
+	),
+});
+
+/** What the first request matching `pattern` carried as its JSON body. */
+const bodyOf = (
+	requests: ReadonlyArray<string>,
+	bodies: ReadonlyArray<string>,
+	pattern: RegExp,
+): string => {
+	const at = requests.findIndex((line) => pattern.test(line));
+	return at < 0 ? "" : (bodies[at] ?? "");
+};
 
 const TITLE = "Editor loses focus after save";
 const BODY = "The editor drops focus once the save round-trips.";
@@ -40,22 +78,28 @@ const COMPOSED = composeChildBody(
 	}),
 );
 
-const issue = (over: Record<string, unknown>) =>
-	okOut(
-		JSON.stringify({
-			number: 4321,
-			title: TITLE,
-			body: COMPOSED,
-			state: "open",
-			labels: [{name: "status:needs-triage"}],
-			html_url: "https://example.test/issues/4321",
-			...over,
-		}),
-	);
+const issue = (over: Record<string, unknown>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: 4321,
+		title: TITLE,
+		body: COMPOSED,
+		state: "open",
+		labels: [{name: "status:needs-triage"}],
+		html_url: "https://example.test/issues/4321",
+		...over,
+	}),
+});
 
 const parentIssue = issue({number: 4312, title: "Two unrelated bugs", body: "a\nb"});
-const created = okOut(JSON.stringify({number: 4321, html_url: "https://example.test/issues/4321"}));
-const posted = okOut(JSON.stringify({id: 7, html_url: "https://example.test/c/7"}));
+const created: HttpReply = {
+	status: 201,
+	body: JSON.stringify({number: 4321, html_url: "https://example.test/issues/4321"}),
+};
+const posted: HttpReply = {
+	status: 201,
+	body: JSON.stringify({id: 7, html_url: "https://example.test/c/7"}),
+};
 
 const options = {
 	parent: 4312,
@@ -68,28 +112,31 @@ const options = {
 };
 
 /** The base script: parent present, label present, nothing already split, create + cross-link fine. */
-const base: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const base: ReadonlyArray<Scripted> = [
 	[BRANCH, okOut("umut/x\n")],
 	[PARENT, parentIssue],
-	[LABELS, okOut("status:needs-triage\ntype:bug")],
-	[QUEUE, okOut("")],
-	[TIMELINE, okOut("")],
+	[LABELS, labels("status:needs-triage", "type:bug")],
+	[QUEUE, queue()],
+	[TIMELINE, timeline()],
 	[CREATE, created],
 	[CROSSLINK, posted],
 	[issueRead(4321), issue({})],
 ];
 
-const script = (
-	...overrides: ReadonlyArray<readonly [RegExp, ExecResult]>
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [...overrides, ...base];
+const script = (...overrides: ReadonlyArray<Scripted>): ReadonlyArray<Scripted> => [
+	...overrides,
+	...base,
+];
 
-const run = (
-	steps: ReadonlyArray<readonly [RegExp, ExecResult]> = base,
-	over: Partial<typeof options> = {},
-) => {
+const run = (steps: ReadonlyArray<Scripted> = base, over: Partial<typeof options> = {}) => {
 	const shell = guardedShell(steps);
 	return Effect.runPromise(Effect.provide(runSplit({...options, ...over}), shell.layer)).then(
-		(outcome) => ({outcome, calls: shell.calls}),
+		(outcome) => ({
+			outcome,
+			calls: shell.calls,
+			requests: shell.requests,
+			bodies: shell.bodies,
+		}),
 	);
 };
 
@@ -101,16 +148,16 @@ describe("runSplit — the created path", () => {
 	});
 
 	it("creates the child carrying the back-reference and the queue label", async () => {
-		const {calls} = await run();
-		const create = calls.find((c) => CREATE.test(c)) ?? "";
+		const {requests, bodies} = await run();
+		const create = bodyOf(requests, bodies, CREATE);
 		expect(create).toContain("split from #4312");
 		expect(create).toContain("Filed by an agent");
-		expect(create).toContain("labels[]=status:needs-triage");
+		expect(create).toContain('"labels":["status:needs-triage"]');
 	});
 
 	it("cross-links the parent as part of the same operation", async () => {
-		const {calls} = await run();
-		expect(calls.some((c) => CROSSLINK.test(c) && c.includes("split into #4321"))).toBe(true);
+		const {requests, bodies} = await run();
+		expect(bodyOf(requests, bodies, CROSSLINK)).toContain("split into #4321");
 	});
 
 	it("reports the object with --json", async () => {
@@ -132,7 +179,7 @@ describe("runSplit — the created path", () => {
 	});
 
 	it("still exits 0 when the cross-link fails — the child demonstrably exists", async () => {
-		const {outcome} = await run(script([CROSSLINK, errOut("gh: timeout")]), {json: true});
+		const {outcome} = await run(script([CROSSLINK, WRITE_FAILED]), {json: true});
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout).crossLinked).toBe(false);
 		expect(outcome.stderr.join("\n")).toContain("add the comment by hand");
@@ -144,18 +191,18 @@ describe("runSplit — the create-once key", () => {
 	const foreign = issue({number: 4400, body: "unrelated\n\nsplit from #9999\n"});
 
 	it("reuses a child matching BOTH halves of the key, and writes nothing", async () => {
-		const {outcome, calls} = await run(
-			script([QUEUE, okOut(`4321\t${TITLE}\n`)], [issueRead(4321), issue({})]),
+		const {outcome, requests} = await run(
+			script([QUEUE, queue({number: 4321, title: TITLE})], [issueRead(4321), issue({})]),
 		);
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout).toBe("reused\t4321\thttps://example.test/issues/4321\n");
-		expect(calls.some((c) => CREATE.test(c))).toBe(false);
-		expect(calls.some((c) => CROSSLINK.test(c))).toBe(false);
+		expect(requests.some((c) => CREATE.test(c))).toBe(false);
+		expect(requests.some((c) => CROSSLINK.test(c))).toBe(false);
 	});
 
 	it("names the key it matched on, and never claims a cross-link it did not make", async () => {
 		const {outcome} = await run(
-			script([QUEUE, okOut(`4321\t${TITLE}\n`)], [issueRead(4321), issue({})]),
+			script([QUEUE, queue({number: 4321, title: TITLE})], [issueRead(4321), issue({})]),
 			{json: true},
 		);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({
@@ -167,7 +214,7 @@ describe("runSplit — the create-once key", () => {
 
 	it("does NOT reuse on the title alone — a same-titled child of another parent is not this child", async () => {
 		const {outcome} = await run(
-			script([QUEUE, okOut(`4400\t${TITLE}\n`)], [issueRead(4400), foreign]),
+			script([QUEUE, queue({number: 4400, title: TITLE})], [issueRead(4400), foreign]),
 		);
 		expect(outcome.stdout).toBe("created\t4321\thttps://example.test/issues/4321\n");
 	});
@@ -177,94 +224,90 @@ describe("runSplit — the create-once key", () => {
 	// reuse. Through the queue the title narrowing would reject it before the key ran at all.
 	it("does NOT reuse on the back-reference alone — a sibling split is not this child", async () => {
 		const {outcome} = await run(
-			script([TIMELINE, okOut("4400\tfalse\n")], [issueRead(4400), sibling]),
+			script([TIMELINE, timeline({number: 4400})], [issueRead(4400), sibling]),
 		);
 		expect(outcome.stdout).toBe("created\t4321\thttps://example.test/issues/4321\n");
 	});
 
 	it("reaches a child already triaged out of the queue, through the timeline", async () => {
 		const {outcome} = await run(
-			script([TIMELINE, okOut("4321\tfalse\n")], [issueRead(4321), issue({})]),
+			script([TIMELINE, timeline({number: 4321})], [issueRead(4321), issue({})]),
 		);
 		expect(outcome.stdout).toBe("reused\t4321\thttps://example.test/issues/4321\n");
 	});
 
 	it("ignores pull requests in the timeline", async () => {
-		const {outcome, calls} = await run(script([TIMELINE, okOut("9001\ttrue\n")]));
+		const {outcome, requests} = await run(script([TIMELINE, timeline({number: 9001, pull: true})]));
 		expect(outcome.stdout).toBe("created\t4321\thttps://example.test/issues/4321\n");
-		expect(calls.some((c) => issueRead(9001).test(c))).toBe(false);
+		expect(requests.some((c) => issueRead(9001).test(c))).toBe(false);
 	});
 
 	it("narrows on the title before fetching, so an unrelated queue row costs no read", async () => {
-		const {calls} = await run(script([QUEUE, okOut("4400\tSomething else entirely\n")]));
-		expect(calls.some((c) => issueRead(4400).test(c))).toBe(false);
+		const {requests} = await run(
+			script([QUEUE, queue({number: 4400, title: "Something else entirely"})]),
+		);
+		expect(requests.some((c) => issueRead(4400).test(c))).toBe(false);
 	});
 });
 
 describe("runSplit — a read that cannot see is never an answer", () => {
 	it("exits 11 on an UNKNOWN candidate body, and creates nothing", async () => {
-		const {outcome, calls} = await run(
-			script(
-				[QUEUE, okOut(`4400\t${TITLE}\n`)],
-				[issueRead(4400), errOut("gh: Bad gateway (HTTP 502)")],
-			),
+		const {outcome, requests} = await run(
+			script([QUEUE, queue({number: 4400, title: TITLE})], [issueRead(4400), UNREADABLE]),
 		);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.at(-1)).toContain("refusing to create a possible twin");
-		expect(calls.some((c) => CREATE.test(c))).toBe(false);
+		expect(requests.some((c) => CREATE.test(c))).toBe(false);
 	});
 
 	// The same refusal on the second loop. The timeline read carries no titles, so it fetches every
 	// cross-reference — an UNKNOWN one there is just as likely to BE the child as an UNKNOWN queue row.
 	it("exits 11 on an UNKNOWN timeline candidate too, not only a queue one", async () => {
-		const {outcome, calls} = await run(
-			script(
-				[TIMELINE, okOut("4400\tfalse\n")],
-				[issueRead(4400), errOut("gh: Bad gateway (HTTP 502)")],
-			),
+		const {outcome, requests} = await run(
+			script([TIMELINE, timeline({number: 4400})], [issueRead(4400), UNREADABLE]),
 		);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stdout).toBe("");
-		expect(calls.some((c) => CREATE.test(c))).toBe(false);
+		expect(requests.some((c) => CREATE.test(c))).toBe(false);
 	});
 
 	it("exits 11 on an unreadable queue, never on a silent create", async () => {
-		const {outcome, calls} = await run(script([QUEUE, errOut("gh: Bad gateway (HTTP 502)")]));
+		const {outcome, requests} = await run(script([QUEUE, UNREADABLE]));
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
-		expect(calls.some((c) => CREATE.test(c))).toBe(false);
+		expect(requests.some((c) => CREATE.test(c))).toBe(false);
 	});
 
 	it("exits 11 on an unreadable timeline", async () => {
-		const {outcome, calls} = await run(script([TIMELINE, errOut("gh: Bad gateway (HTTP 502)")]));
+		const {outcome, requests} = await run(script([TIMELINE, UNREADABLE]));
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
-		expect(calls.some((c) => CREATE.test(c))).toBe(false);
+		expect(requests.some((c) => CREATE.test(c))).toBe(false);
 	});
 
 	it("exits 11 on an unreadable parent, and 7 on one proven absent", async () => {
-		const unreadable = await run(script([PARENT, errOut("gh: Bad gateway (HTTP 502)")]));
+		const unreadable = await run(script([PARENT, UNREADABLE]));
 		expect(unreadable.outcome.code).toBe(PRECONDITION_UNKNOWN);
-		const absent = await run(script([PARENT, errOut("gh: Not Found (HTTP 404)")]));
+		const absent = await run(script([PARENT, NOT_FOUND]));
 		expect(absent.outcome.code).toBe(ZERO_SCOPE);
 		expect(absent.outcome.stderr.at(-1)).toBe("triage split: parent #4312 not found in o/r.");
 	});
 
 	it("exits 11 on an unreadable label set", async () => {
-		const {outcome} = await run(script([LABELS, errOut("gh: Bad gateway (HTTP 502)")]));
+		const {outcome} = await run(script([LABELS, UNREADABLE]));
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
 	it("exits 7 when the queue label does not exist — a 200 over [] is not a proven negative", async () => {
-		const {outcome, calls} = await run(script([LABELS, okOut("type:bug\np0")]));
+		const {outcome, requests} = await run(script([LABELS, labels("type:bug", "p0")]));
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.at(-1)).toContain("(ADR 0092)");
-		expect(calls.some((c) => CREATE.test(c))).toBe(false);
+		expect(requests.some((c) => CREATE.test(c))).toBe(false);
 	});
 });
 
 describe("runSplit — the write and its read-back", () => {
 	it("exits 8 with the re-run recovery when the create fails", async () => {
-		const {outcome} = await run(script([CREATE, errOut("gh: timeout")]));
+		const {outcome} = await run(script([CREATE, WRITE_FAILED]));
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.at(-1)).toContain("which will reuse it if it did");
@@ -279,7 +322,7 @@ describe("runSplit — the write and its read-back", () => {
 	});
 
 	it("exits 9 when the read-back itself fails", async () => {
-		const {outcome} = await run(script([issueRead(4321), errOut("gh: Bad gateway (HTTP 502)")]));
+		const {outcome} = await run(script([issueRead(4321), UNREADABLE]));
 		expect(outcome.code).toBe(READBACK_MISMATCH);
 	});
 
@@ -293,28 +336,29 @@ describe("runSplit — the write and its read-back", () => {
 
 describe("runSplit — the authored-text guard", () => {
 	it("refuses an empty body before any network read", async () => {
-		const {outcome, calls} = await run(base, {
+		const {outcome, requests} = await run(base, {
 			stdin: Effect.succeed({_tag: "Text", text: ""} satisfies StdinRead),
 		});
 		expect(outcome.code).toBe(EMPTY_STDIN);
-		expect(calls.some((c) => c.startsWith("gh"))).toBe(false);
+		expect(requests).toEqual([]);
 	});
 
 	it("scans the COMPOSED body, so nothing the verb appends can escape the predicate", async () => {
-		const {outcome, calls} = await run(base, {
+		const {outcome, requests} = await run(base, {
 			stdin: Effect.succeed({
 				_tag: "Text",
 				text: "reproduced from /Users/someone/scratch/case.md",
 			} satisfies StdinRead),
 		});
 		expect(outcome.code).toBe(LEAKED_PATH);
-		expect(calls.some((c) => c.startsWith("gh"))).toBe(false);
+		expect(requests).toEqual([]);
 	});
 
 	it("refuses a non-issue-number parent without touching the network", async () => {
-		const {outcome, calls} = await run(base, {parent: 0});
+		const {outcome, calls, requests} = await run(base, {parent: 0});
 		expect(outcome.code).toBe(1);
 		expect(calls).toEqual([]);
+		expect(requests).toEqual([]);
 	});
 });
 
@@ -329,9 +373,9 @@ describe("runSplit — the parent guard", () => {
 
 	// The composed child body carries the session in its footer, so a run under a session id cannot
 	// match COMPOSED's read-back. What the guard decides is whether the create was reached at all.
-	const guard = async (steps: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
-		const {outcome, calls} = await run(steps, {env: mine});
-		return {outcome, created: calls.some((line) => CREATE.test(line))};
+	const guard = async (steps: ReadonlyArray<Scripted>) => {
+		const {outcome, requests} = await run(steps, {env: mine});
+		return {outcome, created: requests.some((line) => CREATE.test(line))};
 	};
 
 	it("refuses a closed parent on 7 and creates nothing", async () => {

@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import type {HttpReply, Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {COMMENTS, claimPage, EXPIRED, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
 import {
@@ -18,20 +17,41 @@ import {
 } from "./codes.ts";
 import {KILL_LABEL, runKill} from "./kill-verb.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
-const DUPLICATE = /^gh api repos\/o\/r\/issues\/4290$/;
-const LABELS = /labels\?per_page=100/;
-const REASON_COMMENT = /repos\/o\/r\/issues\/4312\/comments -f/;
-const FOLD_COMMENT = /repos\/o\/r\/issues\/4290\/comments -f/;
-const APPLY_LABEL = /repos\/o\/r\/issues\/4312\/labels/;
-const CLOSE = /--method PATCH repos\/o\/r\/issues\/4312 -f state=closed/;
+const ISSUE = /GET .*\/repos\/o\/r\/issues\/4312$/;
+const DUPLICATE = /GET .*\/repos\/o\/r\/issues\/4290$/;
+const LABELS = /GET .*\/repos\/o\/r\/labels\?/;
+const REASON_COMMENT = /POST .*\/repos\/o\/r\/issues\/4312\/comments$/;
+const FOLD_COMMENT = /POST .*\/repos\/o\/r\/issues\/4290\/comments$/;
+const APPLY_LABEL = /POST .*\/repos\/o\/r\/issues\/4312\/labels$/;
+const CLOSE = /PATCH .*\/repos\/o\/r\/issues\/4312$/;
+
+const ACCEPTED: HttpReply = {status: 200, body: "{}"};
+const LABELLED: HttpReply = {status: 200, body: "[]"};
+const UNREADABLE: HttpReply = {status: 502, body: "{}"};
+const NOT_FOUND: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
+const WRITE_FAILED: HttpReply = {status: 500, body: "{}"};
+
+const labels = (...names: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(names.map((name) => ({name}))),
+});
+
+/** What the first request matching `pattern` carried as its JSON body. */
+const bodyOf = (
+	requests: ReadonlyArray<string>,
+	bodies: ReadonlyArray<string>,
+	pattern: RegExp,
+): string => {
+	const at = requests.findIndex((line) => pattern.test(line));
+	return at < 0 ? "" : (bodies[at] ?? "");
+};
 
 /**
  * A pattern that matches once and then never again.
  *
- * A kill makes the *same* `gh api repos/o/r/issues/<n>` call twice — the precondition read and the
- * read-back — and `fakeShell` resolves a line against the first pattern that matches, so scripting
- * the two to different answers needs a pattern that retires itself. It is a real `RegExp` subclass
+ * A kill reads the *same* `GET .../issues/<n>` endpoint twice — the precondition read and the
+ * read-back — and the fake resolves a line against the first pattern that matches, so scripting the
+ * two to different answers needs a pattern that retires itself. It is a real `RegExp` subclass
  * rather than a cast object because the package forbids type assertions.
  */
 class FirstCallOnly extends RegExp {
@@ -47,34 +67,35 @@ const firstCallOnly = (re: RegExp): RegExp => new FirstCallOnly(re.source, re.fl
 
 const FOOTER = "---\n<sub>Filed by an agent · 2026-01-01T00:00:00Z</sub>";
 
-const issue = (over: Record<string, unknown> = {}) =>
-	okOut(
-		JSON.stringify({
-			number: 4312,
-			title: "t",
-			body: `## Summary\n\nsomething\n\n${FOOTER}`,
-			state: "open",
-			labels: [],
-			html_url: "https://example.test/issues/4312",
-			...over,
-		}),
-	);
+const issue = (over: Record<string, unknown> = {}): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: 4312,
+		title: "t",
+		body: `## Summary\n\nsomething\n\n${FOOTER}`,
+		state: "open",
+		labels: [],
+		html_url: "https://example.test/issues/4312",
+		...over,
+	}),
+});
 
-const duplicate = (over: Record<string, unknown> = {}) =>
-	okOut(
-		JSON.stringify({
-			number: 4290,
-			title: "survivor",
-			body: "the surviving issue",
-			state: "open",
-			labels: [],
-			html_url: "https://example.test/issues/4290",
-			...over,
-		}),
-	);
+const duplicate = (over: Record<string, unknown> = {}): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: 4290,
+		title: "survivor",
+		body: "the surviving issue",
+		state: "open",
+		labels: [],
+		html_url: "https://example.test/issues/4290",
+		...over,
+	}),
+});
 
-const killed = okOut(
-	JSON.stringify({
+const killed: HttpReply = {
+	status: 200,
+	body: JSON.stringify({
 		number: 4312,
 		title: "t",
 		body: `## Summary\n\nsomething\n\n${FOOTER}`,
@@ -83,13 +104,14 @@ const killed = okOut(
 		labels: [{name: KILL_LABEL}],
 		html_url: "https://example.test/issues/4312",
 	}),
-);
+};
 
-const comment = okOut(
-	JSON.stringify({id: 99, html_url: "https://example.test/issues/4312#issuecomment-99"}),
-);
+const comment: HttpReply = {
+	status: 201,
+	body: JSON.stringify({id: 99, html_url: "https://example.test/issues/4312#issuecomment-99"}),
+};
 
-const labelSet = okOut([KILL_LABEL, "status:needs-triage", "p1"].join("\n"));
+const labelSet = labels(KILL_LABEL, "status:needs-triage", "p1");
 
 const REASON = "Superseded by the merged contract; nothing here moves forward.";
 
@@ -110,36 +132,33 @@ const OPERATOR_ENV = {
 } as Record<string, string | undefined>;
 
 /** The whole sequence green: precondition read, label set, three writes, a not-planned read-back. */
-const happy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+const happy = (): ReadonlyArray<Scripted> => [
 	[firstCallOnly(ISSUE), issue()],
 	[ISSUE, killed],
 	[LABELS, labelSet],
 	[REASON_COMMENT, comment],
-	[APPLY_LABEL, okOut("[]")],
-	[CLOSE, okOut("{}")],
+	[APPLY_LABEL, LABELLED],
+	[CLOSE, ACCEPTED],
 ];
 
-const runWith = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) => {
+const runWith = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
 	const shell = guardedShell(script);
 	return Effect.runPromise(Effect.provide(runKill({...options, ...overrides}), shell.layer)).then(
-		(out) => ({out, calls: shell.calls}),
+		(out) => ({out, requests: shell.requests, bodies: shell.bodies}),
 	);
 };
 
 describe("runKill", () => {
 	it("closes not-planned and prints the outcome line", async () => {
-		const {out, calls} = await runWith(happy());
+		const {out, requests} = await runWith(happy());
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("killed\t4312\tnone\n");
-		expect(calls.filter((c) => CLOSE.test(c))).toHaveLength(1);
+		expect(requests.filter((c) => CLOSE.test(c))).toHaveLength(1);
 	});
 
 	it("writes in the order that keeps a failure recoverable: reason, label, close", async () => {
-		const {calls} = await runWith(happy());
-		const at = (re: RegExp) => calls.findIndex((c) => re.test(c));
+		const {requests} = await runWith(happy());
+		const at = (re: RegExp) => requests.findIndex((c) => re.test(c));
 		expect(at(REASON_COMMENT)).toBeLessThan(at(APPLY_LABEL));
 		expect(at(APPLY_LABEL)).toBeLessThan(at(CLOSE));
 	});
@@ -163,18 +182,18 @@ describe("runKill", () => {
 	// --- the provenance guard ------------------------------------------------------------------
 
 	it("refuses a human-filed issue on 12 and writes nothing", async () => {
-		const {out, calls} = await runWith([
+		const {out, requests} = await runWith([
 			[firstCallOnly(ISSUE), issue({body: "I typed this myself."})],
 			...happy().slice(1),
 		]);
 		expect(out.code).toBe(HUMAN_FILED);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("Park it with questions instead.");
-		expect(calls.some((c) => CLOSE.test(c) || REASON_COMMENT.test(c))).toBe(false);
+		expect(requests.some((c) => CLOSE.test(c) || REASON_COMMENT.test(c))).toBe(false);
 	});
 
 	it("refuses a body that merely QUOTES the footer — an unanchored match would close it", async () => {
-		const {out, calls} = await runWith([
+		const {out, requests} = await runWith([
 			[
 				firstCallOnly(ISSUE),
 				issue({body: 'The footer text "Filed by an agent" renders wrong on mobile.'}),
@@ -182,7 +201,7 @@ describe("runKill", () => {
 			...happy().slice(1),
 		]);
 		expect(out.code).toBe(HUMAN_FILED);
-		expect(calls.some((c) => CLOSE.test(c))).toBe(false);
+		expect(requests.some((c) => CLOSE.test(c))).toBe(false);
 	});
 
 	it("refuses an empty body as human, and says the answer was defaulted", async () => {
@@ -200,7 +219,7 @@ describe("runKill", () => {
 	});
 
 	it("kills a FOOTERLESS filing authored by a configured operator account (#4619)", async () => {
-		const {out, calls} = await runWith(
+		const {out, requests} = await runWith(
 			[
 				[
 					firstCallOnly(ISSUE),
@@ -212,11 +231,11 @@ describe("runKill", () => {
 			{env: OPERATOR_ENV},
 		);
 		expect(out.code).toBe(0);
-		expect(calls.filter((c) => CLOSE.test(c))).toHaveLength(1);
+		expect(requests.filter((c) => CLOSE.test(c))).toHaveLength(1);
 	});
 
 	it("still refuses a footerless filing by any OTHER author, operator set configured", async () => {
-		const {out, calls} = await runWith(
+		const {out, requests} = await runWith(
 			[
 				[firstCallOnly(ISSUE), issue({body: "no footer at all", user: {login: "cansirin"}})],
 				...happy().slice(1),
@@ -224,7 +243,7 @@ describe("runKill", () => {
 			{env: OPERATOR_ENV},
 		);
 		expect(out.code).toBe(HUMAN_FILED);
-		expect(calls.some((c) => CLOSE.test(c))).toBe(false);
+		expect(requests.some((c) => CLOSE.test(c))).toBe(false);
 	});
 
 	it("drops the empty-body fail-closed notice when the operator author decided the answer", async () => {
@@ -241,19 +260,19 @@ describe("runKill", () => {
 	});
 
 	it("refuses an UNREADABLE body on 11, never as a human verdict", async () => {
-		const {out, calls} = await runWith([[ISSUE, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const {out, requests} = await runWith([[ISSUE, UNREADABLE]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("a body that was never read");
-		expect(calls.some((c) => CLOSE.test(c))).toBe(false);
+		expect(requests.some((c) => CLOSE.test(c))).toBe(false);
 	});
 
 	// --- the confirmation guard ----------------------------------------------------------------
 
 	it("refuses an agent-filed issue without --confirm on 13, and writes nothing", async () => {
-		const {out, calls} = await runWith(happy(), {confirm: false});
+		const {out, requests} = await runWith(happy(), {confirm: false});
 		expect(out.code).toBe(UNCONFIRMED);
 		expect(out.stderr.at(-1)).toContain("ADR 0159");
-		expect(calls.some((c) => CLOSE.test(c))).toBe(false);
+		expect(requests.some((c) => CLOSE.test(c))).toBe(false);
 	});
 
 	it("checks provenance BEFORE confirmation — a human-filed issue refuses on 12 either way", async () => {
@@ -267,7 +286,7 @@ describe("runKill", () => {
 	// --- preconditions -------------------------------------------------------------------------
 
 	it("refuses an absent issue on 7", async () => {
-		const {out} = await runWith([[ISSUE, errOut("gh: Not Found (HTTP 404)")]]);
+		const {out} = await runWith([[ISSUE, NOT_FOUND]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe("triage kill: issue #4312 not found in o/r.");
 	});
@@ -282,29 +301,29 @@ describe("runKill", () => {
 	});
 
 	it("refuses when closed-by-triage is absent from the repo — the kill would be unauditable", async () => {
-		const {out, calls} = await runWith([
+		const {out, requests} = await runWith([
 			[firstCallOnly(ISSUE), issue()],
 			[ISSUE, killed],
-			[LABELS, okOut("p1\nstatus:needs-triage")],
+			[LABELS, labels("p1", "status:needs-triage")],
 			...happy().slice(3),
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain("invisible to the audit");
-		expect(calls.some((c) => CLOSE.test(c))).toBe(false);
+		expect(requests.some((c) => CLOSE.test(c))).toBe(false);
 	});
 
 	it("refuses an unreadable label set on 11, not on 7", async () => {
 		const {out} = await runWith([
 			[firstCallOnly(ISSUE), issue()],
 			[ISSUE, killed],
-			[LABELS, errOut("gh: Bad gateway (HTTP 502)")],
+			[LABELS, UNREADABLE],
 			...happy().slice(3),
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
 	it("refuses a closed --duplicate-of on 7 — nobody would read the fold", async () => {
-		const {out, calls} = await runWith(
+		const {out, requests} = await runWith(
 			[
 				[firstCallOnly(ISSUE), issue()],
 				[ISSUE, killed],
@@ -314,7 +333,7 @@ describe("runKill", () => {
 			{duplicateOf: 4290},
 		);
 		expect(out.code).toBe(ZERO_SCOPE);
-		expect(calls.some((c) => FOLD_COMMENT.test(c))).toBe(false);
+		expect(requests.some((c) => FOLD_COMMENT.test(c))).toBe(false);
 	});
 
 	it("refuses an absent --duplicate-of on 7", async () => {
@@ -322,7 +341,7 @@ describe("runKill", () => {
 			[
 				[firstCallOnly(ISSUE), issue()],
 				[ISSUE, killed],
-				[DUPLICATE, errOut("gh: Not Found (HTTP 404)")],
+				[DUPLICATE, NOT_FOUND],
 				...happy().slice(2),
 			],
 			{duplicateOf: 4290},
@@ -335,7 +354,7 @@ describe("runKill", () => {
 			[
 				[firstCallOnly(ISSUE), issue()],
 				[ISSUE, killed],
-				[DUPLICATE, errOut("gh: Bad gateway (HTTP 502)")],
+				[DUPLICATE, UNREADABLE],
 				...happy().slice(2),
 			],
 			{duplicateOf: 4290},
@@ -390,7 +409,7 @@ describe("runKill", () => {
 	});
 
 	it("refuses a machine-local path in the authored reason on 5, listing every hit", async () => {
-		const {out, calls} = await runWith(happy(), {
+		const {out, requests} = await runWith(happy(), {
 			stdin: Effect.succeed({
 				_tag: "Text",
 				text: "see /Users/someone/notes/why.md\nand /Users/someone/notes/how.md",
@@ -404,13 +423,13 @@ describe("runKill", () => {
 			"  line 1, absolute home root",
 			"  line 2, absolute home root",
 		]);
-		expect(calls.some((c) => CLOSE.test(c))).toBe(false);
+		expect(requests.some((c) => CLOSE.test(c))).toBe(false);
 	});
 
 	// --- the duplicate fold --------------------------------------------------------------------
 
 	it("folds the redacted body into the survivor and names it on stdout", async () => {
-		const {out, calls} = await runWith(
+		const {out, requests, bodies} = await runWith(
 			[
 				[firstCallOnly(ISSUE), issue({body: `repro at /Users/someone/x.md\n\n${FOOTER}`})],
 				[ISSUE, killed],
@@ -418,21 +437,21 @@ describe("runKill", () => {
 				[LABELS, labelSet],
 				[FOLD_COMMENT, comment],
 				[REASON_COMMENT, comment],
-				[APPLY_LABEL, okOut("[]")],
-				[CLOSE, okOut("{}")],
+				[APPLY_LABEL, LABELLED],
+				[CLOSE, ACCEPTED],
 			],
 			{duplicateOf: 4290},
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("killed\t4312\t4290\n");
-		const fold = calls.find((c) => FOLD_COMMENT.test(c)) ?? "";
+		const fold = bodyOf(requests, bodies, FOLD_COMMENT);
 		expect(fold).toContain("/Users/<redacted>");
 		expect(fold).not.toContain("/Users/someone/x.md");
 		expect(out.stderr.join("\n")).toContain("redacted 1 machine-local path(s)");
 	});
 
 	it("folds before it comments, and comments before it closes", async () => {
-		const {calls} = await runWith(
+		const {requests} = await runWith(
 			[
 				[firstCallOnly(ISSUE), issue()],
 				[ISSUE, killed],
@@ -440,12 +459,12 @@ describe("runKill", () => {
 				[LABELS, labelSet],
 				[FOLD_COMMENT, comment],
 				[REASON_COMMENT, comment],
-				[APPLY_LABEL, okOut("[]")],
-				[CLOSE, okOut("{}")],
+				[APPLY_LABEL, LABELLED],
+				[CLOSE, ACCEPTED],
 			],
 			{duplicateOf: 4290},
 		);
-		const at = (re: RegExp) => calls.findIndex((c) => re.test(c));
+		const at = (re: RegExp) => requests.findIndex((c) => re.test(c));
 		expect(at(FOLD_COMMENT)).toBeLessThan(at(REASON_COMMENT));
 		expect(at(REASON_COMMENT)).toBeLessThan(at(CLOSE));
 	});
@@ -453,20 +472,20 @@ describe("runKill", () => {
 	// --- the four gated writes -----------------------------------------------------------------
 
 	it("stops at a failed fold: nothing else is attempted and nothing was lost", async () => {
-		const {out, calls} = await runWith(
+		const {out, requests} = await runWith(
 			[
 				[firstCallOnly(ISSUE), issue()],
 				[ISSUE, killed],
 				[DUPLICATE, duplicate()],
 				[LABELS, labelSet],
-				[FOLD_COMMENT, errOut("gh: timeout")],
+				[FOLD_COMMENT, WRITE_FAILED],
 				...happy().slice(3),
 			],
 			{duplicateOf: 4290},
 		);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("nothing was lost. Re-run.");
-		expect(calls.some((c) => REASON_COMMENT.test(c) || CLOSE.test(c))).toBe(false);
+		expect(requests.some((c) => REASON_COMMENT.test(c) || CLOSE.test(c))).toBe(false);
 	});
 
 	it("names the landed fold when the reason comment fails — a blind re-run would double-post", async () => {
@@ -477,9 +496,9 @@ describe("runKill", () => {
 				[DUPLICATE, duplicate()],
 				[LABELS, labelSet],
 				[FOLD_COMMENT, comment],
-				[REASON_COMMENT, errOut("gh: timeout")],
-				[APPLY_LABEL, okOut("[]")],
-				[CLOSE, okOut("{}")],
+				[REASON_COMMENT, WRITE_FAILED],
+				[APPLY_LABEL, LABELLED],
+				[CLOSE, ACCEPTED],
 			],
 			{duplicateOf: 4290},
 		);
@@ -488,31 +507,31 @@ describe("runKill", () => {
 	});
 
 	it("stops at a failed reason comment: the issue stays open and unlabelled", async () => {
-		const {out, calls} = await runWith([
+		const {out, requests} = await runWith([
 			[firstCallOnly(ISSUE), issue()],
 			[ISSUE, killed],
 			[LABELS, labelSet],
-			[REASON_COMMENT, errOut("gh: timeout")],
-			[APPLY_LABEL, okOut("[]")],
-			[CLOSE, okOut("{}")],
+			[REASON_COMMENT, WRITE_FAILED],
+			[APPLY_LABEL, LABELLED],
+			[CLOSE, ACCEPTED],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("is NOT closed");
-		expect(calls.some((c) => APPLY_LABEL.test(c) || CLOSE.test(c))).toBe(false);
+		expect(requests.some((c) => APPLY_LABEL.test(c) || CLOSE.test(c))).toBe(false);
 	});
 
 	it("stops at a failed label: the issue stays OPEN rather than closed and unauditable", async () => {
-		const {out, calls} = await runWith([
+		const {out, requests} = await runWith([
 			[firstCallOnly(ISSUE), issue()],
 			[ISSUE, killed],
 			[LABELS, labelSet],
 			[REASON_COMMENT, comment],
-			[APPLY_LABEL, errOut("gh: timeout")],
-			[CLOSE, okOut("{}")],
+			[APPLY_LABEL, WRITE_FAILED],
+			[CLOSE, ACCEPTED],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("still OPEN and invisible to the kill audit");
-		expect(calls.some((c) => CLOSE.test(c))).toBe(false);
+		expect(requests.some((c) => CLOSE.test(c))).toBe(false);
 	});
 
 	it("reports a failed close as UNKNOWN with the by-hand recovery", async () => {
@@ -521,8 +540,8 @@ describe("runKill", () => {
 			[ISSUE, killed],
 			[LABELS, labelSet],
 			[REASON_COMMENT, comment],
-			[APPLY_LABEL, okOut("[]")],
-			[CLOSE, errOut("gh: timeout")],
+			[APPLY_LABEL, LABELLED],
+			[CLOSE, WRITE_FAILED],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("state_reason=not_planned");
@@ -535,18 +554,19 @@ describe("runKill", () => {
 			[firstCallOnly(ISSUE), issue()],
 			[
 				ISSUE,
-				okOut(
-					JSON.stringify({
-						...JSON.parse(issue().stdout),
+				{
+					status: 200,
+					body: JSON.stringify({
+						...JSON.parse(issue().body),
 						state: "closed",
 						state_reason: "completed",
 					}),
-				),
+				},
 			],
 			[LABELS, labelSet],
 			[REASON_COMMENT, comment],
-			[APPLY_LABEL, okOut("[]")],
-			[CLOSE, okOut("{}")],
+			[APPLY_LABEL, LABELLED],
+			[CLOSE, ACCEPTED],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 		expect(out.stderr.at(-1)).toContain("reads as done rather than killed");
@@ -555,11 +575,11 @@ describe("runKill", () => {
 	it("refuses when the read-back itself fails — the writes landed but the close is unproven", async () => {
 		const {out} = await runWith([
 			[firstCallOnly(ISSUE), issue()],
-			[ISSUE, errOut("gh: Bad gateway (HTTP 502)")],
+			[ISSUE, UNREADABLE],
 			[LABELS, labelSet],
 			[REASON_COMMENT, comment],
-			[APPLY_LABEL, okOut("[]")],
-			[CLOSE, okOut("{}")],
+			[APPLY_LABEL, LABELLED],
+			[CLOSE, ACCEPTED],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 		expect(out.stderr.at(-1)).toContain("the close is unverified");
@@ -583,9 +603,9 @@ describe("runKill — the target guard", () => {
 		CLAUDE_CODE_SESSION_ID: MINE,
 	} as Record<string, string | undefined>;
 
-	const guard = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
-		const {out, calls} = await runWith(script, {env: mine});
-		return {out, wrote: calls.some((line) => CLOSE.test(line) || REASON_COMMENT.test(line))};
+	const guard = async (script: ReadonlyArray<Scripted>) => {
+		const {out, requests} = await runWith(script, {env: mine});
+		return {out, wrote: requests.some((line) => CLOSE.test(line) || REASON_COMMENT.test(line))};
 	};
 
 	it("refuses a closed issue on 7 and writes nothing", async () => {

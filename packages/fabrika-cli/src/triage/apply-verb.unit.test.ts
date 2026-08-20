@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import {runApply} from "./apply-verb.ts";
 import {
 	COMMENTS,
@@ -23,12 +22,23 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
-const LABELS = /^gh api --paginate repos\/o\/r\/labels/;
-const MILESTONES = /^gh api --paginate repos\/o\/r\/milestones/;
-const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/4312 -F milestone=/;
-const REMOVE = /^gh api --method DELETE repos\/o\/r\/issues\/4312\/labels\//;
-const ADD = /^gh api --method POST repos\/o\/r\/issues\/4312\/labels /;
+const ISSUE = /GET .*\/repos\/o\/r\/issues\/4312$/;
+const LABELS = /GET .*\/repos\/o\/r\/labels\?/;
+const MILESTONES = /GET .*\/repos\/o\/r\/milestones\?/;
+const PATCH = /PATCH .*\/repos\/o\/r\/issues\/4312$/;
+const REMOVE = /DELETE .*\/repos\/o\/r\/issues\/4312\/labels\//;
+const ADD = /POST .*\/repos\/o\/r\/issues\/4312\/labels$/;
+
+const ACCEPTED: HttpReply = {status: 200, body: "{}"};
+const LABELLED: HttpReply = {status: 200, body: "[]"};
+const UNREADABLE: HttpReply = {status: 502, body: "{}"};
+const NOT_FOUND: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
+const WRITE_FAILED: HttpReply = {status: 500, body: "{}"};
+
+const labelSet = (...names: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(names.map((name) => ({name}))),
+});
 
 /** A body carrying the conforming block — what `--ready-for agent` requires (#6025). */
 const CRITERIA_BODY = "## Summary\n\ns\n\n### Acceptance criteria\n\n- [ ] the one criterion\n";
@@ -39,35 +49,39 @@ const issue = (
 	labels: ReadonlyArray<string>,
 	milestone: number | null,
 	body = CRITERIA_BODY,
-): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: 4312,
-			title: "t",
-			body,
-			state: "open",
-			labels: labels.map((name) => ({name})),
-			html_url: "https://example.test/issues/4312",
-			milestone: milestone === null ? null : {number: milestone},
-		}),
-	);
+): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: 4312,
+		title: "t",
+		body,
+		state: "open",
+		labels: labels.map((name) => ({name})),
+		html_url: "https://example.test/issues/4312",
+		milestone: milestone === null ? null : {number: milestone},
+	}),
+});
 
-const VOCABULARY = okOut(
-	[
-		"type:bug",
-		"type:chore",
-		"p1",
-		"p2",
-		"status:needs-triage",
-		"status:triaged",
-		"ready-for:agent",
-		"ready-for:human",
-		"wayfinder:backlog",
-		"axis:pipeline-hardening",
-	].join("\n"),
+const VOCABULARY = labelSet(
+	"type:bug",
+	"type:chore",
+	"p1",
+	"p2",
+	"status:needs-triage",
+	"status:triaged",
+	"ready-for:agent",
+	"ready-for:human",
+	"wayfinder:backlog",
+	"axis:pipeline-hardening",
 );
 
-const OPEN_MILESTONES = okOut("47\tfabrika campaign\n44\twayfinder");
+const OPEN_MILESTONES: HttpReply = {
+	status: 200,
+	body: JSON.stringify([
+		{number: 47, title: "fabrika campaign"},
+		{number: 44, title: "wayfinder"},
+	]),
+};
 
 const options = {
 	issue: 4312,
@@ -83,20 +97,17 @@ const options = {
 };
 
 /** Observed: needs-triage on `p1` and unhomed. Read back: the whole triaged shape. */
-const happy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+const happy = (): ReadonlyArray<Scripted> => [
 	[once(ISSUE), issue(["status:needs-triage", "p1"], null)],
 	[ISSUE, issue(["type:bug", "p2", "status:triaged", "ready-for:agent"], 47)],
 	[LABELS, VOCABULARY],
 	[MILESTONES, OPEN_MILESTONES],
-	[PATCH, okOut("{}")],
-	[REMOVE, okOut("[]")],
-	[ADD, okOut("[]")],
+	[PATCH, ACCEPTED],
+	[REMOVE, LABELLED],
+	[ADD, LABELLED],
 ];
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(
 		Effect.provide(runApply({...options, ...overrides}), triageContext(guardedShell(script))),
 	);
@@ -121,7 +132,7 @@ describe("runApply under a refused config", () => {
 		await Effect.runPromise(
 			Effect.provide(runApply(options), triageContext(shell, VIOLATING_CONFIG)),
 		);
-		expect(shell.calls).toEqual([]);
+		expect(shell.requests).toEqual([]);
 	});
 
 	it("still runs on a config that declares nothing about the facets", async () => {
@@ -151,7 +162,7 @@ describe("runApply under a refused config", () => {
 		);
 		expect(out.code).toBe(CONFIG_REFUSED);
 		expect(out.stderr.join(" ")).toContain(expected);
-		expect(shell.calls).toEqual([]);
+		expect(shell.requests).toEqual([]);
 	});
 });
 
@@ -185,20 +196,26 @@ describe("runApply", () => {
 	it("homes BEFORE it labels, so the homing guard never sees a triaged un-homed issue", async () => {
 		const shell = guardedShell(happy());
 		await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
-		const writes = shell.calls.filter((c) => PATCH.test(c) || REMOVE.test(c) || ADD.test(c));
-		expect(writes[0]).toBe("gh api --method PATCH repos/o/r/issues/4312 -F milestone=47");
-		expect(writes.at(-1)).toContain("--method POST");
+		const writes = shell.requests
+			.map((line, at) => ({line, body: shell.bodies[at] ?? ""}))
+			.filter(({line}) => PATCH.test(line) || REMOVE.test(line) || ADD.test(line));
+		expect(writes[0]?.line).toBe("PATCH https://api.github.com/repos/o/r/issues/4312");
+		expect(writes[0]?.body).toBe('{"milestone":47}');
+		expect(writes.at(-1)?.line).toContain("POST");
 	});
 
 	it("removes the superseded priority and never the applied one (#4285)", async () => {
 		const shell = guardedShell(happy());
 		await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
-		const removes = shell.calls.filter((c) => REMOVE.test(c));
+		const removes = shell.requests.filter((c) => REMOVE.test(c));
 		expect(removes).toEqual([
-			"gh api --method DELETE repos/o/r/issues/4312/labels/status%3Aneeds-triage",
-			"gh api --method DELETE repos/o/r/issues/4312/labels/p1",
+			"DELETE https://api.github.com/repos/o/r/issues/4312/labels/status%3Aneeds-triage",
+			"DELETE https://api.github.com/repos/o/r/issues/4312/labels/p1",
 		]);
-		expect(shell.calls.find((c) => ADD.test(c))).toContain("labels[]=p2");
+		const added: unknown = JSON.parse(
+			shell.bodies[shell.requests.findIndex((c) => ADD.test(c))] ?? "{}",
+		);
+		expect((added as {readonly labels: ReadonlyArray<string>}).labels).toContain("p2");
 	});
 
 	it("leaves a label no facet owns entirely alone", async () => {
@@ -207,12 +224,12 @@ describe("runApply", () => {
 			[ISSUE, issue(["area:pipeline", "type:bug", "p2", "status:triaged", "ready-for:agent"], 47)],
 			[LABELS, VOCABULARY],
 			[MILESTONES, OPEN_MILESTONES],
-			[REMOVE, okOut("[]")],
-			[ADD, okOut("[]")],
+			[REMOVE, LABELLED],
+			[ADD, LABELLED],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
 		expect(out.code).toBe(0);
-		expect(shell.calls.some((c) => c.includes("area%3Apipeline"))).toBe(false);
+		expect(shell.requests.some((c) => c.includes("area%3Apipeline"))).toBe(false);
 	});
 
 	it("clears the milestone under --lane, because a lane-exempt issue is not homed (ADR 0208)", async () => {
@@ -223,9 +240,9 @@ describe("runApply", () => {
 				issue(["type:bug", "p2", "status:triaged", "ready-for:agent", "wayfinder:backlog"], null),
 			],
 			[LABELS, VOCABULARY],
-			[PATCH, okOut("{}")],
-			[REMOVE, okOut("[]")],
-			[ADD, okOut("[]")],
+			[PATCH, ACCEPTED],
+			[REMOVE, LABELLED],
+			[ADD, LABELLED],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(
@@ -235,8 +252,8 @@ describe("runApply", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("triaged\t4312\tbug\tp2\tagent\twayfinder:backlog\n");
-		expect(shell.calls).toContain("gh api --method PATCH repos/o/r/issues/4312 -F milestone=null");
-		expect(shell.calls.some((c) => MILESTONES.test(c))).toBe(false);
+		expect(shell.bodies[shell.requests.findIndex((c) => PATCH.test(c))]).toBe('{"milestone":null}');
+		expect(shell.requests.some((c) => MILESTONES.test(c))).toBe(false);
 	});
 
 	it("refuses both --home and --lane", async () => {
@@ -268,7 +285,7 @@ describe("runApply", () => {
 		);
 		expect(out.code).toBe(OFF_VOCABULARY);
 		expect(out.stdout).toBe("");
-		expect(shell.calls).toEqual([]);
+		expect(shell.requests).toEqual([]);
 	});
 
 	/**
@@ -287,7 +304,7 @@ describe("runApply", () => {
 		expect(out.code).toBe(OFF_VOCABULARY);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("this repo declares no standing lane");
-		expect(shell.calls).toEqual([]);
+		expect(shell.requests).toEqual([]);
 	});
 
 	it("refuses a milestone that is not open, on the same code", async () => {
@@ -300,16 +317,16 @@ describe("runApply", () => {
 		const shell = guardedShell([
 			[once(ISSUE), issue(["status:needs-triage"], null)],
 			[ISSUE, issue([], null)],
-			[LABELS, okOut(["type:bug", "p2", "status:triaged"].join("\n"))],
+			[LABELS, labelSet("type:bug", "p2", "status:triaged")],
 			[MILESTONES, OPEN_MILESTONES],
-			[PATCH, okOut("{}")],
-			[REMOVE, okOut("[]")],
-			[ADD, okOut("[]")],
+			[PATCH, ACCEPTED],
+			[REMOVE, LABELLED],
+			[ADD, LABELLED],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain("label ready-for:agent does not exist");
-		expect(shell.calls.some((c) => ADD.test(c) || PATCH.test(c))).toBe(false);
+		expect(shell.requests.some((c) => ADD.test(c) || PATCH.test(c))).toBe(false);
 	});
 
 	it("checks only the labels THIS run writes, not the whole vocabulary", async () => {
@@ -317,33 +334,33 @@ describe("runApply", () => {
 		const out = await run([
 			[once(ISSUE), issue(["status:needs-triage", "p1"], null)],
 			[ISSUE, issue(["type:bug", "p2", "status:triaged", "ready-for:agent"], 47)],
-			[LABELS, okOut(["type:bug", "p1", "p2", "status:triaged", "ready-for:agent"].join("\n"))],
+			[LABELS, labelSet("type:bug", "p1", "p2", "status:triaged", "ready-for:agent")],
 			[MILESTONES, OPEN_MILESTONES],
-			[PATCH, okOut("{}")],
-			[REMOVE, okOut("[]")],
-			[ADD, okOut("[]")],
+			[PATCH, ACCEPTED],
+			[REMOVE, LABELLED],
+			[ADD, LABELLED],
 		]);
 		expect(out.code).toBe(0);
 	});
 
 	it("refuses an issue proven absent on 7", async () => {
-		const out = await run([[ISSUE, errOut("gh: Not Found (HTTP 404)")]]);
+		const out = await run([[ISSUE, NOT_FOUND]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe("triage apply: issue #4312 not found in o/r.");
 	});
 
 	it("separates an UNREADABLE issue from an absent one, and writes nothing", async () => {
-		const shell = guardedShell([[ISSUE, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const shell = guardedShell([[ISSUE, UNREADABLE]]);
 		const out = await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("nothing was written");
-		expect(shell.calls.some((c) => PATCH.test(c) || ADD.test(c))).toBe(false);
+		expect(shell.requests.some((c) => PATCH.test(c) || ADD.test(c))).toBe(false);
 	});
 
 	it("refuses an unreadable label set as UNKNOWN, never as an empty vocabulary", async () => {
 		const out = await run([
 			[ISSUE, issue(["status:needs-triage"], null)],
-			[LABELS, errOut("gh: Bad gateway (HTTP 502)")],
+			[LABELS, UNREADABLE],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("cannot read the label set");
@@ -353,7 +370,7 @@ describe("runApply", () => {
 		const out = await run([
 			[ISSUE, issue(["status:needs-triage"], null)],
 			[LABELS, VOCABULARY],
-			[MILESTONES, errOut("gh: Bad gateway (HTTP 502)")],
+			[MILESTONES, UNREADABLE],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("cannot read the milestone set");
@@ -365,9 +382,9 @@ describe("runApply", () => {
 			[ISSUE, issue([], null)],
 			[LABELS, VOCABULARY],
 			[MILESTONES, OPEN_MILESTONES],
-			[PATCH, okOut("{}")],
-			[REMOVE, okOut("[]")],
-			[ADD, errOut("gh: timeout")],
+			[PATCH, ACCEPTED],
+			[REMOVE, LABELLED],
+			[ADD, WRITE_FAILED],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -381,9 +398,9 @@ describe("runApply", () => {
 			[ISSUE, issue(["type:bug", "p2", "ready-for:agent"], 47)],
 			[LABELS, VOCABULARY],
 			[MILESTONES, OPEN_MILESTONES],
-			[PATCH, okOut("{}")],
-			[REMOVE, okOut("[]")],
-			[ADD, okOut("[]")],
+			[PATCH, ACCEPTED],
+			[REMOVE, LABELLED],
+			[ADD, LABELLED],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 		expect(out.stdout).toBe("");
@@ -397,9 +414,9 @@ describe("runApply", () => {
 			[ISSUE, issue(["type:bug", "p2", "status:triaged", "ready-for:agent"], null)],
 			[LABELS, VOCABULARY],
 			[MILESTONES, OPEN_MILESTONES],
-			[PATCH, okOut("{}")],
-			[REMOVE, okOut("[]")],
-			[ADD, okOut("[]")],
+			[PATCH, ACCEPTED],
+			[REMOVE, LABELLED],
+			[ADD, LABELLED],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 		expect(out.stderr.at(-1)).toContain("milestone=none");
@@ -408,12 +425,12 @@ describe("runApply", () => {
 	it("refuses when the read-back itself fails — a write that is not verified is not finished", async () => {
 		const out = await run([
 			[once(ISSUE), issue(["status:needs-triage"], null)],
-			[ISSUE, errOut("gh: Bad gateway (HTTP 502)")],
+			[ISSUE, UNREADABLE],
 			[LABELS, VOCABULARY],
 			[MILESTONES, OPEN_MILESTONES],
-			[PATCH, okOut("{}")],
-			[REMOVE, okOut("[]")],
-			[ADD, okOut("[]")],
+			[PATCH, ACCEPTED],
+			[REMOVE, LABELLED],
+			[ADD, LABELLED],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 		expect(out.stderr.at(-1)).toContain("read-back shows nothing");
@@ -429,9 +446,9 @@ describe("runApply", () => {
 				[ISSUE, issue(["status:needs-triage"], null, body)],
 				[LABELS, VOCABULARY],
 				[MILESTONES, OPEN_MILESTONES],
-				[PATCH, okOut("{}")],
-				[REMOVE, okOut("[]")],
-				[ADD, okOut("[]")],
+				[PATCH, ACCEPTED],
+				[REMOVE, LABELLED],
+				[ADD, LABELLED],
 			]);
 
 		it("refuses an absent block, points at enrich, and writes NO label", async () => {
@@ -441,7 +458,9 @@ describe("runApply", () => {
 			expect(out.stdout).toBe("");
 			expect(out.stderr.at(-1)).toContain("carries no acceptance-criteria block");
 			expect(out.stderr.at(-1)).toContain("triage enrich");
-			expect(shell.calls.some((c) => ADD.test(c) || REMOVE.test(c) || PATCH.test(c))).toBe(false);
+			expect(shell.requests.some((c) => ADD.test(c) || REMOVE.test(c) || PATCH.test(c))).toBe(
+				false,
+			);
 		});
 
 		it("refuses a malformed block on the same code, naming the drift and repair-criteria", async () => {
@@ -451,7 +470,7 @@ describe("runApply", () => {
 			expect(out.stderr.at(-1)).toContain("is malformed");
 			expect(out.stderr.at(-1)).toContain("heading level 2, expected 3");
 			expect(out.stderr.at(-1)).toContain("triage repair-criteria 4312");
-			expect(shell.calls.some((c) => ADD.test(c))).toBe(false);
+			expect(shell.requests.some((c) => ADD.test(c))).toBe(false);
 		});
 
 		/** An epic's criteria arrive per child from the plan ledger, never in its own body. */
@@ -460,11 +479,11 @@ describe("runApply", () => {
 				[
 					[once(ISSUE), issue(["status:needs-triage"], null, NO_CRITERIA_BODY)],
 					[ISSUE, issue(["type:epic", "p2", "status:triaged", "ready-for:agent"], 47)],
-					[LABELS, okOut(["type:epic", "p2", "status:triaged", "ready-for:agent"].join("\n"))],
+					[LABELS, labelSet("type:epic", "p2", "status:triaged", "ready-for:agent")],
 					[MILESTONES, OPEN_MILESTONES],
-					[PATCH, okOut("{}")],
-					[REMOVE, okOut("[]")],
-					[ADD, okOut("[]")],
+					[PATCH, ACCEPTED],
+					[REMOVE, LABELLED],
+					[ADD, LABELLED],
 				],
 				{type: "epic"},
 			);
@@ -479,9 +498,9 @@ describe("runApply", () => {
 					[ISSUE, issue(["type:bug", "p2", "status:triaged", "ready-for:human"], 47)],
 					[LABELS, VOCABULARY],
 					[MILESTONES, OPEN_MILESTONES],
-					[PATCH, okOut("{}")],
-					[REMOVE, okOut("[]")],
-					[ADD, okOut("[]")],
+					[PATCH, ACCEPTED],
+					[REMOVE, LABELLED],
+					[ADD, LABELLED],
 				],
 				{readyFor: "human"},
 			);
@@ -507,8 +526,9 @@ describe("runApply — the target guard", () => {
 		string,
 		string | undefined
 	>;
-	const closed = okOut(
-		JSON.stringify({
+	const closed: HttpReply = {
+		status: 200,
+		body: JSON.stringify({
 			number: 4312,
 			title: "t",
 			body: CRITERIA_BODY,
@@ -517,14 +537,14 @@ describe("runApply — the target guard", () => {
 			html_url: "https://example.test/issues/4312",
 			milestone: null,
 		}),
-	);
+	};
 
-	const guard = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
+	const guard = async (script: ReadonlyArray<Scripted>) => {
 		const shell = guardedShell(script);
 		const out = await Effect.runPromise(
 			Effect.provide(runApply({...options, env: mine}), triageContext(shell)),
 		);
-		return {out, wrote: shell.calls.some((line) => ADD.test(line) || PATCH.test(line))};
+		return {out, wrote: shell.requests.some((line) => ADD.test(line) || PATCH.test(line))};
 	};
 
 	it("refuses a closed issue on 7 and writes nothing", async () => {

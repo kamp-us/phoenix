@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
 	COMMENTS,
@@ -25,38 +24,54 @@ import {
 } from "./codes.ts";
 import {runPark} from "./park-verb.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/4290$/;
-const LABELS = /^gh api --paginate repos\/o\/r\/labels/;
-const COMMENT = /^gh api --method POST repos\/o\/r\/issues\/4290\/comments /;
-const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/4290 -F milestone=/;
-const REMOVE = /^gh api --method DELETE repos\/o\/r\/issues\/4290\/labels\//;
-const ADD = /^gh api --method POST repos\/o\/r\/issues\/4290\/labels /;
+const ISSUE = /GET .*\/repos\/o\/r\/issues\/4290$/;
+const LABELS = /GET .*\/repos\/o\/r\/labels\?/;
+const COMMENT = /POST .*\/repos\/o\/r\/issues\/4290\/comments$/;
+const PATCH = /PATCH .*\/repos\/o\/r\/issues\/4290$/;
+const REMOVE = /DELETE .*\/repos\/o\/r\/issues\/4290\/labels\//;
+const ADD = /POST .*\/repos\/o\/r\/issues\/4290\/labels$/;
+
+const UNREADABLE: HttpReply = {status: 502, body: "{}"};
+const NOT_FOUND: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
+const WRITE_FAILED: HttpReply = {status: 500, body: "{}"};
+const ACCEPTED: HttpReply = {status: 200, body: "{}"};
+const LABELLED: HttpReply = {status: 200, body: "[]"};
+
+const labelSet = (...names: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(names.map((name) => ({name}))),
+});
 
 const QUESTIONS = "Which of the two sozluk surfaces does this cover?";
 
-const issue = (labels: ReadonlyArray<string>, milestone: number | null): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: 4290,
-			title: "t",
-			body: "b",
-			state: "open",
-			labels: labels.map((name) => ({name})),
-			html_url: "https://example.test/issues/4290",
-			milestone: milestone === null ? null : {number: milestone},
-		}),
-	);
+const issue = (labels: ReadonlyArray<string>, milestone: number | null): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: 4290,
+		title: "t",
+		body: "b",
+		state: "open",
+		labels: labels.map((name) => ({name})),
+		html_url: "https://example.test/issues/4290",
+		milestone: milestone === null ? null : {number: milestone},
+	}),
+});
 
-const VOCABULARY = okOut(
-	["type:bug", "p1", "status:needs-triage", "status:needs-info", "ready-for:agent"].join("\n"),
+const VOCABULARY = labelSet(
+	"type:bug",
+	"p1",
+	"status:needs-triage",
+	"status:needs-info",
+	"ready-for:agent",
 );
 
-const POSTED = okOut(
-	JSON.stringify({
+const POSTED: HttpReply = {
+	status: 201,
+	body: JSON.stringify({
 		id: 5170421888,
 		html_url: "https://example.test/issues/4290#issuecomment-5170421888",
 	}),
-);
+};
 
 const options = {
 	issue: 4290,
@@ -68,20 +83,17 @@ const options = {
 };
 
 /** Observed: a fully priced issue. Read back: nothing but the parked status. */
-const happy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+const happy = (): ReadonlyArray<Scripted> => [
 	[once(ISSUE), issue(["type:bug", "p1", "status:triaged", "ready-for:agent"], 47)],
 	[ISSUE, issue(["status:needs-info"], null)],
 	[LABELS, VOCABULARY],
 	[COMMENT, POSTED],
-	[PATCH, okOut("{}")],
-	[REMOVE, okOut("[]")],
-	[ADD, okOut("[]")],
+	[PATCH, ACCEPTED],
+	[REMOVE, LABELLED],
+	[ADD, LABELLED],
 ];
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(
 		Effect.provide(runPark({...options, ...overrides}), triageContext(guardedShell(script))),
 	);
@@ -108,7 +120,7 @@ describe("runPark under a refused config", () => {
 		await Effect.runPromise(
 			Effect.provide(runPark(options), triageContext(shell, VIOLATING_CONFIG)),
 		);
-		expect(shell.calls).toEqual([]);
+		expect(shell.requests).toEqual([]);
 	});
 
 	/** The same three non-decoding arms `apply` refuses — one guard, so one set of cases. */
@@ -123,7 +135,7 @@ describe("runPark under a refused config", () => {
 		);
 		expect(out.code).toBe(CONFIG_REFUSED);
 		expect(out.stderr.join(" ")).toContain(expected);
-		expect(shell.calls).toEqual([]);
+		expect(shell.requests).toEqual([]);
 	});
 });
 
@@ -154,24 +166,29 @@ describe("runPark", () => {
 	it("posts the questions BEFORE it touches a label", async () => {
 		const shell = guardedShell(happy());
 		await Effect.runPromise(Effect.provide(runPark(options), triageContext(shell)));
-		const writes = shell.calls.filter(
-			(c) => COMMENT.test(c) || PATCH.test(c) || REMOVE.test(c) || ADD.test(c),
-		);
-		expect(writes[0]).toContain("/comments");
-		expect(writes[0]).toContain(`body=${QUESTIONS}`);
+		const writes = shell.requests
+			.map((line, at) => ({line, body: shell.bodies[at] ?? ""}))
+			.filter(
+				({line}) => COMMENT.test(line) || PATCH.test(line) || REMOVE.test(line) || ADD.test(line),
+			);
+		expect(writes[0]?.line).toContain("/comments");
+		expect(writes[0]?.body).toContain(`"body":${JSON.stringify(QUESTIONS)}`);
 	});
 
 	it("clears every priced facet, milestone included", async () => {
 		const shell = guardedShell(happy());
 		await Effect.runPromise(Effect.provide(runPark(options), triageContext(shell)));
-		expect(shell.calls).toContain("gh api --method PATCH repos/o/r/issues/4290 -F milestone=null");
-		expect(shell.calls.filter((c) => REMOVE.test(c))).toEqual([
-			"gh api --method DELETE repos/o/r/issues/4290/labels/type%3Abug",
-			"gh api --method DELETE repos/o/r/issues/4290/labels/p1",
-			"gh api --method DELETE repos/o/r/issues/4290/labels/status%3Atriaged",
-			"gh api --method DELETE repos/o/r/issues/4290/labels/ready-for%3Aagent",
+		const patchedAt = shell.requests.findIndex((c) => PATCH.test(c));
+		expect(patchedAt).toBeGreaterThanOrEqual(0);
+		expect(shell.bodies[patchedAt]).toBe('{"milestone":null}');
+		expect(shell.requests.filter((c) => REMOVE.test(c))).toEqual([
+			"DELETE https://api.github.com/repos/o/r/issues/4290/labels/type%3Abug",
+			"DELETE https://api.github.com/repos/o/r/issues/4290/labels/p1",
+			"DELETE https://api.github.com/repos/o/r/issues/4290/labels/status%3Atriaged",
+			"DELETE https://api.github.com/repos/o/r/issues/4290/labels/ready-for%3Aagent",
 		]);
-		expect(shell.calls.find((c) => ADD.test(c))).toContain("labels[]=status:needs-info");
+		const addedAt = shell.requests.findIndex((c) => ADD.test(c));
+		expect(shell.bodies[addedAt]).toContain('"labels":["status:needs-info"]');
 	});
 
 	it("leaves a label no facet owns alone across a park", async () => {
@@ -180,12 +197,12 @@ describe("runPark", () => {
 			[ISSUE, issue(["area:pipeline", "status:needs-info"], null)],
 			[LABELS, VOCABULARY],
 			[COMMENT, POSTED],
-			[REMOVE, okOut("[]")],
-			[ADD, okOut("[]")],
+			[REMOVE, LABELLED],
+			[ADD, LABELLED],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runPark(options), triageContext(shell)));
 		expect(out.code).toBe(0);
-		expect(shell.calls.some((c) => c.includes("area%3Apipeline"))).toBe(false);
+		expect(shell.requests.some((c) => c.includes("area%3Apipeline"))).toBe(false);
 	});
 
 	it("refuses a FAILED stdin read on 1, never on the empty code", async () => {
@@ -272,38 +289,38 @@ describe("runPark", () => {
 				triageContext(shell),
 			),
 		);
-		expect(shell.calls).toEqual([]);
+		expect(shell.requests).toEqual([]);
 	});
 
 	it("refuses an issue proven absent on 7", async () => {
-		const out = await run([[ISSUE, errOut("gh: Not Found (HTTP 404)")]]);
+		const out = await run([[ISSUE, NOT_FOUND]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe("triage park: issue #4290 not found in o/r.");
 	});
 
 	it("separates an UNREADABLE issue from an absent one, and posts nothing", async () => {
-		const shell = guardedShell([[ISSUE, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const shell = guardedShell([[ISSUE, UNREADABLE]]);
 		const out = await Effect.runPromise(Effect.provide(runPark(options), triageContext(shell)));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(shell.calls.some((c) => COMMENT.test(c))).toBe(false);
+		expect(shell.requests.some((c) => COMMENT.test(c))).toBe(false);
 	});
 
 	it("refuses to write status:needs-info when the repo does not define it (#4285)", async () => {
 		const shell = guardedShell([
 			[ISSUE, issue(["status:needs-triage"], null)],
-			[LABELS, okOut(["type:bug", "status:needs-triage"].join("\n"))],
+			[LABELS, labelSet("type:bug", "status:needs-triage")],
 			[COMMENT, POSTED],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runPark(options), triageContext(shell)));
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain("label status:needs-info does not exist");
-		expect(shell.calls.some((c) => COMMENT.test(c))).toBe(false);
+		expect(shell.requests.some((c) => COMMENT.test(c))).toBe(false);
 	});
 
 	it("refuses an unreadable label set as UNKNOWN, never as an empty vocabulary", async () => {
 		const out = await run([
 			[ISSUE, issue(["status:needs-triage"], null)],
-			[LABELS, errOut("gh: Bad gateway (HTTP 502)")],
+			[LABELS, UNREADABLE],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("cannot read the label set");
@@ -313,13 +330,13 @@ describe("runPark", () => {
 		const shell = guardedShell([
 			[ISSUE, issue(["status:needs-triage"], null)],
 			[LABELS, VOCABULARY],
-			[COMMENT, errOut("gh: timeout")],
+			[COMMENT, WRITE_FAILED],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runPark(options), triageContext(shell)));
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("nothing was labelled");
-		expect(shell.calls.some((c) => REMOVE.test(c) || ADD.test(c))).toBe(false);
+		expect(shell.requests.some((c) => REMOVE.test(c) || ADD.test(c))).toBe(false);
 	});
 
 	it("distinguishes a failed label swap — the questions landed, the labels may be partial", async () => {
@@ -328,8 +345,8 @@ describe("runPark", () => {
 			[ISSUE, issue([], null)],
 			[LABELS, VOCABULARY],
 			[COMMENT, POSTED],
-			[REMOVE, errOut("gh: timeout")],
-			[ADD, okOut("[]")],
+			[REMOVE, WRITE_FAILED],
+			[ADD, LABELLED],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("the questions landed but the label swap failed");
@@ -341,8 +358,8 @@ describe("runPark", () => {
 			[ISSUE, issue(["status:needs-info", "p1"], null)],
 			[LABELS, VOCABULARY],
 			[COMMENT, POSTED],
-			[REMOVE, okOut("[]")],
-			[ADD, okOut("[]")],
+			[REMOVE, LABELLED],
+			[ADD, LABELLED],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 		expect(out.stdout).toBe("");
@@ -355,8 +372,8 @@ describe("runPark", () => {
 			[ISSUE, issue(["status:needs-info", "status:triaged"], null)],
 			[LABELS, VOCABULARY],
 			[COMMENT, POSTED],
-			[REMOVE, okOut("[]")],
-			[ADD, okOut("[]")],
+			[REMOVE, LABELLED],
+			[ADD, LABELLED],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 	});
@@ -367,9 +384,9 @@ describe("runPark", () => {
 			[ISSUE, issue(["status:needs-info"], 47)],
 			[LABELS, VOCABULARY],
 			[COMMENT, POSTED],
-			[PATCH, okOut("{}")],
-			[REMOVE, okOut("[]")],
-			[ADD, okOut("[]")],
+			[PATCH, ACCEPTED],
+			[REMOVE, LABELLED],
+			[ADD, LABELLED],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 		expect(out.stderr.at(-1)).toContain("milestone=47");
@@ -378,11 +395,11 @@ describe("runPark", () => {
 	it("refuses when the read-back itself fails", async () => {
 		const out = await run([
 			[once(ISSUE), issue(["status:triaged"], null)],
-			[ISSUE, errOut("gh: Bad gateway (HTTP 502)")],
+			[ISSUE, UNREADABLE],
 			[LABELS, VOCABULARY],
 			[COMMENT, POSTED],
-			[REMOVE, okOut("[]")],
-			[ADD, okOut("[]")],
+			[REMOVE, LABELLED],
+			[ADD, LABELLED],
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 		expect(out.stderr.at(-1)).toContain("read-back shows nothing");
@@ -410,8 +427,9 @@ describe("runPark — the target guard", () => {
 		string,
 		string | undefined
 	>;
-	const closed = okOut(
-		JSON.stringify({
+	const closed: HttpReply = {
+		status: 200,
+		body: JSON.stringify({
 			number: 4290,
 			title: "t",
 			body: "b",
@@ -420,14 +438,14 @@ describe("runPark — the target guard", () => {
 			html_url: "https://example.test/issues/4290",
 			milestone: null,
 		}),
-	);
+	};
 
-	const guard = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
+	const guard = async (script: ReadonlyArray<Scripted>) => {
 		const shell = guardedShell(script);
 		const out = await Effect.runPromise(
 			Effect.provide(runPark({...options, env: mine}), triageContext(shell)),
 		);
-		return {out, wrote: shell.calls.some((line) => COMMENT.test(line) || ADD.test(line))};
+		return {out, wrote: shell.requests.some((line) => COMMENT.test(line) || ADD.test(line))};
 	};
 
 	it("refuses a closed issue on 7 and writes nothing", async () => {

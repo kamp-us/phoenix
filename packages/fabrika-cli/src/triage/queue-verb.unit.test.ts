@@ -1,12 +1,12 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {ANSWER, FAILED} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {ageDays, runQueue, toRows} from "./queue-verb.ts";
 
-const LABELS = /repos\/o\/r\/labels/;
-const QUEUE = /repos\/o\/r\/issues\?state=open/;
+const LABELS = /GET .*\/repos\/o\/r\/labels\?/;
+const QUEUE = /GET .*\/repos\/o\/r\/issues\?state=open/;
 
 const NOW = new Date("2026-08-03T00:00:00Z");
 
@@ -19,15 +19,28 @@ const options = {
 	now: () => NOW,
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]>,
-	overrides: Partial<typeof options> = {},
-) =>
-	Effect.runPromise(Effect.provide(runQueue({...options, ...overrides}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runQueue({...options, ...overrides}), fakeSeams(script).layer));
 
-const labelsOk = [LABELS, okOut("status:needs-triage\ntype:bug\np0")] as const;
+const labels = (...names: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(names.map((name) => ({name}))),
+});
 
-const row = (n: number, createdAt: string, title: string) => `${n}\t${createdAt}\t${title}`;
+const labelsOk = [LABELS, labels("status:needs-triage", "type:bug", "p0")] as const;
+
+const row = (n: number, createdAt: string, title: string) => ({
+	number: n,
+	created_at: createdAt,
+	title,
+});
+
+const queued = (...rows: ReadonlyArray<unknown>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(rows),
+});
+
+const BAD_GATEWAY: HttpReply = {status: 502, body: "{}"};
 
 describe("ageDays", () => {
 	it("floors to whole days", () => {
@@ -74,14 +87,14 @@ describe("runQueue", () => {
 	it("prints `queued` then one `<number>\\t<age-days>\\t<title>` line per issue", async () => {
 		const out = await run([
 			labelsOk,
-			[QUEUE, okOut(row(4312, "2026-08-01T00:00:00Z", "Abort reason lost"))],
+			[QUEUE, queued(row(4312, "2026-08-01T00:00:00Z", "Abort reason lost"))],
 		]);
 		expect(out.code).toBe(ANSWER);
 		expect(out.stdout).toBe("queued\n4312\t2\tAbort reason lost\n");
 	});
 
 	it("prints the STATE WORD `empty` — never empty stdout, which a sweep cannot read", async () => {
-		const out = await run([labelsOk, [QUEUE, okOut("")]]);
+		const out = await run([labelsOk, [QUEUE, queued()]]);
 		expect(out.code).toBe(ANSWER);
 		expect(out.stdout).toBe("empty\n");
 	});
@@ -89,69 +102,62 @@ describe("runQueue", () => {
 	it("reports the scanned count on stderr", async () => {
 		const out = await run([
 			labelsOk,
-			[
-				QUEUE,
-				okOut(
-					[row(1, "2026-08-01T00:00:00Z", "a"), row(2, "2026-08-01T00:00:00Z", "b")].join("\n"),
-				),
-			],
+			[QUEUE, queued(row(1, "2026-08-01T00:00:00Z", "a"), row(2, "2026-08-01T00:00:00Z", "b"))],
 		]);
 		expect(out.stderr.join("\n")).toContain("scanned 2 open status:needs-triage issues in o/r");
 	});
 
 	it("says on stderr when --limit truncated the list", async () => {
-		const rows = Array.from({length: 4}, (_, i) => row(i + 1, "2026-08-01T00:00:00Z", "t")).join(
-			"\n",
-		);
-		const out = await run([labelsOk, [QUEUE, okOut(rows)]], {limit: 2});
+		const rows = Array.from({length: 4}, (_, i) => row(i + 1, "2026-08-01T00:00:00Z", "t"));
+		const out = await run([labelsOk, [QUEUE, queued(...rows)]], {limit: 2});
 		expect(out.stdout.trimEnd().split("\n")).toHaveLength(3);
 		expect(out.stderr.join("\n")).toContain("TRUNCATED");
 	});
 
 	it("REFUSES a --label that does not exist rather than reporting the queue drained", async () => {
-		const out = await run([[LABELS, okOut("type:bug\np0")]]);
+		const out = await run([[LABELS, labels("type:bug", "p0")]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
 	});
 
 	it("never reads the queue once the label is proven absent", async () => {
-		const shell = fakeShell([[LABELS, okOut("type:bug")]]);
-		await Effect.runPromise(Effect.provide(runQueue(options), shell.layer));
-		expect(shell.calls.some((c) => QUEUE.test(c))).toBe(false);
+		const seams = fakeSeams([[LABELS, labels("type:bug")]]);
+		await Effect.runPromise(Effect.provide(runQueue(options), seams.layer));
+		expect(seams.requests.some((c) => QUEUE.test(c))).toBe(false);
 	});
 
 	it("refuses an UNREADABLE label set as UNKNOWN — never as `the label is missing`", async () => {
-		const out = await run([[LABELS, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const out = await run([[LABELS, BAD_GATEWAY]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 	});
 
 	it("refuses an unreadable queue as UNKNOWN — never `empty`, which terminates a sweep", async () => {
-		const out = await run([labelsOk, [QUEUE, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const out = await run([labelsOk, [QUEUE, BAD_GATEWAY]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain('never "empty"');
 	});
 
 	it("prints NO scanned count beside a failed read — a count is a measurement", async () => {
-		const out = await run([labelsOk, [QUEUE, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const out = await run([labelsOk, [QUEUE, BAD_GATEWAY]]);
 		expect(out.stderr.join("\n")).not.toContain("scanned");
 	});
 
-	it("refuses a `gh` that exited 0 with bytes that are not queue rows", async () => {
-		const out = await run([labelsOk, [QUEUE, okOut("not a row")]]);
+	it("refuses a GitHub 200 carrying bytes that are not queue rows", async () => {
+		const out = await run([labelsOk, [QUEUE, queued("not a row")]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 	});
 
 	it("pages the queue read — an unpaginated read truncates at GitHub's default page", async () => {
-		const shell = fakeShell([labelsOk, [QUEUE, okOut("")]]);
-		await Effect.runPromise(Effect.provide(runQueue(options), shell.layer));
-		expect(shell.calls.find((c) => QUEUE.test(c))).toContain("--paginate");
+		const seams = fakeSeams([labelsOk, [QUEUE, queued()]]);
+		await Effect.runPromise(Effect.provide(runQueue(options), seams.layer));
+		expect(seams.requests.find((c) => QUEUE.test(c))).toContain("per_page=100");
 	});
 
 	it("puts the --json payload on stdout, carrying the outcome word and the scanned count", async () => {
-		const out = await run([labelsOk, [QUEUE, okOut(row(4312, "2026-08-01T00:00:00Z", "t"))]], {
+		const out = await run([labelsOk, [QUEUE, queued(row(4312, "2026-08-01T00:00:00Z", "t"))]], {
 			json: true,
 		});
 		expect(JSON.parse(out.stdout)).toEqual({
@@ -163,7 +169,7 @@ describe("runQueue", () => {
 	});
 
 	it("carries the `empty` outcome word into the --json payload too", async () => {
-		const out = await run([labelsOk, [QUEUE, okOut("")]], {json: true});
+		const out = await run([labelsOk, [QUEUE, queued()]], {json: true});
 		expect(JSON.parse(out.stdout).outcome).toBe("empty");
 	});
 
