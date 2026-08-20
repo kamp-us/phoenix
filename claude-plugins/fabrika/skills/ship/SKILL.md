@@ -9,8 +9,10 @@ argument-hint: "[pr-number] — the verified pull request to merge"
 
 You are the merge authority: one PR in, one terminal token out. The checkout you stand in is not
 this PR — **read-only, no local git, ever**. Where a merge queue governs the base, success is
-**enqueued + green** — the queue owns the async merge, so "QUEUED" is your victory condition and
-"merged" is something you *confirm*, never assert. Where no queue governs it, you land the PR
+**enqueued + green** — the queue owns the async merge, so "QUEUED" is where your run ends and
+"merged" is something you *confirm*, never assert. It is the end of *your* run and not of the lane:
+a PR still in the queue is a wait the driver re-reads on a later pass, never a park and never a
+landing (ADR [0313](../../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)). Where no queue governs it, you land the PR
 yourself with `ship merge` and success is the **proven** landing. Which of the two you are on is a
 fact `ship scope` prints; it is never a guess.
 
@@ -208,7 +210,9 @@ mergeability is unknown, so stop and say so; nothing was armed. `reconcile`'s te
 the run's terminals: `landed` → step 8. `ejected` → `disarm --site ejected`, note, route to
 repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue on old verdicts.
 `unresolved` → report it in those words with the horizon; still-queued at the horizon is
-neither a landing nor a failure, and **"auto-merges on green" is not a thing you say**. `parked` →
+neither a landing nor a failure, and **"auto-merges on green" is not a thing you say**. Your horizon
+is fixed: you never poll past it, and a lane that needs longer gets it from the driver's re-reads at
+`ship:queued`, not from a wider watch in here. `parked` →
 the enqueue never took effect: run `fabrika ship disarm $pr_number --site post-enqueue` (reconcile is a
 read and disarms nothing), note, and stop. The `mergeable_state` assertion and each terminal's proof
 are the verbs' sections
@@ -236,12 +240,15 @@ close→reopen nudge, one label (`status:awaiting-release`), and one append to t
 ledger through `lane report` at the `--root` your brief carries, a path outside this checkout. No
 push, no local git mutation, no
 implementation, no review verdict, no flag flip. Every run ends as exactly one of:
-**already-merged (idempotent success)** · **QUEUED — enqueued, awaiting the queue** (success
-without a merge observed, the queue route's victory) · **landed** (the direct route's, and
+**already-merged (idempotent success)** · **QUEUED — enqueued, awaiting the queue** and
+**UNRESOLVED at horizon — still queued, still clean** (the two queue waits: your run ends, the lane
+does not. Neither is a landing — no merge was observed — and neither is a park: both record `WIP`,
+which folds the lane to `ship:queued` for the driver to re-read, ADR 0313) ·
+**landed** (the direct route's, and
 `reconcile`'s — either way it is a landing you *read back*, never one you infer) ·
 **refused — <reason>** (a successful decline: disarmed,
 noted, nothing mutated beyond the note) · **awaiting control-plane approval** · **routed to
-repair** · **routed to heal-ci** · **routed to review** · **UNRESOLVED at horizon** ·
+repair** · **routed to heal-ci** · **routed to review** ·
 **EJECTED — routed to repair** ·
 **UNKNOWN — a read failed** (never rendered as any of the above). The three routings are three
 terminals, not one: repair is work this lane retries, heal-ci and review are waits it cannot, and

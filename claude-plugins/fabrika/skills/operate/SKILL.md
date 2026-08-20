@@ -168,6 +168,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | --- | --- |
 | `queued` | record `WIP` — the task enters build |
 | `build` / `review` / `ship` | dispatch through `lane brief` — below |
+| `ship:queued` | the PR is in the merge queue and nothing is wrong — re-read the queue yourself, below. Never a park, and never a shell |
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
 | a task's own final — `landed`, `shipped` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final |
@@ -322,6 +323,35 @@ gh pr ready <pr>
 ```
 
 That is the last thing you do to the branch: the merge itself is the shipper's, once.
+
+## `ship:queued` — re-read the queue, relay the answer
+
+A PR sitting in the merge queue with every guard clear is a **wait**, not a block: the queue lands it
+on its own clock, and #6178 took ~1.7x the shipper's ~480s horizon to do it. So the shipper's horizon
+stays exactly where it is and the waiting happens out here, one re-read per driver pass, in
+`ship:queued` (ADR [0313](../../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)).
+
+You spawn nothing. One read answers the whole cell — `--polls 1` makes it a single look rather than
+another watch, so this costs a driver pass, not a horizon:
+
+```bash
+node <fabrika> ship reconcile <pr> --polls 1
+```
+
+Relay its answer, never your own reading of the PR:
+
+| `reconcile` says | Record |
+| --- | --- |
+| `landed` | `--token LANDED --pr <pr-url>` — the machine folds the lane to `shipped` |
+| `unresolved` | `--token UNRESOLVED` — still queued; the cell re-enters itself, and after its bounded re-folds escalates to `human:cp-approval` on its own |
+| `ejected` | `--token EJECTED` — the PR left the queue un-merged, which is repair work: the machine spends a retry back into `build` |
+| `parked` | `--token UNKNOWN` — the timeline shows a PR neither queued, ejected nor merged, and an unread queue state is UNKNOWN, never a wait to keep sitting in |
+
+The escalation bound is the machine's, not yours: **you never count re-folds and never decide the
+wait is over**. Record what the read said and re-fold; the cell escalates when its own budget is
+spent, and that budget is separate from the lane's build/review retries, so a long dwell cannot cost
+a later repair round. A non-zero exit from `reconcile` is UNKNOWN — end `STOPPED` naming the code,
+record nothing.
 
 **A chore state routes to a verb, not to a shell**, and the routing is a verb's answer too:
 

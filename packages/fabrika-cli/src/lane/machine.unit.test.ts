@@ -1,4 +1,5 @@
 import {describe, expect, it} from "vitest";
+import {WAIT_BUDGET} from "../wait-budget.ts";
 import {
 	choreWorkflow,
 	coderWorkflow,
@@ -62,6 +63,8 @@ describe("the compiler — structural recognition", () => {
 			retries: 0,
 			maxRetries: 2,
 			cleared: [],
+			waits: 0,
+			maxWaits: WAIT_BUDGET,
 		});
 		expect([...defined(lane.tasks.issue).finals].sort()).toEqual(["frozen", "shipped"]);
 		expect([...defined(lane.tasks.issue).errorFinals]).toEqual(["frozen"]);
@@ -111,10 +114,19 @@ describe("the compiler — structural recognition", () => {
 		]);
 		expect(defined(summary.tasks.issue).states.ship).toEqual([
 			"DONE",
+			"WIP",
 			"BLOCKED",
 			"FAIL",
 			CLEARED_EVENT,
 		]);
+		expect(defined(summary.tasks.issue).states["ship:queued"]).toEqual([
+			"DONE",
+			"BLOCKED",
+			"WIP",
+			"FAIL",
+			CLEARED_EVENT,
+		]);
+		expect(defined(summary.tasks.issue).states.shipped).toEqual([CLEARED_EVENT]);
 		// `frozen` is a final that carries a door: a park the lane trips on, not an end (ADR 0297).
 		expect(defined(summary.tasks.issue).states.frozen).toEqual(["UNBLOCKED", CLEARED_EVENT]);
 		expect(summary.trigger).toBeUndefined();
@@ -150,6 +162,8 @@ describe("the compiler — structural recognition", () => {
 			retries: 0,
 			maxRetries: 2,
 			cleared: [],
+			waits: 0,
+			maxWaits: WAIT_BUDGET,
 		});
 		expect([...defined(lane.tasks.park_sweep).errorFinals]).toEqual(["frozen"]);
 		expect([...defined(lane.tasks.park_sweep).openFinals]).toEqual(["frozen"]);
@@ -242,5 +256,84 @@ describe("the compiler — refusals", () => {
 	it("refuses a document that is not machine-shaped at all", () => {
 		expect(defectsOf(null)).toContain("machine.states");
 		expect(defectsOf({})).toContain("machine.states");
+	});
+});
+
+describe("`ship:queued` — a proven-clean enqueue is a wait, not a park (ADR 0313)", () => {
+	const toShip = ["WIP", "DONE", "PASS"] as const;
+	const reached = ["build", "review", "ship"] as const;
+
+	/** Drive the same events as {@link leaves}, but answer with the task's folded budgets. */
+	const budgets = (lane: CompiledLane, task: string, events: ReadonlyArray<string>) => {
+		const log: LogEntry[] = [];
+		const statesOf = () => {
+			const fold = foldLog(lane, log);
+			if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
+			return fold.states;
+		};
+		for (const event of events) {
+			const applied = applyEvent(lane, statesOf(), task, event, "2026-08-20T00:00:00.000Z");
+			if (applied._tag !== "Applied") throw new Error(`${task} ${event}: ${applied.reason}`);
+			log.push(applied.entry);
+		}
+		return defined(statesOf()[task]);
+	};
+
+	it("takes a still-queued shipper out of `ship` into the wait cell", () => {
+		expect(leaves(compiled(coderWorkflow()), "issue", [...toShip, "WIP"])).toEqual([
+			...reached,
+			"ship:queued",
+		]);
+	});
+
+	it("absorbs the late landing lane 6462 could not record — WIP then DONE folds to `shipped`", () => {
+		expect(leaves(compiled(coderWorkflow()), "issue", [...toShip, "WIP", "DONE"])).toEqual([
+			...reached,
+			"ship:queued",
+			"shipped",
+		]);
+	});
+
+	it("re-enters itself for WAIT_BUDGET re-folds, then escalates to the human park", () => {
+		const waiting = Array.from({length: WAIT_BUDGET + 2}, () => "WIP");
+
+		expect(leaves(compiled(coderWorkflow()), "issue", [...toShip, ...waiting])).toEqual([
+			...reached,
+			...Array.from({length: WAIT_BUDGET + 1}, () => "ship:queued"),
+			"human:cp-approval",
+		]);
+	});
+
+	it("spends `waits`, leaving the repair budget a later FAIL draws on untouched", () => {
+		const waiting = Array.from({length: WAIT_BUDGET + 1}, () => "WIP");
+
+		expect(budgets(compiled(coderWorkflow()), "issue", [...toShip, ...waiting])).toMatchObject({
+			type: "ship:queued",
+			waits: WAIT_BUDGET,
+			retries: 0,
+		});
+	});
+
+	it("routes an ejection out of the wait cell to repair with a full retry budget", () => {
+		const lane = compiled(coderWorkflow());
+		const ejected = [...toShip, "WIP", "FAIL"];
+
+		expect(leaves(lane, "issue", ejected)).toEqual([...reached, "ship:queued", "build"]);
+		expect(budgets(lane, "issue", ejected)).toMatchObject({retries: 1, waits: 0});
+	});
+
+	it("still parks a genuine block out of `ship` on `human:cp-approval` (#5820 untouched)", () => {
+		expect(leaves(compiled(coderWorkflow()), "issue", [...toShip, "BLOCKED"])).toEqual([
+			...reached,
+			"human:cp-approval",
+		]);
+	});
+
+	it("gives an already-parked lane over a merged PR a route out", () => {
+		expect(leaves(compiled(coderWorkflow()), "issue", [...toShip, "BLOCKED", "DONE"])).toEqual([
+			...reached,
+			"human:cp-approval",
+			"shipped",
+		]);
 	});
 });
