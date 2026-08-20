@@ -17,12 +17,19 @@ import {governedRootsOr} from "../config/paths.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {
 	commitExists,
+	getPullDiff,
 	getPullRequest,
 	listPullFiles,
 	type PullRecord,
 	permissionFor,
 } from "../io/pulls.ts";
-import {partitionWithUi, shipNamespacesOf, touchesGovernanceRoot} from "../review/classes.ts";
+import {
+	isUiSurface,
+	partitionWithUi,
+	shipNamespacesOf,
+	touchesGovernanceRoot,
+} from "../review/classes.ts";
+import {changedLines} from "../review/diff.ts";
 import {isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {inForce} from "../ship/gate-verb.ts";
 import {
@@ -295,7 +302,17 @@ export const diagnoseOne = (
 			return refused(PRECONDITION_UNKNOWN, unreadable("the base comparison", pr, drift.reason));
 		}
 
-		const required = shipNamespacesOf(partitionWithUi(filed.value, governedRoots));
+		// Read only when a UI path is present — see `../ship/scope-verb.ts` for why.
+		let changed: ReturnType<typeof changedLines> = [];
+		if (filed.value.some(isUiSurface)) {
+			const diffed = yield* getPullDiff(repo, pr);
+			if (diffed._tag === "Failure") {
+				return refused(PRECONDITION_UNKNOWN, unreadable("the diff", pr, diffed.reason));
+			}
+			changed = changedLines(diffed.value);
+		}
+
+		const required = shipNamespacesOf(partitionWithUi(filed.value, governedRoots, changed));
 		const authorized = new Map<string, boolean>();
 		const candidates: Array<{
 			readonly namespace: string;

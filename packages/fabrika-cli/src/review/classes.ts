@@ -9,6 +9,7 @@
 
 import {SHIPPED_GOVERNED_ROOTS} from "../config/keys/governed-roots.ts";
 import {SHIPPED_DECISIONS_DIR} from "../config/keys/paths.ts";
+import type {DiffLine} from "./diff.ts";
 
 export {SHIPPED_GOVERNED_ROOTS};
 
@@ -98,9 +99,71 @@ export const namespacesOf = (result: Partition): ReadonlyArray<string> =>
 export const SHIP_CLASS_NAMES = [...CLASS_NAMES, "ui"] as const;
 export type ShipClassName = (typeof SHIP_CLASS_NAMES)[number];
 
-/** A rendered frontend surface. Its own tests are code, not UI — they render nothing. */
+/**
+ * A rendered frontend surface **by path alone**. Its own tests are code, not UI — they render
+ * nothing.
+ *
+ * Kept exported under its own name so a caller holding only paths still has a total answer. It is
+ * half the `ui` test, not the whole of it: {@link uiFilesOf} composes it with the diff's changed
+ * lines, and that composition is what {@link partitionWithUi} counts.
+ */
 export const isUiSurface = (path: string): boolean =>
 	path.startsWith("apps/web/src/") && !/\.(?:test|spec)\.tsx?$/.test(path);
+
+/**
+ * The line shapes that change no pixel: a blank line, a `//` comment, and every line of a block
+ * comment or docblock — its opener, a `*` continuation, and its closing delimiter.
+ *
+ * Read line-locally, which is the whole bound: a block-comment body line opening with neither `*`
+ * nor `//` reads as code. That direction is the safe one — see {@link isRenderedLine}.
+ */
+const COMMENT_LINE = /^(?:\/\/|\/?\*)/;
+
+/**
+ * A line whose entire content is one quoted string literal, optionally followed by a comma or
+ * semicolon — the shape a wrapped message takes when a formatter breaks it onto its own line.
+ *
+ * Deliberately narrow, and it does not reach rendered text: JSX text content is unquoted
+ * (`<p>Merhaba</p>`), and a rendered string in an attribute or an expression carries code tokens
+ * beside it (`title="Kaydet"`, `{label ?? "Kaydet"}`), so neither matches. What it catches is the
+ * continuation line of a thrown message or a log string. The residue it cannot see — a rendered
+ * label constant a formatter happened to wrap onto a bare line — is the stated cost of having any
+ * mechanical prose test at all.
+ */
+const PROSE_STRING_LINE = /^(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')[,;]?$/;
+
+/**
+ * Whether one changed line could alter what a user sees rendered.
+ *
+ * **Everything the two tests above do not name is rendering.** A line the classifier cannot read
+ * raises `review-ui`, so the failure mode is one redundant visual review, never a rendered change
+ * reaching merge with no gate on it — the blind-PASS direction is the one this class keeps closed.
+ */
+export const isRenderedLine = (text: string): boolean => {
+	const trimmed = text.trim();
+	if (trimmed === "") return false;
+	return !COMMENT_LINE.test(trimmed) && !PROSE_STRING_LINE.test(trimmed);
+};
+
+/**
+ * The files that raise the `ui` class: a UI path whose diff carries at least one rendered line.
+ *
+ * A UI-path file the diff shows **no** changed lines for still raises. Zero changed lines is not
+ * "every changed line is a comment" — it is a rename, a mode change, or a binary asset such as an
+ * image, and an image swap under `apps/web/src/` is exactly the rendered delta `review-ui` is for.
+ */
+export const uiFilesOf = (
+	files: ReadonlyArray<string>,
+	changed: ReadonlyArray<DiffLine>,
+): ReadonlyArray<string> => {
+	const rendered = new Set<string>();
+	const seen = new Set<string>();
+	for (const line of changed) {
+		seen.add(line.file);
+		if (isRenderedLine(line.text)) rendered.add(line.file);
+	}
+	return files.filter((file) => isUiSurface(file) && (!seen.has(file) || rendered.has(file)));
+};
 
 /**
  * The decision corpus's root as this package ships it, trailing slash included so it matches as a
@@ -134,12 +197,19 @@ export interface ShipPartition {
 	readonly scanned: number;
 }
 
+/**
+ * `changed` has no default, for {@link touchesGovernanceRoot}'s reason: a default would let a caller
+ * with no diff in reach quietly take the path-only answer back, which is the over-raising this
+ * function was changed to stop (#6687). A caller that genuinely holds only paths asks
+ * {@link isUiSurface} and is visibly doing so.
+ */
 export const partitionWithUi = (
 	files: ReadonlyArray<string>,
 	roots: ReadonlyArray<string>,
+	changed: ReadonlyArray<DiffLine>,
 ): ShipPartition => {
 	const base = partition(files);
-	const ui = files.filter(isUiSurface).length;
+	const ui = uiFilesOf(files, changed).length;
 	return {
 		classes: ui === 0 ? base.classes : [...base.classes, {name: "ui" as const, files: ui}],
 		governance: touchesGovernanceRoot(files, roots),

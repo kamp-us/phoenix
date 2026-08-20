@@ -6,10 +6,13 @@ import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
 	branchRules,
 	CODEOWNERS,
+	COMMENT_LINE,
+	diffOf,
 	ENV,
 	files,
 	HEAD,
 	pull,
+	RENDERED_LINE,
 	repository,
 } from "./fixtures.test-support.ts";
 import {runScope} from "./scope-verb.ts";
@@ -20,6 +23,8 @@ const OWNERS = /contents\/\.github\/CODEOWNERS/;
 const RULES = /^gh api repos\/o\/r\/rules\/branches\/main$/;
 const REPO = /^gh api repos\/o\/r$/;
 const CONFIG = /contents\/\.fabrika\.jsonc/;
+const DIFF = /vnd\.github\.diff/;
+const APP = "apps/web/src/App.tsx";
 
 const options = {pr: 4321, repo: null, json: false, cwd: "/repo", env: ENV};
 
@@ -47,7 +52,8 @@ describe("runScope", () => {
 	it("prints one derivation: state, issue ref, classes, the namespaces they require, cp, landing and count", async () => {
 		const out = await run([
 			[PULL, pull()],
-			[FILES, files("apps/web/src/App.tsx", "README.md")],
+			[DIFF, diffOf({file: APP, added: RENDERED_LINE})],
+			[FILES, files(APP, "README.md")],
 			[OWNERS, okOut(CODEOWNERS)],
 			[RULES, branchRules("pull_request")],
 			[REPO, repository()],
@@ -97,12 +103,47 @@ describe("runScope", () => {
 	});
 
 	it("derives review-ui from a rendered surface but not from its own test file", async () => {
+		const test = "apps/web/src/App.test.tsx";
 		const out = await run([
 			[PULL, pull()],
-			[FILES, files("apps/web/src/App.tsx", "apps/web/src/App.test.tsx")],
+			[DIFF, diffOf({file: APP, added: RENDERED_LINE}, {file: test, added: RENDERED_LINE})],
+			[FILES, files(APP, test)],
 			[OWNERS, okOut(CODEOWNERS)],
 		]);
 		expect(out.stdout).toContain("class\tui\t1");
+	});
+
+	it("derives no review-ui when every changed line under the UI root renders nothing (#6687)", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[DIFF, diffOf({file: APP, added: COMMENT_LINE})],
+			[FILES, files(APP, "README.md")],
+			[OWNERS, okOut(CODEOWNERS)],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout).not.toContain("class\tui");
+		expect(out.stdout).not.toContain("namespace\treview-ui");
+	});
+
+	it("refuses rather than guessing when the diff behind a UI path cannot be read", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[DIFF, errOut("HTTP 503")],
+			[FILES, files(APP, "README.md")],
+			[OWNERS, okOut(CODEOWNERS)],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.some((line) => line.includes("cannot read the diff for #4321"))).toBe(true);
+	});
+
+	it("reads no diff at all when the PR touches no UI path", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[DIFF, errOut("this read should never happen")],
+			[FILES, files("README.md", "DEVELOPMENT.md")],
+			[OWNERS, okOut(CODEOWNERS)],
+		]);
+		expect(out.code).toBe(0);
 	});
 
 	it("prints governance beside the class namespaces when the diff touches a governance root", async () => {
@@ -119,9 +160,11 @@ describe("runScope", () => {
 	it("prints no governance line for a diff under no governance root", async () => {
 		const out = await run([
 			[PULL, pull()],
-			[FILES, files("apps/web/src/App.tsx", "README.md")],
+			[DIFF, diffOf({file: APP, added: RENDERED_LINE})],
+			[FILES, files(APP, "README.md")],
 			[OWNERS, okOut(CODEOWNERS)],
 		]);
+		expect(out.code).toBe(0);
 		expect(out.stdout).not.toContain("governance");
 	});
 

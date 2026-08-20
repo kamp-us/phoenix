@@ -304,8 +304,15 @@ With `--json`: `{"outcome":"scoped","head":<40-hex>,"state":…,"issue":{"kind":
 **The class map and the namespace derivation are one derivation, printed once.** The class
 partition extends the `review` group's fixed map (code / doc / skill, `code` the residual —
 same rows, same order, shared as one implemented module with `review scope`, never a second
-copy) with the `ui` class: a changed path matching the UI surface map (`apps/web/src/**`
-excluding `*.test.tsx?` / `*.spec.tsx?`) additionally derives `review-ui`. Namespaces are
+copy) with the `ui` class. That class is **two** tests, not one: a changed path matching the UI
+surface map (`apps/web/src/**` excluding `*.test.tsx?` / `*.spec.tsx?`) **whose diff carries at
+least one line a user could see rendered** derives `review-ui`. A file whose every changed line
+is a comment, a docblock or a wrapped prose string derives nothing — `review-ui` can emit no
+honest verdict where there is no rendered delta, so raising it there blocks a merge on a gate
+nobody can clear (#6376). Everything the render test cannot read counts as rendering, and a UI
+path the diff shows no changed lines for — a rename, a mode change, a binary asset — raises too;
+the direction that stays closed is the blind one. This costs the verb one extra read: with a UI
+path present the diff is fetched, and an unreadable diff is `11`, never a guess. Namespaces are
 derived from classes by one table in one module; v1 printed the class set from one derivation
 in one script and hand-copied it in another, and the copy dropped a class on a live PR
 (#4730). A non-empty diff deriving an empty namespace set is refused (`13`-adjacent but
