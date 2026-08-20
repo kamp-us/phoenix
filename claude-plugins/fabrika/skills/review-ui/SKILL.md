@@ -42,10 +42,25 @@ likewise `--heading "review diff"`, `"review criteria"`, `"review ci"`, `"review
 `"review deviations"`). This skill adds only the `review-ui` group, whose three verbs are listed at
 `fabrika wire doc-section --heading "Verb inventory" < <skill-base>/contract.md`. **You owe a verdict only when the PR
 changes a rendered-visual surface** — a page, component, screen, state, or style a user sees. Read
-the diff (`fabrika review diff $pr_number`) and decide; a PR with no rendered delta is `review`'s alone —
-end **ROUTED-ELSEWHERE**, emit nothing, because a namespace you did not judge is one you never
-fill. The decision is yours, formed from verb-served bytes: the diff verb refuses truncation, so
+the diff (`fabrika review diff $pr_number`) and decide. The decision is yours, formed from verb-served bytes: the diff verb refuses truncation, so
 your judgment sits on proven input rather than on a pattern match that can swallow a failed read.
+
+A PR with no rendered delta is `review`'s alone, and **you say so on the record rather than walking
+away silently**: `ship scope` raises the `ui` class off a path test that cannot see whether pixels
+moved, so the namespace is required and `ship gate` blocks on an absence nothing else can fill (ADR
+[0315](../../../../.decisions/0315-a-gate-records-that-it-owes-no-verdict.md)).
+
+```bash
+fabrika review-ui route $pr_number --sha <head> --clause "<the one-line why>" <<'EOF'
+…which files changed and why none of them renders anything…
+EOF
+```
+
+That is a route, not a verdict: it carries no polarity, it needs no captures, and `ship gate` shows
+it as `routed`. Then end **ROUTED-ELSEWHERE**. What you still never do is post a `review-ui` PASS —
+the namespace you did not judge is one you never *pass*, and the record says exactly that. Exit `7`
+means the diff raises no `ui` class at all, so nothing required your namespace and there is nothing
+to route; end ROUTED-ELSEWHERE with no write.
 
 ## 2 — Read the law you judge by
 
@@ -144,8 +159,8 @@ piece UNKNOWN. The marker format, the evidence-upload proof and every exit are t
 
 <!-- anchor: CAPABILITIES --> This skill opens no PR, mutates no branch, runs no PR code locally;
 it holds a shell, a repo-scoped token, a headless browser pointed at the repo's preview
-deployment, and **uses** two writes — the verdict comment (with its verified evidence) and the
-can't-see/escalation comment. No push, no merge, no label. Every run ends as exactly one of:
+deployment, and **uses** three writes — the verdict comment (with its verified evidence), the
+can't-see/escalation comment, and the routed-elsewhere record. No push, no merge, no label. Every run ends as exactly one of:
 **verdict PASS** · **verdict FAIL** · **CANT-SEE** (no preview, stale preview unrepairable, or
 nothing renderable — no verdict posted, blocker named on the PR) · **ESCALATED** (a verdict was
 formed but provably could not land — the evidence upload or the write path failed after exactly
@@ -153,7 +168,8 @@ one re-run; the state named on the PR through `review-ui note` where that write 
 in the session report when even the note cannot — the empty namespace fail-closes either way;
 never a hand-posted marker) · **BLOCKED-NO-MANIFEST** (no
 design law — routed to front-door, nothing posted) · **ROUTED-ELSEWHERE** (no rendered delta —
-`review`'s lane, nothing posted). Success is a *landed, read-back verdict*; a judgment formed but
+`review`'s lane; the `routed-elsewhere` record posted, or nothing posted when the diff raised no
+`ui` class to route). Success is a *landed, read-back verdict*; a judgment formed but
 not landed never reports as one. Cross-lane signals are closed-vocabulary — kind + action +
 branded ref, no free prose; receivers re-fetch from the PR.
 

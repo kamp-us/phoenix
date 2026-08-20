@@ -800,6 +800,7 @@ Judge a UI pull request over its preview deployment. Contract:
 | `review-ui render` | the named surfaces captured from a PR's preview deployment |
 | `review-ui post` | the `review-ui` verdict on stdin, posted as one comment |
 | `review-ui note` | a typed blocker note when the surfaces cannot be seen |
+| `review-ui route` | a head-bound `routed-elsewhere` record: this PR renders nothing, so no verdict is owed |
 
 **Exit codes.** The shared table (with `4` a required file that does not parse or violates its
 schema), plus `12` the artifact is not the PR's current tree · `13` a surface threw an uncaught

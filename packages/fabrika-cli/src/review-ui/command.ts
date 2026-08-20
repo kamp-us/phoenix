@@ -24,6 +24,7 @@ import {runNote} from "./note-verb.ts";
 import {runPost} from "./post-verb.ts";
 import {captureRenderLeg} from "./render-leg.ts";
 import {runRender} from "./render-verb.ts";
+import {runRoute} from "./route-verb.ts";
 import {githubAttachmentUploadLeg} from "./upload-leg.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
@@ -175,15 +176,47 @@ const note = leafCommand(
 	),
 );
 
+const route = leafCommand(
+	"route",
+	{
+		pr: prArg,
+		sha: Flag.string("sha").pipe(
+			Flag.withDescription("the head whose diff was read (7–40 lowercase hex)"),
+		),
+		clause: Flag.string("clause").pipe(
+			Flag.withDescription("the one-line why this PR renders nothing; blank is not a reason"),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({pr, sha, clause, repo}) {
+		yield* emit(
+			yield* runRoute({
+				pr,
+				sha,
+				clause,
+				repo: Option.getOrNull(repo),
+				env: process.env,
+				stdin: Effect.sync(readStdin),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Record that this PR renders nothing, so no verdict is owed."),
+	Command.withDescription(
+		"Record, bound to the head whose diff you read, that this PR moves no pixels — so review-ui owes it no verdict and ship gate resolves the namespace as routed instead of blocking on an absence no sanctioned path could fill (ADR 0315). The reasoning arrives on STDIN, the record's first line is composed through the `routed-elsewhere` wire format, and both are leak-scanned, upserted as one comment and read back. It is not a verdict: the format carries no polarity, the record is head-bound so any push voids it, and no capture evidence is involved either way. Whether the diff renders anything is your judgment over `review diff`, never a verb's. Prints one JSON object. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (PR absent, closed, empty, or its diff raises no ui class — nothing to route), 8 (the post failed — UNKNOWN), 9 (the record does not read back as sent), 10 (bad --sha or a blank --clause), 11 (a precondition read failed or the file list was truncated — nothing was posted), 12 (the live head moved past --sha). Example: fabrika review-ui route 6326 --sha 6c6fe226 --clause \"no rendered delta; both files are prose only\" < why.md",
+	),
+);
+
 export const reviewUiCommand = Command.make("review-ui").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
 		render,
 		post,
 		note,
+		route,
 	]),
 	Command.withShortDescription("Judge a UI pull request over its preview deployment."),
 	Command.withDescription(
-		"Judge a UI pull request over its preview deployment — capture the named surfaces at the inspected head, and emit the review-ui verdict or a typed blocker note through the one sanctioned write path",
+		"Judge a UI pull request over its preview deployment — capture the named surfaces at the inspected head, and resolve the review-ui namespace through one of the three sanctioned writes: the verdict, a typed blocker note, or a routed-elsewhere record for a PR that renders nothing",
 	),
 );

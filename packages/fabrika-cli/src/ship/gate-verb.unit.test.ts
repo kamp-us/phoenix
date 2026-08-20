@@ -59,6 +59,9 @@ const run = (
 const marker = (namespace: string, polarity: string, sha: string): string =>
 	`${namespace}: ${polarity} @ ${sha} — the clause`;
 
+const route = (namespace: string, sha: string): string =>
+	`routed-elsewhere: ${namespace} @ ${sha} — no rendered delta; the diff is prose only`;
+
 const candidate = (sha: string, stamp: string) => ({
 	namespace: "review-code",
 	polarity: "PASS" as const,
@@ -261,6 +264,90 @@ describe("runGate", () => {
 		);
 		expect(out.stdout).toBe(
 			[`gate\tblocked\t${HEAD}`, "ns\tgovernance\tfail\tmarker", ""].join("\n"),
+		);
+	});
+
+	// ADR 0315. `review-ui` is the one namespace whose emit path cannot answer a PR that renders
+	// nothing — `render` refuses zero surfaces, `post` refuses without captures — so the class
+	// `ship scope` raises off a path test named a namespace nothing legal could fill (#6376).
+	it("resolves review-ui as routed from a head-bound routed-elsewhere record, and satisfies", async () => {
+		const out = await run(
+			[
+				[PULL, pull({comments: 1})],
+				[COMMENTS, comments({id: 1, body: route("review-ui", HEAD)})],
+				[REVIEWS, reviews()],
+				[ACL, okOut("write")],
+			],
+			{require: ["review-ui"]},
+		);
+		expect(out.stdout).toBe(
+			[`gate\tsatisfied\t${HEAD}`, "ns\treview-ui\trouted\trouted-elsewhere", ""].join("\n"),
+		);
+	});
+
+	it("blocks when the route binds a head that has moved — a push re-opens the question", async () => {
+		const out = await run(
+			[
+				[PULL, pull({comments: 1})],
+				[COMMENTS, comments({id: 1, body: route("review-ui", OTHER_HEAD)})],
+				[REVIEWS, reviews()],
+				[ACL, okOut("write")],
+			],
+			{require: ["review-ui"]},
+		);
+		expect(out.stdout).toBe(
+			[`gate\tblocked\t${HEAD}`, "ns\treview-ui\tstale\trouted-elsewhere", ""].join("\n"),
+		);
+	});
+
+	it("ignores a route aimed at any namespace but review-ui — governance stays absent", async () => {
+		const out = await run(
+			[
+				[PULL, pull({comments: 1})],
+				[COMMENTS, comments({id: 1, body: route("governance", HEAD)})],
+				[REVIEWS, reviews()],
+				[ACL, okOut("write")],
+			],
+			{require: ["governance"]},
+		);
+		expect(out.stdout).toBe([`gate\tblocked\t${HEAD}`, "ns\tgovernance\tabsent\t-", ""].join("\n"));
+	});
+
+	it("refuses a route from an author below write+ — the ADR 0055 ACL binds it as it binds a verdict", async () => {
+		const out = await run(
+			[
+				[PULL, pull({comments: 1})],
+				[COMMENTS, comments({id: 1, body: route("review-ui", HEAD)})],
+				[REVIEWS, reviews()],
+				[ACL, okOut("read")],
+			],
+			{require: ["review-ui"]},
+		);
+		expect(out.stdout).toBe([`gate\tblocked\t${HEAD}`, "ns\treview-ui\tabsent\t-", ""].join("\n"));
+	});
+
+	it("lets a FAIL verdict written after a route win the namespace back", async () => {
+		const out = await run(
+			[
+				[PULL, pull({comments: 2})],
+				[
+					COMMENTS,
+					comments(
+						{id: 1, body: route("review-ui", HEAD), updatedAt: "2026-08-19T01:00:00Z"},
+						{
+							id: 2,
+							body: marker("review-ui", "FAIL", HEAD),
+							updatedAt: "2026-08-19T02:00:00Z",
+						},
+					),
+				],
+				[REVIEWS, reviews()],
+				[ACL, okOut("write")],
+			],
+			{require: ["review-ui"]},
+		);
+		expect(out.stdout).toBe(
+			[`gate\tblocked\t${HEAD}`, "ns\treview-ui\tfail\tmarker", ""].join("\n"),
 		);
 	});
 

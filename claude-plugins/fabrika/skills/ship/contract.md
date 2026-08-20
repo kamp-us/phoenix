@@ -581,9 +581,9 @@ fabrika ship gate 4321 --sha 03135b91 --require review-code [--require review-do
 
 **Output** — machine channel. First line: `gate\t<satisfied|blocked>\t<sha>`. Then one line
 per required namespace, in the order required:
-`ns\t<namespace>\t<pass|fail|absent|stale>\t<marker|advisory|review-fold|->` — the fourth
-field names which carrier produced the in-force verdict (`-` on `absent`). `satisfied` iff
-every required namespace reads `pass`.
+`ns\t<namespace>\t<pass|fail|absent|stale|routed>\t<marker|advisory|review-fold|routed-elsewhere|->`
+— the fourth field names which carrier produced the in-force verdict (`-` on `absent`).
+`satisfied` iff every required namespace reads `pass` or `routed`.
 
 With `--json`: `{"outcome":…,"sha":…,"namespaces":[{name,state,carrier,commentId}…],"required":<n>}`.
 
@@ -632,6 +632,18 @@ which wedges the repair loop.
 `absent` and `stale` are distinct tokens because their remedies differ (run the gate vs
 re-run it at this head), and both block — absence-is-refusal is the #3944 law (a PR enqueued
 with no live-head verdict at all).
+
+**`routed` is the fifth state, and it is a gate saying it owes this PR nothing** (ADR
+[0315](../../../../.decisions/0315-a-gate-records-that-it-owes-no-verdict.md)). It resolves from a
+`routed-elsewhere` record — its own wire format, carrying no polarity, read through the same
+head-binding and the same ADR 0055 ACL as a verdict — and it satisfies beside `pass`, because the
+conjunction asks whether every required gate has answered and "not mine to judge" is an answer.
+**`review-ui` is the only namespace that may resolve this way.** It is the only gate whose emit path
+is structurally unable to answer: `review-ui render` refuses zero surfaces and `review-ui post`
+refuses without captures, so the `ui` class — raised off a path test that cannot see whether pixels
+moved — named a namespace nothing legal could fill, and a prose-only `apps/web/src/**` PR was
+permanently unshippable (#6376). A record aimed at any other namespace is read and ignored; that
+namespace stays `absent`. `ship floor` is unaffected — it asks for `governance` and requires `pass`.
 
 **`--cp` is caller-asserted, deliberately** — the one input in this verb the caller vouches
 for, an exception to the group's re-derive habit and stated as such. Gate is a read: a wrongly
