@@ -246,8 +246,8 @@ nothing else: the issue still has to carry `ready-for:agent`, which triage stamp
   an issue carrying a standing-lane label, that label.
 - **The issue's audience** — its `ready-for:` label.
 
-**The outcomes — state words, never a boolean.** The admission test returns exactly one across
-both axes, and every refusal carries its reason and names which axis refused:
+**The outcomes — state words, never a boolean.** The admission test returns exactly one across all
+four axes, and every refusal carries its reason and names which axis refused:
 
 | Outcome | Trigger | Seat |
 |---|---|---|
@@ -255,12 +255,13 @@ both axes, and every refusal carries its reason and names which axis refused:
 | `refused: out-of-scope` | some campaign is active, the issue's home is a milestone none of them pins or no milestone, and no standing-lane label exempts it | `20` |
 | `refused: no-served-issue` | some campaign is active and the target is a pull request whose body names no readable issue — neither a closing keyword nor `Part of #<n>`, or one naming an issue proven absent | `20` |
 | `refused: audience-not-agent` | the issue carries a `ready-for:` label other than `ready-for:agent`, or carries none at all — absence is an unknown audience, never an agent audience (#4780) | `21` |
+| `refused: no-acceptance-criteria` | the body carries no readable `### Acceptance criteria` block — the wire read answers `absent` (no heading reaches for it) or `malformed` (one drifted), and the outcome carries which — on a claim the criteria axis binds, a fresh build and nothing else (#6554) | `32` |
 | `unknown` | the campaigns table or the issue's home could not be read (`11`), or any of its rows is malformed (`4`) | `11` / `4` |
 
-**The two refusals are separately named and separately seated**, never one collapsed "refused": they
-come from the two different axes, they have different remedies (flip the campaign's state cell, or
-re-label the audience), and the per-issue exclusion reason `build pick` reports is derivable only if the outcome
-set keeps them apart.
+**Each refusal is separately named and separately seated**, never one collapsed "refused": they come
+from different axes, they have different remedies (flip the campaign's state cell, re-label the
+audience, or author the missing criteria block), and the per-issue exclusion reason `build pick`
+reports is derivable only if the outcome set keeps them apart.
 
 **The standing-lane exemption, named.** Exactly two labels — `wayfinder:backlog` and
 `axis:pipeline-hardening` (ADR 0208) — are **admitted on the scope axis whatever the table says**, and carrying no milestone is not an exclusion for them. A standing lane is milestone-less by
@@ -795,13 +796,14 @@ fabrika build adopt 4312 --session <dead-session> --reason <text> [--repo <owner
 **`claim` runs the fence before it writes anything.** After the target-open check and **before
 any marker is posted**, `claim` puts `<number>` through the
 [admission test](#admission-test--scope-admission-and-the-audience-axis) — the same imported
-module `build pick` filters on, both axes, never a second derivation. In repair, `<number>` is a PR,
+module `build pick` filters on, every axis, never a second derivation. In repair, `<number>` is a PR,
 and the test judges the issue that PR serves rather than the PR's own empty home — a PR naming no
 readable issue is `refused: no-served-issue` at `20`. A `refused: out-of-scope` is
 `20` and a
-`refused: audience-not-agent` is `21`, each named on stderr; an unreadable declaration or home is
-`11` and a malformed declaration is `4`, and neither ever proceeds. Nothing is written on any of the
-four: the issue carries no marker, so a refused claim leaves no trace to retract.
+`refused: audience-not-agent` is `21`, a `refused: no-acceptance-criteria` is `32`, each named on
+stderr; an unreadable declaration or home is `11` and a malformed declaration is `4`, and neither
+ever proceeds. Nothing is written on any refusal: the issue carries no marker, so a refused claim
+leaves no trace to retract.
 
 **Then the blockedness gate, and only then the marker.** ADR
 [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes GitHub's native
@@ -816,16 +818,16 @@ remedy is neither an edit nor a re-label but waiting, and there is no unblock ac
 the blocker closes, and the next read answers unblocked. In repair `<number>` is a PR, which carries
 no edges of its own and names a lane that has already started, so the gate does not run.
 
-**The purpose decides whether the audience axis binds — it never enters either axis.** `--purpose`
-says why this lane claims: `build` (the default) is bound by both axes, while `plan` and `gate` are
+**The purpose decides which axes bind — it never enters an axis.** `--purpose`
+says why this lane claims: `build` (the default) is bound by all four, while `plan` and `gate` are
 bound by the scope axis alone. The audience axis asks whether an agent should pick the issue up to
 *build*, and an epic earns `ready-for:agent` only after it has been planned and gated, so fencing
 the planner and the gate on it is circular (founder ruling,
 [#5175](https://github.com/kamp-us/phoenix/issues/5175); 19 of 20 open epics carried no such label).
-The purpose rides **beside** the two axes rather than widening either — each axis still reads the
+The purpose rides **beside** the axes rather than widening any — each axis still reads the
 issue exactly as it did, and only the composition consults the purpose, which is the shape ADR 0245's
-repair round settled. A `21` is therefore reachable under `--purpose build` only, and `20` is
-reachable under every purpose. `claim`'s purpose line names which reading applied, and the audience
+repair round settled. A `21`, a `30` and a `32` are therefore reachable under `--purpose build` only,
+and `20` is reachable under every purpose. `claim`'s purpose line names which reading applied, and the audience
 it saw either way, so a claim admitted over a non-agent audience is readable as one afterwards.
 
 **Repair of a decision PR is admitted on its own, with no flag and no override.** When `<number>` is

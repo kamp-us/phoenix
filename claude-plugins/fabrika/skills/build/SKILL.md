@@ -142,13 +142,23 @@ cannot fix an issue body.
 criteria axis is the fourth axis of the shared admission test, beside scope, type and audience, so
 it refuses on `32` at the claim seam before any branch, commit or write — the pool and the
 by-number route (an operator naming a lane, `operate`, a resume) hit the one fence rather than the
-pool alone (#6554). If a token still reaches you — a `plan` or `gate` claim, whose criteria arrive
-per child from the plan ledger, or a repair claim on a PR already in flight — stop before any
-construction, name the reader's own reason off stderr, and name the route out: `fabrika triage
-repair-criteria <n>` for a drifted heading, which repairs exactly that mechanical drift and refuses
-anything else on `14`, or `fabrika triage enrich <n>` for an absent block, which has nothing to
-repair mechanically. **Do not run either from this lane** — a build lane does not write an issue
-body; a human or triage does. Release the claim
+pool alone (#6554).
+
+**The one lane that does see a token here is a repair lane, and it does not back off.** The axis
+binds a fresh build claim and nothing else, and a repair claim is exempt on purpose: refusing it
+would strand an open PR, because writing an issue body is not something a build lane may do from a
+branch. So on a repair, read the token, take it as a fact about the served issue, and go on fixing
+the findings the fold printed — those findings are your contract for the round. (A `plan` or `gate`
+claim is exempt too, but you never hold one here: an epic handed to a build claim refuses on `30`,
+and `--purpose plan` / `--purpose gate` belong to `plan-epic` and `check-epic-plan`, neither of
+which runs this section.)
+
+**Only a fresh build claim stops here**, and only if one reached this step past the `32` refusal.
+Then stop before any construction, name the reader's own reason off stderr, and name the route out:
+`fabrika triage repair-criteria <n>` for a drifted heading, which repairs exactly that mechanical
+drift and refuses anything else on `14`, or `fabrika triage enrich <n>` for an absent block, which
+has nothing to repair mechanically. **Do not run either from this lane** — a build lane does not
+write an issue body; a human or triage does. Release the claim
 (`fabrika build release <n> --token <claim-token>`) so the repaired issue is pickable again, and end
 `BACKED-OFF`.
 
