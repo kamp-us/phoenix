@@ -127,11 +127,15 @@ function Layout() {
 	// `__BOOT__` this is null and the session-gated `isSignedIn` governs.
 	const bootUser = readBootUser();
 	const bootSignedIn = bootUser != null;
-	const signedInAtFirstPaint = bootSignedIn || isSignedIn;
 	// Reserve the account slot only while the edge said signed-in AND we haven't settled to a
 	// definitively signed-out session — so an absent `__BOOT__` never reserves (today's render)
 	// and a boot/session divergence collapses cleanly rather than stranding a phantom slot.
 	const reserveSignedInSlots = bootSignedIn && (session.isPending || isSignedIn);
+	// Both halves of the account side hang off that one condition, so they can never collapse in
+	// opposite directions: the CTA is suppressed exactly while the slot is filled or reserved.
+	// Keying it off `__BOOT__` alone left a boot/session divergence showing neither the pill nor
+	// the CTA, a shell with no way to sign in (#6577).
+	const showSignInCta = !isSignedIn && !reserveSignedInSlots;
 	const bootUserProps = bootUser
 		? {
 				user: {
@@ -180,7 +184,7 @@ function Layout() {
 							actions={
 								// Suppressed from the first frame for a signed-in user so the CTA never flashes
 								// then swaps out (#2933) — see ADR 0185.
-								!signedInAtFirstPaint ? (
+								showSignInCta ? (
 									<Button
 										type="button"
 										variant="secondary"
