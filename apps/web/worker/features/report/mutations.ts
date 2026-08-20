@@ -14,6 +14,7 @@ import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Denied, InsufficientKarma} from "../kunye/errors.ts";
 import {Moderate, moderatorOf, requireModeration} from "../kunye/moderate.ts";
 import {gateFlagOnKarma} from "../kunye/privilege.ts";
+import {moderatorSandboxViewer} from "../kunye/sandbox.ts";
 import {CommentNotFound, PostNotFound} from "../pano/errors.ts";
 import {PanoFeedCache} from "../pano/feed-cache.ts";
 import {Pano} from "../pano/Pano.ts";
@@ -380,16 +381,23 @@ const publishRemoved = Effect.fn("report.publishRemoved")(function* (
 /**
  * Gated on `sandboxedAt` so a still-sandboxed restore stays suppressed from the
  * viewer-blind public topic (#1205/#1280 leak surface).
+ *
+ * That gate is `decidePublish`'s, and it is the ONLY one: the re-reads run under the
+ * moderator's sandbox viewer (#6472) so a still-sandboxed target comes back and reaches
+ * the gate, instead of being dropped earlier by an anonymous read that silently decided
+ * the same question with none of the same reasoning. `if (row)` is then what it reads as
+ * — the target vanished between restore and re-read.
  */
 const publishRestored = Effect.fn("report.publishRestored")(function* (
 	live: ReturnType<typeof reportLive>,
 	target: {targetKind: TargetKind; targetId: string},
 	sandboxedAt: Date | null,
 ) {
+	const sandboxViewer = yield* moderatorSandboxViewer;
 	switch (target.targetKind) {
 		case "post": {
 			const pano = yield* Pano;
-			const [row] = yield* pano.getPostsByIds([target.targetId]);
+			const [row] = yield* pano.getPostsByIds([target.targetId], {sandboxViewer});
 			if (row) yield* live.postRestored(toPost(row), sandboxedAt);
 			return;
 		}
@@ -397,7 +405,7 @@ const publishRestored = Effect.fn("report.publishRestored")(function* (
 			const pano = yield* Pano;
 			const postId = yield* pano.lookupCommentPostId(target.targetId);
 			if (postId === null) return;
-			const [row] = yield* pano.getCommentsByIds([target.targetId]);
+			const [row] = yield* pano.getCommentsByIds([target.targetId], {sandboxViewer});
 			if (row) yield* live.commentRestored(toComment(row), postId, sandboxedAt);
 			return;
 		}
@@ -405,7 +413,7 @@ const publishRestored = Effect.fn("report.publishRestored")(function* (
 			const sozluk = yield* Sozluk;
 			const slug = yield* sozluk.lookupDefinitionTermSlug(target.targetId);
 			if (slug === null) return;
-			const [row] = yield* sozluk.getDefinitionsByIds([target.targetId]);
+			const [row] = yield* sozluk.getDefinitionsByIds([target.targetId], {sandboxViewer});
 			if (row) yield* live.definitionRestored(toDefinition(row), slug, sandboxedAt);
 			return;
 		}

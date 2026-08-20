@@ -88,6 +88,42 @@ landing column.
 When adding a read over any table whose rows are *derived* rather than authored, ask which
 content table owns its lifecycle, and mask through that.
 
+## A gated read still has to say who it is
+
+Passing no viewer is not neutral. `resolveSandboxViewer({})` returns `anonymousViewer`, so a
+read with no options is a read *as the public* — the strictest mask there is. That is the
+right default for an unauthenticated path and the wrong one everywhere else, and it fails
+silently: the row is simply absent, and the caller renders whatever it renders for "missing".
+
+The trap is a read that already sits behind an authority gate. Being inside a
+`Moderate`-gated resolver does nothing for the mask; the SQL only widens for a viewer that
+carries `canSeeSandboxed`. The moderation report queue spent six reads this way (#6472): the
+`Moderate` grant was discharged, the reads passed no viewer, and every reported çaylak item —
+the ones the sandbox exists to make reviewable — rendered with a null excerpt and no link.
+
+Inside such a path, take the viewer off the grant:
+
+```ts
+const sandboxViewer = yield* moderatorSandboxViewer; // requires Moderate in R
+const rows = yield* pano.getPostsByIds(ids, {sandboxViewer});
+```
+
+`moderatorSandboxViewer` (`apps/web/worker/features/kunye/sandbox.ts`) puts `Moderate` in `R`,
+so a path that never proved moderation authority cannot build the viewer that claims it. Use
+`currentSandboxViewer` instead only on an **ungated** read — it probes the moderation gate and
+collapses a denial to `false`, which inside a gated path is a second relation-store round trip
+for an answer the grant already carries.
+
+Two dimensions stay out of this. `removed_at` is orthogonal: the by-id reads carry their own
+`isNull(removedAt)`, which takes no viewer, so widening the sandbox viewer never surfaces a
+removed row. And the draft arm has no moderator branch at all (ADR 0113) — an unpublished
+draft is private to its author, moderators included.
+
+Widening the read does not widen the broadcast. `decidePublish(sandboxedAt)` still gates every
+node fan-out, so a still-sandboxed target that now comes back off a moderator read reaches that
+gate and is suppressed there, which is where the #1205/#1280 decision belongs — not in a read
+that was masking it by accident.
+
 ## The client side — one badge per item, owner's wins
 
 Once an opted-in yazar can meet sandboxed content in place (#6423), two wire fields describe

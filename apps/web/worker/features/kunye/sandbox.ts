@@ -3,7 +3,7 @@
  * the moderation capability (ADR 0107) meet the content paths, kept out of the
  * sözlük/pano domain services so they stay vocabulary-free about authorship.
  *
- * Three helpers, all resolver-level:
+ * Four helpers, all resolver-level:
  *   - {@link sandboxedAtForAuthor} — the create-time decision: should a new piece
  *     of content by this author land sandboxed? Decided by tier (çaylak ⇒ sandboxed,
  *     yazar ⇒ live).
@@ -11,6 +11,8 @@
  *     non-throwing moderator probe of `Moderate.over(platform)`, and the flag-gated
  *     in-place opt-in (#6423), resolved once per read and handed to the
  *     `SandboxVisibility` predicates.
+ *   - {@link moderatorSandboxViewer} — the same viewer for an already-`Moderate`-gated
+ *     read, taken off the discharged grant instead of re-probing for it (#6472).
  *   - {@link PublishDecision} / {@link decidePublish} / {@link alwaysLive} — the
  *     create-time live-broadcast gate, type-level: a node broadcast to a public
  *     fate-live topic requires a `PublishDecision`, constructible only from the
@@ -26,7 +28,7 @@ import {CaylakVisibility} from "../caylak-visibility/CaylakVisibility.ts";
 import {caylakVisibilityOn} from "../caylak-visibility/gate.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {Kunye} from "./Kunye.ts";
-import {requireModeration} from "./moderate.ts";
+import {Moderate, moderatorOf, requireModeration} from "./moderate.ts";
 import {sandboxesNewContent} from "./standing.ts";
 
 export const sandboxedAtForAuthor = (
@@ -77,6 +79,35 @@ export const currentSandboxViewer = Effect.gen(function* () {
 	const seesSandboxedInPlace = yield* inPlaceVisibility(viewerId);
 	return {viewerId, canSeeSandboxed, seesSandboxedInPlace} satisfies SandboxViewer;
 });
+
+/**
+ * The sandbox viewer a `Moderate`-gated read runs under (#6472). `Moderate` sits in R,
+ * so this is unreachable without a discharged grant — the viewer that claims
+ * `canSeeSandboxed` cannot be built by a path that never proved moderation authority.
+ *
+ * Distinct from {@link currentSandboxViewer}, which PROBES the moderation gate for an
+ * ungated read and collapses a denial to `false`. Inside a gated path that probe is a
+ * second relation-store round trip for an answer the grant already carries.
+ *
+ * `seesSandboxedInPlace` is `false` on purpose: that axis is the #6423 reader's opt-in to
+ * seeing çaylak work inside the ordinary feed, and a moderation queue is not that feed.
+ * It also never reaches the SQL, since `canSeeSandboxed` short-circuits
+ * `sandboxVisibleWhere` — so leaving it `false` keeps the `sandboxedInPlace` wire marker
+ * off the moderator's rows rather than mislabelling them.
+ *
+ * The `removed_at` dimension is untouched: the by-id reads carry their own
+ * `isNull(removedAt)` guard, which takes no viewer, so a removed target stays out.
+ */
+export const moderatorSandboxViewer: Effect.Effect<SandboxViewer, never, Moderate> = Effect.gen(
+	function* () {
+		const grant = yield* Moderate;
+		return {
+			viewerId: yield* moderatorOf(grant),
+			canSeeSandboxed: true,
+			seesSandboxedInPlace: false,
+		} satisfies SandboxViewer;
+	},
+);
 
 /**
  * Whether a brand-new content node may be broadcast to a public (viewer-blind)
