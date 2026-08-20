@@ -124,3 +124,63 @@ export const eventForToken = (raw: string): TokenResolution => {
 			}
 		: {_tag: "Mapped", token, event};
 };
+
+/**
+ * Why a lane parked, as a closed set of tokens — the field that makes a `BLOCKED` clearable (#6480).
+ *
+ * The token map above folds thirteen distinct shell terminals into one flat `BLOCKED`, so the event
+ * that lands records that a park happened and never why. `recipe unpark` keys its recipe table on a
+ * park's cause, which left every `BLOCKED` novel by construction: the mechanism to clear a park
+ * autonomously existed and could match nothing. A cause is the key it was missing.
+ *
+ * It is a closed set for the same reason the terminal tokens are: a free-text cause is prose a
+ * recipe would have to interpret, and interpreting a report is the failure class this module
+ * deletes. Each entry's value is what the cause means, in the clause a refusal can quote — a new
+ * cause is a row here plus a `KNOWN_PARKS` row that says how to prove it gone, never one alone.
+ */
+export const PARK_CAUSES = {
+	/**
+	 * The #6395 shape: a finished lane's worktree still holds the branch this lane must build on, so
+	 * `build branch --resume-lane` refuses at exit 11 rather than re-key a branch out from under
+	 * another tree. The whole remedy is removing that worktree, which is why it owes no decision.
+	 */
+	"worktree-holds-branch": "a working tree still holds the lane branch this build must stand on",
+} as const;
+
+export type ParkCause = keyof typeof PARK_CAUSES;
+
+/** The recognised causes, for a refusal's listing — sorted so the listing is deterministic. */
+export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES).sort();
+
+export type CauseResolution =
+	| {readonly _tag: "Uncaused"}
+	| {readonly _tag: "Caused"; readonly cause: ParkCause}
+	| {readonly _tag: "Rejected"; readonly reason: string};
+
+const isParkCause = (token: string): token is ParkCause => Object.hasOwn(PARK_CAUSES, token);
+
+/**
+ * Resolve one `--cause` against the event it rides on. Absent is legal and stays legal: a shell that
+ * parks for a reason no recipe covers reports the bare `BLOCKED` it always did, and `classifyPark`
+ * answers Novel for it exactly as before.
+ *
+ * A cause on a non-`BLOCKED` event is refused rather than dropped. Only a park has a cause to be
+ * gone, so a `DONE` carrying one is a caller that misunderstood the field, and recording it would
+ * seat a cause on a line no unpark will ever read.
+ */
+export const causeForEvent = (raw: string | null, event: OperatorEvent): CauseResolution => {
+	if (raw === null) return {_tag: "Uncaused"};
+	if (event !== "BLOCKED") {
+		return {
+			_tag: "Rejected",
+			reason: `a cause names why a lane parked, and this token maps to ${event}, not BLOCKED — drop --cause "${raw}"`,
+		};
+	}
+	const token = raw.trim().toLowerCase();
+	return isParkCause(token)
+		? {_tag: "Caused", cause: token}
+		: {
+				_tag: "Rejected",
+				reason: `"${raw}" is no park cause this repo's recipes key on (known: ${PARK_CAUSE_TOKENS.join(", ")})`,
+			};
+};

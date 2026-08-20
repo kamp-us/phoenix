@@ -127,7 +127,13 @@ describe("emitMachine", () => {
 		});
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runTransition({root: ".fabrika/lanes", lane: "4300", event: "WIP", task: "issue_4301"}),
+				runTransition({
+					root: ".fabrika/lanes",
+					lane: "4300",
+					event: "WIP",
+					task: "issue_4301",
+					cause: null,
+				}),
 				fs.layer,
 			),
 		);
@@ -162,7 +168,13 @@ describe("emitMachine", () => {
 		const fs = fakeFs({files: {".fabrika/lanes/4300/workflow.json": text}});
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runTransition({root: ".fabrika/lanes", lane: "4300", event: "WIP", task: "issue_4303"}),
+				runTransition({
+					root: ".fabrika/lanes",
+					lane: "4300",
+					event: "WIP",
+					task: "issue_4303",
+					cause: null,
+				}),
 				fs.layer,
 			),
 		);

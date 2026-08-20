@@ -1,7 +1,13 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
-import {APPEND_UNKNOWN, EVENT_REFUSED, LANE_ABSENT, TASK_UNKNOWN} from "./codes.ts";
+import {
+	APPEND_UNKNOWN,
+	CAUSE_UNRECOGNISED,
+	EVENT_REFUSED,
+	LANE_ABSENT,
+	TASK_UNKNOWN,
+} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 import {runTransition} from "./transition-verb.ts";
 
@@ -12,8 +18,15 @@ const LOG = `${ROOT}/42/events.jsonl`;
 const logLine = (event: string): string =>
 	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at: "2026-08-16T00:00:00.000Z"})}\n`;
 
-const run = (fs: ReturnType<typeof fakeFs>, event: string, task: string | null = null) =>
-	Effect.runPromise(Effect.provide(runTransition({root: ROOT, lane: "42", event, task}), fs.layer));
+const run = (
+	fs: ReturnType<typeof fakeFs>,
+	event: string,
+	task: string | null = null,
+	cause: string | null = null,
+) =>
+	Effect.runPromise(
+		Effect.provide(runTransition({root: ROOT, lane: "42", event, task, cause}), fs.layer),
+	);
 
 const freshLane = (log?: string, extra: Parameters<typeof fakeFs>[0] = {}) =>
 	fakeFs({
@@ -106,8 +119,49 @@ describe("lane transition — refuse without append", () => {
 	});
 
 	it("seats its codes above the reserved band, distinct from each other", () => {
-		const codes = [LANE_ABSENT, EVENT_REFUSED, TASK_UNKNOWN, APPEND_UNKNOWN];
+		const codes = [LANE_ABSENT, EVENT_REFUSED, TASK_UNKNOWN, APPEND_UNKNOWN, CAUSE_UNRECOGNISED];
 		expect(new Set(codes).size).toBe(codes.length);
 		for (const code of codes) expect(code).toBeGreaterThanOrEqual(3);
+	});
+});
+
+describe("lane transition — the park cause a driver-originated BLOCKED carries (#6480)", () => {
+	it("records a known cause on the event line", async () => {
+		const fs = freshLane(logLine("WIP"));
+
+		const out = await run(fs, "BLOCKED", null, "worktree-holds-branch");
+
+		expect(out.code).toBe(0);
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(appended).toMatchObject({event: "ISSUE.BLOCKED", cause: "worktree-holds-branch"});
+	});
+
+	it("refuses a cause outside the closed set, log byte-identical", async () => {
+		const fs = freshLane(logLine("WIP"));
+
+		const out = await run(fs, "BLOCKED", null, "the-tree-was-busy");
+
+		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(out.stderr.at(-1)).toContain("log unappended");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses a cause on an event that is not a park", async () => {
+		const fs = freshLane();
+
+		const out = await run(fs, "WIP", null, "worktree-holds-branch");
+
+		expect(out.code).toBe(CAUSE_UNRECOGNISED);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("appends a causeless event with no cause key, exactly as it always did", async () => {
+		const fs = freshLane(logLine("WIP"));
+
+		const out = await run(fs, "BLOCKED");
+
+		expect(out.code).toBe(0);
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(Object.keys(appended).sort()).toEqual(["at", "event", "task"]);
 	});
 });

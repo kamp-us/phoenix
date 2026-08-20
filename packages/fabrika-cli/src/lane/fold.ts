@@ -21,9 +21,9 @@ import {
 
 /**
  * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
- * event a shell reported through `lane report`, the artifact refs its terminal named (#5712). The
- * refs are evidence carried verbatim; the fold reads only `task`/`event`, so a line with or
- * without them folds identically.
+ * event a shell reported through `lane report`, the artifact refs its terminal named (#5712) and,
+ * on a `BLOCKED`, the closed-set cause of the park (#6480). All three are evidence carried
+ * verbatim; the fold reads only `task`/`event`, so a line with or without them folds identically.
  */
 export interface LogEntry {
 	readonly task: string;
@@ -31,6 +31,7 @@ export interface LogEntry {
 	readonly at: string;
 	readonly pr?: string;
 	readonly comment?: string;
+	readonly cause?: string;
 }
 
 export type ParseLogResult =
@@ -57,6 +58,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			at?: unknown;
 			pr?: unknown;
 			comment?: unknown;
+			cause?: unknown;
 		};
 		if (
 			typeof record !== "object" ||
@@ -70,9 +72,10 @@ export const parseLog = (text: string): ParseLogResult => {
 		}
 		if (
 			(record.pr !== undefined && typeof record.pr !== "string") ||
-			(record.comment !== undefined && typeof record.comment !== "string")
+			(record.comment !== undefined && typeof record.comment !== "string") ||
+			(record.cause !== undefined && typeof record.cause !== "string")
 		) {
-			defects.push(`line ${index + 1} carries a non-string \`pr\`/\`comment\` ref`);
+			defects.push(`line ${index + 1} carries a non-string \`pr\`/\`comment\`/\`cause\` field`);
 			continue;
 		}
 		entries.push({
@@ -81,6 +84,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			at: record.at,
 			...(record.pr === undefined ? {} : {pr: record.pr}),
 			...(record.comment === undefined ? {} : {comment: record.comment}),
+			...(record.cause === undefined ? {} : {cause: record.cause}),
 		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};
@@ -140,6 +144,27 @@ export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): F
 	return {_tag: "Folded", states};
 };
 
+/**
+ * The cause standing over each task — the `cause` on that task's latest entry, when it carries one.
+ *
+ * A cause is a property of the event that parked the task, so it stands exactly while that event is
+ * the last thing said about the task: the `UNBLOCKED` that clears the park carries none, and the
+ * standing cause goes with it. Deriving it that way rather than tracking it as machine state is
+ * what keeps the fold total over a log written before this field existed — no cause reads as the
+ * bare `BLOCKED` it always was.
+ */
+export const standingCauses = (
+	entries: ReadonlyArray<LogEntry>,
+): Readonly<Record<string, string>> => {
+	const latest: Record<string, LogEntry> = {};
+	for (const entry of entries) latest[entry.task] = entry;
+	const causes: Record<string, string> = {};
+	for (const [task, entry] of Object.entries(latest)) {
+		if (entry.cause !== undefined) causes[task] = entry.cause;
+	}
+	return causes;
+};
+
 export interface LaneStatus {
 	readonly stateValue: string | Readonly<Record<string, Readonly<Record<string, string>> | string>>;
 	readonly status: "active" | "done";
@@ -150,16 +175,19 @@ export interface LaneStatus {
 export const deriveStatus = (
 	lane: CompiledLane,
 	states: Readonly<Record<string, TaskState>>,
+	causes: Readonly<Record<string, string>> = {},
 ): LaneStatus => {
 	const errors = Object.entries(states)
 		.filter(([taskId, state]) => taskIn(lane, taskId).errorFinals.has(state.type))
 		.map(([taskId]) => taskId);
 	const context: Record<string, unknown> = {};
 	for (const [taskId, state] of Object.entries(states)) {
+		const cause = causes[taskId];
 		context[taskId] = {
 			retries: state.retries,
 			maxRetries: state.maxRetries,
 			...taskIn(lane, taskId).extras,
+			...(cause === undefined ? {} : {cause}),
 		};
 	}
 	context.errors = errors;

@@ -13,14 +13,19 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {
+	branchList,
 	closingPulls,
 	LANE,
+	LANE_BRANCH,
 	LANES_ROOT,
 	LOG,
 	laneTemplate,
 	PARKED_AT_CP,
 	PARKED_BLOCKED,
+	PARKED_ON_WORKTREE,
+	parkedBlockedOn,
 	WORKFLOW,
+	worktreeList,
 } from "./fixtures.test-support.ts";
 import {runUnpark} from "./unpark-verb.ts";
 
@@ -31,6 +36,8 @@ const OWNERS = /contents\/\.github\/CODEOWNERS/;
 const COMPARE = /^gh api repos\/o\/r\/compare\//;
 const ROSTER = /^gh api --paginate orgs\/kamp-us\/teams\/control-plane\/members/;
 const REVIEWS = /^gh api -i repos\/o\/r\/pulls\/4321\/reviews/;
+const BRANCHES = /^git for-each-ref/;
+const TREES = /^git worktree list/;
 
 /** The §CP path set, so the boundary classifies `control-plane` and the discharge table runs. */
 const CP_FILES = files(".github/workflows/ci.yml", "README.md");
@@ -85,6 +92,73 @@ describe("recipe unpark — the known recipe clears", () => {
 		const out = await run(lane(PARKED_AT_CP), DISCHARGED);
 
 		expect(JSON.parse(out.stdout).mechanism).toMatch(/member-approval:notusirin/);
+	});
+});
+
+describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
+	it("clears the worktree-holds-branch park once no working tree holds the branch", async () => {
+		const fs = lane(PARKED_ON_WORKTREE);
+
+		const out = await run(fs, [
+			[BRANCHES, branchList(LANE_BRANCH, "main")],
+			[TREES, worktreeList({path: "/repo", branch: "main"})],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "branch-free",
+			mechanism: `branch-free:${LANE_BRANCH}`,
+			current: "build",
+		});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it("is PARK_HOLDS while a working tree still holds the branch, naming that tree", async () => {
+		const fs = lane(PARKED_ON_WORKTREE);
+
+		const out = await run(fs, [
+			[BRANCHES, branchList(LANE_BRANCH)],
+			[TREES, worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
+		]);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/\/trees\/agent-a9bd/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is TARGET_ABSENT in a clone that never cut the branch — never a clear on an absent read", async () => {
+		const fs = lane(PARKED_ON_WORKTREE);
+
+		const out = await run(fs, [
+			[BRANCHES, branchList("main")],
+			[TREES, worktreeList({path: "/repo", branch: "main"})],
+		]);
+
+		expect(out.code).toBe(TARGET_ABSENT);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is UNKNOWN when the working-tree read fails — never a cleared park", async () => {
+		const fs = lane(PARKED_ON_WORKTREE);
+
+		const out = await run(fs, [
+			[BRANCHES, branchList(LANE_BRANCH)],
+			[TREES, errOut("not a git repository")],
+		]);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is PARK_NOVEL on a cause no row covers, and names the cause it could not key on", async () => {
+		const fs = lane(parkedBlockedOn("some-cause-nobody-wrote-a-row-for"));
+
+		const out = await run(fs, [[BRANCHES, branchList(LANE_BRANCH)]]);
+
+		expect(out.code).toBe(PARK_NOVEL);
+		expect(out.stderr.join("\n")).toMatch(/some-cause-nobody-wrote-a-row-for/);
+		expect(fs.written.size).toBe(0);
 	});
 });
 

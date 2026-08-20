@@ -36,6 +36,41 @@ export const PARKED_AT_CP = eventLog("WIP", "DONE", "PASS", "BLOCKED");
 /** queued → blocked, the bare park no fixed fix keys on. */
 export const PARKED_BLOCKED = eventLog("BLOCKED");
 
+/**
+ * queued → build → blocked, with a `cause` on the parking line — what a shell's `--cause` records.
+ *
+ * Parked out of `build` rather than `queued`, because that is where the #6395 park is actually
+ * taken: the builder's `build branch --resume-lane` refuses, so the history state `UNBLOCKED` walks
+ * back into is `build`.
+ */
+export const parkedBlockedOn = (cause: string): string =>
+	eventLog("WIP") +
+	`${JSON.stringify({
+		task: "issue",
+		event: "ISSUE.BLOCKED",
+		at: "2026-08-16T00:01:00.000Z",
+		cause,
+	})}\n`;
+
+/** The #6395 park: BLOCKED because a working tree still held the lane branch. */
+export const PARKED_ON_WORKTREE = parkedBlockedOn("worktree-holds-branch");
+
+/** The lane branch `childLaneBranches` reads for {@link LANE}'s issue. */
+export const LANE_BRANCH = `build/${LANE}-caylak-in-place-reads-87b626e1`;
+
+/** `git for-each-ref`'s answer — one branch name per line. */
+export const branchList = (...names: ReadonlyArray<string>): ExecResult => okOut(names.join("\n"));
+
+/** `git worktree list --porcelain`'s answer, as blocks of `worktree`/`HEAD`/`branch` lines. */
+export const worktreeList = (
+	...held: ReadonlyArray<{readonly path: string; readonly branch: string}>
+): ExecResult =>
+	okOut(
+		held
+			.map((tree) => `worktree ${tree.path}\nHEAD 0000000\nbranch refs/heads/${tree.branch}\n`)
+			.join("\n"),
+	);
+
 /** The closing-PR edge `openPullsClosing` reads — one open PR declaring it closes the issue. */
 export const closingPulls = (...numbers: ReadonlyArray<number>): ExecResult =>
 	okOut(

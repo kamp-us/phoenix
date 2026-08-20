@@ -552,7 +552,32 @@ transition is itself refused with exit `12` — the current state holds no cell 
 mislabeled rather than missing: `BLOCKED` from `ship` folds to `human:cp-approval` even when the
 block is generic — [#5820](https://github.com/kamp-us/phoenix/issues/5820) tracks that cell.)
 
-You cannot clear a park: post on the driven issue what is needed and from whom (the parking
+**Name the cause when the park has one**, on either recorder — `--cause <token>` on the
+`lane transition … BLOCKED` you originate, and the same flag on the `lane report` a spawned shell
+runs. The vocabulary is closed and lives in code
+([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts));
+`lane transition --help` prints it, and a token outside it is exit `35` with the log unappended, so
+there is no cause to compose and none to guess. The cause is the whole difference between a park a
+verb can clear and one that costs a person: `recipe unpark` keys its recipe table on it, and a
+`BLOCKED` carrying none is Novel by construction (#6480). Omitting one is still legal and still
+correct for a park nobody wrote a recipe for — what is never correct is reaching for a token because
+it is nearby rather than because it is what happened.
+
+**So try `recipe unpark` before you post a park comment**, whenever the fold reads `blocked` or
+`human:*`:
+
+```bash
+node <fabrika> recipe unpark <lane-key> --task <task>
+```
+
+Exit `0` cleared it — the verb recorded the `UNBLOCKED` itself and re-read the fold to prove the task
+left the park, so your next move is the state that re-fold reads, not a park comment. Exit `12` is
+the park's cause outside the table, `13` is a known cause whose clearing condition is not met yet,
+and either way the ledger is untouched and the park below is what you do. You never read past those
+codes and never retype what the verb does: which parks clear on their own is that table's decision,
+not yours (ADR [0228](../../../../.decisions/0228-scripts-relay-never-derive.md)).
+
+You cannot clear a park by hand: post on the driven issue what is needed and from whom (the parking
 spawn's report names both; for `human:cp-approval` it is a control-plane approval at the PR's
 current head; for `frozen` it is a founder-cleared repair round, recorded with `build clear`, which
 re-folds the task into `build` on its own — a bare `UNBLOCKED` walks the door back into the same

@@ -5,7 +5,15 @@
 import {describe, expect, it} from "vitest";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {coderWorkflow, twoPhaseWorkflow} from "./fixtures.test-support.ts";
-import {applyEvent, deriveStatus, foldLog, type LogEntry, parseLog, resolveTask} from "./fold.ts";
+import {
+	applyEvent,
+	deriveStatus,
+	foldLog,
+	type LogEntry,
+	parseLog,
+	resolveTask,
+	standingCauses,
+} from "./fold.ts";
 import {type CompiledLane, compile} from "./machine.ts";
 
 const lane = (workflow: unknown): CompiledLane => {
@@ -459,5 +467,66 @@ describe("the fold is deterministic and total over its inputs", () => {
 		expect(resolveTask(lane(coderWorkflow()), null)).toEqual({_tag: "Task", taskId: "issue"});
 		expect(resolveTask(lane(twoPhaseWorkflow()), null)).toMatchObject({_tag: "Unresolved"});
 		expect(resolveTask(lane(coderWorkflow()), "nope")).toMatchObject({_tag: "Unresolved"});
+	});
+});
+
+describe("the park cause a BLOCKED carries (#6480)", () => {
+	const caused = (task: string, event: string, cause: string): LogEntry => ({
+		...entry(task, event),
+		cause,
+	});
+
+	it("parses a cause off the line and refuses one that is not a string", () => {
+		expect(parseLog(`{"task":"issue","event":"ISSUE.BLOCKED","at":"t","cause":"x"}\n`)).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.BLOCKED", at: "t", cause: "x"}],
+		});
+		expect(parseLog(`{"task":"issue","event":"ISSUE.BLOCKED","at":"t","cause":7}\n`)).toMatchObject(
+			{
+				_tag: "Malformed",
+			},
+		);
+	});
+
+	it("stands the cause of a task's latest entry, per task", () => {
+		expect(
+			standingCauses([
+				entry("issue_1", "WIP"),
+				caused("issue_1", "BLOCKED", "worktree-holds-branch"),
+				entry("issue_2", "WIP"),
+			]),
+		).toEqual({issue_1: "worktree-holds-branch"});
+	});
+
+	it("drops the cause once a later event supersedes it — an UNBLOCKED carries none", () => {
+		expect(
+			standingCauses([
+				caused("issue", "BLOCKED", "worktree-holds-branch"),
+				entry("issue", "UNBLOCKED"),
+			]),
+		).toEqual({});
+	});
+
+	it("hangs the standing cause on the task's own context, beside its retries", () => {
+		const compiled = lane(coderWorkflow());
+		const entries = [entry("issue", "WIP"), caused("issue", "BLOCKED", "worktree-holds-branch")];
+		const folded = foldLog(compiled, entries);
+		if (folded._tag !== "Folded") throw new Error(folded.defects.join("; "));
+
+		const status = deriveStatus(compiled, folded.states, standingCauses(entries));
+
+		expect(status.stateValue).toEqual({pipeline: {issue: "blocked"}});
+		expect(status.context.issue).toMatchObject({retries: 0, cause: "worktree-holds-branch"});
+	});
+
+	it("folds a log written before the field existed with no cause key at all", () => {
+		const compiled = lane(coderWorkflow());
+		const entries = [entry("issue", "WIP"), entry("issue", "BLOCKED")];
+		const folded = foldLog(compiled, entries);
+		if (folded._tag !== "Folded") throw new Error(folded.defects.join("; "));
+
+		const status = deriveStatus(compiled, folded.states, standingCauses(entries));
+
+		expect(Object.hasOwn(status.context.issue as object, "cause")).toBe(false);
 	});
 });
