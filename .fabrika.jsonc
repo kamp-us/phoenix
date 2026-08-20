@@ -1,4 +1,9 @@
 {
+	// Binds this file to its JSON Schema so an editor autocompletes keys and reds a typo or a
+	// wrong-typed value while you type, instead of at fabrika runtime. The schema is generated from
+	// the config-key fragments by `fabrika config schema --write` — never hand-edited (#6488).
+	"$schema": "./.fabrika.schema.json",
+
 	// Who may clear one extra repair round on a PR (`fabrika build clear`). Founder-ruled 2026-08-18
 	// on #5959: the grant-author set is repo configuration, not a compiled-in "founder" concept —
 	// GitHub usernames and teams, both `@`-prefixed as GitHub writes them. In phoenix it is the

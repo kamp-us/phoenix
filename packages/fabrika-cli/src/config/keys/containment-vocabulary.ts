@@ -72,6 +72,24 @@ export const containmentVocabularyKey: KeyGroup<ContainmentVocabulary> = {
 	key: CONTAINMENT_VOCABULARY,
 	shippedDefault: SHIPPED_CONTAINMENT_VOCABULARY,
 	decode,
+	jsonSchema: {
+		type: "object",
+		description:
+			"Which child types are asked for a `**Containment:**` marker, and which values satisfy it. An empty half means the marker is never required.",
+		properties: {
+			types: {
+				type: "array",
+				description: "The `type:` labels a child must carry to be asked for a marker.",
+				items: {type: "string", minLength: 1},
+			},
+			values: {
+				type: "array",
+				description: `The keywords that satisfy the marker. Never "${DECLINED}", the reserved declination.`,
+				items: {type: "string", minLength: 1},
+			},
+		},
+		additionalProperties: false,
+	},
 };
 
 /** Whether this vocabulary asks any child for a marker. An empty half is a vocabulary that asks nothing. */

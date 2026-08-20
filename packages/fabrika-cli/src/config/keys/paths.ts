@@ -19,6 +19,7 @@
  * what the tree already says.
  */
 
+import type {JsonSchema} from "../json-schema.ts";
 import type {Decoded, KeyGroup} from "../key-group.ts";
 
 export const DECISIONS_DIR = "decisionsDir";
@@ -60,11 +61,20 @@ const decodePath = (key: string, raw: unknown): Decoded<string> => {
 	return {_tag: "Value", value: path};
 };
 
+/** A repo-relative path in JSON Schema: a non-empty string, never absolute or parent-relative. */
+const pathSchema = (description: string): JsonSchema => ({
+	type: "string",
+	description,
+	minLength: 1,
+	pattern: "^(?!/)(?!\\.\\.).+",
+});
+
 /** A plain path key: absent is the shipped value, and there is nothing to decline. */
-const pathKey = (key: string, shipped: string): KeyGroup<string> => ({
+const pathKey = (key: string, shipped: string, description: string): KeyGroup<string> => ({
 	key,
 	shippedDefault: shipped,
 	decode: (raw) => decodePath(key, raw),
+	jsonSchema: pathSchema(description),
 });
 
 /**
@@ -88,8 +98,27 @@ export const decisionsDirKey: KeyGroup<PathValue> = {
 	},
 	// A readout prints what the file says, and what the file says for a declined key is `null`.
 	render: (value) => (value._tag === "Declined" ? null : value.path),
+	jsonSchema: {
+		type: ["string", "null"],
+		description:
+			"The decision corpus directory, repo-relative. Write null to declare that this repo keeps no decision corpus.",
+		minLength: 1,
+		pattern: "^(?!/)(?!\\.\\.).+",
+	},
 };
 
-export const roadmapFileKey = pathKey(ROADMAP_FILE_KEY, SHIPPED_ROADMAP_FILE);
-export const cycleDocKey = pathKey(CYCLE_DOC_KEY, SHIPPED_CYCLE_DOC);
-export const designHarnessKey = pathKey(DESIGN_HARNESS_KEY, SHIPPED_DESIGN_HARNESS);
+export const roadmapFileKey = pathKey(
+	ROADMAP_FILE_KEY,
+	SHIPPED_ROADMAP_FILE,
+	"The roadmap file carrying the `## Campaigns` focus table, repo-relative.",
+);
+export const cycleDocKey = pathKey(
+	CYCLE_DOC_KEY,
+	SHIPPED_CYCLE_DOC,
+	"The product-development cycle doc a containment class is derived from, repo-relative.",
+);
+export const designHarnessKey = pathKey(
+	DESIGN_HARNESS_KEY,
+	SHIPPED_DESIGN_HARNESS,
+	"The design-harness file declaring the dev server `ui render` renders at, repo-relative.",
+);

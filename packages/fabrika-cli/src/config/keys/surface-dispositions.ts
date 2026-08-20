@@ -307,4 +307,11 @@ export const surfaceDispositionsKey: KeyGroup<SurfaceDispositions> = {
 	key: SURFACE_DISPOSITIONS,
 	shippedDefault: SHIPPED_SURFACE_DISPOSITIONS,
 	decode,
+	jsonSchema: {
+		type: "object",
+		description:
+			"What this repo does when a surface fabrika reads is missing. Declare only the ids you move; every other falls to its shipped disposition.",
+		propertyNames: {enum: SURFACE_REGISTRY.map((surface) => surface.id)},
+		additionalProperties: {type: "string", enum: [...DISPOSITIONS]},
+	},
 };

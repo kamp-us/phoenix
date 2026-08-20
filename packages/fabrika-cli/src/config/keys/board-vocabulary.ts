@@ -28,6 +28,7 @@
 
 import {DEFAULT_BOARD_VOCABULARY} from "../../triage/facets.ts";
 import {type BoardVocabulary, type StatusNames, statusList} from "../board.ts";
+import type {JsonSchema} from "../json-schema.ts";
 import type {Decoded, KeyGroup} from "../key-group.ts";
 
 export const BOARD_VOCABULARY = "boardVocabulary";
@@ -143,8 +144,43 @@ const decode = (raw: unknown): Decoded<BoardVocabulary> => {
 	return {_tag: "Value", value: {statuses, types, priorities, audiences, standingLanes}};
 };
 
+/** A facet's label list. `standingLanes` may be empty; the other three refuse an empty declaration. */
+const listSchema = (description: string, allowEmpty: boolean): JsonSchema => ({
+	type: "array",
+	description,
+	items: {type: "string", minLength: 1},
+	uniqueItems: true,
+	...(allowEmpty ? {} : {minItems: 1}),
+});
+
+const statusesSchema: JsonSchema = {
+	type: "object",
+	description:
+		"The status role → label map. Every role is optional and falls to its shipped label.",
+	properties: Object.fromEntries(
+		STATUS_ROLES.map((role) => [role, {type: "string", minLength: 1} satisfies JsonSchema]),
+	),
+	additionalProperties: false,
+};
+
 export const boardVocabularyKey: KeyGroup<BoardVocabulary> = {
 	key: BOARD_VOCABULARY,
 	shippedDefault: DEFAULT_BOARD_VOCABULARY,
 	decode,
+	jsonSchema: {
+		type: "object",
+		description:
+			"The statuses, types, priorities, audiences and standing lanes this repo's board runs on. Every sub-key is independently optional.",
+		properties: {
+			statuses: statusesSchema,
+			types: listSchema("The `type:` labels triage may keep.", false),
+			priorities: listSchema("The priority labels triage may keep.", false),
+			audiences: listSchema("The audience labels triage may keep.", false),
+			standingLanes: listSchema(
+				"The standing-lane labels; an empty list means every issue homes on a milestone.",
+				true,
+			),
+		},
+		additionalProperties: false,
+	},
 };

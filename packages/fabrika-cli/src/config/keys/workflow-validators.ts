@@ -62,4 +62,29 @@ export const workflowValidatorsKey: KeyGroup<ReadonlyArray<WorkflowValidator>> =
 	// `argv` is the spawn shape; the file's key is `command`, and a readout prints what the repo wrote.
 	render: (validators) =>
 		validators.map((one) => ({command: [...one.argv], reads: [...one.reads]})),
+	jsonSchema: {
+		type: "array",
+		description:
+			"The repo's own commands that machine-read `.github/workflows/**` — `build check --surface workflows` spawns each. Empty (or absent) stands on actionlint alone.",
+		items: {
+			type: "object",
+			properties: {
+				command: {
+					type: "array",
+					description: 'The argv to spawn — e.g. ["node", "tools/lint-workflows.js"].',
+					items: {type: "string"},
+					minItems: 1,
+				},
+				reads: {
+					type: "array",
+					description:
+						"The exact workflow files this command opens — what makes a passing run checkable per file.",
+					items: {type: "string", minLength: 1},
+					minItems: 1,
+				},
+			},
+			required: ["command", "reads"],
+			additionalProperties: false,
+		},
+	},
 };

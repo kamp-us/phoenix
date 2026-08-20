@@ -102,4 +102,24 @@ export const ciKey: KeyGroup<CiSurface> = {
 	key: CI,
 	shippedDefault: SHIPPED_CI,
 	decode,
+	jsonSchema: {
+		type: "object",
+		description: "What fabrika may assume about the repo's continuous-integration producer.",
+		properties: {
+			noProducer: {
+				type: "string",
+				description:
+					"What a repo with zero Actions workflows gets: `refuse` (a rollup over no producer is vacuous) or `degrade`.",
+				enum: ["refuse", "degrade"],
+			},
+			gateWorkflow: {
+				type: "string",
+				description:
+					"The CI gate's workflow filename, as `gh api actions/workflows/<file>` names it — a bare filename, not a path.",
+				minLength: 1,
+				pattern: "^[^/]+$",
+			},
+		},
+		additionalProperties: false,
+	},
 };

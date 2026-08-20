@@ -15,6 +15,8 @@ rather than a branch in fabrika's source (ADR 0273, epic
 | `key-group.ts` | `KeyGroup<A>`, the four-arm `Resolution<A>`, `resolveKey`, and `register` |
 | `keys/<key>.ts` | One key group: its key name, its shipped default, its decoder |
 | `registry.ts` | One `register(...)` line per key group |
+| `json-schema.ts` | `assembleSchema` — joins every registered key's `jsonSchema` fragment into the one draft-07 document an editor validates `.fabrika.jsonc` against |
+| `schema-verb.ts` / `command.ts` / `codes.ts` | The `config schema` verb group — reconciles the committed `.fabrika.schema.json` with the assembled document, or renders it with `--write` |
 | `load.ts` | `loadConfig(source)` → a document every key resolves against, or a refusal; `resolveAll` for a reader over the whole registry |
 | `source.ts` | `readConfigSource(dir)` — opens the file off a directory and reports which of the three arms it found |
 | `entries.ts` | The shared decoders every list key builds on — one place a list's element shape is read |
@@ -56,6 +58,8 @@ silently disables a gate.
    `shippedDefault`.
 2. Add one `register(yourKey)` line to `registry.ts`.
 3. Add a `render` **only if** the decoded shape is not the shape a repo writes (see below).
+4. Add a `jsonSchema` fragment describing a declared value's shape (see below). Then regenerate the
+   committed schema with `fabrika config schema --write` — CI reds if you skip it.
 
 Nothing else is touched. That is the point — concurrent slices each add a key without serializing
 on one growing reader.
@@ -226,3 +230,34 @@ tells a caller what happens and never what the surface *is* — so `status setti
 the registry's notes to the resolved dispositions and prints one `surface` row each. The join lives
 with the key (`surfaceNotes`), not in the verb, because the notes and the overrides are two halves
 of one answer and neither is complete alone.
+
+## The editor schema, assembled from the fragments
+
+A hand-edited config with no editor support is where a silent typo turns a gate off — the feedback
+is a decode failure at runtime, maybe never (#6488). So each key group carries a `jsonSchema`
+fragment beside its `decode`, and `config/json-schema.ts`'s `assembleSchema` joins the registry's
+fragments into one draft-07 document. `.fabrika.jsonc` opens with a `$schema` pointer at the committed
+`.fabrika.schema.json`, and an editor reds a misspelled key or a wrong-typed value while you type.
+
+Three things hold.
+
+**The fragment is single-sourced beside the decoder.** It describes the *declared* value's shape —
+that a key is absent-optional is the document's rule, not each fragment's. A fragment derived from
+another module's data reads it there rather than restating it: `surfaceDispositions` enumerates its
+ids off `SURFACE_REGISTRY`, `boardVocabulary` builds its status roles off `STATUS_ROLES`.
+
+**An incomplete registry refuses the assembly whole.** The `jsonSchema` field is optional on the
+type but required in practice: `assembleSchema` names any registered key that carries no fragment and
+emits nothing, because a schema missing a key's subtree greens a typo under it — the exact gap the
+schema exists to close. `json-schema.unit.test.ts` asserts the real registry is complete.
+
+**The committed file is generated, and CI keeps it honest.** `config schema` compares the committed
+`.fabrika.schema.json` to the freshly assembled document — by content, not bytes, so the repo's
+formatter may reformat it freely, though the key order is the generator's — and reds drift (exit 4).
+`--write` renders it. What runs that check on a PR is `config/schema.cli.test.ts`, which spawns the
+no-flag verb at the repo root; it rides the `packages unit tests` job, whose path filter lists both
+`packages/**` and `.fabrika.schema.json`, so neither side of the pair can be edited without the job
+firing. A root the verb could not locate exits `6` (UNKNOWN), never `4` — an unlocatable file is not
+a file that disagrees. The verb mirrors `wire index`, the sibling generated-file reconcile, and is
+unaligned from the exit-code base as `wire` is (`exit-code-alignment.ts`). The file is excluded from
+biome (`biome.jsonc`), so a regenerate leaves the committed output stable.
