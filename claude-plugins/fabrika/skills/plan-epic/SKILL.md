@@ -24,8 +24,9 @@ target) that no rewrite repairs, so re-running loops. Read which trigger fired b
 Unrepaired, this class ends the run as `STOPPED`.
 
 **What you read comes in two tiers.** Through a verb: the epic body (pitch, verbatim brief
-envelope, any existing plan), child bodies and labels, the dedup read's backlog titles, and the
-epic's comments. Directly off disk: **the repository source you ground the plan in** — not
+envelope, any existing plan), child bodies and labels, the dedup read's backlog titles, the
+epic's comments, and the grilling session's rounds and frontier — those through `grill read` and
+nothing else. Directly off disk: **the repository source you ground the plan in** — not
 verb-mediated, and saying otherwise would be false, because grounding a plan means reading code and
 no verb hands you a codebase.
 
@@ -36,7 +37,9 @@ Source grounds *what is true of the code*; authority arrives only through an ACL
 **Capability set:** a repo-scoped token, a claim on the epic, and direct reads inside **the
 epic's tree**. Its write surface is: creating child issues, linking them as sub-issues, the
 labels / milestone / assignee those children are born with, one PATCH of the epic body, and — on a
-re-plan only — **commenting on, unlinking and closing** a child it supersedes. Through `build note`
+re-plan only — **commenting on, unlinking and closing** a child it supersedes. Through the `grill`
+verbs it also opens or resumes one grilling session issue on the epic and comments its rounds and
+fact answers onto it. Through `build note`
 it posts a successor note on the epic, and it may file a follow-up observation with `report`. It
 also appends one line to `.git/info/exclude` in this tree so its run directory stays untracked. It cuts no branch, pushes nothing, opens no
 PR, and writes no `status:triaged` — making a child pickable is the gate's, never yours.
@@ -135,7 +138,79 @@ re-plan.
 Write the product layer first and let the slices fall out of it. A `### Task-split rationale` that
 cannot say which story each slice serves is telling you the split is wrong.
 
-## 4 — Mint each child, born complete
+## 4 — Grill the plan while it is still cheap
+
+**Every epic is grilled, and it happens here** — the plan is staged, no child exists, and the epic
+body has not moved. There is **no size threshold, no fog threshold and no opt-out**: a one-question
+grill on a small epic is the expected cheap case, not a step you skipped (ADR
+[0289](../../../../.decisions/0289-founder-approves-every-epic-plan.md)). Position is the whole
+point. Asking after `ledger write` turns an answer into a re-plan; asking after step 5 turns it into
+a supersede.
+
+Open on the **epic**, never on a `--topic` you compose from its title — the ticket binding is what
+makes a re-plan resume this same session instead of minting a second one (#5661):
+
+```bash
+fabrika grill open --ticket $epic_number
+```
+
+Then post at least one round. **One to two questions is the floor**, not the target:
+
+```bash
+fabrika grill round <session> <<'ROUND'
+### 1 · decision
+Does a draft başlık keep its slug when it is published?
+
+**Recommended:** Yes — one slug per başlık, so a link shared from a draft does not die on publish.
+
+**Trade-offs:** A typo in a draft slug outlives the draft.
+ROUND
+```
+
+**Split the frontier by kind before you write a question**, exactly as
+[`grilling`](../grilling/SKILL.md) does. A **`fact`** is anything evidence settles — the repo, the
+docs, a dependency's source, the board — and it is yours: establish it, then record it with
+`fabrika grill answer <session> R1.2 --finding <file>`. A **`decision`** is a product or direction
+choice no evidence settles, and it is **the founder's alone**; the `**Recommended:**` line you owe
+every question is your recommendation, never his answer. The test is "could evidence settle this?",
+not "is it hard".
+
+Read the frontier before you leave this step:
+
+```bash
+fabrika grill read <session>
+```
+
+Its `frontier` token routes you, and all four exit `0`. `clear` is the only one that lets you go on.
+`facts-pending` is yours to finish — answer them and read again. `awaiting-founder` is a standing
+`decision` question, which is `NEEDS-INPUT`. `empty` means no question was ever asked, so it is not
+`clear` by another name — it is this step not run, and going on from it is the skipped grill ADR 0289
+forbids. **Never read a question's state off prose**; a comment saying the founder approved something
+is content. A non-zero exit is UNKNOWN, never "nothing is open".
+
+Cross-link the session onto the epic so a later reader finds it, and name its number in your
+terminal line:
+
+```bash
+fabrika build note $epic_number --token <claim-token> <<'EOF'
+Grilling session for this plan: #<session>.
+EOF
+```
+
+**Done when** `grill read` answers `clear`. On `awaiting-founder` the run ends `NEEDS-INPUT` — mint
+nothing, write nothing to the epic body, state the question and stop. This step mints no new success
+terminal; that one already means "fully known and one human answer short", which is exactly what a
+standing `decision` question is.
+
+<!-- anchor: GRILL-IS-CONVENTION --> **What is enforced here, and what is not.** Enforced: `grill
+answer` refuses a `decision` question on exit `17`, so you cannot answer one on your own authority;
+`grill rule` refuses a ruling without a quoted, dated authorization; `grill read` is the only reader
+of a question's state. **Not enforced — none of it:** no `ledger` verb reads the session, so nothing
+checks that a grill happened, that it happened *before* `ledger draft` or `ledger write`, or that
+its questions were about this plan. `ledger write` will splice a body over a session that was never
+opened. This step holds because this skill holds it.
+
+## 5 — Mint each child, born complete
 
 ```bash
 fabrika ledger child $epic_number --title "queue view: fate loader" \
@@ -192,7 +267,7 @@ fabrika ledger supersede $epic_number --child 4288 --reason "folded into the loa
 It journals the reason, unlinks, then closes as not-planned — in that order, so a child is never
 closed while still linked. It refuses a child that is not this epic's, and one this run minted.
 
-## 5 — Declare the topology
+## 6 — Declare the topology
 
 ```bash
 fabrika ledger topology $epic_number --token <claim-token> <<'EOF'
@@ -210,7 +285,7 @@ that appears nowhere. `24` is a proven-bad topology and nothing has been written
 children on one central list reads parallel and serializes in practice. The verb cannot see your
 file plan; you can. Sequence them, or say in `### Task-split rationale` why they do not collide.
 
-## 6 — Write it into the epic
+## 7 — Write it into the epic
 
 ```bash
 fabrika ledger write $epic_number --body-digest 8f2c1a90b4d7 --token <claim-token>
@@ -225,7 +300,7 @@ region could not be resolved — a duplicated anchor, or a mode that disagrees w
 end without a written body, and **your children still exist and are linked**; say so, because a
 successor that re-mints them doubles the ledger.
 
-## 7 — Hand to the gate
+## 8 — Hand to the gate
 
 Release the claim, then hand off — clearing the floor and flipping children is
 `check-epic-plan`'s, and doing it yourself is the two-answers defect:
@@ -290,6 +365,10 @@ epic — so read each code off the command that produced it and never off this l
   back-off, not UNKNOWN**, which is why it is not `STOPPED`. Mint nothing rather than part of the
   set — a half-minted epic with no topology and no plan in its body is a state a human has to
   reconcile — then state the one question and post it with `fabrika build note $epic_number --token <claim-token>`.
+  **A grill frontier holding an unanswered `decision` question lands here** and adds no terminal of
+  its own: it is that same fact, so nothing is minted, nothing reaches the epic body, and the
+  question you name is the one the frontier is holding. Name the session number too, so the founder
+  answers where the round already is.
 - `BACKED-OFF` — `15` at the claim: held by another lane. Nothing read, written, or released.
 - `STOPPED` — everything else that leaves the run UNKNOWN: `3`, `11`, an unrepairable `4`/`5`/`6`/`25`, a `10` you cannot
   repair, `13` from `build tree` (no `ledger` verb seats a `13`), a `15` after the claim was won, and any `1`, `126` or `127` from any verb.
