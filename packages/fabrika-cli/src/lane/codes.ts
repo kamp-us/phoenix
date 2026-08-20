@@ -209,3 +209,16 @@ export const TOKEN_UNRECOGNISED = 32;
  * versus `lane assembly` a worktree of the run's own.
  */
 export const PRIMARY_CHECKOUT = 33;
+
+/**
+ * The assembly branch tracks a ref that is not itself, and clearing that upstream did not take. The
+ * shape `git worktree add -b epic/<n> <seat> origin/HEAD` left it behind, recording
+ * `branch.epic/<n>.merge = refs/heads/main` and aiming the run's pushes at the default branch
+ * (#6435). `lane push` now names its target explicitly, so the config can no longer redirect the
+ * verb; this code says the seat itself is still aimed at that branch, where a bare `git push` would
+ * fire at it.
+ *
+ * Its own seat rather than {@link REF_NOT_MOVED}'s: that one is read after a push ran and says the
+ * remote disagrees, this one is proven before anything is sent.
+ */
+export const MISDIRECTED_PUSH = 34;
