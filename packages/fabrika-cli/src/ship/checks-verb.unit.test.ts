@@ -64,7 +64,7 @@ describe("rollupFor", () => {
 });
 
 describe("runChecks", () => {
-	it("prints the rollup, the count of lines that follow, each run's gating flag, and the facts", async () => {
+	it("prints the rollup, the run count, the collapsed check tally, and the facts", async () => {
 		const out = await run([
 			[PULL, pull()],
 			[COMMIT, okOut(HEAD)],
@@ -84,13 +84,99 @@ describe("runChecks", () => {
 			[
 				`checks\t${HEAD}\tgreen`,
 				"run\t3",
-				"ci-required\tsuccess\tgating",
-				"unit tests\tsuccess\tgating",
-				"deploy (web)\tfailure\tinformational",
+				"check\tsuccess/gating\t2",
+				"check\tfailure/informational\t1",
 				"facts\tworkflows:2\truns:14",
 				"",
 			].join("\n"),
 		);
+	});
+
+	// ADR 0308: `checks` is an evidence-array, so it collapses to counts — but the gating axis stays
+	// in the key, or a `red` head and this one (a failing *informational* run) would tally the same.
+	it("tallies the collapsed checks by status AND gating, count-descending", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[COMMIT, okOut(HEAD)],
+			[
+				RUNS,
+				checkRuns(3, [
+					noRun("unit tests", "completed", "failure"),
+					noRun("deploy (web)", "completed", "failure"),
+					noRun("ci-required", "completed", "success"),
+				]),
+			],
+			[WORKFLOWS, workflows("active")],
+			[RUN_COUNT, runsTotal(3)],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tred`);
+		expect(out.stdout).toContain("check\tfailure/gating\t1");
+		expect(out.stdout).toContain("check\tfailure/informational\t1");
+		expect(out.stdout).toContain("check\tsuccess/gating\t1");
+		expect(out.stdout).not.toContain("unit tests");
+	});
+
+	// The collapse costs the rows, never the route: `red` still has to hand `heal-ci` a name.
+	it("names the failing gating runs on the notes channel, sorted, informational excluded", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[COMMIT, okOut(HEAD)],
+			[
+				RUNS,
+				checkRuns(3, [
+					noRun("unit tests", "completed", "failure"),
+					noRun("ci-required", "completed", "cancelled"),
+					noRun("deploy (web)", "completed", "failure"),
+				]),
+			],
+			[WORKFLOWS, workflows("active")],
+			[RUN_COUNT, runsTotal(3)],
+		]);
+		expect(out.stderr).toContain(
+			"ship checks: failing gating checks: ci-required, unit tests — route these to heal-ci.",
+		);
+	});
+
+	it("names no failing check when the only failure is informational", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[COMMIT, okOut(HEAD)],
+			[
+				RUNS,
+				checkRuns(2, [
+					noRun("deploy (web)", "completed", "failure"),
+					noRun("unit tests", "completed", "success"),
+				]),
+			],
+			[WORKFLOWS, workflows("active")],
+			[RUN_COUNT, runsTotal(2)],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tgreen`);
+		expect(out.stderr.join("\n")).not.toContain("failing gating checks");
+	});
+
+	it("mirrors the same collapsed tally into the --json payload", async () => {
+		const out = await run(
+			[
+				[PULL, pull()],
+				[COMMIT, okOut(HEAD)],
+				[
+					RUNS,
+					checkRuns(3, [
+						noRun("ci-required", "completed", "success"),
+						noRun("unit tests", "completed", "success"),
+						noRun("deploy (web)", "completed", "failure"),
+					]),
+				],
+				[WORKFLOWS, workflows("active", "active")],
+				[RUN_COUNT, runsTotal(14)],
+			],
+			{json: true},
+		);
+		expect(JSON.parse(out.stdout).checks).toEqual({
+			"success/gating": 2,
+			"failure/informational": 1,
+		});
 	});
 
 	it("reds on a gating failure — the carve-out never covers a real check", async () => {

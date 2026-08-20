@@ -3,6 +3,7 @@ import {
 	type CaptureManifest,
 	isKebabSetName,
 	manifestPath,
+	PAGE_ERROR_CAP,
 	parseManifest,
 	serializeManifest,
 	setDirectory,
@@ -23,7 +24,7 @@ const manifest: CaptureManifest = {
 			width: 1280,
 			height: 2140,
 			sha256: "9c41",
-			pageErrors: [],
+			pageErrors: {rows: [], more: 0},
 		},
 	],
 };
@@ -70,6 +71,45 @@ describe("the manifest round-trip", () => {
 			parseManifest(JSON.stringify({...manifest, captures: []}))._tag,
 			"Malformed",
 		);
+	});
+
+	it("carries a capture's page errors capped, with the dropped rows counted (ADR 0308)", () => {
+		const capped: CaptureManifest = {
+			...manifest,
+			captures: [
+				{
+					...(manifest.captures[0] as CaptureManifest["captures"][number]),
+					pageErrors: {
+						rows: [{kind: "console.error", text: "Warning: missing key prop"}],
+						more: 41,
+					},
+				},
+			],
+		};
+		const document = serializeManifest(capped);
+		assert.include(document, '"pageErrors":{"rows":[{"kind":"console.error"');
+		assert.include(document, '"more":41');
+		assert.deepStrictEqual(parseManifest(document), {_tag: "Manifest", value: capped});
+	});
+
+	it("refuses the pre-collapse bare array, so a stale writer is Malformed and not silently read", () => {
+		const stale = JSON.stringify({
+			...manifest,
+			captures: [
+				{
+					...(manifest.captures[0] as CaptureManifest["captures"][number]),
+					pageErrors: [{kind: "console.error", text: "Warning: missing key prop"}],
+				},
+			],
+		});
+		assert.strictEqual(parseManifest(stale)._tag, "Malformed");
+	});
+});
+
+describe("the page-error cap", () => {
+	it("is a small whole number — the collapse must bound the payload, not echo it", () => {
+		assert.isTrue(Number.isInteger(PAGE_ERROR_CAP));
+		assert.isTrue(PAGE_ERROR_CAP > 0 && PAGE_ERROR_CAP <= 5);
 	});
 });
 

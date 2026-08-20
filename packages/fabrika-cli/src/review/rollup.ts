@@ -21,6 +21,10 @@ const PASSING = new Set(["success", "neutral", "skipped"]);
 export const statusOf = (run: CheckRun): string =>
 	run.status === "completed" ? (run.conclusion ?? "unknown") : run.status;
 
+/** A completed run that did not pass — the single test the `red` bucket is defined by. */
+export const isFailing = (run: CheckRun): boolean =>
+	run.status === "completed" && !PASSING.has(run.conclusion ?? "");
+
 /**
  * `red` on any completed run outside {@link PASSING}; `pending` when none red and any run is still in
  * flight; `green` only when every run completed and each concluded passing.
@@ -29,7 +33,7 @@ export const rollupOf = (runs: ReadonlyArray<CheckRun>): Rollup => {
 	let inFlight = false;
 	for (const run of runs) {
 		if (run.status !== "completed") inFlight = true;
-		else if (!PASSING.has(run.conclusion ?? "")) return "red";
+		else if (isFailing(run)) return "red";
 	}
 	return inFlight ? "pending" : "green";
 };

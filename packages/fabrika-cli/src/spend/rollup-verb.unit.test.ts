@@ -115,10 +115,83 @@ describe("spend rollup — the answer", () => {
 			runs: 2,
 			measuredRuns: 2,
 		});
-		expect(parsed.bySkill.map((b: {skill: string}) => b.skill)).toEqual([
+		expect(parsed.bySkill.rows.map((b: {skill: string}) => b.skill)).toEqual([
 			"review-code",
 			"write-code",
 		]);
+		expect(parsed.bySkill.more).toBe(0);
+	});
+
+	/**
+	 * The three breakdowns are evidence-arrays under ADR 0308: they make the totals auditable and no
+	 * skill reads a row of one by name, so an unbounded ledger must not print an unbounded answer.
+	 */
+	describe("the three breakdowns are bounded evidence, never the whole row set", () => {
+		const CAP = 10;
+
+		/** One row per day, each day billed one more than the last — so the newest days bill most. */
+		const overCapDays = (): ReadonlyArray<LedgerRow> =>
+			Array.from({length: CAP + 5}, (_, index) =>
+				row({
+					recordedAt: `2026-08-${String(index + 1).padStart(2, "0")}T09:00:00.000Z`,
+					spend: spendOf(100 + index, 40, 3),
+				}),
+			);
+
+		it("prints the capped rows plus the remainder count, not every day", async () => {
+			const out = await run(withRows(overCapDays()));
+			const lines = out.stdout.split("\n");
+
+			expect(lines.filter((l) => l.startsWith("day\t"))).toHaveLength(CAP);
+			expect(fields(out.stdout).get("dayMore")).toEqual(["5"]);
+		});
+
+		it("keeps the biggest spenders, not the rows the key order happened to sort first", async () => {
+			const out = await run(withRows(overCapDays()));
+			const days = out.stdout
+				.split("\n")
+				.filter((l) => l.startsWith("day\t"))
+				.map((l) => l.split("\t")[1]);
+
+			expect(days[0]).toBe("2026-08-15");
+			expect(days).not.toContain("2026-08-01");
+		});
+
+		it("prints a 0 remainder rather than dropping the line when nothing was capped", async () => {
+			const out = await run(withRows([row(), row({skillName: "review-code", stage: "review"})]));
+
+			expect(fields(out.stdout).get("dayMore")).toEqual(["0"]);
+			expect(fields(out.stdout).get("skillMore")).toEqual(["0"]);
+			expect(fields(out.stdout).get("stageArmMore")).toEqual(["0"]);
+		});
+
+		it("bounds --json the same way it bounds the line form — the two channels never desync", async () => {
+			const rows = overCapDays();
+			const lineForm = fields((await run(withRows(rows))).stdout);
+			const parsed = JSON.parse((await run(withRows(rows), {json: true})).stdout);
+
+			expect(parsed.byDay.rows).toHaveLength(CAP);
+			expect(String(parsed.byDay.more)).toBe(lineForm.get("dayMore")?.[0]);
+			expect(parsed.byDay.rows.map((b: {day: string}) => b.day)).toEqual(
+				(await run(withRows(rows))).stdout
+					.split("\n")
+					.filter((l) => l.startsWith("day\t"))
+					.map((l) => l.split("\t")[1]),
+			);
+		});
+
+		it("leaves the scalar totals whole — the collapse is evidence-only", async () => {
+			const rows = overCapDays();
+			const parsed = JSON.parse((await run(withRows(rows), {json: true})).stdout);
+			const billed = rows.reduce(
+				(sum, r) => sum + (r.spend._tag === "Reconstructed" ? r.spend.spend.billed : 0),
+				0,
+			);
+
+			expect(parsed.totals.billed).toBe(billed);
+			expect(parsed.totals.runs).toBe(rows.length);
+			expect(parsed.totals.measuredRuns).toBe(rows.length);
+		});
 	});
 
 	it("bounds the window with --since and --until, inclusive at both edges", async () => {

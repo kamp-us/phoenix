@@ -27,11 +27,14 @@
  * (`step1-candidate-pool.sh:12-13`); a bucket whose paginated output stops mid-page is the same fact
  * and lands on the same code. An unreadable campaigns table refuses the whole pool too — an
  * unfiltered pool on a failed read is the fail-open shape the fence exists to remove. An empty pool
- * is still a fact and prints on exit 0 with the scanned counts and the per-issue exclusion reasons
- * beside it, which is what makes it auditable rather than merely plausible (ADR 0092).
+ * is still a fact and prints on exit 0 with the scanned counts and a histogram of the exclusion
+ * reasons beside it, which is what makes it auditable rather than merely plausible (ADR 0092). The
+ * reasons collapse to counts rather than rows because `excluded` is an evidence-array under ADR
+ * 0308 — no skill reads its rows by name, and the reason vocabulary is what the contract defends.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {reasonHistogram} from "../evidence.ts";
 import {TRIAGED} from "../labels.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
@@ -94,7 +97,12 @@ const NO_CRITERIA = "no-acceptance-criteria";
  */
 const BLOCKED_REASON = "blocked";
 
-/** One issue the filter kept out, with the axis that refused it (#5013). */
+/**
+ * One issue the filter kept out, with the axis that refused it (#5013).
+ *
+ * Internal to the scan: what reaches stdout is a `{reason: count}` histogram over these rows (ADR
+ * 0308), and the stderr scope line's per-axis split is derived from them too.
+ */
 interface ExclusionEntry {
 	readonly number: number;
 	readonly home: string | null;
@@ -223,7 +231,7 @@ export const runPick = (
 		return answer(
 			JSON.stringify({
 				pool: pool.slice(0, options.limit),
-				excluded,
+				excluded: reasonHistogram(excluded, (entry) => entry.reason),
 				scanned,
 				campaigns: dispatchReport(dispatch),
 			}),

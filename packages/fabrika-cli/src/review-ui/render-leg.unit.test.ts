@@ -1,6 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {type CapturedSurface, CaptureError} from "../capture/capture.ts";
+import {PAGE_ERROR_CAP} from "./manifest.ts";
 import {type CaptureShots, makeCaptureRenderLeg} from "./render-leg.ts";
 import type {SurfaceRender} from "./render-verb.ts";
 
@@ -68,5 +69,25 @@ describe("captureRenderLeg", () => {
 
 	it("reports a decodable capture as Rendered", () => {
 		expect(run(succeeding({status: 200}))._tag).toBe("Rendered");
+	});
+
+	it("collapses a capture's page errors to the cap plus a count of the rest (ADR 0308)", () => {
+		const noisy = Array.from({length: PAGE_ERROR_CAP + 4}, (_, i) => ({
+			kind: "console.error" as const,
+			text: `Warning: ${i}`,
+		}));
+		const render = run(succeeding({status: 200, pageErrors: noisy}));
+		expect(render).toMatchObject({
+			_tag: "Rendered",
+			entry: {pageErrors: {rows: noisy.slice(0, PAGE_ERROR_CAP), more: 4}},
+		});
+	});
+
+	it("keeps a short list whole and still counts zero, so capped-at-length reads as whole", () => {
+		const one = [{kind: "console.error" as const, text: "Warning: missing key prop"}];
+		expect(run(succeeding({status: 200, pageErrors: one}))).toMatchObject({
+			_tag: "Rendered",
+			entry: {pageErrors: {rows: one, more: 0}},
+		});
 	});
 });

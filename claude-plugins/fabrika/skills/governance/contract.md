@@ -365,14 +365,17 @@ skill's bytes at. Range mode reads no PR at all: an epic child has none mid-run 
 **Output** — machine channel. First line:
 `governance\t<required|not-required>\t<head-sha|base..tip>` — the third field names the subject the
 derivation ran over: the commit the file list was read out of in PR mode, the range in range mode,
-matching `governance post`'s third field in each. Then one line per harness root the diff touches —
-`root\t<.decisions/|.claude/|.github/|claude-plugins/>\t<file-count>` — then
+matching `governance post`'s third field in each. Then one line per harness root the diff touches,
+most-touched first — `root\t<.decisions/|.claude/|.github/|claude-plugins/>\t<file-count>` — then
 `self\t<true|false>`, then one line per decision record in the diff —
 `record\t<NNNN>\t<added|modified|deleted>\t<path>`.
 
 With `--json`, an object with keys `outcome` (`required` | `not-required`), `head` (full 40-hex, or
 `<base>..<tip>` in range mode — the same field the first line's third column carries),
-`roots` (array of `{name, files}`), `self` (boolean), `base` (the merge-base SHA, full 40-hex),
+`roots` (an object mapping each touched root to its file count, count-descending and ties on the
+root — the ADR [0308](../../../../.decisions/0308-bounded-evidence-output-shape.md) evidence
+collapse, since the skill reads the root set off `fabrika status settings`, never off this field),
+`self` (boolean), `base` (the merge-base SHA, full 40-hex),
 `records` (array of `{id, change, path}`), and `scanned` (changed files seen).
 
 `deleted` is in the change vocabulary because removing a decision record is itself a governance
@@ -458,7 +461,7 @@ record	0240	added	.decisions/0240-only-landed-adrs-may-be-cited.md
 
 ```
 $ fabrika governance scope 4400 --json
-{"outcome":"not-required","head":"9f2c1a77b0e4d3586a1c9042bb7731ee5c0d18af","roots":[],"self":false,"base":"c4e0aa1b7f39d2860b5417ce9a0d3f7712bb64e8","records":[],"scanned":6}
+{"outcome":"not-required","head":"9f2c1a77b0e4d3586a1c9042bb7731ee5c0d18af","roots":{},"self":false,"base":"c4e0aa1b7f39d2860b5417ce9a0d3f7712bb64e8","records":[],"scanned":6}
 ```
 
 **Grounding**
@@ -626,10 +629,17 @@ fabrika governance guards 4321 [--sha <head>] [--repo <owner/name>] [--json]
 `guards\t<hits|no-anchor-change|no-anchors-in-reach>\t<anchors-in-reach>` — the third field is how
 many anchored invariants exist in the files this diff touches. Then one line per hit:
 `anchor\t<removed|modified>\t<NAME>\t<file>:<line>`, and one line per touched guard-bearing file
-with no anchor change: `guard-file\t<path>\t<anchor-count>`.
+with no anchor change: `guard-file\t<path>\t<anchor-count>`, capped at **five** and followed by
+`guard-file-more\t<n>` when the cap dropped any.
 
 With `--json`:
-`{"outcome":…,"hits":[{"kind","name","file","line"}…],"guardFiles":[{"path","anchors"}…],"inReach":<n>,"scanned":<files>}`.
+`{"outcome":…,"hits":[{"kind","name","file","line"}…],"guardFiles":{"rows":[{"path","anchors"}…],"more":<n>},"inReach":<n>,"scanned":<files>}`.
+
+**`hits` is whole; `guardFiles` is capped.** Every anchored hit needs a disposition, so that array is
+the answer. The guard-bearing file list is evidence — this skill cites that it exists and never reads
+a row by name — so it collapses to a cap-and-count per ADR
+[0308](../../../../.decisions/0308-bounded-evidence-output-shape.md). `more` is always present, `0`
+included: a whole list must never read as a truncated one.
 
 **The three outcomes are distinct facts and none is a clearance.** `hits` — an anchored invariant
 was removed or its claim changed. `no-anchor-change` — anchors exist in the diff's reach and none
@@ -732,7 +742,7 @@ guards	no-anchors-in-reach	0
 
 ```
 $ fabrika governance guards 4321 --json
-{"outcome":"hits","hits":[{"kind":"modified","name":"UNSEEN-NEVER-PLAUSIBLE","file":"claude-plugins/fabrika/skills/review/SKILL.md","line":12}],"guardFiles":[{"path":"claude-plugins/fabrika/skills/ship/SKILL.md","anchors":3}],"inReach":6,"scanned":4}
+{"outcome":"hits","hits":[{"kind":"modified","name":"UNSEEN-NEVER-PLAUSIBLE","file":"claude-plugins/fabrika/skills/review/SKILL.md","line":12}],"guardFiles":{"rows":[{"path":"claude-plugins/fabrika/skills/ship/SKILL.md","anchors":3}],"more":0},"inReach":6,"scanned":4}
 ```
 
 **Grounding**
