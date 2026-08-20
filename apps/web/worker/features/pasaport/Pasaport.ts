@@ -1237,6 +1237,10 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
  * untouched), so votes/scores/karma ride along; and the `user` row is KEPT as a
  * scrubbed tombstone so the `author_id → silinen` redirect and the FKs stay coherent.
  *
+ * Adding a per-user relation or preference table? It gets a delete here — that is
+ * ruled, not a judgement call (ADR 0097, amendment 2026-08-20 / #6446). `user_profile`
+ * is the exception, because it is the tombstone's own row.
+ *
  * Every statement must be a query-builder statement (no raw correlated subquery), or
  * D1's `batch()` executor rejects the array.
  */
