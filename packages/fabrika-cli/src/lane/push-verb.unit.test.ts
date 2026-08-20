@@ -8,6 +8,7 @@ import {
 	APPEND_UNKNOWN,
 	LANE_ABSENT,
 	LANE_UNREADABLE,
+	MISDIRECTED_PUSH,
 	PRIMARY_CHECKOUT,
 	REF_NOT_MOVED,
 	UNSAFE_PUSH,
@@ -30,6 +31,8 @@ const LS_REMOTE = /^git ls-remote origin /;
 const PUSH = /^git push /;
 const ANCESTOR = /^git merge-base --is-ancestor /;
 const LOG = /^git log /;
+const REMOTES = /^git remote$/;
+const UNSET_UPSTREAM = /^git branch --unset-upstream /;
 
 /** `git ls-remote` output for the assembly ref; an absent ref prints nothing. */
 const refRow = (sha: string | null): ExecResult =>
@@ -59,6 +62,7 @@ const GROUND: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[PRESENT, okOut(`${OLD_HEAD}\n`)],
 	[ANCESTOR, okOut("")],
 	[PUSH, okOut("")],
+	[UNSET_UPSTREAM, okOut("")],
 ];
 
 const run = (
@@ -178,6 +182,35 @@ describe("runPush", () => {
 		const {outcome, calls} = await run([[LS_REMOTE, errOut("network is unreachable")], ...GROUND]);
 
 		expect(outcome.code).toBe(LANE_UNREADABLE);
+		expect(pushed(calls)).toBe(false);
+	});
+
+	it("pushes the derived branch even when the branch tracks main, and clears that upstream (#6435)", async () => {
+		const {outcome, calls} = await run([
+			[once(UPSTREAM), okOut("origin/main\n")],
+			[UPSTREAM, errOut("fatal: no upstream")],
+			[REMOTES, okOut("origin\n")],
+			...remote(refRow(OLD_HEAD), refRow(HEAD)),
+			...GROUND,
+		]);
+
+		expect(outcome.code).toBe(0);
+		expect(calls).toContain(`git push origin HEAD:refs/heads/${BRANCH}`);
+		expect(calls.some((line) => line.includes("refs/heads/main"))).toBe(false);
+		expect(calls).toContain(`git branch --unset-upstream ${BRANCH}`);
+	});
+
+	it("refuses a seat whose upstream survives the clear, naming the ref a bare push would hit", async () => {
+		const {outcome, calls} = await run([
+			[UPSTREAM, okOut("origin/main\n")],
+			[REMOTES, okOut("origin\n")],
+			...remote(refRow(OLD_HEAD), refRow(HEAD)),
+			...GROUND,
+		]);
+
+		expect(outcome.code).toBe(MISDIRECTED_PUSH);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.join("\n")).toContain("main");
 		expect(pushed(calls)).toBe(false);
 	});
 

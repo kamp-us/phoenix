@@ -15,6 +15,10 @@
  * There is no force flag. The assembly branch only ever grows, one merge per landed child, so a
  * non-fast-forward push is always a mistake and the flag that would let one through does not exist.
  *
+ * The push target is derived the same way: `HEAD:refs/heads/epic/<n>`, spelled out rather than read
+ * off the branch's recorded upstream. Reading it there aimed every push in an epic run at
+ * `refs/heads/main`, which only branch protection refused (#6435).
+ *
  * It is also the run's fail-closed isolation gate. Every assembly publication passes through here,
  * so this is where "the assembly seat never stands in the main working tree" is proven rather than
  * assumed: a push from the primary checkout is refused on `33` before anything is fetched, read back
@@ -31,6 +35,7 @@ import {
 	remoteSha,
 	upstreamOf,
 } from "../build/git.ts";
+import {execCapture} from "../io/exec.ts";
 import {currentBranch} from "../io/issues.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
@@ -38,6 +43,7 @@ import {standingInLinkedWorktree} from "./assembly.ts";
 import {
 	APPEND_UNKNOWN,
 	LANE_UNREADABLE,
+	MISDIRECTED_PUSH,
 	PRIMARY_CHECKOUT,
 	REF_NOT_MOVED,
 	UNSAFE_PUSH,
@@ -103,27 +109,40 @@ export const runPush = (
 
 		const upstream = yield* upstreamOf(branch);
 		const remote = upstream?.remote ?? "origin";
-		const ref = upstream?.ref ?? branch;
+		// An assembly branch tracks nothing, so an upstream naming another ref is the #6435 defect in
+		// the seat: this verb no longer reads its target from it, but a bare `git push` here still
+		// would. Clearing it is the reporter's own fix, and a clear that does not take is refused —
+		// publishing from a seat aimed at the default branch is what the run must never leave behind.
+		if (upstream !== null && upstream.ref !== branch) {
+			yield* execCapture("git", ["branch", "--unset-upstream", branch]);
+			const recheck = yield* upstreamOf(branch);
+			if (recheck !== null && recheck.ref !== branch) {
+				return refuse(
+					MISDIRECTED_PUSH,
+					`${VERB}: ${branch} tracks ${recheck.remote}/${recheck.ref}, not itself, and \`git branch --unset-upstream ${branch}\` did not clear it — a bare push from this seat would fire at ${recheck.ref}. Nothing was pushed.`,
+				);
+			}
+		}
 
-		const before = yield* remoteSha(remote, ref);
+		const before = yield* remoteSha(remote, branch);
 		if (before._tag === "Failure") {
 			return refuse(
 				LANE_UNREADABLE,
-				`${VERB}: cannot read ${remote}/${ref}: ${before.reason} — nothing was pushed.`,
+				`${VERB}: cannot read ${remote}/${branch}: ${before.reason} — nothing was pushed.`,
 			);
 		}
 		if (before.value !== null) {
-			if (!(yield* ensureCommitPresent(remote, ref, before.value))) {
+			if (!(yield* ensureCommitPresent(remote, branch, before.value))) {
 				return refuse(
 					LANE_UNREADABLE,
-					`${VERB}: cannot prove containment — ${remote}/${ref} is at ${before.value}, which this checkout does not hold and could not fetch. Nothing was pushed.`,
+					`${VERB}: cannot prove containment — ${remote}/${branch} is at ${before.value}, which this checkout does not hold and could not fetch. Nothing was pushed.`,
 				);
 			}
 			if (!(yield* isAncestor(before.value, local.value))) {
 				const dropped = yield* commitsDropped(local.value, before.value);
 				return refuse(
 					UNSAFE_PUSH,
-					`${VERB}: the local head does not contain ${remote}/${ref} (${before.value}) — this push would DROP ${
+					`${VERB}: the local head does not contain ${remote}/${branch} (${before.value}) — this push would DROP ${
 						dropped.lines.length === 0
 							? "commits the remote holds and this head does not"
 							: `${dropped.lines.join("; ")}${dropped.truncated ? "; …" : ""}`
@@ -132,8 +151,8 @@ export const runPush = (
 			}
 		}
 
-		const pushed = yield* push(remote, ref, false);
-		const after = yield* remoteSha(remote, ref);
+		const pushed = yield* push(remote, branch, false);
+		const after = yield* remoteSha(remote, branch);
 		if (after._tag === "Failure") {
 			return refuse(
 				APPEND_UNKNOWN,
@@ -149,7 +168,7 @@ export const runPush = (
 		}
 		return answer(
 			[
-				`pushed ${branch} → ${remote}/${ref}`,
+				`pushed ${branch} → ${remote}/${branch}`,
 				`remote ref read back: ${after.value}`,
 				"PUSH-VERDICT: MOVED",
 			].join("\n"),

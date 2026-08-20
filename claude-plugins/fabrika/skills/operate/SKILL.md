@@ -133,7 +133,7 @@ node <fabrika> lane assembly $lane_key
 ```
 
 Its stdout is the absolute path of that worktree — `.claude/worktrees/epic-<lane-key>`, cut off the
-repository's default branch through git's own `origin/HEAD` pointer — and **every git write this run
+repository's default branch through git's own `origin/HEAD` pointer, tracking nothing — and **every git write this run
 performs on the assembly branch happens there, addressed as `git -C <that path>`**. It is idempotent
 from either side: a later pass finding the tree still there resumes it and re-prints the same path,
 and a pass finding the branch alive with its tree gone — what `--remove` at a terminal leaves behind,
@@ -264,6 +264,12 @@ bare push cannot say that, which is why the corpus forbids one ([#4213](https://
 and `build push` cannot serve here because the assembly branch carries no build claim's nonce. There
 is no force flag to reach for: the branch only ever grows, so exit `29` means fetch and re-merge, and
 exit `30` is a proven "the remote did not move" — never a `MOVED` you assume.
+
+**Its target is `refs/heads/epic/<n>`, spelled out, never the branch's recorded upstream.** Reading
+it there aimed every push in a run at `refs/heads/main`, and branch protection was the only thing
+refusing them ([#6435](https://github.com/kamp-us/phoenix/issues/6435)). A seat whose branch still
+tracks another ref is cleared before the push, because a bare `git push` there would fire at that
+branch; exit `34` is that clear failing to take.
 
 **It is also the run's isolation gate, and it is fail-closed.** Invoked in the repository's main
 working tree it refuses on `33` and pushes nothing, whatever the branch says — so an assembly that

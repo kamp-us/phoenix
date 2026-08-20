@@ -536,7 +536,8 @@ be resolved · `20` several open PRs claim the task's issue · `21` the lane key
 `22`–`25` the proof `lane prove` needed is absent, in flight, contradicted or ambiguous · `26` the
 tree is not on the run's assembly branch · `29` the push would not fast-forward · `30` the push ran
 and the ref did not move · `31` this session does not hold the driver's claim · `32` the terminal
-token is no shell's · `33` an assembly git write was aimed at the main working tree.
+token is no shell's · `33` an assembly git write was aimed at the main working tree · `34` the
+assembly branch tracks another ref and clearing that upstream did not take.
 
 To open a lane, copy a template in and speak the operator's six events — `DONE` / `PASS` / `FAIL` /
 `BLOCKED` / `WIP` / `UNBLOCKED`:
