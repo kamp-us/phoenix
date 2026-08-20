@@ -192,7 +192,8 @@ the barrier exists to prevent ([#4637-C](https://github.com/kamp-us/phoenix/issu
 a ruling lands at is this table's row 13.
 
 **When a class cannot be derived, it is named, never dropped.** `MISSING_CONTAINMENT` rests on a
-probe for `product-development-cycle.md`, which is three-valued: `present` (the class is derived),
+probe for the **declared** cycle doc (`cycleDoc`, whose shipped value here is
+`product-development-cycle.md`), which is three-valued: `present` (the class is derived),
 `absent` (the class is derived and evaluates false — no cycle doc, no containment requirement), and
 `unknown` (the probe failed to read). Only `unknown` puts the class in `skipped`. v1 fused `absent`
 and `unknown` through a stderr substring match, so a transient probe failure silently switched the
