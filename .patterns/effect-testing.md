@@ -69,6 +69,22 @@ assert.strictEqual((error.value as {code?: unknown}).code, "UNAUTHORIZED");
 
 This is the in-process resolve/wire seam — the app-level fate-op unit surface (there is no heavyweight interpreter harness; ADR [0105](../.decisions/0105-delete-runfateop-harness.md)). Keep using the input-`Schema`-decode-directly form (`account-deletion.unit.test.ts`) for facts that live *before* the handler (a typed-confirmation gate is an input-decode fact, not a handler-failure fact). The canonical examples are `pasaport/queries.unit.test.ts`, `pasaport/account-deletion.unit.test.ts`, `report/report-mutation.unit.test.ts`, and `pano/draft-save.invariant.test.ts`.
 
+### Capturing the argument a resolver hands a service
+
+When the claim is *which value the resolver passed down* — a viewer, a mask, a scoped id — capture it
+off the substituted service rather than reading the call site. Drive the real op through `resolveWire`
+with a double whose method pushes its argument into an array, then assert the captured value across
+each shape that matters. The call site can be read wrong, and the shape it produces changes with what
+sits above it; a captured argument is the wiring itself.
+
+Bundle the services the derivation reads as one layer per axis so a shape is one or two lines, not
+seven stubs — [`kunye/sandbox.testing.ts`](../apps/web/worker/features/kunye/sandbox.testing.ts) is
+the worked example (`inPlaceVisibilityLayer` / `moderatorAxisLayer` / `sandboxViewerLayer`), with
+every store dying on contact so a short-circuit shape proves the read never happened. Consumers:
+[`pano/mutation-rehydrate-viewer.unit.test.ts`](../apps/web/worker/features/pano/mutation-rehydrate-viewer.unit.test.ts),
+[`pano/saved-posts-viewer.unit.test.ts`](../apps/web/worker/features/pano/saved-posts-viewer.unit.test.ts),
+[`search/search-not-widened.unit.test.ts`](../apps/web/worker/features/search/search-not-widened.unit.test.ts).
+
 ## Per-test isolation
 
 `unit` tests carry no per-test database to isolate, so there is no shared-handle lifecycle to manage: each test provides its own `Layer.succeed(Drizzle, …)` double inline. Module-scope a double that doesn't vary between tests; build it inside the test body when the scripted results differ per case.

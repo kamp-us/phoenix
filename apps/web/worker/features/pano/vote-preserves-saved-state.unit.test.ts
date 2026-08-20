@@ -24,7 +24,7 @@ import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import type {PublishMessage} from "../fate-live/protocol.ts";
-import {Flags} from "../flagship/Flags.ts";
+import {sandboxViewerLayer} from "../kunye/sandbox.testing.ts";
 import {Mute} from "../mute/Mute.ts";
 import {mutations} from "./mutations.ts";
 import {Pano, type PostSummaryRow, type VoteOnPostResult} from "./Pano.ts";
@@ -118,16 +118,18 @@ const publishedData = (frames: PublishMessage[]): Record<string, unknown> | unde
 	return entity.frame.data as Record<string, unknown> | undefined;
 };
 
-// The vote path fires the flag-gated `notifyContentVote` emitter, so the resolver's
-// residual context carries `Flags` + `Notification`. Flag ON exercises the emit; the
-// recording stub swallows it — the notification wiring is proven elsewhere
-// (`bildirim/vote-emitters.unit.test.ts`), here it just discharges the context.
-const flagsOn: Layer.Layer<Flags> = Layer.succeed(Flags, {
-	getBoolean: () => Effect.succeed(true),
-	getString: () => Effect.die("getString not exercised"),
-	getNumber: () => Effect.die("getNumber not exercised"),
-	getObject: () => Effect.die("getObject not exercised"),
-} as typeof Flags.Service);
+// The vote path fires the flag-gated `notifyContentVote` emitter and re-resolves the
+// post through the real sandbox viewer (#6424), so the residual context carries every
+// service both read. `flagOn: true` exercises the notification emit (the recording stub
+// swallows it — the wiring is proven in `bildirim/vote-emitters.unit.test.ts`); the
+// voter is a plain not-opted-in, non-moderator yazar, so the re-read's mask is today's.
+const viewerAxes = sandboxViewerLayer({
+	flagOn: true,
+	tier: "yazar",
+	preference: {optedIn: false},
+	viewerId: VOTER.id,
+	isModerator: false,
+});
 
 const notificationStub = makeNotificationStub({
 	recordAggregate: () => Effect.succeed({aggregated: false}),
@@ -150,7 +152,9 @@ const drive = (
 		input: {id: "post_1"},
 		select: ["id", "isSaved", "authorUsername", "authorDisplayName", "myVote", "score"],
 	}).pipe(
-		Effect.provide(Layer.mergeAll(pano, recordingLive(frames), flagsOn, notificationStub, noMutes)),
+		Effect.provide(
+			Layer.mergeAll(pano, recordingLive(frames), viewerAxes, notificationStub, noMutes),
+		),
 		Effect.provideService(CurrentUser, {user: VOTER}),
 		Effect.provideService(RuntimeContext, runtimeContextStub),
 	);

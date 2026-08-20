@@ -12,10 +12,9 @@
  * resolver and capture the viewer `Pano` was handed, rather than inspecting the call site.
  */
 import {assert, describe, it} from "@effect/vitest";
-import {AgentAuthority, CurrentActor, human, RelationStore} from "@kampus/authz";
 import {CurrentUser} from "@kampus/fate-effect";
 import {Effect, Layer} from "effect";
-import {inPlaceVisibilityLayer} from "../kunye/sandbox.testing.ts";
+import {sandboxViewerLayer} from "../kunye/sandbox.testing.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {lists} from "./lists.ts";
@@ -23,14 +22,6 @@ import {Pano} from "./Pano.ts";
 
 const VIEWER = {id: "opted-in-yazar", email: "kaan@kamp.us", name: "kaan", image: null};
 const OPTED_IN_AT = new Date("2026-08-19T00:00:00.000Z");
-
-// A `moderates`-tuple store nobody is in, so the moderator axis stays false and the
-// assertion isolates the opt-in.
-const noModerators = {
-	has: () => Effect.succeed(false),
-	hasSubjects: () => Effect.succeed(new Set<string>()),
-	subjectsOf: () => Effect.succeed(new Set<string>()),
-} as never;
 
 // biome-ignore lint/plugin: a service double — only the saved keyset is on this path.
 const BookmarkStub = Layer.succeed(Bookmark, {
@@ -42,7 +33,7 @@ const BookmarkStub = Layer.succeed(Bookmark, {
 
 /** Run `savedPosts` under these stubs and return the viewer the re-hydrate was handed. */
 const viewerHandedToRehydrate = (
-	stubs: Parameters<typeof inPlaceVisibilityLayer>[0],
+	axes: Omit<Parameters<typeof sandboxViewerLayer>[0], "viewerId">,
 ): Effect.Effect<SandboxViewer, unknown> =>
 	Effect.gen(function* () {
 		const seen: (SandboxViewer | undefined)[] = [];
@@ -61,10 +52,7 @@ const viewerHandedToRehydrate = (
 				Effect.provide(PanoStub),
 				Effect.provide(BookmarkStub),
 				Effect.provideService(CurrentUser, {user: VIEWER}),
-				Effect.provideService(CurrentActor, {actor: human(VIEWER.id)}),
-				Effect.provideService(AgentAuthority, {admits: () => Effect.succeed(false)}),
-				Effect.provideService(RelationStore, noModerators),
-				Effect.provide(inPlaceVisibilityLayer(stubs)),
+				Effect.provide(sandboxViewerLayer({...axes, viewerId: VIEWER.id})),
 			);
 
 		const viewer = seen[0];
@@ -80,6 +68,7 @@ describe("savedPosts — the re-hydrate carries the resolved viewer (#6424)", ()
 					flagOn: true,
 					tier: "yazar",
 					preference: {optedIn: true, setAt: OPTED_IN_AT},
+					isModerator: false,
 				}),
 				{viewerId: VIEWER.id, canSeeSandboxed: false, seesSandboxedInPlace: true},
 			);
@@ -93,6 +82,7 @@ describe("savedPosts — the re-hydrate carries the resolved viewer (#6424)", ()
 					flagOn: true,
 					tier: "yazar",
 					preference: {optedIn: false},
+					isModerator: false,
 				}),
 				{viewerId: VIEWER.id, canSeeSandboxed: false, seesSandboxedInPlace: false},
 			);
@@ -103,9 +93,24 @@ describe("savedPosts — the re-hydrate carries the resolved viewer (#6424)", ()
 		Effect.gen(function* () {
 			// The stubs below the flag die on contact, so this also proves the opt-in
 			// store is never read when the flag is off.
-			assert.deepStrictEqual(yield* viewerHandedToRehydrate({flagOn: false}), {
+			assert.deepStrictEqual(yield* viewerHandedToRehydrate({flagOn: false, isModerator: false}), {
 				viewerId: VIEWER.id,
 				canSeeSandboxed: false,
+				seesSandboxedInPlace: false,
+			});
+		}),
+	);
+
+	// The moderator axis does not ride the flag, so THIS shape's SQL moves with the flag
+	// off: the degraded viewer used to pin `canSeeSandboxed` to `false`, which dropped a
+	// moderator's own bookmarked sandboxed post out of their saved list. Resolving the
+	// viewer restores the moderator exemption `sandboxVisibleWhere` already grants every
+	// other pano read. Deliberate and asserted, so the one shape that moves is covered.
+	it.effect("a moderator's saved list re-hydrates with the real moderator probe", () =>
+		Effect.gen(function* () {
+			assert.deepStrictEqual(yield* viewerHandedToRehydrate({flagOn: false, isModerator: true}), {
+				viewerId: VIEWER.id,
+				canSeeSandboxed: true,
 				seesSandboxedInPlace: false,
 			});
 		}),

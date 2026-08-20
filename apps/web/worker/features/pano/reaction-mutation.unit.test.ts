@@ -31,6 +31,7 @@ import {Cause, Effect, Layer} from "effect";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
+import {inPlaceVisibilityStores, moderatorAxisLayer} from "../kunye/sandbox.testing.ts";
 import {EMPTY_REACTION_AGGREGATE, type ReactionAggregate} from "../reaction/Reaction.ts";
 import {mutations} from "./mutations.ts";
 import {Pano, type PostSummaryRow, type ReactToPostResult} from "./Pano.ts";
@@ -111,6 +112,16 @@ const react = (
 		select: ["id", "reactions"],
 	}).pipe(
 		Effect.provide(Layer.mergeAll(pano, flags, liveStub)),
+		// The inert (flag-off) branch re-resolves the post through the real sandbox viewer
+		// (#6424), so the moderator axis it probes has to be on the context.
+		Effect.provide(
+			Layer.mergeAll(
+				moderatorAxisLayer({viewerId: user?.id ?? "anon", isModerator: false}),
+				// Both stores die on contact: the caylak-visibility flag is off on the only
+				// branch that resolves a viewer, so neither may be read.
+				inPlaceVisibilityStores({}),
+			),
+		),
 		Effect.provideService(CurrentUser, {user}),
 		Effect.provideService(RuntimeContext, runtimeContextStub),
 	);
