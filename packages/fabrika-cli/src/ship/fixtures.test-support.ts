@@ -53,6 +53,34 @@ export const pull = (shape: PullShape = {}): ExecResult =>
 export const files = (...names: ReadonlyArray<string>): ExecResult =>
 	okOut(JSON.stringify(names.map((filename) => ({filename}))));
 
+/**
+ * A unified diff carrying one added line per named file — the shape the `ui` class's render test
+ * reads, which is the changed lines' text and nothing else.
+ */
+export const diffOf = (
+	...entries: ReadonlyArray<{readonly file: string; readonly added: string}>
+): ExecResult =>
+	okOut(
+		entries
+			.map(({file, added}) =>
+				[
+					`diff --git a/${file} b/${file}`,
+					`--- a/${file}`,
+					`+++ b/${file}`,
+					"@@ -1,1 +1,2 @@",
+					" unchanged",
+					`+${added}`,
+					"",
+				].join("\n"),
+			)
+			.join(""),
+	);
+
+/** A changed line no user can see rendered — the case that must stop deriving `review-ui`. */
+export const COMMENT_LINE = "\t// a note nobody renders";
+/** A changed line a user can see rendered. */
+export const RENDERED_LINE = '\t\t\t<p className="mt-2">Merhaba</p>';
+
 export const CODEOWNERS = `# a boundary
 /.github/    @kamp-us/control-plane
 /packages/demo-cli/src/*  @kamp-us/control-plane

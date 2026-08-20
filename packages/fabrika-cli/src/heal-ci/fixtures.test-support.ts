@@ -10,13 +10,16 @@ import type {ExecResult} from "../io/exec.ts";
 import {httpPage} from "../ship/fixtures.test-support.ts";
 
 export {
+	COMMENT_LINE,
 	checkRuns,
 	comments,
+	diffOf,
 	ENV,
 	HEAD,
 	httpPage,
 	OTHER_HEAD,
 	pull,
+	RENDERED_LINE,
 	reviews,
 	runsTotal,
 	timeline,
@@ -25,6 +28,7 @@ export {
 } from "../ship/fixtures.test-support.ts";
 
 export const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
+export const DIFF = /vnd\.github\.diff/;
 export const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
 export const COMMIT_EXISTS = /^gh api repos\/o\/r\/commits\/[0-9a-f]+ --jq \.sha$/;
 export const COMMIT_DATE =
