@@ -194,11 +194,16 @@ and phoenix is one instance.
 | prohibition registry | `design-prohibitions.json` | the law is untyped — exit `13` from `ui law`; manifest prose is the fallback source |
 | component inventory | `design-system-inventory.md` | a fact: the repo ships no inventory; reported as `null`, never an error |
 | golden pointer | `packages/design-capture/golden-pointer.json` where present, else `design-goldens.json` at root | a fact: no goldens; every surface is unblessed |
-| render harness config | `design-harness.json` | the repo cannot be rendered headlessly — exit `19` from `ui render`; reported as `null` by `ui manifest` |
+| render harness config | the **declared** `designHarness` path, whose shipped value here is `design-harness.json` | the repo cannot be rendered headlessly — exit `19` from `ui render`; reported as `null` by `ui manifest` |
+
+The harness row is the one path a repo **declares** rather than inherits: `ui render`, `ui manifest`
+and `ui evidence` resolve the `designHarness` key in `.fabrika.jsonc` and open whatever it names,
+reaching `design-harness.json` only because that is the shipped value. The other four rows are
+convention paths with no key behind them.
 
 ### The harness config schema — canonical here
 
-`design-harness.json` is one JSON object telling the `ui` group how this repo renders and where
+The harness config is one JSON object telling the `ui` group how this repo renders and where
 evidence lives — the portable replacement for v1's phoenix-hardcoded "alchemy dev" knowledge:
 
 | Key | Type | Required | Meaning |
@@ -258,11 +263,12 @@ contract's table.
  "lawSource": "registry"}
 ```
 
-Each key is the surface's repo-root-relative path, or `null` when the convention path holds no
-file. `lawSource` is `"registry"` when the registry file exists, `"manifest-prose"` when only the
-manifest does — the skill writes this token into its PR body verbatim. `registry`, `inventory`,
-`goldenPointer` and `harness` report **presence only**; parsing them is `ui law`'s, `ui golden`'s
-and `ui render`'s.
+Each key is the surface's repo-root-relative path, or `null` when that path holds no file —
+`harness` is the path `designHarness` declares, and the `design-harness.json` above is phoenix's
+shipped value, not a fixed name. `lawSource` is `"registry"` when the registry file exists,
+`"manifest-prose"` when only the manifest does — the skill writes this token into its PR body
+verbatim. `registry`, `inventory`, `goldenPointer` and `harness` report **presence only**; parsing
+them is `ui law`'s, `ui golden`'s and `ui render`'s.
 The manifest itself is the one surface whose absence refuses: without it there is no law at all.
 
 **Exit status** (beyond the universal four)
@@ -392,8 +398,8 @@ implementations guessing differently.
 ```
 
 **The mechanism, in order.** Resolve the lane (shared conventions; the set dir is
-`build scratch`'s allocation for this lane, `<scratch>/<set>/`). Read `design-harness.json`
-(absent `19`, malformed `4`). Start `command` from the repo root; poll `<url><readyPath>` until
+`build scratch`'s allocation for this lane, `<scratch>/<set>/`). Read the declared `designHarness`
+path (absent `19`, malformed `4`). Start `command` from the repo root; poll `<url><readyPath>` until
 HTTP 200, up to the schema row's readiness bound (`11` on timeout, with the server's stderr tail
 in the message); on any exit, kill the started process tree. For each `--surface`, in a headless browser at the
 config's viewport: navigate to `<url><route>`; an HTTP status ≥ 400 or a failed navigation is
@@ -413,14 +419,14 @@ never the tool's silent tolerance.
 
 | Code | Trigger |
 |---|---|
-| `4` | `design-harness.json` exists but violates its schema |
+| `4` | the harness config exists but violates its schema |
 | `10` | `--out` is not kebab-case, or a `--surface` carries the reserved `:state` suffix |
 | `11` | the harness did not become ready, a capture's validity could not be determined, or the claim state could not be read — the render is UNKNOWN |
 | `14` | proven: at least one surface threw an uncaught page error during render |
 | `15` | proven: at least one surface is unreachable — status ≥ 400 or failed navigation (no route, dark flag, gated tier); each named on stderr |
 | `16` | proven: at least one capture was produced but is invalid (zero bytes, undecodable, zero area) |
 | `18` | proven: the lane precondition failed (shared conventions) |
-| `19` | proven: no `design-harness.json` at the convention path |
+| `19` | proven: no file at the declared `designHarness` path |
 
 When outcomes mix, the reported code is the smallest applicable of `14`/`15`/`16` and stderr
 carries every surface's outcome — the code routes, the stderr enumerates.
@@ -435,11 +441,14 @@ carries every surface's outcome — the code routes, the stderr enumerates.
 | `ui render: the render harness could not start: <reason> — every surface is UNKNOWN.` | 11 | refusal |
 | `ui render: the harness did not answer 200 on <readyPath> within the readiness bound — every surface is UNKNOWN; server stderr tail: <tail>.` | 11 | refusal |
 | `ui render: cannot determine the validity of <set>/<file>: <reason> — the capture is UNKNOWN, never valid.` | 11 | refusal |
-| `ui render: no design-harness.json at the repo root — this repo declares no headless render path; add one (see the harness config schema).` | 19 | refusal |
-| `ui render: design-harness.json exists but does not satisfy its schema: <first violation>.` | 4 | refusal |
+| `ui render: no <harness path> at the repo root — this repo declares no headless render path; add one (see the harness config schema).` | 19 | refusal |
+| `ui render: <harness path> exists but does not satisfy its schema: <first violation>.` | 4 | refusal |
 | `ui render: --surface "<id>" carries a :state suffix — states are a reserved grammar, not yet realized; render the bare route.` | 10 | refusal |
 | `ui render: --out "<value>" is not a kebab-case set name.` | 10 | refusal |
 | `ui render: this session does not hold the claim the checked-out branch names (<detail>) — the lane is not yours.` | 18 | refusal |
+
+`<harness path>` is interpolated, not fixed: the verb prints the path `designHarness` declares, so a
+repo that declares its own harness path reads that path back in both refusals.
 
 **Scope** — exactly the `--surface` operands, no more: the verb never scans the diff. Zero
 operands is `1`, so "rendered nothing, found nothing wrong" is unrepresentable (ADR 0092).
@@ -587,7 +596,7 @@ verify each upload individually, before anything posts** — the two-tier store:
 1. **Store tier** — when the harness config declares `evidenceStore`: `PUT` each PNG
    content-addressed (`<store>/<sha256>.png`, the golden-store idiom of ADR 0183), then `GET`
    the same URL back and hash-compare. Any failed PUT, GET, or hash mismatch is `17`. (The
-   tier choice reads `design-harness.json` here too: an absent file selects the attachment
+   tier choice reads the harness config here too: an absent file selects the attachment
    tier — no harness config is a fact, not an error, at evidence time; a file that exists but
    violates its schema is `4`, same whole-file rule as in `ui render`.)
 2. **Attachment tier** — no `evidenceStore` declared: upload each PNG through GitHub's
@@ -616,7 +625,7 @@ another lane's PR is a cross-lane write. PR open (`7`).
 
 | Code | Trigger |
 |---|---|
-| `4` | an after-surface has no before and no `firstRender` mark, a named capture set is missing/empty, a set's `manifest.json` is absent or unparseable, or `design-harness.json` exists but violates its schema |
+| `4` | an after-surface has no before and no `firstRender` mark, a named capture set is missing/empty, a set's `manifest.json` is absent or unparseable, or the harness config exists but violates its schema |
 | `5` | the composed comment carries a machine-local path |
 | `6` | the composed comment is a bare `@` path reference — not redactable |
 | `7` | the PR is proven absent, closed, or merged |
