@@ -2,11 +2,10 @@
  * `CaylakVisibilityPage` — the `/caylak-gorunurlugu` route (#6426, epic #4306): the yazar's
  * "çaylak katkılarını yerinde göster" setting, and the only surface that flips the #6422
  * preference. Same shape as `MutesPage` (`/susturduklarim`, #3117): a signed-in per-user
- * preference route that self-404s behind a default-off flag, shows a neutral placeholder while
- * the flag resolves so the 404 never flashes, and redirects a signed-out visitor to auth with a
- * `returnTo`.
+ * preference route that redirects a signed-out visitor to auth with a `returnTo`.
  *
- * Ships dark behind `phoenix-caylak-visibility` (ADR 0083). Yazar-only: a signed-in çaylak gets
+ * Ships dark behind `phoenix-caylak-visibility` (default-off;
+ * `.patterns/flag-dark-page-gate.md`). Yazar-only: a signed-in çaylak gets
  * a plain explanation, never a switch they cannot flip — the server refuses them anyway (#6422),
  * so a disabled control would only be a dead end wearing a control's clothes. Which of the six
  * states renders is the pure {@link caylakVisibilityGate}.

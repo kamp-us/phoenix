@@ -1,7 +1,8 @@
 /**
  * `/mecmua/yazilarim` — the author's own drafts + published posts, off the `CurrentUser`-scoped
- * `mecmuaMyPosts` root. Ships dark behind `MECMUA_WRITE` (default-off; ADR 0083); that root
- * serves empty while the flag is off, so a signed-out or gated read just renders empty.
+ * `mecmuaMyPosts` root. Ships dark behind `MECMUA_WRITE` (default-off;
+ * `.patterns/flag-dark-page-gate.md`); that root serves empty while the flag is off, so a
+ * signed-out or gated read just renders empty.
  */
 import {NotebookPen} from "lucide-react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -35,7 +36,6 @@ export function MecmuaDraftsPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_WRITE, false);
 	// No in-page write CTA on purpose: mecmua's single one lives in the Subnav (#2603).
 
-	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first.
 	if (flagLoading) {
 		return (
 			<div className="kp-page">

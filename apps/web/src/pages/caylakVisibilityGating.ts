@@ -3,9 +3,9 @@
  * reads (#6426, epic #4306). Extracted DOM-free — the `landingGating` / `mecmua-write-gate`
  * idiom — so the order of the gates is pinned without a render.
  *
- * The order is load-bearing. `loading` outranks everything so the 404 never flashes before
- * the flag resolves; `not-found` outranks the session so a dark feature leaks nothing to a
- * signed-out visitor either; and an unread tier is `loading`, never `caylak` — telling a
+ * The order is load-bearing. `loading` outranks everything — the deferred-404 gate,
+ * `.patterns/flag-dark-page-gate.md`; `not-found` outranks the session so a dark feature leaks
+ * nothing to a signed-out visitor either; and an unread tier is `loading`, never `caylak` — telling a
  * yazar they are a çaylak because their `me` read had not landed yet would be a lie.
  */
 import type {Tier} from "../../worker/features/kunye/standing";

@@ -1,3 +1,7 @@
+/**
+ * `/bildirimler` — ships dark behind the default-off `phoenix-bildirim` flag. The gate's shape is
+ * `.patterns/flag-dark-page-gate.md`.
+ */
 import {Navigate} from "react-router";
 import {useSession} from "../auth/client";
 import {BildirimList} from "../components/bildirim/BildirimList";
@@ -14,7 +18,6 @@ export function BildirimlerPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(PHOENIX_BILDIRIM, false);
 	const session = useSession();
 
-	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first.
 	if (flagLoading || session.isPending) {
 		return (
 			<div className="kp-bildirim">
