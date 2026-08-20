@@ -23,6 +23,7 @@ import {useMutedMembers} from "../mute/useMemberMute";
 import {Tag, type TagKind} from "../ui/atoms";
 import {Button} from "../ui/Button";
 import {MetaRow} from "../ui/MetaRow";
+import {SandboxMarker} from "../ui/SandboxMarker";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 import "./PanoPost.css";
 
@@ -41,6 +42,7 @@ export const PanoPostCardView = view<Post>()({
 	authorUsername: true,
 	authorDisplayName: true,
 	slug: true,
+	sandboxedInPlace: true,
 	tags: true,
 });
 
@@ -155,6 +157,10 @@ export function PanoPostCard({
 					) : null}
 				</div>
 				<MetaRow className="kp-pano-post__meta">
+					{/* The reader-facing çaylak marker (#6427). The feed row has never selected the
+					    owner-scoped `sandboxed` field, so an author still sees nothing on their own
+					    row here — `SandboxMarker` lands on `none` for them, as it did before. */}
+					<SandboxMarker isOwn={isOwn} sandboxedInPlace={data.sandboxedInPlace} />
 					{/* Live author identity via `actorLabel` (#2139): current displayName → @username,
 					    falling back to the write-time `author` snapshot for an unstamped/legacy row. */}
 					<span className="author">{authorLabel}</span>

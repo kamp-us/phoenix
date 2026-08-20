@@ -1,0 +1,13 @@
+/* The reader-facing çaylak marker (#6427). Deliberately quieter than the amber
+   `ReviewBadge`: it is context for a reader who asked to see this work, not a warning.
+   The colour pair is overridden whole (#5228) and both halves are role tokens —
+   `--text-muted` is the AA floor for meaning-carrying text in either theme. */
+.kp-caylak-badge {
+	font: var(--t-meta);
+	font-weight: 600;
+	padding: 2px 6px;
+	border-radius: 4px;
+	background: var(--surface-raised);
+	color: var(--text-muted);
+	text-transform: lowercase;
+}

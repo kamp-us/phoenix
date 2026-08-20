@@ -17,7 +17,7 @@ import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {Menu} from "../ui/Menu";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
-import {ReviewBadge} from "../ui/ReviewBadge";
+import {SandboxMarker} from "../ui/SandboxMarker";
 import {useVoteFlash} from "../useVoteFlash";
 import {VoteTriangle} from "../VoteTriangle";
 import {currentLocationReturnTo, useVoteToggle} from "./useVoteToggle";
@@ -30,6 +30,7 @@ export const CommentTreeNodeView = view<Comment>()({
 	score: true,
 	myVote: true,
 	sandboxed: true,
+	sandboxedInPlace: true,
 	createdAt: true,
 	updatedAt: true,
 	deletedAt: true,
@@ -119,9 +120,14 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 						{actorLabel(data.authorDisplayName ?? null, data.authorUsername ?? null, data.author)}
 					</a>
 				)}
-				{/* Owner-only in-review signal (#4282): `sandboxed` is owner-scoped server-side,
-				    re-gated on `isOwner` — same shape as `PanoPostHeader` / `DefinitionCard`. */}
-				{isOwner && data.sandboxed ? <ReviewBadge /> : null}
+				{/* The node's one sandbox badge (#6427): the owner's "incelemede" (#4282, re-gated
+				    on `isOwner`), else the reader-facing çaylak marker (#6425). Same shape as
+				    `PanoPostHeader` / `PanoPostCard` / `DefinitionCard`. */}
+				<SandboxMarker
+					isOwn={isOwner}
+					sandboxed={data.sandboxed}
+					sandboxedInPlace={data.sandboxedInPlace}
+				/>
 				<span>{formatAgoTR(toIso(data.createdAt))}</span>
 				<EditedIndicator createdAt={toIso(data.createdAt)} updatedAt={toIso(data.updatedAt)} />
 				{!isDeleted ? (
