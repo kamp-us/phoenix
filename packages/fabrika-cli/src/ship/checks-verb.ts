@@ -15,6 +15,7 @@
 import {Clock, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {producerFor, resolveCi} from "../config/ci-producer.ts";
+import {reasonHistogram} from "../evidence.ts";
 import {commitExists} from "../io/pulls.ts";
 import {isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -53,6 +54,18 @@ export interface ChecksOptions {
 	/** Where `.fabrika.jsonc` is looked for — the repo root above it, per `config/working-root.ts`. */
 	readonly cwd: string;
 }
+
+/**
+ * The histogram key one check run tallies under: its status composed with whether it gates.
+ *
+ * `checks` is an evidence-array under ADR 0308 — the skill routes off the rollup and no reader reads
+ * a row by name — so it collapses to counts. The gating axis rides inside the key because status
+ * alone would leave the rollup underivable from the payload: a `red` head and a head whose only
+ * `failure` is an ADR 0061 informational run would tally identically, and the carve-out is exactly
+ * what separates them.
+ */
+const checkClassOf = (run: ShipCheckRun): string =>
+	`${statusOf(run)}/${isInformational(run.name) ? "informational" : "gating"}`;
 
 export interface Sample {
 	readonly runs: ReadonlyArray<ShipCheckRun>;
@@ -178,17 +191,14 @@ export const runChecks = (
 							`${VERB}: stranded past the dwell: ${wedged.join(", ")} — the cancel-and-rerun lever is an operator's (#3999).`,
 						]),
 			];
+			const checks = reasonHistogram(read.runs, checkClassOf);
 			if (json) {
 				return answer(
 					JSON.stringify({
 						outcome: "checks",
 						sha: bound,
 						rollup,
-						checks: read.runs.map((run) => ({
-							name: run.name,
-							status: statusOf(run),
-							gating: !isInformational(run.name),
-						})),
+						checks,
 						workflows: read.workflows,
 						runs: read.runCount,
 						settle,
@@ -201,10 +211,7 @@ export const runChecks = (
 					...(settle === null ? [] : [`settle\t${settle}`]),
 					`checks\t${bound}\t${rollup}`,
 					`run\t${read.runs.length}`,
-					...read.runs.map(
-						(run) =>
-							`${run.name}\t${statusOf(run)}\t${isInformational(run.name) ? "informational" : "gating"}`,
-					),
+					...Object.entries(checks).map(([checkClass, count]) => `check\t${checkClass}\t${count}`),
 					`facts\tworkflows:${read.workflows}\truns:${read.runCount}`,
 				].join("\n"),
 				scope,
