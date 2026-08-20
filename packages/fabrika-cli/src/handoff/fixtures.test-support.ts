@@ -1,5 +1,5 @@
 /**
- * The one ground state, pack document and `gh api` / `git` script every `handoff` verb test is
+ * The one ground state, pack document and GitHub / `git` script every `handoff` verb test is
  * driven from.
  *
  * Shared so the four verb suites assert against one canonical pack rather than each inventing its

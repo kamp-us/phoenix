@@ -16,28 +16,12 @@ export {
 	comments,
 	ENV,
 	HEAD,
-	httpPage,
 	OTHER_HEAD,
 	pull,
-	reviews,
 	runsTotal,
-	timeline,
-	unexhaustedPage,
 	workflows,
 } from "../ship/fixtures.test-support.ts";
 
-export const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-export const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
-export const COMMIT_EXISTS = /^gh api repos\/o\/r\/commits\/[0-9a-f]+ --jq \.sha$/;
-export const CHECK_RUNS = /^gh api --paginate repos\/o\/r\/commits\/[0-9a-f]+\/check-runs/;
-export const WORKFLOWS = /^gh api --paginate repos\/o\/r\/actions\/workflows/;
-export const RUN_COUNT = /^gh api repos\/o\/r\/actions\/runs\?head_sha=[0-9a-f]+&per_page=1$/;
-export const RUNS_AT_HEAD = /^gh api --paginate repos\/o\/r\/actions\/runs\?head_sha=/;
-export const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
-export const TIMELINE = /^gh api -i repos\/o\/r\/issues\/4321\/timeline/;
-export const REVIEWS = /^gh api -i repos\/o\/r\/pulls\/4321\/reviews/;
-export const COMPARE = /^gh api repos\/o\/r\/compare\/main\.\.\.[0-9a-f]+ --jq \.behind_by$/;
-export const PERMISSION = /^gh api repos\/o\/r\/collaborators\/\S+\/permission/;
 /**
  * The nine reads this group makes over the HTTP client, matched on `METHOD url` (ADR 0315).
  *
@@ -56,18 +40,9 @@ export const RATE_LIMIT = new RegExp(`^GET ${API}\\/rate_limit$`);
 export const RULES = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/rules\\/branches\\/main\\?`);
 export const PROTECTION = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/branches\\/main\\/protection$`);
 export const COMMIT_DATE = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/commits\\/[0-9a-f]+$`);
-export const CREATE_COMMENT = /^gh api --method POST repos\/o\/r\/issues\/\d+\/comments/;
-export const READ_COMMENT = /^gh api repos\/o\/r\/issues\/comments\/\d+$/;
-
-/** A `--paginate` bare-array page — the shape `pagedJson` walks. */
-export const jsonArray = (value: unknown): ExecResult => okOut(JSON.stringify(value));
 
 export const files = (...names: ReadonlyArray<string>): ExecResult =>
 	okOut(JSON.stringify(names.map((filename) => ({filename}))));
-
-export const behind = (by: number): ExecResult => okOut(String(by));
-
-export const permission = (level: string): ExecResult => okOut(level);
 
 /** A terminal page: 200 with no `rel="next"`, which is what the exhaustion proof reads. */
 const served = (body: unknown, status = 200): HttpReply => ({

@@ -112,46 +112,6 @@ export const comments = (
 		),
 	);
 
-/**
- * A `gh api -i` response: status line, headers, blank line, body.
- *
- * The bare-array reads prove completeness by **exhausted pagination**, so their fixtures have to
- * carry the header that proof reads. Omitting the `Link` header is a terminal page (the platform
- * sends none when there is only one); `next` present is a page still outstanding.
- */
-export const httpPage = (body: string, options: {next?: boolean} = {}): ExecResult =>
-	okOut(
-		[
-			"HTTP/2.0 200 OK",
-			"content-type: application/json",
-			...(options.next === true
-				? ['link: <https://api.github.com/next?page=2>; rel="next", <https://x>; rel="last"']
-				: []),
-			"",
-			body,
-		].join("\r\n"),
-	);
-
-export const reviews = (
-	...rows: ReadonlyArray<{login: string; state: string; commit: string; at?: string}>
-): ExecResult =>
-	httpPage(
-		JSON.stringify(
-			rows.map((row) => ({
-				user: {login: row.login},
-				state: row.state,
-				commit_id: row.commit,
-				submitted_at: row.at ?? "2026-08-08T00:00:00Z",
-			})),
-		),
-	);
-
-export const timeline = (...rows: ReadonlyArray<{event: string; at: string}>): ExecResult =>
-	httpPage(JSON.stringify(rows.map((row) => ({event: row.event, created_at: row.at}))));
-
-/** The same page, but declaring a `next` — the read that can never prove it is complete. */
-export const unexhaustedPage = (): ExecResult => httpPage("[]", {next: true});
-
 export const threadPage = (
 	declared: number,
 	nodes: ReadonlyArray<{
