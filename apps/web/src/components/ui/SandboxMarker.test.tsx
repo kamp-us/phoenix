@@ -2,7 +2,7 @@
  * `SandboxMarker` render contract (#6427, epic #4306): the badge the pure `sandboxMarker`
  * ruling names is the badge that lands in the DOM, the çaylak marker carries its meaning as
  * announced text rather than colour, and the flag-off wire shape renders nothing at all.
- * The decision table itself is pinned DOM-free in `sandboxMarker.unit.test.ts`.
+ * The decision table itself is pinned DOM-free in `sandbox-marker.unit.test.ts`.
  */
 import {render, screen} from "@testing-library/react";
 import {describe, expect, it} from "vitest";
