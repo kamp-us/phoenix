@@ -82,11 +82,13 @@ const react = (
 		input,
 		select: ["id", "reactions"],
 	}).pipe(
-		Effect.provide(Layer.mergeAll(pano, flagsStub(on), liveStub)),
-		// The inert (flag-off) branch re-resolves the comment through the real sandbox
-		// viewer (#6424), so the moderator axis it probes has to be on the context.
 		Effect.provide(
 			Layer.mergeAll(
+				pano,
+				flagsStub(on),
+				liveStub,
+				// The inert (flag-off) branch re-resolves the comment through the real sandbox
+				// viewer (#6424), so the moderator axis it probes has to be on the context.
 				moderatorAxisLayer({viewerId: user?.id ?? "anon", isModerator: false}),
 				// Both stores die on contact: the caylak-visibility flag is off on the only
 				// branch that resolves a viewer, so neither may be read.
@@ -223,9 +225,11 @@ describe("comment.react — (4) reactions are ungated (a çaylak reacts, no tier
 				input: {id: "comment_1", emoji: "👍"},
 				select: ["id"],
 			}).pipe(
-				Effect.provide(Layer.mergeAll(panoProxy({}), flagsStub(true), liveStub)),
 				Effect.provide(
 					Layer.mergeAll(
+						panoProxy({}),
+						flagsStub(true),
+						liveStub,
 						moderatorAxisLayer({viewerId: CAYLAK.id, isModerator: false}),
 						inPlaceVisibilityStores({}),
 					),

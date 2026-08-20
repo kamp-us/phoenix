@@ -49,10 +49,14 @@ const viewerHandedToRehydrate = (
 		yield* lists.savedPosts
 			.resolve({args: {}, select: []})
 			.pipe(
-				Effect.provide(PanoStub),
-				Effect.provide(BookmarkStub),
+				Effect.provide(
+					Layer.mergeAll(
+						PanoStub,
+						BookmarkStub,
+						sandboxViewerLayer({...axes, viewerId: VIEWER.id}),
+					),
+				),
 				Effect.provideService(CurrentUser, {user: VIEWER}),
-				Effect.provide(sandboxViewerLayer({...axes, viewerId: VIEWER.id})),
 			);
 
 		const viewer = seen[0];
