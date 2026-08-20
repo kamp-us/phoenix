@@ -19,6 +19,7 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {capAndCount} from "../evidence.ts";
 import {diffRange, diffRangeStatuses, readFileAt} from "../io/git.ts";
 import {badNumber, openPull, resolveTargetRepo} from "../review/target.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -37,6 +38,13 @@ import {bindGovernanceHead, boundLine} from "./head.ts";
 const VERB = "governance guards";
 
 const UNKNOWN_TAIL = "the diff cannot be bound to a commit, so what it shows is UNKNOWN.";
+
+/**
+ * How many guard-bearing files survive the collapse (ADR 0308). The list is evidence, not an answer:
+ * the skill cites its existence and never reads a row, so a handful of paths names the neighbourhood
+ * the reader then opens for themselves, and `more` carries the rest.
+ */
+const GUARD_FILE_CAP = 5;
 
 export interface GuardsOptions {
 	readonly pr: number;
@@ -141,6 +149,10 @@ export const runGuards = (
 
 		const outcome =
 			hits.length > 0 ? "hits" : inReach === 0 ? "no-anchors-in-reach" : "no-anchor-change";
+		const collapsed = capAndCount(
+			guardFiles.map((file) => ({path: file.path, anchors: file.anchors})),
+			GUARD_FILE_CAP,
+		);
 		diagnostics.push(
 			`${VERB}: scanned ${listed.value.length} files, ${inReach} anchored invariants in reach, ${compared} compared block-by-block against ${head.mergeBase}.`,
 		);
@@ -150,7 +162,7 @@ export const runGuards = (
 				JSON.stringify({
 					outcome,
 					hits,
-					guardFiles: guardFiles.map((file) => ({path: file.path, anchors: file.anchors})),
+					guardFiles: collapsed,
 					inReach,
 					scanned: listed.value.length,
 				}),
@@ -161,7 +173,8 @@ export const runGuards = (
 			[
 				`guards\t${outcome}\t${inReach}`,
 				...hits.map((hit) => `anchor\t${hit.kind}\t${hit.name}\t${hit.file}:${hit.line}`),
-				...guardFiles.map((file) => `guard-file\t${file.path}\t${file.anchors}`),
+				...collapsed.rows.map((file) => `guard-file\t${file.path}\t${file.anchors}`),
+				...(collapsed.more > 0 ? [`guard-file-more\t${collapsed.more}`] : []),
 			].join("\n"),
 			diagnostics,
 		);

@@ -28,7 +28,7 @@ export const mutedAuthorsWhere = (
 export const isMutedAuthor = (
 	authorId: string,
 	mutedIds: ReadonlySet<string> | undefined,
-): boolean => mutedIds != null && mutedIds.has(authorId);
+): boolean => mutedIds?.has(authorId) ?? false;
 
 /**
  * Safe-default `false`: a Flagship outage and the unflipped default both leave reads

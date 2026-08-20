@@ -16,6 +16,7 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {reasonHistogram} from "../evidence.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {commitExists} from "../io/pulls.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -152,17 +153,26 @@ export const runEvidence = (
 			artifact: number | null,
 			status: string | null,
 			checks: ReadonlyArray<ManifestCheck>,
-		): VerbOutcome =>
-			json
-				? answer(JSON.stringify({outcome: state, sha: bound, run, artifact, checks}), diagnostics)
+		): VerbOutcome => {
+			// `checks` is an evidence-array under ADR 0308: the skill routes off the five states alone,
+			// and the names behind a non-passing tally are already on the notes channel below.
+			const tally = reasonHistogram(checks, (check) => check.status);
+			return json
+				? answer(
+						JSON.stringify({outcome: state, sha: bound, run, artifact, checks: tally}),
+						diagnostics,
+					)
 				: answer(
 						[
 							`evidence\t${state}\t${bound}`,
 							`lookup\trun:${run ?? NULL_TOKEN}\tartifact:${artifact ?? NULL_TOKEN}\tstatus:${status ?? NULL_TOKEN}`,
-							...checks.map((check) => `check\t${check.name}\t${check.status}`),
+							...Object.entries(tally).map(
+								([checkStatus, count]) => `check\t${checkStatus}\t${count}`,
+							),
 						].join("\n"),
 						diagnostics,
 					);
+		};
 
 		const producer = yield* workflowExists(repo, PRODUCER_WORKFLOW);
 		if (producer._tag === "Unknown") {

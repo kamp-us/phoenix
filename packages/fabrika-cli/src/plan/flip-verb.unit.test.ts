@@ -24,7 +24,7 @@ import {
 	SESSION,
 	subIssues,
 } from "./fixtures.test-support.ts";
-import {runFlip} from "./flip-verb.ts";
+import {childrenEvidence, runFlip} from "./flip-verb.ts";
 
 const EPIC = /^gh api repos\/o\/r\/issues\/4300$/;
 const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
@@ -103,7 +103,7 @@ const run = (digest: string, script: ReadonlyArray<readonly [RegExp, ExecResult]
 };
 
 describe("runFlip", () => {
-	it("flips a planned child and reports the OBSERVED labels", async () => {
+	it("flips a planned child and reports the OBSERVED results as a count plus histogram", async () => {
 		const digest = await digestOf(CLEAN_READ);
 		const {outcome} = await run(digest, [
 			...CLAIMED,
@@ -120,11 +120,13 @@ describe("runFlip", () => {
 			terminal: "flipped-all",
 			flipped: 1,
 			already: 0,
-			children: [
-				{number: 4301, observed: ["p1", "status:triaged", "type:feature"], result: "flipped"},
-			],
+			children: {count: 1, results: {flipped: 1}},
 			audience: {result: "flipped", observed: ["ready-for:agent", "type:epic"]},
 		});
+		// `audience.observed` is the answer and stays whole; the child's own observed labels were the
+		// evidence, and the collapse is only real if none of them reached stdout (ADR 0308).
+		expect(JSON.parse(outcome.stdout).children).toEqual({count: 1, results: {flipped: 1}});
+		expect(outcome.stdout).not.toContain("4301");
 	});
 
 	/**
@@ -377,5 +379,22 @@ describe("runFlip", () => {
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toContain("--digest must be 12 lowercase hex");
 		expect(calls).toEqual([]);
+	});
+});
+
+describe("childrenEvidence", () => {
+	it("counts every child and tallies the closed result vocabulary, count-descending", () => {
+		expect(
+			childrenEvidence([
+				{result: "already"},
+				{result: "flipped"},
+				{result: "already"},
+				{result: "not-planned"},
+			]),
+		).toEqual({count: 4, results: {already: 2, flipped: 1, "not-planned": 1}});
+	});
+
+	it("keeps `count` at zero rather than dropping the field, so a caller never reads absence", () => {
+		expect(childrenEvidence([])).toEqual({count: 0, results: {}});
 	});
 });

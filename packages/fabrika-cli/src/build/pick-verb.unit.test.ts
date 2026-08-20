@@ -51,12 +51,9 @@ const run = (
 const pool = (out: {stdout: string}) =>
 	JSON.parse(out.stdout).pool as ReadonlyArray<{number: number}>;
 
+/** The reason histogram `excluded` collapses to (ADR 0308) — counts, never rows. */
 const excluded = (out: {stdout: string}) =>
-	JSON.parse(out.stdout).excluded as ReadonlyArray<{
-		number: number;
-		home: string | null;
-		reason: string;
-	}>;
+	JSON.parse(out.stdout).excluded as Readonly<Record<string, number>>;
 
 describe("runPick", () => {
 	it("ranks p0 before p1 before p2, and milestone order inside a bucket", async () => {
@@ -82,7 +79,7 @@ describe("runPick", () => {
 			[bucket("p2"), EMPTY],
 		]);
 		expect(pool(out)).toEqual([]);
-		expect(excluded(out)).toEqual([{number: 500, home: null, reason: "audience-not-agent"}]);
+		expect(excluded(out)).toEqual({"audience-not-agent": 1});
 	});
 
 	/**
@@ -97,7 +94,7 @@ describe("runPick", () => {
 		]);
 		expect(out.code).toBe(0);
 		expect(pool(out)).toEqual([]);
-		expect(excluded(out)).toEqual([{number: 500, home: null, reason: "no-acceptance-criteria"}]);
+		expect(excluded(out)).toEqual({"no-acceptance-criteria": 1});
 	});
 
 	it("excludes a candidate whose criteria heading has drifted — malformed is not a contract", async () => {
@@ -113,7 +110,7 @@ describe("runPick", () => {
 			[bucket("p1"), EMPTY],
 			[bucket("p2"), EMPTY],
 		]);
-		expect(excluded(out)).toEqual([{number: 500, home: null, reason: "no-acceptance-criteria"}]);
+		expect(excluded(out)).toEqual({"no-acceptance-criteria": 1});
 	});
 
 	it("admits a criteria-bearing candidate — the axis excludes the contract-less one only", async () => {
@@ -129,7 +126,7 @@ describe("runPick", () => {
 			[bucket("p2"), EMPTY],
 		]);
 		expect(pool(out).map((row) => row.number)).toEqual([500]);
-		expect(excluded(out)).toEqual([{number: 501, home: null, reason: "no-acceptance-criteria"}]);
+		expect(excluded(out)).toEqual({"no-acceptance-criteria": 1});
 	});
 
 	/**
@@ -151,6 +148,35 @@ describe("runPick", () => {
 		expect(out.stderr.join("\n")).toContain(
 			"0 candidate(s) survived the filter, 2 excluded — 1 by the admission test, 1 for no acceptance-criteria block, 0 on the blocked_by graph.",
 		);
+	});
+
+	/**
+	 * The exemplar collapse of ADR 0308: `excluded` is evidence, so many rows print as counts, while
+	 * `pool` is the answer and is untouched. The measured board printed 266 rows carrying two reasons.
+	 */
+	it("collapses many exclusions to a reason histogram and leaves the pool whole", async () => {
+		const out = await run([
+			[
+				bucket("p0"),
+				candidates(
+					{number: 500, labels: [...TRIAGED, "p0"]},
+					...[501, 502, 503].map((number) => ({
+						number,
+						labels: ["status:triaged", "type:bug", "p0"],
+					})),
+					...[504, 505].map((number) => ({
+						number,
+						labels: [...TRIAGED, "p0"],
+						body: REPORT_BODY,
+					})),
+				),
+			],
+			[bucket("p1"), EMPTY],
+			[bucket("p2"), EMPTY],
+		]);
+		expect(pool(out).map((row) => row.number)).toEqual([500]);
+		expect(excluded(out)).toEqual({"audience-not-agent": 3, "no-acceptance-criteria": 2});
+		expect(Object.keys(excluded(out))).toEqual(["audience-not-agent", "no-acceptance-criteria"]);
 	});
 
 	it("excludes an assigned issue — assignment keeps a human's document out (#4764)", async () => {
@@ -198,7 +224,7 @@ describe("runPick", () => {
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({
 			pool: [],
-			excluded: [{number: 9, home: null, reason: "audience-not-agent"}],
+			excluded: {"audience-not-agent": 1},
 			scanned: {p0: 0, p1: 0, p2: 1},
 			campaigns: {state: "none"},
 		});
@@ -281,7 +307,7 @@ describe("runPick", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(pool(out).map((row) => row.number)).toEqual([500]);
-		expect(excluded(out)).toEqual([{number: 400, home: "39", reason: "out-of-scope"}]);
+		expect(excluded(out)).toEqual({"out-of-scope": 1});
 		expect(JSON.parse(out.stdout).campaigns).toEqual({state: "active", milestones: ["44"]});
 	});
 
@@ -304,7 +330,7 @@ describe("runPick", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(pool(out).map((row) => row.number)).toEqual([500, 300]);
-		expect(excluded(out)).toEqual([{number: 400, home: "39", reason: "out-of-scope"}]);
+		expect(excluded(out)).toEqual({"out-of-scope": 1});
 		expect(JSON.parse(out.stdout).campaigns).toEqual({state: "active", milestones: ["44", "46"]});
 	});
 
@@ -319,7 +345,7 @@ describe("runPick", () => {
 			fakeFs({files: {[ROADMAP_FILE]: campaignsTable(44)}}),
 		);
 		expect(pool(out).map((row) => row.number)).toEqual([500]);
-		expect(excluded(out)).toEqual([]);
+		expect(excluded(out)).toEqual({});
 	});
 
 	it("refuses an unreadable campaigns table on 11 — never an unfiltered pool", async () => {
@@ -396,7 +422,7 @@ describe("runPick — the blocked_by graph", () => {
 		]);
 		expect(out.code).toBe(0);
 		expect(pool(out)).toEqual([]);
-		expect(excluded(out)).toEqual([{number: 500, home: null, reason: "blocked"}]);
+		expect(excluded(out)).toEqual({blocked: 1});
 		expect(out.stderr.join("\n")).toContain("#500 is blocked by #210");
 	});
 
@@ -409,7 +435,7 @@ describe("runPick — the blocked_by graph", () => {
 			[blocker(210), issue({number: 210, state: "closed"})],
 		]);
 		expect(pool(out).map((row) => row.number)).toEqual([500]);
-		expect(excluded(out)).toEqual([]);
+		expect(excluded(out)).toEqual({});
 	});
 
 	it("excludes a candidate whose edge list could not be read, naming why on stderr", async () => {
@@ -421,7 +447,7 @@ describe("runPick — the blocked_by graph", () => {
 		]);
 		expect(out.code).toBe(0);
 		expect(pool(out)).toEqual([]);
-		expect(excluded(out)).toEqual([{number: 500, home: null, reason: "unreadable"}]);
+		expect(excluded(out)).toEqual({unreadable: 1});
 		expect(out.stderr.join("\n")).toContain("cannot read the blocked_by edges of #500");
 	});
 

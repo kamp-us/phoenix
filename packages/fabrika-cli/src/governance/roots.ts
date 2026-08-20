@@ -12,14 +12,9 @@
  */
 
 import {idFromFile, isFourDigitId} from "../adr/records.ts";
+import {type ReasonHistogram, reasonHistogram} from "../evidence.ts";
 import type {ChangedPath} from "../io/git.ts";
 import {touchesGovernanceRoot} from "../review/classes.ts";
-
-/** One root and how many of the diff's paths sit under it. Only roots the diff touches are reported. */
-export interface RootTally {
-	readonly name: string;
-	readonly files: number;
-}
 
 /** A decision record the diff carries, and what the diff does to it. */
 export interface RecordChange {
@@ -30,7 +25,12 @@ export interface RecordChange {
 
 export interface ScopeResult {
 	readonly required: boolean;
-	readonly roots: ReadonlyArray<RootTally>;
+	/**
+	 * How many of the diff's paths sit under each root the diff touches — an evidence-array collapsed
+	 * to a reason histogram (ADR 0308): the root set is `.fabrika.jsonc`'s `governedRoots`, which the
+	 * governance skill reads off `fabrika status settings` rather than off this field.
+	 */
+	readonly roots: ReasonHistogram;
 	readonly self: boolean;
 	readonly records: ReadonlyArray<RecordChange>;
 	readonly scanned: number;
@@ -81,12 +81,12 @@ export const deriveScope = (
 	const paths = changed.map((entry) => entry.path);
 	return {
 		required: touchesGovernanceRoot(paths, governedRoots),
-		roots: governedRoots
-			.map((name) => ({
-				name,
-				files: paths.filter((path) => path.startsWith(name)).length,
-			}))
-			.filter((tally) => tally.files > 0),
+		// One entry per (path, root) pair rather than per path: a path under two overlapping declared
+		// roots counts under both, which is the tally the partition notice's arithmetic reads.
+		roots: reasonHistogram(
+			paths.flatMap((path) => governedRoots.filter((root) => path.startsWith(root))),
+			(root) => root,
+		),
 		self: paths.some((path) => skillRoots.some((root) => path.startsWith(root))),
 		records: recordsIn(changed),
 		scanned: paths.length,

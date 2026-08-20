@@ -40,4 +40,19 @@ describe("PublishDecision gate — create-time live broadcast gate (#1205 AC#2, 
 		Effect.runSync(broadcastIf(alwaysLive, publish.effect));
 		assert.isTrue(publish.didRun(), "restore must still broadcast its already-public node");
 	});
+
+	// The #6423 in-place opt-in is a READ-path widening. `decidePublish` takes only the
+	// row's `sandboxedAt` — there is no viewer to widen it with, and that is the
+	// containment: an opted-in yazar sees a çaylak's new content on their next read, never
+	// as a live push (#6424). A viewer parameter appearing here would break this test.
+	it("a çaylak create still suppresses its broadcast — the gate has no viewer to widen", () => {
+		const publish = recordingPublish();
+		Effect.runSync(broadcastIf(decidePublish(at), publish.effect));
+		assert.isFalse(publish.didRun());
+		assert.strictEqual(
+			decidePublish.length,
+			1,
+			"decidePublish takes the sandbox state and nothing else",
+		);
+	});
 });

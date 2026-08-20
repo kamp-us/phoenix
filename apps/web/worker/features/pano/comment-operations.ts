@@ -19,12 +19,13 @@ import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {parallelStampWave} from "../fate/stamp-wave.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import {applyRemovalTransition} from "../lifecycle/apply-removal-transition.ts";
-import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
+import {anonymousViewer, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {
 	ownSandboxed,
 	resolveSandboxViewer,
 	sandboxBacklogWhere,
+	sandboxedInPlace,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
 import {mutedAuthorsWhere} from "../mute/read-mask.ts";
@@ -247,29 +248,39 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 		);
 	};
 
-	// The tombstone is rendered HERE, from the lifecycle projection — never written into the
-	// canonical body by the delete path (ADR 0096 §5).
-	// `viewerId` is REQUIRED, not optional-with-a-default: `sandboxed` is owner-scoped, so
-	// every call site must state whose view it is shaping. A viewer-blind call site (the
-	// moderator queue, a broadcast payload) passes `null` and gets `false` — the one safe
-	// answer for a row that may reach a non-author (#4282).
+	// The tombstone is rendered HERE, from the lifecycle projection — not written
+	// into the canonical body by the delete path (ADR 0096 §5). A `Removed`
+	// comment surfaces as the `[silindi]` placeholder with author elided; its real
+	// body stays in the row for restore + moderator review. `deletedAt` on the
+	// wire-facing `CommentRow` is the removal timestamp (presentation contract).
+	// The live shape comes from the `comment-fields.ts` column→field map; the
+	// tombstone overrides the four presentation fields it elides.
+	// `viewer` is a REQUIRED parameter, not an optional with a default: both sandbox
+	// signals are viewer-scoped, so every call site must state whose view it is shaping.
+	// A viewer-blind call site (the moderator queue, a broadcast payload) passes
+	// `anonymousViewer` deliberately and gets `false` for both — the one safe answer for a
+	// row that may reach a non-author (#4282). Taking the whole `SandboxViewer` rather
+	// than a bare `viewerId` is what lets `sandboxedInPlace` (#6425) be derived here at
+	// all: the in-place class cannot be reconstructed from an id.
 	const rowToCommentRow = (
 		row: typeof schema.commentRecord.$inferSelect,
-		viewerId: string | null,
+		viewer: SandboxViewer,
 	): CommentRow => {
-		const sandboxed = ownSandboxed(row, viewerId);
+		const sandboxed = ownSandboxed(row, viewer.viewerId);
+		const inPlace = sandboxedInPlace(row, viewer);
 		const lifecycle = Removal.fromColumns(row);
 		if (Removal.isRemoved(lifecycle)) {
 			return {
 				...toCommentRow(row),
 				sandboxed,
+				sandboxedInPlace: inPlace,
 				author: "",
 				authorId: "",
 				body: SILINDI_PLACEHOLDER,
 				deletedAt: lifecycle.removedAt,
 			};
 		}
-		return {...toCommentRow(row), sandboxed};
+		return {...toCommentRow(row), sandboxed, sandboxedInPlace: inPlace};
 	};
 
 	const listCommentsKeyset = Effect.fn("Pano.listCommentsKeyset")(function* (
@@ -288,13 +299,14 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 		const first = Math.max(1, Math.min(opts.first ?? 50, 200));
 		const after = opts.after ?? null;
 		const viewerId = opts.viewerId ?? null;
+		const viewer = resolveSandboxViewer(opts);
 
 		// A removed comment stays in the thread ONLY to preserve reply structure (ADR 0096
 		// §5): keep it when it still has a live child, otherwise omit it.
 		const visible = sql`(${schema.commentRecord.removedAt} IS NULL OR EXISTS (SELECT 1 FROM ${schema.commentRecord} AS child WHERE child.parent_id = ${schema.commentRecord.id} AND child.removed_at IS NULL))`;
 		const sandboxClause = sandboxVisibleWhere(
 			{sandboxedAt: schema.commentRecord.sandboxedAt, authorId: schema.commentRecord.authorId},
-			resolveSandboxViewer(opts),
+			viewer,
 		);
 		const muteClause = mutedAuthorsWhere(schema.commentRecord.authorId, opts.mutedIds);
 		const baseWhere = and(
@@ -349,7 +361,7 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 			fetched,
 			first,
 			(r: CommentRow) => r.id,
-			(row) => rowToCommentRow(row, viewerId),
+			(row) => rowToCommentRow(row, viewer),
 		);
 		const rows = yield* stampComments(page.rows, viewerId, opts.parallelStamps ?? false);
 
@@ -368,6 +380,7 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 	) {
 		if (ids.length === 0) return [];
 		const viewerId = opts.viewerId ?? null;
+		const viewer = resolveSandboxViewer(opts);
 		const fetched = yield* run((db) =>
 			db
 				.select()
@@ -380,14 +393,14 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 								sandboxedAt: schema.commentRecord.sandboxedAt,
 								authorId: schema.commentRecord.authorId,
 							},
-							resolveSandboxViewer(opts),
+							viewer,
 						),
 						mutedAuthorsWhere(schema.commentRecord.authorId, opts.mutedIds),
 					),
 				),
 		);
 		return yield* stampComments(
-			fetched.map((row) => rowToCommentRow(row, viewerId)),
+			fetched.map((row) => rowToCommentRow(row, viewer)),
 			viewerId,
 			opts.parallelStamps ?? false,
 		);
@@ -414,9 +427,9 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 				)
 				.orderBy(desc(schema.commentRecord.createdAt)),
 		);
-		// Viewer-blind by construction — it reads OTHER people's pending comments, so the
-		// owner-scoped flag is `false` for every row here.
-		return fetched.map((row) => rowToCommentRow(row, null));
+		// The moderator queue is viewer-blind by construction — it reads OTHER people's
+		// pending comments, so both sandbox signals are `false` for every row here.
+		return fetched.map((row) => rowToCommentRow(row, anonymousViewer));
 	});
 
 	const lookupCommentPostId = Effect.fn("Pano.lookupCommentPostId")(function* (commentId: string) {
@@ -587,7 +600,7 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 				hasReplies: true,
 				// Viewer-blind: the placeholder is published to the whole thread topic
 				// (`live.comment.update`), so it must never carry an owner-scoped flag.
-				placeholder: rowToCommentRow(row, null),
+				placeholder: rowToCommentRow(row, anonymousViewer),
 			} satisfies DeleteCommentResult;
 		}
 

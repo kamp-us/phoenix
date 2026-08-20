@@ -12,6 +12,7 @@ import {UserId} from "../../lib/ids.ts";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
+import {inPlaceVisibilityStores, moderatorAxisLayer} from "../kunye/sandbox.testing.ts";
 import {EMPTY_REACTION_AGGREGATE, type ReactionAggregate} from "../reaction/Reaction.ts";
 import type {CommentRow} from "./comment-fields.ts";
 import type {ReactToCommentInput, ReactToCommentResult} from "./comment-operations.ts";
@@ -81,7 +82,19 @@ const react = (
 		input,
 		select: ["id", "reactions"],
 	}).pipe(
-		Effect.provide(Layer.mergeAll(pano, flagsStub(on), liveStub)),
+		Effect.provide(
+			Layer.mergeAll(
+				pano,
+				flagsStub(on),
+				liveStub,
+				// The inert (flag-off) branch re-resolves the comment through the real sandbox
+				// viewer (#6424), so the moderator axis it probes has to be on the context.
+				moderatorAxisLayer({viewerId: user?.id ?? "anon", isModerator: false}),
+				// Both stores die on contact: the caylak-visibility flag is off on the only
+				// branch that resolves a viewer, so neither may be read.
+				inPlaceVisibilityStores({}),
+			),
+		),
 		Effect.provideService(CurrentUser, {user}),
 		Effect.provideService(RuntimeContext, runtimeContextStub),
 	);
@@ -212,7 +225,15 @@ describe("comment.react — (4) reactions are ungated (a çaylak reacts, no tier
 				input: {id: "comment_1", emoji: "👍"},
 				select: ["id"],
 			}).pipe(
-				Effect.provide(Layer.mergeAll(panoProxy({}), flagsStub(true), liveStub)),
+				Effect.provide(
+					Layer.mergeAll(
+						panoProxy({}),
+						flagsStub(true),
+						liveStub,
+						moderatorAxisLayer({viewerId: CAYLAK.id, isModerator: false}),
+						inPlaceVisibilityStores({}),
+					),
+				),
 				Effect.provideService(CurrentUser, {user: undefined}),
 				Effect.provideService(RuntimeContext, runtimeContextStub),
 				Effect.exit,

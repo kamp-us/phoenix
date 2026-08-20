@@ -29,6 +29,27 @@ A `unit` test never builds a database — it substitutes the seam **below** the 
 - **A throwing `Drizzle`** — a `DrizzleAccess` whose every `run` / `batch` `Effect.die`s. Provide it so that any path which *should* short-circuit before touching the DB fails loudly if it doesn't — running to completion against it is the "no read / no write" proof.
 - **A scripted `Drizzle`** — a `DrizzleAccess` whose `run` replays a queued sequence of fixture results (and whose `batch` throws), feeding a decision its DB inputs without an engine. The canonical pair lives at the top of [`Vote.unit.test.ts`](../apps/web/worker/features/vote/Vote.unit.test.ts) (`throwingAccess`, `scriptedAccess`) — the `Drizzle.unit.test.ts` half-A idiom.
 
+### Capturing the SQL a read emits
+
+When the claim is *which predicate a read wired in* — a viewer mask, a removal guard — assert the
+compiled statement, not the returned rows. The scripted `Drizzle` above renders it, but a read lands
+on one of **two** capture surfaces and only one is obvious:
+
+- a builder handed back **un-awaited** reaches `run` as a builder, so `.toSQL()` renders it;
+- a read **finalized inside the callback** (`.get().then(…)`, the usual `count(*)` shape) hands `run`
+  a promise, so its SQL is recoverable only at the D1 binding — capture it off a `prepare`/`bind`
+  double. A connection's `totalCount` is almost always this one.
+
+Capture both, or a `totalCount` that drifted from its page reads as untested rather than as broken.
+The canonical harness is [`sozluk/term-list-sandbox.unit.test.ts`](../apps/web/worker/features/sozluk/term-list-sandbox.unit.test.ts).
+
+For an **unchanged-behaviour** claim — a widening that must not move any other viewer's SQL — pin the
+whole statement as a literal golden rather than matching a regex, and collapse only the leading
+select-column list (`select … from`): that list is the schema's axis, so leaving it in reds every
+golden on an unrelated new column while proving nothing. [`sozluk`](../apps/web/worker/features/sozluk/in-place-visibility.unit.test.ts)
+and [`pano`](../apps/web/worker/features/pano/in-place-visibility.unit.test.ts)'s in-place-visibility
+files are the worked pair.
+
 There is **no app-level in-process op-test harness**. The heavyweight `runFateOp` mirror of the `/fate` route was deleted as a zero-consumer dead end (ADR [0105](../.decisions/0105-delete-runfateop-harness.md)). `route.ts → FateInterpreter` reachability runs at the `integration` tier on real D1; the interpreter dispatch loop is unit-tested at the package tier (`fate-effect`'s `Executor.test.ts` / `Codegen.test.ts`); the light app-level resolve/wire seam is [`resolveWire`](#per-feature-op-tests-drive-resolvewire-not-handler) below.
 
 ## Per-feature op tests: drive `resolveWire`, not `.handler`
@@ -47,6 +68,22 @@ assert.strictEqual((error.value as {code?: unknown}).code, "UNAUTHORIZED");
 ```
 
 This is the in-process resolve/wire seam — the app-level fate-op unit surface (there is no heavyweight interpreter harness; ADR [0105](../.decisions/0105-delete-runfateop-harness.md)). Keep using the input-`Schema`-decode-directly form (`account-deletion.unit.test.ts`) for facts that live *before* the handler (a typed-confirmation gate is an input-decode fact, not a handler-failure fact). The canonical examples are `pasaport/queries.unit.test.ts`, `pasaport/account-deletion.unit.test.ts`, `report/report-mutation.unit.test.ts`, and `pano/draft-save.invariant.test.ts`.
+
+### Capturing the argument a resolver hands a service
+
+When the claim is *which value the resolver passed down* — a viewer, a mask, a scoped id — capture it
+off the substituted service rather than reading the call site. Drive the real op through `resolveWire`
+with a double whose method pushes its argument into an array, then assert the captured value across
+each shape that matters. The call site can be read wrong, and the shape it produces changes with what
+sits above it; a captured argument is the wiring itself.
+
+Bundle the services the derivation reads as one layer per axis so a shape is one or two lines, not
+seven stubs — [`kunye/sandbox.testing.ts`](../apps/web/worker/features/kunye/sandbox.testing.ts) is
+the worked example (`inPlaceVisibilityLayer` / `moderatorAxisLayer` / `sandboxViewerLayer`), with
+every store dying on contact so a short-circuit shape proves the read never happened. Consumers:
+[`pano/mutation-rehydrate-viewer.unit.test.ts`](../apps/web/worker/features/pano/mutation-rehydrate-viewer.unit.test.ts),
+[`pano/saved-posts-viewer.unit.test.ts`](../apps/web/worker/features/pano/saved-posts-viewer.unit.test.ts),
+[`search/search-not-widened.unit.test.ts`](../apps/web/worker/features/search/search-not-widened.unit.test.ts).
 
 ## Per-test isolation
 

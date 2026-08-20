@@ -18,7 +18,7 @@ import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {InsufficientKarma} from "../kunye/errors.ts";
 import {gateContentOnKarma} from "../kunye/privilege.ts";
-import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {currentSandboxViewer, decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {ownSandboxed} from "../lifecycle/SandboxVisibility.ts";
 import {authorDisplayLabel} from "../pasaport/author-label.ts";
 import {SelfVoteNotAllowed, VoterNotEligible} from "../vote/errors.ts";
@@ -259,9 +259,19 @@ export const mutations = {
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.voteOnPost({postId: input.id, voterId: UserId.make(user.id)});
-			// Re-resolve via the batched read: the write result carries no `isSaved`, and its
-			// null-bearing shape clobbered the cache of an already-saved post (#2213).
-			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
+			// Re-resolve the affected post via the same batched read `post.save`/`post.unsave`
+			// use, so the returned AND published projection carries the real `isSaved` + live
+			// author identity. The write result (`VoteOnPostResult`) has neither, and its
+			// null-bearing shape clobbered the client cache — and the fanned live frame — of an
+			// already-saved post (#2213).
+			// The re-read masks on the sandbox dimension, so it must carry the SAME resolved
+			// viewer as the read that surfaced this post (#6424). Handed a degraded
+			// `{viewerId}`-only viewer it masks out another author's still-sandboxed post — which
+			// an opted-in yazar or a moderator can now reach — and the handler answers
+			// `PostNotFound` on a write that already committed. Every re-read below that can
+			// raise `*NotFound` carries it for the same reason.
+			const sandboxViewer = yield* currentSandboxViewer;
+			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id, sandboxViewer});
 			if (!row) {
 				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
 			}
@@ -289,8 +299,10 @@ export const mutations = {
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			yield* pano.retractPostVote({postId: input.id, voterId: UserId.make(user.id)});
-			// Re-resolve like `post.vote` so the projection keeps real `isSaved` + author (#2213).
-			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
+			// Re-resolve like `post.vote` above so the returned/published projection keeps the
+			// real `isSaved` + author identity instead of the null-bearing write shape (#2213).
+			const sandboxViewer = yield* currentSandboxViewer;
+			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id, sandboxViewer});
 			if (!row) {
 				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
 			}
@@ -315,7 +327,11 @@ export const mutations = {
 			const flags = yield* Flags;
 			const on = yield* flags.getBoolean(PHOENIX_REACTIONS, false).pipe(provideRequestFlags);
 			if (!on) {
-				const [current] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
+				const sandboxViewer = yield* currentSandboxViewer;
+				const [current] = yield* pano.getPostsByIds([input.id], {
+					viewerId: user.id,
+					sandboxViewer,
+				});
 				if (!current) {
 					return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
 				}
@@ -344,7 +360,8 @@ export const mutations = {
 			const bookmark = yield* Bookmark;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			yield* bookmark.toggle({userId: UserId.make(user.id), postId: input.id, value: true});
-			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
+			const sandboxViewer = yield* currentSandboxViewer;
+			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id, sandboxViewer});
 			if (!row) {
 				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
 			}
@@ -365,7 +382,8 @@ export const mutations = {
 			const bookmark = yield* Bookmark;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			yield* bookmark.toggle({userId: UserId.make(user.id), postId: input.id, value: false});
-			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
+			const sandboxViewer = yield* currentSandboxViewer;
+			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id, sandboxViewer});
 			if (!row) {
 				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
 			}
@@ -572,7 +590,11 @@ export const mutations = {
 			const flags = yield* Flags;
 			const on = yield* flags.getBoolean(PHOENIX_REACTIONS, false).pipe(provideRequestFlags);
 			if (!on) {
-				const [current] = yield* pano.getCommentsByIds([input.id], {viewerId: user.id});
+				const sandboxViewer = yield* currentSandboxViewer;
+				const [current] = yield* pano.getCommentsByIds([input.id], {
+					viewerId: user.id,
+					sandboxViewer,
+				});
 				if (!current) {
 					return yield* new CommentNotFound({
 						commentId: input.id,

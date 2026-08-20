@@ -58,6 +58,15 @@ _Source: apps/web/src/components/ui/Card.tsx_
 **Agent directives (`@agent` — protected, do not regenerate):**
 - Prefer this composite over hand-rolling a bordered box; do not regenerate this selection guidance — it echoes the manifest's component-selection rule.
 
+## CaylakBadge
+
+_Source: apps/web/src/components/ui/CaylakBadge.tsx_
+
+**When to use:** Never directly — reach for `SandboxMarker`, which owns the ReviewBadge/CaylakBadge choice so the two cannot stack on one item. Rendered only when the server-derived `sandboxedInPlace` field is true, which is structurally false while `PHOENIX_CAYLAK_VISIBILITY` is off.
+
+**Slots:**
+- `none` — Fixed copy; no children slot.
+
 ## Code
 
 _Source: apps/web/src/components/ui/atoms.tsx_
@@ -228,6 +237,15 @@ _Source: apps/web/src/components/ui/ReviewBadge.tsx_
 
 **Slots:**
 - `none` — Fixed copy; no children slot.
+
+## SandboxMarker
+
+_Source: apps/web/src/components/ui/SandboxMarker.tsx_
+
+**When to use:** Any surface showing content that can be sandboxed — the pano feed row, post detail, comment tree node, sözlük definition entry. Renders nothing when neither wire field applies, which is also what every viewer gets with `PHOENIX_CAYLAK_VISIBILITY` off.
+
+**Slots:**
+- `none` — Chooses a fixed-copy badge; no children slot.
 
 ## ScrollArea
 

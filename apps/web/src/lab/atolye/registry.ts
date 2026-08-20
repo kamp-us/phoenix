@@ -4,6 +4,7 @@ import type {AnyExhibit} from "./exhibit";
 import {avatarExhibit} from "./exhibits/Avatar.exhibit";
 import {buttonExhibit} from "./exhibits/Button.exhibit";
 import {cardExhibit} from "./exhibits/Card.exhibit";
+import {caylakBadgeExhibit} from "./exhibits/CaylakBadge.exhibit";
 import {collapsibleExhibit} from "./exhibits/Collapsible.exhibit";
 import {composerExhibit} from "./exhibits/Composer.exhibit";
 import {copyLinkButtonExhibit} from "./exhibits/CopyLinkButton.exhibit";
@@ -30,6 +31,7 @@ const exhibits: readonly AnyExhibit[] = [
 	buttonExhibit,
 	avatarExhibit,
 	cardExhibit,
+	caylakBadgeExhibit,
 	collapsibleExhibit,
 	copyLinkButtonExhibit,
 	countToggleExhibit,

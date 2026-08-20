@@ -69,10 +69,10 @@ const OTHER = "someone-else";
 const MOD = "a-mod";
 
 const viewers = {
-	anonymous: {viewerId: null, canSeeSandboxed: false},
-	otherMember: {viewerId: OTHER, canSeeSandboxed: false},
-	author: {viewerId: AUTHOR, canSeeSandboxed: false},
-	moderator: {viewerId: MOD, canSeeSandboxed: true},
+	anonymous: {viewerId: null, canSeeSandboxed: false, seesSandboxedInPlace: false},
+	otherMember: {viewerId: OTHER, canSeeSandboxed: false, seesSandboxedInPlace: false},
+	author: {viewerId: AUTHOR, canSeeSandboxed: false, seesSandboxedInPlace: false},
+	moderator: {viewerId: MOD, canSeeSandboxed: true, seesSandboxedInPlace: false},
 } satisfies Record<string, SandboxViewer>;
 
 // Only the three feed SELECTs return a renderable query builder; the `COUNT(*)` reads

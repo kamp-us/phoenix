@@ -108,6 +108,44 @@ describe("runGuards", () => {
 		expect(out.stdout).toContain(`guard-file\t${path}\t0`);
 	});
 
+	it("caps the guard-file evidence at five and counts the rest, on both channels (ADR 0308)", async () => {
+		const paths = Array.from({length: 7}, (_, i) => `.github/workflows/g${i}.yml`);
+		const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+			[PULL, pull({changedFiles: paths.length})],
+			...binding(),
+			[DIFF_AT(), okOut(paths.map((path) => diffOf(path, "-  run: a", "+  run: b")).join("\n"))],
+			[STATUS_AT(), statuses(...paths.map((path) => ["M", path] as const))],
+			...paths.flatMap(
+				(path) =>
+					[
+						[SHOW_AT(HEAD, path), okOut("jobs: {}\n")],
+						[SHOW_AT(BASE, path), okOut("jobs: {}\n")],
+					] as ReadonlyArray<readonly [RegExp, ExecResult]>,
+			),
+		];
+
+		const lines = await run(script);
+		expect(lines.stdout.split("\n").filter((line) => line.startsWith("guard-file\t"))).toHaveLength(
+			5,
+		);
+		expect(lines.stdout).toContain("guard-file-more\t2");
+
+		const json = JSON.parse((await run(script, {json: true})).stdout);
+		expect(json.guardFiles.rows).toHaveLength(5);
+		expect(json.guardFiles.more).toBe(2);
+	});
+
+	it("carries `more: 0` under the cap, so a whole list never reads as a truncated one", async () => {
+		const out = await run(
+			scripted(diffOf(SKILL, "-prose", "+other prose"), "<!-- anchor: G --> g\n"),
+			{json: true},
+		);
+		expect(JSON.parse(out.stdout).guardFiles).toEqual({
+			rows: [{path: SKILL, anchors: 1}],
+			more: 0,
+		});
+	});
+
 	it("keeps a file whose anchor MOVED out of the guard-file list — it is already a hit", async () => {
 		const out = await run(
 			scripted(

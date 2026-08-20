@@ -54,7 +54,10 @@ export const queries = {
 					authorUsername: stamped?.authorUsername ?? null,
 					authorDisplayName: stamped?.authorDisplayName ?? null,
 				},
-				stamped?.sandboxed ?? false,
+				{
+					sandboxed: stamped?.sandboxed ?? false,
+					sandboxedInPlace: stamped?.sandboxedInPlace ?? false,
+				},
 			);
 
 			// The native path does not auto-invoke a nested relation's `connection` executor for
