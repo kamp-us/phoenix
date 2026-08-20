@@ -6,6 +6,9 @@
  * `appendNode` / `prependNode` take a `PublishDecision` and gate through `broadcastIf`, so
  * a resolver cannot broadcast a node to these viewer-blind public topics without
  * discharging the sandbox check. `deleteEdge` carries no node payload, so it stays ungated.
+ * `update` needs neither — it fans an already-public entity — but its payload IS a whole
+ * re-resolved node, so it routes through `viewerBlindUpdate` to drop the marker resolved
+ * against the mutator's viewer (#6462).
  *
  * Every publish here ALSO purges the base-feed edge cache (ADR 0170): a fanned pano write
  * is by construction a feed-visible write, so one seam fires both invalidations. The purge
@@ -15,9 +18,9 @@
 import {Effect} from "effect";
 import type {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {LiveTopic} from "../fate-live/protocol.ts";
-import {broadcastIf, type PublishDecision} from "../kunye/sandbox.ts";
+import {broadcastIf, type PublishDecision, viewerBlindUpdate} from "../kunye/sandbox.ts";
 import type {WorkerPanoFeedCache} from "./feed-cache.ts";
-import {CommentView, PostView} from "./views.ts";
+import {type Comment, CommentView, type Post, PostView} from "./views.ts";
 
 const POST = PostView.typeName;
 const COMMENT = CommentView.typeName;
@@ -52,15 +55,15 @@ const onTopic = (
  */
 export const panoLive = (live: WorkerLivePublisher, feedCache: WorkerPanoFeedCache) => ({
 	post: {
-		update: (id: string | number, options?: {changed?: ReadonlyArray<string>; data?: unknown}) =>
-			withPurge(feedCache, live.update(POST, id, options)),
+		update: (id: string | number, options?: {changed?: ReadonlyArray<string>; data?: Post}) =>
+			withPurge(feedCache, live.update(POST, id, viewerBlindUpdate(options))),
 		delete: (id: string | number) => withPurge(feedCache, live.delete(POST, id)),
 		/** The global `posts` feed connection. */
 		feed: onTopic(live.topic(LiveTopic.posts), POST, feedCache),
 	},
 	comment: {
-		update: (id: string | number, options?: {changed?: ReadonlyArray<string>; data?: unknown}) =>
-			withPurge(feedCache, live.update(COMMENT, id, options)),
+		update: (id: string | number, options?: {changed?: ReadonlyArray<string>; data?: Comment}) =>
+			withPurge(feedCache, live.update(COMMENT, id, viewerBlindUpdate(options))),
 		/** The args-scoped `Post.comments` connection for one parent post. */
 		thread: (postId: string) =>
 			onTopic(live.topic(LiveTopic.postComments, {id: postId}), COMMENT, feedCache),

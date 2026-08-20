@@ -35,7 +35,7 @@ yield* live.topic("posts").prependNode("Post", post.id);
 yield* live.topic("Post.comments", {id: postId}).deleteEdge("Comment", commentId);
 ```
 
-- `live.update(type, id, {changed, data})` — entity field change. **Publish the re-resolved entity inline as `data`.** The mutation already re-resolved it for its own response ([fate-effect-operations.md](./fate-effect-operations.md)), so the live event carries resolved data and each client masks it to its own selection. The DO does no database work and needs no Effect runtime.
+- `live.update(type, id, {changed, data})` — entity field change. **Publish the re-resolved entity inline as `data`.** The mutation already re-resolved it for its own response ([fate-effect-operations.md](./fate-effect-operations.md)), so the live event carries resolved data. The DO does no database work and needs no Effect runtime. **`data` merges whole into every subscriber's cache and `changed` narrows nothing** — phoenix's frame builder drops it — so a field resolved against the mutator's viewer must be left off the payload: see [fate-live-consistency.md](./fate-live-consistency.md#entity-frames-merge-whole).
 - `live.topic(name | "Type.field", args?).appendNode/prependNode/deleteEdge/invalidate(...)` — list membership. Pass the resolved `node` inline.
 - Topic identity strips pagination args, keeps filter args — `live.topic("posts")` reaches every feed-sort variant; `live.topic("Post.comments", {id})` targets one post's comments.
 

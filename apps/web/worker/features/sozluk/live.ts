@@ -7,20 +7,22 @@
  * `appendNode` takes a `PublishDecision` and gates through `broadcastIf`, so a
  * resolver cannot broadcast a node to this viewer-blind public topic without
  * discharging the sandbox check (#1280). `deleteEdge` carries no node payload and
- * stays ungated.
+ * stays ungated. `update` fans an already-public definition, but its payload is a whole
+ * re-resolved node, so it routes through `viewerBlindUpdate` to drop the marker resolved
+ * against the mutator's viewer (#6462).
  */
 
 import type {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {LiveTopic} from "../fate-live/protocol.ts";
-import {broadcastIf, type PublishDecision} from "../kunye/sandbox.ts";
-import {DefinitionView} from "./views.ts";
+import {broadcastIf, type PublishDecision, viewerBlindUpdate} from "../kunye/sandbox.ts";
+import {type Definition, DefinitionView} from "./views.ts";
 
 const DEFINITION = DefinitionView.typeName;
 
 export const sozlukLive = (live: WorkerLivePublisher) => ({
 	definition: {
-		update: (id: string | number, options?: {changed?: ReadonlyArray<string>; data?: unknown}) =>
-			live.update(DEFINITION, id, options),
+		update: (id: string | number, options?: {changed?: ReadonlyArray<string>; data?: Definition}) =>
+			live.update(DEFINITION, id, viewerBlindUpdate(options)),
 		delete: (id: string | number) => live.delete(DEFINITION, id),
 		term: (slug: string) => {
 			const topic = live.topic(LiveTopic.termDefinitions, {id: slug});
