@@ -1,7 +1,7 @@
 ---
 id: 0110
 title: The kampus-pipeline plugin carries no `version` — continuous-ship, content-addressed by commit SHA
-status: accepted
+status: amended-in-part by [0332](0332-fabrika-pi-ships-as-npm-package.md)
 date: 2026-06-27
 tags: [plugin-portability, packaging, distribution, pipeline]
 ---
