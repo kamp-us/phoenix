@@ -158,12 +158,16 @@ export interface Harness {
 	/**
 	 * How many rows one SELECT returns, over the same REST seam as {@link execD1}.
 	 *
-	 * The narrow exception to "assert over HTTP only": a row whose only public read path
-	 * is scoped to the user who owns it becomes unobservable the moment that user stops
-	 * existing. `account.delete` tears the session down, so `mute.listMine`,
-	 * `mecmuaSubscription` and `caylakVisibility.mine` all answer `UNAUTHORIZED` for
-	 * exactly the account whose swept rows are under test (ADR 0097 amendment / #6733).
-	 * Reach for it only for that shape — an absence no session can be held to observe.
+	 * The narrow exception to "assert over HTTP only": a row whose every public read path
+	 * ships dark. All three surfaces over the rows `account.delete` sweeps are behind
+	 * default-off flags (ADR 0083) — `mute.listMine` fails `MuteDisabled` under
+	 * `MEMBER_MUTE`, `mecmuaSubscription` resolves `subscribed: false` under
+	 * `MECMUA_FEED`, and `caylakVisibility.mine` short-circuits to "not opted in" under
+	 * `PHOENIX_CAYLAK_VISIBILITY` — so no session can observe them, the surviving peer's
+	 * included, and that peer is the muter / subscriber on half the seeded edges
+	 * (ADR 0097 amendment / #6733). Not a session-scoping argument: the peer's session
+	 * outlives the delete. Reach for `countD1` only for that shape, and when a flag here
+	 * flips, move the assertion back onto the public read.
 	 */
 	countD1(sql: string, params?: unknown[]): Promise<number>;
 	/**
