@@ -13,7 +13,13 @@ const NAV = [
 function renderTopbar() {
 	return render(
 		<MemoryRouter>
-			<Topbar nav={NAV} divanTo="/divan" karma={42} user={{name: "Elif", username: "elif"}} />
+			<Topbar
+				nav={NAV}
+				divanTo="/divan"
+				karma={42}
+				reserveSignedInSlots
+				user={{name: "Elif", username: "elif"}}
+			/>
 		</MemoryRouter>,
 	);
 }
@@ -49,7 +55,13 @@ describe("Topbar nav-IA zone grammar (#2611)", () => {
 		// destination zone ties the CSS-source guard to a real DOM occupant.
 		render(
 			<MemoryRouter initialEntries={["/pano"]}>
-				<Topbar nav={NAV} divanTo="/divan" karma={42} user={{name: "Elif", username: "elif"}} />
+				<Topbar
+					nav={NAV}
+					divanTo="/divan"
+					karma={42}
+					reserveSignedInSlots
+					user={{name: "Elif", username: "elif"}}
+				/>
 			</MemoryRouter>,
 		);
 		const activePano = screen.getByRole("link", {name: "pano"});
@@ -172,6 +184,7 @@ describe("Topbar status/signal zone (#2613)", () => {
 					nav={NAV}
 					divanTo="/divan"
 					karma={42}
+					reserveSignedInSlots
 					user={{name: "Elif", username: "elif"}}
 					{...props}
 				/>
@@ -226,6 +239,7 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 					nav={NAV}
 					themeChoice="auto"
 					onThemeChange={() => {}}
+					reserveSignedInSlots
 					user={{name: "Elif", username: "elif"}}
 				/>
 			</MemoryRouter>,
@@ -247,6 +261,7 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 					nav={NAV}
 					themeChoice="dark"
 					onThemeChange={onThemeChange}
+					reserveSignedInSlots
 					user={{name: "Elif", username: "elif"}}
 				/>
 			</MemoryRouter>,
@@ -298,6 +313,7 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 					nav={NAV}
 					themeChoice="light"
 					onThemeChange={() => {}}
+					reserveSignedInSlots
 					user={{name: "Elif", username: "elif"}}
 				/>
 			</MemoryRouter>,
@@ -367,6 +383,19 @@ describe("Topbar reserved signed-in account slot (#2933)", () => {
 
 	it("reserve off, no user: no placeholder — today's signed-out render (AC-3 no-op)", () => {
 		const {container} = renderReserved({reserveSignedInSlots: false});
+		expect(screen.queryByTestId("topbar-user-placeholder")).toBeNull();
+		expect(container.querySelector(".kp-topbar__user")).toBeNull();
+	});
+
+	// #6660: the flag gates the pill too, not just the placeholder. A caller showing its sign-in
+	// CTA off this flag's negation can hand a stale `user` through — an edge-resolved identity the
+	// settled session denies — and must still get an empty account side, never a pill beside a CTA.
+	it("reserve off, user supplied: no pill either — the flag gates the whole account side", () => {
+		const {container} = renderReserved({
+			reserveSignedInSlots: false,
+			user: {name: "Elif", username: "elif"},
+		});
+		expect(screen.queryByText("Elif")).toBeNull();
 		expect(screen.queryByTestId("topbar-user-placeholder")).toBeNull();
 		expect(container.querySelector(".kp-topbar__user")).toBeNull();
 	});

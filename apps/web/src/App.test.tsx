@@ -264,6 +264,40 @@ describe("signed-in cluster seeded from __BOOT__.user (ADR 0185)", () => {
 		expect(screen.queryByTestId("topbar-user-placeholder")).toBeNull();
 	});
 
+	// #6660: the same divergence, read as the coupling itself. `LayoutContent` publishes no
+	// `userProps` for a signed-out session, so the spread falls through to the boot props and the
+	// topbar is handed a `user` — the account side stays empty only because the CTA's own
+	// condition gates it. Drop that gate and this render carries a phantom pill beside `giriş yap`.
+	it("__BOOT__ present, settled signed-out, no userProps published: the CTA and the account side never share a render", () => {
+		flags.signedIn = true;
+		const {container} = renderApp(FATE_FREE_ROUTE);
+
+		act(() => {
+			setSession({data: null, isPending: false});
+		});
+
+		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();
+		expect(container.querySelector(".kp-topbar__user")).toBeNull();
+	});
+
+	// The other direction of the same gate: with no `__BOOT__` the claim comes from the settled
+	// session alone, so widening it to cover the pill must not cost a signed-in visitor their menu.
+	it("__BOOT__ absent but the session settles signed-in: the account pill renders and no CTA does", () => {
+		const {container} = renderApp(FATE_FREE_ROUTE);
+		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();
+
+		act(() => {
+			setSession({
+				data: {user: {id: "user-42", name: "Elif", email: "elif@kamp.us"}},
+				isPending: false,
+			});
+		});
+
+		expect(screen.queryByRole("button", {name: "giriş yap"})).toBeNull();
+		expect(container.querySelector(".kp-topbar__user")).not.toBeNull();
+		expect(screen.getByText("Elif")).toBeTruthy();
+	});
+
 	it("__BOOT__ absent (readBootUser null): the shell is exactly as today — giriş-yap, no account cluster (AC-3)", () => {
 		renderApp();
 		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();

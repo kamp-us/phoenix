@@ -66,7 +66,7 @@ import {UserProfilePage} from "./pages/UserProfilePage";
 import {useProfileStats} from "./pages/useProfileStats";
 
 type TopbarChips = {
-	userProps: {user?: {name: string; username: string | null}};
+	userProps: {user: {name: string; username: string | null}} | undefined;
 	karma: number | undefined;
 	divanTo: string | undefined;
 	bildirim: {to: string; unread: number} | undefined;
@@ -127,15 +127,17 @@ function Layout() {
 	// `__BOOT__` this is null and the session-gated `isSignedIn` governs.
 	const bootUser = readBootUser();
 	const bootSignedIn = bootUser != null;
-	// Reserve the account slot only while the edge said signed-in AND we haven't settled to a
-	// definitively signed-out session — so an absent `__BOOT__` never reserves (today's render)
-	// and a boot/session divergence collapses cleanly rather than stranding a phantom slot.
-	const reserveSignedInSlots = bootSignedIn && (session.isPending || isSignedIn);
-	// Both halves of the account side hang off that one condition, so they can never collapse in
-	// opposite directions: the CTA is suppressed exactly while the slot is filled or reserved.
-	// Keying it off `__BOOT__` alone left a boot/session divergence showing neither the pill nor
-	// the CTA, a shell with no way to sign in (#6577).
-	const showSignInCta = !isSignedIn && !reserveSignedInSlots;
+	// The account side is claimed by a settled signed-in session, or on trust while the edge said
+	// signed-in and the session has yet to answer. A boot/session divergence therefore releases it
+	// on the settle rather than stranding a phantom slot, and an absent `__BOOT__` claims nothing
+	// before the session settles (today's render).
+	const reserveSignedInSlots = isSignedIn || (bootSignedIn && session.isPending);
+	// Both halves of the account side read this one value — `Topbar` gates the pill and its
+	// placeholder on the prop, the CTA is its literal negation — so they can never collapse in
+	// opposite directions. Keying the CTA off `__BOOT__` alone left a divergence showing neither,
+	// a shell with no way to sign in (#6577); leaving the pill on a truthy `user` prop left the
+	// other direction, a phantom pill beside the CTA, held off only by a distant `{}` (#6660).
+	const showSignInCta = !reserveSignedInSlots;
 	const bootUserProps = bootUser
 		? {
 				user: {
@@ -168,6 +170,9 @@ function Layout() {
 								...(mecmuaOn ? [{to: "/mecmua", label: "mecmua"}] : []),
 							]}
 							divanTo={chips?.divanTo}
+							// Boot props carry the first paint, before `LayoutContent` publishes any chips.
+							// A signed-out publish leaves `userProps` undefined, so they land again there —
+							// inert, because `reserveSignedInSlots` is false and gates the whole account side.
 							{...(chips?.userProps ?? bootUserProps)}
 							karma={chips?.karma}
 							{...(chips?.bildirim ? {bildirim: chips.bildirim} : {})}
@@ -268,7 +273,7 @@ function LayoutContent() {
 							username,
 						},
 					}
-				: {},
+				: undefined,
 			karma: selfKarma,
 			divanTo: showDivan ? "/divan" : undefined,
 			bildirim: bildirimOn && isSignedIn ? {to: "/bildirimler", unread: bildirimUnread} : undefined,

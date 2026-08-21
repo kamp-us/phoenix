@@ -45,6 +45,8 @@ export function Topbar({
 	themeChoice?: ThemeChoice;
 	onThemeChange?: (choice: ThemeChoice) => void;
 	onLogout?: () => void;
+	// The account side is claimed — gates the pill as well as its placeholder, so a caller that
+	// also renders a sign-in CTA must derive that CTA from this flag's negation (#6660).
 	reserveSignedInSlots?: boolean;
 }) {
 	// ⌘K (mac) / Ctrl+K (other) focuses search, backing the <Kbd>⌘K</Kbd> hint below.
@@ -146,20 +148,23 @@ export function Topbar({
 			onLogout={onLogout}
 		/>
 	) : null;
-	// The placeholder holds the account slot's geometry until fate publishes the real user, so
-	// the menu fills in place with no shift. See ADR 0179 §1 and ADR 0185.
-	const accountSlot =
-		userMenu ??
-		(reserveSignedInSlots ? (
-			<span
-				className="kp-topbar__user kp-topbar__user--placeholder"
-				data-testid="topbar-user-placeholder"
-				aria-hidden="true"
-			>
-				<span className="kp-avatar" />
-				<span className="kp-topbar__name-placeholder" />
-			</span>
-		) : null);
+	// `reserveSignedInSlots` gates the whole account side, pill included. The caller derives its
+	// sign-in CTA from the negation of this same flag, so gating only the placeholder left the
+	// pill riding a truthy `user` prop that a signed-out caller could still supply — pill and CTA
+	// on screen together (#6660). Inside the gate the placeholder holds the slot's geometry until
+	// the real user arrives, so the menu fills in place with no shift. See ADR 0179 §1, ADR 0185.
+	const accountSlot = reserveSignedInSlots
+		? (userMenu ?? (
+				<span
+					className="kp-topbar__user kp-topbar__user--placeholder"
+					data-testid="topbar-user-placeholder"
+					aria-hidden="true"
+				>
+					<span className="kp-avatar" />
+					<span className="kp-topbar__name-placeholder" />
+				</span>
+			))
+		: null;
 
 	// Every element sits in its one lawful zone (see ADR 0176). The primary-action zone is
 	// empty on purpose — #2600 moved `+ gönderi` to the pano Subnav CTA; do not refill it.
