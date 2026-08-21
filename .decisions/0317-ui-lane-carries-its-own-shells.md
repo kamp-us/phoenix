@@ -1,7 +1,7 @@
 ---
 id: 0317
 title: A UI-class lane carries its own build and review shells, and the lane state carries the class
-status: accepted
+status: amended-in-part by [0327](0327-ship-fail-routes-to-build.md)
 date: 2026-08-20
 tags: [fabrika, lane, pipeline, review, state-machine]
 ---
@@ -87,7 +87,7 @@ ends a rendered-visual subject on the *routed elsewhere* terminal, a handoff to 
 nothing in the loop was there to receive. Folding the rubrics together does not remove that terminal;
 it hides it inside one shell that now owns a modality it cannot judge.
 
-### Why `ISSUE.FAIL` at `ship` routes back to `review`
+### Why `ISSUE.FAIL` at `ship` routes back to `review` — holds for the epic tail only, per ADR [0327](0327-ship-fail-routes-to-build.md)
 
 The single-issue coder template
 ([`packages/fabrika-cli/src/lane/templates/coder.workflow.json`](../packages/fabrika-cli/src/lane/templates/coder.workflow.json))
@@ -99,16 +99,6 @@ This is not an invention: the epic tail task already has that shape — the gold
 [`packages/fabrika-cli/src/lane/__fixtures__/epic-4300.workflow.golden.txt`](../packages/fabrika-cli/src/lane/__fixtures__/epic-4300.workflow.golden.txt)
 routes both `review.FAIL` and `ship.FAIL` back to `review`. The single-issue template was the
 outlier.
-
-**Reverted for the single-issue template by [#6826](https://github.com/kamp-us/phoenix/issues/6826);
-the epic tail keeps this shape.** The premise above — that a `ship` FAIL is "a green PR refused for a
-missing verdict" — no longer holds: the shipper's three routing terminals (#6002) send that refusal
-to `ROUTED-REVIEW`, which maps to `BLOCKED`, not `FAIL`. What still reaches `ISSUE.FAIL` at `ship` is
-`ROUTED-REPAIR` and `EJECTED`, and both name repair, which is `build`'s. Sending them to `review` had
-the reviewer re-verdict a byte-identical head and hand it straight back, spending a retry per lap;
-two laps froze three lanes on 2026-08-20. The epic tail is not the same case and is unchanged: its
-region has no `build` state at all, so `review` is the only retry arm it can have
-([`packages/fabrika-cli/src/lane/emit.ts`](../packages/fabrika-cli/src/lane/emit.ts)).
 
 ## Consequences
 

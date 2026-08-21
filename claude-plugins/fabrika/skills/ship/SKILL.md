@@ -81,15 +81,15 @@ so the approval is never spent on a head that must move.
 The notice says what has to happen before the approval is solicited; it is not a second outcome, and
 the verb's own emitted outcome stays `stop` on the `behind > 0` branch. So a base-drift diagnostic on
 a `stop` is never reported as `ROUTED-REPAIR` — that token folds `ISSUE.FAIL` and charges a repair
-retry to a lane with no defect in it, which froze three lanes on 2026-08-20 (#6826). Name the cause
-when you record it, so the park is one a sweep can read:
+retry to a lane with no defect in it, which froze three lanes on 2026-08-20 (ADR 0327). Name the
+cause when you record it, so the park is one a sweep can read:
 
 ```bash
 node <fabrika> lane report <lane> --root <root> --task <task> --token AWAITING-CP-APPROVAL --cause head-behind-base --pr <pr-url>
 ```
 
-Pass `--cause head-behind-base` only when the notice fired; a `stop` with no drift carries no cause,
-which is the park `recipe unpark` already clears by re-reading the approval. <!-- anchor: NO-REBASE-AFTER-APPROVAL -->
+Pass it when the head is still behind at the moment you record. A `stop` with no drift carries no
+cause, which is the park `recipe unpark` already clears by re-reading the approval. <!-- anchor: NO-REBASE-AFTER-APPROVAL -->
 Once a control-plane approval exists, **never rebase or force-push the head**: a moved head means
 re-approval, patch-identical or not. **That is the human approval only.** A fabrika `review-*` or
 `governance` marker binds the content it judged as well as the head, so a branch update leaving the

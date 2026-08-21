@@ -157,10 +157,10 @@ export const PARK_CAUSES = {
 	 */
 	"worktree-holds-branch": "a working tree still holds the lane branch this build must stand on",
 	/**
-	 * The #6826 shape: `ship cp-approval` stops on a head behind its base, and the head must move
-	 * before an approval is solicited (#4477). The park spends neither budget, which is the whole
-	 * point — drift is a lane that did nothing wrong (ADR 0313), and reporting it as `ROUTED-REPAIR`
-	 * charged a repair retry for a trip through a stage that owns no verb that can move a branch.
+	 * See ADR 0327. `ship cp-approval` stops on a head behind its base, and the head must move before
+	 * an approval is solicited (#4477). The park spends neither budget, and reporting it as
+	 * `ROUTED-REPAIR` charged a repair retry for a trip through a stage that owns no verb that can
+	 * move a branch.
 	 *
 	 * It carries no `KNOWN_PARKS` row on purpose: clearing it needs a verb that merges the base into
 	 * the head, and `build` ships none, so the sweep routes it to a human by naming this cause.
