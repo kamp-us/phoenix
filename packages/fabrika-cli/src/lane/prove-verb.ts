@@ -24,14 +24,9 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
 import {governedRootsOr} from "../config/paths.ts";
 import {getIssue, listComments} from "../io/issues.ts";
-import {getPullRequest, listPullFiles, openPullsClosing, searchOpenPulls} from "../io/pulls.ts";
+import {getPullRequest, listPullFiles} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
-import {
-	issueRefsOf,
-	partitionWithUi,
-	ROUTED_NAMESPACES,
-	shipNamespacesOf,
-} from "../review/classes.ts";
+import {partitionWithUi, ROUTED_NAMESPACES, shipNamespacesOf} from "../review/classes.ts";
 import {bindRange, contentDigestAt, rangeContentAt} from "../review/content-binding.ts";
 import {bindHead} from "../review/head.ts";
 import {CODEOWNERS_PATH, readBoundary} from "../ship/boundary.ts";
@@ -50,6 +45,7 @@ import {
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {foldLog, nextLeaf, resolveTask} from "./fold.ts";
+import {nominateOpenPulls} from "./nominate.ts";
 import {
 	claimOf,
 	epicOf,
@@ -59,7 +55,6 @@ import {
 	judgeVerdicts,
 	type NamespaceRow,
 	type Proof,
-	type PullFact,
 	roleOf,
 	traceDiagnosis,
 	tracePulls,
@@ -272,26 +267,14 @@ interface Traced {
 }
 
 /**
- * The open PRs linking this issue, each read as its own record.
+ * The open PRs linking this issue, nominated by `./nominate.ts` — the union `lane brief` and
+ * `recipe unpark` resolve their PR through too, so the three verbs cannot disagree about which PR a
+ * lane owns (#6179). What that union is, and why the edge is read before the index, lives there.
  *
- * Two nomination reads, unioned, because neither alone answers the question. The closing-issue edge
- * (`openPullsClosing`) is authoritative and lag-free but blind to `Part of #N`, the shape
- * `build --partial` emits; the search index sees any body but lags a fresh PR — and this verb runs
- * at the worst moment for that lag, right after a builder reports `SHIPPED-PR`. Reading the edge
- * first means a lagging index can only fail to add a candidate, never hide the closing one, so a
- * lane that shipped is not recorded `BLOCKED` on exit `22`.
- *
- * Both reads only nominate; the body's links decide. A candidate that has closed since it was
- * nominated, or that only mentions the number in prose, drops out here rather than counting as
- * proof — so unioning in the looser read widens candidates without widening what counts.
- *
- * **What `lane brief` and this verb still differ on.** Both start from the same edge, and since
- * #6797 the body read is plural, so a tail closing N+1 issues traces to each of them here exactly as
- * it does on the edge. The residue is that `brief` answers off the edge alone while this verb
- * re-derives the link from body text, so a PR linked through the sidebar's Development panel rather
- * than a keyword in its body (GitHub's "Manually linking a pull request to an issue using the pull
- * request sidebar") is on the edge and is not a proof here. That is deliberate — a proof
- * this verb records has to be readable in the artifact it names — not an agreement claim.
+ * The one thing this verb adds is the ruling on the sidebar link: a PR linked through GitHub's
+ * Development panel rather than a keyword in its body is on the edge and is still not a proof here,
+ * because a proof this verb records has to be readable in the artifact it names. The nominator
+ * offers it as a candidate; `tracePulls` drops it on the body read.
  */
 const traceOpenPull = (
 	repo: string,
@@ -302,37 +285,14 @@ const traceOpenPull = (
 	ChildProcessSpawner.ChildProcessSpawner
 > =>
 	Effect.gen(function* () {
-		const closing = yield* openPullsClosing(repo, issue);
-		if (closing._tag === "Failure") {
+		const nominated = yield* nominateOpenPulls(repo, issue);
+		if (nominated._tag === "Unreadable") {
 			return {
 				_tag: "Refused" as const,
-				outcome: unreadable(`the open pull requests closing #${issue}`, closing.reason),
+				outcome: unreadable(nominated.what, nominated.reason),
 			};
 		}
-		const found = yield* searchOpenPulls(repo, [`${issue}`, "in:body"]);
-		if (found._tag === "Failure") {
-			return {
-				_tag: "Refused" as const,
-				outcome: unreadable(`the open pull requests mentioning #${issue}`, found.reason),
-			};
-		}
-		const candidates = new Set([...closing.value.map((pull) => pull.number), ...found.value]);
-		const facts: PullFact[] = [];
-		for (const candidate of candidates) {
-			const pull = yield* getPullRequest(repo, candidate);
-			if (pull._tag === "Unknown") {
-				return {
-					_tag: "Refused" as const,
-					outcome: unreadable(`PR #${candidate}`, pull.reason),
-				};
-			}
-			if (pull._tag === "Absent") continue;
-			facts.push({
-				number: pull.value.number,
-				open: pull.value.state === "open",
-				linkedIssues: issueRefsOf(pull.value.body).numbers,
-			});
-		}
+		const facts = nominated.pulls;
 		return {_tag: "Traced" as const, trace: tracePulls(issue, facts), scanned: facts.length};
 	});
 

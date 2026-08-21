@@ -24,7 +24,6 @@ import {Effect, type FileSystem, Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import type {EntrypointRead} from "../delegate/entrypoint.ts";
 import {getIssue, resolveRepo} from "../io/issues.ts";
-import {openPullsClosing} from "../io/pulls.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	type ArtifactUrl,
@@ -52,7 +51,8 @@ import {
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {foldLog, resolveTask} from "./fold.ts";
-import {epicOf, issueOf} from "./prove.ts";
+import {nominateOpenPulls, nominationScope} from "./nominate.ts";
+import {epicOf, issueOf, tracePulls} from "./prove.ts";
 import {locateRange, type RangeLocation} from "./range.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {type LaneRef, loadLane} from "./store.ts";
@@ -291,31 +291,35 @@ export const runBrief = (
 			]);
 		}
 
-		const pulls = yield* openPullsClosing(repo.value, issue);
-		if (pulls._tag === "Failure") {
+		const nominated = yield* nominateOpenPulls(repo.value, issue);
+		if (nominated._tag === "Unreadable") {
 			return refuse(
 				LANE_UNREADABLE,
-				`${VERB}: cannot read the open PRs declaring they close #${issue}: ${pulls.reason} — UNKNOWN.`,
+				`${VERB}: cannot read ${nominated.what}: ${nominated.reason} — UNKNOWN.`,
 				notes,
 			);
 		}
-		const [only, ...rest] = pulls.value;
-		if (rest.length > 0) {
+		const traced = tracePulls(issue, nominated.pulls);
+		if (traced._tag === "Many") {
 			return refuse(
 				PR_AMBIGUOUS,
-				`${VERB}: ${pulls.value.length} open PRs declare they close #${issue} — exactly one is the lane's, and which is not this verb's to guess.`,
-				[...notes, `${VERB}: candidates: ${pulls.value.map((p) => `#${p.number}`).join(", ")}.`],
+				`${VERB}: ${traced.prs.length} open PRs link #${issue} — exactly one is the lane's, and which is not this verb's to guess.`,
+				[...notes, `${VERB}: candidates: ${traced.prs.map((pr) => `#${pr}`).join(", ")}.`],
 			);
 		}
-		if (only === undefined && !isBuildState(state)) {
+		if (traced._tag === "None" && !isBuildState(state)) {
 			return refuse(
 				PR_AMBIGUOUS,
-				`${VERB}: no open PR declares it closes #${issue}, and a "${state}" shell has nothing to read without one.`,
+				`${VERB}: ${traced.why} across ${nominationScope(issue)}, and a "${state}" shell has nothing to read without one.`,
 				notes,
 			);
 		}
-		const prUrl = only === undefined ? null : artifactUrl(only.url);
-		if (only !== undefined && prUrl === null) {
+		const only =
+			traced._tag === "One"
+				? (nominated.pulls.find((pull) => pull.number === traced.pr) ?? null)
+				: null;
+		const prUrl = only === null ? null : artifactUrl(only.htmlUrl);
+		if (only !== null && prUrl === null) {
 			return refuse(
 				LANE_UNREADABLE,
 				`${VERB}: the board published no URL for PR #${only.number} — the ground is UNKNOWN.`,

@@ -25,7 +25,8 @@ import {childLaneBranches} from "../build/lane.ts";
 import {runRetire} from "../build/retire-verb.ts";
 import {localBranches} from "../io/git.ts";
 import {isRecord, parseJson} from "../io/json.ts";
-import {openPullsClosing} from "../io/pulls.ts";
+import {nominateOpenPulls, nominationScope} from "../lane/nominate.ts";
+import {tracePulls} from "../lane/prove.ts";
 import {runStatus} from "../lane/status-verb.ts";
 import {runTransition} from "../lane/transition-verb.ts";
 import {runCpApproval} from "../ship/cp-approval-verb.ts";
@@ -183,49 +184,53 @@ const clearCpApproval = (
 		if (resolved._tag === "Refused") return no(resolved.outcome);
 		const repo = resolved.repo;
 
-		const pulls = yield* openPullsClosing(repo, issue);
-		if (pulls._tag === "Failure") {
+		// The lane's PR through the shared nominator (`../lane/nominate.ts`): a §CP park sits on the same
+		// PR `lane brief` dispatched a shipper against, and a `Part of #N` PR that this verb could not
+		// see is a park no recipe could ever clear (#6179).
+		const nominated = yield* nominateOpenPulls(repo, issue);
+		if (nominated._tag === "Unreadable") {
 			return no(
 				refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read the open PRs declaring they close #${issue}: ${pulls.reason} — the park's cause is UNKNOWN, never cleared.`,
+					`${VERB}: cannot read ${nominated.what}: ${nominated.reason} — the park's cause is UNKNOWN, never cleared.`,
 				),
 			);
 		}
-		const [only, ...rest] = pulls.value;
-		if (only === undefined) {
+		const traced = tracePulls(issue, nominated.pulls);
+		if (traced._tag === "None") {
 			return no(
 				refuse(
 					TARGET_ABSENT,
-					`${VERB}: no open PR declares it closes #${issue}, and "${recipe.park}" waits on ${recipe.waitingOn} — there is no subject to read.`,
+					`${VERB}: ${traced.why} across ${nominationScope(issue)}, and "${recipe.park}" waits on ${recipe.waitingOn} — there is no subject to read.`,
 				),
 			);
 		}
-		if (rest.length > 0) {
+		if (traced._tag === "Many") {
 			return no(
 				refuse(
 					PARK_NOVEL,
-					`${VERB}: ${pulls.value.length} open PRs declare they close #${issue} (${pulls.value
-						.map((p) => `#${p.number}`)
+					`${VERB}: ${traced.prs.length} open PRs link #${issue} (${traced.prs
+						.map((candidate) => `#${candidate}`)
 						.join(
 							", ",
 						)}) — which one the park hangs on is not this verb's to guess; route this to a human.`,
 				),
 			);
 		}
+		const pr = traced.pr;
 
 		const target = yield* openPull(
 			VERB,
 			repo,
-			only.number,
+			pr,
 			(reason) =>
-				`${VERB}: cannot read PR #${only.number}: ${reason} — the park's cause is UNKNOWN, never cleared.`,
+				`${VERB}: cannot read PR #${pr}: ${reason} — the park's cause is UNKNOWN, never cleared.`,
 		);
 		if (target._tag === "Refused") return no(target.outcome);
 		const head = target.pull.headSha;
 
 		const discharge = yield* runCpApproval({
-			pr: only.number,
+			pr,
 			sha: head,
 			repo,
 			json: true,
@@ -249,7 +254,7 @@ const clearCpApproval = (
 				),
 			);
 		}
-		const scope = scannedLine(VERB, 1, "pull request", `#${only.number} at ${head}`);
+		const scope = scannedLine(VERB, 1, "pull request", `#${pr} at ${head}`);
 		switch (answered.outcome) {
 			case "discharge":
 				return {
@@ -260,7 +265,7 @@ const clearCpApproval = (
 				return no(
 					refuse(
 						PARK_HOLDS,
-						`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — PR #${only.number} is not discharged at ${head}; nothing was written.`,
+						`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — PR #${pr} is not discharged at ${head}; nothing was written.`,
 						[scope],
 					),
 				);
@@ -268,7 +273,7 @@ const clearCpApproval = (
 				return no(
 					refuse(
 						PARK_NOVEL,
-						`${VERB}: PR #${only.number} is not control-plane, so "${recipe.park}" is parked over something this recipe does not cover — refusing with the ledger untouched; route this to a human.`,
+						`${VERB}: PR #${pr} is not control-plane, so "${recipe.park}" is parked over something this recipe does not cover — refusing with the ledger untouched; route this to a human.`,
 						[scope],
 					),
 				);

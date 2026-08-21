@@ -69,6 +69,46 @@ const closingPulls = (...rows: ReadonlyArray<readonly [number, string]>): HttpRe
 	}),
 });
 
+/** The search index's nomination envelope — candidate numbers, never a proof (`searchOpenPulls`). */
+const nominated = (...numbers: ReadonlyArray<number>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({total_count: numbers.length, items: numbers.map((number) => ({number}))}),
+});
+
+/** Nothing nominated by the body half, so the union answers off the closing edge alone. */
+const NO_NOMINATIONS: Scripted = [/^GET .*\/search\/issues\?/, nominated()];
+
+const pullPayload = (number: number, url: string, body: string): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number,
+		state: "open",
+		head: {sha: "6ba0a4e2ff5e4f6b9e2b0e4b1f7cf50b7b6a3d21"},
+		base: {ref: "main"},
+		body,
+		changed_files: 1,
+		comments: 0,
+		html_url: url,
+	}),
+});
+
+/**
+ * The nominator's reads for one issue: the closing edge, plus each candidate's own record — the
+ * body is what `tracePulls` matches on, so a candidate the edge names still has to link the issue.
+ */
+const linked = (
+	issue: number,
+	...rows: ReadonlyArray<readonly [number, string]>
+): ReadonlyArray<Scripted> => [
+	[PR_CLOSERS, closingPulls(...rows)],
+	...rows.map(
+		([number, url]): Scripted => [
+			new RegExp(`^GET .*/repos/o/r/pulls/${number}$`),
+			pullPayload(number, url, `Fixes #${issue}\n`),
+		],
+	),
+];
+
 /**
  * A single-issue lane at `lane`, with one log line per operator event already recorded. `classes`
  * rides the first event, which is where a UI-class lane's own routing is decided.
@@ -184,7 +224,8 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			runBrief({...options, ...overrides}),
-			Layer.merge(fs.layer, fakeSeams(script).layer),
+			// The body half is tailed, so a test scripting its own wins the seam's first-match lookup.
+			Layer.merge(fs.layer, fakeSeams([...script, NO_NOMINATIONS]).layer),
 		),
 	);
 
@@ -207,7 +248,7 @@ describe("lane brief", () => {
 	it("briefs the reviewer on a `review` state, carrying the one open PR that traces to the issue", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
-			[PR_CLOSERS, closingPulls([5790, PR_URL])],
+			...linked(5751, [5790, PR_URL]),
 		]);
 
 		expect(out.code).toBe(0);
@@ -238,7 +279,7 @@ describe("lane brief", () => {
 	it("briefs the ui-reviewer shell on a `review:ui` state, over the same one PR", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE", "PASS"], ["ui"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
-			[PR_CLOSERS, closingPulls([5790, PR_URL])],
+			...linked(5751, [5790, PR_URL]),
 		]);
 
 		expect(out.code).toBe(0);
@@ -251,7 +292,7 @@ describe("lane brief", () => {
 	it("prints a single-issue brief byte for byte — the format's bytes, nothing per dispatch", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
-			[PR_CLOSERS, closingPulls([5790, PR_URL])],
+			...linked(5751, [5790, PR_URL]),
 		]);
 
 		expect(out.stdout).toBe(
@@ -298,7 +339,7 @@ describe("lane brief", () => {
 	it("briefs the shipper on a `ship` state", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE", "PASS"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
-			[PR_CLOSERS, closingPulls([5790, PR_URL])],
+			...linked(5751, [5790, PR_URL]),
 		]);
 
 		expect(out.code).toBe(0);
@@ -311,7 +352,7 @@ describe("lane brief", () => {
 	it("carries URLs only — no title, no body, no verdict text", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
-			[PR_CLOSERS, closingPulls([5790, PR_URL])],
+			...linked(5751, [5790, PR_URL]),
 		]);
 
 		expect(out.stdout).not.toContain(TITLE);
@@ -455,10 +496,41 @@ describe("lane brief", () => {
 		expect(out.stdout).toBe("");
 	});
 
+	it("resolves a `Part of #5751` PR the closing edge cannot see — the lane-5981 shape (#6179)", async () => {
+		const out = await run(lane("5751", ["WIP", "DONE"]), [
+			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+			[PR_CLOSERS, closingPulls()],
+			[/^GET .*\/search\/issues\?/, nominated(5790)],
+			[/^GET .*\/repos\/o\/r\/pulls\/5790$/, pullPayload(5790, PR_URL, "Part of #5751.\n")],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {state: "review", shell: "reviewer", ground: {_tag: "Pull", pr: PR_URL}},
+		});
+	});
+
+	it("refuses two PRs the body search alone nominated, both linking the issue", async () => {
+		const out = await run(lane("5751", ["WIP", "DONE"]), [
+			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+			[PR_CLOSERS, closingPulls()],
+			[/^GET .*\/search\/issues\?/, nominated(5790, 5791)],
+			[/^GET .*\/repos\/o\/r\/pulls\/5790$/, pullPayload(5790, PR_URL, "Part of #5751.\n")],
+			[
+				/^GET .*\/repos\/o\/r\/pulls\/5791$/,
+				pullPayload(5791, "https://github.com/o/r/pull/5791", "Part of #5751.\n"),
+			],
+		]);
+
+		expect(out.code).toBe(PR_AMBIGUOUS);
+		expect(out.stderr.join("\n")).toContain("#5790, #5791");
+	});
+
 	it("refuses several open PRs, naming every candidate", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
-			[PR_CLOSERS, closingPulls([5790, PR_URL], [5791, "https://github.com/o/r/pull/5791"])],
+			...linked(5751, [5790, PR_URL], [5791, "https://github.com/o/r/pull/5791"]),
 		]);
 
 		expect(out.code).toBe(PR_AMBIGUOUS);
@@ -466,7 +538,7 @@ describe("lane brief", () => {
 		expect(out.stderr.join("\n")).toContain("#5791");
 	});
 
-	it("refuses zero open PRs where the state needs one", async () => {
+	it("refuses zero open PRs where the state needs one, naming the whole union it searched", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE", "PASS"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
 			[PR_CLOSERS, closingPulls()],
@@ -474,6 +546,7 @@ describe("lane brief", () => {
 
 		expect(out.code).toBe(PR_AMBIGUOUS);
 		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("the closing-issue edge and the open PRs whose body");
 	});
 });
 
@@ -483,7 +556,7 @@ describe("lane brief on an epic lane", () => {
 		script: ReadonlyArray<Scripted>,
 		overrides: Partial<typeof options>,
 	) => {
-		const seams = fakeSeams(script);
+		const seams = fakeSeams([...script, NO_NOMINATIONS]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runBrief({...options, lane: String(EPIC), ...overrides}),
@@ -602,10 +675,7 @@ describe("lane brief on an epic lane", () => {
 				["issue_5828", "DONE"],
 				["issue_5828", "PASS"],
 			]),
-			[
-				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
-				[PR_CLOSERS, closingPulls([5890, PR_URL])],
-			],
+			[[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)], ...linked(EPIC, [5890, PR_URL])],
 			{task: "epic_5800"},
 		);
 
@@ -652,7 +722,7 @@ describe("lane brief on an epic lane", () => {
 			]),
 			[
 				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
-				[PR_CLOSERS, closingPulls([5890, PR_URL], [5891, "https://github.com/o/r/pull/5891"])],
+				...linked(EPIC, [5890, PR_URL], [5891, "https://github.com/o/r/pull/5891"]),
 			],
 			{task: "epic_5800"},
 		);
