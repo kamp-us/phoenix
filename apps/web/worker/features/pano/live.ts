@@ -64,12 +64,22 @@ export const panoLive = (live: WorkerLivePublisher, feedCache: WorkerPanoFeedCac
 		update: (id: string | number, options?: {changed?: ReadonlyArray<string>; data?: Post}) =>
 			withPurge(feedCache, live.update(POST, id, viewerBlindUpdate(options))),
 		delete: (id: string | number) => withPurge(feedCache, live.delete(POST, id)),
+		/**
+		 * `invalidate`'s entity twin: the subscriber holding this row BY ID re-reads it
+		 * through the normal path, so a viewer-derived field is re-derived against their
+		 * own viewer. A row held by id sits in no connection, so the topic invalidations
+		 * never reach it (ADR 0314).
+		 */
+		invalidate: (id: string | number, options?: {eventId?: string}) =>
+			withPurge(feedCache, live.invalidate(POST, id, options)),
 		/** The global `posts` feed connection. */
 		feed: onTopic(live.topic(LiveTopic.posts), POST, feedCache),
 	},
 	comment: {
 		update: (id: string | number, options?: {changed?: ReadonlyArray<string>; data?: Comment}) =>
 			withPurge(feedCache, live.update(COMMENT, id, viewerBlindUpdate(options))),
+		invalidate: (id: string | number, options?: {eventId?: string}) =>
+			withPurge(feedCache, live.invalidate(COMMENT, id, options)),
 		/** The args-scoped `Post.comments` connection for one parent post. */
 		thread: (postId: string) =>
 			onTopic(live.topic(LiveTopic.postComments, {id: postId}), COMMENT, feedCache),

@@ -3,7 +3,8 @@
  * user may save a private draft, but yayımla is offered only to a yazar (read off the fate
  * `me` view, never the session field) — `PublishMecmua` gates it server-side regardless.
  * Every save mints a FRESH draft row; there is no edit-in-place (#2463). Nothing here
- * imports tiptap directly. Ships dark behind `MECMUA_WRITE` (default-off; ADR 0083).
+ * imports tiptap directly. Ships dark behind `MECMUA_WRITE` (default-off;
+ * `.patterns/flag-dark-page-gate.md`).
  */
 import {Composer, useComposerEditor} from "@kampus/composer";
 import {useState} from "react";
@@ -34,7 +35,6 @@ const MecmuaEditorView = view<MecmuaPost>()({
 export function MecmuaEditorPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_WRITE, false);
 
-	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first.
 	if (flagLoading) {
 		return (
 			<div className="kp-page">

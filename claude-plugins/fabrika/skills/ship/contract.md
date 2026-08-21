@@ -49,7 +49,7 @@ Named because a spec that leaves the substrate open makes the implementer guess 
 | `ship resolve` | the sanctioned thread-resolution write: rationale reply, resolve mutation, read-back — refusing any thread not positively bot-classed | the protocol and the bot-only structural anchor are mechanical; deciding a bot thread is a nit is the skill's |
 | `ship enqueue` | arm the queue's auto-merge at a pinned head, method-flag-free by construction, and prove the arm landed | the arm, its error discrimination, and the entry read are mechanical; whether the PR should ship was settled by the gates |
 | `ship merge` | the second landing path: land directly on a base branch no merge queue governs, with the method read off the repository, and prove the landing | reading the regime, picking a permitted method and proving `merged` + the merge commit are mechanical; whether the PR should ship was settled by the gates |
-| `ship reconcile` | the bounded post-enqueue watch: `landed` / `ejected` / `unresolved` / `parked`, each a proven answer at exit 0 | multi-signal terminal classification against timeline + base-branch evidence is mechanical; what ejection means for the lane is judgment |
+| `ship reconcile` | the bounded post-enqueue watch: `landed` / `ejected` / `unresolved` / `parked`, each a proven answer at exit 0 — and, at `--polls 1`, the one read the driver's `ship:queued` wait cell relays | multi-signal terminal classification against timeline + base-branch evidence is mechanical; what ejection means for the lane is judgment |
 | `ship disarm` | the four-site merge-intent lifecycle (ADR 0198): `kept` / `disarmed`, read-back-verified | the site policy table and the verified write are mechanical |
 | `ship nudge` | the at-most-once dropped-trigger remedy: re-derive the zero-runs state, close→reopen, verify both legs | the precondition re-derivation and the guarded PATCH pair are mechanical; the verb refuses rather than trusting its dispatch (#4816) |
 | `ship note` | the durable stop-path comment: stdin body, leak-scanned, read back | posting with the sibling groups' write protocol is mechanical; what the note says is the skill's |
@@ -581,9 +581,9 @@ fabrika ship gate 4321 --sha 03135b91 --require review-code [--require review-do
 
 **Output** — machine channel. First line: `gate\t<satisfied|blocked>\t<sha>`. Then one line
 per required namespace, in the order required:
-`ns\t<namespace>\t<pass|fail|absent|stale>\t<marker|advisory|review-fold|->` — the fourth
-field names which carrier produced the in-force verdict (`-` on `absent`). `satisfied` iff
-every required namespace reads `pass`.
+`ns\t<namespace>\t<pass|fail|absent|stale|routed>\t<marker|advisory|review-fold|routed-elsewhere|->`
+— the fourth field names which carrier produced the in-force verdict (`-` on `absent`).
+`satisfied` iff every required namespace reads `pass` or `routed`.
 
 With `--json`: `{"outcome":…,"sha":…,"namespaces":[{name,state,carrier,commentId}…],"required":<n>}`.
 
@@ -632,6 +632,18 @@ which wedges the repair loop.
 `absent` and `stale` are distinct tokens because their remedies differ (run the gate vs
 re-run it at this head), and both block — absence-is-refusal is the #3944 law (a PR enqueued
 with no live-head verdict at all).
+
+**`routed` is the fifth state, and it is a gate saying it owes this PR nothing** (ADR
+[0316](../../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md)). It resolves from a
+`routed-elsewhere` record — its own wire format, carrying no polarity, read through the same
+head-binding and the same ADR 0055 ACL as a verdict — and it satisfies beside `pass`, because the
+conjunction asks whether every required gate has answered and "not mine to judge" is an answer.
+**`review-ui` is the only namespace that may resolve this way.** It is the only gate whose emit path
+is structurally unable to answer: `review-ui render` refuses zero surfaces and `review-ui post`
+refuses without captures, so the `ui` class — raised off a path test that cannot see whether pixels
+moved — named a namespace nothing legal could fill, and a prose-only `apps/web/src/**` PR was
+permanently unshippable (#6376). A record aimed at any other namespace is read and ignored; that
+namespace stays `absent`. `ship floor` is unaffected — it asks for `governance` and requires `pass`.
 
 **`--cp` is caller-asserted, deliberately** — the one input in this verb the caller vouches
 for, an exception to the group's re-derive habit and stated as such. Gate is a read: a wrongly
@@ -1609,7 +1621,10 @@ pages joined.
 
 **The horizon is stated, not defended:** default 16×30s ≈ 7.5 minutes of dwell against a
 measured queue dwell of 5–10 minutes; `unresolved` at the horizon is the expected outcome of
-a healthy long dwell, and the caller's report says so in those words. The verb never disarms
+a healthy long dwell, and the caller's report says so in those words. It stays there: a lane
+that needs longer waits in the driver's `ship:queued` cell, which re-reads this verb at
+`--polls 1` once a pass, rather than in a wider watch inside one shipper run (ADR
+[0313](../../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)). The verb never disarms
 — it is a read; the skill fires `ship disarm --site ejected` / `--site post-enqueue` on the
 `ejected` / `parked` answers (the sites exist precisely for these two answers, and the skill
 text carries the pairing).

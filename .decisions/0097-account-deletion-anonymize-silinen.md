@@ -55,3 +55,36 @@ There is no scheduled-job substrate (ADR 0009 deferred Workflows/Cron) and we do
 - **Irreversible by design** (unlike content removal in 0096, which restores). The typed-confirmation input is the guard; this asymmetry is deliberate and documented.
 - **Migration cost:** seed the `@[silinen]` user + profile row; add a `deleted_at` (user tombstone) column to `user`. No content-table schema change beyond what 0096 already adds.
 - **Surfaces touched:** `apps/web/worker/features/pasaport/` (new `account.delete` mutation + `Pasaport` anonymize method + reserved-username guard in `setUsername`), `apps/web/worker/db/drizzle/schema.ts` (`user` tombstone column + `@[silinen]` seed migration), `apps/web/worker/features/pasaport/better-auth-live.ts` (`deleteUser` stays off — note only), the per-feature author-name denormalization in `sozluk`/`pano` shapers.
+
+## Amendment (2026-08-20, [#6446](https://github.com/kamp-us/phoenix/issues/6446)) — per-user relation and preference rows are swept too, and that is the standing default
+
+§2 above lists what the teardown touches: `session`, `account`, `apikey`, `verification` and the
+scrubbed `user` row. It says nothing about the per-user relation and preference tables keyed by the
+departing user's id, and that silence is what three tables in a row inherited — `user_mute`,
+`mecmua_subscription`, and now `caylak_visibility_preference` ([#6422](https://github.com/kamp-us/phoenix/issues/6422),
+epic [#4306](https://github.com/kamp-us/phoenix/issues/4306)) — surviving an `account.delete` by
+default rather than by decision. The founder
+[ruled](https://github.com/kamp-us/phoenix/issues/6446#issuecomment-5363121594) on 2026-08-20: they
+are swept.
+
+**The rule.** A per-user relation or preference row keyed by the deleted user's id is **deleted**, in
+the same atomic batch as the identity teardown (ADR [0014](0014-drizzle-run-batch-as-service-methods.md)). At ruling
+time that is three tables: `user_mute`, `mecmua_subscription`, `caylak_visibility_preference`. Both
+sides of a two-sided edge go, because both columns are user ids and neither side resolves to a live
+relation once the account is a tombstone — a mute the departed yazar set masks nothing for a yazar
+who is gone, and a mute *against* them matches nothing once their content is re-attributed to
+`@[silinen]`.
+
+**The standing default.** A future per-user relation or preference table dies with the account,
+unless a later ADR says otherwise. A new table of that shape inherits the sweep; keeping one alive is
+the thing that now needs a written reason, not deleting it.
+
+**`user_profile` is not in that set.** It is identity-tombstone state §2 already decided to keep: the
+scrubbed `user` row's companion, carrying the karma the karma-kept rule preserves and the counts the
+`@[silinen]`-attributed content still justifies. Deleting it would contradict §2, not extend it. The
+distinction is authored intent versus tombstone: a preference row is a thing the yazar chose and
+nothing else can restore, while `user_profile` is the surviving tombstone's own denormalized summary.
+
+**The code half is [#6733](https://github.com/kamp-us/phoenix/issues/6733)**, where the sweep
+statements land in `buildAnonymizeStatements`. This amendment is the record only; §2's other clauses
+— re-attribution, the kept-and-scrubbed `user` row, karma-kept, one synchronous batch — are unchanged.

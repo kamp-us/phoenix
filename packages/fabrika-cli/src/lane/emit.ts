@@ -114,6 +114,15 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
  * the same reason the review edge's is: the repair round happens outside the machine, so the next
  * thing the lane can record is another verdict.
  *
+ * `ship:queued` is the tail's wait cell (ADR 0313): the tail is the one place an epic run meets a
+ * merge queue, so it is the one region that needs it — a child region has no `ship` and reaches no
+ * queue at all. The `WIP` out of it is a guarded array like the FAIL above, but it spends `waits`
+ * rather than `retries`, so a queue dwell cannot eat the epic review's repair rounds. Its spent-
+ * budget fallthrough is `human:queue-stall` and not `human:cp-approval` because a `WIP` carries no
+ * park cause, and `recipe/parks.ts`'s §CP row keys on `cause: null` — a stall landing there would be
+ * cleared by reading an approval nobody was waiting on. Its own leaf carries no row, so the table
+ * reads it as novel and routes it to a human, which is what a spent wait actually needs.
+ *
  * `review` FAIL is a two-arm guarded array so the fallthrough final is an *error* final by the
  * compiler's own structural read; a plain target would leave a failed epic review folding to
  * `complete`. The retry arm is `review` itself: a repair round happens outside the machine and the
@@ -137,7 +146,22 @@ const epicRegion = (ns: string): Record<string, unknown> => ({
 		ship: {
 			on: {
 				[`${ns}.DONE`]: "shipped",
+				[`${ns}.WIP`]: "ship:queued",
 				[`${ns}.BLOCKED`]: "human:cp-approval",
+				[`${ns}.FAIL`]: [
+					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
+					{target: "human:epic-review"},
+				],
+			},
+		},
+		"ship:queued": {
+			on: {
+				[`${ns}.DONE`]: "shipped",
+				[`${ns}.BLOCKED`]: "human:cp-approval",
+				[`${ns}.WIP`]: [
+					{target: "ship:queued", guard: "waitsRemaining", actions: "incrementWaits"},
+					{target: "human:queue-stall"},
+				],
 				[`${ns}.FAIL`]: [
 					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
 					{target: "human:epic-review"},
@@ -146,6 +170,7 @@ const epicRegion = (ns: string): Record<string, unknown> => ({
 		},
 		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		"human:cp-approval": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
+		"human:queue-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		hist: {type: "history"},
 		shipped: {type: "final"},
 		"human:epic-review": {type: "final"},

@@ -1,7 +1,7 @@
 /**
  * The çaylak marker's surface coverage (#6427, epic #4306): every place the #6425 wire field
  * is delivered renders it, and renders it through `SandboxMarker` rather than a hand-rolled
- * ternary — a fifth surface that selects the field but forgets the badge is the drift this
+ * ternary — a new surface that selects the field but forgets the badge is the drift this
  * pins. A source scan, like `badge-variant-contract`: it holds even for the surfaces whose
  * live render needs a fate transport to mount.
  */
@@ -11,12 +11,16 @@ import {describe, expect, it} from "vitest";
 
 const sourceRoot = join(import.meta.dirname, "../..");
 
-/** The four surfaces the issue names: the pano feed row, post detail, comment node, sözlük entry. */
+/**
+ * The pano feed row, post detail, comment node, sözlük entry — plus the profile
+ * contribution row, the fifth surface #6464 brought onto the split.
+ */
 const surfaces = [
 	"components/pano/PanoPostCard.tsx",
 	"components/pano/PanoPostHeader.tsx",
 	"components/pano/CommentTreeNode.tsx",
 	"components/sozluk/DefinitionCard.tsx",
+	"components/profile/ContributionRow.tsx",
 ];
 
 const read = (path: string) => readFileSync(join(sourceRoot, path), "utf8");

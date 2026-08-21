@@ -19,6 +19,7 @@ import {runLaneClaim, runLaneRelease} from "./claim-verb.ts";
 import {runEmit} from "./emit-verb.ts";
 import {runHistory} from "./history-verb.ts";
 import {type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
+import {runMigrate} from "./migrate-verb.ts";
 import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
 import {runProve} from "./prove-verb.ts";
@@ -122,7 +123,7 @@ const transition = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record one operator event, refusing an invalid one unappended."),
 	Command.withDescription(
-		"Record one operator event on the lane's append-only log — after the machine accepts it, never before. stdout is `{previous, event, current, taskAffected}` with the two stateValues around the fold. An invalid event — no cell in the task's current state (tea's NoCellError, surfaced verbatim), outside the operator's six, a task outside the active phase, a finished workflow — is refused loudly and the log is left byte-identical. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (the lane could not be read), 12 (the event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 35 (--cause is outside the closed park-cause set or rides on an event that is not BLOCKED). An optional --cause lands on a BLOCKED's event line and is what `recipe unpark` keys its recipe table on; a BLOCKED with no cause is the bare park it always was, and routes to a human. Example: fabrika lane transition 5673 DONE",
+		"Record one operator event on the lane's append-only log — after the machine accepts it, never before. stdout is `{previous, event, current, taskAffected}` with the two stateValues around the fold. An invalid event — no cell in the task's current state (tea's NoCellError, surfaced verbatim), outside the operator's six, a task outside the active phase, a finished workflow — is refused loudly and the log is left byte-identical. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (the lane could not be read), 12 (the event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 35 (--cause is outside the closed park-cause set or rides on an event that is not BLOCKED), 36 (an UNBLOCKED out of an error final would restore the state and not the repair budget — record the founder's cleared round with `build clear` first; the two land in either order). A cleared round is NOT recorded here: it is a `<TASK>.CLEARED` event `build clear` appends, it targets no state, and the operator's six are unchanged (ADR 0312). An optional --cause lands on a BLOCKED's event line and is what `recipe unpark` keys its recipe table on; a BLOCKED with no cause is the bare park it always was, and routes to a human. Example: fabrika lane transition 5673 DONE",
 	),
 );
 
@@ -232,7 +233,7 @@ const history = leafCommand(
 ).pipe(
 	Command.withShortDescription("The lane's append-only event log, verbatim."),
 	Command.withDescription(
-		"The lane's append-only event log, verbatim — one `{task, event, at}` per recorded event, in append order, carrying the optional `pr`/`comment` refs where the event was recorded with one as its evidence; the log IS the history, and `from`/`to` are reconstructible by folding, never stored. A lane with no events yet answers `[]`. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane could not be read), 21 (the key is not a lane key). Example: fabrika lane history 5673",
+		"The lane's append-only event log, verbatim — one `{task, event, at}` per recorded event, in append order, carrying the optional `pr`/`comment` refs where the event was recorded with one as its evidence, and the `round` a `CLEARED` clears; the log IS the history, and `from`/`to` are reconstructible by folding, never stored. A lane with no events yet answers `[]`. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane could not be read), 21 (the key is not a lane key). Example: fabrika lane history 5673",
 	),
 );
 
@@ -249,15 +250,17 @@ const print = leafCommand(
 	),
 );
 
-const templatePath = (key: LaneKey): string =>
-	fileURLToPath(new URL(`./templates/${templateFile(key)}`, import.meta.url));
+const templatePath = (kind: LaneKey["_tag"]): string =>
+	fileURLToPath(new URL(`./templates/${templateFile(kind)}`, import.meta.url));
 
 const open = leafCommand(
 	"open",
 	{lane: laneArgument, root: rootFlag},
 	Effect.fn(function* ({lane, root}) {
 		yield* emit(
-			yield* onKey(lane, root, (key, ref) => runOpen({...ref, templatePath: templatePath(key)})),
+			yield* onKey(lane, root, (key, ref) =>
+				runOpen({...ref, templatePath: templatePath(key._tag)}),
+			),
 		);
 	}),
 ).pipe(
@@ -488,6 +491,39 @@ const stale = leafCommand(
 	),
 );
 
+const migrate = leafCommand(
+	"migrate",
+	{
+		root: rootFlag,
+		check: Flag.boolean("check").pipe(
+			Flag.withDescription("judge every lane and report, writing nothing"),
+		),
+	},
+	Effect.fn(function* ({root, check}) {
+		yield* emit(
+			yield* runMigrate({
+				roots: Option.match(root, {
+					onNone: () => [
+						{root: DEFAULT_LANES_ROOT, templatePaths: [templatePath("Issue")]},
+						{root: DEFAULT_CHORES_ROOT, templatePaths: [templatePath("Chore")]},
+					],
+					// A relocated root holds whatever was opened into it, so both templates are
+					// candidates and the lane's own machine id picks — never the root's position.
+					onSome: (only) => [
+						{root: only, templatePaths: [templatePath("Issue"), templatePath("Chore")]},
+					],
+				}),
+				check,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Bring every booted lane's machine up to the committed template."),
+	Command.withDescription(
+		'Bring each booted lane\'s workflow.json up to the committed template its root selects, but only where the swap provably moves nothing. `lane open` places a byte-identical copy at boot and refuses to overwrite one afterwards, so a template edit reaches lanes booted after it and no lane already on disk — safe until a token→event map in code changes with it, at which point every booted lane is asked for a cell its frozen machine does not have (ADR 0313). Two things are kept: the lane\'s own `machine.context`, which is per-lane DATA (the task\'s maxRetries, and whatever else a lane declares) and would be erased by a verbatim copy, and any lane whose machine was GENERATED rather than booted — an emitted epic document has no committed template to be brought up to, and is reported, never touched. State is the event log replayed from scratch with no snapshot, so the swap is safe exactly when the existing events.jsonl folds to the same per-task leaf state through both machines; anything else is a rewritten history, not a migration. Each lane carries one verdict: "current" (already the machine this verb would write, read past formatting), "migrated" (judged safe and written), "stale" (judged safe, --check withheld the write), "generated" (not booted from this template), "unsafe" (the log will not replay through one of the two machines, or it folds to a different state — named, never written) or "unreadable". stdout is {check, scanned, summary, lanes}. Both default roots are swept unless --root names one, which is read as a relocated root whose lanes may have booted from either committed template — the lane\'s own machine id picks, never the root\'s position; an absent root holds no lanes and is not a fault. Exits 11 (a template could not be read, or a root is there and could not be listed — the lane set is UNKNOWN, never empty), 37 (at least one lane cannot take the template without moving; those lanes are named on stderr and none of them was written, and so are the ones that were). Examples: fabrika lane migrate --check · fabrika lane migrate',
+	),
+);
+
 const view = leafCommand(
 	"view",
 	{
@@ -530,6 +566,7 @@ export const laneCommand = Command.make("lane").pipe(
 		assembly,
 		pushLane,
 		stale,
+		migrate,
 		claim,
 		release,
 		view,

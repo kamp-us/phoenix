@@ -274,7 +274,34 @@
 							"ship": {
 								"on": {
 									"EPIC_4300.DONE": "shipped",
+									"EPIC_4300.WIP": "ship:queued",
 									"EPIC_4300.BLOCKED": "human:cp-approval",
+									"EPIC_4300.FAIL": [
+										{
+											"target": "review",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{
+											"target": "human:epic-review"
+										}
+									]
+								}
+							},
+							"ship:queued": {
+								"on": {
+									"EPIC_4300.DONE": "shipped",
+									"EPIC_4300.BLOCKED": "human:cp-approval",
+									"EPIC_4300.WIP": [
+										{
+											"target": "ship:queued",
+											"guard": "waitsRemaining",
+											"actions": "incrementWaits"
+										},
+										{
+											"target": "human:queue-stall"
+										}
+									],
 									"EPIC_4300.FAIL": [
 										{
 											"target": "review",
@@ -293,6 +320,11 @@
 								}
 							},
 							"human:cp-approval": {
+								"on": {
+									"EPIC_4300.UNBLOCKED": "hist"
+								}
+							},
+							"human:queue-stall": {
 								"on": {
 									"EPIC_4300.UNBLOCKED": "hist"
 								}

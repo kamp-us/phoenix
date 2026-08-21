@@ -160,6 +160,27 @@ const pagedForExistence = (token: string, path: string): Api<Existence<ReadonlyA
 		);
 	});
 
+/**
+ * The repository's default branch, on the ambient credential.
+ *
+ * A second reading of `build/github.ts`'s `defaultBranch` only because that one publishes `env` and
+ * `HttpClient` up into its callers; `../ship/roster.ts` is reached from a hundred `Shell<…>` sites
+ * that thread neither. #6693 folds the two once one convention wins.
+ */
+export const defaultBranch = (repo: string): Shell<Attempt<string>> =>
+	authed((token) =>
+		Effect.map(restRead(token, "GET", `repos/${repo}`), (outcome) => {
+			if (outcome._tag === "Unreachable") return fail(outcome.reason);
+			if (outcome.status < 200 || outcome.status >= 300) {
+				return fail(`GitHub answered HTTP ${outcome.status}`);
+			}
+			const name = isRecord(outcome.body) ? outcome.body.default_branch : undefined;
+			return typeof name === "string" && name.trim() !== ""
+				? ok(name.trim())
+				: fail("GitHub answered 200 but named no default branch");
+		}),
+	);
+
 /** One team's members, paged. A 404 is proven — the team does not exist in this org. */
 export const listTeamMembers = (
 	org: string,

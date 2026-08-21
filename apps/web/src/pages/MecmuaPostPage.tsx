@@ -2,7 +2,7 @@
  * `/mecmua/:slug` — the public reader for one published post. The body renders through
  * `@kampus/composer` in read-only mode, so write and read share one tiptap render path and
  * can't re-diverge (the raw-markdown bug #2578). Client-only; SEO/prerender is deferred.
- * Ships dark behind `MECMUA_PUBLIC_READ` (default-off; ADR 0083).
+ * Ships dark behind `MECMUA_PUBLIC_READ` (default-off; `.patterns/flag-dark-page-gate.md`).
  */
 import {lazy, Suspense, useEffect, useState} from "react";
 import {useParams} from "react-router";
@@ -33,7 +33,6 @@ export function MecmuaPostPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_PUBLIC_READ, false);
 	const {slug} = useParams<{slug: string}>();
 
-	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first.
 	if (flagLoading) {
 		return (
 			<div className="kp-page">

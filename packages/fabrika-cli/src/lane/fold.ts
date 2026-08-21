@@ -13,8 +13,10 @@
 import {applyCell, foldMsgs, NoCellError} from "@demlik/tea";
 import {
 	bareEvent,
+	CLEARED_EVENT,
 	type CompiledLane,
 	isOperatorEvent,
+	type LaneMsg,
 	OPERATOR_EVENTS,
 	type TaskState,
 } from "./machine.ts";
@@ -22,8 +24,11 @@ import {
 /**
  * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
  * event a shell reported through `lane report`, the artifact refs its terminal named (#5712) and,
- * on a `BLOCKED`, the closed-set cause of the park (#6480). All three are evidence carried
+ * on a `BLOCKED`, the closed-set cause of the park (#6480). Those three are evidence carried
  * verbatim; the fold reads only `task`/`event`, so a line with or without them folds identically.
+ *
+ * `round` is not evidence — it is the only payload the fold reads, and a `CLEARED` line without it
+ * names no round to clear (ADR 0312).
  */
 export interface LogEntry {
 	readonly task: string;
@@ -32,6 +37,7 @@ export interface LogEntry {
 	readonly pr?: string;
 	readonly comment?: string;
 	readonly cause?: string;
+	readonly round?: number;
 }
 
 export type ParseLogResult =
@@ -59,6 +65,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			pr?: unknown;
 			comment?: unknown;
 			cause?: unknown;
+			round?: unknown;
 		};
 		if (
 			typeof record !== "object" ||
@@ -78,6 +85,16 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(`line ${index + 1} carries a non-string \`pr\`/\`comment\`/\`cause\` field`);
 			continue;
 		}
+		if (record.round !== undefined && !Number.isInteger(record.round)) {
+			defects.push(`line ${index + 1} carries a non-integer \`round\` field`);
+			continue;
+		}
+		// A grant that names no round raises the budget by nothing and would fold as a silent no-op —
+		// the failure mode ADR 0312 exists to delete, so it is a defect at the parse.
+		if (bareEvent(record.event) === CLEARED_EVENT && record.round === undefined) {
+			defects.push(`line ${index + 1} is a ${CLEARED_EVENT} event carrying no \`round\``);
+			continue;
+		}
 		entries.push({
 			task: record.task,
 			event: record.event,
@@ -85,6 +102,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.pr === undefined ? {} : {pr: record.pr}),
 			...(record.comment === undefined ? {} : {comment: record.comment}),
 			...(record.cause === undefined ? {} : {cause: record.cause}),
+			...(record.round === undefined ? {} : {round: record.round as number}),
 		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};
@@ -128,7 +146,10 @@ export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): F
 	for (const [taskId, task] of Object.entries(lane.tasks)) {
 		const msgs = entries
 			.filter((entry) => entry.task === taskId)
-			.map((entry) => ({type: bareEvent(entry.event)}));
+			.map((entry) => ({
+				type: bareEvent(entry.event),
+				...(entry.round === undefined ? {} : {round: entry.round}),
+			}));
 		try {
 			states[taskId] = foldMsgs(task.machine, task.initial, msgs);
 		} catch (error) {
@@ -152,12 +173,19 @@ export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): F
  * standing cause goes with it. Deriving it that way rather than tracking it as machine state is
  * what keeps the fold total over a log written before this field existed — no cause reads as the
  * bare `BLOCKED` it always was.
+ *
+ * A `CLEARED` is not the last thing said about a task, because it says nothing about one: it moves
+ * no task and clears no park, so a grant landing on a parked lane must leave that park's cause
+ * standing (ADR 0312).
  */
 export const standingCauses = (
 	entries: ReadonlyArray<LogEntry>,
 ): Readonly<Record<string, string>> => {
 	const latest: Record<string, LogEntry> = {};
-	for (const entry of entries) latest[entry.task] = entry;
+	for (const entry of entries) {
+		if (bareEvent(entry.event) === CLEARED_EVENT) continue;
+		latest[entry.task] = entry;
+	}
 	const causes: Record<string, string> = {};
 	for (const [task, entry] of Object.entries(latest)) {
 		if (entry.cause !== undefined) causes[task] = entry.cause;
@@ -186,6 +214,9 @@ export const deriveStatus = (
 		context[taskId] = {
 			retries: state.retries,
 			maxRetries: state.maxRetries,
+			...(state.cleared.length === 0 ? {} : {clearedRounds: state.cleared}),
+			waits: state.waits,
+			maxWaits: state.maxWaits,
 			...taskIn(lane, taskId).extras,
 			...(cause === undefined ? {} : {cause}),
 		};
@@ -249,12 +280,30 @@ export type ApplyResult =
 			readonly previous: LaneStatus;
 			readonly current: LaneStatus;
 	  }
-	| {readonly _tag: "Refused"; readonly reason: string};
+	| {
+			readonly _tag: "Refused";
+			readonly reason: string;
+			/**
+			 * Which fact the refusal proves, so the verb can seat it on the right exit code without
+			 * reading the message. `"unbudgeted-resume"` is the one whose remedy is not a different
+			 * event — see {@link applyEvent}.
+			 */
+			readonly kind: "event" | "unbudgeted-resume";
+	  };
+
+const refuseEvent = (reason: string): ApplyResult => ({_tag: "Refused", reason, kind: "event"});
 
 /**
  * Validate and apply one operator event, producing the entry to append. Every refusal is decided
  * BEFORE anything would touch the log, which is what lets a verb prove refuse-without-append. The
  * no-cell refusal is tea's own dispatch guard (`applyCell` → `NoCellError`), surfaced verbatim.
+ *
+ * One refusal is this function's own rather than the machine table's: an `UNBLOCKED` walking the
+ * door out of an error final back into a state whose only non-`PASS` route is guarded, with the
+ * budget already spent. The cell exists and the fold would succeed — it would restore the state and
+ * not the budget, advertise `active`, and re-freeze on the next `FAIL` (#6570). Under ADR 0312 the
+ * budget comes from a recorded `CLEARED` and from nothing else, so the resume is refused loudly with
+ * the log unappended instead of resolving to a lane that reads walkable and is not.
  */
 export const applyEvent = (
 	lane: CompiledLane,
@@ -264,10 +313,11 @@ export const applyEvent = (
 	at: string,
 ): ApplyResult => {
 	if (!isOperatorEvent(event)) {
-		return {
-			_tag: "Refused",
-			reason: `"${event}" is outside the operator's six events (${OPERATOR_EVENTS.join("/")})`,
-		};
+		return refuseEvent(
+			event === CLEARED_EVENT
+				? `"${event}" is not an operator event — a cleared repair round is appended by \`build clear\`, never recorded here (ADR 0312)`
+				: `"${event}" is outside the operator's six events (${OPERATOR_EVENTS.join("/")})`,
+		);
 	}
 	const previous = deriveStatus(lane, states);
 	// A task sitting in an open final is parked, not finished: the door out is still walkable (ADR
@@ -282,10 +332,7 @@ export const applyEvent = (
 	const parked =
 		previous.status === "done" && previous.stateValue === lane.terminals.tripped && inOpenFinal;
 	if (previous.status === "done" && !parked) {
-		return {
-			_tag: "Refused",
-			reason: `workflow is "${String(previous.stateValue)}" — no further events`,
-		};
+		return refuseEvent(`workflow is "${String(previous.stateValue)}" — no further events`);
 	}
 	const activePhase = parked
 		? lane.phases.find((phase) => phase.tasks.includes(taskId))
@@ -293,35 +340,84 @@ export const applyEvent = (
 				(phase) => typeof (previous.stateValue as Record<string, unknown>)[phase.name] === "object",
 			);
 	if (activePhase === undefined || !activePhase.tasks.includes(taskId)) {
-		return {
-			_tag: "Refused",
-			reason: `task "${taskId}" is not in the active phase ("${activePhase?.name}")`,
-		};
+		return refuseEvent(`task "${taskId}" is not in the active phase ("${activePhase?.name}")`);
 	}
+	const task = taskIn(lane, taskId);
+	const from = stateIn(states, taskId);
 	let next: TaskState;
 	try {
-		[next] = applyCell<TaskState, {type: string}, never>(
-			taskIn(lane, taskId).machine,
-			stateIn(states, taskId),
-			{
-				type: event,
-			},
-		);
+		[next] = applyCell<TaskState, LaneMsg, never>(task.machine, from, {type: event});
 	} catch (error) {
 		if (error instanceof NoCellError) {
-			return {_tag: "Refused", reason: `${error.name}: ${error.message}`};
+			return refuseEvent(`${error.name}: ${error.message}`);
 		}
 		throw error;
 	}
 	// A region booted straight into a park left no state behind it, so its door resolves to the park
 	// itself; recording that would answer "resumed" for a fold that did not move.
-	if (inOpenFinal && next.type === stateIn(states, taskId).type) {
+	if (inOpenFinal && next.type === from.type) {
+		return refuseEvent(
+			`task "${taskId}" booted in "${next.type}" and left no state to resume — the door leads back to itself`,
+		);
+	}
+	if (
+		task.errorFinals.has(from.type) &&
+		task.guardedStates.has(next.type) &&
+		next.retries >= next.maxRetries
+	) {
+		const stale =
+			task.staleGrants.length === 0
+				? ""
+				: ` This lane's \`workflow.json\` still names a retired \`clearedRounds\` of [${task.staleGrants.join(", ")}], which the compiler no longer honours — re-record each as a ${CLEARED_EVENT} event.`;
 		return {
 			_tag: "Refused",
-			reason: `task "${taskId}" booted in "${next.type}" and left no state to resume — the door leads back to itself`,
+			kind: "unbudgeted-resume",
+			reason: `task "${taskId}" would resume from "${from.type}" into "${next.type}" at ${next.retries}/${next.maxRetries} retries — the state comes back and the repair budget does not, so every guarded route out of "${next.type}" falls straight back to "${from.type}". Record the founder's cleared round first (\`build clear\`); the two may land in either order.${stale}`,
 		};
 	}
 	const entry: LogEntry = {task: taskId, event: `${taskId.toUpperCase()}.${event}`, at};
 	const current = deriveStatus(lane, {...states, [taskId]: next});
 	return {_tag: "Applied", entry, previous, current};
+};
+
+export type ClearanceResult =
+	| {readonly _tag: "Appendable"; readonly entry: LogEntry}
+	/** The log already carries this round for this task — set semantics, so nothing to append. */
+	| {readonly _tag: "AlreadyHeld"; readonly round: number}
+	| {readonly _tag: "Refused"; readonly reason: string};
+
+/**
+ * The entry a recorded clearance appends — `build clear`'s half of ADR 0312, kept beside
+ * {@link applyEvent} because both decide appendability from the same fold.
+ *
+ * It validates far less than an operator event does, and deliberately: a grant moves no task, so
+ * there is no cell to miss, no phase to be outside of, and no terminal to be past. A clearance may
+ * land on a lane in any state, in any order relative to the `UNBLOCKED` it enables — which is the
+ * whole point of anchoring the budget to the event rather than to mutable context.
+ */
+export const applyClearance = (
+	lane: CompiledLane,
+	entries: ReadonlyArray<LogEntry>,
+	taskId: string,
+	round: number,
+	at: string,
+): ClearanceResult => {
+	if (lane.tasks[taskId] === undefined) {
+		return {
+			_tag: "Refused",
+			reason: `task "${taskId}" is not in this lane's machine (tasks: ${Object.keys(lane.tasks).join(", ")})`,
+		};
+	}
+	if (!Number.isInteger(round)) {
+		return {_tag: "Refused", reason: `round ${round} is not a whole round to clear`};
+	}
+	const held = entries.some(
+		(entry) =>
+			entry.task === taskId && bareEvent(entry.event) === CLEARED_EVENT && entry.round === round,
+	);
+	if (held) return {_tag: "AlreadyHeld", round};
+	return {
+		_tag: "Appendable",
+		entry: {task: taskId, event: `${taskId.toUpperCase()}.${CLEARED_EVENT}`, at, round},
+	};
 };

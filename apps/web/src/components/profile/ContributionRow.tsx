@@ -7,7 +7,7 @@ import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {Badge} from "../ui/Badge";
-import {ReviewBadge} from "../ui/ReviewBadge";
+import {SandboxMarker} from "../ui/SandboxMarker";
 import "./ContributionRow.css";
 
 export const ContributionView = view<Contribution>()({
@@ -15,9 +15,8 @@ export const ContributionView = view<Contribution>()({
 	id: true,
 	score: true,
 	createdAt: true,
-	// A bare boolean carrying no reviewer identity (one-way glass), and sent only to
-	// the author/moderator — a non-owner never receives a sandboxed row at all.
 	sandboxed: true,
+	sandboxedInPlace: true,
 	bodyExcerpt: true,
 	termSlug: true,
 	termTitle: true,
@@ -29,12 +28,26 @@ export const ContributionView = view<Contribution>()({
 
 export interface ContributionRowProps {
 	node: ViewRef<"Contribution">;
+	/**
+	 * The viewer authored these rows. The feed is author-scoped, so ownership is a
+	 * property of the profile being read, not of the individual row — which is why it
+	 * cannot be derived here and has to be passed down.
+	 */
+	isOwn?: boolean;
 	sandboxBadge?: boolean;
 }
 
-export function ContributionRow({node, sandboxBadge = false}: ContributionRowProps) {
+export function ContributionRow({node, isOwn = false, sandboxBadge = false}: ContributionRowProps) {
 	const c = useView(ContributionView, node);
-	const badge = sandboxBadge && c.sandboxed ? <ReviewBadge /> : null;
+	// `sandboxBadge` is the caller's çaylak-status gate on the OWNER badge (#1316); a
+	// surface that withholds it passes `undefined` and lands on `none` for the owner.
+	const badge = (
+		<SandboxMarker
+			isOwn={isOwn}
+			sandboxed={sandboxBadge ? c.sandboxed : undefined}
+			sandboxedInPlace={c.sandboxedInPlace}
+		/>
+	);
 
 	if (c.kind === "definition") {
 		return (

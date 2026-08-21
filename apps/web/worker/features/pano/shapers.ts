@@ -106,3 +106,20 @@ export const toComment = (r: CommentFields): Comment => ({
 	sandboxedInPlace: r.sandboxedInPlace ?? false,
 	reactions: r.reactions ?? EMPTY_REACTION_AGGREGATE,
 });
+
+/**
+ * The viewer-blind form of a `Comment` node — what a broadcast to the viewer-blind
+ * `Comment` topic may carry. Both review-state fields are stamped from whoever resolved
+ * the row (`sandboxed` #4282, `sandboxedInPlace` #6423), so a payload re-resolved against
+ * the mutator hands their own review state to every other subscriber.
+ *
+ * One shaper owns the whole list so a third such field cannot be stripped at one broadcast
+ * site and missed at another (#4313). It is the innermost of three layers over the same
+ * leak — `viewerBlindUpdate` drops the in-place marker at `panoLive`, and the publisher's
+ * `changed` trim drops both since #6585 — and the only one a call site states for itself.
+ */
+export const broadcastComment = (comment: Comment): Comment => ({
+	...comment,
+	sandboxed: false,
+	sandboxedInPlace: false,
+});

@@ -4,25 +4,28 @@ import {comments, LANE_UUID, marker, LANE_TOKEN as TOKEN} from "../build/fixture
 import type {HttpReply} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {read as readMarker} from "../wire/verdict-marker.ts";
-import {runCheck} from "./check-verb.ts";
 import {
 	BARE_AT_PATH,
 	CLAIM_NOT_MINE,
 	LEAKED_PATH,
 	OFF_VOCABULARY,
 	PLAN_MOVED,
+	PLAN_UNAPPROVED,
 	READBACK_MISMATCH,
 } from "./codes.ts";
 import {
+	approvalRow,
 	CHILD as CHILD_AT,
 	CWD,
 	CYCLE_DOC,
 	child,
 	childBody,
 	cycleDoc,
+	digestOver,
 	epic,
 	epicBody,
 	planSeams,
+	ROSTER,
 	type Scripted,
 	SESSION,
 	SUB_ISSUES,
@@ -49,9 +52,15 @@ const env = {
 	GITHUB_TOKEN: "ghp_scripted",
 } as Record<string, string | undefined>;
 
-const CLAIMED: ReadonlyArray<Scripted> = [
-	[COMMENTS, comments({id: 1, body: marker(SESSION, LANE_UUID)})],
+/**
+ * The epic's comments as a lane that may post a verdict finds them: this lane's claim marker, and a
+ * standing founder approval of the plan the script derives. Both come off **one** read, so the
+ * approval has to be a row here rather than a second scripted `COMMENTS` entry nothing would reach.
+ */
+const claimed = (digest: string): ReadonlyArray<Scripted> => [
+	[COMMENTS, comments({id: 1, body: marker(SESSION, LANE_UUID)}, approvalRow(digest))],
 	[PERM, {status: 200, body: '{"permission":"write"}'}],
+	...ROSTER,
 ];
 
 const ledger = (childPayload: HttpReply): ReadonlyArray<Scripted> => [
@@ -66,15 +75,8 @@ const POSTED: HttpReply = {
 	body: JSON.stringify({id: 512346, html_url: "https://github.com/o/r/issues/4300#c"}),
 };
 
-const digestOf = async (childPayload: HttpReply): Promise<string> => {
-	const out = await Effect.runPromise(
-		Effect.provide(
-			runCheck({number: 4300, repo: null, env, cwd: CWD}),
-			planSeams(ledger(childPayload)).layer,
-		),
-	);
-	return JSON.parse(out.stdout).digest as string;
-};
+const digestOf = (childPayload: HttpReply): Promise<string> =>
+	digestOver(ledger(childPayload), {env});
 
 const run = (
 	digest: string,
@@ -116,10 +118,10 @@ const postedBody = (run: {calls: ReadonlyArray<string>; bodies: ReadonlyArray<st
 describe("runVerdict", () => {
 	it("posts a PASS bound to the digest and reads it back", async () => {
 		const digest = await digestOf(CLEAN_CHILD);
-		const first = await run(digest, [...CLAIMED, ...ledger(CLEAN_CHILD), [POST, POSTED]]);
+		const first = await run(digest, [...claimed(digest), ...ledger(CLEAN_CHILD), [POST, POSTED]]);
 		const body = postedBody(first);
 		const {outcome} = await run(digest, [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(CLEAN_CHILD),
 			[POST, POSTED],
 			[GET_COMMENT, {status: 200, body: JSON.stringify({body})}],
@@ -143,7 +145,7 @@ describe("runVerdict", () => {
 	 */
 	it("emits a marker the shared format reads back", async () => {
 		const digest = await digestOf(CLEAN_CHILD);
-		const posted = await run(digest, [...CLAIMED, ...ledger(CLEAN_CHILD), [POST, POSTED]]);
+		const posted = await run(digest, [...claimed(digest), ...ledger(CLEAN_CHILD), [POST, POSTED]]);
 		const marked = readMarker(postedBody(posted));
 		expect(marked._tag).toBe("Found");
 		if (marked._tag !== "Found") return;
@@ -157,7 +159,11 @@ describe("runVerdict", () => {
 
 	it("derives FAIL from the floor and posts it — a defective floor is the deliverable", async () => {
 		const digest = await digestOf(DEFECTIVE_CHILD);
-		const posted = await run(digest, [...CLAIMED, ...ledger(DEFECTIVE_CHILD), [POST, POSTED]]);
+		const posted = await run(digest, [
+			...claimed(digest),
+			...ledger(DEFECTIVE_CHILD),
+			[POST, POSTED],
+		]);
 		const body = postedBody(posted);
 		expect(
 			body.startsWith(`check-epic-plan: FAIL @ ${digest} — 1 children scanned, floor 1 defect(s)`),
@@ -174,7 +180,7 @@ describe("runVerdict", () => {
 		const digest = await digestOf(DEFECTIVE_CHILD);
 		const {outcome, calls} = await run(
 			digest,
-			[...CLAIMED, ...ledger(DEFECTIVE_CHILD), [POST, POSTED]],
+			[...claimed(digest), ...ledger(DEFECTIVE_CHILD), [POST, POSTED]],
 			{polarity: "PASS"},
 		);
 		expect(outcome.code).toBe(OFF_VOCABULARY);
@@ -184,15 +190,19 @@ describe("runVerdict", () => {
 
 	it("accepts a --polarity that agrees", async () => {
 		const digest = await digestOf(CLEAN_CHILD);
-		const {calls} = await run(digest, [...CLAIMED, ...ledger(CLEAN_CHILD), [POST, POSTED]], {
-			polarity: "PASS",
-		});
+		const {calls} = await run(
+			digest,
+			[...claimed(digest), ...ledger(CLEAN_CHILD), [POST, POSTED]],
+			{
+				polarity: "PASS",
+			},
+		);
 		expect(calls.some((line) => POST.test(line))).toBe(true);
 	});
 
 	it("records caveats verbatim under their kinds and counts them", async () => {
 		const digest = await digestOf(CLEAN_CHILD);
-		const posted = await run(digest, [...CLAIMED, ...ledger(CLEAN_CHILD), [POST, POSTED]], {
+		const posted = await run(digest, [...claimed(digest), ...ledger(CLEAN_CHILD), [POST, POSTED]], {
 			caveats: 'caveat: ac-not-checkable #4301 — "works well" states no observable outcome',
 		});
 		const body = postedBody(posted);
@@ -204,7 +214,7 @@ describe("runVerdict", () => {
 		const digest = await digestOf(CLEAN_CHILD);
 		const {outcome, calls} = await run(
 			digest,
-			[...CLAIMED, ...ledger(CLEAN_CHILD), [POST, POSTED]],
+			[...claimed(digest), ...ledger(CLEAN_CHILD), [POST, POSTED]],
 			{
 				caveats: "caveat: vibes #4301 — feels thin",
 			},
@@ -216,9 +226,13 @@ describe("runVerdict", () => {
 
 	it("refuses 10 on a caveat naming a ref outside the scanned set", async () => {
 		const digest = await digestOf(CLEAN_CHILD);
-		const {outcome} = await run(digest, [...CLAIMED, ...ledger(CLEAN_CHILD), [POST, POSTED]], {
-			caveats: "caveat: brief-fidelity #9999 — drifted",
-		});
+		const {outcome} = await run(
+			digest,
+			[...claimed(digest), ...ledger(CLEAN_CHILD), [POST, POSTED]],
+			{
+				caveats: "caveat: brief-fidelity #9999 — drifted",
+			},
+		);
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toContain("which is not in the scanned set");
 	});
@@ -226,21 +240,22 @@ describe("runVerdict", () => {
 	/** The caveat tail is model-authored prose reaching a public surface — the seat 5/6 exist for. */
 	it("refuses 5 on a machine-local path and 6 on a bare @ reference", async () => {
 		const digest = await digestOf(CLEAN_CHILD);
-		const leaked = await run(digest, [...CLAIMED, ...ledger(CLEAN_CHILD), [POST, POSTED]], {
+		const leaked = await run(digest, [...claimed(digest), ...ledger(CLEAN_CHILD), [POST, POSTED]], {
 			caveats: "caveat: brief-fidelity #4301 — see /Users/someone/notes/plan.md",
 		});
 		expect(leaked.outcome.code).toBe(LEAKED_PATH);
 		expect(leaked.calls.some((line) => POST.test(line))).toBe(false);
 
-		const bare = await run(digest, [...CLAIMED, ...ledger(CLEAN_CHILD), [POST, POSTED]], {
+		const bare = await run(digest, [...claimed(digest), ...ledger(CLEAN_CHILD), [POST, POSTED]], {
 			caveats: "@/Users/someone/notes/plan.md",
 		});
 		expect(bare.outcome.code).toBe(BARE_AT_PATH);
 	});
 
 	it("refuses 21 when the plan moved, and posts nothing", async () => {
+		const digest = await digestOf(CLEAN_CHILD);
 		const {outcome, calls} = await run("000000000000", [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(CLEAN_CHILD),
 			[POST, POSTED],
 		]);
@@ -252,7 +267,7 @@ describe("runVerdict", () => {
 	it("refuses 9 when the posted comment does not read back", async () => {
 		const digest = await digestOf(CLEAN_CHILD);
 		const {outcome} = await run(digest, [
-			...CLAIMED,
+			...claimed(digest),
 			...ledger(CLEAN_CHILD),
 			[POST, POSTED],
 			[GET_COMMENT, {status: 200, body: JSON.stringify({body: "something else entirely"})}],
@@ -304,12 +319,40 @@ describe("runVerdict", () => {
 			[CHILD, CLEAN_CHILD],
 			[CYCLE, {status: 502, body: '{"message":"Bad gateway"}'}],
 		] as ReadonlyArray<Scripted>;
-		const out = await Effect.runPromise(
-			Effect.provide(runCheck({number: 4300, repo: null, env, cwd: CWD}), planSeams(script).layer),
-		);
-		const digest = JSON.parse(out.stdout).digest as string;
-		const posted = await run(digest, [...CLAIMED, ...script, [POST, POSTED]]);
+		const digest = await digestOver(script, {env});
+		const posted = await run(digest, [...claimed(digest), ...script, [POST, POSTED]]);
 		expect(postedBody(posted)).toContain("1 class(es) skipped");
 		expect(postedBody(posted)).toContain("## Skipped classes");
+	});
+
+	/**
+	 * An unapproved plan gets no verdict at all, not even a `FAIL`: a posted verdict is the gate saying
+	 * it ran, and on an unapproved plan the gate is exactly what did not run (ADR 0289).
+	 */
+	it("refuses 25 on an unapproved plan, posting nothing", async () => {
+		const digest = await digestOf(DEFECTIVE_CHILD);
+		const {outcome, calls} = await run(digest, [
+			[COMMENTS, comments({id: 1, body: marker(SESSION, LANE_UUID)})],
+			[PERM, {status: 200, body: '{"permission":"write"}'}],
+			...ROSTER,
+			...ledger(DEFECTIVE_CHILD),
+			[POST, POSTED],
+		]);
+		expect(outcome.code).toBe(PLAN_UNAPPROVED);
+		expect(calls.some((line) => POST.test(line))).toBe(false);
+	});
+
+	it("refuses 25 on a stale approval, posting nothing", async () => {
+		const digest = await digestOf(CLEAN_CHILD);
+		const {outcome, calls} = await run(digest, [
+			[COMMENTS, comments({id: 1, body: marker(SESSION, LANE_UUID)}, approvalRow("0000000000ff"))],
+			[PERM, {status: 200, body: '{"permission":"write"}'}],
+			...ROSTER,
+			...ledger(CLEAN_CHILD),
+			[POST, POSTED],
+		]);
+		expect(outcome.code).toBe(PLAN_UNAPPROVED);
+		expect(outcome.stderr.at(-1)).toContain("state stale");
+		expect(calls.some((line) => POST.test(line))).toBe(false);
 	});
 });

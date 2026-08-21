@@ -1,7 +1,8 @@
 /**
  * `/mecmua` — the public index of published posts, distinct from the personalized
  * subscribed-author feed (`/mecmua/akis`). Ships dark behind `MECMUA_PUBLIC_READ`
- * (default-off; ADR 0083) — the route 404s server-side too, this gate just saves a fetch.
+ * (default-off; `.patterns/flag-dark-page-gate.md`) — the route 404s server-side too, this gate
+ * just saves a fetch.
  */
 import {BookOpenText} from "lucide-react";
 import {useEffect, useState} from "react";
@@ -32,7 +33,6 @@ type FetchState =
 export function MecmuaIndexPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_PUBLIC_READ, false);
 
-	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first.
 	if (flagLoading) {
 		return (
 			<div className="kp-page">

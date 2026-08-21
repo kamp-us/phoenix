@@ -234,6 +234,7 @@ export const recordingPublisher = (): {
 	const publisher: typeof LivePublisher.Service = {
 		update: (type, id) => push(`update ${type}:${id}`),
 		delete: (type, id) => push(`delete ${type}:${id}`),
+		invalidate: (type, id) => push(`invalidate ${type}:${id}`),
 		topic: (procedure, args) => ({
 			appendNode: (nodeType, id) =>
 				push(`append ${procedure}(${JSON.stringify(args ?? {})}) ${nodeType}:${id}`),

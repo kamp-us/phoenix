@@ -1,4 +1,6 @@
 import {describe, expect, it} from "vitest";
+import {classifyPark, isPark} from "../recipe/parks.ts";
+import {WAIT_BUDGET} from "../wait-budget.ts";
 import {
 	choreWorkflow,
 	coderWorkflow,
@@ -6,7 +8,7 @@ import {
 	twoPhaseWorkflow,
 } from "./fixtures.test-support.ts";
 import {applyEvent, foldLog, type LogEntry} from "./fold.ts";
-import {type CompiledLane, compile, OPERATOR_EVENTS, topology} from "./machine.ts";
+import {CLEARED_EVENT, type CompiledLane, compile, OPERATOR_EVENTS, topology} from "./machine.ts";
 
 const compiled = (workflow: unknown) => {
 	const result = compile(workflow);
@@ -57,10 +59,45 @@ describe("the compiler — structural recognition", () => {
 
 		expect(lane.phases).toEqual([{name: "pipeline", tasks: ["issue"]}]);
 		expect(lane.terminals).toEqual({complete: "complete", tripped: "tripped"});
-		expect(defined(lane.tasks.issue).initial).toEqual({type: "queued", retries: 0, maxRetries: 2});
+		expect(defined(lane.tasks.issue).initial).toEqual({
+			type: "queued",
+			retries: 0,
+			maxRetries: 2,
+			cleared: [],
+			waits: 0,
+			maxWaits: WAIT_BUDGET,
+		});
 		expect([...defined(lane.tasks.issue).finals].sort()).toEqual(["frozen", "shipped"]);
 		expect([...defined(lane.tasks.issue).errorFinals]).toEqual(["frozen"]);
 		expect([...defined(lane.tasks.issue).openFinals]).toEqual(["frozen"]);
+		expect([...defined(lane.tasks.issue).guardedStates].sort()).toEqual([
+			"review",
+			"ship",
+			"ship:queued",
+		]);
+	});
+
+	it("counts a state as guarded only for the retry budget, never for the wait budget", () => {
+		const workflow = twoPhaseWorkflow();
+		// A WIP-guarded array spends `waits`, and its spent fallthrough is a park that names the stall
+		// — not a fall back into the error final a resume just left, so it is no resume hazard (#6570).
+		stateNode(workflow, "task_a", "doing").on["TASK_A.WIP"] = [
+			{target: "doing"},
+			{target: "tripped"},
+		];
+
+		const lane = compiled(workflow);
+
+		expect([...defined(lane.tasks.task_a).guardedStates]).toEqual(["checking"]);
+	});
+
+	it("leaves every final an end but `frozen`, though all of them take a clearance", () => {
+		const summary = topology(compiled(coderWorkflow()));
+
+		// The injected cell is on `shipped` too, and it must not make `shipped` a park: an open final
+		// is one the DOCUMENT left a door in, and a clearance is a door out of nothing (ADR 0312).
+		expect(defined(summary.tasks.issue).states.shipped).toEqual([CLEARED_EVENT]);
+		expect([...defined(compiled(coderWorkflow()).tasks.issue).openFinals]).toEqual(["frozen"]);
 	});
 
 	it("reads a guarded array as retry-or-fallthrough by shape, never by guard name", () => {
@@ -86,12 +123,31 @@ describe("the compiler — structural recognition", () => {
 	it("summarizes each state's legal events in the topology", () => {
 		const summary = topology(compiled(coderWorkflow()));
 
-		expect(defined(summary.tasks.issue).states.queued).toEqual(["WIP", "BLOCKED"]);
-		expect(defined(summary.tasks.issue).states.review).toEqual(["PASS", "BLOCKED", "FAIL"]);
-		expect(defined(summary.tasks.issue).states.ship).toEqual(["DONE", "BLOCKED", "FAIL"]);
-		expect(defined(summary.tasks.issue).states.shipped).toEqual([]);
+		// Every state also holds the compiler's own `CLEARED` cell (ADR 0312), which no document declares.
+		expect(defined(summary.tasks.issue).states.queued).toEqual(["WIP", "BLOCKED", CLEARED_EVENT]);
+		expect(defined(summary.tasks.issue).states.review).toEqual([
+			"PASS",
+			"BLOCKED",
+			"FAIL",
+			CLEARED_EVENT,
+		]);
+		expect(defined(summary.tasks.issue).states.ship).toEqual([
+			"DONE",
+			"WIP",
+			"BLOCKED",
+			"FAIL",
+			CLEARED_EVENT,
+		]);
+		expect(defined(summary.tasks.issue).states["ship:queued"]).toEqual([
+			"DONE",
+			"BLOCKED",
+			"WIP",
+			"FAIL",
+			CLEARED_EVENT,
+		]);
+		expect(defined(summary.tasks.issue).states.shipped).toEqual([CLEARED_EVENT]);
 		// `frozen` is a final that carries a door: a park the lane trips on, not an end (ADR 0297).
-		expect(defined(summary.tasks.issue).states.frozen).toEqual(["UNBLOCKED"]);
+		expect(defined(summary.tasks.issue).states.frozen).toEqual(["UNBLOCKED", CLEARED_EVENT]);
 		expect(summary.trigger).toBeUndefined();
 	});
 
@@ -124,6 +180,9 @@ describe("the compiler — structural recognition", () => {
 			type: "queued",
 			retries: 0,
 			maxRetries: 2,
+			cleared: [],
+			waits: 0,
+			maxWaits: WAIT_BUDGET,
 		});
 		expect([...defined(lane.tasks.park_sweep).errorFinals]).toEqual(["frozen"]);
 		expect([...defined(lane.tasks.park_sweep).openFinals]).toEqual(["frozen"]);
@@ -132,8 +191,18 @@ describe("the compiler — structural recognition", () => {
 	it("holds the chore template to the same six events as every other lane", () => {
 		const summary = topology(compiled(choreWorkflow()));
 		const listened = new Set(Object.values(defined(summary.tasks.park_sweep).states).flat());
+		// The clearance is the compiler's cell on every lane, so it is not a seventh event this
+		// document declares — the six a chore template may listen for are unchanged.
+		listened.delete(CLEARED_EVENT);
 
 		for (const event of listened) expect(OPERATOR_EVENTS).toContain(event);
+	});
+
+	it("refuses a document that declares the clearance itself, on any lane", () => {
+		const workflow = twoPhaseWorkflow();
+		stateNode(workflow, "task_a", "doing").on[`TASK_A.${CLEARED_EVENT}`] = "checking";
+
+		expect(defectsOf(workflow)).toContain("never a document's transition");
 	});
 });
 
@@ -206,5 +275,111 @@ describe("the compiler — refusals", () => {
 	it("refuses a document that is not machine-shaped at all", () => {
 		expect(defectsOf(null)).toContain("machine.states");
 		expect(defectsOf({})).toContain("machine.states");
+	});
+});
+
+describe("`ship:queued` — a proven-clean enqueue is a wait, not a park (ADR 0313)", () => {
+	const toShip = ["WIP", "DONE", "PASS"] as const;
+	const reached = ["build", "review", "ship"] as const;
+
+	/** Drive the same events as {@link leaves}, but answer with the task's folded budgets. */
+	const budgets = (lane: CompiledLane, task: string, events: ReadonlyArray<string>) => {
+		const log: LogEntry[] = [];
+		const statesOf = () => {
+			const fold = foldLog(lane, log);
+			if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
+			return fold.states;
+		};
+		for (const event of events) {
+			const applied = applyEvent(lane, statesOf(), task, event, "2026-08-20T00:00:00.000Z");
+			if (applied._tag !== "Applied") throw new Error(`${task} ${event}: ${applied.reason}`);
+			log.push(applied.entry);
+		}
+		return defined(statesOf()[task]);
+	};
+
+	it("takes a still-queued shipper out of `ship` into the wait cell", () => {
+		expect(leaves(compiled(coderWorkflow()), "issue", [...toShip, "WIP"])).toEqual([
+			...reached,
+			"ship:queued",
+		]);
+	});
+
+	it("absorbs the late landing lane 6462 could not record — WIP then DONE folds to `shipped`", () => {
+		expect(leaves(compiled(coderWorkflow()), "issue", [...toShip, "WIP", "DONE"])).toEqual([
+			...reached,
+			"ship:queued",
+			"shipped",
+		]);
+	});
+
+	it("re-enters itself for WAIT_BUDGET re-folds, then escalates to its own human park", () => {
+		const waiting = Array.from({length: WAIT_BUDGET + 2}, () => "WIP");
+
+		expect(leaves(compiled(coderWorkflow()), "issue", [...toShip, ...waiting])).toEqual([
+			...reached,
+			...Array.from({length: WAIT_BUDGET + 1}, () => "ship:queued"),
+			"human:queue-stall",
+		]);
+	});
+
+	// A spent wait carries no park cause — `report.ts` refuses one on any non-BLOCKED event — so
+	// landing it in `human:cp-approval` would key `parks.ts`'s `cause: null` §CP row and clear it by
+	// reading an approval nobody was waiting on. Its own leaf is what makes the sweep read it novel.
+	it("escalates to a park the recipe table reads as novel, never as the §CP row", () => {
+		const stalled = [...toShip, ...Array.from({length: WAIT_BUDGET + 2}, () => "WIP")];
+		const leaf = defined(leaves(compiled(coderWorkflow()), "issue", stalled).at(-1));
+
+		expect(isPark(leaf)).toBe(true);
+		expect(classifyPark(leaf, null)._tag).toBe("Novel");
+		expect(classifyPark("human:cp-approval", null)._tag).toBe("Known");
+	});
+
+	it("lets a human clear the stall back into the wait cell", () => {
+		const stalled = [...toShip, ...Array.from({length: WAIT_BUDGET + 2}, () => "WIP")];
+
+		expect(leaves(compiled(coderWorkflow()), "issue", [...stalled, "UNBLOCKED"]).at(-1)).toBe(
+			"ship:queued",
+		);
+	});
+
+	it("spends `waits`, leaving the repair budget a later FAIL draws on untouched", () => {
+		const waiting = Array.from({length: WAIT_BUDGET + 1}, () => "WIP");
+
+		expect(budgets(compiled(coderWorkflow()), "issue", [...toShip, ...waiting])).toMatchObject({
+			type: "ship:queued",
+			waits: WAIT_BUDGET,
+			retries: 0,
+		});
+	});
+
+	it("routes an ejection out of the wait cell to repair with a full retry budget", () => {
+		const lane = compiled(coderWorkflow());
+		const ejected = [...toShip, "WIP", "FAIL"];
+
+		expect(leaves(lane, "issue", ejected)).toEqual([...reached, "ship:queued", "build"]);
+		expect(budgets(lane, "issue", ejected)).toMatchObject({retries: 1, waits: 0});
+	});
+
+	it("still parks a genuine block out of `ship` on `human:cp-approval` (#5820 untouched)", () => {
+		expect(leaves(compiled(coderWorkflow()), "issue", [...toShip, "BLOCKED"])).toEqual([
+			...reached,
+			"human:cp-approval",
+		]);
+	});
+
+	// Lane 6462's real route out, and the only one ADR 0302 permits: a park is left by a recorded
+	// `UNBLOCKED` and never by a second exit cell, so the landing is recorded from the state the lane
+	// resumes into rather than from inside the park.
+	it("leaves a park over a merged PR by UNBLOCKED, then records the landing", () => {
+		expect(
+			leaves(compiled(coderWorkflow()), "issue", [...toShip, "BLOCKED", "UNBLOCKED", "DONE"]),
+		).toEqual([...reached, "human:cp-approval", "ship", "shipped"]);
+	});
+
+	it("refuses a DONE inside the park rather than opening a second exit from it", () => {
+		expect(() =>
+			leaves(compiled(coderWorkflow()), "issue", [...toShip, "BLOCKED", "DONE"]),
+		).toThrow(/DONE/);
 	});
 });
