@@ -159,7 +159,7 @@ or the search index could not be read
 | `10` | the supplied value is not permitted here — off the closed vocabulary, a non-open milestone, or a slug that is not a kebab-case leaf | — | — | — | — | — | — | ✓ | — | — | ✓ |
 | `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `12` | refused: the issue is human-filed and this is not a `--duplicate-of` fold | — | — | — | — | — | — | — | — | ✓ | — |
-| `13` | refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ | — |
+| `13` | refused: close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ | — |
 | `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — | — |
 | `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — | — |
 | `17` | refused: a live claim marker on the target names a claimant other than the asking lane — another session, or another lane of this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |

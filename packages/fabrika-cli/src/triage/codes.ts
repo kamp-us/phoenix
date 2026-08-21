@@ -97,7 +97,7 @@ export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
  * the other's seat.
  */
 export const HUMAN_FILED = 12;
-/** Refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159). */
+/** Refused: close-eligible, but the kill is unconfirmed (ADR 0159). */
 export const UNCONFIRMED = 13;
 /**
  * Refused: the acceptance-criteria block is drifted in a way no mechanical repair covers.
@@ -228,7 +228,7 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	},
 	{
 		code: UNCONFIRMED,
-		meaning: "refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159)",
+		meaning: "refused: close-eligible, but the kill is unconfirmed (ADR 0159)",
 	},
 	{
 		code: UNREPAIRABLE,
