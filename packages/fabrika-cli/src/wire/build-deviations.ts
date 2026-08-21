@@ -18,6 +18,14 @@
  * the entry grammar, because two readers of the four-field bullet is the disagreement that format
  * exists to remove (#5566).
  *
+ * **One marker per issue.** A repair round re-discloses, and a second comment is not a second
+ * disclosure: `./deviations.ts` refuses two conforming headings as undecidable, so a stacked marker
+ * makes the disclosure unreadable through the very verb the tail review is told to read it with
+ * (#6691). Nothing here can enforce that — this module judges one artifact's bytes and cannot see a
+ * comment timeline — so the rule is held at the write seam by `build deviations`
+ * (`../build/deviations-verb.ts`), which edits the standing marker in place. That verb is the only
+ * sanctioned producer; a hand-rolled `gh issue comment` appends.
+ *
  * The discrimination that carries the weight is **Absent vs Malformed**: bytes with no
  * `build-deviations:` first line are `Absent` — an ordinary comment, not a defective disclosure —
  * while a marker line over a missing or drifted section is `Malformed`, because the marker promised

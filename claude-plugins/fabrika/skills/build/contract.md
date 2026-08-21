@@ -10,6 +10,8 @@
 
 **Amended 2026-08-20** — `build claimants` ([#6837](https://github.com/kamp-us/phoenix/pull/6837), [#6771](https://github.com/kamp-us/phoenix/issues/6771)): every ownership verb in the claim family asks about the *asking* lane, so a driver arriving after a session limit killed its builders could read which lanes stopped but not which numbers those dead lanes left claimed — `confirm` refuses a token of any other session and `claim` would only answer by writing a marker of its own. The verb reads one issue's claim state holding no token, writing nothing and clearing nothing, and `lane stale --claims` runs the same read across a sweep. Its block sits under the existing claim-family heading rather than standing alone, and it adds no code to the shared exit matrix.
 
+**Amended 2026-08-21** — `build deviations` ([#6691](https://github.com/kamp-us/phoenix/issues/6691)): the epic child's disclosure had no verb, so the skill hand-rolled `wire emit` into `gh issue comment`, which appends. A repair round left the child carrying two markers, and `wire read --format build-deviations` refuses two conforming headings as undecidable — so a repaired child stranded its epic's whole tail review. The verb owns the write seam and holds one marker per issue: the standing marker is edited in place, every superseded one is retracted, and the landed comment is read back. No new code — it allocates from the shared matrix.
+
 The verbs land in `packages/fabrika-cli/` under the `build` subcommand group, registered in
 `packages/fabrika-cli/src/registry.ts` like the shipped `adr`, `report`, `triage` and `wire`
 groups. The [CLI interface convention](../../docs/cli-interface-convention.md) governs every verb;
@@ -80,6 +82,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build pr` | open the PR from a stdin body, refusing the known defect shapes, with read-back | mechanical guards over an authored body; *authoring* stays in the skill |
 | `build pr-body` | replace an open PR's body from a stdin body, under `build pr`'s guards, with read-back | the same mechanical guards as `build pr`, over a `PATCH` that moves no ref; *authoring* stays in the skill |
 | `build note` | post a progress/handoff comment, head-stamped, leak-guarded, with read-back | as `report note`, plus the head stamp |
+| `build deviations` | post an epic child's `## Deviations` disclosure as the ONE `build-deviations` marker on its issue, edited in place on every later round | a claim-gated upsert with a read-back, over a section validated by the wire format; *authoring* the disclosure stays in the skill |
 | `build verdicts` | the paginated, per-gate verdict fold: current-head on a PR, range-bound on an epic child | fetch-all + fold via the wire module; *acting on rows* stays in the skill |
 | `build clear` | record the founder's clearance of one extra repair round on a PR | a conjunctive ACL/authorization protocol with read-back; *whether to grant* is the founder's, never the verb's |
 
@@ -111,8 +114,9 @@ Every verb obeys these; stated once.
   construction: no verb caches content across invocations; every invocation re-fetches and
   re-gates, so a gate change is in force on the next read.
 - **Isolation preconditions are guarded identically wherever they apply.** `branch`, `commit`,
-  `check`, `push`, `pr` and `pr-body` run the same tree assertions `tree` runs, with the same codes (`note` runs only
-  the posting guards — a stop-report must remain postable from a refused tree) — a sibling that
+  `check`, `push`, `pr` and `pr-body` run the same tree assertions `tree` runs, with the same codes (`note` and
+  `deviations` run only the posting guards — a stop-report must remain postable from a refused tree, and so
+  must the disclosure a repair round owes) — a sibling that
   took the same ground unguarded would be the split this table exists to prevent.
   Their refusal messages are `tree`'s rows with the verb-name prefix substituted; **every error
   message contract-wide is prefixed with the invoked verb's name**, stated once here.
@@ -2292,6 +2296,120 @@ EOF
 
 ---
 
+## `build deviations`
+
+**Invocation**
+
+```
+fabrika build deviations 6566 --token <token> [--repo <owner/name>] <<'EOF'
+## Deviations
+
+None.
+EOF
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `<issue>` | positional integer | yes | — | the epic child the disclosure is for, and the issue the marker sits on. A pull request is `10`: a PR discloses in its body, which is `build pr` / `build pr-body` |
+| `--repo` | string | no | the `origin` remote's `owner/name` | the repository written to |
+| `--token` | string | yes | — | the token `build claim` handed this lane — which lane is asking (#6037). Not a claim token, or one carrying another session id, is `1` |
+| stdin | text | yes | — | the `## Deviations` section, read through the `deviations` wire format before anything is written |
+
+**Output** — machine.
+`{"answer": "posted", "issue": 6566, "commentId": 900, "upsert": "created", "retracted": 0, "url": "https://github.com/o/r/issues/6566#issuecomment-900"}`.
+`upsert` is `"created"` when the child carried no standing marker and `"edited"` when one was
+PATCHed in place; `retracted` counts the superseded markers deleted behind it.
+
+**One marker per issue is this verb's invariant** (#6691, [ADR 0285](../../../../.decisions/0285-epic-machine-ends-in-review.md)).
+An epic child opens no PR, so its disclosure is a `build-deviations` marker comment; the tail review
+reads every child's through `fabrika wire read --format build-deviations`, and that reader refuses
+two conforming `## Deviations` headings as undecidable. The rule is held **at this write seam and
+not in the reader** — the reader judges bytes on stdin and cannot see which comment is newer, so a
+"newest wins" rule there would have it guess at a genuinely ambiguous body. So the verb edits the
+standing marker rather than appending, and retracts every superseded marker of this account's that
+the format reads as *this* issue's disclosure — the second half is what makes the invariant hold on
+a child a pre-fix lane already stacked.
+
+Guards, in order: stdin non-empty (`3`), bare-`@` body (`6`), the section readable through the
+`deviations` format (`4`), target is an open issue and not a PR (`7`/`10`), caller token parses
+(`1`), claim held (`15`/`11`), leak predicates over the composed comment (`5`), the authenticated
+user and the comment list both readable (`11`), write (`8`), read-back (`9`), retraction (`8`).
+
+The marker line is composed from the positional and never taken from stdin, so a disclosure cannot
+name an issue other than the one it sits on. Read-back is a re-fetch of the landed comment asserted
+twice — through `build-deviations.read`, the contract a tail reviewer runs, and byte-for-byte
+against the composed bytes through `normalizeForReadback`. Retraction runs **after** the live
+comment reads back, so a write that then fails can never destroy the standing disclosure.
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `3` | stdin held nothing |
+| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format — absent, empty, a drifted heading, or an entry short a field |
+| `5` | the composed comment carries a machine-local path |
+| `6` | the disclosure is a bare `@` path reference |
+| `7` | the issue is proven absent or closed |
+| `8` | the write failed, or the disclosure landed and a superseded marker could not be retracted — UNKNOWN either way |
+| `9` | the comment landed but the read-back does not yield this disclosure |
+| `10` | the number is a pull request, which discloses in its body |
+| `11` | a precondition read failed — the issue, the authenticated user, or the comment list |
+| `15` | proven: this lane does not hold the claim on the issue |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `build deviations: stdin held nothing — an absent disclosure reads as "never considered it"; send the "## Deviations" section, or "None." under its heading.` | 3 | refusal |
+| `build deviations: the disclosure carries no "## Deviations" heading — <the wire format's reason>.` | 4 | refusal |
+| `build deviations: the disclosure is malformed — <reason> (<evidence>).` | 4 | refusal |
+| `build deviations: the body carries a machine-local path: <first hit> — redact before posting.` | 5 | refusal |
+| `build deviations: the disclosure is a bare @ path reference — write the section, not a pointer to it.` | 6 | refusal |
+| `build deviations: #<n> is proven absent or closed — nothing to disclose on.` | 7 | refusal |
+| `build deviations: the write failed: <reason> — UNKNOWN whether the disclosure landed; re-read #<n> before retrying.` | 8 | refusal |
+| `build deviations: the disclosure landed on comment <id>, but <k> superseded marker(s) could not be retracted (<ids>) — #<n> still carries more than one, so \`fabrika wire read --format build-deviations\` reads it as malformed; delete them and re-run.` | 8 | refusal |
+| `build deviations: posted (comment <id>) but the read-back does not yield this disclosure (<why>) — it needs a human eye.` | 9 | refusal |
+| `build deviations: #<n> is a pull request — a PR discloses in its body, and this marker is the epic child's surface (ADR 0285). Use \`fabrika build pr\` or \`fabrika build pr-body\`.` | 10 | refusal |
+| `build deviations: cannot read #<n>: <reason> — nothing was written.` | 11 | refusal |
+| `build deviations: cannot read #<n>'s comments: <reason> — nothing was written; a partial list would stack a second marker.` | 11 | refusal |
+| `build deviations: cannot read the authenticated user: <reason> — nothing was written.` | 11 | refusal |
+| `build deviations: #<n> is held by <winning token>, not by <caller token>.` | 15 | refusal |
+
+**Scope** — one issue's marker, written by one claim-holding lane. It runs the posting guards only,
+never the tree assertions: a child's disclosure is composed from the branch's work but the comment
+is not a git write, and gating it on the tree would strand a disclosure a repair round owes. It
+never touches a PR body, never posts a second comment, and deletes nothing but a superseded marker
+of this account's that reads as this same issue's disclosure.
+
+**Example**
+
+```
+$ fabrika build deviations 6566 --token <token> <<'EOF'
+## Deviations
+
+- **Scope narrowing** — **Said:** #6566 names the ledger row and its header. **Did:** wrote the
+  row only. **Why:** the header is another child's file. **Disposition:** stated here.
+EOF
+{"answer":"posted","issue":6566,"commentId":900,"upsert":"edited","retracted":1,"url":"https://github.com/o/r/issues/6566#issuecomment-900"}
+```
+
+**Grounding**
+
+- #6691 — a repair round's second marker made the disclosure unreadable through `wire read`, and
+  stranded the tail review of epic #5843 on children #6566 and #6567.
+- [ADR 0285](../../../../.decisions/0285-epic-machine-ends-in-review.md) — an epic child opens no
+  PR, which is why the disclosure surface is a comment at all.
+- [ADR 0228](../../../../.decisions/0228-scripts-relay-never-derive.md) — the skill's hand-rolled
+  `gh issue comment` is the glue a verb is supposed to own.
+- `packages/fabrika-cli/src/review/post-verb.ts` — the upsert spine this verb mirrors: viewer,
+  list, edit-or-create, read back. It keys on the head because a verdict is head-bound; a
+  disclosure carries no head, so this verb keys on the issue.
+- #3173 — a write call's own echo is not evidence; the read-back is a re-fetch.
+
+---
+
 ## `build verdicts`
 
 **Invocation**
@@ -2556,5 +2674,5 @@ script, another skill's prose, or the authoring session. The three hand-checks t
 lineage demands: every reachable outcome above was walked against its verb's failure modes; every
 example value is derivable from its verb's stated rules (the nonce from the claim token, the
 verdict line from the protocol); and sibling verbs guard shared preconditions identically
-(`branch`/`commit`/`check`/`push` run `tree`'s assertions; `pr`/`pr-body`/`note` run the same posting guards on
+(`branch`/`commit`/`check`/`push` run `tree`'s assertions; `pr`/`pr-body`/`note`/`deviations` run the same posting guards on
 the same codes, and `commit` runs the same authored-text guards on `3`/`5`/`6`).

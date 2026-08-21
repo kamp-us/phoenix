@@ -235,9 +235,12 @@ A child re-entering \`build\` after a \`FAIL\` is a repair, not a second build: 
 the fresh claim naming that FAIL, and the route it points at takes over the branch the prior lane
 built on rather than cutting another (#6386).
 A child's build discloses its deviations — the section a PR body would carry — as a
-\`build-deviations\` marker comment on the child issue, composed through
-\`node <fabrika> wire emit --format build-deviations\`; the epic-tail review
-reads them from there (#5903).
+\`build-deviations\` marker comment on the child issue, posted through
+\`node <fabrika> build deviations <child> --token <claim-token>\` with the
+\`## Deviations\` section on stdin; the epic-tail review reads them from there (#5903).
+That verb is the only sanctioned way this marker is posted: it edits the standing
+marker in place, so a repair round re-discloses without stacking a second comment the
+reader would refuse as undecidable (#6691).
 A child's review judges the \`range\` above and records its verdict on the child issue in the
 \`range-verdict-marker\` format, composed through
 \`node <fabrika> wire emit --format range-verdict-marker\`.`;

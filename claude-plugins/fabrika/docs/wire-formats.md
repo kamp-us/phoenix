@@ -107,6 +107,16 @@ not a disclosure — and the Absent/Malformed split for comments: an ordinary co
 while a marker line whose promised section is missing or drifted is `Malformed`, so a tail reviewer
 cannot mistake a broken disclosure for a child with nothing to say.
 
+**One marker per issue, and the producer is what enforces it.** A child that takes a repair round
+discloses again, and a second comment is not a second disclosure — the `deviations` reader counts
+the conforming `## Deviations` headings and refuses two as undecidable, so a stacked marker leaves
+the tail review reading `malformed` where a human reads two comments fine, and UNKNOWN blocks a PASS
+(#6691). The reader keeps that refusal: `wire read` judges bytes on stdin and cannot see which
+comment is newer, so a "newest wins" rule there would have it guess at a genuinely ambiguous body.
+The rule is therefore held at the write seam — `fabrika build deviations <issue>` edits the standing
+marker in place and retracts any superseded one, and it is the only sanctioned way this marker is
+posted. A raw `gh issue comment` appends, which is the shape that produced the bug.
+
 ### `verdict-marker`
 
 This is the first line of a gate's verdict comment on a PR, and the artifact the merge decision
