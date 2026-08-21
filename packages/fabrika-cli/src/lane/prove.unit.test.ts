@@ -256,7 +256,7 @@ describe("judgeVerdicts", () => {
 });
 
 describe("foldNamespaces", () => {
-	const row = (namespace: string, state: "pass" | "fail" | "absent") => ({
+	const row = (namespace: string, state: "pass" | "fail" | "absent" | "routed" | "stale") => ({
 		namespace,
 		state,
 		commentId: null,
@@ -283,5 +283,17 @@ describe("foldNamespaces", () => {
 		);
 		expect(proof._tag).toBe("Contradicted");
 		expect(proof._tag === "Contradicted" && proof.what).toContain("review-code");
+	});
+
+	it("satisfies a routed namespace beside a pass — a route is an answer, not an absence", () => {
+		const proof = foldNamespaces([row("review-code", "pass"), row("review-ui", "routed")], "#4318");
+		expect(proof._tag).toBe("Proven");
+		expect(proof._tag === "Proven" && proof.note).toContain("review-ui (routed)");
+	});
+
+	it("holds a route the head has moved past — it rows stale, and stale is not an answer", () => {
+		const proof = foldNamespaces([row("review-code", "pass"), row("review-ui", "stale")], "#4318");
+		expect(proof._tag).toBe("InFlight");
+		expect(proof._tag === "InFlight" && proof.what).toContain("review-ui (stale)");
 	});
 });

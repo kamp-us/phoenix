@@ -4,7 +4,9 @@
  * The answer is the operator's status shape: compound `stateValue` (active phase → per-task leaf,
  * future phases `"waiting"`), `status` active/done, and per-task `{retries, maxRetries, …extras}`
  * context with the tripped tasks in `errors`. A task whose latest event named a park cause carries
- * it as `context.<task>.cause` — the key `recipe unpark` seats a park against (#6480).
+ * it as `context.<task>.cause` — the key `recipe unpark` seats a park against (#6480) — and a task
+ * with lane classes standing carries them as `context.<task>.classes`, which is what a driver
+ * relays onto the next event's `--class` (ADR 0317).
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import {answer, type VerbOutcome} from "../verb.ts";

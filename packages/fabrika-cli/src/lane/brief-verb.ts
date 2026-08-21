@@ -32,6 +32,8 @@ import {
 	emit as emitBrief,
 	epicBranch,
 	fabrikaEntry,
+	isBuildState,
+	isReviewState,
 	type LaneBrief,
 	type LaneGround,
 	lanesRoot,
@@ -161,7 +163,7 @@ const childGround = (
 ): Effect.Effect<GroundRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const branch = epicBranch(epic);
-		if (state !== "review") {
+		if (!isReviewState(state)) {
 			return {_tag: "Ground", ground: {_tag: "Epic", epic: epicUrl, branch}, notes: []} as const;
 		}
 		const located = yield* locateRange(VERB, epic, issue);
@@ -305,7 +307,7 @@ export const runBrief = (
 				[...notes, `${VERB}: candidates: ${pulls.value.map((p) => `#${p.number}`).join(", ")}.`],
 			);
 		}
-		if (only === undefined && state !== "build") {
+		if (only === undefined && !isBuildState(state)) {
 			return refuse(
 				PR_AMBIGUOUS,
 				`${VERB}: no open PR declares it closes #${issue}, and a "${state}" shell has nothing to read without one.`,
@@ -325,7 +327,7 @@ export const runBrief = (
 		// above): the ground carries the epic too, so the tail review's brief names where each
 		// child's `build-deviations` disclosure lives (#5903).
 		const ground: LaneGround =
-			epic !== null && prUrl !== null && state !== "build"
+			epic !== null && prUrl !== null && !isBuildState(state)
 				? {_tag: "Tail", pr: prUrl, epic: read.url}
 				: {_tag: "Pull", pr: prUrl};
 		const brief: LaneBrief = {

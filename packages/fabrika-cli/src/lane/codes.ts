@@ -258,3 +258,15 @@ export const RESUME_UNBUDGETED = 36;
  * sweep picks (ADR 0313).
  */
 export const MIGRATION_UNSAFE = 37;
+
+/**
+ * A `--class` handed to `lane report` or `lane transition` is outside the closed set the review
+ * classes name — refused with the log unappended.
+ *
+ * Its own seat rather than {@link CAUSE_UNRECOGNISED}'s: a cause is dropped and the same event is
+ * recorded, while an unknown class is a routing miss — `--class UI` matched no `class:<name>` arm
+ * and fell through to the unclassed target with nothing said, so the lane built as a plain lane and
+ * the rendered-visual verdict it owed was never asked for (ADR 0317). The remedy is respelling the
+ * class, and the event must not land until it is.
+ */
+export const CLASS_UNRECOGNISED = 38;

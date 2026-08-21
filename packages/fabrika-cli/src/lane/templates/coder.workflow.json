@@ -5,7 +5,7 @@
 		"id": "coder",
 		"initial": "pipeline",
 		"context": {
-			"issue": { "retries": 0, "maxRetries": 2 }
+			"issue": { "retries": 0, "maxRetries": 2, "classes": [] }
 		},
 		"states": {
 			"pipeline": {
@@ -16,7 +16,10 @@
 						"states": {
 							"queued": {
 								"on": {
-									"ISSUE.WIP": "build",
+									"ISSUE.WIP": [
+										{ "target": "build:ui", "guard": "class:ui" },
+										{ "target": "build" }
+									],
 									"ISSUE.BLOCKED": "blocked"
 								}
 							},
@@ -26,13 +29,36 @@
 									"ISSUE.BLOCKED": "blocked"
 								}
 							},
+							"build:ui": {
+								"on": {
+									"ISSUE.DONE": "review",
+									"ISSUE.BLOCKED": "blocked"
+								}
+							},
 							"review": {
+								"on": {
+									"ISSUE.PASS": [
+										{ "target": "review:ui", "guard": "class:ui" },
+										{ "target": "ship" }
+									],
+									"ISSUE.BLOCKED": "blocked",
+									"ISSUE.FAIL": [
+										{
+											"target": "build",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{ "target": "frozen" }
+									]
+								}
+							},
+							"review:ui": {
 								"on": {
 									"ISSUE.PASS": "ship",
 									"ISSUE.BLOCKED": "blocked",
 									"ISSUE.FAIL": [
 										{
-											"target": "build",
+											"target": "build:ui",
 											"guard": "retriesRemaining",
 											"actions": "incrementRetries"
 										},
@@ -47,7 +73,7 @@
 									"ISSUE.BLOCKED": "human:cp-approval",
 									"ISSUE.FAIL": [
 										{
-											"target": "build",
+											"target": "review",
 											"guard": "retriesRemaining",
 											"actions": "incrementRetries"
 										},

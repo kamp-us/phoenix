@@ -22,6 +22,7 @@ import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	APPEND_UNKNOWN,
 	CAUSE_UNRECOGNISED,
+	CLASS_UNRECOGNISED,
 	EVENT_REFUSED,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
@@ -29,7 +30,7 @@ import {
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
 import type {ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
-import {causeForEvent, eventForToken} from "./report.ts";
+import {causeForEvent, classesForEvent, eventForToken} from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane report";
@@ -46,6 +47,8 @@ export interface ReportOptions extends LaneRef {
 	readonly comment: string | null;
 	/** Why the lane parked, from the closed set in [`report.ts`](report.ts); `BLOCKED` only. */
 	readonly cause: string | null;
+	/** The lane classes standing at this event, relayed onto the event line (ADR 0317). */
+	readonly classes: ReadonlyArray<string>;
 	/** The target repo the proof reads against, resolved exactly as `lane prove` resolves it. */
 	readonly repo: string | null;
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in, not the ledger root. */
@@ -66,6 +69,10 @@ export const runReport = <R>(
 		if (caused._tag === "Rejected") {
 			return refuse(CAUSE_UNRECOGNISED, `${VERB}: refused (log unappended): ${caused.reason}.`);
 		}
+		const classed = classesForEvent(options.classes);
+		if (classed._tag === "Rejected") {
+			return refuse(CLASS_UNRECOGNISED, `${VERB}: refused (log unappended): ${classed.reason}.`);
+		}
 		const loaded = yield* loadLane(options);
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
 		const task = resolveTask(loaded.lane, options.task);
@@ -76,7 +83,14 @@ export const runReport = <R>(
 		if (fold._tag !== "Folded") return replayRefusal(VERB, loaded.logPath, fold);
 
 		const at = yield* Effect.sync(() => new Date().toISOString());
-		const applied = applyEvent(loaded.lane, fold.states, task.taskId, resolved.event, at);
+		const applied = applyEvent(
+			loaded.lane,
+			fold.states,
+			task.taskId,
+			resolved.event,
+			at,
+			classed.classes,
+		);
 		if (applied._tag === "Refused") {
 			return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${applied.reason}`);
 		}

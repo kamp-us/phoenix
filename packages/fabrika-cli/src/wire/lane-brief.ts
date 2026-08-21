@@ -112,21 +112,45 @@ export const epicBranch = (epic: number): GitRef => `epic/${epic}` as GitRef;
  */
 export type ReviewRange = CommitRange<HeadSha>;
 
-/** The three leaf states that route to a shell. Every other state is a refusal, never a guess. */
-export const SHELL_STATES = ["build", "review", "ship"] as const;
+/**
+ * The five leaf states that route to a shell. Every other state is a refusal, never a guess.
+ *
+ * A UI-class lane runs its construction and its rendered review in shells of their own (ADR 0317),
+ * and the state name is what carries the class — the routing stays a 1:1 state → shell map rather
+ * than a diff a brief would have to read, which a `build` state has no PR to read anyway.
+ */
+export const SHELL_STATES = ["build", "build:ui", "review", "review:ui", "ship"] as const;
 
 export type ShellState = (typeof SHELL_STATES)[number];
 
-export type LaneShell = "builder" | "reviewer" | "shipper";
+export type LaneShell = "builder" | "ui-builder" | "reviewer" | "ui-reviewer" | "shipper";
 
+// The two UI shells are named for the actor, not the skill they preload: `build-ui` / `review-ui`
+// are the SKILL names, and an agent whose `name:` is the bare spelling of its skill is the ADR 0281
+// violation #6684's repair removed. `claude-plugins/fabrika/agents/` is authoritative here.
 const SHELLS: Readonly<Record<ShellState, LaneShell>> = {
 	build: "builder",
+	"build:ui": "ui-builder",
 	review: "reviewer",
+	"review:ui": "ui-reviewer",
 	ship: "shipper",
 };
 
 /** The state → shell table, total over the states that route — owned here, not in the verb. */
 export const shellOf = (state: ShellState): LaneShell => SHELLS[state];
+
+/**
+ * Whether a state constructs, and whether it judges — the two questions the ground rules ask.
+ *
+ * They ask about the *round*, not the shell: a `build:ui` brief carries no PR for the same reason a
+ * `build` one does not, and a `review:ui` child brief needs the same resolved range a `review` one
+ * does. Written as predicates so a sixth state cannot answer one of the two by accident.
+ */
+export const isBuildState = (state: ShellState): boolean =>
+	state === "build" || state === "build:ui";
+
+export const isReviewState = (state: ShellState): boolean =>
+	state === "review" || state === "review:ui";
 
 /**
  * A leaf state, only if it routes to a shell.
@@ -403,7 +427,7 @@ const groundOf = (fields: ReadonlyMap<string, string>, state: ShellState): Groun
 		if (pr === null && prRaw !== "") return bad(`"${prRaw}" is not a PR URL`, "pr");
 		// A reviewer or shipper with no PR has nothing to judge or merge, so the brief that would send
 		// one is not a well-formed brief — the ambiguity is the driver's to resolve before dispatch.
-		if (pr === null && state !== "build") {
+		if (pr === null && !isBuildState(state)) {
 			return bad(`a "${state}" brief carries no PR URL — that shell has nothing to read`, "pr");
 		}
 		return {_tag: "Ground", ground: {_tag: "Pull", pr}};
@@ -422,7 +446,7 @@ const groundOf = (fields: ReadonlyMap<string, string>, state: ShellState): Groun
 				"pr",
 			);
 		}
-		if (state === "build") {
+		if (isBuildState(state)) {
 			return bad(
 				"an epic tail briefs review or ship — construction happens in the children",
 				"state",
@@ -441,7 +465,7 @@ const groundOf = (fields: ReadonlyMap<string, string>, state: ShellState): Groun
 	if (state === "ship") {
 		return bad("a child state never ships — an epic run merges once, at its tail", "state");
 	}
-	if (state !== "review") {
+	if (!isReviewState(state)) {
 		return rangeRaw === ""
 			? {_tag: "Ground", ground: {_tag: "Epic", epic, branch}}
 			: bad(`a "${state}" brief names a range, and nothing has landed for one to judge`, "range");
