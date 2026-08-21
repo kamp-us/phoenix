@@ -147,6 +147,77 @@ describe("account.delete — anonymize-to-@[silinen]", () => {
 		}
 	});
 
+	it("sweeps the leaving account's mutes, subscriptions and çaylak-visibility preference", async () => {
+		const leaver = await h.signUp(`${NS}-leaver@test.local`, "hunter2hunter2", "Leaver");
+		const peer = await h.signUp(`${NS}-peer@test.local`, "hunter2hunter2", "Peer");
+		const bystander = await h.signUp(`${NS}-bystander@test.local`, "hunter2hunter2", "Bystander");
+		const nowSeconds = Math.floor(Date.now() / 1000);
+
+		// Seeded off the binding rather than through `mute.set` / `mecmua.subscribe` /
+		// `caylakVisibility.optIn`: each of those is behind a flag or an earned-level gate,
+		// none of which this test is about. Setup-only, the sanctioned `execD1` use.
+		const mute = (muterId: string, mutedId: string) =>
+			h.execD1("INSERT INTO user_mute (muter_id, muted_id, created_at) VALUES (?, ?, ?)", [
+				muterId,
+				mutedId,
+				nowSeconds,
+			]);
+		const subscribe = (subscriberId: string, authorId: string) =>
+			h.execD1(
+				"INSERT INTO mecmua_subscription (author_id, subscriber_id, created_at) VALUES (?, ?, ?)",
+				[authorId, subscriberId, nowSeconds],
+			);
+
+		await mute(leaver.userId, peer.userId);
+		await mute(peer.userId, leaver.userId);
+		await subscribe(leaver.userId, peer.userId);
+		await subscribe(peer.userId, leaver.userId);
+		await h.execD1("INSERT INTO caylak_visibility_preference (user_id, set_at) VALUES (?, ?)", [
+			leaver.userId,
+			nowSeconds,
+		]);
+		// The control edge: it touches neither side of the leaving account, so the sweep's
+		// `where` must leave it standing.
+		await mute(peer.userId, bystander.userId);
+
+		const del = await h.fate(
+			{
+				kind: "mutation",
+				name: "account.delete",
+				input: {confirmation: CONFIRMATION},
+				select: ["deleted"],
+			},
+			{cookie: leaver.cookie, retry: true},
+		);
+		expect(del.ok).toBe(true);
+
+		// Both columns of each two-sided edge, so one predicate per table covers both
+		// directions the account could sit in.
+		const mutesLeft = await h.countD1(
+			"SELECT 1 FROM user_mute WHERE muter_id = ? OR muted_id = ?",
+			[leaver.userId, leaver.userId],
+		);
+		expect(mutesLeft).toBe(0);
+
+		const subscriptionsLeft = await h.countD1(
+			"SELECT 1 FROM mecmua_subscription WHERE subscriber_id = ? OR author_id = ?",
+			[leaver.userId, leaver.userId],
+		);
+		expect(subscriptionsLeft).toBe(0);
+
+		const preferencesLeft = await h.countD1(
+			"SELECT 1 FROM caylak_visibility_preference WHERE user_id = ?",
+			[leaver.userId],
+		);
+		expect(preferencesLeft).toBe(0);
+
+		const controlLeft = await h.countD1(
+			"SELECT 1 FROM user_mute WHERE muter_id = ? AND muted_id = ?",
+			[peer.userId, bystander.userId],
+		);
+		expect(controlLeft).toBe(1);
+	});
+
 	it("the @[silinen] sentinel is seeded and resolvable as a real profile", async () => {
 		const res = await h.fate({
 			kind: "query",

@@ -1264,6 +1264,25 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
 	const dropAccounts = db.delete(schema.account).where(eq(schema.account.userId, userId));
 	const dropApikeys = db.delete(schema.apikey).where(eq(schema.apikey.referenceId, userId));
 
+	// Both columns of each two-sided edge, not just the leaving user's own side: an edge is
+	// dead whichever end of it left (ADR 0097 amendment / #6446).
+	const dropMutes = db
+		.delete(schema.userMute)
+		.where(or(eq(schema.userMute.muterId, userId), eq(schema.userMute.mutedId, userId)));
+
+	const dropSubscriptions = db
+		.delete(schema.mecmuaSubscription)
+		.where(
+			or(
+				eq(schema.mecmuaSubscription.subscriberId, userId),
+				eq(schema.mecmuaSubscription.authorId, userId),
+			),
+		);
+
+	const dropCaylakVisibility = db
+		.delete(schema.caylakVisibilityPreference)
+		.where(eq(schema.caylakVisibilityPreference.userId, userId));
+
 	const scrubUser = db
 		.update(schema.user)
 		.set({name: null, email: "", image: null, deletedAt: now, updatedAt: now})
@@ -1281,6 +1300,9 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
 		dropSessions,
 		dropAccounts,
 		dropApikeys,
+		dropMutes,
+		dropSubscriptions,
+		dropCaylakVisibility,
 		scrubUser,
 	] as const;
 }
