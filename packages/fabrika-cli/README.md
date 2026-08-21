@@ -198,6 +198,7 @@ Contract: [`skills/build/contract.md`](../../claude-plugins/fabrika/skills/build
 | `build pick` | the ranked candidate pool, with every excluded issue under the axis that refused it |
 | `build eligible` | whether one issue's dependency gate is open |
 | `build claim` / `confirm` / `release` / `adopt` | the lane's claim on an issue: race it, re-prove it, retract it, or take a dead session's |
+| `build claimants` | who holds an issue's claim, read by a caller holding none — no token, no write, no clearance |
 | `build issue` | the claimed issue's body and its criteria — `found` / `absent` / `malformed`, all on exit 0 |
 | `build branch` / `scratch` | the lane's branch off a fresh base, and its scratch directory |
 | `build commit` / `push` | the commit whose message is proven this lane's, and the push whose ref is proven moved |
@@ -576,7 +577,7 @@ snapshot. Lane state is local and never committed.
 | `lane open` / `emit` | boot a lane from a committed template, or generate an epic's machine from its board topology |
 | `lane brief` | the spawn prompt for one task's current leaf state |
 | `lane assembly` / `push` | an epic run's assembly worktree, and its published branch |
-| `lane stale` | which lanes have gone quiet with something owed on them |
+| `lane stale` | which lanes have gone quiet with something owed on them — offline, or `--claims` to pair each non-terminal lane with the claim standing on its issue |
 | `lane claim` / `release` | who is driving this lane |
 
 **Exit codes.** `4` the lane read in full and is not the shape · `7` the lane is absent · `8` the

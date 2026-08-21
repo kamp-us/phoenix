@@ -350,6 +350,8 @@ const open = leafCommand(
 							roots,
 							olderThanMinutes: DEFAULT_STALE_MINUTES,
 							now: new Date().toISOString(),
+							// The front door renders on a cold start and must not wait on the board for it.
+							claims: null,
 						}),
 						roots,
 						asOf,

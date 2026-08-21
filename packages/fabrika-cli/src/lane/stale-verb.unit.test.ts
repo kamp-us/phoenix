@@ -1,6 +1,7 @@
 /** `lane stale` — the sweep across lanes, its per-lane rows, and the one thing it refuses. */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import type {Claimants} from "../build/claim.ts";
 import {type FakeFsOptions, fakeFs} from "../fakes.test-support.ts";
 import {LANE_UNREADABLE} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
@@ -40,6 +41,13 @@ const tree = (lanes: ReadonlyArray<LaneFixture>, extra: FakeFsOptions = {}) => {
 	});
 };
 
+/**
+ * The default sweep, run with the filesystem as its ONLY provided service.
+ *
+ * That is the offline claim, stated where a test can red it: the claim reader is the verb's one
+ * network seam, `null` removes it, and a run that reached the board here would want a service this
+ * environment does not carry.
+ */
 const sweep = (
 	fs: ReturnType<typeof fakeFs>,
 	options: {roots?: ReadonlyArray<string>; olderThanMinutes?: number; now?: string} = {},
@@ -50,10 +58,47 @@ const sweep = (
 				roots: options.roots ?? [DEFAULT_LANES_ROOT],
 				olderThanMinutes: options.olderThanMinutes ?? 60,
 				now: options.now ?? NOW,
+				claims: null,
 			}),
 			fs.layer,
 		),
 	);
+
+/** The same sweep with a scripted board reader, and the log of every number it was asked about. */
+const sweepWithClaims = (
+	fs: ReturnType<typeof fakeFs>,
+	claimants: (number: number) => Claimants,
+	options: {roots?: ReadonlyArray<string>} = {},
+) => {
+	const asked: Array<number> = [];
+	return Effect.runPromise(
+		Effect.provide(
+			runStale({
+				roots: options.roots ?? [DEFAULT_LANES_ROOT],
+				olderThanMinutes: 60,
+				now: NOW,
+				claims: (number) =>
+					Effect.sync(() => {
+						asked.push(number);
+						return claimants(number);
+					}),
+			}),
+			fs.layer,
+		),
+	).then((out) => ({out, asked}));
+};
+
+const HOLDER = {
+	commentId: 9001,
+	author: "agent",
+	createdAt: minutesAgo(80),
+	token: "build:s-dead:c1a4d6f8-1111-2222-3333-444455556666",
+	session: "s-dead",
+	authorized: true,
+} as const;
+
+const held: Claimants = {_tag: "Read", claimants: [HOLDER], adopts: [], holder: HOLDER};
+const unclaimed: Claimants = {_tag: "Read", claimants: [], adopts: [], holder: null};
 
 describe("lane stale", () => {
 	it("reports a driven lane silent past the threshold as stale, with its state and age", async () => {
@@ -219,5 +264,76 @@ describe("lane stale", () => {
 
 		expect(out.code).toBe(1);
 		expect(out.stdout).toBe("");
+	});
+
+	describe("--claims", () => {
+		it("reads no board at all by default — no row carries a claim, and the summary says unasked", async () => {
+			const out = await sweep(tree([{lane: "6669", log: line("WIP", minutesAgo(90))}]));
+			const answer = JSON.parse(out.stdout);
+
+			expect(answer.claims).toBeNull();
+			expect(answer.lanes[0]).not.toHaveProperty("claims");
+		});
+
+		it("pairs a stale lane with the claim its dead builder left on the issue", async () => {
+			const {out, asked} = await sweepWithClaims(
+				tree([{lane: "6669", log: line("WIP", minutesAgo(90))}]),
+				() => held,
+			);
+			const answer = JSON.parse(out.stdout);
+
+			expect(asked).toEqual([6669]);
+			expect(answer.lanes[0].claims).toEqual({
+				state: "held",
+				token: HOLDER.token,
+				session: "s-dead",
+				author: "agent",
+				commentId: 9001,
+			});
+			expect(answer.claims).toEqual({paired: 1, held: 1, unclaimed: 0, unknown: 0});
+			expect(out.stderr.join("\n")).toContain(`6669 (${HOLDER.token})`);
+		});
+
+		it("answers unknown on a board read that failed, never unclaimed", async () => {
+			const {out} = await sweepWithClaims(
+				tree([{lane: "6670", log: line("WIP", minutesAgo(90))}]),
+				() => ({_tag: "Unknown", reason: "GitHub answered 502"}),
+			);
+			const answer = JSON.parse(out.stdout);
+
+			expect(answer.lanes[0].claims).toEqual({
+				state: "unknown",
+				reason: "GitHub answered 502",
+			});
+			expect(answer.claims).toMatchObject({unknown: 1, unclaimed: 0});
+			expect(out.stderr.join("\n")).toContain('UNKNOWN, never "unclaimed"');
+		});
+
+		it("asks about neither a terminal lane nor a chore lane — one drives no work, the other no issue", async () => {
+			const done =
+				line("WIP", minutesAgo(300)) +
+				line("DONE", minutesAgo(290)) +
+				line("PASS", minutesAgo(280)) +
+				line("DONE", minutesAgo(270));
+			const {out, asked} = await sweepWithClaims(
+				tree([
+					{lane: "6671", log: done},
+					{lane: "6672", log: line("WIP", minutesAgo(90))},
+					{root: DEFAULT_CHORES_ROOT, lane: "sweep", log: line("WIP", minutesAgo(90))},
+				]),
+				() => unclaimed,
+				{roots: [DEFAULT_LANES_ROOT, DEFAULT_CHORES_ROOT]},
+			);
+			const answer = JSON.parse(out.stdout);
+			const rows = Object.fromEntries(
+				answer.lanes.map((row: {key: string; claims?: unknown}) => [row.key, row.claims]),
+			);
+
+			expect(asked).toEqual([6672]);
+			expect(rows["6671"]).toBeUndefined();
+			expect(rows["chore:sweep"]).toBeUndefined();
+			expect(rows["6672"]).toEqual({state: "unclaimed"});
+			expect(answer.claims).toEqual({paired: 1, held: 0, unclaimed: 1, unknown: 0});
+		});
 	});
 });
