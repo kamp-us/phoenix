@@ -182,6 +182,7 @@ describe("traceRange", () => {
 		base: "664eb9d",
 		tip: "03135b9",
 		messages: [commit(5829)],
+		contains: [],
 	};
 
 	it("traces the one branch whose commits name the child, and counts them", () => {
@@ -224,14 +225,76 @@ describe("traceRange", () => {
 		expect(foreign._tag === "None" && foreign.why).toContain("names #5829");
 	});
 
-	it("keeps several carrying branches as their own answer rather than picking one", () => {
+	it("keeps a genuine fork as its own answer rather than picking one", () => {
 		const traced = traceRange(5829, "epic/5800", [
 			carrying,
-			{...carrying, branch: "build/5829-second-try-deadbeef"},
+			{...carrying, branch: "build/5829-second-try-deadbeef", tip: "9b51636"},
 		]);
 		expect(traced).toEqual({
 			_tag: "Many",
 			branches: [carrying.branch, "build/5829-second-try-deadbeef"],
+		});
+	});
+
+	it("resolves a repair round's superseding branch to the range it strictly contains", () => {
+		const repaired = {
+			...carrying,
+			branch: "build/5829-second-try-deadbeef",
+			tip: "a1068c0",
+			messages: [commit(5829), commit(5829)],
+			contains: [carrying.tip],
+		};
+		expect(traceRange(5829, "epic/5800", [carrying, repaired])).toEqual({
+			_tag: "One",
+			branch: repaired.branch,
+			base: "664eb9d",
+			tip: "a1068c0",
+			commits: 2,
+			naming: 2,
+		});
+	});
+
+	it("walks a three-round chain to the newest tip rather than an intermediate one", () => {
+		const second = {
+			...carrying,
+			branch: "build/5829-second-try-deadbeef",
+			tip: "a1068c0",
+			contains: [carrying.tip],
+		};
+		const third = {
+			...carrying,
+			branch: "build/5829-third-try-c0ffee00",
+			tip: "7d21ab4",
+			contains: [carrying.tip, second.tip],
+		};
+		const traced = traceRange(5829, "epic/5800", [carrying, second, third]);
+		expect(traced._tag === "One" && traced.branch).toBe(third.branch);
+		expect(traced._tag === "One" && traced.tip).toBe("7d21ab4");
+	});
+
+	it("stays ambiguous when two candidates each contain the other", () => {
+		const twin = {...carrying, branch: "build/5829-twin-deadbeef", contains: [carrying.tip]};
+		const traced = traceRange(5829, "epic/5800", [{...carrying, contains: [twin.tip]}, twin]);
+		expect(traced._tag).toBe("Many");
+	});
+
+	it("stays ambiguous when a third branch forks off a superseded round", () => {
+		const second = {
+			...carrying,
+			branch: "build/5829-second-try-deadbeef",
+			tip: "a1068c0",
+			contains: [carrying.tip],
+		};
+		const forked = {
+			...carrying,
+			branch: "build/5829-forked-c0ffee00",
+			tip: "7d21ab4",
+			contains: [carrying.tip],
+		};
+		const traced = traceRange(5829, "epic/5800", [carrying, second, forked]);
+		expect(traced).toEqual({
+			_tag: "Many",
+			branches: [carrying.branch, second.branch, forked.branch],
 		});
 	});
 });

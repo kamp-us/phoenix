@@ -542,7 +542,7 @@ different next move:
 | `22` | the artifact is provably absent — no open PR links the task's issue and no legal no-PR outcome is proven either (the issue is not a `type:investigation`, or it is one but no diagnosis was posted since the task entered `build`); on an epic child, no branch in this tree carries commits naming it | the report is unproven — record `BLOCKED`, never the `DONE` |
 | `23` | a derived namespace has no verdict that still binds — no current-head one on a PR, or, on an epic child, none whose content digest matches what the range carries now | record **nothing**; re-read this pass |
 | `24` | a still-binding `FAIL` under a claimed `PASS`, or under a reviewer's claimed park | record the event the artifact supports (`FAIL`) |
-| `25` | several candidates — open PRs linking the issue, or lane branches carrying an epic child's commits | park — step 4, naming the ambiguity |
+| `25` | several candidates — open PRs linking the issue, or lane branches carrying an epic child's commits that no one of them contains, so a repair round's superseding branch is not one of these (#6049) | park — step 4, naming the ambiguity |
 | `11` | a lane, board or tree read failed | the proof is UNKNOWN — end `STOPPED` naming the code |
 
 A builder's `SUCCESS-NO-PR` is a proven `DONE`, not an unproven one: the verb takes the no-PR arm
