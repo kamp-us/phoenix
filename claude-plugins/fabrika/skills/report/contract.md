@@ -790,7 +790,11 @@ the scan runs. The scope line on stderr names the bytes read and the size of the
 the appended section is present **and** the prior body survived, on the same normalized comparison
 `report file` uses. The write's own echo is not evidence — that is #3173's lesson — and a landed
 body missing the prior text is a replacement wearing an append's shape, with no history to recover
-it from.
+it from. A read-back that could not be **performed** — the issue answers 404 after the write, or the
+re-read fails — is reported through that same one message, as `the read-back itself failed:
+<reason>` or `the issue is not readable after the write` in the `<what differs>` clause, exactly as
+`report note` and `report file` report theirs. The exit stays `9`: the body was mutated and nobody
+has proven what is in it.
 
 **Examples**
 
