@@ -19,7 +19,7 @@ import {
 	unconfigured,
 } from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
-import {runLaneClaim, runLaneRelease} from "./claim-verb.ts";
+import {runLaneAdopt, runLaneClaim, runLaneRelease} from "./claim-verb.ts";
 import {APPEND_UNKNOWN, CLAIM_NOT_MINE, LANE_UNREADABLE, MARKER_READBACK} from "./codes.ts";
 import {parseKey} from "./key.ts";
 
@@ -447,5 +447,157 @@ describe("a driver's claim and the builder it spawns", () => {
 		);
 		expect(out.code).not.toBe(BUILD_CLAIM_NOT_MINE);
 		expect(JSON.parse(out.stdout).answer).toBe("won");
+	});
+});
+
+/**
+ * The killed-seat succession (ADR 0324, #6374). The stranded marker here is SAME-SESSION under
+ * another nonce, which is what a killed operator seat actually leaves: the successor boots under the
+ * one `CLAUDE_CODE_SESSION_ID` and only its nonce differs. That is the shape `build adopt` refuses
+ * as already covered by plain release; here plain release reads it as foreign, so it is the case
+ * this verb exists for.
+ */
+describe("runLaneAdopt", () => {
+	const ADOPT_BODY = `lane-adopt: s-9f2e by ${MY_TOKEN} · 2026-08-17T00:00:00Z · reason: the seat was killed by an outage`;
+
+	const adoptOptions = {
+		key: options.key,
+		lane: options.lane,
+		repo: null,
+		env: options.env,
+		uuid: LANE_UUID,
+		at: options.at,
+		session: "s-9f2e",
+		reason: "the seat was killed by an outage",
+	};
+
+	const adopt = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof adoptOptions> = {}) =>
+		Effect.runPromise(
+			Effect.provide(
+				runLaneAdopt({...adoptOptions, ...overrides}),
+				Layer.merge(fakeSeams(script).layer, unconfigured),
+			),
+		);
+
+	it("posts one marker naming the stranded seat, and prints the successor token", async () => {
+		const seams = fakeSeams([
+			[POST, POSTED],
+			[GET_COMMENT, served({body: ADOPT_BODY})],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runLaneAdopt(adoptOptions), seams.layer));
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			answer: "adopted",
+			lane: "5492",
+			number: 5492,
+			session: "s-9f2e",
+			token: MY_TOKEN,
+		});
+		expect(seams.requests.filter((line) => POST.test(line))).toHaveLength(1);
+	});
+
+	it("exits 1 on an empty --session or --reason, writing nothing", async () => {
+		for (const overrides of [{session: "  "}, {reason: ""}]) {
+			const out = await adopt([], overrides);
+			expect(out.code).toBe(FAILED);
+			expect(out.stdout).toBe("");
+		}
+	});
+
+	it("exits 1 on a --session carrying the marker's own field separator", async () => {
+		const out = await adopt([], {session: "s-9f2e · s-other"});
+		expect(out.code).toBe(FAILED);
+	});
+
+	it("answers inert on a chore lane, writing nothing", async () => {
+		const seams = fakeSeams([]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runLaneAdopt({...adoptOptions, key: key("chore:sweep"), lane: "chore:sweep"}),
+				seams.layer,
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).answer).toBe("inert");
+		expect(seams.requests).toEqual([]);
+	});
+
+	it("exits 9 when the marker lands and does not read back", async () => {
+		const out = await adopt([
+			[POST, POSTED],
+			[GET_COMMENT, served({body: "lane-adopt: s-other by lane:s-9f2e:x · at · reason: no"})],
+		]);
+		expect(out.code).toBe(MARKER_READBACK);
+	});
+
+	it("makes the stranded same-session claim releasable, and takes the adopt with it", async () => {
+		const seams = fakeSeams([
+			[
+				COMMENTS,
+				buildComments(
+					{id: 8000, body: SIBLING, createdAt: "2026-08-16T00:00:00Z"},
+					{id: 9002, body: ADOPT_BODY, createdAt: "2026-08-17T00:00:00Z"},
+				),
+			],
+			[perm("agent"), WRITE_PERMISSION],
+			[DELETE, DELETED],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), seams.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			answer: "released",
+			lane: "5492",
+			number: 5492,
+			adopted: "s-9f2e",
+		});
+		expect(seams.requests.filter((line) => DELETE.test(line))).toEqual([
+			deleted(8000),
+			deleted(9002),
+		]);
+	});
+
+	/**
+	 * Answering `won` here would hand back the DEAD seat's token, which every later verb of this run
+	 * refuses as another lane's. The successor's path is adopt → release → claim, and this refusal is
+	 * what keeps it the only one.
+	 */
+	it("refuses a re-claim under an adopted claim rather than answering with the dead seat's token", async () => {
+		const seams = fakeSeams([
+			[
+				COMMENTS,
+				buildComments(
+					{id: 8000, body: SIBLING, createdAt: "2026-08-16T00:00:00Z"},
+					{id: 9002, body: ADOPT_BODY, createdAt: "2026-08-17T00:00:00Z"},
+				),
+			],
+			[perm("agent"), WRITE_PERMISSION],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runLaneClaim({...options, token: MY_TOKEN}), seams.layer),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.join("\n")).toContain(SIBLING_TOKEN);
+		expect(seams.requests.filter((line) => POST.test(line))).toEqual([]);
+	});
+
+	it("names the succession route on a proven loss, so claim and stale stop contradicting", async () => {
+		const seams = fakeSeams([
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[
+				COMMENTS,
+				buildComments(
+					{id: 8000, body: THEIRS, createdAt: "2026-08-16T00:00:00Z"},
+					{id: 9001, body: MINE, createdAt: "2026-08-17T00:00:00Z"},
+				),
+			],
+			[perm("agent"), WRITE_PERMISSION],
+			[DELETE, DELETED],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runLaneClaim(options), seams.layer));
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.join("\n")).toContain("fabrika lane adopt 5492 --session s-77aa");
 	});
 });
