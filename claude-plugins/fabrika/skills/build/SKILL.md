@@ -70,11 +70,13 @@ record (ADR [0300](../../../../.decisions/0300-a-cited-ruling-makes-a-decision-b
 decision settled yourself: "this looks settled" is not a citation, a converged thread is not a
 citation, and a gap the ruling left open goes back to the founder rather than getting filled here.
 **The arm opens this refusal and nothing else** — the audience fence at step 2 is a separate gate the
-citation does not lift, so the issue still has to carry `ready-for:agent`, which triage stamps on a
-ruled decision issue — its [`--ready-for` routing](../triage/SKILL.md) owns that call, not this
-skill. On `ready-for:human` the claim is exit `21` and
-step 2's rule holds unchanged: end the run naming the code and say the issue needs re-stamping by
-triage — never override on your own authority, however good the citation.
+citation does not lift, so the issue still has to carry `ready-for:agent`. Two things stamp it:
+triage, when it first reads a decision that already carries a ruling comment — its
+[`--ready-for` routing](../triage/SKILL.md) owns that call, not this skill — and
+`fabrika decision rule <n> --cites <url>`, which a control-plane human runs on a decision that is
+already parked. On `ready-for:human` the claim is exit `21` and step 2's rule holds unchanged: end
+the run naming the code, and name that verb as the way back in — a control-plane human runs it, never
+you, and never an override on your own authority, however good the citation.
 This skill is not a router: on its own text surfaces
 it executes the whole loop itself. In pick mode neither the argument nor your caller gave you a
 number, so the one `pick` returned stands in its place everywhere below. Then gate your choice:
@@ -113,7 +115,9 @@ overridable, and the remedy is on the refusal line.** An epic goes to `--purpose
 `--cites <ruling-comment-url>` — the comment URL is checked against this repository and this issue,
 and the verb can prove no more than that, so citing a comment that does not rule anything is a lie
 the tool cannot catch and you must not tell. Passing `--cites` on a decision whose audience is still
-`ready-for:human` lands on `21`, because the citation opens the type axis and nothing else.
+`ready-for:human` lands on `21`, because the citation opens the type axis and nothing else — the
+route back in is `fabrika decision rule <n> --cites <url>`, run by a control-plane human, as step 1
+says.
 
 Exit `32` (no acceptance criteria) is the fourth refusal, and it is the one you are most likely to
 meet: the verb reads the issue's body itself, so a body with no readable `### Acceptance criteria`
