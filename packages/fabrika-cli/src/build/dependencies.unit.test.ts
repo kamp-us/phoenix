@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {predecessorsOf, readTopology} from "./dependencies.ts";
+import {predecessorsOf, readTopology, requiredEdges} from "./dependencies.ts";
 
 const ledger = (body: string) => `# Epic\n\n## Dependencies\n\n${body}\n\n## Notes\n\nunrelated\n`;
 
@@ -101,5 +101,48 @@ describe("predecessorsOf", () => {
 
 	it("gives an issue the topology never names no predecessors", () => {
 		expect(predecessorsOf(edges("- phase 1: #210"), {_tag: "Issue", number: 999})).toEqual([]);
+	});
+});
+
+describe("requiredEdges", () => {
+	const of = (body: string) => {
+		const read = readTopology(ledger(body));
+		return requiredEdges(read._tag === "Parsed" ? read.edges : []);
+	};
+
+	/** Epic #6595's shape: the row exists, the graph does not, and both build gates read the graph. */
+	it("names the pair a `requires:` row states", () => {
+		expect(of("- phase 1: #6597\n- phase 2: #6598\n- #6598 requires: #6597")).toEqual([
+			{dependent: 6598, prerequisite: 6597},
+		]);
+	});
+
+	it("names every earlier-phase pair when no requires: row narrows it", () => {
+		expect(of("- phase 1: #210, #211\n- phase 2: #212")).toEqual([
+			{dependent: 212, prerequisite: 210},
+			{dependent: 212, prerequisite: 211},
+		]);
+	});
+
+	it("reaches back through every earlier phase, not just the one below", () => {
+		expect(of("- phase 1: #210\n- phase 2: #211\n- phase 3: #212")).toEqual([
+			{dependent: 211, prerequisite: 210},
+			{dependent: 212, prerequisite: 210},
+			{dependent: 212, prerequisite: 211},
+		]);
+	});
+
+	it("requires nothing of a single phase — a sibling does not gate a sibling", () => {
+		expect(of("- phase 1: #210, #211")).toEqual([]);
+	});
+
+	it("skips a ledger-local ref: `C1` names no issue, so no edge over it is writable", () => {
+		expect(of("- phase 1: C1\n- phase 2: #212\n- #212 requires: C1")).toEqual([]);
+	});
+
+	it("dedupes a pair two rows both state", () => {
+		expect(
+			of("- phase 1: #210\n- phase 2: #212\n- #212 requires: #210\n- #212 requires: #210"),
+		).toEqual([{dependent: 212, prerequisite: 210}]);
 	});
 });

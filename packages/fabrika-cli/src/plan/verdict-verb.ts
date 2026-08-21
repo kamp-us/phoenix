@@ -199,7 +199,13 @@ export const runVerdict = (
 		const approval = yield* requireApproval(MESSAGES, repo, ledger.epic, ledger.digest, notes);
 		if (approval._tag === "Refused") return approval.outcome;
 
-		const derived = yield* deriveFloorFor(MESSAGES, repo, ledger, vocabulary.vocabulary);
+		const derived = yield* deriveFloorFor(
+			MESSAGES,
+			repo,
+			ledger,
+			vocabulary.vocabulary,
+			read.required,
+		);
 		if (derived._tag === "Refused") return derived.outcome;
 		const floor = derived.floor;
 

@@ -80,9 +80,9 @@ const check = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("The deterministic floor over the thirteen hard defect types."),
+	Command.withShortDescription("The deterministic floor over the fourteen hard defect types."),
 	Command.withDescription(
-		'The deterministic floor over the thirteen hard defect types — the whole pass/fail decision. BOTH arms exit 0 and the discriminator is the "answer" state word (clean | defective); a defective floor is this verb\'s answer, never its refusal, and the guard against acting on one lives at `plan flip`\'s own re-gate. "skipped" names a class that could not be derived (today only MISSING_CONTAINMENT, and only when the cycle-doc probe failed) — it never makes the floor clean by omission. Exits 4 (the ledger grammar refused), 7 (zero scope), 10 (the issue is not a type:epic), 11 (a read the floor depends on failed, the control-plane roster included — UNKNOWN, never "not approved"), 25 (the plan is not approved as it now stands: no standing marker, or one binding a digest the plan has moved off — refused BEFORE the floor is derived, so an unapproved AND defective plan refuses on this, ADR 0289). Example: fabrika plan check 4300',
+		'The deterministic floor over the fourteen hard defect types — the whole pass/fail decision. BOTH arms exit 0 and the discriminator is the "answer" state word (clean | defective); a defective floor is this verb\'s answer, never its refusal, and the guard against acting on one lives at `plan flip`\'s own re-gate. "skipped" names a class that could not be derived (today only MISSING_CONTAINMENT, and only when the cycle-doc probe failed) — it never makes the floor clean by omission. Exits 4 (the ledger grammar refused), 7 (zero scope), 10 (the issue is not a type:epic), 11 (a read the floor depends on failed — a child, a referenced issue, a dependent\'s blocked_by list, or the control-plane roster — UNKNOWN, never "not approved" and never "no edge"), 25 (the plan is not approved as it now stands: no standing marker, or one binding a digest the plan has moved off — refused BEFORE the floor is derived, so an unapproved AND defective plan refuses on this, ADR 0289). Example: fabrika plan check 4300',
 	),
 );
 

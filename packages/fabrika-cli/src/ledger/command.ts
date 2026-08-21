@@ -22,6 +22,7 @@ import {readStdin} from "../io/stdin.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runChild} from "./child-verb.ts";
 import {runDraft} from "./draft-verb.ts";
+import {runEdges} from "./edges-verb.ts";
 import {runOpen} from "./open-verb.ts";
 import {runSupersede} from "./supersede-verb.ts";
 import {runTopology} from "./topology-verb.ts";
@@ -260,6 +261,27 @@ const supersede = leafCommand(
 	),
 );
 
+const edges = leafCommand(
+	"edges",
+	{number: epicArg, token: tokenFlag, repo: repoFlag},
+	Effect.fn(function* ({number, token, repo}) {
+		yield* emit(
+			yield* runEdges({
+				number,
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Write the epic's declared dependencies into the blocked_by graph."),
+	Command.withDescription(
+		'Read the epic\'s own ## Dependencies block and write every edge it requires into GitHub\'s native blocked_by graph, then prove each one by re-reading the graph. ADR 0301 makes that graph the ONE carrier of blockedness and both build gates read only it, so a dependency living in prose alone admits a child the plan already declared blocked (#6616). Reconcile, never replace: an edge already present is "already", an edge no ledger authored is left alone. It reads the epic body, not this run\'s staged topology, so an epic planned by an earlier run reconciles the same way — and it is idempotent, so a re-run over a reconciled epic writes nothing. Prints {"answer":"reconciled","epic":n,"required":k,"already":k,"written":k,"verified":true}. Exits 4 (the ## Dependencies block is unparseable), 7 (the epic is proven absent or closed, or declares no topology — zero scope), 8 (edges were POSTed and the graph could not be re-read — UNKNOWN), 9 (the graph does not read back carrying every required edge), 10 (not a type:epic), 11 (a read failed — nothing was written), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking, #6060), 24 (a prerequisite the block names is proven absent, so no edge can point at it). Example: fabrika ledger edges 4300 --token build:s-9f2e:c1a4d6f8-…',
+	),
+);
+
 export const ledgerCommand = Command.make("ledger").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
@@ -268,6 +290,7 @@ export const ledgerCommand = Command.make("ledger").pipe(
 		child,
 		topology,
 		write,
+		edges,
 		supersede,
 	]),
 	Command.withShortDescription("Author an epic's plan and its children."),

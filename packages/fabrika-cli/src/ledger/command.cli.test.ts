@@ -1,5 +1,5 @@
 /**
- * The end-to-end half: `fabrika ledger` resolves, and so does every one of its six verbs.
+ * The end-to-end half: `fabrika ledger` resolves, and so does every one of its seven verbs.
  *
  * The reported defect was a group that answered `Unknown subcommand "ledger"` — a fact only a real
  * process can settle, because the unit tests exercise the verbs directly and would pass against a
@@ -47,6 +47,7 @@ describe("`fabrika ledger` is a registered group", {timeout: SUBPROCESS_TEST_TIM
 		["child"],
 		["topology"],
 		["write"],
+		["edges"],
 		["supersede"],
 	])("`ledger %s --help` exits 0 with its flags on stdout", (verb) => {
 		const run = fabrika("ledger", verb, "--help");

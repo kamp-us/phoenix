@@ -10,6 +10,11 @@
  * ledger renderer, and the epic machine emitter. A reader that wants to know whether work may start
  * asks the graph.
  *
+ * **{@link requiredEdges} does not weaken that.** It reads the block to say which edges the graph
+ * *owes*, so `ledger edges` can write them and the plan gate can red when the two disagree — the
+ * picture is still never consulted at a build gate, and the picture is still never the thing a
+ * builder waits on.
+ *
  * The section holds only blank lines and list lines of two forms:
  *
  * ```
@@ -156,4 +161,43 @@ export const predecessorsOf = (
 	return phases
 		.filter((edge) => edge.phase < own.phase)
 		.flatMap((edge) => edge.members.map((ref) => ({kind: "phase" as const, ref})));
+};
+
+/** One `blocked_by` edge the block requires on the board: `dependent` waits on `prerequisite`. */
+export interface RequiredEdge {
+	readonly dependent: number;
+	readonly prerequisite: number;
+}
+
+/**
+ * Every `blocked_by` edge this block requires, deduped and ascending by `[dependent, prerequisite]`.
+ *
+ * The rendering is not the carrier, so a plan that only *says* `#N requires: #M` leaves the graph
+ * empty and both build gates blind — which is how a child gated behind an unruled decision was
+ * admitted for construction (#6616). This is the bridge: `ledger edges` writes what it names, and the
+ * plan gate reds on a pair the board does not carry.
+ *
+ * The rule is {@link predecessorsOf}'s and is not restated — every subject the block names is asked
+ * for its predecessors. Only `#<int>` refs become pairs: a ledger-local `C<int>` names no issue, so
+ * no edge over it is writable and none is required. A self-pair is dropped as unwritable; `DEP_CYCLE`
+ * is what reports it.
+ */
+export const requiredEdges = (edges: ReadonlyArray<Edge>): ReadonlyArray<RequiredEdge> => {
+	const subjects = edges.flatMap((edge) =>
+		edge._tag === "Phase" ? [...edge.members] : [edge.subject],
+	);
+	const pairs = new Map<string, RequiredEdge>();
+	for (const subject of subjects) {
+		if (subject._tag !== "Issue") continue;
+		for (const {ref} of predecessorsOf(edges, subject)) {
+			if (ref._tag !== "Issue" || ref.number === subject.number) continue;
+			pairs.set(`${subject.number}>${ref.number}`, {
+				dependent: subject.number,
+				prerequisite: ref.number,
+			});
+		}
+	}
+	return [...pairs.values()].sort((a, b) =>
+		a.dependent === b.dependent ? a.prerequisite - b.prerequisite : a.dependent - b.dependent,
+	);
 };

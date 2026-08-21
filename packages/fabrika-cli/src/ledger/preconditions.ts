@@ -1,5 +1,5 @@
 /**
- * The four preconditions every `ledger` verb runs before it answers, in one place so six copies cannot
+ * The four preconditions every `ledger` verb runs before it answers, in one place so seven copies cannot
  * drift apart: resolve the repo, refuse a target that is not a `type:epic`, read the tree root the run
  * directory hangs off, and prove this session holds the epic's claim.
  *

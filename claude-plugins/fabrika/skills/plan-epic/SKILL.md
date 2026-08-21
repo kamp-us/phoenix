@@ -317,7 +317,31 @@ region could not be resolved — a duplicated anchor, or a mode that disagrees w
 end without a written body, and **your children still exist and are linked**; say so, because a
 successor that re-mints them doubles the ledger.
 
-## 8 — Hand to the gate
+## 8 — Put the topology on the graph
+
+The block you just wrote is a **picture** of the dependencies. The thing every build gate reads is
+GitHub's native `blocked_by` graph (ADR
+[0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md)), so a plan that stops at the
+picture leaves both gates blind — epic #6595 said in three places that #6598 waited on an unruled
+decision, and `build claim` admitted it anyway on `scanned 0 blocked_by edges` ([#6616](https://github.com/kamp-us/phoenix/issues/6616)):
+
+```bash
+fabrika ledger edges $epic_number --token <claim-token>
+```
+
+It reads the epic's own block, writes every edge it requires, and proves each one by re-reading the
+graph. Done when it answers `reconciled` with `verified: true`. It is idempotent and reconciles
+rather than replaces, so re-running it writes nothing and an edge no ledger authored is left alone.
+
+`9` means an edge was POSTed and does not read back, and `8` means the graph could not be re-read
+after a POST — both leave the graph UNKNOWN and need a human eye; say the epic body **is** written,
+so nobody re-plans it. `24` means a prerequisite the block names is proven absent: the topology is
+wrong, not the graph.
+
+**Do not skip this because the gate would catch it.** The gate reds `UNENFORCED_DEP` on exactly what
+this leaves undone, and a floor you hand over defective is a re-plan round nobody needed.
+
+## 9 — Hand to the gate
 
 Release the claim, then hand off — clearing the floor and flipping children is
 `check-epic-plan`'s, and doing it yourself is the two-answers defect:
@@ -344,12 +368,16 @@ holds for the `grill` verbs step 4 calls: they allocate from their own table
 ([`packages/fabrika-cli/src/grill/codes.ts`](../../../../packages/fabrika-cli/src/grill/codes.ts)),
 and every row below that seats one says so.
 
-- `PLANNED` — **success.** Plan and topology written and byte-verified, children minted and linked.
-  A ledger exists; it is not gated and no child is pickable.
+- `PLANNED` — **success.** Plan and topology written and byte-verified, children minted and linked,
+  and every edge the topology requires proven on the `blocked_by` graph. A ledger exists; it is not
+  gated and no child is pickable.
 - `RE-PLANNED` — **success.** As above, naming the children superseded this run.
-- `TOPOLOGY-REFUSED` — `24`: the declared topology is proven invalid. **A back-off, and a cheap
-  one** — nothing reached the epic body and the repair is re-declaring, not re-minting. Name the
-  children that exist.
+- `TOPOLOGY-REFUSED` — `24`, and **its disposition turns on which verb seated it.** From `ledger
+  topology` nothing reached the epic body and the repair is re-declaring, not re-minting: a back-off,
+  and a cheap one. From `ledger edges` at step 8 the body **is** written and a prerequisite it names
+  is proven absent, so the repair is a re-plan of that row, not a re-mint — say which, because a
+  successor that reads the cheap case re-declares a topology that is already published. Either way,
+  name the children that exist.
 - `BODY-UNRESOLVABLE` — `22` from `ledger open` or `ledger write`: the plan region is proven
   ambiguous or mode-mismatched. **A back-off that needs a human** to disambiguate the body; nothing
   was written to it.
@@ -371,7 +399,9 @@ and every row below that seats one says so.
 - `WRITE-UNPROVEN` — `8` or `9` from any writing `ledger` verb, and from `grill open`, `grill round`
   or `grill answer`, which allocate those two seats for the same fact: a write landed, or may have,
   and could not be proven. **Neither a success nor a clean back-off — it is UNKNOWN and needs a
-  human.** Report the code, the verb, and any number known. Do not repeat the write.
+  human.** Report the code, the verb, and any number known. Do not repeat the write. From `ledger
+  edges` this says the graph is UNKNOWN while the epic body is written: say so, or a successor
+  re-plans an epic that only needs its edges reconciled.
 - `EPIC-UNPLANNABLE` — a proven verdict **about the epic itself**: `7` or `10` from a `ledger`
   verb, `7` from `build claim` at step 1, or a `7` from `grill open --ticket $epic_number` **whose
   message names the epic** — the same fact reached by a third verb. That verb seats `7` for the

@@ -68,7 +68,7 @@ structural, and it enforces itself through state rather than advice — a child 
 labelled in a way that makes it unpickable, so "an unverified child got built" is not a thing that
 can happen rather than a thing discouraged.
 
-The human checkpoint sits between them, and it is not redundant with the gate. The gate is thirteen
+The human checkpoint sits between them, and it is not redundant with the gate. The gate is fourteen
 structural defect classes; not one of them reads product intent. So an agent could write the user
 stories, satisfy every structural rule, and produce a clean plan for the wrong product. The founder
 approves the plan before the gate runs, and every epic is grilled while it is being planned rather
