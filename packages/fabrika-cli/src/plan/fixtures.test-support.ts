@@ -9,13 +9,14 @@
  */
 
 import type {FileSystem, Path} from "effect";
-import {Layer} from "effect";
+import {Effect, Layer} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {CONFIG_PATH} from "../config/document.ts";
 import type {FakeHttp, FakeShell, HttpReply} from "../fakes.test-support.ts";
 import {fakeFs, fakeHttp, fakeShell} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {runRead} from "./read-verb.ts";
 
 export const EPIC = 4300;
 export const SESSION = "s-9f2e";
@@ -133,7 +134,13 @@ export const SUB_ISSUES = new RegExp(
 );
 export const CHILD = (number: number): RegExp =>
 	new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/${number}$`);
-export const CYCLE_DOC = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/contents\\/`);
+/**
+ * The cycle-doc probe. Bound to the doc's own path, not to `contents/`: the roster reads
+ * `.github/CODEOWNERS` through the same endpoint, and a prefix pattern here answers that read too.
+ */
+export const CYCLE_DOC = new RegExp(
+	`^GET ${API}\\/repos\\/o\\/r\\/contents\\/product-development-cycle\\.md`,
+);
 
 /** The cycle doc, served — `present` is any 2xx, and the body is not read. */
 export const cycleDoc: HttpReply = {status: 200, body: "{}"};
@@ -178,3 +185,66 @@ export const ENV = {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} a
 	string,
 	string | undefined
 >;
+
+export const APPROVER = "usirin";
+
+/**
+ * The control-plane roster reads the ADR 0289 approval precondition makes before it looks for a
+ * marker — the same three `plan approve`'s write resolves the actor through.
+ */
+export const ROSTER: ReadonlyArray<Scripted> = [
+	[new RegExp(`^GET ${API}\\/repos\\/o\\/r$`), {status: 200, body: '{"default_branch":"main"}'}],
+	[
+		new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/contents\\/\\.github\\/CODEOWNERS\\?ref=main$`),
+		{status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"},
+	],
+	[
+		new RegExp(`^GET ${API}\\/orgs\\/kamp-us\\/teams\\/control-plane\\/members`),
+		{status: 200, body: JSON.stringify([{login: APPROVER}])},
+	],
+];
+
+/**
+ * A standing approval on the epic, as a `comments` row.
+ *
+ * A row rather than a whole scripted response, because the epic's comments are one read: the claim
+ * marker `plan flip` and `plan verdict` prove ownership through arrives in the same payload, and a
+ * second scripted `COMMENTS` entry would simply never be reached.
+ */
+export const approvalRow = (
+	digest: string,
+	overrides: {id?: number; author?: string; epic?: number} = {},
+): {id: number; body: string; author: string} => ({
+	id: overrides.id ?? 90,
+	body: `plan-approved: #${overrides.epic ?? EPIC} @ ${digest} · 2026-08-16T07:16:03Z\n`,
+	author: overrides.author ?? APPROVER,
+});
+
+/**
+ * The scope digest a ledger script derives, read off `plan read`.
+ *
+ * `plan read` and not `plan check`, which is the older route: the gate now refuses ahead of its floor
+ * on an unapproved plan, so deriving the digest through it would need the very marker the digest is
+ * being derived to write.
+ */
+export const digestOver = async (
+	script: ReadonlyArray<Scripted>,
+	options: {
+		readonly env?: Readonly<Record<string, string | undefined>>;
+		readonly config?: string | {readonly unreadable: true} | undefined;
+	} = {},
+): Promise<string> => {
+	const out = await Effect.runPromise(
+		Effect.provide(
+			runRead({
+				number: EPIC,
+				repo: null,
+				env: options.env ?? ENV,
+				cwd: CWD,
+			}),
+			planSeams(script, options.config).layer,
+		),
+	);
+	// A script the read itself refuses has no digest, and no case that scripts one reaches the gate.
+	return out.stdout === "" ? "" : (JSON.parse(out.stdout).digest as string);
+};

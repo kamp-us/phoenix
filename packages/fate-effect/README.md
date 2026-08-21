@@ -162,6 +162,21 @@ full contract is the pattern doc's: [operations](../../.patterns/fate-effect-ope
 `CurrentUser` and `LivePublisher` are ordinary services from the handler's point of view; the
 serving layer provides fresh per-request values.
 
+`LivePublisher` publishes three ways to a row and four to a connection:
+
+| Call | Tells subscribers |
+| --- | --- |
+| `live.update(type, id, {changed, data})` | here are these fields' new values |
+| `live.delete(type, id)` | this row is gone |
+| `live.invalidate(type, id)` | read this row again — no data attached |
+| `live.topic(procedure, args).{appendNode,prependNode,deleteEdge,invalidate}(…)` | this connection's membership moved, or re-load it whole |
+
+`invalidate` is the only honest repair for a **viewer-derived** field — one whose value depends on
+who is reading, like a viewer's own vote or a moderation marker. Its true new value differs per
+subscriber, so a broadcast payload would overwrite every reader with the mutator's answer;
+attaching no data is what forces each subscriber to re-read on its own viewer
+([ADR 0314](../../.decisions/0314-entity-invalidate-frame-upstream.md)).
+
 Queries are the same minus `input`: `Fate.query({args: ArgsSchema, type: NoteView}, handler)`,
 where the handler bag is `{args, select}` — `select` is the client's field selection, useful for
 skipping expensive nested work (see sozluk's `term` query).

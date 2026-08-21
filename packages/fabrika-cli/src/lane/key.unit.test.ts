@@ -35,8 +35,8 @@ describe("the lane key", () => {
 	});
 
 	it("selects the boot template by kind, never by root", () => {
-		expect(templateFile(key("5673"))).toBe("coder.workflow.json");
-		expect(templateFile(key("chore:park-sweep"))).toBe("chore.workflow.json");
+		expect(templateFile(key("5673")._tag)).toBe("coder.workflow.json");
+		expect(templateFile(key("chore:park-sweep")._tag)).toBe("chore.workflow.json");
 	});
 
 	it("refuses a chore name that is not lowercase kebab", () => {

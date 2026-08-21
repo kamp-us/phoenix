@@ -7,7 +7,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import {ownSandboxed} from "../lifecycle/SandboxVisibility.ts";
 import {commentViewFields} from "./comment-fields.ts";
-import {toComment} from "./shapers.ts";
+import {broadcastComment, toComment} from "./shapers.ts";
 
 const AUTHOR = "user-author";
 const OTHER = "user-other";
@@ -64,5 +64,26 @@ describe("the Comment wire shape carries sandboxed", () => {
 	// a published-looking node, never an accidental `incelemede` on live content.
 	it("toComment defaults an unstamped row to false", () => {
 		assert.strictEqual(toComment(commentFields()).sandboxed, false);
+	});
+});
+
+// #4313: `comment.react` broadcasts a node re-resolved against the REACTOR, so an author
+// reacting to their own sandboxed comment would hand their review state to every other
+// subscriber of the viewer-blind `Comment` topic.
+describe("broadcastComment blanks every viewer-scoped review field at once", () => {
+	const ownView = toComment({...commentFields({sandboxed: true}), sandboxedInPlace: true});
+
+	it("an author's own view goes out as neither sandboxed nor sandboxedInPlace", () => {
+		const published = broadcastComment(ownView);
+		assert.strictEqual(published.sandboxed, false);
+		assert.strictEqual(published.sandboxedInPlace, false);
+	});
+
+	it("leaves the rest of the node alone", () => {
+		assert.deepStrictEqual(broadcastComment(ownView), {
+			...ownView,
+			sandboxed: false,
+			sandboxedInPlace: false,
+		});
 	});
 });

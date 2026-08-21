@@ -2318,7 +2318,7 @@ fabrika build clear --pr 5953 --authorization authorization.md [--lane-root <dir
 ```
 {"pr": 5953, "round": 3, "at": "2026-08-18T07:16:03Z", "by": "usirin",
  "authorization": 512399, "marker": 512400, "cap": 4,
- "lane": "recorded on issue in .fabrika/lanes/5941/workflow.json", "resolvesTo": "cleared"}
+ "lane": "recorded on issue in .fabrika/lanes/5941/events.jsonl", "resolvesTo": "cleared"}
 ```
 
 `resolvesTo` is `cleared` when this run posted the grant, and `reconciled` when the grant was already
@@ -2398,7 +2398,7 @@ the cap it is judged against, so a refusal is auditable without a second read.
 
 ```
 $ fabrika build clear --pr 5953 --authorization authorization.md
-{"pr":5953,"round":3,"at":"2026-08-18T07:16:03Z","by":"usirin","authorization":512399,"marker":512400,"cap":4,"lane":"recorded on issue in .fabrika/lanes/5941/workflow.json","resolvesTo":"cleared"}
+{"pr":5953,"round":3,"at":"2026-08-18T07:16:03Z","by":"usirin","authorization":512399,"marker":512400,"cap":4,"lane":"recorded on issue in .fabrika/lanes/5941/events.jsonl","resolvesTo":"cleared"}
 ```
 
 **Grounding**

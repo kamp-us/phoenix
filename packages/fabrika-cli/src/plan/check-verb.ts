@@ -8,6 +8,11 @@
  * and refuses on `20` rather than trusting any caller's reading of an exit code.
  *
  * There is deliberately no `20` here: a defective floor is this verb's answer, not its refusal.
+ *
+ * **The one refusal that outranks the answer is the approval precondition** (`25`, ADR 0289). It runs
+ * before the floor is derived, so an unapproved plan gets no floor reading at all — a defective *and*
+ * unapproved plan refuses on the approval, because reporting its defects would hand a founder who
+ * never saw the plan a verdict over it.
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -16,6 +21,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
 import {cycleDocOr} from "../config/paths.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {requireApproval} from "./approval.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import type {Floor} from "./defects.ts";
 import {
@@ -106,14 +112,19 @@ export const runCheck = (
 		if (read._tag === "Refused") return read.outcome;
 		const ledger = read.ledger;
 
+		const scannedLine = scannedChildren(
+			VERB,
+			ledger.children.map((child) => child.number),
+		);
+		const approval = yield* requireApproval(MESSAGES, repo, ledger.epic, ledger.digest, [
+			scannedLine,
+		]);
+		if (approval._tag === "Refused") return approval.outcome;
+
 		const derived = yield* deriveFloorFor(MESSAGES, repo, ledger, vocabulary.vocabulary);
 		if (derived._tag === "Refused") return derived.outcome;
 		const floor = derived.floor;
 
-		const scanned = scannedChildren(
-			VERB,
-			ledger.children.map((child) => child.number),
-		);
 		// A notice on an exit-0 answer, not an error — which is why it is not in the Errors table.
 		const notice =
 			floor.defects.length === 0
@@ -121,5 +132,5 @@ export const runCheck = (
 				: [
 						`${VERB}: ${floor.defects.length} hard defect(s) over ${ledger.children.length} child(ren) — see stdout.`,
 					];
-		return answer(floorAnswer(ledger, floor), [scanned, ...notice]);
+		return answer(floorAnswer(ledger, floor), [scannedLine, ...notice]);
 	});

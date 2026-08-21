@@ -17,6 +17,7 @@ import * as Schema from "effect/Schema";
 import {DefinitionId} from "../../lib/ids.ts";
 import {noopPanoFeedCache} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
+import {sandboxViewerLayer} from "../kunye/sandbox.testing.ts";
 import type {CommentRow} from "../pano/comment-fields.ts";
 import {CommentId, PostId} from "../pano/ids.ts";
 import {mutations as panoMutations} from "../pano/mutations.ts";
@@ -28,6 +29,11 @@ import {Sozluk, type TermPage} from "../sozluk/Sozluk.ts";
 
 const AUTHOR = {id: "caylak-1", email: "caylak@example.com", name: "çaylak"};
 const AT = new Date("2026-07-03T00:00:00.000Z");
+
+// The three restore handlers re-read their parent page through the resolved sandbox
+// viewer (#6586), so the axes it probes have to be on the context. Flag off + not a
+// moderator is this file's world: what it proves is the publish gate, not the mask.
+const viewerAxes = sandboxViewerLayer({flagOn: false, viewerId: AUTHOR.id, isModerator: false});
 
 // The gated `appendNode` publishes NOTHING when `decidePublish` suppresses it, so a
 // suppressed restore leaves the topic absent from `recorded` — the assertion itself.
@@ -155,7 +161,7 @@ describe("çaylak sandbox-escape via delete→restore is structurally prevented 
 			yield* panoMutations["post.restore"]
 				.handler({input: {id: PostId.make("post-1")}, select: ["id"]})
 				.pipe(
-					Effect.provide(Layer.mergeAll(pano, layer)),
+					Effect.provide(Layer.mergeAll(pano, layer, viewerAxes)),
 					Effect.provideService(CurrentUser, {user: AUTHOR}),
 				);
 			yield* drain(scheduled);
@@ -204,7 +210,7 @@ describe("çaylak sandbox-escape via delete→restore is structurally prevented 
 			yield* panoMutations["comment.restore"]
 				.handler({input: {id: CommentId.make("comment-1")}, select: ["id"]})
 				.pipe(
-					Effect.provide(Layer.mergeAll(pano, layer)),
+					Effect.provide(Layer.mergeAll(pano, layer, viewerAxes)),
 					Effect.provideService(CurrentUser, {user: AUTHOR}),
 				);
 			yield* drain(scheduled);
@@ -243,7 +249,7 @@ describe("çaylak sandbox-escape via delete→restore is structurally prevented 
 			yield* sozlukMutations["definition.restore"]
 				.handler({input: {id: DefinitionId.make("def-1")}, select: ["id"]})
 				.pipe(
-					Effect.provide(Layer.mergeAll(sozluk, layer)),
+					Effect.provide(Layer.mergeAll(sozluk, layer, viewerAxes)),
 					Effect.provideService(CurrentUser, {user: AUTHOR}),
 				);
 			yield* drain(scheduled);

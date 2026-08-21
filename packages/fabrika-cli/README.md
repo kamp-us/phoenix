@@ -261,6 +261,29 @@ stale, or was never committed · `6` the repo root could not be resolved, or the
 read or written — UNKNOWN, never a drift · `7` a registered key carries no schema fragment, so the
 assembled schema would green a typo under it.
 
+## The `decision` group
+
+Record and read a founder's ruling on a `type:decision` issue, so a decided question re-enters the
+normal build lane instead of being hand-driven around its `ready-for:human` park. The ruling is a
+marker comment on the issue, bound to a digest of the issue body it ruled on and naming the comment
+the ruling is written in — the same marker mechanism `plan approve` uses for an epic plan, over its
+second surface (ADR 0289; #5842, consolidated into epic #5843).
+
+| Verb | Answers |
+|---|---|
+| `decision rule <n> --cites <url>` | records the ruling and flips the audience — **only after** the marker reads back |
+| `decision ruling <n>` | whether the issue carries a `current`, `stale` or `absent` ruling |
+
+`rule` derives the digest itself; there is no `--digest`, because a ruling whose scope its caller
+supplies attests whatever the caller pleased. Both verbs resolve the `@kamp-us/control-plane` roster
+through the same `ship/codeowners.ts` path the merge gate uses: the write gates on the invoking
+account, and the read gates on the marker's author, because posting those bytes takes nothing but the
+ability to comment. `ruling`'s three states all exit `0` — a missing ruling is the answer.
+
+**Exit codes.** The shared table's `7` / `8` / `9` / `11`, plus one of its own: `20` the invoking
+account is off the control-plane roster, or that roster names nobody. A roster that could not be read
+is `11`, never "unauthorized" and never "authorized" (#4223).
+
 ## The `glossary` group
 
 Maintain the repo's canonical vocabulary registers — `.glossary/TERMS.md` for the domain nouns and
@@ -814,6 +837,7 @@ Judge a UI pull request over its preview deployment. Contract:
 | `review-ui render` | the named surfaces captured from a PR's preview deployment |
 | `review-ui post` | the `review-ui` verdict on stdin, posted as one comment |
 | `review-ui note` | a typed blocker note when the surfaces cannot be seen |
+| `review-ui route` | a head-bound `routed-elsewhere` record: this PR renders nothing, so no verdict is owed |
 
 **Exit codes.** The shared table (with `4` a required file that does not parse or violates its
 schema), plus `12` the artifact is not the PR's current tree · `13` a surface threw an uncaught
@@ -863,9 +887,11 @@ permits no merge method at all · `23` a label this run would POST is absent fro
 - **`17` is the loud one.** It says the nudge's close landed and its reopen is unconfirmed, a state
   so much worse than a failed write that folding it into `8` would hide the one fact an operator
   must act on now.
-- **Exactly two verbs use GraphQL** (`threads`, `resolve`), because review-thread resolution state
-  has no REST equivalent. Every other verb is a REST read, paginated, with the platform's
-  declared count carried beside what arrived.
+- **GraphQL is a three-item carve** (ADR 0315): review-thread state and its mutations (`threads`,
+  `resolve`), the auto-merge mutation, and the closing-issue edge `lane`/`recipe` read. Everything
+  else is a REST read, paginated, and it carries the proof its endpoint declares — an envelope read
+  a `total_count` beside what arrived, a bare-array read the `Link` header's exhaustion. Both come
+  back with `exhausted`, and a walk that stopped at the 50-page cap is a refusal, never a short list.
 
 ## The `spend` group
 

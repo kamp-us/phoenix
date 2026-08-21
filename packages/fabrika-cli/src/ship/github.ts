@@ -15,9 +15,9 @@
  *   terminal page carrying no `rel="next"` link, which the transport now reads off the `Link` header
  *   natively instead of parsing `gh api -i` output back out of a printed status line.
  *
- * The transport is `../io/gh-api.ts`, not a `gh` subprocess. REST throughout, with the two carves
- * ADR 0315 records: the review-thread block at the bottom, and the auto-merge mutation, which has no
- * REST route at all.
+ * The transport is `../io/gh-api.ts`, not a `gh` subprocess. REST throughout, with two of the three
+ * carves ADR 0315 records: the review-thread block at the bottom, and the auto-merge mutation.
+ * Neither has a REST route at all. The third is `openPullsClosing` in `../io/pulls.ts`.
  */
 
 import {writeFile} from "node:fs/promises";
@@ -159,6 +159,27 @@ const pagedForExistence = (token: string, path: string): Api<Existence<ReadonlyA
 			`GitHub declared another page past ${PAGE_CAP} — the read is truncated`,
 		);
 	});
+
+/**
+ * The repository's default branch, on the ambient credential.
+ *
+ * A second reading of `build/github.ts`'s `defaultBranch` only because that one publishes `env` and
+ * `HttpClient` up into its callers; `../ship/roster.ts` is reached from a hundred `Shell<…>` sites
+ * that thread neither. #6693 folds the two once one convention wins.
+ */
+export const defaultBranch = (repo: string): Shell<Attempt<string>> =>
+	authed((token) =>
+		Effect.map(restRead(token, "GET", `repos/${repo}`), (outcome) => {
+			if (outcome._tag === "Unreachable") return fail(outcome.reason);
+			if (outcome.status < 200 || outcome.status >= 300) {
+				return fail(`GitHub answered HTTP ${outcome.status}`);
+			}
+			const name = isRecord(outcome.body) ? outcome.body.default_branch : undefined;
+			return typeof name === "string" && name.trim() !== ""
+				? ok(name.trim())
+				: fail("GitHub answered 200 but named no default branch");
+		}),
+	);
 
 /** One team's members, paged. A 404 is proven — the team does not exist in this org. */
 export const listTeamMembers = (
@@ -790,7 +811,7 @@ export const listReviewThreads = (
 			const threads: ReviewThread[] = [];
 			let declared: number | null = null;
 			let cursor: string | null = null;
-			for (let page = 0; page < 50; page++) {
+			for (let page = 0; page < PAGE_CAP; page++) {
 				const data = yield* graphql(token, THREADS_QUERY, {
 					owner: named.value.owner,
 					name: named.value.name,

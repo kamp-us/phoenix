@@ -204,7 +204,7 @@ describe("pagedEnvelope", () => {
 				http.layer,
 			),
 		);
-		expect(result).toEqual(ok({declared: 3, entries: [1, 2, 3]}));
+		expect(result).toEqual(ok({declared: 3, entries: [1, 2, 3], exhausted: true}));
 	});
 
 	it("does not reconcile declared against what arrived — that is the caller's call", async () => {
@@ -212,7 +212,25 @@ describe("pagedEnvelope", () => {
 		const result = await Effect.runPromise(
 			Effect.provide(pagedEnvelope(TOKEN, "repos/o/r/x", "check_runs"), http.layer),
 		);
-		expect(result).toEqual(ok({declared: 9, entries: [1]}));
+		expect(result).toEqual(ok({declared: 9, entries: [1], exhausted: true}));
+	});
+
+	/**
+	 * Without this field a capped envelope walk is a plain `Ok` carrying a short list, and every
+	 * caller that does not reconcile `declared` reads it as the whole answer (#6690's finding 2).
+	 */
+	it("returns exhausted: false when the cap is reached with a next link outstanding", async () => {
+		const http = fakeHttp([
+			[
+				/&page=\d+$/,
+				served(200, {total_count: 9000, check_runs: [1]}, linkNext("https://api.github.com/x")),
+			],
+		]);
+		const result = await Effect.runPromise(
+			Effect.provide(pagedEnvelope(TOKEN, "repos/o/r/x", "check_runs"), http.layer),
+		);
+		expect(result._tag === "Ok" && result.value.exhausted).toBe(false);
+		expect(http.calls).toHaveLength(PAGE_CAP);
 	});
 
 	it("refuses an envelope that declares no total_count", async () => {

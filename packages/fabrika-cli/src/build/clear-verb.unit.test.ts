@@ -2,6 +2,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
+import {deriveStatus, foldLog, parseLog} from "../lane/fold.ts";
 import {compileText} from "../lane/machine.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {type DocumentRead, runClear} from "./clear-verb.ts";
@@ -21,6 +22,19 @@ const viewer = (login: string): HttpReply => served({login});
 const permission = (level: string): HttpReply => served({permission: level});
 
 const WORKFLOW = ".fabrika/lanes/4312/workflow.json";
+const LANE_LOG = ".fabrika/lanes/4312/events.jsonl";
+
+/** The budget the lane's own fold reads back — a grant is an event now, never a context edit. */
+const laneBudget = (log: string | undefined): number => {
+	const compiled = compileText(coderTemplateText());
+	if (compiled._tag !== "Compiled") throw new Error("the lane template did not compile");
+	const parsed = parseLog(log ?? "");
+	if (parsed._tag !== "Parsed") throw new Error("the lane log did not parse");
+	const fold = foldLog(compiled.lane, parsed.entries);
+	if (fold._tag !== "Folded") throw new Error("the lane log did not replay");
+	const issue = deriveStatus(compiled.lane, fold.states).context.issue as {maxRetries: number};
+	return issue.maxRetries;
+};
 const NOW = new Date("2026-08-18T07:16:03Z");
 const AUTHORIZATION = 'Founder ruling 2026-08-18: "one more round on this one."';
 
@@ -114,9 +128,8 @@ describe("runClear", () => {
 			{},
 			{[WORKFLOW]: coderTemplateText()},
 		);
-		const compiled = compileText(written.get(WORKFLOW) ?? "");
-		if (compiled._tag !== "Compiled") throw new Error("the lane document did not recompile");
-		expect(compiled.lane.tasks.issue?.initial.maxRetries).toBe(RETRY_BUDGET + 1);
+		expect(written.has(WORKFLOW)).toBe(false);
+		expect(laneBudget(written.get(LANE_LOG))).toBe(RETRY_BUDGET + 1);
 	});
 
 	it("refuses an account outside the configured set, writing nothing", async () => {
@@ -282,8 +295,7 @@ describe("runClear", () => {
 			resolvesTo: "reconciled",
 		});
 		expect(requests.some((request) => request.startsWith("POST"))).toBe(false);
-		const compiled = compileText(written.get(WORKFLOW) ?? "");
-		if (compiled._tag !== "Compiled") throw new Error("the lane document did not recompile");
-		expect(compiled.lane.tasks.issue?.initial.maxRetries).toBe(RETRY_BUDGET + 1);
+		expect(written.has(WORKFLOW)).toBe(false);
+		expect(laneBudget(written.get(LANE_LOG))).toBe(RETRY_BUDGET + 1);
 	});
 });

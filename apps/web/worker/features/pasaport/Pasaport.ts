@@ -20,8 +20,10 @@ import {moderatorTuple, type PlatformRole} from "../kunye/moderate.ts";
 import type {StoredTier} from "../kunye/standing.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {
+	ownSandboxed,
 	resolveSandboxViewer,
 	sandboxBacklogWhere,
+	sandboxedInPlace,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
 import {postVisibleWhere} from "../pano/PostVisibility.ts";
@@ -89,13 +91,33 @@ export interface SetDisplayNameResult {
 	image: string | null;
 }
 
-// `sandboxed` = `sandboxed_at IS NOT NULL` (#1316). It carries NO reviewer identity,
-// and the feed only ever surfaces a sandboxed row to its author + a moderator.
 interface ContributionBase {
 	id: string;
 	createdAt: Date;
 	score: number;
+	/**
+	 * Owner-scoped in-review flag (#1316/#2200): `true` only when this row is still
+	 * sandboxed AND the viewer is its author, so it never leaks review state to anyone
+	 * else. The client renders it as `ReviewBadge` ("incelemede") — the author's own
+	 * signal about their own row.
+	 */
 	sandboxed: boolean;
+	/**
+	 * The reader-facing çaylak marker (#6425): `true` iff this row is still sandboxed AND
+	 * the viewer is the opted-in in-place reader of #6423, derived from the resolved
+	 * `SandboxViewer` this read already carries.
+	 *
+	 * The twin of `sandboxed` above, and never a substitute for it — this one marks
+	 * SOMEBODY ELSE's hazırlık-stage work for a reader who asked to see çaylak work in
+	 * place, so the two are true for disjoint audiences on the same row and cannot
+	 * collapse into one field. Structurally `false` for every viewer while
+	 * `PHOENIX_CAYLAK_VISIBILITY` is off.
+	 *
+	 * A çaylak→yazar promotion sweep does not re-announce this connection (#6462): the
+	 * profile feed is read through `useListView`, not `useLiveListView`, so no subscriber
+	 * holds it open and the next read re-derives both fields.
+	 */
+	sandboxedInPlace: boolean;
 }
 
 // The single source of variant→fields for the contribution union: every other shape
@@ -849,6 +871,7 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 								createdAt: schema.definitionRecord.createdAt,
 								score: schema.definitionRecord.score,
 								sandboxedAt: schema.definitionRecord.sandboxedAt,
+								authorId: schema.definitionRecord.authorId,
 								bodyExcerpt: schema.definitionRecord.bodyExcerpt,
 								termSlug: schema.definitionRecord.termSlug,
 								termTitle: schema.definitionRecord.termTitle,
@@ -867,6 +890,7 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 								createdAt: schema.postRecord.createdAt,
 								score: schema.postRecord.score,
 								sandboxedAt: schema.postRecord.sandboxedAt,
+								authorId: schema.postRecord.authorId,
 								title: schema.postRecord.title,
 								bodyExcerpt: schema.postRecord.bodyExcerpt,
 							})
@@ -883,6 +907,7 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 								createdAt: schema.commentRecord.createdAt,
 								score: schema.commentRecord.score,
 								sandboxedAt: schema.commentRecord.sandboxedAt,
+								authorId: schema.commentRecord.authorId,
 								bodyExcerpt: schema.commentRecord.bodyExcerpt,
 								postId: schema.commentRecord.postId,
 								postTitle: schema.commentRecord.postTitle,
@@ -913,7 +938,8 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 							id: d.id,
 							createdAt: d.createdAt ?? new Date(0),
 							score: d.score,
-							sandboxed: d.sandboxedAt != null,
+							sandboxed: ownSandboxed(d, viewer.viewerId),
+							sandboxedInPlace: sandboxedInPlace(d, viewer),
 							bodyExcerpt: d.bodyExcerpt,
 							termSlug: d.termSlug,
 							termTitle: d.termTitle,
@@ -923,7 +949,8 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 							id: p.id,
 							createdAt: p.createdAt ?? new Date(0),
 							score: p.score,
-							sandboxed: p.sandboxedAt != null,
+							sandboxed: ownSandboxed(p, viewer.viewerId),
+							sandboxedInPlace: sandboxedInPlace(p, viewer),
 							title: p.title,
 							slug: p.slug,
 							bodyExcerpt: p.bodyExcerpt,
@@ -933,7 +960,8 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 							id: c.id,
 							createdAt: c.createdAt ?? new Date(0),
 							score: c.score,
-							sandboxed: c.sandboxedAt != null,
+							sandboxed: ownSandboxed(c, viewer.viewerId),
+							sandboxedInPlace: sandboxedInPlace(c, viewer),
 							bodyExcerpt: c.bodyExcerpt,
 							postId: c.postId,
 							postTitle: c.postTitle,
@@ -1237,6 +1265,10 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
  * untouched), so votes/scores/karma ride along; and the `user` row is KEPT as a
  * scrubbed tombstone so the `author_id → silinen` redirect and the FKs stay coherent.
  *
+ * Adding a per-user relation or preference table? It gets a delete here — that is
+ * ruled, not a judgement call (ADR 0097, amendment 2026-08-20 / #6446). `user_profile`
+ * is the exception, because it is the tombstone's own row.
+ *
  * Every statement must be a query-builder statement (no raw correlated subquery), or
  * D1's `batch()` executor rejects the array.
  */
@@ -1282,7 +1314,7 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
 }
 
 /**
- * The topics the sweep below is about to un-hide content on, captured BEFORE the batch:
+ * The topics AND the rows the sweep below is about to un-hide, captured BEFORE the batch:
  * afterwards `sandboxed_at` is null and a swept row is indistinguishable from one the
  * author already had live. Same pre-batch capture as `anonymizeAccount`'s email (ADR 0097 §2).
  *
@@ -1297,26 +1329,27 @@ async function readSandboxSweep(db: DrizzleDb, userId: string): Promise<SandboxS
 			{authorId: userId},
 		);
 
-	// The global `posts` connection is ONE topic however many posts are swept, so its
-	// whole question is "any?" — `limit(1)` rather than a list this discards.
 	const posts = await db
 		.select({id: schema.postRecord.id})
 		.from(schema.postRecord)
-		.where(sweptWhere(schema.postRecord))
-		.limit(1);
+		.where(sweptWhere(schema.postRecord));
 	const comments = await db
-		.select({postId: schema.commentRecord.postId})
+		.select({id: schema.commentRecord.id, postId: schema.commentRecord.postId})
 		.from(schema.commentRecord)
 		.where(sweptWhere(schema.commentRecord));
 	const definitions = await db
-		.select({termSlug: schema.definitionRecord.termSlug})
+		.select({id: schema.definitionRecord.id, termSlug: schema.definitionRecord.termSlug})
 		.from(schema.definitionRecord)
 		.where(sweptWhere(schema.definitionRecord));
 
 	return {
+		// The global `posts` connection is ONE topic however many posts are swept.
 		feed: posts.length > 0,
 		commentThreads: [...new Set(comments.map((row) => row.postId))],
 		definitionTerms: [...new Set(definitions.map((row) => row.termSlug))],
+		postIds: posts.map((row) => row.id),
+		commentIds: comments.map((row) => row.id),
+		definitionIds: definitions.map((row) => row.id),
 	};
 }
 

@@ -8,6 +8,10 @@
  *
  * The verb is the **only** emit path, and it re-reads what it posted: v1 hand-posted a gate verdict at
  * least once and it read as genuine for weeks.
+ *
+ * **The approval is re-read inside that same re-derive** and refuses on `25` (ADR 0289) — an
+ * unapproved plan gets no verdict at all, not even a `FAIL`, because a posted verdict is the gate
+ * saying it ran, and on an unapproved plan the gate is exactly what did not run.
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
@@ -22,6 +26,7 @@ import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {clause, emit, headSha, type Polarity} from "../wire/verdict-marker.ts";
+import {requireApproval} from "./approval.ts";
 import {CAVEAT_KINDS, type Caveat, readCaveats, renderCaveats} from "./caveats.ts";
 import {
 	BARE_AT_PATH,
@@ -190,6 +195,9 @@ export const runVerdict = (
 				ledger.children.map((child) => child.number),
 			),
 		];
+
+		const approval = yield* requireApproval(MESSAGES, repo, ledger.epic, ledger.digest, notes);
+		if (approval._tag === "Refused") return approval.outcome;
 
 		const derived = yield* deriveFloorFor(MESSAGES, repo, ledger, vocabulary.vocabulary);
 		if (derived._tag === "Refused") return derived.outcome;

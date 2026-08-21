@@ -8,7 +8,7 @@ import {
 	linkNext,
 } from "../fakes.test-support.ts";
 import {NO_TOKEN, PAGE_CAP} from "./gh-api.ts";
-import type {Shell} from "./git.ts";
+import type {Attempt, Shell} from "./git.ts";
 import {
 	addLabels,
 	clearMilestone,
@@ -436,6 +436,44 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 			headers: linkNext("https://api.github.com/next"),
 		});
 		expect((await against(listOpenIssues("o/r"), http))._tag).toBe("Failure");
+	});
+
+	/**
+	 * #6690's finding 1: these reads used to hand their entries on without the exhaustion flag, so a
+	 * walk that stopped at the cap answered a short list as a clean `Ok`. Each of them seats a proven
+	 * negative — "no duplicate", "no twin", "this label is not in the taxonomy" — and a short list
+	 * there is a wrong answer rather than a short one.
+	 */
+	const cappedReads: ReadonlyArray<readonly [string, () => Shell<Attempt<unknown>>]> = [
+		["openIssuesTitled", () => openIssuesTitled("o/r", "map: portability")],
+		["issueTimeline", () => issueTimeline("o/r", 1)],
+		["openIssuesWithLabel", () => openIssuesWithLabel("o/r", "status:needs-triage")],
+		["listLabels", () => listLabels("o/r")],
+		["listOpenMilestones", () => listOpenMilestones("o/r")],
+	];
+
+	it.each(
+		cappedReads,
+	)("%s refuses a capped walk rather than answering a proven negative over it", async (_, read) => {
+		const http = scripted([], {
+			status: 200,
+			body: [],
+			headers: linkNext("https://api.github.com/next"),
+		});
+		const result = await against(read(), http);
+		expect(result._tag).toBe("Failure");
+		expect(result).toMatchObject({reason: expect.stringContaining("not the whole list")});
+	});
+
+	it("searchOpenIssues refuses a capped envelope walk — a dedup scan may not answer short", async () => {
+		const http = scripted([], {
+			status: 200,
+			body: {total_count: 9000, items: []},
+			headers: linkNext("https://api.github.com/next"),
+		});
+		const result = await against(searchOpenIssues("o/r", ["focus"]), http);
+		expect(result._tag).toBe("Failure");
+		expect(result).toMatchObject({reason: expect.stringContaining("not the whole list")});
 	});
 });
 

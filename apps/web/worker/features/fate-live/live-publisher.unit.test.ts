@@ -1,6 +1,6 @@
 /** Unit tier (ADR 0082): stubs at the topic seam, zero storage, no platform fake. */
 
-import {assert, it} from "@effect/vitest";
+import {assert, describe, it} from "@effect/vitest";
 import type {LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveEntityTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
 import {Effect, Exit} from "effect";
@@ -47,6 +47,7 @@ it("every publish method's error channel is `never` — the no-fail contract is 
 	type Publisher = typeof LivePublisher.Service;
 	expectTypeOf<Effect.Error<ReturnType<Publisher["update"]>>>().toEqualTypeOf<never>();
 	expectTypeOf<Effect.Error<ReturnType<Publisher["delete"]>>>().toEqualTypeOf<never>();
+	expectTypeOf<Effect.Error<ReturnType<Publisher["invalidate"]>>>().toEqualTypeOf<never>();
 	type Topic = ReturnType<Publisher["topic"]>;
 	expectTypeOf<Effect.Error<ReturnType<Topic["appendNode"]>>>().toEqualTypeOf<never>();
 	expectTypeOf<Effect.Error<ReturnType<Topic["prependNode"]>>>().toEqualTypeOf<never>();
@@ -61,15 +62,15 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 	Effect.gen(function* () {
 		const {live, recorded, flush} = makeHarness();
 
-		// `changed` is accepted but does NOT reach the wire.
 		yield* live.update("Definition", "d1", {
 			data: {id: "d1", body: "updated"},
 			changed: ["body"],
 			eventId: "e1",
 		});
-		// An update with no `data` still carries the `data` key on the wire.
+		// An update with no `changed` and no `data` still carries the `data` key on the wire.
 		yield* live.update("Definition", "d9", {eventId: "e9"});
 		yield* live.delete("Post", 7, {eventId: "e2"});
+		yield* live.invalidate("Post", 8, {eventId: "e6"});
 		const definitions = live.topic("Term.definitions", {slug: "effect"});
 		yield* definitions.appendNode("Definition", "d2", {
 			node: {id: "d2"},
@@ -92,7 +93,7 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 				message: {
 					kind: "entity",
 					match: {type: "Definition", entityId: "d1"},
-					frame: {data: {id: "d1", body: "updated"}},
+					frame: {data: {id: "d1", body: "updated"}, select: ["id", "body"]},
 					eventId: "e1",
 				},
 			},
@@ -112,6 +113,15 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 					match: {type: "Post", entityId: "7"},
 					frame: {delete: true, id: 7},
 					eventId: "e2",
+				},
+			},
+			{
+				topicKey: liveEntityTopic("Post", 8),
+				message: {
+					kind: "entity",
+					match: {type: "Post", entityId: "8"},
+					frame: {type: "invalidate", id: 8},
+					eventId: "e6",
 				},
 			},
 			{
@@ -162,6 +172,106 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 				},
 			},
 		]);
+	}),
+);
+
+/**
+ * The #6585 leak: fate merges a live payload key-by-key over every subscriber's cached
+ * record, so a whole re-resolved node resolved against the mutator's viewer overwrites
+ * everyone else's viewer scalars. `changed` is what narrows it.
+ */
+describe("entity update frames narrow to the changed keys", () => {
+	const frameOf = async (options: Parameters<(typeof LivePublisher.Service)["update"]>[2]) => {
+		const {live, recorded, flush} = makeHarness();
+		await Effect.runPromise(live.update("Post", "p1", options));
+		await flush();
+		const message = recorded[0]?.message;
+		if (message?.kind !== "entity") {
+			throw new Error(`expected one entity publish, recorded ${JSON.stringify(recorded)}`);
+		}
+		return message.frame;
+	};
+
+	it("trims the payload to the changed keys and selects exactly what it kept", async () => {
+		assert.deepStrictEqual(
+			await frameOf({
+				changed: ["score"],
+				data: {id: "p1", score: 8, myVote: true, isSaved: true, title: "t"},
+			}),
+			{data: {id: "p1", score: 8}, select: ["id", "score"]},
+			"the mutator's `myVote`/`isSaved` never ride a vote broadcast",
+		);
+	});
+
+	it("keeps a viewer scalar only when it IS the changed field", async () => {
+		assert.deepStrictEqual(
+			await frameOf({changed: ["isSaved"], data: {id: "p1", isSaved: true, myVote: true}}),
+			{data: {id: "p1", isSaved: true}, select: ["id", "isSaved"]},
+		);
+	});
+
+	it("carries every changed key, de-duplicated, with `id` first", async () => {
+		assert.deepStrictEqual(
+			await frameOf({
+				changed: ["title", "body", "id", "title"],
+				data: {id: "p1", title: "t", body: "b", myVote: false},
+			}),
+			{data: {id: "p1", title: "t", body: "b"}, select: ["id", "title", "body"]},
+		);
+	});
+
+	it("drops a changed key the payload does not carry, so `select` stays coverable", async () => {
+		assert.deepStrictEqual(
+			await frameOf({changed: ["title", "body"], data: {id: "p1", title: "t"}}),
+			{data: {id: "p1", title: "t"}, select: ["id", "title"]},
+			"a select fate's payload cannot cover forces every subscriber to refetch",
+		);
+	});
+
+	it("sends `select` alone when the payload carries no cache key", async () => {
+		assert.deepStrictEqual(await frameOf({changed: ["score"], data: {score: 8}}), {
+			data: undefined,
+			select: ["id", "score"],
+		});
+	});
+
+	it("narrows a data-less signal so the subscriber's refetch is narrow too", async () => {
+		assert.deepStrictEqual(await frameOf({changed: ["score"]}), {
+			data: undefined,
+			select: ["id", "score"],
+		});
+	});
+
+	it("leaves an unnarrowed publish whole rather than silently emptying it", async () => {
+		const whole = {id: "p1", score: 8, myVote: true};
+		assert.deepStrictEqual(await frameOf({data: whole}), {data: whole});
+		assert.deepStrictEqual(await frameOf({changed: [], data: whole}), {data: whole});
+		assert.deepStrictEqual(await frameOf({changed: [""], data: whole}), {data: whole});
+	});
+});
+
+/**
+ * The other half of the #6585 leak fix: where an update narrows its payload, an
+ * invalidation has none to narrow. ADR 0314 binds that — the subscriber re-reads against
+ * its own viewer, so any key here would be the mutator's answer to everyone's question.
+ */
+it.effect("an entity invalidation reaches the entity match with no data key at all", () =>
+	Effect.gen(function* () {
+		const {live, recorded, flush} = makeHarness();
+		yield* live.invalidate("Post", "p1");
+		yield* Effect.tryPromise({try: flush, catch: (cause) => new PromiseRejected({cause})}).pipe(
+			Effect.orDie,
+		);
+
+		assert.strictEqual(recorded.length, 1, "an invalidation reaches exactly its entity topic");
+		const record = recorded[0];
+		assert.strictEqual(record?.topicKey, liveEntityTopic("Post", "p1"));
+		if (record?.message.kind !== "entity") {
+			return assert.fail(`expected an entity publish, got ${record?.message.kind}`);
+		}
+		assert.deepStrictEqual(record.message.match, {type: "Post", entityId: "p1"});
+		assert.deepStrictEqual(record.message.frame, {type: "invalidate", id: "p1"});
+		assert.deepStrictEqual(Object.keys(record.message.frame), ["type", "id"]);
 	}),
 );
 

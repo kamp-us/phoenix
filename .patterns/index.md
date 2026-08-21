@@ -81,6 +81,7 @@ live in `apps/web/src/components/ui/`.
 | [reachability-journey-e2e.md](./reachability-journey-e2e.md) | Writing a `@journey:<flag-key>` reachability e2e (ADR 0173 §2): force the edge payload at the network seam (`page.route`), strip/re-inject the `__BOOT__` tag, prove zero-CLS two ways, cover the absent-payload half; the `flows`-lane + signed-in-divergence gotcha | Authoring a reachability/journey e2e for a dark-ship flag, or a zero-CLS first-paint proof ([ADR 0173](../.decisions/0173-vertical-completeness-gate.md) / [0179](../.decisions/0179-edge-resolved-shell-state-boot-contract.md)) |
 | [atolye-exhibit-harness.md](./atolye-exhibit-harness.md) | The atölye harness (`apps/web/src/lab/atolye/`): the typed prop-knobs primitive, the `Exhibit`/`defineExhibit` contract, the headless registry, how `ExhibitStage`/`useKnobs`/`PropKnobs` wire a knob change to a prop re-render | Adding an atölye exhibit or building against the harness seam (epic #2473) |
 | [component-metadata-jsdoc.md](./component-metadata-jsdoc.md) | The per-component metadata JSDoc convention on `ui/` primitives (descriptive-only): the tag set (`@component`/`@whenToUse`/`@slot`/`@agent`, prop-level JSDoc), the descriptive/normative firewall, TS-compiler-API extractability | Annotating a `ui/` primitive with metadata, or building the doc extractor ([ADR 0194](../.decisions/0194-design-law-jsdoc-firewall.md)) |
+| [zag-machine-interaction-tests.md](./zag-machine-interaction-tests.md) | Why a `client`-tier test that clicks a Manti primitive and asserts in the same tick asserts nothing (`useMachine`'s `queueMicrotask`-deferred `send`); the `await act`/`waitFor` flush; the ruled-out causes (`mergeProps`, React 19, jsdom events); the measured blast radius across Switch/Menu/Tabs/ToggleGroup/Dialog | Writing or reviewing any `*.test.tsx` that drives a Manti/Zag primitive through an interaction ([#6495](https://github.com/kamp-us/phoenix/issues/6495)) |
 
 ## Index — frontend routing
 
@@ -89,6 +90,7 @@ The SPA's route tree (`apps/web/src/App.tsx`) and the visibility classes a route
 | Doc | Topic | Read when |
 |---|---|---|
 | [frontend-routing.md](./frontend-routing.md) | The react-router `<Routes>`/`<Route>` tree (one shared `<Layout />`, pages in `apps/web/src/pages/`); the two visibility classes (public vs dark flag-gated); the `/lab/*` PUBLIC-prototype convention + graduate-or-cull lifecycle | Adding a route, mounting a prototype under `/lab/*`, or deciding a route's production visibility |
+| [flag-dark-page-gate.md](./flag-dark-page-gate.md) | The dark-route gate's shape: `useFlag(KEY, false)` → self-404 when off → the deferred-404 placeholder so the 404 never flashes; the `value`/`loading` contract; the `__BOOT__` fast path; when a server-authoritative denial or an in-page toggle is the right gate instead | Gating a whole page behind a flag, or touching an existing gated page's gate ([#6459](https://github.com/kamp-us/phoenix/issues/6459)) |
 
 ## Index — alchemy infra layer
 

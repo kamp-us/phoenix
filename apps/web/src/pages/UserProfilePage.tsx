@@ -91,8 +91,8 @@ function ContributionsList({profile}: {profile: ViewRef<"Profile">}) {
 	const data = useView(UserProfileView, profile);
 	const {userId} = useView(UserProfileHeaderView, profile);
 	const {me} = useMe();
-	// The badge is own-profile only; a non-owner never receives a sandboxed row anyway.
-	const sandboxBadge = shouldShowCaylakStatus(me?.tier, me?.id === userId);
+	const isOwn = me?.id === userId;
+	const sandboxBadge = shouldShowCaylakStatus(me?.tier, isOwn);
 	const [items, loadNext] = useListView(ContributionsConnectionView, data.contributions);
 
 	return (
@@ -106,7 +106,7 @@ function ContributionsList({profile}: {profile: ViewRef<"Profile">}) {
 			) : (
 				<ul className="kp-user-profile__list">
 					{items.map(({cursor, node}) => (
-						<ContributionRow key={cursor} node={node} sandboxBadge={sandboxBadge} />
+						<ContributionRow key={cursor} node={node} isOwn={isOwn} sandboxBadge={sandboxBadge} />
 					))}
 				</ul>
 			)}

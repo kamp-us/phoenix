@@ -151,6 +151,10 @@ import {FlagGate} from "../flags/FlagGate";
 `FlagGate` defaults to `false`, so the gated path stays dark through loading, fetch errors, and an
 undeclared flag — the same safe-default contract as the server, end to end.
 
+Gating a **whole page** on a flag has its own shape, because the off answer there is a 404 and a
+404 rendered before the flag settles reads as a broken link:
+[flag-dark-page-gate.md](./flag-dark-page-gate.md).
+
 ## 4. Flip a flag (and kill-switch)
 
 Flipping is the **release** — a deliberate act, separate from the merge. Two paths:

@@ -233,3 +233,28 @@ export const MISDIRECTED_PUSH = 34;
  * A cause nobody can key on must never be recorded as one that can (#6480).
  */
 export const CAUSE_UNRECOGNISED = 35;
+
+/**
+ * The `UNBLOCKED` would walk the door out of an error final back into a state whose guarded routes
+ * all fall straight back through it — the state restored, the repair budget still spent. Refused
+ * with the log unappended.
+ *
+ * Its own seat rather than {@link EVENT_REFUSED}'s: that one says the machine holds no cell, and the
+ * remedy is a different event. Here the cell is there and the fold would succeed — it would advertise
+ * `active`/`review` on a lane that re-freezes on its next `FAIL`, which is what #6570 reports. The
+ * remedy is not another event at all but a recorded clearance (`build clear`), so a caller reading
+ * only the code must not be told to retype the transition (ADR 0312).
+ */
+export const RESUME_UNBUDGETED = 36;
+
+/**
+ * A booted lane's machine cannot be replaced by the committed template without moving the lane: the
+ * log will not replay through the candidate, or it replays to a different leaf state. Nothing was
+ * written on either arm.
+ *
+ * Its own seat rather than {@link MALFORMED_RECORD}'s: that one says a record on disk is not the
+ * shape and the remedy is fixing the record, while this one says both records are fine and
+ * *disagree* — the remedy is a human deciding what that lane's state should be, never a rewrite the
+ * sweep picks (ADR 0313).
+ */
+export const MIGRATION_UNSAFE = 37;

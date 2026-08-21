@@ -1,18 +1,24 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import {comments} from "../build/fixtures.test-support.ts";
+import type {HttpReply} from "../fakes.test-support.ts";
 import {runCheck} from "./check-verb.ts";
-import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {OFF_VOCABULARY, PLAN_UNAPPROVED, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
+	APPROVER,
+	approvalRow,
 	CHILD,
 	CWD,
 	CYCLE_DOC,
 	child,
 	childBody,
 	cycleDoc,
+	digestOver,
 	ENV,
 	epic,
 	epicBody,
 	planSeams,
+	ROSTER,
 	type Scripted,
 	SUB_ISSUES,
 	subIssues,
@@ -27,8 +33,25 @@ const CYCLE = CYCLE_DOC;
 
 const options = {number: 4300, repo: null, env: ENV, cwd: CWD};
 
-const run = (script: ReadonlyArray<Scripted>) =>
-	Effect.runPromise(Effect.provide(runCheck(options), planSeams(script).layer));
+const COMMENTS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/comments/;
+
+/**
+ * The floor over an **approved** plan — the arm every case below the approval `describe` is about.
+ *
+ * The marker has to be minted against the digest this very script derives, so the helper reads it
+ * off `plan read` first: an approval is a statement about a scope, and one bound to any other scope
+ * is what the precondition exists to refuse.
+ */
+const approvedLayer = async (
+	script: ReadonlyArray<Scripted>,
+	config?: string | {readonly unreadable: true},
+) => {
+	const digest = await digestOver(script, {config});
+	return planSeams([...script, ...ROSTER, [COMMENTS, comments(approvalRow(digest))]], config).layer;
+};
+
+const run = async (script: ReadonlyArray<Scripted>) =>
+	Effect.runPromise(Effect.provide(runCheck(options), await approvedLayer(script)));
 
 /** An epic whose phase line names exactly the one child a single-child script serves. */
 const ONE_CHILD_EPIC = epic({body: epicBody({dependencies: "- phase 1: #4301"})});
@@ -148,9 +171,79 @@ describe("runCheck", () => {
 	});
 
 	it("re-runs the fetch itself — it takes no ledger from a caller", async () => {
-		const seams = planSeams(CLEAN);
+		const digest = await digestOver(CLEAN);
+		const seams = planSeams([...CLEAN, ...ROSTER, [COMMENTS, comments(approvalRow(digest))]]);
 		await Effect.runPromise(Effect.provide(runCheck(options), seams.layer));
 		expect(seams.http.calls.some((line) => /sub_issues/.test(line))).toBe(true);
+	});
+});
+
+/**
+ * ADR 0289's fail-closed precondition. It sits **ahead of the floor**, so these cases are about what
+ * the verb refuses to grade at all rather than about what it grades.
+ */
+describe("the approval precondition", () => {
+	const unapproved = (script: ReadonlyArray<Scripted>, listed: HttpReply) =>
+		Effect.runPromise(
+			Effect.provide(
+				runCheck(options),
+				planSeams([...script, ...ROSTER, [COMMENTS, listed]]).layer,
+			),
+		);
+
+	it("refuses 25 when the epic carries no approval marker", async () => {
+		const out = await unapproved(CLEAN, comments());
+		expect(out.code).toBe(PLAN_UNAPPROVED);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("carries no founder approval");
+	});
+
+	/**
+	 * The whole point of seating this ahead of the floor: a plan nobody read gets no verdict over its
+	 * defects, because reporting them would hand a founder who never saw it a reading of it.
+	 */
+	it("refuses on the approval code, not FLOOR_DEFECTIVE, when the floor is ALSO defective", async () => {
+		const out = await unapproved(
+			[
+				[EPIC, ONE_CHILD_EPIC],
+				[SUBS, subIssues(4301)],
+				[CHILD_1, child({number: 4301, body: childBody({criteria: "no boxes here"})})],
+				[CYCLE, cycleDoc],
+			],
+			comments(),
+		);
+		expect(out.code).toBe(PLAN_UNAPPROVED);
+		expect(out.stdout).toBe("");
+	});
+
+	it("refuses 25 when the marker's digest names a plan the epic has moved off", async () => {
+		const out = await unapproved(CLEAN, comments(approvalRow("0000000000ff", {author: APPROVER})));
+		expect(out.code).toBe(PLAN_UNAPPROVED);
+		expect(out.stderr.at(-1)).toContain("state stale");
+	});
+
+	it("passes through unchanged when the marker binds the derived digest", async () => {
+		const out = await run(CLEAN);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({answer: "clean", defects: []});
+	});
+
+	/** #4223's collapse, on this side too: a roster nobody could read is UNKNOWN, never `absent`. */
+	it("refuses 11, not 25, when the roster cannot be read", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runCheck(options),
+				planSeams([
+					...CLEAN,
+					[
+						/^GET https:\/\/api\.github\.com\/repos\/o\/r$/,
+						{status: 502, body: '{"message":"Bad gateway"}'},
+					],
+				]).layer,
+			),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("who may approve is unread");
 	});
 });
 
@@ -160,8 +253,8 @@ describe("runCheck", () => {
  * is the bare-repo arm — none of them writes a config — so these two only have to move the config.
  */
 describe("the containment vocabulary, resolved", () => {
-	const withConfig = (config: string | {readonly unreadable: true}) =>
-		Effect.runPromise(Effect.provide(runCheck(options), planSeams(CLEAN, config).layer));
+	const withConfig = async (config: string | {readonly unreadable: true}) =>
+		Effect.runPromise(Effect.provide(runCheck(options), await approvedLayer(CLEAN, config)));
 
 	it("reds a phoenix-legal marker a foreign vocabulary does not carry", async () => {
 		const out = await withConfig(
@@ -189,7 +282,7 @@ describe("the containment vocabulary, resolved", () => {
 		const off = await Effect.runPromise(
 			Effect.provide(
 				runCheck(options),
-				planSeams(unmarked, '{"containmentVocabulary": {"types": []}}').layer,
+				await approvedLayer(unmarked, '{"containmentVocabulary": {"types": []}}'),
 			),
 		);
 		const bare = await run(unmarked);

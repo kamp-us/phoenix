@@ -19,6 +19,7 @@ import {adrCommand} from "./adr/command.ts";
 import {buildCommand} from "./build/command.ts";
 import {ciCommand} from "./ci/command.ts";
 import {configCommand} from "./config/command.ts";
+import {decisionCommand} from "./decision/command.ts";
 import {glossaryCommand} from "./glossary/command.ts";
 import {governanceCommand} from "./governance/command.ts";
 import {graduateCommand} from "./graduate/command.ts";
@@ -53,6 +54,7 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	buildCommand,
 	ciCommand,
 	configCommand,
+	decisionCommand,
 	glossaryCommand,
 	governanceCommand,
 	graduateCommand,

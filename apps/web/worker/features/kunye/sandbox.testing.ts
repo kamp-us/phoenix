@@ -18,8 +18,22 @@ import {
 } from "../caylak-visibility/CaylakVisibility.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {RequestFlagOverrides} from "../flagship/FlagsContext.ts";
+import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {Kunye} from "./Kunye.ts";
 import type {Tier} from "./standing.ts";
+
+/**
+ * The plain signed-in viewer — neither moderator nor #6423 in-place reader, so the
+ * sandbox mask admits their own rows and nothing else. Test-only: production reads take
+ * the viewer `currentSandboxViewer` resolved, and a constructor that hands back an
+ * unelevated viewer without probing is exactly the degradation `MaskedReadOptions` exists
+ * to keep out of the call sites (#6586).
+ */
+export const memberSandboxViewer = (viewerId: string): SandboxViewer => ({
+	viewerId,
+	canSeeSandboxed: false,
+	seesSandboxedInPlace: false,
+});
 
 const runtimeContextStub: BaseRuntimeContext = {
 	Type: "sandbox-viewer-test",

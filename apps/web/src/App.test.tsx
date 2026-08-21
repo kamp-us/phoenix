@@ -247,6 +247,23 @@ describe("signed-in cluster seeded from __BOOT__.user (ADR 0185)", () => {
 		expect(screen.getByText("Elif")).toBeTruthy();
 	});
 
+	// #6577: the edge resolved a user the settled session denies. The account slot collapses (no
+	// pill, no placeholder), so the CTA must come back — otherwise the shell offers no sign-in
+	// path at all and the viewer reads it as broken rather than signed out.
+	it("__BOOT__ present but the session settles signed-out: giriş-yap returns and the account slot is empty", () => {
+		flags.signedIn = true;
+		renderApp(FATE_FREE_ROUTE);
+		expect(screen.queryByRole("button", {name: "giriş yap"})).toBeNull();
+
+		act(() => {
+			setSession({data: null, isPending: false});
+		});
+
+		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();
+		expect(screen.queryByText("Elif")).toBeNull();
+		expect(screen.queryByTestId("topbar-user-placeholder")).toBeNull();
+	});
+
 	it("__BOOT__ absent (readBootUser null): the shell is exactly as today — giriş-yap, no account cluster (AC-3)", () => {
 		renderApp();
 		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();

@@ -19,6 +19,7 @@ import {
 	files,
 	HEAD,
 	httpError,
+	OTHER_HEAD,
 	PROTECTION,
 	protection,
 	pull,
@@ -134,6 +135,75 @@ describe("runDiagnose answers", () => {
 				"",
 			].join("\n"),
 		);
+	});
+
+	// #6376: this verb is the second resolver of the same question `ship gate` answers. A PR the
+	// gate calls satisfied must not classify `ungated` here, or the healer dispatches it back to a
+	// review whose namespace no sanctioned path can fill — the loop the route exists to close.
+	it("counts a head-bound routed-elsewhere record as a filled review-ui namespace", async () => {
+		const out = await run(
+			script([
+				[PULL, reply(pull({updatedAt: PUSHED, comments: 2, changedFiles: 1}))],
+				[FILES, reply(files("apps/web/src/flags/shell-keys.ts"))],
+				[
+					COMMENTS,
+					reply(
+						comments(
+							{id: 1, body: `review-code: PASS @ ${HEAD} — the clause`},
+							{
+								id: 2,
+								body: `routed-elsewhere: review-ui @ ${HEAD} — no rendered delta; the diff is prose only`,
+							},
+						),
+					),
+				],
+			]),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("gates\tsatisfied\t2/2");
+		expect(out.stdout).not.toContain("ungated");
+	});
+
+	it("re-opens the namespace when the route binds a head that has moved", async () => {
+		const out = await run(
+			script([
+				[PULL, reply(pull({updatedAt: PUSHED, comments: 2, changedFiles: 1}))],
+				[FILES, reply(files("apps/web/src/flags/shell-keys.ts"))],
+				[
+					COMMENTS,
+					reply(
+						comments(
+							{id: 1, body: `review-code: PASS @ ${HEAD} — the clause`},
+							{
+								id: 2,
+								body: `routed-elsewhere: review-ui @ ${OTHER_HEAD} — no rendered delta; the diff is prose only`,
+							},
+						),
+					),
+				],
+			]),
+		);
+		expect(out.stdout).toContain("gates\tblocked\t1/2");
+	});
+
+	// The gate admits the record for `review-ui` alone; a route aimed anywhere else resolves nothing,
+	// or a session could decline any gate it liked.
+	it("drops a route aimed at a namespace other than review-ui", async () => {
+		const out = await run(
+			script([
+				[PULL, reply(pull({updatedAt: PUSHED, comments: 1}))],
+				[
+					COMMENTS,
+					reply(
+						comments({
+							id: 1,
+							body: `routed-elsewhere: review-code @ ${HEAD} — no rendered delta; the diff is prose only`,
+						}),
+					),
+				],
+			]),
+		);
+		expect(out.stdout).toContain("gates\tblocked\t0/1");
 	});
 
 	it("reads a red gating rollup as `red`, an answer at exit 0", async () => {

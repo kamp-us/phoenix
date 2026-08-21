@@ -14,9 +14,9 @@
  *   read proves completeness by `total_count`, a bare-array read declares no count at all and its
  *   proof is exhausted pagination — a terminal page carrying no `rel="next"` link.
  *
- * REST throughout, with two carves recorded in ADR 0315: {@link graphqlRead} for review threads and
- * their mutations, and the auto-merge mutation. Issue queries stay REST — this org's
- * Projects-classic integration errors GraphQL issue queries out.
+ * REST throughout, with three carves recorded in ADR 0315: {@link graphqlRead} for review threads
+ * and their mutations, the auto-merge mutation, and `openPullsClosing` in `./pulls.ts`. Issue
+ * *search* stays REST — this org's Projects-classic integration errors GraphQL search out.
  *
  * The credential is an argument to every leg *of this module*, never something a leg resolves —
  * {@link resolveToken} is the one producer, and a caller holding no `token` cannot construct a
@@ -304,10 +304,21 @@ export interface PagedProof {
 	readonly exhausted: boolean;
 }
 
-/** What an envelope read holds: the platform's declared count, and what actually arrived. */
+/**
+ * What an envelope read holds: the platform's declared count, and what actually arrived.
+ *
+ * `exhausted` is the second proof and it is not redundant with `declared`. Reaching
+ * {@link PAGE_CAP} with a `rel="next"` still outstanding is a walk that stopped early, and an
+ * envelope with no `exhausted` field cannot say so — a short list would come back as a clean `Ok`
+ * and read as the whole answer. A caller reconciling `declared` against `entries.length` catches
+ * that too, but only if it reconciles; this field makes the truncated state representable so a
+ * caller that does not reconcile still has to handle it.
+ */
 export interface EnvelopeRead {
 	readonly declared: number;
 	readonly entries: ReadonlyArray<unknown>;
+	/** True only when a terminal page arrived carrying no `rel="next"` link. */
+	readonly exhausted: boolean;
 }
 
 const declaresNextPage = (headers: Readonly<Record<string, string>>): boolean =>
@@ -427,11 +438,11 @@ export const pagedEnvelope = (
 				declared = body.total_count;
 			}
 			entries.push(...body[key]);
-			if (!declaresNextPage(outcome.headers)) return ok({declared, entries});
+			if (!declaresNextPage(outcome.headers)) return ok({declared, entries, exhausted: true});
 		}
 		return declared === null
 			? statusless("GitHub answered 200 and printed no envelope at all")
-			: ok({declared, entries});
+			: ok({declared, entries, exhausted: false});
 	});
 
 /**

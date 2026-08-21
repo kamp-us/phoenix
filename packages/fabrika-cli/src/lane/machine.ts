@@ -6,9 +6,12 @@
  * Three structural recognitions replace every name-driven mechanism, and **no guard or action name
  * is ever dereferenced** — a `guard`/`actions` string in the document is inert data:
  *
- *   - An **array on an event** means guarded-FAIL: `[retry-while-retries-remain, else-fallthrough]`.
- *     The guard is the one inline `retries < maxRetries` in the compiled cell; the fallthrough
- *     target, when final, is the task's error final (`frozen`, `tripped`).
+ *   - An **array on an event** means guarded-loop: `[loop-while-budget-remains, else-fallthrough]`.
+ *     The guard is one inline counter comparison in the compiled cell; the fallthrough target, when
+ *     final, is the task's error final (`frozen`, `tripped`). **Which counter it spends is the
+ *     event's own polarity**: `FAIL` is a repair round and spends `retries`, every other event is a
+ *     wait and spends `waits`. A queue dwell must not eat the budget a later repair draws on, and
+ *     reading that off the event keeps it structural — no guard name is consulted (ADR 0313).
  *   - A transition **targeting a `history` node** resumes the state the task left, carried as the
  *     `was` field in {@link TaskState} — history-state semantics as data, no pseudo-state.
  *   - A phase's **`onDone` pair** `[{target, guard}, {target}]` names the two workflow terminals
@@ -20,11 +23,17 @@
  *
  * Compilation is total over its result type: a document that does not fit comes back as
  * {@link Malformed} with every defect named, never as a machine that half-works.
+ *
+ * One cell is the compiler's rather than the document's: {@link CLEARED_EVENT}, injected into every
+ * state, which raises the retry budget and moves nothing (ADR 0312). A document that declares it is
+ * still a defect — the budget is a fold over recorded events, so a grant is a line in
+ * `events.jsonl`, never a field the compiler reads out of mutable context.
  */
 import type {Machine} from "@demlik/tea";
 import {defineMachine} from "@demlik/tea";
 import {budgetWith} from "../cap-clearance.ts";
 import {RETRY_BUDGET} from "../retry-budget.ts";
+import {WAIT_BUDGET} from "../wait-budget.ts";
 
 /** The operator's whole event vocabulary — the six, closed (#5570 founder session, 2026-08-15). */
 export const OPERATOR_EVENTS = ["DONE", "PASS", "FAIL", "BLOCKED", "WIP", "UNBLOCKED"] as const;
@@ -34,16 +43,33 @@ export type OperatorEvent = (typeof OPERATOR_EVENTS)[number];
 export const isOperatorEvent = (event: string): event is OperatorEvent =>
 	(OPERATOR_EVENTS as readonly string[]).includes(event);
 
-/** One task's folded state: the leaf, the retry budget, and the state it left (`was`). */
+/**
+ * The seventh event, and the one no operator records: a founder's cleared repair round, appended by
+ * `build clear` (ADR 0312). It targets nothing — it raises the budget from its own position in the
+ * log forward — so it opens no door out of a park and leaves 0297's transition vocabulary at six.
+ */
+export const CLEARED_EVENT = "CLEARED";
+
+/**
+ * One task's folded state: the leaf, its two budgets, the state it left (`was`), and the grants
+ * applied so far — `cleared` is the fold's own tally of {@link CLEARED_EVENT} rounds, which is what
+ * makes `maxRetries` a function of the log's prefix rather than of a document anyone can edit.
+ */
 export interface TaskState {
 	readonly type: string;
 	readonly retries: number;
 	readonly maxRetries: number;
+	readonly cleared: ReadonlyArray<number>;
+	/** Re-folds spent waiting on something outside the lane — never the repair budget above. */
+	readonly waits: number;
+	readonly maxWaits: number;
 	readonly was?: string;
 }
 
 export interface LaneMsg {
 	readonly type: string;
+	/** The round a {@link CLEARED_EVENT} clears; absent on every operator event. */
+	readonly round?: number;
 }
 
 export type TaskMachine = Machine<TaskState, LaneMsg, never, never, unknown>;
@@ -57,7 +83,21 @@ export interface CompiledTask {
 	readonly errorFinals: ReadonlySet<string>;
 	/** The finals that hold a cell for some event — parks the lane trips on and resumes from. */
 	readonly openFinals: ReadonlySet<string>;
-	/** The task's `context` entry minus the retry bookkeeping — passed through to status. */
+	/**
+	 * The states holding a **retries**-guarded cell — the ones whose only non-`PASS` route out is
+	 * gated on `retries < maxRetries`. Read at resume time, where landing in one with the budget
+	 * spent means the state was restored and the budget was not (#6570). A wait-guarded cell is not
+	 * one of these: its spent fallthrough is a human park that names the stall, not a fall back into
+	 * the error final the resume just left (ADR 0313).
+	 */
+	readonly guardedStates: ReadonlySet<string>;
+	/**
+	 * Rounds a retired `clearedRounds` context field names, which the compiler no longer honours
+	 * (ADR 0312). Carried so a refusal can name the repair — re-record each as a `CLEARED` event —
+	 * rather than leaving an operator staring at a grant that silently buys nothing.
+	 */
+	readonly staleGrants: ReadonlyArray<number>;
+	/** The task's `context` entry minus the two budgets' bookkeeping — passed through to status. */
 	readonly extras: Readonly<Record<string, unknown>>;
 }
 
@@ -78,7 +118,7 @@ export type CompileResult =
 	| {readonly _tag: "Compiled"; readonly lane: CompiledLane}
 	| {readonly _tag: "Malformed"; readonly defects: ReadonlyArray<string>};
 
-type Cell = (state: TaskState) => readonly [TaskState, readonly never[]];
+type Cell = (state: TaskState, msg: LaneMsg) => readonly [TaskState, readonly never[]];
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
@@ -108,8 +148,12 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		defects.push(`task "${taskId}": initial state "${initialState}" is not in \`states\``);
 	}
 
+	const ctx = isRecord(context) ? context : {};
+	const declared = typeof ctx.maxRetries === "number" ? ctx.maxRetries : RETRY_BUDGET;
+
 	const finals = new Set<string>();
 	const errorFinals = new Set<string>();
+	const guardedStates = new Set<string>();
 	for (const [name, node] of Object.entries(states)) {
 		if (nodeType(node) === "final") finals.add(name);
 	}
@@ -130,6 +174,12 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		}
 		for (const [eventName, transition] of Object.entries(on)) {
 			const msg = bareEvent(eventName);
+			if (msg === CLEARED_EVENT) {
+				defects.push(
+					`task "${taskId}": state "${stateName}" declares "${eventName}" — a clearance is the compiler's own cell on every state, never a document's transition (ADR 0312)`,
+				);
+				continue;
+			}
 			if (!isOperatorEvent(msg)) {
 				defects.push(
 					`task "${taskId}": state "${stateName}" listens for "${eventName}" — outside the operator's six (${OPERATOR_EVENTS.join("/")})`,
@@ -143,7 +193,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 				const [retry, fallthrough] = targets;
 				if (transition.length !== 2 || retry === undefined || fallthrough === undefined) {
 					defects.push(
-						`task "${taskId}": guarded "${eventName}" must be a two-arm array of \`{target}\` — [retry-while-retries-remain, else-fallthrough]`,
+						`task "${taskId}": guarded "${eventName}" must be a two-arm array of \`{target}\` — [loop-while-budget-remains, else-fallthrough]`,
 					);
 					continue;
 				}
@@ -153,10 +203,17 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 					}
 				}
 				if (finals.has(fallthrough)) errorFinals.add(fallthrough);
-				cells[msg] = (s) =>
-					s.retries < s.maxRetries
-						? [{...s, type: retry, retries: s.retries + 1, was: s.type}, []]
-						: [{...s, type: fallthrough, was: s.type}, []];
+				if (msg === "FAIL") guardedStates.add(stateName);
+				cells[msg] =
+					msg === "FAIL"
+						? (s) =>
+								s.retries < s.maxRetries
+									? [{...s, type: retry, retries: s.retries + 1, was: s.type}, []]
+									: [{...s, type: fallthrough, was: s.type}, []]
+						: (s) =>
+								s.waits < s.maxWaits
+									? [{...s, type: retry, waits: s.waits + 1, was: s.type}, []]
+									: [{...s, type: fallthrough, was: s.type}, []];
 				continue;
 			}
 			if (typeof transition !== "string") {
@@ -177,22 +234,47 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	}
 	if (defects.length > 0) return {defects};
 
+	// Read BEFORE the clearance cell is injected: an open final is one the DOCUMENT left a door in.
+	// The injected cell targets nothing, so counting it would read every final as a park (ADR 0312).
 	const openFinals = new Set(
 		Object.entries(table)
 			.filter(([name, cells]) => finals.has(name) && Object.keys(cells).length > 0)
 			.map(([name]) => name),
 	);
 
-	const ctx = isRecord(context) ? context : {};
-	const declared = typeof ctx.maxRetries === "number" ? ctx.maxRetries : RETRY_BUDGET;
 	// The lane guard and `build verdicts`'s `capReached` spend one grant identically, which is why the
 	// budget is derived there rather than tallied here — see `../cap-clearance.ts` (#5959, #6137).
-	const cleared = Array.isArray(ctx.clearedRounds)
+	const clearedCell: Cell = (s, msg) => {
+		const round = msg.round;
+		// Set-semantic by the round it names, so a re-recorded grant buys nothing (ADR 0312).
+		if (round === undefined || s.cleared.includes(round)) return [s, []];
+		const cleared = [...s.cleared, round].sort((a, b) => a - b);
+		return [{...s, cleared, maxRetries: budgetWith(declared, cleared)}, []];
+	};
+	for (const cells of Object.values(table)) cells[CLEARED_EVENT] = clearedCell;
+
+	const staleGrants = Array.isArray(ctx.clearedRounds)
 		? ctx.clearedRounds.filter((round): round is number => typeof round === "number")
 		: [];
-	const maxRetries = budgetWith(declared, cleared);
-	const {maxRetries: _max, retries: _retries, ...extras} = ctx;
-	const initial: TaskState = {type: initialState, retries: 0, maxRetries};
+	// A cap clearance buys a repair round and never a longer wait: `clearedCell` raises `maxRetries`
+	// alone, so the wait budget is a declared constant no recorded event moves (ADRs 0312, 0313).
+	const maxWaits = typeof ctx.maxWaits === "number" ? ctx.maxWaits : WAIT_BUDGET;
+	const {
+		maxRetries: _max,
+		retries: _retries,
+		clearedRounds: _cleared,
+		maxWaits: _maxWaits,
+		waits: _waits,
+		...extras
+	} = ctx;
+	const initial: TaskState = {
+		type: initialState,
+		retries: 0,
+		maxRetries: declared,
+		cleared: [],
+		waits: 0,
+		maxWaits,
+	};
 	// The Transitions mapped type demands a cell for every (state × msg) pair; a lane machine is
 	// compiled from data and deliberately partial — the absent cells ARE the refusal contract
 	// (`applyCell` throws `NoCellError` on them). One cast at the construction boundary.
@@ -200,7 +282,10 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		init: (loaded) => [loaded ?? initial, []],
 		update: table as never,
 	});
-	return {task: {machine, initial, finals, errorFinals, openFinals, extras}, defects: []};
+	return {
+		task: {machine, initial, finals, errorFinals, openFinals, guardedStates, staleGrants, extras},
+		defects: [],
+	};
 };
 
 /** The two targets of a phase's `onDone` pair: `[guarded success, fallthrough trip]`. */
@@ -319,6 +404,7 @@ export interface LaneTopology {
 			{
 				readonly initial: string;
 				readonly maxRetries: number;
+				readonly maxWaits: number;
 				/** Per state, the events it holds a cell for — everything else refuses. */
 				readonly states: Readonly<Record<string, ReadonlyArray<string>>>;
 			}
@@ -326,7 +412,11 @@ export interface LaneTopology {
 	>;
 }
 
-/** The compiled machines summarized as data — what `lane print` answers with. */
+/**
+ * The compiled machines summarized as data — what `lane print` answers with. Every state lists
+ * {@link CLEARED_EVENT} because every state holds that cell; `maxRetries` is the declared budget,
+ * which is what a fresh lane starts at before any grant is recorded.
+ */
 export const topology = (lane: CompiledLane): LaneTopology => ({
 	phases: lane.phases,
 	terminals: lane.terminals,
@@ -337,6 +427,7 @@ export const topology = (lane: CompiledLane): LaneTopology => ({
 			{
 				initial: task.initial.type,
 				maxRetries: task.initial.maxRetries,
+				maxWaits: task.initial.maxWaits,
 				states: Object.fromEntries(
 					Object.entries(task.machine.update as Record<string, Record<string, unknown>>).map(
 						([state, cells]) => [state, Object.keys(cells)],

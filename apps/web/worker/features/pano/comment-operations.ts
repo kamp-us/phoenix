@@ -22,8 +22,8 @@ import {applyRemovalTransition} from "../lifecycle/apply-removal-transition.ts";
 import {anonymousViewer, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {
+	type MaskedReadOptions,
 	ownSandboxed,
-	resolveSandboxViewer,
 	sandboxBacklogWhere,
 	sandboxedInPlace,
 	sandboxVisibleWhere,
@@ -101,7 +101,7 @@ export interface VoteOnCommentResult {
 	changed: boolean;
 }
 
-export interface ReactToCommentInput {
+export interface ReactToCommentInput extends MaskedReadOptions {
 	commentId: CommentId;
 	userId: UserId;
 	// `null` retracts (toggle off). Already decoded against `ReactionEmojiSchema` at the
@@ -285,21 +285,20 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 
 	const listCommentsKeyset = Effect.fn("Pano.listCommentsKeyset")(function* (
 		postId: string,
-		opts: {
+		opts: MaskedReadOptions & {
 			first?: number | undefined;
 			after?: string | null | undefined;
 			viewerId?: string | null | undefined;
-			sandboxViewer?: SandboxViewer | undefined;
 			mutedIds?: ReadonlySet<string> | undefined;
 			// Off ⇒ the wave runs at `concurrency: 1`, byte-for-byte today. Resolved from the
 			// default-off `phoenix-pano-stamp-wave` flag.
 			parallelStamps?: boolean | undefined;
-		} = {},
+		},
 	) {
 		const first = Math.max(1, Math.min(opts.first ?? 50, 200));
 		const after = opts.after ?? null;
 		const viewerId = opts.viewerId ?? null;
-		const viewer = resolveSandboxViewer(opts);
+		const viewer = opts.sandboxViewer;
 
 		// A removed comment stays in the thread ONLY to preserve reply structure (ADR 0096
 		// §5): keep it when it still has a live child, otherwise omit it.
@@ -370,17 +369,16 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 
 	const getCommentsByIds = Effect.fn("Pano.getCommentsByIds")(function* (
 		ids: ReadonlyArray<string>,
-		opts: {
+		opts: MaskedReadOptions & {
 			viewerId?: string | null | undefined;
-			sandboxViewer?: SandboxViewer | undefined;
 			mutedIds?: ReadonlySet<string> | undefined;
 			/** See `listCommentsKeyset`'s `parallelStamps` (#2710). */
 			parallelStamps?: boolean | undefined;
-		} = {},
+		},
 	) {
 		if (ids.length === 0) return [];
 		const viewerId = opts.viewerId ?? null;
-		const viewer = resolveSandboxViewer(opts);
+		const viewer = opts.sandboxViewer;
 		const fetched = yield* run((db) =>
 			db
 				.select()
@@ -852,7 +850,10 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 			);
 
 		// A missing row here is a raced removal — surface it as `CommentNotFound`.
-		const [row] = yield* getCommentsByIds([input.commentId], {viewerId: input.userId});
+		const [row] = yield* getCommentsByIds([input.commentId], {
+			viewerId: input.userId,
+			sandboxViewer: input.sandboxViewer,
+		});
 		if (!row) {
 			return yield* new CommentNotFound({
 				commentId: input.commentId,
