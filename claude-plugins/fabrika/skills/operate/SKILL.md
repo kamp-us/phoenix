@@ -72,7 +72,12 @@ node <fabrika> lane claim $lane_key
 Exit `0` is yours to drive — `won` on an issue lane, `unclaimable` on a `chore:<name>` key, which
 carries no board number for a marker to sit on and so races with nobody. Exit `31` is a **proven
 loss**: another driver holds this lane, its token is named on stderr, and this run ends `LANE-HELD`
-having emitted no ledger and spawned no shell. `1` (no `CLAUDE_CODE_SESSION_ID`, or a `--token` that
+having emitted no ledger and spawned no shell. One reading of `31` is not a loss to wait out — a
+holder that is a **killed seat**, which is the same session under another nonce and is named as such
+on stderr beside the `lane adopt` invocation that takes it back (ADR
+[0325](../../../../.decisions/0325-lane-namespace-claim-succession.md)). Follow the refusal's own
+route there rather than ending `LANE-HELD` on a lane nobody is driving; step 3's lane-claim passage
+has the three commands. `1` (no `CLAUDE_CODE_SESSION_ID`, or a `--token` that
 is not a lane-claim token of this session), `8` (the marker write is UNKNOWN), `9` (it landed and
 does not read back) and `11` (the marker set could not be read) all end `STOPPED` naming the code —
 an unproven claim is never driven through.
@@ -478,6 +483,26 @@ as its successor: `fabrika build adopt <n> --session <its session id> --reason "
 issue and reversible by deleting it; a claim you are not willing to state that about stays where it
 is, named in the park comment with its token.
 
+**The lane claim a killed *seat* stranded takes the same route, one namespace over.** The dead spawn
+above ran under your session, so `build release` clears it; a dead **operator seat** held a
+`lane-claim:` marker of its own, and that one is `Foreign` to you even though it carries your session
+id — ownership turns on the whole token, and only the nonce differs. So neither plain `lane release`
+nor `lane claim` reaches it, and the escape used to be reading its token out of the comment body by
+hand ([#6374](https://github.com/kamp-us/phoenix/issues/6374)). Run the succession instead:
+
+```bash
+node <fabrika> lane adopt $lane_key --session <this run's session id> --reason "<why>"
+node <fabrika> lane release $lane_key --token <the token adopt printed>
+node <fabrika> lane claim $lane_key
+```
+
+`--session` is your own session id in the ordinary case, which is the one thing `lane adopt` admits
+and `build adopt` refuses — that difference is the killed seat (ADR
+[0325](../../../../.decisions/0325-lane-namespace-claim-succession.md)). It proves no seat dead: the
+guards are the ACL and the marker sitting on the issue with your reason, so state a reason you would
+defend, and adopt a seat you have cause to believe is gone rather than one that is merely quiet. If
+that seat turns out to be live, delete the adopt comment — the act reverses.
+
 **Every event is proven first — artifacts over self-reports.** A report is
 data; what moves the machine is the artifact behind it. The verb below is the read `lane report`
 already ran for the shell; on your own two records it is yours to run. The retired epic conductor held this rule
@@ -805,6 +830,16 @@ claimants <n>` gives the same answer for one issue.
 mechanics, the guards and the exact invocations are in the adopt-then-release passage of step 3
 above ("A claim stranded by a gone session is releasable, once you say so on the board") — the
 `session` field on the `held` row is the `--session` argument that passage asks for.
+
+**The lane's own claim is not in this sweep, and a stale row does not mean you can take it.**
+`--claims` pairs each row with the **build** claim on its issue; the `lane-claim:` marker a killed
+operator seat left is a second marker on the same thread that nothing here reads. So a row can read
+`stale` — a lane to re-spawn — while `lane claim` on it refuses `31`, which is the contradiction
+[#6374](https://github.com/kamp-us/phoenix/issues/6374) reported. That refusal now names its own way
+out on stderr: `lane adopt`, then `lane release` under the token it prints, then claim (ADR
+[0325](../../../../.decisions/0325-lane-namespace-claim-succession.md), step 3's lane-claim
+passage). Read the exit code and follow it; never hand-compose a `--token` release off a comment
+body.
 
 ## Terminal vocabulary
 
