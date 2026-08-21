@@ -218,9 +218,14 @@ type PriorBuildRead =
  * refusal is overridable by `--override`, which admits an issue the *scope* fence barred; this is
  * not a question about whether the issue is in scope.
  *
- * Three answers, then, not two: `FAIL`, no `FAIL`, and **unreadable** — an unreachable comment page
- * and a marker that reaches for the range format and misses it both land in the third, refuse on
- * `11`, and are never folded into the second.
+ * A fresh claim refuses on **any** standing verdict, not only a `FAIL`: a `PASS` says the child was
+ * built and graded just as loudly, and it is the more finished of the two, so admitting it was the
+ * same re-implementation hazard with the opposite sign (#6715). Only the route out differs — a
+ * `FAIL` has a repair lane behind `--resume`, a `PASS` has no repair to take and waits on the epic
+ * driver's fold.
+ *
+ * Unreadable is the third answer, never folded into "no prior build": an unreachable comment page
+ * and a marker that reaches for the range format and misses it both refuse on `11`.
  */
 const readPriorBuild = (
 	repo: string,
@@ -267,16 +272,17 @@ const readPriorBuild = (
 				),
 			};
 		}
-		if (failed.length > 0 && !resume) {
+		if (read.standing.length > 0 && !resume) {
+			const graded = read.standing
+				.map((v) => `${v.namespace} ${v.polarity} over ${v.range} (comment ${v.commentId})`)
+				.join("; ");
 			return {
 				_tag: "Refused" as const,
 				outcome: refuse(
 					PRIOR_BUILD_MISMATCH,
-					`${CLAIM}: #${number} already carries a build a reviewer failed — ${failed
-						.map((v) => `${v.namespace} FAIL over ${v.range} (comment ${v.commentId})`)
-						.join(
-							"; ",
-						)}. A fresh build would re-implement it; run "fabrika build claim ${number} --resume" to take the repair lane instead, then "fabrika build branch ${number} --resume-lane --token <token>" to stand on the branch that build left. Nothing was written.`,
+					failed.length > 0
+						? `${CLAIM}: #${number} already carries a build a reviewer failed — ${graded}. A fresh build would re-implement it; run "fabrika build claim ${number} --resume" to take the repair lane instead, then "fabrika build branch ${number} --resume-lane --token <token>" to stand on the branch that build left. Nothing was written.`
+						: `${CLAIM}: #${number} is already built and graded — ${graded}. A fresh build would re-implement work a reviewer passed, and there is nothing to repair, so --resume does not apply either. The next step is the epic driver's: fold the branch that build left, then close the child. Nothing was written.`,
 					[...lines, ...notes],
 				),
 			};

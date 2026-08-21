@@ -1640,8 +1640,8 @@ describe("runClaim — the blockedness gate", () => {
 describe("runClaim — the prior-build gate on an epic child", () => {
 	const RANGE =
 		"9f2c1ab4d5e6f708192a3b4c5d6e7f8091a2b3c4..03135b917283a4b5c6d7e8f90a1b2c3d4e5f6071";
-	const rangeVerdict = (polarity: string) =>
-		`review-code: ${polarity} range:${RANGE} content:2f1a9c4e0b7d — the child's range`;
+	const rangeVerdict = (polarity: string, namespace = "review-code") =>
+		`${namespace}: ${polarity} range:${RANGE} content:2f1a9c4e0b7d — the child's range`;
 
 	it("refuses a fresh build claim on a child whose newest range verdict is FAIL", async () => {
 		const out = await run(runClaim, [
@@ -1701,17 +1701,97 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 		expect(out.stderr.join("\n")).toContain("drop --resume");
 	});
 
-	it("admits an ordinary fresh claim on a child whose verdicts all PASS", async () => {
+	/**
+	 * The opposite polarity, same hazard (#6715): a `PASS` child is the *more* finished of the two and
+	 * was the one that admitted freely, so a fresh lane could re-implement work a reviewer had graded.
+	 * The refusal points at the fold, never at `--resume`, because a passed child has nothing to repair.
+	 */
+	it("refuses a fresh build claim on a child whose standing verdicts all PASS", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
 			unclaimed(),
-			[once(COMMENTS), comments({id: 8801, body: rangeVerdict("PASS")})],
+			[COMMENTS, comments({id: 8801, body: rangeVerdict("PASS")})],
+		]);
+		expect(out.code).toBe(PRIOR_BUILD_MISMATCH);
+		const stderr = out.stderr.join("\n");
+		expect(stderr).toContain("review-code PASS over");
+		expect(stderr).toContain(RANGE);
+		expect(stderr).toContain("comment 8801");
+		expect(stderr).toContain("fold");
+		expect(stderr).not.toContain("--resume-lane");
+		expect(stderr).not.toContain('"fabrika build claim 4312 --resume"');
+	});
+
+	it("writes no marker when it refuses a PASS-only child either", async () => {
+		const shell = unblocked([
+			[ISSUE, CLAIMABLE],
+			unclaimed(),
+			[COMMENTS, comments({id: 8801, body: rangeVerdict("PASS")})],
+		]);
+		await Effect.runPromise(
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
+		);
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+	});
+
+	it("refuses a mixed PASS and FAIL child naming both, and keeps the repair route", async () => {
+		const out = await run(runClaim, [
+			[ISSUE, CLAIMABLE],
+			unclaimed(),
+			[
+				COMMENTS,
+				comments(
+					{id: 8801, body: rangeVerdict("FAIL")},
+					{id: 8802, body: rangeVerdict("PASS", "governance")},
+				),
+			],
+		]);
+		expect(out.code).toBe(PRIOR_BUILD_MISMATCH);
+		const stderr = out.stderr.join("\n");
+		expect(stderr).toContain("review-code FAIL over");
+		expect(stderr).toContain("governance PASS over");
+		expect(stderr).toContain('"fabrika build claim 4312 --resume"');
+	});
+
+	it("admits a fresh claim on a child holding no standing verdict at all", async () => {
+		const out = await run(runClaim, [
+			[ISSUE, CLAIMABLE],
+			unclaimed(),
+			[once(COMMENTS), comments()],
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
 			[perm("agent"), WRITES],
 		]);
 		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({answer: "won"});
+	});
+
+	it("still refuses --resume on a child holding only PASS — the two refusals stay distinct", async () => {
+		const out = await run(
+			runClaim,
+			[
+				[ISSUE, CLAIMABLE],
+				unclaimed(),
+				[COMMENTS, comments({id: 8801, body: rangeVerdict("PASS")})],
+			],
+			{resume: true},
+		);
+		expect(out.code).toBe(PRIOR_BUILD_MISMATCH);
+		expect(out.stderr.join("\n")).toContain("drop --resume");
+	});
+
+	it("refuses a PASS-only child under --override too — this is not a scope question", async () => {
+		const out = await run(
+			runClaim,
+			[
+				[ISSUE, CLAIMABLE],
+				unclaimed(),
+				[COMMENTS, comments({id: 8801, body: rangeVerdict("PASS")})],
+			],
+			{override: "the operator says build it anyway", overrideLane: "lane-7"},
+		);
+		expect(out.code).toBe(PRIOR_BUILD_MISMATCH);
 	});
 
 	it("refuses on 11 when the comments cannot be read — never 'no prior build'", async () => {

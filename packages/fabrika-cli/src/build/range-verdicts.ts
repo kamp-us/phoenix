@@ -14,7 +14,7 @@
  * (`../lane/range.ts`), and a claim has no tree yet — but more than that, staleness is the wrong
  * question here. "Does this verdict still bind" is what a repair lane asks before it re-reviews;
  * "has this child been built and reviewed at all" is what a *fresh* claim asks, and a stale `FAIL`
- * answers that one yes.
+ * answers that one yes — so does a `PASS`, which is why the fresh claim refuses on either (#6715).
  *
  * A comment reaching for the range format and missing it is reported separately, never dropped and
  * never folded into `standing`: a verdict posted in a broken format is the one failure that would
@@ -73,6 +73,9 @@ export const readRangeVerdicts = (comments: ReadonlyArray<CommentRecord>): Range
 	};
 };
 
-/** The standing verdicts a fresh build claim must not build over. */
+/**
+ * The standing verdicts that have a repair lane behind them. A fresh claim refuses on any standing
+ * verdict (#6715), so this narrowing picks the route out, not the refusal.
+ */
 export const failing = (read: RangeVerdictRead): ReadonlyArray<RangeVerdict> =>
 	read.standing.filter((verdict) => verdict.polarity === "FAIL");
