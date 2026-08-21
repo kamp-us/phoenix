@@ -8,13 +8,15 @@
  * adds and a range-bound verdict on the child issue. Everything here is the pure half — facts in,
  * one verdict out — so the whole table is testable without a network and without a checkout.
  *
- * **Two events carry a claim; the other four carry none.** `DONE` out of a `build` state asserts the
- * work exists, `PASS` out of a review state asserts the namespaces that state owes judged it —
- * every derived one out of `review:ui`, every one the plain `review` cell can itself reach out of
- * `review` (see {@link REVIEW_UI_STATE} for why the two differ). A
- * `BLOCKED`, a `WIP`, an `UNBLOCKED`, a `FAIL`, a `DONE` out of `ship` or a `DONE` out of a child's
- * `integrate` asserts nothing a read could falsify — those answer {@link Claim} `None`, so a caller
- * may prove *every* event and still only pay for the two that can lie.
+ * **Three events carry a claim, and one of them claims a negative.** `DONE` out of a `build` state
+ * asserts the work exists, `PASS` out of a review state asserts the namespaces that state owes
+ * judged it — every derived one out of `review:ui`, every one the plain `review` cell can itself
+ * reach out of `review` (see {@link REVIEW_UI_STATE} for why the two differ). `BLOCKED` out of a
+ * review state asserts the reviewer's run reached **no** verdict, which one still-binding `FAIL`
+ * falsifies ({@link foldPark}). A `WIP`, an `UNBLOCKED`, a `FAIL`, a `BLOCKED` out of `build`, a
+ * `DONE` out of `ship` or a `DONE` out of a child's `integrate` asserts nothing a read could
+ * falsify — those answer {@link Claim} `None`, so a caller may prove *every* event and still only
+ * pay for the three that can lie.
  *
  * **What the two events claim is the same question asked of a different artifact**, and which
  * artifact is structural: {@link roleOf} reads it off the task's own name, exactly as the emitter
@@ -96,6 +98,12 @@ export type Claim =
 	 * `review` `PASS` that walks to `ship`.
 	 */
 	| {readonly _tag: "HeadVerdicts"; readonly defers: ReadonlyArray<string>}
+	/**
+	 * A reviewer's park out of a review cell, which claims the run reached no verdict. It is the one
+	 * negative claim here, so it is refused only by a still-binding `FAIL` and by nothing else — see
+	 * {@link foldPark}.
+	 */
+	| {readonly _tag: "ParkUncontradicted"}
 	| {readonly _tag: "RangeCommits"; readonly epic: number}
 	| {readonly _tag: "RangeVerdict"; readonly epic: number}
 	| {readonly _tag: "None"; readonly why: string};
@@ -131,9 +139,13 @@ export const claimOf = (
 	if (event === "PASS" && leaf === REVIEW_UI_STATE && !child) {
 		return {_tag: "HeadVerdicts", defers: []};
 	}
+	// A child's park has no PR to read, and its range verdicts are the other arm's read (#6112).
+	if (event === "BLOCKED" && (leaf === REVIEW_STATE || leaf === REVIEW_UI_STATE) && !child) {
+		return {_tag: "ParkUncontradicted"};
+	}
 	return {
 		_tag: "None",
-		why: `${event} out of "${leaf}" asserts no artifact — only DONE out of "${BUILD_STATE}" and PASS out of "${REVIEW_STATE}" / "${REVIEW_UI_STATE}" do`,
+		why: `${event} out of "${leaf}" asserts no artifact — only DONE out of "${BUILD_STATE}", PASS out of "${REVIEW_STATE}" / "${REVIEW_UI_STATE}" and BLOCKED out of those two review cells do`,
 	};
 };
 
@@ -420,5 +432,32 @@ export const foldNamespaces = (rows: ReadonlyArray<NamespaceRow>, subject: strin
 	return {
 		_tag: "Proven",
 		note: `every derived namespace has answered on ${subject}: ${rows.map((row) => `${row.namespace} (${row.state})`).join(", ")}`,
+	};
+};
+
+/**
+ * Fold the namespace rows into the one verdict a reviewer's **park** earns — one `FAIL` refuses it,
+ * everything else lets it through (ADR 0329, #6112).
+ *
+ * A park says "this run reached no verdict", and only one row can say otherwise: a `FAIL` that still
+ * binds. An `absent` or `stale` row cannot, because that is the very state a run parks in the middle
+ * of, and a `pass` row cannot either — the reviewer's own precedence is that an unseen input blocks
+ * `PASS` and never `FAIL`, so a namespace that passed beside an unreadable one still parks.
+ *
+ * The asymmetry with {@link foldNamespaces} is the point: a `PASS` must clear a floor, a park must
+ * only survive a contradiction. Nothing here is an "is the review finished" test, so a park is never
+ * held for a namespace nobody has judged yet.
+ */
+export const foldPark = (rows: ReadonlyArray<NamespaceRow>, subject: string): Proof => {
+	const failed = rows.filter((row) => row.state === "fail");
+	if (failed.length > 0) {
+		return {
+			_tag: "Contradicted",
+			what: `${subject} holds a FAIL that still binds in ${failed.map((row) => row.namespace).join(", ")} — the run reached a verdict, so its terminal is that FAIL and not a park`,
+		};
+	}
+	return {
+		_tag: "Proven",
+		note: `no verdict on ${subject} contradicts the park: ${rows.length === 0 ? "no derived namespace holds one" : rows.map((row) => `${row.namespace} (${row.state})`).join(", ")}`,
 	};
 };

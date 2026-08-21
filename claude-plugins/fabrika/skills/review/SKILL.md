@@ -72,8 +72,9 @@ fabrika review verdicts $pr_number
 ```
 
 The acceptance-criteria block arrives through the registered wire format, never a hand parse;
-`absent` and `malformed` are findings about the issue, not licence to invent criteria. Read the
-binding column as printed — the three-outcome type, not a boolean.
+`absent` and `malformed` are findings about the issue, not licence to invent criteria — and not a
+terminal either, so carry them into the verdict you reach at the end rather than reporting one here
+(§ Terminal vocabulary). Read the binding column as printed — the three-outcome type, not a boolean.
 
 <!-- anchor: BOTH-ISSUE-KINDS-BIND --> **Both issue kinds bind, and you grade against the number
 either one names.** `part-of:<n>` is an intentional partial split — `build --partial` emits `Part of
@@ -243,6 +244,17 @@ Stale/Unbindable — re-review required** · **routed elsewhere** (`review-ui` /
 only). Precedence: **an unseen input blocks PASS, never FAIL** — FAIL on what you did
 see, naming the unread piece UNKNOWN; no namespace PASSes on an unseen input.
 
+**A terminal is where the run ends, never where it stumbles.** An input you cannot read — a
+malformed acceptance-criteria heading, a diff that will not serve, a marker you cannot bind — is one
+input to the verdict you reach at the end, not an exit from the run. Keep working: fire every
+namespace this PR derives, judge what you can see, and pick your token once, from everything the
+whole run reached. **One `lane report` call per run**, and the first one you make is the one the
+ledger keeps — the log is append-only, and a lane folded into a park holds no cell for a verdict
+that arrives after it. Lane 5661 reported `UNKNOWN` on a malformed criteria heading four seconds
+before its own first FAIL, landed three FAILs at head, and could record none of them: exit `12`,
+`no update cell for msg.type "FAIL" in state "blocked"`, leaving a ledger that read a wait on a
+human over a PR that needed a repair round (#6112).
+
 **`routed elsewhere` has a mechanical trigger, and it is §1's `routed` rows against your emission
 checklist.** You end `ROUTED` when the routed rows are the *whole* required set — every namespace
 this PR derives is one you may not emit, so there is no round here to run. That is the only shape
@@ -295,10 +307,16 @@ what you inferred. A spelling outside the closed set is refused at exit `38`, bu
 spelling on a PR that raised no such row is not refused: it routes the lane into a rendered round its
 diff cannot fill.
 
-One guard is yours before a `FAIL`: record it **only when every derived namespace holds a verdict
-that still binds at the head** — a `FAIL` beside an in-flight namespace is an incomplete read the
-lane must not act on yet, so print the terminal without recording and leave the record to the
-operator's re-read. The verb refuses a token outside this vocabulary (exit `32`) rather than
+Two guards are yours before you record, one per polarity. Record a `FAIL` **only when every derived
+namespace holds a verdict that still binds at the head** — a `FAIL` beside an in-flight namespace is
+an incomplete read the lane must not act on yet, so print the terminal without recording and leave
+the record to the operator's re-read. And record an `UNKNOWN`, a `STALE` or an `UNBINDABLE` **only
+when no derived namespace holds a still-binding `FAIL`**: those three park the lane on a human, a
+`FAIL` routes it into a repair round under the retry budget, and a park recorded over a FAIL
+converts the second into the first with nothing downstream able to tell (ADR
+[0329](../../../../.decisions/0329-a-reviewers-park-is-proof-gated-by-the-fails-at-head.md)).
+`lane report` proves that half itself — a park out of `review` is refused at exit `24` naming the
+FAILs it read, and `FAIL` is the token that refusal points at. The verb refuses a token outside this vocabulary (exit `32`) rather than
 interpreting it, and it **proves a `PASS` before it records it** — read off the PR itself, exit `23`
 where a namespace holds no verdict still binding at the head. What it proves is what *this* cell
 owes, and your class flag is what decides that: a routed namespace is left to the `review:ui` cell

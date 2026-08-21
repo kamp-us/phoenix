@@ -4,6 +4,7 @@ import {
 	claimOf,
 	epicOf,
 	foldNamespaces,
+	foldPark,
 	integratedFrom,
 	issueOf,
 	judgeVerdicts,
@@ -83,6 +84,19 @@ describe("claimOf", () => {
 	/** A child's regions carry no `review:ui` cell, so its range-scoped set has nowhere to defer to. */
 	it("claims nothing for a child out of `review:ui`, a cell its regions do not have", () => {
 		expect(claimOf("PASS", "review:ui", CHILD)._tag).toBe("None");
+	});
+
+	/**
+	 * A park claims a negative — that the run reached no verdict — so it is read rather than waved
+	 * through, and one still-binding FAIL falsifies it (#6112). A child's park has no PR to read.
+	 */
+	it("claims the park a reviewer records out of either review cell, and none for a child", () => {
+		expect(claimOf("BLOCKED", "review", SINGLE, "blocked")).toEqual({_tag: "ParkUncontradicted"});
+		expect(claimOf("BLOCKED", "review:ui", SINGLE, "blocked")).toEqual({
+			_tag: "ParkUncontradicted",
+		});
+		expect(claimOf("BLOCKED", "review", TAIL, "blocked")).toEqual({_tag: "ParkUncontradicted"});
+		expect(claimOf("BLOCKED", "review", CHILD, "blocked")._tag).toBe("None");
 	});
 
 	it("claims nothing for the events no read can falsify, in either shape", () => {
@@ -356,5 +370,31 @@ describe("foldNamespaces", () => {
 		const proof = foldNamespaces([row("review-code", "pass"), row("review-ui", "stale")], "#4318");
 		expect(proof._tag).toBe("InFlight");
 		expect(proof._tag === "InFlight" && proof.what).toContain("review-ui (stale)");
+	});
+
+	/**
+	 * The park's bar is the opposite shape: a PASS clears a floor, a park only survives a
+	 * contradiction. The rows a PASS is held on are the rows a run parks in the middle of, so holding
+	 * a park on them would be holding it forever (#6112).
+	 */
+	describe("foldPark", () => {
+		it("refuses a park when one namespace holds a FAIL that still binds", () => {
+			const proof = foldPark([row("review-code", "fail"), row("governance", "absent")], "#4318");
+			expect(proof._tag).toBe("Contradicted");
+			expect(proof._tag === "Contradicted" && proof.what).toContain(
+				"its terminal is that FAIL and not a park",
+			);
+		});
+
+		it("lets a park through on the rows a PASS is held on — absent, stale, and passing", () => {
+			for (const rows of [
+				[row("review-code", "absent")],
+				[row("review-code", "stale")],
+				[row("review-code", "pass"), row("governance", "absent")],
+				[],
+			]) {
+				expect(foldPark(rows, "#4318")._tag).toBe("Proven");
+			}
+		});
 	});
 });

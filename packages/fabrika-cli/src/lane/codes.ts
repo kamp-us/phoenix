@@ -139,9 +139,9 @@ export const PROOF_ABSENT = 22;
 export const PROOF_IN_FLIGHT = 23;
 
 /**
- * The artifact is there and says the other thing — a still-binding `FAIL` under a claimed `PASS`.
- * Distinct again by remedy: the caller has the event wrong and the machine has a cell for the one
- * the artifact actually supports.
+ * The artifact is there and says the other thing — a still-binding `FAIL` under a claimed `PASS`, or
+ * under a reviewer's claimed park (#6112). Distinct again by remedy: the caller has the event wrong
+ * and the machine has a cell for the one the artifact actually supports.
  */
 export const PROOF_CONTRADICTED = 24;
 
