@@ -102,7 +102,12 @@ const migrateLane = (
 		if (graft === undefined) {
 			const foreign = grafts.find((candidate) => candidate._tag === "Foreign");
 			const id = foreign === undefined ? name : foreign.id;
-			return {key, root, verdict: "generated", reason: `machine "${id}" was generated`};
+			return {
+				key,
+				root,
+				verdict: "generated",
+				reason: `machine "${id}" was generated, not booted — it drains on the machine it was emitted with and is never migrated (ADR 0313, amendment 2026-08-20)`,
+			};
 		}
 		if (sameMachine(onDisk.success, graft.text)) return {key, root, verdict: "current"};
 
