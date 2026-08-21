@@ -84,16 +84,63 @@ describe("scanFile leaves everything that is not a call alone", () => {
 });
 
 describe("the sanctioned leg and the self-exemptions", () => {
+	const GH_API = "packages/fabrika-cli/src/io/gh-api.ts";
+
+	/** The sanctioned leg as it really sits: inside `resolveToken`, at column 0. */
+	const resolveToken = (body: string): string =>
+		["export const resolveToken = (env) =>", "\tEffect.gen(function* () {", body, "\t});"].join(
+			"\n",
+		);
+
 	it("allows ADR 0315's credential leg in the one file that holds it", () => {
-		expect(scanFile("packages/fabrika-cli/src/io/gh-api.ts", 'file: "gh",')).toEqual([]);
+		expect(
+			scanFile(GH_API, resolveToken('\t\texecRecord({file: "gh", args: ["auth", "token"]});')),
+		).toEqual([]);
 	});
 
 	it("still reds a different call added to that same file", () => {
-		const findings = scanFile(
-			"packages/fabrika-cli/src/io/gh-api.ts",
-			'execFileSync("sh", ["-c", "gh pr merge"]);',
-		);
+		const findings = scanFile(GH_API, 'execFileSync("sh", ["-c", "gh pr merge"]);');
 		expect(findings.map((f) => f.matched)).toContain('"gh pr');
+	});
+
+	/**
+	 * The hole the sanction had until #6629's tail: keyed on the matched text alone, every argv spawn
+	 * produced the same `"gh"`, so `gh-api.ts` held a file-wide licence for the one spelling most
+	 * likely to come back.
+	 */
+	it("reds an argv spawn added to that file outside the sanctioned declaration", () => {
+		const findings = scanFile(
+			GH_API,
+			[
+				resolveToken('\t\texecRecord({file: "gh", args: ["auth", "token"]});'),
+				"",
+				"export const listPulls = () =>",
+				'\texecCapture("gh", ["pr", "list"]);',
+			].join("\n"),
+		);
+		expect(findings.map((f) => f.matched)).toEqual(['"gh"']);
+	});
+
+	it("reds a second argv spawn inside the sanctioned declaration — one sanction is one call", () => {
+		const findings = scanFile(
+			GH_API,
+			resolveToken(
+				[
+					'\t\texecRecord({file: "gh", args: ["auth", "token"]});',
+					'\t\texecRecord({file: "gh", args: ["pr", "list"]});',
+				].join("\n"),
+			),
+		);
+		expect(findings).toHaveLength(1);
+		expect(findings[0]?.matched).toBe('"gh"');
+	});
+
+	it("reds the same leg in any other file — the sanction names one file", () => {
+		const findings = scanFile(
+			"packages/fabrika-cli/src/io/pulls.ts",
+			resolveToken('\t\texecRecord({file: "gh", args: ["auth", "token"]});'),
+		);
+		expect(findings.map((f) => f.matched)).toEqual(['"gh"']);
 	});
 
 	it("exempts the guard's own files, which have to spell out what they forbid", () => {

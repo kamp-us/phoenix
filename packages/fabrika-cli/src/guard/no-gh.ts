@@ -87,18 +87,26 @@ const isRunnable = (lines: ReadonlyArray<string>, index: number): boolean => {
 
 interface Sanctioned {
 	readonly file: string;
+	/** The top-level declaration the sanctioned spawn sits inside — {@link enclosingSymbols}. */
+	readonly symbol: string;
 	readonly matched: string;
 }
 
 /**
- * The one `gh` spawn this package keeps, named by file **and** by the exact text that matched.
+ * The one `gh` spawn this package keeps, named by file, by the declaration that holds it, and by the
+ * exact text that matched — and spendable **once**.
  *
  * ADR 0315 rules the credential order `GITHUB_TOKEN`, `GH_TOKEN`, then `gh auth token` — the last a
- * developer-machine convenience resolved once, before any request, never on a request path. Pinning
- * the matched text as well as the file is what keeps this from becoming a file-wide licence: a
- * second, different `gh` call added to `gh-api.ts` still reds.
+ * developer-machine convenience resolved once, before any request, never on a request path.
+ *
+ * Keying on the matched text alone was a file-wide licence for the one spelling that matters: every
+ * argv spawn produces the same `"gh"`, so any number of them added anywhere in `gh-api.ts` passed
+ * silently, and `gh-api.ts` is the most plausible file for such a call to come back to. The site key
+ * plus the single-use rule is what the docblock always claimed and the unit test always pinned.
  */
-const SANCTIONED: ReadonlyArray<Sanctioned> = [{file: "/src/io/gh-api.ts", matched: '"gh"'}];
+const SANCTIONED: ReadonlyArray<Sanctioned> = [
+	{file: "/src/io/gh-api.ts", symbol: "resolveToken", matched: '"gh"'},
+];
 
 /**
  * The guard's own files, which cannot be scanned by it: a guard must spell out what it forbids, and
@@ -121,9 +129,42 @@ export const isSelfExempt = (path: string): boolean => {
 	return SELF_EXEMPT_SUFFIXES.some((suffix) => p.endsWith(suffix));
 };
 
-const isSanctioned = (file: string, matched: string): boolean => {
+/**
+ * A top-level `const`/`let`/`function`/`class` declaration, at column 0.
+ *
+ * Column 0 is the whole test, and it holds because biome formats this package with tabs: anything
+ * nested is indented. A `gh` spawn the scanner cannot place — before the first declaration, or in a
+ * file shaped some other way — gets `null` and matches no sanction, which is the fail-closed
+ * direction.
+ */
+const TOP_LEVEL_DECL =
+	/^(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/;
+
+/** For each line, the nearest top-level declaration at or above it — the call site a sanction names. */
+const enclosingSymbols = (lines: ReadonlyArray<string>): ReadonlyArray<string | null> => {
+	const out: Array<string | null> = [];
+	let current: string | null = null;
+	for (const line of lines) {
+		const named = TOP_LEVEL_DECL.exec(line)?.[1];
+		if (named !== undefined) current = named;
+		out.push(current);
+	}
+	return out;
+};
+
+/**
+ * The sanction row this match spends, or `null` when none covers it.
+ *
+ * Returns the row rather than a boolean so {@link scanFile} can spend it: a sanction names one call,
+ * so a second match against the same row is a second call and reds.
+ */
+const sanctionFor = (file: string, symbol: string | null, matched: string): Sanctioned | null => {
 	const p = normalize(file);
-	return SANCTIONED.some((row) => p.endsWith(row.file) && row.matched === matched);
+	return (
+		SANCTIONED.find(
+			(row) => p.endsWith(row.file) && row.symbol === symbol && row.matched === matched,
+		) ?? null
+	);
 };
 
 /**
@@ -183,6 +224,8 @@ export const scanFile = (file: string, content: string): ReadonlyArray<Finding> 
 	if (isSelfExempt(file)) return [];
 	const findings: Array<Finding> = [];
 	const lines = codeOf(content);
+	const symbols = enclosingSymbols(lines);
+	const spent = new Set<Sanctioned>();
 	for (let i = 0; i < lines.length; i++) {
 		const text = lines[i] ?? "";
 		const patterns = isRunnable(lines, i)
@@ -192,8 +235,12 @@ export const scanFile = (file: string, content: string): ReadonlyArray<Finding> 
 			pattern.lastIndex = 0;
 			for (const match of text.matchAll(pattern)) {
 				const matched = match[0];
-				if (isSanctioned(file, matched)) continue;
 				if (findings.some((f) => f.line === i + 1 && f.matched === matched)) continue;
+				const sanction = sanctionFor(file, symbols[i] ?? null, matched);
+				if (sanction !== null && !spent.has(sanction)) {
+					spent.add(sanction);
+					continue;
+				}
 				findings.push({file, line: i + 1, matched, reason: SPAWNED});
 			}
 		}
