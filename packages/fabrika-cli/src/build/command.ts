@@ -27,6 +27,7 @@ import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
 import {type DocumentRead, runClear} from "./clear-verb.ts";
 import {OFF_VOCABULARY} from "./codes.ts";
 import {runCommit} from "./commit-verb.ts";
+import {runDeviations} from "./deviations-verb.ts";
 import {runEligible} from "./eligible-verb.ts";
 import {runIssue} from "./issue-verb.ts";
 import {runNote} from "./note-verb.ts";
@@ -503,6 +504,33 @@ const note = leafCommand(
 	),
 );
 
+const deviations = leafCommand(
+	"deviations",
+	{
+		issue: Argument.integer("issue").pipe(
+			Argument.withDescription("the epic child the disclosure is for, and sits on"),
+		),
+		token: tokenFlag,
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({issue, token, repo}) {
+		yield* emit(
+			yield* runDeviations({
+				issue,
+				token,
+				repo: Option.getOrNull(repo),
+				env: process.env,
+				stdin: Effect.sync(readStdin),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Post an epic child's deviation disclosure as its one marker."),
+	Command.withDescription(
+		'Post the "## Deviations" section on STDIN as the epic child\'s build-deviations marker comment — the disclosure surface a child has instead of a PR body (ADR 0285). ONE marker per issue: the standing marker is edited in place and every superseded one of this account\'s is retracted, so `fabrika wire read --format build-deviations` never meets two conforming headings. The marker line is composed from the positional, so a disclosure cannot name an issue other than the one it sits on. The section is validated through the wire format before anything is written, and the landed comment is read back from live issue state. Prints {"answer":"posted","issue":n,"commentId":n,"upsert":"created"|"edited","retracted":n,"url":"…"}. Exits 1 (--token is not a claim token of this session), 3 (stdin held nothing), 4 (the "## Deviations" section is missing or malformed), 5 (machine-local path), 6 (bare @ reference), 7 (the issue is proven absent or closed), 8 (the write failed, or a superseded marker could not be retracted — UNKNOWN), 9 (posted but does not read back), 10 (the number is a pull request, which discloses in its body), 11 (a precondition read failed), 15 (this LANE does not hold the claim). Example: fabrika build deviations 6566 --token build:s-9f2e:c1a4d6f8-… < deviations.md',
+	),
+);
+
 const verdicts = leafCommand(
 	"verdicts",
 	{
@@ -655,6 +683,7 @@ export const buildCommand = Command.make("build").pipe(
 		pr,
 		prBody,
 		note,
+		deviations,
 		verdicts,
 		clear,
 	]),

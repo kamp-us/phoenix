@@ -270,10 +270,26 @@ to arrive a whole review round later, and could not say what was wrong (#5566).
 **An epic child opens no PR, and its disclosure surface moves with that** (#5903). When your spawn
 brief carries the epic rules — you build on a branch cut from the assembly branch, and steps 5's
 push and PR are not yours — the same `## Deviations` section lands as a `build-deviations` marker
-comment on the child issue instead: the line `build-deviations: #<n>` over the section, composed
-through `fabrika wire emit --format build-deviations` and posted with `gh issue comment`. The
-epic-tail review reads every landed child's comment from there, so a child with nothing to disclose
-still posts the checked `None.` — an absent comment reads as "never considered it", not as
+comment on the child issue instead. One verb posts it, and it takes the section on stdin exactly as
+you would have written it into a PR body:
+
+```bash
+fabrika build deviations <n> --token <claim-token> <<'EOF'
+## Deviations
+
+None.
+EOF
+```
+
+The verb composes the `build-deviations: #<n>` line from the number you gave it, validates the
+section through the wire format before writing anything, and reads the landed comment back from live
+issue state. **Never post this marker with a raw `gh issue comment`** — that appends, so a repair
+round leaves two markers, and the reader refuses two conforming headings as undecidable, which is an
+UNKNOWN the tail review cannot pass (#6691). Re-run the verb on every round: it edits the standing
+marker in place.
+
+The epic-tail review reads every landed child's comment from there, so a child with nothing to
+disclose still posts the checked `None.` — an absent comment reads as "never considered it", not as
 "nothing to disclose". A child that lands its commit and posts that comment ends on `BUILT-NO-PR`,
 below — not on a `SHIPPED-PR` naming a PR nobody opened.
 

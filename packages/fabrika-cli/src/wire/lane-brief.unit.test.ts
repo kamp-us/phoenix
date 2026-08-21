@@ -107,7 +107,7 @@ describe("the lane-brief carries no repo's own path in its rules", () => {
 
 	it("points the shell at the `fabrika:` field rather than at a literal", () => {
 		expect(RULES).toContain("node <fabrika> <group> <verb>");
-		expect(EPIC_RULES).toContain("node <fabrika> wire emit --format build-deviations");
+		expect(EPIC_RULES).toContain("node <fabrika> build deviations <child>");
 		expect(EPIC_RULES).toContain("node <fabrika> wire emit --format range-verdict-marker");
 		expect(EPIC_TAIL_RULES).toContain("node <fabrika> wire read --format build-deviations");
 	});
