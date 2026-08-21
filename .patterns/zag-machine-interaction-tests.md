@@ -83,6 +83,23 @@ synchronous read → flush → read:
 
 Treat any Manti primitive the same way, whether or not it is listed here.
 
+## The mirror image — Zag also schedules work *after* the unmount
+
+The same deferral runs past the end of a test, and there it is the tier's problem rather than
+yours. Two Zag paths outlive the unmount that should have ended them, because nothing cancels
+them: `@zag-js/dialog`'s `checkRenderedElements` action discards the cancel handle `raf()` hands
+back, and `@zag-js/focus-trap`'s `deactivate()` restores focus on a `setTimeout(fn, 0)`. Both
+resolve their root through `@zag-js/core` `createScope`, whose `props.getRootNode?.() ?? document`
+is a bare global read — so once Vitest tears the jsdom environment down at the end of a file, that
+read throws `ReferenceError: document is not defined` rather than yielding `undefined`, and Vitest
+collects it as an unhandled error that reds a fully-green run.
+
+`apps/web/tests/client/setup.ts` drains those queues in an `afterAll` — two animation frames
+(`raf.mjs`'s `nextTick` double-nests) plus one macrotask — so the work runs inside the
+environment's life. **You inherit this; do not re-solve it per test.** What it means for you: a
+`client`-tier test may leave Zag work pending without reding the run, but a test that deletes or
+stubs `document` itself still has to restore it before its own teardown.
+
 ## Related
 
 - [property-based-a11y.md](./property-based-a11y.md) — the other `ui/` test surface; it
