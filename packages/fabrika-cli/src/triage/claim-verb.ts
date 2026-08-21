@@ -29,19 +29,16 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {createComment, deleteComment, getIssue, listComments, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
-	claimNonceOf,
-	composeClaimToken,
+	type AskedLane,
 	DEFAULT_TTL_MINUTES,
 	expiryOf,
-	isStampableSession,
-	type LaneCaller,
-	laneCaller,
 	markerBody,
 	markersOf,
+	mintCaller,
 	myMarker,
-	parseClaimToken,
+	requireCallerToken,
+	requireSession,
 	resolveClaim,
-	TOKEN_PREFIX,
 } from "./claim.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {scannedLine} from "./scope.ts";
@@ -61,82 +58,19 @@ export interface ClaimOptions {
 const VERB = "triage claim";
 
 /**
- * The session id, or a refusal.
- *
- * The unset case is seated on `1` because the merged contract's errors table puts it there. That
- * sits against the group's own rule that a proven refusal never shares a code with a failure to
- * invoke — the tension is real and disclosed rather than renumbered here, and it is defensible: an
- * unstamped environment is a precondition of *invoking* the verb, not a verdict it reached.
- */
-const sessionFrom = (
-	env: Readonly<Record<string, string | undefined>>,
-): {readonly session: string} | {readonly refusal: VerbOutcome} => {
-	const raw = env.CLAUDE_CODE_SESSION_ID ?? "";
-	if (raw.trim() === "") {
-		return {
-			refusal: refuse(
-				FAILED,
-				`${VERB}: CLAUDE_CODE_SESSION_ID is unset — refusing to post an unattributable claim.`,
-			),
-		};
-	}
-	const session = raw.trim();
-	if (!isStampableSession(session)) {
-		return {
-			refusal: refuse(
-				FAILED,
-				`${VERB}: CLAUDE_CODE_SESSION_ID is not a single token — a marker stamped with it would not read back as this session.`,
-			),
-		};
-	}
-	return {session};
-};
-
-/**
  * The lane that is asking — the one it was handed a token for, or a fresh one minted here.
  *
- * A token from another session is refused rather than trusted: the env says which session is
- * running, the flag says which lane of it, and a pair that disagrees is a token threaded through
- * from somewhere else.
+ * Both arms and the session read behind them live in `claim.ts`, so `triage scratch` asks the same
+ * question in the same words rather than in a second copy of them.
  */
 const callerFrom = (
 	session: string,
 	token: string | null,
 	uuid: string,
-): {readonly caller: LaneCaller; readonly token: string} | {readonly refusal: VerbOutcome} => {
-	if (token === null) {
-		const minted = composeClaimToken(session, uuid);
-		const nonce = claimNonceOf(minted);
-		if (nonce === null) {
-			return {
-				refusal: refuse(
-					FAILED,
-					`${VERB}: could not mint a lane token for session ${session} — nothing was written.`,
-				),
-			};
-		}
-		return {caller: laneCaller(session, nonce, minted), token: minted};
-	}
-	const trimmed = token.trim();
-	const parsed = parseClaimToken(trimmed);
-	const nonce = claimNonceOf(trimmed);
-	if (parsed === null || nonce === null) {
-		return {
-			refusal: refuse(
-				FAILED,
-				`${VERB}: --token "${trimmed}" is not a claim token (${TOKEN_PREFIX}:<session-id>:<uuid>) — which lane is asking is not stated.`,
-			),
-		};
-	}
-	if (parsed.session !== session) {
-		return {
-			refusal: refuse(
-				FAILED,
-				`${VERB}: --token "${trimmed}" carries session ${parsed.session}, but this run is session ${session} — a lane names itself, never another.`,
-			),
-		};
-	}
-	return {caller: laneCaller(session, nonce, trimmed), token: trimmed};
+): AskedLane | {readonly refusal: VerbOutcome} => {
+	const asked =
+		token === null ? mintCaller(VERB, session, uuid) : requireCallerToken(VERB, session, token);
+	return "refusal" in asked ? asked : asked.value;
 };
 
 export const runClaim = (
@@ -149,9 +83,9 @@ export const runClaim = (
 			return refuse(FAILED, `${VERB}: ${issue} is not an issue number.`);
 		}
 
-		const stamped = sessionFrom(options.env);
+		const stamped = requireSession(VERB, options.env, "refusing to post an unattributable claim");
 		if ("refusal" in stamped) return stamped.refusal;
-		const {session} = stamped;
+		const session = stamped.value;
 
 		const asking = callerFrom(session, options.token, options.uuid);
 		if ("refusal" in asking) return asking.refusal;

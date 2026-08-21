@@ -1,5 +1,5 @@
 /**
- * The one exit table all nine `triage` verbs allocate from, so a code means one thing across this
+ * The one exit table every `triage` verb allocates from, so a code means one thing across this
  * group whichever verb produced it.
  *
  * `0`, `1`, `126` and `127` are reserved by the interface convention (see `../verb.ts` and the
@@ -71,12 +71,14 @@ export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
 /** The write landed but the read-back does not match. The artifact exists and needs a human. */
 export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
 /**
- * The supplied classification value is not permitted in this position — off a closed enum, or a
- * `--home` naming a milestone that is not open.
+ * The supplied value is not permitted in this position — off a closed enum, a `--home` naming a
+ * milestone that is not open, or a `--slug` that is not a kebab-case leaf.
  *
  * The superset that keeps `report`'s reading true: there `10` is a title or `--label` carrying a
  * type or priority. A closed milestone is an off-vocabulary home, so it belongs with the enum
- * refusals rather than with the shape errors.
+ * refusals rather than with the shape errors; a slug joins them because its whole fix is the same
+ * one — re-run with another value — which is exactly what `1` cannot tell a caller (`build scratch`
+ * seats it here for the same reason).
  */
 export const OFF_VOCABULARY = REPORT_CLASSIFIED;
 /** A precondition read failed — nothing was written and no outcome is proven. `report`'s `11`. */
@@ -164,6 +166,19 @@ export const CLAIMED_ELSEWHERE = 17;
  * that retried this code would loop forever.
  */
 export const CONFIG_REFUSED = 18;
+/**
+ * Refused: the asking lane holds no live claim on the target, so it has no nonce to key on.
+ *
+ * `triage scratch`'s, and only a namespace allocator needs it. The five mutating verbs pass when
+ * nobody holds a claim — an unclaimed issue is the ordinary first-triage case — but a scratch path
+ * IS the lane, so a caller that cannot prove one has nothing to be allocated a directory under.
+ *
+ * Its own seat rather than {@link CLAIMED_ELSEWHERE}'s: that code means a live marker names *another
+ * session*, deliberately excluding "I hold none". This one covers both ways a lane fails to hold the
+ * claim — no marker of its own, and a marker of its own that lost the race to a sibling lane — and
+ * the message says which, because the caller's move differs: claim first, versus back off.
+ */
+export const CLAIM_NOT_HELD = 19;
 
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
@@ -194,7 +209,11 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	},
 	{code: WRITE_UNKNOWN, meaning: "the write itself failed — the outcome is UNKNOWN"},
 	{code: READBACK_MISMATCH, meaning: "the write landed but the read-back does not match"},
-	{code: OFF_VOCABULARY, meaning: "the supplied classification value is not permitted here"},
+	{
+		code: OFF_VOCABULARY,
+		meaning:
+			"the supplied value is not permitted here — off a closed vocabulary, a non-open milestone, or a slug that is not a kebab-case leaf",
+	},
 	{
 		code: PRECONDITION_UNKNOWN,
 		meaning: "a precondition read failed — nothing was written and the outcome is UNKNOWN",
@@ -227,6 +246,10 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 		code: CONFIG_REFUSED,
 		meaning:
 			"refused: no value of .fabrika.jsonc may be used — a key's load-time check refused it, it could not be read, or it did not decode",
+	},
+	{
+		code: CLAIM_NOT_HELD,
+		meaning: "refused: the asking lane holds no live claim on the target",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

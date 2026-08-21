@@ -15,6 +15,7 @@
  * silently opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  */
 import {randomUUID} from "node:crypto";
+import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {CONFIG_PATH} from "../config/document.ts";
@@ -35,6 +36,7 @@ import {runProvenance} from "./provenance-verb.ts";
 import {DEFAULT_QUEUE_LABEL, DEFAULT_QUEUE_LIMIT, runQueue} from "./queue-verb.ts";
 import {runRepairCriteria} from "./repair-criteria-verb.ts";
 import {ROADMAP_FILE} from "./roadmap.ts";
+import {runScratch} from "./scratch-verb.ts";
 import {runSplit} from "./split-verb.ts";
 import {readStandingLanes} from "./standing-lanes.ts";
 
@@ -453,6 +455,40 @@ const repairCriteria = leafCommand(
 	),
 );
 
+const scratch = leafCommand(
+	"scratch",
+	{
+		issue: Argument.integer("issue").pipe(
+			Argument.withDescription("the issue this lane holds the claim on"),
+		),
+		slug: Flag.string("slug").pipe(
+			Flag.withDescription("the file's leaf name: kebab-case, no path separators"),
+		),
+		token: Flag.string("token").pipe(
+			Flag.withDescription("the claim token `triage claim` handed this lane — its identity"),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({issue, slug, token, repo}) {
+		yield* emit(
+			yield* runScratch({
+				issue,
+				slug,
+				token,
+				repo: Option.getOrNull(repo),
+				env: process.env,
+				tmpRoot: tmpdir(),
+				now: () => new Date(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("The per-lane scratch path a triager's working files go under."),
+	Command.withDescription(
+		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-triage/<session-id>/<issue>-<claim-nonce>/<slug>, one absolute path on stdout, the directory created if absent. --token's nonce is what keys the namespace per LANE rather than per session, so two triagers of one fan-out cannot clobber each other's fixed-name files. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created, CLAUDE_CODE_SESSION_ID is unset or is not one path segment, --token is not a claim token of this session, or the repo does not resolve), 10 (--slug carries a path separator or is not kebab-case), 11 (the claim state could not be read — UNKNOWN), 19 (proven: this lane holds no live claim on the issue). Example: fabrika triage scratch 4312 --slug authored --token triage:s-9f2e:c1a4d6f8-…",
+	),
+);
+
 export const triageCommand = Command.make("triage").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so five in-flight slices append at five distinct lines rather than all
@@ -468,6 +504,7 @@ export const triageCommand = Command.make("triage").pipe(
 		homes,
 		enrich,
 		repairCriteria,
+		scratch,
 	]),
 	Command.withShortDescription("Take one intake-queue issue from arrival to triaged."),
 	Command.withDescription(
