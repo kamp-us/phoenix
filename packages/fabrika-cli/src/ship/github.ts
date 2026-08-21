@@ -15,9 +15,9 @@
  *   terminal page carrying no `rel="next"` link, which the transport now reads off the `Link` header
  *   natively instead of parsing `gh api -i` output back out of a printed status line.
  *
- * The transport is `../io/gh-api.ts`, not a `gh` subprocess. REST throughout, with the two carves
- * ADR 0315 records: the review-thread block at the bottom, and the auto-merge mutation, which has no
- * REST route at all.
+ * The transport is `../io/gh-api.ts`, not a `gh` subprocess. REST throughout, with two of the three
+ * carves ADR 0315 records: the review-thread block at the bottom, and the auto-merge mutation.
+ * Neither has a REST route at all. The third is `openPullsClosing` in `../io/pulls.ts`.
  */
 
 import {writeFile} from "node:fs/promises";
@@ -811,7 +811,7 @@ export const listReviewThreads = (
 			const threads: ReviewThread[] = [];
 			let declared: number | null = null;
 			let cursor: string | null = null;
-			for (let page = 0; page < 50; page++) {
+			for (let page = 0; page < PAGE_CAP; page++) {
 				const data = yield* graphql(token, THREADS_QUERY, {
 					owner: named.value.owner,
 					name: named.value.name,

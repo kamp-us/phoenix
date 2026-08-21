@@ -19,6 +19,7 @@ import {
 	authedExistence,
 	existenceOf,
 	graphqlRead,
+	PAGE_CAP,
 	pagedEnvelope,
 	pagedWithLinkProof,
 	type Rest,
@@ -282,6 +283,13 @@ export const searchOpenPulls = (
 			const q = `repo:${repo} is:pr is:open ${tokens.join(" ")}`;
 			const page = yield* pagedEnvelope(token, `search/issues?q=${encodeURIComponent(q)}`, "items");
 			if (page._tag === "Failure") return page;
+			// A nomination scan that stopped early reports "no open PR names this issue" over a scope
+			// nobody proved was searched, which is a proven negative the caller then acts on.
+			if (!page.value.exhausted) {
+				return fail(
+					`the search reached the ${PAGE_CAP}-page cap with another page still to come — this is not the whole list`,
+				);
+			}
 			const numbers: number[] = [];
 			for (const item of page.value.entries) {
 				if (!isRecord(item) || typeof item.number !== "number") {
@@ -330,7 +338,7 @@ export const openPullsClosing = (
 				if (owner === undefined || name === undefined) return fail(`\`${repo}\` is not owner/name`);
 				const out: ClosingPull[] = [];
 				let cursor: string | null = null;
-				for (let page = 0; page < 50; page++) {
+				for (let page = 0; page < PAGE_CAP; page++) {
 					const outcome: Rest = yield* graphqlRead(token, CLOSERS_QUERY, {
 						owner,
 						name,

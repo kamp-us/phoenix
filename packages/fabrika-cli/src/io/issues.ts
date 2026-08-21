@@ -4,8 +4,9 @@
  * read-backs.
  *
  * Everything goes through `./gh-api.ts` REST and **never GraphQL** — the org's Projects-classic
- * integration errors out GraphQL issue queries — and **every list read pages**: an unpaginated
- * first page is a silently short answer, which for a duplicate check is a false `none`.
+ * integration errors out the GraphQL issue *search* connection, which is what this module's reads
+ * are — and **every list read pages** and refuses a walk it could not prove whole: an unpaginated or
+ * capped read is a silently short answer, which for a duplicate check is a false `none`.
  *
  * Two disciplines this module exists to make unavoidable:
  *
@@ -173,15 +174,15 @@ const capped = (): string =>
 	`the read reached the ${PAGE_CAP}-page cap with another page still to come — this is not the whole list`;
 
 /**
- * A paged bare-array read whose entries are handed on **without** their completeness proof.
+ * Every paged bare-array read in this module, and a capped walk is a failure rather than a list.
  *
- * For the reads that carry no proof today. `gh api --paginate` walked to exhaustion with nothing to
- * refuse on, so reading `exhausted` here would be a hardening pass this port is not.
+ * There is no proof-dropping sibling on purpose. `gh api --paginate` had no page cap, so a short
+ * list was not a state it could produce; this transport caps at {@link PAGE_CAP}, so it is. Handing
+ * the entries on without the flag turns a truncated read into a clean `Ok`, and eight callers seat
+ * proven negatives on it — the duplicate check in `openIssuesTitled`, the twin scan in
+ * `issueTimeline`, the dedup sweep in `openIssuesWithLabel` — where a short list is a wrong answer
+ * rather than a short one.
  */
-const bareList = (token: string, path: string): Api<Attempt<ReadonlyArray<unknown>>> =>
-	Effect.map(pagedWithLinkProof(token, path), (read) => then(read, (proof) => ok(proof.entries)));
-
-/** The same read for the lists that must be proven whole — a capped walk is a failure, not a list. */
 const provenList = (token: string, path: string): Api<Attempt<ReadonlyArray<unknown>>> =>
 	Effect.map(pagedWithLinkProof(token, path), (read) =>
 		then(read, (proof) => (proof.exhausted ? ok(proof.entries) : fail(capped()))),
@@ -206,7 +207,7 @@ const issueRows = (entries: ReadonlyArray<unknown>): Attempt<ReadonlyArray<Issue
 /** Every label name defined in `repo`, paged. Doubles as the type/priority vocabulary source. */
 export const listLabels = (repo: string): Shell<Attempt<ReadonlyArray<string>>> =>
 	withToken((token) =>
-		Effect.map(bareList(token, `repos/${repo}/labels`), (read) =>
+		Effect.map(provenList(token, `repos/${repo}/labels`), (read) =>
 			then(read, (entries) => {
 				const names: string[] = [];
 				for (const entry of entries) {
@@ -229,7 +230,7 @@ export const openIssuesWithLabel = (
 	label: string,
 ): Shell<Attempt<ReadonlyArray<IssueRow>>> =>
 	withToken((token) =>
-		Effect.map(bareList(token, openWithLabel(repo, label)), (read) =>
+		Effect.map(provenList(token, openWithLabel(repo, label)), (read) =>
 			then(read, (entries) => issueRows(withoutPullRequests(entries))),
 		),
 	);
@@ -252,7 +253,7 @@ export const openIssuesWithLabelDetailed = (
 	label: string,
 ): Shell<Attempt<ReadonlyArray<IssueDetail>>> =>
 	withToken((token) =>
-		Effect.map(bareList(token, openWithLabel(repo, label)), (read) =>
+		Effect.map(provenList(token, openWithLabel(repo, label)), (read) =>
 			then(read, (entries) => {
 				const rows: IssueDetail[] = [];
 				for (const entry of withoutPullRequests(entries)) {
@@ -286,7 +287,7 @@ export const openIssuesTitled = (
 	title: string,
 ): Shell<Attempt<ReadonlyArray<IssueRow>>> =>
 	withToken((token) =>
-		Effect.map(bareList(token, `repos/${repo}/issues?state=open`), (read) =>
+		Effect.map(provenList(token, `repos/${repo}/issues?state=open`), (read) =>
 			then(read, (entries) =>
 				then(issueRows(withoutPullRequests(entries)), (rows) =>
 					ok(rows.filter((row) => row.title === title)),
@@ -296,16 +297,17 @@ export const openIssuesTitled = (
 	);
 
 /**
- * The search index's rows for `query`, paged.
+ * The search index's rows for `query`, paged, and a walk that stopped at the cap is a failure.
  *
- * `search/issues` answers with a `{total_count, items}` envelope. The declared count is read past
- * rather than reconciled: this read carried no completeness proof under `gh api --paginate` either,
- * and inventing one here would be a hardening pass rather than a port.
+ * `search/issues` answers with a `{total_count, items}` envelope. Both callers are duplicate checks,
+ * and a duplicate check is the read where a short list is not a short answer but a wrong one: it
+ * reports "nothing matches" over a scope nobody proved was searched, and something gets filed twice.
  */
 const searchRows = (token: string, query: string): Api<Attempt<ReadonlyArray<IssueRow>>> =>
 	Effect.map(
 		pagedEnvelope(token, `search/issues?q=${encodeURIComponent(query)}`, "items"),
-		(read) => then(read, (envelope) => issueRows(envelope.entries)),
+		(read) =>
+			then(read, (envelope) => (envelope.exhausted ? issueRows(envelope.entries) : fail(capped()))),
 	);
 
 /**
@@ -545,7 +547,7 @@ export interface Milestone {
  */
 export const listOpenMilestones = (repo: string): Shell<Attempt<ReadonlyArray<Milestone>>> =>
 	withToken((token) =>
-		Effect.map(bareList(token, `repos/${repo}/milestones?state=open`), (read) =>
+		Effect.map(provenList(token, `repos/${repo}/milestones?state=open`), (read) =>
 			then(read, (entries) => {
 				const milestones: Milestone[] = [];
 				for (const entry of entries) {
@@ -581,7 +583,7 @@ export interface MilestoneState extends Milestone {
  */
 export const listMilestones = (repo: string): Shell<Attempt<ReadonlyArray<MilestoneState>>> =>
 	withToken((token) =>
-		Effect.map(bareList(token, `repos/${repo}/milestones?state=all`), (read) =>
+		Effect.map(provenList(token, `repos/${repo}/milestones?state=all`), (read) =>
 			then(read, (entries) => {
 				const milestones: MilestoneState[] = [];
 				for (const entry of entries) {
@@ -767,7 +769,7 @@ export const openQueueIssues = (
 	label: string,
 ): Shell<Attempt<ReadonlyArray<QueueIssue>>> =>
 	withToken((token) =>
-		Effect.map(bareList(token, openWithLabel(repo, label)), (read) =>
+		Effect.map(provenList(token, openWithLabel(repo, label)), (read) =>
 			then(read, (entries) => {
 				const rows: QueueIssue[] = [];
 				for (const entry of withoutPullRequests(entries)) {
@@ -843,7 +845,7 @@ export const issueTimeline = (
 	issue: number,
 ): Shell<Attempt<ReadonlyArray<CrossReference>>> =>
 	withToken((token) =>
-		Effect.map(bareList(token, `repos/${repo}/issues/${issue}/timeline`), (read) =>
+		Effect.map(provenList(token, `repos/${repo}/issues/${issue}/timeline`), (read) =>
 			then(read, (entries) => {
 				const out: CrossReference[] = [];
 				for (const entry of entries) {
