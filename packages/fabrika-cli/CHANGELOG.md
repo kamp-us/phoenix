@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.5.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.4.0...fabrika-cli-v0.5.0) (2026-08-21)
+
+
+### Features
+
+* A BLOCKED park carries no cause, so recipe unpark can never clear one ([#6591](https://github.com/kamp-us/phoenix/issues/6591)) ([e97cfcc](https://github.com/kamp-us/phoenix/commit/e97cfcc7b49e86ce0a4700de4982bfe17bac8020))
+* **fabrika-cli:** drop the gh CLI for a fetch-based GitHub client (epic [#6629](https://github.com/kamp-us/phoenix/issues/6629)) ([#6690](https://github.com/kamp-us/phoenix/issues/6690)) ([79ed693](https://github.com/kamp-us/phoenix/commit/79ed69349ee53a85fc3c3236df80dc2838fb37f0))
+* **fabrika:** plan approval marker + mandatory grilling before plan-epic writes (epic [#5843](https://github.com/kamp-us/phoenix/issues/5843) phase 1) ([#6627](https://github.com/kamp-us/phoenix/issues/6627)) ([204df46](https://github.com/kamp-us/phoenix/commit/204df462ad3313af6f01bc82ef2545e697674a50))
+* No JSON Schema for .fabrika.jsonc: typo'd keys get no editor validation ([#6489](https://github.com/kamp-us/phoenix/issues/6489)) ([e62ac33](https://github.com/kamp-us/phoenix/commit/e62ac336fb997d2f28e77b38aca61cd871089e87))
+* **status:** probe whether the fabrika plugin is wired at all ([#6443](https://github.com/kamp-us/phoenix/issues/6443)) ([#6588](https://github.com/kamp-us/phoenix/issues/6588)) ([dd8e3cd](https://github.com/kamp-us/phoenix/commit/dd8e3cdaa27db4a325b591956b9c60e463999ea2))
+
+
+### Bug Fixes
+
+* An issue with no acceptance-criteria block still reached a build lane, past the guard built to exclude it ([#6587](https://github.com/kamp-us/phoenix/issues/6587)) ([77f5635](https://github.com/kamp-us/phoenix/commit/77f56358cda9cad446de57c72c332cfa0dc952ef))
+* **docs:** fabrika-cli is published, so stop saying the install 404s ([#6447](https://github.com/kamp-us/phoenix/issues/6447)) ([#6543](https://github.com/kamp-us/phoenix/issues/6543)) ([b5d0919](https://github.com/kamp-us/phoenix/commit/b5d091989177fefa90cfd978c6fe1021163bee3c))
+* Event-anchor the lane retry budget so a frozen resume and a later build clear stay replayable ([#6675](https://github.com/kamp-us/phoenix/issues/6675)) ([b71a822](https://github.com/kamp-us/phoenix/commit/b71a822956a34c3e57549431bf60b5d9ad8a49c8))
+* **fabrika-cli:** bind the bootstrap taxonomy to its board, not a restatement ([#6451](https://github.com/kamp-us/phoenix/issues/6451)) ([#6572](https://github.com/kamp-us/phoenix/issues/6572)) ([8730a49](https://github.com/kamp-us/phoenix/commit/8730a49766c130145556dc6764e520562ee22c7e))
+* **lane:** push the assembly branch explicitly, never at its recorded upstream ([#6435](https://github.com/kamp-us/phoenix/issues/6435)) ([#6494](https://github.com/kamp-us/phoenix/issues/6494)) ([d1fd529](https://github.com/kamp-us/phoenix/commit/d1fd5299cc0b047093cd892a8b97218b82574b84))
+* review ci reads green when only CodeQL ran and every gating workflow was skipped ([#6584](https://github.com/kamp-us/phoenix/issues/6584)) ([1ab0eb5](https://github.com/kamp-us/phoenix/commit/1ab0eb55e6c0e095e11bc57e047916ffda8913d9))
+* **review-ui:** send the upload token on the evidence verify probe ([#6520](https://github.com/kamp-us/phoenix/issues/6520)) ([#6524](https://github.com/kamp-us/phoenix/issues/6524)) ([8a5e5c4](https://github.com/kamp-us/phoenix/commit/8a5e5c47e7df91352987b9331f71900618c83217))
+* ship scope classes a comment-only edit under apps/web/src as ui, and review-ui can never fill that namespace ([#6697](https://github.com/kamp-us/phoenix/issues/6697)) ([08449a9](https://github.com/kamp-us/phoenix/commit/08449a9205f05b8e51a114b41e599c67f0adeaec))
+* The decision corpus resolves from decisionsDir in two verbs and from a .decisions literal in two others ([#6546](https://github.com/kamp-us/phoenix/issues/6546)) ([4b1bd41](https://github.com/kamp-us/phoenix/commit/4b1bd41bf29a4c966db2719b1173390bc37eba5e))
+
 ## [0.4.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.3.0...fabrika-cli-v0.4.0) (2026-08-19)
 
 
