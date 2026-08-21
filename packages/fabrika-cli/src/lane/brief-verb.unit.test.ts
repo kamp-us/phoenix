@@ -152,6 +152,8 @@ const CHILD_MESSAGE = "feat(lane): resolve the child's range (#5828)";
 const REV = (rev: string) =>
 	new RegExp(`^git rev-parse --verify --quiet ${rev.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}\\^`);
 const BRANCHES = /^git for-each-ref --format=%\(refname:short\) refs\/heads$/;
+/** The shallow probe every range read takes before it trusts an ancestry answer (#6343). */
+const COMPLETE_CLONE = [/^git rev-parse --is-shallow-repository$/, okOut("false\n")] as const;
 const LOG_RANGE = /^git log --format=/;
 
 /** `git log`'s framing for one commit: `<sha>\x1f<message>\x1e`. */
@@ -163,6 +165,7 @@ const locating = (
 	branches: ReadonlyArray<string> = [CHILD_BRANCH, "main", "epic/5800"],
 	commits: ReadonlyArray<readonly [string, string]> = [[CHILD_TIP, CHILD_MESSAGE]],
 ): ReadonlyArray<Scripted> => [
+	COMPLETE_CLONE,
 	[REV("epic/5800"), okOut(`${EPIC_BASE}\n`)],
 	[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
 	[BRANCHES, okOut(`${branches.join("\n")}\n`)],

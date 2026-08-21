@@ -817,6 +817,8 @@ const literally = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g,
 const REV = (rev: string) =>
 	new RegExp(`^git rev-parse --verify --quiet ${literally(rev)}\\^\\{commit\\}$`);
 const BRANCHES = /^git for-each-ref --format=%\(refname:short\) refs\/heads$/;
+/** The shallow probe every range read takes before it trusts an ancestry answer (#6343). */
+const COMPLETE_CLONE = [/^git rev-parse --is-shallow-repository$/, okOut("false\n")] as const;
 const LOG_RANGE = /^git log --format=/;
 const MERGE_BASE = /^git merge-base /;
 const ANCESTRY = /^git rev-list --parents --ancestry-path /;
@@ -851,6 +853,7 @@ const locating = (
 	branches: ReadonlyArray<string> = [CHILD_BRANCH, "main", "epic/4300"],
 	commits: ReadonlyArray<readonly [string, string]> = [[CHILD_TIP, CHILD_MESSAGE]],
 ): ReadonlyArray<Scripted> => [
+	COMPLETE_CLONE,
 	[REV("epic/4300"), okOut(`${EPIC_BASE}\n`)],
 	[BRANCHES, okOut(`${branches.join("\n")}\n`)],
 	[REV(CHILD_BRANCH), okOut(`${CHILD_TIP}\n`)],
@@ -924,6 +927,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 		// The merge base of a contained tip IS that tip, so the range only survives integration if the
 		// verb recovers the epic branch as it stood before the merge that took the child in (#5984).
 		const seams = fakeSeams([
+			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
@@ -945,6 +949,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 
 	it("measures a not-yet-integrated child over its fork point, not over the moved epic tip", async () => {
 		const seams = fakeSeams([
+			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
@@ -974,6 +979,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 		// The tip is an epic commit, so it is contained and a later merge names it — as its FIRST
 		// parent. Reading the second there would hand back a sibling's fork point and prove nothing.
 		const seams = fakeSeams([
+			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
@@ -1004,6 +1010,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 
 	it("refuses a child DONE when two lane branches both carry its commits", async () => {
 		const seams = fakeSeams([
+			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_BASE}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\nbuild/4301-second-try-deadbeef\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
@@ -1080,6 +1087,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 		// The binding is content and only content (ADR 0276), so an integrated child's PASS reads
 		// `Current` only while prove diffs the same two endpoints the marker was posted over (#5984).
 		const seams = fakeSeams([
+			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
