@@ -64,8 +64,9 @@ export const lists = {
 	posts: Fate.list(
 		{args: PostsArgs, type: PostView},
 		Effect.fn("posts")(function* ({args}) {
-			// Resolved once (identity + moderator probe): the feed hides çaylak-sandboxed
-			// posts from anyone but their author + a mod (#1205).
+			// The feed admits a çaylak-sandboxed post to its author, a moderator, or the
+			// opted-in in-place reader of #6423 — the rule is `sandboxVisibleWhere` in
+			// lifecycle/SandboxVisibility.ts (#1205).
 			const sandboxViewer = yield* currentSandboxViewer;
 			const viewerId = sandboxViewer.viewerId;
 			// Gated behind the default-off `member-mute` flag — empty set means unchanged

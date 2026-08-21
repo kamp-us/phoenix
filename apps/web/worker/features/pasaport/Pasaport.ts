@@ -218,8 +218,9 @@ export class Pasaport extends Context.Service<
 			value: string;
 		}) => Effect.Effect<SetDisplayNameResult, DisplayNameEmpty | UserNotFound>;
 
-		// `viewer` applies the #1205 sandbox filter to the headline counts (#1312):
-		// only the author + a moderator see sandboxed content counted. Omitted ⇒
+		// `viewer` applies the #1205 sandbox filter to the headline counts (#1312): they
+		// follow whichever viewer `sandboxVisibleWhere` was handed, the opted-in in-place
+		// reader of #6423 included — see lifecycle/SandboxVisibility.ts. Omitted ⇒
 		// anonymous (public-only), the fail-safe default.
 		readonly lookupProfile: (
 			username: string,
