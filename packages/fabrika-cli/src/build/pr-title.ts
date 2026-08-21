@@ -14,10 +14,21 @@
  * here: this is the one place an issue title becomes a commit subject.
  */
 
-/** `type:<label>` → conventional-commit type. Anything unlisted falls back to `chore`. */
+/**
+ * `type:<label>` → conventional-commit type. Anything unlisted falls back to `chore`.
+ *
+ * Only a type the release strategy *shows* keeps the change visible: the node strategy takes the
+ * conventionalcommits preset's default sections, where `feat`, `fix`, `perf` and `revert` render and
+ * `chore`/`docs`/`style`/`refactor`/`test`/`build`/`ci` carry `hidden: true`
+ * (`conventional-changelog-conventionalcommits/writer-opts.js`, `config.types`). So `type:epic` maps
+ * to `feat` rather than falling through: an epic spans children and carries feature work by
+ * construction, and a minor bump on an all-fixes epic is cheaper than a whole epic vanishing from
+ * the notes (#6754).
+ */
 const PREFIX_BY_LABEL: ReadonlyMap<string, string> = new Map([
 	["type:bug", "fix"],
 	["type:feature", "feat"],
+	["type:epic", "feat"],
 ]);
 
 /**
