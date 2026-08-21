@@ -78,11 +78,11 @@ assertions (forgot-to-provide, wrong-proof).
 
 ## The one audited cast: `sealCapability`
 
-The internal builder hits a real effect-smol typing limit, handled with **exactly one** coercion
+The internal builder hits a real Effect typing limit, handled with **exactly one** coercion
 (`Capability.ts`, `sealCapability = <T>(tag: unknown): T => tag as T`) — a single cast across an
 `unknown` boundary (the [`no-type-assertions`](./biome-custom-gritql-rules.md) plugin's permitted
 single-cast form, **not** `as any`). It exists because a bare `Context.Service` class rejects the
-structural match to the augmented `Capability*` type; effect-smol's own `HttpApiMiddleware.Service`
+structural match to the augmented `Capability*` type; `Effect-TS/effect`'s own `HttpApiMiddleware.Service`
 resorts to `as any` for the identical reason, and this cast is the tighter, sound form. Each
 internal builder names itself as its Service `Self` (the `classSelfMismatch` convention); the
 external `Self`-parameterized public type is produced by the cast.

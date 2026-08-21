@@ -20,9 +20,9 @@ is ADRs [0027](../.decisions/0027-http-router-drop-hono.md) /
 > `NodeContext.layer` / `NodeFileSystem.layer` from `@effect/platform-node` — does
 > **not** apply. `NodeContext` is a v3 name; the v4 union is `NodeServices`
 > (`ChildProcessSpawner | Crypto | FileSystem | Path | Stdio | Terminal`, one
-> `NodeServices.layer`). Grounded in effect-smol `packages/effect/src/FileSystem.ts` +
+> `NodeServices.layer`). Grounded in `Effect-TS/effect` `packages/effect/src/FileSystem.ts` +
 > `packages/effect/src/Path.ts` (both `@since 4.0.0`, module docblocks) and
-> `packages/platform-node/src/NodeServices.ts`.
+> `packages/platform/node/src/NodeServices.ts`.
 
 ## When to use it
 
@@ -38,7 +38,7 @@ id. Reach for the service, not the `node:*` builtin:
 | `node:fs` on **fd 0** (`readFileSync(0, "utf8")` — reading stdin) | `Stdio.stdin`, a chunked `Stream` — **considered and declined; fd 0 stays raw** ([the bright line](#the-bright-line--when-raw-node-is-still-correct)) | `NodeStdio.layer` |
 
 All of these are members of the one `NodeServices.layer` (grounded in
-`packages/platform-node/src/NodeServices.ts`), so a bin that already provides
+`packages/platform/node/src/NodeServices.ts`), so a bin that already provides
 `NodeServices.layer` has the whole platform in scope for free — see
 [the after](#the-after--already-in-scope-just-yield-the-service). Every operation
 fails with `PlatformError` on the `E` channel (grounded in `FileSystem.ts` — the
@@ -67,7 +67,7 @@ const readConfig = Effect.fn("Config.read")(function* (dir: string) {
 ```
 
 The method's `R` carries `FileSystem | Path`; the caller discharges it by providing
-the Node layer once, at the bin. Grounded in effect-smol
+the Node layer once, at the bin. Grounded in `Effect-TS/effect`
 `packages/effect/src/FileSystem.ts` (§"Accessing file system operations" module
 example) and LLMS.md §"Writing Effect services" (the `yield*`-the-tag idiom).
 
@@ -133,8 +133,8 @@ sometimes the only option, in these grounded cases:
 
 - **A node primitive with no `@effect/platform` service.** `node:os`'s `homedir()`
   has **no** platform equivalent in Effect v4 — there is no `Os` service and no
-  `homeDir` on `FileSystem`/`Path` (verified absent across effect-smol
-  `packages/effect/src` + `packages/platform-node/src`). Read it once at the boundary
+  `homeDir` on `FileSystem`/`Path` (verified absent across `Effect-TS/effect`
+  `packages/effect/src` + `packages/platform/node/src`). Read it once at the boundary
   from `node:os` and thread the resolved value as a plain string, exactly as
   `register-local-scope.ts` already does (`claudeConfigPath(home = homedir())` — the
   home is a parameter default, injectable in a test). Don't invent a service that

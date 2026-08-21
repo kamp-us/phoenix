@@ -138,7 +138,7 @@ Phoenix doesn't have this need — phoenix's domain errors *are* `Schema.TaggedE
 
 ## Schema features worth knowing about
 
-Documented in `effect-smol`'s `Schema.ts` (`packages/effect/src/Schema.ts`). Not exhaustive, just what phoenix would actually use:
+Documented in `Effect-TS/effect`'s `Schema.ts` (`packages/effect/src/Schema.ts`). Not exhaustive, just what phoenix would actually use:
 
 - **`Schema.String`, `Schema.Number`, `Schema.Boolean`, `Schema.Date`, `Schema.BigInt`** — primitives.
 - **`Schema.Array(itemSchema)`, `Schema.Record({key, value})`, `Schema.Tuple(...)`** — collections.
@@ -160,4 +160,4 @@ Documented in `effect-smol`'s `Schema.ts` (`packages/effect/src/Schema.ts`). Not
 - [feature-services.md](./feature-services.md) — service methods own their input validation
 - [effect-errors.md](./effect-errors.md) — tagged errors for domain validation failures, `Schema.TaggedErrorClass` for wire-form errors
 - [effect-error-operators.md](./effect-error-operators.md) — handling `ParseError` when it does come up (typed-JSON boundaries)
-- effect-smol `Schema.ts` — full API reference at `packages/effect/src/Schema.ts`
+- `Effect-TS/effect` `Schema.ts` — full API reference at `packages/effect/src/Schema.ts`

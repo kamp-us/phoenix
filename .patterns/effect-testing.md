@@ -208,7 +208,7 @@ Canonical implementation: `apps/web/worker/db/Drizzle.unit.test.ts`.
 - **Service fixtures** — small builder functions that return realistic input shapes. Live at the top of the test file or in a sibling `fixtures.ts`. Pure functions, plain TS, no Effect needed.
 - **Seed helpers** — wrap calls to the *real* services. `seedTerm(sozluk, slug, defs)` is an Effect that calls `sozluk.addDefinition` multiple times. Lives next to the test that uses it. (In integration tests the equivalent is the harness's `h.seedTerm(...)` — see [alchemy-test-harness.md](./alchemy-test-harness.md).)
 - **Test layer vs. platform fake — the distinction IS the rule.** An Effect **service**'s test seam is a **test layer**: a `Layer.succeed(Service, impl)` (or `Layer.effect`) that provides the service with a test implementation — the layer *is* the seam (see "Stubbing a service" above). The **test-double meaning carries in the layer name**, not a file suffix, following the Effect ecosystem grammar:
-  - **`layerTest`** — a working test implementation (effect.website "Managing Layers" documents the `Live`/`Test` suffix, e.g. `DatabaseLive`/`DatabaseTest`; effect-smol v4's layer-tests doc uses a `static readonly layerTest` on the `Context.Service` class; v3 ships module-level `HttpServer.layerTestClient`). Use the module-level `layerTest(instance)` form for a third-party tag you do not own; phoenix has no live example today.
+  - **`layerTest`** — a working test implementation (effect.website "Managing Layers" documents the `Live`/`Test` suffix, e.g. `DatabaseLive`/`DatabaseTest`; `Effect-TS/effect` v4's layer-tests doc uses a `static readonly layerTest` on the `Context.Service` class; v3 ships module-level `HttpServer.layerTestClient`). Use the module-level `layerTest(instance)` form for a third-party tag you do not own; phoenix has no live example today.
   - **`layerStub`** — a canned / **fail-on-contact** double (a stub that returns fixtures or `Effect.die`s if a path it shouldn't reach is hit).
   - **`layerNoop`** — a double whose methods silently succeed as no-ops (v3's `FileSystem.layerNoop` / `MessageStorage.layerNoop`). Use this *only* when no-op-and-succeed is the wanted behavior — **not** for fail-on-contact (that's `layerStub`).
 
@@ -223,7 +223,7 @@ Canonical implementation: `apps/web/worker/db/Drizzle.unit.test.ts`.
 ## TestClock and time-dependent tests
 
 For anything time-sensitive (TTL expiry, debouncing, scheduled work), use `TestClock`
-from `effect/testing/TestClock` and provide its `TestClock.layer()` (effect-smol/v4 —
+from `effect/testing/TestClock` and provide its `TestClock.layer()` (Effect v4 —
 there is no `TestContext.TestContext` aggregate to provide; the clock layer alone
 virtualizes time):
 

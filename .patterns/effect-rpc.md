@@ -13,10 +13,10 @@ leaning on it; the illustrative catalog is a two-message sketch, not shipped cod
 
 phoenix pins `effect@4.0.0-beta.92` (the `effect:` catalog entry in `pnpm-workspace.yaml`).
 The RPC surface lives in the **unstable** namespace, so its shape is pinned to that beta —
-ground every claim below against the module source at the pin (effect-smol
+ground every claim below against the module source at the pin (`Effect-TS/effect`
 `packages/effect/src/unstable/rpc/{Rpc,RpcGroup,RpcServer,RpcClient,RpcSerialization}.ts`,
 mirrored by the installed dist), not intuition. `LLMS.md` documents the cluster-entity RPC
-shape ([`ai-docs/src/80_cluster/10_entities.ts`](https://github.com/usirin/effect-smol/blob/main/ai-docs/src/80_cluster/10_entities.ts),
+shape ([`ai-docs/src/80_cluster/10_entities.ts`](https://github.com/Effect-TS/effect/blob/main/ai-docs/src/80_cluster/10_entities.ts),
 linked from `LLMS.md` §Integration); the transport layers below are grounded in each
 module's `@category protocols` jsdoc.
 

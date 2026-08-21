@@ -26,7 +26,7 @@ and the source disagree, the source wins — fix the doc.
 
 The `Context.Service` + `Layer.effect` idiom is the phoenix service standard — the class-form
 service, `return Telemetry.of({...})` from a `Layer.effect` generator — grounded upstream in
-effect-smol `LLMS.md` §"Writing Effect services" → "Context.Service" and documented in
+`Effect-TS/effect` `LLMS.md` §"Writing Effect services" → "Context.Service" and documented in
 [effect-context-service.md](./effect-context-service.md). It mirrors the binding-as-service
 shape of `Database`/`Flagship` (ADR [0028](../.decisions/0028-effect-durable-object-model.md)): the
 binding is resolved **once per isolate in worker init** and carried on a dependency-free seam.
@@ -51,7 +51,7 @@ Two discharges live in the layer (`Telemetry.ts`), so the call-site gets a clean
   and interruptions** — whereas `Effect.ignore` would discard only the typed `E` channel and let
   a defect propagate out. Containing the whole Cause **at the seam** is what makes `emit` a
   genuine `Effect<void>` that cannot fail OR die for every caller, so no instrument has to
-  remember a call-site wrap. Grounded in effect-smol `Effect.ts` (`ignoreCause`: "Ignores the
+  remember a call-site wrap. Grounded in `Effect-TS/effect` `packages/effect/src/Effect.ts` (`ignoreCause`: "Ignores the
   effect's failure cause, including defects and interruptions"; `ignore`: discards only the
   failure value).
 

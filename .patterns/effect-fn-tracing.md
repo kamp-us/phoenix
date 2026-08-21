@@ -118,4 +118,4 @@ Handler and service `Effect.fn` spans parent to the router's request span becaus
 - [effect-context-service.md](./effect-context-service.md) — service definition, where `Effect.fn` methods live
 - [feature-services.md](./feature-services.md) — full feature service example using `Effect.fn` throughout
 - [effect-testing.md](./effect-testing.md) — span names in tests via `TestContext`
-- effect-smol `Effect.fn` docs: `packages/effect/src/Effect.ts` `fn` / `fnUntraced` exports
+- `Effect-TS/effect` `Effect.fn` docs: `packages/effect/src/Effect.ts` `fn` / `fnUntraced` exports

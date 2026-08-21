@@ -185,8 +185,8 @@ so two ids that are both `string` at runtime (a user id, a definition id) become
 types** the checker won't let you pass for one another. The brand is **compile-time only**:
 it narrows the output type without validating, so `.make`/decode return the input unchanged
 and the wire + D1 bytes stay byte-identical — no runtime allocation, no runtime check. (Epic
-[#2700](https://github.com/kamp-us/phoenix/issues/2700); idiom grounded in effect-smol
-`SCHEMA.md` §Branding — the top-level `Schema.brand` form, not a hand-rolled phantom symbol.)
+[#2700](https://github.com/kamp-us/phoenix/issues/2700); idiom grounded in `Effect-TS/effect`
+`packages/effect/SCHEMA.md` §Branding — the top-level `Schema.brand` form, not a hand-rolled phantom symbol.)
 
 - **The shared home + the mint.** All branded ids live in one module,
   [`apps/web/worker/lib/ids.ts`](../apps/web/worker/lib/ids.ts), and are minted by its
