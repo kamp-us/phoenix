@@ -22,9 +22,6 @@
 
 import {writeFile} from "node:fs/promises";
 import {Effect} from "effect";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
-import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import {execCapture} from "../io/exec.ts";
 import {
 	type Api,
@@ -38,56 +35,16 @@ import {
 	onTransport,
 	PAGE_CAP,
 	type Rest,
+	restBytes,
+	restCall,
 	restRead,
+	restWrite,
 } from "../io/gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
 import {absent, type Existence, present, unknown} from "../io/issues.ts";
 import {isRecord} from "../io/json.ts";
 
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
-
-const API_ROOT = "https://api.github.com";
-
-const headersFor = (token: string, accept: string): Record<string, string> => ({
-	authorization: `token ${token}`,
-	accept,
-	"x-github-api-version": "2022-11-28",
-	"user-agent": "fabrika-cli",
-});
-
-const endpoint = (path: string): string => `${API_ROOT}/${path.replace(/^\//, "")}`;
-
-/** One served response, or the reason none arrived. */
-type Delivered<A> =
-	| {readonly _tag: "Delivered"; readonly status: number; readonly value: A}
-	| {readonly _tag: "Unreachable"; readonly reason: string};
-
-/**
- * The three legs `../io/gh-api.ts` does not carry: a raw media type, a PATCH body, and raw bytes.
- *
- * They live here rather than in the client because five sibling ports are cutting from the same
- * base and no child owns that file — #6693 tracks hoisting them, which is where they belong once
- * the parallel ports have landed.
- */
-const deliver = <A>(
-	request: HttpClientRequest.HttpClientRequest,
-	read: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, unknown>,
-): Api<Delivered<A>> =>
-	HttpClient.execute(request).pipe(
-		Effect.flatMap((response) =>
-			Effect.map(read(response), (value) => ({
-				_tag: "Delivered" as const,
-				status: response.status,
-				value,
-			})),
-		),
-		Effect.catch((error: unknown) =>
-			Effect.succeed({
-				_tag: "Unreachable" as const,
-				reason: `the GitHub API could not be reached: ${String(error)}`,
-			}),
-		),
-	);
 
 export interface ReviewRecord {
 	readonly login: string;
@@ -165,7 +122,7 @@ const pagedForExistence = (token: string, path: string): Api<Existence<ReadonlyA
  *
  * A second reading of `build/github.ts`'s `defaultBranch` only because that one publishes `env` and
  * `HttpClient` up into its callers; `../ship/roster.ts` is reached from a hundred `Shell<…>` sites
- * that thread neither. #6693 folds the two once one convention wins.
+ * that thread neither. #6814 folds the two once one convention wins.
  */
 export const defaultBranch = (repo: string): Shell<Attempt<string>> =>
 	authed((token) =>
@@ -214,19 +171,20 @@ export const listTeamMembers = (
 export const readFileAtRef = (repo: string, path: string, ref: string): Shell<Existence<string>> =>
 	authedExistence((token) =>
 		Effect.map(
-			deliver(
-				HttpClientRequest.get(endpoint(`repos/${repo}/contents/${path}?ref=${ref}`)).pipe(
-					HttpClientRequest.setHeaders(headersFor(token, "application/vnd.github.raw")),
-				),
-				(response) => response.text,
-			),
+			restCall(token, {
+				method: "GET",
+				path: `repos/${repo}/contents/${path}?ref=${ref}`,
+				accept: "application/vnd.github.raw",
+			}),
 			(outcome): Existence<string> => {
 				if (outcome._tag === "Unreachable") return unknown<string>(outcome.reason);
 				if (outcome.status === 404) return absent<string>();
 				if (outcome.status < 200 || outcome.status >= 300) {
 					return unknown<string>(`GitHub answered HTTP ${outcome.status}`);
 				}
-				return present(outcome.value);
+				// The raw media type is what makes `text` the answer here: a file's bytes are not
+				// JSON, so `body` parses to `null` for every file that is not itself a JSON document.
+				return present(outcome.text);
 			},
 		),
 	);
@@ -474,12 +432,7 @@ export const fetchManifest = (
 		const token = yield* ambientToken;
 		if (token._tag === "Failure") return token;
 		const download = yield* onTransport(
-			deliver(
-				HttpClientRequest.get(endpoint(`repos/${repo}/actions/artifacts/${artifactId}/zip`)).pipe(
-					HttpClientRequest.setHeaders(headersFor(token.value, "application/vnd.github+json")),
-				),
-				(response) => Effect.map(response.arrayBuffer, (buffer) => new Uint8Array(buffer)),
-			),
+			restBytes(token.value, `repos/${repo}/actions/artifacts/${artifactId}/zip`),
 		);
 		if (download._tag === "Unreachable") return fail(download.reason);
 		if (download.status < 200 || download.status >= 300) {
@@ -737,21 +690,12 @@ export const disableAutoMerge = (repo: string, pr: number): Shell<Attempt<void>>
 /** Close or reopen a pull request. Each leg is read back by the caller; neither is trusted here. */
 export const setPullState = (repo: string, pr: number, state: string): Shell<Attempt<void>> =>
 	authed((token) =>
-		Effect.map(
-			deliver(
-				HttpClientRequest.patch(endpoint(`repos/${repo}/pulls/${pr}`)).pipe(
-					HttpClientRequest.setHeaders(headersFor(token, "application/vnd.github+json")),
-					HttpClientRequest.bodyJsonUnsafe({state}),
-				),
-				(response) => response.text,
-			),
-			(outcome) => {
-				if (outcome._tag === "Unreachable") return fail(outcome.reason);
-				return outcome.status >= 200 && outcome.status < 300
-					? ok(undefined)
-					: fail(`GitHub answered HTTP ${outcome.status}`);
-			},
-		),
+		Effect.map(restWrite(token, "PATCH", `repos/${repo}/pulls/${pr}`, {state}), (outcome) => {
+			if (outcome._tag === "Unreachable") return fail(outcome.reason);
+			return outcome.status >= 200 && outcome.status < 300
+				? ok(undefined)
+				: fail(`GitHub answered HTTP ${outcome.status}`);
+		}),
 	);
 
 export interface ThreadComment {
