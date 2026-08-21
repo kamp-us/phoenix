@@ -8,6 +8,7 @@
  * `BLOCKED` guess, because "a report you cannot parse" stops being a failure class only when
  * nothing is left to parse.
  */
+import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import type {OperatorEvent} from "./machine.ts";
 
 /**
@@ -157,6 +158,34 @@ export type ParkCause = keyof typeof PARK_CAUSES;
 
 /** The recognised causes, for a refusal's listing — sorted so the listing is deterministic. */
 export const PARK_CAUSE_TOKENS: ReadonlyArray<string> = Object.keys(PARK_CAUSES).sort();
+
+export type ClassResolution =
+	| {readonly _tag: "Classed"; readonly classes: ReadonlyArray<string> | null}
+	| {readonly _tag: "Rejected"; readonly reason: string};
+
+/**
+ * Resolve the `--class` values against the closed set `ship scope` / `review scope` derive from.
+ *
+ * A silent miss is the failure mode this closes: an unknown spelling matched no `class:<name>` arm,
+ * the guarded array fell through to its unclassed target, and the lane built as a plain lane with
+ * the rendered-visual verdict it owed never asked for (ADR 0317). Spelling is normalised the way a
+ * cause's is, so `--class UI` is the `ui` class rather than a refusal.
+ */
+export const classesForEvent = (raw: ReadonlyArray<string>): ClassResolution => {
+	if (raw.length === 0) return {_tag: "Classed", classes: null};
+	const classes: string[] = [];
+	for (const value of raw) {
+		const token = value.trim().toLowerCase();
+		if (!(SHIP_CLASS_NAMES as ReadonlyArray<string>).includes(token)) {
+			return {
+				_tag: "Rejected",
+				reason: `"${value}" is no lane class this repo routes on (known: ${SHIP_CLASS_NAMES.join(", ")})`,
+			};
+		}
+		if (!classes.includes(token)) classes.push(token);
+	}
+	return {_tag: "Classed", classes};
+};
 
 export type CauseResolution =
 	| {readonly _tag: "Uncaused"}

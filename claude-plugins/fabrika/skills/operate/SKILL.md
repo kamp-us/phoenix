@@ -466,8 +466,13 @@ states are entered by a guarded arm reading the classes standing over the task, 
 ride the event line the way `--cause` does. So a lane whose work is a rendered surface takes
 `--class ui` on the `WIP` you record before spawning the builder, and it stands from there — the
 `PASS` out of `review` routes to `review:ui` without you naming it again. **Relay it, never derive
-it**: the class comes off a shipped verb's answer (`ship scope` / `review scope` at a head, the
-issue's own labels before one exists), not off your reading of the diff (ADR 0228).
+it**: the class is the lane's own fact, not your reading of the diff (ADR 0228). At `WIP` there is
+no head to scope and no `ui` label to read, so the class you relay is the one the machine already
+carries — `lane status` prints the task's `classes` when any stand, seeded from the lane document
+the plan wrote and carried forward by every event since. No `classes` key means unclassed: record
+the bare `WIP`. Once
+a head exists, `ship scope` / `review scope` name the classes it raises, and those are what you
+relay from then on. A spelling outside the closed set is refused at exit `38`, never routed.
 
 `lane prove` reads the two events a report can lie about — a `DONE` out of `build` and a `PASS` out
 of `review` — and answers `not-required` at exit `0` for every other one, so it is run on every

@@ -4,6 +4,7 @@ import {fakeFs} from "../fakes.test-support.ts";
 import {
 	APPEND_UNKNOWN,
 	CAUSE_UNRECOGNISED,
+	CLASS_UNRECOGNISED,
 	EVENT_REFUSED,
 	LANE_ABSENT,
 	TASK_UNKNOWN,
@@ -164,5 +165,39 @@ describe("lane transition — the park cause a driver-originated BLOCKED carries
 		expect(out.code).toBe(0);
 		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
 		expect(Object.keys(appended).sort()).toEqual(["at", "event", "task"]);
+	});
+});
+
+describe("lane transition — the lane class the `class:<name>` arms route on (ADR 0317)", () => {
+	it("records a known class on the event line and routes the arm that reads it", async () => {
+		const fs = freshLane();
+
+		const out = await run(fs, "WIP", null, null, ["ui"]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "build:ui"}}});
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(appended).toMatchObject({event: "ISSUE.WIP", classes: ["ui"]});
+	});
+
+	it("refuses a class outside the closed set instead of routing it as unclassed", async () => {
+		const fs = freshLane();
+
+		// The miss this closes: `UI` matched no `class:ui` arm, so the guarded array fell through and
+		// the lane built plain — a routing failure nothing said out loud.
+		const out = await run(fs, "WIP", null, null, ["UI-ish"]);
+
+		expect(out.code).toBe(CLASS_UNRECOGNISED);
+		expect(out.stderr.at(-1)).toContain("log unappended");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("normalises a class's spelling the way a cause's is normalised", async () => {
+		const fs = freshLane();
+
+		const out = await run(fs, "WIP", null, null, [" UI "]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "build:ui"}}});
 	});
 });

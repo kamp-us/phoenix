@@ -9,7 +9,7 @@ tags: [fabrika, lane, pipeline, review, state-machine]
 # 0317 — A UI-class lane carries its own build and review shells, and the lane state carries the class
 
 **What this decides:** a lane whose diff raises the `ui` class runs its build and review rounds in
-`build-ui` and `review-ui` shells of its own, reached from lane states named `build:ui` and
+`ui-builder` and `ui-reviewer` shells of its own, reached from lane states named `build:ui` and
 `review:ui`. The class rides on the state name, not on a field in the lane brief.
 
 ## Context
@@ -41,7 +41,7 @@ must never do, because a driver records verdicts and never authors them.
 
 The founder ruled direction 1 on 2026-08-20 in
 https://github.com/kamp-us/phoenix/issues/6505#issuecomment-5360947091: wire the two shells in. The
-loop grows `build-ui` and `review-ui` shells, the lane routes a UI-class lane to them, and
+loop grows `ui-builder` and `ui-reviewer` shells, the lane routes a UI-class lane to them, and
 `lane prove` requires `review-ui` when the `ui` class is raised, so `prove` and `ship gate` compute
 one bar.
 
@@ -110,7 +110,8 @@ outlier.
 - `prove` tightens **last**. Tightened before the shells and routing exist, it converts today's park
   into a stall, which is worse than the deadlock it replaces.
 - Two lane-state nouns become load-bearing: `build:ui` and `review:ui` are where a lane sits;
-  `build-ui` and `review-ui` are the skills, and the shells that load them.
+  `build-ui` and `review-ui` are the skills, and `ui-builder` and `ui-reviewer` the shells that
+  load them.
 
 ## Records
 

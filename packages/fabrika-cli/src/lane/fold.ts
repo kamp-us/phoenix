@@ -232,6 +232,9 @@ export const deriveStatus = (
 			...(state.cleared.length === 0 ? {} : {clearedRounds: state.cleared}),
 			waits: state.waits,
 			maxWaits: state.maxWaits,
+			// Absent rather than empty when unclassed, so an unclassed lane's status is what it always
+			// was; a driver relaying `--class` reads the standing set here (ADR 0317).
+			...(state.classes.length === 0 ? {} : {classes: state.classes}),
 			...taskIn(lane, taskId).extras,
 			...(cause === undefined ? {} : {cause}),
 		};
