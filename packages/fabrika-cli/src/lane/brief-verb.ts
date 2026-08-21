@@ -53,7 +53,7 @@ import {
 import {foldLog, resolveTask} from "./fold.ts";
 import {nominateOpenPulls, nominationScope} from "./nominate.ts";
 import {epicOf, issueOf, tracePulls} from "./prove.ts";
-import {locateRange, type RangeLocation} from "./range.ts";
+import {DEEPEN_REMEDY, locateRange, type RangeLocation} from "./range.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
@@ -120,16 +120,24 @@ const issueUrl = (
 
 /**
  * A range this tree could not pin, seated on the proof codes the `lane` table already spends on
- * exactly these three facts (`./codes.ts`) — nothing there, several candidates, unreadable.
+ * exactly these facts (`./codes.ts`) — nothing there, several candidates, unreadable, truncated.
  *
  * Refusing is the whole point: a brief whose range resolves to nothing sends the reviewer an empty
- * diff it can still land a `range-verdict-marker` over (#6023).
+ * diff it can still land a `range-verdict-marker` over (#6023), and one whose base sits on a shallow
+ * graft boundary sends it a count that swallowed everyone else's landed commits (#6343).
  */
 const rangeRefusal = (
 	located: Exclude<RangeLocation, {readonly _tag: "Located"}>,
 	notes: ReadonlyArray<string>,
-): VerbOutcome =>
-	located._tag === "Unreadable"
+): VerbOutcome => {
+	if (located._tag === "Truncated") {
+		return refuse(
+			LANE_UNREADABLE,
+			`${VERB}: ${located.what} (${located.sha}) sits on this shallow clone's graft boundary, so every ancestry answer over it is wrong — which range the reviewer would judge is UNKNOWN. Remedy: ${DEEPEN_REMEDY}.`,
+			notes,
+		);
+	}
+	return located._tag === "Unreadable"
 		? refuse(
 				LANE_UNREADABLE,
 				`${VERB}: cannot read ${located.what}: ${located.reason} — which range the reviewer would judge is UNKNOWN.`,
@@ -140,6 +148,7 @@ const rangeRefusal = (
 				`${VERB}: ${located.why} — the reviewer would be sent to a range that resolves to nothing.`,
 				[...notes, ...located.notes],
 			);
+};
 
 type GroundRead =
 	| {readonly _tag: "Ground"; readonly ground: LaneGround; readonly notes: ReadonlyArray<string>}

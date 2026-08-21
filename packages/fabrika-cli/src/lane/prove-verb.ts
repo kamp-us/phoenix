@@ -65,7 +65,7 @@ import {
 	tracePulls,
 	type VerdictFact,
 } from "./prove.ts";
-import {type ChildRange, locateRange} from "./range.ts";
+import {type ChildRange, DEEPEN_REMEDY, locateRange} from "./range.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
@@ -723,6 +723,15 @@ const located = (
 	Effect.map(locateRange(VERB, epic, issue), (location) => {
 		if (location._tag === "Located") {
 			return {_tag: "Located" as const, range: location.range, notes: location.notes};
+		}
+		if (location._tag === "Truncated") {
+			return {
+				_tag: "Refused" as const,
+				outcome: unreadable(
+					`${location.what} (${location.sha})`,
+					`it sits on this shallow clone's graft boundary, so every ancestry answer over it is wrong — remedy: ${DEEPEN_REMEDY}`,
+				),
+			};
 		}
 		if (location._tag === "Unreadable") {
 			return {_tag: "Refused" as const, outcome: unreadable(location.what, location.reason)};
