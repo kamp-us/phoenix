@@ -773,13 +773,14 @@ File one follow-up observation into the intake queue. Contract:
 | `report dedup` | ranks the open issues that may already cover an observation — `candidates` / `none` / `indeterminate`, all three at exit 0 |
 | `report file` | composes the intake issue from the six sections on stdin, guards it, creates it, and reads back what landed |
 | `report note` | adds a note to an existing issue over the same guarded path, and reads the comment back |
+| `report amend` | appends a dated amendment to an existing issue's **body** over that path, leaving the prior body verbatim above it, and reads the body back |
 
 **Exit codes.** The shared table this group defines, plus `27` the intake queue could not be read ·
 `28` the search index could not be read.
 
-Four behaviours are worth knowing:
+Five behaviours are worth knowing:
 
-- **The body is a value, never a path.** The two writing verbs take it on **stdin only** — no
+- **The body is a value, never a path.** The three writing verbs take it on **stdin only** — no
   `--body`, no `--body-file`. A flag that accepts a path turns the body into a string the verb
   could post verbatim. A shell redirect is fine: the *shell* reads the file.
 - **An empty stdin is a refusal, not an empty body.** A read that failed exits `1` (the body is
@@ -789,6 +790,9 @@ Four behaviours are worth knowing:
   negative over a scope of zero. Both reading and writing verbs check the label first and exit `7`.
 - **The write is not finished until it is read back.** A create call's own response is the server
   echoing the request; exit `9` is the landed artifact failing to match what was composed.
+- **A body is amended, never replaced.** GitHub keeps no issue-body history, so `report amend`
+  appends under a separator and a dated heading it composes itself, and its read-back proves both
+  halves — the amendment landed *and* the prior body survived.
 
 Intake applies **no type and no priority**, defended mechanically: exit `10` refuses a `--label` or
 a title prefix that resolves to the target repo's own type/priority vocabulary.

@@ -1,6 +1,6 @@
 /**
- * The one exit table `report file` and `report note` allocate from, so a code means the same thing
- * whichever verb produced it. A verb that cannot reach a code leaves it unused rather than
+ * The one exit table `report file`, `report note` and `report amend` allocate from, so a code means
+ * the same thing whichever verb produced it. A verb that cannot reach a code leaves it unused rather than
  * compacting the range — a gap is cheaper than a collision.
  *
  * `0`, `1` and `127` are the interface convention's reserved codes (see `../verb.ts`); everything
