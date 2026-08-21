@@ -193,15 +193,21 @@ jobs:
       # the Release PR its checks. Cancellation is the one case that still skips, because a
       # cancelled run's dispatches would race the run that replaces it.
       #
-      # The `for entry in …` list below is workflow file → the required check-run name that
-      # file produces, and it is the drift surface: the required set lives in the repo's
+      # The `for entry in …` list below is workflow file → the check-run name that file
+      # produces, and it is the drift surface: the required set lives in the repo's
       # `main protection` ruleset, not here, so a check added there but not here would never run
       # on the Release PR. Two things make that loud rather than silent — the trigger
       # assertion (a mapped file that lost its `workflow_dispatch:` reds this run), and the
       # dispatch-on-failure stance (an unreadable check-run probe dispatches rather than skips).
       # `ci.yml` carries TWO required checks — `ci-required` and `validate skill frontmatter`
       # — from the same run, so probing the first covers both; one dispatch, one entry.
-      - name: Kick the standing Release PR's required checks at its current head
+      #
+      # `run-evidence.yml` is in the map though it gates nothing (#6759). It is the evidence
+      # producer `ship` reads at step 5, and a parked producer publishes no artifact, so `ship`
+      # refuses the release cut while every dashboard reads green — the same stale-green this
+      # step exists to end, arriving one gate later. A parked run reports no check run at all,
+      # which is exactly what makes the probe below dispatch rather than skip.
+      - name: Kick the standing Release PR's checks and evidence producer at its current head
         if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -231,12 +237,12 @@ jobs:
           # A literal list and not a here-doc: a here-doc's terminator has to sit at column 0,
           # which no indented step body can give it, and a `printf | while` puts the loop in
           # a subshell where the `exit 1`s below would abort nothing.
-          for entry in "ci.yml=ci-required" "leak-guard.yml=scan changed files for leaks"; do
+          for entry in "ci.yml=ci-required" "leak-guard.yml=scan changed files for leaks" "run-evidence.yml=produce run-evidence bundle"; do
             file="${entry%%=*}"
             check="${entry#*=}"
 
             if ! grep -qE '^[[:space:]]*workflow_dispatch:' ".github/workflows/$file"; then
-              echo "::error::.github/workflows/$file carries no workflow_dispatch trigger, so the required check '$check' can never run on the Release PR."
+              echo "::error::.github/workflows/$file carries no workflow_dispatch trigger, so '$check' can never run on the Release PR."
               exit 1
             fi
 
