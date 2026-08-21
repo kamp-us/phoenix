@@ -451,7 +451,7 @@ describe("a driver's claim and the builder it spawns", () => {
 });
 
 /**
- * The killed-seat succession (ADR 0324, #6374). The stranded marker here is SAME-SESSION under
+ * The killed-seat succession (ADR 0325, #6374). The stranded marker here is SAME-SESSION under
  * another nonce, which is what a killed operator seat actually leaves: the successor boots under the
  * one `CLAUDE_CODE_SESSION_ID` and only its nonce differs. That is the shape `build adopt` refuses
  * as already covered by plain release; here plain release reads it as foreign, so it is the case
@@ -507,6 +507,19 @@ describe("runLaneAdopt", () => {
 	it("exits 1 on a --session carrying the marker's own field separator", async () => {
 		const out = await adopt([], {session: "s-9f2e · s-other"});
 		expect(out.code).toBe(FAILED);
+	});
+
+	it("exits 1 on a multi-line --reason, writing nothing", async () => {
+		const seams = fakeSeams([]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runLaneAdopt({...adoptOptions, reason: "the seat was killed\nby an outage"}),
+				Layer.merge(seams.layer, unconfigured),
+			),
+		);
+		expect(out.code).toBe(FAILED);
+		expect(out.stdout).toBe("");
+		expect(seams.requests).toEqual([]);
 	});
 
 	it("answers inert on a chore lane, writing nothing", async () => {

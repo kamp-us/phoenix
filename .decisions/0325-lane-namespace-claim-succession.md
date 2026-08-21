@@ -1,12 +1,12 @@
 ---
-id: 0324
+id: 0325
 title: A killed operator seat's lane claim passes to its successor by a board-attested lane adopt
 status: accepted
 date: 2026-08-21
 tags: [fabrika, pipeline-hardening]
 ---
 
-# 0324 — A killed operator seat's lane claim passes to its successor by a board-attested lane adopt
+# 0325 — A killed operator seat's lane claim passes to its successor by a board-attested lane adopt
 
 **What this decides:** the `lane` claim namespace gets the succession `build` already has. A
 successor operator seat posts one `lane-adopt:` marker on the issue, `lane release` then reads that

@@ -27,7 +27,7 @@
  * builder this driver spawns runs it on its own account; a second copy in the driver would refuse a
  * lane at a different moment than the shell it drives, for reasons the driver is type-blind to.
  *
- * **`adopt` is the third verb, and it is what a killed seat's successor runs** (ADR 0324, in parity
+ * **`adopt` is the third verb, and it is what a killed seat's successor runs** (ADR 0325, in parity
  * with ADR 0295's build-namespace succession): the successor states on the board that a seat is gone
  * and inherits its claim, so `release` then answers `Mine` and retracts the claim and the adopt
  * together. No TTL, no lease, no steal.
@@ -137,7 +137,7 @@ const siblingNote = (verb: string, token: string): string =>
  * `--token` release in between (#6374).
  */
 const successionNote = (verb: string, holder: {readonly session: string}, lane: string): string =>
-	`${verb}: if that seat is gone, take the lane back through succession rather than a hand-composed token — fabrika lane adopt ${lane} --session ${holder.session} --reason "<why>", then fabrika lane release ${lane} --token <the token adopt printed> (ADR 0324).`;
+	`${verb}: if that seat is gone, take the lane back through succession rather than a hand-composed token — fabrika lane adopt ${lane} --session ${holder.session} --reason "<why>", then fabrika lane release ${lane} --token <the token adopt printed> (ADR 0325).`;
 
 export const runLaneClaim = (
 	options: LaneClaimOptions,
@@ -395,7 +395,7 @@ export interface LaneAdoptOptions extends Omit<ProtocolOptions, "token"> {
 
 /**
  * `lane adopt` — the successor operator seat names a stranded seat on the board, so its lane claim
- * becomes releasable (ADR 0324, the lane-namespace half of ADR 0295).
+ * becomes releasable (ADR 0325, the lane-namespace half of ADR 0295).
  *
  * **It admits this run's own session, and that is the difference from `build adopt`.** What dies in
  * this namespace is a *seat*, not a session: a killed operator seat's successor boots under the same
@@ -405,9 +405,7 @@ export interface LaneAdoptOptions extends Omit<ProtocolOptions, "token"> {
  * marker reads `Foreign` and the only way through was reading its token out of the comment thread by
  * hand (#6374). That hand-composed `--token` is what this verb exists to remove.
  *
- * The price is the one ADR 0295 already priced and disclosed: an adopt proves a seat gone no more
- * than it proves a session gone, so a driver may adopt a live sibling's claim. The guard is the
- * ACL plus the marker sitting on the issue with its reason, not a liveness proof.
+ * The price is the one ADR 0295 already priced: an adopt proves nothing dead.
  *
  * It writes one comment and nothing else. It takes no claim and evicts nobody: the release that
  * follows runs the ordinary ownership read, so an adopt posted below `write` decides nothing.
