@@ -105,6 +105,9 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | fabrika fast follows | #46 | done |
 | fabrika everywhere | #47 | active |
 | Geçit product push | #24 | active |
+| Lane integrity | #48 | paused |
+| Epic lanes | #49 | paused |
+| Diátaxis README passes | #50 | paused |
 
 **The table is a parsed contract.** It is the single source whatever writes a campaign row (appending it `paused` and later flipping its state) and the lifecycle guard that reads it both bind to, so the grammar is pinned here rather than re-derived at either end:
 
