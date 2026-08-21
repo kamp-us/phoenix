@@ -136,6 +136,8 @@ export const runsAtHead = (...paths: ReadonlyArray<string>): ExecResult =>
 				id: index + 1,
 				name: path,
 				path,
+				workflow_id: index + 1,
+				check_suite_id: index + 1,
 				status: "completed",
 				conclusion: "success",
 				completed_at: "2026-08-08T00:00:00Z",

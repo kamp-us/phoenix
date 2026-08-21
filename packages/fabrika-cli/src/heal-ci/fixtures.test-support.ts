@@ -124,6 +124,8 @@ export const runsAtHead = (
 			workflow_runs: rows.map((row) => ({
 				id: row.id,
 				name: row.name ?? "ci",
+				workflow_id: 1,
+				check_suite_id: row.id,
 				status: row.status ?? "completed",
 				conclusion: row.conclusion === undefined ? "failure" : row.conclusion,
 				completed_at: "2026-08-08T00:00:00Z",

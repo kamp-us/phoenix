@@ -12,6 +12,7 @@ import {
 	fetchManifest,
 	listReviews,
 	listReviewThreads,
+	listRunsAtHead,
 	listShipCheckRuns,
 	listTeamMembers,
 	listWorkflowPaths,
@@ -98,18 +99,67 @@ describe("the envelope proof", () => {
 			[
 				/check-runs\?per_page=100&page=1$/,
 				json(
-					{total_count: 3, check_runs: [{name: "ci", status: "completed", id: 1}]},
+					{
+						total_count: 3,
+						check_runs: [{name: "ci", status: "completed", id: 1, check_suite: {id: 91}}],
+					},
 					linkNext("https://api.github.com/x?page=2"),
 				),
 			],
 			[
 				/&page=2$/,
-				json({total_count: 3, check_runs: [{name: "lint", status: "completed", id: 2}]}),
+				json({
+					total_count: 3,
+					check_runs: [{name: "lint", status: "completed", id: 2, check_suite: {id: 91}}],
+				}),
 			],
 		]);
 		const read = value(await run(listShipCheckRuns("o/r", "abc"), http));
 		expect(read.declared).toBe(3);
 		expect(read.runs).toHaveLength(2);
+		expect(read.runs.map((entry) => entry.checkSuiteId)).toEqual([91, 91]);
+	});
+
+	// The join key onto the workflow run is what tells a concurrency-cancel from a failure (#6834),
+	// and the platform's own schema types `check_suite` as nullable — so the row can really arrive
+	// without it, and an unjoinable row is UNKNOWN rather than a run with no supersession.
+	it("refuses a check run that names no check suite rather than dropping the join key", async () => {
+		const http = fakeHttp([
+			[
+				/check-runs/,
+				json({total_count: 1, check_runs: [{name: "ci", status: "completed", id: 1}]}),
+			],
+		]);
+		const read = await run(listShipCheckRuns("o/r", "abc"), http);
+		expect(reason(read)).toContain("names no check suite");
+	});
+
+	it("carries each run's workflow and suite ids — the two halves of the supersession join", async () => {
+		const http = fakeHttp([
+			[
+				/actions\/runs\?head_sha=/,
+				json({
+					total_count: 2,
+					workflow_runs: [
+						{id: 11, workflow_id: 7, check_suite_id: 91, status: "completed"},
+						{id: 12, workflow_id: 7, status: "in_progress"},
+					],
+				}),
+			],
+		]);
+		const read = value(await run(listRunsAtHead("o/r", "abc"), http));
+		expect(read.runs.map((entry) => [entry.workflowId, entry.checkSuiteId])).toEqual([
+			[7, 91],
+			[7, null],
+		]);
+	});
+
+	it("refuses a workflow run naming no workflow — two runs of nothing are not the same workflow", async () => {
+		const http = fakeHttp([
+			[/actions\/runs\?head_sha=/, json({total_count: 1, workflow_runs: [{id: 11}]})],
+		]);
+		const read = await run(listRunsAtHead("o/r", "abc"), http);
+		expect(reason(read)).toContain("not a workflow run");
 	});
 
 	it("refuses an envelope that declares no total_count rather than inventing one", async () => {

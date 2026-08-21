@@ -21,12 +21,13 @@ import {isFailing, isInformational, isStalled, rollupOf, statusOf} from "../revi
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
-	countWorkflowRuns,
 	latestPerContext,
+	listRunsAtHead,
 	listShipCheckRuns,
 	listWorkflows,
 	type ShipCheckRun,
 } from "./github.ts";
+import {isSuperseded, supersededSuites} from "./supersession.ts";
 import {
 	badNumber,
 	inspectedSha,
@@ -64,16 +65,25 @@ export interface ChecksOptions {
  * The gating axis rides inside the key because status
  * alone would leave the rollup underivable from the payload: a `red` head and a head whose only
  * `failure` is an ADR 0061 informational run would tally identically, and the carve-out is exactly
- * what separates them.
+ * what separates them. A superseded cancel says so in the key for the same reason — it pends where a
+ * plain `cancelled` reds.
  */
-const checkClassOf = (run: ShipCheckRun): string =>
-	`${statusOf(run)}/${isInformational(run.name) ? "informational" : "gating"}`;
+const checkClassOf = (run: ShipCheckRun, superseded: ReadonlySet<number>): string => {
+	const status = isSuperseded(run, superseded) ? `${statusOf(run)}-superseded` : statusOf(run);
+	return `${status}/${isInformational(run.name) ? "informational" : "gating"}`;
+};
 
 export interface Sample {
 	readonly runs: ReadonlyArray<ShipCheckRun>;
 	readonly workflows: number;
 	readonly runCount: number;
+	/** The suites a newer run of their own workflow replaced at this head — see `./supersession.ts`. */
+	readonly superseded: ReadonlySet<number>;
 }
+
+/** The gating check runs a superseded suite cancelled — read as still in flight, never as failed. */
+const supersededGating = (sample: Sample): ReadonlyArray<ShipCheckRun> =>
+	sample.runs.filter((run) => !isInformational(run.name) && isSuperseded(run, sample.superseded));
 
 /**
  * The whole answer over one sample.
@@ -88,7 +98,11 @@ export const rollupFor = (sample: Sample, wedged: ReadonlyArray<string>): Checks
 		if (sample.workflows === 0) return "no-producer";
 		return sample.runCount === 0 ? "no-runs" : "pending";
 	}
-	return rollupOf(sample.runs.filter((run) => !isInformational(run.name)));
+	const gating = sample.runs.filter((run) => !isInformational(run.name));
+	const rollup = rollupOf(gating.filter((run) => !isSuperseded(run, sample.superseded)));
+	// A superseded cancel is exactly as unfinished as a running check, so it pends a green and loses
+	// to a red — the substitution `rollupOf` would make if the row were still in flight.
+	return rollup === "green" && supersededGating(sample).length > 0 ? "pending" : rollup;
 };
 
 export const runChecks = (
@@ -158,18 +172,21 @@ export const runChecks = (
 					diagnostics,
 				);
 			}
-			const runCount = yield* countWorkflowRuns(repo, bound);
-			if (runCount._tag === "Failure") {
+			// Enumerated rather than counted: `total_count` is still the `no-runs` discriminator, and
+			// the rows beside it are the only place supersession can be read from (#6834).
+			const atHead = yield* listRunsAtHead(repo, bound);
+			if (atHead._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					unreadable("the workflow runs", runCount.reason),
+					unreadable("the workflow runs", atHead.reason),
 					diagnostics,
 				);
 			}
 			return {
 				runs: latestPerContext(runs),
 				workflows: workflows.value,
-				runCount: runCount.value,
+				runCount: atHead.value.declared,
+				superseded: supersededSuites(atHead.value.runs),
 			} satisfies Sample;
 		});
 
@@ -180,7 +197,13 @@ export const runChecks = (
 			settle: Settle | null,
 		): VerbOutcome => {
 			const failing = read.runs
-				.filter((run) => !isInformational(run.name) && isFailing(run))
+				.filter(
+					(run) =>
+						!isInformational(run.name) && isFailing(run) && !isSuperseded(run, read.superseded),
+				)
+				.map((run) => run.name)
+				.sort();
+			const replaced = supersededGating(read)
 				.map((run) => run.name)
 				.sort();
 			const scope = [
@@ -196,11 +219,16 @@ export const runChecks = (
 					: [
 							`${VERB}: stranded past the dwell: ${wedged.join(", ")} — the cancel-and-rerun lever is an operator's (#3999).`,
 						]),
+				...(replaced.length === 0
+					? []
+					: [
+							`${VERB}: cancelled by a newer run of the same workflow at this head: ${replaced.join(", ")} — waiting on that run, not routing.`,
+						]),
 				...(failing.length === 0
 					? []
 					: [`${VERB}: failing gating checks: ${failing.join(", ")} — route these to heal-ci.`]),
 			];
-			const checks = reasonHistogram(read.runs, checkClassOf);
+			const checks = reasonHistogram(read.runs, (run) => checkClassOf(run, read.superseded));
 			if (json) {
 				return answer(
 					JSON.stringify({

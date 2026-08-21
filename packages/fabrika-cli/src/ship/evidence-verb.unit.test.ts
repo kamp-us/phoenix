@@ -35,6 +35,8 @@ const runsAt = (
 		total_count: rows.length,
 		workflow_runs: rows.map(({completedAt, ...row}) => ({
 			...row,
+			workflow_id: row.id,
+			check_suite_id: row.id,
 			conclusion: "success",
 			completed_at: completedAt === undefined ? new Date().toISOString() : completedAt,
 		})),
