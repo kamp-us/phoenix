@@ -18,8 +18,9 @@ the real behavior.
 
 ## What Zag wires for you (don't re-supply it)
 
-Each row was read against the cited source. A claim that source did not confirm is marked, not
-carried.
+Each row was read against the cited source. Claims the source did not confirm were dropped rather
+than carried over — notably Zag's tooltip `aria-label` branch, which strips `role="tooltip"` and
+sets no label anywhere, and which Manti never reaches.
 
 | Primitive | Zag wires automatically | Where the accessible **name** comes from | Source |
 |---|---|---|---|
@@ -64,7 +65,14 @@ is why "supply a title, not a label" is the rule rather than a preference. `Swit
 suppression one layer up: Manti drops Zag's `aria-labelledby` when you pass `aria-label` or
 `aria-labelledby` through `inputProps`.
 
-### Two gaps the primitives leave open
+```tsx
+// apps/web/src/components/ui/Dialog.test.tsx — the flat API. `title` IS the accessible name.
+<Dialog open title="başlık" description="açıklama" footer={<Button>tamam</Button>}>
+	<p>gövde</p>
+</Dialog>
+```
+
+### Two places the primitives leave a control unnamed
 
 - **`Dialog`'s close button has no accessible name.** Zag's `getCloseTriggerProps` emits only
   `id`/`type`/`onClick`, Manti renders an `aria-hidden` X inside it, and `DialogProps` offers no
@@ -73,14 +81,7 @@ suppression one layer up: Manti drops Zag's `aria-labelledby` when you pass `ari
 - **A `ToggleGroup` root is an unnamed `radiogroup`.** Name it from outside — `PropKnobs.tsx` wraps
   each in a `<fieldset aria-labelledby={labelId}>`, which is the shape to copy.
 
-```tsx
-// apps/web/src/components/ui/Dialog.test.tsx — the flat API. `title` IS the accessible name.
-<Dialog open title="başlık" description="açıklama" footer={<Button>tamam</Button>}>
-	<p>gövde</p>
-</Dialog>
-```
-
-## The gap: nothing invents a name for a control with no naming text
+## Nothing invents a name for a control with no naming text
 
 Zag wires *relationships and roles*, but a name is always the element's own text or an explicit
 attribute. So when a control's only content is a glyph — or text that identifies nothing, like a
