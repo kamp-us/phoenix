@@ -1314,7 +1314,7 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
 }
 
 /**
- * The topics the sweep below is about to un-hide content on, captured BEFORE the batch:
+ * The topics AND the rows the sweep below is about to un-hide, captured BEFORE the batch:
  * afterwards `sandboxed_at` is null and a swept row is indistinguishable from one the
  * author already had live. Same pre-batch capture as `anonymizeAccount`'s email (ADR 0097 §2).
  *
@@ -1329,26 +1329,27 @@ async function readSandboxSweep(db: DrizzleDb, userId: string): Promise<SandboxS
 			{authorId: userId},
 		);
 
-	// The global `posts` connection is ONE topic however many posts are swept, so its
-	// whole question is "any?" — `limit(1)` rather than a list this discards.
 	const posts = await db
 		.select({id: schema.postRecord.id})
 		.from(schema.postRecord)
-		.where(sweptWhere(schema.postRecord))
-		.limit(1);
+		.where(sweptWhere(schema.postRecord));
 	const comments = await db
-		.select({postId: schema.commentRecord.postId})
+		.select({id: schema.commentRecord.id, postId: schema.commentRecord.postId})
 		.from(schema.commentRecord)
 		.where(sweptWhere(schema.commentRecord));
 	const definitions = await db
-		.select({termSlug: schema.definitionRecord.termSlug})
+		.select({id: schema.definitionRecord.id, termSlug: schema.definitionRecord.termSlug})
 		.from(schema.definitionRecord)
 		.where(sweptWhere(schema.definitionRecord));
 
 	return {
+		// The global `posts` connection is ONE topic however many posts are swept.
 		feed: posts.length > 0,
 		commentThreads: [...new Set(comments.map((row) => row.postId))],
 		definitionTerms: [...new Set(definitions.map((row) => row.termSlug))],
+		postIds: posts.map((row) => row.id),
+		commentIds: comments.map((row) => row.id),
+		definitionIds: definitions.map((row) => row.id),
 	};
 }
 

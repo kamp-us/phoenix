@@ -54,6 +54,16 @@ const pasaportWithUser = makePasaportStub({
 	getUsersByIds: () => Effect.succeed([promotedRecord]),
 });
 
+/** Two comments on one parent post, so the thread topics dedupe but the row ids do not. */
+const sweep: SandboxSweep = {
+	feed: true,
+	commentThreads: ["p-1", "p-2"],
+	definitionTerms: ["effect"],
+	postIds: ["p-1", "p-9"],
+	commentIds: ["c-1", "c-2"],
+	definitionIds: ["d-1"],
+};
+
 const recordingLive = () => {
 	const recorded: Array<string> = [];
 	const frames: Array<{topicKey: string; message: PublishMessage}> = [];
@@ -123,11 +133,6 @@ describe("publishPromotion — the shared post-promote live-publish (#1886)", ()
 
 	it.effect("a swept backlog re-announces its content as connection INVALIDATIONS", () => {
 		const {layer, frames, scheduled} = recordingLive();
-		const sweep: SandboxSweep = {
-			feed: true,
-			commentThreads: ["p-1", "p-2"],
-			definitionTerms: ["effect"],
-		};
 		return Effect.gen(function* () {
 			yield* publishPromotion("u-target", sweep);
 			yield* drain(scheduled);
@@ -151,8 +156,65 @@ describe("publishPromotion — the shared post-promote live-publish (#1886)", ()
 			);
 			// The tier frame still rides: the sweep is additive, not a replacement.
 			assert.deepStrictEqual(
-				frames.filter(({message}) => message.kind === "entity").map(({topicKey}) => topicKey),
+				frames
+					.filter(({message}) => message.kind === "entity" && !("type" in message.frame))
+					.map(({topicKey}) => topicKey),
 				[liveEntityTopic("User", "u-target")],
+			);
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(pasaportWithUser, relationStoreEmpty, noopPanoFeedCache, layer),
+			),
+		);
+	});
+
+	it.effect("a swept row is ALSO invalidated by id, for the subscriber holding it alone", () => {
+		const {layer, frames, scheduled} = recordingLive();
+		return Effect.gen(function* () {
+			yield* publishPromotion("u-target", sweep);
+			yield* drain(scheduled);
+
+			const byId = frames.filter(
+				({message}) => message.kind === "entity" && "type" in message.frame,
+			);
+			assert.deepStrictEqual(
+				byId.map(({topicKey}) => topicKey),
+				[
+					liveEntityTopic("Post", "p-1"),
+					liveEntityTopic("Post", "p-9"),
+					liveEntityTopic("Comment", "c-1"),
+					liveEntityTopic("Comment", "c-2"),
+					liveEntityTopic("Definition", "d-1"),
+				],
+			);
+			// No payload, by ADR 0314's binding constraint: the true new value of a
+			// viewer-derived field differs per reader, so the frame says re-read and
+			// nothing else. A `data` key here would be the broadcast it exists to avoid.
+			assert.deepStrictEqual(
+				byId.map(({message}) => message.frame),
+				[
+					{type: "invalidate", id: "p-1"},
+					{type: "invalidate", id: "p-9"},
+					{type: "invalidate", id: "c-1"},
+					{type: "invalidate", id: "c-2"},
+					{type: "invalidate", id: "d-1"},
+				],
+			);
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(pasaportWithUser, relationStoreEmpty, noopPanoFeedCache, layer),
+			),
+		);
+	});
+
+	it.effect("an empty sweep invalidates nothing — no topic, no row", () => {
+		const {layer, frames, scheduled} = recordingLive();
+		return Effect.gen(function* () {
+			yield* publishPromotion("u-target", NO_SANDBOX_SWEEP);
+			yield* drain(scheduled);
+			assert.deepStrictEqual(
+				frames.filter(({message}) => "type" in message.frame),
+				[],
 			);
 		}).pipe(
 			Effect.provide(
