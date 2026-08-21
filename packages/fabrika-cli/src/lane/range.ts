@@ -101,7 +101,7 @@ export const locateRange = (
 			};
 		}
 		const candidates = childLaneBranches(issue, branches.value);
-		const facts: BranchFact[] = [];
+		const scanned: Array<Omit<BranchFact, "contains">> = [];
 		for (const branch of candidates) {
 			const tip = yield* resolveCommit(branch);
 			if (tip._tag === "Failure") {
@@ -123,7 +123,7 @@ export const locateRange = (
 					reason: walked.reason,
 				};
 			}
-			facts.push({
+			scanned.push({
 				branch,
 				base: forked.value,
 				tip: tip.value,
@@ -131,10 +131,41 @@ export const locateRange = (
 			});
 		}
 
+		const facts: BranchFact[] = [];
+		for (const fact of scanned) {
+			const contains: string[] = [];
+			for (const other of scanned) {
+				if (other.branch === fact.branch) continue;
+				const shared = yield* mergeBase(other.tip, fact.tip);
+				// A read that failed says nothing about containment, and reading it as "not contained"
+				// would turn an unreadable object database into a proven fork.
+				if (shared._tag === "Failure") {
+					return {
+						_tag: "Unreadable" as const,
+						what: `whether "${fact.branch}" already carries "${other.branch}"`,
+						reason: shared.reason,
+					};
+				}
+				if (shared.value === other.tip) contains.push(other.tip);
+			}
+			facts.push({...fact, contains});
+		}
+
 		const notes = [
 			`${verb}: #${issue} is a child of epic #${epic} and opens no PR of its own — looked in this tree for a lane branch of #${issue} over ${baseRef}; ${branches.value.length} local branch(es) read, ${candidates.length} candidate(s).`,
 		];
 		const trace = traceRange(issue, baseRef, facts);
+		if (trace._tag === "One" && candidates.length > 1) {
+			const won = facts.find((fact) => fact.branch === trace.branch);
+			const superseded = facts
+				.filter((fact) => fact.branch !== trace.branch && won?.contains.includes(fact.tip) === true)
+				.map((fact) => fact.branch);
+			if (superseded.length > 0) {
+				notes.push(
+					`${verb}: ${trace.branch} already carries ${superseded.join(", ")}, so it is the later round of one lane rather than a fork.`,
+				);
+			}
+		}
 		if (trace._tag === "None") return {_tag: "Absent" as const, why: trace.why, notes};
 		if (trace._tag === "Many") {
 			return {
