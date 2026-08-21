@@ -170,27 +170,27 @@ describe("lane prove — the two events that carry a claim", () => {
 });
 
 describe("lane prove — the ui class, derived exactly as `ship scope` derives it", () => {
-	const UI_FILE = okOut(JSON.stringify([{filename: "apps/web/src/routes/pano.tsx"}]));
+	const UI_FILE = served([{filename: "apps/web/src/routes/pano.tsx"}]);
 
 	it("holds a lane whose head raises the ui class and carries no review-ui verdict", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 			[FILES, UI_FILE],
 			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-ui (absent)");
 	});
 
 	it("proves the same lane once a head-bound review-ui PASS is on the board", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 			[FILES, UI_FILE],
 			[
@@ -202,7 +202,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
@@ -212,15 +212,15 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 	});
 
 	it("requires no review-ui row of a head that raises no ui class", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
-			[FILES, okOut(JSON.stringify([{filename: "apps/web/src/routes/pano.test.tsx"}]))],
+			[FILES, served([{filename: "apps/web/src/routes/pano.test.tsx"}])],
 			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
@@ -229,9 +229,9 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 	});
 
 	it("proves a ui lane whose review-ui is filled by a head-bound routed-elsewhere record", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 			[FILES, UI_FILE],
 			[
@@ -246,7 +246,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
@@ -257,9 +257,9 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 	});
 
 	it("holds the same lane when the route was attested at a head the branch has moved past", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 			[FILES, UI_FILE],
 			[
@@ -274,16 +274,16 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-ui (stale)");
 	});
 
 	it("lets a FAIL written after a route win, so a route is no shield", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
-			[SEARCH, okOut("4318\n")],
+			[SEARCH, nominated(4318)],
 			[PULL, pull()],
 			[FILES, UI_FILE],
 			[
@@ -304,7 +304,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			],
 		]);
 
-		const out = await run(laneAt("review"), shell, "PASS");
+		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_CONTRADICTED);
 		expect(out.stderr.join("\n")).toContain("review-ui");
@@ -1080,12 +1080,12 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	});
 
 	const uiRanged = (...comments: ReadonlyArray<{id: number; body: string}>) =>
-		fakeShell([...locating(), [RAW, okOut(UI_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
+		fakeSeams([...locating(), [RAW, okOut(UI_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
 
 	it("refuses a child PASS whose range raises the ui class and carries no review-ui verdict", async () => {
-		const shell = uiRanged({id: 1, body: rangeMarker("PASS", UI_DIGEST)});
+		const seams = uiRanged({id: 1, body: rangeMarker("PASS", UI_DIGEST)});
 
-		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("derives review-code, review-ui");
@@ -1093,7 +1093,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	});
 
 	it("proves that same ui child once the review-ui range verdict is on the issue", async () => {
-		const shell = uiRanged(
+		const seams = uiRanged(
 			{id: 1, body: rangeMarker("PASS", UI_DIGEST)},
 			{
 				id: 2,
@@ -1107,7 +1107,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 			},
 		);
 
-		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(0);
 		expect(
@@ -1116,7 +1116,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	});
 
 	it("proves that same ui child when a routed-elsewhere record at the range tip fills review-ui", async () => {
-		const shell = uiRanged(
+		const seams = uiRanged(
 			{id: 1, body: rangeMarker("PASS", UI_DIGEST)},
 			{
 				id: 2,
@@ -1124,7 +1124,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 			},
 		);
 
-		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
@@ -1135,7 +1135,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	});
 
 	it("refuses that ui child when the route was attested at a tip the branch has moved past", async () => {
-		const shell = uiRanged(
+		const seams = uiRanged(
 			{id: 1, body: rangeMarker("PASS", UI_DIGEST)},
 			{
 				id: 2,
@@ -1143,7 +1143,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 			},
 		);
 
-		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-ui (stale)");
