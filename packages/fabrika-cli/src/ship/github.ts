@@ -35,6 +35,7 @@ import {
 	onTransport,
 	PAGE_CAP,
 	type Rest,
+	refusalText,
 	restBytes,
 	restCall,
 	restRead,
@@ -102,7 +103,7 @@ const pagedForExistence = (token: string, path: string): Api<Existence<ReadonlyA
 			}
 			if (outcome.status === 404) return absent<ReadonlyArray<unknown>>();
 			if (outcome.status < 200 || outcome.status >= 300) {
-				return unknown<ReadonlyArray<unknown>>(`GitHub answered HTTP ${outcome.status}`);
+				return unknown<ReadonlyArray<unknown>>(refusalText(outcome));
 			}
 			if (!Array.isArray(outcome.body)) {
 				return unknown<ReadonlyArray<unknown>>("GitHub answered 200 but its body is not a list");
@@ -129,7 +130,7 @@ export const defaultBranch = (repo: string): Shell<Attempt<string>> =>
 		Effect.map(restRead(token, "GET", `repos/${repo}`), (outcome) => {
 			if (outcome._tag === "Unreachable") return fail(outcome.reason);
 			if (outcome.status < 200 || outcome.status >= 300) {
-				return fail(`GitHub answered HTTP ${outcome.status}`);
+				return fail(refusalText(outcome));
 			}
 			const name = isRecord(outcome.body) ? outcome.body.default_branch : undefined;
 			return typeof name === "string" && name.trim() !== ""
@@ -180,7 +181,7 @@ export const readFileAtRef = (repo: string, path: string, ref: string): Shell<Ex
 				if (outcome._tag === "Unreachable") return unknown<string>(outcome.reason);
 				if (outcome.status === 404) return absent<string>();
 				if (outcome.status < 200 || outcome.status >= 300) {
-					return unknown<string>(`GitHub answered HTTP ${outcome.status}`);
+					return unknown<string>(refusalText(outcome));
 				}
 				// The raw media type is what makes `text` the answer here: a file's bytes are not
 				// JSON, so `body` parses to `null` for every file that is not itself a JSON document.
@@ -323,7 +324,7 @@ export const countCommitStatuses = (repo: string, sha: string): Shell<Attempt<nu
 const bodyOf = (outcome: Rest): Attempt<unknown> => {
 	if (outcome._tag === "Unreachable") return fail(outcome.reason);
 	if (outcome.status < 200 || outcome.status >= 300) {
-		return fail(`GitHub answered HTTP ${outcome.status}`);
+		return fail(refusalText(outcome));
 	}
 	return ok(outcome.body);
 };
@@ -694,7 +695,7 @@ export const setPullState = (repo: string, pr: number, state: string): Shell<Att
 			if (outcome._tag === "Unreachable") return fail(outcome.reason);
 			return outcome.status >= 200 && outcome.status < 300
 				? ok(undefined)
-				: fail(`GitHub answered HTTP ${outcome.status}`);
+				: fail(refusalText(outcome));
 		}),
 	);
 

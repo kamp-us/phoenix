@@ -16,7 +16,7 @@
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {pagedEnvelope, resolveToken, restRead} from "../io/gh-api.ts";
+import {pagedEnvelope, refusalText, resolveToken, restRead} from "../io/gh-api.ts";
 import {type Attempt, fail, ok} from "../io/git.ts";
 import {isRecord} from "../io/json.ts";
 
@@ -105,7 +105,7 @@ export const getRun = (repo: string, id: number, env: Env): Authed<Attempt<Workf
 		const outcome = yield* restRead(token.value, "GET", `repos/${repo}/actions/runs/${id}`);
 		if (outcome._tag === "Unreachable") return fail(outcome.reason);
 		if (outcome.status < 200 || outcome.status >= 300) {
-			return fail(`GitHub answered HTTP ${outcome.status}`);
+			return fail(refusalText(outcome));
 		}
 		const run = toRun(outcome.body);
 		return run === null ? fail(SHAPE) : ok(run);
@@ -120,7 +120,7 @@ export const rerunRun = (repo: string, id: number, env: Env): Authed<Attempt<voi
 		if (outcome._tag === "Unreachable") return fail(outcome.reason);
 		return outcome.status >= 200 && outcome.status < 300
 			? ok<void>(undefined)
-			: fail(`GitHub answered HTTP ${outcome.status}`);
+			: fail(refusalText(outcome));
 	});
 
 /** Whether a re-read proves the rerun landed: a new attempt, or a run that is no longer completed. */

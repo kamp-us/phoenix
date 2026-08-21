@@ -170,11 +170,19 @@ describe("runMerge", () => {
 		expect(outcome.stderr.at(-1)).toBe("ship merge: PR #4321 is merged — nothing to merge.");
 	});
 
-	it("refuses on 8 when the merge call fails, quoting the status", async () => {
+	it("refuses on 8 when the merge call fails, quoting the status and GitHub's own message", async () => {
 		const {outcome} = await land([
 			...happyReads(),
 			[MERGE, {status: 405, body: '{"message":"Pull Request is not mergeable"}'}],
 		]);
+		expect(outcome.code).toBe(WRITE_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain(
+			'the merge failed: "GitHub answered HTTP 405: Pull Request is not mergeable"',
+		);
+	});
+
+	it("falls back to the bare status when the failing merge body carries no message", async () => {
+		const {outcome} = await land([...happyReads(), [MERGE, {status: 405, body: "{}"}]]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toContain('the merge failed: "GitHub answered HTTP 405"');
 	});
