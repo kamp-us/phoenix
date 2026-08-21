@@ -17,21 +17,13 @@
 
 import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {passThroughStdin, runAnnotate} from "./annotate-verb.ts";
 import {runChangelog} from "./changelog-verb.ts";
 import {runCiEvidence} from "./evidence-verb.ts";
 import {runPrBody} from "./pr-body-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const rootFlag = Flag.string("root").pipe(
 	Flag.optional,

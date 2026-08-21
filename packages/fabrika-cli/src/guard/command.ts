@@ -14,8 +14,8 @@
 
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {runCatalogGuard} from "./catalog-verb.ts";
 import {runChangeDetectGuard} from "./change-detect-verb.ts";
 import {runCodeownersCpGuard} from "./codeowners-cp-verb.ts";
@@ -36,14 +36,6 @@ import {runRoadmapGuard} from "./roadmap-verb.ts";
 import {runSettingsEnvGuard} from "./settings-env-verb.ts";
 import {runSkillLint} from "./skill-lint-verb.ts";
 import {runUnresolvedThreadsGuard} from "./unresolved-threads-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const rootFlag = Flag.string("root").pipe(
 	Flag.optional,

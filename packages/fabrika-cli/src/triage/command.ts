@@ -20,9 +20,10 @@ import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {CONFIG_PATH} from "../config/document.ts";
 import {readRoadmapFile} from "../config/paths.ts";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import {refuse, type VerbOutcome} from "../verb.ts";
+import {refuse} from "../verb.ts";
 import {runApply} from "./apply-verb.ts";
 import {runClaim} from "./claim-verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -39,14 +40,6 @@ import {ROADMAP_FILE} from "./roadmap.ts";
 import {runScratch} from "./scratch-verb.ts";
 import {runSplit} from "./split-verb.ts";
 import {readStandingLanes} from "./standing-lanes.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 /**
  * The two flags every verb in this group shares, declared once here.

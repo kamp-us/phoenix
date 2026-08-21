@@ -13,21 +13,13 @@
 
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {runAnchor} from "./anchor-verb.ts";
 import {runCorpus} from "./corpus-verb.ts";
 import {runDrift} from "./drift-verb.ts";
 import {runNew} from "./new-verb.ts";
 import {runRegister} from "./register-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const dirFlag = Flag.string("dir").pipe(
 	Flag.withDefault(".patterns"),
