@@ -430,8 +430,7 @@ export const counts = (tickets: ReadonlyArray<Ticket>): Readonly<Record<string, 
 	for (const ticket of tickets) {
 		tally[ticket.state] = (tally[ticket.state] ?? 0) + 1;
 		// Derived, never stored: a ticket can be both `open` and blocked, and collapsing the two would
-		// lose which. Whether a standalone issue may carry stored blockedness is open at #4840; this
-		// read takes no position on it.
+		// lose which.
 		if (ticket.blockedBy.some((number) => unresolved.has(number))) {
 			tally.blocked = (tally.blocked ?? 0) + 1;
 		}
