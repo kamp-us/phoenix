@@ -46,6 +46,12 @@ mechanism was barred.
 did.** Board state is a fact about the issue, read at the moment someone looks, never an event
 appended to `events.jsonl`.
 
+The principle already holds at the other end of a lane's life. `initialFor` in
+[`packages/fabrika-cli/src/lane/emit.ts`](../packages/fabrika-cli/src/lane/emit.ts) boots an epic
+child whose issue closed *without* landing into `frozen` rather than `landed`, because — in its own
+words — "marking it `landed` would fabricate a landing". That is this rule at boot time; this record
+extends it to read time.
+
 - **The vocabulary stays closed.** `OPERATOR_EVENTS` keeps its six members and ADR 0297's binding
   constraint stands unamended. This record supersedes nothing.
 - **The fold learns nothing.** `events.jsonl` stays the fold's only input, so a closed-issue lane
@@ -73,10 +79,13 @@ itself is a demlik change, tracked on that repo.
 
 Phoenix owes the input: per-lane board state passed alongside the existing four. The reader exists —
 `getIssue(repo, issue)` in [`packages/fabrika-cli/src/io/issues.ts`](../packages/fabrika-cli/src/io/issues.ts)
-returns an `IssueRecord` carrying `state` — so this is wiring, not a new client. It is also the first
-board read in the lane group: nothing under `packages/fabrika-cli/src/lane/` reads issue state today.
-That makes an unreachable board a real case, and the honest reading of one is that a lane's bucket is
-UNKNOWN — it stays where its fold puts it rather than being demoted on a failed read.
+returns an `IssueRecord` carrying `state` — so this is wiring, not a new client, and the lane group
+already calls it: `lane brief` and `lane prove` both read an issue record today.
+
+A board read can fail, so an unreachable board is a real case, and the honest reading of one is that
+a lane's bucket is UNKNOWN — it stays where its fold puts it rather than being demoted on a failed
+read. Demoting on a failed read would hide a genuine park behind a network error, which is the exact
+failure this record exists to fix, pointed the other way.
 
 ## Consequences
 
