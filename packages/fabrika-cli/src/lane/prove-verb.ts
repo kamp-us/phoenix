@@ -26,7 +26,12 @@ import {governedRootsOr} from "../config/paths.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {getPullRequest, listPullFiles, openPullsClosing, searchOpenPulls} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
-import {issueRefOf, partitionWithUi, shipNamespacesOf} from "../review/classes.ts";
+import {
+	issueRefOf,
+	partitionWithUi,
+	ROUTED_NAMESPACES,
+	shipNamespacesOf,
+} from "../review/classes.ts";
 import {bindRange, contentDigestAt, rangeContentAt} from "../review/content-binding.ts";
 import {bindHead} from "../review/head.ts";
 import {CODEOWNERS_PATH, readBoundary} from "../ship/boundary.ts";
@@ -44,7 +49,7 @@ import {
 	PROOF_IN_FLIGHT,
 	TASK_UNKNOWN,
 } from "./codes.ts";
-import {foldLog, resolveTask} from "./fold.ts";
+import {foldLog, nextLeaf, resolveTask} from "./fold.ts";
 import {
 	claimOf,
 	epicOf,
@@ -80,6 +85,13 @@ export interface ProveOptions extends LaneRef {
 	readonly event: string;
 	/** The task the event addresses; `null` resolves only on a single-task lane. */
 	readonly task: string | null;
+	/**
+	 * The lane classes the caller is about to record, exactly as `lane report` validated them —
+	 * `null` leaves the classes already standing alone, the fold's own rule (ADR 0317). They are an
+	 * input here because they pick the arm the event takes, and the arm picks which cell owes the
+	 * routed namespace (#6664).
+	 */
+	readonly classes: ReadonlyArray<string> | null;
 	readonly repo: string | null;
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in, not the ledger root. */
 	readonly cwd: string;
@@ -122,7 +134,8 @@ export const runProve = (
 		const leaf = fold.states[taskId]?.type ?? "";
 		const event = options.event.toUpperCase();
 		const role = roleOf(taskId, epicOf(Object.keys(loaded.lane.tasks)));
-		const claim = claimOf(event, leaf, role);
+		const routing = nextLeaf(loaded.lane, fold.states, taskId, event, options.classes);
+		const claim = claimOf(event, leaf, role, routing);
 		if (claim._tag === "None") {
 			return answer(
 				JSON.stringify({proof: "not-required", event, task: taskId, state: leaf}, null, 2),
@@ -240,6 +253,7 @@ export const runProve = (
 			event,
 			diagnostics,
 			governed.roots,
+			claim.defers,
 		);
 	});
 
@@ -365,11 +379,18 @@ const proveNoPull = (
 	});
 
 /**
- * Every namespace this PR's diff derives, judged at its live head.
+ * Every namespace this PR's diff derives that the state being left owes, judged at its live head.
  *
  * The derivation is `ship scope`'s own pair — the `ui`-bearing partition and the namespace map that
  * appends the `governance` floor — so the bar this proves against is the same object the merge gate
  * enforces rather than a second reading of it.
+ *
+ * `defers` is the one subtraction, and it is a routing fact rather than a relaxation: it is non-empty
+ * only where this lane's own machine takes the deferred namespace's event into the cell that owes it,
+ * so a subtraction can never outlive the round it hands the work to (ADR 0320). Demanding `review-ui`
+ * of the very `PASS` that enters `review:ui` demanded a verdict from a cell the lane had not reached
+ * (#6664/#6793); demanding it of a `PASS` that walks to `ship` is the floor, and it still stands.
+ * `ship gate` re-derives the full set at the merge either way.
  *
  * On a control-plane PR the reviewer's PASS arrives through the §CP advisory carrier by design —
  * no first-line marker, the head in the body (ADR 0111/0226) — so a marker-only read would row it
@@ -393,6 +414,7 @@ const proveVerdicts = (
 	event: string,
 	diagnostics: ReadonlyArray<string>,
 	roots: ReadonlyArray<string>,
+	defers: ReadonlyArray<string>,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const pull = yield* getPullRequest(repo, pr);
@@ -406,7 +428,9 @@ const proveVerdicts = (
 		if (files._tag === "Failure") {
 			return unreadable(`the changed files of #${pr}`, files.reason);
 		}
-		const required = shipNamespacesOf(partitionWithUi(files.value, roots));
+		const derived = shipNamespacesOf(partitionWithUi(files.value, roots));
+		const deferred = derived.filter((namespace) => defers.includes(namespace));
+		const required = derived.filter((namespace) => !defers.includes(namespace));
 
 		const commented = yield* listComments(repo, pr);
 		if (commented._tag === "Failure") {
@@ -476,7 +500,20 @@ const proveVerdicts = (
 			}
 		}
 
-		const notes = [...diagnostics];
+		const unrouted = derived.filter(
+			(namespace) => ROUTED_NAMESPACES.includes(namespace) && !defers.includes(namespace),
+		);
+		const notes = [
+			...diagnostics,
+			...deferred.map(
+				(namespace) =>
+					`${VERB}: ${namespace} on #${pr} is owed by the cell this event routes into, not by this one — the event being proven is that arm, so requiring it here is the deadlock #6664 closed.`,
+			),
+			...unrouted.map(
+				(namespace) =>
+					`${VERB}: #${pr} derives ${namespace} and this event routes into no cell that could fill it, so it is required here — relay the class \`review scope\` printed (\`lane report … --class ui\`) if this lane's machine carries the rendered round (ADR 0320).`,
+			),
+		];
 		if (advisories.length > 0) {
 			const boundary = yield* readBoundary(repo, pull.value.baseRef);
 			if (boundary._tag === "Unreadable") {

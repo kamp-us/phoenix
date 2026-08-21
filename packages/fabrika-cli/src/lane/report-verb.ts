@@ -100,6 +100,9 @@ export const runReport = <R>(
 			lane: options.lane,
 			event: resolved.event,
 			task: task.taskId,
+			// The same classes the append carries, so the proof asks about the arm this event actually
+			// takes rather than the one the lane stood on before it (#6664).
+			classes: classed.classes,
 			repo: options.repo,
 			cwd: options.cwd,
 			env: options.env,

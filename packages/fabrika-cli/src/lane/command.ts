@@ -13,10 +13,11 @@ import {Argument, Command, Flag} from "effect/unstable/cli";
 import {resolveEntrypoint} from "../delegate/entrypoint.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
-import type {VerbOutcome} from "../verb.ts";
+import {refuse, type VerbOutcome} from "../verb.ts";
 import {runAssembly} from "./assembly-verb.ts";
 import {runBrief} from "./brief-verb.ts";
 import {runLaneClaim, runLaneRelease} from "./claim-verb.ts";
+import {CLASS_UNRECOGNISED} from "./codes.ts";
 import {runEmit} from "./emit-verb.ts";
 import {runHistory} from "./history-verb.ts";
 import {type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
@@ -26,7 +27,7 @@ import {runPrint} from "./print-verb.ts";
 import {runProve} from "./prove-verb.ts";
 import {runPush} from "./push-verb.ts";
 import {keyRefusal} from "./refusals.ts";
-import {PARK_CAUSE_TOKENS} from "./report.ts";
+import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
 import {runReport} from "./report-verb.ts";
 import {DEFAULT_STALE_MINUTES} from "./stale.ts";
 import {runStale} from "./stale-verb.ts";
@@ -221,6 +222,7 @@ const prove = leafCommand(
 			Flag.optional,
 			Flag.withDescription("the task the event addresses; omittable on a single-task lane"),
 		),
+		classes: classFlag,
 		repo: Flag.string("repo").pipe(
 			Flag.optional,
 			Flag.withDescription(
@@ -228,13 +230,19 @@ const prove = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({lane, event, root, task, repo}) {
+	Effect.fn(function* ({lane, event, root, task, classes, repo}) {
+		const classed = classesForEvent(classes);
+		if (classed._tag === "Rejected") {
+			yield* emit(refuse(CLASS_UNRECOGNISED, `fabrika lane prove: ${classed.reason}.`));
+			return;
+		}
 		yield* emit(
 			yield* onKey(lane, root, (_key, ref) =>
 				runProve({
 					...ref,
 					event,
 					task: Option.getOrNull(task),
+					classes: classed.classes,
 					repo: Option.getOrNull(repo),
 					cwd: process.cwd(),
 					env: process.env,
@@ -245,7 +253,7 @@ const prove = leafCommand(
 ).pipe(
 	Command.withShortDescription("Prove a lane event against the board before recording it."),
 	Command.withDescription(
-		"Read the artifact a lane event claims — artifacts over self-reports, the rule the retired epic conductor held against a conducted branch. Two events carry a claim, and which artifact answers them is the task's shape. On a single-issue lane and on an epic run's tail: a DONE out of `build` claims an open PR whose body links the task's issue (or, for an investigation, the diagnosis comment a no-PR builder posted since the task entered build), and a PASS out of `review` claims a current-head verdict in every namespace that PR's diff derives, governance included. On an epic run's child, which opens no PR at all (ADR 0285): a DONE out of `build` claims the commits its lane branch adds over `epic/<n>` in THIS tree, and a PASS out of `review` claims a range-scoped verdict on the child issue still bound to the content that range carries now (ADR 0276). Every other event answers `not-required` at exit 0. Writes nothing — the append stays `lane transition`'s. The refusals are artifact-independent, so the range arms take no new seat. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (a lane, board or tree read failed — the proof is UNKNOWN, never proven; an epic branch this tree does not carry is UNKNOWN too), 13 (the task is not in the machine, or names no issue), 21 (the key is not a lane key), 22 (the artifact is provably not there), 23 (a required namespace has no current or still-binding verdict — re-read, record nothing), 24 (a FAIL under a claimed PASS), 25 (several open PRs link the issue, or several lane branches carry the child's commits). Example: fabrika lane prove 5673 DONE",
+		"Read the artifact a lane event claims — artifacts over self-reports, the rule the retired epic conductor held against a conducted branch. Two events carry a claim, and which artifact answers them is the task's shape. On a single-issue lane and on an epic run's tail: a DONE out of `build` claims an open PR whose body links the task's issue (or, for an investigation, the diagnosis comment a no-PR builder posted since the task entered build), and a PASS out of `review` claims a current-head verdict in every namespace that PR's diff derives, governance included — minus, and only minus, a routed namespace this very event's arm hands to a later cell of this lane's own machine (`--class ui` into `review:ui`; ADR 0320), which then proves the whole set. On an epic run's child, which opens no PR at all (ADR 0285): a DONE out of `build` claims the commits its lane branch adds over `epic/<n>` in THIS tree, and a PASS out of `review` claims a range-scoped verdict on the child issue still bound to the content that range carries now (ADR 0276). Every other event answers `not-required` at exit 0. Writes nothing — the append stays `lane transition`'s. The refusals are artifact-independent, so the range arms take no new seat. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (a lane, board or tree read failed — the proof is UNKNOWN, never proven; an epic branch this tree does not carry is UNKNOWN too), 13 (the task is not in the machine, or names no issue), 21 (the key is not a lane key), 22 (the artifact is provably not there), 23 (a required namespace has no current or still-binding verdict — re-read, record nothing), 24 (a FAIL under a claimed PASS), 25 (several open PRs link the issue, or several lane branches carry the child's commits). Exits 38 too (--class is outside the closed lane-class set). Example: fabrika lane prove 5673 DONE",
 	),
 );
 

@@ -12,6 +12,7 @@ import {
 	deriveStatus,
 	foldLog,
 	type LogEntry,
+	nextLeaf,
 	parseLog,
 	resolveTask,
 	standingCauses,
@@ -642,6 +643,38 @@ describe("the fold is deterministic and total over its inputs", () => {
 		expect(resolveTask(lane(coderWorkflow()), null)).toEqual({_tag: "Task", taskId: "issue"});
 		expect(resolveTask(lane(twoPhaseWorkflow()), null)).toMatchObject({_tag: "Unresolved"});
 		expect(resolveTask(lane(coderWorkflow()), "nope")).toMatchObject({_tag: "Unresolved"});
+	});
+});
+
+describe("nextLeaf — the arm an event would take, asked before it is recorded (#6664)", () => {
+	const atReview = () => {
+		const compiled = lane(coderWorkflow());
+		return {
+			compiled,
+			states: statesOf(
+				compiled,
+				drive(compiled, [
+					["issue", "WIP"],
+					["issue", "DONE"],
+				]),
+			),
+		};
+	};
+
+	it("routes a review PASS into `review:ui` only when the ui class rides on it", () => {
+		const {compiled, states} = atReview();
+
+		expect(nextLeaf(compiled, states, "issue", "PASS", ["ui"])).toBe("review:ui");
+		expect(nextLeaf(compiled, states, "issue", "PASS", null)).toBe("ship");
+		expect(nextLeaf(compiled, states, "issue", "PASS", ["code"])).toBe("ship");
+	});
+
+	it("answers null where the machine holds no cell for the event, rather than guessing one", () => {
+		const {compiled, states} = atReview();
+
+		expect(nextLeaf(compiled, states, "issue", "UNBLOCKED", null)).toBeNull();
+		expect(nextLeaf(compiled, states, "issue", "NOPE", null)).toBeNull();
+		expect(nextLeaf(compiled, states, "task_z", "PASS", null)).toBeNull();
 	});
 });
 

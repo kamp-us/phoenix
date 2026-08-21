@@ -471,8 +471,24 @@ no head to scope and no `ui` label to read, so the class you relay is the one th
 carries — `lane status` prints the task's `classes` when any stand, seeded from the lane document
 the plan wrote and carried forward by every event since. No `classes` key means unclassed: record
 the bare `WIP`. Once
-a head exists, `ship scope` / `review scope` name the classes it raises, and those are what you
-relay from then on. A spelling outside the closed set is refused at exit `38`, never routed.
+a head exists, `ship scope` / `review scope` name the classes it raises — one derivation, printed by
+both, so they cannot disagree (#6664) — and those are what you relay from then on. A spelling
+outside the closed set is refused at exit `38`, never routed.
+
+**The two review cells prove different halves, and that is what makes the ui arm walkable.** `lane
+prove` takes the `PASS` out of `review` against the namespaces that cell owes, leaving the routed
+`review-ui` to the cell the `PASS` routes into; the `PASS` out of `review:ui` stands on the whole
+derived set. Requiring all of it at `review` was a closed circle — the arm into `review:ui` is that
+very event — and every rendered-surface lane deadlocked at exit `23` until a driver hand-spawned the
+ui reviewer (#6793). Nothing reaches `ship` on less, and `ship gate` re-derives the full set at the
+merge regardless.
+
+**That split is the routing, so it never outlives it.** `prove` asks this lane's own machine which
+arm the event takes, with the classes the append will carry, and defers only into `review:ui` — so a
+lane whose machine has no such arm, and a rendered `PASS` whose class flag was never relayed, both
+owe the whole set at `review` and refuse there exactly as before
+(ADR [0320](../../../../.decisions/0320-the-review-bar-splits-across-two-cells-and-the-machine-decides.md)).
+The remedy the refusal names is the class relay, and it is the reviewer's to make.
 
 `lane prove` reads the two events a report can lie about — a `DONE` out of `build` and a `PASS` out
 of `review` — and answers `not-required` at exit `0` for every other one, so it is run on every

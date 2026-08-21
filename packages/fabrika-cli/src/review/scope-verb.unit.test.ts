@@ -73,7 +73,7 @@ const happy = (shape: Parameters<typeof pull>[0] = {}): ReadonlyArray<Scripted> 
 ];
 
 describe("runScope", () => {
-	it("prints the head, the linked issue, the present classes, the flags and the governance token", async () => {
+	it("prints the head, the linked issue, the present classes, the namespaces, the flags and the governance token", async () => {
 		const out = await run(happy());
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
@@ -81,6 +81,8 @@ describe("runScope", () => {
 				`scoped\t${HEAD}\tfixes:4287`,
 				"class\tcode\t1",
 				"class\tdoc\t1",
+				"namespace\treview-code",
+				"namespace\treview-doc",
 				"self\tfalse",
 				"harness\tfalse",
 				"governance\tnot-required",

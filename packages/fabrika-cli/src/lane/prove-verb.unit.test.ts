@@ -18,7 +18,7 @@ import {
 	PROOF_CONTRADICTED,
 	PROOF_IN_FLIGHT,
 } from "./codes.ts";
-import {coderTemplateText} from "./fixtures.test-support.ts";
+import {coderTemplateText, coderWorkflow} from "./fixtures.test-support.ts";
 import {runProve} from "./prove-verb.ts";
 
 const ROOT = ".fabrika/lanes";
@@ -64,20 +64,54 @@ const closingPulls = (...numbers: ReadonlyArray<number>): HttpReply =>
 		},
 	});
 
-const logLine = (event: string, at: string): string =>
-	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at})}\n`;
+const logLine = (event: string, at: string, classes?: ReadonlyArray<string>): string =>
+	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at, ...(classes === undefined ? {} : {classes})})}\n`;
 
-/** The lane in `build` (one WIP), or in `review` (WIP then DONE). */
-const laneAt = (state: "build" | "review") =>
+/**
+ * The lane in `build` (one WIP), in `review` (WIP then DONE), or in `review:ui` — which is the same
+ * path with `ui` standing from the `WIP`, so the `PASS` out of `review` took the class-guarded arm.
+ */
+const laneAt = (state: "build" | "review" | "review:ui") =>
 	fakeFs({
 		files: {
 			[WORKFLOW]: coderTemplateText(),
 			[LOG]:
 				state === "build"
 					? logLine("WIP", "2026-08-16T01:00:00Z")
-					: logLine("WIP", "2026-08-16T01:00:00Z") + logLine("DONE", "2026-08-16T02:00:00Z"),
+					: state === "review"
+						? logLine("WIP", "2026-08-16T01:00:00Z") + logLine("DONE", "2026-08-16T02:00:00Z")
+						: logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]) +
+							logLine("DONE", "2026-08-16T02:00:00Z") +
+							logLine("PASS", "2026-08-16T03:00:00Z"),
 		},
 	});
+
+/**
+ * The same lane in `review`, on a machine whose `review` `PASS` targets `ship` outright — no
+ * `class:ui` arm, and no `review:ui` state to reach. Built by collapsing the coder template's
+ * guarded array rather than hand-writing a document, so it stays the shipped machine minus exactly
+ * the one arm under test.
+ */
+const laneWithNoUiArm = () => {
+	const document = coderWorkflow() as {
+		machine: {
+			states: Record<
+				string,
+				{states: Record<string, {states: Record<string, {on: Record<string, unknown>}>}>}
+			>;
+		};
+	};
+	const states = document.machine.states.pipeline?.states.issue?.states;
+	if (states?.review === undefined) throw new Error("the coder template holds no review state");
+	states.review.on["ISSUE.PASS"] = "ship";
+	delete states["review:ui"];
+	return fakeFs({
+		files: {
+			[WORKFLOW]: JSON.stringify(document),
+			[LOG]: logLine("WIP", "2026-08-16T01:00:00Z") + logLine("DONE", "2026-08-16T02:00:00Z"),
+		},
+	});
+};
 
 const pull = (overrides: Record<string, unknown> = {}): HttpReply =>
 	served({
@@ -115,7 +149,12 @@ const issue = (labels: ReadonlyArray<string>): HttpReply =>
 		html_url: "https://github.com/o/r/issues/5747",
 	});
 
-const run = (fs: ReturnType<typeof fakeFs>, seams: ReturnType<typeof fakeSeams>, event: string) =>
+const run = (
+	fs: ReturnType<typeof fakeFs>,
+	seams: ReturnType<typeof fakeSeams>,
+	event: string,
+	classes: ReadonlyArray<string> | null = null,
+) =>
 	Effect.runPromise(
 		Effect.provide(
 			runProve({
@@ -123,6 +162,7 @@ const run = (fs: ReturnType<typeof fakeFs>, seams: ReturnType<typeof fakeSeams>,
 				lane: "5747",
 				event,
 				task: null,
+				classes,
 				repo: null,
 				cwd: "/repo",
 				env: {CLAUDE_PIPELINE_REPO: "o/r"},
@@ -172,7 +212,37 @@ describe("lane prove — the two events that carry a claim", () => {
 describe("lane prove — the ui class, derived exactly as `ship scope` derives it", () => {
 	const UI_FILE = served([{filename: "apps/web/src/routes/pano.tsx"}]);
 
-	it("holds a lane whose head raises the ui class and carries no review-ui verdict", async () => {
+	/**
+	 * The deadlock #6664/#6793 closed. This `PASS` **is** the arm into `review:ui`, so requiring
+	 * `review-ui` of it required a verdict from the cell it had not entered — every rendered-surface
+	 * lane needed a hand-spawned ui reviewer to get out. The next case is the floor that replaces it.
+	 */
+	it("lets a ui lane's PASS out of `review` through, so the machine can reach `review:ui`", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, UI_FILE],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await run(laneAt("review"), seams, "PASS", ["ui"]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
+			{namespace: "review-code", state: "pass", commentId: 1},
+		]);
+		expect(out.stderr.join("\n")).toContain(
+			"review-ui on #4318 is owed by the cell this event routes into",
+		);
+	});
+
+	/**
+	 * The floor the deferral must not lift (ADR 0320). Same rendered head, same cell — but no class
+	 * relayed, so the machine's `class:ui` arm does not hold and this `PASS` walks to `ship`. There
+	 * is no later cell to defer to, so `review-ui` is owed here and the lane is held.
+	 */
+	it("holds the same PASS when no class is relayed, because the ui arm is not the one it takes", async () => {
 		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
@@ -182,6 +252,43 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 		]);
 
 		const out = await run(laneAt("review"), seams, "PASS");
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.stderr.join("\n")).toContain("review-ui (absent)");
+		expect(out.stderr.join("\n")).toContain("routes into no cell that could fill it");
+	});
+
+	/**
+	 * The other half of the same floor, and the one a class flag cannot talk its way past: a machine
+	 * whose `review` cell has no arm into `review:ui` at all — every workflow shape but the coder
+	 * template, the shipped `chore` one included. The class stands and the deferral still does not.
+	 */
+	it("holds a ui-class PASS on a machine whose review cell has no arm into review:ui", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, UI_FILE],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await run(laneWithNoUiArm(), seams, "PASS", ["ui"]);
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.stderr.join("\n")).toContain("review-ui (absent)");
+		expect(out.stderr.join("\n")).toContain("routes into no cell that could fill it");
+	});
+
+	it("holds the PASS out of `review:ui` while the lane carries no review-ui verdict", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, UI_FILE],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await run(laneAt("review:ui"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-ui (absent)");
@@ -202,7 +309,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			],
 		]);
 
-		const out = await run(laneAt("review"), seams, "PASS");
+		const out = await run(laneAt("review:ui"), seams, "PASS");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
@@ -246,7 +353,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			],
 		]);
 
-		const out = await run(laneAt("review"), seams, "PASS");
+		const out = await run(laneAt("review:ui"), seams, "PASS");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
@@ -274,7 +381,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			],
 		]);
 
-		const out = await run(laneAt("review"), seams, "PASS");
+		const out = await run(laneAt("review:ui"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-ui (stale)");
@@ -304,7 +411,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			],
 		]);
 
-		const out = await run(laneAt("review"), seams, "PASS");
+		const out = await run(laneAt("review:ui"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_CONTRADICTED);
 		expect(out.stderr.join("\n")).toContain("review-ui");
@@ -695,6 +802,7 @@ const runEpic = (
 				lane: "4300",
 				event,
 				task,
+				classes: null,
 				repo: null,
 				cwd: "/repo",
 				env: {CLAUDE_PIPELINE_REPO: "o/r"},

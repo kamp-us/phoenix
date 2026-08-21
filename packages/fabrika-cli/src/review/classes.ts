@@ -83,17 +83,26 @@ export const partition = (files: ReadonlyArray<string>): Partition => {
 	};
 };
 
+/**
+ * The namespaces `review post` may emit — narrower than what a PR *requires*, and deliberately so.
+ * The required set is {@link shipNamespacesOf}'s; this is the image the emit fence checks against.
+ */
 export const namespacesOf = (result: Partition): ReadonlyArray<string> =>
 	result.classes.map((entry) => namespaceOf(entry.name));
 
 /**
- * The `ui` class, which `ship scope` derives **in addition to** the three above.
+ * The `ui` class, which extends the three above.
  *
  * It lives here rather than in a second copy under `ship/` so the two groups partition one map: v1
  * printed the class set from one derivation and hand-copied it into another, and the copy dropped a
- * class on a live PR (#4730). `review scope` does not print it — its rubric has no `ui` row — but
- * the rows and their order are shared, which is the property that keeps ship and review from
- * disagreeing about what a file is.
+ * class on a live PR (#4730). Both `review scope` and `ship scope` print these rows, in this order.
+ *
+ * `review scope` printing `ui` is not `review` growing a rendered rubric. It still emits no
+ * `review-ui` verdict — {@link namespacesOf} over {@link CLASS_NAMES} is the narrower image
+ * `review post` fences on, and that fence is untouched. What the two verbs must agree on is what a
+ * file is *and* what the merge gate will require: while only the ship side derived `ui`, a reviewer
+ * read its own short set as the whole bar, PASSed, and the gate then refused on a namespace nobody
+ * had been told to route (#6664).
  */
 export const SHIP_CLASS_NAMES = [...CLASS_NAMES, "ui"] as const;
 export type ShipClassName = (typeof SHIP_CLASS_NAMES)[number];
@@ -160,6 +169,24 @@ export const shipNamespacesOf = (result: ShipPartition): ReadonlyArray<string> =
 	const classes = result.classes.map((entry) => `review-${entry.name}`);
 	return result.governance ? [...classes, "governance"] : classes;
 };
+
+/**
+ * The namespaces a derived set carries that the text-review gate hands to another modality instead
+ * of emitting.
+ *
+ * `review-ui` is the whole list, and `governance` is deliberately not on it: a `governance:
+ * required` round fires inside the review run and no terminal ends that run with the namespace
+ * un-fired (ADR 0293). Routing is the *other* shape — a subject `review` cannot judge at all, whose
+ * verdict only the `review-ui` group's own verbs may post.
+ *
+ * It reads a namespace list rather than a partition so both sides of one lane ask it the same
+ * question: `review scope` prints the row a reviewer routes on, and `lane prove` subtracts it from
+ * what a `PASS` out of the plain `review` cell has to stand on (#6664).
+ */
+export const ROUTED_NAMESPACES: ReadonlyArray<string> = ["review-ui"];
+
+export const routedNamespacesOf = (namespaces: ReadonlyArray<string>): ReadonlyArray<string> =>
+	namespaces.filter((name) => ROUTED_NAMESPACES.includes(name));
 
 /**
  * The closed namespace vocabulary `ship gate --require` admits.
