@@ -109,10 +109,28 @@ sources; with one source there is nothing to compare. What, if anything, replace
 This supersedes the **regex framing** of [0299](0299-cp-fence-covers-fabrika-ci-core.md) and
 [0100](0100-control-plane-covers-enforcement-guard-packages.md), and nothing else in either. Both rest
 on §CP being a regex that CODEOWNERS mirrors, and their lockstep clauses have no referent once the
-regex is gone. What each of them actually ruled about *coverage* stands unchanged and stands as
-CODEOWNERS rows: `packages/fabrika-cli/src/ci/` is control-plane and no wider slice of that package
-is (0299), and the enforcement-guard packages are control-plane wherever they live (0100). Both are
-amended in part rather than superseded outright for that reason.
+regex is gone. What each of them actually ruled about *coverage* stands unchanged, and both are
+amended in part rather than superseded outright for that reason. Only one of the two is held by a
+row today:
+
+- **0299 — held.** `packages/fabrika-cli/src/ci/` is control-plane and no wider slice of that
+  package is, and `/packages/fabrika-cli/src/ci/ @kamp-us/control-plane` is a standing CODEOWNERS
+  row.
+- **0100 — an open gap, not a standing row.** The enforcement-guard packages are control-plane
+  wherever they live, and at this record's date no row covers them: `.github/CODEOWNERS` has no `*`
+  catch-all and matches neither `packages/migrations-guard/**` nor
+  `packages/fabrika-cli/src/guard/**`, where every surviving guard verb now lives. The regex holds
+  it no better — its `^packages/[^/]*-guard/` branch went when the standalone guards folded
+  ([0103](0103-consolidate-pipeline-cli-package.md), #1003) and was never re-added. So
+  0100's rule is enforced by neither source, and this record — which makes CODEOWNERS the *only*
+  source — is what makes the gap the whole exposure. It is tracked as
+  [#6947](https://github.com/kamp-us/phoenix/issues/6947), and until the covering rows land it sits
+  beside the `control-plane-re.ts` interim rule above: a rule the corpus states and nothing
+  mechanically holds.
+
+Naming that gap rather than certifying it closed is this record's own binding constraint applied to
+itself. Under "path-set completeness is the whole protection", a gap asserted shut is worse than a
+gap left named.
 
 ## Records
 
