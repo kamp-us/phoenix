@@ -938,7 +938,7 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `20` | `claim` only, proven: the issue's home is pinned by no `active` campaign row — no marker was written |
 | `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written. Unreachable when the target is an open PR serving a `type:decision` issue (#5914) |
 | `30` | `claim --purpose build` against an **issue** only, proven: the issue is `type:decision` or `type:epic` — no marker was written. Not overridable: a decision opens it with `--cites <ruling-comment-url>`, an epic with `--purpose plan` or `--purpose gate` |
-| `31` | `claim --purpose build` against an **issue** only, proven: the claim's mode disagrees with the child's standing range verdicts — a fresh claim over a child holding a `FAIL`, or `--resume` over a child holding none. No marker was written, and neither direction is overridable: `--override` admits a *scope* refusal, and this is not one |
+| `31` | `claim --purpose build` against an **issue** only, proven: the claim's mode disagrees with the child's standing range verdicts — a fresh claim over a child holding any standing verdict (`PASS` as well as `FAIL`), or `--resume` over a child holding no `FAIL`. No marker was written, and neither direction is overridable: `--override` admits a *scope* refusal, and this is not one |
 | `32` | `claim --purpose build` against an **issue** only, proven: the body carries no readable `### Acceptance criteria` block — absent, or a heading that drifted. No marker was written. Not overridable: the repair belongs on the issue (`triage enrich` for an absent block, `triage repair-criteria` for a drifted one), not on a branch |
 
 **The prior-build gate — "no lane holds this" is not "this has no reviewed build"**
@@ -951,8 +951,12 @@ therefore handed to the next lane as ordinary work and rebuilt from scratch, twi
 refusal kept the wrong branch out of the assembly (#6386).
 
 So a fresh build-purpose claim against an issue folds those comments — newest write per namespace,
-the same rule `lane prove` folds on — and refuses on `31` when any namespace's newest verdict is
-`FAIL`. Staleness is deliberately not asked: a stale `FAIL` still proves the child was built and
+the same rule `lane prove` folds on — and refuses on `31` when any namespace holds a standing
+verdict, whatever its polarity. A `PASS` says the child was built and graded as loudly as a `FAIL`
+does, and it is the more finished of the two, so admitting it was the same hazard with the opposite
+sign (#6715); what the polarity changes is the route out, which each refusal line names — `--resume`
+for a `FAIL`, the epic driver's fold for a `PASS`, which has no repair to take. Staleness is
+deliberately not asked: a stale verdict still proves the child was built and
 graded, which is the fact this gate exists for. The read runs **after** the pure axes and the
 blockedness gate, so an issue those already refused pays for no comment page, and an unreadable page
 is `11` — never "no prior build".
@@ -967,7 +971,8 @@ this arm (`packages/fabrika-cli/src/wire/marker-line.ts`), so ordinary discussio
 trips it, and the remedy is to repost or delete the comment.
 
 `--resume` is the other side, and it is **checked, not trusted**: it admits a claim over a standing
-`FAIL` and refuses on `31` over a child holding none. Repair is otherwise derived from the target
+`FAIL` and refuses on `31` over a child holding none — including a child holding only `PASS`
+verdicts, whose fresh claim the gate has already refused, so both doors are shut on it. Repair is otherwise derived from the target
 being an open PR and never typed (founder ruling on #5866, #5914); the objection there was that a
 typed mode is passable in a state where it means nothing, and a child has no PR to derive from — so
 the word is admitted here exactly because the seam checks the fact it asserts. The route it opens is
@@ -995,7 +1000,8 @@ the word is admitted here exactly because the seam checks the fact it asserts. T
 | `build claim: --purpose "<value>" is not one of plan \| gate \| build — an unrecognised purpose refuses, and never falls back to build.` | 10 | usage error |
 | `build claim: the marker write failed: <reason> — the claim state is UNKNOWN; run "fabrika build confirm <n> --token <minted token>" before any further action.` — preceded by `build claim: the token this run minted is <minted token> — it addresses the marker the failed write may still have landed. Do not re-run "fabrika build claim <n>": it mints a second token, and if the first marker landed the race resolves to that earlier one, leaving a claim no lane holds a token for.` | 8 | refusal |
 | `build claim: cannot read the claim markers on #<n>: <reason> — ownership is UNKNOWN, never "unclaimed".` | 11 | refusal |
-| `build claim: #<n> already carries a build a reviewer failed — <gate> FAIL over <base>..<tip> (comment <id>). A fresh build would re-implement it; run "fabrika build claim <n> --resume" to take the repair lane instead, then "fabrika build branch <n> --resume-lane --token <token>" to stand on the branch that build left. Nothing was written.` | 31 | refusal |
+| `build claim: #<n> already carries a build a reviewer failed — <gate> <polarity> over <base>..<tip> (comment <id>); …. A fresh build would re-implement it; run "fabrika build claim <n> --resume" to take the repair lane instead, then "fabrika build branch <n> --resume-lane --token <token>" to stand on the branch that build left. Nothing was written.` — every standing verdict is named, `PASS` ones included, whenever at least one is a `FAIL` | 31 | refusal |
+| `build claim: #<n> is already built and graded — <gate> PASS over <base>..<tip> (comment <id>); …. A fresh build would re-implement work a reviewer passed, and there is nothing to repair, so --resume does not apply either. The next step is the epic driver's: fold the branch that build left, then close the child. Nothing was written.` — when every standing verdict is a `PASS` | 31 | refusal |
 | `build claim: --resume says #<n> holds a build to repair, and no gate holds a standing FAIL over it — drop --resume and claim it as the fresh build it is. Nothing was written.` | 31 | refusal |
 | `build claim: cannot read the comments on #<n>: <reason> — whether it already carries a graded build is UNKNOWN, never "no"; nothing was written.` | 11 | refusal |
 | `build claim: <n> comment(s) on #<n> reach for a verdict marker and are not readable range ones — <#id: why>; …. A verdict that cannot be read is UNKNOWN, never "no prior build"; repost or delete the comment(s), then claim again. Nothing was written.` | 11 | refusal |

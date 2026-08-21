@@ -160,10 +160,11 @@ export const TYPE_NOT_BUILDABLE = 30;
  * Proven: the claim's mode and the child's standing range verdict disagree (#6386).
  *
  * Two directions, one seat, because one fact is established either way — *this number's build state
- * is not what the claim says it is* — and the remedy is the same act in both: re-run the claim in the
- * mode the board already recorded, adding `--resume` on a child holding a `FAIL`, dropping it on one
- * holding none. That is unlike every neighbouring seat: `20`/`21`/`30` are about whether an issue
- * may be built at all, and this one is about whether it has been built already.
+ * is not what the claim says it is*. A fresh claim refuses on any standing verdict, `PASS` as well as
+ * `FAIL` (#6715); `--resume` refuses on a child holding no `FAIL`. That is unlike every neighbouring
+ * seat: `20`/`21`/`30` are about whether an issue may be built at all, and this one is about whether
+ * it has been built already. The route out is not uniform — a `FAIL` has a repair lane, a `PASS` has
+ * only the epic driver's fold — so each refusal line names its own.
  *
  * Never {@link PRECONDITION_UNKNOWN}: the comments were read in full and the standing verdicts folded,
  * so the refusal is a fact about the child. A read that *failed* stays `11`, and a fence that could

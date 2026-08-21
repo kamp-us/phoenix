@@ -414,11 +414,13 @@ release; no commit, no `build check`, no `build push`.
 
 **An epic child is repaired too, and it is the one repair that names an issue rather than a PR.** A
 child opens no PR (ADR 0285), so its verdicts are range-bound comments on the child issue and there
-is no head to resume from. `build claim` reads those verdicts on every fresh build-purpose claim: a
-child whose newest verdict in any gate is `FAIL` refuses on `31` naming that FAIL, because building
-it fresh re-implements work a reviewer already graded — which cost two whole lanes on epic #5631, and
-on one of them produced two divergent implementations of a single criterion (#6386). The route the
-refusal names is the whole repair:
+is no head to resume from. `build claim` reads those verdicts on every fresh build-purpose claim, and
+**any standing verdict refuses it on `31`**, naming every one of them, because building it fresh
+re-implements work a reviewer already graded — which cost two whole lanes on epic #5631, and on one
+of them produced two divergent implementations of a single criterion (#6386). Only the way out
+differs by polarity, and the refusal line says which one you are on.
+
+On a standing `FAIL` there is a repair to take, and the route the refusal names is the whole repair:
 
 ```bash
 fabrika build claim $issue_or_pr_number --resume
@@ -442,6 +444,11 @@ there the loop is the ordinary one minus the publishing half: fix, `build
 check`, `build commit`, no push and no PR, then the `build-deviations` comment and `BUILT-NO-PR`.
 There is no cap clearance on this path — a grant is recorded against a PR's base branch — so a child
 at its cap escalates to the operator.
+
+**A standing `PASS` refuses the same way and has no repair route** (#6715). That child is built,
+graded and waiting on the epic driver's fold, so `--resume` is not the answer — it refuses on `31`
+too, saying to drop the flag. Nothing here is yours to build: report the refusal, and the fold and
+the close are the driver's. `--override` reaches neither polarity; this was never a scope question.
 
 ## Expectations you hold but never recompute
 
