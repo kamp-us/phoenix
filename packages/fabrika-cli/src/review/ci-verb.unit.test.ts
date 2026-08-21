@@ -199,7 +199,25 @@ describe("the gate-coverage read", () => {
 		expect(out.code).toBe(NO_GATE_COVERAGE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`review ci: none of the 2 workflow(s) o/r authors produced a run at ${HEAD} — the 4 check run(s) here came from elsewhere, so no gate inspected these bytes (#6522).`,
+			`review ci: none of the 2 workflow(s) o/r authors produced a run at ${HEAD} — the 4 check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green (#6522).`,
+		);
+	});
+
+	it("answers when one authored run sits among the platform's — one gate is coverage", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[RUNS, CODEQL_ONLY],
+			],
+			[
+				[WORKFLOWS, served(inventory(CI_YML, GUARD_YML, CODEQL))],
+				[AT_HEAD, served(runsAtHead(CI_YML, CODEQL))],
+			],
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain(`ci\t${HEAD}\tgreen`);
+		expect(out.stderr).toContain(
+			`review ci: 1 of 2 workflow(s) o/r authors produced a run at ${HEAD}.`,
 		);
 	});
 

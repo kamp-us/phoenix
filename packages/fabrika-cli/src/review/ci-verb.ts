@@ -180,7 +180,7 @@ export const runCi = (
 			if (coverage._tag === "Uncovered") {
 				return refuse(
 					NO_GATE_COVERAGE,
-					`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha} — the ${runs.length} check run(s) here came from elsewhere, so no gate inspected these bytes (#6522).`,
+					`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha} — the ${runs.length} check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green (#6522).`,
 					diagnostics,
 				);
 			}
