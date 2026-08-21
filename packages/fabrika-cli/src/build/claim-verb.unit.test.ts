@@ -1,6 +1,14 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs, fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeFs,
+	fakeSeams,
+	type HttpReply,
+	okOut,
+	once,
+	type Scripted,
+} from "../fakes.test-support.ts";
 import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {FAILED} from "../verb.ts";
 import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
@@ -33,7 +41,9 @@ import {
 	LANE_UUID,
 	marker,
 	NO_BLOCKERS,
+	NONCE,
 	NOT_FOUND,
+	SIBLING_NONCE,
 	SIBLING_TOKEN,
 	SIBLING_UUID,
 	served,
@@ -47,6 +57,8 @@ const POST = /^POST \S+\/repos\/o\/r\/issues\/4312\/comments/;
 const GET_COMMENT = /^GET \S+\/repos\/o\/r\/issues\/comments\/9001$/;
 const DELETE = /^DELETE \S+\/repos\/o\/r\/issues\/comments\//;
 const perm = (login: string) => new RegExp(`^GET \\S+/repos/o/r/collaborators/${login}/permission`);
+const SHOW_CURRENT = /^git branch --show-current$/;
+const DETACH = /^git switch --detach$/;
 
 /** The two permissions the ACL answers with: one authorizes a marker, the other does not. */
 const WRITES = served({permission: "write"});
@@ -1106,10 +1118,63 @@ describe("runRelease", () => {
 			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout)).toEqual({answer: "released", number: 4312});
+		expect(JSON.parse(out.stdout)).toEqual({answer: "released", number: 4312, freed: null});
 		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
 			"DELETE https://api.github.com/repos/o/r/issues/comments/9001",
 		]);
+	});
+
+	// The complement half of the #6610 ruling (ADR 0323): a lane that ends normally frees the branch
+	// on its way out, so the pin `build branch --resume-lane` refuses on never forms in the first
+	// place. Detaching is the whole act — the branch survives, and so does anything uncommitted.
+	it("detaches this tree's HEAD when the tree is standing on the released lane's own branch", async () => {
+		const shell = unblocked([
+			[ISSUE, CLAIMABLE],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
+			[SHOW_CURRENT, okOut(`build/4312-editor-focus-loss-${NONCE}\n`)],
+			[DETACH, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).freed).toBe(`build/4312-editor-focus-loss-${NONCE}`);
+		expect(shell.calls).toContain("git switch --detach");
+	});
+
+	it("detaches nothing when this tree stands on another lane's branch", async () => {
+		const shell = unblocked([
+			[ISSUE, CLAIMABLE],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
+			[SHOW_CURRENT, okOut(`build/4312-editor-focus-loss-${SIBLING_NONCE}\n`)],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).freed).toBeNull();
+		expect(shell.calls.some((line) => DETACH.test(line))).toBe(false);
+	});
+
+	it("reports a failed detach and stays exit 0 — the claim is already retracted by then", async () => {
+		const shell = unblocked([
+			[ISSUE, CLAIMABLE],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), WRITES],
+			[DELETE, NO_CONTENT],
+			[SHOW_CURRENT, okOut(`build/4312-editor-focus-loss-${NONCE}\n`)],
+			[DETACH, errOut("index.lock exists")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).freed).toBeNull();
+		expect(out.stderr.join("\n")).toMatch(/fabrika build retire 4312/);
 	});
 
 	it("refuses to release another lane's claim on 15, and deletes nothing", async () => {
@@ -1452,7 +1517,12 @@ describe("runAdopt / succession", () => {
 			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_CAMPAIGNS.layer)),
 		);
 		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout)).toEqual({answer: "released", number: 4312, adopted: DEAD});
+		expect(JSON.parse(out.stdout)).toEqual({
+			answer: "released",
+			number: 4312,
+			adopted: DEAD,
+			freed: null,
+		});
 		expect(shell.requests.filter((line) => DELETE.test(line))).toEqual([
 			"DELETE https://api.github.com/repos/o/r/issues/comments/8000",
 			"DELETE https://api.github.com/repos/o/r/issues/comments/8100",

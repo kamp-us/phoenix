@@ -122,6 +122,78 @@ export const worktreeCheckouts: Shell<Attempt<ReadonlyArray<WorktreeCheckout>>> 
 	},
 );
 
+/**
+ * Drop the registrations whose working directory is gone — git's own definition of a stale record.
+ *
+ * It asks nothing of the board and needs nothing from it: a pruned record has no directory, so there
+ * is no tree holding work and no session whose fate anyone has to attest to. That keeps it outside
+ * ADR 0295's licensing question rather than an exception to it.
+ */
+export const pruneWorktrees: Shell<Attempt<void>> = Effect.gen(function* () {
+	const r = yield* execCapture("git", ["worktree", "prune"]);
+	return r.ok ? ok<void>(undefined) : fail(r.reason);
+});
+
+/** How many paths another worktree has uncommitted — `0` is a clean tree, salvage-free. */
+export const worktreeDirtyPaths = (path: string): Shell<Attempt<number>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["-C", path, "status", "--porcelain"]);
+		if (!r.ok) return fail(r.reason);
+		return ok(r.stdout.split("\n").filter((line) => line.trim() !== "").length);
+	});
+
+/**
+ * Commit everything another worktree holds onto the branch it is standing on — ADR 0321's salvage.
+ *
+ * The uncommitted work in a dead spawn's tree is the only copy of what it was doing, so it is
+ * preserved before the tree goes rather than weighed: that is what lets a retirement ignore
+ * dirtiness (ADR 0323) without the removal being the thing that destroys the record.
+ *
+ * `--no-verify` because the hooks are this repo's contribution gate and a salvage is not a
+ * contribution — a formatter rewriting a dying spawn's half-written file, or a guard refusing it,
+ * loses exactly the bytes being rescued.
+ */
+export const salvageWorktree = (path: string, message: string): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const staged = yield* execCapture("git", ["-C", path, "add", "--all"]);
+		if (!staged.ok) return fail(staged.reason);
+		const committed = yield* execCaptureInput(
+			"git",
+			["-C", path, "commit", "--no-verify", "--cleanup=verbatim", "-F", "-"],
+			message,
+		);
+		return committed.ok ? ok<void>(undefined) : fail(committed.reason);
+	});
+
+/**
+ * Remove one worktree and its registration — **never with `--force`**, which ADR 0321 bans on every
+ * path for every tree.
+ *
+ * A remove that refuses after the salvage means something in that tree is unaccounted for, and the
+ * caller reports that rather than overriding it. The recurring instance measured against git 2.40.1
+ * is a *locked* tree, which answers `cannot remove a locked working tree` however clean it is; the
+ * agent harness locks the trees it registers, so that refusal is the one a caller must name in full.
+ *
+ * **The branch survives** — removal frees the checkout, it does not delete the ref. That is the
+ * whole point: the repair lane refused at `branch --resume-lane` needs exactly that branch.
+ */
+export const removeWorktree = (path: string): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["worktree", "remove", path]);
+		return r.ok ? ok<void>(undefined) : fail(r.reason);
+	});
+
+/**
+ * Detach this tree's HEAD at the commit it already holds, freeing the branch name it was holding.
+ *
+ * The content is untouched — same commit, and an uncommitted edit carries over — so a lane may do
+ * this at its terminal without deciding anything about work still in the tree.
+ */
+export const detachHead: Shell<Attempt<void>> = Effect.gen(function* () {
+	const r = yield* execCapture("git", ["switch", "--detach"]);
+	return r.ok ? ok<void>(undefined) : fail(r.reason);
+});
+
 /** The branch this tree holds, or `null` when its HEAD is detached. */
 export const currentBranch: Shell<Attempt<string | null>> = Effect.gen(function* () {
 	const r = yield* execCapture("git", ["branch", "--show-current"]);

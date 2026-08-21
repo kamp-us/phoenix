@@ -34,6 +34,16 @@ export interface ParkRecipe {
 	readonly cause: string | null;
 	/** The read whose answer decides whether the park's cause is gone. */
 	readonly clearance: Clearance;
+	/**
+	 * The verb the clearance runs to remove the park's cause before re-reading, or `null` for a
+	 * clearance that only waits on somebody else.
+	 *
+	 * A row naming one is a row that clears itself: `branch-free` sat at exit 13 forever without one,
+	 * because reading whether a tree still holds the branch cannot make it stop (#6610). A row naming
+	 * `null` is deliberate, not unfinished — `cp-approval` waits on a human's judgment, and a recipe
+	 * that "removed" that cause would be granting the approval.
+	 */
+	readonly remedy: string | null;
 	/** What the park is waiting on, in one clause a refusal can quote. */
 	readonly waitingOn: string;
 }
@@ -46,19 +56,24 @@ export interface ParkRecipe {
  * second reading of it here would be the drift #2435 closed. `blocked` + `worktree-holds-branch` is
  * the #6395 shape, and its clearance is the inverse of the very read that refuses the build:
  * `build branch --resume-lane` refuses while a working tree holds the child's lane branch, so the
- * park is clear exactly when no working tree holds it.
+ * park is clear exactly when no working tree holds it — and since #6610 the clearance first runs
+ * `build retire`, which takes that checkout back when the board licenses it (ADR 0323). Without the
+ * remedy the row read the pin and could never remove it, so every lane parked on this cause sat at
+ * exit 13 until a human ran `git worktree remove` by hand.
  */
 export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 	{
 		park: "human:cp-approval",
 		cause: null,
 		clearance: "cp-approval",
+		remedy: null,
 		waitingOn: "a control-plane approval at the PR's current head",
 	},
 	{
 		park: "blocked",
 		cause: "worktree-holds-branch",
 		clearance: "branch-free",
+		remedy: "fabrika build retire",
 		waitingOn: "the working tree holding this build's lane branch to be removed",
 	},
 ];

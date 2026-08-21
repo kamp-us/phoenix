@@ -187,3 +187,13 @@ export const PRIOR_BUILD_MISMATCH = 31;
  * never reaches this axis.
  */
 export const NO_ACCEPTANCE_CRITERIA = 32;
+/**
+ * Proven: a working tree still holds this number's lane branch, and the board licenses no release.
+ *
+ * A *proven* refusal about the board — the ticket is not terminal and no authorized adopt marker
+ * says the holding lane's session is gone (ADR 0323) — so it never borrows
+ * {@link PRECONDITION_UNKNOWN}, which is for a read that failed. Its own seat rather than
+ * {@link WRONG_LANE}'s: `14` says *you* are standing in the wrong tree, and this says another tree
+ * is standing where you need to be, with the board declining to move it.
+ */
+export const WORKTREE_HELD = 33;
