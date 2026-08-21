@@ -75,7 +75,7 @@ loss**: another driver holds this lane, its token is named on stderr, and this r
 having emitted no ledger and spawned no shell. One reading of `31` is not a loss to wait out — a
 holder that is a **killed seat**, which is the same session under another nonce and is named as such
 on stderr beside the `lane adopt` invocation that takes it back (ADR
-[0324](../../../../.decisions/0324-lane-namespace-claim-succession.md)). Follow the refusal's own
+[0325](../../../../.decisions/0325-lane-namespace-claim-succession.md)). Follow the refusal's own
 route there rather than ending `LANE-HELD` on a lane nobody is driving; step 3's lane-claim passage
 has the three commands. `1` (no session id in `FABRIKA_SESSION_ID` / `CLAUDE_CODE_SESSION_ID` /
 `PI_SUBAGENT_PARENT_SESSION`, or a `--token` that
@@ -498,14 +498,14 @@ nor `lane claim` reaches it, and the escape used to be reading its token out of 
 hand ([#6374](https://github.com/kamp-us/phoenix/issues/6374)). Run the succession instead:
 
 ```bash
-node <fabrika> lane adopt $lane_key --session "$CLAUDE_CODE_SESSION_ID" --reason "<why>"
+node <fabrika> lane adopt $lane_key --session <this run's session id> --reason "<why>"
 node <fabrika> lane release $lane_key --token <the token adopt printed>
 node <fabrika> lane claim $lane_key
 ```
 
 `--session` is your own session id in the ordinary case, which is the one thing `lane adopt` admits
 and `build adopt` refuses — that difference is the killed seat (ADR
-[0324](../../../../.decisions/0324-lane-namespace-claim-succession.md)). It proves no seat dead: the
+[0325](../../../../.decisions/0325-lane-namespace-claim-succession.md)). It proves no seat dead: the
 guards are the ACL and the marker sitting on the issue with your reason, so state a reason you would
 defend, and adopt a seat you have cause to believe is gone rather than one that is merely quiet. If
 that seat turns out to be live, delete the adopt comment — the act reverses.
@@ -848,7 +848,7 @@ operator seat left is a second marker on the same thread that nothing here reads
 `stale` — a lane to re-spawn — while `lane claim` on it refuses `31`, which is the contradiction
 [#6374](https://github.com/kamp-us/phoenix/issues/6374) reported. That refusal now names its own way
 out on stderr: `lane adopt`, then `lane release` under the token it prints, then claim (ADR
-[0324](../../../../.decisions/0324-lane-namespace-claim-succession.md), step 3's lane-claim
+[0325](../../../../.decisions/0325-lane-namespace-claim-succession.md), step 3's lane-claim
 passage). Read the exit code and follow it; never hand-compose a `--token` release off a comment
 body.
 
