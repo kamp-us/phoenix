@@ -142,8 +142,12 @@ export const eventForToken = (raw: string): TokenResolution => {
  *
  * It is a closed set for the same reason the terminal tokens are: a free-text cause is prose a
  * recipe would have to interpret, and interpreting a report is the failure class this module
- * deletes. Each entry's value is what the cause means, in the clause a refusal can quote — a new
- * cause is a row here plus a `KNOWN_PARKS` row that says how to prove it gone, never one alone.
+ * deletes. Each entry's value is what the cause means, in the clause a refusal can quote.
+ *
+ * A cause pairs with a `KNOWN_PARKS` row wherever a remedy verb exists to clear it. Where none does,
+ * the cause still earns its row alone: `classifyPark` then answers `Novel` **naming this cause**
+ * instead of the bare "recorded the event and not why", which is the difference between a gap
+ * somebody can write a row for and a structural dead end (`recipe/parks.ts`).
  */
 export const PARK_CAUSES = {
 	/**
@@ -152,6 +156,17 @@ export const PARK_CAUSES = {
 	 * another tree. The whole remedy is removing that worktree, which is why it owes no decision.
 	 */
 	"worktree-holds-branch": "a working tree still holds the lane branch this build must stand on",
+	/**
+	 * The #6826 shape: `ship cp-approval` stops on a head behind its base, and the head must move
+	 * before an approval is solicited (#4477). The park spends neither budget, which is the whole
+	 * point — drift is a lane that did nothing wrong (ADR 0313), and reporting it as `ROUTED-REPAIR`
+	 * charged a repair retry for a trip through a stage that owns no verb that can move a branch.
+	 *
+	 * It carries no `KNOWN_PARKS` row on purpose: clearing it needs a verb that merges the base into
+	 * the head, and `build` ships none, so the sweep routes it to a human by naming this cause.
+	 */
+	"head-behind-base":
+		"the PR's head is behind its base and must move before an approval is solicited",
 } as const;
 
 export type ParkCause = keyof typeof PARK_CAUSES;

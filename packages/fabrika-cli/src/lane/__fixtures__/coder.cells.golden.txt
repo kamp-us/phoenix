@@ -78,9 +78,9 @@ ship	BLOCKED	-	0/2	-> human:cp-approval	0/2
 ship	BLOCKED	-	2/2	-> human:cp-approval	2/2
 ship	BLOCKED	ui	0/2	-> human:cp-approval	0/2
 ship	BLOCKED	ui	2/2	-> human:cp-approval	2/2
-ship	FAIL	-	0/2	-> review	1/2
+ship	FAIL	-	0/2	-> build	1/2
 ship	FAIL	-	2/2	-> frozen	2/2
-ship	FAIL	ui	0/2	-> review	1/2
+ship	FAIL	ui	0/2	-> build	1/2
 ship	FAIL	ui	2/2	-> frozen	2/2
 ship	CLEARED	-	0/2	-> ship	0/2
 ship	CLEARED	-	2/2	-> ship	2/2

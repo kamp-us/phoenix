@@ -73,7 +73,7 @@
 									"ISSUE.BLOCKED": "human:cp-approval",
 									"ISSUE.FAIL": [
 										{
-											"target": "review",
+											"target": "build",
 											"guard": "retriesRemaining",
 											"actions": "incrementRetries"
 										},
