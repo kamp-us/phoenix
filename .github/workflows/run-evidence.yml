@@ -9,9 +9,10 @@
 # Load-bearing invariant (ADR 0054 §1 / 0056 fetch contract): the manifest's `commit`
 # MUST equal the head SHA the gate keys on. On `pull_request`, `github.sha` is the
 # synthetic merge commit, NOT the head — so the adapter is stamped with the head via the
-# job-level HEAD_SHA (`pull_request.head.sha`, or `merge_group.head_sha` on the merge
-# queue's batch ref — ADR 0132). Getting this wrong silently unbinds the evidence from the
-# commit the gate keys on.
+# job-level HEAD_SHA (`pull_request.head.sha`, `merge_group.head_sha` on the merge queue's
+# batch ref — ADR 0132 — and `github.sha` on `workflow_dispatch`, where it is the dispatched
+# ref's own head). Getting this wrong silently unbinds the evidence from the commit the gate
+# keys on.
 #
 # crabbox output contract (verified locally against v0.31.0, spike #235): `crabbox run
 # --timing-json` prints its machine-readable run-summary JSON as the LAST line of its
@@ -32,6 +33,15 @@ on:
   # every queued merge hangs (ADR 0132). On `merge_group` the head is the batch head
   # (`merge_group.head_sha`), the exact commit that merges — resolved into HEAD_SHA below.
   merge_group:
+  # The standing Release PR's branch is pushed by release-please with `secrets.GITHUB_TOKEN`, and
+  # GitHub parks every run raised on it at `action_required` until a human approves by hand — so
+  # this producer publishes nothing and `ship evidence` reads `absent` on every release cut
+  # (#6759). A `workflow_dispatch` run is never parked, so release-please.yml re-dispatches this
+  # workflow at the branch head, the same #5718 shape `leak-guard.yml` already carries. On a
+  # dispatch both event heads above are empty and `github.sha` IS the dispatched ref's head — a
+  # real commit, not the synthetic merge ref it is on `pull_request` — which is what HEAD_SHA
+  # resolves to below.
+  workflow_dispatch:
 
 # One producer run per head ref; cancel superseded pushes so the latest head SHA wins.
 concurrency:
@@ -48,11 +58,28 @@ jobs:
     permissions:
       contents: read
     # HEAD_SHA is the commit the bundle binds to — the PR head on `pull_request`, the
-    # batch head on `merge_group` (`pull_request.head.sha` is empty on merge_group). Both
-    # are the exact ref that merges, the binding key the gate consumers assert (ADR 0132).
+    # batch head on `merge_group` (`pull_request.head.sha` is empty on merge_group), the
+    # dispatched ref's head on `workflow_dispatch` (both event heads are empty there). Each is
+    # the exact ref that merges, the binding key the gate consumers assert (ADR 0132).
+    #
+    # The dispatch arm leads and tests `event_name` rather than trailing the `||` chain: falling
+    # through to `github.sha` would bind a `pull_request` run to the synthetic merge ref the
+    # moment `pull_request.head.sha` came back empty, publishing a bundle at a commit no gate
+    # keys on — worse than publishing none.
     env:
-      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+      HEAD_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
     steps:
+      # An empty HEAD_SHA would check out the default branch and stamp the bundle off a commit
+      # this run never resolved, so it is refused before the checkout rather than after.
+      - name: Assert the binding head resolved
+        run: |
+          set -uo pipefail
+          if [ -z "${HEAD_SHA:-}" ]; then
+            echo "::error::HEAD_SHA is empty on a '${{ github.event_name }}' event — refusing to build a bundle bound to no commit."
+            exit 1
+          fi
+          echo "binding run-evidence to $HEAD_SHA"
+
       # Check out the head (not the merge ref) so the in-repo `git rev-parse HEAD`
       # and the explicit head-sha stamp agree, and crabbox syncs the head tree.
       - uses: actions/checkout@v4.2.2
