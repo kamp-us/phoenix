@@ -17,7 +17,8 @@ have a working home today.
 
 This rules the **cannot-run** case only. A verb that **runs** and returns a deny still fails
 closed exactly as designed — `fabrika hook spawn` denying an off-allowlist model
-([`../packages/fabrika-cli/src/hook/spawn.ts`](../packages/fabrika-cli/src/hook/spawn.ts), ADR
+(`packages/fabrika-cli/src/hook/spawn.ts`, since retired unlinked by ADR
+[0331](0331-fabrika-spawn-hook-retired.md); ADR
 [0092](0092-gates-fail-closed-on-zero-scope.md)) is untouched. Nothing here weakens a gate that
 executed.
 
