@@ -46,6 +46,9 @@ flowchart TD
 		camp_fabrika_fast_follows["fabrika fast follows"]:::done
 		camp_fabrika_everywhere["fabrika everywhere"]:::active
 		camp_ge_it_product_push["Geçit product push"]:::active
+		camp_lane_integrity["Lane integrity"]:::paused
+		camp_epic_lanes["Epic lanes"]:::paused
+		camp_di_taxis_readme_passes["Diátaxis README passes"]:::paused
 	end
 	ext_3642["#3642"]:::external
 	ext_3833["#3833"]:::external
