@@ -1,7 +1,7 @@
 ---
 id: 0317
 title: A UI-class lane carries its own build and review shells, and the lane state carries the class
-status: accepted
+status: amended-in-part by [0327](0327-ship-fail-routes-to-build.md)
 date: 2026-08-20
 tags: [fabrika, lane, pipeline, review, state-machine]
 ---
@@ -87,7 +87,7 @@ ends a rendered-visual subject on the *routed elsewhere* terminal, a handoff to 
 nothing in the loop was there to receive. Folding the rubrics together does not remove that terminal;
 it hides it inside one shell that now owns a modality it cannot judge.
 
-### Why `ISSUE.FAIL` at `ship` routes back to `review`
+### Why `ISSUE.FAIL` at `ship` routes back to `review` — holds for the epic tail only, per ADR [0327](0327-ship-fail-routes-to-build.md)
 
 The single-issue coder template
 ([`packages/fabrika-cli/src/lane/templates/coder.workflow.json`](../packages/fabrika-cli/src/lane/templates/coder.workflow.json))

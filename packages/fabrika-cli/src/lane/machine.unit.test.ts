@@ -8,7 +8,7 @@ import {
 	stateNode,
 	twoPhaseWorkflow,
 } from "./fixtures.test-support.ts";
-import {applyEvent, foldLog, type LogEntry} from "./fold.ts";
+import {applyEvent, foldLog, type LogEntry, standingCauses} from "./fold.ts";
 import {
 	CLEARED_EVENT,
 	type CompiledLane,
@@ -18,6 +18,7 @@ import {
 	type TaskState,
 	topology,
 } from "./machine.ts";
+import {causeForEvent, eventForToken} from "./report.ts";
 
 const compiled = (workflow: unknown) => {
 	const result = compile(workflow);
@@ -57,6 +58,37 @@ const leaves = (
 		log.push(applied.entry);
 		return defined(statesOf()[task]).type;
 	});
+};
+
+/** Drive the same events as {@link leaves}, but answer with the task's folded state and budgets. */
+const budgets = (lane: CompiledLane, task: string, events: ReadonlyArray<string>): TaskState =>
+	driven(lane, task, events).state;
+
+/**
+ * Drive one task's events and answer with both its folded state and the cause standing over it.
+ *
+ * The cause rides the final entry because it is a field `lane report` writes onto the parking event
+ * rather than machine state (#6480) — the fold derives it back from there.
+ */
+const driven = (
+	lane: CompiledLane,
+	task: string,
+	events: ReadonlyArray<string>,
+	cause: string | null = null,
+): {readonly state: TaskState; readonly cause: string | undefined} => {
+	const log: LogEntry[] = [];
+	const statesOf = () => {
+		const fold = foldLog(lane, log);
+		if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
+		return fold.states;
+	};
+	for (const [index, event] of events.entries()) {
+		const applied = applyEvent(lane, statesOf(), task, event, "2026-08-20T00:00:00.000Z");
+		if (applied._tag !== "Applied") throw new Error(`${task} ${event}: ${applied.reason}`);
+		const last = index === events.length - 1 && cause !== null;
+		log.push(last ? {...applied.entry, cause} : applied.entry);
+	}
+	return {state: defined(statesOf()[task]), cause: standingCauses(log)[task]};
 };
 
 /**
@@ -210,15 +242,28 @@ describe("the compiler — structural recognition", () => {
 		expect(summary.trigger).toBeUndefined();
 	});
 
-	it("re-reviews on a FAIL at ship, and freezes once the retries are spent (#5807)", () => {
+	it("repairs on a FAIL at ship, and freezes once the retries are spent (#5807, #6826)", () => {
 		const lane = compiled(coderWorkflow());
-		// A ship-stage failure is not a construction defect: the PR is green and there is nothing at
-		// `build` to repair, so the retry buys a re-review rather than a builder round (#6688).
-		const roundTrip = ["FAIL", "PASS"];
+		// Everything that still reaches ISSUE.FAIL at `ship` names repair — `ROUTED-REPAIR` and
+		// `EJECTED` — because the shipper's other refusals map to BLOCKED. `review` owns no verb that
+		// moves a branch, so routing there re-verdicted an unchanged head and spent a retry per lap
+		// (#6826, reverting ADR 0317's arm for this template only).
+		const roundTrip = ["FAIL", "DONE", "PASS"];
 
 		expect(
 			leaves(lane, "issue", ["WIP", "DONE", "PASS", ...roundTrip, ...roundTrip, "FAIL"]),
-		).toEqual(["build", "review", "ship", "review", "ship", "review", "ship", "frozen"]);
+		).toEqual([
+			"build",
+			"review",
+			"ship",
+			"build",
+			"review",
+			"ship",
+			"build",
+			"review",
+			"ship",
+			"frozen",
+		]);
 	});
 
 	it("routes a UI-class lane through build:ui and review:ui, and back to build:ui on a FAIL", () => {
@@ -392,22 +437,6 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park (ADR 03
 	const toShip = ["WIP", "DONE", "PASS"] as const;
 	const reached = ["build", "review", "ship"] as const;
 
-	/** Drive the same events as {@link leaves}, but answer with the task's folded budgets. */
-	const budgets = (lane: CompiledLane, task: string, events: ReadonlyArray<string>) => {
-		const log: LogEntry[] = [];
-		const statesOf = () => {
-			const fold = foldLog(lane, log);
-			if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
-			return fold.states;
-		};
-		for (const event of events) {
-			const applied = applyEvent(lane, statesOf(), task, event, "2026-08-20T00:00:00.000Z");
-			if (applied._tag !== "Applied") throw new Error(`${task} ${event}: ${applied.reason}`);
-			log.push(applied.entry);
-		}
-		return defined(statesOf()[task]);
-	};
-
 	it("takes a still-queued shipper out of `ship` into the wait cell", () => {
 		expect(leaves(compiled(coderWorkflow()), "issue", [...toShip, "WIP"])).toEqual([
 			...reached,
@@ -491,5 +520,64 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park (ADR 03
 		expect(() =>
 			leaves(compiled(coderWorkflow()), "issue", [...toShip, "BLOCKED", "DONE"]),
 		).toThrow(/DONE/);
+	});
+});
+
+describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing (#6826)", () => {
+	const toShip = ["WIP", "DONE", "PASS"] as const;
+	const reached = ["build", "review", "ship"] as const;
+
+	it("lands a FAIL folded from `ship` on `build`, with the retry spent", () => {
+		const lane = compiled(coderWorkflow());
+
+		expect(leaves(lane, "issue", [...toShip, "FAIL"])).toEqual([...reached, "build"]);
+		expect(budgets(lane, "issue", [...toShip, "FAIL"])).toMatchObject({
+			type: "build",
+			retries: 1,
+			waits: 0,
+		});
+	});
+
+	it("freezes at `ship` once the repair budget is spent, leaving the frozen arm as it was", () => {
+		const lane = compiled(coderWorkflow());
+		const spent = [...toShip, "FAIL", "DONE", "PASS", "FAIL", "DONE", "PASS", "FAIL"];
+
+		expect(defined(leaves(lane, "issue", spent).at(-1))).toBe("frozen");
+		expect(budgets(lane, "issue", spent)).toMatchObject({type: "frozen", retries: 2});
+	});
+
+	it("maps the drift stop's terminal to BLOCKED and takes its cause", () => {
+		const resolved = eventForToken("AWAITING-CP-APPROVAL");
+		if (resolved._tag !== "Mapped") throw new Error(resolved.reason);
+
+		expect(resolved.event).toBe("BLOCKED");
+		expect(causeForEvent("head-behind-base", resolved.event)).toEqual({
+			_tag: "Caused",
+			cause: "head-behind-base",
+		});
+	});
+
+	// The whole reported harm: three lanes froze at 2/2 over drift alone, with no defect in the work
+	// and every namespace PASS at the head the reviewer re-read.
+	it("spends neither budget when that terminal folds from `ship`", () => {
+		const lane = compiled(coderWorkflow());
+		const before = budgets(lane, "issue", [...toShip]);
+		const parked = driven(lane, "issue", [...toShip, "BLOCKED"], "head-behind-base");
+
+		expect(parked.cause).toBe("head-behind-base");
+		expect(parked.state).toMatchObject({
+			type: "human:cp-approval",
+			retries: before.retries,
+			waits: before.waits,
+		});
+	});
+
+	// No `KNOWN_PARKS` row exists for this cause and none is owed yet: clearing it needs a verb that
+	// merges the base into the head, and `build` ships none. Novel-naming-the-cause is the answer.
+	it("reads as a novel park that names its cause, never as the causeless §CP row", () => {
+		const classified = classifyPark("human:cp-approval", "head-behind-base");
+
+		expect(classified._tag).toBe("Novel");
+		if (classified._tag === "Novel") expect(classified.reason).toContain("head-behind-base");
 	});
 });
