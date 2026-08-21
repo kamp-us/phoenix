@@ -198,6 +198,8 @@ export interface ShipCheckRun {
 	/** `null` while the run has never started — half of the queued-but-wedged discriminator. */
 	readonly startedAt: string | null;
 	readonly id: number;
+	/** The suite that produced it — the join onto {@link WorkflowRun.checkSuiteId} (`./supersession.ts`). */
+	readonly checkSuiteId: number;
 }
 
 export interface CheckRunSet {
@@ -227,12 +229,19 @@ export const listShipCheckRuns = (repo: string, sha: string): Shell<Attempt<Chec
 					) {
 						return fail("GitHub answered 200 but one entry is not a check run");
 					}
+					// `check_suite` is `{id} | null` in the platform's own schema, so a row can arrive
+					// without the join key — and a check run nothing can be joined to a workflow run is
+					// unreadable rather than lenient (`./supersession.ts`).
+					if (!isRecord(value.check_suite) || typeof value.check_suite.id !== "number") {
+						return fail("GitHub answered 200 but one check run names no check suite");
+					}
 					runs.push({
 						name: value.name,
 						status: value.status,
 						conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
 						startedAt: typeof value.started_at === "string" ? value.started_at : null,
 						id: typeof value.id === "number" ? value.id : 0,
+						checkSuiteId: value.check_suite.id,
 					});
 				}
 				return ok({declared: enveloped.value.declared, runs});
@@ -346,6 +355,15 @@ export interface WorkflowRun {
 	readonly completedAt: string | null;
 	/** The workflow this run came from, as {@link listWorkflowPaths} addresses it. */
 	readonly path: string;
+	/** The workflow's own id — what makes two runs at one head runs of the *same* workflow. */
+	readonly workflowId: number;
+	/**
+	 * The suite this run published its check runs under, joining onto {@link ShipCheckRun.checkSuiteId}.
+	 *
+	 * `null` because the platform's schema declares the field optional: a run that names no suite
+	 * simply joins to nothing, which leaves every check run at its own conclusion.
+	 */
+	readonly checkSuiteId: number | null;
 }
 
 /** The runs at exactly this head — `head_sha` match only, never a name or a date heuristic. */
@@ -360,7 +378,11 @@ export const listRunsAtHead = (
 				if (enveloped._tag === "Failure") return enveloped;
 				const runs: WorkflowRun[] = [];
 				for (const value of enveloped.value.entries) {
-					if (!isRecord(value) || typeof value.id !== "number") {
+					if (
+						!isRecord(value) ||
+						typeof value.id !== "number" ||
+						typeof value.workflow_id !== "number"
+					) {
 						return fail("GitHub answered 200 but one entry is not a workflow run");
 					}
 					runs.push({
@@ -370,6 +392,8 @@ export const listRunsAtHead = (
 						conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
 						completedAt: typeof value.completed_at === "string" ? value.completed_at : null,
 						path: str(value.path),
+						workflowId: value.workflow_id,
+						checkSuiteId: typeof value.check_suite_id === "number" ? value.check_suite_id : null,
 					});
 				}
 				return ok({declared: enveloped.value.declared, runs});

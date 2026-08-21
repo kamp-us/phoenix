@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {fakeFs, fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {rollupFor, runChecks} from "./checks-verb.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -60,21 +60,99 @@ const noRun = (name: string, status: string, conclusion: string | null = null) =
 	conclusion,
 });
 
+const empty = {runs: [], superseded: new Set<number>()};
+
+/**
+ * One sample's check rows, with the suites a newer run replaced.
+ *
+ * A row's `checkSuiteId` is the join `supersededSuites` computes over, so a test states the two
+ * halves — the row's suite and the superseded set — rather than a "this is superseded" flag the
+ * verb has no way to receive.
+ */
+const sampleOf = (
+	rows: ReadonlyArray<{name: string; conclusion: string; suite?: number}>,
+	superseded: ReadonlyArray<number> = [],
+) => ({
+	runs: rows.map((row, index) => ({
+		name: row.name,
+		status: "completed",
+		conclusion: row.conclusion,
+		startedAt: "2026-08-08T00:00:00Z",
+		id: index + 1,
+		checkSuiteId: row.suite ?? 1,
+	})),
+	workflows: 1,
+	runCount: 2,
+	superseded: new Set(superseded),
+});
+
 describe("rollupFor", () => {
 	it("names any wedged check as the whole answer", () => {
-		expect(rollupFor({runs: [], workflows: 3, runCount: 0}, ["ci-required"])).toBe("wedged");
+		expect(rollupFor({...empty, workflows: 3, runCount: 0}, ["ci-required"])).toBe("wedged");
 	});
 
 	it("is no-runs only with positive evidence: workflows exist and none fired at this head", () => {
-		expect(rollupFor({runs: [], workflows: 12, runCount: 0}, [])).toBe("no-runs");
+		expect(rollupFor({...empty, workflows: 12, runCount: 0}, [])).toBe("no-runs");
 	});
 
 	it("is no-producer on zero workflows, never collapsed into pending (#6298)", () => {
-		expect(rollupFor({runs: [], workflows: 0, runCount: 0}, [])).toBe("no-producer");
+		expect(rollupFor({...empty, workflows: 0, runCount: 0}, [])).toBe("no-producer");
 	});
 
 	it("keeps no-producer apart from pending — the second waits on a run, the first never will", () => {
-		expect(rollupFor({runs: [], workflows: 1, runCount: 3}, [])).toBe("pending");
+		expect(rollupFor({...empty, workflows: 1, runCount: 3}, [])).toBe("pending");
+	});
+});
+
+// #6834: the repo cancels its own runs at an unmoved head, so `cancelled` there means "replaced",
+// not "failed" — and the dependent aggregator is the row that lands in it.
+describe("rollupFor over a concurrency-cancelled run", () => {
+	it("pends a superseded cancelled aggregator rather than reding it", () => {
+		expect(
+			rollupFor(sampleOf([{name: "ci-required", conclusion: "cancelled", suite: 91}], [91]), []),
+		).toBe("pending");
+	});
+
+	it("reds a cancelled run no newer run of its workflow replaced", () => {
+		expect(
+			rollupFor(sampleOf([{name: "ci-required", conclusion: "cancelled", suite: 91}]), []),
+		).toBe("red");
+	});
+
+	it("reds when the newer run has already concluded failure at the same head", () => {
+		const sample = sampleOf(
+			[
+				{name: "ci-required", conclusion: "cancelled", suite: 91},
+				{name: "unit tests", conclusion: "failure", suite: 92},
+			],
+			[91],
+		);
+		expect(rollupFor(sample, [])).toBe("red");
+	});
+
+	it("never reclassifies a conclusion other than cancelled, however superseded its suite", () => {
+		for (const conclusion of [
+			"failure",
+			"timed_out",
+			"action_required",
+			"startup_failure",
+			"stale",
+		]) {
+			expect(rollupFor(sampleOf([{name: "ci-required", conclusion, suite: 91}], [91]), [])).toBe(
+				"red",
+			);
+		}
+	});
+
+	it("leaves an informational run carved out on both sides of the rule (ADR 0061)", () => {
+		const sample = sampleOf(
+			[
+				{name: "deploy (web)", conclusion: "cancelled", suite: 91},
+				{name: "ci-required", conclusion: "success", suite: 92},
+			],
+			[91],
+		);
+		expect(rollupFor(sample, [])).toBe("green");
 	});
 });
 
@@ -258,6 +336,87 @@ describe("runChecks", () => {
 		);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe(`ship checks: no commit ${HEAD} on PR #4321.`);
+	});
+});
+
+/**
+ * The incident head of #6834, end to end: a close/reopen re-fired the suite without moving the head,
+ * so the older run was concurrency-cancelled and the newer run had not published its own
+ * `ci-required` yet. The verb read the cancelled aggregator and settled red on the first sample.
+ */
+describe("the concurrency-cancelled head", () => {
+	const cancelledAggregator = served(
+		checkRuns(1, [{...noRun("ci-required", "completed", "cancelled"), check_suite_id: 91}]),
+	);
+
+	/** The older run cancelled, the newer run of the same workflow still going, at one head. */
+	const supersededRuns = served(
+		runsTotal(2, [
+			{id: 11, workflowId: 7, checkSuiteId: 91, conclusion: "cancelled"},
+			{id: 12, workflowId: 7, checkSuiteId: 92, status: "in_progress", conclusion: null},
+		]),
+	);
+
+	it("reads pending, names the replaced context, and routes nothing to heal-ci", async () => {
+		const out = await run(found, [
+			[RUNS, cancelledAggregator],
+			[WORKFLOWS, served(workflows("active"))],
+			[RUN_COUNT, supersededRuns],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tpending`);
+		expect(out.stdout).toContain("check\tcancelled-superseded/gating\t1");
+		expect(out.stderr).toContain(
+			"ship checks: cancelled by a newer run of the same workflow at this head: ci-required — waiting on that run, not routing.",
+		);
+		expect(out.stderr.join("\n")).not.toContain("failing gating checks");
+	});
+
+	it("reds the same head when no newer run of that workflow exists", async () => {
+		const out = await run(found, [
+			[RUNS, cancelledAggregator],
+			[WORKFLOWS, served(workflows("active"))],
+			[
+				RUN_COUNT,
+				served(runsTotal(1, [{id: 11, workflowId: 7, checkSuiteId: 91, conclusion: "cancelled"}])),
+			],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tred`);
+		expect(out.stderr).toContain(
+			"ship checks: failing gating checks: ci-required — route these to heal-ci.",
+		);
+	});
+
+	it("--wait stays in the loop and settles on the newer run's verdict, not the cancel", async () => {
+		const out = await run(
+			found,
+			[
+				[once(RUNS), cancelledAggregator],
+				[
+					RUNS,
+					served(
+						checkRuns(1, [
+							{...noRun("ci-required", "completed", "success"), id: 5, check_suite_id: 92},
+						]),
+					),
+				],
+				[WORKFLOWS, served(workflows("active"))],
+				[once(RUN_COUNT), supersededRuns],
+				[
+					RUN_COUNT,
+					served(
+						runsTotal(2, [
+							{id: 11, workflowId: 7, checkSuiteId: 91, conclusion: "cancelled"},
+							{id: 12, workflowId: 7, checkSuiteId: 92, conclusion: "success"},
+						]),
+					),
+				],
+			],
+			{wait: true, cadenceSeconds: 0},
+		);
+		expect(out.stdout.split("\n").slice(0, 2)).toEqual([
+			"settle\tsettled",
+			`checks\t${HEAD}\tgreen`,
+		]);
 	});
 });
 

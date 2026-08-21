@@ -68,6 +68,8 @@ export const checkRuns = (
 		conclusion?: string | null;
 		started_at?: string | null;
 		id?: number;
+		/** The suite that published it — what {@link runsTotal}'s rows are joined to. */
+		check_suite_id?: number;
 	}>,
 ): ExecResult =>
 	okOut(
@@ -79,6 +81,7 @@ export const checkRuns = (
 				status: run.status,
 				conclusion: run.conclusion ?? null,
 				started_at: run.started_at ?? "2026-08-08T00:00:00Z",
+				check_suite: {id: run.check_suite_id ?? 1},
 			})),
 		}),
 	);
@@ -95,7 +98,37 @@ export const workflows = (...states: ReadonlyArray<string>): ExecResult =>
 		}),
 	);
 
-export const runsTotal = (total: number): ExecResult => okOut(JSON.stringify({total_count: total}));
+/**
+ * The Actions run list at one head: the declared total, and the rows a caller cares to enumerate.
+ *
+ * The total and the rows are separate arguments because they answer separate questions — the
+ * `no-runs` discriminator reads only the first, supersession only the second.
+ */
+export const runsTotal = (
+	total: number,
+	rows: ReadonlyArray<{
+		id: number;
+		workflowId?: number;
+		checkSuiteId?: number | null;
+		status?: string;
+		conclusion?: string | null;
+	}> = [],
+): ExecResult =>
+	okOut(
+		JSON.stringify({
+			total_count: total,
+			workflow_runs: rows.map((row) => ({
+				id: row.id,
+				name: "ci",
+				path: ".github/workflows/ci.yml",
+				workflow_id: row.workflowId ?? 1,
+				check_suite_id: row.checkSuiteId === undefined ? row.id : row.checkSuiteId,
+				status: row.status ?? "completed",
+				conclusion: row.conclusion === undefined ? "success" : row.conclusion,
+				completed_at: "2026-08-08T00:00:00Z",
+			})),
+		}),
+	);
 
 export const comments = (
 	...rows: ReadonlyArray<{id: number; body: string; author?: string; updatedAt?: string}>
