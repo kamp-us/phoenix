@@ -300,8 +300,8 @@ skill cannot touch one.** It holds a shell and a repo-scoped token, and performs
 writes of its own: the namespaced verdict comment, the readout artifact, and one re-run request for
 the `governance-floor` run at the head its verdict binds — which is why the token also needs
 `actions: write`. **That third write asserts nothing:** it writes no check-run and no status, so the
-floor's green stays a green that job derived — and published — itself against live comment state, and a token without
-`actions: write` costs a red check, never a false one. (Routing a finding to `/report` fires that
+floor's green stays a green that job derived — and published — itself against live comment state, and
+a token without `actions: write` costs a red check, never a false one. (Routing a finding to `/report` fires that
 skill, whose write is that skill's capability and not one claimed here.) Every run ends as exactly
 one of:
 

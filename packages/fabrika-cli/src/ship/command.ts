@@ -19,8 +19,7 @@ import {runCpApproval} from "./cp-approval-verb.ts";
 import {runDisarm} from "./disarm-verb.ts";
 import {runEnqueue} from "./enqueue-verb.ts";
 import {runEvidence} from "./evidence-verb.ts";
-import {runFloorCheck} from "./floor-check.ts";
-import {runFloor} from "./floor-verb.ts";
+import {floorRunner} from "./floor-check.ts";
 import {runGate} from "./gate-verb.ts";
 import {runMerge} from "./merge-verb.ts";
 import {runNote} from "./note-verb.ts";
@@ -160,7 +159,7 @@ const floor = leafCommand(
 			cwd: process.cwd(),
 			env: process.env,
 		};
-		yield* emit(yield* publishCheck ? runFloorCheck(options) : runFloor(options));
+		yield* emit(yield* floorRunner(publishCheck)(options));
 	}),
 ).pipe(
 	Command.withShortDescription("Whether a governance-root diff carries its governance verdict."),

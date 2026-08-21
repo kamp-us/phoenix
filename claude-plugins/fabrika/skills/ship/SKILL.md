@@ -133,7 +133,8 @@ you read `ns governance` as anything but `pass`, that check is not green either,
 not concluded as a discharged floor. Why the floor is a caller verb rather than a new exit code, why
 it refuses on WRONG and not only on MISSING, and the conclusion map are its sections
 (`fabrika wire doc-section --heading "ship floor" < <skill-base>/contract.md`, then
-`--heading "It refuses on WRONG, not only on MISSING"`, then `--heading "The check-run mode: pending while nobody has judged this head (#6161)"`).
+`--heading "It refuses on WRONG, not only on MISSING"`, then
+`--heading "The check-run mode: pending while nobody has judged this head (#6161)"`).
 
 ## 4 — CI at the head, and only at the head
 

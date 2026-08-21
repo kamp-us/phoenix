@@ -9,9 +9,10 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, type Scripted, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
+import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
 import {checkRuns, comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
-import {CHECK_RUN_NAME, planFor, runFloorCheck} from "./floor-check.ts";
+import {CHECK_RUN_NAME, floorRunner, planFor, runFloorCheck} from "./floor-check.ts";
+import {runFloor} from "./floor-verb.ts";
 
 const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4321$/;
 const FILES = /^GET \S+\/repos\/o\/r\/pulls\/4321\/files\?/;
@@ -265,5 +266,26 @@ describe("a floor nobody published is the one thing this mode reds the job on", 
 		const {outcome, seams} = await run([], {sha: "not-a-sha"});
 		expect(outcome.code).not.toBe(0);
 		expect(seams.requests.some((call) => CREATE.test(call))).toBe(false);
+	});
+
+	// A list nobody could read is not a head carrying no row. Reading the two as one would post a
+	// second check-run beside a row that may already be there, breaking one-row-per-head with no
+	// signal anywhere — so the read refuses like every other reader of this seam does.
+	it("refuses when the check-runs at the head could not be enumerated", async () => {
+		const {outcome, seams} = await run([
+			...withVerdict(marker("governance", "PASS", HEAD)),
+			[HEAD_CHECKS, {status: 502, body: "{}"}],
+		]);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.join("\n")).toContain("cannot enumerate the check runs");
+		expect(seams.requests.some((call) => CREATE.test(call) || UPDATE.test(call))).toBe(false);
+	});
+});
+
+describe("--publish-check selects the mode", () => {
+	it("routes the flag to the check-run mode and its absence to the exit-code one", () => {
+		expect(floorRunner(true)).toBe(runFloorCheck);
+		expect(floorRunner(false)).toBe(runFloor);
 	});
 });

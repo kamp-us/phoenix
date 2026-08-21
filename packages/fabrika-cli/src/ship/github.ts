@@ -313,11 +313,7 @@ export const createCheckRun = (
 ): Shell<Attempt<WrittenCheckRun>> =>
 	authed((token) =>
 		Effect.map(
-			restCall(token, {
-				method: "POST",
-				path: `repos/${repo}/check-runs`,
-				body: checkRunBody(draft),
-			}),
+			restWrite(token, "POST", `repos/${repo}/check-runs`, checkRunBody(draft)),
 			(outcome) => attemptOf(outcome, toWrittenCheckRun),
 		),
 	);
@@ -331,7 +327,7 @@ export const updateCheckRun = (
 	authed((token) => {
 		const {head_sha: _pinned, ...mutable} = checkRunBody(draft);
 		return Effect.map(
-			restCall(token, {method: "PATCH", path: `repos/${repo}/check-runs/${id}`, body: mutable}),
+			restWrite(token, "PATCH", `repos/${repo}/check-runs/${id}`, mutable),
 			(outcome) => attemptOf(outcome, toWrittenCheckRun),
 		);
 	});

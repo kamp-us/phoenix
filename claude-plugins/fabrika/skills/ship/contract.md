@@ -742,9 +742,29 @@ fabrika ship floor 4321 --sha 03135b91 [--publish-check] [--repo <owner/name>] [
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
-**Output** — machine channel. Two lines: `floor\t<satisfied|n/a>\t<sha>` then
-`ns\tgovernance\t<pass|->`. With `--json`, an object with keys `outcome`, `sha`, `namespace`,
-`state` and `scanned`.
+**Output** — machine channel, and the two modes print different shapes.
+
+Without `--publish-check`, two lines:
+
+```
+floor	<satisfied|n/a>	<sha>
+ns	governance	<pass|->
+```
+
+With `--json`, an object with keys `outcome`, `sha`, `namespace`, `state` and `scanned`.
+
+With `--publish-check`, three lines — the check-run the verb wrote comes first, and the floor and
+namespace words are the raw ones the resolution carried rather than the exit-code mode's two:
+
+```
+check	<in_progress|completed>	<success|failure|->	<check-run id>
+floor	<n/a|satisfied|blocked|unresolved>	<sha>
+ns	governance	<pass|absent|stale|fail|->
+```
+
+With `--json` in that mode, an object with keys `outcome`, `sha`, `namespace`, `state` and
+`checkRun` (`{id, name, status, conclusion}`) — **no `scanned` key**, because what this mode answers
+is what it published.
 
 **`n/a` is an answer about the diff, never a discharged verdict.** It means the changed files touch
 none of this repo's governed roots, so the floor does not bind — and the verb says so on stderr, in
@@ -772,9 +792,10 @@ name, distinct from the job's — and this map is the whole of it:
 
 **The process then exits 0 whenever the check-run landed, whatever it said.** The floor's polarity is
 the check-run's; a non-zero in this mode says only that the answer could not be published, which is
-the one fact the job still carries. It seats `8` (the write failed) and `9` (GitHub echoed a state
-this run did not decide), both this group's existing meanings — no exit code is repurposed, and every
-other caller of `ship floor` is untouched.
+the one fact the job still carries. It seats `8` (the write failed), `9` (GitHub echoed a state this
+run did not decide) and `11` (the head's check-runs could not be enumerated, so nothing was written),
+all three this group's existing meanings — no exit code is repurposed, and every other caller of
+`ship floor` is untouched.
 
 **A pending check-run does not weaken the block.** `ship gate` is unchanged and still refuses while a
 governance verdict is absent, `ship checks` rolls a pending gating run up as `pending` rather than
@@ -784,7 +805,9 @@ reads, not what a merge is allowed to do.
 **One row per head.** A check-run this head already carries is rewritten in place rather than stacked
 on, so the PR shows one row. The exception is the backwards transition — a completed check-run being
 re-opened as pending — which the platform will not model, because an update cannot clear a conclusion
-it has recorded; that one posts a fresh check-run instead.
+it has recorded; that one posts a fresh check-run instead. A head whose check-runs cannot be read is
+neither case: the verb refuses on `11` and publishes nothing, because "unreadable" read as "no row
+here" is how one head ends up with two.
 
 **What re-fires it.** Nothing new: `governance post` re-fires the floor run at the head it posted to,
 and that re-run re-derives the floor and rewrites the check-run green. Since the job now succeeds
@@ -834,7 +857,7 @@ it is *present and wrong* (#5416, #4887). All four of these red on `18`, and eac
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed, or has zero changed files — whether it touches a governance root is unanswerable (ADR 0092) |
-| `11` | the PR, its changed-file list, or the conjunction underneath could not be read — the floor is UNKNOWN, never `n/a` |
+| `11` | the PR, its changed-file list, or the conjunction underneath could not be read — the floor is UNKNOWN, never `n/a`. Under `--publish-check`, also: the check-runs at the head could not be enumerated, so whether this head already carries the floor's row is unknown and nothing is published |
 | `13` | the changed-file enumeration is provably short — a governance root could sit in the part nobody read |
 | `18` | the diff touches a governance root and its `governance` verdict at this head is `absent`, `stale` or `fail` |
 | `8` | **`--publish-check` only** — the check-run could not be written, so the floor is resolved and nothing published it |
@@ -852,6 +875,11 @@ it is *present and wrong* (#5416, #4887). All four of these red on `18`, and eac
 | `ship floor: received <k> of <m> changed files — a governance root could sit in the part nobody read.` | 13 | refusal |
 | `ship floor: #<n> touches a governance root and its governance verdict at <sha> is <state> — <remedy> (#5408).` | 18 | refusal |
 | `ship floor: #<n>'s diff touches no governance root, so the floor does not bind — this is an answer about the diff, not a discharged verdict.` | 0 | notice |
+| `ship floor --publish-check: cannot enumerate the check runs at <sha>: <reason> — nothing was published, so the floor stays UNKNOWN rather than posting a duplicate row.` | 11 | refusal |
+| `ship floor --publish-check: the check-run could not be written: <reason> — the floor is resolved and nothing published it.` | 8 | refusal |
+| `ship floor --publish-check: wrote <status>/<conclusion> to check-run <id> and GitHub echoed <status>/<conclusion> — what the PR shows is not what this run decided.` | 9 | refusal |
+| `ship floor --publish-check: posted check-run <id> — the job's own exit code no longer carries the floor (#6161).` | 0 | notice |
+| `ship floor --publish-check: rewrote check-run <id> — the job's own exit code no longer carries the floor (#6161).` | 0 | notice |
 
 **Scope** — one PR's changed-file list, count-checked against the declared total, plus whatever
 `ship gate` scans for the one required namespace (its own file list, the comments, the reviews and
@@ -886,6 +914,21 @@ ship gate: scanned 0 reviews; pagination exhausted.
 ship floor: #5481 touches a governance root and its governance verdict at c9deb6047acc69da85b033a46b1fe05d2e0f5b91 is absent — no authorized governance verdict at this head — run the `governance` skill and emit one with `fabrika governance post` (#5408).
 $ echo $?
 18
+```
+
+The same absent floor under `--publish-check` — the answer moves to the check-run and the process
+exits 0 on having published it:
+
+```
+$ fabrika ship floor 5481 --sha c9deb6047acc69da85b033a46b1fe05d2e0f5b91 --publish-check
+ship floor: scanned 1 changed file; 1 declared.
+ship floor: #5481 touches a governance root and its governance verdict at c9deb6047acc69da85b033a46b1fe05d2e0f5b91 is absent — no authorized governance verdict at this head — run the `governance` skill and emit one with `fabrika governance post` (#5408).
+ship floor --publish-check: posted check-run 48812301 — the job's own exit code no longer carries the floor (#6161).
+check	in_progress	-	48812301
+floor	blocked	c9deb6047acc69da85b033a46b1fe05d2e0f5b91
+ns	governance	absent
+$ echo $?
+0
 ```
 
 **Grounding**

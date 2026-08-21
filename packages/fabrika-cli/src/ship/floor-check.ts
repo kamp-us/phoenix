@@ -21,13 +21,14 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
+import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
 import {
 	type FloorOptions,
 	type FloorResolution,
 	floorRefusalLine,
 	NAMESPACE,
 	resolveFloor,
+	runFloor,
 } from "./floor-verb.ts";
 import {
 	type CheckRunDraft,
@@ -152,14 +153,17 @@ export const runFloorCheck = (
 > =>
 	Effect.gen(function* () {
 		// The head and the repository are resolved before the floor is, because they are what a
-		// check-run is addressed to: without either there is nowhere to post the answer, so those two
-		// refusals are the only ones that reach the caller as a non-zero exit.
+		// check-run is addressed to: without either there is nowhere to post the answer. Every non-zero
+		// exit this mode has is a seat like that one — the answer was derived and something on the way
+		// to publishing it was UNKNOWN. What the floor itself decided never reddens the job.
 		const bound = inspectedSha(VERB, options.sha);
 		if (typeof bound !== "string") return bound;
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
 
+		// `resolveFloor` resolves the repository again, and that second call is a pass-through rather
+		// than a second probe: it is handed the name this one already proved.
 		const resolution = yield* resolveFloor({...options, repo});
 		const plan = planFor(options.pr, resolution);
 		const relayed =
@@ -170,10 +174,19 @@ export const runFloorCheck = (
 		// transition — a completed check-run being re-opened as pending — which the platform does not
 		// model: a `conclusion` already set is not cleared by an update, so that one posts a fresh run.
 		const listed = yield* listShipCheckRuns(repo, bound);
+		if (listed._tag === "Failure") {
+			// An unreadable list is not a head carrying no row: collapsing the two would post a second
+			// check-run and quietly break the one-row-per-head invariant above. Every sibling reader of
+			// this seam refuses here too (`ship checks`, `heal-ci surface`, `governance post`), so the
+			// group holds one disposition for one read (#6161).
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot enumerate the check runs at ${bound}: ${listed.reason} — nothing was published, so the floor stays UNKNOWN rather than posting a duplicate row.`,
+				relayed,
+			);
+		}
 		const held =
-			listed._tag === "Ok"
-				? (latestPerContext(listed.value.runs).find((run) => run.name === CHECK_RUN_NAME) ?? null)
-				: null;
+			latestPerContext(listed.value.runs).find((run) => run.name === CHECK_RUN_NAME) ?? null;
 		const rewritable = held !== null && !(held.status === "completed" && plan._tag === "Pending");
 
 		const draft = draftFor(plan, bound);
@@ -221,3 +234,13 @@ export const runFloorCheck = (
 			[...relayed, posted],
 		);
 	});
+
+/**
+ * Which of the two modes `--publish-check` selects, as a value rather than a branch inside the
+ * command handler — the handler is the one surface no test in this package reaches, so a flag wired
+ * to the wrong arm would ship green (#6161).
+ */
+export const floorRunner = (
+	publishCheck: boolean,
+): ((options: FloorOptions) => ReturnType<typeof runFloor>) =>
+	publishCheck ? runFloorCheck : runFloor;

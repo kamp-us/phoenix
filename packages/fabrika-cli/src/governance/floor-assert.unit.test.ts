@@ -48,6 +48,16 @@ const noFloorCheck: ReadonlyArray<Scripted> = [
 	],
 ];
 
+/**
+ * Whether one recorded request WROTE a check-run — the fence this module must never trip.
+ *
+ * Every method that is not a GET counts. `ship floor --publish-check` creates with POST and rewrites
+ * with PATCH, so a POST-shaped fence would let a PATCH-shaped fabricated conclusion straight through
+ * (#6161).
+ */
+const writesCheckRun = (call: string): boolean =>
+	call.includes("check-runs") && !call.startsWith("GET ");
+
 const FLOOR = 31_863_008_185;
 
 const assert = (script: ReadonlyArray<Scripted>) =>
@@ -83,10 +93,10 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 		expect(seams.requests.some((call) => RERUN.test(call))).toBe(true);
 		// The re-fire re-runs `ship floor` in CI. Nothing here WRITES a check-run — the read above is
 		// how this module learns the floor's state, and the green a PR ends up with is one the job
-		// derived for itself (#5585).
-		expect(
-			seams.requests.some((call) => call.startsWith("POST") && call.includes("check-runs")),
-		).toBe(false);
+		// derived for itself (#5585). The fence is every method that is not a GET, not `POST` alone:
+		// `ship floor --publish-check` rewrites a held row with `PATCH /check-runs/{id}`, so a
+		// method-specific fence would let the PATCH-shaped fabrication through (#6161).
+		expect(seams.requests.some(writesCheckRun)).toBe(false);
 	});
 
 	it("picks the NEWEST floor run at the head, not the first one listed", async () => {
@@ -265,5 +275,16 @@ describe("needsRefire reads the check-run, and the job only where there is none"
 		expect(needsRefire("success", null)).toBe(false);
 		expect(needsRefire("failure", null)).toBe(true);
 		expect(needsRefire(null, null)).toBe(false);
+	});
+});
+
+describe("the check-run fence these cases assert on", () => {
+	it("catches every write method and lets the read through", () => {
+		expect(writesCheckRun("POST https://api.github.com/repos/o/r/check-runs")).toBe(true);
+		expect(writesCheckRun("PATCH https://api.github.com/repos/o/r/check-runs/55")).toBe(true);
+		expect(writesCheckRun("DELETE https://api.github.com/repos/o/r/check-runs/55")).toBe(true);
+		expect(
+			writesCheckRun("GET https://api.github.com/repos/o/r/commits/abc/check-runs?per_page=100"),
+		).toBe(false);
 	});
 });
