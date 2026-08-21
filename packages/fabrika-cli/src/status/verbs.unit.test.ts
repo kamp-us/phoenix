@@ -977,7 +977,7 @@ describe("the lanes field renders `lane stale`'s sweep, never a second staleness
 	const sweep = (fs: ReturnType<typeof fakeFs>) =>
 		Effect.runPromise(
 			Effect.provide(
-				runStale({roots: ROOTS, olderThanMinutes: DEFAULT_STALE_MINUTES, now: NOW}),
+				runStale({roots: ROOTS, olderThanMinutes: DEFAULT_STALE_MINUTES, now: NOW, claims: null}),
 				fs.layer,
 			),
 		);
