@@ -24,6 +24,7 @@ import {refuse, type VerbOutcome} from "../verb.ts";
 import {runBranch} from "./branch-verb.ts";
 import {runCheck} from "./check-verb.ts";
 import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
+import {runClaimants} from "./claimants-verb.ts";
 import {type DocumentRead, runClear} from "./clear-verb.ts";
 import {OFF_VOCABULARY} from "./codes.ts";
 import {runCommit} from "./commit-verb.ts";
@@ -222,6 +223,19 @@ const confirm = leafCommand(
 	Command.withShortDescription("Re-prove this session still holds the claim."),
 	Command.withDescription(
 		'Re-prove THIS LANE still holds the claim, before a mutation. --token is the lane asking: one session runs many lanes, so ownership turns on the whole token and a same-session marker under another nonce is a proven loss (#6037). Prints {"answer":"mine","number":n,"token":"…"}. Exits 1 (CLAUDE_CODE_SESSION_ID unset, or --token is not a claim token of this session), 7 (issue proven absent or closed), 11 (the marker set could not be read — UNKNOWN, never "unclaimed"), 15 (proven: held by another lane, or no claim exists — the detail is on stderr, naming both tokens). Example: fabrika build confirm 4312 --token build:s-9f2e:c1a4d6f8-…',
+	),
+);
+
+const claimants = leafCommand(
+	"claimants",
+	{number: issueArg, repo: repoFlag},
+	Effect.fn(function* ({number, repo}) {
+		yield* emit(yield* runClaimants({number, repo: Option.getOrNull(repo), env: process.env}));
+	}),
+).pipe(
+	Command.withShortDescription("Which sessions hold live claims on one issue."),
+	Command.withDescription(
+		'Read who holds the claim on an issue, holding none yourself. It takes no --token and needs no session: confirm re-proves THIS lane\'s claim and refuses a token of any other session, so a driver arriving after a session limit killed its builders could not ask which numbers those dead lanes left claimed (#6771). It writes nothing, and it clears nothing — a stranded claim leaves through "fabrika build adopt" then "fabrika build release", never through a TTL, a lease or an inference from absence (ADR 0295). Prints {"answer":"held"|"unclaimed","number":n,"holder":{"commentId","author","createdAt","token","session","authorized"}|null,"claimants":[…],"adopts":[…]}: the holder is the EARLIEST AUTHORIZED marker, the same one every ownership question resolves against, and every other marker is listed beside it — an unauthorized one is counted and named on stderr, never a winner (ADR 0055). A closed issue is answered rather than refused, because a marker outliving its issue is exactly the strandedness this reads for; its state is named on stderr. Exits 7 (the issue is proven absent — there is no thread to read), 11 (the issue, its comments or an author\'s permission could not be read — UNKNOWN, never "unclaimed"). Example: fabrika build claimants 6669',
 	),
 );
 
@@ -672,6 +686,7 @@ export const buildCommand = Command.make("build").pipe(
 		eligible,
 		claim,
 		confirm,
+		claimants,
 		release,
 		adopt,
 		issue,

@@ -23,6 +23,7 @@ import {
 	pagedEnvelope,
 	pagedWithLinkProof,
 	type Rest,
+	refusalText,
 	restCall,
 } from "./gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "./git.ts";
@@ -132,7 +133,7 @@ export const getPullDiff = (repo: string, pr: number): Shell<Attempt<string>> =>
 				if (outcome._tag === "Unreachable") return fail(outcome.reason);
 				return outcome.status >= 200 && outcome.status < 300
 					? ok(outcome.text)
-					: fail(`GitHub answered HTTP ${outcome.status}`);
+					: fail(refusalText(outcome));
 			}),
 		),
 	);
@@ -203,7 +204,7 @@ export const viewerLogin: Shell<Attempt<string>> = authed((token) =>
 		Effect.map((outcome) => {
 			if (outcome._tag === "Unreachable") return fail(outcome.reason);
 			if (outcome.status < 200 || outcome.status >= 300) {
-				return fail(`GitHub answered HTTP ${outcome.status}`);
+				return fail(refusalText(outcome));
 			}
 			const login =
 				isRecord(outcome.body) && typeof outcome.body.login === "string"
@@ -250,7 +251,7 @@ export const patchComment = (repo: string, id: number, body: string): Shell<Atte
 			Effect.map((outcome) => {
 				if (outcome._tag === "Unreachable") return fail(outcome.reason);
 				if (outcome.status < 200 || outcome.status >= 300) {
-					return fail(`GitHub answered HTTP ${outcome.status}`);
+					return fail(refusalText(outcome));
 				}
 				return isRecord(outcome.body) && typeof outcome.body.html_url === "string"
 					? ok(outcome.body.html_url)
@@ -347,7 +348,7 @@ export const openPullsClosing = (
 					});
 					if (outcome._tag === "Unreachable") return fail(outcome.reason);
 					if (outcome.status < 200 || outcome.status >= 300) {
-						return fail(`GitHub answered HTTP ${outcome.status}`);
+						return fail(refusalText(outcome));
 					}
 					const parsed: unknown = outcome.body;
 					if (isRecord(parsed) && Array.isArray(parsed.errors) && parsed.errors.length > 0) {

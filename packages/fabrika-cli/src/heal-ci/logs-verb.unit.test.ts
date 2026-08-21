@@ -150,6 +150,31 @@ describe("runLogs refuses rather than answering `no failed steps`", () => {
 		expect(out.stdout).toBe("");
 	});
 
+	it("names GitHub's own message when the job-log read is refused on 11", async () => {
+		const out = await run([
+			[PULL, reply(pull())],
+			[CHECK_RUNS, reply(checkRuns(1, [failed("unit tests")]))],
+			[RUNS_AT_HEAD, reply(runsAtHead(1, [{id: 77}]))],
+			[JOBS, jobs(1, [{id: 441, name: "unit tests"}])],
+			[JOB_LOG, httpError(500, "Server Error")],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("GitHub answered HTTP 500: Server Error");
+	});
+
+	it("falls back to the bare status when the refused job-log body carries no message", async () => {
+		const out = await run([
+			[PULL, reply(pull())],
+			[CHECK_RUNS, reply(checkRuns(1, [failed("unit tests")]))],
+			[RUNS_AT_HEAD, reply(runsAtHead(1, [{id: 77}]))],
+			[JOBS, jobs(1, [{id: 441, name: "unit tests"}])],
+			[JOB_LOG, {status: 500, body: "{}"}],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("GitHub answered HTTP 500");
+		expect(out.stderr.at(-1)).not.toContain("HTTP 500:");
+	});
+
 	it("refuses an unreadable check-run read on 11", async () => {
 		const out = await run([
 			[PULL, reply(pull())],

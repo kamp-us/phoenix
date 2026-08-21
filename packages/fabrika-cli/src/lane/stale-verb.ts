@@ -10,8 +10,15 @@
  * one broken lane would hide every other lane's silence, which is the failure this verb exists to
  * end. The sweep itself refuses only when a root it was asked to scan is there and cannot be listed —
  * that leaves the lane set UNKNOWN, and an UNKNOWN lane set is never a short list.
+ *
+ * The sweep is **offline unless a caller asks for more**. A session limit strands a lane's state and
+ * the claim marker its dead builder left on the issue, and only the first is on disk (#6771) — so
+ * `claims` pairs the second onto each non-terminal row. It is a reader the caller passes rather than
+ * a flag this module reads, which is what keeps the default provable: with no reader there is no
+ * seam to reach the board through.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
+import type {Claimants} from "../build/claim.ts";
 import {exists, readDir} from "../io/fs.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_UNREADABLE} from "./codes.ts";
@@ -22,13 +29,37 @@ import {DEFAULT_CHORES_ROOT, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane stale";
 
-export interface StaleOptions {
+/** The board read that pairs one issue with its claim state — the sweep's only network seam. */
+export type ClaimReader<R> = (number: number) => Effect.Effect<Claimants, never, R>;
+
+export interface StaleOptions<R = never> {
 	/** The lane roots to sweep, in order. An absent root is an empty one, not a fault. */
 	readonly roots: ReadonlyArray<string>;
 	readonly olderThanMinutes: number;
 	/** The instant the ages are measured against, ISO — the adapter's clock, so the verb stays pure. */
 	readonly now: string;
+	/** The claim reader, or `null` for the offline sweep every caller gets by default. */
+	readonly claims: ClaimReader<R> | null;
 }
+
+/**
+ * What the board says about the issue a lane drives.
+ *
+ * `unknown` is a seat rather than an absent field for the reason every read in this protocol keeps
+ * it: a comment page that did not load says nothing about whether a claim stands, and calling it
+ * `unclaimed` would tell a driver an issue is free to pick up when it may not be.
+ */
+type LaneClaim =
+	| {
+			readonly state: "held";
+			readonly token: string;
+			/** The session to name in `build adopt --session` when that session is gone. */
+			readonly session: string;
+			readonly author: string;
+			readonly commentId: number;
+	  }
+	| {readonly state: "unclaimed"}
+	| {readonly state: "unknown"; readonly reason: string};
 
 interface LaneRow extends Judgement {
 	/** The key this lane is addressed by — what a caller passes to any other `lane` verb. */
@@ -38,6 +69,8 @@ interface LaneRow extends Judgement {
 	readonly status: LaneStatus["status"] | null;
 	/** Why the lane could not be judged; absent on every readable lane. */
 	readonly reason?: string;
+	/** The claim on this lane's issue; absent unless a reader was passed and this row was paired. */
+	readonly claims?: LaneClaim;
 }
 
 interface ScannedRoot {
@@ -131,9 +164,43 @@ const byAge = (left: LaneRow, right: LaneRow): number => {
 	return left.key.localeCompare(right.key);
 };
 
-export const runStale = (
-	options: StaleOptions,
-): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
+/**
+ * The issue a lane key names, or `null` when it names none.
+ *
+ * A chore lane is keyed `chore:<name>` and drives no issue, so there is no thread to pair it with —
+ * and a claim is a fact about an issue, never about a lane directory.
+ */
+const issueOf = (key: string): number | null =>
+	/^[0-9]+$/.test(key) ? Number.parseInt(key, 10) : null;
+
+/** The row plus what the board says about its issue — a terminal lane and a chore lane are skipped. */
+const pair = <R>(row: LaneRow, read: ClaimReader<R>): Effect.Effect<LaneRow, never, R> =>
+	Effect.gen(function* () {
+		const issue = issueOf(row.key);
+		if (issue === null || row.verdict === "terminal") return row;
+		const claimants = yield* read(issue);
+		if (claimants._tag === "Unknown") {
+			return {...row, claims: {state: "unknown" as const, reason: claimants.reason}};
+		}
+		const holder = claimants.holder;
+		return {
+			...row,
+			claims:
+				holder === null
+					? {state: "unclaimed" as const}
+					: {
+							state: "held" as const,
+							token: holder.token,
+							session: holder.session,
+							author: holder.author,
+							commentId: holder.commentId,
+						},
+		};
+	});
+
+export const runStale = <R = never>(
+	options: StaleOptions<R>,
+): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path | R> =>
 	Effect.gen(function* () {
 		if (!Number.isFinite(options.olderThanMinutes) || options.olderThanMinutes < 0) {
 			return refuse(FAILED, `${VERB}: --older-than must be a non-negative number of minutes.`);
@@ -177,8 +244,17 @@ export const runStale = (
 		const summary = Object.fromEntries(
 			VERDICTS.map((verdict) => [verdict, lanes.filter((row) => row.verdict === verdict).length]),
 		);
-		const sorted = [...lanes].sort(byAge);
+		const reader = options.claims;
+		const paired: LaneRow[] =
+			reader === null
+				? lanes
+				: yield* Effect.forEach(lanes, (row) => pair(row, reader), {concurrency: 1});
+		const sorted = [...paired].sort(byAge);
 		const stale = sorted.filter((row) => row.verdict === "stale");
+		const held = sorted.flatMap((row) =>
+			row.claims?.state === "held" ? [`${row.key} (${row.claims.token})`] : [],
+		);
+		const unknown = sorted.flatMap((row) => (row.claims?.state === "unknown" ? [row.key] : []));
 		return answer(
 			JSON.stringify(
 				{
@@ -186,6 +262,16 @@ export const runStale = (
 					olderThanMinutes: options.olderThanMinutes,
 					scanned,
 					summary,
+					// `null` says the board was never asked, which "nothing is held" would silently claim.
+					claims:
+						reader === null
+							? null
+							: {
+									paired: sorted.filter((row) => row.claims !== undefined).length,
+									held: held.length,
+									unclaimed: sorted.filter((row) => row.claims?.state === "unclaimed").length,
+									unknown: unknown.length,
+								},
 					lanes: sorted,
 				},
 				null,
@@ -196,6 +282,22 @@ export const runStale = (
 				stale.length === 0
 					? `${VERB}: no lane has been silent for ${options.olderThanMinutes} minute(s) with something owed on it.`
 					: `${VERB}: ${stale.length} stale: ${stale.map((row) => `${row.key} (${String(row.ageMinutes)}m)`).join(", ")}.`,
+				...(reader === null
+					? []
+					: [
+							held.length === 0
+								? `${VERB}: no non-terminal lane's issue carries a live claim.`
+								: `${VERB}: ${held.length} lane(s) whose issue is still claimed: ${held.join(
+										", ",
+									)} — a claim clears through "fabrika build adopt" then "fabrika build release", never on its own (ADR 0295).`,
+						]),
+				...(unknown.length === 0
+					? []
+					: [
+							`${VERB}: ${unknown.length} lane(s) whose claim state could not be read: ${unknown.join(
+								", ",
+							)} — UNKNOWN, never "unclaimed".`,
+						]),
 			],
 		);
 	});

@@ -24,7 +24,14 @@
  * marking it wrong — the fail-open direction.
  */
 import {Effect} from "effect";
-import {authed, authedExistence, existenceOf, pagedExistence, restCall} from "./gh-api.ts";
+import {
+	authed,
+	authedExistence,
+	existenceOf,
+	pagedExistence,
+	refusalText,
+	restCall,
+} from "./gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "./git.ts";
 import {type Existence, present, unknown} from "./issues.ts";
 import {isRecord} from "./json.ts";
@@ -90,7 +97,7 @@ const edgeWrite = (path: string, body: Readonly<Record<string, number>>): Shell<
 				if (outcome._tag === "Unreachable") return fail(outcome.reason);
 				return outcome.status >= 200 && outcome.status < 300
 					? ok(undefined)
-					: fail(`GitHub answered HTTP ${outcome.status}`);
+					: fail(refusalText(outcome));
 			}),
 		),
 	);

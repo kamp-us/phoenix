@@ -53,7 +53,7 @@ question.
 the session can re-run one instead of trusting the render. Each field has one command behind it —
 `fabrika status menu`, `fabrika status settings`, `fabrika status readout`, `fabrika lane stale` for
 the lanes field (the stale-lane sweep over this machine's `.fabrika/` roots — it reports, it never
-resumes), and for the board:
+resumes; `fabrika lane stale --claims` is that field's deeper read, below), and for the board:
 
 ```bash
 fabrika status board
@@ -61,6 +61,13 @@ fabrika status board
 
 The readout carries only two headline counts, so the other buckets are **not seen** rather than zero
 until you run this. Report them that way.
+
+**The lanes field's deeper read is `fabrika lane stale --claims`.** It additionally pairs each
+non-terminal lane with the claim standing on its issue, which is the other half a dead session
+strands: the lane record cannot see markers. It costs a board read per paired lane where the bare
+form makes no network call at all, so reach for it when you suspect a session died rather than on
+every pass. It reports there too, retracting nothing — and an `unknown` claims row means the board
+could not be read, never that the number is unclaimed.
 
 <!-- anchor: NO-READOUT-IS-ITSELF-A-STATE --> **If no readout appeared above**, the verb group is not
 built in this install — the group is greenfield and its implementation is tracked separately. Say so

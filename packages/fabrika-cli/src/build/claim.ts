@@ -105,20 +105,34 @@ export const composeMarker = (
 		? `${grammar.keyword}: ${token} · ${at}`
 		: `${grammar.keyword}: ${token} · ${at}\n${grammar.keyword}-override: ${override.lane} · ${override.reason}`;
 
-/** The token a comment body claims in `grammar`, or `null` when it carries no marker of that kind. */
-export const readMarkerToken = (
+/**
+ * The marker a comment body carries in `grammar`, or `null` when it carries none of that kind.
+ *
+ * The session comes back beside the token because it is read out of the same parse the token's
+ * well-formedness already turns on — deriving it again at a call site is a second parse that can
+ * disagree, and the one it would disagree about is which session a stranded claim names.
+ */
+const readMarker = (
 	body: string,
-	grammar: ClaimGrammar = BUILD_CLAIM,
-): string | null => {
+	grammar: ClaimGrammar,
+): {readonly token: string; readonly session: string} | null => {
 	const m = grammar.marker.exec(body);
-	return m?.[1] === undefined || parseToken(m[1], grammar.prefix) === null ? null : m[1];
+	if (m?.[1] === undefined) return null;
+	const parsed = parseToken(m[1], grammar.prefix);
+	return parsed === null ? null : {token: m[1], session: parsed.session};
 };
+
+/** The token a comment body claims in `grammar`, or `null` when it carries no marker of that kind. */
+export const readMarkerToken = (body: string, grammar: ClaimGrammar = BUILD_CLAIM): string | null =>
+	readMarker(body, grammar)?.token ?? null;
 
 export interface ClaimMarker {
 	readonly commentId: number;
 	readonly author: string;
 	readonly createdAt: string;
 	readonly token: string;
+	/** The session the token names — what `build adopt --session` takes when that session is gone. */
+	readonly session: string;
 }
 
 /**
@@ -198,13 +212,13 @@ export const markersIn = (
 ): ReadonlyArray<ClaimMarker> => {
 	const markers: ClaimMarker[] = [];
 	for (const comment of comments) {
-		const token = readMarkerToken(comment.body, grammar);
-		if (token !== null) {
+		const read = readMarker(comment.body, grammar);
+		if (read !== null) {
 			markers.push({
 				commentId: comment.id,
 				author: comment.author,
 				createdAt: comment.createdAt,
-				token,
+				...read,
 			});
 		}
 	}
@@ -437,6 +451,83 @@ export const resolveOwnership = (
 			ownership: {_tag: "Foreign" as const, marker: winner, sameSession},
 			unauthorized,
 			unauthorizedAdopts,
+		};
+	});
+
+/** One claim marker on a thread, with the authority question already answered for it. */
+export interface Claimant extends ClaimMarker {
+	/** Whether the author's repository permission authorizes the marker (ADR 0055). */
+	readonly authorized: boolean;
+}
+
+/** One succession marker, with the same authority question answered. */
+export interface Adopter extends AdoptMarker {
+	readonly authorized: boolean;
+}
+
+/**
+ * Who holds a number, asked by nobody in particular.
+ *
+ * `Unknown` is the whole reason this is a sum rather than a list: a comment page or an ACL read that
+ * failed leaves the question unanswered, and "no claim" is the one answer it must never collapse to.
+ */
+export type Claimants =
+	| {readonly _tag: "Unknown"; readonly reason: string}
+	| {
+			readonly _tag: "Read";
+			/** Every marker on the thread, oldest first — the unauthorized ones included. */
+			readonly claimants: ReadonlyArray<Claimant>;
+			readonly adopts: ReadonlyArray<Adopter>;
+			/** The earliest authorized marker: the one every ownership question resolves against. */
+			readonly holder: Claimant | null;
+	  };
+
+/**
+ * Every claim on `number`, read against no asking lane at all.
+ *
+ * {@link resolveOwnership} answers "is this mine", which is the only question the protocol needed
+ * while every asker held a claim. A driver arriving after a session limit killed its builders holds
+ * none, and had no way to ask which issues those dead lanes left claimed (#6771) — `confirm` requires
+ * a token of the caller's own session, and `claim` would answer only by racing a marker of its own.
+ *
+ * Unlike `resolveOwnership`, which stops at the first authorized marker because the winner is all it
+ * needs, every marker's author is resolved: an unauthorized marker sitting beside the winner is
+ * exactly what explains a thread a driver cannot make sense of, and hiding it would leave the
+ * stranded set half-named. The ACL reader is memoized, so a thread of one author still costs one read.
+ *
+ * It reads and returns. Nothing here clears a claim, and nothing infers one from absence: the two
+ * clearances are `build release` and `build adopt` (ADR 0295).
+ */
+export const readClaimants = (
+	repo: string,
+	number: number,
+	grammar: ClaimGrammar = BUILD_CLAIM,
+): Effect.Effect<Claimants, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const listed = yield* listComments(repo, number);
+		if (listed._tag === "Failure") return {_tag: "Unknown" as const, reason: listed.reason};
+		const authorizationOf = permissionReader(repo);
+		const claimants: Claimant[] = [];
+		for (const marker of markersIn(listed.value, grammar)) {
+			const permission = yield* authorizationOf(marker.author);
+			if (permission._tag === "Unknown") {
+				return {_tag: "Unknown" as const, reason: permission.reason};
+			}
+			claimants.push({...marker, authorized: permission._tag === "Authorized"});
+		}
+		const adopts: Adopter[] = [];
+		for (const adopt of adoptMarkersIn(listed.value, grammar)) {
+			const permission = yield* authorizationOf(adopt.author);
+			if (permission._tag === "Unknown") {
+				return {_tag: "Unknown" as const, reason: permission.reason};
+			}
+			adopts.push({...adopt, authorized: permission._tag === "Authorized"});
+		}
+		return {
+			_tag: "Read" as const,
+			claimants,
+			adopts,
+			holder: claimants.find((claimant) => claimant.authorized) ?? null,
 		};
 	});
 
