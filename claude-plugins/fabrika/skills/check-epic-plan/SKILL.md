@@ -100,7 +100,7 @@ fabrika plan check $epic_number
 ```
 
 This is the **whole pass/fail decision** over the closed hard-defect enum
-(`fabrika wire doc-section --heading "The floor — thirteen defect types" < <skill-base>/contract.md`).
+(`fabrika wire doc-section --heading "The floor — fourteen defect types" < <skill-base>/contract.md`).
 Do not read the ledger and form your own verdict beside it: two
 answers to one question is how a gate contradicts itself. Both arms exit `0` — read `answer`
 (`clean` or `defective`), and carry `digest` forward to every verb that writes.
@@ -110,7 +110,10 @@ that could **not be derived** — the floor still answered, but over less than t
 your terminal says so.
 
 `defective` ends the run at `PLAN-REFUSED`: post the verdict (step 4), flip nothing, stop. **The
-defective path is terminal here.** Re-planning is `plan-epic`'s lane; hand back to it.
+defective path is terminal here.** Re-planning is `plan-epic`'s lane; hand back to it. Say so when
+every defect is `UNENFORCED_DEP`, because that one is the cheap case: the plan is right and only the
+`blocked_by` graph is behind it, which `plan-epic` clears with `fabrika ledger edges` and no
+re-plan.
 
 ## 3 — Flip, and report what you observed
 

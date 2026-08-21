@@ -13,7 +13,14 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {type PhaseLine, type RequiresLine, readTopology, renderRef} from "../build/dependencies.ts";
+import {
+	type PhaseLine,
+	type RequiredEdge,
+	type RequiresLine,
+	readTopology,
+	renderRef,
+	requiredEdges,
+} from "../build/dependencies.ts";
 import {openIssue} from "../build/target.ts";
 import {CONFIG_PATH} from "../config/document.ts";
 import {
@@ -24,12 +31,13 @@ import {
 } from "../config/keys/containment-vocabulary.ts";
 import {resolve} from "../config/load.ts";
 import {loadRepoConfig} from "../config/working-root.ts";
+import {blockedBy} from "../io/edges.ts";
 import {getIssue, type IssueRecord} from "../io/issues.ts";
 import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {read as readAcceptanceCriteria} from "../wire/acceptance-criteria.ts";
 import {BAD_SECTIONS, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {deriveFloor, type Floor, refsToProbe} from "./defects.ts";
+import {deriveFloor, edgesToEnforce, type Floor, refsToProbe} from "./defects.ts";
 import {type LedgerScope, scopeDigest} from "./digest.ts";
 import {getChild, listSubIssues, probeCycleDoc} from "./github.ts";
 import {
@@ -118,7 +126,16 @@ export const requireEpic = (
 
 export type LedgerRead =
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
-	| {readonly _tag: "Ledger"; readonly ledger: Ledger};
+	| {
+			readonly _tag: "Ledger";
+			readonly ledger: Ledger;
+			/**
+			 * The edges the topology requires on the board, carried beside the ledger rather than on it:
+			 * the digest is taken over the ledger, and this is a function of the topology already in it,
+			 * so folding it in would invalidate every standing approval to say nothing new (ADR 0289).
+			 */
+			readonly required: ReadonlyArray<RequiredEdge>;
+	  };
 
 const criteriaOf = (body: string): {token: CriteriaToken; count: number} => {
 	const read = readAcceptanceCriteria(body);
@@ -263,7 +280,11 @@ export const loadLedger = (
 			topology: {phases, edges},
 			dependenciesAbsent: topology._tag === "Absent",
 		};
-		return {_tag: "Ledger" as const, ledger: {...scope, digest: scopeDigest(scope)}};
+		return {
+			_tag: "Ledger" as const,
+			ledger: {...scope, digest: scopeDigest(scope)},
+			required: requiredEdges(parsed),
+		};
 	});
 
 /**
@@ -283,17 +304,19 @@ export type FloorRead =
 	| {readonly _tag: "Floor"; readonly floor: Floor};
 
 /**
- * The floor over a loaded ledger, including the one read it needs: the 404-discriminating probe
- * behind `DANGLING_DEP`.
+ * The floor over a loaded ledger, including the two reads it needs: the 404-discriminating probe
+ * behind `DANGLING_DEP`, and each dependent's `blocked_by` list behind `UNENFORCED_DEP`.
  *
  * An `Unknown` probe refuses on `11` rather than resolving either way — "I could not tell whether
- * this ref exists" is not "it does", and it is certainly not "it does not".
+ * this ref exists" is not "it does", and it is certainly not "it does not". An unread `blocked_by`
+ * list refuses the same way: an edge nobody could see is never an edge that is there.
  */
 export const deriveFloorFor = (
 	messages: PlanMessages,
 	repo: string,
 	ledger: LedgerScope,
 	vocabulary: ContainmentVocabulary,
+	required: ReadonlyArray<RequiredEdge>,
 ): Effect.Effect<
 	FloorRead,
 	never,
@@ -318,5 +341,36 @@ export const deriveFloorFor = (
 			}
 			if (found._tag === "Absent") provenAbsent.add(ref);
 		}
-		return {_tag: "Floor" as const, floor: deriveFloor({ledger, provenAbsent, vocabulary})};
+
+		const dependents = [
+			...new Set(edgesToEnforce(required, provenAbsent).map((edge) => edge.dependent)),
+		].sort((a, b) => a - b);
+		const graph = yield* Effect.forEach(
+			dependents,
+			(number) => blockedBy(repo, number).pipe(Effect.map((found) => [number, found] as const)),
+			{concurrency: FAN_OUT},
+		);
+		const observed = new Map<number, ReadonlySet<number>>();
+		for (const [number, found] of graph) {
+			if (found._tag !== "Present") {
+				return {
+					_tag: "Refused" as const,
+					outcome: refuse(
+						PRECONDITION_UNKNOWN,
+						messages.unreadable(
+							`#${number}'s blocked_by list`,
+							found._tag === "Absent"
+								? "it answered 404 for an issue the topology names"
+								: found.reason,
+						),
+					),
+				};
+			}
+			observed.set(number, new Set(found.value));
+		}
+
+		return {
+			_tag: "Floor" as const,
+			floor: deriveFloor({ledger, provenAbsent, required, observed, vocabulary}),
+		};
 	});

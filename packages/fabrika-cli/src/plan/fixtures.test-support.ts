@@ -134,6 +134,16 @@ export const SUB_ISSUES = new RegExp(
 );
 export const CHILD = (number: number): RegExp =>
 	new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/${number}$`);
+/** The native `blocked_by` list `UNENFORCED_DEP` is derived over. */
+export const BLOCKED_BY = (number: number): RegExp =>
+	new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/${number}\\/dependencies\\/blocked_by`);
+/** The list payload that endpoint answers — full issue rows, of which the reader takes `number`. */
+export const blockers = (...numbers: ReadonlyArray<number>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(
+		numbers.map((number) => ({number, state: "open", title: `blocker ${number}`})),
+	),
+});
 /**
  * The cycle-doc probe. Bound to the doc's own path, not to `contents/`: the roster reads
  * `.github/CODEOWNERS` through the same endpoint, and a prefix pattern here answers that read too.

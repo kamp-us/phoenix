@@ -122,7 +122,7 @@ as the sibling contracts do):
   homed or standing-lane exempt) and computes no second answer, because a planner that told an
   author "homed" while the guard reds is worse than one that stays quiet.
 - **The structural floor.** `fabrika plan check` is the whole pass/fail decision over the
-  thirteen hard defects, and it is [`check-epic-plan`](../check-epic-plan/contract.md)'s. This
+  fourteen hard defects, and it is [`check-epic-plan`](../check-epic-plan/contract.md)'s. This
   group derives no second verdict; `ledger draft`, `ledger child` and `ledger topology` each
   validate *the document they are composing* so a defect is caught at authoring time, which is a
   different question from grading a finished ledger.
@@ -147,6 +147,7 @@ as the sibling contracts do):
 | `ledger child` | mint one child with every birth attribute in one create, link it, re-read it, record it | a guarded write with a read-back; *what the child should contain* is the skill's, taken as input |
 | `ledger topology` | validate the declared edges against the recorded children and render the block | a total function from edges to a verdict — cycles, dangling refs and orphans are decidable; *which slices may run in parallel* is the skill's |
 | `ledger write` | splice the staged plan and topology into the epic body, byte-verified | anchor resolution + a guarded PATCH with a round-trip diff — no judgment |
+| `ledger edges` | write the epic's written `## Dependencies` block into the native `blocked_by` graph, reconciling rather than replacing | a total derivation from the block to the pairs it owes, plus a guarded write with a read-back — no judgment; *what the topology should be* was decided at `ledger topology` |
 | `ledger supersede` | retire a child the re-plan no longer contains | an ordered three-leg write with a read-back; *which child to retire* is the skill's |
 
 **Considered and not derived: a `ledger validate` verb** that pre-runs the gate's floor. It would
@@ -276,10 +277,13 @@ rests on.** Walked against every write this contract makes:
 | `ledger child` — link as sub-issue | no — `sub_issues` is a separate relation; the body is untouched |
 | `ledger topology` — render into the run directory | no — nothing reaches GitHub |
 | `ledger supersede` — comment, unlink, close the child | no — a different issue |
-| `ledger write` — PATCH the epic body | **yes, and it is the last write of the run** |
+| `ledger write` — PATCH the epic body | **yes, and it is the only write that does** |
+| `ledger edges` — POST each missing `blocked_by` edge | no — a native relation on the children; the body is untouched, which is why it may run after `write` |
 
 So the digest taken at `open` still binds through minting, topology and supersede, and is consumed
-by the single body write. **It is void afterwards**: a second `ledger write` in one run is not a
+by the single body write. `ledger edges` runs after that write and takes no digest at all, because
+it writes no body text and its own guard is the graph read-back. **The digest is void afterwards**:
+a second `ledger write` in one run is not a
 supported operation, and a caller that re-uses a spent digest gets `21` rather than a silent
 double-splice. Unlike the sibling gate's scope digest this one is deliberately *not* neutral to
 its own guarded write — the write is terminal, so neutrality would buy nothing and would require
@@ -356,9 +360,10 @@ Every `ledger` verb obeys these; stated once.
   per [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql),
   paginated in full — v1's idempotency read used `per_page=100` with no `--paginate`, so in any
   repo past a hundred open issues its duplicate check was mostly blind and failed by re-minting.
-- **Bounded fan-out, where there is any.** Only `ledger open` fans out — it reads every existing
-  child of the epic — and it does so at concurrency **8**, never `"unbounded"`; a rate-limit
-  response must not abort the whole read, which is how v1's sixty-child epic failed. **No other verb fans out over a
+- **Bounded fan-out, where there is any.** Two verbs fan out and both do so at concurrency **8**,
+  never `"unbounded"`; a rate-limit response must not abort the whole read, which is how v1's
+  sixty-child epic failed. `ledger open` reads every existing child of the epic, and `ledger edges`
+  reads one `blocked_by` list per dependent the topology names. **No other verb fans out over a
   set**, so no other verb needs the rule: `child` mints one child, `supersede` retires one child
   (touching the epic only to unlink it), and `topology` writes nothing at all — it reads the epic
   once for the shared preconditions and derives everything else from the manifest. There is deliberately no
@@ -368,8 +373,9 @@ Every `ledger` verb obeys these; stated once.
 - **Preconditions.** Every verb runs `resolveTargetRepo`, refuses a non-`type:epic` target on
   `10`, resolves the run directory (`11` when the tree root cannot be read), and runs
   the imported `requireClaim` on the **epic** number (`15`). Every verb's `7` means **zero scope**;
-  for five of the six that is the epic proven absent (404) or closed, and `ledger topology` adds one
-  documented arm — an empty run manifest — stated in its own table with its reason.
+  for five of the seven that is the epic proven absent (404) or closed, and two add one documented
+  arm each — an empty run manifest for `ledger topology`, an epic declaring no topology for `ledger
+  edges` — stated in their own tables with their reasons.
   **`13` is not this group's.** `--require-clean` belongs to `fabrika build tree`, called once at
   the skill's step 1; no `ledger` verb declares that flag, so none can seat the code. It is carried
   in the matrix below only as a reserved seat with `build`'s meaning.
@@ -1092,6 +1098,111 @@ $ echo $?
 
 ---
 
+## `ledger edges`
+
+**Invocation**
+
+```
+fabrika ledger edges <epic> --token <claim-token> [--repo owner/name]
+```
+
+**Answer**
+
+```json
+{"answer": "reconciled", "epic": 4300, "required": 3, "already": 1, "written": 2, "verified": true}
+```
+
+**Why it exists.** The `## Dependencies` block is a **picture** of the dependency graph, never the
+graph. ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes GitHub's
+native `blocked_by` edges the one carrier of blockedness, and `build eligible` / `build claim` read
+only those. So a plan that stops at the picture admits a child it has itself declared blocked: epic
+#6595 stated in three places that #6598 waited on the open, unruled decision #6597, and `build claim`
+took it on `scanned 0 blocked_by edges`
+([#6616](https://github.com/kamp-us/phoenix/issues/6616)). This verb is the bridge.
+
+Order of operations:
+
+1. **Read the epic's own body**, not this run's staged `topology.md`. The board is what the gates
+   read, so the board is what the graph is compared against — and reading the body is what lets this
+   verb reconcile an epic some earlier run planned, which is the whole repair path for an epic
+   already published with prose-only dependencies. An unparseable block is `4`; a body with no block,
+   or one whose block parses to nothing, is `7`.
+2. **Derive the required pairs** through `requiredEdges` in
+   [`build/dependencies.ts`](../../../../packages/fabrika-cli/src/build/dependencies.ts) — one
+   statement of the rule, shared with the gate's `UNENFORCED_DEP`. A `requires:` row is the precise
+   gate where one is present; otherwise the phase boundary is, and the subject waits on every earlier
+   phase. A ledger-local `C<int>` names no issue, so no edge over it is required.
+3. **Read one `blocked_by` list per dependent**, bounded at concurrency 8. An unread list is `11`
+   and **nothing is written** — an edge nobody could see is never an edge that is there.
+4. **Resolve each missing prerequisite's internal `id`** and POST the edge on that id, never on the
+   issue number ([`io/edges.ts`](../../../../packages/fabrika-cli/src/io/edges.ts)'s
+   `EDGE-BODY-TAKES-AN-INTERNAL-ID`). A prerequisite proven absent is `24`: the topology is wrong,
+   and no edge can point at it.
+5. **Re-read every dependent's list and prove each required pair**. A POST's own response is not
+   evidence: a refused write and a write whose response was lost look identical at the client, and
+   only the graph tells them apart. An unread re-read is `8`; a pair that does not read back is `9`.
+
+**Reconcile, never replace.** Only missing edges are written. An edge the block does not name is
+left alone, because a `blocked_by` list may carry edges no ledger authored — a human's, another
+epic's — and deleting one would unblock work on the strength of a document that was never the
+carrier. The verb is therefore idempotent: a second run over a reconciled epic writes nothing and
+answers `written: 0`.
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `4` | the `## Dependencies` block is unparseable |
+| `7` | the epic is proven absent or closed, or it declares no topology — zero scope |
+| `8` | edges were POSTed and the graph could not be re-read — UNKNOWN |
+| `9` | the graph does not read back carrying every required edge |
+| `10` | the issue is not a `type:epic` |
+| `11` | a read failed before any write — **nothing was written** |
+| `15` | this lane does not hold the epic's claim |
+| `24` | a prerequisite the block names is proven absent, so no edge can point at it |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `ledger edges: #<n>'s ## Dependencies block is unparseable at line <k>: <text>` | 4 | refusal |
+| `ledger edges: #<n> declares no topology — refusing to answer over zero scope (ADR 0092).` | 7 | refusal |
+| `ledger edges: <k> edge(s) were POSTed and cannot be confirmed — cannot read <what>: <reason>.` | 8 | refusal |
+| `ledger edges: <k> edge(s) do not read back on the graph — it needs a human eye.` | 9 | refusal |
+| `ledger edges: #<n> is not a type:epic — refusing to write edges for it.` | 10 | refusal |
+| `ledger edges: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
+| `ledger edges: this lane does not hold #<n>'s claim.` | 15 | refusal |
+| `ledger edges: #<n> is named as a prerequisite and is proven absent — no edge can point at it.` | 24 | refusal |
+
+**Scope** — one epic body read, one `blocked_by` read per dependent, one POST per missing edge, and
+one confirming read per dependent. The scanned line names the required-edge count, so an answer over
+a surprising scope is auditable without re-running.
+
+**Examples**
+
+```
+$ fabrika ledger edges 4300 --token <claim-token>
+ledger edges: scanned 3 required edges.
+{"answer":"reconciled","epic":4300,"required":3,"already":1,"written":2,"verified":true}
+```
+
+```
+$ fabrika ledger edges 4300 --token <claim-token>
+ledger edges: #4300 declares no topology — refusing to answer over zero scope (ADR 0092).
+$ echo $?
+7
+```
+
+**Grounding**
+
+- [#6616](https://github.com/kamp-us/phoenix/issues/6616) — the defect this verb answers, with the
+  epic #6595 / #6597 / #6598 reproduction.
+- ADR 0301 — the `blocked_by` graph is the carrier; the prose block is at most a picture of it.
+- [`map ticket`](../../../../packages/fabrika-cli/src/map/ticket-verb.ts) — the shipped precedent for
+  writing an edge on a resolved internal id, whose shape this verb follows rather than re-deriving.
+
+---
+
 ## `ledger supersede`
 
 **Invocation**
@@ -1224,9 +1335,9 @@ The three hand-checks the presence tests cannot perform:
    set reaches `ledger topology` and `ledger supersede` through `<dir>/children.jsonl`, and the
    staged documents reach `ledger write` through the run directory — so a compaction between
    minting and splicing loses nothing, which is the v1 failure this shape exists to remove.
-4. **Sibling verbs guard shared preconditions identically.** All six run `resolveTargetRepo`, the
+4. **Sibling verbs guard shared preconditions identically.** All seven run `resolveTargetRepo`, the
    `type:epic` check (`10`), `assertGround` (`11`), the imported `requireClaim` (`15`) and the
-   same `7` trigger, with `topology`'s one documented widening of `7` (an empty run manifest)
-   stated in its own table. `open` states the other divergence — it alone proves freshness (`20`) —
+   same `7` trigger, with two documented widenings of `7` — `topology`'s empty run manifest and
+   `edges`' epic that declares no topology — stated in their own tables. `open` states the other divergence — it alone proves freshness (`20`) —
    with its reason: the ground is established once and inherited. `13` is seated by no verb here;
    `--require-clean` is `build tree`'s flag at the skill's step 1.

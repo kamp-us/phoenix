@@ -7,6 +7,8 @@ import {OFF_VOCABULARY, PLAN_UNAPPROVED, PRECONDITION_UNKNOWN, ZERO_SCOPE} from 
 import {
 	APPROVER,
 	approvalRow,
+	BLOCKED_BY,
+	blockers,
 	CHILD,
 	CWD,
 	CYCLE_DOC,
@@ -153,6 +155,50 @@ describe("runCheck", () => {
 		expect(unreadable.code).toBe(PRECONDITION_UNKNOWN);
 		expect(unreadable.stdout).toBe("");
 		expect(unreadable.stderr.at(-1)).toContain("the floor is UNKNOWN, not clean");
+	});
+
+	/**
+	 * Epic #6595's shape, end to end: the ledger says #4302 requires #4301 and the graph carries
+	 * nothing. Before this defect the floor answered `clean` here, `plan flip` made #4302 pickable, and
+	 * `build claim` admitted it on `scanned 0 blocked_by edges` (#6616).
+	 */
+	it("reds UNENFORCED_DEP when the graph does not carry a stated dependency", async () => {
+		const gated = epic({
+			body: epicBody({dependencies: "- phase 1: #4301\n- phase 2: #4302\n- #4302 requires: #4301"}),
+		});
+		const script: ReadonlyArray<Scripted> = [
+			[EPIC, gated],
+			[SUBS, subIssues(4301, 4302)],
+			[CHILD_1, child({number: 4301})],
+			[CHILD_2, child({number: 4302, body: childBody({stories: "2"})})],
+			[CYCLE, cycleDoc],
+		];
+
+		const blind = await run([...script, [BLOCKED_BY(4302), blockers()]]);
+		expect(blind.code).toBe(0);
+		expect(JSON.parse(blind.stdout)).toMatchObject({answer: "defective"});
+		expect(JSON.parse(blind.stdout).defects).toContainEqual({
+			type: "UNENFORCED_DEP",
+			refs: [4301, 4302],
+			detail: "#4302 waits on #4301 in prose with no blocked_by edge",
+		});
+
+		const written = await run([...script, [BLOCKED_BY(4302), blockers(4301)]]);
+		expect(JSON.parse(written.stdout)).toMatchObject({answer: "clean"});
+	});
+
+	it("refuses 11 on an unread blocked_by list — an unseen edge is never a present one", async () => {
+		const out = await run([
+			[EPIC, epic({body: epicBody({dependencies: "- phase 1: #4301\n- #4301 requires: #4302"})})],
+			[SUBS, subIssues(4301, 4302)],
+			[CHILD_1, child({number: 4301})],
+			[CHILD_2, child({number: 4302, body: childBody({stories: "2"})})],
+			[CYCLE, cycleDoc],
+			[BLOCKED_BY(4301), {status: 502, body: '{"message":"Bad gateway"}'}],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("the floor is UNKNOWN, not clean");
 	});
 
 	it("refuses zero scope on 7 rather than answering `clean` over nothing", async () => {

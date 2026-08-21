@@ -1,8 +1,14 @@
 /**
- * The floor: a total function from the ledger to a sorted defect list over a closed thirteen-type
+ * The floor: a total function from the ledger to a sorted defect list over a closed fourteen-type
  * enum. `plan check` is this function plus a fetch; nothing above it can change the answer.
  *
- * **Fourteen names, thirteen defects.** `ZERO_SCOPE` is the fourteenth and is seated as exit `7`
+ * **`UNENFORCED_DEP` is the one defect about the *board* rather than the document.** ADR 0301 makes
+ * the native `blocked_by` graph the only carrier of blockedness, so a plan whose dependency lives in
+ * `## Dependencies` alone is a plan whose gates are blind — epic #6595 admitted a child gated behind
+ * an open, unruled decision (#6616). This defect is what makes "floor clean" mean the graph agrees
+ * with the prose; `ledger edges` is the write that clears it.
+ *
+ * **Fifteen names, fourteen defects.** `ZERO_SCOPE` is the fifteenth and is seated as exit `7`
  * rather than as defect zero: v1 made a childless epic defect #1 and early-returned, so the ledger
  * was never validated and the verdict reported exactly one thing wrong about a plan it had not read.
  * A refused scope is not a defect list of length one (ADR 0092).
@@ -15,6 +21,7 @@
  * The priority set is exactly `{p0, p1, p2}` — `p3` was ruled *retired*, not widened (#4101, #2413).
  */
 
+import type {RequiredEdge} from "../build/dependencies.ts";
 import {type ContainmentVocabulary, containmentGap} from "../config/keys/containment-vocabulary.ts";
 import type {LedgerScope} from "./digest.ts";
 import type {ChildLedger} from "./model.ts";
@@ -24,6 +31,7 @@ export const DEFECT_TYPES = [
 	"MISSING_DEPS_SECTION",
 	"DEP_CYCLE",
 	"DANGLING_DEP",
+	"UNENFORCED_DEP",
 	"ORPHAN_CHILD",
 	"MISSING_STORIES_SECTION",
 	"UNCOVERED_STORY",
@@ -169,10 +177,33 @@ const missingLabelKinds = (labels: ReadonlyArray<string>): ReadonlyArray<string>
 	return missing;
 };
 
+/**
+ * The required pairs `UNENFORCED_DEP` is derived over: everything except a pair whose prerequisite the
+ * probe proved absent, which is `DANGLING_DEP`'s and which no edge could point at anyway.
+ *
+ * Exported because the verb reads a `blocked_by` list per dependent and must read exactly this set —
+ * two spellings of the filter would let the floor report a pair the verb never read, which reads as a
+ * defect and is really an unread.
+ */
+export const edgesToEnforce = (
+	required: ReadonlyArray<RequiredEdge>,
+	provenAbsent: ReadonlySet<number>,
+): ReadonlyArray<RequiredEdge> => required.filter((edge) => !provenAbsent.has(edge.prerequisite));
+
 export interface FloorInput {
 	readonly ledger: LedgerScope;
 	/** The refs {@link refsToProbe} named that a 404-discriminating probe proved **absent**. */
 	readonly provenAbsent: ReadonlySet<number>;
+	/** Every `blocked_by` edge the topology requires, off the one derivation in `build/dependencies.ts`. */
+	readonly required: ReadonlyArray<RequiredEdge>;
+	/**
+	 * Each dependent's observed `blocked_by` set, read off the board.
+	 *
+	 * Total over the dependents `required` names — the verb refuses on an unread list rather than
+	 * calling this, so a dependent absent from the map is read here as carrying no edges, which is the
+	 * fail-closed direction (ADR 0092).
+	 */
+	readonly observed: ReadonlyMap<number, ReadonlySet<number>>;
 	/**
 	 * The resolved containment vocabulary — config, not ledger, which is why it is an input here
 	 * rather than a field of the ledger the scope digest is taken over.
@@ -180,7 +211,13 @@ export interface FloorInput {
 	readonly vocabulary: ContainmentVocabulary;
 }
 
-export const deriveFloor = ({ledger, provenAbsent, vocabulary}: FloorInput): Floor => {
+export const deriveFloor = ({
+	ledger,
+	provenAbsent,
+	required,
+	observed,
+	vocabulary,
+}: FloorInput): Floor => {
 	const defects: Defect[] = [];
 
 	if (ledger.dependenciesAbsent) {
@@ -206,6 +243,15 @@ export const deriveFloor = ({ledger, provenAbsent, vocabulary}: FloorInput): Flo
 			type: "DANGLING_DEP",
 			refs: [ref],
 			detail: `#${ref} is referenced but is not a child and is proven absent`,
+		});
+	}
+
+	for (const {dependent, prerequisite} of edgesToEnforce(required, provenAbsent)) {
+		if (observed.get(dependent)?.has(prerequisite) === true) continue;
+		defects.push({
+			type: "UNENFORCED_DEP",
+			refs: [dependent, prerequisite].sort((a, b) => a - b),
+			detail: `#${dependent} waits on #${prerequisite} in prose with no blocked_by edge`,
 		});
 	}
 

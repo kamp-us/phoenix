@@ -1,4 +1,5 @@
 import {describe, expect, it} from "vitest";
+import type {RequiredEdge} from "../build/dependencies.ts";
 import {SHIPPED_CONTAINMENT_VOCABULARY} from "../config/keys/containment-vocabulary.ts";
 import {DEFECT_TYPES, type DefectType, deriveFloor, refsToProbe} from "./defects.ts";
 import type {LedgerScope} from "./digest.ts";
@@ -27,15 +28,35 @@ const scope = (overrides: Partial<LedgerScope> = {}): LedgerScope => ({
 	...overrides,
 });
 
-const floorOf = (overrides: Partial<LedgerScope> = {}, absent: ReadonlyArray<number> = []) =>
+/** The board half of the floor's inputs: what the topology owes, and what the graph carries. */
+interface Graph {
+	readonly required?: ReadonlyArray<RequiredEdge>;
+	readonly observed?: Readonly<Record<number, ReadonlyArray<number>>>;
+}
+
+const floorOf = (
+	overrides: Partial<LedgerScope> = {},
+	absent: ReadonlyArray<number> = [],
+	graph: Graph = {},
+) =>
 	deriveFloor({
 		ledger: scope(overrides),
 		provenAbsent: new Set(absent),
+		required: graph.required ?? [],
+		observed: new Map(
+			Object.entries(graph.observed ?? {}).map(([number, blockers]) => [
+				Number.parseInt(number, 10),
+				new Set(blockers),
+			]),
+		),
 		vocabulary: SHIPPED_CONTAINMENT_VOCABULARY,
 	});
 
-const types = (overrides: Partial<LedgerScope> = {}, absent: ReadonlyArray<number> = []) =>
-	floorOf(overrides, absent).defects.map((defect) => defect.type);
+const types = (
+	overrides: Partial<LedgerScope> = {},
+	absent: ReadonlyArray<number> = [],
+	graph: Graph = {},
+) => floorOf(overrides, absent, graph).defects.map((defect) => defect.type);
 
 describe("a clean plan", () => {
 	it("derives no defects and skips no class", () => {
@@ -43,7 +64,7 @@ describe("a clean plan", () => {
 	});
 });
 
-describe("each of the thirteen types fires on its own condition", () => {
+describe("each of the fourteen types fires on its own condition", () => {
 	it("MISSING_DEPS_SECTION", () => {
 		expect(types({dependenciesAbsent: true})).toContain("MISSING_DEPS_SECTION");
 	});
@@ -76,6 +97,41 @@ describe("each of the thirteen types fires on its own condition", () => {
 		};
 		expect(types(referenced, [9999])).toContain("DANGLING_DEP");
 		expect(types(referenced, [])).not.toContain("DANGLING_DEP");
+	});
+
+	/**
+	 * The pre-fix state, in one assertion: epic #6595's shape — a phase-2 child requiring an open
+	 * phase-1 decision — with the dependency in prose and nothing on the graph. Before `UNENFORCED_DEP`
+	 * this floor read `clean`, `plan flip` made the child pickable, and `build claim` admitted it on
+	 * `scanned 0 blocked_by edges` (#6616).
+	 */
+	it("UNENFORCED_DEP when the prose names an edge the graph does not carry", () => {
+		const gated = {
+			children: [child({number: 6597}), child({number: 6598})],
+			topology: {
+				phases: [
+					{phase: 1, members: ["#6597"]},
+					{phase: 2, members: ["#6598"]},
+				],
+				edges: [["#6598", "#6597"] as const],
+			},
+		};
+		const required: ReadonlyArray<RequiredEdge> = [{dependent: 6598, prerequisite: 6597}];
+
+		const blind = floorOf(gated, [], {required});
+		const defect = blind.defects.find((row) => row.type === "UNENFORCED_DEP");
+		expect(defect?.refs).toEqual([6597, 6598]);
+		expect(defect?.detail).toBe("#6598 waits on #6597 in prose with no blocked_by edge");
+
+		expect(types(gated, [], {required, observed: {6598: [6597]}})).not.toContain("UNENFORCED_DEP");
+	});
+
+	it("UNENFORCED_DEP yields to DANGLING_DEP when the prerequisite is proven absent", () => {
+		const dangling = {
+			topology: {phases: [{phase: 1, members: ["#4301", "#9999"]}], edges: []},
+		};
+		const required: ReadonlyArray<RequiredEdge> = [{dependent: 4301, prerequisite: 9999}];
+		expect(types(dangling, [9999], {required})).not.toContain("UNENFORCED_DEP");
 	});
 
 	it("ORPHAN_CHILD", () => {
