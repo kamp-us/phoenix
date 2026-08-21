@@ -2245,6 +2245,7 @@ comment reads back, so a write that then fails can never destroy the standing di
 | `build deviations: the disclosure landed on comment <id>, but <k> superseded marker(s) could not be retracted (<ids>) — #<n> still carries more than one, so \`fabrika wire read --format build-deviations\` reads it as malformed; delete them and re-run.` | 8 | refusal |
 | `build deviations: posted (comment <id>) but the read-back does not yield this disclosure (<why>) — it needs a human eye.` | 9 | refusal |
 | `build deviations: #<n> is a pull request — a PR discloses in its body, and this marker is the epic child's surface (ADR 0285). Use \`fabrika build pr\` or \`fabrika build pr-body\`.` | 10 | refusal |
+| `build deviations: cannot read #<n>: <reason> — nothing was written.` | 11 | refusal |
 | `build deviations: cannot read #<n>'s comments: <reason> — nothing was written; a partial list would stack a second marker.` | 11 | refusal |
 | `build deviations: cannot read the authenticated user: <reason> — nothing was written.` | 11 | refusal |
 | `build deviations: #<n> is held by <winning token>, not by <caller token>.` | 15 | refusal |
