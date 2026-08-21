@@ -135,7 +135,7 @@ teardown path — `Stream.ensuring(closeStream)` fires and the queue + the
 merged heartbeat fiber are reclaimed. But the fiber's exit is a `Failure`
 carrying an **interrupt-only** `Cause`, and `Cause.squash` of an
 interrupt-only cause is a generic `Error("All fibers interrupted without
-error")` (effect-smol `Cause.squash`). `Stream.toReadableStream`'s observer
+error")` (`Effect-TS/effect` `Cause.squash`). `Stream.toReadableStream`'s observer
 reports any `Failure` exit via `controller.error(...)`, so the workerd
 isolate logs this squashed error as an *uncaught exception* on every
 disconnect.

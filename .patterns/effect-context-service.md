@@ -5,7 +5,7 @@
 How to define and wire services in phoenix's worker.
 
 > [!IMPORTANT]
-> **phoenix is on Effect v4** (`effect@4.0.0-beta.*` — the effect-smol line). Every idiom in this doc is v4. Effect **v3** is what most training data and blog posts show, and several of its core idioms are *wrong* here. The one that bites hardest:
+> **phoenix is on Effect v4** (`effect@4.0.0-beta.*`, developed on [`Effect-TS/effect`](https://github.com/Effect-TS/effect) main). Every idiom in this doc is v4. Effect **v3** is what most training data and blog posts show, and several of its core idioms are *wrong* here. The one that bites hardest:
 >
 > | concept | Effect **v3** — DO NOT use | Effect **v4** — phoenix |
 > |---|---|---|
@@ -167,7 +167,7 @@ When a service wraps a **non-Effect client** (a synchronous fluent object, a
 Promise-based SDK), don't expose the raw client and let callers `Effect.try` at
 every call site. Expose a `use` method that runs a caller-supplied function
 against the client *inside* the Effect, surfacing a typed error. This is
-effect-smol's `NodeRedis.use` / `BunRedis.use` shape, adapted per client.
+`Effect-TS/effect`'s `NodeRedis.use` / `BunRedis.use` shape, adapted per client.
 
 phoenix's shipped application of this pattern is the live publisher
 (`worker/features/fate-live/live-publisher.ts`, originating as the `LiveBus`

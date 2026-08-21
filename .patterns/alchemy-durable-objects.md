@@ -169,7 +169,7 @@ through untouched**. The SSE-open path is the one exception: a cold-DO `stub.fet
 rejection arrives as a **defect**, not an `RpcCallError` failure, so the open call site
 uses the sibling `withColdStartRetryFetch`, which lifts the transport defect into the same
 retryable shape. Why the cold-start race is the steady state, and the retryable-only
-schedule shape (grounded in effect-smol `LLMS.md`), live in
+schedule shape (grounded in `Effect-TS/effect` `LLMS.md`), live in
 [ADR 0095](../.decisions/0095-cold-start-retry-rpc-transport-seam.md) and
 [ADR 0094](../.decisions/0094-app-lifetime-global-live-pin.md).
 

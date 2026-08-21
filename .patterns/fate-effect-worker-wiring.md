@@ -91,7 +91,7 @@ const {contextLayer: fateLayer} = makeFateRuntime(
 
 ### CF deviation — never dispose
 
-effect-smol's `LLMS.md` integration example disposes the runtime on `SIGINT`/`SIGTERM`. A
+`Effect-TS/effect`'s `LLMS.md` integration example disposes the runtime on `SIGINT`/`SIGTERM`. A
 Cloudflare Worker isolate **has no shutdown hook**, so phoenix never calls `dispose()`: the
 runtime lives for the isolate's lifetime, and Drizzle/D1 holds no poolable socket to release, so
 there is nothing leaked by not disposing. Recorded in
@@ -125,7 +125,7 @@ const res = yield* FateInterpreter.handleRequest(raw, ctx).pipe(interruptOnAbort
   `interruptOnAbort(signal)` (`worker/http/interrupt-on-abort.ts`, beside the router assembly
   it serves; unit-tested in `interrupt-on-abort.unit.test.ts`)
   forks the program as a child of the request fiber and interrupts it from the signal's
-  `abort` listener — effect-smol's own platform idiom (`HttpEffect.toWebHandlerWith`).
+  `abort` listener — `Effect-TS/effect`'s own platform idiom (`HttpEffect.toWebHandlerWith`).
 - **One ctx object per request**: the interpreter provides the pair as VALUES off this object
   to every operation. Never copy/rebuild it per resolver.
 - The publish surface rides one topic capability: the worker-init `LiveTopics.publish` with the

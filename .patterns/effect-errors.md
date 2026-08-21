@@ -101,7 +101,7 @@ The explicit union is the method's contract. TypeScript will:
 - Catch you when you add a new failure case to the body but forget to widen the signature.
 - Catch you when you remove a case from the body but leave the signature wide.
 
-Read effect-smol's `MessageStorage` (in `packages/effect/src/unstable/cluster/MessageStorage.ts`) for a real codebase example — every method spells out exactly which errors it can raise.
+Read `Effect-TS/effect`'s `MessageStorage` (in `packages/effect/src/unstable/cluster/MessageStorage.ts`) for a real codebase example — every method spells out exactly which errors it can raise.
 
 ## Raising errors inside `Effect.fn`
 
