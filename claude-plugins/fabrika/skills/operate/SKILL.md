@@ -415,8 +415,10 @@ or an event recorded this pass.
 ## 3 — Verify the record landed, and record what no shell can
 
 **A shell records its own terminal.** Every spawned shell ends by invoking
-`lane report <lane> --root <root> --token <TOKEN>` against the lane and root its brief named, and
-the token→event map is code
+`lane report <lane> --root <root> --task <task> --token <TOKEN>` against the lane, root and task its
+brief named — the same `--task` you pass on your own `lane transition`, because the shell's report
+resolves a task exactly as yours does and refuses at exit `13` on a multi-task lane without one
+(#6084). The token→event map is code
 ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts)),
 never a table you execute — an unrecognised token is that verb's refusal (exit `32`), not a reading
 of yours. **That verb proves before it appends**: it runs `lane prove`'s read on the mapped event
