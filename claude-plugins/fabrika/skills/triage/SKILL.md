@@ -90,8 +90,10 @@ you read it. **No founder ruling is owed for that close** — the
 [#6070 (c) ruling](https://github.com/kamp-us/phoenix/issues/6070#issuecomment-5361950454) already
 lets triage close a twin on its own judgment, and ADR
 [0328](../../../../.decisions/0328-report-freshness-check-at-triage.md) puts this check at this
-layer for the same reason. The check reaches agent filings only: §8's rule stands
-unchanged — **a human filing is parked, never killed**, however plainly main already fixed it.
+layer for the same reason. This close carries no `--duplicate-of`, so it reaches agent filings only:
+§8's rule stands unchanged — **a human filing is parked, never killed** on this path, however
+plainly main already fixed it. Fold it into a survivor with `--duplicate-of` and provenance stops
+mattering; a bare `--confirm` close of a human filing still refuses on `12`.
 
 Done when you can state the issue from the code, the dedup outcome is read, and an agent-filed gap
 has been read at main.
@@ -142,9 +144,12 @@ Read the candidates yourself and take the cheapest true route:
 - **An open epic or issue already owns this surface** → **fold in and close**, which is the preferred
   outcome. Add this issue's content to the survivor, then close this one against it so the trail runs
   both ways — the survivor carries the content, this issue points at the survivor. `fabrika triage
-  kill $issue_number --confirm --duplicate-of 4290` is the folding route, and it is only open to an agent
-  filing (step 8); for a human filing, add the content to the survivor by hand and carry on triaging
-  this one, since a human filing is never closed here.
+  kill $issue_number --confirm --duplicate-of 4290` is the folding route, and it is open whatever the
+  provenance — a human filing folds and closes here exactly as an agent filing does
+  ([#6070's ruling](https://github.com/kamp-us/phoenix/issues/6070#issuecomment-5361950454)), because
+  a fold moves the content into the survivor instead of discarding it. `--confirm` is still required,
+  and it is the `--duplicate-of` that opens the close, not the `--confirm`: a bare `--confirm` close
+  of a human filing still refuses on `12` (step 8).
 - **Several small items cluster on one surface with no owner yet** → **make the cluster an epic**
   rather than minting each item as its own ticket. An epic's children ship as one pull request, so a
   cluster of small items costs one review-and-merge round instead of five.
@@ -170,7 +175,8 @@ section (`fabrika wire doc-section --heading "triage split" < <skill-base>/contr
 
 Done when every unit is separately pickable. **A human-filed original always stays one of the
 units** — only an agent filing may be left as an empty husk and killed, because a husk parked on
-`status:needs-info` is a question nobody can answer.
+`status:needs-info` is a question nobody can answer. The `--duplicate-of` exception below does not
+reach here: a split leaves no survivor to fold the original into, so nothing licenses that close.
 
 ## 6 — Home it, then enrich: rewrite on top, original preserved beneath
 
@@ -313,7 +319,11 @@ kills an agent-filed issue when any one of five clauses holds:
 
 Those examples are verdicts, not hypotheticals: a sweep on 2026-08-18 killed twelve of thirty-five
 triaged `p2`s, and every one of them landed in a clause above. The bar reaches agent-filed work only
-— **a human filing is parked, never killed**, however cleanly it fits a clause.
+— **a human filing is parked, never killed**, however cleanly it fits a clause, with one exception:
+a `--duplicate-of` fold closes it whatever its provenance
+([#6070's ruling](https://github.com/kamp-us/phoenix/issues/6070#issuecomment-5361950454)), because
+a fold moves the content into the survivor instead of discarding it. Every other close of a human
+filing still refuses on `12`.
 
 Done when the issue has left the queue by exactly one route.
 

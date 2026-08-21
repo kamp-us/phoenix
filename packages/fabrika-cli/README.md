@@ -1064,16 +1064,16 @@ Take one intake-queue issue from arrival to triaged. Contract:
 | `triage enrich` | an issue body replaced with the rewrite on stdin |
 | `triage apply` | type, priority, audience, status and home stamped as one owned-facet reconcile, read back |
 | `triage park` | an issue demoted to needs-info with the questions on stdin |
-| `triage kill` | an agent-filed issue closed not-planned, with a reason |
+| `triage kill` | an agent-filed issue — or any issue folded into a survivor with `--duplicate-of` — closed not-planned, with a reason |
 | `triage repair-criteria` | an acceptance-criteria block's shape repaired mechanically |
 | `triage scratch` | the per-lane directory a triager's working files go under |
 
-**Exit codes.** The shared table, plus `12` the issue is human-filed · `13` agent-filed and
-close-eligible, but the kill is unconfirmed (ADR 0159) · `14` the criteria block is drifted in a
-way no mechanical repair covers · `15` the composed body's authored region carries a `Malformed`
-criteria block · `16` `--ready-for agent` over a body whose criteria block does not read `Found` ·
-`17` a live claim marker names another session · `18` no value of `.fabrika.jsonc` may be used ·
-`19` the asking lane holds no live claim on the target. `4` is a deliberate gap.
+**Exit codes.** The shared table, plus `12` the issue is human-filed and no `--duplicate-of` fold
+was named · `13` close-eligible, but the kill is unconfirmed (ADR 0159) · `14` the criteria block is
+drifted in a way no mechanical repair covers · `15` the composed body's authored region carries a
+`Malformed` criteria block · `16` `--ready-for agent` over a body whose criteria block does not
+read `Found` · `17` a live claim marker names another session · `18` no value of `.fabrika.jsonc`
+may be used · `19` the asking lane holds no live claim on the target. `4` is a deliberate gap.
 
 Two repairs are worth spelling out, because they are what `repair-criteria` will and will not do.
 It rewrites a level-drifted `## Acceptance criteria` heading to the conforming `###`, and, when the
