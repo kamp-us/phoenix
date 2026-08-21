@@ -887,9 +887,11 @@ permits no merge method at all · `23` a label this run would POST is absent fro
 - **`17` is the loud one.** It says the nudge's close landed and its reopen is unconfirmed, a state
   so much worse than a failed write that folding it into `8` would hide the one fact an operator
   must act on now.
-- **Exactly two verbs use GraphQL** (`threads`, `resolve`), because review-thread resolution state
-  has no REST equivalent. Every other verb is a REST read, paginated, with the platform's
-  declared count carried beside what arrived.
+- **GraphQL is a three-item carve** (ADR 0315): review-thread state and its mutations (`threads`,
+  `resolve`), the auto-merge mutation, and the closing-issue edge `lane`/`recipe` read. Everything
+  else is a REST read, paginated, and it carries the proof its endpoint declares — an envelope read
+  a `total_count` beside what arrived, a bare-array read the `Link` header's exhaustion. Both come
+  back with `exhausted`, and a walk that stopped at the 50-page cap is a refusal, never a short list.
 
 ## The `spend` group
 

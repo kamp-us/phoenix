@@ -127,3 +127,50 @@ carve all stand exactly as ruled above.
   `404-IS-A-VERDICT` discipline `src/io/edges.ts` anchors: the dependency endpoints answer `200 []`
   for a real issue with no edges and `404` for an issue that does not exist, and fusing the two
   prints a proven negative over zero scope (ADR 0092).
+
+## Amendment, 2026-08-21 — phases 2 and 3 landed: the coexistence ended, and the carve is three items
+
+Recorded on the epic-tail review of [#6690](https://github.com/kamp-us/phoenix/pull/6690), which
+red this record against the tree the same commit ships
+([review-doc](https://github.com/kamp-us/phoenix/pull/6690#issuecomment-5363699640),
+[governance](https://github.com/kamp-us/phoenix/pull/6690#issuecomment-5363634729)).
+
+**The Consequences section above describes the phase-1 world, and it is retracted.** Two of its
+bullets — "`src/ui/pull-head.ts` is the tracer … every other adapter still spawns `gh`" and "the `gh`
+binary … stays one for the rest" — were true of the tracer commit and false of the epic. Every
+adapter in the package is ported, the `gh`-shaped parser layer is deleted, and
+`fabrika guard no-gh check` reds a second transport in CI. There is no `gh` prerequisite, which is
+what [the package README](../packages/fabrika-cli/README.md) says one screen away.
+
+**The carve has three items, not two.** `openPullsClosing` (`src/io/pulls.ts`) reads
+`repository.issue.closedByPullRequestsReferences` through GraphQL, live in `lane brief`, `lane prove`
+and `recipe unpark`. It is forced the same way the other two are: the closing-issue link edge — which
+PR a `Fixes #N` binds — is published on no REST route at all. The alternative that was tried,
+matching `search/issues` prose, parked a lane on a false match (#5805).
+
+**And the ground the closed list rested on was wider than its fact.** "This org's Projects-classic
+integration errors GraphQL issue queries out" reads as every GraphQL issue query. What breaks is the
+GraphQL **search** connection over this org's issues; `repository(...){issue(number:)}` works, and
+`openPullsClosing` has been running it since before this port. The rule the corpus should carry is
+narrower: **issue search stays REST**, and a GraphQL read is a carve wherever REST publishes no
+equivalent edge. Anything else reaching for GraphQL is still a new decision.
+
+**Two adapter conventions shipped, and the amendment above names one.** "Adapters keep their
+`(repo, …)` signatures and publish neither `HttpClient` nor an `env` parameter" describes
+`io/edges.ts`, `io/issues.ts`, `io/pulls.ts`, `ship/github.ts` and `heal-ci/github.ts`.
+`build/github.ts` does the opposite — `env` first, `HttpClient.HttpClient` published up into
+thirteen verbs. **The ambient shape is the preferred one** and is what a new adapter takes;
+`build/github.ts` is the outlier, [#6693](https://github.com/kamp-us/phoenix/issues/6693) tracks
+normalising it. `ship/roster.ts` reaches the ambient `defaultBranch` in `ship/github.ts` rather than
+`build/github.ts`'s for exactly this reason: it is called from `Shell<…>` sites that thread no `env`.
+
+**The page cap is a real behaviour change and it is stated here rather than left to a reader.**
+`gh api --paginate` had no cap; this transport walks at most `PAGE_CAP = 50` pages. So a list longer
+than that is a state the old transport could not produce and this one can. Every list read in
+`io/issues.ts` and both search reads therefore **refuse** a walk that reached the cap with a
+`rel="next"` still outstanding, rather than answering the short list: eight of them seat proven
+negatives (`openIssuesTitled`'s duplicate check, `issueTimeline`'s twin scan,
+`openIssuesWithLabel`'s dedup sweep), and there a short list is a wrong answer, not a short one.
+`EnvelopeRead` carries `exhausted` beside `declared` so the truncated state is representable at all —
+without it a capped envelope walk is a plain `Ok`, and a caller that does not reconcile `declared`
+reads it as the whole answer.
