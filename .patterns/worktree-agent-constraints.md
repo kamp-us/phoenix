@@ -73,16 +73,19 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
 
 - **A bare `git checkout`/`switch` can detach the *shared primary* HEAD — never run
   one; address git at your worktree explicitly.** This is the cwd-reset bullet's most
-  damaging instance. A worktree agent *armed* by `@kampus/worktree-guard` has its
+  damaging instance. A worktree agent *armed* by `@kampus/worktree-guard` had its
   non-mutating bare commands prepended with `cd "$WORKTREE_ROOT" && …`; a bare
-  **working-state-mutating** op (`checkout`/`switch`/`reset`/`rebase`/`merge`) that
-  is not scoped to the worktree is now **refused outright** by the `pre-bash` guard (the
-  enforced guard route below), because cd-pinning it would only relocate the mutation into
-  the worktree rather than surface the mistake. (`stash` is **not** on that list because
-  scoping does not save it — see the stash hazard below, where the rule is *never*, not
-  *scope it*.) The class this closes: a bare
+  **working-state-mutating** op (`checkout`/`switch`/`reset`/`rebase`/`stash`/`merge`) that
+  was not scoped to the worktree was **refused outright** by the `pre-bash` guard (the
+  retired guard route below), because cd-pinning it would only relocate the mutation into
+  the worktree rather than surface the mistake. `stash` **was** on that list — added for #2030,
+  where a review-doc agent's `git stash pop` + `reset --hard` silently discarded the owner's
+  uncommitted work — but the guard refused only the **unscoped** form and allowed
+  `git -C "$WT" stash`, and that allowance is the hole #6701 fell through. So read the stash
+  hazard below rather than this bullet: there the rule is *never*, not *scope it*.
+  The class this closes: a bare
   `git checkout <pr-head-sha>`, run after a between-calls cwd reset, executes in the
-  **primary** tree — detaching the shared `main`, or (for a bare `merge`)
+  **primary** tree — detaching the shared `main`, or (for a bare `stash pop` / `merge`)
   corrupting its working tree — which then stalls a sibling puller's `git merge --ff-only
   origin/main` with the symptom (puller stuck, merged work not propagating) far from the cause.
   The rule, mandatory for **every** worktree/review/ship agent:
@@ -109,12 +112,14 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   `$WORKTREE_ROOT`) and its legitimate `git checkout main` (ff-pull/reattach) are **never**
   intercepted. The safe form it points agents to — `git -C "$WT" <op> …`, or `git -C "$WT" fetch
   origin pull/<N>/head && git -C "$WT" checkout FETCH_HEAD` for a PR head — is recognized as
-  worktree-scoped and **allowed** — **for the HEAD-moving ops named above, and for those only.**
-  Scoping is a real remedy when the damage is "the command landed in the wrong tree", which is every
-  op on that list. It is **not** a remedy for `stash`, whose damage is that the stack itself is
-  shared: `git -C "$WT" stash push` is textbook worktree-scoped and still writes the shared stack.
-  Do not read this paragraph as licensing a scoped `stash` (it did, and that is how #6701's incident
-  happened). The prose-only rule alone did not hold (the detach recurred
+  worktree-scoped and **allowed** — and the guard allowed the scoped form for *every* op in that
+  set, `stash` included. **That allowance is right for `checkout`/`switch`/`reset`/`rebase`/`merge`
+  and wrong for `stash`.** For the other five the damage is "the command landed in the wrong tree",
+  and scoping is a real remedy. For `stash` the damage is that the stack itself is shared:
+  `git -C "$WT" stash push` is textbook worktree-scoped and still writes the shared stack, so the
+  guard waved through the exact command that caused #6701. Do not read this paragraph as licensing a
+  scoped `stash`; that rule is *never*, in any form.
+  The prose-only rule alone did not hold (the detach recurred
   after it shipped), which is why the mechanical guard route was taken (#1571).
 
   **Keeping the primary current, by hand.** `pipeline-cli main-sync` retired with that package and
