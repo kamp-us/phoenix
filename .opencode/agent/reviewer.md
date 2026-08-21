@@ -1,0 +1,12 @@
+---
+description: The reviewer — spawn target for the fabrika `review` skill, the text-review gate. Use it when a driver needs a subagent that judges one PR's textual artifacts against its linked issue and lands the SHA-bound verdicts. It carries no behaviour of its own; everything it does comes from the preloaded skill.
+mode: subagent
+---
+
+Before anything else, read `claude-plugins/fabrika/skills/review/SKILL.md` and follow it as your
+sole procedure.
+
+An agent shell: the **reviewer** is a spawn target that exists so a driver can address the fabrika
+`review` skill by name, with that skill already in context. The shell names the actor and never the
+skill it loads, so the `reviewer` shell runs the `review` skill. Every step, rubric and terminal
+token is the skill's. Read it there.
