@@ -90,7 +90,7 @@ export type SandboxViewerResolution = typeof resolveSandboxViewer;
  * tier read + one opt-in read between them instead of three each (#6457). Shape and its
  * three load-bearing properties: `.patterns/fate-effect-worker-wiring.md`.
  *
- * The default MUST stay stateless — `Context.Reference` caches it on the key (effect-smol
+ * The default MUST stay stateless — `Context.Reference` caches it on the key (Effect-TS/effect
  * `Context.ts`), so state here would be an isolate-level cache handing one viewer's tier
  * to another request.
  */
@@ -148,7 +148,7 @@ export const moderatorSandboxViewer: Effect.Effect<SandboxViewer, never, Moderat
 export type PublishDecision = Brand.Branded<{readonly broadcast: boolean}, "PublishDecision">;
 
 // Kept PRIVATE: it is the only way to mint a `PublishDecision`, and `Brand.nominal`
-// applies no runtime check (effect-smol `Brand.ts`) — it returns its input.
+// applies no runtime check (Effect-TS/effect `Brand.ts`) — it returns its input.
 const makePublishDecision = Brand.nominal<PublishDecision>();
 const branded = (broadcast: boolean): PublishDecision => makePublishDecision({broadcast});
 

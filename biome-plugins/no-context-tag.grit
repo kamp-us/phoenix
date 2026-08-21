@@ -2,11 +2,11 @@
 // `Effect.Service(...)` — require Effect-v4 `Context.Service`.
 //
 // Rationale (single site; .patterns/effect-context-service.md): phoenix is on Effect v4
-// (the effect-smol line). The v3 service idioms — `Context.Tag`, `Context.GenericTag`,
-// and the `Effect.Service` helper — are wrong here; the single v4 idiom is
-// `class S extends Context.Service<S, Shape>()("id") {}`. This rule is a pure regression
-// gate: the repo scan for #2736 found ZERO existing violations (the codebase is already
-// all-v4), so it exists only to stop a v3 form from re-entering.
+// (`effect@4.0.0-beta.*`, developed on `Effect-TS/effect` main). The v3 service idioms —
+// `Context.Tag`, `Context.GenericTag`, and the `Effect.Service` helper — are wrong here;
+// the single v4 idiom is `class S extends Context.Service<S, Shape>()("id") {}`. This rule
+// is a pure regression gate: the repo scan for #2736 found ZERO existing violations (the
+// codebase is already all-v4), so it exists only to stop a v3 form from re-entering.
 //
 // Matched on the member-access callee (`Context.Tag` etc.) rather than a call snippet,
 // because the forms differ in arity/type-args (`Context.Tag("id")<S, Shape>()`,
