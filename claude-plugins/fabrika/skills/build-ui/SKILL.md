@@ -1,6 +1,6 @@
 ---
 name: build-ui
-description: "Execute one triaged issue whose deliverable is a rendered visual surface, and land it as a PR — or, given a PR number, enter repair mode. Trigger on \"build the UI for #N\", \"implement the page/component/screen\", \"make the visual change in #N\", \"repair the design FAIL on PR #N\", and whenever backlog work's deliverable is something a user will see rendered. Text construction — code-as-text, prose, plans — is `build`'s lane; judging a rendered surface is `review-ui`'s."
+description: "Execute one triaged issue whose deliverable is a rendered visual surface, and land it as a PR — or, given a PR number, enter repair mode. Trigger on \"build the UI for #N\", \"implement the page/component/screen\", \"make the visual change in #N\", \"repair the design FAIL on PR #N\", and whenever backlog work's deliverable is something a user will see rendered. Text construction — code-as-text, prose, plans — is `build`'s lane, unless a shell preloads both, and then the diff's class picks the law per file; judging a rendered surface is `review-ui`'s."
 arguments: [issue_or_pr_number]
 argument-hint: "[issue-number|pr-number] — an issue number builds, a PR number repairs; omit to pick from the pool"
 context: fork
@@ -56,6 +56,19 @@ rendered surface is `review-ui`'s. **When in doubt, the work is not yours.** Gat
 `fabrika build eligible $issue_or_pr_number`, then claim with `fabrika build claim
 $issue_or_pr_number`. Keep the token it prints — it is `<claim-token>` below, this LANE's name, and
 every later verb takes it as `--token` (#6037). Re-confirm before every later mutation.
+
+**Composition — what holds when `build` is loaded beside this skill.** A shell's `skills:` list is
+its capability set, so a shell preloading both carries both construction laws and a mixed-deliverable
+ticket routes to it whole (ADR
+[0319](../../../../.decisions/0319-skill-composition-via-shell-skills-list.md)). Under that co-load
+the claim-only rule and the doubt clause above stop refusing a ticket that also carries text: claim
+it and build all of it, because the text half is `build`'s law to apply, not a reason to decline.
+**The diff's class picks the law per file** — a ui-class file builds under this skill, a text file
+under `build`'s — and **`fabrika ui manifest` (step 2) stays mandatory before any ui-class file is
+touched**, co-load or not. Co-load lifts nothing else: a ticket with no rendered surface at all is
+still not this skill's, doubt still resolves toward refusal with `build` absent, and either way you
+never invoke another stage skill mid-run to cover a law you lack — a ticket whose class the seed got
+wrong stops here and the lane re-spawns the right shell.
 
 ## 2 — Read the law before you generate anything
 
