@@ -19,7 +19,6 @@
 import {Effect} from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import {execCapture} from "./exec.ts";
 import {
 	type Api,
@@ -30,9 +29,10 @@ import {
 	type Rest,
 	resolveToken,
 	restRead,
+	restWrite,
 } from "./gh-api.ts";
 import {type Attempt, fail, ok, originRepo, type Shell} from "./git.ts";
-import {isRecord, parseJson} from "./json.ts";
+import {isRecord} from "./json.ts";
 
 /** A three-way probe: proven present, proven absent, or unreadable — never two of those fused. */
 export type Existence<A> =
@@ -123,50 +123,6 @@ const servedBody = (outcome: Rest): Attempt<unknown> => {
 
 /** A write whose only evidence is its status — the body it echoes is not proof of anything. */
 const accepted = (outcome: Rest): Attempt<void> => then(servedBody(outcome), () => ok(undefined));
-
-const API_ROOT = "https://api.github.com";
-
-// `restRead` sends no request body, and every write below needs one. Duplicated here rather than
-// added to `gh-api.ts` because this epic partitions its children by file and a sibling's branch
-// would collide; #6693 tracks folding the copies back into the client.
-const restWrite = (
-	token: string,
-	method: "POST" | "PATCH" | "DELETE",
-	path: string,
-	body?: Readonly<Record<string, unknown>>,
-): Api<Rest> => {
-	const base = HttpClientRequest.make(method)(`${API_ROOT}/${path.replace(/^\//, "")}`).pipe(
-		HttpClientRequest.setHeaders({
-			authorization: `token ${token}`,
-			accept: "application/vnd.github+json",
-			"x-github-api-version": "2022-11-28",
-			"user-agent": "fabrika-cli",
-		}),
-	);
-	return HttpClient.execute(
-		body === undefined ? base : HttpClientRequest.bodyJsonUnsafe(base, body),
-	).pipe(
-		Effect.flatMap((response) =>
-			response.text.pipe(
-				Effect.map(
-					(text): Rest => ({
-						_tag: "Response",
-						status: response.status,
-						headers: response.headers,
-						body: parseJson(text),
-						text,
-					}),
-				),
-			),
-		),
-		Effect.catch((error: unknown) =>
-			Effect.succeed<Rest>({
-				_tag: "Unreachable",
-				reason: `the GitHub API could not be reached: ${String(error)}`,
-			}),
-		),
-	);
-};
 
 // A function, not a top-level constant: `gh-api.ts` imports this module back, so at the moment
 // this one is evaluated `PAGE_CAP` is still in its exporter's temporal dead zone.

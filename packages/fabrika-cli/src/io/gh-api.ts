@@ -28,6 +28,7 @@ import {Effect, Option} from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import {execRecord} from "./exec.ts";
 import {type Attempt, type Failure, fail, type Ok, ok, type Shell} from "./git.ts";
 import {absent, type Existence, present, unknown} from "./issues.ts";
@@ -164,27 +165,53 @@ const headersFor = (token: string, accept: string = JSON_ACCEPT): Record<string,
 	"user-agent": "fabrika-cli",
 });
 
-const send = (request: HttpClientRequest.HttpClientRequest): Api<Rest> =>
+/** One response read into whatever shape its media type has, or the reason none arrived. */
+export type Served<A> =
+	| {
+			readonly _tag: "Response";
+			readonly status: number;
+			readonly headers: Readonly<Record<string, string>>;
+			readonly value: A;
+	  }
+	| {readonly _tag: "Unreachable"; readonly reason: string};
+
+const served = <A>(
+	request: HttpClientRequest.HttpClientRequest,
+	read: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, unknown>,
+): Api<Served<A>> =>
 	HttpClient.execute(request).pipe(
 		Effect.flatMap((response) =>
-			response.text.pipe(
-				Effect.map(
-					(text): Rest => ({
-						_tag: "Response",
-						status: response.status,
-						headers: response.headers,
-						body: parseJson(text),
-						text,
-					}),
-				),
+			Effect.map(
+				read(response),
+				(value): Served<A> => ({
+					_tag: "Response",
+					status: response.status,
+					headers: response.headers,
+					value,
+				}),
 			),
 		),
 		Effect.catch((error: unknown) =>
-			Effect.succeed<Rest>({
+			Effect.succeed<Served<A>>({
 				_tag: "Unreachable",
 				reason: `the GitHub API could not be reached: ${String(error)}`,
 			}),
 		),
+	);
+
+const send = (request: HttpClientRequest.HttpClientRequest): Api<Rest> =>
+	Effect.map(
+		served(request, (response) => response.text),
+		(outcome): Rest =>
+			outcome._tag === "Unreachable"
+				? outcome
+				: {
+						_tag: "Response",
+						status: outcome.status,
+						headers: outcome.headers,
+						body: parseJson(outcome.value),
+						text: outcome.value,
+					},
 	);
 
 /** What a call is, beyond its path: the method, an optional JSON body, an optional `Accept`. */
@@ -222,6 +249,22 @@ export const restRead = (token: string, method: "GET" | "POST", path: string): A
 	restCall(token, {method, path});
 
 /**
+ * A read whose answer is bytes — the run-evidence artifact zip, and nothing else today.
+ *
+ * It is separate from {@link restCall} rather than a flag on it because {@link Rest} carries a
+ * parsed body and a decoded `text`, and a zip decoded as UTF-8 is corrupt rather than merely
+ * unparsed. The caller still reads `status` before the bytes: a 503 body saved as `.zip` is not a
+ * bundle.
+ */
+export const restBytes = (token: string, path: string, accept?: string): Api<Served<Uint8Array>> =>
+	served(
+		HttpClientRequest.get(endpoint(path)).pipe(
+			HttpClientRequest.setHeaders(headersFor(token, accept)),
+		),
+		(response) => Effect.map(response.arrayBuffer, (buffer) => new Uint8Array(buffer)),
+	);
+
+/**
  * Run `use` under the ambient credential and the ambient transport, or hand back the refusal that
  * says there is no credential.
  *
@@ -246,7 +289,8 @@ export const authedExistence = <A>(
 	});
 
 /**
- * One REST call carrying a JSON body — the write half of {@link restRead}.
+ * One REST call carrying a JSON body — the write half of {@link restRead}. The body is optional
+ * because a `DELETE` has none, and {@link RestCall} omits an absent one rather than sending `null`.
  *
  * The body travels as JSON on the wire, which is what retires the `gh`-era `-f key=value` argv
  * shape and the `-f body=@file` scar with it: `@` made `gh` read the value as a *path*, so a
@@ -257,7 +301,7 @@ export const restWrite = (
 	token: string,
 	method: "POST" | "PATCH" | "PUT" | "DELETE",
 	path: string,
-	body: Readonly<Record<string, unknown>>,
+	body?: Readonly<Record<string, unknown>>,
 ): Api<Rest> => restCall(token, {method, path, body});
 
 const refusalText = (outcome: Rest & {_tag: "Response"}): string =>
@@ -440,6 +484,9 @@ export const pagedEnvelope = (
 			entries.push(...body[key]);
 			if (!declaresNextPage(outcome.headers)) return ok({declared, entries, exhausted: true});
 		}
+		// Unreachable at runtime — page one refuses without a numeric `total_count`, so a loop that
+		// ran at all set `declared`. Kept as a type-narrowing device: TypeScript does not narrow
+		// across the loop, and dropping the branch reds `EnvelopeRead.declared: number`.
 		return declared === null
 			? statusless("GitHub answered 200 and printed no envelope at all")
 			: ok({declared, entries, exhausted: false});

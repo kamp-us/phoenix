@@ -13,8 +13,10 @@ import {
 	pagedWithLinkProof,
 	type Rest,
 	resolveToken,
+	restBytes,
 	restCall,
 	restRead,
+	restWrite,
 } from "./gh-api.ts";
 import {fail, ok} from "./git.ts";
 
@@ -330,6 +332,60 @@ describe("restCall — the write leg", () => {
 		expect(http.headers[0]?.accept).toBe("application/vnd.github.v3.diff");
 		expect(result._tag === "Response" && result.body).toBeNull();
 		expect(result._tag === "Response" && result.text).toContain("diff --git");
+	});
+});
+
+describe("the credential reaches the transport", () => {
+	// `headersFor` is the only place the token is attached, and it is attached nowhere a response
+	// assertion can see. Without these, dropping the `setHeaders` pipe leaves the suite green.
+	it("attaches `authorization` on a read", async () => {
+		const http = fakeHttp([[/repos\/o\/r$/, served(200, {default_branch: "main"})]]);
+		await Effect.runPromise(Effect.provide(restRead(TOKEN, "GET", "repos/o/r"), http.layer));
+		expect(http.headers[0]?.authorization).toBe(`token ${TOKEN}`);
+	});
+
+	it("attaches `authorization` on a write", async () => {
+		const http = fakeHttp([[/issues\/9$/, served(200, {number: 9})]]);
+		await Effect.runPromise(
+			Effect.provide(restWrite(TOKEN, "PATCH", "repos/o/r/issues/9", {body: "x"}), http.layer),
+		);
+		expect(http.headers[0]?.authorization).toBe(`token ${TOKEN}`);
+	});
+
+	it("attaches `authorization` on the bytes leg", async () => {
+		const http = fakeHttp([[/artifacts\/5\/zip$/, {status: 200, body: "PK", headers: {}}]]);
+		await Effect.runPromise(
+			Effect.provide(restBytes(TOKEN, "repos/o/r/actions/artifacts/5/zip"), http.layer),
+		);
+		expect(http.headers[0]?.authorization).toBe(`token ${TOKEN}`);
+	});
+
+	it("attaches `authorization` on the GraphQL leg", async () => {
+		const http = fakeHttp([[/graphql$/, served(200, {data: {}})]]);
+		await Effect.runPromise(Effect.provide(graphqlRead(TOKEN, "query{x}", {}), http.layer));
+		expect(http.headers[0]?.authorization).toBe(`token ${TOKEN}`);
+	});
+});
+
+describe("restBytes — the raw-bytes read", () => {
+	it("hands back the bytes undecoded, beside the status", async () => {
+		const http = fakeHttp([[/artifacts\/5\/zip$/, {status: 200, body: "PK", headers: {}}]]);
+		const result = await Effect.runPromise(
+			Effect.provide(restBytes(TOKEN, "repos/o/r/actions/artifacts/5/zip"), http.layer),
+		);
+		expect(http.calls).toEqual(["GET https://api.github.com/repos/o/r/actions/artifacts/5/zip"]);
+		expect(result._tag).toBe("Response");
+		expect(result._tag === "Response" && Array.from(result.value.slice(0, 2))).toEqual([
+			0x50, 0x4b,
+		]);
+	});
+
+	it("answers Unreachable rather than a status when GitHub was never reached", async () => {
+		const http = fakeHttp([], undefined, [/artifacts\/5\/zip$/]);
+		const result = await Effect.runPromise(
+			Effect.provide(restBytes(TOKEN, "repos/o/r/actions/artifacts/5/zip"), http.layer),
+		);
+		expect(result._tag).toBe("Unreachable");
 	});
 });
 
