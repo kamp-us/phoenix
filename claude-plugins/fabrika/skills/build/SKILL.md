@@ -188,7 +188,18 @@ fabrika build branch $issue_or_pr_number --slug editor-focus-loss --token <claim
 Construct. Match the surrounding artifact's idiom; for code: domain logic in domain objects,
 invalid states unrepresentable. Re-run `fabrika build tree --issue $issue_or_pr_number` before every
 git mutation — the cwd resets between shell calls, so the tree you proved is not the tree you are
-standing in until you prove it again. Scratch files go only where this prints:
+standing in until you prove it again.
+
+**A lane never runs `git stash` — not scoped, not any form.** `refs/stash` lives in the common git
+dir, so every worktree of this clone shares one stack: between your push and your pop a sibling
+lane's entry becomes `stash@{0}`, and your pop restores their files into your tree and drops their
+commit, reporting success either way. `git -C "$WT" stash push` is correctly scoped and still writes
+the shared stack, so scoping is no defence. To get a clean tree for a baseline run, commit to your
+lane branch and `reset` back to it, or read the baseline from a second checkout. The hazard and its
+`git reflog stash` recovery path are in
+[`.patterns/worktree-agent-constraints.md`](../../../../.patterns/worktree-agent-constraints.md).
+
+Scratch files go only where this prints:
 
 ```bash
 fabrika build scratch $issue_or_pr_number --slug notes --token <claim-token>

@@ -75,19 +75,21 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   one; address git at your worktree explicitly.** This is the cwd-reset bullet's most
   damaging instance. A worktree agent *armed* by `@kampus/worktree-guard` has its
   non-mutating bare commands prepended with `cd "$WORKTREE_ROOT" && …`; a bare
-  **working-state-mutating** op (`checkout`/`switch`/`reset`/`rebase`/`stash`/`merge`) that
+  **working-state-mutating** op (`checkout`/`switch`/`reset`/`rebase`/`merge`) that
   is not scoped to the worktree is now **refused outright** by the `pre-bash` guard (the
   enforced guard route below), because cd-pinning it would only relocate the mutation into
-  the worktree rather than surface the mistake. The class this closes: a bare
+  the worktree rather than surface the mistake. (`stash` is **not** on that list because
+  scoping does not save it — see the stash hazard below, where the rule is *never*, not
+  *scope it*.) The class this closes: a bare
   `git checkout <pr-head-sha>`, run after a between-calls cwd reset, executes in the
-  **primary** tree — detaching the shared `main`, or (for a bare `stash pop` / `merge`)
+  **primary** tree — detaching the shared `main`, or (for a bare `merge`)
   corrupting its working tree — which then stalls a sibling puller's `git merge --ff-only
   origin/main` with the symptom (puller stuck, merged work not propagating) far from the cause.
   The rule, mandatory for **every** worktree/review/ship agent:
   - **Capture `WT="$(git rev-parse --show-toplevel)"` once at spawn** (right after the
     opening worktree preflight passes) and run **ALL** git ops as `git -C "$WT" …`, so a
     cwd reset can never silently relocate the command into the primary tree.
-  - **Never run a bare `git checkout` / `git switch`** (nor `rebase` / `reset` / `stash` /
+  - **Never run a bare `git checkout` / `git switch`** (nor `rebase` / `reset` /
     `merge`) against a shared checkout. To bring a **PR head** in for review, fetch and check out
     *inside the worktree* by ref, not by a bare SHA:
     ```bash
@@ -107,7 +109,12 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   `$WORKTREE_ROOT`) and its legitimate `git checkout main` (ff-pull/reattach) are **never**
   intercepted. The safe form it points agents to — `git -C "$WT" <op> …`, or `git -C "$WT" fetch
   origin pull/<N>/head && git -C "$WT" checkout FETCH_HEAD` for a PR head — is recognized as
-  worktree-scoped and **allowed**. The prose-only rule alone did not hold (the detach recurred
+  worktree-scoped and **allowed** — **for the HEAD-moving ops named above, and for those only.**
+  Scoping is a real remedy when the damage is "the command landed in the wrong tree", which is every
+  op on that list. It is **not** a remedy for `stash`, whose damage is that the stack itself is
+  shared: `git -C "$WT" stash push` is textbook worktree-scoped and still writes the shared stack.
+  Do not read this paragraph as licensing a scoped `stash` (it did, and that is how #6701's incident
+  happened). The prose-only rule alone did not hold (the detach recurred
   after it shipped), which is why the mechanical guard route was taken (#1571).
 
   **Keeping the primary current, by hand.** `pipeline-cli main-sync` retired with that package and
@@ -128,6 +135,40 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   PULLER/orchestrator ROE therefore stands on prose alone: drive sync ONLY through the
   fetch-inspect-`ff-only` seam — never a bare `checkout -B main` / `branch -f main` / `reset` /
   `update-ref refs/heads/main` on the primary checkout.**
+
+- **`git stash` is repository-global — a lane worktree NEVER runs it, in any form.** `refs/stash`
+  lives in the **common** git dir, not the per-worktree one, so every worktree of a clone pushes to
+  and pops from **one** stack. Prove it from any linked tree:
+
+  ```bash
+  git rev-parse --git-dir --git-common-dir        # differ in a linked worktree
+  git rev-parse --git-path refs/stash             # resolves under the COMMON dir either way
+  ```
+
+  This is the one hazard on this page that **scoping does not fix**. `git -C "$WT" stash push` is
+  correctly scoped to your worktree and still writes the shared stack, so the bullet above's remedy —
+  address git at your worktree explicitly — is no defence here. Between your `push` and your `pop` a
+  sibling lane's entry becomes `stash@{0}`, and your `pop` restores **their** files into **your** tree
+  and drops their stash commit. Neither command warns; the pop reports success. Lanes #6643 and #6646
+  did exactly this to each other on 2026-08-20, both children of one epic
+  ([#6701](https://github.com/kamp-us/phoenix/issues/6701)) — and epic runs fan several lanes on
+  purpose, so the collision window is routine, not rare.
+
+  **What to do instead.** To get a clean tree for a baseline run, commit to your lane branch and
+  `git -C "$WT" reset` back to it afterwards, or read the baseline from a second checkout. Both keep
+  your work on a ref only your lane names.
+
+  **Recovery, if a pop already ate someone's work.** A dropped stash commit stays reachable through
+  the reflog for its expiry window, and files can be lifted out of it without touching the shared
+  stack:
+
+  ```bash
+  git -C "$WT" reflog stash                       # names the dropped commits
+  git -C "$WT" restore --source=<stash-sha> --worktree -- <paths>
+  ```
+
+  `git restore --source=<sha>` reads one commit and writes the named paths — no push, no pop, no drop,
+  so it cannot damage a sibling lane the way the recovery attempt itself otherwise might.
 
 - **Run root `pnpm` scripts as `pnpm -w <script>` (or from the worktree root),
   never from a subdir.** A root-level script (`pnpm lint`, `pnpm typecheck`, …) run
