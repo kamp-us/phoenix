@@ -483,6 +483,13 @@ very event — and every rendered-surface lane deadlocked at exit `23` until a d
 ui reviewer (#6793). Nothing reaches `ship` on less, and `ship gate` re-derives the full set at the
 merge regardless.
 
+**That split is the routing, so it never outlives it.** `prove` asks this lane's own machine which
+arm the event takes, with the classes the append will carry, and defers only into `review:ui` — so a
+lane whose machine has no such arm, and a rendered `PASS` whose class flag was never relayed, both
+owe the whole set at `review` and refuse there exactly as before
+(ADR [0320](../../../../.decisions/0320-the-review-bar-splits-across-two-cells-and-the-machine-decides.md)).
+The remedy the refusal names is the class relay, and it is the reviewer's to make.
+
 `lane prove` reads the two events a report can lie about — a `DONE` out of `build` and a `PASS` out
 of `review` — and answers `not-required` at exit `0` for every other one, so it is run on every
 event and never skipped as an optimisation. Its refusals each name a different next move:

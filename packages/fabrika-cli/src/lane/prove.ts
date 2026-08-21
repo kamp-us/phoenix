@@ -47,8 +47,9 @@ export const REVIEW_STATE = "review";
  * taken on the `PASS` out of {@link REVIEW_STATE}, so proving that `PASS` against `review-ui` asked
  * a lane to hold a verdict only the cell it had not reached yet could produce — every rendered-surface
  * lane deadlocked at exit 23 and needed a hand-spawned reviewer to get out (#6664, #6793). Each cell
- * now proves what it owes: `review` the namespaces it can reach, `review:ui` all of them. Nothing
- * reaches `ship` on less, and `ship gate` re-derives the full set regardless.
+ * now proves what it owes: `review` the namespaces it can reach **when this arm is the one it is
+ * taking**, `review:ui` all of them. A lane that is not taking it holds the whole set at `review`,
+ * so the deferral can never outlive the routing that earns it (ADR 0320).
  */
 export const REVIEW_UI_STATE = "review:ui";
 
@@ -90,8 +91,9 @@ export type Claim =
 	| {readonly _tag: "OpenPull"}
 	/**
 	 * `defers` is the slice of the required set this cell hands to a later one, subtracted before the
-	 * proof is taken. Empty everywhere but the plain `review` cell, which defers what only
-	 * {@link REVIEW_UI_STATE} can fill.
+	 * proof is taken. Non-empty only on a `review` `PASS` this lane's own machine routes into
+	 * {@link REVIEW_UI_STATE} — the cell that then owes it. Empty everywhere else, including on a
+	 * `review` `PASS` that walks to `ship`.
 	 */
 	| {readonly _tag: "HeadVerdicts"; readonly defers: ReadonlyArray<string>}
 	| {readonly _tag: "RangeCommits"; readonly epic: number}
@@ -101,18 +103,30 @@ export type Claim =
 /**
  * What this event, recorded out of this leaf state in this role, asserts about the world.
  *
- * A child's `PASS` defers nothing: its regions carry no `review:ui` cell, so there is no later cell
- * to defer to and its range-scoped set stands whole.
+ * `next` is the leaf this event would land in, read off the caller's own machine — the one input
+ * that decides whether the plain `review` cell may defer. It defers exactly when the event routes
+ * into {@link REVIEW_UI_STATE}, so the subtraction and the routing are one fact rather than two:
+ * a machine with no such arm (a `chore` workflow), or a `PASS` whose class flag never raised `ui`
+ * and so walks straight to `ship`, defers nothing and stands on the whole derived set. A child's
+ * `PASS` defers nothing either, and for the same reason read structurally: its regions carry no
+ * `review:ui` cell at all.
  */
-export const claimOf = (event: string, leaf: string, role: LaneRole): Claim => {
+export const claimOf = (
+	event: string,
+	leaf: string,
+	role: LaneRole,
+	next: string | null = null,
+): Claim => {
 	const child = role._tag === "Child";
 	if (event === "DONE" && leaf === BUILD_STATE) {
 		return child ? {_tag: "RangeCommits", epic: role.epic} : {_tag: "OpenPull"};
 	}
 	if (event === "PASS" && leaf === REVIEW_STATE) {
-		return child
-			? {_tag: "RangeVerdict", epic: role.epic}
-			: {_tag: "HeadVerdicts", defers: ROUTED_NAMESPACES};
+		if (child) return {_tag: "RangeVerdict", epic: role.epic};
+		return {
+			_tag: "HeadVerdicts",
+			defers: next === REVIEW_UI_STATE ? ROUTED_NAMESPACES : [],
+		};
 	}
 	if (event === "PASS" && leaf === REVIEW_UI_STATE && !child) {
 		return {_tag: "HeadVerdicts", defers: []};

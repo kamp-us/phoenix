@@ -250,9 +250,10 @@ this PR derives is one you may not emit, so there is no round here to run. That 
 would sit on a human instead of walking to `review:ui`.
 
 **On a mixed diff — the ordinary rendered-surface PR — you own namespaces, so your terminal is the
-ordinary `PASS`/`FAIL` and the route rides §1's class flag.** Every non-`.md` file also classes
-`code`, a rendered `.tsx` included, so a PR whose whole required set is routed is rare by
-construction; do not reach for `ROUTED` because a `routed` row is printed. Whether the diff renders
+ordinary `PASS`/`FAIL` and the route rides §1's class flag.** On this repo that is every rendered PR:
+`ui` is an overlay rather than a bucket, so a rendered `.tsx` classes `code` **as well** and you
+always own `review-code` beside the routed row. A whole-set route is therefore unreachable here
+today, not merely rare — do not reach for `ROUTED` because a `routed` row is printed. Whether the diff renders
 anything at all is `review-ui`'s judgment, taken through `review-ui route`, never yours.
 `check-epic-plan` is the other route and has no row: its trigger is being handed a plan ledger
 rather than a PR.
@@ -274,11 +275,20 @@ in its code, with the PR as the event's evidence (#5736). `<fabrika>` is that sa
 `fabrika:` entrypoint, the one path this repo's verbs actually run from (#6012):
 
 ```bash
+node <fabrika> lane report <lane> --root <root> --token PASS --pr <pr-url>
+```
+
+**Add `--class ui` to that line only when §1 printed a `routed\treview-ui` row**, and never
+otherwise:
+
+```bash
 node <fabrika> lane report <lane> --root <root> --token PASS --pr <pr-url> --class ui
 ```
 
-`--class` is repeatable and carries §1's `routed` rows — `--class ui` on the row this skill routes.
-Omit it where no row printed; a spelling outside the closed set is refused at exit `38`.
+`--class` is repeatable and carries §1's `routed` rows and nothing else — relay what printed, never
+what you inferred. A spelling outside the closed set is refused at exit `38`, but the *right*
+spelling on a PR that raised no such row is not refused: it routes the lane into a rendered round its
+diff cannot fill.
 
 One guard is yours before a `FAIL`: record it **only when every derived namespace holds a verdict
 that still binds at the head** — a `FAIL` beside an in-flight namespace is an incomplete read the
@@ -286,9 +296,11 @@ lane must not act on yet, so print the terminal without recording and leave the 
 operator's re-read. The verb refuses a token outside this vocabulary (exit `32`) rather than
 interpreting it, and it **proves a `PASS` before it records it** — read off the PR itself, exit `23`
 where a namespace holds no verdict still binding at the head. What it proves is what *this* cell
-owes: out of `review` a routed namespace is left to the `review:ui` cell your class flag routes
-into, and out of `review:ui` the whole derived set must stand — the merge gate re-derives all of it
-either way. A refusal is the PR disagreeing with your terminal: print the token, name the exit code,
+owes, and your class flag is what decides that: a routed namespace is left to the `review:ui` cell
+only when the flag routes this very `PASS` into it, and out of `review:ui` the whole derived set must
+stand. Omit the flag on a rendered PR and the routed namespace is owed **here** — exit `23` naming
+it, with the flag as the remedy (ADR [0320](../../../../.decisions/0320-the-review-bar-splits-across-two-cells-and-the-machine-decides.md)).
+The merge gate re-derives all of it either way. A refusal is the PR disagreeing with your terminal: print the token, name the exit code,
 change nothing. Then print the terminal either way; a run whose caller named no lane prints it only
 and records nothing.
 

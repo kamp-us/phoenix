@@ -267,6 +267,41 @@ export const deriveStatus = (
 	return {stateValue, status: "active", context};
 };
 
+/**
+ * The leaf this task would land in if this event were recorded now, asked of the compiled cell
+ * itself — `null` where the machine holds no cell for it.
+ *
+ * `lane prove` needs the answer to know which cell owes what, and reading it off the machine rather
+ * than off a state-name list is what keeps the routing and the proof one fact: a `PASS` out of
+ * `review` that lands in `review:ui` is a `PASS` whose rendered namespace the cell it routes into
+ * owes, while the same `PASS` on a machine with no such arm — a chore workflow, or a rendered head
+ * whose reviewer relayed no class — lands in `ship` and owes the whole set here (#6664).
+ *
+ * It answers the machine's question only. Whether the event is *appendable* stays
+ * {@link applyEvent}'s, which asks several more.
+ */
+export const nextLeaf = (
+	lane: CompiledLane,
+	states: Readonly<Record<string, TaskState>>,
+	taskId: string,
+	event: string,
+	classes: ReadonlyArray<string> | null,
+): string | null => {
+	const task = lane.tasks[taskId];
+	const from = states[taskId];
+	if (task === undefined || from === undefined || !isOperatorEvent(event)) return null;
+	try {
+		const [next] = applyCell<TaskState, LaneMsg, never>(task.machine, from, {
+			type: event,
+			...(classes === null ? {} : {classes}),
+		});
+		return next.type;
+	} catch (error) {
+		if (error instanceof NoCellError) return null;
+		throw error;
+	}
+};
+
 export type TaskResolution =
 	| {readonly _tag: "Task"; readonly taskId: string}
 	| {readonly _tag: "Unresolved"; readonly reason: string};

@@ -207,11 +207,26 @@ describe("lane report — the append is proof-gated", () => {
 				lane: "42",
 				event: "DONE",
 				task: "issue",
+				classes: null,
 				repo: "kamp-us/phoenix",
 				cwd: "/repo",
 				env: {},
 			},
 		]);
+	});
+
+	/**
+	 * The classes go to the prover as well as to the log, because they pick the arm the event takes
+	 * and the arm picks which cell owes the routed namespace (#6664). A prover asked without them
+	 * would answer about a different transition than the one being appended.
+	 */
+	it("hands the prover the same classes the append carries", async () => {
+		const fs = laneAt(LOG_AT.review);
+		const prover = fakeProver();
+
+		const out = await run(fs, "PASS", {prover, classes: ["ui"]});
+		expect(out.code).toBe(0);
+		expect(prover.asked[0]).toMatchObject({event: "PASS", classes: ["ui"]});
 	});
 
 	it("refuses on the prover's own code with the log byte-identical", async () => {

@@ -105,7 +105,11 @@ outlier.
 - A UI-class lane reaches `shipped` with no human hand-firing a round, and no driver authoring a
   verdict.
 - `lane prove` and `ship gate` derive from the same partition, so a lane cannot leave `review` on a
-  set the merge gate will refuse.
+  set the merge gate will refuse. **Narrowed by ADR [0320](0320-the-review-bar-splits-across-two-cells-and-the-machine-decides.md)**
+  to the review *phase*: a `PASS` the machine takes into `review:ui` leaves the `review` cell on the
+  set minus the routed namespace, which that cell then proves whole. Written as stated here, this
+  line made the arm into `review:ui` unwalkable — the `PASS` that takes it was required to hold a
+  verdict only the cell it entered could produce.
 - The routing table grows but stays one table; a state that routes to no shell is still a refusal.
 - `prove` tightens **last**. Tightened before the shells and routing exist, it converts today's park
   into a stall, which is worse than the deadlock it replaces.

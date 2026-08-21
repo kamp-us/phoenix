@@ -34,7 +34,7 @@ describe("epicOf and roleOf", () => {
 describe("claimOf", () => {
 	it("claims a pull request for a DONE out of build, verdicts for a PASS out of review", () => {
 		expect(claimOf("DONE", "build", SINGLE)).toEqual({_tag: "OpenPull"});
-		expect(claimOf("PASS", "review", SINGLE)).toEqual({
+		expect(claimOf("PASS", "review", SINGLE, "review:ui")).toEqual({
 			_tag: "HeadVerdicts",
 			defers: ["review-ui"],
 		});
@@ -46,13 +46,30 @@ describe("claimOf", () => {
 	 * arm asked the lane for a verdict from the cell it had not entered (#6664/#6793).
 	 */
 	it("defers the routed namespace out of `review` and nothing out of `review:ui`", () => {
-		expect(claimOf("PASS", "review:ui", SINGLE)).toEqual({_tag: "HeadVerdicts", defers: []});
-		expect(claimOf("PASS", "review:ui", TAIL)).toEqual({_tag: "HeadVerdicts", defers: []});
+		expect(claimOf("PASS", "review:ui", SINGLE, "ship")).toEqual({
+			_tag: "HeadVerdicts",
+			defers: [],
+		});
+		expect(claimOf("PASS", "review:ui", TAIL, "ship")).toEqual({
+			_tag: "HeadVerdicts",
+			defers: [],
+		});
+	});
+
+	/**
+	 * The deferral is the routing, so a `review` `PASS` the machine sends anywhere else defers
+	 * nothing — the chore-shaped machine with no such arm, and the rendered head whose class was
+	 * never relayed, both land here (ADR 0320). Without this the subtraction outlived the round it
+	 * hands the work to, and `ship gate` was left as the only thing still asking.
+	 */
+	it("defers nothing out of `review` when the event does not route into `review:ui`", () => {
+		expect(claimOf("PASS", "review", SINGLE, "ship")).toEqual({_tag: "HeadVerdicts", defers: []});
+		expect(claimOf("PASS", "review", TAIL, null)).toEqual({_tag: "HeadVerdicts", defers: []});
 	});
 
 	it("claims the same two artifacts for an epic tail — the tail is the one PR (ADR 0285)", () => {
 		expect(claimOf("DONE", "build", TAIL)).toEqual({_tag: "OpenPull"});
-		expect(claimOf("PASS", "review", TAIL)).toEqual({
+		expect(claimOf("PASS", "review", TAIL, "review:ui")).toEqual({
 			_tag: "HeadVerdicts",
 			defers: ["review-ui"],
 		});
