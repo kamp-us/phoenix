@@ -1,7 +1,7 @@
 ---
 id: 0100
 title: The control-plane / §CP boundary covers the enforcement-guard packages (`packages/*-guard/**` + `packages/ci-required/**`) — a guard is a self-weakening surface wherever it lives, so it is BLOCKING (human merge), not auto-merged on a `review-code` PASS
-status: amended-in-part by [0218](0218-pipeline-cli-cp-enforcement-core.md)
+status: amended-in-part by [0218](0218-pipeline-cli-cp-enforcement-core.md), [0330](0330-codeowners-is-the-cp-boundary.md)
 date: 2026-06-20
 tags: [pipeline, ship-it, control-plane, security, guards]
 ---
