@@ -13,7 +13,13 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {getIssue, patchIssueBody, resolveRepo} from "../io/issues.ts";
+import {
+	type Existence,
+	getIssue,
+	type IssueRecord,
+	patchIssueBody,
+	resolveRepo,
+} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {compose} from "./amend.ts";
@@ -40,6 +46,31 @@ export interface AmendOptions {
 }
 
 const bytes = (text: string): number => new TextEncoder().encode(text).length;
+
+/**
+ * What the read-back found wrong after the PATCH, or `null` when the amendment landed.
+ *
+ * A read-back that could not be performed folds into the same clause as one that came back wrong, so
+ * the verb has a single `READBACK_MISMATCH` message — the shape `report note` and `report file` use.
+ */
+const readbackMismatch = (
+	landed: Existence<IssueRecord>,
+	prior: string,
+	appended: string,
+): string | null => {
+	if (landed._tag === "Absent") return "the issue is not readable after the write";
+	if (landed._tag === "Unknown") return `the read-back itself failed: ${landed.reason}`;
+	const body = normalizeForReadback(landed.value.body);
+	// Both halves are the append's whole claim, so both are proven: a landed body missing the prior
+	// text is a replacement wearing an append's shape, and GitHub keeps no history to recover it.
+	if (!body.includes(normalizeForReadback(appended))) {
+		return "the appended amendment is not in the landed body";
+	}
+	if (!body.includes(normalizeForReadback(prior))) {
+		return "the prior body did not survive the write";
+	}
+	return null;
+};
 
 export const runAmend = (
 	options: AmendOptions,
@@ -135,24 +166,7 @@ export const runAmend = (
 			);
 		}
 
-		const back = yield* getIssue(repo, issue);
-		if (back._tag !== "Present") {
-			return refuse(
-				READBACK_MISMATCH,
-				`report amend: body written but it could not be read back (${
-					back._tag === "Absent" ? "the issue is now absent" : back.reason
-				}) — inspect #${issue} before continuing.`,
-				diagnostics,
-			);
-		}
-		const landed = normalizeForReadback(back.value.body);
-		// Both halves are the append's whole claim, so both are proven: a landed body missing the prior
-		// text is a replacement wearing an append's shape, and GitHub keeps no history to recover it.
-		const wrong = !landed.includes(normalizeForReadback(amendment.appended))
-			? "the appended amendment is not in the landed body"
-			: !landed.includes(normalizeForReadback(prior))
-				? "the prior body did not survive the write"
-				: null;
+		const wrong = readbackMismatch(yield* getIssue(repo, issue), prior, amendment.appended);
 		if (wrong !== null) {
 			return refuse(
 				READBACK_MISMATCH,

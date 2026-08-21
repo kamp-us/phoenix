@@ -252,5 +252,19 @@ describe("runAmend", () => {
 			[READ, {status: 502, body: "{}"}],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
+		expect(outcome.stderr.at(-1)).toContain("the read-back is wrong:");
+		expect(outcome.stderr.at(-1)).toContain("the read-back itself failed");
+	});
+
+	it("refuses when the issue is gone after the write, through the one message", async () => {
+		const outcome = await runScripted([
+			[once(READ), issue(PRIOR)],
+			[PATCH, ACCEPTED],
+			[READ, {status: 404, body: "{}"}],
+		]);
+		expect(outcome.code).toBe(READBACK_MISMATCH);
+		expect(outcome.stderr.at(-1)).toContain(
+			"report amend: wrote the body of #4312 but the read-back is wrong: the issue is not readable after the write. The issue exists and needs fixing by hand.",
+		);
 	});
 });
