@@ -10,6 +10,12 @@
 	// three founder accounts. One grant buys exactly one round.
 	"capClearAuthors": ["@usirin", "@notusirin", "@cansirin"],
 
+	// Who may declare a campaign or flip its lifecycle state (`fabrika campaign open` / `campaign
+	// state`). It narrows the repo's collaborator ACL and never replaces it: an entry here still
+	// needs `write` or above on the repo (ADR 0294). Founder-declared 2026-08-20 on #6811 — the
+	// shipped default is empty, which refuses every declaration, so phoenix names the founder.
+	"campaignAuthors": ["@usirin"],
+
 	// Docs whose subject IS path hygiene: they must spell the forbidden path shapes out, so
 	// `fabrika build check --surface prose` skips its leak scan on them. Repo-relative path
 	// suffixes, matched by suffix the way `fabrika guard leak-guard scan` matches its own

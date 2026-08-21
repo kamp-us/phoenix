@@ -46,7 +46,7 @@ flowchart TD
 		camp_fabrika_fast_follows["fabrika fast follows"]:::done
 		camp_fabrika_everywhere["fabrika everywhere"]:::active
 		camp_ge_it_product_push["Geçit product push"]:::active
-		camp_lane_integrity["Lane integrity"]:::paused
+		camp_lane_integrity["Lane integrity"]:::active
 		camp_epic_lanes["Epic lanes"]:::paused
 		camp_di_taxis_readme_passes["Diátaxis README passes"]:::paused
 	end
@@ -108,7 +108,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | fabrika fast follows | #46 | done |
 | fabrika everywhere | #47 | active |
 | Geçit product push | #24 | active |
-| Lane integrity | #48 | paused |
+| Lane integrity | #48 | active |
 | Epic lanes | #49 | paused |
 | Diátaxis README passes | #50 | paused |
 
