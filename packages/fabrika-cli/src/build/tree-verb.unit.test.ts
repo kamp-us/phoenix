@@ -145,6 +145,8 @@ describe("runTree", () => {
 			env: {CLAUDE_PIPELINE_REPO: "o/r"},
 		});
 		expect(out.code).toBe(FAILED);
-		expect(out.stderr.at(-1)).toContain("CLAUDE_CODE_SESSION_ID is unset");
+		expect(out.stderr.at(-1)).toContain(
+			"no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID, PI_SUBAGENT_PARENT_SESSION are all unset",
+		);
 	});
 });

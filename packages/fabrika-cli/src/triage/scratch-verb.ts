@@ -81,7 +81,7 @@ export const runScratch = (
 		if (!isPathSegment(session)) {
 			return refuse(
 				FAILED,
-				`${VERB}: CLAUDE_CODE_SESSION_ID is not one path segment — it cannot name a directory of its own.`,
+				`${VERB}: the session id is not one path segment — it cannot name a directory of its own.`,
 			);
 		}
 

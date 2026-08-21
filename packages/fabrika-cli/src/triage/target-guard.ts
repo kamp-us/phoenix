@@ -21,6 +21,7 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type IssueRecord, listComments} from "../io/issues.ts";
+import {sessionIdFrom} from "../io/session-id.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {
 	type Asked,
@@ -111,7 +112,7 @@ const askCaller = (
 ): Asked<Caller> => {
 	const trimmed = (token ?? "").trim();
 	if (trimmed === "") {
-		return {_tag: "Asked", value: anySessionCaller((env.CLAUDE_CODE_SESSION_ID ?? "").trim())};
+		return {_tag: "Asked", value: anySessionCaller(sessionIdFrom(env) ?? "")};
 	}
 	const session = requireSession(
 		verb,

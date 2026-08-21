@@ -59,7 +59,8 @@ the purpose exists to remove.
 
 Done when it answers `won`. Exit `15` is a proven loss with the winner named on stderr: end at
 `BACKED-OFF`. Exit `7` is a proven-absent or closed target: end at `PLAN-UNGATEABLE`. The verb takes
-the session identity from `CLAUDE_CODE_SESSION_ID`, and an unset one is exit `1` — a claim without
+the session identity from the environment (`FABRIKA_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`, else
+`PI_SUBAGENT_PARENT_SESSION` — #6960), and an unset chain is exit `1` — a claim without
 an identity is not a claim. **Any other non-zero here (`1`, `8`, `9`, `10`, `11`, `20`) ends
 `STOPPED` with no note**: you hold no claim, and `build note` requires one, so there is nothing
 postable — report the code in the terminal line instead. `10` is an off-enum `--purpose`, and `20`

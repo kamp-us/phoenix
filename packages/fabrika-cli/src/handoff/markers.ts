@@ -6,7 +6,7 @@
  * nothing outside it reads one — and a format nobody meets through is not a wire format.
  *
  * <!-- anchor: CLAIM-KEY-IS-THE-RUN-NONCE --> The claim key is the caller's run nonce, never a
- * session id and never a pid: `$CLAUDE_CODE_SESSION_ID` is pane-constant rather than per-run (#5028)
+ * session id and never a pid: the session id is pane-constant rather than per-run (#5028)
  * and sibling subagents of one parent share it (#4516), so two successors booted from one parent
  * would key onto one namespace and each would classify the other's claim as its own. Nothing here
  * reads the environment — the nonce arrives as an argument.

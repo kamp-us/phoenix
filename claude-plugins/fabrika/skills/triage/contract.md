@@ -392,7 +392,7 @@ winning lane's nonce, `null` on `won` or when the winner is a pre-#6132 marker),
 live markers considered), and `expired` (count discarded as older than the TTL).
 
 **A claim names a lane, not a session.** One fan-out runs several triagers under one
-`$CLAUDE_CODE_SESSION_ID`, so a marker stamped with the session alone cannot tell two of them apart:
+session id, so a marker stamped with the session alone cannot tell two of them apart:
 on 2026-08-18 two siblings each read the other's marker back as their own, both answered `won`, and
 both wrote the issue ([#6132](https://github.com/kamp-us/phoenix/issues/6132)). The lane is a token,
 `triage:<session-id>:<uuid>` — the same shape and the same nonce rule the `build` namespace resolves
@@ -407,7 +407,9 @@ token it was handed re-enters the lane it already holds.
 ```
 
 One line, no surrounding prose, so a marker is matched by an exact prefix rather than by parsing
-human text. `<session-id>` is the verbatim value of `$CLAUDE_CODE_SESSION_ID`; `<nonce>` is the first
+human text. `<session-id>` is this run's session id — `FABRIKA_SESSION_ID`, else
+`CLAUDE_CODE_SESSION_ID`, else `PI_SUBAGENT_PARENT_SESSION`
+([#6960](https://github.com/kamp-us/phoenix/issues/6960)); `<nonce>` is the first
 8 hex of the claim token's UUID. Any comment not matching that prefix is not a marker and is ignored.
 A marker carrying no `lane=` field is a pre-#6132 claim: it is counted, it ages out on the same TTL,
 and every lane reads it as **another** claimant's — never as its own.
@@ -426,8 +428,9 @@ reader alike; widening the window means changing that constant.
 **The claim is a session-stamped comment, never the assignee.** Every agent authenticates as the same
 login, so the assignee field cannot discriminate two concurrent sweeps — it is a shared availability
 slot (#4780, and v1's own `claim-assign.ts` says as much: *"every agent authenticates as the same
-login, so the assignee is one shared slot"*). The session id comes from `$CLAUDE_CODE_SESSION_ID`; with it
-unset the verb exits `1` rather than posting an unattributable marker.
+login, so the assignee is one shared slot"*). The session id comes from `FABRIKA_SESSION_ID`, else
+`CLAUDE_CODE_SESSION_ID`, else `PI_SUBAGENT_PARENT_SESSION`; with all three unset the verb exits `1`
+rather than posting an unattributable marker.
 
 **Resolution.** Post this session's marker, re-read all markers on the issue, discard any older than
 the TTL, and the **earliest surviving marker wins**. `won` requires a positive proof that the
@@ -490,7 +493,7 @@ rather than to this verb.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `triage claim: CLAUDE_CODE_SESSION_ID is unset — refusing to post an unattributable claim.` | 1 | refusal |
+| `triage claim: no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID, PI_SUBAGENT_PARENT_SESSION are all unset — refusing to post an unattributable claim.` | 1 | refusal |
 | `triage claim: --token "<t>" is not a claim token (triage:<session-id>:<uuid>) — which lane is asking is not stated.` | 1 | refusal |
 | `triage claim: --token "<t>" carries session <s>, but this run is session <mine> — a lane names itself, never another.` | 1 | refusal |
 | `triage claim: issue #<n> not found in <repo>.` | 7 | refusal |
@@ -503,7 +506,7 @@ rather than to this verb.
 
 **Scope** — the issue's comments, paginated, filtered to the marker prefix. A comment read that fails
 is exit `11`; it never degrades to `won`. Session ids are printed **in full** on both channels — there
-is no abbreviation rule — because a truncated id cannot be compared against `$CLAUDE_CODE_SESSION_ID`
+is no abbreviation rule — because a truncated id cannot be compared against this run's session id
 by a caller.
 
 **Examples**
@@ -574,7 +577,7 @@ absent, so the path is writable the moment it is printed; the leaf itself is not
 `--json`: the answer is one path, and an object around it would carry nothing the path does not.
 
 **The claim nonce is in the key, and that is the whole verb.** A fan-out of triagers runs under one
-`$CLAUDE_CODE_SESSION_ID`, so a namespace keyed on the session alone hands every lane the same
+session id, so a namespace keyed on the session alone hands every lane the same
 directory — and a working file under a fixed name like `authored.md` then overwrites a sibling's
 silently. That happened on 2026-08-20 across #6597/#6189/#6146 and was caught only because the
 clobbered content happened to be a different issue's body
@@ -612,9 +615,9 @@ record, so it has no write to fail and no read-back to mismatch.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `triage scratch: --slug "<s>" must be a kebab-case leaf, no path separators.` | 10 | refusal |
-| `triage scratch: CLAUDE_CODE_SESSION_ID is unset — refusing to key a scratch namespace on an unattributable session.` | 1 | refusal |
-| `triage scratch: CLAUDE_CODE_SESSION_ID is not a single token — a marker stamped with it would not read back as this session.` | 1 | refusal |
-| `triage scratch: CLAUDE_CODE_SESSION_ID is not one path segment — it cannot name a directory of its own.` | 1 | refusal |
+| `triage scratch: no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID, PI_SUBAGENT_PARENT_SESSION are all unset — refusing to key a scratch namespace on an unattributable session.` | 1 | refusal |
+| `triage scratch: the session id is not a single token — a marker stamped with it would not read back as this session.` | 1 | refusal |
+| `triage scratch: the session id is not one path segment — it cannot name a directory of its own.` | 1 | refusal |
 | `triage scratch: --token "<t>" is not a claim token (triage:<session-id>:<uuid>) — which lane is asking is not stated.` | 1 | refusal |
 | `triage scratch: --token "<t>" carries session <s>, but this run is session <mine> — a lane names itself, never another.` | 1 | refusal |
 | `triage scratch: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN, so no path was allocated.` | 11 | refusal |
