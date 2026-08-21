@@ -671,6 +671,23 @@ describe("lane brief on an epic lane", () => {
 		expect(out.stderr.join("\n")).toContain("UNKNOWN");
 	});
 
+	it("leaves a child review UNKNOWN when the range's base sits on a shallow graft boundary", async () => {
+		const {out, calls} = await runEpic(
+			atReview(),
+			reviewing([
+				[/^git rev-parse --is-shallow-repository$/, okOut("true\n")],
+				[REV("epic/5800"), okOut(`${EPIC_BASE}\n`)],
+				[/^git log -1 --format=%P /, okOut("\n")],
+			]),
+			{task: "issue_5828"},
+		);
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("git fetch --deepen=25");
+		expect(calls.some((line) => BRANCHES.test(line))).toBe(false);
+	});
+
 	it("briefs the epic tail's review on the one PR the run produced", async () => {
 		const {out} = await runEpic(
 			epicLane([

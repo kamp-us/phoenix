@@ -1034,6 +1034,20 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 		expect(seams.calls.some((line) => BRANCHES.test(line))).toBe(false);
 	});
 
+	it("leaves a child DONE UNKNOWN when the range's base sits on a shallow graft boundary", async () => {
+		const seams = fakeSeams([
+			[/^git rev-parse --is-shallow-repository$/, okOut("true\n")],
+			[REV("epic/4300"), okOut(`${EPIC_BASE}\n`)],
+			[/^git log -1 --format=%P /, okOut("\n")],
+		]);
+
+		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stderr.join("\n")).toContain("git fetch --deepen=25");
+		expect(seams.calls.some((line) => BRANCHES.test(line))).toBe(false);
+	});
+
 	it("answers not-required for the DONE that lands a reviewed range, reading nothing", async () => {
 		const seams = fakeSeams([]);
 		const fs = fakeFs({
