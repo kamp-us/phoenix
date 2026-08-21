@@ -12,8 +12,7 @@
  * `no-requirements` would tell an adopter their repo gates nothing when it may gate everything.
  */
 import {Effect} from "effect";
-import type * as HttpClient from "effect/unstable/http/HttpClient";
-import type {ChildProcessSpawner} from "effect/unstable/process";
+import type {Shell} from "../io/git.ts";
 import {isInformational} from "../review/rollup.ts";
 import type {ShipCheckRun} from "../ship/github.ts";
 import {branchProtectionContexts, rulesetContexts} from "./github.ts";
@@ -69,17 +68,9 @@ const isPermissionDenial = (status: number | null): boolean => status === 401 ||
  * `no-requirements` needs a **successful** rules read returning zero required contexts *and* the
  * protection endpoint's 404 — both, never the 404 alone.
  */
-export const readDeclared = (
-	repo: string,
-	base: string,
-	env: Readonly<Record<string, string | undefined>>,
-): Effect.Effect<
-	DeclaredRead,
-	never,
-	HttpClient.HttpClient | ChildProcessSpawner.ChildProcessSpawner
-> =>
+export const readDeclared = (repo: string, base: string): Shell<DeclaredRead> =>
 	Effect.gen(function* () {
-		const rules = yield* rulesetContexts(repo, base, env);
+		const rules = yield* rulesetContexts(repo, base);
 		if (rules._tag === "Failure") {
 			return isPermissionDenial(rules.status)
 				? {_tag: "Unprobeable" as const, reason: rules.reason}
@@ -89,7 +80,7 @@ export const readDeclared = (
 			return {_tag: "Incomplete" as const, scanned: rules.value.scanned};
 		}
 
-		const {read: protection, status} = yield* branchProtectionContexts(repo, base, env);
+		const {read: protection, status} = yield* branchProtectionContexts(repo, base);
 		if (protection._tag === "Unknown") {
 			return isPermissionDenial(status)
 				? {_tag: "Unprobeable" as const, reason: protection.reason}

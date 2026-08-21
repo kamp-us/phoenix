@@ -2,9 +2,9 @@ import {mkdtempSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {Effect, Layer} from "effect";
-import {afterEach, describe, expect, it, vi} from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {fakeHttp, fakeShell, type HttpReply, linkNext, okOut} from "../fakes.test-support.ts";
-import {NO_TOKEN, PAGE_CAP} from "../io/gh-api.ts";
+import {forgetAmbientToken, NO_TOKEN, PAGE_CAP} from "../io/gh-api.ts";
 import type {Attempt, Shell} from "../io/git.ts";
 import {
 	armAutoMerge,
@@ -15,8 +15,6 @@ import {
 	listShipCheckRuns,
 	listTeamMembers,
 	listWorkflowPaths,
-	pagedEnvelope,
-	pagedWithLinkProof,
 	pullTimeline,
 	readFileAtRef,
 	setPullState,
@@ -52,8 +50,13 @@ const review = (state: string) => ({
 	submitted_at: "2026-01-01T00:00:00Z",
 });
 
+beforeEach(() => {
+	forgetAmbientToken();
+});
+
 afterEach(() => {
 	vi.unstubAllEnvs();
+	forgetAmbientToken();
 });
 
 describe("the Link-header proof", () => {
@@ -87,13 +90,6 @@ describe("the Link-header proof", () => {
 	it("holds the cap at 50 — the number the callers' refusal is written against", () => {
 		expect(PAGE_CAP).toBe(50);
 	});
-
-	it("stays exported at its `gh`-era signature for `../heal-ci/github.ts`", async () => {
-		const http = fakeHttp([[/rules\/branches\/main/, json([{type: "merge_queue"}])]]);
-		const read = value(await run(pagedWithLinkProof("repos/o/r/rules/branches/main"), http));
-		expect(read.entries).toEqual([{type: "merge_queue"}]);
-		expect(read.exhausted).toBe(true);
-	});
 });
 
 describe("the envelope proof", () => {
@@ -120,11 +116,6 @@ describe("the envelope proof", () => {
 		const http = fakeHttp([[/check-runs/, json({check_runs: []})]]);
 		const read = await run(listShipCheckRuns("o/r", "abc"), http);
 		expect(reason(read)).toContain("total_count");
-	});
-
-	it("stays exported as the pure reader `../heal-ci/github.ts` still calls", () => {
-		const read = pagedEnvelope('{"total_count":2,"jobs":[{"id":1}]}', "jobs");
-		expect(read).toEqual({_tag: "Ok", value: {declared: 2, entries: [{id: 1}]}});
 	});
 
 	it("carries #6602's gap across the port: listWorkflowPaths still drops the declared count", async () => {

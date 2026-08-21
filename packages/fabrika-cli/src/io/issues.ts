@@ -43,40 +43,11 @@ export const present = <A>(value: A): Existence<A> => ({_tag: "Present", value})
 export const absent = <A>(): Existence<A> => ({_tag: "Absent"});
 export const unknown = <A>(reason: string): Existence<A> => ({_tag: "Unknown", reason});
 
-/**
- * The HTTP status a failure names, or `null` when it named none.
- *
- * Two shapes, because the package is mid-port: `gh` says `gh: Not Found (HTTP 404)`, and an adapter
- * already on `../io/gh-api.ts` says `GitHub answered HTTP 404`. A reader that knew only the
- * parenthesised one read a ported 403 as "no status at all", which collapsed `heal-ci`'s
- * proven-unprobeable surface into UNKNOWN (#6644). The bare form goes away with this function, once
- * every caller reads the status off the response instead of scraping it.
- */
-export const httpStatusOf = (reason: string): number | null => {
-	const m = /\(HTTP (\d{3})\)|\bHTTP (\d{3})\b/.exec(reason);
-	const status = m?.[1] ?? m?.[2];
-	return status === undefined ? null : Number.parseInt(status, 10);
-};
-
 /** One issue as the dedup ranking sees it. */
 export interface IssueRow {
 	readonly number: number;
 	readonly title: string;
 }
-
-/** `<number>\t<title>` rows, or `null` when a row is not that shape. */
-export const parseIssueRows = (stdout: string): ReadonlyArray<IssueRow> | null => {
-	const rows: IssueRow[] = [];
-	for (const line of stdout.split("\n")) {
-		if (line === "") continue;
-		const tab = line.indexOf("\t");
-		if (tab <= 0) return null;
-		const number = line.slice(0, tab);
-		if (!/^\d+$/.test(number)) return null;
-		rows.push({number: Number.parseInt(number, 10), title: line.slice(tab + 1)});
-	}
-	return rows;
-};
 
 /**
  * The target repository, in the precedence the contract states: `--repo`, then
@@ -267,20 +238,6 @@ export const openIssuesWithLabel = (
 export interface IssueDetail extends IssueRow {
 	readonly body: string;
 }
-
-/** One compact-JSON object per line, or `null` when a line is not that shape. */
-export const parseIssueDetails = (stdout: string): ReadonlyArray<IssueDetail> | null => {
-	const rows: IssueDetail[] = [];
-	for (const line of stdout.split("\n")) {
-		if (line.trim() === "") continue;
-		const parsed = parseJson(line);
-		if (!isRecord(parsed)) return null;
-		const {number, title, body} = parsed;
-		if (!Number.isInteger(number) || typeof title !== "string") return null;
-		rows.push({number: number as number, title, body: typeof body === "string" ? body : ""});
-	}
-	return rows;
-};
 
 /**
  * Open issues carrying `label`, paged, with their bodies — the same single list call
@@ -573,29 +530,6 @@ export const getComment = (repo: string, id: number): Shell<Attempt<string>> =>
 // file here without colliding with the `report` half above.
 // ---------------------------------------------------------------------------------------------
 
-/**
- * Split `stdout` into rows of exactly `columns` tab-separated fields, or `null` when any line is not
- * that shape.
- *
- * The wider sibling of {@link parseIssueRows}: same discipline, any column count. A shape that is
- * not what was asked for is a failure, never an empty result — `gh` can exit 0 having printed a `jq`
- * error, and interpreting those bytes positionally is how a malformed read answers a plausible
- * value.
- */
-export const parseTabRows = (
-	stdout: string,
-	columns: number,
-): ReadonlyArray<ReadonlyArray<string>> | null => {
-	const rows: ReadonlyArray<string>[] = [];
-	for (const line of stdout.split("\n")) {
-		if (line === "") continue;
-		const fields = line.split("\t");
-		if (fields.length !== columns) return null;
-		rows.push(fields);
-	}
-	return rows;
-};
-
 /** One open milestone, as a home candidate. */
 export interface Milestone {
 	readonly number: number;
@@ -668,100 +602,6 @@ export const listMilestones = (repo: string): Shell<Attempt<ReadonlyArray<Milest
 			}),
 		),
 	);
-
-/**
- * The pages a paginated read produced, or the proof that its output stopped mid-flight.
- *
- * `Truncated` exists because the alternative is a partial answer that reads as a complete one: a
- * paginated read whose stdout ends inside a page yields *fewer* rows and no error at all, so a caller
- * that only ever sees pages cannot tell "the board holds three issues" from "the read died after
- * three". A caller that receives `Truncated` seats it as UNKNOWN.
- */
-export interface JsonPages {
-	/** Every page that closed. Complete pages stay readable even when a later one is cut short. */
-	readonly pages: ReadonlyArray<string>;
-	/** Why the output does not end on a page boundary, or `null` when every byte was accounted for. */
-	readonly truncated: string | null;
-}
-
-/** Non-whitespace characters in `[from, to)` — bytes no closed page accounts for. */
-const countOutsideWhitespace = (text: string, from: number, to: number): number => {
-	let count = 0;
-	for (let i = from; i < to; i++) {
-		if (!/\s/.test(text[i] ?? "")) count++;
-	}
-	return count;
-};
-
-/**
- * Split `gh api --paginate`'s concatenated top-level JSON values back into one string per page, and
- * say so when the output does not end on a page boundary.
- *
- * `--paginate` emits `[…][…]` with no separator, which `JSON.parse` rejects outright — so a
- * single-parse read would fail on exactly the responses pagination exists to reach. Bracket depth is
- * counted outside string literals only, so a `[` inside a comment body cannot split a page.
- *
- * Truncation is **everything the scan could not account for**, not an end-of-input special case: an
- * unclosed value, an unterminated string, a stray `]`, or any non-whitespace byte sitting outside a
- * completed page. Testing the leftovers rather than the final depth is what makes a half-written page
- * in the *middle* of the stream as visible as one at its end.
- */
-export const scanJsonPages = (stdout: string): JsonPages => {
-	const pages: string[] = [];
-	let depth = 0;
-	let start = -1;
-	let inString = false;
-	let escaped = false;
-	/** The index just past the last closed page — everything before it is accounted for. */
-	let closed = 0;
-	let stray = 0;
-	for (let i = 0; i < stdout.length; i++) {
-		const c = stdout[i];
-		if (inString) {
-			if (escaped) escaped = false;
-			else if (c === "\\") escaped = true;
-			else if (c === '"') inString = false;
-			continue;
-		}
-		if (c === '"') inString = true;
-		else if (c === "[" || c === "{") {
-			if (depth === 0) start = i;
-			depth++;
-		} else if (c === "]" || c === "}") {
-			depth--;
-			if (depth === 0 && start >= 0) {
-				stray += countOutsideWhitespace(stdout, closed, start);
-				pages.push(stdout.slice(start, i + 1));
-				closed = i + 1;
-				start = -1;
-			} else if (depth < 0) {
-				depth = 0;
-				stray++;
-			}
-		}
-	}
-	stray += countOutsideWhitespace(stdout, closed, stdout.length);
-	return {
-		pages,
-		truncated:
-			stray === 0
-				? null
-				: `the paginated output does not end on a page boundary — ${pages.length} complete page(s), then ${stray} byte(s) of an incomplete one`,
-	};
-};
-
-/**
- * The pages of a paginated read, or the failure a truncated one is.
- *
- * This is the only sanctioned way to consume {@link scanJsonPages} from a list read: it discharges
- * `truncated` on the caller's behalf, so no reader can receive the pages while dropping the proof
- * that they are not all of them (#5127). Its predecessor returned `.pages` alone and every caller
- * silently answered short.
- */
-export const pagedJson = (stdout: string): Attempt<ReadonlyArray<string>> => {
-	const scanned = scanJsonPages(stdout);
-	return scanned.truncated === null ? ok(scanned.pages) : fail(scanned.truncated);
-};
 
 /** One issue comment, as a claim scan reads it. */
 export interface CommentRecord {

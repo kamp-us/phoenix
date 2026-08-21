@@ -6,8 +6,8 @@
  *
  * - **Every response's status is read before its bytes are interpreted.** The status arrives as a
  *   number, so `Absent` and `Unknown` are told apart by the platform's own answer instead of by
- *   scraping `(HTTP 404)` out of a `gh` error string (`httpStatusOf` in `./issues.ts`, which stays
- *   for the adapters still on `gh`).
+ *   scraping `(HTTP 404)` out of a `gh` error string, which is what the package did until #6644 read
+ *   a ported 403 as no status at all.
  * - **Every list read returns its own completeness proof beside what it received.** A caller that
  *   cannot see the proof cannot refuse a truncated read, and a truncated read that answers anyway
  *   is a verdict over unknown scope. Which proof depends on what the platform declares: an envelope
@@ -108,6 +108,18 @@ export const ambientToken: Shell<Attempt<string>> = Effect.suspend(() =>
 				return attempt;
 			}),
 );
+
+/**
+ * Drop the memo, so the next {@link ambientToken} resolves the environment again.
+ *
+ * A process only ever has one environment, so nothing on a request path calls this. A test does: a
+ * suite that proves the no-credential refusal restages `process.env` between cases, and a memo taken
+ * under the previous case's environment would answer for the new one — the refusal would pass or
+ * fail on test order rather than on the code.
+ */
+export const forgetAmbientToken = (): void => {
+	memoisedToken = null;
+};
 
 /**
  * Run an {@link Api} against the caller's `HttpClient` when there is one, and a fetch client
@@ -310,7 +322,7 @@ const paged = (path: string, page: number): string =>
  * A caller telling a permission denial apart from any other unreadable answer needs the number. A
  * single read gets it from {@link existenceOf}; a paged read walks many responses, so the one it
  * stopped on carries its status here rather than leaving the caller to scrape it back out of the
- * reason — which is the `httpStatusOf` habit this client exists to end.
+ * reason — the scraping habit this client exists to end.
  */
 export type PagedAttempt<A> = Ok<A> | (Failure & {readonly status: number | null});
 

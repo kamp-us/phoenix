@@ -63,7 +63,7 @@ export const runSweep = (
 		);
 		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
 
-		const listed = yield* listOpenPulls(repo, options.env);
+		const listed = yield* listOpenPulls(repo);
 		if (listed._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -89,7 +89,7 @@ export const runSweep = (
 		const found: Diagnosis[] = [];
 		let scanned = 0;
 		for (const row of open) {
-			const limit = yield* readRateLimit(options.env);
+			const limit = yield* readRateLimit();
 			if (limit._tag === "Ok" && limit.value.remaining < RATE_FLOOR) {
 				return refuse(
 					PRECONDITION_UNKNOWN,
@@ -97,15 +97,7 @@ export const runSweep = (
 					notices,
 				);
 			}
-			const result = yield* diagnoseOne(
-				repo,
-				row.number,
-				"",
-				options,
-				options.env,
-				governed.roots,
-				ci,
-			);
+			const result = yield* diagnoseOne(repo, row.number, "", options, governed.roots, ci);
 			scanned += 1;
 			if (result._tag === "Refused") {
 				return refuse(

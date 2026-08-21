@@ -126,6 +126,7 @@ describe("fabrika guard, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () 
 		["design-token-guard", "check", "ADR 0162"],
 		["design-inventory", "check", "ADR 0194"],
 		["design-inventory", "generate", "ADR 0194"],
+		["no-gh", "check", "#6629"],
 	])("reaches %s's %s leaf by its registration alone", (guard, leaf, marker) => {
 		const run = fabrika(["guard", guard, leaf, "--help"]);
 		expect(run.code).toBe(0);

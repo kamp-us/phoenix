@@ -3,7 +3,6 @@ import {describe, expect, it} from "vitest";
 import {fakeSeams, once, type Scripted} from "../fakes.test-support.ts";
 import {
 	accepted,
-	ENV,
 	httpError,
 	RERUN,
 	RUN,
@@ -19,11 +18,11 @@ const RUNS = /^GET .*\/repos\/o\/r\/actions\/runs\?head_sha=/;
 const FLOOR = 31_863_008_185;
 
 const assert = (script: ReadonlyArray<Scripted>) =>
-	Effect.runPromise(Effect.provide(assertFloorAt("o/r", HEAD, ENV), fakeSeams(script).layer));
+	Effect.runPromise(Effect.provide(assertFloorAt("o/r", HEAD), fakeSeams(script).layer));
 
 const withCalls = (script: ReadonlyArray<Scripted>) => {
 	const seams = fakeSeams(script);
-	return Effect.runPromise(Effect.provide(assertFloorAt("o/r", HEAD, ENV), seams.layer)).then(
+	return Effect.runPromise(Effect.provide(assertFloorAt("o/r", HEAD), seams.layer)).then(
 		(assertion) => ({assertion, seams}),
 	);
 };

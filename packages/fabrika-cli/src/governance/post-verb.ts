@@ -367,7 +367,7 @@ export const runPost = (
 		// nothing re-fires it, so the gate that just wrote the verdict is the actor that re-derives the
 		// check (#5585). It never gates the post: the verdict is landed and read back by here, and a
 		// floor that could not be asserted is a red check, not an unwritten verdict.
-		const floor = yield* assertFloorAt(repo, head.sha, options.env);
+		const floor = yield* assertFloorAt(repo, head.sha);
 		diagnostics.push(floorLine(VERB, floor));
 
 		return json

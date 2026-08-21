@@ -95,7 +95,7 @@ export const runSurface = (
 		}
 		const runs = latestPerContext(enumerated.value.runs);
 
-		const declared = yield* readDeclared(repo, pull.baseRef, options.env);
+		const declared = yield* readDeclared(repo, pull.baseRef);
 		if (declared._tag === "Unknown") {
 			return refuse(PRECONDITION_UNKNOWN, unreadable(declared.what, declared.reason), notices);
 		}
