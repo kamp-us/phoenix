@@ -132,9 +132,11 @@ const kill = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Close an agent-filed issue not-planned, with a reason."),
+	Command.withShortDescription(
+		"Close an agent-filed issue or a dup fold not-planned, with a reason.",
+	),
 	Command.withDescription(
-		"Close an agent-filed issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the closed-by-triage label, then the close — and read back that it says not_planned. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close), 11 (a precondition read failed, including the claim on the issue), 12 (human-filed — no agent footer and no operator author, see $FABRIKA_OPERATOR_ACCOUNTS), 13 (unconfirmed), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
+		"Close an issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the closed-by-triage label, then the close — and read back that it says not_planned. A human-filed issue closes ONLY as a --duplicate-of fold (the #6070 (c) ruling, ADR 0181); every other close still refuses one on 12. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close), 11 (a precondition read failed, including the claim on the issue), 12 (human-filed and no --duplicate-of — no agent footer and no operator author, see $FABRIKA_OPERATOR_ACCOUNTS), 13 (unconfirmed), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
 	),
 );
 

@@ -90,8 +90,10 @@ you read it. **No founder ruling is owed for that close** — the
 [#6070 (c) ruling](https://github.com/kamp-us/phoenix/issues/6070#issuecomment-5361950454) already
 lets triage close a twin on its own judgment, and ADR
 [0328](../../../../.decisions/0328-report-freshness-check-at-triage.md) puts this check at this
-layer for the same reason. The check reaches agent filings only: §8's rule stands
-unchanged — **a human filing is parked, never killed**, however plainly main already fixed it.
+layer for the same reason. A **flagless** freshness close reaches agent filings only: §8's rule
+stands unchanged there — **a human filing is parked, never killed**, however plainly main already
+fixed it. When the gap is a genuine twin of a live issue, though, `--duplicate-of <survivor>` closes
+it whatever its provenance, because that fold is exactly what the #6070 (c) ruling licensed.
 
 Done when you can state the issue from the code, the dedup outcome is read, and an agent-filed gap
 has been read at main.
@@ -170,7 +172,8 @@ section (`fabrika wire doc-section --heading "triage split" < <skill-base>/contr
 
 Done when every unit is separately pickable. **A human-filed original always stays one of the
 units** — only an agent filing may be left as an empty husk and killed, because a husk parked on
-`status:needs-info` is a question nobody can answer.
+`status:needs-info` is a question nobody can answer. The #6070 (c) fold does not reach this: a husk
+is the remains of a split, not a duplicate of anything, so there is no survivor to fold it into.
 
 ## 6 — Home it, then enrich: rewrite on top, original preserved beneath
 
@@ -312,8 +315,19 @@ kills an agent-filed issue when any one of five clauses holds:
 - **duplicate of its parent** — the parent's scope already covers it.
 
 Those examples are verdicts, not hypotheticals: a sweep on 2026-08-18 killed twelve of thirty-five
-triaged `p2`s, and every one of them landed in a clause above. The bar reaches agent-filed work only
-— **a human filing is parked, never killed**, however cleanly it fits a clause.
+triaged `p2`s, and every one of them landed in a clause above. Four of the five clauses reach
+agent-filed work only — **a human filing is parked, never killed** on those, however cleanly it fits.
+
+**The duplicate clause is the exception, and it is the only one.** When the issue is a genuine twin
+of a live issue, `fabrika triage kill <n> --confirm --duplicate-of <survivor>` closes it whatever its
+provenance, folding its content into the survivor first. That is the
+[#6070 (c) ruling](https://github.com/kamp-us/phoenix/issues/6070#issuecomment-5361950454), recorded
+as ADR [0181](../../../../.decisions/0181-unified-intake-dedup-one-deterministic-tool.md)'s
+2026-08-21 amendment and narrowing ADR
+[0159](../../../../.decisions/0159-never-auto-close-signal-is-the-report-footer.md) on that path
+alone — **no founder ruling is owed for a dup close.** The judgment it rests on is yours and it is
+not cheap: read both issues in full and be able to say they are the same observation. Anything short
+of that is a park, because a fold you cannot defend has closed a human's report on a guess.
 
 Done when the issue has left the queue by exactly one route.
 

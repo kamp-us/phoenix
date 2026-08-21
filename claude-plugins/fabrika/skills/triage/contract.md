@@ -36,7 +36,7 @@ makes the implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4
 | `triage enrich` | replace the body with your rewrite — or, for an epic, your pitch — over a preserved, leak-redacted original | envelope assembly, redaction and read-back are mechanical; what the rewrite says is judgment |
 | `triage apply` | apply the whole triaged transition — type, priority, audience, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
 | `triage park` | park a human-filed issue on `status:needs-info` with questions | the label swap and comment are mechanical; the questions are judgment |
-| `triage kill` | close an agent-filed issue not-planned, auditably, preserving a duplicate's content | the three-write envelope, the redacted fold and the human-filed refusal are mechanical; the verdict is judgment |
+| `triage kill` | close an issue not-planned, auditably, preserving a duplicate's content — agent-filed, or any provenance on a `--duplicate-of` fold | the three-write envelope, the redacted fold and the human-filed refusal (off the fold path) are mechanical; the verdict, and whether two issues are the same observation, is judgment |
 
 One existing verb gains one flag:
 
@@ -158,8 +158,8 @@ or the search index could not be read
 | `9` | the write landed but the read-back does not match | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 | `10` | the supplied value is not permitted here — off the closed vocabulary, a non-open milestone, or a slug that is not a kebab-case leaf | — | — | — | — | — | — | ✓ | — | — | ✓ |
 | `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `12` | refused: the issue is human-filed | — | — | — | — | — | — | — | — | ✓ | — |
-| `13` | refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ | — |
+| `12` | refused: the issue is human-filed and this is not a `--duplicate-of` fold | — | — | — | — | — | — | — | — | ✓ | — |
+| `13` | refused: close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ | — |
 | `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — | — |
 | `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — | — |
 | `17` | refused: a live claim marker on the target names a claimant other than the asking lane — another session, or another lane of this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
@@ -1999,21 +1999,37 @@ caller can read as one: exit `13`, with a message naming what to do. An earlier 
 distinct protection on each half; a spec that implements one and drops the other has narrowed an
 accepted decision.
 
-1. **No agent signal ⇒ human-owned ⇒ PROTECTED.** The verb runs the `triage provenance` predicate
-   itself rather than trusting the caller to have run it — the anchored footer match **and** the
-   operator-account test, both from the one definition. A `human` answer — no footer *and* an author
-   outside `$FABRIKA_OPERATOR_ACCOUNTS`, including the fail-closed default on an **empty** body —
-   refuses on exit `12`. When the operator set is unconfigured the refusal carries a stderr notice
-   saying so, because otherwise "the config is empty" and "this really is a human filing" produce an
-   identical refusal. An **unreadable** body is exit `11`, not a `human` verdict: the kill is refused
-   either way, but a caller must never be told the issue was measured as human-filed when nothing was
-   measured.
+1. **No agent signal ⇒ human-owned ⇒ PROTECTED, off the fold path.** The verb runs the
+   `triage provenance` predicate itself rather than trusting the caller to have run it — the anchored
+   footer match **and** the operator-account test, both from the one definition. A `human` answer —
+   no footer *and* an author outside `$FABRIKA_OPERATOR_ACCOUNTS`, including the fail-closed default
+   on an **empty** body — refuses on exit `12` **whenever `--duplicate-of` is absent**. When the
+   operator set is unconfigured the refusal carries a stderr notice saying so, because otherwise
+   "the config is empty" and "this really is a human filing" produce an identical refusal. An
+   **unreadable** body is exit `11`, not a `human` verdict: the kill is refused either way, but a
+   caller must never be told the issue was measured as human-filed when nothing was measured.
 2. **An agent signal ⇒ eligible *after confirmation*, and "the confirmation step IS the guard."**
    A human-invoked `/report` also emits the footer, so footer presence alone is **not** licence to
    close — ADR 0159 reserves a confirmation-free close-sweep as an explicitly re-opened question.
    `--confirm` is that step made structural: without it the verb refuses on exit `13`, so an
    autonomous sweep cannot close on footer presence alone, and the flag is a greppable, auditable act
    rather than a thing the model was supposed to remember.
+
+**The `--duplicate-of` fold narrows the first guard, and only the first.** The
+[#6070 (c) ruling](https://github.com/kamp-us/phoenix/issues/6070#issuecomment-5361950454) —
+recorded as ADR [0181](https://github.com/kamp-us/phoenix/blob/main/.decisions/0181-unified-intake-dedup-one-deterministic-tool.md)'s
+2026-08-21 amendment, narrowing ADR
+[0159](https://github.com/kamp-us/phoenix/blob/main/.decisions/0159-never-auto-close-signal-is-the-report-footer.md)
+on that path alone — licenses a fold whatever the issue's provenance, because a duplicate's content
+survives on the survivor rather than being lost. So the `12` refusal tests `--duplicate-of` and
+nothing else about position: the second guard still binds (a human-filed fold without `--confirm` is
+still `13`), and so does every `--duplicate-of` precondition (an absent or closed survivor is still
+`7`), so provenance never becomes a route around either.
+
+**The test is `--duplicate-of`'s presence, never a later position in the sequence.** Moving the
+provenance check below the `--confirm` check instead would re-seat a flagless human-filed kill on
+`13`, and `12`-before-`13` is asserted precedence: the same refusal must read `12` whether or not the
+caller also forgot `--confirm`, because the fix for each is different.
 
 **The duplicate fold is redacted.** With `--duplicate-of`, this issue's body is posted as a comment on
 the surviving issue **through the same redaction `triage enrich` applies**, before this issue is
@@ -2032,8 +2048,8 @@ location, with the leak matcher literally named for comments.
 | `9` | the writes landed but the read-back does not show a not-planned close |
 | `11` | the issue body, its comments, the claim on it, the duplicate, or the label set could not be read — no kill was attempted |
 | `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
-| `12` | refused: the issue is human-filed — no agent footer and no operator author |
-| `13` | refused: agent-filed and close-eligible, but `--confirm` was absent (ADR 0159) |
+| `12` | refused: the issue is human-filed — no agent footer and no operator author — and no `--duplicate-of` names a survivor |
+| `13` | refused: close-eligible, but `--confirm` was absent (ADR 0159) |
 
 **Errors**
 
@@ -2054,6 +2070,7 @@ location, with the leak matcher literally named for comments.
 | `triage kill: #<n> carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the `--token` `fabrika triage claim <n>` handed this lane.` | 17 | refusal |
 | `triage kill: #<n> is human-filed — refusing to close it. Park it with questions instead.` | 12 | refusal |
 | `triage kill: #<n> is agent-filed and close-eligible, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.` | 13 | refusal |
+| `triage kill: #<n> is human-filed and close-eligible only as a --duplicate-of fold, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.` | 13 | refusal |
 | `triage kill: the fold comment on #<m> failed: <reason> — #<n> is NOT closed, carries no reason and no label; nothing was lost. Re-run.` | 8 | refusal |
 | `triage kill: the reason comment on #<n> failed: <reason> — #<n> is NOT closed and carries no label, but the fold on #<m> DID land; delete that comment before re-running, or the fold posts twice.` | 8 | refusal |
 | `triage kill: applying closed-by-triage to #<n> failed: <reason> — the fold and the reason comment landed; #<n> is still OPEN and invisible to the kill audit. Apply the label by hand, or delete the landed comments and re-run.` | 8 | refusal |
@@ -2105,6 +2122,13 @@ $ fabrika triage kill 4290 --confirm < reason.md
 triage kill: #4290 is human-filed — refusing to close it. Park it with questions instead.
 $ echo $?
 12
+```
+
+The same human-filed issue folds, because the fold is the one close its provenance does not block:
+
+```
+$ fabrika triage kill 4290 --confirm --duplicate-of 4312 < reason.md
+killed	4290	4312
 ```
 
 ```

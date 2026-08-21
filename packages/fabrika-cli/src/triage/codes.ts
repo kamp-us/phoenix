@@ -84,7 +84,10 @@ export const OFF_VOCABULARY = REPORT_CLASSIFIED;
 /** A precondition read failed — nothing was written and no outcome is proven. `report`'s `11`. */
 export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
 /**
- * Refused: the issue is human-filed.
+ * Refused: the issue is human-filed and this is not a `--duplicate-of` fold.
+ *
+ * The fold is the one close a human filing survives — the #6070 (c) ruling, recorded as ADR 0181's
+ * 2026-08-21 amendment, narrows ADR 0159 on that path alone. Every other close still refuses.
  *
  * `12`, not `11`, because `11` already means `PRECONDITION_UNKNOWN` in the shipped `report` table
  * this group aligns to. Issue #4831's acceptance criteria state `11`/`12` for this pair; the merged
@@ -218,10 +221,13 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 		code: PRECONDITION_UNKNOWN,
 		meaning: "a precondition read failed — nothing was written and the outcome is UNKNOWN",
 	},
-	{code: HUMAN_FILED, meaning: "refused: the issue is human-filed"},
+	{
+		code: HUMAN_FILED,
+		meaning: "refused: the issue is human-filed and this is not a --duplicate-of fold",
+	},
 	{
 		code: UNCONFIRMED,
-		meaning: "refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159)",
+		meaning: "refused: close-eligible, but the kill is unconfirmed (ADR 0159)",
 	},
 	{
 		code: UNREPAIRABLE,

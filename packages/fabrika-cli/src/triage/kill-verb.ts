@@ -1,16 +1,18 @@
 /**
- * `triage kill` — close an agent-filed issue not-planned, auditably.
+ * `triage kill` — close an issue not-planned, auditably.
  *
  * This is the group's only irreversible act on a public board, which shapes every decision below:
  * no precondition resolves to a plausible value, and no write runs before all of them are proven.
  *
- * **Two guards, and they are different guards (ADR 0159, as narrowed by the #4619 ruling).** A
- * filing with no agent signal — no footer *and* no operator author — is human-owned and the verb
- * refuses outright; an agent signal makes it *eligible*, not closeable — a human-invoked `/report`
- * emits the same footer, so `--confirm` is the confirmation step made
- * structural. That is why `--confirm` is optional at the parser and refused at the verb: a
- * parser-required flag's absence is a usage error, indistinguishable from a typo, while ADR 0159's
- * confirmation is a decision whose absence must be a proven refusal a caller can read as one.
+ * **Two guards, and they are different guards (ADR 0159, as narrowed by the #4619 and #6070 (c)
+ * rulings).** A filing with no agent signal — no footer *and* no operator author — is human-owned
+ * and the verb refuses outright, **except on the `--duplicate-of` fold**, which the #6070 (c) ruling
+ * licenses whatever the provenance (ADR 0181's 2026-08-21 amendment). An agent signal makes a filing
+ * *eligible*, not closeable — a human-invoked `/report` emits the same footer, so `--confirm` is the
+ * confirmation step made structural, and it gates the human fold too. That is why `--confirm` is
+ * optional at the parser and refused at the verb: a parser-required flag's absence is a usage error,
+ * indistinguishable from a typo, while ADR 0159's confirmation is a decision whose absence must be a
+ * proven refusal a caller can read as one.
  *
  * **Write order is the auditability guarantee.** Fold the duplicate content, post the reason, apply
  * `closed-by-triage`, then close — and each step gates the next, so a failure before the close
@@ -136,7 +138,10 @@ export const runKill = (
 					]
 				: [];
 
-		if (provenance === "human") {
+		// The fold is the one close a human filing survives, and the test is `duplicateOf`, never a
+		// later position in this function: moving the check below `--confirm` would re-seat a
+		// flagless human kill on `13`, and `12`-before-`13` is asserted precedence.
+		if (provenance === "human" && duplicateOf === null) {
 			// An unset operator set makes every footerless filing read human, including the operator's
 			// own — the refusal is correct but its cause is invisible, so name the config that decides it.
 			const unconfiguredNotice =
@@ -153,9 +158,13 @@ export const runKill = (
 		}
 
 		if (!options.confirm) {
+			const eligibility =
+				provenance === "human"
+					? `#${issue} is human-filed and close-eligible only as a --duplicate-of fold`
+					: `#${issue} is agent-filed and close-eligible`;
 			return refuse(
 				UNCONFIRMED,
-				`triage kill: #${issue} is agent-filed and close-eligible, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.`,
+				`triage kill: ${eligibility}, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.`,
 			);
 		}
 

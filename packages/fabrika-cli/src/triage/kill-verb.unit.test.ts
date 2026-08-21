@@ -180,7 +180,10 @@ describe("runKill", () => {
 		});
 	});
 
-	// --- the provenance guard ------------------------------------------------------------------
+	// --- the provenance guard, off the fold path -------------------------------------------------
+	//
+	// Every case here runs with `duplicateOf: null`, which is what arms the guard at all — the fold
+	// path is the block further down.
 
 	it("refuses a human-filed issue on 12 and writes nothing", async () => {
 		const {out, requests} = await runWith([
@@ -282,6 +285,93 @@ describe("runKill", () => {
 			{confirm: false},
 		);
 		expect(out.code).toBe(HUMAN_FILED);
+	});
+
+	// --- the duplicate fold narrows the provenance guard (#6070 (c), ADR 0181) ------------------
+
+	it("folds a HUMAN-filed issue into a survivor and closes it", async () => {
+		const {out, requests} = await runWith(
+			[
+				[firstCallOnly(ISSUE), issue({body: "I typed this myself."})],
+				[ISSUE, killed],
+				[DUPLICATE, duplicate()],
+				[LABELS, labelSet],
+				[FOLD_COMMENT, comment],
+				[REASON_COMMENT, comment],
+				[APPLY_LABEL, LABELLED],
+				[CLOSE, ACCEPTED],
+			],
+			{duplicateOf: 4290},
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("killed\t4312\t4290\n");
+		expect(requests.filter((c) => FOLD_COMMENT.test(c))).toHaveLength(1);
+	});
+
+	it("reports the human provenance of a fold it closed, so the audit reads what was folded", async () => {
+		const {out} = await runWith(
+			[
+				[firstCallOnly(ISSUE), issue({body: "I typed this myself."})],
+				[ISSUE, killed],
+				[DUPLICATE, duplicate()],
+				[LABELS, labelSet],
+				[FOLD_COMMENT, comment],
+				[REASON_COMMENT, comment],
+				[APPLY_LABEL, LABELLED],
+				[CLOSE, ACCEPTED],
+			],
+			{duplicateOf: 4290, json: true},
+		);
+		expect(JSON.parse(out.stdout)).toEqual({
+			outcome: "killed",
+			number: 4312,
+			foldedInto: 4290,
+			redactions: 0,
+			provenance: "human",
+		});
+	});
+
+	it("refuses a human-filed fold WITHOUT --confirm on 13 — the fold does not lift confirmation", async () => {
+		const {out, requests} = await runWith(
+			[
+				[firstCallOnly(ISSUE), issue({body: "I typed this myself."})],
+				[ISSUE, killed],
+				[DUPLICATE, duplicate()],
+				...happy().slice(2),
+			],
+			{duplicateOf: 4290, confirm: false},
+		);
+		expect(out.code).toBe(UNCONFIRMED);
+		expect(out.stderr.at(-1)).toContain("only as a --duplicate-of fold");
+		expect(requests.some((c) => FOLD_COMMENT.test(c) || CLOSE.test(c))).toBe(false);
+	});
+
+	it("refuses a human-filed fold naming a CLOSED survivor on 7, and writes nothing", async () => {
+		const {out, requests} = await runWith(
+			[
+				[firstCallOnly(ISSUE), issue({body: "I typed this myself."})],
+				[ISSUE, killed],
+				[DUPLICATE, duplicate({state: "closed"})],
+				...happy().slice(2),
+			],
+			{duplicateOf: 4290},
+		);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(requests.some((c) => FOLD_COMMENT.test(c) || CLOSE.test(c))).toBe(false);
+	});
+
+	it("refuses a human-filed fold naming an ABSENT survivor on 7 — provenance is no way around it", async () => {
+		const {out, requests} = await runWith(
+			[
+				[firstCallOnly(ISSUE), issue({body: "I typed this myself."})],
+				[ISSUE, killed],
+				[DUPLICATE, NOT_FOUND],
+				...happy().slice(2),
+			],
+			{duplicateOf: 4290},
+		);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(requests.some((c) => FOLD_COMMENT.test(c) || CLOSE.test(c))).toBe(false);
 	});
 
 	// --- preconditions -------------------------------------------------------------------------
