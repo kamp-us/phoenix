@@ -113,9 +113,12 @@ outlier.
 - The routing table grows but stays one table; a state that routes to no shell is still a refusal.
 - `prove` tightens **last**. Tightened before the shells and routing exist, it converts today's park
   into a stall, which is worse than the deadlock it replaces.
-- Two lane-state nouns become load-bearing: `build:ui` and `review:ui` are where a lane sits;
-  `build-ui` and `review-ui` are the skills, and `ui-builder` and `ui-reviewer` the shells that
-  load them.
+- Two lane-state nouns become load-bearing: `build:ui` and `review:ui` are where a lane sits. Four
+  more nouns ride beside them, and the skill and the shell that loads it never share a spelling:
+  `build-ui` and `review-ui` are the skills; `ui-builder` and `ui-reviewer` are the shells that load
+  them. ADR [0281](0281-agent-names-are-nouns.md) is why they differ — an agent whose `name:` is the
+  bare spelling of its skill is banned there, so deriving a shell name from a skill name yields one
+  nobody can spawn.
 
 ## Records
 
