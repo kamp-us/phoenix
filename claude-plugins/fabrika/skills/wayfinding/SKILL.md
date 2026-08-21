@@ -152,8 +152,11 @@ something to build is the failure mode: re-frame it as the question underneath, 
 already settled — record it as a decision instead. Build work is not fog and does not belong on a
 map at all.
 
-**The edges are map topology, not board state** — never pipeline eligibility, because a frontier
-ticket is not pickable.
+**The edges are map topology and real blockedness both.** A native `blocked_by` edge gates pipeline
+eligibility whoever wrote it, so a destination stays unpickable until its frontier tickets close —
+`build claim`, `build pick` and `build eligible` all read this graph. That gating is intended, not a
+side effect: ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md), ruled for
+map edges at [#6271](https://github.com/kamp-us/phoenix/issues/6271#issuecomment-5362260727).
 
 **Done when** every open question you named is a ticket, and `map read` shows the frontier you
 intended.
