@@ -11,6 +11,10 @@
  * type-level fact rather than a number two files agree about by luck.
  */
 import {
+	READBACK_MISMATCH as BUILD_READBACK_MISMATCH,
+	WRITE_UNKNOWN as BUILD_WRITE_UNKNOWN,
+} from "../build/codes.ts";
+import {
 	LANE_ABSENT,
 	APPEND_UNKNOWN as LANE_APPEND_UNKNOWN,
 	EVENT_REFUSED as LANE_EVENT_REFUSED,
@@ -23,6 +27,7 @@ import {refuse, type VerbOutcome} from "../verb.ts";
 import {
 	MALFORMED_RECORD,
 	PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH,
 	TARGET_ABSENT,
 	TASK_UNRESOLVED,
 	UNPARK_REFUSED,
@@ -52,6 +57,27 @@ export const laneExit = (code: number): number => {
 			return UNPARK_REFUSED;
 		case LANE_TASK_UNKNOWN:
 			return TASK_UNRESOLVED;
+		default:
+			return PRECONDITION_UNKNOWN;
+	}
+};
+
+/**
+ * This group's seat for a `build` verb's refusal — today, `build retire`'s.
+ *
+ * Only the two write-side facts carry across, and they carry because both tables import the same
+ * base constant for them: a removal whose outcome is unproven and a removal contradicted by its
+ * read-back mean here exactly what they mean there. Everything else is
+ * {@link PRECONDITION_UNKNOWN}, including `build`'s own proven refusals: `7` says a *number* is
+ * absent, which is not this group's "no lane at this ref", and re-seating it as one would report a
+ * missing issue as a missing lane.
+ */
+export const buildExit = (code: number): number => {
+	switch (code) {
+		case BUILD_WRITE_UNKNOWN:
+			return WRITE_UNKNOWN;
+		case BUILD_READBACK_MISMATCH:
+			return READBACK_MISMATCH;
 		default:
 			return PRECONDITION_UNKNOWN;
 	}

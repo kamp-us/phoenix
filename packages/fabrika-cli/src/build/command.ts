@@ -35,6 +35,7 @@ import {runNote} from "./note-verb.ts";
 import {runPick} from "./pick-verb.ts";
 import {runPr, runPrBody} from "./pr-verb.ts";
 import {runPush} from "./push-verb.ts";
+import {runRetire} from "./retire-verb.ts";
 import {
 	ADMISSION_EXIT_CODES,
 	CITATION_GRAMMAR,
@@ -248,7 +249,20 @@ const release = leafCommand(
 ).pipe(
 	Command.withShortDescription("Retract this session's own claim marker."),
 	Command.withDescription(
-		'Retract this LANE\'s OWN claim marker, and only its own — --token says which lane that is. Prints {"answer":"released","number":n}. Exits 1 (CLAUDE_CODE_SESSION_ID unset, or --token is not a claim token of this session), 7 (issue proven absent or closed), 8 (the retraction failed — UNKNOWN), 11 (the marker set could not be read), 15 (this lane holds no claim — refusing to release another lane\'s). Example: fabrika build release 4312 --token build:s-9f2e:c1a4d6f8-…',
+		'Retract this LANE\'s OWN claim marker, and only its own — --token says which lane that is. It then frees this tree\'s checkout when the tree is standing on the released lane\'s own branch: HEAD is detached at the commit it already holds, so the branch stays and the pin that refuses a later "build branch --resume-lane" never forms (ADR 0323). The branch is reported as "freed"; a tree on any other branch, and a detach that fails, are both reported and neither is fatal — the claim is already retracted by then. Prints {"answer":"released","number":n,"freed":"<branch>"|null}. Exits 1 (CLAUDE_CODE_SESSION_ID unset, or --token is not a claim token of this session), 7 (issue proven absent or closed), 8 (the retraction failed — UNKNOWN), 11 (the marker set could not be read), 15 (this lane holds no claim — refusing to release another lane\'s). Example: fabrika build release 4312 --token build:s-9f2e:c1a4d6f8-…',
+	),
+);
+
+const retire = leafCommand(
+	"retire",
+	{number: issueArg, repo: repoFlag},
+	Effect.fn(function* ({number, repo}) {
+		yield* emit(yield* runRetire({number, repo: Option.getOrNull(repo), env: process.env}));
+	}),
+).pipe(
+	Command.withShortDescription("Take back the checkout an orphaned build worktree is holding."),
+	Command.withDescription(
+		'Retire the working trees of this clone that hold #<n>\'s lane branch, so a repair lane refused at "build branch --resume-lane" can stand where it needs to (ADR 0323). Two licenses, both written positive board states and never an inference from a tree that looks idle: the ticket is TERMINAL (a closed issue, a merged PR), or an authorized ADR 0295 build-adopt marker on #<n> names the session whose claim carries that branch\'s lane nonce. DIRTINESS IS NOT A REFUSAL — an agent routinely leaves a worktree dirty after its ticket merged — and it costs nobody their only copy either: ADR 0321\'s salvage runs first, committing whatever the tree holds uncommitted onto its own branch, and only then is the tree removed WITHOUT --force, which that ADR bans on every path. A removal that still refuses (a locked tree does, however clean) is reported as an incident to file, never overridden. The removal takes the tree, never the branch. It first prunes registrations whose directory is already gone, never removes the tree the run is standing in, and reads every removal back off a second worktree list. A worktree-isolated caller may run it — the harness rule that refuses a typed cross-worktree git does not bind a verb\'s own child process. Prints {"answer":"retired"|"held"|"none","number":n,"retired":[…],"held":[…]}. Exits 7 (#<n> proven absent), 8 (the salvage or the removal failed — UNKNOWN), 9 (git reported a removal and the registration survives), 11 (a precondition read failed), 33 (a tree still holds the branch and the board licenses no release). Example: fabrika build retire 6567',
 	),
 );
 
@@ -689,6 +703,7 @@ export const buildCommand = Command.make("build").pipe(
 		claimants,
 		release,
 		adopt,
+		retire,
 		issue,
 		branch,
 		scratch,

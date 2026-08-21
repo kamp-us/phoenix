@@ -451,14 +451,18 @@ this order:
   ruling rejected a lease, a TTL and steal outright, and eviction by inference from
   absence stays banned (ADR
   [0215](../../../../.decisions/0215-claim-identity-continuity-proof.md) §5).
-- **Retire the worktree it left.** Salvage first: if the tree is dirty, commit its contents to the
-  dead spawn's branch as a WIP commit, because that uncommitted work is the only copy of what the
-  spawn was doing. Then `git worktree remove` **without `--force`** — a remove that still refuses is
-  an incident to file through [`report`](../report/SKILL.md), never a force. A tree left standing
-  holds the lane branch checked out, which refuses the next repair round's `build branch
-  --resume-lane` on exit `11`. This one is the **primary checkout's**, not a worktree-isolated
-  spawn's (ADR
-  [0321](../../../../.decisions/0321-dead-spawn-worktree-ownership.md)).
+- **Retire the worktree it left**, with `fabrika build retire <n>`. A tree left standing holds the
+  lane branch checked out, which refuses the next repair round's `build branch --resume-lane` on
+  exit `11`. The verb does ADR
+  [0321](../../../../.decisions/0321-dead-spawn-worktree-ownership.md)'s two steps in its order —
+  salvage the tree's uncommitted work onto its own branch, then `git worktree remove` **without
+  `--force`**, and a remove that still refuses is an incident to file through
+  [`report`](../report/SKILL.md), never a force — and it removes nothing the board does not license:
+  the ticket is terminal, or an adopt marker names the holding lane's session as gone (ADR
+  [0323](../../../../.decisions/0323-board-licensed-worktree-retirement.md)). **Run it from wherever
+  you are.** The harness rule that refuses a *typed* cross-worktree `git` reads the command you
+  type, so it does not bind the verb's own child process — which is why this obligation is no longer
+  the primary checkout's alone.
 
 **A claim stranded by a gone session is releasable, once you say so on the board.** `build release`
 refuses it on `15` — proven-foreign — until an adopt marker names that session as dead and this one

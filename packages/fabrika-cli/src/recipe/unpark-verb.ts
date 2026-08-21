@@ -19,8 +19,10 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {WORKTREE_HELD} from "../build/codes.ts";
 import {worktreeCheckouts} from "../build/git.ts";
 import {childLaneBranches} from "../build/lane.ts";
+import {runRetire} from "../build/retire-verb.ts";
 import {localBranches} from "../io/git.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {openPullsClosing} from "../io/pulls.ts";
@@ -38,7 +40,7 @@ import {
 	TASK_UNRESOLVED,
 } from "./codes.ts";
 import {classifyPark, type ParkRecipe} from "./parks.ts";
-import {laneExit, relayRefusal} from "./relay.ts";
+import {buildExit, laneExit, relayRefusal} from "./relay.ts";
 import {clearProof, issueOf, leafOf} from "./status-read.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 
@@ -334,8 +336,30 @@ const clearBranchFree = (
 				),
 			);
 		}
-		const held = checkouts.value.filter((checkout) => candidates.includes(checkout.branch));
+		let held = checkouts.value.filter((checkout) => candidates.includes(checkout.branch));
 		const scope = scannedLine(VERB, checkouts.value.length, "working tree", candidates.join(", "));
+		let retired = 0;
+		if (held.length > 0 && recipe.remedy !== null) {
+			const retire = yield* runRetire({number: issue, repo: options.repo, env: options.env});
+			// `33` is the retirement proving the board licenses none, which is this recipe's own hold
+			// rather than a fault — the re-read below reports it in the recipe's words.
+			if (retire.code !== 0 && retire.code !== WORKTREE_HELD) {
+				return no(relayRefusal(VERB, `${recipe.remedy} ${issue}`, retire, buildExit(retire.code)));
+			}
+			const after = yield* worktreeCheckouts;
+			if (after._tag === "Failure") {
+				return no(
+					refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot re-read which working tree holds ${candidates.join(", ")} after the retirement: ${after.reason} — the park's cause is UNKNOWN, never cleared.`,
+						[scope],
+					),
+				);
+			}
+			retired = held.length;
+			held = after.value.filter((checkout) => candidates.includes(checkout.branch));
+			retired -= held.length;
+		}
 		if (held.length > 0) {
 			return no(
 				refuse(
@@ -343,10 +367,18 @@ const clearBranchFree = (
 					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — ${held
 						.map((checkout) => `${checkout.branch} is checked out in ${checkout.path}`)
 						.join("; ")}; nothing was written.`,
-					[scope],
+					retired === 0
+						? [scope]
+						: [scope, `${VERB}: ${retired} working tree(s) were retired, and these still hold.`],
 				),
 			);
 		}
 
-		return {_tag: "Cleared", mechanism: `branch-free:${candidates.join(",")}`};
+		return {
+			_tag: "Cleared",
+			mechanism:
+				retired === 0
+					? `branch-free:${candidates.join(",")}`
+					: `branch-free:${candidates.join(",")} (retired ${retired} working tree(s))`,
+		};
 	});

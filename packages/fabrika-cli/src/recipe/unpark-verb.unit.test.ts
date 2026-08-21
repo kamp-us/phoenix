@@ -1,6 +1,14 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeFs,
+	fakeSeams,
+	type HttpReply,
+	okOut,
+	once,
+	type Scripted,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {CODEOWNERS, ENV, files, HEAD, pull} from "../ship/fixtures.test-support.ts";
 import {
@@ -39,6 +47,24 @@ const ROSTER = /orgs\/kamp-us\/teams\/control-plane\/members/;
 const REVIEWS = /\/repos\/o\/r\/pulls\/4321\/reviews/;
 const BRANCHES = /^git for-each-ref/;
 const TREES = /^git worktree list/;
+const PRUNE = /^git worktree prune$/;
+const REMOVE = /^git worktree remove /;
+const STATUS = /^git -C \S+ status --porcelain$/;
+const SELF = /^git rev-parse --path-format=absolute/;
+const LANE_ISSUE = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}$`);
+const LANE_COMMENTS = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}/comments`);
+
+/** What `build retire` reads the park's number as — an open issue, so only a closed one licenses. */
+const openIssue = {
+	number: Number(LANE),
+	title: "the lane's issue",
+	body: "",
+	state: "open",
+	labels: [],
+	html_url: `https://github.com/o/r/issues/${LANE}`,
+	milestone: null,
+	state_reason: null,
+};
 
 /** The shared payload fixtures speak `gh`'s `ExecResult`; the seam now serves the same bytes. */
 const reply = (result: ExecResult, status = 200): HttpReply => ({status, body: result.stdout});
@@ -140,17 +166,54 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
-	it("is PARK_HOLDS while a working tree still holds the branch, naming that tree", async () => {
+	it("is PARK_HOLDS while a working tree holds the branch and the board licenses no retirement", async () => {
 		const fs = lane(PARKED_ON_WORKTREE);
 
-		const out = await run(fs, [
-			[BRANCHES, branchList(LANE_BRANCH)],
-			[TREES, worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
-		]);
+		const out = await run(
+			fs,
+			[
+				[BRANCHES, branchList(LANE_BRANCH)],
+				[TREES, worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
+				[PRUNE, okOut("")],
+				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
+			],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[LANE_COMMENTS, {status: 200, body: "[]"}],
+			],
+		);
 
 		expect(out.code).toBe(PARK_HOLDS);
 		expect(out.stderr.join("\n")).toMatch(/\/trees\/agent-a9bd/);
 		expect(fs.written.size).toBe(0);
+	});
+
+	// The routing half of #6610: the row names `fabrika build retire`, so a park whose only cause is a
+	// stale registration clears without a human running `git worktree remove` by hand.
+	it("clears the park by retiring the holding tree when the board licenses it", async () => {
+		const fs = lane(PARKED_ON_WORKTREE);
+
+		const out = await run(
+			fs,
+			[
+				[BRANCHES, branchList(LANE_BRANCH)],
+				[once(TREES), worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
+				[PRUNE, okOut("")],
+				[once(TREES), worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
+				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
+				[STATUS, okOut("")],
+				[REMOVE, okOut("")],
+				[TREES, worktreeList()],
+			],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify({...openIssue, state: "closed"})}],
+				[LANE_COMMENTS, {status: 200, body: "[]"}],
+			],
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).mechanism).toMatch(/retired 1 working tree/);
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
 	it("is TARGET_ABSENT in a clone that never cut the branch — never a clear on an absent read", async () => {

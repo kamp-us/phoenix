@@ -86,7 +86,8 @@ import {
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
-import {composeToken, nonceOf, parseToken} from "./lane.ts";
+import {currentBranch, detachHead} from "./git.ts";
+import {composeToken, laneNumber, nonceOf, parseLaneBranch, parseToken} from "./lane.ts";
 import {failing, readRangeVerdicts} from "./range-verdicts.ts";
 import {
 	admissionOf,
@@ -733,17 +734,83 @@ export const runRelease = (
 				);
 			}
 		}
+		const freed = yield* freeLaneBranch(number, lane.nonce);
 		const adopt = ownership.adopt;
-		if (adopt === null) return answer(JSON.stringify({answer: "released", number}), notes);
+		if (adopt === null) {
+			return answer(JSON.stringify({answer: "released", number, freed: freed.branch}), [
+				...notes,
+				...freed.notes,
+			]);
+		}
 		// The adopt outlives nothing: it exists to authorize this release, so it goes with the claim.
 		const cleared = yield* deleteComment(repo, adopt.commentId);
 		return cleared._tag === "Failure"
 			? refuse(
 					WRITE_UNKNOWN,
 					`${RELEASE}: the claim was retracted and its adopt marker (comment ${adopt.commentId}) was not: ${cleared.reason} — delete it by hand, or a later claim on #${number} reads a succession that no longer applies.`,
-					notes,
+					[...notes, ...freed.notes],
 				)
-			: answer(JSON.stringify({answer: "released", number, adopted: adopt.adopted}), notes);
+			: answer(
+					JSON.stringify({
+						answer: "released",
+						number,
+						adopted: adopt.adopted,
+						freed: freed.branch,
+					}),
+					[...notes, ...freed.notes],
+				);
+	});
+
+/**
+ * Detach this tree's HEAD when it is standing on the branch of the lane just released — the cheap
+ * complement half of the #6610 ruling (ADR 0323).
+ *
+ * A lane that ends normally leaks no pin this way, so `build retire` is left for the trees a killed
+ * session leaves behind rather than being the ordinary route. Detaching is enough and is all that is
+ * done: the commit is unchanged, an uncommitted edit carries over, and the branch keeps existing —
+ * what goes is only the checkout that made `branch --resume-lane` refuse.
+ *
+ * **Never fatal.** The claim comments are already retracted by the time this runs, so refusing here
+ * would report a failure over work that had finished.
+ */
+const freeLaneBranch = (
+	number: number,
+	nonce: string,
+): Effect.Effect<
+	{readonly branch: string | null; readonly notes: ReadonlyArray<string>},
+	never,
+	ChildProcessSpawner.ChildProcessSpawner
+> =>
+	Effect.gen(function* () {
+		const held = yield* currentBranch;
+		if (held._tag === "Failure") {
+			return {
+				branch: null,
+				notes: [
+					`${RELEASE}: the claim was retracted; this tree's branch could not be read (${held.reason}), so nothing was detached.`,
+				],
+			};
+		}
+		const name = held.value;
+		if (name === null) return {branch: null, notes: []};
+		const lane = parseLaneBranch(name);
+		if (lane === null || laneNumber(lane) !== number || lane.nonce !== nonce) {
+			return {branch: null, notes: []};
+		}
+		const detached = yield* detachHead;
+		return detached._tag === "Failure"
+			? {
+					branch: null,
+					notes: [
+						`${RELEASE}: the claim was retracted and this tree still holds ${name}: ${detached.reason} — a later repair round on #${number} will need "fabrika build retire ${number}".`,
+					],
+				}
+			: {
+					branch: name,
+					notes: [
+						`${RELEASE}: detached this tree's HEAD, freeing ${name} — a later repair lane can resume it (ADR 0323).`,
+					],
+				};
 	});
 
 const ADOPT = "build adopt";
