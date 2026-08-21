@@ -349,10 +349,27 @@ export const DECISION_SEATS: SharedSeats = {
 	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
 };
 
+/**
+ * `campaign`'s seats: four, under the base's own names.
+ *
+ * The group writes one file and reads two, so it claims the write-shaped pair and the
+ * unreadable-precondition seat, plus `7` as `NO_TARGET` in the base's own reading — `campaign state`
+ * addresses exactly one row and its selector matching nothing is a target proven absent, not a scope
+ * proven empty. Nothing here reads stdin, composes a body or classifies a label, so `3`, `4`, `5`,
+ * `6` and `10` stay unclaimed rather than seating a second meaning.
+ */
+export const CAMPAIGN_SEATS: SharedSeats = {
+	NO_TARGET: "NO_TARGET",
+	WRITE_UNKNOWN: "WRITE_UNKNOWN",
+	READBACK_MISMATCH: "READBACK_MISMATCH",
+	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
+};
+
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	adr: ADR_SEATS,
 	build: BUILD_SEATS,
+	campaign: CAMPAIGN_SEATS,
 	decision: DECISION_SEATS,
 	governance: GOVERNANCE_SEATS,
 	hook: HOOK_SEATS,
