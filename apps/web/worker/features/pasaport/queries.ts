@@ -62,7 +62,8 @@ export const queries = {
 			const pasaport = yield* Pasaport;
 			// The SAME viewer must thread into both the headline counts and the
 			// contribution feed, or the header disagrees with the feed for that viewer
-			// (#1309/#1312). Only the author and a moderator see sandboxed content.
+			// (#1309/#1312). Sandboxed content shows to its author, a moderator, or the
+			// opted-in in-place reader of #6423 — see lifecycle/SandboxVisibility.ts.
 			const sandboxViewer = yield* currentSandboxViewer;
 			const row = yield* pasaport.lookupProfile(args.username, {sandboxViewer});
 			if (!row) return null;

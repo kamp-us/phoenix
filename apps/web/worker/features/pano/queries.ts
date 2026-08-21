@@ -34,7 +34,9 @@ export const queries = {
 		{args: PostArgs, type: PostView},
 		Effect.fn("post")(function* ({args, select}) {
 			const pano = yield* Pano;
-			// A sandboxed post is hidden from anyone but its author + a moderator (#1205).
+			// A çaylak-sandboxed post is visible to its author, a moderator, or the opted-in
+			// in-place reader of #6423 — the rule is `sandboxVisibleWhere` in
+			// lifecycle/SandboxVisibility.ts (#1205).
 			const sandboxViewer = yield* currentSandboxViewer;
 			const viewerId = sandboxViewer.viewerId;
 			// Mute read-mask (#3113): default-off `member-mute` ⇒ empty set ⇒ unchanged.
