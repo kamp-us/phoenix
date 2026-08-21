@@ -24,6 +24,12 @@ const groupCommands = readdirSync(SRC, {withFileTypes: true})
 		}
 	});
 
+/** The name the adapter bound the shared helper to — several import it `as emitOutcome`. */
+const localName = (source: string): string | undefined => {
+	const match = /\bemit(?:\s+as\s+(\w+))?\s*(?:,[^}]*)?\}\s*from\s*"\.\.\/emit\.ts"/.exec(source);
+	return match === null ? undefined : (match[1] ?? "emit");
+};
+
 describe("every verb group emits through the shared, drain-safe helper", () => {
 	it("finds group adapters at all — fail closed on zero scope (ADR 0092)", () => {
 		expect(groupCommands.length).toBeGreaterThan(0);
@@ -33,7 +39,16 @@ describe("every verb group emits through the shared, drain-safe helper", () => {
 		expect(readFileSync(path, "utf8")).toContain('from "../emit.ts"');
 	});
 
-	it.each(groupCommands)("`%s` never exits on an undrained write", (_label, path) => {
-		expect(readFileSync(path, "utf8")).not.toContain("process.exit(outcome.code)");
+	it.each(groupCommands)("`%s` calls it, not merely imports it", (_label, path) => {
+		const source = readFileSync(path, "utf8");
+		const bound = localName(source);
+		expect(bound).toBeDefined();
+		expect(source).toMatch(new RegExp(`yield\\*\\s*${bound}\\(`));
+	});
+
+	// Any exit from an adapter is a hand-rolled emit however it is spelled: the answer is on stdout
+	// by then, and only the shared helper's write callbacks know it drained.
+	it.each(groupCommands)("`%s` never exits the process itself", (_label, path) => {
+		expect(readFileSync(path, "utf8")).not.toMatch(/process\.exit\(/);
 	});
 });

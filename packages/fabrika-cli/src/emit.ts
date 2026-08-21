@@ -15,8 +15,11 @@
 import {Effect} from "effect";
 import type {VerbOutcome} from "./verb.ts";
 
-export const emit = (outcome: VerbOutcome): Effect.Effect<never> =>
-	Effect.callback<never>(() => {
+// Declared `void` rather than the `never` this actually is: an `Effect<never>` yielded without
+// `return` is what effect's `missingReturnYieldStar` rule reds on, and every adapter's tail is a
+// bare `yield* emit(...)`. Nothing resumes past the exit either way.
+export const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
+	Effect.callback<void>(() => {
 		process.exitCode = outcome.code;
 
 		// The exit holds a count of its own alongside each stream's, so a callback that fires
