@@ -139,15 +139,16 @@ export function Topbar({
 		bildirim && showUnreadBadge(bildirim.unread) ? (
 			<BildirimPopover to={bildirim.to} unread={bildirim.unread} />
 		) : null;
-	const userMenu = user ? (
-		<UserMenu
-			user={user}
-			bildirim={bildirim}
-			themeChoice={themeChoice}
-			onThemeChange={onThemeChange}
-			onLogout={onLogout}
-		/>
-	) : null;
+	const userMenu =
+		reserveSignedInSlots && user ? (
+			<UserMenu
+				user={user}
+				bildirim={bildirim}
+				themeChoice={themeChoice}
+				onThemeChange={onThemeChange}
+				onLogout={onLogout}
+			/>
+		) : null;
 	// `reserveSignedInSlots` gates the whole account side, pill included. The caller derives its
 	// sign-in CTA from the negation of this same flag, so gating only the placeholder left the
 	// pill riding a truthy `user` prop that a signed-out caller could still supply — pill and CTA
@@ -186,9 +187,11 @@ export function Topbar({
 			<span className="kp-topbar__spacer" />
 			<div className="kp-topbar__zone kp-topbar__zone--utility" data-testid="topbar-zone-utility">
 				{searchForm}
-				{/* Signed-out visitors reach the theme picker here; signed-in ones in the user
-				    menu (above), so exactly one theme control renders either way (#2612). */}
-				{!user ? themePicker : null}
+				{/* The picker rides the user menu when one renders, and sits here when none does, so
+				    exactly one theme control renders in every state (#2612). It reads `userMenu`
+				    itself, not `user` — `user` alone can be truthy with the account side gated shut,
+				    and gating this on it left that state with no theme control at all (#6660). */}
+				{userMenu ? null : themePicker}
 			</div>
 			<div
 				className="kp-topbar__zone kp-topbar__zone--status-signal"

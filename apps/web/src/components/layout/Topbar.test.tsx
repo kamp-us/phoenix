@@ -399,4 +399,28 @@ describe("Topbar reserved signed-in account slot (#2933)", () => {
 		expect(screen.queryByTestId("topbar-user-placeholder")).toBeNull();
 		expect(container.querySelector(".kp-topbar__user")).toBeNull();
 	});
+
+	// #2612 says exactly one theme control renders in every state, and the account gate is what
+	// decides which one. These two cases are the states where the gate and a bare `user` disagree.
+	it("reserve off, user supplied: the utility picker still renders — no menu means no menu picker", () => {
+		renderReserved({
+			reserveSignedInSlots: false,
+			user: {name: "Elif", username: "elif"},
+			themeChoice: "light",
+			onThemeChange: () => {},
+		});
+		const utility = screen.getByTestId("topbar-zone-utility");
+		expect(within(utility).getByTestId("topbar-theme-picker")).toBeTruthy();
+	});
+
+	it("reserve on, no user: the utility picker renders beside the placeholder", () => {
+		renderReserved({
+			reserveSignedInSlots: true,
+			themeChoice: "light",
+			onThemeChange: () => {},
+		});
+		const utility = screen.getByTestId("topbar-zone-utility");
+		expect(within(utility).getByTestId("topbar-theme-picker")).toBeTruthy();
+		expect(screen.getByTestId("topbar-user-placeholder")).toBeTruthy();
+	});
 });
