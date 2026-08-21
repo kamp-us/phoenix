@@ -75,3 +75,15 @@ ADR. It is conversation-authored per ADR
   it ships no code.
 
 > Amendment 2026-08-19: the dedup tool shipped as `fabrika report dedup` in `packages/fabrika-cli/src/report/dedup.ts` (+ `dedup-verb.ts`), not `pipeline-cli`; both seams call it — the report skill (claude-plugins/fabrika/skills/report/SKILL.md) and the triage skill's intake check (claude-plugins/fabrika/skills/triage/SKILL.md, with `--exclude`). See ADR 0303.
+
+> Amendment 2026-08-21: one triage wave on 2026-08-18 closed 8 of 13 issues as duplicates or already-fixed (#6070), and the founder ruled on that evidence — [comment 5361950454](https://github.com/kamp-us/phoenix/issues/6070#issuecomment-5361950454), verbatim answer `a+c`. Four things follow, and nothing else does.
+>
+> **(a) accepted — dedup's search half widens to closed issues.** `fabrika report dedup` moves from `searchOpenIssues` to the open-plus-closed `searchIssues` that already sits beside it in `packages/fabrika-cli/src/io/issues.ts`. The ruling bounds that search to a recent window so this ADR's noise concern stays contained, but names no value for it, and neither helper carries a window parameter today — **the concrete bound is unset and this amendment does not set one**, because a number nobody ruled is not a decision. Picking it is the first thing #6923 has to settle.
+>
+> **Dedup stays advisory, never a gate.** Filing never stalls: `candidates`, `none` and `indeterminate` all keep exiting 0 in `packages/fabrika-cli/src/report/dedup-verb.ts`, and nothing on the filing path may stop a filing.
+>
+> **(b) rejected — no tree-freshness check.** Nothing on the report path compares the working tree to `origin/main`, and that includes `packages/fabrika-cli/src/report/file-verb.ts`. A filing from a stale checkout stays legal.
+>
+> **(c) accepted — triage folds a duplicate whatever its provenance.** `fabrika triage kill --duplicate-of <survivor>` may close a duplicate whether it was agent-filed or human-filed, once the triager has read both issues and judged them the same observation; no founder ruling is owed for a dup close. The `HUMAN_FILED` refusal in `packages/fabrika-cli/src/triage/kill-verb.ts` therefore no longer applies on the `--duplicate-of` path. **It survives unchanged everywhere else** — every close that is not a `--duplicate-of` fold still refuses a human filing, which is the whole reason the park route exists. Three prose surfaces state the old rule and follow with the code: `claude-plugins/fabrika/skills/triage/SKILL.md` (step 4's "only an agent filing may be left as an empty husk and killed" and step 8's "a human filing is parked, never killed") and `claude-plugins/fabrika/skills/triage/contract.md` (the `triage kill` row and its exit `12` entries).
+>
+> This amendment records the choice and ships no code. The implementation is tracked as #6923 (the (a) widening) and #6924 (the (c) fold plus its prose). Admitted as transcription per ADR [0300](0300-a-cited-ruling-makes-a-decision-buildable.md).
