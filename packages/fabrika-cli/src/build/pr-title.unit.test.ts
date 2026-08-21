@@ -19,6 +19,23 @@ describe("conventionalTitleOf", () => {
 		);
 	});
 
+	// #6754: the epic tail squashes to a subject on `main`, and a type the node strategy hides drops
+	// the whole epic's changes from the release notes. These are the hidden types in the
+	// conventionalcommits preset's default `config.types`.
+	const HIDDEN_TYPES = ["chore", "docs", "style", "refactor", "test", "build", "ci"];
+
+	it("derives a type release-please shows from type:epic, never a hidden one", () => {
+		const title = conventionalTitleOf("Retire the v1 pipeline plugin", [
+			"type:epic",
+			"status:triaged",
+			"ready-for:agent",
+		]);
+		expect(title).toBe("feat: Retire the v1 pipeline plugin");
+		for (const hidden of HIDDEN_TYPES) {
+			expect(title.startsWith(`${hidden}:`)).toBe(false);
+		}
+	});
+
 	it("falls back to chore for every other type label", () => {
 		expect(conventionalTitleOf("Sweep the stale worktrees", ["type:chore"])).toBe(
 			"chore: Sweep the stale worktrees",

@@ -303,13 +303,20 @@ things, neither of them a summary you compose:
 
 Open the draft with the command below as written. `--base` is omitted on purpose — `gh pr create`
 defaults it to the repository's default branch, the same branch the assembly cut from. The title
-is deliberately the lane key, not the epic's prose title: nothing downstream reads a PR title
-(`lane brief` resolves the tail's PR through the closing-issue edge), and a literal title is what
-keeps this fence expansion-free:
+is deliberately the lane key rather than the epic's prose title, because a literal title keeps this
+fence expansion-free — but it leads with `feat(epic):`, and that prefix is not decoration.
+**release-please reads this title.** The repo squash-merges with
+`squash_merge_commit_title: COMMIT_OR_PR_TITLE`, so the title becomes the subject on `main`, and the
+node strategy classifies on the subject alone: an untyped one is unroutable and a `chore`/`docs` one
+is hidden, either way dropping every package change the epic carried from the notes (#6754; incident
+#5771 is the same rule for builder PRs, derived in
+[`pr-title.ts`](../../../../packages/fabrika-cli/src/build/pr-title.ts)). `feat` is the shown type an
+epic earns by construction. `lane brief` still resolves the tail's PR through the closing-issue edge,
+not the title:
 
 ```bash
 gh pr create --draft --head epic/$lane_key \
-  --title "epic #$lane_key: one-PR run" --body-file -
+  --title "feat(epic): #$lane_key one-PR run" --body-file -
 ```
 
 Every later integration pushes the same branch and **appends that child's closing reference** to the
