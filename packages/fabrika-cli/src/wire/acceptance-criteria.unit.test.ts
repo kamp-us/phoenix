@@ -267,13 +267,12 @@ describe("read — Malformed: the drifts a naive reader answers `empty` for", ()
 		expect(result._tag).toBe("Malformed");
 	});
 
-	it("two conforming headings are Malformed — which one is the contract is undecidable", () => {
-		const result = read(
-			body("### Acceptance criteria", "- [ ] one", "", "### Acceptance criteria", "- [ ] two"),
-		);
-		expect(result._tag).toBe("Malformed");
-		if (result._tag !== "Malformed") return;
-		expect(result.reason).toContain("2");
+	it("two conforming headings serve the LAST — an amendment supersedes what it sits below", () => {
+		expect(
+			found(
+				body("### Acceptance criteria", "- [ ] one", "", "### Acceptance criteria", "- [ ] two"),
+			),
+		).toEqual([criterion("two", false)]);
 	});
 
 	it("no drift answer is ever Found, so no caller can read a drift as a zero-criteria contract", () => {
@@ -285,6 +284,81 @@ describe("read — Malformed: the drifts a naive reader answers `empty` for", ()
 			body("### Acceptance criteria", "just prose"),
 		];
 		for (const drift of drifts) expect(read(drift)._tag).toBe("Malformed");
+	});
+});
+
+/**
+ * One case per rule, in the ADR's own order. The pair that carries the design is rules 4 and 5: the
+ * same near-miss heading refuses below the served block and is dropped above it, because only the
+ * one below can be an amendment nobody is grading.
+ */
+describe("read — block selection in an amended body (ADR 0326)", () => {
+	it("rule 1: no candidate heading at all is Absent", () => {
+		expect(read(body("### What to build", "Stand up the group."))._tag).toBe("Absent");
+	});
+
+	it("rule 2: candidates with none conforming is Malformed, naming the first candidate's drift", () => {
+		const result = read(
+			body(
+				"## Acceptance criteria",
+				"- [ ] one",
+				"",
+				"### Revised acceptance criteria",
+				"- [ ] two",
+			),
+		);
+		expect(result._tag).toBe("Malformed");
+		if (result._tag !== "Malformed") return;
+		expect(result.reason).toContain("heading level 2");
+		expect(result.evidence).toContain("## Acceptance criteria");
+	});
+
+	it("rule 3: two conforming blocks serve the last, whole and alone", () => {
+		expect(
+			found(
+				body(
+					"### Acceptance criteria",
+					"- [ ] the superseded one",
+					"",
+					"## Re-scope after #6690",
+					"",
+					"### Acceptance criteria",
+					"- [ ] the revised one",
+					"- [x] and its second row",
+				),
+			),
+		).toEqual([criterion("the revised one", false), criterion("and its second row", true)]);
+	});
+
+	it("rule 4: a near-miss below the served block is Malformed, naming its text and line", () => {
+		const result = read(
+			body(
+				"### Acceptance criteria",
+				"- [ ] one",
+				"",
+				"### Revised acceptance criteria",
+				"- [ ] two",
+			),
+		);
+		expect(result._tag).toBe("Malformed");
+		if (result._tag !== "Malformed") return;
+		expect(result.reason).toContain("Revised acceptance criteria");
+		expect(result.reason).toContain("line 4");
+		expect(result.evidence).toBe('line 4: "### Revised acceptance criteria"');
+	});
+
+	it("rule 5: a near-miss above the served block is dropped, and the read is Found", () => {
+		expect(
+			found(
+				body(
+					"### Revised acceptance criteria",
+					"- [ ] one",
+					"",
+					"### Acceptance criteria",
+					"- [ ] two",
+				),
+			),
+		).toEqual([criterion("two", false)]);
 	});
 });
 
