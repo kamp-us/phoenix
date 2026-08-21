@@ -199,7 +199,9 @@ the issue carries a founder ruling comment that made the call: the deliverable i
 `build`'s citation arm reads; without it the arm is unreachable and the ruling costs another human
 round-trip. No such comment, and the default above stands: `human`. You cite the comment rather than
 judging the question settled yourself, and a ruling that left a gap open is still a judgment, so it
-stays `human`.
+stays `human`. An issue already parked on `human` needs no triage re-run to come back:
+`fabrika decision rule <n> --cites <url>` is how a control-plane human records the ruling and flips
+the audience, and its contract is that verb's `--help`, not this page.
 
 **`--ready-for agent` requires a criteria block on every type but `epic`.** The verb reads the live
 body through the same wire reader every grader downstream reads, and refuses on `16` — writing no
