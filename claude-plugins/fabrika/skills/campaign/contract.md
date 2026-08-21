@@ -37,18 +37,39 @@ parses the name→milestone join for `triage homes`. And
 recognised by its column names rather than its position, and one unreadable row making the whole
 table `Malformed` rather than degrading to the rows that parsed.
 
-`campaign list` and the two write verbs bind to **`readCampaigns`**. It is the reader whose answer
-decides whether a lane may open, so it is the one a writer must not disagree with: a row this skill
-reports or writes and the fence calls `Malformed` is a campaign that reads as declared and dispatches
-nothing. Binding to `guard/roadmap.ts` instead would buy exactly that divergence — a second cell like
-`(was #47)` is a pin to the guard's loose parser and `Malformed` to the fence, and a bad *milestone*
-cell would be invisible to a report the fence refuses to read. The guard's looser parser is not a bug
-to fix here; it serves invariants that judge a pin's referent rather than admit a row, and
-re-pointing it is outside this skill's lane.
+All three verbs bind to **`readCampaigns`'s parse**, in `build/scope-admission.ts`. It is the parse
+whose answer decides whether a lane may open, so it is the one a writer must not disagree with: a row
+this skill reports or writes and the fence calls `Malformed` is a campaign that reads as declared and
+dispatches nothing. Binding to `guard/roadmap.ts` instead would buy exactly that divergence — a
+second cell like `(was #47)` is a pin to the guard's loose parser and `Malformed` to the fence, and a
+bad *milestone* cell would be invisible to a report the fence refuses to read. The guard's looser
+parser is not a bug to fix here; it serves invariants that judge a pin's referent rather than admit a
+row, and re-pointing it is outside this skill's lane.
 
-The write half is new — nothing in the tree writes this table today. Implementing these verbs means
-exporting `readCampaigns`'s read (it is already `export const`) and adding the writers beside it, not
-copying its regexes into a fourth parser.
+**But `readCampaigns` itself is a narrowing, and these verbs need the rows it narrows away.** Its
+`Dispatch` result carries `ActiveCampaign[]` — only the rows whose state cell is `active`; `paused`
+and `done` rows are validated and then dropped, so an all-`paused` table comes back `None`. `campaign
+list` has to print those rows and count them, `campaign open`'s `19` has to see a duplicate against a
+`paused` row, and `campaign state`'s selector has to find one to flip. Reading `Dispatch` for any of
+those is not a narrower answer, it is the wrong one.
+
+**So the parse is extracted and both callers share it — one parser, still not a third.** Implementing
+these verbs means splitting `build/scope-admission.ts` in one place, before any writer is added:
+
+- Export `parseCampaigns(text: string): CampaignTable`, holding today's loop **unchanged** — the same
+  `MILESTONE_CELL`, the same `isHeader`, the same whole-table `Malformed` on the first unreadable
+  row — but pushing **every** parsed row rather than only the `active` ones:
+  `CampaignTable = {_tag: "Rows"; rows: ReadonlyArray<CampaignRow>} | {_tag: "Malformed"; reason: string}`,
+  with `CampaignRow = {milestone: number; state: CampaignState; name: string}`. An absent heading and
+  a table with no rows both give `{_tag: "Rows", rows: []}`; who calls that `none` is the caller's
+  question, below.
+- Re-express `readCampaigns` as the narrowing over it, keeping its `Dispatch` signature and its
+  `Active`-is-non-empty invariant exactly: `Malformed` passes through, otherwise filter `rows` to
+  `state === "active"` and return `None` for an empty filter. No call site of the fence changes, and
+  the fence's own type still makes "permitting nothing while reporting a permission" unconstructible.
+- The three verbs here call `parseCampaigns`. The write half is new — nothing in the tree writes this
+  table today — so the writers are added beside that parse, never as a fourth one carrying copies of
+  its regexes.
 
 **A roadmap with no `## Campaigns` table, or one whose table has no rows, is a state `campaign open`
 writes into rather than refuses.** `list` calls both `none` at exit 0, so both are ordinary states of
@@ -146,22 +167,29 @@ whatever it contains.** The header is recognised by its three column names (`cam
 heading. Recognising rows this way rather than by a shape test is what makes a mistyped cell
 *malformed* rather than *invisible* — a parser that skipped rows it could not read would answer
 "nothing is active" for a broken table, which is the well-formed-and-always-wrong shape the fence
-exists to avoid. That is `readCampaigns`'s rule and the writers keep it.
+exists to avoid. That is `parseCampaigns`'s rule and the writers keep it.
 
 **A data row is readable only when it has exactly three cells, a non-empty first cell, a second cell
 matching `^#(\d+)$`, and a third cell that lowercases to one of the three states.** Any row failing
 any of those four makes the **whole** table unreadable (`12`) — not just the row, and not just a bad
 state cell. A fence never falls back to the rows it could parse (ADR 0304), so a partial answer is
-the one thing no verb here may return. The refusal carries `readCampaigns`'s own reason string, so
+the one thing no verb here may return. The refusal carries `parseCampaigns`'s own reason string, so
 `campaign list` and the `build` fence name the same defect in the same words.
 
-**An absent table, a table with no rows, and a table whose every row is `paused` or `done` are one
-well-formed default, and they are a fact rather than a failed read.** `campaign list` answers `none`
-at exit `0`. This is the deliberate exception to ADR 0092's fail-closed-on-zero-scope rule, and it is
-ruled: nothing declared means the fence is off, not closed (founder ruling on #5011, carried onto
-this surface by ADR 0304). A judging verb would red here; `list` supplies an input and its empty
-answer is a fact, which is the distinction the interface convention's rule 4 asks every verb to
-settle in its header.
+**An absent table and a table with no rows are one well-formed default, and they are a fact rather
+than a failed read.** `campaign list` answers `none` at exit `0` for both. This is the deliberate
+exception to ADR 0092's fail-closed-on-zero-scope rule, and it is ruled: nothing declared means the
+fence is off, not closed (founder ruling on #5011, carried onto this surface by ADR 0304). A judging
+verb would red here; `list` supplies an input and its empty answer is a fact, which is the
+distinction the interface convention's rule 4 asks every verb to settle in its header.
+
+**A table whose every row is `paused` or `done` is a different input, and `list` does not call it
+`none`.** It prints those rows, because they are declared: someone opened each one and the file says
+so. What is empty there is the *dispatch* answer, and that answer is the fence's — `readCampaigns`
+returns `None` and no lane opens. The two are only one state when read through the fence's narrowing,
+which is exactly the read a report verb must not borrow: `none` from `list` means **no row survived**,
+never "nothing is active". `--state active` is how a caller asks the dispatch question of `list`, and
+on such a table it does answer `none`.
 
 ## The approval trace
 
@@ -329,8 +357,9 @@ $ fabrika campaign list --json
   means the fence is off, not closed.
 - Founder ruling on #5011 — the empty declaration admits everything, which is why zero rows here is
   `0` and not ADR 0092's red.
-- `build/scope-admission.ts`'s `readCampaigns` — the reader this verb binds to, so the report and the
-  dispatch fence cannot disagree about what a row says.
+- `build/scope-admission.ts`'s `parseCampaigns` — the all-rows parse this verb binds to, the one
+  `readCampaigns` narrows for the fence, so the report and the dispatch fence cannot disagree about
+  what a row says.
 
 ---
 

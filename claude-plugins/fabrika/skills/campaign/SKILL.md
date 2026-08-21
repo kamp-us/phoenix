@@ -25,10 +25,14 @@ fabrika campaign list
 
 Three answers, and the third is not the second.
 
-- **Rows** are the live declaration.
-- **`none`** at exit 0 is a proven fact: an absent table, an empty one, and one where every row is
-  `paused` or `done` are a single well-formed default. Report it as *nothing is declared, so every
-  milestone stays admissible* — **the fence is off, not closed** (ADR 0304).
+- **Rows** are the live declaration — every row, whatever state it holds. A table whose rows are all
+  `paused` or `done` prints those rows; it is declared and dispatching nothing, which is not the same
+  as undeclared.
+- **`none`** at exit 0 is a proven fact rather than a failed read: no row survived — the table is
+  absent, or it has no rows, or a `--state` matched nothing. On an absent or empty table, report it
+  as *nothing is declared, so every milestone stays admissible* — **the fence is off, not closed**
+  (ADR 0304). `--state active` answering `none` says the same thing about dispatch on a table that
+  does hold rows.
 - **Unreadable** is exit 11, 12 or 22: the file could not be read, one row would not parse, or
   `.fabrika.jsonc` would not say which file to open. Report it as *nothing was proven*. A table with
   one bad row is unreadable **whole**, never the rows that happened to parse.
