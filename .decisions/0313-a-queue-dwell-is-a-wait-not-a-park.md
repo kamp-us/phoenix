@@ -121,3 +121,41 @@ escalation path out of the wait.
 An epic run's tail gets the same cell for the same reason: the tail is where an epic meets the merge
 queue. A child region has no `ship` and reaches no queue, so it needs none (ADR
 [0285](0285-epic-machine-ends-in-review.md)).
+
+## Amendment — 2026-08-20: an epic lane already on disk drains on the machine it was emitted with
+
+Founder ruling,
+[2026-08-20](https://github.com/kamp-us/phoenix/issues/6683#issuecomment-5361645200), on
+[#6683](https://github.com/kamp-us/phoenix/issues/6683). This amendment transcribes it.
+
+The migration above covers a *booted* lane, whose machine is a copy of a committed template. An epic
+lane's machine is **generated** by `lane emit` from the epic body's topology, so there is no template
+to bring it up to and `lane migrate` reports it `generated` and writes nothing. Five epic lanes were
+on disk when the `WIP` remap landed, each with a tail `ship` state holding cells for `DONE` /
+`BLOCKED` / `FAIL` and none for `WIP`.
+
+**They are not migrated. They drain on the machine they were emitted with**, and no regenerate path
+is built.
+
+**The route out when one is hit.** An old-shape epic tail whose shipper reports its ordinary `QUEUED`
+now maps to `WIP` and refuses with `NoCellError` against that `ship` state. The refusal leaves the
+log byte-identical, so nothing is lost — the driver records the lane's terminal by hand from the
+board's truth with `lane transition`: on a merged PR, `UNBLOCKED` first if the lane is sitting in a
+park, back to the state it came from, then `DONE` from `ship`. That is the same fold lane 6462 took
+and the one the park route above already names. If the epic still has phases to run, the lane is
+re-emitted — which means retiring its directory by hand and running `lane emit` fresh, since
+`placeMachine` refuses over a lane that already exists and that refusal is untouched here.
+
+**Two other answers were considered and rejected**, so the next reader does not re-open them:
+
+1. **Teach `lane migrate` to regenerate a `generated` lane** — re-run `emitMachine` and judge the
+   candidate by the replay test the verb already applies to a template graft. Rejected: `emitMachine`
+   needs the epic's board state, which `lane migrate` reads nothing of today. That is a new read and
+   a new failure mode inside a verb whose whole guarantee is that it writes only where the swap is
+   provably inert.
+2. **Give `lane emit` a `--regenerate`** that overwrites an existing epic lane behind the same
+   proving fold. Rejected: the refusal over an existing lane is there so a lane is never re-booted
+   over, and carving an exception into it costs more than the five lanes are worth.
+
+`lane migrate`'s `generated` verdict therefore stays a skip, and its reason points a reader here
+rather than stating only that the machine was generated.
