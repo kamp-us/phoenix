@@ -7,6 +7,8 @@ import {
 	ADD_LABEL,
 	acl,
 	BODY,
+	BODY_DRIFTED_CRITERIA,
+	BODY_NO_CRITERIA,
 	CODEOWNERS,
 	COMMENTS,
 	comments,
@@ -61,8 +63,8 @@ const postedBody = (posted: {
  * issue read answers the pre-write state and the second answers the read-back, and sharing one
  * scripted regex across two runs would leave the second run's first read unscripted.
  */
-const upToMarker = (): Script => [
-	[once(ISSUE_READ), issueRead()],
+const upToMarker = (body: string = BODY): Script => [
+	[once(ISSUE_READ), issueRead(undefined, body)],
 	[COMMENTS, RULING_ONLY],
 	...acl,
 	[LABELS, taxonomy],
@@ -74,7 +76,17 @@ const wroteLabels = (calls: ReadonlyArray<string>): boolean =>
 	calls.some((line) => ADD_LABEL.test(line) || REMOVE_LABEL.test(line));
 
 /** The marker bytes this fixture's verb composes, taken off a run that stops at the read-back. */
-const marker = async (): Promise<string> => postedBody(await run(upToMarker()));
+const marker = async (body: string = BODY): Promise<string> =>
+	postedBody(await run(upToMarker(body)));
+
+/** A run over `body` carried to a proven marker — the seam where the flip is decided. */
+const ruledOn = async (body: string) => {
+	const bytes = await marker(body);
+	return run([
+		...upToMarker(body),
+		[GET_MARKER, {status: 200, body: JSON.stringify({body: bytes})}],
+	]);
+};
 
 /** The whole happy path, with the read-back scripted from the bytes the verb actually posted. */
 const settled = async (observed: ReadonlyArray<string> = ["type:decision", "ready-for:agent"]) => {
@@ -219,6 +231,28 @@ describe("runRule", () => {
 		const {outcome} = await settled(["type:decision", "ready-for:agent", "ready-for:human"]);
 		expect(outcome.code).toBe(9);
 		expect(outcome.stdout).toBe("");
+	});
+
+	it("keeps the marker and skips the flip when no acceptance-criteria block is there", async () => {
+		const ruled = await ruledOn(BODY_NO_CRITERIA);
+		expect(ruled.outcome.code).toBe(4);
+		expect(ruled.outcome.stdout).toBe("");
+		expect(readRuling(postedBody(ruled))).toMatchObject({
+			_tag: "Found",
+			value: {issue: ISSUE, digest: bodyDigest(BODY_NO_CRITERIA)},
+		});
+		expect(wroteLabels(ruled.calls)).toBe(false);
+		expect(ruled.calls.some((line) => LABELS.test(line))).toBe(false);
+		expect(ruled.outcome.stderr.join("\n")).toContain(`triage enrich ${ISSUE}`);
+	});
+
+	it("skips the flip on a drifted heading too, naming the mechanical repair", async () => {
+		const ruled = await ruledOn(BODY_DRIFTED_CRITERIA);
+		expect(ruled.outcome.code).toBe(4);
+		expect(ruled.outcome.stdout).toBe("");
+		expect(ruled.calls.some((line) => POST.test(line))).toBe(true);
+		expect(wroteLabels(ruled.calls)).toBe(false);
+		expect(ruled.outcome.stderr.join("\n")).toContain(`triage repair-criteria ${ISSUE}`);
 	});
 
 	it("does not re-add an audience the issue already carries", async () => {

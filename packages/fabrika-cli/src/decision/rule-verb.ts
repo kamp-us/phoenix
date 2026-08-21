@@ -21,6 +21,11 @@
  * A roster that could not be read is `11` — never "not authorized" and never "authorized". That is
  * the collapse `ship cp-approval` already refuses to make (#4223), and it is worth more here: this
  * verb's whole output is an authority claim.
+ *
+ * **The guard sits on the flip, never on the ruling.** A ruled decision whose body carries no
+ * acceptance-criteria block still earns its marker — the founder's judgement is the durable thing —
+ * but not the audience, because `ready-for:agent` promises a builder can grade the issue cold and a
+ * criteria-less one only parks the lane at `build claim` exit 32 (#6734).
  */
 
 import {Effect} from "effect";
@@ -46,6 +51,7 @@ import {
 	READY_FOR_HUMAN,
 } from "../triage/audience.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {type AcceptanceCriteriaRead, read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {
 	emit,
 	markedIssue,
@@ -55,6 +61,7 @@ import {
 } from "../wire/decision-ruling.ts";
 import {stampOf} from "../wire/grill-marker.ts";
 import {
+	CRITERIA_REQUIRED,
 	NO_TARGET,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
@@ -65,6 +72,26 @@ import {bodyDigest} from "./digest.ts";
 import {requireDecision} from "./ruling.ts";
 
 const VERB = "decision rule";
+
+/**
+ * The label writes this run owes. The audience's answer holds only over a body a builder could grade
+ * cold: a body whose acceptance-criteria block does not read writes neither label, whatever the
+ * issue carries today.
+ */
+const flipWrites = (
+	labels: ReadonlyArray<string>,
+	criteria: AcceptanceCriteriaRead,
+): {readonly add: boolean; readonly remove: boolean} =>
+	criteria._tag === "Found" ? audienceWrites(labels) : {add: false, remove: false};
+
+/** Why the flip was skipped, in the reader's own words plus the route that repairs the body. */
+const skippedFlip = (
+	issue: number,
+	criteria: Exclude<AcceptanceCriteriaRead, {readonly _tag: "Found"}>,
+): string =>
+	criteria._tag === "Absent"
+		? `${VERB}: the ruling marker stands, but #${issue} carries no acceptance-criteria block — ${criteria.reason}. ready-for:agent promises a builder can pick it up cold, so the audience was not flipped: author the block with \`fabrika triage enrich ${issue}\` and re-run.`
+		: `${VERB}: the ruling marker stands, but #${issue}'s acceptance-criteria block is malformed — ${criteria.reason} (${criteria.evidence}). The audience was not flipped: repair a level drift with \`fabrika triage repair-criteria ${issue}\`, anything else with \`fabrika triage enrich ${issue}\`, then re-run.`;
 
 export interface RuleOptions {
 	readonly number: number;
@@ -163,7 +190,8 @@ export const runRule = (
 			);
 		}
 
-		const audience = audienceWrites(target.issue.labels);
+		const criteria = readCriteria(target.issue.body);
+		const audience = flipWrites(target.issue.labels, criteria);
 		if (audience.add) {
 			// Only the label this run would POST is guarded: it is the POST that mints an unknown
 			// label, and a DELETE of a label the repo never defined removes nothing (#4285).
@@ -207,6 +235,10 @@ export const runRule = (
 				`${VERB}: the marker posted but does not read back — the audience was not flipped, and the ruling needs a human eye.`,
 				notes,
 			);
+		}
+		if (criteria._tag !== "Found") {
+			notes.push(`${VERB}: marker ${posted.value.id} posted and read back.`);
+			return refuse(CRITERIA_REQUIRED, skippedFlip(options.number, criteria), notes);
 		}
 		notes.push(`${VERB}: marker ${posted.value.id} posted and read back; flipping the audience.`);
 

@@ -4,25 +4,37 @@
  *
  * The overlap with `report` is **re-exported, never re-typed** — the discipline `grill/codes.ts` and
  * `build/codes.ts` state in full: an aligning group imports the base's constant, so a drift is
- * unrepresentable rather than merely detectable. This group shares four seats and adds one of its
+ * unrepresentable rather than merely detectable. This group shares five seats and adds one of its
  * own for the fact neither `report` nor any other group proves.
  *
- * Five of the base's seats are deliberately left empty rather than given a second meaning. No verb
- * here reads stdin (`3`), checks a body's sections (`4`), or classifies a label or a title (`10`) —
- * the group writes exactly one audience label pair and one marker whose every field is a digest, a
- * URL or a stamp. And nothing it composes carries free human text, so the two redaction seats (`5`,
- * `6`) are unreachable too: the marker's only caller-supplied field is a URL matched against the
- * `#issuecomment-` grammar, which admits no machine-local path and no bare `@` reference.
+ * Four of the base's seats are deliberately left empty rather than given a second meaning. No verb
+ * here reads stdin (`3`) or classifies a label or a title (`10`) — the group writes exactly one
+ * audience label pair and one marker whose every field is a digest, a URL or a stamp. And nothing it
+ * composes carries free human text, so the two redaction seats (`5`, `6`) are unreachable too: the
+ * marker's only caller-supplied field is a URL matched against the `#issuecomment-` grammar, which
+ * admits no machine-local path and no bare `@` reference.
  *
  * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
  */
 
 import {
+	BAD_SECTIONS as REPORT_BAD_SECTIONS,
 	NO_TARGET as REPORT_NO_TARGET,
 	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
 	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
 } from "../report/codes.ts";
+
+/**
+ * Proven: the ruled issue's body carries no readable `### Acceptance criteria` block, so the
+ * audience flip was skipped and the issue stays on `ready-for:human`. The marker still stands.
+ *
+ * `report`'s own seat for a body whose sections do not hold up, and the same fact here: `triage
+ * apply` already refuses `--ready-for agent` over such a body, and a flip written under the same
+ * promise with none of the same proof manufactures a lane that parks at `build claim` exit 32
+ * (#6734).
+ */
+export const CRITERIA_REQUIRED = REPORT_BAD_SECTIONS;
 
 /** Proven absent: the issue does not exist, is a pull request, or is not a `type:decision`. */
 export const NO_TARGET = REPORT_NO_TARGET;

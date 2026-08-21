@@ -13,7 +13,13 @@ export const RULER = "usirin";
 export const RULING_COMMENT = 900001;
 export const RULING_URL = `https://github.com/${REPO}/issues/${ISSUE}#issuecomment-${RULING_COMMENT}`;
 export const MARKER_COMMENT = 900002;
-export const BODY = "## The decision\n\nWhich fork?\n";
+/** A gradeable decision body: the acceptance-criteria block `decision rule` needs to flip on. */
+export const BODY =
+	"## The decision\n\nWhich fork?\n\n### Acceptance criteria\n\n- [ ] an ADR records the choice\n";
+/** The same decision with nothing reaching for the block — the `Absent` case. */
+export const BODY_NO_CRITERIA = "## The decision\n\nWhich fork?\n";
+/** The same decision with the block's heading drifted a level — the `Malformed` case. */
+export const BODY_DRIFTED_CRITERIA = BODY.replace("### Acceptance", "## Acceptance");
 
 export const env = {CLAUDE_PIPELINE_REPO: REPO, GITHUB_TOKEN: "ghp_scripted"} as Record<
 	string,
