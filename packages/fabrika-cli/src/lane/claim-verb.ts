@@ -26,15 +26,22 @@
  * **No admission test runs here.** The fence decides what may start *building* (ADR 0245), and the
  * builder this driver spawns runs it on its own account; a second copy in the driver would refuse a
  * lane at a different moment than the shell it drives, for reasons the driver is type-blind to.
+ *
+ * **`adopt` is the third verb, and it is what a killed seat's successor runs** (ADR 0324, in parity
+ * with ADR 0295's build-namespace succession): the successor states on the board that a seat is gone
+ * and inherits its claim, so `release` then answers `Mine` and retracts the claim and the adopt
+ * together. No TTL, no lease, no steal.
  */
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {
+	composeAdoptMarker,
 	composeMarker,
 	describeCaller,
 	laneCaller,
 	markersIn,
+	readAdoptMarker,
 	readMarkerToken,
 	requireCallerToken,
 	requireSession,
@@ -83,7 +90,7 @@ type Preflight =
 const preflight = (
 	verb: string,
 	kind: string,
-	options: ProtocolOptions,
+	options: Omit<ProtocolOptions, "token">,
 ): Effect.Effect<Preflight, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const session = requireSession(verb, options.env);
@@ -122,6 +129,16 @@ const unauthorizedNotes = (
 const siblingNote = (verb: string, token: string): string =>
 	`${verb}: ${token} carries this very session under another nonce — a sibling driver of this session, or a marker an earlier run of it left behind.`;
 
+/**
+ * The route out of a proven loss, named on the refusal itself.
+ *
+ * Without it `lane claim` dead-ends on `31` for a seat `lane stale` is at the same moment naming as
+ * one to re-spawn — the two verbs contradicting each other over one lane, with only a hand-composed
+ * `--token` release in between (#6374).
+ */
+const successionNote = (verb: string, holder: {readonly session: string}, lane: string): string =>
+	`${verb}: if that seat is gone, take the lane back through succession rather than a hand-composed token — fabrika lane adopt ${lane} --session ${holder.session} --reason "<why>", then fabrika lane release ${lane} --token <the token adopt printed> (ADR 0324).`;
+
 export const runLaneClaim = (
 	options: LaneClaimOptions,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
@@ -139,6 +156,16 @@ export const runLaneClaim = (
 			const holding = requireCallerToken(CLAIM, session, options.token, LANE_CLAIM);
 			if (holding._tag === "Refused") return holding.outcome;
 			const prior = yield* resolveOwnership(repo, number, holding.caller, LANE_CLAIM);
+			if (prior.ownership._tag === "Mine" && prior.ownership.adopt !== null) {
+				// Answering `won` here would hand back the DEAD seat's token — the winner on an adopted
+				// claim — which every later verb of this run refuses as another lane's. This is the only
+				// arm that can see it: the post-write read below runs under a nonce no adopt can name, so a
+				// tokenless claim resolves `Foreign` and loses. Nothing was written, so nothing to retract.
+				return refuse(
+					CLAIM_NOT_MINE,
+					`${CLAIM}: #${number} still carries the adopted claim ${prior.ownership.marker.token} — run "fabrika lane release ${options.lane} --token ${prior.ownership.adopt.token}" to retract it and the adopt together, then claim.`,
+				);
+			}
 			if (prior.ownership._tag === "Mine") {
 				return answer(
 					JSON.stringify({
@@ -227,6 +254,7 @@ export const runLaneClaim = (
 					[
 						...notes,
 						...(ownership.sameSession ? [siblingNote(CLAIM, ownership.marker.token)] : []),
+						successionNote(CLAIM, ownership.marker, options.lane),
 						...trailer,
 					],
 				)
@@ -257,8 +285,19 @@ export const runLaneRelease = (
 		if (asking._tag === "Refused") return asking.outcome;
 		const lane = asking.caller;
 
-		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, lane, LANE_CLAIM);
-		const notes = unauthorizedNotes(RELEASE, unauthorized);
+		const {ownership, unauthorized, unauthorizedAdopts} = yield* resolveOwnership(
+			repo,
+			number,
+			lane,
+			LANE_CLAIM,
+		);
+		const notes = [
+			...unauthorizedNotes(RELEASE, unauthorized),
+			...unauthorizedAdopts.map(
+				(marker) =>
+					`${RELEASE}: comment ${marker.commentId} carries a lane-adopt marker from "${marker.author}", who holds no write permission — counted, never a succession.`,
+			),
+		];
 		if (ownership._tag === "Unknown") {
 			return refuse(
 				LANE_UNREADABLE,
@@ -272,8 +311,12 @@ export const runLaneRelease = (
 				ownership._tag === "Foreign"
 					? `${RELEASE}: #${number} is held by ${ownership.marker.token}, not by ${describeCaller(lane)} — refusing to retract another driver's marker.`
 					: `${RELEASE}: no lane claim exists on #${number} — nothing to retract.`,
-				ownership._tag === "Foreign" && ownership.sameSession
-					? [...notes, siblingNote(RELEASE, ownership.marker.token)]
+				ownership._tag === "Foreign"
+					? [
+							...notes,
+							...(ownership.sameSession ? [siblingNote(RELEASE, ownership.marker.token)] : []),
+							successionNote(RELEASE, ownership.marker, options.lane),
+						]
 					: notes,
 			);
 		}
@@ -310,5 +353,128 @@ export const runLaneRelease = (
 				);
 			}
 		}
-		return answer(JSON.stringify({answer: "released", lane: options.lane, number}), notes);
+		const adopt = ownership.adopt;
+		if (adopt === null) {
+			return answer(JSON.stringify({answer: "released", lane: options.lane, number}), notes);
+		}
+		// The adopt outlives nothing: it exists to authorize this release, so it goes with the claim.
+		const cleared = yield* deleteComment(repo, adopt.commentId);
+		return cleared._tag === "Failure"
+			? refuse(
+					APPEND_UNKNOWN,
+					`${RELEASE}: the claim was retracted and its adopt marker (comment ${adopt.commentId}) was not: ${cleared.reason} — delete it by hand, or a later claim on #${number} reads a succession that no longer applies.`,
+					notes,
+				)
+			: answer(
+					JSON.stringify({
+						answer: "released",
+						lane: options.lane,
+						number,
+						adopted: adopt.adopted,
+					}),
+					notes,
+				);
+	});
+
+const ADOPT = "lane adopt";
+
+/**
+ * `adopt` takes no `--token`: it MINTS the driver identity the succession creates and prints it. A
+ * successor holds no token on a lane whose claim it is inheriting — demanding one would be demanding
+ * the thing being conferred.
+ */
+export interface LaneAdoptOptions extends Omit<ProtocolOptions, "token"> {
+	/** The session whose stranded seat this run adopts. */
+	readonly session: string;
+	/** Why the succession is taken — required, and recorded on the marker. */
+	readonly reason: string;
+	/** A fresh UUID, supplied by the adapter so the successor token is deterministic under test. */
+	readonly uuid: string;
+	readonly at: string;
+}
+
+/**
+ * `lane adopt` — the successor operator seat names a stranded seat on the board, so its lane claim
+ * becomes releasable (ADR 0324, the lane-namespace half of ADR 0295).
+ *
+ * **It admits this run's own session, and that is the difference from `build adopt`.** What dies in
+ * this namespace is a *seat*, not a session: a killed operator seat's successor boots under the same
+ * `CLAUDE_CODE_SESSION_ID` and only its nonce differs, so the marker it must inherit is
+ * same-session-other-nonce — the shape `build adopt` refuses as already covered by plain release.
+ * Here plain release does not cover it: `resolveOwnership` turns on the whole token, so the stranded
+ * marker reads `Foreign` and the only way through was reading its token out of the comment thread by
+ * hand (#6374). That hand-composed `--token` is what this verb exists to remove.
+ *
+ * The price is the one ADR 0295 already priced and disclosed: an adopt proves a seat gone no more
+ * than it proves a session gone, so a driver may adopt a live sibling's claim. The guard is the
+ * ACL plus the marker sitting on the issue with its reason, not a liveness proof.
+ *
+ * It writes one comment and nothing else. It takes no claim and evicts nobody: the release that
+ * follows runs the ordinary ownership read, so an adopt posted below `write` decides nothing.
+ */
+export const runLaneAdopt = (
+	options: LaneAdoptOptions,
+): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const adopted = options.session.trim();
+		const reason = options.reason.trim();
+		if (adopted === "") {
+			return refuse(
+				FAILED,
+				`${ADOPT}: --session is empty — an adoption that names no session adopts nothing.`,
+			);
+		}
+		if (reason === "") {
+			return refuse(
+				FAILED,
+				`${ADOPT}: --reason is empty — a succession is recorded or it is not one.`,
+			);
+		}
+		// The marker is one line with `·` as its field separator, so a value carrying either composes a
+		// comment the reader cannot read back: the post lands, the read-back refuses, and a stray comment
+		// is left behind. Refuse before the write instead.
+		if (/[\s·]/.test(adopted)) {
+			return refuse(
+				FAILED,
+				`${ADOPT}: --session "${adopted}" carries whitespace or "·" — a session id is one unbroken word, and this one would compose a marker no reader can read back; nothing was written.`,
+			);
+		}
+		if (/[\r\n]/.test(reason)) {
+			return refuse(
+				FAILED,
+				`${ADOPT}: --reason spans more than one line — the marker records one line, so the rest would be dropped silently; restate it as one line. Nothing was written.`,
+			);
+		}
+
+		const ready = yield* preflight(ADOPT, "inert", options);
+		if (ready._tag !== "Ready") return ready.outcome;
+		const {repo, session, number} = ready;
+
+		const token = composeToken(session, options.uuid, LANE_CLAIM.prefix);
+		const body = composeAdoptMarker(adopted, token, options.at, reason, LANE_CLAIM);
+		const posted = yield* createComment(repo, number, body);
+		if (posted._tag === "Failure") {
+			return refuse(
+				APPEND_UNKNOWN,
+				`${ADOPT}: the adopt marker write failed: ${posted.reason} — whether the succession is recorded is UNKNOWN; re-read #${number}'s comments before releasing.`,
+			);
+		}
+		const back = yield* getComment(repo, posted.value.id);
+		const read =
+			back._tag === "Failure"
+				? null
+				: readAdoptMarker(normalizeForReadback(back.value), LANE_CLAIM);
+		if (read === null || read.adopted !== adopted || read.token !== token) {
+			return refuse(
+				MARKER_READBACK,
+				`${ADOPT}: the adopt marker landed but the read-back does not match — the succession needs a human eye.`,
+				[`${ADOPT}: comment ${posted.value.id} on #${number} is the one to inspect.`],
+			);
+		}
+		return answer(
+			JSON.stringify({answer: "adopted", lane: options.lane, number, session: adopted, token}),
+			[
+				`${ADOPT}: #${number}'s lane claim from "${adopted}" is now releasable by the driver this marker names — run "fabrika lane release ${options.lane} --token ${token}".`,
+			],
+		);
 	});

@@ -17,7 +17,7 @@ import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {runAssembly} from "./assembly-verb.ts";
 import {runBrief} from "./brief-verb.ts";
-import {runLaneClaim, runLaneRelease} from "./claim-verb.ts";
+import {runLaneAdopt, runLaneClaim, runLaneRelease} from "./claim-verb.ts";
 import {CLASS_UNRECOGNISED} from "./codes.ts";
 import {runEmit} from "./emit-verb.ts";
 import {runHistory} from "./history-verb.ts";
@@ -495,6 +495,48 @@ const release = leafCommand(
 	),
 );
 
+const adopt = leafCommand(
+	"adopt",
+	{
+		lane: laneArgument,
+		session: Flag.string("session").pipe(
+			Flag.withDescription(
+				"the session whose stranded seat this run adopts — this run's own is the ordinary case here",
+			),
+		),
+		reason: Flag.string("reason").pipe(
+			Flag.withDescription("why the succession is taken; recorded on the marker, required"),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, session, reason, repo}) {
+		yield* emit(
+			yield* onKey(lane, Option.none(), (key) =>
+				runLaneAdopt({
+					key,
+					lane,
+					session,
+					reason,
+					repo: Option.getOrNull(repo),
+					env: process.env,
+					uuid: randomUUID(),
+					at: new Date().toISOString(),
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Inherit a stranded seat's lane claim by attesting on the board."),
+	Command.withDescription(
+		'Post the succession marker a stranded operator seat\'s lane claim needs: lane-adopt: <session> by lane:<this-session>:<uuid> · <ISO> · reason: <text>. It writes ONE comment and posts no claim marker — "fabrika lane release <lane> --token <the token this prints>" then resolves that claim as this driver\'s and retracts both comments, after which "fabrika lane claim <lane>" wins normally (ADR 0324, the lane-namespace half of ADR 0295). UNLIKE "build adopt" it ADMITS this run\'s own session, because what dies here is a SEAT and its successor boots under the same CLAUDE_CODE_SESSION_ID with only a fresh nonce — the same-session-other-nonce marker plain release reads as foreign, which is the whole hole this closes (#6374). It proves no seat dead, exactly as ADR 0295 proves no session dead: the guards are the poster\'s repository permission, read at release time (ADR 0055), and the marker sitting on the issue with its reason for anyone to read; an adopt from an account below write is counted, reported, and never a succession. Deleting the comment reverses it. Prints {"answer":"adopted","lane":"…","number":n,"session":"<adopted>","token":"…"}. A `chore:<name>` lane, or any key that is not a board number, was never claimable and answers {"answer":"inert","lane":"…","why":"…"} at exit 0 with nothing written. Exits 1 (CLAUDE_CODE_SESSION_ID unset, an empty --session or --reason, a --session carrying whitespace or ·, or a multi-line --reason), 8 (the marker write failed — UNKNOWN), 9 (the marker landed and does not read back), 21 (the key is not a lane key). Example: fabrika lane adopt 5648 --session 99162fc1-3d99-416e-98b3-99dd423ade39 --reason "the seat driving this lane was killed by the 2026-08-19 outage"',
+	),
+);
+
 const stale = leafCommand(
 	"stale",
 	{
@@ -533,7 +575,7 @@ const stale = leafCommand(
 ).pipe(
 	Command.withShortDescription("Which lanes have gone quiet with something owed on them."),
 	Command.withDescription(
-		`Sweep every lane on disk and answer which ones nothing is driving. A lane's ledger records state, not liveness, so a shell that dies leaves the lane reading active forever (#5897); the age here comes off the \`at\` every event line already carries — nothing new is stored. stdout is {now, olderThanMinutes, scanned, summary, lanes}, oldest silence first, each lane carrying its folded stateValue, its last event's timestamp, its age in minutes and one verdict: "stale" (non-terminal, unparked and silent past the threshold), "moving", "parked" (blocked or a human:* hold — a park is meant to sit), "terminal", "unstarted" (a lane with no events at all, so no age to judge) or "unreadable" (the lane is there and its record is not readable — it is reported, never dropped). Both default roots are swept unless --root names one; an absent root holds no lanes and is not a fault, and zero lanes is an empty answer at exit 0. Stale lanes exit 0 too — this reports, it never resumes. Without --claims the whole sweep runs off disk and makes no network call. --claims additionally reads the board and pairs each NON-TERMINAL lane with the claim standing on its issue, which is the other half a session limit strands: the dead builder's claim marker outlives it, and the lane log cannot see that (#6771). Each paired row then carries claims: {"state":"held",token,session,author,commentId} | {"state":"unclaimed"} | {"state":"unknown",reason} — a board read that failed is unknown, never "unclaimed" — and the answer carries a top-level claims summary, null when the board was never asked. Chore lanes drive no issue and are not paired. Nothing here clears a claim: a stranded one leaves through "fabrika build adopt" then "fabrika build release" (ADR 0295), and "fabrika build claimants <n>" reads one issue the same way. Exits 1 (--older-than is not a non-negative number of minutes), 11 (a root is there and could not be listed — the lane set is UNKNOWN, never a short list). Examples: fabrika lane stale · fabrika lane stale --older-than 30 · fabrika lane stale --claims`,
+		`Sweep every lane on disk and answer which ones nothing is driving. A lane's ledger records state, not liveness, so a shell that dies leaves the lane reading active forever (#5897); the age here comes off the \`at\` every event line already carries — nothing new is stored. stdout is {now, olderThanMinutes, scanned, summary, lanes}, oldest silence first, each lane carrying its folded stateValue, its last event's timestamp, its age in minutes and one verdict: "stale" (non-terminal, unparked and silent past the threshold), "moving", "parked" (blocked or a human:* hold — a park is meant to sit), "terminal", "unstarted" (a lane with no events at all, so no age to judge) or "unreadable" (the lane is there and its record is not readable — it is reported, never dropped). Both default roots are swept unless --root names one; an absent root holds no lanes and is not a fault, and zero lanes is an empty answer at exit 0. Stale lanes exit 0 too — this reports, it never resumes. Without --claims the whole sweep runs off disk and makes no network call. --claims additionally reads the board and pairs each NON-TERMINAL lane with the claim standing on its issue, which is the other half a session limit strands: the dead builder's claim marker outlives it, and the lane log cannot see that (#6771). Each paired row then carries claims: {"state":"held",token,session,author,commentId} | {"state":"unclaimed"} | {"state":"unknown",reason} — a board read that failed is unknown, never "unclaimed" — and the answer carries a top-level claims summary, null when the board was never asked. Chore lanes drive no issue and are not paired. Nothing here clears a claim: a stranded BUILD claim leaves through "fabrika build adopt" then "fabrika build release" (ADR 0295), and the LANE claim a killed operator seat strands on the same issue — which this sweep does not read — leaves through "fabrika lane adopt" then "fabrika lane release" (ADR 0324). "fabrika build claimants <n>" reads one issue's build claims the same way. Exits 1 (--older-than is not a non-negative number of minutes), 11 (a root is there and could not be listed — the lane set is UNKNOWN, never a short list). Examples: fabrika lane stale · fabrika lane stale --older-than 30 · fabrika lane stale --claims`,
 	),
 );
 
@@ -615,6 +657,7 @@ export const laneCommand = Command.make("lane").pipe(
 		migrate,
 		claim,
 		release,
+		adopt,
 		view,
 	]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
