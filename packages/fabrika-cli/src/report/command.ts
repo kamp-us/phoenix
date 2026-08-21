@@ -1,5 +1,5 @@
 /**
- * The `report` verb group — `fabrika report <dedup|file|note>`.
+ * The `report` verb group — `fabrika report <dedup|file|note|amend>`.
  *
  * The adapter and nothing else: it declares the flags (`--help` is the interface, so every flag
  * carries a one-line description), runs the pure verb, and emits its outcome. Every decision lives
@@ -16,6 +16,7 @@ import {Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import type {VerbOutcome} from "../verb.ts";
+import {runAmend} from "./amend-verb.ts";
 import {DEFAULT_LIMIT} from "./dedup.ts";
 import {runDedup} from "./dedup-verb.ts";
 import {runFile} from "./file-verb.ts";
@@ -157,8 +158,38 @@ const note = leafCommand(
 	),
 );
 
+const amend = leafCommand(
+	"amend",
+	{
+		issue: Flag.integer("issue").pipe(
+			Flag.withDescription("the issue number whose body the amendment is appended to"),
+		),
+		redact: redactFlag,
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({issue, redact, repo, json}) {
+		yield* emit(
+			yield* runAmend({
+				issue,
+				redact,
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+				stdin: Effect.sync(readStdin),
+				now: () => new Date(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Append a dated amendment from stdin to an existing issue's body."),
+	Command.withDescription(
+		"Append the section on STDIN to an existing issue's body under a separator and a dated `## Amendment` heading this verb composes, leaving the prior body verbatim above it, then read the body back. Never replaces a body — GitHub keeps no issue-body history. Prints `<issue>\\t<url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue), 8 (write failed — UNKNOWN), 9 (read-back mismatch), 11 (issue unreadable). Example: fabrika report amend --issue 4312 < correction.md",
+	),
+);
+
 export const reportCommand = Command.make("report").pipe(
-	Command.withSubcommands([dedup, fileCmd, note]),
+	Command.withSubcommands([dedup, fileCmd, note, amend]),
 	Command.withShortDescription("File one follow-up observation into the intake queue."),
 	Command.withDescription(
 		"File one follow-up observation into the intake queue: check for a duplicate, then compose and post it over a guarded path that refuses a leak, an empty body, or a hand-applied classification",

@@ -1,5 +1,5 @@
 /**
- * The body-surface leak predicate, shared by `report file` and `report note`.
+ * The body-surface leak predicate, shared by `report file`, `report note` and `report amend`.
  *
  * A machine-local path in a body posted to a public issue is a leak, and no merge gate covers it —
  * the repo's committed-file leak gate decides whether a *file in a diff* carries one, and a runtime

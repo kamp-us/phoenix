@@ -93,7 +93,7 @@ the file's contents, which is how a machine-local path reaches a public artifact
 reads success — the rule and its reasoning are one section
 (`fabrika wire doc-section --heading "The body is a value, never a path" < <skill-base>/contract.md`).
 Which exit carries which refusal is
-`--heading "The shared exit taxonomy for the two writing verbs"`, and what counts as a leak is
+`--heading "The shared exit taxonomy for the writing verbs"`, and what counts as a leak is
 `--heading "The body-surface leak predicate"`.
 
 Use `--redact` when a machine-local path is genuinely part of the evidence — reporting a leak
@@ -116,6 +116,13 @@ EOF
 Done when the verb exits 0 and prints the comment id and URL. It runs the same guards as `file` over
 a comment body, and its section says which
 (`fabrika wire doc-section --heading "report note" < <skill-base>/contract.md`).
+
+**When the correction belongs in the body rather than under it, amend — never rewrite.** GitHub
+keeps no issue-body history, so a hand-rolled `gh api -X PATCH -f body=@file` that posts the path
+instead of the file destroys the body it was correcting (#6708, #6736). `fabrika report amend
+--issue <n>` appends your section under a separator and a dated heading it composes, leaves the
+prior body verbatim, and proves both halves on the read-back
+(`fabrika wire doc-section --heading "report amend" < <skill-base>/contract.md`).
 
 ## 5 — Report and return
 

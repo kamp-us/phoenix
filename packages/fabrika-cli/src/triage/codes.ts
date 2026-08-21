@@ -8,7 +8,7 @@
  * code on `PreToolUse` (`../hook/harness-exit.ts`, #5423).
  *
  * **The alignment with `report` is deliberate, code-for-code, and re-exported rather than
- * re-typed.** Where this table overlaps `report`'s two writing verbs — `3`, `5`, `6`, `7`, `8`, `9`,
+ * re-typed.** Where this table overlaps `report`'s writing verbs — `3`, `5`, `6`, `7`, `8`, `9`,
  * `10`, `11` — the values are *imported* from `../report/codes.ts`, so a caller driving `report` and
  * `triage` in one sweep reads one meaning and a drift between the two is unrepresentable rather than
  * merely detectable (`../review/codes.ts` set the precedent; `../exit-code-alignment.ts` owns the

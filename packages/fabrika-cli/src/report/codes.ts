@@ -1,6 +1,6 @@
 /**
- * The one exit table `report file` and `report note` allocate from, so a code means the same thing
- * whichever verb produced it. A verb that cannot reach a code leaves it unused rather than
+ * The one exit table `report file`, `report note` and `report amend` allocate from, so a code means
+ * the same thing whichever verb produced it. A verb that cannot reach a code leaves it unused rather than
  * compacting the range — a gap is cheaper than a collision.
  *
  * `0`, `1` and `127` are the interface convention's reserved codes (see `../verb.ts`); everything
@@ -37,10 +37,10 @@ export const CLASSIFIED = 10;
 /**
  * A precondition read failed, so nothing was written and no outcome is proven.
  *
- * Not in the contract's table, and allocated here rather than folded into an existing code
- * (#4752's class): the label-set read is what makes {@link NO_TARGET} and {@link CLASSIFIED}
- * *proven*, so a failed read of it can be neither. It is not `8` — nothing was attempted — and not
- * `1`, which would fuse an unreachable GitHub with a bad flag.
+ * Allocated its own code rather than folded into an existing one (#4752's class): the label-set
+ * read is what makes {@link NO_TARGET} and {@link CLASSIFIED} *proven*, so a failed read of it can
+ * be neither. It is not `8` — nothing was attempted — and not `1`, which would fuse an unreachable
+ * GitHub with a bad flag.
  */
 export const PRECONDITION_UNKNOWN = 11;
 /**

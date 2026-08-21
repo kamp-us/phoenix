@@ -47,6 +47,7 @@ description stays.
 | `report dedup` | rank the open issues that may already cover an observation | two REST reads, tokenize, score, sort — deciding whether a candidate *is* your observation stays in the skill |
 | `report file` | compose, guard and create the intake issue, then read back what landed | the template, the footer, the leak predicate, the classification refusal, the label and the read-back are all mechanical; what goes in the sections is judgment |
 | `report note` | add a note to an existing issue over the same guarded path | as above, minus composition — the guard and the read-back are the deterministic part |
+| `report amend` | append a dated amendment to an existing issue's **body** over that path | the separator, the dated heading, the guard and the two-halved read-back are mechanical; what the amendment says is judgment |
 
 **Considered and deliberately not derived.** Each is a real proposal someone could make again, so it
 is recorded rather than left to be re-litigated. (The conventions' §7 puts rejections in a plugin-root
@@ -61,7 +62,7 @@ corpus-wide work filed separately, and these live here until it does.)
   `report file`, so it is a precondition rather than a verb; minting it would be a wrapper whose
   only behaviour is relaying an upstream answer, which ADR 0238 bans.
 - **A standalone redactor verb.** Same test: a transform with one caller is that caller's
-  precondition. It is the `--redact` flag on the two writing verbs.
+  precondition. It is the `--redact` flag on the three writing verbs.
 
 **The residual this accepts.** Because there is no preview verb, a refusal costs the caller the
 whole heredoc again — and re-sending under refusal pressure is exactly the condition that produced
@@ -92,24 +93,25 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
 - **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql)**
   — REST, paginated, reads and writes alike. The reason lives there, not here.
 
-### The shared exit taxonomy for the two writing verbs
+### The shared exit taxonomy for the writing verbs
 
-`report file` and `report note` allocate codes from **one table**, so a code means the same thing
-whichever produced it. A verb that cannot reach a code leaves it unused rather than compacting the
-range — a gap is cheaper than a collision.
+`report file`, `report note` and `report amend` allocate codes from **one table**, so a code means
+the same thing whichever produced it. A verb that cannot reach a code leaves it unused rather than
+compacting the range — a gap is cheaper than a collision.
 
-| Code | Meaning | `file` | `note` |
-|---|---|:--:|:--:|
-| `0` | the write landed, read back clean, and its answer is on stdout | ✓ | ✓ |
-| `1` | usage error, unresolvable repo, or a failed stdin read | ✓ | ✓ |
-| `3` | stdin was read and held nothing | ✓ | ✓ |
-| `4` | a required section is missing, out of order, or empty | ✓ | — |
-| `5` | the body carries a machine-local path and `--redact` was not given | ✓ | ✓ |
-| `6` | the body is a bare `@` path reference — **not** redactable | ✓ | ✓ |
-| `7` | the write target does not exist (`--label` in the repo / `--issue`) | ✓ | ✓ |
-| `8` | the write itself failed — the outcome is **UNKNOWN** | ✓ | ✓ |
-| `9` | the write landed but the read-back does not match | ✓ | ✓ |
-| `10` | the title or `--label` carries a type or priority classification | ✓ | — |
+| Code | Meaning | `file` | `note` | `amend` |
+|---|---|:--:|:--:|:--:|
+| `0` | the write landed, read back clean, and its answer is on stdout | ✓ | ✓ | ✓ |
+| `1` | usage error, unresolvable repo, or a failed stdin read | ✓ | ✓ | ✓ |
+| `3` | stdin was read and held nothing | ✓ | ✓ | ✓ |
+| `4` | a required section is missing, out of order, or empty | ✓ | — | — |
+| `5` | the body carries a machine-local path and `--redact` was not given | ✓ | ✓ | ✓ |
+| `6` | the body is a bare `@` path reference — **not** redactable | ✓ | ✓ | ✓ |
+| `7` | the write target does not exist (`--label` in the repo / `--issue`) | ✓ | ✓ | ✓ |
+| `8` | the write itself failed — the outcome is **UNKNOWN** | ✓ | ✓ | ✓ |
+| `9` | the write landed but the read-back does not match | ✓ | ✓ | ✓ |
+| `10` | the title or `--label` carries a type or priority classification | ✓ | — | — |
+| `11` | a precondition read failed, so nothing was written | ✓ | ✓ | ✓ |
 
 **`5` and `6` are separate because their fixes are opposite.** The obvious caller loop on a
 path refusal is *re-run with `--redact`*; on a body that **is** a path, `--redact` is a no-op and
@@ -125,7 +127,7 @@ is how one observation becomes two issues.
 
 ### The body is a value, never a path
 
-The two writing verbs take the body **on stdin only**. There is deliberately **no `--body` flag, no
+The three writing verbs take the body **on stdin only**. There is deliberately **no `--body` flag, no
 `--body-file`, and no temp file**: a flag that accepts a path turns the body into a string the verb
 could post verbatim, which is precisely how the incidents below happened. A shell redirect
 (`< some-file`) is fine and expected — the *shell* reads the file, so what reaches the verb is
@@ -626,7 +628,7 @@ bind here.
 keys `id`, `url`, `issue`, `redactions` and `bodyBytes`.
 
 **Exit status** — allocated from the shared table above. This verb can return `0`, `1`, `3`, `5`,
-`6`, `7`, `8` and `9`; `7` is *`--issue` names no issue in `--repo`*. Codes `4` and `10` are
+`6`, `7`, `8`, `9` and `11`; `7` is *`--issue` names no issue in `--repo`*. Codes `4` and `10` are
 structurally unreachable here and are left unused rather than reassigned.
 
 **Errors**
@@ -695,3 +697,130 @@ $ echo $?
 - v1's `tracker create-comment` prints `tracker: commented on #<n> (ref <id>).` — prose on a machine
   channel, the same scar as its create sibling, and the reason this line is tab-separated with a
   bare id.
+
+---
+
+## `report amend`
+
+Appends a section to an existing issue's **body**, under a separator and a dated heading this verb
+composes. **It exists because there was no public verb for that operation, and the hand-rolled call
+that filled the gap posts a path.** `gh api -X PATCH -f body=@file` takes its value as a raw string,
+so the literal `@/path/to/file` becomes the whole body and the write returns success — #6708 and
+#6736 on 2026-08-21, both self-caught inside a minute. The plumbing was already in the package; what
+was missing was a reachable seat for it, since `triage enrich` is stage-scoped and cannot serve an
+append to an already-triaged issue.
+
+**Invocation**
+
+```
+fabrika report amend --issue 4312 [--redact] [--repo <owner/name>] [--json]
+```
+
+The amendment arrives on **stdin** as markdown.
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--issue` | integer | yes | — | the issue number whose body the amendment is appended to |
+| `--redact` | boolean | no | `false` | mask each machine-local path in the amendment down to its class marker and append the masked section, instead of refusing |
+| `--repo` | string | no | resolved (see Shared conventions) | the repository the issue lives in |
+| `--json` | boolean | no | `false` | emit the full amend record instead of the line grammar |
+| stdin | markdown | yes | — | the amendment section, without its heading |
+
+### The envelope, pinned
+
+The verb composes the separator and the heading, so no caller invents its own and two amendments on
+one issue read as one document. Given a prior body `P` and a section `S` amended on `2026-08-21`,
+the posted body is **exactly**:
+
+```
+<P, with trailing whitespace trimmed>
+
+---
+
+## Amendment — 2026-08-21
+
+<S, trimmed>
+```
+
+with a single trailing newline. `P` is otherwise **verbatim** — no reflow, no re-heading, and no
+redaction of text this verb did not author. On a prior body that is empty or blank the separator is
+omitted and the amendment stands alone: a rule over nothing renders as a stray horizontal line.
+
+The date is **UTC**, so two machines amending the same issue on the same day agree on the heading.
+Two amendments on one day therefore produce two identical headings; that is accepted rather than
+disambiguated, because the `## Amendment — <date>` form is the one
+[`build`'s prose rubric](../build/references/prose.md) already pins, and the reader of an issue body
+reads it top to bottom rather than by heading lookup.
+
+**It never replaces a body.** GitHub keeps no issue-body history, so a replaced body is a lost one —
+which is what both incidents actually destroyed. There is no flag that makes this verb overwrite.
+
+**Output** — one **tab-separated** line: `<issue>`, `<url>`. With `--json`, one object with keys
+`issue`, `url`, `redactions`, `appendedBytes` and `bodyBytes`.
+
+**Exit status** — allocated from the shared table above. This verb can return `0`, `1`, `3`, `5`,
+`6`, `7`, `8`, `9` and `11`. Codes `4` and `10` are structurally unreachable here and are left
+unused rather than reassigned.
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `report amend: stdin was read and held 0 bytes — refusing to append an empty amendment.` | 3 | refusal |
+| `report amend: could not read stdin: <reason> — the amendment is UNKNOWN, never empty.` | 1 | refusal |
+| `report amend: the amendment carries <n> machine-local path(s) — refusing to append them to a public issue.` (then one indented `line <n>, <class>` per hit) | 5 | refusal |
+| `report amend: the amendment is a bare "@" path reference — the composed section never arrived. Send it on stdin; --redact does not apply.` | 6 | refusal |
+| `report amend: <repo> has no issue #<n>.` | 7 | refusal |
+| `report amend: cannot read #<n> in <repo>: <reason> — whether the issue exists is UNKNOWN, so nothing was written.` | 11 | refusal |
+| `report amend: could not write the body of #<n>: <reason> — the amendment is UNKNOWN. Re-read the issue before retrying; the append may have landed.` | 8 | refusal |
+| `report amend: wrote the body of #<n> but the read-back is wrong: <what differs>. The issue exists and needs fixing by hand.` | 9 | refusal |
+
+A **closed** issue is not a refusal — a correction on a closed issue is often exactly the point — but
+the verb says so on stderr (`report amend: #<n> is closed.`).
+
+**Scope** — the leak scan reads the **appended section only**, never the prior body. Scanning the
+prior body would make an append a rewrite of text this verb did not author, and `--redact` would
+then silently edit someone else's words. Zero scope is unreachable: an empty stdin is exit 3 before
+the scan runs. The scope line on stderr names the bytes read and the size of the prior body.
+
+**The read-back proves both halves.** After the PATCH the verb re-reads the issue body and asserts
+the appended section is present **and** the prior body survived, on the same normalized comparison
+`report file` uses. The write's own echo is not evidence — that is #3173's lesson — and a landed
+body missing the prior text is a replacement wearing an append's shape, with no history to recover
+it from.
+
+**Examples**
+
+```
+$ fabrika report amend --issue 4312 <<'EOF'
+The fanout classifier landed in #6629; this issue's `Pointers` section predates it.
+EOF
+4312	https://github.com/kamp-us/phoenix/issues/4312
+```
+
+```
+$ fabrika report amend --issue 4312 --json < correction.md
+{"issue":4312,"url":"https://github.com/kamp-us/phoenix/issues/4312","redactions":[],"appendedBytes":112,"bodyBytes":1904}
+```
+
+```
+$ printf '' | fabrika report amend --issue 4312
+report amend: stdin was read and held 0 bytes — refusing to append an empty amendment.
+$ echo $?
+3
+```
+
+**Grounding**
+
+- **#6708 and #6736** are the two live hits: `-f` posts its value as a raw string, so `body=@file`
+  ships the literal path. Both bodies were briefly destroyed and both were repaired fix-forward.
+- **`restWrite`** ([`packages/fabrika-cli/src/io/gh-api.ts`](../../../../packages/fabrika-cli/src/io/gh-api.ts))
+  sends the body as JSON on the wire, so no `-f`/`-F` argv shape exists inside the CLI at all. This
+  verb is how a caller reaches that path instead of rebuilding the argv one.
+- **#4683** filed the same hazard and was killed because its deliverable hung off retired
+  `pipeline-cli` surfaces. That kill carved out old-pipeline work fabrika lacks the capability for,
+  which is this.
+- **#3086** is the earlier PR-description instance of the same byte pattern, now covered by
+  `build pr-body`. Exit 6 is the shape both share.

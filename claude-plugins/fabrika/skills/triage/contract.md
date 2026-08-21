@@ -137,7 +137,7 @@ more than one group: **repo-wide the same number does not mean the same thing.**
 *the format's block is provably not in the artifact*, where `report`'s and this group's is *stdin was
 read and held nothing*.
 
-Where this group's codes overlap **`report`'s two writing verbs** (`3`, `5`, `6`, `7`, `8`, `9`,
+Where this group's codes overlap **`report`'s writing verbs** (`3`, `5`, `6`, `7`, `8`, `9`,
 `10`, `11`) they match them **deliberately**, code for code, so a caller driving `report` and `triage`
 in one sweep reads one meaning. This spec calls `report dedup` (the `--exclude` extension below), and
 that verb reads from the same `report` table: `7` when `--label` is absent, `27`/`28` when the queue
