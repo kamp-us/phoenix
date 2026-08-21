@@ -32,6 +32,12 @@ list` and the two write verbs read through the `guard/roadmap.ts` parser rather 
 the reporting surface and the judging surface cannot disagree about what a row says. The write half
 is new — nothing in the tree writes this table today.
 
+**A roadmap with no `## Campaigns` table, or one whose table has no rows, is a state `campaign open`
+writes into rather than refuses.** `list` calls both `none` at exit 0, so both are ordinary states of
+a live file, and a repo adopting fabrika reaches the first one on its very first campaign. The bytes
+are specified in `campaign open`'s Behaviour block; leaving them to the implementer is how one
+implementation scaffolds the heading and another refuses.
+
 ## Verb inventory
 
 | Verb | Purpose | Split test |
@@ -49,11 +55,17 @@ re-open in code exactly what the ruling closed in the grammar.
 - **Answer channel: machine.** Stdout carries the answer and nothing else. Notices, scope lines and
   refusal reasons go to stderr.
 - **Common inputs.** `--file <path>` is the roadmap file; absent, it resolves `.fabrika.jsonc`'s
-  `roadmapFile` (`config/keys/paths.ts`), itself defaulting to `ROADMAP.md` at the repo root. A repo
-  that writes `null` there keeps no roadmap, and every verb here refuses on `22`. `--repo
-  <owner/name>` (default: resolved from the env then the `origin` remote) is the repository a cited
-  comment must belong to. `--json` swaps the line grammar for one JSON object with the keys named per
-  verb.
+  `roadmapFile` (`config/keys/paths.ts`), itself defaulting to `ROADMAP.md` at the repo root.
+  **`roadmapFile` is a plain path key with no declined form** — unlike `decisionsDir`, it cannot be
+  written `null` to say this repo keeps no roadmap; `null` and `""` are both *malformed* there. So
+  `22` is the config seat: `.fabrika.jsonc` could not be read, or its `roadmapFile` will not decode,
+  and no roadmap file was opened. `--repo <owner/name>` (default: resolved from the env then the
+  `origin` remote) is the repository a cited comment must belong to. **The env fallback is
+  `CLAUDE_PIPELINE_REPO`, then `GITHUB_REPOSITORY`**, which is `io/issues.ts`'s existing
+  `resolveRepo` order and is not re-implemented here; with the flag absent and neither variable set,
+  the `origin` remote is read, and a repo that resolves from none of the four is `13` — authority is
+  UNKNOWN, because a citation cannot be bound to a repository nobody could name. `--json` swaps the
+  line grammar for one JSON object with the keys named per verb.
 - **Row line grammar.** Every verb that prints a row prints it as
   `#<milestone>\t<state>\t<name>`, one row per line, newline-terminated, in table order. This is the
   single shape; `open` and `state` print the row they just read back in it.
@@ -78,22 +90,26 @@ re-open in code exactly what the ruling closed in the grammar.
   | `19` | the table already holds a row for this campaign or this milestone | | ✓ | |
   | `20` | the row already holds the state `--to` names — nothing written | | | ✓ |
   | `21` | the read-back after writing did not match, so the write is UNKNOWN | | ✓ | ✓ |
-  | `22` | `.fabrika.jsonc` declines `roadmapFile` — this repo keeps no roadmap | ✓ | ✓ | ✓ |
+  | `22` | `.fabrika.jsonc` could not be read, or its `roadmapFile` will not decode — UNKNOWN | ✓ | ✓ | ✓ |
 
   `7` and `11` hold the meanings `report`'s table gives them — *the target is not there*, and *the
   read that would have proven it failed* — and the group **imports those two constants from
   `report/codes.ts`** rather than restating numerals, exactly as `triage` and `review` do. The group
   registers in
   [`exit-code-alignment.ts`](../../../../packages/fabrika-cli/src/exit-code-alignment.ts) as aligning
-  on those two seats; `3`, `5`, `6`, `8`, `9` and `10` are left **unallocated** so alignment stays
-  cheap, and this group's private band starts at `12`. A private code carries no cross-group
+  on those two seats; `3`, `4`, `5`, `6`, `8`, `9` and `10` are left **unallocated** so alignment
+  stays cheap, and this group's private band starts at `12`. `4` is in that list deliberately rather
+  than by omission — nothing here reaches it, and a later verb of this group allocates it fresh. A private code carries no cross-group
   obligation: `12` here is *the campaigns table is unreadable*, and `triage`'s and `review`'s `12`
   are two other namespaces, not a collision.
 - **A non-zero exit is UNKNOWN.** No verb prints a partial or permissive answer on a non-zero exit.
 - **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql)**,
   paginated. What is local to this group: team membership for a `@org/team` entry in
-  `campaignAuthors` is `gh api orgs/<org>/teams/<team>/memberships/<login>`, and a non-`200` that is
-  not a `404` is `13`, never a "no".
+  `campaignAuthors` is `gh api orgs/<org>/teams/<team>/memberships/<login>`. A `404` on the
+  *membership* is a proven "not a member"; every other non-`200`, **and a `404` on the team itself**,
+  is `13`. A team the org does not have is a typo in `campaignAuthors`, and reading it as "not a
+  member" would exit `16` and send the caller to find a different approver instead of to the key —
+  so the two are separated, and `13`'s message names the key.
 - **Nothing here writes to GitHub.** Every verb's only write is to the roadmap file; the board is
   read at most.
 
@@ -144,10 +160,21 @@ case-insensitive, separator the middle dot `·` (U+00B7). `<ts>` must additional
 `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/` **and** parse: `Number.isFinite(Date.parse(ts))`.
 A regex-shaped but calendar-invalid date (`2026-02-30T00:00:00Z`) is malformed.
 
-**Why the first line and nothing else.** v1 matched the marker anywhere in the body, so a founder who
-wrote their approval and then explained it read as `malformed` (#3831). Anchoring to line one fixes
-that *and* closes the inverse: a marker quoted inside somebody else's comment is a quotation, never a
-grant. Both directions are load-bearing; the anchor is not a tightening to relax.
+**The timestamp is compared to nothing.** There is no staleness window, no ordering and no binding
+against the comment's own `created_at`; it is evidence a human reader dates the ruling by, and its
+only mechanical job is to make the marker a deliberate line rather than a phrase somebody typed in
+passing. Stated because a validated input with no stated effect is where one implementer adds a
+freshness rule and another does not (ADR 0247). v1 ordered candidate approvals by timestamp because
+it scanned a whole label for them; a cited URL names exactly one, so there is nothing left to
+order.
+
+**Why the first line, and why the body is split rather than matched whole.** v1's docs said first
+line and its implementation required the whole body to *be* the marker, so a founder who wrote their
+approval and then explained it read as `malformed`
+([#3831](https://github.com/kamp-us/phoenix/issues/3831)). Matching `body.split(/\r?\n/)[0]` is the
+fix, and it closes the inverse at the same time: a marker quoted mid-body inside somebody else's
+comment is a quotation, never a grant. Both directions are load-bearing, so the anchor is neither
+loosened to whole-body matching nor tightened back to a marker-only body.
 
 **Binding.** `<milestone>` must equal the milestone of the row being written and `<state>` must equal
 the state the write produces — `paused` for `campaign open`, the `--to` value for `campaign state`.
@@ -224,7 +251,7 @@ with `rows: []` for the `none` case.
 | `1` | usage error (an unknown flag, or a `--state` outside the three values), or the verb failed to run |
 | `11` | the roadmap file could not be read |
 | `12` | a row under `## Campaigns` pins a milestone and carries a state outside the three values |
-| `22` | `.fabrika.jsonc` declines `roadmapFile` |
+| `22` | `.fabrika.jsonc` could not be read, or its `roadmapFile` will not decode |
 
 **Errors**
 
@@ -232,12 +259,14 @@ with `rows: []` for the `none` case.
 |---|---|---|
 | `campaign list: cannot read <file>: <reason> — UNKNOWN, nothing was parsed.` | 11 | refusal |
 | `campaign list: <file> row "<name>" holds state "<cell>" — the whole ## Campaigns table is unreadable (ADR 0304).` | 12 | refusal |
-| `campaign list: .fabrika.jsonc sets roadmapFile to null — this repo keeps no roadmap.` | 22 | refusal |
+| `campaign list: cannot resolve roadmapFile from .fabrika.jsonc: <reason> — UNKNOWN, no roadmap file was opened.` | 22 | refusal |
 | `campaign list: --state "<value>" is not one of active, paused, done.` | 1 | usage error |
 
 **Scope** — every row under `## Campaigns` in `--file`. Zero rows is a **fact, not a failed read**:
-see the table-grammar section. The scope line goes to stderr:
-`campaign list: read <file> — <n> campaign row(s), <k> active.`
+see the table-grammar section. The scope line goes to stderr and **always counts the whole table, not
+the filtered result**, so a `--state` run still says what it read past:
+`campaign list: read <file> — <n> campaign row(s), <k> active; printed <m>.` Without `--state`,
+`<m>` equals `<n>`.
 
 **Examples**
 
@@ -260,6 +289,14 @@ none
 $ echo $?
 0
 ```
+
+```
+$ fabrika campaign list --json
+{"rows":[{"milestone":42,"state":"paused","name":"Taste-Skill Library"},{"milestone":47,"state":"active","name":"fabrika everywhere"}],"file":"ROADMAP.md"}
+```
+
+`--json` carries exactly the rows the line grammar would have printed, so `--state done --json` is
+`{"rows":[],"file":"ROADMAP.md"}` — the `none` case, with no separate token.
 
 **Grounding**
 
@@ -295,7 +332,23 @@ fabrika campaign open <name> --milestone <n> --cites <url> [--file <path>] [--re
 | `--json` | boolean | no | `false` | print one JSON object instead of the line grammar |
 
 **Behaviour.** The row is appended as the **last** row of the `## Campaigns` table, immediately after
-the current last row, formatted `| <name> | #<n> | paused |`. The state is always `paused` and there
+the current last row, formatted `| <name> | #<n> | paused |`.
+
+Two states have no last row, and each has specified bytes:
+
+- **The table exists with a header and no rows** — the row is written immediately after the `|---|`
+  separator line.
+- **`## Campaigns` exists with no table, or does not exist at all** — the verb writes the heading (if
+  absent, as the last `## ` section of the file), then a blank line, then exactly these three lines:
+
+  ```
+  | Campaign | Milestone | State |
+  |----------|-----------|-------|
+  | <name> | #<n> | paused |
+  ```
+
+  Nothing else is scaffolded: the prose `ROADMAP.md` carries under its table is founder-voice, and a
+  verb that generated it would be writing in a voice that is not its own. The state is always `paused` and there
 is no flag to change it: a row that could be written `active` is a write that grants dispatch in the
 same stroke that names the campaign, which is the shape ADR 0304 forbids. Nothing outside the table
 is touched — the `## Dependency graph` block is the caller's edit, for the reason in *Considered and
@@ -316,17 +369,17 @@ answer: a run that wrote nothing exits non-zero. Under `--json`:
 | Code | Trigger |
 |---|---|
 | `0` | the row was appended and read back, and is on stdout |
-| `1` | usage error (unknown flag, missing required flag, a `--milestone` that is not a positive integer, a `<name>` holding `\|` or a newline), or the verb failed to run |
+| `1` | usage error (unknown flag, missing required flag, a `--milestone` that is not a positive integer, a `<name>` holding `\|` or a newline, or a `--cites` that is not a comment URL), or the verb failed to run |
 | `11` | the roadmap file could not be read, or could not be written |
 | `12` | the `## Campaigns` table holds a row that will not parse |
-| `13` | the cited comment could not be fetched, or a team membership could not be resolved |
+| `13` | the cited comment could not be fetched, a team membership could not be resolved, `campaignAuthors` names a team the org does not have, or no repository could be resolved from `--repo`, the env or `origin` |
 | `14` | the cited comment's first line carries no `campaign-approve:` marker |
 | `15` | the marker is malformed, names a milestone other than `--milestone`, names a state other than `paused`, or the cited URL is outside `--repo` |
 | `16` | the cited comment's author is not in `campaignAuthors` |
 | `17` | `campaignAuthors` is empty or absent |
 | `19` | a row already holds this `<name>`, or already pins `--milestone` |
 | `21` | the file was written and the read-back does not hold the row — UNKNOWN |
-| `22` | `.fabrika.jsonc` declines `roadmapFile` |
+| `22` | `.fabrika.jsonc` could not be read, or its `roadmapFile` will not decode |
 
 **Errors**
 
@@ -334,21 +387,25 @@ answer: a run that wrote nothing exits non-zero. Under `--json`:
 |---|---|---|
 | `campaign open: --milestone must be a positive integer, got "<value>".` | 1 | usage error |
 | `campaign open: <name> holds "\|" or a newline — a campaign name must fit one table cell.` | 1 | usage error |
+| `campaign open: --cites "<value>" is not a comment URL in <repo> — expected .../issues/<n>#issuecomment-<id> or .../pull/<n>#issuecomment-<id>.` | 1 | usage error |
+| `campaign open: --<flag> is required.` | 1 | usage error |
 | `campaign open: cannot read <file>: <reason> — UNKNOWN, nothing was written.` | 11 | refusal |
 | `campaign open: cannot write <file>: <reason> — UNKNOWN, the table may be half-written; re-read it.` | 11 | refusal |
 | `campaign open: <file> row "<name>" holds state "<cell>" — the whole ## Campaigns table is unreadable (ADR 0304). NOTHING was written.` | 12 | refusal |
 | `campaign open: cannot fetch <url>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
 | `campaign open: cannot resolve membership of <login> in @<org>/<team>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
+| `campaign open: campaignAuthors names @<org>/<team>, which <org> does not have — fix the key; authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
+| `campaign open: no --repo, no CLAUDE_PIPELINE_REPO, no GITHUB_REPOSITORY and no readable origin remote — the citation cannot be bound to a repository. NOTHING was written.` | 13 | refusal |
 | `campaign open: <url> has no campaign-approve: marker on its first line — NOTHING was written.` | 14 | refusal |
 | `campaign open: <url> marker is malformed: <reason> — NOTHING was written.` | 15 | refusal |
 | `campaign open: <url> approves #<marker-milestone> <marker-state>, not #<n> paused — NOTHING was written.` | 15 | refusal |
-| `campaign open: <url> is not a comment in <repo> — NOTHING was written.` | 15 | refusal |
+| `campaign open: <url> is a comment in <other-repo>, not <repo> — NOTHING was written.` | 15 | refusal |
 | `campaign open: <url> was authored by @<login>, who is not in campaignAuthors (<declared>) — NOTHING was written.` | 16 | refusal |
 | `campaign open: campaignAuthors is empty in .fabrika.jsonc — nobody may declare a campaign in this repo. NOTHING was written.` | 17 | refusal |
 | `campaign open: <file> already holds "<name>" at #<m> — NOTHING was written.` | 19 | refusal |
 | `campaign open: <file> already pins #<n> to "<other>" — NOTHING was written.` | 19 | refusal |
 | `campaign open: wrote <file> but the read-back holds no row for #<n> — the write is UNKNOWN; re-read the file before retrying.` | 21 | refusal |
-| `campaign open: .fabrika.jsonc sets roadmapFile to null — this repo keeps no roadmap.` | 22 | refusal |
+| `campaign open: cannot resolve roadmapFile from .fabrika.jsonc: <reason> — UNKNOWN, no roadmap file was opened.` | 22 | refusal |
 
 Every refusal past the read states what did **not** happen. That is v1's discipline and it is kept:
 a refusal line that leaves the caller guessing whether a row landed is the one that makes them write
@@ -374,6 +431,11 @@ $ fabrika campaign open "fabrika everywhere" --milestone 52 --cites https://gith
 campaign open: ROADMAP.md already holds "fabrika everywhere" at #47 — NOTHING was written.
 $ echo $?
 19
+```
+
+```
+$ fabrika campaign open "Mecmua reading layout" --milestone 52 --cites https://github.com/kamp-us/phoenix/issues/6289#issuecomment-5337663028 --json
+{"row":{"milestone":52,"state":"paused","name":"Mecmua reading layout"},"file":"ROADMAP.md"}
 ```
 
 **Grounding**
@@ -419,8 +481,12 @@ Two rows matching is `18` rather than a first-wins pick — a lifecycle flip aim
 grants dispatch on a milestone nobody named.
 
 Order of operations: resolve config → read and parse → select → refuse a no-op → check the trace →
-rewrite the third cell → read back. Only the third cell of the selected row changes; the row's
-spacing, its name cell and every other line of the file are byte-identical afterwards.
+rewrite the third cell → read back. Only the third cell's **state token** changes: the cell's leading
+and trailing whitespace is preserved exactly as found and the token is swapped in place, so
+`| active |` becomes `| paused |` and `|  active  |` becomes `|  paused  |`. **The cell is never
+re-padded to a column width** — `paused` → `done` therefore shortens the line, and every other line
+of the file is byte-identical afterwards. Re-padding would be a second, silent edit the caller did
+not ask for, and on a table whose columns are already ragged it would rewrite rows nobody touched.
 
 **Output** — machine channel. The rewritten row, read back, in the row line grammar. Under `--json`:
 `{"row":{"milestone":47,"state":"active","name":"fabrika everywhere"},"from":"paused","file":"ROADMAP.md"}`.
@@ -430,11 +496,11 @@ spacing, its name cell and every other line of the file are byte-identical after
 | Code | Trigger |
 |---|---|
 | `0` | the cell was rewritten and read back, and the row is on stdout |
-| `1` | usage error (unknown flag, missing required flag, a `--to` outside the three values), or the verb failed to run |
+| `1` | usage error (unknown flag, missing required flag, a `--to` outside the three values, or a `--cites` that is not a comment URL), or the verb failed to run |
 | `7` | the selector matches no row |
 | `11` | the roadmap file could not be read, or could not be written |
 | `12` | the `## Campaigns` table holds a row that will not parse |
-| `13` | the cited comment could not be fetched, or a team membership could not be resolved |
+| `13` | the cited comment could not be fetched, a team membership could not be resolved, `campaignAuthors` names a team the org does not have, or no repository could be resolved from `--repo`, the env or `origin` |
 | `14` | the cited comment's first line carries no `campaign-approve:` marker |
 | `15` | the marker is malformed, names a milestone other than the selected row's, names a state other than `--to`, or the cited URL is outside `--repo` |
 | `16` | the cited comment's author is not in `campaignAuthors` |
@@ -442,7 +508,7 @@ spacing, its name cell and every other line of the file are byte-identical after
 | `18` | the selector matches more than one row |
 | `20` | the selected row already holds `--to` — nothing written |
 | `21` | the file was written and the read-back does not hold `--to` — UNKNOWN |
-| `22` | `.fabrika.jsonc` declines `roadmapFile` |
+| `22` | `.fabrika.jsonc` could not be read, or its `roadmapFile` will not decode |
 
 **Errors**
 
@@ -450,21 +516,25 @@ spacing, its name cell and every other line of the file are byte-identical after
 |---|---|---|
 | `campaign state: --to "<value>" is not one of active, paused, done.` | 1 | usage error |
 | `campaign state: <file> has no campaign row matching "<selector>" — NOTHING was written.` | 7 | refusal |
+| `campaign state: --cites "<value>" is not a comment URL in <repo> — expected .../issues/<n>#issuecomment-<id> or .../pull/<n>#issuecomment-<id>.` | 1 | usage error |
+| `campaign state: --<flag> is required.` | 1 | usage error |
 | `campaign state: cannot read <file>: <reason> — UNKNOWN, nothing was written.` | 11 | refusal |
 | `campaign state: cannot write <file>: <reason> — UNKNOWN, the row may be half-written; re-read it.` | 11 | refusal |
 | `campaign state: <file> row "<name>" holds state "<cell>" — the whole ## Campaigns table is unreadable (ADR 0304). NOTHING was written.` | 12 | refusal |
 | `campaign state: cannot fetch <url>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
 | `campaign state: cannot resolve membership of <login> in @<org>/<team>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
+| `campaign state: campaignAuthors names @<org>/<team>, which <org> does not have — fix the key; authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
+| `campaign state: no --repo, no CLAUDE_PIPELINE_REPO, no GITHUB_REPOSITORY and no readable origin remote — the citation cannot be bound to a repository. NOTHING was written.` | 13 | refusal |
 | `campaign state: <url> has no campaign-approve: marker on its first line — NOTHING was written.` | 14 | refusal |
 | `campaign state: <url> marker is malformed: <reason> — NOTHING was written.` | 15 | refusal |
 | `campaign state: <url> approves #<marker-milestone> <marker-state>, not #<n> <to> — NOTHING was written.` | 15 | refusal |
-| `campaign state: <url> is not a comment in <repo> — NOTHING was written.` | 15 | refusal |
+| `campaign state: <url> is a comment in <other-repo>, not <repo> — NOTHING was written.` | 15 | refusal |
 | `campaign state: <url> was authored by @<login>, who is not in campaignAuthors (<declared>) — NOTHING was written.` | 16 | refusal |
 | `campaign state: campaignAuthors is empty in .fabrika.jsonc — nobody may flip a campaign in this repo. NOTHING was written.` | 17 | refusal |
 | `campaign state: "<selector>" matches <k> rows (<names>) — NOTHING was written.` | 18 | refusal |
 | `campaign state: "<name>" #<n> already holds <to> — NOTHING was written.` | 20 | refusal |
 | `campaign state: wrote <file> but the read-back holds <cell> for #<n>, not <to> — the write is UNKNOWN; re-read the file before retrying.` | 21 | refusal |
-| `campaign state: .fabrika.jsonc sets roadmapFile to null — this repo keeps no roadmap.` | 22 | refusal |
+| `campaign state: cannot resolve roadmapFile from .fabrika.jsonc: <reason> — UNKNOWN, no roadmap file was opened.` | 22 | refusal |
 
 `20` is a refusal and not a quiet `0`. A flip to `active` is the grant of dispatch permission, so a
 caller who reads "done" over a cell nobody moved cannot tell a grant they made from a grant somebody
@@ -490,6 +560,11 @@ $ fabrika campaign state 'fabrika everywhere' --to active --cites https://github
 campaign state: "fabrika everywhere" #47 already holds active — NOTHING was written.
 $ echo $?
 20
+```
+
+```
+$ fabrika campaign state '#42' --to active --cites https://github.com/kamp-us/phoenix/issues/6289#issuecomment-5337663028 --json
+{"row":{"milestone":42,"state":"active","name":"Taste-Skill Library"},"from":"paused","file":"ROADMAP.md"}
 ```
 
 **Grounding**
