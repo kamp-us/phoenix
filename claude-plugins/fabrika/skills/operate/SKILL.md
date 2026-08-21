@@ -437,7 +437,8 @@ Two reads stay yours, because no shell can take them:
 **A dead spawn's residue is yours to clear** — the founder's ruling on
 [#5752](https://github.com/kamp-us/phoenix/issues/5752). `BLOCKED` records where the lane stands; it
 does not clean up after the shell that died, and what a dead spawn leaves behind is an incident
-nobody filed and a claim nobody can take. Three obligations, in this order:
+nobody filed, a claim nobody can take, and a worktree still holding its branch. Four obligations, in
+this order:
 
 - **Read its final message.** What the spawn printed before it stopped is the only account of what
   it was doing, and both the filing and the park comment come out of it.
@@ -450,6 +451,14 @@ nobody filed and a claim nobody can take. Three obligations, in this order:
   ruling rejected a lease, a TTL and steal outright, and eviction by inference from
   absence stays banned (ADR
   [0215](../../../../.decisions/0215-claim-identity-continuity-proof.md) §5).
+- **Retire the worktree it left.** Salvage first: if the tree is dirty, commit its contents to the
+  dead spawn's branch as a WIP commit, because that uncommitted work is the only copy of what the
+  spawn was doing. Then `git worktree remove` **without `--force`** — a remove that still refuses is
+  an incident to file through [`report`](../report/SKILL.md), never a force. A tree left standing
+  holds the lane branch checked out, which refuses the next repair round's `build branch
+  --resume-lane` on exit `11`. This one is the **primary checkout's**, not a worktree-isolated
+  spawn's (ADR
+  [0321](../../../../.decisions/0321-dead-spawn-worktree-ownership.md)).
 
 **A claim stranded by a gone session is releasable, once you say so on the board.** `build release`
 refuses it on `15` — proven-foreign — until an adopt marker names that session as dead and this one
