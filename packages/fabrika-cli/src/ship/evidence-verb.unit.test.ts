@@ -28,18 +28,33 @@ const ZIP = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/actions\/artifacts\/\
 const scratch = (): string => mkdtempSync(join(tmpdir(), "fabrika-test-"));
 
 const runsAt = (
-	...rows: ReadonlyArray<{id: number; name: string; status: string; completedAt?: string | null}>
+	...rows: ReadonlyArray<{
+		id: number;
+		name: string;
+		status: string;
+		conclusion?: string;
+		completedAt?: string | null;
+	}>
 ): HttpReply => ({
 	status: 200,
 	body: JSON.stringify({
 		total_count: rows.length,
-		workflow_runs: rows.map(({completedAt, ...row}) => ({
+		workflow_runs: rows.map(({completedAt, conclusion, ...row}) => ({
 			...row,
-			conclusion: "success",
+			conclusion: conclusion ?? "success",
 			completed_at: completedAt === undefined ? new Date().toISOString() : completedAt,
 		})),
 	}),
 });
+
+/** The shape GitHub reports for a run parked on a bot-authored branch: completed, never started. */
+const PARKED_RUN = {
+	id: 9182730001,
+	name: "run-evidence",
+	status: "completed",
+	conclusion: "action_required",
+	completedAt: "2026-08-08T00:00:00Z",
+} as const;
 
 const artifactsFor = (
 	...rows: ReadonlyArray<{id: number; name: string; expired?: boolean}>
@@ -152,6 +167,34 @@ describe("runEvidence", () => {
 				"",
 			].join("\n"),
 		);
+	});
+
+	// #6759: a Release PR's head carries both the parked `pull_request` run and the dispatched one,
+	// and GitHub's return order for `runs?head_sha=` is undocumented. Taking the first match would
+	// read `absent` at a head whose bundle exists.
+	it("picks the run that ran over a parked one, whatever order GitHub lists them in", async () => {
+		const out = await run(
+			[...readsUpToArtifact(), [UNZIP, okOut(producerManifest(HEAD))]],
+			[
+				WORKFLOW_PRESENT,
+				[RUNS, runsAt(PARKED_RUN, {id: 9182736450, name: "run-evidence", status: "completed"})],
+				[ARTIFACTS, artifactsFor({id: 2211334455, name: "run-evidence"})],
+				[ZIP, zipBody()],
+			],
+		);
+		expect(out.stdout).toContain(`evidence\tpresent\t${HEAD}`);
+		expect(out.stdout).toContain("lookup\trun:9182736450\tartifact:2211334455");
+	});
+
+	it("names the parking when a parked run is the only one at the head", async () => {
+		const out = await run(HEAD_READS, [
+			WORKFLOW_PRESENT,
+			[RUNS, runsAt(PARKED_RUN)],
+			[ARTIFACTS, artifactsFor()],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`evidence\tabsent\t${HEAD}`);
+		expect(out.stdout).toContain(`lookup\trun:${PARKED_RUN.id}`);
+		expect(out.stderr.some((line) => line.includes("parked at action_required"))).toBe(true);
 	});
 
 	// ADR 0308: `checks` is an evidence-array, so the manifest's rows collapse to a status tally. The
