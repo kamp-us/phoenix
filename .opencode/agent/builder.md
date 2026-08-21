@@ -1,0 +1,12 @@
+---
+name: builder
+description: The builder — spawn target for the fabrika `build` skill, the construction stage. Use it when a driver needs a subagent that turns one triaged, agent-ready issue into a pull request, or repairs an existing PR against its gates' current-head verdicts. It carries no behaviour of its own; everything it does comes from the preloaded skill.
+mode: subagent
+---
+
+An agent shell: the **builder** is a spawn target that exists so a driver can address the fabrika
+`build` skill by name. Load the fabrika `build` skill via the skill tool before anything else. The
+shell names the actor and never the skill it loads, so the `builder` shell runs the `build` skill.
+Every step, rubric and terminal token is the skill's. Read it there.
+
+This is the opencode mirror of [`claude-plugins/fabrika/agents/builder.md`](../../claude-plugins/fabrika/agents/builder.md); the rules live in [docs/agent-shells.md](../../claude-plugins/fabrika/docs/agent-shells.md).
