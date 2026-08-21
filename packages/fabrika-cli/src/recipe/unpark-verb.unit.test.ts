@@ -29,6 +29,7 @@ import {
 	LANES_ROOT,
 	LOG,
 	laneTemplate,
+	nominatedPulls,
 	PARKED_AT_CP,
 	PARKED_BLOCKED,
 	PARKED_ON_WORKTREE,
@@ -39,7 +40,9 @@ import {
 import {runUnpark} from "./unpark-verb.ts";
 
 const CLOSERS = /^POST .*\/graphql$/;
+const SEARCH = /^GET .*\/search\/issues\?/;
 const PULL = /^GET .*\/repos\/o\/r\/pulls\/4321$/;
+const SECOND_PULL = /^GET .*\/repos\/o\/r\/pulls\/4322$/;
 const FILES = /^GET .*\/repos\/o\/r\/pulls\/4321\/files\?/;
 const OWNERS = /contents\/\.github\/CODEOWNERS/;
 const COMPARE = /\/repos\/o\/r\/compare\//;
@@ -110,6 +113,24 @@ const DISCHARGED_HTTP: ReadonlyArray<Scripted> = [
 const lane = (log: string, extra: Parameters<typeof fakeFs>[0] = {}) =>
 	fakeFs({files: {[WORKFLOW]: laneTemplate(), [LOG]: log}, ...extra});
 
+/** A second candidate the search index alone nominates, its body linking the same lane issue. */
+const otherPull = (number: number): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number,
+		state: "open",
+		head: {sha: HEAD},
+		base: {ref: "main"},
+		body: `Part of #${LANE}\n`,
+		changed_files: 1,
+		comments: 0,
+		user: {login: "usirin"},
+		html_url: `https://github.com/o/r/pull/${number}`,
+	}),
+});
+
+const NO_NOMINATIONS: Scripted = [SEARCH, reply(nominatedPulls())];
+
 const run = (
 	fs: ReturnType<typeof fakeFs>,
 	script: ReadonlyArray<Scripted>,
@@ -119,7 +140,9 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			runUnpark({root: LANES_ROOT, lane: LANE, task, repo: null, env: ENV}),
-			Layer.merge(fs.layer, fakeSeams([...script, ...http]).layer),
+			// The nominator's body-search half is tailed, so a test scripting its own wins the lookup.
+			// Empty by default: the union then answers off the closing edge, as these tests always did.
+			Layer.merge(fs.layer, fakeSeams([...script, ...http, NO_NOMINATIONS]).layer),
 		),
 	);
 
@@ -138,6 +161,20 @@ describe("recipe unpark — the known recipe clears", () => {
 			current: "ship",
 		});
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it("clears a §CP park whose PR only says `Part of #N` — the shared nominator's body half (#6179)", async () => {
+		const fs = lane(PARKED_AT_CP);
+
+		const out = await run(fs, [
+			[CLOSERS, reply(closingPulls())],
+			[SEARCH, reply(nominatedPulls(4321))],
+			[PULL, reply(pull({author: "usirin", body: `Part of #${LANE}\n`}))],
+			[FILES, CP_FILES],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({park: "human:cp-approval", current: "ship"});
 	});
 
 	it("names the discharge mechanism it relayed rather than restating the §CP rule", async () => {
@@ -282,10 +319,15 @@ describe("recipe unpark — the refusals write nothing", () => {
 		expect(fs.written.size).toBe(0);
 	});
 
-	it("is PARK_NOVEL when several open PRs declare they close the issue", async () => {
+	it("is PARK_NOVEL when several open PRs link the issue", async () => {
 		const fs = lane(PARKED_AT_CP);
 
-		const out = await run(fs, [[CLOSERS, reply(closingPulls(4321, 4322))]]);
+		const out = await run(fs, [
+			[CLOSERS, reply(closingPulls(4321))],
+			[SEARCH, reply(nominatedPulls(4322))],
+			[PULL, reply(pull({author: "usirin"}))],
+			[SECOND_PULL, otherPull(4322)],
+		]);
 
 		expect(out.code).toBe(PARK_NOVEL);
 		expect(out.stderr.join("\n")).toMatch(/#4321, #4322/);
@@ -324,7 +366,7 @@ describe("recipe unpark — the refusals write nothing", () => {
 		expect(fs.written.size).toBe(0);
 	});
 
-	it("is TARGET_ABSENT when no open PR declares it closes the issue the park hangs on", async () => {
+	it("is TARGET_ABSENT when no open PR links the issue the park hangs on", async () => {
 		const fs = lane(PARKED_AT_CP);
 
 		const out = await run(fs, [[CLOSERS, reply(closingPulls())]]);

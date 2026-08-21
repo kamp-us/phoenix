@@ -298,8 +298,9 @@ Open it yourself; no shell owns this branch. Its body carries two
 things, neither of them a summary you compose:
 
 - **one closing reference per child that has landed so far**, plus one on the epic issue itself.
-  The epic's is what makes the PR findable at all — `lane brief` resolves the tail's PR through
-  GitHub's closing-issue edge on the epic, and without it every tail dispatch refuses with exit
+  The epic's is what makes the PR findable at all — `lane brief` resolves the tail's PR through the
+  same nominator `lane prove` uses (GitHub's closing-issue edge unioned with a body search), and a
+  body naming the epic on neither refuses every tail dispatch with exit
   `20`. The children's are what make all of them close at the single merge, which is how ADR
   [0131](../../../../.decisions/0131-epic-autoclose-on-all-children-closed.md)'s auto-close reads
   under this shape: it fires on the GitHub edge after the merge, never mid-lane;
@@ -323,8 +324,8 @@ node strategy classifies on the subject alone: an untyped one is unroutable and 
 is hidden, either way dropping every package change the epic carried from the notes (#6754; incident
 #5771 is the same rule for builder PRs, derived in
 [`pr-title.ts`](../../../../packages/fabrika-cli/src/build/pr-title.ts)). `feat` is the shown type an
-epic earns by construction. `lane brief` still resolves the tail's PR through the closing-issue edge,
-not the title:
+epic earns by construction. `lane brief` still resolves the tail's PR through the body's links, not
+the title:
 
 ```bash
 gh pr create --draft --head epic/$lane_key \

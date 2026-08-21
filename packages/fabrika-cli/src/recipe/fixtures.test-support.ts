@@ -93,6 +93,10 @@ export const closingPulls = (...numbers: ReadonlyArray<number>): ExecResult =>
 		}),
 	);
 
+/** The search index's nomination envelope — candidate numbers, never a proof (`searchOpenPulls`). */
+export const nominatedPulls = (...numbers: ReadonlyArray<number>): ExecResult =>
+	okOut(JSON.stringify({total_count: numbers.length, items: numbers.map((number) => ({number}))}));
+
 export interface RunShape {
 	readonly id: number;
 	readonly name?: string;

@@ -21,6 +21,7 @@ const PULL: PullRecord = {
 	state: "open",
 	headSha: HEAD,
 	body: "",
+	htmlUrl: "https://github.com/o/r/pull/4321",
 	changedFiles: 2,
 	comments: 0,
 	draft: false,

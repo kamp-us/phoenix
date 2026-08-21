@@ -35,6 +35,8 @@ export interface PullRecord {
 	readonly state: string;
 	readonly headSha: string;
 	readonly body: string;
+	/** The PR's own page — the link a `lane brief` hands a shell, empty when the board published none. */
+	readonly htmlUrl: string;
 	/** What the platform says the PR changes — the denominator every completeness proof divides by. */
 	readonly changedFiles: number;
 	/** Issue comments on the PR, as the platform counts them. The verdict sweep's denominator. */
@@ -66,6 +68,7 @@ const toPullRecord = (value: unknown): PullRecord | null => {
 		state,
 		headSha,
 		body: typeof body === "string" ? body : "",
+		htmlUrl: typeof value.html_url === "string" ? value.html_url : "",
 		changedFiles,
 		comments: typeof comments === "number" ? comments : 0,
 		draft: value.draft === true,
