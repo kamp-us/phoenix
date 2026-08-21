@@ -111,6 +111,7 @@ request fiber:
 const ctx: FateRequestContext = {
 	currentUser: {user: session?.user},          // CurrentUserInfo is a structural subset — direct assignment
 	livePublisher: livePublisherFor({publish: publishToTopic, waitUntil}),
+	requestServices,                             // `requestServicesFor(...)` — the ADR 0107 §7 seam
 	// no `signal` field — abort is wired at this edge, below
 };
 const res = yield* FateInterpreter.handleRequest(raw, ctx).pipe(interruptOnAbort(raw.signal));
@@ -128,11 +129,50 @@ const res = yield* FateInterpreter.handleRequest(raw, ctx).pipe(interruptOnAbort
   `abort` listener — effect-smol's own platform idiom (`HttpEffect.toWebHandlerWith`).
 - **One ctx object per request**: the interpreter provides the pair as VALUES off this object
   to every operation. Never copy/rebuild it per resolver.
+- **A value the whole request shares goes on `requestServices`, never in a `FiberRef`.** Every
+  operation in a `/fate` envelope runs on its own child fiber at unbounded concurrency, so a
+  child's `FiberRef` set is invisible to its siblings. `requestServicesFor(...)` builds that
+  context in one place and a test pins its membership (`request-services.unit.test.ts`).
 - The publish surface rides one topic capability: the worker-init `LiveTopics.publish` with the
   route's `LiveLimits` applied + the request's `waitUntil`. `livePublisherFor` (the per-request
   `LivePublisher` service value) builds frames + topic keys directly — the one
   frame-building code path; the static `liveBusConfig` fate holds is a throwing stub
   for the build-time `"subscribe" in live` check only.
+
+### Memoizing a per-request read across resolvers
+
+When one derived value costs a database read and many resolvers ask for it — the sandbox viewer
+(`kunye/sandbox.ts`) is the case that forced this — memoize it for the request rather than
+threading it through every call site:
+
+```ts
+export const SandboxViewerMemo = Context.Reference<SandboxViewerResolution>(
+	"kunye/SandboxViewerMemo",
+	{defaultValue: () => resolveSandboxViewer},        // the unmemoized read
+);
+export const makeSandboxViewerMemo = Effect.cached(resolveSandboxViewer);  // one per request
+export const currentSandboxViewer = Effect.gen(function* () {
+	return yield* yield* SandboxViewerMemo;
+});
+```
+
+Three properties are load-bearing:
+
+- **`Context.Reference`, not `Context.Service`.** The default keeps `R` at every call site
+  exactly as it was, so tests and the long-lived `/fate/live` connection go on resolving fresh
+  instead of holding a viewer across SSE frames.
+- **The default must be stateless.** `Context.Reference` caches its default value on the key
+  (effect-smol `Context.ts`), so a stateful one is an isolate-level cache serving one request's
+  answer to another.
+- **`Effect.cached` is the single-flight part.** It guards one latch, so K sibling fibers
+  arriving together produce one read and K-1 awaits; a plain check-then-compute lets all K miss
+  (effect-smol `internal/effect.ts`, `cachedInvalidateWithTTL`). It is lazy — building the memo
+  reads nothing.
+
+Only memoize what is stable for the request. Batch operations already run with no ordering
+between a mutation and a query, so a value a same-envelope mutation can change was never
+read-your-writes to begin with; one that becomes stale for a *different* reason is not a
+candidate.
 
 ## `schema.ts` (build time — the codegen export)
 

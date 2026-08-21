@@ -7,6 +7,7 @@
  * bridge runs the request fiber without abort wiring, so a disconnected client would
  * not interrupt the resolver fibers unless the edge wires it.
  */
+import type {CurrentActor} from "@kampus/authz";
 import {FateInterpreter, type FateRequestContext} from "@kampus/fate-effect";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {Context} from "effect";
@@ -24,8 +25,39 @@ import {
 } from "../flagship/FlagsContext.ts";
 import {overridesAuthorized} from "../flagship/override-authz.ts";
 import {currentActorContext} from "../kunye/CurrentActorLive.ts";
+import {
+	makeSandboxViewerMemo,
+	SandboxViewerMemo,
+	type SandboxViewerResolution,
+} from "../kunye/sandbox.ts";
 import {PanoFeedCache, panoFeedCacheFor} from "../pano/feed-cache.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
+
+/**
+ * ONE context object for the whole request — never copied or rebuilt per resolver. It
+ * fulfills the per-request services registered in `layers.ts` (ADR 0107 §7).
+ *
+ * Exported so its membership is pinned by a test rather than by reading this file:
+ * {@link SandboxViewerMemo} is a `Context.Reference`, so dropping it from here would not
+ * break a type or a run — every read would just quietly go back to resolving per call
+ * site (#6457).
+ */
+export const requestServicesFor = (parts: {
+	readonly actor: Context.Context<CurrentActor>;
+	readonly flagOverrides: typeof RequestFlagOverrides.Service;
+	readonly feedCache: typeof PanoFeedCache.Service;
+	readonly sandboxViewer: SandboxViewerResolution;
+}): Context.Context<CurrentActor | PanoFeedCache | RequestFlagOverrides> =>
+	Context.merge(
+		parts.actor,
+		Context.merge(
+			Context.make(RequestFlagOverrides, parts.flagOverrides),
+			Context.merge(
+				Context.make(PanoFeedCache, parts.feedCache),
+				Context.make(SandboxViewerMemo, parts.sandboxViewer),
+			),
+		),
+	);
 
 export const handleFate = Effect.gen(function* () {
 	const raw = yield* Cloudflare.Request;
@@ -59,19 +91,17 @@ export const handleFate = Effect.gen(function* () {
 		Effect.provide(currentActorContext(session?.user)),
 	);
 
-	// ONE context object for the whole request — never copy or rebuild it per resolver.
-	// No `signal` field: interruption is wired at this edge (below). This fulfills the
-	// per-request services registered in `layers.ts` (ADR 0107 §7).
-	const requestServices = Context.merge(
-		currentActorContext(session?.user),
-		Context.merge(
-			Context.make(RequestFlagOverrides, {
-				cookieHeader: raw.headers.get("cookie"),
-				overridesAllowed,
-			}),
-			Context.make(PanoFeedCache, feedCache),
-		),
-	);
+	// The sandbox viewer costs up to three reads and is asked for at 26 resolver sites, so
+	// it resolves once per request instead of once per site (#6457). Lazy: nothing is read
+	// until the first site asks, and a request touching none reads nothing.
+	const sandboxViewer = yield* makeSandboxViewerMemo;
+
+	const requestServices = requestServicesFor({
+		actor: currentActorContext(session?.user),
+		flagOverrides: {cookieHeader: raw.headers.get("cookie"), overridesAllowed},
+		feedCache,
+		sandboxViewer,
+	});
 	const ctx: FateRequestContext = {
 		currentUser: {user: session?.user},
 		livePublisher: livePublisherFor({publish: publishToTopic, waitUntil}),
