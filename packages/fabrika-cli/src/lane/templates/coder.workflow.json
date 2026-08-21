@@ -69,10 +69,33 @@
 							"ship": {
 								"on": {
 									"ISSUE.DONE": "shipped",
+									"ISSUE.WIP": "ship:queued",
 									"ISSUE.BLOCKED": "human:cp-approval",
 									"ISSUE.FAIL": [
 										{
 											"target": "review",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{ "target": "frozen" }
+									]
+								}
+							},
+							"ship:queued": {
+								"on": {
+									"ISSUE.DONE": "shipped",
+									"ISSUE.BLOCKED": "human:cp-approval",
+									"ISSUE.WIP": [
+										{
+											"target": "ship:queued",
+											"guard": "waitsRemaining",
+											"actions": "incrementWaits"
+										},
+										{ "target": "human:queue-stall" }
+									],
+									"ISSUE.FAIL": [
+										{
+											"target": "build",
 											"guard": "retriesRemaining",
 											"actions": "incrementRetries"
 										},
@@ -86,6 +109,11 @@
 								}
 							},
 							"human:cp-approval": {
+								"on": {
+									"ISSUE.UNBLOCKED": "hist"
+								}
+							},
+							"human:queue-stall": {
 								"on": {
 									"ISSUE.UNBLOCKED": "hist"
 								}

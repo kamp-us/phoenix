@@ -90,6 +90,7 @@ The SPA's route tree (`apps/web/src/App.tsx`) and the visibility classes a route
 | Doc | Topic | Read when |
 |---|---|---|
 | [frontend-routing.md](./frontend-routing.md) | The react-router `<Routes>`/`<Route>` tree (one shared `<Layout />`, pages in `apps/web/src/pages/`); the two visibility classes (public vs dark flag-gated); the `/lab/*` PUBLIC-prototype convention + graduate-or-cull lifecycle | Adding a route, mounting a prototype under `/lab/*`, or deciding a route's production visibility |
+| [flag-dark-page-gate.md](./flag-dark-page-gate.md) | The dark-route gate's shape: `useFlag(KEY, false)` → self-404 when off → the deferred-404 placeholder so the 404 never flashes; the `value`/`loading` contract; the `__BOOT__` fast path; when a server-authoritative denial or an in-page toggle is the right gate instead | Gating a whole page behind a flag, or touching an existing gated page's gate ([#6459](https://github.com/kamp-us/phoenix/issues/6459)) |
 
 ## Index — alchemy infra layer
 

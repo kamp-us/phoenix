@@ -145,6 +145,15 @@ export function livePublisherFor(options: LivePublisherOptions): typeof LivePubl
 					...(opts?.eventId !== undefined ? {eventId: opts.eventId} : {}),
 				}),
 			),
+		invalidate: (type, id, opts) =>
+			swallow(() =>
+				publish({
+					kind: "entity",
+					match: {type, entityId: String(id)},
+					frame: {type: "invalidate", id},
+					...(opts?.eventId !== undefined ? {eventId: opts.eventId} : {}),
+				}),
+			),
 		topic: (procedure, args) => {
 			// The args must ride into the match so `topicsForPublish` resolves the SAME
 			// args-scoped key the subscriber registered under; the global wildcard would fan

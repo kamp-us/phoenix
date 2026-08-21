@@ -4,6 +4,7 @@
  */
 import {describe, expect, it} from "vitest";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
+import {WAIT_BUDGET} from "../wait-budget.ts";
 import {coderWorkflow, twoPhaseWorkflow} from "./fixtures.test-support.ts";
 import {
 	applyClearance,
@@ -77,9 +78,9 @@ describe("run 1 — a fresh lane's status shape", () => {
 			},
 			status: "active",
 			context: {
-				task_a: {retries: 0, maxRetries: 2, code: true},
-				task_b: {retries: 0, maxRetries: 3, code: false},
-				task_c: {retries: 0, maxRetries: 3, code: true},
+				task_a: {retries: 0, maxRetries: 2, waits: 0, maxWaits: WAIT_BUDGET, code: true},
+				task_b: {retries: 0, maxRetries: 3, waits: 0, maxWaits: WAIT_BUDGET, code: false},
+				task_c: {retries: 0, maxRetries: 3, waits: 0, maxWaits: WAIT_BUDGET, code: true},
 				errors: [],
 			},
 		});

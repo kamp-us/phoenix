@@ -2,6 +2,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
+import {WAIT_BUDGET} from "../wait-budget.ts";
 import {LANE_ABSENT, LANE_UNREADABLE, MALFORMED_RECORD} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 import {runHistory} from "./history-verb.ts";
@@ -31,7 +32,10 @@ describe("lane status", () => {
 		expect(JSON.parse(out.stdout)).toEqual({
 			stateValue: {pipeline: {issue: "queued"}},
 			status: "active",
-			context: {issue: {retries: 0, maxRetries: 2}, errors: []},
+			context: {
+				issue: {retries: 0, maxRetries: 2, waits: 0, maxWaits: WAIT_BUDGET},
+				errors: [],
+			},
 		});
 	});
 
@@ -78,7 +82,7 @@ describe("lane print", () => {
 		expect(JSON.parse(out.stdout)).toMatchObject({
 			phases: [{name: "pipeline", tasks: ["issue"]}],
 			terminals: {complete: "complete", tripped: "tripped"},
-			tasks: {issue: {initial: "queued", maxRetries: 2}},
+			tasks: {issue: {initial: "queued", maxRetries: 2, maxWaits: WAIT_BUDGET}},
 		});
 	});
 });

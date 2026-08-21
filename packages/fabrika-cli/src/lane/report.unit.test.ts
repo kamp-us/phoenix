@@ -46,6 +46,31 @@ describe("the shipper's routing arms are three answers, not one", () => {
 	});
 });
 
+describe("the shipper's two queue terminals are waits, not landings (ADR 0313)", () => {
+	it("routes a still-queued-at-horizon shipper to WIP, so the lane waits instead of parking", () => {
+		expect(eventForToken("UNRESOLVED")).toEqual({
+			_tag: "Mapped",
+			token: "UNRESOLVED",
+			event: "WIP",
+		});
+	});
+
+	it("routes a bare enqueue to WIP too — a merge nobody read back is not `shipped`", () => {
+		expect(eventForToken("QUEUED")).toEqual({_tag: "Mapped", token: "QUEUED", event: "WIP"});
+	});
+
+	it("keeps DONE for the two terminals that read a merge back", () => {
+		expect(eventForToken("LANDED")).toMatchObject({event: "DONE"});
+		expect(eventForToken("ALREADY-MERGED")).toMatchObject({event: "DONE"});
+	});
+
+	it("still folds every genuine shipper block to BLOCKED", () => {
+		expect(eventForToken("REFUSED")).toMatchObject({event: "BLOCKED"});
+		expect(eventForToken("AWAITING-CP-APPROVAL")).toMatchObject({event: "BLOCKED"});
+		expect(eventForToken("UNKNOWN")).toMatchObject({event: "BLOCKED"});
+	});
+});
+
 describe("flattening the per-shell vocabularies", () => {
 	it("flattens the real vocabularies with nothing overwritten", () => {
 		const flat = flattenVocabularies(SHELL_VOCABULARIES);

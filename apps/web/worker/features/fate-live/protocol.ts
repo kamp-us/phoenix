@@ -78,9 +78,18 @@ export type WorkerLivePublisher = Omit<typeof LivePublisher.Service, "topic"> & 
 export const WorkerLivePublisher: Effect.Effect<WorkerLivePublisher, never, LivePublisher> =
 	LivePublisher;
 
-/** A fate live entity frame body (matches fate's native `livePayload`). */
+/**
+ * A fate live entity frame body (matches fate's native `livePayload`).
+ *
+ * The `invalidate` variant says "read this row again" and carries no data: a
+ * viewer-derived field's true new value differs per reader, so the re-read must run on
+ * the subscriber's own viewer and a payload here would reintroduce the broadcast it
+ * exists to avoid (ADR 0314). fate's entity dispatch cannot answer it until #6661 ships
+ * upstream and the `@nkzw/fate` pin moves; publishing one before then is inert, not wrong.
+ */
 export type EntityFrame =
 	| {readonly delete: true; readonly id: string | number}
+	| {readonly type: "invalidate"; readonly id: string | number}
 	| {readonly data: unknown; readonly select?: ReadonlyArray<string>};
 
 /** A fate live connection frame body (matches fate's native `liveConnectionPayload`). */
@@ -218,6 +227,23 @@ export interface DeliverFrame {
 	readonly id: string;
 	readonly event: EntityFrame | ConnectionFrame;
 	readonly eventId?: string;
+}
+
+/**
+ * The `DeliverFrame` a resolved publish relays as. The relay is frame-body-blind — the
+ * SSE event name follows the publish's `kind` alone, so every `EntityFrame` variant,
+ * invalidate included, rides the same `"next"` path with no branch of its own.
+ *
+ * `id` (the fate subscription id) is left empty: one publish fans out to many
+ * subscriptions, each stamped with its own id by the topic instance at delivery.
+ */
+export function deliverFrameOf(message: PublishMessage): DeliverFrame {
+	return {
+		kind: message.kind === "entity" ? "next" : "connection",
+		id: "",
+		event: message.frame,
+		...(message.eventId !== undefined ? {eventId: message.eventId} : {}),
+	};
 }
 
 /** Serialize a fate SSE frame, matching fate's native `sse()` exactly. */

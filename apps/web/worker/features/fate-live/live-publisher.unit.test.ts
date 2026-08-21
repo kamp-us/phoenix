@@ -47,6 +47,7 @@ it("every publish method's error channel is `never` — the no-fail contract is 
 	type Publisher = typeof LivePublisher.Service;
 	expectTypeOf<Effect.Error<ReturnType<Publisher["update"]>>>().toEqualTypeOf<never>();
 	expectTypeOf<Effect.Error<ReturnType<Publisher["delete"]>>>().toEqualTypeOf<never>();
+	expectTypeOf<Effect.Error<ReturnType<Publisher["invalidate"]>>>().toEqualTypeOf<never>();
 	type Topic = ReturnType<Publisher["topic"]>;
 	expectTypeOf<Effect.Error<ReturnType<Topic["appendNode"]>>>().toEqualTypeOf<never>();
 	expectTypeOf<Effect.Error<ReturnType<Topic["prependNode"]>>>().toEqualTypeOf<never>();
@@ -69,6 +70,7 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 		// An update with no `changed` and no `data` still carries the `data` key on the wire.
 		yield* live.update("Definition", "d9", {eventId: "e9"});
 		yield* live.delete("Post", 7, {eventId: "e2"});
+		yield* live.invalidate("Post", 8, {eventId: "e6"});
 		const definitions = live.topic("Term.definitions", {slug: "effect"});
 		yield* definitions.appendNode("Definition", "d2", {
 			node: {id: "d2"},
@@ -111,6 +113,15 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 					match: {type: "Post", entityId: "7"},
 					frame: {delete: true, id: 7},
 					eventId: "e2",
+				},
+			},
+			{
+				topicKey: liveEntityTopic("Post", 8),
+				message: {
+					kind: "entity",
+					match: {type: "Post", entityId: "8"},
+					frame: {type: "invalidate", id: 8},
+					eventId: "e6",
 				},
 			},
 			{
@@ -238,6 +249,31 @@ describe("entity update frames narrow to the changed keys", () => {
 		assert.deepStrictEqual(await frameOf({changed: [""], data: whole}), {data: whole});
 	});
 });
+
+/**
+ * The other half of the #6585 leak fix: where an update narrows its payload, an
+ * invalidation has none to narrow. ADR 0314 binds that — the subscriber re-reads against
+ * its own viewer, so any key here would be the mutator's answer to everyone's question.
+ */
+it.effect("an entity invalidation reaches the entity match with no data key at all", () =>
+	Effect.gen(function* () {
+		const {live, recorded, flush} = makeHarness();
+		yield* live.invalidate("Post", "p1");
+		yield* Effect.tryPromise({try: flush, catch: (cause) => new PromiseRejected({cause})}).pipe(
+			Effect.orDie,
+		);
+
+		assert.strictEqual(recorded.length, 1, "an invalidation reaches exactly its entity topic");
+		const record = recorded[0];
+		assert.strictEqual(record?.topicKey, liveEntityTopic("Post", "p1"));
+		if (record?.message.kind !== "entity") {
+			return assert.fail(`expected an entity publish, got ${record?.message.kind}`);
+		}
+		assert.deepStrictEqual(record.message.match, {type: "Post", entityId: "p1"});
+		assert.deepStrictEqual(record.message.frame, {type: "invalidate", id: "p1"});
+		assert.deepStrictEqual(Object.keys(record.message.frame), ["type", "id"]);
+	}),
+);
 
 it.effect("a rejecting topic publish cannot fail the calling effect", () => {
 	// Silence the publisher's Warn failure log so the run stays quiet.

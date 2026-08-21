@@ -104,7 +104,9 @@ const recordingLive = (frames: PublishMessage[]): Layer.Layer<LivePublisher> =>
 
 const publishedFrame = (frames: PublishMessage[]) => {
 	const entity = frames.find((m) => m.kind === "entity");
-	if (!entity || entity.kind !== "entity" || "delete" in entity.frame) return undefined;
+	// Positively select the update variant: `EntityFrame`'s other two arms (delete and
+	// invalidate) both carry no payload, so "not a delete" no longer narrows to one.
+	if (!entity || entity.kind !== "entity" || !("data" in entity.frame)) return undefined;
 	return {
 		data: entity.frame.data as Record<string, unknown> | undefined,
 		select: entity.frame.select,

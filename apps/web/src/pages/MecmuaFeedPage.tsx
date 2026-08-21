@@ -1,7 +1,8 @@
 /**
  * `/mecmua/akis` — the feed of published posts from authors the reader follows. On-site
  * reading only: there is no email/bülten path here by design. Ships dark behind
- * `MECMUA_FEED` (default-off; ADR 0083), and the `mecmuaFeed` root serves empty while it is.
+ * `MECMUA_FEED` (default-off; `.patterns/flag-dark-page-gate.md`), and the `mecmuaFeed` root
+ * serves empty while it is.
  */
 import {Newspaper} from "lucide-react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -40,7 +41,6 @@ const feedRequest = {
 export function MecmuaFeedPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_FEED, false);
 
-	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first.
 	if (flagLoading) {
 		return (
 			<div className="kp-page">
