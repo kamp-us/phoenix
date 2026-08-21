@@ -212,6 +212,18 @@ and `11` is a ref this tree cannot read — the same three facts, and the same r
 seats on those codes. Each is a park naming what the verb named — never a prompt you write by hand
 instead. Parallel active tasks brief and spawn in parallel.
 
+**Then do nothing until a spawn returns — and never `sleep`.** A shell spawned with the Agent tool
+returns its result to you, so that return *is* the wait: there is no interval to fill and nothing to
+poll. Never run `sleep`, foreground or background, and never re-read `lane status` on a timer while
+a spawn is in flight — a timed `lane status` is the same defect wearing a fabrika verb. The harness
+refuses a foreground `sleep`, which makes a background one the shape this goes wrong in: an operator
+waiting on a reviewer spawned `sleep 575` in the background about every nine seconds, waited on none
+of them, and left ~55 live shells on the founder's machine while no lane state moved
+([#6696](https://github.com/kamp-us/phoenix/issues/6696)). So dispatch every task the fold routed,
+say in one line what you dispatched, and end the turn. Your next move is
+[§3](#3--verify-the-record-landed-and-record-what-no-shell-can)'s fresh `lane status`, once a spawn
+has returned.
+
 **An `integrate` state is the one thing you do with your own hands.** It routes to no shell —
 `lane brief` refuses it with exit `18` — because the merge *is* the assembly the run exists to
 produce, and no spawned worktree owns the branch it lands on. Everything about it is still a relay:
