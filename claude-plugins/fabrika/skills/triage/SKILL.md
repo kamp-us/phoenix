@@ -144,9 +144,12 @@ Read the candidates yourself and take the cheapest true route:
 - **An open epic or issue already owns this surface** → **fold in and close**, which is the preferred
   outcome. Add this issue's content to the survivor, then close this one against it so the trail runs
   both ways — the survivor carries the content, this issue points at the survivor. `fabrika triage
-  kill $issue_number --confirm --duplicate-of 4290` is the folding route, and it is only open to an agent
-  filing (step 8); for a human filing, add the content to the survivor by hand and carry on triaging
-  this one, since a human filing is never closed here.
+  kill $issue_number --confirm --duplicate-of 4290` is the folding route, and it is open whatever the
+  provenance — a human filing folds and closes here exactly as an agent filing does
+  ([#6070's ruling](https://github.com/kamp-us/phoenix/issues/6070#issuecomment-5361950454)), because
+  a fold moves the content into the survivor instead of discarding it. `--confirm` is still required,
+  and it is the `--duplicate-of` that opens the close, not the `--confirm`: a bare `--confirm` close
+  of a human filing still refuses on `12` (step 8).
 - **Several small items cluster on one surface with no owner yet** → **make the cluster an epic**
   rather than minting each item as its own ticket. An epic's children ship as one pull request, so a
   cluster of small items costs one review-and-merge round instead of five.

@@ -2039,7 +2039,7 @@ location, with the leak matcher literally named for comments.
 | `9` | the writes landed but the read-back does not show a not-planned close |
 | `11` | the issue body, its comments, the claim on it, the duplicate, or the label set could not be read — no kill was attempted |
 | `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
-| `12` | refused: the issue is human-filed — no agent footer and no operator author — and no `--duplicate-of` was named. A fold is licensed whatever the provenance ([#6070](https://github.com/kamp-us/phoenix/issues/6070#issuecomment-5361950454)); every other close of a human filing refuses here |
+| `12` | refused: the issue is human-filed — no agent footer and no operator author — and no `--duplicate-of` was named (the fold exception, above) |
 | `13` | refused: close-eligible, but `--confirm` was absent (ADR 0159) |
 
 **Errors**
