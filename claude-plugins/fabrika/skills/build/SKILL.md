@@ -196,7 +196,7 @@ lane's entry becomes `stash@{0}`, and your pop restores their files into your tr
 commit, reporting success either way. `git -C "$WT" stash push` is correctly scoped and still writes
 the shared stack, so scoping is no defence. To get a clean tree for a baseline run, commit to your
 lane branch and `reset` back to it, or read the baseline from a second checkout. The hazard and its
-`git reflog stash` recovery path are in
+recovery path are in
 [`.patterns/worktree-agent-constraints.md`](../../../../.patterns/worktree-agent-constraints.md).
 
 Scratch files go only where this prints:

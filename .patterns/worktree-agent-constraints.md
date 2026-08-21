@@ -82,8 +82,8 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   where a review-doc agent's `git stash pop` + `reset --hard` silently discarded the owner's
   uncommitted work — but the guard refused only the **unscoped** form and allowed
   `git -C "$WT" stash`, and that allowance is the hole #6701 fell through. So read the stash
-  hazard below rather than this bullet: there the rule is *never*, not *scope it*.
-  The class this closes: a bare
+  hazard below rather than this bullet: there the rule is *never*, not *scope it*. The class this
+  closes: a bare
   `git checkout <pr-head-sha>`, run after a between-calls cwd reset, executes in the
   **primary** tree — detaching the shared `main`, or (for a bare `stash pop` / `merge`)
   corrupting its working tree — which then stalls a sibling puller's `git merge --ff-only
@@ -118,9 +118,8 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   and scoping is a real remedy. For `stash` the damage is that the stack itself is shared:
   `git -C "$WT" stash push` is textbook worktree-scoped and still writes the shared stack, so the
   guard waved through the exact command that caused #6701. Do not read this paragraph as licensing a
-  scoped `stash`; that rule is *never*, in any form.
-  The prose-only rule alone did not hold (the detach recurred
-  after it shipped), which is why the mechanical guard route was taken (#1571).
+  scoped `stash`; that rule is *never*, in any form. The prose-only rule alone did not hold (the
+  detach recurred after it shipped), which is why the mechanical guard route was taken (#1571).
 
   **Keeping the primary current, by hand.** `pipeline-cli main-sync` retired with that package and
   has no fabrika successor, so the driving session drives sync itself:
@@ -155,22 +154,33 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   address git at your worktree explicitly — is no defence here. Between your `push` and your `pop` a
   sibling lane's entry becomes `stash@{0}`, and your `pop` restores **their** files into **your** tree
   and drops their stash commit. Neither command warns; the pop reports success. Lanes #6643 and #6646
-  did exactly this to each other on 2026-08-20, both children of one epic
-  ([#6701](https://github.com/kamp-us/phoenix/issues/6701)) — and epic runs fan several lanes on
-  purpose, so the collision window is routine, not rare.
+  did exactly this to each other on 2026-08-20, both children of epic
+  [#6629](https://github.com/kamp-us/phoenix/issues/6629); the incident is reported in full on
+  [#6701](https://github.com/kamp-us/phoenix/issues/6701). Epic runs fan several lanes on purpose, so
+  the collision window is routine, not rare.
 
   **What to do instead.** To get a clean tree for a baseline run, commit to your lane branch and
   `git -C "$WT" reset` back to it afterwards, or read the baseline from a second checkout. Both keep
   your work on a ref only your lane names.
 
-  **Recovery, if a pop already ate someone's work.** A dropped stash commit stays reachable through
-  the reflog for its expiry window, and files can be lifted out of it without touching the shared
-  stack:
+  **Recovery, if a pop already ate someone's work.** The commit survives the drop for its expiry
+  window, so the files can be lifted out of it — but **`git reflog stash` will not name it.** A clean
+  `pop` deletes the entry from the stash reflog as it drops, and if that was the last entry the
+  command is a hard error (`fatal: ambiguous argument 'stash'`); with siblings left on the stack it
+  succeeds and simply omits the SHA you need. Verified live on git 2.40.1, and it is `git-stash(1)`'s
+  own position under *"Recovering stash entries that were cleared/dropped erroneously"*: dropped
+  entries "cannot be recovered through the normal safety mechanisms". Use the incantation that manual
+  prescribes instead:
 
   ```bash
-  git -C "$WT" reflog stash                       # names the dropped commits
+  git -C "$WT" fsck --unreachable | grep commit    # lists the dropped stash commits (repo-wide)
+  git -C "$WT" show --stat <stash-sha>             # identify which one is the lost work
   git -C "$WT" restore --source=<stash-sha> --worktree -- <paths>
   ```
+
+  The reflog is worth a look only while the entry is still **on** the stack — a `pop` that stopped on
+  a conflict leaves it there, and so does a plain `push` you have not popped yet. Once it drops,
+  `fsck` is the only route.
 
   `git restore --source=<sha>` reads one commit and writes the named paths — no push, no pop, no drop,
   so it cannot damage a sibling lane the way the recovery attempt itself otherwise might.
