@@ -9,8 +9,8 @@
  *     yazar ⇒ live).
  *   - {@link currentSandboxViewer} — the read-time viewer: the signed-in id, a
  *     non-throwing moderator probe of `Moderate.over(platform)`, and the flag-gated
- *     in-place opt-in (#6423), resolved once per read and handed to the
- *     `SandboxVisibility` predicates.
+ *     in-place opt-in (#6423), handed to the `SandboxVisibility` predicates. Resolved
+ *     once per `POST /fate` request through {@link SandboxViewerMemo} (#6457).
  *   - {@link moderatorSandboxViewer} — the same viewer for an already-`Moderate`-gated
  *     read, taken off the discharged grant instead of re-probing for it (#6472).
  *   - {@link PublishDecision} / {@link decidePublish} / {@link alwaysLive} — the
@@ -26,7 +26,7 @@
  */
 
 import {CurrentUser} from "@kampus/fate-effect";
-import {Brand, Effect} from "effect";
+import {Brand, Context, Effect} from "effect";
 import {CaylakVisibility} from "../caylak-visibility/CaylakVisibility.ts";
 import {caylakVisibilityOn} from "../caylak-visibility/gate.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
@@ -70,7 +70,7 @@ const inPlaceVisibility = Effect.fn("kunye.inPlaceVisibility")(function* (viewer
  * `Denied` otherwise; we collapse that to a boolean so a non-moderator reads as
  * `canSeeSandboxed: false` rather than erroring the read.
  */
-export const currentSandboxViewer = Effect.gen(function* () {
+const resolveSandboxViewer = Effect.gen(function* () {
 	const {user} = yield* CurrentUser;
 	const viewerId = user?.id ?? null;
 	// A non-throwing probe of the moderation gate: `requireModeration` discharges
@@ -81,6 +81,31 @@ export const currentSandboxViewer = Effect.gen(function* () {
 	);
 	const seesSandboxedInPlace = yield* inPlaceVisibility(viewerId);
 	return {viewerId, canSeeSandboxed, seesSandboxedInPlace} satisfies SandboxViewer;
+});
+
+export type SandboxViewerResolution = typeof resolveSandboxViewer;
+
+/**
+ * Where a request installs its one resolution, so the 26 call sites cost one probe + one
+ * tier read + one opt-in read between them instead of three each (#6457). Shape and its
+ * three load-bearing properties: `.patterns/fate-effect-worker-wiring.md`.
+ *
+ * The default MUST stay stateless — `Context.Reference` caches it on the key (effect-smol
+ * `Context.ts`), so state here would be an isolate-level cache handing one viewer's tier
+ * to another request.
+ */
+export const SandboxViewerMemo = Context.Reference<SandboxViewerResolution>(
+	"kunye/SandboxViewerMemo",
+	{defaultValue: () => resolveSandboxViewer},
+);
+
+/** One request's memo, for the `/fate` route edge to put on `requestServices`. */
+export const makeSandboxViewerMemo: Effect.Effect<SandboxViewerResolution> =
+	Effect.cached(resolveSandboxViewer);
+
+/** @see {@link resolveSandboxViewer} — this reads it through the request's {@link SandboxViewerMemo}. */
+export const currentSandboxViewer: SandboxViewerResolution = Effect.gen(function* () {
+	return yield* yield* SandboxViewerMemo;
 });
 
 /**

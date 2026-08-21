@@ -3,15 +3,19 @@
  * per task out, everything XState's nesting carried reduced to data (#5673; grounded in the
  * recorded spike runs on #5671/#5672).
  *
- * Three structural recognitions replace every name-driven mechanism, and **no guard or action name
- * is ever dereferenced** — a `guard`/`actions` string in the document is inert data:
+ * Structural recognitions replace every name-driven mechanism, and **one guard spelling is read**:
+ * a `guard`/`actions` string is otherwise inert data.
  *
- *   - An **array on an event** means guarded-loop: `[loop-while-budget-remains, else-fallthrough]`.
- *     The guard is one inline counter comparison in the compiled cell; the fallthrough target, when
- *     final, is the task's error final (`frozen`, `tripped`). **Which counter it spends is the
- *     event's own polarity**: `FAIL` is a repair round and spends `retries`, every other event is a
- *     wait and spends `waits`. A queue dwell must not eat the budget a later repair draws on, and
- *     reading that off the event keeps it structural — no guard name is consulted (ADR 0313).
+ *   - An **array on an event** means guarded: `[taken-when-the-guard-holds, else-fallthrough]`, and
+ *     the fallthrough target, when final, is the task's error final (`frozen`, `tripped`). The
+ *     first arm's own spelling picks the guard, and only two spellings exist. `class:<name>` reads
+ *     the lane class the event carried (see {@link TaskState}) and spends nothing: it picks which
+ *     shell serves the round, and picking is not repairing (ADR 0317). Every other spelling is the
+ *     budget guard, one inline counter comparison in the compiled cell, and **which counter it
+ *     spends is the event's own polarity**: `FAIL` is a repair round and spends `retries`, every
+ *     other event is a wait and spends `waits`. A queue dwell must not eat the budget a later
+ *     repair draws on, and reading that off the event keeps it structural — beyond `class:`, no
+ *     guard name is consulted (ADR 0313).
  *   - A transition **targeting a `history` node** resumes the state the task left, carried as the
  *     `was` field in {@link TaskState} — history-state semantics as data, no pseudo-state.
  *   - A phase's **`onDone` pair** `[{target, guard}, {target}]` names the two workflow terminals
@@ -54,12 +58,19 @@ export const CLEARED_EVENT = "CLEARED";
  * One task's folded state: the leaf, its two budgets, the state it left (`was`), and the grants
  * applied so far — `cleared` is the fold's own tally of {@link CLEARED_EVENT} rounds, which is what
  * makes `maxRetries` a function of the log's prefix rather than of a document anyone can edit.
+ *
+ * `classes` is the routing fact a `class:<name>` guard reads. It is *not* derived here — the
+ * compiler reads no diff and no board — it is carried on the event that observed it and folded in
+ * below, exactly as `pr`, `comment` and `cause` are carried. It is sticky: an event that names no
+ * class leaves the standing set alone, so a lane proven UI-class at `WIP` is still UI-class at the
+ * `PASS` that routes its rendered review.
  */
 export interface TaskState {
 	readonly type: string;
 	readonly retries: number;
 	readonly maxRetries: number;
 	readonly cleared: ReadonlyArray<number>;
+	readonly classes: ReadonlyArray<string>;
 	/** Re-folds spent waiting on something outside the lane — never the repair budget above. */
 	readonly waits: number;
 	readonly maxWaits: number;
@@ -70,6 +81,8 @@ export interface LaneMsg {
 	readonly type: string;
 	/** The round a {@link CLEARED_EVENT} clears; absent on every operator event. */
 	readonly round?: number;
+	/** The lane classes the recorder observed; absent leaves {@link TaskState.classes} standing. */
+	readonly classes?: ReadonlyArray<string>;
 }
 
 export type TaskMachine = Machine<TaskState, LaneMsg, never, never, unknown>;
@@ -119,6 +132,23 @@ export type CompileResult =
 	| {readonly _tag: "Malformed"; readonly defects: ReadonlyArray<string>};
 
 type Cell = (state: TaskState, msg: LaneMsg) => readonly [TaskState, readonly never[]];
+
+/**
+ * The one guard spelling the compiler reads: `class:<name>` takes the arm when `<name>` stands over
+ * the task. Anything else — `retriesRemaining`, a per-task spelling, a name nobody defined — is the
+ * budget guard, whose counter the event's polarity picks, which is what keeps every document
+ * written before this shape existed compiling byte-for-byte the same.
+ */
+const CLASS_GUARD = /^class:([a-z][a-z0-9-]*)$/;
+
+const classGuardOf = (arm: unknown): string | undefined => {
+	if (!isRecord(arm) || typeof arm.guard !== "string") return undefined;
+	return CLASS_GUARD.exec(arm.guard)?.[1];
+};
+
+/** Fold the classes an event carried into the state before any guard reads them. */
+const withClasses = (state: TaskState, msg: LaneMsg): TaskState =>
+	msg.classes === undefined ? state : {...state, classes: msg.classes};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
@@ -190,30 +220,43 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 				const targets = transition.map((arm) =>
 					isRecord(arm) && typeof arm.target === "string" ? arm.target : undefined,
 				);
-				const [retry, fallthrough] = targets;
-				if (transition.length !== 2 || retry === undefined || fallthrough === undefined) {
+				const [taken, fallthrough] = targets;
+				if (transition.length !== 2 || taken === undefined || fallthrough === undefined) {
 					defects.push(
 						`task "${taskId}": guarded "${eventName}" must be a two-arm array of \`{target}\` — [loop-while-budget-remains, else-fallthrough]`,
 					);
 					continue;
 				}
-				for (const target of [retry, fallthrough]) {
+				for (const target of [taken, fallthrough]) {
 					if (states[target] === undefined) {
 						defects.push(`task "${taskId}": "${eventName}" targets unknown state "${target}"`);
 					}
+				}
+				const laneClass = classGuardOf(transition[0]);
+				if (laneClass !== undefined) {
+					cells[msg] = (s, m) => {
+						const c = withClasses(s, m);
+						const target = c.classes.includes(laneClass) ? taken : fallthrough;
+						return [{...c, type: target, was: c.type}, []];
+					};
+					continue;
 				}
 				if (finals.has(fallthrough)) errorFinals.add(fallthrough);
 				if (msg === "FAIL") guardedStates.add(stateName);
 				cells[msg] =
 					msg === "FAIL"
-						? (s) =>
-								s.retries < s.maxRetries
-									? [{...s, type: retry, retries: s.retries + 1, was: s.type}, []]
-									: [{...s, type: fallthrough, was: s.type}, []]
-						: (s) =>
-								s.waits < s.maxWaits
-									? [{...s, type: retry, waits: s.waits + 1, was: s.type}, []]
-									: [{...s, type: fallthrough, was: s.type}, []];
+						? (s, m) => {
+								const c = withClasses(s, m);
+								return c.retries < c.maxRetries
+									? [{...c, type: taken, retries: c.retries + 1, was: c.type}, []]
+									: [{...c, type: fallthrough, was: c.type}, []];
+							}
+						: (s, m) => {
+								const c = withClasses(s, m);
+								return c.waits < c.maxWaits
+									? [{...c, type: taken, waits: c.waits + 1, was: c.type}, []]
+									: [{...c, type: fallthrough, was: c.type}, []];
+							};
 				continue;
 			}
 			if (typeof transition !== "string") {
@@ -225,10 +268,16 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 				continue;
 			}
 			if (nodeType(states[transition]) === "history") {
-				cells[msg] = (s) => [{...s, type: s.was ?? initialState}, []];
+				cells[msg] = (s, m) => {
+					const c = withClasses(s, m);
+					return [{...c, type: c.was ?? initialState}, []];
+				};
 			} else {
 				const target = transition;
-				cells[msg] = (s) => [{...s, type: target, was: s.type}, []];
+				cells[msg] = (s, m) => {
+					const c = withClasses(s, m);
+					return [{...c, type: target, was: c.type}, []];
+				};
 			}
 		}
 	}
@@ -256,6 +305,11 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	const staleGrants = Array.isArray(ctx.clearedRounds)
 		? ctx.clearedRounds.filter((round): round is number => typeof round === "number")
 		: [];
+	// A document may seed the classes a lane starts under; every later change rides an event, so a
+	// non-array declaration is a silence rather than a defect the compiler could act on.
+	const classes = Array.isArray(ctx.classes)
+		? ctx.classes.filter((name): name is string => typeof name === "string")
+		: [];
 	// A cap clearance buys a repair round and never a longer wait: `clearedCell` raises `maxRetries`
 	// alone, so the wait budget is a declared constant no recorded event moves (ADRs 0312, 0313).
 	const maxWaits = typeof ctx.maxWaits === "number" ? ctx.maxWaits : WAIT_BUDGET;
@@ -263,6 +317,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		maxRetries: _max,
 		retries: _retries,
 		clearedRounds: _cleared,
+		classes: _classes,
 		maxWaits: _maxWaits,
 		waits: _waits,
 		...extras
@@ -272,6 +327,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		retries: 0,
 		maxRetries: declared,
 		cleared: [],
+		classes,
 		waits: 0,
 		maxWaits,
 	};

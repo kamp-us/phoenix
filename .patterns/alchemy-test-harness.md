@@ -268,6 +268,7 @@ setup-only Cloudflare D1 REST seam; it deploys nothing.
 | `h.touchTerm(definitionId)` | Re-stamp a term's `last_activity_at` to "now" via a fresh voter's up-vote — moves the clock forward but can't pin a specific second. |
 | `h.setLastActivityAt(slug, epochSeconds)` | **Setup-only controlled write:** stamp `term_record.last_activity_at` to an EXACT whole-second epoch via the Cloudflare D1 REST API, so a keyset tie is **constructed**, never raced on wall-clock coincidence (#643). NOT the worker binding, never on an assertion path. |
 | `h.execD1(sql, params?)` | One setup-only SQL statement over the same D1 REST seam — the fault-injection a black-box test can't reach (e.g. drop an FTS table to prove the read path errors instead of masking, #549). |
+| `h.countD1(sql, params?)` | **The one read-assertion exception:** how many rows one SELECT returns, over the same D1 REST seam. Only for a row whose every public read path ships dark behind a default-off flag, so no session can observe its absence (the account-deletion sweep of `user_mute` / `mecmua_subscription` / `caylak_visibility_preference`, #6733). Once a flag flips, the assertion belongs back on the public read. |
 | `h.promoteToYazar(userId)` | Flip `user.tier` over the D1 REST seam — needed since #1810's earn-to-vote gate; there is no public promotion mutation. Setup-only. |
 | `h.d1Target()` | This stage's `{accountId, databaseId}` for external setup tools (the fts-backfill CLI, #645). |
 | `h.openSse(connectionId, cookie)` | Open the live SSE stream (no timeout — the body stays open). |
@@ -295,8 +296,12 @@ SSE wire on the test side.
 - **Transient-deploy classification** — `tests/integration/_deploy-transient.ts`.
 - **The HTTP harness** — `tests/integration/_harness.ts`.
 - **The test files** — `tests/integration/*.test.ts`. Black-box assertions
-  only; the one sanctioned exception is fixture setup the public seam genuinely
-  cannot express (`setLastActivityAt` / `execD1` / `promoteToYazar`, above).
+  only, with two sanctioned exceptions: fixture setup the public seam genuinely
+  cannot express (`setLastActivityAt` / `execD1` / `promoteToYazar`, above), and
+  the single read exception `countD1` — a row whose every public read path ships
+  dark behind a default-off flag has no session that could observe it, so the
+  absence is unassertable over HTTP (#6733). Both stay narrow: a row a live
+  session *can* read is asserted through that read, never through D1.
 
 ## Why isolated stages (and why most files still share one)
 

@@ -156,6 +156,21 @@ export interface Harness {
 	 */
 	execD1(sql: string, params?: unknown[]): Promise<number>;
 	/**
+	 * How many rows one SELECT returns, over the same REST seam as {@link execD1}.
+	 *
+	 * The narrow exception to "assert over HTTP only": a row whose every public read path
+	 * ships dark. All three surfaces over the rows `account.delete` sweeps are behind
+	 * default-off flags (ADR 0083) — `mute.listMine` fails `MuteDisabled` under
+	 * `MEMBER_MUTE`, `mecmuaSubscription` resolves `subscribed: false` under
+	 * `MECMUA_FEED`, and `caylakVisibility.mine` short-circuits to "not opted in" under
+	 * `PHOENIX_CAYLAK_VISIBILITY` — so no session can observe them, the surviving peer's
+	 * included, and that peer is the muter / subscriber on half the seeded edges
+	 * (ADR 0097 amendment / #6733). Not a session-scoping argument: the peer's session
+	 * outlives the delete. Reach for `countD1` only for that shape, and when a flag here
+	 * flips, move the assertion back onto the public read.
+	 */
+	countD1(sql: string, params?: unknown[]): Promise<number>;
+	/**
 	 * Promote an account to `yazar` by flipping its `user.tier` column directly over the
 	 * same setup-only D1 REST seam as `execD1` — the test-harness analogue of the server's
 	 * `Pasaport.promoteToYazar` (there is no public promotion mutation to drive black-box).
@@ -788,21 +803,27 @@ export function harness(
 		return (voted.data as {score: number}).score;
 	};
 
-	const runD1Query = async (sql: string, params: unknown[]): Promise<number> => {
+	const sendD1Query = async (
+		sql: string,
+		params: unknown[],
+	): Promise<{results?: unknown[]; meta?: {changes?: number}}> => {
 		const {accountId: acct, databaseId} = getD1Target();
 		const res = await cloudflareApi(`/accounts/${acct}/d1/database/${databaseId}/query`, {
 			method: "POST",
 			body: JSON.stringify({sql, params}),
 		});
 		const body = (await res.json()) as {
-			result?: Array<{meta?: {changes?: number}}>;
+			result?: Array<{results?: unknown[]; meta?: {changes?: number}}>;
 			errors?: Array<{message: string}>;
 		};
 		if (body.errors?.length) {
 			throw new Error(`D1 query failed (${sql}): ${body.errors.map((e) => e.message).join("; ")}`);
 		}
-		return body.result?.[0]?.meta?.changes ?? 0;
+		return body.result?.[0] ?? {};
 	};
+
+	const runD1Query = async (sql: string, params: unknown[]): Promise<number> =>
+		(await sendD1Query(sql, params)).meta?.changes ?? 0;
 
 	const setLastActivityAt: Harness["setLastActivityAt"] = async (slug, epochSeconds) => {
 		const changes = await runD1Query("UPDATE term_record SET last_activity_at = ? WHERE slug = ?", [
@@ -815,6 +836,9 @@ export function harness(
 	};
 
 	const execD1: Harness["execD1"] = (sql, params = []) => runD1Query(sql, params);
+
+	const countD1: Harness["countD1"] = async (sql, params = []) =>
+		((await sendD1Query(sql, params)).results ?? []).length;
 
 	const promoteToYazar: Harness["promoteToYazar"] = async (userId) => {
 		const changes = await runD1Query(`UPDATE "user" SET tier = 'yazar' WHERE id = ?`, [userId]);
@@ -862,6 +886,7 @@ export function harness(
 		touchTerm,
 		setLastActivityAt,
 		execD1,
+		countD1,
 		promoteToYazar,
 		d1Target,
 		openSse,

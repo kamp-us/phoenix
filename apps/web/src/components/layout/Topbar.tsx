@@ -45,6 +45,8 @@ export function Topbar({
 	themeChoice?: ThemeChoice;
 	onThemeChange?: (choice: ThemeChoice) => void;
 	onLogout?: () => void;
+	// The account side is claimed — gates the pill as well as its placeholder, so a caller that
+	// also renders a sign-in CTA must derive that CTA from this flag's negation (#6660).
 	reserveSignedInSlots?: boolean;
 }) {
 	// ⌘K (mac) / Ctrl+K (other) focuses search, backing the <Kbd>⌘K</Kbd> hint below.
@@ -137,29 +139,33 @@ export function Topbar({
 		bildirim && showUnreadBadge(bildirim.unread) ? (
 			<BildirimPopover to={bildirim.to} unread={bildirim.unread} />
 		) : null;
-	const userMenu = user ? (
-		<UserMenu
-			user={user}
-			bildirim={bildirim}
-			themeChoice={themeChoice}
-			onThemeChange={onThemeChange}
-			onLogout={onLogout}
-		/>
-	) : null;
-	// The placeholder holds the account slot's geometry until fate publishes the real user, so
-	// the menu fills in place with no shift. See ADR 0179 §1 and ADR 0185.
-	const accountSlot =
-		userMenu ??
-		(reserveSignedInSlots ? (
-			<span
-				className="kp-topbar__user kp-topbar__user--placeholder"
-				data-testid="topbar-user-placeholder"
-				aria-hidden="true"
-			>
-				<span className="kp-avatar" />
-				<span className="kp-topbar__name-placeholder" />
-			</span>
-		) : null);
+	const userMenu =
+		reserveSignedInSlots && user ? (
+			<UserMenu
+				user={user}
+				bildirim={bildirim}
+				themeChoice={themeChoice}
+				onThemeChange={onThemeChange}
+				onLogout={onLogout}
+			/>
+		) : null;
+	// `reserveSignedInSlots` gates the whole account side, pill included. The caller derives its
+	// sign-in CTA from the negation of this same flag, so gating only the placeholder left the
+	// pill riding a truthy `user` prop that a signed-out caller could still supply — pill and CTA
+	// on screen together (#6660). Inside the gate the placeholder holds the slot's geometry until
+	// the real user arrives, so the menu fills in place with no shift. See ADR 0179 §1, ADR 0185.
+	const accountSlot = reserveSignedInSlots
+		? (userMenu ?? (
+				<span
+					className="kp-topbar__user kp-topbar__user--placeholder"
+					data-testid="topbar-user-placeholder"
+					aria-hidden="true"
+				>
+					<span className="kp-avatar" />
+					<span className="kp-topbar__name-placeholder" />
+				</span>
+			))
+		: null;
 
 	// Every element sits in its one lawful zone (see ADR 0176). The primary-action zone is
 	// empty on purpose — #2600 moved `+ gönderi` to the pano Subnav CTA; do not refill it.
@@ -181,9 +187,11 @@ export function Topbar({
 			<span className="kp-topbar__spacer" />
 			<div className="kp-topbar__zone kp-topbar__zone--utility" data-testid="topbar-zone-utility">
 				{searchForm}
-				{/* Signed-out visitors reach the theme picker here; signed-in ones in the user
-				    menu (above), so exactly one theme control renders either way (#2612). */}
-				{!user ? themePicker : null}
+				{/* The picker rides the user menu when one renders, and sits here when none does, so
+				    exactly one theme control renders in every state (#2612). It reads `userMenu`
+				    itself, not `user` — `user` alone can be truthy with the account side gated shut,
+				    and gating this on it left that state with no theme control at all (#6660). */}
+				{userMenu ? null : themePicker}
 			</div>
 			<div
 				className="kp-topbar__zone kp-topbar__zone--status-signal"

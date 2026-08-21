@@ -170,5 +170,5 @@ fallback is a labeled status region (`role="status"` + `aria-busy="true"` + a Tu
 - [fate-views-and-requests.md](./fate-views-and-requests.md) — `view`/`useView`/`useListView`, one request per screen
 - [fate-connections.md](./fate-connections.md) — how the server resolves nested connections inline (the reason `defer` can't reach them by id)
 - [fate-mutations-client.md](./fate-mutations-client.md) — writes ride React Actions (no manual transition needed)
-- [base-ui-accessibility.md](./base-ui-accessibility.md) — the accessible-name rules a status region follows
+- [manti-accessibility.md](./manti-accessibility.md) — the accessible-name rules a status region follows
 - fate reference (in the [fate](https://github.com/usirin/fate) repo README): *Data Fetching* (Suspense); *Deferred Views* (`defer` — see the phoenix-seam caveat above)

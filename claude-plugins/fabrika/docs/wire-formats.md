@@ -42,7 +42,7 @@ does not exist yet — rather than missing; check the registry before assuming a
 | `build-deviations` | [`packages/fabrika-cli/src/wire/build-deviations.ts`](../../../packages/fabrika-cli/src/wire/build-deviations.ts) | `build` | `review` |
 | `verdict-marker` | [`packages/fabrika-cli/src/wire/verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/verdict-marker.ts) | `review`, `check-epic-plan`, `governance` | `build`, `ship` |
 | `range-verdict-marker` | [`packages/fabrika-cli/src/wire/range-verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/range-verdict-marker.ts) | `review` | `build`, `operate` |
-| `lane-brief` | [`packages/fabrika-cli/src/wire/lane-brief.ts`](../../../packages/fabrika-cli/src/wire/lane-brief.ts) | `operate` | `build`, `review`, `ship` |
+| `lane-brief` | [`packages/fabrika-cli/src/wire/lane-brief.ts`](../../../packages/fabrika-cli/src/wire/lane-brief.ts) | `operate` | `build`, `build-ui`, `review`, `review-ui`, `ship` |
 | `map-ticket` | [`packages/fabrika-cli/src/wire/map-ticket.ts`](../../../packages/fabrika-cli/src/wire/map-ticket.ts) | `map` | `map` |
 | `grill-ruling` | [`packages/fabrika-cli/src/wire/grill-ruling.ts`](../../../packages/fabrika-cli/src/wire/grill-ruling.ts) | `grilling` | `grilling` |
 | `cap-clearance` | [`packages/fabrika-cli/src/wire/cap-clearance.ts`](../../../packages/fabrika-cli/src/wire/cap-clearance.ts) | `build` | `build`, `operate` |
@@ -54,7 +54,7 @@ does not exist yet — rather than missing; check the registry before assuming a
 | `came-from` | [`packages/fabrika-cli/src/wire/came-from.ts`](../../../packages/fabrika-cli/src/wire/came-from.ts) | `grilling`, `prototyping` | `grilling`, `wayfinding` |
 | `plan-approval` | [`packages/fabrika-cli/src/wire/plan-approval.ts`](../../../packages/fabrika-cli/src/wire/plan-approval.ts) | `check-epic-plan` | `check-epic-plan` |
 | `decision-ruling` | [`packages/fabrika-cli/src/wire/decision-ruling.ts`](../../../packages/fabrika-cli/src/wire/decision-ruling.ts) | `adr` | `build`, `triage` |
-| `routed-elsewhere` | [`packages/fabrika-cli/src/wire/routed-elsewhere.ts`](../../../packages/fabrika-cli/src/wire/routed-elsewhere.ts) | `review-ui` | `ship` |
+| `routed-elsewhere` | [`packages/fabrika-cli/src/wire/routed-elsewhere.ts`](../../../packages/fabrika-cli/src/wire/routed-elsewhere.ts) | `review-ui` | `ship`, `operate` |
 <!-- fabrika:wire-index:end -->
 
 ### `acceptance-criteria`
@@ -320,13 +320,14 @@ pickable with no recorded ruling behind it.
 
 ### `routed-elsewhere`
 
-This is a gate saying, at one head, that this PR owes it no verdict. `review-ui` writes it and
-`ship gate` reads it, and it exists because those two disagreed in a way neither could resolve:
-`ship scope` raises the `ui` class from a path test that cannot see whether pixels moved, so a PR
-whose only `apps/web/src/**` change is a docblock required a `review-ui` verdict — and `review-ui`
-cannot produce one, because `render` refuses zero surfaces and `post` refuses to compose without a
-capture set. The namespace was unfillable, `ship gate` blocks on absence, and the PR was stuck
-forever (#6376). The record is the missing answer, and ADR
+This is a gate saying, at one head, that this PR owes it no verdict. `review-ui` writes it, and both
+gates that compute a required set read it — `ship gate` and `lane prove`, which must agree or a
+lane that ships clean never leaves `review`. It exists because two readings disagreed in a way
+neither could resolve: `ship scope` raises the `ui` class from a path test that cannot see whether
+pixels moved, so a PR whose only `apps/web/src/**` change is a docblock required a `review-ui`
+verdict — and `review-ui` cannot produce one, because `render` refuses zero surfaces and `post`
+refuses to compose without a capture set. The namespace was unfillable, `ship gate` blocks on
+absence, and the PR was stuck forever (#6376). The record is the missing answer, and ADR
 [0316](../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md) is why it is this shape.
 
 It carries no polarity, and that is the whole safety story. A PASS says a gate looked and found

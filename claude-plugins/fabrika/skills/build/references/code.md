@@ -12,8 +12,9 @@ UNKNOWN rather than running someone else's script names.
   flow, never address the reviewer.
 - **Make invalid states unrepresentable; domain logic in domain objects.** Prefer a type that
   cannot hold the bug over a check that catches it.
-- **Ground platform/dependency behavior in source, not intuition** — effect-smol's `LLMS.md` for
-  Effect idiom; the dep's own source for its contract. Cite what you grounded in the PR body.
+- **Ground platform/dependency behavior in source, not intuition** — [`Effect-TS/effect`](https://github.com/Effect-TS/effect)
+  main's `LLMS.md` for Effect idiom; the dep's own source for its contract. Cite what you grounded
+  in the PR body.
 - **Every dependency via `catalog:`** — never a hardcoded version (catalog-guard reds it anyway).
 - **A mutation over a fate-live fanned entity publishes the `/fate/live` invalidation** — check
   `apps/web/worker/features/fate-live/fanned-mutations.ts` before touching Post/Comment/Definition

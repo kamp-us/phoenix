@@ -23,12 +23,13 @@ import {
 
 /**
  * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
- * event a shell reported through `lane report`, the artifact refs its terminal named (#5712) and,
- * on a `BLOCKED`, the closed-set cause of the park (#6480). Those three are evidence carried
- * verbatim; the fold reads only `task`/`event`, so a line with or without them folds identically.
+ * event a shell reported through `lane report`, the artifact refs its terminal named (#5712), on a
+ * `BLOCKED`, the closed-set cause of the park (#6480), and the lane classes the recorder observed
+ * at that moment (ADR 0317). Those three refs are evidence carried verbatim.
  *
- * `round` is not evidence — it is the only payload the fold reads, and a `CLEARED` line without it
- * names no round to clear (ADR 0312).
+ * `round` and `classes` are not evidence — they are the two payloads the fold reads. A `CLEARED`
+ * line without a `round` names no round to clear (ADR 0312), and `classes` is what a `class:<name>`
+ * guard routes on (ADR 0317).
  */
 export interface LogEntry {
 	readonly task: string;
@@ -38,6 +39,7 @@ export interface LogEntry {
 	readonly comment?: string;
 	readonly cause?: string;
 	readonly round?: number;
+	readonly classes?: ReadonlyArray<string>;
 }
 
 export type ParseLogResult =
@@ -66,6 +68,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			comment?: unknown;
 			cause?: unknown;
 			round?: unknown;
+			classes?: unknown;
 		};
 		if (
 			typeof record !== "object" ||
@@ -95,6 +98,16 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(`line ${index + 1} is a ${CLEARED_EVENT} event carrying no \`round\``);
 			continue;
 		}
+		if (
+			record.classes !== undefined &&
+			!(
+				Array.isArray(record.classes) &&
+				record.classes.every((name) => typeof name === "string" && name !== "")
+			)
+		) {
+			defects.push(`line ${index + 1} carries a \`classes\` field that is not a list of names`);
+			continue;
+		}
 		entries.push({
 			task: record.task,
 			event: record.event,
@@ -103,6 +116,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.comment === undefined ? {} : {comment: record.comment}),
 			...(record.cause === undefined ? {} : {cause: record.cause}),
 			...(record.round === undefined ? {} : {round: record.round as number}),
+			...(record.classes === undefined ? {} : {classes: record.classes as ReadonlyArray<string>}),
 		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};
@@ -149,6 +163,7 @@ export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): F
 			.map((entry) => ({
 				type: bareEvent(entry.event),
 				...(entry.round === undefined ? {} : {round: entry.round}),
+				...(entry.classes === undefined ? {} : {classes: entry.classes}),
 			}));
 		try {
 			states[taskId] = foldMsgs(task.machine, task.initial, msgs);
@@ -217,6 +232,9 @@ export const deriveStatus = (
 			...(state.cleared.length === 0 ? {} : {clearedRounds: state.cleared}),
 			waits: state.waits,
 			maxWaits: state.maxWaits,
+			// Absent rather than empty when unclassed, so an unclassed lane's status is what it always
+			// was; a driver relaying `--class` reads the standing set here (ADR 0317).
+			...(state.classes.length === 0 ? {} : {classes: state.classes}),
 			...taskIn(lane, taskId).extras,
 			...(cause === undefined ? {} : {cause}),
 		};
@@ -311,6 +329,7 @@ export const applyEvent = (
 	taskId: string,
 	event: string,
 	at: string,
+	classes: ReadonlyArray<string> | null = null,
 ): ApplyResult => {
 	if (!isOperatorEvent(event)) {
 		return refuseEvent(
@@ -346,7 +365,10 @@ export const applyEvent = (
 	const from = stateIn(states, taskId);
 	let next: TaskState;
 	try {
-		[next] = applyCell<TaskState, LaneMsg, never>(task.machine, from, {type: event});
+		[next] = applyCell<TaskState, LaneMsg, never>(task.machine, from, {
+			type: event,
+			...(classes === null ? {} : {classes}),
+		});
 	} catch (error) {
 		if (error instanceof NoCellError) {
 			return refuseEvent(`${error.name}: ${error.message}`);
@@ -375,7 +397,12 @@ export const applyEvent = (
 			reason: `task "${taskId}" would resume from "${from.type}" into "${next.type}" at ${next.retries}/${next.maxRetries} retries — the state comes back and the repair budget does not, so every guarded route out of "${next.type}" falls straight back to "${from.type}". Record the founder's cleared round first (\`build clear\`); the two may land in either order.${stale}`,
 		};
 	}
-	const entry: LogEntry = {task: taskId, event: `${taskId.toUpperCase()}.${event}`, at};
+	const entry: LogEntry = {
+		task: taskId,
+		event: `${taskId.toUpperCase()}.${event}`,
+		at,
+		...(classes === null ? {} : {classes}),
+	};
 	const current = deriveStatus(lane, {...states, [taskId]: next});
 	return {_tag: "Applied", entry, previous, current};
 };

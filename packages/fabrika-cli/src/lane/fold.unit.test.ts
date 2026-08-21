@@ -85,6 +85,19 @@ describe("run 1 — a fresh lane's status shape", () => {
 			},
 		});
 	});
+
+	it("carries the standing lane classes in status, and nothing when none stand (ADR 0317)", () => {
+		const compiled = lane(coderWorkflow());
+		const states = statesOf(compiled, []);
+		const at = "2026-08-16T00:00:00.000Z";
+		const applied = applyEvent(compiled, states, "issue", "WIP", at, ["ui"]);
+		if (applied._tag !== "Applied") throw new Error(applied.reason);
+
+		// The driver relays this back onto the next event's `--class`; unclassed stays key-absent, so
+		// a lane that never raised one reads exactly as it always did.
+		expect(statusOf(compiled, [applied.entry]).context.issue).toMatchObject({classes: ["ui"]});
+		expect(statusOf(compiled, []).context.issue).not.toHaveProperty("classes");
+	});
 });
 
 describe("run 2 — the happy path", () => {

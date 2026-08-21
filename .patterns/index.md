@@ -69,12 +69,12 @@ Read [fate-client-setup.md](./fate-client-setup.md) first, then [fate-views-and-
 ## Index — UI / components layer
 
 The frontend's component layer (above the fate client data layer). phoenix's UI primitives are
-[Base UI](https://base-ui.com) (`@base-ui/react`), unstyled + accessible-by-default; the wrappers
-live in `apps/web/src/components/ui/`.
+**Manti** (`@manti-ui/react`), each primitive driven by a [Zag](https://zagjs.com) state machine
+(`@zag-js/*`); the wrappers live in `apps/web/src/components/ui/`, many of them bare re-exports.
 
 | Doc | Topic | Read when |
 |---|---|---|
-| [base-ui-accessibility.md](./base-ui-accessibility.md) | What Base UI wires automatically (roles, disclosure/popup ARIA, focus, accessible name from content); the icon-only-name gap; no `aria-label` on a text-bearing control + the four legitimate hand-authored-label cases | Adding or labelling an interactive control, or reaching for an `aria-label` |
+| [manti-accessibility.md](./manti-accessibility.md) | What Manti/Zag wires automatically (roles, disclosure/popup ARIA, focus, title/description id-linking) and where each primitive's accessible **name** comes from — a prop, not rendered children; the no-visible-name gap; no `aria-label` on a control that already has a name + the four legitimate hand-authored-label cases | Adding or labelling an interactive control, or reaching for an `aria-label` |
 | [property-based-a11y.md](./property-based-a11y.md) | The property-based a11y gate over `ui/` (`fast-check` × `axe-core` in jsdom asserting the ADR 0162 pillar-4 invariants); the warning-to-enforced promotion loop; fail-closed auto-coverage; how to add/classify a primitive | Adding a `ui/` primitive, promoting an a11y warning, or extending the harness ([ADR 0162](../.decisions/0162-four-pillars-design-law.md)) |
 | [design-sync-authority.md](./design-sync-authority.md) | The one-directional per-layer `/design-sync` authority: tokens/style → the visual tool is source; component logic + a11y → the repo primitive is source. Enforced by the property-based a11y loop + the entry-row spine lock | Before any design round-trip, or when changing an entry-row primitive's behavior vs its paint ([ADR 0162](../.decisions/0162-four-pillars-design-law.md)) |
 | [moderation-admin-shared-components.md](./moderation-admin-shared-components.md) | The one shared moderation/admin component layer (`apps/web/src/components/moderation/`): the cross-surface primitives, the shared-primitive + thin-per-surface-wrapper shape, the reuse-don't-fork rule, extract-on-the-second-consumer | Building or extending any moderation/admin UI — before forking a user-list / action-row ([ADR 0147](../.decisions/0147-shared-moderation-admin-component-layer.md) / [0138](../.decisions/0138-divan-actor-centric-spine.md)) |

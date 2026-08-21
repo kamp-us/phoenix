@@ -45,8 +45,9 @@ in jsdom; that is a false gate.
 primitive that no one classified — or a stale entry for a removed one — **fails the
 gate** (ADR [0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md)), so the
 covered set tracks `ui/index.ts` and never silently goes stale. `deferred` is a
-reasoned, reason-carrying parking spot (compound base-ui/portal primitives; form
-controls whose name comes from a composed Field/Label), not an escape hatch.
+reasoned, reason-carrying parking spot (Manti machine primitives needing required
+`items`/`trigger`/`content` props or a portal interaction; form controls whose name
+comes from a composed label prop), not an escape hatch.
 
 ## Adding a primitive
 

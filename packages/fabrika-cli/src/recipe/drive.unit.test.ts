@@ -83,11 +83,10 @@ describe("the exit → event table", () => {
 		expect(folded.event).toBe("BLOCKED");
 		expect(unparkState.unpark?.BLOCKED).toBeDefined();
 		expect(
-			(unparkState.unpark?.BLOCKED as (state: unknown) => readonly [{type: string}])({
-				type: "unpark",
-				retries: 0,
-				maxRetries: 2,
-			})[0].type,
+			(unparkState.unpark?.BLOCKED as (state: unknown, msg: unknown) => readonly [{type: string}])(
+				{type: "unpark", retries: 0, maxRetries: 2, classes: []},
+				{type: "BLOCKED"},
+			)[0].type,
 		).toBe("human:novel-park");
 	});
 

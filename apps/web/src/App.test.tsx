@@ -6,7 +6,7 @@
  * the REAL `FateProvider` gate through a mount-recording `FateClient` spy; see the two
  * `// REGRESSION:` notes on the assertions.
  */
-import {act, render, screen} from "@testing-library/react";
+import {act, render, screen, within} from "@testing-library/react";
 import type {ReactNode} from "react";
 import {MemoryRouter} from "react-router";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
@@ -262,6 +262,45 @@ describe("signed-in cluster seeded from __BOOT__.user (ADR 0185)", () => {
 		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();
 		expect(screen.queryByText("Elif")).toBeNull();
 		expect(screen.queryByTestId("topbar-user-placeholder")).toBeNull();
+	});
+
+	// #6660: the same divergence, read as the coupling itself. `LayoutContent` publishes no
+	// `userProps` for a signed-out session, so the spread falls through to the boot props and the
+	// topbar is handed a `user` — the account side stays empty only because the CTA's own
+	// condition gates it. Drop that gate and this render carries a phantom pill beside `giriş yap`.
+	it("__BOOT__ present, settled signed-out, no userProps published: the CTA and the account side never share a render", () => {
+		flags.signedIn = true;
+		const {container} = renderApp(FATE_FREE_ROUTE);
+
+		act(() => {
+			setSession({data: null, isPending: false});
+		});
+
+		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();
+		expect(container.querySelector(".kp-topbar__user")).toBeNull();
+		// The gate that empties the account side also decides where the theme control lives: with
+		// no user menu to carry it, the utility-zone picker must render (#2612).
+		expect(
+			within(screen.getByTestId("topbar-zone-utility")).getByTestId("topbar-theme-picker"),
+		).toBeTruthy();
+	});
+
+	// The other direction of the same gate: with no `__BOOT__` the claim comes from the settled
+	// session alone, so widening it to cover the pill must not cost a signed-in visitor their menu.
+	it("__BOOT__ absent but the session settles signed-in: the account pill renders and no CTA does", () => {
+		const {container} = renderApp(FATE_FREE_ROUTE);
+		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();
+
+		act(() => {
+			setSession({
+				data: {user: {id: "user-42", name: "Elif", email: "elif@kamp.us"}},
+				isPending: false,
+			});
+		});
+
+		expect(screen.queryByRole("button", {name: "giriş yap"})).toBeNull();
+		expect(container.querySelector(".kp-topbar__user")).not.toBeNull();
+		expect(screen.getByText("Elif")).toBeTruthy();
 	});
 
 	it("__BOOT__ absent (readBootUser null): the shell is exactly as today — giriş-yap, no account cluster (AC-3)", () => {
