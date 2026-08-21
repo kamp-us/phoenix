@@ -8,6 +8,8 @@
 
 **Amended 2026-08-13** — `build commit` ([#5484](https://github.com/kamp-us/phoenix/issues/5484)): the group had no commit verb, so the message-carrying path at every call site was improvised and nothing asserted the message on the resulting commit. A lane's improvised `git commit -F <leaf>` read back a two-day-old message from another lane and committed it, silently, with every command exiting 0. The verb prescribes the carrying path, tests the numbers the message names against this lane's claim, and reads the message back off the created commit — plus one code (`24`) in the shared exit matrix.
 
+**Amended 2026-08-20** — `build claimants` ([#6837](https://github.com/kamp-us/phoenix/pull/6837), [#6771](https://github.com/kamp-us/phoenix/issues/6771)): every ownership verb in the claim family asks about the *asking* lane, so a driver arriving after a session limit killed its builders could read which lanes stopped but not which numbers those dead lanes left claimed — `confirm` refuses a token of any other session and `claim` would only answer by writing a marker of its own. The verb reads one issue's claim state holding no token, writing nothing and clearing nothing, and `lane stale --claims` runs the same read across a sweep. Its block sits under the existing claim-family heading rather than standing alone, and it adds no code to the shared exit matrix.
+
 The verbs land in `packages/fabrika-cli/` under the `build` subcommand group, registered in
 `packages/fabrika-cli/src/registry.ts` like the shipped `adr`, `report`, `triage` and `wire`
 groups. The [CLI interface convention](../../docs/cli-interface-convention.md) governs every verb;
@@ -68,6 +70,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build confirm` | re-prove this LANE still holds the claim before a mutation | a lookup with a defined answer |
 | `build release` | retract this LANE's own claim | a guarded single write |
 | `build adopt` | record that a dead session's claim passes to the lane this marker names, which may then release it or carry on | a marker write with a read-back; *whether the session is really gone* is the driver's judgment |
+| `build claimants` | who holds the claim on one issue, asked by a caller holding no token | the same ownership fold `confirm` runs, reported instead of tested against a caller; *what to do about a stranded claim* stays with the driver |
 | `build issue` | the claimed issue's body + parsed acceptance criteria, through the content gate | fetch + parse via the wire module; *judging* the criteria stays in the skill |
 | `build branch` | cut (or resume) the lane's nonce branch off a freshly fetched base | fetch, derive, create — the nonce is a function of the claim token |
 | `build scratch` | the per-lane scratch path, allocated fail-closed | deterministic path derivation keyed session + issue + claim nonce |
@@ -1093,6 +1096,130 @@ $ echo $?
 - v1 scars designed out: `step3-direct-claim.sh` exit-0-on-lost; `claim/command.ts:57` fused
   refusals; `claim/github.ts:229-231` where a transient permission-read failure silently demoted
   an authorized author (here that read failing is `11`, never a silent demotion).
+
+### `build claimants`
+
+**The one ownership read that does not ask about the caller.** Every verb above resolves ownership
+against the lane that is asking: `confirm` takes a `--token` that must carry this session's id, and
+`claim` answers only by writing a marker of its own. So a driver arriving after a session limit
+killed its builders could list the lanes that stopped and not the numbers those dead lanes left
+claimed — it opened each issue by hand
+([#6771](https://github.com/kamp-us/phoenix/issues/6771)). `claimants` runs the same fold and
+**reports** it: no `--token`, no session needed, nothing written.
+
+**It clears nothing, and that is a designed limit rather than an unfinished one.** ADR 0295 bans a
+TTL, a lease, a steal and eviction inferred from absence, so a stranded claim still leaves through
+`build adopt` then `build release`. The answer is a list a driver acts on, never an act.
+
+**A closed issue is answered, not refused.** The rest of the group folds through `openIssue`, where
+absent and closed share `7` because neither leaves a live issue to act on. Here the question is
+answerable on a closed thread, and a marker outliving the issue it was taken on is exactly the
+strandedness this reads for — so closed is reported on stderr and answered on exit `0`. Absent is
+still `7`: there is no thread. Unreadable is still `11`.
+
+**Invocation**
+
+```
+fabrika build claimants 6669 [--repo <owner/name>]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `<number>` | positional integer | yes | — | the issue this lane serves |
+| `--repo` | string | no | `$CLAUDE_PIPELINE_REPO`, else `$GITHUB_REPOSITORY`, else the `origin` remote | the target owner/name |
+
+**Output** — machine, one JSON object:
+
+```
+{"answer": "held" | "unclaimed", "number": 6669,
+ "holder": {"commentId": 512345, "author": "…", "createdAt": "…", "token": "…", "session": "…",
+            "authorized": true} | null,
+ "claimants": [<the same shape, one per claim marker on the thread>],
+ "adopts": [{"commentId": …, "author": "…", "createdAt": "…", "adopted": "<dead session>",
+             "token": "…", "reason": "…", "authorized": …}]}
+```
+
+`holder` is the **earliest authorized** marker — the same winner every ownership question in this
+group resolves against, never a second derivation — and `null` exactly when `answer` is
+`"unclaimed"`. `claimants` lists every marker beside it, authorized or not, so an unauthorized one is
+visible as counted-and-not-a-winner rather than dropped (ADR 0055). `adopts` lists the succession
+markers on the thread, which is how a reader tells a claim already passed to a successor from one
+still stranded. Empty `claimants` and `adopts` arrays are an answer, not an absence: they mean the
+thread was read in full and carries no marker of that kind. An unreadable thread never lands here —
+it is `11`.
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `7` | the issue is **proven absent** — there is no thread to read a claim off. Closed is not this: a closed issue is answered on `0` |
+| `11` | the issue, its comments, or an author's permission could not be read — who holds it is UNKNOWN, never "unclaimed" |
+
+No other code is reachable. There is nothing to lose (`15` needs a caller identity, and this verb
+holds none), nothing to write (`8`, `9`), and no fence to refuse against (`20`, `21`, `30`, `31`,
+`32`, `16`) — the admission test governs what may *start*, and this starts nothing.
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `build claimants: cannot resolve a target repo — set CLAUDE_PIPELINE_REPO, or run inside a checkout whose origin remote resolves.` | 1 | usage error |
+| `build claimants: issue #<n> is proven absent — there is no thread to read a claim off.` | 7 | refusal |
+| `build claimants: cannot read #<n>: <reason> — who holds it is UNKNOWN, never "unclaimed".` | 11 | refusal |
+| `build claimants: cannot read the claim markers on #<n>: <reason> — who holds it is UNKNOWN, never "unclaimed".` | 11 | refusal |
+| `build claimants: #<n> is closed.` — beside the answer on exit 0, never instead of it | 0 | note |
+| `build claimants: comment <id> carries a claim marker from "<author>", who holds no write permission — counted, never a winner.` — one line per unauthorized marker | 0 | note |
+| `build claimants: no authorized claim marker stands on #<n>.` — beside `{"answer":"unclaimed", …}` | 0 | note |
+| `build claimants: #<n> is held by <token> (session <session>, comment <id>, posted <ISO>).` | 0 | note |
+| `build claimants: if that session is gone, the succession is a written one: fabrika build adopt <n> --session <session> --reason "<why>", then release under the token adopt prints. Nothing clears a claim on its own (ADR 0295).` | 0 | note |
+| `build claimants: session <session> has already been adopted — the lane that adopt names releases it.` — this line replaces the one above when an authorized adopt marker names the holder's session | 0 | note |
+
+**Scope** — one issue's comment markers, paginated in full, and nothing else. It reads no campaign
+declaration, no `blocked_by` edge and no label: the admission test governs starting work and this
+verb starts none. Zero markers is a proven answer (`"unclaimed"` on exit `0`), never a refusal —
+which is the one place this verb's shape differs from `confirm`, where proven-unclaimed is `15`
+because the caller was about to mutate.
+
+**Examples**
+
+A thread carrying exactly one claim marker, comment `512345` by a `write` account:
+
+```
+$ fabrika build claimants 6669
+{"answer":"held","number":6669,"holder":{"commentId":512345,"author":"usirin","createdAt":"2026-08-19T22:14:03Z","token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","session":"s-9f2e","authorized":true},"claimants":[{"commentId":512345,"author":"usirin","createdAt":"2026-08-19T22:14:03Z","token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","session":"s-9f2e","authorized":true}],"adopts":[]}
+```
+
+A thread carrying no claim marker at all:
+
+```
+$ fabrika build claimants 6670
+{"answer":"unclaimed","number":6670,"holder":null,"claimants":[],"adopts":[]}
+$ echo $?
+0
+```
+
+A number with no issue behind it:
+
+```
+$ fabrika build claimants 999999
+build claimants: issue #999999 is proven absent — there is no thread to read a claim off.
+$ echo $?
+7
+```
+
+**Grounding**
+
+- #6771 — the driver could list the lanes that stopped and not the issues those lanes left claimed;
+  this verb and `lane stale --claims` are the two halves of that read, landed in
+  [#6837](https://github.com/kamp-us/phoenix/pull/6837).
+- ADR 0295 — succession is written on the board; no TTL, no lease, no steal, no eviction from
+  absence. A read verb that cleared anything would be that eviction by another name.
+- ADR 0055 — authorization from repository permissions; an unauthorized marker is counted and named,
+  never a winner.
+- #6060 — the holder is the earliest authorized marker, one fold shared with `confirm`, so this
+  cannot answer a different winner than the protocol enforces.
 
 ---
 
