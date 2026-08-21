@@ -153,7 +153,7 @@ describe("runEligible", () => {
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
 			expect(out.stdout).toBe("");
 			expect(out.stderr.at(-1)).toBe(
-				'build eligible: cannot read #4312: GitHub answered HTTP 502 — eligibility is UNKNOWN, never "eligible".',
+				'build eligible: cannot read #4312: GitHub answered HTTP 502: Bad gateway — eligibility is UNKNOWN, never "eligible".',
 			);
 		});
 

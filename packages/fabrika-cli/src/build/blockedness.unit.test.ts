@@ -7,8 +7,8 @@ import {GATEWAY, issuePayload, NOT_FOUND, served} from "./fixtures.test-support.
 const EDGES = /GET .*\/repos\/o\/r\/issues\/4312\/dependencies\/blocked_by/;
 const BLOCKER = (n: number) => new RegExp(`GET .*/repos/o/r/issues/${n}$`);
 
-/** What `existenceOf` and the paged read both name a served 502. */
-const UNREADABLE = "GitHub answered HTTP 502";
+/** What `existenceOf` and the paged read both name a served 502 — `GATEWAY`'s own `message` included. */
+const UNREADABLE = "GitHub answered HTTP 502: Bad gateway";
 
 const edges = (...numbers: ReadonlyArray<number>): HttpReply =>
 	served(numbers.map((number) => ({number, state: "open"})));

@@ -27,6 +27,7 @@ import {
 	pagedEnvelope,
 	pagedWithLinkProof,
 	type Rest,
+	refusalText,
 	resolveToken,
 	restRead,
 	restWrite,
@@ -109,15 +110,10 @@ const withToken = <A>(read: (token: string) => Api<Attempt<A>>): Shell<Attempt<A
 		return token._tag === "Failure" ? token : yield* onTransport(read(token.value));
 	});
 
-const refusalFor = (outcome: Rest & {_tag: "Response"}): string => {
-	const named = isRecord(outcome.body) && typeof outcome.body.message === "string";
-	return `GitHub answered HTTP ${outcome.status}${named ? `: ${String(outcome.body.message)}` : ""}`;
-};
-
 /** A served 2xx body, or the refusal a non-2xx or an unreached endpoint is. */
 const servedBody = (outcome: Rest): Attempt<unknown> => {
 	if (outcome._tag === "Unreachable") return fail(outcome.reason);
-	if (outcome.status < 200 || outcome.status >= 300) return fail(refusalFor(outcome));
+	if (outcome.status < 200 || outcome.status >= 300) return fail(refusalText(outcome));
 	return ok(outcome.body);
 };
 
