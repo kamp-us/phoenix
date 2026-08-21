@@ -25,10 +25,6 @@
 # `packages/fabrika-cli/` is ordinary (founder ruling on #6164). Must stay in lockstep with the
 # §CP `^packages/fabrika-cli/src/ci/` branch.
 /packages/fabrika-cli/src/ci/   @kamp-us/control-plane
-# Lint config (`biome.jsonc`) and GritQL plugin rules (`biome-plugins/`) left the control-plane
-# fence by founder ruling 2026-08-21 (prompted by PR #6872, a comment-only .grit diff banking for a
-# founder approval): lint-surface changes are ordinary reviewed code, covered by the pipeline's own
-# review gates. Supersedes the ADR 0193 rows; a dated ADR amendment records it.
 # Control-plane: the local hook-wiring config — `lefthook.yml` wires the pre-commit/pre-push guard
 # legs, and `.lefthookrc` is sourced by every generated hook wrapper.
 # The §CP `([^/]+/)*(lefthook|\.lefthook)[^/]+$` branch (founder ruling on #3402); `**/` is the
