@@ -1,6 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type Scripted} from "../fakes.test-support.ts";
+import {fakeSeams, once, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import * as buildDeviations from "../wire/build-deviations.ts";
 import {
@@ -272,7 +272,7 @@ describe("runDeviations", () => {
 		expect(out.code).toBe(ZERO_SCOPE);
 	});
 
-	it("is UNKNOWN when the comment list cannot be read, and writes nothing", async () => {
+	it("is UNKNOWN when the authenticated user cannot be read, and writes nothing", async () => {
 		const seams = seamsFor([
 			[IS_ISSUE, served({number: ISSUE})],
 			[COMMENTS, comments(CLAIM)],
@@ -282,6 +282,22 @@ describe("runDeviations", () => {
 		const out = await Effect.runPromise(Effect.provide(runDeviations(options), seams.layer));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(seams.requests.some((line) => POST.test(line))).toBe(false);
+	});
+
+	it("is UNKNOWN when the comment list cannot be read, and writes nothing", async () => {
+		// The claim resolver reads the same endpoint first, so only the SECOND read can be the one
+		// that fails — `once` spends the served row, and the verb's own read falls through to the 502.
+		const seams = seamsFor([
+			[IS_ISSUE, served({number: ISSUE})],
+			[once(COMMENTS), comments(CLAIM)],
+			[COMMENTS, GATEWAY],
+			[PERM, WRITE],
+			[USER, ME],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runDeviations(options), seams.layer));
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toContain("a partial list would stack a second marker");
+		expect(seams.requests.some((line) => POST.test(line) || PATCH.test(line))).toBe(false);
 	});
 
 	it("refuses when this lane does not hold the claim", async () => {

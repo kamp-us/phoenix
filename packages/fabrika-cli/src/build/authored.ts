@@ -1,5 +1,6 @@
 /**
- * The guard over **authored** text — the bytes the caller just wrote — for `build pr` and `build note`.
+ * The guard over **authored** text — the bytes the caller just wrote — for `build pr`, `build note`
+ * and `build deviations`.
  *
  * Four outcomes, and the first two must never collapse: an **unread** pipe is UNKNOWN and seats on
  * `1`, a **read-but-empty** one is a proven `3`. Swallowing the first into the second makes an unread
