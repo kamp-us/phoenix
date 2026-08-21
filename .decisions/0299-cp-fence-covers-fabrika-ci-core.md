@@ -1,7 +1,7 @@
 ---
 id: 0299
 title: §CP covers packages/fabrika-cli/src/ci/, the ci-required verdict core, and nothing wider
-status: accepted
+status: amended-in-part by [0330](0330-codeowners-is-the-cp-boundary.md)
 date: 2026-08-18
 tags: [fabrika, pipeline, control-plane, codeowners, ci, guards]
 ---
