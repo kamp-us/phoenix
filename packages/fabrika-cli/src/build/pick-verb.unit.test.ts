@@ -244,7 +244,7 @@ describe("runPick", () => {
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"build pick: cannot read the p0 bucket: GitHub answered HTTP 502 — the pool is UNKNOWN, never partial.",
+			"build pick: cannot read the p0 bucket: GitHub answered HTTP 502: Bad gateway — the pool is UNKNOWN, never partial.",
 		);
 	});
 

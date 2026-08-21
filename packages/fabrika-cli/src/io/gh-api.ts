@@ -304,8 +304,36 @@ export const restWrite = (
 	body?: Readonly<Record<string, unknown>>,
 ): Api<Rest> => restCall(token, {method, path, body});
 
-const refusalText = (outcome: Rest & {_tag: "Response"}): string =>
-	`GitHub answered HTTP ${outcome.status}`;
+/**
+ * How many characters of GitHub's own `message` a refusal carries.
+ *
+ * A refusal reason is interpolated into operator-facing text and quoted into GitHub comments, so an
+ * unbounded append is a flooding surface as well as noise. 200 holds every real API message
+ * ("Validation Failed", "Reference already exists", the secret-scanning block) whole.
+ */
+const MESSAGE_CAP = 200;
+
+/**
+ * The refusal a non-2xx is, naming GitHub's own `message` when it sent one.
+ *
+ * Every non-2xx arm in this module and in `./issues.ts` builds its reason here, because the string
+ * used to be constructed at five call sites and enriching one of them would have left the other
+ * four naming a bare number (#6708). The status leads: a caller telling a permission denial apart
+ * from a validation failure reads the number, and the message is the clause that separates a
+ * fixable input from an unfixable one.
+ *
+ * The append is best-effort by construction — a body that is `null`, is not a record, or carries no
+ * string `message` falls back to the bare status rather than becoming a second failure.
+ */
+export const refusalText = (outcome: Rest & {_tag: "Response"}): string => {
+	const status = `GitHub answered HTTP ${outcome.status}`;
+	if (!isRecord(outcome.body) || typeof outcome.body.message !== "string") return status;
+	const message = outcome.body.message.replace(/\s+/g, " ").trim();
+	if (message === "") return status;
+	const bounded =
+		message.length <= MESSAGE_CAP ? message : `${message.slice(0, MESSAGE_CAP)}…truncated`;
+	return `${status}: ${bounded}`;
+};
 
 /**
  * The three-arm {@link Existence} construction, off the status the response carried.
@@ -319,9 +347,7 @@ export const existenceOf = <A>(
 ): Existence<A> => {
 	if (outcome._tag === "Unreachable") return unknown<A>(outcome.reason);
 	if (outcome.status === 404) return absent<A>();
-	if (outcome.status < 200 || outcome.status >= 300) {
-		return unknown<A>(`GitHub answered HTTP ${outcome.status}`);
-	}
+	if (outcome.status < 200 || outcome.status >= 300) return unknown<A>(refusalText(outcome));
 	const value = read(outcome.body);
 	return value._tag === "Failure" ? unknown<A>(value.reason) : present<A>(value.value);
 };
@@ -388,7 +414,7 @@ const statusless = (reason: string): Failure & {readonly status: null} => ({
 });
 
 const refusalFor = (outcome: Rest & {_tag: "Response"}): Failure & {readonly status: number} => ({
-	...fail(`GitHub answered HTTP ${outcome.status}`),
+	...fail(refusalText(outcome)),
 	status: outcome.status,
 });
 

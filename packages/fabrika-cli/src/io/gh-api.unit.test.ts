@@ -12,6 +12,7 @@ import {
 	pagedExistence,
 	pagedWithLinkProof,
 	type Rest,
+	refusalText,
 	resolveToken,
 	restBytes,
 	restCall,
@@ -102,6 +103,47 @@ describe("restRead", () => {
 	});
 });
 
+describe("refusalText — the status, and GitHub's own message when it sent one", () => {
+	const responded = (status: number, body: unknown): Rest & {_tag: "Response"} => ({
+		_tag: "Response",
+		status,
+		headers: {},
+		body,
+		text: JSON.stringify(body),
+	});
+
+	it("names the message a 422 carried beside the status", () => {
+		expect(
+			refusalText(
+				responded(422, {
+					message: "Validation Failed",
+					errors: [{field: "milestone", code: "invalid"}],
+				}),
+			),
+		).toBe("GitHub answered HTTP 422: Validation Failed");
+	});
+
+	it("falls back to the bare status when no string message is there to read", () => {
+		expect(refusalText(responded(502, null))).toBe("GitHub answered HTTP 502");
+		expect(refusalText(responded(502, ["not", "a", "record"]))).toBe("GitHub answered HTTP 502");
+		expect(refusalText(responded(502, {}))).toBe("GitHub answered HTTP 502");
+		expect(refusalText(responded(502, {message: 404}))).toBe("GitHub answered HTTP 502");
+		expect(refusalText(responded(502, {message: "   "}))).toBe("GitHub answered HTTP 502");
+	});
+
+	it("bounds what it appends, so a hostile body cannot flood a quoted refusal", () => {
+		const reason = refusalText(responded(500, {message: "x".repeat(5000)}));
+		expect(reason.length).toBeLessThan(300);
+		expect(reason).toContain("truncated");
+	});
+
+	it("flattens the message onto one line", () => {
+		expect(refusalText(responded(403, {message: "blocked\nby\tpolicy"}))).toBe(
+			"GitHub answered HTTP 403: blocked by policy",
+		);
+	});
+});
+
 describe("existenceOf — three arms, never two", () => {
 	const response = (status: number, body: unknown): Rest => ({
 		_tag: "Response",
@@ -123,6 +165,14 @@ describe("existenceOf — three arms, never two", () => {
 		const result = existenceOf(response(502, null), readName);
 		expect(result._tag).toBe("Unknown");
 		expect(result._tag === "Unknown" && result.reason).toContain("502");
+	});
+
+	it("routes its Unknown arm through refusalText rather than building the status inline", () => {
+		const result = existenceOf(response(422, {message: "Validation Failed"}), readName);
+		expect(result).toEqual({
+			_tag: "Unknown",
+			reason: "GitHub answered HTTP 422: Validation Failed",
+		});
 	});
 
 	it("constructs Unknown when the transport never reached GitHub", () => {
