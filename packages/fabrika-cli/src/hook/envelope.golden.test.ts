@@ -53,12 +53,8 @@ interface Run {
  * line a verdict rests on is only asserted if it is readable on the path that produced a verdict.
  * `FABRIKA_SKIP_INFER` pins the invocation to *this* copy rather than whatever the root resolves.
  */
-const runDeclared = (command: string, stdin: string, pin: string | null = null): Run => {
-	// The pin is set explicitly rather than inherited: a `WORKFLOW_MODEL` in the runner's own shell
-	// would otherwise decide which branch these assertions exercise.
+const runDeclared = (command: string, stdin: string): Run => {
 	const env: NodeJS.ProcessEnv = {...process.env, FABRIKA_SKIP_INFER: "1"};
-	if (pin === null) delete env.WORKFLOW_MODEL;
-	else env.WORKFLOW_MODEL = pin;
 	const run = spawnSync(process.execPath, [BIN, ...argvOf(command)], {
 		encoding: "utf8",
 		input: stdin,
@@ -77,10 +73,7 @@ describe("the committed hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}
 	});
 
 	it("declares every hook on an event whose real envelope is committed beside this test", () => {
-		expect([...new Set(surface.map((hook) => hook.event))].sort()).toEqual([
-			"PreToolUse",
-			"SessionStart",
-		]);
+		expect([...new Set(surface.map((hook) => hook.event))].sort()).toEqual(["SessionStart"]);
 	});
 });
 
@@ -172,8 +165,9 @@ describe("the captured envelope shape, pinned by exact key set", {
 			"__fixtures__/pre-tool-use-spawn.payload.golden.json",
 		);
 		expect(payload.hook_event_name).toBe("PreToolUse");
-		// The declaration matches on `Task`, and this is what the harness then sends: a guard keyed on
-		// `tool_name === "Task"` would never fire.
+		// A `Task|Workflow` matcher fires, but the harness then sends `tool_name: "Agent"` — a hook
+		// keyed on `tool_name === "Task"` would never fire. Kept as the captured record of that gap
+		// even though fabrika declares no PreToolUse hook today (ADR 0331).
 		expect(payload.tool_name).toBe("Agent");
 		expect(payload.tool_input).toMatchObject({subagent_type: "general-purpose", model: "opus"});
 	});
@@ -195,67 +189,5 @@ describe("the captured envelope shape, pinned by exact key set", {
 		]) {
 			expect(readGoldenFixture(import.meta.url, fixture)).toContain("/Users/<operator>/");
 		}
-	});
-});
-
-describe("the declared spawn guard, run against the captured spawn envelopes", {
-	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
-}, () => {
-	const declared = declaredOn("PreToolUse");
-	const SPAWN = "__fixtures__/pre-tool-use-spawn.payload.golden.json";
-	const SPAWN_NO_MODEL = "__fixtures__/pre-tool-use-spawn-unset-model.payload.golden.json";
-
-	interface Decision {
-		readonly hookSpecificOutput: {
-			readonly hookEventName: string;
-			readonly permissionDecision: string;
-			readonly permissionDecisionReason?: string;
-		};
-		readonly systemMessage: string;
-	}
-
-	const decisionOf = (run: Run): Decision => JSON.parse(run.stdout) as Decision;
-
-	it("is declared on the spawn tools, so it sees every subagent launch", () => {
-		expect(declared.matcher).toBe("Task|Workflow");
-	});
-
-	it("allows the captured spawn, whose model is the harness alias the allowlist never held", () => {
-		const run = runDeclared(declared.command, readGoldenFixture(import.meta.url, SPAWN));
-		expect(run.code).toBe(0);
-		expect(decisionOf(run).hookSpecificOutput).toMatchObject({
-			hookEventName: "PreToolUse",
-			permissionDecision: "allow",
-		});
-		expect(decisionOf(run).systemMessage).toContain("canonical=claude-opus-4-8");
-	});
-
-	it("allows the captured no-model spawn to inherit the session model, on the committed pin", () => {
-		const run = runDeclared(declared.command, readGoldenFixture(import.meta.url, SPAWN_NO_MODEL));
-		expect(run.code).toBe(0);
-		expect(decisionOf(run).hookSpecificOutput.permissionDecision).toBe("allow");
-		expect(decisionOf(run).systemMessage).toContain("committed default pin");
-	});
-
-	/**
-	 * The one edit to the captured bytes is `tool_input.model` — every other key, and the envelope
-	 * around it, is what the harness sent. That is what makes this the real deny path.
-	 */
-	it("denies the same captured spawn once its model is off the allowlist", () => {
-		const payload = loadGoldenPayload(import.meta.url, SPAWN);
-		(payload.tool_input as Record<string, unknown>).model = "fable-5";
-		const run = runDeclared(declared.command, JSON.stringify(payload));
-		expect(run.code).toBe(0);
-		expect(decisionOf(run).hookSpecificOutput.permissionDecision).toBe("deny");
-		expect(decisionOf(run).hookSpecificOutput.permissionDecisionReason).toContain(
-			"is not on the allowlist",
-		);
-	});
-
-	it("denies an explicit off-allowlist model even under an allowlisted pin", () => {
-		const payload = loadGoldenPayload(import.meta.url, SPAWN);
-		(payload.tool_input as Record<string, unknown>).model = "sonnet";
-		const run = runDeclared(declared.command, JSON.stringify(payload), "claude-opus-4-8[1m]");
-		expect(decisionOf(run).hookSpecificOutput.permissionDecision).toBe("deny");
 	});
 });

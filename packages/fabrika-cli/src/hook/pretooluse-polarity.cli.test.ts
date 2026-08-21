@@ -9,9 +9,13 @@
  * can come back: the **exit code a real process returns**, and the **literals the bootstrap sources
  * carry**.
  *
- * The end-to-end leg runs the argv out of the committed `hooks.json` `PreToolUse` declaration rather
- * than a literal, for the same reason the golden test does: a pass must not be able to exercise a
- * verb the surface does not name. And it reaches a refusal for real rather than mocking one — a temp
+ * The end-to-end leg runs the argv out of a committed `hooks.json` declaration rather than a
+ * literal, for the same reason the golden test does: a pass must not be able to exercise a verb the
+ * surface does not name. Since ADR 0331 retired the spawn hook the surface declares only
+ * `SessionStart`, so that is the row it drives — the property under test is the *exit code* a
+ * cannot-run fabrika returns, which is the same whichever hook consulted it, and the code must stay
+ * off `2` so a future `PreToolUse` declaration cannot inherit a denying bootstrap. And it reaches a
+ * refusal for real rather than mocking one — a temp
  * directory made into a repo root that resolves a *different* `@kampus/fabrika-cli` is the
  * cross-checkout state, which triage measured on the v1 crew's worktrees before they left with ADR
  * 0279 — the state belongs to any worktree whose install resolves outside its own checkout.
@@ -91,7 +95,7 @@ const foreignCheckout = (): string => {
 	return root;
 };
 
-describe("the PreToolUse hook the surface declares, run from a checkout it refuses to answer from", {
+describe("a hook the surface declares, run from a checkout it refuses to answer from", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
 	let root: string;
@@ -104,8 +108,8 @@ describe("the PreToolUse hook the surface declares, run from a checkout it refus
 
 	const declared = () => {
 		const surface = declaredHooks(JSON.parse(readGoldenFixture(import.meta.url, HOOKS_JSON)));
-		const hook = surface.find((row) => row.event === "PreToolUse");
-		if (hook === undefined) throw new Error("hooks.json declares no PreToolUse hook");
+		const hook = surface[0];
+		if (hook === undefined) throw new Error("hooks.json declares no hook at all");
 		return hook;
 	};
 
@@ -126,7 +130,7 @@ describe("the PreToolUse hook the surface declares, run from a checkout it refus
 		expect(run().stderr).toContain("different repositories");
 	});
 
-	it("does not exit on the blocking code, so the spawn proceeds", () => {
+	it("does not exit on the blocking code, so the tool call proceeds", () => {
 		const {status} = run();
 		expect(status).not.toBe(PRETOOLUSE_BLOCKING_EXIT);
 		expect(status).toBe(NO_IMPLEMENTATION);
