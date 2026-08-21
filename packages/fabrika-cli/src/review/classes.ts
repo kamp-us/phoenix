@@ -215,6 +215,24 @@ export const linkedIssueOf = (body: string): number | null => {
 };
 
 /**
+ * **Every** issue the body's closing keywords link, in body order, deduplicated.
+ *
+ * A sibling rather than a widening of {@link linkedIssueOf}, whose scalar first match is load
+ * bearing where a PR closes one issue and the caller wants that one (`ship release`, `heal-ci`).
+ * An epic tail body carries one closing reference per landed child plus one on the epic itself, at
+ * an arbitrary position among them, so a scalar reader there reports whichever child happens to be
+ * first and answers "unlinked" of the epic — which is false of the board, since GitHub links all of
+ * them (#6797). Callers asking "does this body link #N" ask this one and test membership.
+ */
+export const linkedIssuesOf = (body: string): ReadonlyArray<number> => {
+	const all = new RegExp(CLOSING_KEYWORD.source, "gi");
+	const numbers = [...body.matchAll(all)].flatMap((match) =>
+		match[1] === undefined ? [] : [Number.parseInt(match[1], 10)],
+	);
+	return [...new Set(numbers)];
+};
+
+/**
  * The **whole** reference a PR body can carry to its issue: a closing keyword, else the explicit
  * non-closing `Part of #N`, else nothing.
  *
@@ -240,6 +258,29 @@ export const issueRefOf = (body: string): IssueRef => {
 	return part?.[1] === undefined
 		? {kind: "none", number: null}
 		: {kind: "part-of", number: Number.parseInt(part[1], 10)};
+};
+
+export interface IssueRefs {
+	readonly kind: "fixes" | "part-of" | "none";
+	readonly numbers: ReadonlyArray<number>;
+}
+
+/**
+ * The plural sibling of {@link issueRefOf}: every issue of the winning kind, not the first.
+ *
+ * Same precedence — closing beats `Part of`, and a body carrying both is a `fixes` body — so a
+ * caller trading the scalar for this one changes only how many references it can see.
+ */
+export const issueRefsOf = (body: string): IssueRefs => {
+	const closing = linkedIssuesOf(body);
+	if (closing.length > 0) return {kind: "fixes", numbers: closing};
+	const all = new RegExp(PART_OF.source, "gi");
+	const parts = [...body.matchAll(all)].flatMap((match) =>
+		match[1] === undefined ? [] : [Number.parseInt(match[1], 10)],
+	);
+	return parts.length === 0
+		? {kind: "none", numbers: []}
+		: {kind: "part-of", numbers: [...new Set(parts)]};
 };
 
 /** `fixes:<n>` / `part-of:<n>`, or the calling group's null token. */

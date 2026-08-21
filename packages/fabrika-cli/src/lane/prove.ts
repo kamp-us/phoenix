@@ -252,26 +252,44 @@ export const traceRange = (
 export interface PullFact {
 	readonly number: number;
 	readonly open: boolean;
-	/** The issue the body links, through the closing keyword or `Part of` — never the search term. */
-	readonly linkedIssue: number | null;
+	/**
+	 * **Every** issue the body links, through the closing keywords or `Part of` — never the search
+	 * term. Plural because an epic tail links one issue per landed child plus the epic itself, and a
+	 * scalar field there can only ever report one of them (#6797).
+	 */
+	readonly linkedIssues: ReadonlyArray<number>;
 }
 
 export type PullTrace =
 	| {readonly _tag: "One"; readonly pr: number}
-	| {readonly _tag: "None"}
+	| {readonly _tag: "None"; readonly why: string}
 	| {readonly _tag: "Many"; readonly prs: ReadonlyArray<number>};
 
 /**
  * The open PR tracing to this issue.
  *
- * The search index only nominates; the trace is the body's own link, so a PR that merely mentions
+ * The search index only nominates; the trace is the body's own links, so a PR that merely mentions
  * the number in prose is not a proof of it. Several is its own answer — which one the lane owns is
  * not derivable here, and picking the first is how a lane records a DONE against another lane's PR.
+ *
+ * `None` carries its own reason for the same purpose `traceRange`'s does: "nothing was nominated"
+ * and "candidates were read and every one linked elsewhere" have different remedies, and a refusal
+ * saying the first of a board that shows the second is false of the board (#6797).
  */
 export const tracePulls = (issue: number, facts: ReadonlyArray<PullFact>): PullTrace => {
-	const matched = facts.filter((fact) => fact.open && fact.linkedIssue === issue);
+	const open = facts.filter((fact) => fact.open);
+	const matched = open.filter((fact) => fact.linkedIssues.includes(issue));
 	const first = matched[0];
-	if (first === undefined) return {_tag: "None"};
+	if (first === undefined) {
+		if (facts.length === 0) return {_tag: "None", why: `no open PR links #${issue}`};
+		const read = facts.map((fact) => `#${fact.number}`).join(", ");
+		return open.length === 0
+			? {
+					_tag: "None",
+					why: `read ${read} — every candidate has closed since it was nominated`,
+				}
+			: {_tag: "None", why: `read ${read} — no candidate's body links #${issue}`};
+	}
 	return matched.length === 1
 		? {_tag: "One", pr: first.number}
 		: {_tag: "Many", prs: matched.map((fact) => fact.number)};
