@@ -17,6 +17,7 @@ import {CONFIG_PATH, type ConfigSource} from "../config/document.ts";
 import {readConfigSource} from "../config/source.ts";
 import {repoConfigSource} from "../config/working-root.ts";
 import {discoverRepoRoot} from "../delegate/root.ts";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import type {Attempt} from "../io/git.ts";
 import {resolveRepo} from "../io/issues.ts";
@@ -24,7 +25,6 @@ import {readStdin} from "../io/stdin.ts";
 import {DEFAULT_STALE_MINUTES} from "../lane/stale.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {readBoard, runBoard} from "./board-verb.ts";
 import {knownIds, runBootstrap} from "./bootstrap-verb.ts";
 import {instant, readNow} from "./fields.ts";
@@ -46,14 +46,6 @@ import {badIssueRefusal, issueNumberOf, readReadout, runReadout} from "./readout
 import {type RosterSources, readRoster} from "./roster.ts";
 import {runSettings, settingRows} from "./settings-verb.ts";
 import {readWiringSource, repoWiringSource, runWiring, wiringOf} from "./wiring-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const repoFlag = Flag.string("repo").pipe(
 	Flag.optional,

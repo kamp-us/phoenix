@@ -12,6 +12,7 @@ import {Effect, type FileSystem, Option, Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {claimReader} from "../build/claimants-verb.ts";
 import {resolveEntrypoint} from "../delegate/entrypoint.ts";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
@@ -37,14 +38,6 @@ import {runStatus} from "./status-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT, type LaneRef} from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
 import {DEFAULT_VIEW_PORT, listeningAt, runView} from "./view-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const laneArgument = Argument.string("lane").pipe(
 	Argument.withDescription(
