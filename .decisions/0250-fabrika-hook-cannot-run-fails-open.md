@@ -17,7 +17,7 @@ have a working home today.
 
 This rules the **cannot-run** case only. A verb that **runs** and returns a deny still fails
 closed exactly as designed — `fabrika hook spawn` denying an off-allowlist model
-([`../packages/fabrika-cli/src/hook/spawn.ts`](../packages/fabrika-cli/src/hook/spawn.ts), ADR
+(`packages/fabrika-cli/src/hook/spawn.ts` — since deleted, see the amendment below; ADR
 [0092](0092-gates-fail-closed-on-zero-scope.md)) is untouched. Nothing here weakens a gate that
 executed.
 
@@ -267,3 +267,10 @@ it now states the package is on the registry and that a bare `fabrika` exits `12
 that has not installed it. The quoted substance the record leans on — `127` means the verb never ran
 — survives the rewrite; the label "unpublished-global" does not, and the citation is historical from
 here.
+
+> Amendment 2026-08-20: the example above, `fabrika hook spawn`, is retired — verb, decision and
+> declaration all deleted (ADR [0331](0331-fabrika-spawn-hook-retired.md)). The link to
+> `hook/spawn.ts` is dropped for that reason; read the file at the pinned commit. **This ADR still
+> binds**: it rules the polarity of the cannot-run state, not the fate of any one hook, and
+> `packages/fabrika-cli/src/hook/pretooluse-polarity.cli.test.ts` still pins it — fabrika simply
+> declares no deciding hook today.

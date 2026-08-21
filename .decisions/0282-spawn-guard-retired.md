@@ -48,3 +48,5 @@ consumer, so it moved to `packages/pipeline-cli/src/tools/token-spend/session-co
   no longer announces itself at session start.
 - #5540 owns retiring the remaining v1 hook entries; the two removed here are out of its
   scope.
+
+> Amendment 2026-08-20: the tracked decision this record deferred to has landed — ADR [0331](0331-fabrika-spawn-hook-retired.md) retires `fabrika hook spawn` on the same reasoning, so the ruling here now reaches both copies and no spawn guard survives anywhere.
