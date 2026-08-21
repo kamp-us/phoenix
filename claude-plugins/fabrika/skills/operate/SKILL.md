@@ -740,6 +740,34 @@ Every `stale` row is a lane something is owed on that has not moved in the thres
 re-spawn. It reports and never resumes: a driver or a human decides, and the resume is the
 re-spawn above ([#5897](https://github.com/kamp-us/phoenix/issues/5897)).
 
+**That bare form is the routine sweep, and it stays bare because it costs nothing.** The whole scan
+runs off disk and makes no network call, so a driver can run it on every pass without paying for the
+board. Reach past it in one case: you suspect a session died — an outage, a crash, an account limit
+that killed a batch of shells at once. Then the lane half is only half the answer, because a dead
+builder's claim marker outlives it and the ledger cannot see markers at all
+([#6771](https://github.com/kamp-us/phoenix/issues/6771)):
+
+```bash
+node <fabrika> lane stale --claims
+```
+
+`--claims` reads the board and pairs each **non-terminal** lane with the claim standing on its issue,
+which is the network call the bare form avoids — one per paired lane, so this is the deliberate sweep,
+not the default one. Each paired row carries `claims` as `held` (with the token, the session, the
+author and the comment id), `unclaimed`, or `unknown` with a reason. **Read `unknown` as unknown**: a
+board read that failed says nothing about who holds the number, and reporting it as `unclaimed` is
+the one misreading that turns a stranded claim into an invisible one. Chore lanes drive no issue and
+are not paired. To ask the same question about a single number without a token, `node <fabrika> build
+claimants <n>` gives the same answer for one issue.
+
+**A `held` row is not cleared by having been swept.** Nothing in this sweep retracts anything —
+`--claims` reports, exactly as the bare form does. A claim a dead session left leaves the way ADR
+[0295](../../../../.decisions/0295-board-attested-claim-succession.md) prescribes and no other way:
+`build adopt` naming that session, then `build release` under the token the adopt printed. The
+mechanics, the guards and the exact invocations are in the adopt-then-release passage of step 3
+above ("A claim stranded by a gone session is releasable, once you say so on the board") — the
+`session` field on the `held` row is the `--session` argument that passage asks for.
+
 ## Terminal vocabulary
 
 Every run ends as exactly one of — each naming what was recorded and what the fold reads after:
