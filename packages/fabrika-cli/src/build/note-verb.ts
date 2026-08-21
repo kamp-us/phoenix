@@ -10,6 +10,7 @@
  * freshness signal at all, which is the stale-repair-note class (#4808).
  */
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {createComment, getComment} from "../io/issues.ts";
 import {getPullRequest} from "../io/pulls.ts";
@@ -44,7 +45,11 @@ export const headStamp = (sha: string): string => `— at ${sha}`;
 
 export const runNote = (
 	options: NoteOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const {number} = options;
 
@@ -58,7 +63,7 @@ export const runNote = (
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
 
-		const kind = yield* isPullRequest(repo, number);
+		const kind = yield* isPullRequest(options.env, repo, number);
 		if (kind._tag === "Absent") {
 			return refuse(
 				ZERO_SCOPE,

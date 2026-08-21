@@ -1,5 +1,5 @@
 /**
- * The map bodies and `gh api` responses every `map` verb test is driven from.
+ * The map bodies and GitHub responses every `map` verb test is driven from.
  *
  * Shared so the eight verb suites assert against one canonical map rather than each inventing its
  * own: a fixture per suite is how two tests come to disagree about what a well-formed body is, and

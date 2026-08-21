@@ -1,18 +1,29 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {CLAIM_NOT_MINE, DIRTY_TREE, PRECONDITION_UNKNOWN, WRONG_LANE} from "./codes.ts";
-import {comments, GIT_DIRS, issue, LANE_UUID, marker, NONCE} from "./fixtures.test-support.ts";
+import {
+	comments,
+	GATEWAY,
+	GIT_DIRS,
+	issue,
+	LANE_UUID,
+	marker,
+	NONCE,
+	served,
+} from "./fixtures.test-support.ts";
 import {runTree} from "./tree-verb.ts";
+
+/** The write permission the marker's author holds — what authorizes a claim (ADR 0055). */
+const WRITE = served({permission: "write"});
 
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
 const STATUS = /^git status --porcelain$/;
 const BRANCH = /^git rev-parse --abbrev-ref HEAD$/;
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
-const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
+const ISSUE = /GET .*\/repos\/o\/r\/issues\/4312$/;
+const COMMENTS = /GET .*\/repos\/o\/r\/issues\/4312\/comments/;
+const PERM = /GET .*\/repos\/o\/r\/collaborators\/agent\/permission/;
 
 const LANE_BRANCH = okOut(`build/4312-editor-focus-loss-${NONCE}\n`);
 const MINE = comments({id: 1, body: marker("s-9f2e", LANE_UUID)});
@@ -27,11 +38,8 @@ const options = {
 	>,
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
-	Effect.runPromise(Effect.provide(runTree({...options, ...overrides}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runTree({...options, ...overrides}), fakeSeams(script).layer));
 
 describe("runTree", () => {
 	it("prints the tree root when the git dir and the common dir differ", async () => {
@@ -48,18 +56,18 @@ describe("runTree", () => {
 	});
 
 	it("refuses a dirty tree at a --require-clean open on 13, and never cleans it", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[REV_PARSE, GIT_DIRS],
 			[STATUS, okOut(" M apps/web/src/App.tsx\n?? scratch.md\n")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runTree({...options, requireClean: true}), shell.layer),
+			Effect.provide(runTree({...options, requireClean: true}), seams.layer),
 		);
 		expect(out.code).toBe(DIRTY_TREE);
 		expect(out.stderr.at(-1)).toBe(
 			"build tree: 2 uncommitted change(s) at open — refusing; an unauthored hunk is not yours to keep or clean.",
 		);
-		expect(shell.calls.some((line) => /git (checkout|clean|restore|stash)/.test(line))).toBe(false);
+		expect(seams.calls.some((line) => /git (checkout|clean|restore|stash)/.test(line))).toBe(false);
 	});
 
 	it("passes --require-clean over a clean tree", async () => {
@@ -76,7 +84,7 @@ describe("runTree", () => {
 				[REV_PARSE, GIT_DIRS],
 				[ISSUE, issue()],
 				[COMMENTS, MINE],
-				[PERM, okOut("write\n")],
+				[PERM, WRITE],
 				[BRANCH, LANE_BRANCH],
 			],
 			{issue: 4312},
@@ -91,7 +99,7 @@ describe("runTree", () => {
 				[REV_PARSE, GIT_DIRS],
 				[ISSUE, issue()],
 				[COMMENTS, MINE],
-				[PERM, okOut("write\n")],
+				[PERM, WRITE],
 				[BRANCH, okOut("build/4312-editor-focus-loss-deadbeef\n")],
 			],
 			{issue: 4312},
@@ -106,7 +114,7 @@ describe("runTree", () => {
 				[REV_PARSE, GIT_DIRS],
 				[ISSUE, issue()],
 				[COMMENTS, comments({id: 1, body: marker("s-77aa", LANE_UUID)})],
-				[PERM, okOut("write\n")],
+				[PERM, WRITE],
 				[BRANCH, LANE_BRANCH],
 			],
 			{issue: 4312},
@@ -122,7 +130,7 @@ describe("runTree", () => {
 			[
 				[REV_PARSE, GIT_DIRS],
 				[ISSUE, issue()],
-				[COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
+				[COMMENTS, GATEWAY],
 				[BRANCH, LANE_BRANCH],
 			],
 			{issue: 4312},

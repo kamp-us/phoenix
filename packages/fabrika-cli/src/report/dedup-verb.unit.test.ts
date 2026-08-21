@@ -1,12 +1,32 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {NO_TARGET, QUEUE_UNREADABLE, SEARCH_UNREADABLE} from "./codes.ts";
 import {runDedup} from "./dedup-verb.ts";
 
 const LABELS = /repos\/o\/r\/labels/;
 const QUEUE = /repos\/o\/r\/issues\?state=open/;
 const SEARCH = /search\/issues/;
+
+/** A label-set page: the endpoint answers `[{name}]`, not one name per line. */
+const labelSet = (...names: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(names.map((name) => ({name}))),
+});
+
+const issueRows = (...rows: ReadonlyArray<readonly [number, string]>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(rows.map(([number, title]) => ({number, title}))),
+});
+
+/** The search index answers a `{total_count, items}` envelope. */
+const searchHits = (...rows: ReadonlyArray<readonly [number, string]>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		total_count: rows.length,
+		items: rows.map(([number, title]) => ({number, title})),
+	}),
+});
 
 const options = {
 	query: "retry helper swallows the abort reason",
@@ -18,20 +38,17 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]>,
-	overrides: Partial<typeof options> = {},
-) =>
-	Effect.runPromise(Effect.provide(runDedup({...options, ...overrides}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runDedup({...options, ...overrides}), fakeSeams(script).layer));
 
-const labelsOk = [LABELS, okOut("status:needs-triage\ntype:bug\np0")] as const;
+const labelsOk = [LABELS, labelSet("status:needs-triage", "type:bug", "p0")] as const;
 
 describe("runDedup", () => {
 	it("exits 0 with a ranked candidates list", async () => {
 		const out = await run([
 			labelsOk,
-			[QUEUE, okOut("4312\tAbort reason lost when the retry helper re-wraps the request")],
-			[SEARCH, okOut("4088\thttp worker retries do not propagate cancellation")],
+			[QUEUE, issueRows([4312, "Abort reason lost when the retry helper re-wraps the request"])],
+			[SEARCH, searchHits([4088, "http worker retries do not propagate cancellation"])],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe("candidates");
@@ -42,7 +59,7 @@ describe("runDedup", () => {
 	it("--exclude drops the issue being deduped from both sources, so it cannot flag itself", async () => {
 		const title = "Abort reason lost when the retry helper re-wraps the request";
 		const out = await run(
-			[labelsOk, [QUEUE, okOut(`4312\t${title}`)], [SEARCH, okOut(`4312\t${title}`)]],
+			[labelsOk, [QUEUE, issueRows([4312, title])], [SEARCH, searchHits([4312, title])]],
 			{exclude: 4312},
 		);
 		expect(out.code).toBe(0);
@@ -51,12 +68,12 @@ describe("runDedup", () => {
 	});
 
 	it("says nothing about exclusion on the scope line when --exclude was not given", async () => {
-		const out = await run([labelsOk, [QUEUE, okOut("")], [SEARCH, okOut("")]]);
+		const out = await run([labelsOk, [QUEUE, issueRows()], [SEARCH, searchHits()]]);
 		expect(out.stderr.join("\n")).not.toContain("excluded from both sources");
 	});
 
 	it("exits 0 on a PROVEN none, printing the token rather than empty stdout", async () => {
-		const out = await run([labelsOk, [QUEUE, okOut("")], [SEARCH, okOut("")]]);
+		const out = await run([labelsOk, [QUEUE, issueRows()], [SEARCH, searchHits()]]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("none\n");
 		expect(out.stderr.join("\n")).toContain("both sources were read");
@@ -70,20 +87,20 @@ describe("runDedup", () => {
 	});
 
 	it("REFUSES a --label that does not exist rather than printing `none` over zero scope (#4752)", async () => {
-		const out = await run([[LABELS, okOut("type:bug\np0")]]);
+		const out = await run([[LABELS, labelSet("type:bug", "p0")]]);
 		expect(out.code).toBe(NO_TARGET);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain('never "none"');
 	});
 
 	it("never reads either source once the label is proven absent", async () => {
-		const shell = fakeShell([[LABELS, okOut("type:bug")]]);
-		await Effect.runPromise(Effect.provide(runDedup(options), shell.layer));
-		expect(shell.calls.some((c) => QUEUE.test(c) || SEARCH.test(c))).toBe(false);
+		const seams = fakeSeams([[LABELS, labelSet("type:bug")]]);
+		await Effect.runPromise(Effect.provide(runDedup(options), seams.layer));
+		expect(seams.requests.some((c) => QUEUE.test(c) || SEARCH.test(c))).toBe(false);
 	});
 
 	it("refuses an UNREADABLE label set as UNKNOWN — never as `the label is missing`", async () => {
-		const out = await run([[LABELS, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const out = await run([[LABELS, {status: 502, body: "{}"}]]);
 		expect(out.code).toBe(QUEUE_UNREADABLE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("UNKNOWN");
@@ -92,8 +109,8 @@ describe("runDedup", () => {
 	it("refuses an unreadable queue — UNKNOWN, never `none`", async () => {
 		const out = await run([
 			labelsOk,
-			[QUEUE, errOut("gh: Not Found (HTTP 404)")],
-			[SEARCH, okOut("")],
+			[QUEUE, {status: 404, body: '{"message":"Not Found"}'}],
+			[SEARCH, searchHits()],
 		]);
 		expect(out.code).toBe(QUEUE_UNREADABLE);
 		expect(out.stdout).toBe("");
@@ -101,7 +118,11 @@ describe("runDedup", () => {
 	});
 
 	it("refuses an unreadable search index on its own code", async () => {
-		const out = await run([labelsOk, [QUEUE, okOut("")], [SEARCH, errOut("rate limited")]]);
+		const out = await run([
+			labelsOk,
+			[QUEUE, issueRows()],
+			[SEARCH, {status: 429, body: '{"message":"rate limited"}'}],
+		]);
 		expect(out.code).toBe(SEARCH_UNREADABLE);
 		expect(out.stdout).toBe("");
 	});
@@ -109,23 +130,27 @@ describe("runDedup", () => {
 	it("reports the QUEUE's code when both fail, and names both failures", async () => {
 		const out = await run([
 			labelsOk,
-			[QUEUE, errOut("queue down")],
-			[SEARCH, errOut("search down")],
+			[QUEUE, {status: 503, body: "{}"}],
+			[SEARCH, {status: 429, body: "{}"}],
 		]);
 		expect(out.code).toBe(QUEUE_UNREADABLE);
-		expect(out.stderr.at(-1)).toContain("queue down");
-		expect(out.stderr.at(-1)).toContain("search down");
+		expect(out.stderr.at(-1)).toContain("HTTP 503");
+		expect(out.stderr.at(-1)).toContain("HTTP 429");
 	});
 
-	it("refuses a `gh` that exited 0 with output that is not issue rows", async () => {
-		const out = await run([labelsOk, [QUEUE, okOut("not a row")], [SEARCH, okOut("")]]);
+	it("refuses a 200 whose body is not a list of issues", async () => {
+		const out = await run([
+			labelsOk,
+			[QUEUE, {status: 200, body: JSON.stringify([{title: "no number"}])}],
+			[SEARCH, searchHits()],
+		]);
 		expect(out.code).toBe(QUEUE_UNREADABLE);
 		expect(out.stdout).toBe("");
 	});
 
 	it("puts the --json payload on STDOUT, with both source counts", async () => {
 		const out = await run(
-			[labelsOk, [QUEUE, okOut("4312\tretry helper abort reason")], [SEARCH, okOut("")]],
+			[labelsOk, [QUEUE, issueRows([4312, "retry helper abort reason"])], [SEARCH, searchHits()]],
 			{json: true},
 		);
 		const payload = JSON.parse(out.stdout);
@@ -137,10 +162,10 @@ describe("runDedup", () => {
 	});
 
 	it("says on stderr when the cap truncated the list", async () => {
-		const rows = Array.from({length: 4}, (_, i) => `${i + 1}\tretry helper abort reason`).join(
-			"\n",
-		);
-		const out = await run([labelsOk, [QUEUE, okOut(rows)], [SEARCH, okOut("")]], {limit: 2});
+		const rows = Array.from({length: 4}, (_, i) => [i + 1, "retry helper abort reason"] as const);
+		const out = await run([labelsOk, [QUEUE, issueRows(...rows)], [SEARCH, searchHits()]], {
+			limit: 2,
+		});
 		expect(out.stdout.split("\n").filter((l) => l !== "")).toHaveLength(3);
 		expect(out.stderr[0]).toContain("TRUNCATED");
 	});

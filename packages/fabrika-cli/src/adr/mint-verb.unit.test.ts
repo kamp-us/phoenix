@@ -5,7 +5,15 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, type FakeFs, fakeFs, fakeShell, okOut, tree} from "../fakes.test-support.ts";
+import {
+	errOut,
+	type FakeFs,
+	fakeFs,
+	fakeSeams,
+	okOut,
+	type Scripted,
+	tree,
+} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {
 	ALREADY_EXISTS,
@@ -20,17 +28,25 @@ import {runMint} from "./mint-verb.ts";
 const SHA = "49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82";
 const PATH = ".decisions/0240-only-landed-adrs-may-be-cited.md";
 
-const shell = (overrides: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]> = []) =>
-	fakeShell([
+const PULLS = /GET .*\/pulls\?state=open/;
+
+/** A pull request's file list, as the endpoint answers it. */
+const files = (...entries: ReadonlyArray<readonly [string, string]>) => ({
+	status: 200,
+	body: JSON.stringify(entries.map(([status, filename]) => ({status, filename}))),
+});
+
+const seams = (overrides: ReadonlyArray<Scripted> = []) =>
+	fakeSeams([
 		...overrides,
 		[/^git remote$/, okOut("origin\n")],
 		[/^git remote get-url origin$/, okOut("git@github.com:kamp-us/phoenix.git\n")],
 		[/^git fetch/, okOut("")],
 		[/^git rev-parse/, okOut(`${SHA}\n`)],
 		[/^git ls-tree/, okOut(tree("0234-a.md", "0235-b.md", "0236-c.md"))],
-		[/^gh api --paginate repos\/[^ ]+\/pulls\?/, okOut("11\n12\n")],
-		[/pulls\/11\/files/, okOut("added\t.decisions/0237-x.md\nmodified\tREADME.md\n")],
-		[/pulls\/12\/files/, okOut("added\t.decisions/0239-y.md\n")],
+		[PULLS, {status: 200, body: JSON.stringify([{number: 11}, {number: 12}])}],
+		[/pulls\/11\/files/, files(["added", ".decisions/0237-x.md"], ["modified", "README.md"])],
+		[/pulls\/12\/files/, files(["added", ".decisions/0239-y.md"])],
 	]);
 
 const options = {
@@ -46,12 +62,12 @@ const options = {
 };
 
 const run = (
-	overrides: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]> = [],
+	overrides: ReadonlyArray<Scripted> = [],
 	opts: Partial<typeof options> = {},
 	fs: FakeFs = fakeFs({}),
 ) =>
 	Effect.runPromise(
-		Effect.provide(runMint({...options, ...opts}), Layer.merge(shell(overrides).layer, fs.layer)),
+		Effect.provide(runMint({...options, ...opts}), Layer.merge(seams(overrides).layer, fs.layer)),
 	);
 
 describe("runMint", () => {
@@ -79,25 +95,33 @@ describe("runMint", () => {
 
 	it("allocates over the in-flight set, not the merged maximum", async () => {
 		const fs = fakeFs({});
-		await run([[/pulls\/12\/files/, okOut("added\t.decisions/0299-z.md\n")]], {}, fs);
+		await run([[/pulls\/12\/files/, files(["added", ".decisions/0299-z.md"])]], {}, fs);
 		expect([...fs.written.keys()]).toEqual([".decisions/0300-only-landed-adrs-may-be-cited.md"]);
 	});
 
-	it.each([
+	const unreadable: ReadonlyArray<readonly [string, Scripted, number]> = [
 		[
 			"the origin remote is unreadable",
-			[/^git remote get-url origin$/, ORIGIN_REPO_UNRESOLVABLE] as const,
+			[/^git remote get-url origin$/, errOut("boom")],
+			ORIGIN_REPO_UNRESOLVABLE,
 		],
-		["the base ref cannot be fetched", [/^git fetch/, BASE_UNFETCHABLE] as const],
-		["the record directory is unreadable", [/^git ls-tree/, DIR_UNREADABLE] as const],
+		["the base ref cannot be fetched", [/^git fetch/, errOut("boom")], BASE_UNFETCHABLE],
+		["the record directory is unreadable", [/^git ls-tree/, errOut("boom")], DIR_UNREADABLE],
 		[
 			"the open pull requests cannot be enumerated",
-			[/^gh api --paginate repos\/[^ ]+\/pulls\?/, IN_FLIGHT_UNKNOWN] as const,
+			[PULLS, {status: 502, body: "{}"}],
+			IN_FLIGHT_UNKNOWN,
 		],
-		["a pull request's files cannot be read", [/pulls\/11\/files/, IN_FLIGHT_UNKNOWN] as const],
-	])("writes nothing when %s", async (_name, [pattern, code]) => {
+		[
+			"a pull request's files cannot be read",
+			[/pulls\/11\/files/, {status: 502, body: "{}"}],
+			IN_FLIGHT_UNKNOWN,
+		],
+	];
+
+	it.each(unreadable)("writes nothing when %s", async (_name, row, code) => {
 		const fs = fakeFs({});
-		const out = await run([[pattern, errOut("boom")]], {}, fs);
+		const out = await run([row], {}, fs);
 		expect(out.code).toBe(code);
 		expect(out.stdout).toBe("");
 		expect(fs.written.size).toBe(0);
@@ -122,7 +146,7 @@ describe("runMint", () => {
 
 	it("refuses a slug that is not kebab-case before it spends a read", async () => {
 		const fs = fakeFs({});
-		const sh = shell();
+		const sh = seams();
 		const out = await Effect.runPromise(
 			Effect.provide(runMint({...options, slug: "Not Kebab"}), Layer.merge(sh.layer, fs.layer)),
 		);
@@ -132,6 +156,6 @@ describe("runMint", () => {
 		);
 		expect(fs.written.size).toBe(0);
 		// A usage error costs no fetch and no pull-request enumeration.
-		expect(sh.calls).toEqual([]);
+		expect(sh.log).toEqual([]);
 	});
 });

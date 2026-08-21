@@ -3,7 +3,14 @@ import {resolve} from "node:path";
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import type {EntrypointRead} from "../delegate/entrypoint.ts";
-import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeFs,
+	fakeSeams,
+	type HttpReply,
+	okOut,
+	type Scripted,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {EPIC_RULES, EPIC_TAIL_RULES, RULES, read as readBrief} from "../wire/lane-brief.ts";
 import {runBrief} from "./brief-verb.ts";
@@ -26,38 +33,41 @@ const ISSUE_URL = "https://github.com/o/r/issues/5751";
 const PR_URL = "https://github.com/o/r/pull/5790";
 const TITLE = "the operator hand-writes every spawn prompt";
 
-const ISSUE_READ = /^gh api repos\/o\/r\/issues\/5751$/;
-const CHILD_READ = /^gh api repos\/o\/r\/issues\/5729$/;
-const PR_CLOSERS = /^gh api graphql -f query=query\(/;
+const ISSUE_READ = /^GET .*\/repos\/o\/r\/issues\/5751$/;
+const CHILD_READ = /^GET .*\/repos\/o\/r\/issues\/5729$/;
+const PR_CLOSERS = /^POST .*\/graphql$/;
 
-const issuePayload = (number: number, url: string): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number,
-			title: TITLE,
-			body: "## What is wrong\n\nNothing prints it, nothing records it.",
-			state: "open",
-			labels: [{name: "type:feature"}],
-			html_url: url,
-		}),
-	);
+const NOT_FOUND: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
+const SERVER_ERROR: HttpReply = {status: 503, body: '{"message":"Server Error"}'};
+
+const issuePayload = (number: number, url: string): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number,
+		title: TITLE,
+		body: "## What is wrong\n\nNothing prints it, nothing records it.",
+		state: "open",
+		labels: [{name: "type:feature"}],
+		html_url: url,
+	}),
+});
 
 /** One page of the closing-issue link edge — every node OPEN, since the verb filters on that. */
-const closingPulls = (...rows: ReadonlyArray<readonly [number, string]>): ExecResult =>
-	okOut(
-		JSON.stringify({
-			data: {
-				repository: {
-					issue: {
-						closedByPullRequestsReferences: {
-							pageInfo: {hasNextPage: false, endCursor: null},
-							nodes: rows.map(([number, url]) => ({number, url, state: "OPEN"})),
-						},
+const closingPulls = (...rows: ReadonlyArray<readonly [number, string]>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		data: {
+			repository: {
+				issue: {
+					closedByPullRequestsReferences: {
+						pageInfo: {hasNextPage: false, endCursor: null},
+						nodes: rows.map(([number, url]) => ({number, url, state: "OPEN"})),
 					},
 				},
 			},
-		}),
-	);
+		},
+	}),
+});
 
 /**
  * A single-issue lane at `lane`, with one log line per operator event already recorded. `classes`
@@ -90,8 +100,8 @@ const lane = (
 const EPIC = 5800;
 const EPIC_URL = "https://github.com/o/r/issues/5800";
 const CHILD_URL = "https://github.com/o/r/issues/5828";
-const EPIC_ISSUE_READ = /^gh api repos\/o\/r\/issues\/5800$/;
-const EPIC_CHILD_READ = /^gh api repos\/o\/r\/issues\/5828$/;
+const EPIC_ISSUE_READ = /^GET .*\/repos\/o\/r\/issues\/5800$/;
+const EPIC_CHILD_READ = /^GET .*\/repos\/o\/r\/issues\/5828$/;
 
 /** The child's range as this tree holds it: the epic branch's commit, and the build branch's tip. */
 const EPIC_BASE = "58ad239e2f8b41c0d7a6935ee1c204ab5d3f9017";
@@ -112,7 +122,7 @@ const logOf = (...rows: ReadonlyArray<readonly [string, string]>): ExecResult =>
 const locating = (
 	branches: ReadonlyArray<string> = [CHILD_BRANCH, "main", "epic/5800"],
 	commits: ReadonlyArray<readonly [string, string]> = [[CHILD_TIP, CHILD_MESSAGE]],
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+): ReadonlyArray<Scripted> => [
 	[REV("epic/5800"), okOut(`${EPIC_BASE}\n`)],
 	[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
 	[BRANCHES, okOut(`${branches.join("\n")}\n`)],
@@ -168,13 +178,13 @@ const options = {
 
 const run = (
 	fs: ReturnType<typeof fakeFs>,
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runBrief({...options, ...overrides}),
-			Layer.merge(fs.layer, fakeShell(script).layer),
+			Layer.merge(fs.layer, fakeSeams(script).layer),
 		),
 	);
 
@@ -433,17 +443,13 @@ describe("lane brief", () => {
 	});
 
 	it("refuses when the issue is proven absent", async () => {
-		const out = await run(lane("5751", ["WIP"]), [
-			[ISSUE_READ, errOut("gh: Not Found (HTTP 404)")],
-		]);
+		const out = await run(lane("5751", ["WIP"]), [[ISSUE_READ, NOT_FOUND]]);
 
 		expect(out.code).toBe(ISSUE_UNRESOLVED);
 	});
 
 	it("refuses when the issue could not be read — UNKNOWN, never a brief", async () => {
-		const out = await run(lane("5751", ["WIP"]), [
-			[ISSUE_READ, errOut("gh: Server Error (HTTP 503)")],
-		]);
+		const out = await run(lane("5751", ["WIP"]), [[ISSUE_READ, SERVER_ERROR]]);
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stdout).toBe("");
@@ -474,21 +480,21 @@ describe("lane brief", () => {
 describe("lane brief on an epic lane", () => {
 	const runEpic = async (
 		fs: ReturnType<typeof fakeFs>,
-		script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+		script: ReadonlyArray<Scripted>,
 		overrides: Partial<typeof options>,
 	) => {
-		const shell = fakeShell(script);
+		const seams = fakeSeams(script);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runBrief({...options, lane: String(EPIC), ...overrides}),
-				Layer.merge(fs.layer, shell.layer),
+				Layer.merge(fs.layer, seams.layer),
 			),
 		);
-		return {out, calls: shell.calls};
+		return {out, calls: seams.calls, requests: seams.requests};
 	};
 
 	it("briefs a child's build on the epic branch, resolving no PR at all", async () => {
-		const {out, calls} = await runEpic(
+		const {out, calls, requests} = await runEpic(
 			epicLane([["issue_5828", "WIP"]]),
 			[
 				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
@@ -511,14 +517,12 @@ describe("lane brief on an epic lane", () => {
 		});
 		expect(out.stdout).toContain(EPIC_RULES);
 		expect(out.stdout).not.toContain("range:");
-		expect(calls.some((call) => PR_CLOSERS.test(call))).toBe(false);
+		expect(requests.some((request) => PR_CLOSERS.test(request))).toBe(false);
 		// No child branch exists yet at `build`, so the tree is never read for one.
 		expect(calls.some((call) => call.startsWith("git "))).toBe(false);
 	});
 
-	const reviewing = (
-		script: ReadonlyArray<readonly [RegExp, ExecResult]> = locating(),
-	): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+	const reviewing = (script: ReadonlyArray<Scripted> = locating()): ReadonlyArray<Scripted> => [
 		[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
 		[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
 		...script,
@@ -531,7 +535,7 @@ describe("lane brief on an epic lane", () => {
 		]);
 
 	it("briefs a child's review with the range this tree resolved and the range-verdict contract", async () => {
-		const {out, calls} = await runEpic(atReview(), reviewing(), {task: "issue_5828"});
+		const {out, requests} = await runEpic(atReview(), reviewing(), {task: "issue_5828"});
 
 		expect(out.code).toBe(0);
 		expect(readBrief(out.stdout)).toMatchObject({
@@ -548,7 +552,7 @@ describe("lane brief on an epic lane", () => {
 		});
 		expect(out.stdout).toContain(`range: ${EPIC_BASE}..${CHILD_TIP}`);
 		expect(out.stdout).toContain("range-verdict-marker");
-		expect(calls.some((call) => PR_CLOSERS.test(call))).toBe(false);
+		expect(requests.some((request) => PR_CLOSERS.test(request))).toBe(false);
 	});
 
 	it("never prints a literal HEAD — the spawned reviewer would re-resolve it in its own worktree", async () => {
@@ -662,7 +666,7 @@ describe("lane brief on an epic lane", () => {
 			epicLane([["issue_5828", "WIP"]]),
 			[
 				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
-				[EPIC_ISSUE_READ, errOut("gh: Server Error (HTTP 503)")],
+				[EPIC_ISSUE_READ, SERVER_ERROR],
 			],
 			{task: "issue_5828"},
 		);

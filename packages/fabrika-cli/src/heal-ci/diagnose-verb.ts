@@ -9,6 +9,7 @@
  * rather than a second one.
  */
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type Producer, producerFor, resolveCi} from "../config/ci-producer.ts";
 import type {Resolution} from "../config/key-group.ts";
@@ -183,7 +184,11 @@ export const diagnoseOne = (
 	governedRoots: ReadonlyArray<string>,
 	/** This repo's `ci`, resolved once by the caller for the same reason. */
 	ci: Resolution<CiSurface>,
-): Effect.Effect<DiagnoseResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	DiagnoseResult,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const notices: string[] = [];
 
@@ -514,7 +519,10 @@ export const runDiagnose = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "a pull-request number", options.pr);

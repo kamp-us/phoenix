@@ -1,8 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {GIT_DIRS} from "../build/fixtures.test-support.ts";
-import {fakeFs, fakeShell} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeFs, fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
 	BAD_SECTIONS,
@@ -24,8 +23,8 @@ import {
 } from "./run.ts";
 import {runTopology} from "./topology-verb.ts";
 
-const GROUND: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
+const GROUND: ReadonlyArray<Scripted> = [
+	[/^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/, epic()],
 	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	...CLAIMED,
 ];
@@ -60,7 +59,7 @@ const run = (
 	stdinText: string,
 	fsFiles: Readonly<Record<string, string | null>> = files(record(4301), record(4303)),
 ) => {
-	const shell = fakeShell(GROUND);
+	const shell = fakeSeams(GROUND);
 	const fs = fakeFs({files: fsFiles});
 	const stdin: Effect.Effect<StdinRead> = Effect.succeed({_tag: "Text", text: stdinText});
 	return Effect.runPromise(

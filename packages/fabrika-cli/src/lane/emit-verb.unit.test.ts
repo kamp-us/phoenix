@@ -1,10 +1,9 @@
 /** `lane emit` — the board reads, the emit refusal seats, and the write that lands the machine. */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {issue} from "../build/fixtures.test-support.ts";
-import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
+import {issuePayload, NOT_FOUND, served} from "../build/fixtures.test-support.ts";
+import {fakeFs, fakeHttp, fakeShell, type HttpReply} from "../fakes.test-support.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
-import type {ExecResult} from "../io/exec.ts";
 import {
 	LANE_ABSENT,
 	LANE_EXISTS,
@@ -15,37 +14,47 @@ import {
 } from "./codes.ts";
 import {runEmit} from "./emit-verb.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/4300$/;
-const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues\?per_page=100$/;
+const ISSUE = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
+const SUBS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issues\?/;
 
 const body = (): string => readGoldenFixture(import.meta.url, "./__fixtures__/epic-4300.body.txt");
 const golden = (): string =>
 	readGoldenFixture(import.meta.url, "./__fixtures__/epic-4300.workflow.golden.txt");
 
-const children = okOut(
-	JSON.stringify([
+const epic = (overrides: Record<string, unknown> = {}): HttpReply =>
+	served(issuePayload({number: 4300, body: body(), ...overrides}));
+
+const children: HttpReply = {
+	status: 200,
+	body: JSON.stringify([
 		{number: 4301, state: "open", state_reason: null},
 		{number: 4302, state: "open", state_reason: null},
 		{number: 4303, state: "open", state_reason: null},
 	]),
-);
+};
 
 const OPTIONS = {
 	epic: 4300,
 	root: ".fabrika/lanes",
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	env: {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} as Record<
+		string,
+		string | undefined
+	>,
 };
 
-const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>, fs = fakeFs({files: {}})) =>
+const run = (script: ReadonlyArray<readonly [RegExp, HttpReply]> = [], fs = fakeFs({files: {}})) =>
 	Effect.runPromise(
-		Effect.provide(runEmit(OPTIONS), Layer.merge(fs.layer, fakeShell(script).layer)),
+		Effect.provide(
+			runEmit(OPTIONS),
+			Layer.mergeAll(fs.layer, fakeShell([]).layer, fakeHttp(script).layer),
+		),
 	).then((out) => ({out, fs}));
 
 describe("lane emit", () => {
 	it("writes the golden machine bytes to the epic's lane dir", async () => {
 		const {out, fs} = await run([
-			[ISSUE, issue({number: 4300, body: body()})],
+			[ISSUE, epic()],
 			[SUBS, children],
 		]);
 
@@ -62,7 +71,7 @@ describe("lane emit", () => {
 	it("refuses an existing lane dir with the open verb's code and writes nothing", async () => {
 		const {out, fs} = await run(
 			[
-				[ISSUE, issue({number: 4300, body: body()})],
+				[ISSUE, epic()],
 				[SUBS, children],
 			],
 			fakeFs({files: {}, directories: [".fabrika/lanes/4300"]}),
@@ -73,14 +82,14 @@ describe("lane emit", () => {
 	});
 
 	it("refuses a proven-absent epic on the no-target seat", async () => {
-		const {out} = await run([[ISSUE, errOut("gh: Not Found (HTTP 404)")]]);
+		const {out} = await run([[ISSUE, NOT_FOUND]]);
 		expect(out.code).toBe(LANE_ABSENT);
 	});
 
 	it("refuses an unreadable child list as UNKNOWN — never an epic with no children", async () => {
 		const {out, fs} = await run([
-			[ISSUE, issue({number: 4300, body: body()})],
-			[SUBS, errOut("gh: connect: network is unreachable")],
+			[ISSUE, epic()],
+			[SUBS, {status: 503, body: '{"message":"unreachable"}'}],
 		]);
 
 		expect(out.code).toBe(LANE_UNREADABLE);
@@ -89,8 +98,8 @@ describe("lane emit", () => {
 
 	it("refuses a child entry with no readable state as UNKNOWN — never a queued default", async () => {
 		const {out, fs} = await run([
-			[ISSUE, issue({number: 4300, body: body()})],
-			[SUBS, okOut(JSON.stringify([{number: 4301}, {number: 4302}, {number: 4303}]))],
+			[ISSUE, epic()],
+			[SUBS, {status: 200, body: JSON.stringify([{number: 4301}, {number: 4302}, {number: 4303}])}],
 		]);
 
 		expect(out.code).toBe(LANE_UNREADABLE);
@@ -100,7 +109,7 @@ describe("lane emit", () => {
 
 	it("refuses an epic with no topology block, naming the absence", async () => {
 		const {out} = await run([
-			[ISSUE, issue({number: 4300, body: "## Plan\n\nno topology\n"})],
+			[ISSUE, epic({body: "## Plan\n\nno topology\n"})],
 			[SUBS, children],
 		]);
 
@@ -110,7 +119,7 @@ describe("lane emit", () => {
 
 	it("refuses a topology referencing a non-child, naming the ref", async () => {
 		const {out} = await run([
-			[ISSUE, issue({number: 4300, body: "## Dependencies\n\n- phase 1: #9999\n"})],
+			[ISSUE, epic({body: "## Dependencies\n\n- phase 1: #9999\n"})],
 			[SUBS, children],
 		]);
 
@@ -122,7 +131,7 @@ describe("lane emit", () => {
 		const cyclic =
 			"## Dependencies\n\n- phase 1: #4301, #4302\n- #4301 requires: #4302\n- #4302 requires: #4301\n";
 		const {out} = await run([
-			[ISSUE, issue({number: 4300, body: cyclic})],
+			[ISSUE, epic({body: cyclic})],
 			[SUBS, children],
 		]);
 

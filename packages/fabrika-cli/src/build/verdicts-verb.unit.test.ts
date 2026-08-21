@@ -1,21 +1,31 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {comments, HEAD, issue, OLD_HEAD, PRIOR_HEADS, pull} from "./fixtures.test-support.ts";
+import {
+	comments,
+	GATEWAY,
+	GH_TOKEN_ENV,
+	HEAD,
+	issue,
+	NOT_FOUND,
+	OLD_HEAD,
+	PRIOR_HEADS,
+	pull,
+	served,
+} from "./fixtures.test-support.ts";
 import {runChildVerdicts, runVerdicts} from "./verdicts-verb.ts";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4310$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4310\/comments/;
-const REVIEWS = /^gh api --paginate repos\/o\/r\/pulls\/4310\/reviews/;
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
+const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4310$/;
+const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4310\/comments/;
+const REVIEWS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4310\/reviews/;
+const ISSUE = /^GET \S+\/repos\/o\/r\/issues\/4312$/;
 
 const FAIL_NOW = `review-code: FAIL @ ${HEAD} — the debounce fix races the unmount`;
 const failAt = (sha: string) => `review-code: FAIL @ ${sha} — the debounce fix races the unmount`;
 const PASS_STALE = `review-doc: PASS @ ${OLD_HEAD} — guide matches shipped behavior`;
 
-const NO_REVIEWS = okOut("[]");
+const NO_REVIEWS = served([]);
 const PR = pull({number: 4310, body: "Fixes #4312\n\n## Deviations\nNone.\n"});
 const PR_ON_MAIN = pull({
 	number: 4310,
@@ -26,11 +36,11 @@ const PR_ON_MAIN = pull({
 const options = {
 	pr: 4310,
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	env: {CLAUDE_PIPELINE_REPO: "o/r", ...GH_TOKEN_ENV} as Record<string, string | undefined>,
 };
 
-const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
-	Effect.runPromise(Effect.provide(runVerdicts(options), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>) =>
+	Effect.runPromise(Effect.provide(runVerdicts(options), fakeSeams(script).layer));
 
 describe("runVerdicts", () => {
 	it("binds each marker to the live head and keeps the latest per gate", async () => {
@@ -64,13 +74,8 @@ describe("runVerdicts", () => {
 	it("reports a native review as its OWN row kind, never coerced into a marker (#4555)", async () => {
 		const out = await run([
 			[PULL, PR],
-			[COMMENTS, okOut("[]")],
-			[
-				REVIEWS,
-				okOut(
-					JSON.stringify([{id: 98001, state: "CHANGES_REQUESTED", body: "the debounce races"}]),
-				),
-			],
+			[COMMENTS, served([])],
+			[REVIEWS, served([{id: 98001, state: "CHANGES_REQUESTED", body: "the debounce races"}])],
 			[ISSUE, issue()],
 		]);
 		const parsed = JSON.parse(out.stdout);
@@ -151,7 +156,7 @@ describe("runVerdicts", () => {
 	it("lists only the criteria appended AFTER round 2, by their provenance tag", async () => {
 		const out = await run([
 			[PULL, PR],
-			[COMMENTS, okOut("[]")],
+			[COMMENTS, served([])],
 			[REVIEWS, NO_REVIEWS],
 			[
 				ISSUE,
@@ -188,7 +193,7 @@ describe("runVerdicts", () => {
 	});
 
 	it("refuses a proven-absent PR on 7", async () => {
-		const out = await run([[PULL, errOut("gh: Not Found (HTTP 404)")]]);
+		const out = await run([[PULL, NOT_FOUND]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe("build verdicts: PR #4310 is proven absent or closed.");
 	});
@@ -196,7 +201,7 @@ describe("runVerdicts", () => {
 	it("refuses an unreadable comment page on 11 — never a shorter list", async () => {
 		const out = await run([
 			[PULL, PR],
-			[COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
+			[COMMENTS, GATEWAY],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -206,30 +211,30 @@ describe("runVerdicts", () => {
 	it("refuses an unreadable review page on 11 too", async () => {
 		const out = await run([
 			[PULL, PR],
-			[COMMENTS, okOut("[]")],
-			[REVIEWS, errOut("gh: Bad gateway (HTTP 502)")],
+			[COMMENTS, served([])],
+			[REVIEWS, GATEWAY],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
 	it("paginates both list reads", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			[PULL, PR],
-			[COMMENTS, okOut("[]")],
+			[COMMENTS, served([])],
 			[REVIEWS, NO_REVIEWS],
 			[ISSUE, issue()],
 		]);
-		await Effect.runPromise(Effect.provide(runVerdicts(options), shell.layer));
-		expect(shell.calls.filter((line) => line.includes("--paginate")).length).toBeGreaterThanOrEqual(
-			2,
-		);
+		await Effect.runPromise(Effect.provide(runVerdicts(options), seams.layer));
+		expect(seams.requests.filter((line) => line.includes("per_page=100")).length).toBe(2);
 	});
 	describe("the founder's cleared rounds", () => {
-		const CONFIG =
-			/^gh api -H Accept: application\/vnd\.github\.raw repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
-		const CONFIGURED = okOut('{"capClearAuthors": ["@usirin"]}');
-		const PERMISSION = /^gh api repos\/o\/r\/collaborators\/usirin\/permission/;
-		const WRITES = okOut("admin\n");
+		const CONFIG = /^GET \S+\/repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
+		const CONFIGURED: HttpReply = {
+			status: 200,
+			body: JSON.stringify({capClearAuthors: ["@usirin"]}),
+		};
+		const PERMISSION = /^GET \S+\/repos\/o\/r\/collaborators\/usirin\/permission/;
+		const WRITES = served({permission: "admin"});
 		const AUTHORIZATION = 'Founder ruling 2026-08-18: "one more round."';
 		// Three graded heads, so three rounds — a round is a head, not a span of clock (#6137).
 		const CAPPED = [
@@ -347,7 +352,7 @@ describe("runVerdicts", () => {
 				[PULL, PR_ON_MAIN],
 				[COMMENTS, comments(...CAPPED, ...GRANT)],
 				[CONFIG, CONFIGURED],
-				[PERMISSION, okOut("read\n")],
+				[PERMISSION, served({permission: "read"})],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE, issue()],
 			]);
@@ -362,7 +367,7 @@ describe("runVerdicts", () => {
 				[PULL, PR_ON_MAIN],
 				[COMMENTS, comments(...CAPPED, ...GRANT)],
 				[CONFIG, CONFIGURED],
-				[PERMISSION, errOut("gh: Bad gateway (HTTP 502)")],
+				[PERMISSION, GATEWAY],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE, issue()],
 			]);
@@ -396,7 +401,7 @@ describe("runVerdicts", () => {
 			const out = await run([
 				[PULL, PR_ON_MAIN],
 				[COMMENTS, comments(...CAPPED, ...GRANT)],
-				[CONFIG, errOut("gh: Bad gateway (HTTP 502)")],
+				[CONFIG, GATEWAY],
 				[REVIEWS, NO_REVIEWS],
 				[ISSUE, issue()],
 			]);
@@ -414,19 +419,19 @@ describe("runChildVerdicts", () => {
 	const BASE = "9f2c1ab4d5e6f708192a3b4c5d6e7f8091a2b3c4";
 	const TIP = "03135b917283a4b5c6d7e8f90a1b2c3d4e5f6071";
 	const NEXT_TIP = "5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f";
-	const CHILD_COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4312\/comments/;
+	const CHILD_COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4312\/comments/;
 	const range = (polarity: string, tip = TIP) =>
 		`review-code: ${polarity} range:${BASE}..${tip} content:2f1a9c4e0b7d — the child's range`;
 
-	const runChild = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
+	const runChild = (script: ReadonlyArray<Scripted>) =>
 		Effect.runPromise(
 			Effect.provide(
 				runChildVerdicts({
 					issue: 4312,
 					repo: null,
-					env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+					env: {CLAUDE_PIPELINE_REPO: "o/r", ...GH_TOKEN_ENV} as Record<string, string | undefined>,
 				}),
-				fakeShell(script).layer,
+				fakeSeams(script).layer,
 			),
 		);
 
@@ -482,7 +487,7 @@ describe("runChildVerdicts", () => {
 	it("refuses an unreadable comment page on 11 — never 'none'", async () => {
 		const out = await runChild([
 			[ISSUE, issue()],
-			[CHILD_COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
+			[CHILD_COMMENTS, GATEWAY],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");

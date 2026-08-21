@@ -7,7 +7,7 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
+import {fakeSeams, type HttpReply, type Scripted, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	GOVERNANCE_FLOOR_UNMET,
@@ -15,31 +15,40 @@ import {
 	PRECONDITION_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {comments, ENV, files, HEAD, OTHER_HEAD, pull, reviews} from "./fixtures.test-support.ts";
+import {comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
 import {runFloor} from "./floor-verb.ts";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
-const REVIEWS = /^gh api -i repos\/o\/r\/pulls\/4321\/reviews/;
-const ACL = /^gh api repos\/o\/r\/collaborators\/[^ ]+\/permission/;
+const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4321$/;
+const FILES = /^GET \S+\/repos\/o\/r\/pulls\/4321\/files\?/;
+const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/4321\/comments\?/;
+const REVIEWS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/4321\/reviews/;
+const ACL = /^GET \S+\/repos\/o\/r\/collaborators\/[^/]+\/permission$/;
+
+/** No native review on the PR — the floor is a marker question, so every test reads the same page. */
+const NO_REVIEWS: readonly [RegExp, HttpReply] = [REVIEWS, {status: 200, body: "[]"}];
+
+/** A canned `ExecResult` fixture as the body of a 200 — the same payload, off the served seam. */
+const served = (result: ExecResult): HttpReply => ({status: 200, body: result.stdout});
+
+/** The permission endpoint's own shape — a `{permission}` record, not a bare word. */
+const permissionServed = (permission: string): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({permission}),
+});
 
 /** A fabrika-tree diff — `claude-plugins/` is one of the shipped governance roots. */
 const FABRIKA_TREE = [
 	FILES,
-	files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/web/src/b.ts"),
+	served(files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/web/src/b.ts")),
 ] as const;
 
 const options = {pr: 4321, sha: HEAD, repo: null, json: false, cwd: "/repo", env: ENV};
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) =>
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(
 		Effect.provide(
 			runFloor({...options, ...overrides}),
-			Layer.merge(fakeShell([...script]).layer, unconfigured),
+			Layer.merge(fakeSeams([...script, NO_REVIEWS]).layer, unconfigured),
 		),
 	);
 
@@ -49,11 +58,10 @@ const marker = (namespace: string, polarity: string, sha: string): string =>
 /** A governance-root PR carrying exactly one comment, with the ACL answer the test wants. */
 const withVerdict = (body: string, permission = "write") =>
 	[
-		[PULL, pull({comments: 1})],
+		[PULL, served(pull({comments: 1}))],
 		FABRIKA_TREE,
-		[COMMENTS, comments({id: 1, body})],
-		[REVIEWS, reviews()],
-		[ACL, okOut(permission)],
+		[COMMENTS, served(comments({id: 1, body}))],
+		[ACL, permissionServed(permission)],
 	] as const;
 
 describe("runFloor", () => {
@@ -65,8 +73,8 @@ describe("runFloor", () => {
 
 	it("answers n/a — not satisfied — when the diff touches no governance root", async () => {
 		const out = await run([
-			[PULL, pull()],
-			[FILES, files("apps/web/src/a.ts", "apps/web/src/b.ts")],
+			[PULL, served(pull())],
+			[FILES, served(files("apps/web/src/a.ts", "apps/web/src/b.ts"))],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(`floor\tn/a\t${HEAD}\nns\tgovernance\t-\n`);
@@ -75,10 +83,9 @@ describe("runFloor", () => {
 
 	it("reds when the verdict is ABSENT — the #5293/#5333 shape", async () => {
 		const out = await run([
-			[PULL, pull({comments: 0})],
+			[PULL, served(pull({comments: 0}))],
 			FABRIKA_TREE,
-			[COMMENTS, comments()],
-			[REVIEWS, reviews()],
+			[COMMENTS, served(comments())],
 		]);
 		expect(out.code).toBe(GOVERNANCE_FLOOR_UNMET);
 		expect(out.stdout).toBe("");
@@ -111,11 +118,10 @@ describe("runFloor", () => {
 
 	it("fails closed when the ACL cannot be read — UNKNOWN is never a discharge", async () => {
 		const out = await run([
-			[PULL, pull({comments: 1})],
+			[PULL, served(pull({comments: 1}))],
 			FABRIKA_TREE,
-			[COMMENTS, comments({id: 1, body: marker("governance", "PASS", HEAD)})],
-			[REVIEWS, reviews()],
-			[ACL, errOut("HTTP 403")],
+			[COMMENTS, served(comments({id: 1, body: marker("governance", "PASS", HEAD)}))],
+			[ACL, {status: 403, body: '{"message":"Forbidden"}'}],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -123,8 +129,8 @@ describe("runFloor", () => {
 
 	it("fails closed when the changed-file list cannot be read", async () => {
 		const out = await run([
-			[PULL, pull()],
-			[FILES, errOut("HTTP 502")],
+			[PULL, served(pull())],
+			[FILES, {status: 502, body: "{}"}],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.join("\n")).toContain('never "n/a"');
@@ -132,16 +138,16 @@ describe("runFloor", () => {
 
 	it("refuses a short file list — a governance root could sit in the part nobody read", async () => {
 		const out = await run([
-			[PULL, pull({changedFiles: 9})],
-			[FILES, files("apps/web/src/a.ts")],
+			[PULL, served(pull({changedFiles: 9}))],
+			[FILES, served(files("apps/web/src/a.ts"))],
 		]);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 	});
 
 	it("refuses a zero-file diff rather than answering n/a (ADR 0092)", async () => {
 		const out = await run([
-			[PULL, pull({changedFiles: 0})],
-			[FILES, files()],
+			[PULL, served(pull({changedFiles: 0}))],
+			[FILES, served(files())],
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
 	});

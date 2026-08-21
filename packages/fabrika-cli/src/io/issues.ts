@@ -3,21 +3,34 @@
  * index, the repository's label set and open milestones, and the issue/comment writes plus their
  * read-backs.
  *
- * Everything goes through `gh api` REST and **never GraphQL** — the org's Projects-classic
- * integration errors out GraphQL issue queries — and **every list read pages**: an unpaginated
- * first page is a silently short answer, which for a duplicate check is a false `none`.
+ * Everything goes through `./gh-api.ts` REST and **never GraphQL** — the org's Projects-classic
+ * integration errors out the GraphQL issue *search* connection, which is what this module's reads
+ * are — and **every list read pages** and refuses a walk it could not prove whole: an unpaginated or
+ * capped read is a silently short answer, which for a duplicate check is a false `none`.
  *
  * Two disciplines this module exists to make unavoidable:
  *
- * - **Absent and unreadable are different outcomes.** `gh` reports a 404 and a 502 the same way —
- *   a non-zero exit — so {@link Existence} splits them on the `(HTTP <n>)` status `gh` prints. A
- *   caller may only seat a proven "does not exist" refusal on `Absent`; `Unknown` refuses on its
- *   own code with nothing on stdout.
- * - **A shape that is not what was asked for is a failure, never an empty result.** Every parser
- *   validates before anything interprets, because `gh` can exit 0 having printed something else.
+ * - **Absent and unreadable are different outcomes.** {@link Existence} splits them on the numeric
+ *   status the response carried. A caller may only seat a proven "does not exist" refusal on
+ *   `Absent`; `Unknown` refuses on its own code with nothing on stdout.
+ * - **A shape that is not what was asked for is a failure, never an empty result.** Every read
+ *   validates before anything interprets, because a 200 can carry something else entirely.
  */
 import {Effect} from "effect";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import {execCapture} from "./exec.ts";
+import {
+	type Api,
+	existenceOf,
+	PAGE_CAP,
+	pagedEnvelope,
+	pagedWithLinkProof,
+	type Rest,
+	resolveToken,
+	restRead,
+} from "./gh-api.ts";
 import {type Attempt, fail, ok, originRepo, type Shell} from "./git.ts";
 import {isRecord, parseJson} from "./json.ts";
 
@@ -31,31 +44,11 @@ export const present = <A>(value: A): Existence<A> => ({_tag: "Present", value})
 export const absent = <A>(): Existence<A> => ({_tag: "Absent"});
 export const unknown = <A>(reason: string): Existence<A> => ({_tag: "Unknown", reason});
 
-/** The HTTP status `gh` names in `gh: Not Found (HTTP 404)`, or `null` when it named none. */
-export const httpStatusOf = (reason: string): number | null => {
-	const m = /\(HTTP (\d{3})\)/.exec(reason);
-	return m?.[1] === undefined ? null : Number.parseInt(m[1], 10);
-};
-
 /** One issue as the dedup ranking sees it. */
 export interface IssueRow {
 	readonly number: number;
 	readonly title: string;
 }
-
-/** `<number>\t<title>` rows, or `null` when a row is not that shape. */
-export const parseIssueRows = (stdout: string): ReadonlyArray<IssueRow> | null => {
-	const rows: IssueRow[] = [];
-	for (const line of stdout.split("\n")) {
-		if (line === "") continue;
-		const tab = line.indexOf("\t");
-		if (tab <= 0) return null;
-		const number = line.slice(0, tab);
-		if (!/^\d+$/.test(number)) return null;
-		rows.push({number: Number.parseInt(number, 10), title: line.slice(tab + 1)});
-	}
-	return rows;
-};
 
 /**
  * The target repository, in the precedence the contract states: `--repo`, then
@@ -79,62 +72,173 @@ export const currentBranch: Shell<string | null> = Effect.gen(function* () {
 	return r.ok && name !== "" && name !== "HEAD" ? name : null;
 });
 
+/**
+ * The credential, resolved per call from the ambient environment.
+ *
+ * `resolveToken` takes an env map so a caller can thread one, and every export below is reached from
+ * a hundred-odd call sites that pass none — the port may not change their signatures, so the read
+ * happens here. `Effect.suspend` keeps it per call rather than frozen at module load, which is what
+ * lets a test set the variable before it runs.
+ */
+const ambientToken: Shell<Attempt<string>> = Effect.suspend(() => resolveToken(process.env));
+
+/**
+ * Run one HTTP leg on whatever transport the caller provided, falling back to `fetch`.
+ *
+ * The requirement is **erased here rather than published**, and that is a constraint from outside
+ * this module: every export below is reached from a hundred-odd sites that annotate `Shell<…>`, so
+ * an adapter that demanded an `HttpClient` would red every one of them. A provided client still
+ * wins, which is what keeps a unit test's scripted seam the seam production runs on.
+ */
+const onTransport = <A>(leg: Api<A>): Shell<A> =>
+	Effect.gen(function* () {
+		const provided = yield* Effect.serviceOption(HttpClient.HttpClient);
+		return yield* provided._tag === "Some"
+			? Effect.provideService(leg, HttpClient.HttpClient, provided.value)
+			: Effect.provide(leg, FetchHttpClient.layer);
+	});
+
+/** Sequence two attempts: a failure short-circuits carrying its own reason. */
+const then = <A, B>(attempt: Attempt<A>, next: (value: A) => Attempt<B>): Attempt<B> =>
+	attempt._tag === "Failure" ? attempt : next(attempt.value);
+
+/** Run `read` under a resolved credential; an unresolvable one is the read's own failure. */
+const withToken = <A>(read: (token: string) => Api<Attempt<A>>): Shell<Attempt<A>> =>
+	Effect.gen(function* () {
+		const token = yield* ambientToken;
+		return token._tag === "Failure" ? token : yield* onTransport(read(token.value));
+	});
+
+const refusalFor = (outcome: Rest & {_tag: "Response"}): string => {
+	const named = isRecord(outcome.body) && typeof outcome.body.message === "string";
+	return `GitHub answered HTTP ${outcome.status}${named ? `: ${String(outcome.body.message)}` : ""}`;
+};
+
+/** A served 2xx body, or the refusal a non-2xx or an unreached endpoint is. */
+const servedBody = (outcome: Rest): Attempt<unknown> => {
+	if (outcome._tag === "Unreachable") return fail(outcome.reason);
+	if (outcome.status < 200 || outcome.status >= 300) return fail(refusalFor(outcome));
+	return ok(outcome.body);
+};
+
+/** A write whose only evidence is its status — the body it echoes is not proof of anything. */
+const accepted = (outcome: Rest): Attempt<void> => then(servedBody(outcome), () => ok(undefined));
+
+const API_ROOT = "https://api.github.com";
+
+// `restRead` sends no request body, and every write below needs one. Duplicated here rather than
+// added to `gh-api.ts` because this epic partitions its children by file and a sibling's branch
+// would collide; #6693 tracks folding the copies back into the client.
+const restWrite = (
+	token: string,
+	method: "POST" | "PATCH" | "DELETE",
+	path: string,
+	body?: Readonly<Record<string, unknown>>,
+): Api<Rest> => {
+	const base = HttpClientRequest.make(method)(`${API_ROOT}/${path.replace(/^\//, "")}`).pipe(
+		HttpClientRequest.setHeaders({
+			authorization: `token ${token}`,
+			accept: "application/vnd.github+json",
+			"x-github-api-version": "2022-11-28",
+			"user-agent": "fabrika-cli",
+		}),
+	);
+	return HttpClient.execute(
+		body === undefined ? base : HttpClientRequest.bodyJsonUnsafe(base, body),
+	).pipe(
+		Effect.flatMap((response) =>
+			response.text.pipe(
+				Effect.map(
+					(text): Rest => ({
+						_tag: "Response",
+						status: response.status,
+						headers: response.headers,
+						body: parseJson(text),
+						text,
+					}),
+				),
+			),
+		),
+		Effect.catch((error: unknown) =>
+			Effect.succeed<Rest>({
+				_tag: "Unreachable",
+				reason: `the GitHub API could not be reached: ${String(error)}`,
+			}),
+		),
+	);
+};
+
+// A function, not a top-level constant: `gh-api.ts` imports this module back, so at the moment
+// this one is evaluated `PAGE_CAP` is still in its exporter's temporal dead zone.
+const capped = (): string =>
+	`the read reached the ${PAGE_CAP}-page cap with another page still to come — this is not the whole list`;
+
+/**
+ * Every paged bare-array read in this module, and a capped walk is a failure rather than a list.
+ *
+ * There is no proof-dropping sibling on purpose. `gh api --paginate` had no page cap, so a short
+ * list was not a state it could produce; this transport caps at {@link PAGE_CAP}, so it is. Handing
+ * the entries on without the flag turns a truncated read into a clean `Ok`, and eight callers seat
+ * proven negatives on it — the duplicate check in `openIssuesTitled`, the twin scan in
+ * `issueTimeline`, the dedup sweep in `openIssuesWithLabel` — where a short list is a wrong answer
+ * rather than a short one.
+ */
+const provenList = (token: string, path: string): Api<Attempt<ReadonlyArray<unknown>>> =>
+	Effect.map(pagedWithLinkProof(token, path), (read) =>
+		then(read, (proof) => (proof.exhausted ? ok(proof.entries) : fail(capped()))),
+	);
+
+const NOT_ISSUES = "GitHub answered 200 but its body is not a list of issues";
+
+const withoutPullRequests = (entries: ReadonlyArray<unknown>): ReadonlyArray<unknown> =>
+	entries.filter((entry) => !(isRecord(entry) && isRecord(entry.pull_request)));
+
+const issueRows = (entries: ReadonlyArray<unknown>): Attempt<ReadonlyArray<IssueRow>> => {
+	const rows: IssueRow[] = [];
+	for (const entry of entries) {
+		if (!isRecord(entry) || typeof entry.number !== "number" || typeof entry.title !== "string") {
+			return fail(NOT_ISSUES);
+		}
+		rows.push({number: entry.number, title: entry.title});
+	}
+	return ok(rows);
+};
+
 /** Every label name defined in `repo`, paged. Doubles as the type/priority vocabulary source. */
 export const listLabels = (repo: string): Shell<Attempt<ReadonlyArray<string>>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/labels?per_page=100`,
-			"--jq",
-			".[].name",
-		]);
-		if (!r.ok) return fail(r.reason);
-		const names = r.stdout
-			.split("\n")
-			.map((l) => l.trim())
-			.filter((l) => l !== "");
-		return ok(names);
-	});
+	withToken((token) =>
+		Effect.map(provenList(token, `repos/${repo}/labels`), (read) =>
+			then(read, (entries) => {
+				const names: string[] = [];
+				for (const entry of entries) {
+					if (!isRecord(entry) || typeof entry.name !== "string") {
+						return fail("GitHub answered 200 but its body is not a list of labels");
+					}
+					names.push(entry.name);
+				}
+				return ok(names);
+			}),
+		),
+	);
+
+const openWithLabel = (repo: string, label: string): string =>
+	`repos/${repo}/issues?state=open&labels=${encodeURIComponent(label)}`;
 
 /** Open issues carrying `label`, paged, with pull requests filtered out. */
 export const openIssuesWithLabel = (
 	repo: string,
 	label: string,
 ): Shell<Attempt<ReadonlyArray<IssueRow>>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=100`,
-			"--jq",
-			'.[] | select(.pull_request | not) | "\\(.number)\t\\(.title)"',
-		]);
-		if (!r.ok) return fail(r.reason);
-		const rows = parseIssueRows(r.stdout);
-		return rows === null
-			? fail("`gh api` exited 0 but its output is not a list of issue rows")
-			: ok(rows);
-	});
+	withToken((token) =>
+		Effect.map(provenList(token, openWithLabel(repo, label)), (read) =>
+			then(read, (entries) => issueRows(withoutPullRequests(entries))),
+		),
+	);
 
 /** One issue with the bytes a body-keyed match needs. `body` is `""` when the API sent none. */
 export interface IssueDetail extends IssueRow {
 	readonly body: string;
 }
-
-/** One compact-JSON object per line, or `null` when a line is not that shape. */
-export const parseIssueDetails = (stdout: string): ReadonlyArray<IssueDetail> | null => {
-	const rows: IssueDetail[] = [];
-	for (const line of stdout.split("\n")) {
-		if (line.trim() === "") continue;
-		const parsed = parseJson(line);
-		if (!isRecord(parsed)) return null;
-		const {number, title, body} = parsed;
-		if (!Number.isInteger(number) || typeof title !== "string") return null;
-		rows.push({number: number as number, title, body: typeof body === "string" ? body : ""});
-	}
-	return rows;
-};
 
 /**
  * Open issues carrying `label`, paged, with their bodies — the same single list call
@@ -148,20 +252,28 @@ export const openIssuesWithLabelDetailed = (
 	repo: string,
 	label: string,
 ): Shell<Attempt<ReadonlyArray<IssueDetail>>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=100`,
-			"--jq",
-			".[] | select(.pull_request | not) | {number, title, body} | @json",
-		]);
-		if (!r.ok) return fail(r.reason);
-		const rows = parseIssueDetails(r.stdout);
-		return rows === null
-			? fail("`gh api` exited 0 but its output is not a list of issue objects")
-			: ok(rows);
-	});
+	withToken((token) =>
+		Effect.map(provenList(token, openWithLabel(repo, label)), (read) =>
+			then(read, (entries) => {
+				const rows: IssueDetail[] = [];
+				for (const entry of withoutPullRequests(entries)) {
+					if (
+						!isRecord(entry) ||
+						typeof entry.number !== "number" ||
+						typeof entry.title !== "string"
+					) {
+						return fail(NOT_ISSUES);
+					}
+					rows.push({
+						number: entry.number,
+						title: entry.title,
+						body: typeof entry.body === "string" ? entry.body : "",
+					});
+				}
+				return ok(rows);
+			}),
+		),
+	);
 
 /**
  * Open issues in `repo` whose title is **exactly** `title`, paged, pull requests filtered out.
@@ -174,20 +286,29 @@ export const openIssuesTitled = (
 	repo: string,
 	title: string,
 ): Shell<Attempt<ReadonlyArray<IssueRow>>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/issues?state=open&per_page=100`,
-			"--jq",
-			'.[] | select(.pull_request | not) | "\\(.number)\t\\(.title)"',
-		]);
-		if (!r.ok) return fail(r.reason);
-		const rows = parseIssueRows(r.stdout);
-		return rows === null
-			? fail("`gh api` exited 0 but its output is not a list of issue rows")
-			: ok(rows.filter((row) => row.title === title));
-	});
+	withToken((token) =>
+		Effect.map(provenList(token, `repos/${repo}/issues?state=open`), (read) =>
+			then(read, (entries) =>
+				then(issueRows(withoutPullRequests(entries)), (rows) =>
+					ok(rows.filter((row) => row.title === title)),
+				),
+			),
+		),
+	);
+
+/**
+ * The search index's rows for `query`, paged, and a walk that stopped at the cap is a failure.
+ *
+ * `search/issues` answers with a `{total_count, items}` envelope. Both callers are duplicate checks,
+ * and a duplicate check is the read where a short list is not a short answer but a wrong one: it
+ * reports "nothing matches" over a scope nobody proved was searched, and something gets filed twice.
+ */
+const searchRows = (token: string, query: string): Api<Attempt<ReadonlyArray<IssueRow>>> =>
+	Effect.map(
+		pagedEnvelope(token, `search/issues?q=${encodeURIComponent(query)}`, "items"),
+		(read) =>
+			then(read, (envelope) => (envelope.exhausted ? issueRows(envelope.entries) : fail(capped()))),
+	);
 
 /**
  * The search index's open issues for `tokens`.
@@ -199,21 +320,7 @@ export const searchOpenIssues = (
 	repo: string,
 	tokens: ReadonlyArray<string>,
 ): Shell<Attempt<ReadonlyArray<IssueRow>>> =>
-	Effect.gen(function* () {
-		const q = `repo:${repo} is:issue is:open ${tokens.join(" ")}`;
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`search/issues?q=${encodeURIComponent(q)}&per_page=100`,
-			"--jq",
-			'.items[] | "\\(.number)\t\\(.title)"',
-		]);
-		if (!r.ok) return fail(r.reason);
-		const rows = parseIssueRows(r.stdout);
-		return rows === null
-			? fail("`gh api` exited 0 but its output is not a list of issue rows")
-			: ok(rows);
-	});
+	withToken((token) => searchRows(token, `repo:${repo} is:issue is:open ${tokens.join(" ")}`));
 
 /**
  * The search index's issues for `tokens`, **open and closed**, paged.
@@ -228,21 +335,7 @@ export const searchIssues = (
 	repo: string,
 	tokens: ReadonlyArray<string>,
 ): Shell<Attempt<ReadonlyArray<IssueRow>>> =>
-	Effect.gen(function* () {
-		const q = `repo:${repo} is:issue ${tokens.join(" ")}`;
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`search/issues?q=${encodeURIComponent(q)}&per_page=100`,
-			"--jq",
-			'.items[] | "\\(.number)\t\\(.title)"',
-		]);
-		if (!r.ok) return fail(r.reason);
-		const rows = parseIssueRows(r.stdout);
-		return rows === null
-			? fail("`gh api` exited 0 but its output is not a list of issue rows")
-			: ok(rows);
-	});
+	withToken((token) => searchRows(token, `repo:${repo} is:issue ${tokens.join(" ")}`));
 
 export interface IssueRecord {
 	readonly number: number;
@@ -328,22 +421,28 @@ const toIssueRecord = (value: unknown): IssueRecord | null => {
 /** One issue, probed three ways — the 404 that seats a proven refusal is split from a 5xx. */
 export const getIssue = (repo: string, issue: number): Shell<Existence<IssueRecord>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", ["api", `repos/${repo}/issues/${issue}`]);
-		if (!r.ok) {
-			return httpStatusOf(r.reason) === 404
-				? absent<IssueRecord>()
-				: unknown<IssueRecord>(r.reason);
-		}
-		const record = toIssueRecord(parseJson(r.stdout));
-		return record === null
-			? unknown<IssueRecord>("`gh api` exited 0 but its output is not an issue")
-			: present(record);
+		const token = yield* ambientToken;
+		if (token._tag === "Failure") return unknown<IssueRecord>(token.reason);
+		const outcome = yield* onTransport(
+			restRead(token.value, "GET", `repos/${repo}/issues/${issue}`),
+		);
+		return existenceOf(outcome, (body) => {
+			const record = toIssueRecord(body);
+			return record === null
+				? fail("GitHub answered 200 but its body is not an issue")
+				: ok(record);
+		});
 	});
 
 export interface CreatedIssue {
 	readonly number: number;
 	readonly url: string;
 }
+
+const createdIssue = (body: unknown): Attempt<CreatedIssue> =>
+	isRecord(body) && typeof body.number === "number" && typeof body.html_url === "string"
+		? ok({number: body.number, url: body.html_url})
+		: fail("GitHub answered 2xx but its body is not a created issue");
 
 /** Create the intake issue carrying exactly one label. */
 export const createIssue = (
@@ -352,30 +451,12 @@ export const createIssue = (
 	body: string,
 	label: string,
 ): Shell<Attempt<CreatedIssue>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"POST",
-			`repos/${repo}/issues`,
-			"-f",
-			`title=${title}`,
-			"-f",
-			`body=${body}`,
-			"-f",
-			`labels[]=${label}`,
-		]);
-		if (!r.ok) return fail(r.reason);
-		const parsed = parseJson(r.stdout);
-		if (
-			!isRecord(parsed) ||
-			typeof parsed.number !== "number" ||
-			typeof parsed.html_url !== "string"
-		) {
-			return fail("`gh api` exited 0 but its output is not a created issue");
-		}
-		return ok({number: parsed.number, url: parsed.html_url});
-	});
+	withToken((token) =>
+		Effect.map(
+			restWrite(token, "POST", `repos/${repo}/issues`, {title, body, labels: [label]}),
+			(outcome) => then(servedBody(outcome), createdIssue),
+		),
+	);
 
 /**
  * Create an issue carrying **no** label — the durable-artifact shape.
@@ -388,28 +469,11 @@ export const createUnlabelledIssue = (
 	title: string,
 	body: string,
 ): Shell<Attempt<CreatedIssue>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"POST",
-			`repos/${repo}/issues`,
-			"-f",
-			`title=${title}`,
-			"-f",
-			`body=${body}`,
-		]);
-		if (!r.ok) return fail(r.reason);
-		const parsed = parseJson(r.stdout);
-		if (
-			!isRecord(parsed) ||
-			typeof parsed.number !== "number" ||
-			typeof parsed.html_url !== "string"
-		) {
-			return fail("`gh api` exited 0 but its output is not a created issue");
-		}
-		return ok({number: parsed.number, url: parsed.html_url});
-	});
+	withToken((token) =>
+		Effect.map(restWrite(token, "POST", `repos/${repo}/issues`, {title, body}), (outcome) =>
+			then(servedBody(outcome), createdIssue),
+		),
+	);
 
 /** Create one repository label; `color` is `null` for GitHub's default. */
 export const createLabel = (
@@ -418,20 +482,16 @@ export const createLabel = (
 	description: string,
 	color: string | null,
 ): Shell<Attempt<void>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"POST",
-			`repos/${repo}/labels`,
-			"-f",
-			`name=${name}`,
-			"-f",
-			`description=${description}`,
-			...(color === null ? [] : ["-f", `color=${color}`]),
-		]);
-		return r.ok ? ok(undefined) : fail(r.reason);
-	});
+	withToken((token) =>
+		Effect.map(
+			restWrite(token, "POST", `repos/${repo}/labels`, {
+				name,
+				description,
+				...(color === null ? {} : {color}),
+			}),
+			accepted,
+		),
+	);
 
 export interface CreatedComment {
 	readonly id: number;
@@ -443,74 +503,34 @@ export const createComment = (
 	issue: number,
 	body: string,
 ): Shell<Attempt<CreatedComment>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"POST",
-			`repos/${repo}/issues/${issue}/comments`,
-			"-f",
-			`body=${body}`,
-		]);
-		if (!r.ok) return fail(r.reason);
-		const parsed = parseJson(r.stdout);
-		if (!isRecord(parsed) || typeof parsed.id !== "number" || typeof parsed.html_url !== "string") {
-			return fail("`gh api` exited 0 but its output is not a created comment");
-		}
-		return ok({id: parsed.id, url: parsed.html_url});
-	});
+	withToken((token) =>
+		Effect.map(
+			restWrite(token, "POST", `repos/${repo}/issues/${issue}/comments`, {body}),
+			(outcome) =>
+				then(servedBody(outcome), (served) =>
+					isRecord(served) && typeof served.id === "number" && typeof served.html_url === "string"
+						? ok({id: served.id, url: served.html_url})
+						: fail("GitHub answered 2xx but its body is not a created comment"),
+				),
+		),
+	);
 
 /** One comment's body, re-read from the API — the create call's own echo is not evidence. */
 export const getComment = (repo: string, id: number): Shell<Attempt<string>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", ["api", `repos/${repo}/issues/comments/${id}`]);
-		if (!r.ok) return fail(r.reason);
-		const parsed = parseJson(r.stdout);
-		return isRecord(parsed) && typeof parsed.body === "string"
-			? ok(parsed.body)
-			: fail("`gh api` exited 0 but its output is not a comment");
-	});
+	withToken((token) =>
+		Effect.map(restRead(token, "GET", `repos/${repo}/issues/comments/${id}`), (outcome) =>
+			then(servedBody(outcome), (body) =>
+				isRecord(body) && typeof body.body === "string"
+					? ok(body.body)
+					: fail("GitHub answered 200 but its body is not a comment"),
+			),
+		),
+	);
 
 // ---------------------------------------------------------------------------------------------
 // The `triage` group's reads and writes, appended as one block so later verb slices extend the
 // file here without colliding with the `report` half above.
 // ---------------------------------------------------------------------------------------------
-
-/**
- * Split `stdout` into rows of exactly `columns` tab-separated fields, or `null` when any line is not
- * that shape.
- *
- * The wider sibling of {@link parseIssueRows}: same discipline, any column count. A shape that is
- * not what was asked for is a failure, never an empty result — `gh` can exit 0 having printed a `jq`
- * error, and interpreting those bytes positionally is how a malformed read answers a plausible
- * value.
- */
-export const parseTabRows = (
-	stdout: string,
-	columns: number,
-): ReadonlyArray<ReadonlyArray<string>> | null => {
-	const rows: ReadonlyArray<string>[] = [];
-	for (const line of stdout.split("\n")) {
-		if (line === "") continue;
-		const fields = line.split("\t");
-		if (fields.length !== columns) return null;
-		rows.push(fields);
-	}
-	return rows;
-};
-
-/** The leading field of every tab row as a non-negative integer — `null` if any is not one. */
-const leadingNumbers = (
-	rows: ReadonlyArray<ReadonlyArray<string>>,
-): ReadonlyArray<number> | null => {
-	const out: number[] = [];
-	for (const row of rows) {
-		const first = row[0];
-		if (first === undefined || !/^\d+$/.test(first)) return null;
-		out.push(Number.parseInt(first, 10));
-	}
-	return out;
-};
 
 /** One open milestone, as a home candidate. */
 export interface Milestone {
@@ -526,23 +546,24 @@ export interface Milestone {
  * routes work toward a park or a close.
  */
 export const listOpenMilestones = (repo: string): Shell<Attempt<ReadonlyArray<Milestone>>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/milestones?state=open&per_page=100`,
-			"--jq",
-			'.[] | "\\(.number)\t\\(.title)"',
-		]);
-		if (!r.ok) return fail(r.reason);
-		const rows = parseTabRows(r.stdout, 2);
-		if (rows === null) return fail("`gh api` exited 0 but its output is not a list of milestones");
-		const numbers = leadingNumbers(rows);
-		if (numbers === null) {
-			return fail("`gh api` exited 0 but a milestone row does not start with a number");
-		}
-		return ok(rows.map((row, i) => ({number: numbers[i] as number, title: row[1] ?? ""})));
-	});
+	withToken((token) =>
+		Effect.map(provenList(token, `repos/${repo}/milestones?state=open`), (read) =>
+			then(read, (entries) => {
+				const milestones: Milestone[] = [];
+				for (const entry of entries) {
+					if (
+						!isRecord(entry) ||
+						typeof entry.number !== "number" ||
+						typeof entry.title !== "string"
+					) {
+						return fail("GitHub answered 200 but its body is not a list of milestones");
+					}
+					milestones.push({number: entry.number, title: entry.title});
+				}
+				return ok(milestones);
+			}),
+		),
+	);
 
 /** One milestone in whichever state it is actually in — the projection a roadmap row is checked against. */
 export interface MilestoneState extends Milestone {
@@ -561,125 +582,28 @@ export interface MilestoneState extends Milestone {
  * positionally is how a malformed read answers a plausible verdict.
  */
 export const listMilestones = (repo: string): Shell<Attempt<ReadonlyArray<MilestoneState>>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/milestones?state=all&per_page=100`,
-			"--jq",
-			'.[] | "\\(.number)\t\\(.state)\t\\(.title)"',
-		]);
-		if (!r.ok) return fail(r.reason);
-		const rows = parseTabRows(r.stdout, 3);
-		if (rows === null) return fail("`gh api` exited 0 but its output is not a list of milestones");
-		const numbers = leadingNumbers(rows);
-		if (numbers === null) {
-			return fail("`gh api` exited 0 but a milestone row does not start with a number");
-		}
-		const milestones: MilestoneState[] = [];
-		for (const [i, row] of rows.entries()) {
-			const state = row[1];
-			if (state !== "open" && state !== "closed") {
-				return fail(`\`gh api\` exited 0 but a milestone row's state is "${state}"`);
-			}
-			milestones.push({number: numbers[i] as number, state, title: row[2] ?? ""});
-		}
-		return ok(milestones);
-	});
-
-/**
- * The pages a paginated read produced, or the proof that its output stopped mid-flight.
- *
- * `Truncated` exists because the alternative is a partial answer that reads as a complete one: a
- * paginated read whose stdout ends inside a page yields *fewer* rows and no error at all, so a caller
- * that only ever sees pages cannot tell "the board holds three issues" from "the read died after
- * three". A caller that receives `Truncated` seats it as UNKNOWN.
- */
-export interface JsonPages {
-	/** Every page that closed. Complete pages stay readable even when a later one is cut short. */
-	readonly pages: ReadonlyArray<string>;
-	/** Why the output does not end on a page boundary, or `null` when every byte was accounted for. */
-	readonly truncated: string | null;
-}
-
-/**
- * Split `gh api --paginate`'s concatenated top-level JSON values back into one string per page, and
- * say so when the output does not end on a page boundary.
- *
- * `--paginate` emits `[…][…]` with no separator, which `JSON.parse` rejects outright — so a
- * single-parse read would fail on exactly the responses pagination exists to reach. Bracket depth is
- * counted outside string literals only, so a `[` inside a comment body cannot split a page.
- *
- * Truncation is **everything the scan could not account for**, not an end-of-input special case: an
- * unclosed value, an unterminated string, a stray `]`, or any non-whitespace byte sitting outside a
- * completed page. Testing the leftovers rather than the final depth is what makes a half-written page
- * in the *middle* of the stream as visible as one at its end.
- */
-/** Non-whitespace characters in `[from, to)` — bytes no closed page accounts for. */
-const countOutsideWhitespace = (text: string, from: number, to: number): number => {
-	let count = 0;
-	for (let i = from; i < to; i++) {
-		if (!/\s/.test(text[i] ?? "")) count++;
-	}
-	return count;
-};
-
-export const scanJsonPages = (stdout: string): JsonPages => {
-	const pages: string[] = [];
-	let depth = 0;
-	let start = -1;
-	let inString = false;
-	let escaped = false;
-	/** The index just past the last closed page — everything before it is accounted for. */
-	let closed = 0;
-	let stray = 0;
-	for (let i = 0; i < stdout.length; i++) {
-		const c = stdout[i];
-		if (inString) {
-			if (escaped) escaped = false;
-			else if (c === "\\") escaped = true;
-			else if (c === '"') inString = false;
-			continue;
-		}
-		if (c === '"') inString = true;
-		else if (c === "[" || c === "{") {
-			if (depth === 0) start = i;
-			depth++;
-		} else if (c === "]" || c === "}") {
-			depth--;
-			if (depth === 0 && start >= 0) {
-				stray += countOutsideWhitespace(stdout, closed, start);
-				pages.push(stdout.slice(start, i + 1));
-				closed = i + 1;
-				start = -1;
-			} else if (depth < 0) {
-				depth = 0;
-				stray++;
-			}
-		}
-	}
-	stray += countOutsideWhitespace(stdout, closed, stdout.length);
-	return {
-		pages,
-		truncated:
-			stray === 0
-				? null
-				: `the paginated output does not end on a page boundary — ${pages.length} complete page(s), then ${stray} byte(s) of an incomplete one`,
-	};
-};
-
-/**
- * The pages of a paginated read, or the failure a truncated one is.
- *
- * This is the only sanctioned way to consume {@link scanJsonPages} from a list read: it discharges
- * `truncated` on the caller's behalf, so no reader can receive the pages while dropping the proof
- * that they are not all of them (#5127). Its predecessor returned `.pages` alone and every caller
- * silently answered short.
- */
-export const pagedJson = (stdout: string): Attempt<ReadonlyArray<string>> => {
-	const scanned = scanJsonPages(stdout);
-	return scanned.truncated === null ? ok(scanned.pages) : fail(scanned.truncated);
-};
+	withToken((token) =>
+		Effect.map(provenList(token, `repos/${repo}/milestones?state=all`), (read) =>
+			then(read, (entries) => {
+				const milestones: MilestoneState[] = [];
+				for (const entry of entries) {
+					if (
+						!isRecord(entry) ||
+						typeof entry.number !== "number" ||
+						typeof entry.title !== "string"
+					) {
+						return fail("GitHub answered 200 but its body is not a list of milestones");
+					}
+					const state = entry.state;
+					if (state !== "open" && state !== "closed") {
+						return fail(`GitHub answered 200 but a milestone's state is "${String(state)}"`);
+					}
+					milestones.push({number: entry.number, state, title: entry.title});
+				}
+				return ok(milestones);
+			}),
+		),
+	);
 
 /** One issue comment, as a claim scan reads it. */
 export interface CommentRecord {
@@ -699,75 +623,47 @@ export interface CommentRecord {
 /**
  * Every comment on `issue`, paged, oldest first.
  *
- * The bodies arrive as typed JSON rather than through `--jq .body`: a body carrying an unescaped
- * control character makes `jq -r` error mid-stream, which inside a loop reads back as an empty
- * comment rather than as a failure.
- *
- * A truncated read is a failure here for the same reason, one step further out: the claim resolver
- * reads its markers through this call, and a short comment list would let an unreadable marker set
- * refuse as a *proven* loss — retracting a marker that had in fact won (#5127).
+ * A read that could not be proven whole is a failure: the claim resolver reads its markers through
+ * this call, and a short comment list would let an unreadable marker set refuse as a *proven* loss —
+ * retracting a marker that had in fact won (#5127).
  */
 export const listComments = (
 	repo: string,
 	issue: number,
 ): Shell<Attempt<ReadonlyArray<CommentRecord>>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/issues/${issue}/comments?per_page=100`,
-		]);
-		if (!r.ok) return fail(r.reason);
-		const pages = pagedJson(r.stdout);
-		if (pages._tag === "Failure") return pages;
-		const out: CommentRecord[] = [];
-		for (const page of pages.value) {
-			const parsed = parseJson(page);
-			if (!Array.isArray(parsed)) {
-				return fail("`gh api` exited 0 but its output is not a list of comments");
-			}
-			for (const value of parsed) {
-				if (!isRecord(value) || typeof value.id !== "number") {
-					return fail("`gh api` exited 0 but one entry is not a comment");
+	withToken((token) =>
+		Effect.map(provenList(token, `repos/${repo}/issues/${issue}/comments`), (read) =>
+			then(read, (entries) => {
+				const out: CommentRecord[] = [];
+				for (const value of entries) {
+					if (!isRecord(value) || typeof value.id !== "number") {
+						return fail("GitHub answered 200 but one entry is not a comment");
+					}
+					const user = value.user;
+					out.push({
+						id: value.id,
+						author: isRecord(user) && typeof user.login === "string" ? user.login : "",
+						createdAt: typeof value.created_at === "string" ? value.created_at : "",
+						updatedAt: typeof value.updated_at === "string" ? value.updated_at : "",
+						body: typeof value.body === "string" ? value.body : "",
+					});
 				}
-				const user = value.user;
-				out.push({
-					id: value.id,
-					author: isRecord(user) && typeof user.login === "string" ? user.login : "",
-					createdAt: typeof value.created_at === "string" ? value.created_at : "",
-					updatedAt: typeof value.updated_at === "string" ? value.updated_at : "",
-					body: typeof value.body === "string" ? value.body : "",
-				});
-			}
-		}
-		return ok(out);
-	});
+				return ok(out);
+			}),
+		),
+	);
 
 /** Delete one issue comment — how a claim is retracted. */
 export const deleteComment = (repo: string, id: number): Shell<Attempt<void>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"DELETE",
-			`repos/${repo}/issues/comments/${id}`,
-		]);
-		return r.ok ? ok(undefined) : fail(r.reason);
-	});
+	withToken((token) =>
+		Effect.map(restWrite(token, "DELETE", `repos/${repo}/issues/comments/${id}`), accepted),
+	);
 
 /** Replace an issue's body. The caller re-reads and compares; this call's echo is not evidence. */
 export const patchIssueBody = (repo: string, issue: number, body: string): Shell<Attempt<void>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"PATCH",
-			`repos/${repo}/issues/${issue}`,
-			"-f",
-			`body=${body}`,
-		]);
-		return r.ok ? ok(undefined) : fail(r.reason);
-	});
+	withToken((token) =>
+		Effect.map(restWrite(token, "PATCH", `repos/${repo}/issues/${issue}`, {body}), accepted),
+	);
 
 /** Add labels to an issue, leaving every label already on it in place. */
 export const addLabels = (
@@ -775,17 +671,14 @@ export const addLabels = (
 	issue: number,
 	labels: ReadonlyArray<string>,
 ): Shell<Attempt<void>> =>
-	Effect.gen(function* () {
-		if (labels.length === 0) return ok(undefined);
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"POST",
-			`repos/${repo}/issues/${issue}/labels`,
-			...labels.flatMap((l) => ["-f", `labels[]=${l}`]),
-		]);
-		return r.ok ? ok(undefined) : fail(r.reason);
-	});
+	labels.length === 0
+		? Effect.succeed(ok(undefined))
+		: withToken((token) =>
+				Effect.map(
+					restWrite(token, "POST", `repos/${repo}/issues/${issue}/labels`, {labels: [...labels]}),
+					accepted,
+				),
+			);
 
 /**
  * Remove one label from an issue. `true` = it was removed, `false` = it was already absent.
@@ -795,16 +688,19 @@ export const addLabels = (
  * failure — "I could not remove it" and "it is gone" are opposite facts.
  */
 export const removeLabel = (repo: string, issue: number, label: string): Shell<Attempt<boolean>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"DELETE",
-			`repos/${repo}/issues/${issue}/labels/${encodeURIComponent(label)}`,
-		]);
-		if (r.ok) return ok(true);
-		return httpStatusOf(r.reason) === 404 ? ok(false) : fail(r.reason);
-	});
+	withToken((token) =>
+		Effect.map(
+			restWrite(
+				token,
+				"DELETE",
+				`repos/${repo}/issues/${issue}/labels/${encodeURIComponent(label)}`,
+			),
+			(outcome) =>
+				outcome._tag === "Response" && outcome.status === 404
+					? ok(false)
+					: then(accepted(outcome), () => ok(true)),
+		),
+	);
 
 /** Home an issue on a milestone by number. */
 export const setMilestone = (
@@ -812,52 +708,35 @@ export const setMilestone = (
 	issue: number,
 	milestone: number,
 ): Shell<Attempt<void>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"PATCH",
-			`repos/${repo}/issues/${issue}`,
-			"-F",
-			`milestone=${milestone}`,
-		]);
-		return r.ok ? ok(undefined) : fail(r.reason);
-	});
+	withToken((token) =>
+		Effect.map(restWrite(token, "PATCH", `repos/${repo}/issues/${issue}`, {milestone}), accepted),
+	);
 
 /**
  * Clear an issue's milestone.
  *
- * `-F` is what sends a JSON `null`; the `-f` form would send the four-character string `"null"`,
- * which the API rejects rather than reading as a clear.
+ * A JSON `null`, which is what the API reads as a clear; the four-character string `"null"` it
+ * rejects outright.
  */
 export const clearMilestone = (repo: string, issue: number): Shell<Attempt<void>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"PATCH",
-			`repos/${repo}/issues/${issue}`,
-			"-F",
-			"milestone=null",
-		]);
-		return r.ok ? ok(undefined) : fail(r.reason);
-	});
+	withToken((token) =>
+		Effect.map(
+			restWrite(token, "PATCH", `repos/${repo}/issues/${issue}`, {milestone: null}),
+			accepted,
+		),
+	);
 
 /** Close an issue as `not_planned` — the only close spelling a kill may use. */
 export const closeNotPlanned = (repo: string, issue: number): Shell<Attempt<void>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"PATCH",
-			`repos/${repo}/issues/${issue}`,
-			"-f",
-			"state=closed",
-			"-f",
-			"state_reason=not_planned",
-		]);
-		return r.ok ? ok(undefined) : fail(r.reason);
-	});
+	withToken((token) =>
+		Effect.map(
+			restWrite(token, "PATCH", `repos/${repo}/issues/${issue}`, {
+				state: "closed",
+				state_reason: "not_planned",
+			}),
+			accepted,
+		),
+	);
 
 /**
  * Close an issue as `completed` — the close spelling for work that reached an answer.
@@ -867,19 +746,15 @@ export const closeNotPlanned = (repo: string, issue: number): Shell<Attempt<void
  * over "we answered it".
  */
 export const closeCompleted = (repo: string, issue: number): Shell<Attempt<void>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"PATCH",
-			`repos/${repo}/issues/${issue}`,
-			"-f",
-			"state=closed",
-			"-f",
-			"state_reason=completed",
-		]);
-		return r.ok ? ok(undefined) : fail(r.reason);
-	});
+	withToken((token) =>
+		Effect.map(
+			restWrite(token, "PATCH", `repos/${repo}/issues/${issue}`, {
+				state: "closed",
+				state_reason: "completed",
+			}),
+			accepted,
+		),
+	);
 
 /** One intake-queue row. `IssueRow` omits `created_at`, and the age is half of what a queue prints. */
 export interface QueueIssue {
@@ -888,54 +763,42 @@ export interface QueueIssue {
 	readonly title: string;
 }
 
-/**
- * Open issues carrying `label` with their filing time, paged, pull requests filtered out.
- *
- * The rows are cut at the **first two** tabs rather than through {@link parseTabRows}, because a
- * title may itself contain a tab: a strict three-field split would turn one odd title into a failed
- * read of the whole queue, and a queue that cannot be read is a sweep that cannot terminate.
- */
+/** Open issues carrying `label` with their filing time, paged, pull requests filtered out. */
 export const openQueueIssues = (
 	repo: string,
 	label: string,
 ): Shell<Attempt<ReadonlyArray<QueueIssue>>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=100`,
-			"--jq",
-			'.[] | select(.pull_request | not) | "\\(.number)\t\\(.created_at)\t\\(.title)"',
-		]);
-		if (!r.ok) return fail(r.reason);
-		const rows: QueueIssue[] = [];
-		for (const line of r.stdout.split("\n")) {
-			if (line === "") continue;
-			const first = line.indexOf("\t");
-			const second = line.indexOf("\t", first + 1);
-			if (first <= 0 || second <= first) {
-				return fail("`gh api` exited 0 but its output is not a list of queue rows");
-			}
-			const number = line.slice(0, first);
-			const createdAt = line.slice(first + 1, second);
-			if (!/^\d+$/.test(number) || Number.isNaN(Date.parse(createdAt))) {
-				return fail("`gh api` exited 0 but a queue row carries no issue number and filing time");
-			}
-			rows.push({number: Number.parseInt(number, 10), createdAt, title: line.slice(second + 1)});
-		}
-		return ok(rows);
-	});
+	withToken((token) =>
+		Effect.map(provenList(token, openWithLabel(repo, label)), (read) =>
+			then(read, (entries) => {
+				const rows: QueueIssue[] = [];
+				for (const entry of withoutPullRequests(entries)) {
+					if (
+						!isRecord(entry) ||
+						typeof entry.number !== "number" ||
+						typeof entry.title !== "string"
+					) {
+						return fail(NOT_ISSUES);
+					}
+					const createdAt = entry.created_at;
+					if (typeof createdAt !== "string" || Number.isNaN(Date.parse(createdAt))) {
+						return fail("GitHub answered 200 but a queue row carries no filing time");
+					}
+					rows.push({number: entry.number, createdAt, title: entry.title});
+				}
+				return ok(rows);
+			}),
+		),
+	);
 
 /**
  * Every **open** issue in `repo` as a full record, paged, pull requests filtered out.
  *
- * Typed JSON pages rather than `--jq` line grammar, for `listComments`' reason one field over: the
- * bodies are the payload here, and a body carrying an unescaped control character would make
- * `jq -r` die mid-stream and read back as a shorter board. A truncated read is a failure — a sweep
- * over a silently short list reports issues it never looked at as never drifted.
+ * A read that could not be proven whole is a failure — a sweep over a silently short list reports
+ * issues it never looked at as never drifted.
  */
 export const listOpenIssues = (repo: string): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
-	openIssueRecords(`repos/${repo}/issues?state=open&per_page=100`);
+	openIssueRecords(`repos/${repo}/issues?state=open`);
 
 /**
  * Every **open** issue in `repo` carrying `label`, as full records, paged, pull requests filtered
@@ -948,31 +811,22 @@ export const listOpenIssues = (repo: string): Shell<Attempt<ReadonlyArray<IssueR
 export const openIssuesWithLabelRecords = (
 	repo: string,
 	label: string,
-): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
-	openIssueRecords(
-		`repos/${repo}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=100`,
-	);
+): Shell<Attempt<ReadonlyArray<IssueRecord>>> => openIssueRecords(openWithLabel(repo, label));
 
 const openIssueRecords = (endpoint: string): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", ["api", "--paginate", endpoint]);
-		if (!r.ok) return fail(r.reason);
-		const pages = pagedJson(r.stdout);
-		if (pages._tag === "Failure") return pages;
-		const out: IssueRecord[] = [];
-		for (const page of pages.value) {
-			const parsed = parseJson(page);
-			if (!Array.isArray(parsed)) {
-				return fail("`gh api` exited 0 but its output is not a list of issues");
-			}
-			for (const value of parsed) {
-				const record = toIssueRecord(value);
-				if (record === null) return fail("`gh api` exited 0 but one entry is not an issue");
-				if (!record.isPullRequest) out.push(record);
-			}
-		}
-		return ok(out);
-	});
+	withToken((token) =>
+		Effect.map(provenList(token, endpoint), (read) =>
+			then(read, (entries) => {
+				const out: IssueRecord[] = [];
+				for (const value of entries) {
+					const record = toIssueRecord(value);
+					if (record === null) return fail("GitHub answered 200 but one entry is not an issue");
+					if (!record.isPullRequest) out.push(record);
+				}
+				return ok(out);
+			}),
+		),
+	);
 
 /** An issue or pull request that references this one, from the timeline. */
 export interface CrossReference {
@@ -990,25 +844,28 @@ export const issueTimeline = (
 	repo: string,
 	issue: number,
 ): Shell<Attempt<ReadonlyArray<CrossReference>>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/issues/${issue}/timeline?per_page=100`,
-			"--jq",
-			'.[] | select(.event == "cross-referenced") | "\\(.source.issue.number)\t\\(.source.issue.pull_request != null)"',
-		]);
-		if (!r.ok) return fail(r.reason);
-		const rows = parseTabRows(r.stdout, 2);
-		if (rows === null) return fail("`gh api` exited 0 but its output is not a timeline");
-		const numbers = leadingNumbers(rows);
-		if (numbers === null) {
-			return fail("`gh api` exited 0 but a timeline row does not start with an issue number");
-		}
-		return ok(
-			rows.map((row, i) => ({number: numbers[i] as number, isPullRequest: row[1] === "true"})),
-		);
-	});
+	withToken((token) =>
+		Effect.map(provenList(token, `repos/${repo}/issues/${issue}/timeline`), (read) =>
+			then(read, (entries) => {
+				const out: CrossReference[] = [];
+				for (const entry of entries) {
+					if (!isRecord(entry)) return fail("GitHub answered 200 but its body is not a timeline");
+					if (entry.event !== "cross-referenced") continue;
+					const source = entry.source;
+					const referenced = isRecord(source) ? source.issue : undefined;
+					if (!isRecord(referenced) || typeof referenced.number !== "number") {
+						return fail("GitHub answered 200 but a cross-reference names no issue number");
+					}
+					out.push({
+						number: referenced.number,
+						isPullRequest:
+							referenced.pull_request !== undefined && referenced.pull_request !== null,
+					});
+				}
+				return ok(out);
+			}),
+		),
+	);
 
 /**
  * The repository's default branch.
@@ -1018,9 +875,14 @@ export const issueTimeline = (
  * a field that is not there.
  */
 export const repoDefaultBranch = (repo: string): Shell<Attempt<string>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", ["api", `repos/${repo}`, "--jq", ".default_branch"]);
-		if (!r.ok) return fail(r.reason);
-		const name = r.stdout.trim();
-		return name === "" ? fail("`gh api` exited 0 but named no default branch") : ok(name);
-	});
+	withToken((token) =>
+		Effect.map(restRead(token, "GET", `repos/${repo}`), (outcome) =>
+			then(servedBody(outcome), (body) => {
+				const name =
+					isRecord(body) && typeof body.default_branch === "string" ? body.default_branch : "";
+				return name.trim() === ""
+					? fail("GitHub answered 200 but named no default branch")
+					: ok(name.trim());
+			}),
+		),
+	);

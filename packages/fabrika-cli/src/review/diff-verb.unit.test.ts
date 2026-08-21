@@ -1,6 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeSeams, type HttpReply, okOut, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	INCOMPLETE_SCAN,
@@ -21,18 +21,35 @@ import {
 	pull,
 } from "./fixtures.test-support.ts";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-/** The unbound endpoint this verb no longer reads — scripted so a regression has bytes to serve. */
-const RAW = /^gh api -H Accept: application\/vnd\.github\.diff repos\/o\/r\/pulls\/4321$/;
+const PULL = /GET .*\/repos\/o\/r\/pulls\/4321$/;
+const NOT_FOUND = '{"message":"Not Found"}';
 
-/** What that endpoint would hand back mid-flight: a *different* head's diff, one file wide. */
-const MOVED_DIFF = `diff --git a/src/other.ts b/src/other.ts
---- a/src/other.ts
-+++ b/src/other.ts
-@@ -1,1 +1,2 @@
- const x = 1;
-+const y = 2;
-`;
+/** A canned payload as the platform serves it — the fixtures speak `ExecResult`, the seam HTTP. */
+const served = (result: ExecResult, status = 200): HttpReply => ({status, body: result.stdout});
+
+/**
+ * How many times the run asked GitHub for `pulls/4321`.
+ *
+ * The unbound diff read this verb must never make is that same URL under a diff `Accept`, so the
+ * two are one line at the HTTP seam and only the count tells them apart: one read is the metadata
+ * read every run makes, two is the PR-number diff read coming back (#5117).
+ */
+const pullReads = (requests: ReadonlyArray<string>): number =>
+	requests.filter((request) => PULL.test(request)).length;
+
+/**
+ * How many requests carried a diff `Accept` — the unbound read's only distinguishing mark.
+ *
+ * The diff read and the metadata read are the same URL, so `requests` alone cannot tell them apart;
+ * the `Accept` header is the one place the difference is stated, and this holds the fence's original
+ * claim rather than inferring it from a count.
+ */
+const diffAcceptReads = (fake: {
+	readonly requests: ReadonlyArray<string>;
+	readonly headers: ReadonlyArray<Readonly<Record<string, string>>>;
+}): number =>
+	fake.requests.filter((_, i) => (fake.headers[i]?.accept ?? "").includes("vnd.github.diff"))
+		.length;
 
 const options = {
 	pr: 4321,
@@ -41,21 +58,16 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
-const shell = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) => {
-	const fake = fakeShell(script);
+const shell = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
+	const fake = fakeSeams(script);
 	return {
 		fake,
 		out: Effect.runPromise(Effect.provide(runDiff({...options, ...overrides}), fake.layer)),
 	};
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) => shell(script, overrides).out;
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
+	shell(script, overrides).out;
 
 /**
  * The whole green path: the PR read, the four binding reads, the diff at the bound commit, and the
@@ -65,12 +77,11 @@ const green = (
 	diff: string = DIFF,
 	shape: Parameters<typeof pull>[0] = {},
 	inRange: ReadonlyArray<string> = ["src/cart.ts", "README.md"],
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-	[PULL, pull(shape)],
+): ReadonlyArray<Scripted> => [
+	[PULL, served(pull(shape))],
 	...binding(),
 	[DIFF_AT(), okOut(diff)],
 	[PATHS_AT(), paths(...inRange)],
-	[RAW, okOut(MOVED_DIFF)],
 ];
 
 /** A rename git pairs into ONE `diff --git` entry — the shape GitHub may count as two files. */
@@ -114,7 +125,7 @@ describe("runDiff", () => {
 
 	it("refuses on 11 when the range's file list cannot be read, rather than proving completeness against nothing", async () => {
 		const out = await run([
-			[PULL, pull()],
+			[PULL, served(pull())],
 			...binding(),
 			[DIFF_AT(), okOut(DIFF)],
 			[PATHS_AT(), errOut("fatal: bad revision")],
@@ -125,7 +136,7 @@ describe("runDiff", () => {
 	});
 
 	it("makes the same zero-file refusal `review scope` does, so neither serves a review over nothing", async () => {
-		const out = await run([[PULL, pull({changedFiles: 0})]]);
+		const out = await run([[PULL, served(pull({changedFiles: 0}))]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain(
 			"refusing to serve an empty diff as a reviewable one (ADR 0092).",
@@ -133,9 +144,9 @@ describe("runDiff", () => {
 	});
 
 	it("refuses an absent PR on 7 and an unreadable diff on 11", async () => {
-		expect((await run([[PULL, errOut("gh: Not Found (HTTP 404)")]])).code).toBe(ZERO_SCOPE);
+		expect((await run([[PULL, {status: 404, body: NOT_FOUND}]])).code).toBe(ZERO_SCOPE);
 		const unreadable = await run([
-			[PULL, pull()],
+			[PULL, served(pull())],
 			...binding(),
 			[DIFF_AT(), errOut("fatal: bad object")],
 		]);
@@ -178,20 +189,20 @@ describe("runDiff proves completeness against git's own count", () => {
 /**
  * The provenance fence (#5117).
  *
- * Each case here fails if the read reverts to the PR-number endpoint: that endpoint is scripted in
- * every green fixture and serves a *different* head's bytes, so an unbound read does not error — it
- * answers, plausibly and wrongly. That is the whole hazard, so it is the whole assertion.
+ * Each case here fails if the read reverts to the PR-number endpoint: that read does not error, it
+ * answers with whatever head the platform is serving right now — plausibly and wrongly. That is the
+ * whole hazard, so it is the whole assertion, counted through {@link pullReads}.
  */
 describe("runDiff binds its bytes to a commit", () => {
 	it("reads the object database and never the PR-number diff endpoint", async () => {
 		const {fake, out} = shell(green());
 		const result = await out;
 		expect(result.stdout).toBe(DIFF);
-		expect(result.stdout).not.toContain("src/other.ts");
 		expect(fake.calls).toContain(
 			`git diff --no-ext-diff --no-color --find-renames --src-prefix=a/ --dst-prefix=b/ 0f1e2d3c4b5a69788796a5b4c3d2e1f009182736...${HEAD}`,
 		);
-		expect(fake.calls.some((c) => c.includes("vnd.github.diff"))).toBe(false);
+		expect(pullReads(fake.requests)).toBe(1);
+		expect(diffAcceptReads(fake)).toBe(0);
 	});
 
 	it("serves the scoped commit's bytes through a rewind, which the post-time re-resolve passes clean", async () => {
@@ -201,7 +212,8 @@ describe("runDiff binds its bytes to a commit", () => {
 		const result = await out;
 		expect(result.code).toBe(0);
 		expect(result.stdout).toBe(DIFF);
-		expect(fake.calls.some((c) => c.includes("vnd.github.diff"))).toBe(false);
+		expect(pullReads(fake.requests)).toBe(1);
+		expect(diffAcceptReads(fake)).toBe(0);
 	});
 
 	it("refuses on 12 when --sha is not the PR's head, instead of reading whatever is live", async () => {
@@ -223,7 +235,7 @@ describe("runDiff binds its bytes to a commit", () => {
 
 	it("refuses on 11 when no remote in this checkout serves the target repo", async () => {
 		const out = await run([
-			[PULL, pull()],
+			[PULL, served(pull())],
 			[/^git remote -v$/, okOut("origin\tgit@github.com:someone/else.git (fetch)\n")],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -236,7 +248,7 @@ describe("runDiff binds its bytes to a commit", () => {
 		// The override goes FIRST: `fakeShell` answers with the first matching row, so a row placed
 		// after the green binding would never be reached.
 		const out = await run([
-			[PULL, pull()],
+			[PULL, served(pull())],
 			[/^git fetch --quiet origin pull\/4321\/head$/, errOut("couldn't find remote ref")],
 			...binding(),
 		]);
@@ -248,7 +260,7 @@ describe("runDiff binds its bytes to a commit", () => {
 		// A local ref or tag spelled as hex resolves elsewhere — a name that verifies and still names
 		// the wrong tree, which is why the resolved object name is compared against the one asked for.
 		const out = await run([
-			[PULL, pull()],
+			[PULL, served(pull())],
 			[
 				new RegExp(`^git rev-parse --verify --quiet ${HEAD}\\^\\{commit\\}$`),
 				okOut(`${OLD_HEAD}\n`),
@@ -261,7 +273,7 @@ describe("runDiff binds its bytes to a commit", () => {
 
 	it("refuses on 11 when the base end of the range will not resolve", async () => {
 		const out = await run([
-			[PULL, pull()],
+			[PULL, served(pull())],
 			[/^git fetch --quiet origin main$/, errOut("couldn't find remote ref main")],
 			...binding(),
 		]);

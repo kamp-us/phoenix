@@ -15,6 +15,7 @@
  */
 
 import {Effect, FileSystem, Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {scannedLine} from "../build/target.ts";
 import {readTree} from "../build/tree.ts";
@@ -56,7 +57,10 @@ export const runOpen = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		const ground = yield* openGround(MESSAGES, options);
@@ -89,7 +93,7 @@ export const runOpen = (
 			);
 		}
 
-		const children = yield* listSubIssueEntries(repo, epic.number);
+		const children = yield* listSubIssueEntries(options.env, repo, epic.number);
 		if (children._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -104,10 +108,10 @@ export const runOpen = (
 			"where the cycle doc lives is unread, so the containment class cannot be derived.",
 		);
 		if (cycle._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, cycle.message, notes);
-		const cycleDoc = yield* probeCycleDoc(repo, cycle.path);
+		const cycleDoc = yield* probeCycleDoc(repo, cycle.path, options.env);
 
 		const tokens = tokenize(epic.title);
-		const backlog = yield* openBacklog(repo);
+		const backlog = yield* openBacklog(options.env, repo);
 		if (backlog._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,

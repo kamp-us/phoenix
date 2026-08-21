@@ -1,42 +1,38 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeSeams, type HttpReply, okOut, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {BLOCKED, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {runEligible} from "./eligible-verb.ts";
-import {issue} from "./fixtures.test-support.ts";
+import {GATEWAY, GH_TOKEN_ENV, issue, NOT_FOUND, served} from "./fixtures.test-support.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
-const PARENT = /^gh api repos\/o\/r\/issues\/4312\/parent/;
-const EDGES =
-	/^gh api --paginate repos\/o\/r\/issues\/4312\/dependencies\/blocked_by\?per_page=100$/;
-const BLOCKER = (n: number) => new RegExp(`^gh api repos/o/r/issues/${n}$`);
-
-const NOT_FOUND = errOut("gh: Not Found (HTTP 404)");
-const GATEWAY = errOut("gh: Bad gateway (HTTP 502)");
+const ISSUE = /^GET \S+\/repos\/o\/r\/issues\/4312$/;
+const PARENT = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4312\/parent$/;
+const EDGES = /^GET \S+\/repos\/o\/r\/issues\/4312\/dependencies\/blocked_by\?/;
+const BLOCKER = (n: number) => new RegExp(`^GET \\S+/repos/o/r/issues/${n}$`);
 
 /** The `blocked_by` payload, shaped like the endpoint's rows rather than like the parser. */
-const edges = (...numbers: ReadonlyArray<number>): ExecResult =>
-	okOut(JSON.stringify(numbers.map((number) => ({number, state: "open"}))));
+const edges = (...numbers: ReadonlyArray<number>): HttpReply =>
+	served(numbers.map((number) => ({number, state: "open"})));
 
 const options = {
 	number: 4312,
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	env: {CLAUDE_PIPELINE_REPO: "o/r", ...GH_TOKEN_ENV} as Record<string, string | undefined>,
 };
 
-const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
-	Effect.runPromise(Effect.provide(runEligible(options), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>) =>
+	Effect.runPromise(Effect.provide(runEligible(options), fakeSeams(script).layer));
 
-/** The same run, with the command lines it spawned — how "no git read happened" is asserted. */
-const runWatched = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
-	const shell = fakeShell(script);
-	const out = await Effect.runPromise(Effect.provide(runEligible(options), shell.layer));
-	return {out, calls: shell.calls};
+/** The same run, with what it spawned and what it requested — how "X was never read" is asserted. */
+const runWatched = async (script: ReadonlyArray<Scripted>) => {
+	const seams = fakeSeams(script);
+	const out = await Effect.runPromise(Effect.provide(runEligible(options), seams.layer));
+	return {out, calls: seams.calls, requests: seams.requests};
 };
 
 const ASSEMBLY = /^git rev-parse --verify --quiet epic\/4300\^\{commit\}$/;
-const TRUNK = /^gh api repos\/o\/r --jq \.default_branch$/;
+const TRUNK = /^GET https:\/\/api\.github\.com\/repos\/o\/r$/;
 const MERGE_BASE = /^git merge-base origin\/main [0-9a-f]{40}$/;
 /** The bounded walk: two dots, base first — a one-dot rev would not match. */
 const ASSEMBLY_LOG = /^git log --format=.* [0-9a-f]{40}\.\.[0-9a-f]{40}$/;
@@ -44,9 +40,9 @@ const TIP = "9a1c2b3d4e5f60718293a4b5c6d7e8f901234567";
 const BASE = "0123456789abcdef0123456789abcdef01234567";
 
 /** The three reads that bound the assembly range, scripted together — tip, trunk, merge base. */
-const RANGE_ENDPOINTS: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const RANGE_ENDPOINTS: ReadonlyArray<Scripted> = [
 	[ASSEMBLY, okOut(`${TIP}\n`)],
-	[TRUNK, okOut("main\n")],
+	[TRUNK, served({default_branch: "main"})],
 	[MERGE_BASE, okOut(`${BASE}\n`)],
 ];
 
@@ -69,7 +65,7 @@ describe("runEligible", () => {
 	it("answers eligible when every blocker the graph names is closed", async () => {
 		const out = await run([
 			[ISSUE, issue()],
-			[PARENT, okOut("4300\n")],
+			[PARENT, served({number: 4300})],
 			[EDGES, edges(210)],
 			[BLOCKER(210), issue({number: 210, state: "closed"})],
 		]);
@@ -84,9 +80,9 @@ describe("runEligible", () => {
 	 * for this child and answer `eligible`.
 	 */
 	it("holds back a child blocked by a native edge no prose row names", async () => {
-		const {out, calls} = await runWatched([
+		const {out, requests} = await runWatched([
 			[ISSUE, issue()],
-			[PARENT, okOut("4300\n")],
+			[PARENT, served({number: 4300})],
 			[EDGES, edges(210)],
 			[BLOCKER(210), issue({number: 210, state: "open"})],
 			...RANGE_ENDPOINTS,
@@ -96,7 +92,7 @@ describe("runEligible", () => {
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe("build eligible: blocked by 1 open blocked_by edge: #210.");
 		// The parent ledger body is never fetched — the prose block is not an input any more.
-		expect(calls.some((line) => line === "gh api repos/o/r/issues/4300")).toBe(false);
+		expect(requests.some((request) => request.endsWith("/issues/4300"))).toBe(false);
 	});
 
 	it("gates a STANDALONE issue on its own edges — no parent ledger to derive from", async () => {
@@ -157,7 +153,7 @@ describe("runEligible", () => {
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
 			expect(out.stdout).toBe("");
 			expect(out.stderr.at(-1)).toBe(
-				'build eligible: cannot read #4312: gh: Bad gateway (HTTP 502) — eligibility is UNKNOWN, never "eligible".',
+				'build eligible: cannot read #4312: GitHub answered HTTP 502 — eligibility is UNKNOWN, never "eligible".',
 			);
 		});
 
@@ -214,7 +210,7 @@ describe("runEligible", () => {
 		it("discharges an OPEN blocker whose work landed on the assembly branch", async () => {
 			const out = await run([
 				[ISSUE, issue()],
-				[PARENT, okOut("4300\n")],
+				[PARENT, served({number: 4300})],
 				[EDGES, edges(210)],
 				[BLOCKER(210), issue({number: 210, state: "open"})],
 				...RANGE_ENDPOINTS,
@@ -228,7 +224,7 @@ describe("runEligible", () => {
 		it("reads no branch at all when every blocker is already closed", async () => {
 			const {out, calls} = await runWatched([
 				[ISSUE, issue()],
-				[PARENT, okOut("4300\n")],
+				[PARENT, served({number: 4300})],
 				[EDGES, edges(210)],
 				[BLOCKER(210), issue({number: 210, state: "closed"})],
 			]);
@@ -250,7 +246,7 @@ describe("runEligible", () => {
 		it("stays blocked when the branch names no commit for the open blocker", async () => {
 			const out = await run([
 				[ISSUE, issue()],
-				[PARENT, okOut("4300\n")],
+				[PARENT, served({number: 4300})],
 				[EDGES, edges(210)],
 				[BLOCKER(210), issue({number: 210, state: "open"})],
 				...RANGE_ENDPOINTS,
@@ -263,7 +259,7 @@ describe("runEligible", () => {
 		it("never discharges off a branch it could not read — absent epic/<n> stays 16", async () => {
 			const out = await run([
 				[ISSUE, issue()],
-				[PARENT, okOut("4300\n")],
+				[PARENT, served({number: 4300})],
 				[EDGES, edges(210)],
 				[BLOCKER(210), issue({number: 210, state: "open"})],
 				[ASSEMBLY, errOut("fatal: ambiguous argument 'epic/4300'")],
@@ -278,7 +274,7 @@ describe("runEligible", () => {
 		it("never discharges when the trunk to bound the range against cannot be named", async () => {
 			const out = await run([
 				[ISSUE, issue()],
-				[PARENT, okOut("4300\n")],
+				[PARENT, served({number: 4300})],
 				[EDGES, edges(210)],
 				[BLOCKER(210), issue({number: 210, state: "open"})],
 				[ASSEMBLY, okOut(`${TIP}\n`)],
@@ -293,11 +289,11 @@ describe("runEligible", () => {
 		it("never discharges when the range has no merge base with the trunk", async () => {
 			const out = await run([
 				[ISSUE, issue()],
-				[PARENT, okOut("4300\n")],
+				[PARENT, served({number: 4300})],
 				[EDGES, edges(210)],
 				[BLOCKER(210), issue({number: 210, state: "open"})],
 				[ASSEMBLY, okOut(`${TIP}\n`)],
-				[TRUNK, okOut("main\n")],
+				[TRUNK, served({default_branch: "main"})],
 				[MERGE_BASE, errOut("fatal: refusing to merge unrelated histories")],
 			]);
 			expect(out.code).toBe(BLOCKED);
@@ -307,7 +303,7 @@ describe("runEligible", () => {
 		it("never discharges off a log that failed — an unread blocker stays 11", async () => {
 			const out = await run([
 				[ISSUE, issue()],
-				[PARENT, okOut("4300\n")],
+				[PARENT, served({number: 4300})],
 				[EDGES, edges(210)],
 				[BLOCKER(210), GATEWAY],
 				...RANGE_ENDPOINTS,

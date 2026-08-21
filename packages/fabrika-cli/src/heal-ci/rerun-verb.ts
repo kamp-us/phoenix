@@ -16,6 +16,7 @@
  * skill's and is exercised before this verb is called.
  */
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {createComment, getComment, listComments} from "../io/issues.ts";
 import {normalizeForReadback} from "../report/compose.ts";
@@ -59,7 +60,11 @@ export interface RerunOptions {
 
 export const runRerun = (
 	options: RerunOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "a pull-request number", options.pr);
 		if (bad !== null) return bad;

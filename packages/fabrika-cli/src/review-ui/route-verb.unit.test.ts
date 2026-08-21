@@ -4,8 +4,7 @@
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {read as readVerdict} from "../wire/verdict-marker.ts";
 import {
@@ -23,32 +22,32 @@ const MOVED = "9fe12ab04f5a6b7c8d9e0f1a2b3c4d5e6f708192";
 const URL = "https://example.test/pull/6326#issuecomment-512399";
 const CLAUSE = "no rendered delta; both files are prose only";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/6326$/;
-const FILES = /^gh api --paginate repos\/o\/r\/pulls\/6326\/files/;
-const USER = /^gh api user --jq \.login$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/6326\/comments/;
-const CREATE = /^gh api --method POST repos\/o\/r\/issues\/6326\/comments /;
-const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/comments\/\d+ /;
-const READBACK = /^gh api repos\/o\/r\/issues\/comments\/\d+$/;
+const PULL = /^GET \S+\/repos\/o\/r\/pulls\/6326$/;
+const FILES = /^GET \S+\/repos\/o\/r\/pulls\/6326\/files\?/;
+const USER = /^GET \S+api\.github\.com\/user$/;
+const COMMENTS = /^GET \S+\/repos\/o\/r\/issues\/6326\/comments\?/;
+const CREATE = /^POST \S+\/repos\/o\/r\/issues\/6326\/comments$/;
+const PATCH = /^PATCH \S+\/repos\/o\/r\/issues\/comments\/\d+$/;
+const READBACK = /^GET \S+\/repos\/o\/r\/issues\/comments\/\d+$/;
 
 const BODY =
 	"`shell-keys.ts` rewrites one JSDoc paragraph and the lint config two note strings. No component,\nroute, token or style changed.\n";
 
-const pull = (shape: {state?: string; head?: string; changed?: number} = {}): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: 6326,
-			state: shape.state ?? "open",
-			head: {sha: shape.head ?? HEAD},
-			base: {ref: "main"},
-			body: "",
-			changed_files: shape.changed ?? 2,
-			comments: 0,
-		}),
-	);
+const served = (body: unknown): HttpReply => ({status: 200, body: JSON.stringify(body)});
 
-const files = (...names: ReadonlyArray<string>): ExecResult =>
-	okOut(JSON.stringify(names.map((filename) => ({filename}))));
+const pull = (shape: {state?: string; head?: string; changed?: number} = {}): HttpReply =>
+	served({
+		number: 6326,
+		state: shape.state ?? "open",
+		head: {sha: shape.head ?? HEAD},
+		base: {ref: "main"},
+		body: "",
+		changed_files: shape.changed ?? 2,
+		comments: 0,
+	});
+
+const files = (...names: ReadonlyArray<string>): HttpReply =>
+	served(names.map((filename) => ({filename})));
 
 const PROSE_UI = files("apps/web/src/flags/shell-keys.ts", "apps/web/src/styles/lint.config.json");
 
@@ -57,7 +56,10 @@ const options = {
 	sha: HEAD,
 	clause: CLAUSE,
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	env: {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} as Record<
+		string,
+		string | undefined
+	>,
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
 };
 
@@ -65,22 +67,19 @@ const options = {
 const composed = (sha = HEAD, clause = CLAUSE): string =>
 	`routed-elsewhere: review-ui @ ${sha} — ${clause}\n\n${BODY.replace(/\n+$/, "")}\n`;
 
-const happy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+const happy = (): ReadonlyArray<Scripted> => [
 	[PULL, pull()],
 	[FILES, PROSE_UI],
-	[USER, okOut("reviewer")],
-	[COMMENTS, okOut("[]")],
-	[CREATE, okOut(JSON.stringify({id: 512399, html_url: URL}))],
-	[READBACK, okOut(JSON.stringify({body: composed()}))],
+	[USER, served({login: "reviewer"})],
+	[COMMENTS, {status: 200, body: "[]"}],
+	[CREATE, {status: 201, body: JSON.stringify({id: 512399, html_url: URL})}],
+	[READBACK, served({body: composed()})],
 ];
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) => {
-	const shell = fakeShell(script);
-	return Effect.runPromise(Effect.provide(runRoute({...options, ...overrides}), shell.layer)).then(
-		(outcome) => ({outcome, calls: shell.calls}),
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
+	const seams = fakeSeams(script);
+	return Effect.runPromise(Effect.provide(runRoute({...options, ...overrides}), seams.layer)).then(
+		(outcome) => ({outcome, requests: seams.requests, bodies: seams.bodies}),
 	);
 };
 
@@ -98,9 +97,9 @@ describe("review-ui route", () => {
 	});
 
 	it("posts bytes the verdict reader refuses to read as a verdict", async () => {
-		const {calls} = await run(happy());
-		const posted = calls.find((call) => CREATE.test(call)) ?? "";
-		expect(posted).toContain("routed-elsewhere: review-ui @");
+		const {requests, bodies} = await run(happy());
+		const at = requests.findIndex((request) => CREATE.test(request));
+		expect(bodies[at]).toContain("routed-elsewhere: review-ui @");
 		expect(readVerdict(composed())._tag).toBe("Absent");
 	});
 
@@ -108,23 +107,21 @@ describe("review-ui route", () => {
 		const {outcome} = await run([
 			[PULL, pull()],
 			[FILES, PROSE_UI],
-			[USER, okOut("reviewer")],
+			[USER, served({login: "reviewer"})],
 			[
 				COMMENTS,
-				okOut(
-					JSON.stringify([
-						{
-							id: 77,
-							user: {login: "reviewer"},
-							created_at: "2026-08-19T00:00:00Z",
-							updated_at: "2026-08-19T00:00:00Z",
-							body: composed(MOVED),
-						},
-					]),
-				),
+				served([
+					{
+						id: 77,
+						user: {login: "reviewer"},
+						created_at: "2026-08-19T00:00:00Z",
+						updated_at: "2026-08-19T00:00:00Z",
+						body: composed(MOVED),
+					},
+				]),
 			],
-			[PATCH, okOut(JSON.stringify({html_url: URL}))],
-			[READBACK, okOut(JSON.stringify({body: composed()}))],
+			[PATCH, served({html_url: URL})],
+			[READBACK, served({body: composed()})],
 		]);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({upsert: "edited"});
 	});
@@ -175,10 +172,10 @@ describe("review-ui route", () => {
 		const {outcome} = await run([
 			[PULL, pull()],
 			[FILES, PROSE_UI],
-			[USER, okOut("reviewer")],
-			[COMMENTS, okOut("[]")],
-			[CREATE, okOut(JSON.stringify({id: 512399, html_url: URL}))],
-			[READBACK, okOut(JSON.stringify({body: composed(MOVED)}))],
+			[USER, served({login: "reviewer"})],
+			[COMMENTS, {status: 200, body: "[]"}],
+			[CREATE, {status: 201, body: JSON.stringify({id: 512399, html_url: URL})}],
+			[READBACK, served({body: composed(MOVED)})],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
 	});

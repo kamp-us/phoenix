@@ -1,7 +1,13 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, type FakeFsOptions, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {
+	errOut,
+	type FakeFsOptions,
+	fakeFs,
+	fakeSeams,
+	okOut,
+	type Scripted,
+} from "../fakes.test-support.ts";
 import {issueBody, spikeTitle} from "./bodies.ts";
 import {
 	MALFORMED_RECORD,
@@ -21,7 +27,9 @@ import {
 	ENV,
 	ISSUE,
 	issuePayload,
+	issueRowsPayload,
 	LABELS,
+	labelsPayload,
 	MANIFEST,
 	manifestText,
 	NONCE,
@@ -51,24 +59,32 @@ const options = {
 	mintNonce: () => NONCE,
 };
 
-const happy: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const happy: ReadonlyArray<Scripted> = [
 	[ROOT, okOut(`${TREE_ROOT}\n`)],
-	[LABELS, okOut("prototyping:spike\ntype:bug\n")],
+	[LABELS, {status: 200, body: labelsPayload("prototyping:spike", "type:bug")}],
 	[STATUS, okOut("")],
-	[CREATE, okOut(JSON.stringify({number: SPIKE, html_url: "https://example.test/#9310"}))],
-	[ISSUE, okOut(issuePayload({title: TITLE, body: BODY}))],
+	[
+		CREATE,
+		{status: 201, body: JSON.stringify({number: SPIKE, html_url: "https://example.test/#9310"})},
+	],
+	[ISSUE, {status: 200, body: issuePayload({title: TITLE, body: BODY})}],
 ];
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	fs: FakeFsOptions = {},
 ) => {
 	const disk = fakeFs(fs);
-	const shell = fakeShell(script);
+	const seams = fakeSeams(script);
 	return Effect.runPromise(
-		Effect.provide(runOpen({...options, ...overrides}), Layer.merge(disk.layer, shell.layer)),
-	).then((outcome) => ({outcome, written: disk.written, calls: shell.calls}));
+		Effect.provide(runOpen({...options, ...overrides}), Layer.merge(disk.layer, seams.layer)),
+	).then((outcome) => ({
+		outcome,
+		written: disk.written,
+		requests: seams.requests,
+		bodies: seams.bodies,
+	}));
 };
 
 describe("runOpen mints a spike, its workspace and their binding", () => {
@@ -85,14 +101,16 @@ describe("runOpen mints a spike, its workspace and their binding", () => {
 	});
 
 	it("creates the workspace BEFORE the issue, so a half-run leaves a collectable orphan", async () => {
-		const {written, calls} = await run(happy);
+		const {written, requests} = await run(happy);
 		expect([...written.keys()]).toContain(MANIFEST);
-		expect(calls.filter((line) => CREATE.test(line))).toHaveLength(1);
+		expect(requests.filter((line) => CREATE.test(line))).toHaveLength(1);
 	});
 
-	it("sends the label in the create call itself, so there is no unlabelled window", async () => {
-		const {calls} = await run(happy);
-		expect(calls.find((line) => CREATE.test(line))).toContain("labels[]=prototyping:spike");
+	it("sends the label in the create request itself, so there is no unlabelled window", async () => {
+		const {requests, bodies} = await run(happy);
+		expect(bodies[requests.findIndex((line) => CREATE.test(line))]).toContain(
+			'"labels":["prototyping:spike"]',
+		);
 	});
 
 	it("completes the manifest with the spike number", async () => {
@@ -127,7 +145,7 @@ describe("runOpen refuses before it writes anything", () => {
 	it("refuses a proven-absent label on 7 and names the bootstrap", async () => {
 		const {outcome, written} = await run([
 			[ROOT, okOut(`${TREE_ROOT}\n`)],
-			[LABELS, okOut("type:bug\n")],
+			[LABELS, {status: 200, body: labelsPayload("type:bug")}],
 		]);
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.join("\n")).toContain("front-door");
@@ -137,7 +155,7 @@ describe("runOpen refuses before it writes anything", () => {
 	it("refuses an unreadable label set on 11 — never as a proven absence", async () => {
 		const {outcome} = await run([
 			[ROOT, okOut(`${TREE_ROOT}\n`)],
-			[LABELS, errOut("gh: Bad gateway (HTTP 502)")],
+			[LABELS, {status: 502, body: "{}"}],
 		]);
 		expect(outcome.code).toBe(READ_OR_EXEC_UNKNOWN);
 		expect(outcome.stderr.join("\n")).not.toContain("front-door");
@@ -146,7 +164,7 @@ describe("runOpen refuses before it writes anything", () => {
 	it("refuses an unreadable tree on 11 — an unreadable tree is never clean", async () => {
 		const {outcome, written} = await run([
 			[ROOT, okOut(`${TREE_ROOT}\n`)],
-			[LABELS, okOut("prototyping:spike\n")],
+			[LABELS, {status: 200, body: labelsPayload("prototyping:spike")}],
 			[STATUS, errOut("fatal: not a git repository")],
 		]);
 		expect(outcome.code).toBe(READ_OR_EXEC_UNKNOWN);
@@ -164,10 +182,10 @@ describe("runOpen re-enters an existing workspace rather than minting a second i
 	const resident: FakeFsOptions = {directories: [WORKSPACE], files: {[MANIFEST]: manifestText()}};
 
 	it("answers the existing manifest and creates nothing", async () => {
-		const {outcome, calls} = await run(happy, {nonce: NONCE}, resident);
+		const {outcome, requests} = await run(happy, {nonce: NONCE}, resident);
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout).spike).toBe(SPIKE);
-		expect(calls.filter((line) => CREATE.test(line))).toHaveLength(0);
+		expect(requests.filter((line) => CREATE.test(line))).toHaveLength(0);
 	});
 
 	it("refuses a workspace holding a different question on 18", async () => {
@@ -201,8 +219,8 @@ describe("runOpen re-enters an existing workspace rather than minting a second i
 		const {outcome, written} = await run(
 			[
 				[ROOT, okOut(`${TREE_ROOT}\n`)],
-				[OPEN_SPIKES, okOut(`${SPIKE}\t${TITLE}\n`)],
-				[ISSUE, okOut(issuePayload({title: TITLE, body: BODY}))],
+				[OPEN_SPIKES, {status: 200, body: issueRowsPayload([{number: SPIKE, title: TITLE}])}],
+				[ISSUE, {status: 200, body: issuePayload({title: TITLE, body: BODY})}],
 			],
 			{nonce: NONCE},
 			{directories: [WORKSPACE], files: {[MANIFEST]: manifestText({spike: null})}},
@@ -219,7 +237,7 @@ describe("runOpen re-enters an existing workspace rather than minting a second i
 		const {outcome, written} = await run(
 			[
 				[ROOT, okOut(`${TREE_ROOT}\n`)],
-				[OPEN_SPIKES, errOut("gh: Bad gateway (HTTP 502)")],
+				[OPEN_SPIKES, {status: 502, body: "{}"}],
 			],
 			{nonce: NONCE},
 			{directories: [WORKSPACE], files: {[MANIFEST]: manifestText({spike: null})}},
@@ -233,9 +251,9 @@ describe("runOpen proves the issue landed as sent", () => {
 	it("seats an unproven create on 8", async () => {
 		const {outcome} = await run([
 			[ROOT, okOut(`${TREE_ROOT}\n`)],
-			[LABELS, okOut("prototyping:spike\n")],
+			[LABELS, {status: 200, body: labelsPayload("prototyping:spike")}],
 			[STATUS, okOut("")],
-			[CREATE, errOut("gh: Bad gateway (HTTP 502)")],
+			[CREATE, {status: 502, body: "{}"}],
 		]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 		expect(outcome.stderr.join("\n")).toContain("may or may not have landed");
@@ -244,7 +262,7 @@ describe("runOpen proves the issue landed as sent", () => {
 	it("seats a body that does not read back as sent on 9", async () => {
 		const {outcome} = await run([
 			...happy.filter(([pattern]) => pattern !== ISSUE),
-			[ISSUE, okOut(issuePayload({title: TITLE, body: "somebody edited it"}))],
+			[ISSUE, {status: 200, body: issuePayload({title: TITLE, body: "somebody edited it"})}],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
 		expect(outcome.stderr.join("\n")).toContain("body");
@@ -253,7 +271,7 @@ describe("runOpen proves the issue landed as sent", () => {
 	it("seats a label that did not land on 9", async () => {
 		const {outcome} = await run([
 			...happy.filter(([pattern]) => pattern !== ISSUE),
-			[ISSUE, okOut(issuePayload({title: TITLE, body: BODY, labels: []}))],
+			[ISSUE, {status: 200, body: issuePayload({title: TITLE, body: BODY, labels: []})}],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
 		expect(outcome.stderr.join("\n")).toContain("labels");
@@ -263,8 +281,8 @@ describe("runOpen proves the issue landed as sent", () => {
 		const {outcome} = await run(
 			[
 				[ROOT, okOut(`${TREE_ROOT}\n`)],
-				[OPEN_SPIKES, okOut(`${SPIKE}\t${TITLE}\n`)],
-				[ISSUE, okOut(issuePayload({title: TITLE, body: BODY}))],
+				[OPEN_SPIKES, {status: 200, body: issueRowsPayload([{number: SPIKE, title: TITLE}])}],
+				[ISSUE, {status: 200, body: issuePayload({title: TITLE, body: BODY})}],
 			],
 			{nonce: NONCE},
 			{

@@ -1,8 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {GIT_DIRS} from "../build/fixtures.test-support.ts";
-import {errOut, fakeFs, fakeShell} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeFs, fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
 	BAD_SECTIONS,
@@ -21,8 +20,10 @@ import {planPath, renderRunRecord, runJsonPath} from "./run.ts";
 const EPIC_BODY = "An epic brief about the moderation queue.\n";
 const DIGEST = bodyDigest(EPIC_BODY);
 
-const GROUND: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
+const EPIC_READ = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
+
+const GROUND: ReadonlyArray<Scripted> = [
+	[EPIC_READ, epic()],
 	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	...CLAIMED,
 ];
@@ -42,11 +43,11 @@ const run = (
 	stdin: Effect.Effect<StdinRead>,
 	options: {
 		digest?: string;
-		script?: ReadonlyArray<readonly [RegExp, ExecResult]>;
+		script?: ReadonlyArray<Scripted>;
 		files?: Readonly<Record<string, string | null>>;
 	} = {},
 ) => {
-	const shell = fakeShell(options.script ?? GROUND);
+	const shell = fakeSeams(options.script ?? GROUND);
 	const fs = fakeFs({files: options.files ?? {[runJsonPath(DIR)]: RUN_JSON}});
 	return Effect.runPromise(
 		Effect.provide(
@@ -146,7 +147,7 @@ describe("runDraft", () => {
 	it("refuses an unreadable tree root on 11 — the run directory is UNKNOWN", async () => {
 		const {outcome} = await run(text(planBlock()), {
 			script: [
-				[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
+				[EPIC_READ, epic()],
 				[/^git rev-parse --path-format=absolute/, errOut("fatal: not a git repository")],
 				...CLAIMED,
 			],
@@ -160,7 +161,7 @@ describe("runDraft", () => {
 	it("refuses an issue that is not a type:epic", async () => {
 		const {outcome} = await run(text(planBlock()), {
 			script: [
-				[/^gh api repos\/o\/r\/issues\/4300$/, epic({labels: [{name: "type:chore"}]})],
+				[EPIC_READ, epic({labels: [{name: "type:chore"}]})],
 				[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 				...CLAIMED,
 			],

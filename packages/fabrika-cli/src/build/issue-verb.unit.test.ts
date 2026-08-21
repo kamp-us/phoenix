@@ -1,12 +1,11 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {issue} from "./fixtures.test-support.ts";
+import {GATEWAY, issue, NOT_FOUND} from "./fixtures.test-support.ts";
 import {runIssue} from "./issue-verb.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
+const ISSUE = /GET .*\/repos\/o\/r\/issues\/4312$/;
 
 const options = {
 	number: 4312,
@@ -14,8 +13,8 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
-const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
-	Effect.runPromise(Effect.provide(runIssue(options), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>) =>
+	Effect.runPromise(Effect.provide(runIssue(options), fakeSeams(script).layer));
 
 describe("runIssue", () => {
 	it("carries the body and the criteria rows through", async () => {
@@ -58,7 +57,7 @@ describe("runIssue", () => {
 	});
 
 	it("refuses a proven-absent issue on 7", async () => {
-		const out = await run([[ISSUE, errOut("gh: Not Found (HTTP 404)")]]);
+		const out = await run([[ISSUE, NOT_FOUND]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe("build issue: issue #4312 is proven absent or closed.");
 	});
@@ -69,7 +68,7 @@ describe("runIssue", () => {
 	});
 
 	it("refuses an unreadable issue on 11 — its content is UNKNOWN", async () => {
-		const out = await run([[ISSUE, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const out = await run([[ISSUE, GATEWAY]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("its content is UNKNOWN");

@@ -1,6 +1,14 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeFs, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
+import {
+	errOut,
+	fakeFs,
+	fakeSeams,
+	type HttpReply,
+	okOut,
+	type Scripted,
+	unconfigured,
+} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	INCOMPLETE_SCAN,
@@ -22,9 +30,13 @@ import {
 } from "./fixtures.test-support.ts";
 import {runScope} from "./scope-verb.ts";
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
+const PULL = /GET .*\/repos\/o\/r\/pulls\/4321$/;
 /** The unbound endpoint this verb no longer reads — scripted so a regression has a list to serve. */
-const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
+const FILES = /GET .*\/repos\/o\/r\/pulls\/4321\/files\?/;
+const NOT_FOUND = '{"message":"Not Found"}';
+
+/** A canned payload as the platform serves it — the fixtures speak `ExecResult`, the seam HTTP. */
+const served = (result: ExecResult, status = 200): HttpReply => ({status, body: result.stdout});
 
 const options = {
 	pr: 4321,
@@ -35,11 +47,8 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
-const shell = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) => {
-	const fake = fakeShell(script);
+const shell = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
+	const fake = fakeSeams(script);
 	return {
 		fake,
 		out: Effect.runPromise(
@@ -48,23 +57,19 @@ const shell = (
 	};
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	overrides: Partial<typeof options> = {},
-) => shell(script, overrides).out;
+const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) =>
+	shell(script, overrides).out;
 
 /**
  * The green path. The PR-number files endpoint is scripted too, and deliberately answers a
  * *different* file set — so a read that drifts back to it derives `review-doc` where the bound
  * commit derives both classes, instead of failing loudly.
  */
-const happy = (
-	shape: Parameters<typeof pull>[0] = {},
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-	[PULL, pull(shape)],
+const happy = (shape: Parameters<typeof pull>[0] = {}): ReadonlyArray<Scripted> => [
+	[PULL, served(pull(shape))],
 	...binding(),
 	[PATHS_AT(), paths("src/cart.ts", "README.md")],
-	[FILES, files("docs/moved.md", "docs/also.md")],
+	[FILES, served(files("docs/moved.md", "docs/also.md"))],
 ];
 
 describe("runScope", () => {
@@ -93,7 +98,7 @@ describe("runScope", () => {
 			},
 		});
 		const out = await Effect.runPromise(
-			Effect.provide(runScope({...options}), Layer.merge(fakeShell(happy()).layer, declared.layer)),
+			Effect.provide(runScope({...options}), Layer.merge(fakeSeams(happy()).layer, declared.layer)),
 		);
 		expect(out.stdout).toContain("governance\trequired");
 		expect(out.stderr).toContain(
@@ -104,7 +109,7 @@ describe("runScope", () => {
 	it("refuses rather than deriving when the config cannot be decoded", async () => {
 		const broken = fakeFs({files: {"/repo/.fabrika.jsonc": '{"governedRoots": []}'}});
 		const out = await Effect.runPromise(
-			Effect.provide(runScope({...options}), Layer.merge(fakeShell(happy()).layer, broken.layer)),
+			Effect.provide(runScope({...options}), Layer.merge(fakeSeams(happy()).layer, broken.layer)),
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -130,10 +135,10 @@ describe("runScope", () => {
 	 */
 	it("prints `governance required` on a `.decisions/`-only diff, where `harness` is false", async () => {
 		const out = await run([
-			[PULL, pull()],
+			[PULL, served(pull())],
 			...binding(),
 			[PATHS_AT(), paths(".decisions/0280-review-shell-carries-the-spawn-tool.md")],
-			[FILES, files("docs/moved.md")],
+			[FILES, served(files("docs/moved.md"))],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("harness\tfalse");
@@ -142,10 +147,10 @@ describe("runScope", () => {
 
 	it("keeps the two answers apart on a harness diff — both roots, both tokens", async () => {
 		const out = await run([
-			[PULL, pull()],
+			[PULL, served(pull())],
 			...binding(),
 			[PATHS_AT(), paths(".github/workflows/ci.yml")],
-			[FILES, files("docs/moved.md")],
+			[FILES, served(files("docs/moved.md"))],
 		]);
 		expect(out.stdout).toContain("harness\ttrue");
 		expect(out.stdout).toContain("governance\trequired");
@@ -195,26 +200,26 @@ describe("runScope refusals and diagnostics", () => {
 	});
 
 	it("refuses a PR proven absent on 7", async () => {
-		const out = await run([[PULL, errOut("gh: Not Found (HTTP 404)")]]);
+		const out = await run([[PULL, {status: 404, body: NOT_FOUND}]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe("review scope: PR #4321 not found in o/r.");
 	});
 
 	it("refuses a closed PR on 7 — nothing to review", async () => {
-		const out = await run([[PULL, pull({state: "closed"})]]);
+		const out = await run([[PULL, served(pull({state: "closed"}))]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe("review scope: PR #4321 is closed — nothing to review.");
 	});
 
 	it("refuses a zero-file PR on 7 rather than classifying an empty review (#4060)", async () => {
-		const out = await run([[PULL, pull({changedFiles: 0})]]);
+		const out = await run([[PULL, served(pull({changedFiles: 0}))]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain("has zero changed files");
 	});
 
 	it("separates an UNREADABLE PR from an absent one — 11, never 7", async () => {
-		const out = await run([[PULL, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const out = await run([[PULL, {status: 502, body: "{}"}]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.code).not.toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toContain("the scope is UNKNOWN");
@@ -222,7 +227,7 @@ describe("runScope refusals and diagnostics", () => {
 
 	it("refuses an unreadable file list on 11 — the partition would be over unknown scope", async () => {
 		const out = await run([
-			[PULL, pull()],
+			[PULL, served(pull())],
 			[PATHS_AT(), errOut("fatal: bad revision")],
 			...binding(),
 		]);
@@ -232,7 +237,11 @@ describe("runScope refusals and diagnostics", () => {
 	});
 
 	it("refuses an empty file list on 13, distinct from 11 and 7", async () => {
-		const out = await run([[PULL, pull({changedFiles: 9})], ...binding(), [PATHS_AT(), paths()]]);
+		const out = await run([
+			[PULL, served(pull({changedFiles: 9}))],
+			...binding(),
+			[PATHS_AT(), paths()],
+		]);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.code).not.toBe(PRECONDITION_UNKNOWN);
 		expect(out.code).not.toBe(ZERO_SCOPE);
@@ -247,7 +256,7 @@ describe("runScope refusals and diagnostics", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runScope({...options, env: {}}),
-				Layer.merge(fakeShell([]).layer, unconfigured),
+				Layer.merge(fakeSeams([]).layer, unconfigured),
 			),
 		);
 		expect(out.code).toBe(1);
@@ -263,8 +272,8 @@ describe("runScope refusals and diagnostics", () => {
  */
 describe("runScope never refuses on GitHub's declared count", () => {
 	/** git pairs the rename into one `--name-only` path; GitHub counts the delete and the add. */
-	const renamed: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-		[PULL, pull({changedFiles: 2})],
+	const renamed: ReadonlyArray<Scripted> = [
+		[PULL, served(pull({changedFiles: 2}))],
 		...binding(),
 		[PATHS_AT(), paths("src/new.ts")],
 	];
@@ -290,7 +299,7 @@ describe("runScope never refuses on GitHub's declared count", () => {
 
 	it("scopes a list LONGER than GitHub declares, which the old inequality also let through", async () => {
 		const out = await run([
-			[PULL, pull({changedFiles: 1})],
+			[PULL, served(pull({changedFiles: 1}))],
 			...binding(),
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 		]);
@@ -315,7 +324,7 @@ describe("runScope binds its file list to the commit it prints", () => {
 		expect(fake.calls).toContain(
 			`git diff --no-ext-diff --no-color --find-renames --src-prefix=a/ --dst-prefix=b/ --name-only -z ${BASE}...${HEAD}`,
 		);
-		expect(fake.calls.some((c) => c.includes("pulls/4321/files"))).toBe(false);
+		expect(fake.requests.some((r) => r.includes("pulls/4321/files"))).toBe(false);
 	});
 
 	it("prints the head it actually read the files out of", async () => {
@@ -341,7 +350,7 @@ describe("runScope binds its file list to the commit it prints", () => {
 
 	it("refuses on 11 when the commit cannot be bound, rather than partitioning an unbound list", async () => {
 		const out = await run([
-			[PULL, pull()],
+			[PULL, served(pull())],
 			[/^git remote -v$/, okOut("origin\tgit@github.com:someone/else.git (fetch)\n")],
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);

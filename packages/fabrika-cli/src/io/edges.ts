@@ -3,8 +3,8 @@
  * lists. The frontier's topology is stored here rather than in a map body, so this is the one path
  * to it — a second path is what let v1's prose topology drift from the graph it described.
  *
- * The `issues.ts` disciplines hold unchanged: `gh api` REST and never GraphQL, every list read paged,
- * absent split from unreadable through {@link Existence}, and a shape that is not what was asked for
+ * The `issues.ts` disciplines hold unchanged: REST and never GraphQL, every list read paged, absent
+ * split from unreadable through {@link Existence}, and a shape that is not what was asked for
  * treated as a failure rather than an empty result.
  *
  * <!-- anchor: 404-IS-A-VERDICT --> **A 404 on a dependency read is a verdict about the issue, not
@@ -24,42 +24,37 @@
  * marking it wrong — the fail-open direction.
  */
 import {Effect} from "effect";
-import {execCapture} from "./exec.ts";
+import {authed, authedExistence, existenceOf, pagedExistence, restCall} from "./gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "./git.ts";
-import {absent, type Existence, httpStatusOf, pagedJson, present, unknown} from "./issues.ts";
-import {isRecord, parseJson} from "./json.ts";
+import {type Existence, present, unknown} from "./issues.ts";
+import {isRecord} from "./json.ts";
 
-/** The issue numbers in a paged list response, or the reason the bytes are not that. */
-const issueNumbers = (stdout: string): Attempt<ReadonlyArray<number>> => {
-	const pages = pagedJson(stdout);
-	if (pages._tag === "Failure") return pages;
+/** The issue numbers in a paged list response, or the reason the entries are not that. */
+const issueNumbers = (entries: ReadonlyArray<unknown>): Attempt<ReadonlyArray<number>> => {
 	const numbers: number[] = [];
-	for (const page of pages.value) {
-		const parsed = parseJson(page);
-		if (!Array.isArray(parsed)) return fail("`gh api` exited 0 but its output is not a list");
-		for (const value of parsed) {
-			if (!isRecord(value) || typeof value.number !== "number") {
-				return fail("`gh api` exited 0 but one entry carries no issue number");
-			}
-			numbers.push(value.number);
+	for (const value of entries) {
+		if (!isRecord(value) || typeof value.number !== "number") {
+			return fail("GitHub answered 200 but one entry carries no issue number");
 		}
+		numbers.push(value.number);
 	}
 	return ok(numbers);
 };
 
 const listRelation = (repo: string, path: string): Shell<Existence<ReadonlyArray<number>>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", ["api", "--paginate", `repos/${repo}/${path}?per_page=100`]);
-		if (!r.ok) {
-			return httpStatusOf(r.reason) === 404
-				? absent<ReadonlyArray<number>>()
-				: unknown<ReadonlyArray<number>>(r.reason);
-		}
-		const numbers = issueNumbers(r.stdout);
-		return numbers._tag === "Failure"
-			? unknown<ReadonlyArray<number>>(numbers.reason)
-			: present(numbers.value);
-	});
+	authedExistence((token) =>
+		Effect.gen(function* () {
+			const read = yield* pagedExistence(token, `repos/${repo}/${path}`);
+			if (read._tag !== "Present") return read;
+			if (!read.value.exhausted) {
+				return unknown<ReadonlyArray<number>>(`${path} was not read to its end`);
+			}
+			const numbers = issueNumbers(read.value.entries);
+			return numbers._tag === "Failure"
+				? unknown<ReadonlyArray<number>>(numbers.reason)
+				: present(numbers.value);
+		}),
+	);
 
 /** The map's children. `200 []` is a proven-empty child set; a non-404 error is `Unknown`. */
 export const subIssues = (repo: string, parent: number): Shell<Existence<ReadonlyArray<number>>> =>
@@ -75,30 +70,34 @@ export const blocking = (repo: string, issue: number): Shell<Existence<ReadonlyA
 
 /** The target's internal `id` — the value both POST bodies take, never the issue number. */
 export const internalId = (repo: string, issue: number): Shell<Existence<number>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", ["api", `repos/${repo}/issues/${issue}`, "--jq", ".id"]);
-		if (!r.ok) {
-			return httpStatusOf(r.reason) === 404 ? absent<number>() : unknown<number>(r.reason);
-		}
-		const id = r.stdout.trim();
-		return /^\d+$/.test(id)
-			? present(Number.parseInt(id, 10))
-			: unknown<number>("`gh api` exited 0 but named no internal id");
-	});
+	authedExistence((token) =>
+		restCall(token, {method: "GET", path: `repos/${repo}/issues/${issue}`}).pipe(
+			Effect.map((outcome) =>
+				existenceOf(outcome, (body) => {
+					const id = isRecord(body) ? body.id : undefined;
+					return typeof id === "number"
+						? ok(id)
+						: fail("GitHub answered 200 but named no internal id");
+				}),
+			),
+		),
+	);
 
-/** Link `childId` under `parent` as a sub-issue. `-F` sends the integer the API requires. */
+const edgeWrite = (path: string, body: Readonly<Record<string, number>>): Shell<Attempt<void>> =>
+	authed((token) =>
+		restCall(token, {method: "POST", path, body}).pipe(
+			Effect.map((outcome) => {
+				if (outcome._tag === "Unreachable") return fail(outcome.reason);
+				return outcome.status >= 200 && outcome.status < 300
+					? ok(undefined)
+					: fail(`GitHub answered HTTP ${outcome.status}`);
+			}),
+		),
+	);
+
+/** Link `childId` under `parent` as a sub-issue. The body carries the integer the API requires. */
 export const addSubIssue = (repo: string, parent: number, childId: number): Shell<Attempt<void>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"POST",
-			`repos/${repo}/issues/${parent}/sub_issues`,
-			"-F",
-			`sub_issue_id=${childId}`,
-		]);
-		return r.ok ? ok(undefined) : fail(r.reason);
-	});
+	edgeWrite(`repos/${repo}/issues/${parent}/sub_issues`, {sub_issue_id: childId});
 
 /** Record that `issue` waits on the issue whose internal id is `blockerId`. */
 export const addBlockedBy = (
@@ -106,14 +105,4 @@ export const addBlockedBy = (
 	issue: number,
 	blockerId: number,
 ): Shell<Attempt<void>> =>
-	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--method",
-			"POST",
-			`repos/${repo}/issues/${issue}/dependencies/blocked_by`,
-			"-F",
-			`issue_id=${blockerId}`,
-		]);
-		return r.ok ? ok(undefined) : fail(r.reason);
-	});
+	edgeWrite(`repos/${repo}/issues/${issue}/dependencies/blocked_by`, {issue_id: blockerId});

@@ -9,14 +9,14 @@
  * {@link EXPIRED} cannot come back.
  */
 import {type FileSystem, Layer, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {CONFIG_PATH} from "../config/document.ts";
-import {type FakeShell, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {markerBody} from "./claim.ts";
 
-/** `listComments`' command line, whichever issue it names. */
-export const COMMENTS = /^gh api --paginate repos\/[^ ]+\/comments\?per_page=100$/;
+/** `listComments`' request line, whichever issue it names. */
+export const COMMENTS = /GET .*\/issues\/\d+\/comments\?/;
 
 /** A `created_at` no TTL can have passed. */
 export const LIVE = "2999-01-01T00:00:00Z";
@@ -36,30 +36,33 @@ export const claimPage = (
 		readonly createdAt: string;
 		readonly lane?: string;
 	}>
-): ExecResult =>
-	okOut(
-		JSON.stringify(
-			held.map((row, index) => ({
-				id: 900 + index,
-				user: {login: "agent"},
-				created_at: row.createdAt,
-				updated_at: row.createdAt,
-				body: markerBody({session: row.session, nonce: row.lane ?? `fixture${index}`}),
-			})),
-		),
-	);
+): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(
+		held.map((row, index) => ({
+			id: 900 + index,
+			user: {login: "agent"},
+			created_at: row.createdAt,
+			updated_at: row.createdAt,
+			body: markerBody({session: row.session, nonce: row.lane ?? `fixture${index}`}),
+		})),
+	),
+});
 
 /** The default every existing test gets: the issue carries no claim marker at all. */
-export const UNCLAIMED: readonly [RegExp, ExecResult] = [COMMENTS, okOut("[]")];
+export const UNCLAIMED: Scripted = [COMMENTS, {status: 200, body: "[]"}];
+
+/** Both seams off one script, with the unclaimed comments page appended as the last resort. */
+export type GuardedSeams = ReturnType<typeof fakeSeams>;
 
 /**
- * A spawner scripted on `script`, with the unclaimed comments page appended as the last resort.
+ * Both seams scripted on `script`, with the unclaimed comments page appended as the last resort.
  *
- * Appended rather than prepended so a test that scripts its own comments page still wins:
- * {@link fakeShell} resolves each call by the first pattern that matches.
+ * Appended rather than prepended so a test that scripts its own comments page still wins: the fakes
+ * resolve each call by the first pattern that matches.
  */
-export const guardedShell = (script: ReadonlyArray<readonly [RegExp, ExecResult]>): FakeShell =>
-	fakeShell([...script, UNCLAIMED]);
+export const guardedShell = (script: ReadonlyArray<Scripted>): GuardedSeams =>
+	fakeSeams([...script, UNCLAIMED]);
 
 /** The directory a triage verb under test is standing in. Its config is the one the load reads. */
 export const CWD = "/repo";
@@ -79,9 +82,16 @@ export type ConfigFixture = string | {readonly unreadable: true};
  * defaults case every existing test runs in.
  */
 export const triageContext = (
-	shell: FakeShell,
+	shell: {
+		readonly layer: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient>;
+	},
 	config?: ConfigFixture,
-): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path> => {
+): Layer.Layer<
+	| ChildProcessSpawner.ChildProcessSpawner
+	| HttpClient.HttpClient
+	| FileSystem.FileSystem
+	| Path.Path
+> => {
 	const path = `${CWD}/${CONFIG_PATH}`;
 	const files = config === undefined ? {} : {[path]: typeof config === "string" ? config : ""};
 	const unreadable = config === undefined || typeof config === "string" ? [] : [path];

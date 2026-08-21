@@ -30,6 +30,7 @@
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {requireCallerToken, requireClaim, requireSession} from "../build/claim.ts";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
@@ -132,7 +133,10 @@ export const runFlip = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "an issue number", options.number);
@@ -170,7 +174,14 @@ export const runFlip = (
 		);
 		if (cycle._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, cycle.message);
 
-		const read = yield* loadLedger(MESSAGES, repo, target.issue, cycle.path, vocabulary.vocabulary);
+		const read = yield* loadLedger(
+			MESSAGES,
+			repo,
+			target.issue,
+			cycle.path,
+			vocabulary.vocabulary,
+			options.env,
+		);
 		if (read._tag === "Refused") return read.outcome;
 		const ledger = read.ledger;
 		const scanned = scannedChildren(
@@ -241,7 +252,10 @@ export const runFlip = (
 
 		const reread = yield* Effect.forEach(
 			ledger.children,
-			(child) => getChild(repo, child.number).pipe(Effect.map((found) => [child, found] as const)),
+			(child) =>
+				getChild(repo, child.number, options.env).pipe(
+					Effect.map((found) => [child, found] as const),
+				),
 			{concurrency: FAN_OUT},
 		);
 

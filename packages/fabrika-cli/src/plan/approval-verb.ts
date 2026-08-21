@@ -18,6 +18,7 @@
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
 import {cycleDocOr} from "../config/paths.ts";
@@ -58,7 +59,10 @@ export const runApproval = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "an issue number", options.number);
@@ -81,7 +85,14 @@ export const runApproval = (
 		);
 		if (cycle._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, cycle.message);
 
-		const read = yield* loadLedger(MESSAGES, repo, target.issue, cycle.path, vocabulary.vocabulary);
+		const read = yield* loadLedger(
+			MESSAGES,
+			repo,
+			target.issue,
+			cycle.path,
+			vocabulary.vocabulary,
+			options.env,
+		);
 		if (read._tag === "Refused") return read.outcome;
 		const ledger = read.ledger;
 

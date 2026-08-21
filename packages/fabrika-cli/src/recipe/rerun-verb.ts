@@ -13,6 +13,7 @@
  * success with a caveat.
  */
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {listComments} from "../io/issues.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -43,7 +44,11 @@ export interface RerunOptions {
 
 export const runRerun = (
 	options: RerunOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const {pr} = options;
 		const bad = badNumber(VERB, "a pull-request number", pr);
@@ -109,7 +114,7 @@ export const runRerun = (
 			);
 		}
 
-		const runs = yield* listRunsAtHead(repo, head);
+		const runs = yield* listRunsAtHead(repo, head, options.env);
 		if (runs._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -131,7 +136,7 @@ export const runRerun = (
 
 		const rerun: Array<{id: number; name: string; attempt: number}> = [];
 		for (const run of failed) {
-			const proven = yield* rerunOne(repo, run);
+			const proven = yield* rerunOne(repo, run, options.env);
 			if (proven._tag === "Refused") {
 				return {
 					...proven.outcome,
@@ -154,9 +159,14 @@ type RerunProof =
 const rerunOne = (
 	repo: string,
 	run: WorkflowRun,
-): Effect.Effect<RerunProof, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	env: Readonly<Record<string, string | undefined>>,
+): Effect.Effect<
+	RerunProof,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
-		const posted = yield* rerunRun(repo, run.id);
+		const posted = yield* rerunRun(repo, run.id, env);
 		if (posted._tag === "Failure") {
 			return {
 				_tag: "Refused" as const,
@@ -166,7 +176,7 @@ const rerunOne = (
 				),
 			};
 		}
-		const after = yield* getRun(repo, run.id);
+		const after = yield* getRun(repo, run.id, env);
 		if (after._tag === "Failure") {
 			return {
 				_tag: "Refused" as const,

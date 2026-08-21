@@ -1,45 +1,26 @@
-import {Effect} from "effect";
-import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import {
-	claimedIdOf,
-	idsClaimedByPr,
-	openPullRequests,
-	parseFileRows,
-	parsePrNumbers,
-} from "./github.ts";
+import {Effect, Layer} from "effect";
+import {beforeAll, describe, expect, it} from "vitest";
+import {fakeHttp, fakeShell, type HttpReply, linkNext} from "../fakes.test-support.ts";
+import {claimedIdOf, idsClaimedByPr, openPullRequests} from "./github.ts";
 
-describe("parsePrNumbers — shape before interpretation", () => {
-	it("reads a list of numbers", () => {
-		expect(parsePrNumbers("11\n12\n")).toEqual([11, 12]);
-	});
-
-	it("reads an empty list as an empty FACT, not a failure", () => {
-		expect(parsePrNumbers("")).toEqual([]);
-	});
-
-	it("returns null on output that is not numbers — a 0 exit with the wrong bytes is UNKNOWN", () => {
-		expect(parsePrNumbers("null\n")).toBeNull();
-		expect(parsePrNumbers('{"message":"Not Found"}')).toBeNull();
-	});
+/**
+ * The credential is resolved off the process environment (`ambientToken`), so the tests name one
+ * rather than leaving the fake shell to answer a `gh auth token` this port exists to retire.
+ */
+beforeAll(() => {
+	process.env.GITHUB_TOKEN = "ghp_scripted";
 });
 
-describe("parseFileRows — shape before interpretation", () => {
-	it("reads status/filename rows", () => {
-		expect(parseFileRows("added\ta.md\nmodified\tb.md\n")).toEqual([
-			{status: "added", filename: "a.md"},
-			{status: "modified", filename: "b.md"},
-		]);
-	});
-
-	it("returns null on a row with no tab", () => {
-		expect(parseFileRows("a.md\n")).toBeNull();
-	});
-
-	it("returns null on an unknown status word", () => {
-		expect(parseFileRows("teleported\ta.md\n")).toBeNull();
-	});
+const served = (status: number, body: unknown, headers?: Record<string, string>): HttpReply => ({
+	status,
+	body: JSON.stringify(body),
+	headers,
 });
+
+const wired = (script: ReadonlyArray<readonly [RegExp, HttpReply]>) => {
+	const http = fakeHttp(script);
+	return {http, layer: Layer.merge(http.layer, fakeShell([]).layer)};
+};
 
 describe("claimedIdOf", () => {
 	it("reads the id a .decisions path claims", () => {
@@ -57,54 +38,92 @@ describe("claimedIdOf", () => {
 });
 
 describe("openPullRequests", () => {
-	it("refuses when gh fails", async () => {
+	it("refuses when the read is not served", async () => {
+		const {layer} = wired([[/pulls/, served(404, {message: "Not Found"})]]);
 		const result = await Effect.runPromise(
-			Effect.provide(
-				openPullRequests("kamp-us/nonexistent"),
-				fakeShell([[/gh api/, errOut("HTTP 404")]]).layer,
-			),
+			Effect.provide(openPullRequests("kamp-us/nonexistent"), layer),
 		);
 		expect(result._tag).toBe("Failure");
 	});
 
-	it("refuses when gh exits 0 with output of the wrong shape", async () => {
+	it("refuses a 200 whose payload is not a list of pull requests, never reading it empty", async () => {
+		const {layer} = wired([[/pulls/, served(200, [{title: "no number here"}])]]);
 		const result = await Effect.runPromise(
-			Effect.provide(
-				openPullRequests("kamp-us/phoenix"),
-				fakeShell([[/gh api/, okOut("not-a-number\n")]]).layer,
-			),
+			Effect.provide(openPullRequests("kamp-us/phoenix"), layer),
 		);
 		expect(result._tag).toBe("Failure");
 	});
 
-	it("pages — the request asks for the full set, not the first page", async () => {
-		const shell = fakeShell([[/gh api/, okOut("1\n")]]);
-		await Effect.runPromise(Effect.provide(openPullRequests("kamp-us/phoenix"), shell.layer));
-		expect(shell.calls[0]).toContain("--paginate");
-		expect(shell.calls[0]).toContain("per_page=100");
+	it("refuses a 200 that is not a list at all — the in-flight set is never guessed empty", async () => {
+		const {layer} = wired([[/pulls/, served(200, {message: "Not Found"})]]);
+		const result = await Effect.runPromise(
+			Effect.provide(openPullRequests("kamp-us/phoenix"), layer),
+		);
+		expect(result._tag).toBe("Failure");
+	});
+
+	it("pages — a second page's pull requests are not dropped (#725)", async () => {
+		const {http, layer} = wired([
+			[/&page=1$/, served(200, [{number: 11}], linkNext("https://api.github.com/x?page=2"))],
+			[/&page=2$/, served(200, [{number: 12}])],
+		]);
+		const result = await Effect.runPromise(
+			Effect.provide(openPullRequests("kamp-us/phoenix"), layer),
+		);
+		expect(result).toEqual({_tag: "Ok", value: [11, 12]});
+		expect(http.calls[0]).toContain("per_page=100");
+		expect(http.calls).toHaveLength(2);
+	});
+
+	it("reads an empty list as an empty FACT, not a failure", async () => {
+		const {layer} = wired([[/pulls/, served(200, [])]]);
+		const result = await Effect.runPromise(
+			Effect.provide(openPullRequests("kamp-us/phoenix"), layer),
+		);
+		expect(result).toEqual({_tag: "Ok", value: []});
 	});
 });
 
 describe("idsClaimedByPr", () => {
 	it("counts only ADDED record files", async () => {
-		const shell = fakeShell([
+		const {layer} = wired([
 			[
 				/files/,
-				okOut("added\t.decisions/0239-x.md\nmodified\t.decisions/0126-y.md\nadded\tREADME.md\n"),
+				served(200, [
+					{status: "added", filename: ".decisions/0239-x.md"},
+					{status: "modified", filename: ".decisions/0126-y.md"},
+					{status: "added", filename: "README.md"},
+				]),
 			],
 		]);
 		const result = await Effect.runPromise(
-			Effect.provide(idsClaimedByPr("kamp-us/phoenix", 4711, ".decisions"), shell.layer),
+			Effect.provide(idsClaimedByPr("kamp-us/phoenix", 4711, ".decisions"), layer),
 		);
 		expect(result).toEqual({_tag: "Ok", value: [{id: "0239", file: "0239-x.md", pr: 4711}]});
 	});
 
 	it("refuses rather than returning a short list when the read fails", async () => {
+		const {layer} = wired([[/files/, served(502, {message: "Bad gateway"})]]);
 		const result = await Effect.runPromise(
-			Effect.provide(
-				idsClaimedByPr("kamp-us/phoenix", 1, ".decisions"),
-				fakeShell([[/files/, errOut("HTTP 502")]]).layer,
-			),
+			Effect.provide(idsClaimedByPr("kamp-us/phoenix", 1, ".decisions"), layer),
+		);
+		expect(result._tag).toBe("Failure");
+	});
+
+	it("refuses an entry whose status is outside the allowed set", async () => {
+		const {layer} = wired([
+			[/files/, served(200, [{status: "teleported", filename: ".decisions/0239-x.md"}])],
+		]);
+		const result = await Effect.runPromise(
+			Effect.provide(idsClaimedByPr("kamp-us/phoenix", 1, ".decisions"), layer),
+		);
+		expect(result._tag).toBe("Failure");
+	});
+
+	it("refuses an entry carrying no filename", async () => {
+		const {layer} = wired([[/files/, served(200, [{status: "added"}])]]);
+		const result = await Effect.runPromise(
+			Effect.provide(idsClaimedByPr("kamp-us/phoenix", 1, ".decisions"), layer),
 		);
 		expect(result._tag).toBe("Failure");
 	});

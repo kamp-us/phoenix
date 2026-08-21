@@ -9,6 +9,7 @@
  * rate limit exhausted mid-scan refuses with nothing partial emitted.
  */
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveCi} from "../config/ci-producer.ts";
 import {governedRootsOr} from "../config/paths.ts";
@@ -43,7 +44,10 @@ export const runSweep = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);

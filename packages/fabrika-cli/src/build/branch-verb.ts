@@ -17,6 +17,7 @@
  * name and switches to it instead of failing on a branch that is already there.
  */
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {localBranches} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -74,7 +75,11 @@ const checkout = (name: string, start: string) =>
 
 export const runBranch = (
 	options: BranchOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const {number, slug, resume, resumeLane} = options;
 		if ((number === null) === (resume === null)) {
@@ -126,7 +131,7 @@ export const runBranch = (
 		const nonce = caller.nonce;
 
 		if (resume !== null) {
-			const head = yield* getPullHead(repo, resume);
+			const head = yield* getPullHead(options.env, repo, resume);
 			if (head._tag === "Unknown") {
 				return refuse(
 					PRECONDITION_UNKNOWN,

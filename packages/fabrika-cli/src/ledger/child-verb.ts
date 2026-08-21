@@ -21,6 +21,7 @@
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {readAuthored} from "../build/authored.ts";
 import {STANDING_LANE_LABELS, type StandingLaneLabel} from "../build/scope-admission.ts";
@@ -99,7 +100,10 @@ export const runChild = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		if (options.readyFor === null) {
@@ -225,7 +229,7 @@ export const runChild = (
 		const scanned = scannedLine(VERB, labels.length, "label", `taxonomy of ${repo} checked`);
 		const diagnostics = [...notes, scanned];
 
-		const created = yield* createChildIssue(repo, {
+		const created = yield* createChildIssue(options.env, repo, {
 			title: options.title,
 			body: composed.body,
 			labels,
@@ -263,12 +267,12 @@ export const runChild = (
 		}
 
 		const unlinked = `${VERB}: created #${child.number} and could not prove the sub-issue link — the child exists, is recorded in the run manifest as linked:false, and is unlinked on GitHub.`;
-		const linked = yield* linkSubIssue(repo, epic.number, child.id);
+		const linked = yield* linkSubIssue(options.env, repo, epic.number, child.id);
 		if (linked._tag === "Failure") {
 			return refuse(LINK_UNPROVEN, unlinked, [...diagnostics, `${VERB}: ${linked.reason}.`]);
 		}
 
-		const observed = yield* readChildBack(repo, child.number);
+		const observed = yield* readChildBack(options.env, repo, child.number);
 		if (observed._tag !== "Present") {
 			return refuse(
 				WRITE_UNKNOWN,
@@ -277,7 +281,7 @@ export const runChild = (
 			);
 		}
 
-		const siblings = yield* listSubIssues(repo, epic.number);
+		const siblings = yield* listSubIssues(repo, epic.number, options.env);
 		if (
 			siblings._tag === "Failure" ||
 			!siblings.value.some((link) => link.number === child.number)

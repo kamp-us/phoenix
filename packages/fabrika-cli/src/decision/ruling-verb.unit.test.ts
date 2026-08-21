@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import {emit, markedIssue, rulingUrl, scopeDigest} from "../wire/decision-ruling.ts";
 import {markerTime} from "../wire/grill-marker.ts";
 import {bodyDigest} from "./digest.ts";
@@ -20,19 +19,22 @@ import {
 } from "./fixtures.test-support.ts";
 import {runRuling} from "./ruling-verb.ts";
 
-type Script = ReadonlyArray<readonly [RegExp, ExecResult]>;
+const BAD_GATEWAY = JSON.stringify({message: "Bad gateway"});
+const NOT_FOUND = JSON.stringify({message: "Not Found"});
+
+type Script = ReadonlyArray<Scripted>;
 
 const run = (script: Script) => {
-	const shell = fakeShell(script);
+	const seams = fakeSeams(script);
 	return Effect.runPromise(
-		Effect.provide(runRuling({number: ISSUE, repo: null, env}), shell.layer),
+		Effect.provide(runRuling({number: ISSUE, repo: null, env}), seams.layer),
 	).then((outcome) => JSON.parse(outcome.stdout === "" ? "null" : outcome.stdout) ?? outcome);
 };
 
 const outcomeOf = (script: Script) => {
-	const shell = fakeShell(script);
+	const seams = fakeSeams(script);
 	return Effect.runPromise(
-		Effect.provide(runRuling({number: ISSUE, repo: null, env}), shell.layer),
+		Effect.provide(runRuling({number: ISSUE, repo: null, env}), seams.layer),
 	);
 };
 
@@ -134,7 +136,7 @@ describe("runRuling", () => {
 
 	it("is UNKNOWN, never absent, when the roster cannot be read", async () => {
 		const outcome = await outcomeOf([
-			[MEMBERS, errOut("gh: Bad gateway (HTTP 502)")],
+			[MEMBERS, {status: 502, body: BAD_GATEWAY}],
 			[ISSUE_READ, issueRead()],
 			[COMMENTS, comments([900002, RULER, marker(bodyDigest(BODY))])],
 			...acl,
@@ -145,7 +147,7 @@ describe("runRuling", () => {
 
 	it("is UNKNOWN, never absent, when the comments cannot be read", async () => {
 		const outcome = await outcomeOf([
-			[COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
+			[COMMENTS, {status: 502, body: BAD_GATEWAY}],
 			[ISSUE_READ, issueRead()],
 			...acl,
 		]);
@@ -162,9 +164,9 @@ describe("runRuling", () => {
 	});
 
 	it("splits an unreadable issue from a proven absent one", async () => {
-		const unreadable = await outcomeOf([[ISSUE_READ, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const unreadable = await outcomeOf([[ISSUE_READ, {status: 502, body: BAD_GATEWAY}]]);
 		expect(unreadable.code).toBe(11);
-		const gone = await outcomeOf([[ISSUE_READ, errOut("gh: Not Found (HTTP 404)")]]);
+		const gone = await outcomeOf([[ISSUE_READ, {status: 404, body: NOT_FOUND}]]);
 		expect(gone.code).toBe(7);
 	});
 
@@ -186,7 +188,7 @@ describe("runRuling", () => {
 	it("reports no audience label as null rather than guessing one", async () => {
 		const answer = await run([
 			[ISSUE_READ, issueRead(["type:decision"])],
-			[COMMENTS, okOut("[]")],
+			[COMMENTS, {status: 200, body: "[]"}],
 			...acl,
 		]);
 		expect(answer).toMatchObject({audience: null, state: "absent"});

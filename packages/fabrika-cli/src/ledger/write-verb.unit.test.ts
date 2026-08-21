@@ -1,8 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {GIT_DIRS} from "../build/fixtures.test-support.ts";
-import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeFs, fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import {
 	EPIC_MOVED,
 	NOT_STAGED,
@@ -17,8 +16,9 @@ import {CLAIMED, DIR, env, epic, TOKEN} from "./fixtures.test-support.ts";
 import {planPath, renderRunRecord, runJsonPath, topologyPath} from "./run.ts";
 import {runWrite} from "./write-verb.ts";
 
-const EPIC_READ = /^gh api repos\/o\/r\/issues\/4300$/;
-const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/4300/;
+const EPIC_READ = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
+const PATCH = /^PATCH https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
+const PATCHED: HttpReply = {status: 200, body: "{}"};
 
 const BODY = "An epic brief about the moderation queue.\n";
 const DIGEST = bodyDigest(BODY);
@@ -46,28 +46,28 @@ const STAGED = {
  * the pre-write one. Built per call, because a spent `once` pattern would leak across tests.
  */
 const happy = (
-	options: {before?: string; after?: string; patch?: ExecResult} = {},
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+	options: {before?: string; after?: string; patch?: HttpReply} = {},
+): ReadonlyArray<Scripted> => [
 	[once(EPIC_READ), epic({body: options.before ?? BODY})],
 	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	...CLAIMED,
-	[PATCH, options.patch ?? okOut("{}")],
+	[PATCH, options.patch ?? PATCHED],
 	[EPIC_READ, epic({body: options.after ?? SPLICED})],
 ];
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]> = happy(),
+	script: ReadonlyArray<Scripted> = happy(),
 	files: Readonly<Record<string, string | null>> = STAGED,
 	digest: string = DIGEST,
 ) => {
-	const shell = fakeShell(script);
+	const shell = fakeSeams(script);
 	const fs = fakeFs({files});
 	return Effect.runPromise(
 		Effect.provide(
 			runWrite({number: 4300, bodyDigest: digest, token: TOKEN, repo: null, cwd: "/repo", env}),
 			Layer.mergeAll(shell.layer, fs.layer),
 		),
-	).then((outcome) => ({outcome, calls: shell.calls}));
+	).then((outcome) => ({outcome, calls: shell.log}));
 };
 
 describe("runWrite", () => {
@@ -140,7 +140,7 @@ describe("runWrite", () => {
 				[once(EPIC_READ), epic({body})],
 				[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 				...CLAIMED,
-				[PATCH, okOut("{}")],
+				[PATCH, PATCHED],
 				[EPIC_READ, epic({body})],
 			],
 			{...STAGED, [runJsonPath(DIR)]: runJson("fresh")},
@@ -150,7 +150,7 @@ describe("runWrite", () => {
 	});
 
 	it("seats an unconfirmable PATCH on 8", async () => {
-		const {outcome} = await run(happy({patch: errOut("gh: Bad Gateway (HTTP 502)")}));
+		const {outcome} = await run(happy({patch: {status: 502, body: '{"message":"Bad Gateway"}'}}));
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 		expect(outcome.stdout).toBe("");
 	});
@@ -161,7 +161,7 @@ describe("runWrite", () => {
 			[once(EPIC_READ), epic()],
 			[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 			...CLAIMED,
-			[PATCH, okOut("{}")],
+			[PATCH, PATCHED],
 			[EPIC_READ, epic({body: `${SPLICED}\nsomeone else wrote this\n`})],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);

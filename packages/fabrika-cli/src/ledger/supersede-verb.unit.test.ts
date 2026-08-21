@@ -1,8 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {GIT_DIRS} from "../build/fixtures.test-support.ts";
-import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {GATEWAY, GIT_DIRS, served} from "../build/fixtures.test-support.ts";
+import {fakeFs, fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import {
 	BARE_AT_PATH,
 	LEAKED_PATH,
@@ -23,11 +22,12 @@ import {
 } from "./run.ts";
 import {runSupersede} from "./supersede-verb.ts";
 
-const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
-const CHILD = /^gh api repos\/o\/r\/issues\/4288$/;
-const COMMENT = /^gh api --method POST repos\/o\/r\/issues\/4288\/comments/;
-const UNLINK = /^gh api --method DELETE repos\/o\/r\/issues\/4300\/sub_issue /;
-const CLOSE = /^gh api --method PATCH repos\/o\/r\/issues\/4288/;
+const SUBS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issues/;
+const CHILD = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4288$/;
+const EPIC_READ = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
+const COMMENT = /^POST https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4288\/comments$/;
+const UNLINK = /^DELETE https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issue$/;
+const CLOSE = /^PATCH https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4288$/;
 
 const RUN_JSON = renderRunRecord({
 	epic: 4300,
@@ -55,41 +55,39 @@ const files = (...records: ReadonlyArray<ChildRecord>) => ({
 	[manifestPath(DIR)]: renderManifest(records),
 });
 
-const COMMENTED = okOut(
-	JSON.stringify({id: 5230661234, html_url: "https://github.com/o/r/issues/4288#c"}),
-);
+const COMMENTED = served({id: 5230661234, html_url: "https://github.com/o/r/issues/4288#c"}, 201);
 
 /** The three legs and the reads around them; `once` lets each read differ before and after. */
 const happy = (
 	overrides: {
-		comment?: ExecResult;
-		unlink?: ExecResult;
-		close?: ExecResult;
-		after?: ExecResult;
-		afterSubs?: ExecResult;
+		comment?: HttpReply;
+		unlink?: HttpReply;
+		close?: HttpReply;
+		after?: HttpReply;
+		afterSubs?: HttpReply;
 	} = {},
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-	[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
+): ReadonlyArray<Scripted> => [
+	[EPIC_READ, epic()],
 	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	...CLAIMED,
 	[once(SUBS), subIssues({number: 4288, id: 42880})],
 	[once(CHILD), childIssue({number: 4288})],
 	[COMMENT, overrides.comment ?? COMMENTED],
-	[UNLINK, overrides.unlink ?? okOut("{}")],
-	[CLOSE, overrides.close ?? okOut("{}")],
+	[UNLINK, overrides.unlink ?? served({})],
+	[CLOSE, overrides.close ?? served({})],
 	[
 		CHILD,
 		overrides.after ?? childIssue({number: 4288, state: "closed", stateReason: "not_planned"}),
 	],
-	[SUBS, overrides.afterSubs ?? okOut("[]")],
+	[SUBS, overrides.afterSubs ?? served([])],
 ];
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]> = happy(),
+	script: ReadonlyArray<Scripted> = happy(),
 	fsFiles: Readonly<Record<string, string | null>> = files(record(4288, false)),
 	options: {child?: number; reason?: string} = {},
 ) => {
-	const shell = fakeShell(script);
+	const shell = fakeSeams(script);
 	const fs = fakeFs({files: fsFiles});
 	return Effect.runPromise(
 		Effect.provide(
@@ -104,7 +102,13 @@ const run = (
 			}),
 			Layer.mergeAll(shell.layer, fs.layer),
 		),
-	).then((outcome) => ({outcome, calls: shell.calls}));
+	).then((outcome) => ({
+		outcome,
+		calls: shell.calls,
+		log: shell.log,
+		bodies: shell.bodies,
+		requests: shell.requests,
+	}));
 };
 
 describe("runSupersede", () => {
@@ -126,10 +130,8 @@ describe("runSupersede", () => {
 	 * as a child in scope that can never carry a live assignee (#5026).
 	 */
 	it("unlinks before it closes, and journals before either", async () => {
-		const {calls} = await run();
-		const order = calls.filter(
-			(line) => COMMENT.test(line) || UNLINK.test(line) || CLOSE.test(line),
-		);
+		const {log} = await run();
+		const order = log.filter((line) => COMMENT.test(line) || UNLINK.test(line) || CLOSE.test(line));
 		expect(
 			order.map((line) =>
 				COMMENT.test(line) ? "comment" : UNLINK.test(line) ? "unlink" : "close",
@@ -138,23 +140,24 @@ describe("runSupersede", () => {
 	});
 
 	it("unlinks on the child's id, not its number", async () => {
-		const {calls} = await run();
-		expect(calls.find((line) => UNLINK.test(line))).toContain("sub_issue_id=42880");
+		const {requests, bodies} = await run();
+		const at = requests.findIndex((line) => UNLINK.test(line));
+		expect(JSON.parse(bodies[at] ?? "null")).toEqual({sub_issue_id: 42880});
 	});
 
 	it("refuses a child this run minted — a re-plan does not retire its own work", async () => {
-		const {outcome, calls} = await run(happy(), files(record(4288, true)));
+		const {outcome, requests} = await run(happy(), files(record(4288, true)));
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toBe(
 			"ledger supersede: #4288 was minted by this run — refusing to supersede a child of the current plan.",
 		);
-		expect(calls.some((line) => COMMENT.test(line))).toBe(false);
+		expect(requests.some((line) => COMMENT.test(line))).toBe(false);
 	});
 
 	it("refuses a child that is not this epic's sub-issue", async () => {
 		const {outcome} = await run(
 			[
-				[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
+				[EPIC_READ, epic()],
 				[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 				...CLAIMED,
 				[SUBS, subIssues({number: 4301, id: 43010})],
@@ -167,7 +170,7 @@ describe("runSupersede", () => {
 
 	it("refuses a child that is already closed", async () => {
 		const {outcome} = await run([
-			[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
+			[EPIC_READ, epic()],
 			[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 			...CLAIMED,
 			[SUBS, subIssues({number: 4288, id: 42880})],
@@ -177,12 +180,12 @@ describe("runSupersede", () => {
 	});
 
 	it("refuses a reason carrying a machine-local path, masked", async () => {
-		const {outcome, calls} = await run(happy(), files(record(4288, false)), {
+		const {outcome, log} = await run(happy(), files(record(4288, false)), {
 			reason: "see /Users/someone/notes.md",
 		});
 		expect(outcome.code).toBe(LEAKED_PATH);
 		expect(outcome.stderr.join("\n")).toContain("/Users/<redacted>");
-		expect(calls).toEqual([]);
+		expect(log).toEqual([]);
 	});
 
 	it("refuses a reason that is a bare @ path reference", async () => {
@@ -192,7 +195,7 @@ describe("runSupersede", () => {
 
 	/** The journal is posted first so the reason survives even if a later leg fails. */
 	it("reports how many legs landed when one could not be proven", async () => {
-		const {outcome} = await run(happy({unlink: errOut("gh: Bad Gateway (HTTP 502)")}));
+		const {outcome} = await run(happy({unlink: GATEWAY}));
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toBe(
 			"ledger supersede: wrote 1 of 3 legs on #4288 and could not prove the rest — the child is UNKNOWN.",
@@ -218,10 +221,10 @@ describe("runSupersede", () => {
 
 	it("refuses when the sub-issue list could not be read", async () => {
 		const {outcome} = await run([
-			[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
+			[EPIC_READ, epic()],
 			[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 			...CLAIMED,
-			[SUBS, errOut("gh: Bad Gateway (HTTP 502)")],
+			[SUBS, GATEWAY],
 		]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});

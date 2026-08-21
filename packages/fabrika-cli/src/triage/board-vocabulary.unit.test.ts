@@ -7,21 +7,31 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeFs, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import {ok} from "../io/git.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {runBootstrap} from "../status/bootstrap-verb.ts";
 import {runApply} from "./apply-verb.ts";
-import {CWD, guardedShell, triageContext} from "./claim-fixtures.test-support.ts";
+import {
+	CWD,
+	type GuardedSeams,
+	guardedShell,
+	triageContext,
+} from "./claim-fixtures.test-support.ts";
 import {OFF_VOCABULARY} from "./codes.ts";
 import {runPark} from "./park-verb.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/4312$/;
-const LABELS = /^gh api --paginate repos\/o\/r\/labels/;
-const REMOVE = /^gh api --method DELETE repos\/o\/r\/issues\/4312\/labels\//;
-const ADD = /^gh api --method POST repos\/o\/r\/issues\/4312\/labels /;
-const COMMENT = /^gh api --method POST repos\/o\/r\/issues\/4312\/comments /;
+const ISSUE = /GET .*\/repos\/o\/r\/issues\/4312$/;
+const LABELS = /GET .*\/repos\/o\/r\/labels\?/;
+const REMOVE = /DELETE .*\/repos\/o\/r\/issues\/4312\/labels\//;
+const ADD = /POST .*\/repos\/o\/r\/issues\/4312\/labels$/;
+const COMMENT = /POST .*\/repos\/o\/r\/issues\/4312\/comments$/;
+
+/** What one matching request carried as its JSON body — where the labels now travel. */
+const bodyFor = (seams: GuardedSeams, pattern: RegExp): string => {
+	const at = seams.requests.findIndex((line) => pattern.test(line));
+	return at < 0 ? "" : (seams.bodies[at] ?? "");
+};
 
 /** The whole board a hypothetical adopting repo declares: its own types, priorities and lanes. */
 const FOREIGN = JSON.stringify({
@@ -36,34 +46,37 @@ const FOREIGN = JSON.stringify({
 
 const BODY = "## Summary\n\ns\n\n### Acceptance criteria\n\n- [ ] the one criterion\n";
 
-const issue = (labels: ReadonlyArray<string>): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: 4312,
-			title: "t",
-			body: BODY,
-			state: "open",
-			labels: labels.map((name) => ({name})),
-			html_url: "https://example.test/issues/4312",
-			milestone: null,
-		}),
-	);
+const issue = (labels: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: 4312,
+		title: "t",
+		body: BODY,
+		state: "open",
+		labels: labels.map((name) => ({name})),
+		html_url: "https://example.test/issues/4312",
+		milestone: null,
+	}),
+});
 
 /** Every label the foreign board can produce, as the repo's own label set reads back. */
-const FOREIGN_LABELS = okOut(
-	[
-		"type:task",
-		"type:defect",
-		"sev1",
-		"sev2",
-		"state:new",
-		"state:ready",
-		"state:blocked",
-		"ready-for:agent",
-		"ready-for:human",
-		"team:infra",
-	].join("\n"),
-);
+const FOREIGN_LABELS: HttpReply = {
+	status: 200,
+	body: JSON.stringify(
+		[
+			"type:task",
+			"type:defect",
+			"sev1",
+			"sev2",
+			"state:new",
+			"state:ready",
+			"state:blocked",
+			"ready-for:agent",
+			"ready-for:human",
+			"team:infra",
+		].map((name) => ({name})),
+	),
+};
 
 const applyOptions = {
 	issue: 4312,
@@ -80,12 +93,12 @@ const applyOptions = {
 
 describe("triage apply under a declared board vocabulary", () => {
 	/** Observed: new, on `sev1`. Read back: the whole triaged shape in the repo's own vocabulary. */
-	const script = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+	const script = (): ReadonlyArray<Scripted> => [
 		[once(ISSUE), issue(["state:new", "sev1"])],
 		[ISSUE, issue(["type:task", "sev2", "state:ready", "ready-for:agent", "team:infra"])],
 		[LABELS, FOREIGN_LABELS],
-		[REMOVE, okOut("[]")],
-		[ADD, okOut("[]")],
+		[REMOVE, {status: 200, body: "[]"}],
+		[ADD, {status: 200, body: "[]"}],
 	];
 
 	it("writes the repo's own type, priority, status and lane", async () => {
@@ -94,7 +107,7 @@ describe("triage apply under a declared board vocabulary", () => {
 			Effect.provide(runApply(applyOptions), triageContext(shell, FOREIGN)),
 		);
 		expect(out.code).toBe(0);
-		const added = shell.calls.find((line) => ADD.test(line)) ?? "";
+		const added = bodyFor(shell, ADD);
 		for (const label of ["type:task", "sev2", "state:ready", "team:infra"]) {
 			expect(added).toContain(label);
 		}
@@ -108,7 +121,7 @@ describe("triage apply under a declared board vocabulary", () => {
 		);
 		expect(out.code).toBe(OFF_VOCABULARY);
 		expect(out.stderr.join(" ")).toContain("task, defect");
-		expect(shell.calls).toEqual([]);
+		expect(shell.requests).toEqual([]);
 	});
 
 	/** The lanes are an open set now, so this decode is the only thing standing between a typo'd
@@ -123,7 +136,7 @@ describe("triage apply under a declared board vocabulary", () => {
 		);
 		expect(out.code).toBe(OFF_VOCABULARY);
 		expect(out.stderr.join(" ")).toContain("team:infra");
-		expect(shell.calls).toEqual([]);
+		expect(shell.requests).toEqual([]);
 	});
 
 	it("accepts a lane the declaring repo named", async () => {
@@ -140,9 +153,9 @@ describe("triage park under a declared board vocabulary", () => {
 			[once(ISSUE), issue(["type:task", "sev1", "state:ready"])],
 			[ISSUE, issue(["state:blocked"])],
 			[LABELS, FOREIGN_LABELS],
-			[COMMENT, okOut(JSON.stringify({id: 1, html_url: "https://example.test/c/1"}))],
-			[REMOVE, okOut("[]")],
-			[ADD, okOut("[]")],
+			[COMMENT, {status: 201, body: JSON.stringify({id: 1, html_url: "https://example.test/c/1"})}],
+			[REMOVE, {status: 200, body: "[]"}],
+			[ADD, {status: 200, body: "[]"}],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(
@@ -158,18 +171,18 @@ describe("triage park under a declared board vocabulary", () => {
 			),
 		);
 		expect(out.code).toBe(0);
-		expect(shell.calls.some((line) => line.includes("state:blocked"))).toBe(true);
+		expect(shell.bodies.some((body) => body.includes("state:blocked"))).toBe(true);
 	});
 });
 
 describe("status bootstrap under a declared board vocabulary", () => {
-	const LIST = /^gh api --paginate repos\/o\/r\/labels/;
-	const CREATE = /^gh api --method POST repos\/o\/r\/labels /;
+	const LIST = /GET .*\/repos\/o\/r\/labels\?/;
+	const CREATE = /POST .*\/repos\/o\/r\/labels$/;
 
 	const run = (config: string | null) => {
 		const shell = guardedShell([
-			[LIST, okOut("")],
-			[CREATE, okOut("{}")],
+			[LIST, {status: 200, body: "[]"}],
+			[CREATE, {status: 201, body: "{}"}],
 		]);
 		const files = config === null ? {} : {[`${CWD}/.fabrika.jsonc`]: config};
 		return Effect.runPromise(
@@ -185,12 +198,14 @@ describe("status bootstrap under a declared board vocabulary", () => {
 				}),
 				Layer.merge(shell.layer, fakeFs({files}).layer),
 			),
-		).then(() => ({calls: shell.calls}));
+		).then(() => shell);
 	};
 
+	const created = (seams: GuardedSeams): string =>
+		seams.bodies.filter((_, at) => CREATE.test(seams.requests[at] ?? "")).join(" ");
+
 	it("creates the resolved taxonomy, never the shipped one", async () => {
-		const {calls} = await run(FOREIGN);
-		const wrote = calls.filter((line) => CREATE.test(line)).join(" ");
+		const wrote = created(await run(FOREIGN));
 		for (const label of ["state:new", "state:ready", "state:blocked", "sev1", "type:task"]) {
 			expect(wrote).toContain(label);
 		}
@@ -199,8 +214,7 @@ describe("status bootstrap under a declared board vocabulary", () => {
 	});
 
 	it("creates phoenix's taxonomy for a repo that declared nothing", async () => {
-		const {calls} = await run(null);
-		const wrote = calls.filter((line) => CREATE.test(line)).join(" ");
+		const wrote = created(await run(null));
 		expect(wrote).toContain("status:needs-triage");
 		expect(wrote).toContain("type:bug");
 	});
@@ -210,8 +224,8 @@ describe("status bootstrap under a declared board vocabulary", () => {
 	// mechanism, arriving from the other direction).
 	it("writes nothing when the config could not be read", async () => {
 		const shell = guardedShell([
-			[LIST, okOut("")],
-			[CREATE, okOut("{}")],
+			[LIST, {status: 200, body: "[]"}],
+			[CREATE, {status: 201, body: "{}"}],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(
@@ -228,6 +242,6 @@ describe("status bootstrap under a declared board vocabulary", () => {
 			),
 		);
 		expect(out.code).toBe(11);
-		expect(shell.calls.some((line) => CREATE.test(line))).toBe(false);
+		expect(shell.requests.some((line) => CREATE.test(line))).toBe(false);
 	});
 });

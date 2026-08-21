@@ -14,6 +14,7 @@
  * stale head misleads (#4808's class).
  */
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {requireSession} from "../build/claim.ts";
 import {contentOf, gate} from "../build/content-gate.ts";
@@ -71,8 +72,20 @@ export interface EvidenceOptions {
 	readonly tmpRoot: string;
 	/** Content-addressed PUT + GET-back into the harness's declared store. */
 	readonly storeUpload: (store: string, target: UploadTarget) => Effect.Effect<Upload>;
-	/** GitHub's user-attachment endpoint plus a HEAD probe of every returned URL. */
-	readonly attachmentUpload: (repo: string, target: UploadTarget) => Effect.Effect<Upload>;
+	/**
+	 * GitHub's user-attachment endpoint plus a HEAD probe of every returned URL.
+	 *
+	 * Wider than {@link UploadLeg} by the two services its credential path needs: the repo id comes
+	 * off the fetch client and the token off `../io/gh-api.ts`, whose `gh` leg spawns.
+	 */
+	readonly attachmentUpload: (
+		repo: string,
+		target: UploadTarget,
+	) => Effect.Effect<
+		Upload,
+		never,
+		HttpClient.HttpClient | ChildProcessSpawner.ChildProcessSpawner
+	>;
 }
 
 /** The posted markdown: one row per surface, before|after side by side, bound to the head SHA. */
@@ -170,7 +183,10 @@ export const runEvidence = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| Path.Path
+	| HttpClient.HttpClient
 > =>
 	Effect.gen(function* () {
 		const session = requireSession(VERB, options.env);
@@ -202,7 +218,7 @@ export const runEvidence = (
 			);
 		}
 		const branch = yield* currentBranch;
-		const headBranch = yield* pullHeadRef(resolved.repo, options.pr);
+		const headBranch = yield* pullHeadRef(options.env, resolved.repo, options.pr);
 		if (headBranch._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,

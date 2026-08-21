@@ -8,14 +8,18 @@
  * projected away by an error channel typed `never` (#3925): here a failed verification is a value the
  * verb refuses on.
  */
-import {execFileSync} from "node:child_process";
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
+import type {ChildProcessSpawner} from "effect/unstable/process";
 import {
 	PNG_CONTENT_TYPE,
 	parseUploadResponse,
 	type UploadOutcome,
 	uploadEndpoint,
 } from "../capture/upload.ts";
+import {existenceOf, resolveToken, restRead} from "../io/gh-api.ts";
+import {fail, ok} from "../io/git.ts";
+import {isRecord} from "../io/json.ts";
 import type {Upload, UploadLeg, UploadTarget} from "./evidence-verb.ts";
 import type {FetchLeg} from "./golden-verb.ts";
 import {legFailed} from "./leg-failed.ts";
@@ -138,43 +142,59 @@ export const attachmentUpload =
 			Effect.catch((cause) => Effect.succeed<Upload>({_tag: "Failed", reason: cause.reason})),
 		);
 
+/** What the attachment tier needs before it can post anything: the repo's id, and a credential. */
+interface Credentials {
+	readonly repositoryId: number;
+	readonly token: string;
+}
+
+/** Everything the credential path needs: the fetch client, and the spawner `resolveToken`'s `gh` leg uses. */
+type Credentialed<A> = Effect.Effect<
+	A,
+	never,
+	HttpClient.HttpClient | ChildProcessSpawner.ChildProcessSpawner
+>;
+
 /**
- * The attachment tier's two credentials, resolved through the `gh` CLI the rest of the group already
- * speaks through — never a second auth path. Resolved lazily, at the first upload, so a run that
- * never reaches the attachment tier never asks for a token, and memoised per repo so a five-surface
- * evidence post does not shell out ten times.
+ * The attachment tier's two credentials, both off `../io/gh-api.ts` — the package's one token
+ * resolution (ADR 0315) and one REST read, never a second auth path and never a `gh` subprocess on
+ * the request path.
+ *
+ * Resolved lazily, at the first upload, so a run that never reaches the attachment tier never asks
+ * for a token, and memoised per repo so a five-surface evidence post does not resolve them ten
+ * times. A failure memoises too: the reason is what the caller refuses on, and re-asking would only
+ * fail the same way five more times.
  */
-const credentials = new Map<
-	string,
-	{readonly repositoryId: number; readonly token: string} | string
->();
+const credentials = new Map<string, Credentials | string>();
 
 const resolveCredentials = (
+	env: Readonly<Record<string, string | undefined>>,
 	repo: string,
-): Effect.Effect<{readonly repositoryId: number; readonly token: string} | string> =>
-	Effect.try({
-		try: () => {
-			const id = Number.parseInt(
-				execFileSync("gh", ["api", `repos/${repo}`, "--jq", ".id"], {encoding: "utf8"}).trim(),
-				10,
-			);
-			const token = execFileSync("gh", ["auth", "token"], {encoding: "utf8"}).trim();
-			return Number.isInteger(id) && token !== ""
-				? {repositoryId: id, token}
-				: "`gh` named no repository id or token";
-		},
-		catch: legFailed,
-	}).pipe(
-		Effect.catch((cause) =>
-			Effect.succeed(`cannot resolve the upload credentials through gh: ${cause.reason}`),
-		),
-	);
-
-export const ghAttachmentUpload = (repo: string, target: UploadTarget): Effect.Effect<Upload> =>
+): Credentialed<Credentials | string> =>
 	Effect.gen(function* () {
-		const cached = credentials.get(repo) ?? (yield* resolveCredentials(repo));
-		credentials.set(repo, cached);
-		return typeof cached === "string"
-			? {_tag: "Failed" as const, reason: cached}
-			: yield* attachmentUpload(cached)(target);
+		const token = yield* resolveToken(env);
+		if (token._tag === "Failure") return token.reason;
+		const read = existenceOf(yield* restRead(token.value, "GET", `repos/${repo}`), (body) =>
+			isRecord(body) && typeof body.id === "number" && Number.isInteger(body.id)
+				? ok(body.id)
+				: fail("GitHub answered 200 but named no repository id"),
+		);
+		if (read._tag === "Present") return {repositoryId: read.value, token: token.value};
+		return read._tag === "Absent"
+			? `${repo} does not exist, so it names no repository id`
+			: `cannot resolve ${repo}'s numeric id: ${read.reason}`;
 	});
+
+export const ghAttachmentUpload =
+	(env: Readonly<Record<string, string | undefined>>) =>
+	(repo: string, target: UploadTarget): Credentialed<Upload> =>
+		Effect.gen(function* () {
+			const cached = credentials.get(repo) ?? (yield* resolveCredentials(env, repo));
+			credentials.set(repo, cached);
+			return typeof cached === "string"
+				? {_tag: "Failed" as const, reason: cached}
+				: yield* attachmentUpload(cached)(target);
+		});
+
+/** Test-only: the memo is module-level, so a test over laziness needs a way back to a cold start. */
+export const forgetCredentials = (): void => credentials.clear();

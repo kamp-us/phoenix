@@ -1,9 +1,8 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {GIT_DIRS} from "../build/fixtures.test-support.ts";
+import {GATEWAY, GIT_DIRS, served} from "../build/fixtures.test-support.ts";
 import {CONFIG_PATH} from "../config/document.ts";
-import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeFs, fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {runChild} from "./child-verb.ts";
 import {
@@ -32,12 +31,13 @@ import {
 } from "./fixtures.test-support.ts";
 import {manifestPath, parseManifest, renderRunRecord, runJsonPath} from "./run.ts";
 
-const CREATE = /^gh api --method POST repos\/o\/r\/issues /;
-const LINK = /^gh api --method POST repos\/o\/r\/issues\/4300\/sub_issues/;
-const READBACK = /^gh api repos\/o\/r\/issues\/4301$/;
-const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
-const LABELS = /^gh api --paginate repos\/o\/r\/labels/;
-const MILESTONES = /^gh api --paginate repos\/o\/r\/milestones/;
+const CREATE = /^POST https:\/\/api\.github\.com\/repos\/o\/r\/issues$/;
+const LINK = /^POST https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issues$/;
+const READBACK = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4301$/;
+const SUBS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issues\?/;
+const LABELS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/labels\?/;
+const MILESTONES = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/milestones\?/;
+const EPIC_READ = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
 
 const MINTED_LABELS = ["type:feature", "p1", "status:planned", "ready-for:agent"];
 
@@ -54,18 +54,18 @@ const RUN_JSON = (cycleDoc: "present" | "absent" | "unknown" = "present") =>
 		bodyDigest: bodyDigest("An epic brief about the moderation queue.\n"),
 	});
 
-const CREATED = okOut(JSON.stringify({number: 4301, id: 90210}));
+const CREATED = served({number: 4301, id: 90210});
 
-const HAPPY: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
+const HAPPY: ReadonlyArray<Scripted> = [
+	[EPIC_READ, epic()],
 	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	...CLAIMED,
 	[LABELS, labelSet(...DEFAULT_LABELS)],
 	[MILESTONES, milestones([44, "fabrika campaign"])],
 	[CREATE, CREATED],
-	[LINK, okOut("{}")],
+	[LINK, served({})],
 	[READBACK, childIssue({number: 4301, labels: MINTED_LABELS, milestone: HOME})],
-	[SUBS, okOut(JSON.stringify([{number: 4301, id: 90210, state: "open", state_reason: null}]))],
+	[SUBS, served([{number: 4301, id: 90210, state: "open", state_reason: null}])],
 ];
 
 const options = {
@@ -85,11 +85,11 @@ const options = {
 
 const run = (
 	overrides: Partial<typeof options> = {},
-	script: ReadonlyArray<readonly [RegExp, ExecResult]> = HAPPY,
+	script: ReadonlyArray<Scripted> = HAPPY,
 	files: Readonly<Record<string, string | null>> = {[runJsonPath(DIR)]: RUN_JSON()},
 	body: string = childBody(),
 ) => {
-	const shell = fakeShell(script);
+	const shell = fakeSeams(script);
 	const fs = fakeFs({files});
 	const stdin: Effect.Effect<StdinRead> = Effect.succeed({_tag: "Text", text: body});
 	return Effect.runPromise(
@@ -97,7 +97,22 @@ const run = (
 			runChild({...options, ...overrides, stdin}),
 			Layer.mergeAll(shell.layer, fs.layer),
 		),
-	).then((outcome) => ({outcome, written: fs.written, calls: shell.calls}));
+	).then((outcome) => ({
+		outcome,
+		written: fs.written,
+		calls: shell.log,
+		requests: shell.requests,
+		bodies: shell.bodies,
+	}));
+};
+
+/** The JSON a matching request carried — where every write's fields travel now (ADR 0315). */
+const sent = (
+	run: {requests: ReadonlyArray<string>; bodies: ReadonlyArray<string>},
+	pattern: RegExp,
+): Record<string, unknown> => {
+	const at = run.requests.findIndex((line) => pattern.test(line));
+	return at < 0 ? {} : (JSON.parse(run.bodies[at] ?? "{}") as Record<string, unknown>);
 };
 
 describe("runChild", () => {
@@ -135,7 +150,7 @@ describe("runChild", () => {
 	 * opens a window in which the child exists with no `ready-for:` value at all.
 	 */
 	it("puts every birth attribute in the one POST", async () => {
-		const {calls} = await run({milestone: "fabrika campaign", labels: ["fabrika"]}, [
+		const minted = await run({milestone: "fabrika campaign", labels: ["fabrika"]}, [
 			...HAPPY.filter(([pattern]) => pattern !== LABELS && pattern !== READBACK),
 			[LABELS, labelSet(...DEFAULT_LABELS, "fabrika")],
 			[
@@ -147,17 +162,13 @@ describe("runChild", () => {
 				}),
 			],
 		]);
-		const create = calls.find((line) => CREATE.test(line)) ?? "";
-		for (const label of [...MINTED_LABELS, "fabrika"]) {
-			expect(create).toContain(`labels[]=${label}`);
-		}
-		expect(create).toContain("milestone=44");
-		expect(calls.filter((line) => line.startsWith("gh api --method PATCH")).length).toBe(0);
+		expect(sent(minted, CREATE).labels).toEqual([...MINTED_LABELS, "fabrika"]);
+		expect(sent(minted, CREATE).milestone).toBe(44);
+		expect(minted.requests.some((line) => line.startsWith("PATCH "))).toBe(false);
 	});
 
 	it("links on the child's id, not its number", async () => {
-		const {calls} = await run();
-		expect(calls.find((line) => LINK.test(line))).toContain("sub_issue_id=90210");
+		expect(sent(await run(), LINK).sub_issue_id).toBe(90210);
 	});
 
 	/** #4780: a child must never inherit its audience by omission. */
@@ -193,24 +204,23 @@ describe("runChild", () => {
 	});
 
 	it("mints a milestone-homed child", async () => {
-		const {outcome, calls} = await run({milestone: HOME});
-		expect(outcome.code).toBe(0);
-		expect(calls.find((line) => CREATE.test(line)) ?? "").toContain("milestone=44");
+		const minted = await run({milestone: HOME});
+		expect(minted.outcome.code).toBe(0);
+		expect(sent(minted, CREATE).milestone).toBe(44);
 	});
 
 	/** ADR 0208's lane exemption holds here too — homing is never collapsed into "milestone required". */
 	it("mints a lane-homed child carrying no milestone", async () => {
-		const {outcome, calls} = await run({milestone: null, labels: [LANE]}, [
+		const minted = await run({milestone: null, labels: [LANE]}, [
 			...HAPPY.filter(([pattern]) => pattern !== LABELS && pattern !== READBACK),
 			[LABELS, labelSet(...DEFAULT_LABELS, LANE)],
 			[READBACK, childIssue({number: 4301, labels: [...MINTED_LABELS, LANE]})],
 		]);
-		expect(outcome.code).toBe(0);
-		expect(JSON.parse(outcome.stdout).observed.milestone).toBe(null);
-		const create = calls.find((line) => CREATE.test(line)) ?? "";
-		expect(create).toContain(`labels[]=${LANE}`);
-		expect(create).not.toContain("milestone=");
-		expect(calls.some((line) => MILESTONES.test(line))).toBe(false);
+		expect(minted.outcome.code).toBe(0);
+		expect(JSON.parse(minted.outcome.stdout).observed.milestone).toBe(null);
+		expect(sent(minted, CREATE).labels).toContain(LANE);
+		expect(sent(minted, CREATE)).not.toHaveProperty("milestone");
+		expect(minted.requests.some((line) => MILESTONES.test(line))).toBe(false);
 	});
 
 	it("refuses a retired priority", async () => {
@@ -221,12 +231,12 @@ describe("runChild", () => {
 
 	/** #4285: `POST .../labels` CREATES an unknown label rather than rejecting it. */
 	it("refuses a label absent from the repo taxonomy rather than minting it", async () => {
-		const {outcome, calls} = await run({labels: ["not-a-label"]});
+		const {outcome, requests} = await run({labels: ["not-a-label"]});
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toBe(
 			'ledger child: label "not-a-label" is absent from o/r\'s taxonomy — refusing to create it (#4285).',
 		);
-		expect(calls.some((line) => CREATE.test(line))).toBe(false);
+		expect(requests.some((line) => CREATE.test(line))).toBe(false);
 	});
 
 	it("refuses a milestone that is not open in the repo", async () => {
@@ -307,9 +317,8 @@ describe("runChild", () => {
 	});
 
 	it("drops the containment line when the run's cycle-doc read is absent", async () => {
-		const {calls} = await run({}, HAPPY, {[runJsonPath(DIR)]: RUN_JSON("absent")});
-		const create = calls.find((line) => CREATE.test(line)) ?? "";
-		expect(create).not.toContain("**Containment:**");
+		const minted = await run({}, HAPPY, {[runJsonPath(DIR)]: RUN_JSON("absent")});
+		expect(String(sent(minted, CREATE).body)).not.toContain("**Containment:**");
 	});
 
 	it("refuses an empty pipe on its own code", async () => {
@@ -328,18 +337,18 @@ describe("runChild", () => {
 	});
 
 	it("refuses when a precondition read fails, and creates nothing", async () => {
-		const {outcome, calls} = await run({}, [
+		const {outcome, requests} = await run({}, [
 			...HAPPY.filter(([pattern]) => pattern !== LABELS),
-			[LABELS, errOut("gh: Bad Gateway (HTTP 502)")],
+			[LABELS, GATEWAY],
 		]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
-		expect(calls.some((line) => CREATE.test(line))).toBe(false);
+		expect(requests.some((line) => CREATE.test(line))).toBe(false);
 	});
 
 	it("seats a create that could not be proven on 8", async () => {
 		const {outcome} = await run({}, [
 			...HAPPY.filter(([pattern]) => pattern !== CREATE),
-			[CREATE, errOut("gh: Bad Gateway (HTTP 502)")],
+			[CREATE, GATEWAY],
 		]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 	});
@@ -352,7 +361,7 @@ describe("runChild", () => {
 	it("records the child before it links, so a 23 leaves a findable number", async () => {
 		const {outcome, written} = await run({}, [
 			...HAPPY.filter(([pattern]) => pattern !== LINK),
-			[LINK, errOut("gh: Unprocessable (HTTP 422)")],
+			[LINK, {status: 422, body: '{"message":"Unprocessable"}'}],
 		]);
 		expect(outcome.code).toBe(LINK_UNPROVEN);
 		expect(outcome.stderr.at(-1)).toContain("recorded in the run manifest as linked:false");
@@ -364,7 +373,7 @@ describe("runChild", () => {
 	it("seats an unprovable link on 23 even when the write itself returned", async () => {
 		const {outcome} = await run({}, [
 			...HAPPY.filter(([pattern]) => pattern !== SUBS),
-			[SUBS, okOut("[]")],
+			[SUBS, served([])],
 		]);
 		expect(outcome.code).toBe(LINK_UNPROVEN);
 	});
@@ -372,7 +381,7 @@ describe("runChild", () => {
 	it("seats a create it cannot re-read on 8", async () => {
 		const {outcome} = await run({}, [
 			...HAPPY.filter(([pattern]) => pattern !== READBACK),
-			[READBACK, errOut("gh: Bad Gateway (HTTP 502)")],
+			[READBACK, GATEWAY],
 		]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 	});
@@ -387,7 +396,7 @@ describe("runChild", () => {
 	});
 
 	it("seats a manifest it could not write on 26, naming the number that now exists", async () => {
-		const shell = fakeShell(HAPPY);
+		const shell = fakeSeams(HAPPY);
 		const fs = fakeFs({
 			files: {[runJsonPath(DIR)]: RUN_JSON()},
 			unwritable: [manifestPath(DIR)],

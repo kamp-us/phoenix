@@ -10,8 +10,7 @@ import {
 	NONCE,
 	pull,
 } from "../build/fixtures.test-support.ts";
-import {fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import {isBareAtReference} from "../report/leaks.ts";
 import {
 	BAD_SECTIONS,
@@ -62,25 +61,31 @@ const files = (): Record<string, Uint8Array | string> => ({
 
 const POSTED_ID = 512347;
 
-const script = (
-	overrides: ReadonlyArray<readonly [RegExp, ExecResult]> = [],
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+// One `pulls/4318` row answers both reads over that resource: the PR record and the head branch the
+// lane fence compares against.
+const script = (overrides: ReadonlyArray<Scripted> = []): ReadonlyArray<Scripted> => [
 	...overrides,
 	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	[/^git rev-parse --abbrev-ref HEAD$/, okOut(`${LANE}\n`)],
-	[/^gh api repos\/o\/r\/issues\/4312$/, issue()],
+	[/GET .*\/repos\/o\/r\/issues\/4312$/, issue()],
 	[
-		/^gh api --paginate repos\/o\/r\/issues\/4312\/comments/,
+		/GET .*\/repos\/o\/r\/issues\/4312\/comments/,
 		comments({id: 1, body: marker("s-9f2e", LANE_UUID)}),
 	],
-	[/^gh api repos\/o\/r\/collaborators\/agent\/permission/, okOut("write\n")],
-	[/^gh api repos\/o\/r\/pulls\/4318 --jq \.head\.ref$/, okOut(`${LANE}\n`)],
-	[/^gh api repos\/o\/r\/pulls\/4318$/, pull({head: {sha: HEAD, ref: LANE}})],
 	[
-		/^gh api --method POST repos\/o\/r\/issues\/4318\/comments/,
-		okOut(
-			JSON.stringify({id: POSTED_ID, html_url: "https://github.com/o/r/pull/4318#issuecomment-1"}),
-		),
+		/GET .*\/repos\/o\/r\/collaborators\/agent\/permission/,
+		{status: 200, body: '{"permission":"write"}'},
+	],
+	[/GET .*\/repos\/o\/r\/pulls\/4318$/, pull({head: {sha: HEAD, ref: LANE}})],
+	[
+		/POST .*\/repos\/o\/r\/issues\/4318\/comments/,
+		{
+			status: 201,
+			body: JSON.stringify({
+				id: POSTED_ID,
+				html_url: "https://github.com/o/r/pull/4318#issuecomment-1",
+			}),
+		},
 	],
 ];
 
@@ -99,17 +104,24 @@ const options: EvidenceOptions = {
 	before: "before",
 	after: "after",
 	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"},
+	env: {
+		CLAUDE_PIPELINE_REPO: "o/r",
+		CLAUDE_CODE_SESSION_ID: "s-9f2e",
+		GITHUB_TOKEN: "ghp_scripted",
+	},
 	tmpRoot: "/tmp",
 	...uploads,
 };
 
 /** The read-back the happy path needs: the posted body, echoed. */
 const withReadback = (
-	rows: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	rows: ReadonlyArray<Scripted>,
 	body: () => string,
-): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-	[/^gh api repos\/o\/r\/issues\/comments\/512347$/, okOut(JSON.stringify({body: body()}))],
+): ReadonlyArray<Scripted> => [
+	[
+		/GET .*\/repos\/o\/r\/issues\/comments\/512347$/,
+		{status: 200, body: JSON.stringify({body: body()})},
+	],
 	...rows,
 ];
 
@@ -125,14 +137,14 @@ const EXPECTED_BODY = composeEvidence(
 );
 
 const run = (
-	rows: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	rows: ReadonlyArray<Scripted>,
 	fs: FakeBytesFsOptions,
 	overrides: Partial<EvidenceOptions> = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runEvidence({...options, ...overrides}),
-			Layer.merge(fakeShell(rows).layer, fakeBytesFs(fs).layer),
+			Layer.mergeAll(fakeSeams(rows).layer, fakeBytesFs(fs).layer),
 		),
 	);
 
@@ -188,7 +200,7 @@ describe("runEvidence", () => {
 	});
 
 	it("refuses on 17 with NOTHING posted when one upload fails", async () => {
-		const calls = fakeShell(withReadback(script(), () => EXPECTED_BODY));
+		const seams = fakeSeams(withReadback(script(), () => EXPECTED_BODY));
 		const outcome = await Effect.runPromise(
 			Effect.provide(
 				runEvidence({
@@ -200,12 +212,12 @@ describe("runEvidence", () => {
 								: {_tag: "Ok", url: "https://github.com/user-attachments/assets/x"},
 						),
 				}),
-				Layer.merge(calls.layer, fakeBytesFs({files: files()}).layer),
+				Layer.mergeAll(seams.layer, fakeBytesFs({files: files()}).layer),
 			),
 		);
 		expect(outcome.code).toBe(UPLOAD_FAILED);
 		expect(outcome.stdout).toBe("");
-		expect(calls.calls.some((line) => line.includes("--method POST"))).toBe(false);
+		expect(seams.requests.some((line) => line.startsWith("POST"))).toBe(false);
 	});
 
 	it("refuses an after-surface with no baseline on 4", async () => {
@@ -233,7 +245,7 @@ describe("runEvidence", () => {
 		const outcome = await run(
 			script([
 				[
-					/^gh api repos\/o\/r\/pulls\/4318$/,
+					/GET .*\/repos\/o\/r\/pulls\/4318$/,
 					pull({state: "closed", head: {sha: HEAD, ref: LANE}}),
 				],
 			]),
@@ -246,8 +258,8 @@ describe("runEvidence", () => {
 		const outcome = await run(
 			script([
 				[
-					/^gh api repos\/o\/r\/pulls\/4318 --jq \.head\.ref$/,
-					okOut("build/9999-other-aaaaaaaa\n"),
+					/GET .*\/repos\/o\/r\/pulls\/4318$/,
+					pull({head: {sha: HEAD, ref: "build/9999-other-aaaaaaaa"}}),
 				],
 			]),
 			{files: files()},
@@ -259,7 +271,7 @@ describe("runEvidence", () => {
 		const outcome = await run(
 			script([
 				[
-					/^gh api --paginate repos\/o\/r\/issues\/4312\/comments/,
+					/GET .*\/repos\/o\/r\/issues\/4312\/comments/,
 					comments({id: 1, body: marker("other-session", LANE_UUID)}),
 				],
 			]),
@@ -270,12 +282,7 @@ describe("runEvidence", () => {
 
 	it("refuses on 8 when the post itself fails — it may or may not have landed", async () => {
 		const outcome = await run(
-			script([
-				[
-					/^gh api --method POST repos\/o\/r\/issues\/4318\/comments/,
-					{ok: false, stdout: "", reason: "HTTP 502"},
-				],
-			]),
+			script([[/POST .*\/repos\/o\/r\/issues\/4318\/comments/, {status: 502, body: "{}"}]]),
 			{files: files()},
 		);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
@@ -303,7 +310,7 @@ describe("runEvidence", () => {
 		const tampered = files();
 		tampered[`${SCRATCH}/after/pano.png`] = encodePng(2, 2, solid(2, 2, [255, 0, 0, 255]));
 		const uploaded: string[] = [];
-		const shell = fakeShell(script());
+		const seams = fakeSeams(script());
 		const outcome = await Effect.runPromise(
 			Effect.provide(
 				runEvidence({
@@ -316,16 +323,16 @@ describe("runEvidence", () => {
 						});
 					},
 				}),
-				Layer.merge(shell.layer, fakeBytesFs({files: tampered}).layer),
+				Layer.mergeAll(seams.layer, fakeBytesFs({files: tampered}).layer),
 			),
 		);
 		expect(outcome.code).toBe(CAPTURE_INVALID);
 		expect(uploaded).toEqual([]);
-		expect(shell.calls.some((line) => line.includes("--method POST"))).toBe(false);
+		expect(seams.requests.some((line) => line.startsWith("POST"))).toBe(false);
 	});
 
 	it("refuses a machine-local path in the composed comment on 5, and posts nothing", async () => {
-		const shell = fakeShell(script());
+		const seams = fakeSeams(script());
 		const outcome = await Effect.runPromise(
 			Effect.provide(
 				runEvidence({
@@ -336,12 +343,12 @@ describe("runEvidence", () => {
 							url: `/Users/someone/captures/${target.fileName}`,
 						}),
 				}),
-				Layer.merge(shell.layer, fakeBytesFs({files: files()}).layer),
+				Layer.mergeAll(seams.layer, fakeBytesFs({files: files()}).layer),
 			),
 		);
 		expect(outcome.code).toBe(LEAKED_PATH);
 		expect(outcome.stdout).toBe("");
-		expect(shell.calls.some((line) => line.includes("--method POST"))).toBe(false);
+		expect(seams.requests.some((line) => line.startsWith("POST"))).toBe(false);
 	});
 
 	// Seat 6 is the #3086 backstop, and `runEvidence` cannot reach it: `composeEvidence` always leads

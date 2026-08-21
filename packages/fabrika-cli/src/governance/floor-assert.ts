@@ -21,8 +21,9 @@
  * two groups come to disagree about what the platform returns.
  */
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
+import type {ChildProcessSpawner} from "effect/unstable/process";
 import {getWorkflowRun, rerunFailedJobs} from "../heal-ci/github.ts";
-import type {Shell} from "../io/git.ts";
 import {listRunsAtHead} from "../ship/github.ts";
 
 /** The floor workflow's `name:`, which is what a run at a head carries. */
@@ -60,7 +61,14 @@ const unknown = (reason: string): FloorAssertion => ({_tag: "Unknown", reason});
  * signal proves it: `run_attempt` increased, or the completed-and-red run is running again under the
  * same id while the counter catches up.
  */
-export const assertFloorAt = (repo: string, sha: string): Shell<FloorAssertion> =>
+export const assertFloorAt = (
+	repo: string,
+	sha: string,
+): Effect.Effect<
+	FloorAssertion,
+	never,
+	HttpClient.HttpClient | ChildProcessSpawner.ChildProcessSpawner
+> =>
 	Effect.gen(function* () {
 		const listed = yield* listRunsAtHead(repo, sha);
 		if (listed._tag === "Failure") return unknown(listed.reason);

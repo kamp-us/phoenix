@@ -1,39 +1,39 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {comments} from "../build/fixtures.test-support.ts";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import type {HttpReply} from "../fakes.test-support.ts";
 import {runCheck} from "./check-verb.ts";
 import {OFF_VOCABULARY, PLAN_UNAPPROVED, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
 	APPROVER,
 	approvalRow,
+	CHILD,
 	CWD,
+	CYCLE_DOC,
 	child,
 	childBody,
+	cycleDoc,
 	digestOver,
+	ENV,
 	epic,
 	epicBody,
-	planContext,
+	planSeams,
 	ROSTER,
+	type Scripted,
+	SUB_ISSUES,
 	subIssues,
 } from "./fixtures.test-support.ts";
 
-const EPIC = /^gh api repos\/o\/r\/issues\/4300$/;
-const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
-const CHILD_1 = /^gh api repos\/o\/r\/issues\/4301$/;
-const CHILD_2 = /^gh api repos\/o\/r\/issues\/4302$/;
-const REF_9999 = /^gh api repos\/o\/r\/issues\/9999$/;
-const CYCLE = /^gh api repos\/o\/r\/contents\/product-development-cycle\.md$/;
+const EPIC = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
+const SUBS = SUB_ISSUES;
+const CHILD_1 = CHILD(4301);
+const CHILD_2 = CHILD(4302);
+const REF_9999 = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/9999$/;
+const CYCLE = CYCLE_DOC;
 
-const options = {
-	number: 4300,
-	repo: null,
-	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
-	cwd: CWD,
-};
+const options = {number: 4300, repo: null, env: ENV, cwd: CWD};
 
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4300\/comments/;
+const COMMENTS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/comments/;
 
 /**
  * The floor over an **approved** plan — the arm every case below the approval `describe` is about.
@@ -42,29 +42,26 @@ const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4300\/comments/;
  * off `plan read` first: an approval is a statement about a scope, and one bound to any other scope
  * is what the precondition exists to refuse.
  */
-const approvedContext = async (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+const approvedLayer = async (
+	script: ReadonlyArray<Scripted>,
 	config?: string | {readonly unreadable: true},
 ) => {
 	const digest = await digestOver(script, {config});
-	return planContext(
-		fakeShell([...script, ...ROSTER, [COMMENTS, comments(approvalRow(digest))]]),
-		config,
-	);
+	return planSeams([...script, ...ROSTER, [COMMENTS, comments(approvalRow(digest))]], config).layer;
 };
 
-const run = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
-	Effect.runPromise(Effect.provide(runCheck(options), await approvedContext(script)));
+const run = async (script: ReadonlyArray<Scripted>) =>
+	Effect.runPromise(Effect.provide(runCheck(options), await approvedLayer(script)));
 
 /** An epic whose phase line names exactly the one child a single-child script serves. */
 const ONE_CHILD_EPIC = epic({body: epicBody({dependencies: "- phase 1: #4301"})});
 
-const CLEAN: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const CLEAN: ReadonlyArray<Scripted> = [
 	[EPIC, epic()],
 	[SUBS, subIssues(4301, 4302)],
 	[CHILD_1, child({number: 4301})],
 	[CHILD_2, child({number: 4302, body: childBody({stories: "2"})})],
-	[CYCLE, okOut("{}")],
+	[CYCLE, cycleDoc],
 ];
 
 describe("runCheck", () => {
@@ -90,7 +87,7 @@ describe("runCheck", () => {
 			[EPIC, ONE_CHILD_EPIC],
 			[SUBS, subIssues(4301)],
 			[CHILD_1, child({number: 4301, body: childBody({criteria: "no boxes here"})})],
-			[CYCLE, okOut("{}")],
+			[CYCLE, cycleDoc],
 		]);
 		expect(out.code).toBe(0);
 		const answer = JSON.parse(out.stdout);
@@ -105,7 +102,7 @@ describe("runCheck", () => {
 			[EPIC, ONE_CHILD_EPIC],
 			[SUBS, subIssues(4301)],
 			[CHILD_1, child({number: 4301, body: childBody({criteria: "none"})})],
-			[CYCLE, okOut("{}")],
+			[CYCLE, cycleDoc],
 		]);
 		expect(defective.stderr[0]).toBe("plan check: scanned 1 child; #4301.");
 		expect(defective.stderr[1]).toContain("hard defect(s) over 1 child(ren) — see stdout.");
@@ -117,7 +114,7 @@ describe("runCheck", () => {
 			[SUBS, subIssues(4301, 4302)],
 			[CHILD_1, child({number: 4301})],
 			[CHILD_2, child({number: 4302, body: childBody({stories: "2"})})],
-			[CYCLE, errOut("gh: Bad gateway (HTTP 502)")],
+			[CYCLE, {status: 502, body: '{"message":"Bad gateway"}'}],
 		]);
 		expect(JSON.parse(out.stdout)).toMatchObject({
 			answer: "clean",
@@ -137,8 +134,8 @@ describe("runCheck", () => {
 			[EPIC, referencing],
 			[SUBS, subIssues(4301)],
 			[CHILD_1, child({number: 4301})],
-			[REF_9999, errOut("gh: Not Found (HTTP 404)")],
-			[CYCLE, okOut("{}")],
+			[REF_9999, {status: 404, body: '{"message":"Not Found"}'}],
+			[CYCLE, cycleDoc],
 		]);
 		expect(JSON.parse(dangling.stdout).defects).toContainEqual({
 			type: "DANGLING_DEP",
@@ -150,8 +147,8 @@ describe("runCheck", () => {
 			[EPIC, referencing],
 			[SUBS, subIssues(4301)],
 			[CHILD_1, child({number: 4301})],
-			[REF_9999, errOut("gh: Bad gateway (HTTP 502)")],
-			[CYCLE, okOut("{}")],
+			[REF_9999, {status: 502, body: '{"message":"Bad gateway"}'}],
+			[CYCLE, cycleDoc],
 		]);
 		expect(unreadable.code).toBe(PRECONDITION_UNKNOWN);
 		expect(unreadable.stdout).toBe("");
@@ -161,7 +158,7 @@ describe("runCheck", () => {
 	it("refuses zero scope on 7 rather than answering `clean` over nothing", async () => {
 		const out = await run([
 			[EPIC, epic()],
-			[SUBS, okOut("[]")],
+			[SUBS, subIssues()],
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
@@ -175,9 +172,9 @@ describe("runCheck", () => {
 
 	it("re-runs the fetch itself — it takes no ledger from a caller", async () => {
 		const digest = await digestOver(CLEAN);
-		const shell = fakeShell([...CLEAN, ...ROSTER, [COMMENTS, comments(approvalRow(digest))]]);
-		await Effect.runPromise(Effect.provide(runCheck(options), planContext(shell)));
-		expect(shell.calls.some((line) => /sub_issues/.test(line))).toBe(true);
+		const seams = planSeams([...CLEAN, ...ROSTER, [COMMENTS, comments(approvalRow(digest))]]);
+		await Effect.runPromise(Effect.provide(runCheck(options), seams.layer));
+		expect(seams.http.calls.some((line) => /sub_issues/.test(line))).toBe(true);
 	});
 });
 
@@ -186,11 +183,11 @@ describe("runCheck", () => {
  * the verb refuses to grade at all rather than about what it grades.
  */
 describe("the approval precondition", () => {
-	const unapproved = (script: ReadonlyArray<readonly [RegExp, ExecResult]>, listed: ExecResult) =>
+	const unapproved = (script: ReadonlyArray<Scripted>, listed: HttpReply) =>
 		Effect.runPromise(
 			Effect.provide(
 				runCheck(options),
-				planContext(fakeShell([...script, ...ROSTER, [COMMENTS, listed]])),
+				planSeams([...script, ...ROSTER, [COMMENTS, listed]]).layer,
 			),
 		);
 
@@ -211,7 +208,7 @@ describe("the approval precondition", () => {
 				[EPIC, ONE_CHILD_EPIC],
 				[SUBS, subIssues(4301)],
 				[CHILD_1, child({number: 4301, body: childBody({criteria: "no boxes here"})})],
-				[CYCLE, okOut("{}")],
+				[CYCLE, cycleDoc],
 			],
 			comments(),
 		);
@@ -236,12 +233,13 @@ describe("the approval precondition", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runCheck(options),
-				planContext(
-					fakeShell([
-						...CLEAN,
-						[/^gh api repos\/o\/r --jq \.default_branch$/, errOut("gh: Bad gateway (HTTP 502)")],
-					]),
-				),
+				planSeams([
+					...CLEAN,
+					[
+						/^GET https:\/\/api\.github\.com\/repos\/o\/r$/,
+						{status: 502, body: '{"message":"Bad gateway"}'},
+					],
+				]).layer,
 			),
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -256,7 +254,7 @@ describe("the approval precondition", () => {
  */
 describe("the containment vocabulary, resolved", () => {
 	const withConfig = async (config: string | {readonly unreadable: true}) =>
-		Effect.runPromise(Effect.provide(runCheck(options), await approvedContext(CLEAN, config)));
+		Effect.runPromise(Effect.provide(runCheck(options), await approvedLayer(CLEAN, config)));
 
 	it("reds a phoenix-legal marker a foreign vocabulary does not carry", async () => {
 		const out = await withConfig(
@@ -274,17 +272,17 @@ describe("the containment vocabulary, resolved", () => {
 	});
 
 	it("asks no child for a marker on an empty vocabulary", async () => {
-		const unmarked: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		const unmarked: ReadonlyArray<Scripted> = [
 			[EPIC, epic()],
 			[SUBS, subIssues(4301, 4302)],
 			[CHILD_1, child({number: 4301, body: childBody({containment: null})})],
 			[CHILD_2, child({number: 4302, body: childBody({stories: "2", containment: null})})],
-			[CYCLE, okOut("{}")],
+			[CYCLE, cycleDoc],
 		];
 		const off = await Effect.runPromise(
 			Effect.provide(
 				runCheck(options),
-				await approvedContext(unmarked, '{"containmentVocabulary": {"types": []}}'),
+				await approvedLayer(unmarked, '{"containmentVocabulary": {"types": []}}'),
 			),
 		);
 		const bare = await run(unmarked);

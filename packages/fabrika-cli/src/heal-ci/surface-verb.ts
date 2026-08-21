@@ -9,6 +9,7 @@
  * printing both sides is what lets a reader see which of the two mistakes they have.
  */
 import {Effect} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {commitExists} from "../io/pulls.ts";
 import {latestPerContext, listShipCheckRuns} from "../ship/github.ts";
@@ -36,7 +37,11 @@ export interface SurfaceOptions {
 
 export const runSurface = (
 	options: SurfaceOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "a pull-request number", options.pr);
 		if (bad !== null) return bad;

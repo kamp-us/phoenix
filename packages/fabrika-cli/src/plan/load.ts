@@ -11,6 +11,7 @@
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type PhaseLine, type RequiresLine, readTopology, renderRef} from "../build/dependencies.ts";
 import {openIssue} from "../build/target.ts";
@@ -138,7 +139,13 @@ export const loadLedger = (
 	/** Where this repo keeps its cycle doc — `cycleDoc`, resolved by the verb. */
 	cycleDocPath: string,
 	vocabulary: ContainmentVocabulary,
-): Effect.Effect<LedgerRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	/** The caller's environment, which is where the GitHub credential resolves from. */
+	env: Readonly<Record<string, string | undefined>>,
+): Effect.Effect<
+	LedgerRead,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const number = epic.number;
 		const grammarRefusal = (reason: string): LedgerRead => ({
@@ -172,7 +179,7 @@ export const loadLedger = (
 			);
 		}
 
-		const listed = yield* listSubIssues(repo, number);
+		const listed = yield* listSubIssues(repo, number, env);
 		if (listed._tag === "Failure") {
 			return {
 				_tag: "Refused" as const,
@@ -188,7 +195,7 @@ export const loadLedger = (
 
 		const fetched = yield* Effect.forEach(
 			listed.value.map((link) => link.number).sort((a, b) => a - b),
-			(child) => getChild(repo, child).pipe(Effect.map((found) => [child, found] as const)),
+			(child) => getChild(repo, child, env).pipe(Effect.map((found) => [child, found] as const)),
 			{concurrency: FAN_OUT},
 		);
 
@@ -252,7 +259,7 @@ export const loadLedger = (
 			epic: number,
 			children,
 			epicStories: stories.ids,
-			cycleDoc: yield* probeCycleDoc(repo, cycleDocPath),
+			cycleDoc: yield* probeCycleDoc(repo, cycleDocPath, env),
 			topology: {phases, edges},
 			dependenciesAbsent: topology._tag === "Absent",
 		};
@@ -287,7 +294,11 @@ export const deriveFloorFor = (
 	repo: string,
 	ledger: LedgerScope,
 	vocabulary: ContainmentVocabulary,
-): Effect.Effect<FloorRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	FloorRead,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const probed = yield* Effect.forEach(
 			refsToProbe(ledger),

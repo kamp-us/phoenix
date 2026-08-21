@@ -1,0 +1,43 @@
+name: no-gh-guard
+
+# CI gate for epic #6629: no `gh` invocation may return to `packages/fabrika-cli/src/`.
+# The epic put every GitHub call on the fetch client in src/io/gh-api.ts (ADR 0315) so a
+# fabrika verb runs from a token alone — on a phone, on a lean CI image, in a consumer
+# repo that never installed the binary. Nothing but this job holds that: one new
+# `execFileSync("gh", …)` reinstates the dependency and every test stays green. Whole-tree,
+# so it runs on `push: main` too (.patterns/repo-wide-gates-run-on-main.md), and it fails
+# closed if it scans zero files (ADR 0092).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check fabrika-cli's source holds no gh invocation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Non-zero on three distinct seats, so a red says which thing happened: 12 a `gh`
+      # invocation was found, 7 zero scope (fail-closed, ADR 0092), 11 a read failed so the
+      # verdict is UNKNOWN. The report is on stderr, with ::error annotations beside it.
+      # Reproduce locally with the same verb. See #6629/#6651.
+      - name: Check fabrika-cli's source holds no gh invocation
+        run: node packages/fabrika-cli/src/bin.ts guard no-gh check

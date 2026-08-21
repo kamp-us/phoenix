@@ -1,7 +1,6 @@
 import {Effect, FileSystem, Layer, Path, PlatformError} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
 	EMPTY_STDIN,
@@ -86,40 +85,40 @@ const world = (overrides: FsShape = {}): Layer.Layer<FileSystem.FileSystem | Pat
 		bytes: {[CAPTURE_PATH]: BYTES, ...overrides.bytes},
 	});
 
-const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-const USER = /^gh api user --jq \.login$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
-const CREATE = /^gh api --method POST repos\/o\/r\/issues\/4321\/comments /;
-const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/comments\/\d+ /;
-const READBACK = /^gh api repos\/o\/r\/issues\/comments\/\d+$/;
+const PULL = /GET .*\/repos\/o\/r\/pulls\/4321\b/;
+const USER = /GET .*api\.github\.com\/user$/;
+const COMMENTS = /GET .*\/repos\/o\/r\/issues\/4321\/comments/;
+const CREATE = /POST .*\/repos\/o\/r\/issues\/4321\/comments/;
+const PATCH = /PATCH .*\/repos\/o\/r\/issues\/comments\/\d+/;
+const READBACK = /GET .*\/repos\/o\/r\/issues\/comments\/\d+/;
 
-const pull = (state = "open", head = HEAD): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: 4321,
-			state,
-			head: {sha: head},
-			base: {ref: "main"},
-			body: "",
-			changed_files: 1,
-			comments: 0,
-		}),
-	);
+const pull = (state = "open", head = HEAD): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: 4321,
+		state,
+		head: {sha: head},
+		base: {ref: "main"},
+		body: "",
+		changed_files: 1,
+		comments: 0,
+	}),
+});
 
 const comments = (
 	...rows: ReadonlyArray<{id: number; body: string; author?: string; updatedAt?: string}>
-): ExecResult =>
-	okOut(
-		JSON.stringify(
-			rows.map((row) => ({
-				id: row.id,
-				user: {login: row.author ?? "kampus-bot"},
-				created_at: "2026-08-08T00:00:00Z",
-				updated_at: row.updatedAt ?? "2026-08-08T00:00:00Z",
-				body: row.body,
-			})),
-		),
-	);
+): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(
+		rows.map((row) => ({
+			id: row.id,
+			user: {login: row.author ?? "kampus-bot"},
+			created_at: "2026-08-08T00:00:00Z",
+			updated_at: row.updatedAt ?? "2026-08-08T00:00:00Z",
+			body: row.body,
+		})),
+	),
+});
 
 const hostingLeg: UploadLeg = () => Effect.succeed({_tag: "Hosted", url: HOSTED});
 const failingLeg: UploadLeg = () => Effect.succeed({_tag: "Failed", reason: "HTTP 500"});
@@ -142,32 +141,32 @@ const options = {
 };
 
 /** The comment as the verb will have posted it, echoed back by the read-back read. */
-const posted = (body: string): ExecResult => okOut(JSON.stringify({body}));
+const posted = (body: string): HttpReply => ({status: 200, body: JSON.stringify({body})});
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
 	layer: Layer.Layer<FileSystem.FileSystem | Path.Path> = world(),
 ) => {
-	const shell = fakeShell(script);
+	const seams = fakeSeams(script);
 	return Effect.runPromise(
-		Effect.provide(runPost({...options, ...overrides}), Layer.merge(shell.layer, layer)),
-	).then((outcome) => ({outcome, calls: shell.calls}));
+		Effect.provide(runPost({...options, ...overrides}), Layer.merge(seams.layer, layer)),
+	).then((outcome) => ({outcome, requests: seams.requests, bodies: seams.bodies}));
 };
 
 const COMPOSED = `review-ui: FAIL @ ${HEAD} — changes-requested\n\n${BODY.trimEnd()}\n\n## Evidence\n\n### /pano\n\n![/pano](${HOSTED})`;
 
-const happy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+const happy = (): ReadonlyArray<Scripted> => [
 	[PULL, pull()],
-	[USER, okOut("kampus-bot")],
+	[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
 	[COMMENTS, comments()],
-	[CREATE, okOut(JSON.stringify({id: 5154902211, html_url: URL}))],
+	[CREATE, {status: 201, body: JSON.stringify({id: 5154902211, html_url: URL})}],
 	[READBACK, posted(COMPOSED)],
 ];
 
 describe("runPost", () => {
 	it("posts one marker-first comment with the verified evidence gallery under it", async () => {
-		const {outcome, calls} = await run(happy());
+		const {outcome, requests, bodies} = await run(happy());
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout)).toEqual({
 			answer: "posted",
@@ -179,8 +178,8 @@ describe("runPost", () => {
 			surfaces: 1,
 			commentUrl: URL,
 		});
-		const write = calls.find((call) => CREATE.test(call)) ?? "";
-		const body = write.slice(write.indexOf("body=") + "body=".length);
+		const write = bodies[requests.findIndex((request) => CREATE.test(request))] ?? "";
+		const body = String(JSON.parse(write).body);
 		expect(body.split("\n")[0]).toBe(`review-ui: FAIL @ ${HEAD} — changes-requested`);
 		expect(body).toContain(`![/pano](${HOSTED})`);
 		// The gallery embeds the hosted URL, never the local path the reviewer judged.
@@ -206,9 +205,9 @@ describe("runPost", () => {
 	});
 
 	it("refuses on 12 when the live head moved past --sha, and posts nothing", async () => {
-		const {outcome, calls} = await run([[PULL, pull("open", OLD_HEAD)], ...happy().slice(1)]);
+		const {outcome, requests} = await run([[PULL, pull("open", OLD_HEAD)], ...happy().slice(1)]);
 		expect(outcome.code).toBe(STALE_TREE);
-		expect(calls.some((call) => CREATE.test(call))).toBe(false);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("refuses on 12 when the evidence set was rendered at another head", async () => {
@@ -251,25 +250,25 @@ describe("runPost", () => {
 	});
 
 	it("posts NOTHING when an evidence upload fails — 17 is this verb's reason to exist", async () => {
-		const {outcome, calls} = await run(happy(), {upload: failingLeg});
+		const {outcome, requests} = await run(happy(), {upload: failingLeg});
 		expect(outcome.code).toBe(UPLOAD_FAILED);
-		expect(calls.some((call) => CREATE.test(call))).toBe(false);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 		expect(outcome.stderr.at(-1)).toMatch(/broken evidence channel/);
 	});
 
 	it("still refuses when the AUTHENTICATED probe reads 404 — #6520 does not soften #3925", async () => {
 		const notResolving: UploadLeg = () =>
 			Effect.succeed({_tag: "Failed", reason: classifyProbe(404) ?? ""});
-		const {outcome, calls} = await run(happy(), {upload: notResolving});
+		const {outcome, requests} = await run(happy(), {upload: notResolving});
 		expect(outcome.code).toBe(UPLOAD_FAILED);
-		expect(calls.some((call) => CREATE.test(call))).toBe(false);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 		expect(outcome.stderr.join("\n")).toMatch(/probed back HTTP 404/);
 	});
 
 	it("edits this namespace's own comment instead of stacking a second marker", async () => {
-		const {outcome, calls} = await run([
+		const {outcome, requests} = await run([
 			[PULL, pull()],
-			[USER, okOut("kampus-bot")],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
 			[
 				COMMENTS,
 				comments({
@@ -278,18 +277,18 @@ describe("runPost", () => {
 					author: "kampus-bot",
 				}),
 			],
-			[PATCH, okOut(JSON.stringify({html_url: URL}))],
+			[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
 			[READBACK, posted(COMPOSED)],
 		]);
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout).upsert).toBe("edited");
-		expect(calls.some((call) => CREATE.test(call))).toBe(false);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("edits the NEWEST of two markers at one SHA, not whichever came back first (#4881)", async () => {
-		const {outcome, calls} = await run([
+		const {outcome, requests} = await run([
 			[PULL, pull()],
-			[USER, okOut("kampus-bot")],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
 			[
 				COMMENTS,
 				comments(
@@ -305,19 +304,19 @@ describe("runPost", () => {
 					},
 				),
 			],
-			[PATCH, okOut(JSON.stringify({html_url: URL}))],
+			[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
 			[READBACK, posted(COMPOSED)],
 		]);
 		expect(outcome.code).toBe(0);
-		expect(calls.find((call) => PATCH.test(call))).toContain("issues/comments/42");
+		expect(requests.find((request) => PATCH.test(request))).toContain("issues/comments/42");
 	});
 
 	it("refuses on 8 when the write itself failed — UNKNOWN, never 1", async () => {
 		const {outcome} = await run([
 			[PULL, pull()],
-			[USER, okOut("kampus-bot")],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
 			[COMMENTS, comments()],
-			[CREATE, {ok: false, stdout: "", reason: "gh: 502"}],
+			[CREATE, {status: 502, body: "{}"}],
 		]);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 	});
@@ -325,9 +324,9 @@ describe("runPost", () => {
 	it("refuses on 9 when the read-back does not yield this marker", async () => {
 		const {outcome} = await run([
 			[PULL, pull()],
-			[USER, okOut("kampus-bot")],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
 			[COMMENTS, comments()],
-			[CREATE, okOut(JSON.stringify({id: 1, html_url: URL}))],
+			[CREATE, {status: 201, body: JSON.stringify({id: 1, html_url: URL})}],
 			[once(READBACK), posted("someone else's comment entirely")],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);

@@ -1,5 +1,5 @@
 /**
- * The canned `gh` responses the `plan` verb tests script their spawner with.
+ * The canned GitHub responses the `plan` verb tests script their seams with.
  *
  * Shaped like the real payloads rather than like the parsers, so a parser that starts reading a
  * different field still has to find it here — a fixture trimmed to exactly what the code reads today
@@ -10,9 +10,11 @@
 
 import type {FileSystem, Path} from "effect";
 import {Effect, Layer} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {CONFIG_PATH} from "../config/document.ts";
-import {fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
+import type {FakeHttp, FakeShell, HttpReply} from "../fakes.test-support.ts";
+import {fakeFs, fakeHttp, fakeShell} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {runRead} from "./read-verb.ts";
 
@@ -35,32 +37,32 @@ export const epicBody = (overrides: {dependencies?: string; stories?: string} = 
 		"",
 	].join("\n");
 
-export const epic = (overrides: Record<string, unknown> = {}): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: EPIC,
-			title: "The plan gate",
-			body: epicBody(),
-			state: "open",
-			labels: [{name: "type:epic"}],
-			html_url: "https://github.com/o/r/issues/4300",
-			milestone: null,
-			state_reason: null,
-			...overrides,
-		}),
-	);
+export const epic = (overrides: Record<string, unknown> = {}): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: EPIC,
+		title: "The plan gate",
+		body: epicBody(),
+		state: "open",
+		labels: [{name: "type:epic"}],
+		html_url: "https://github.com/o/r/issues/4300",
+		milestone: null,
+		state_reason: null,
+		...overrides,
+	}),
+});
 
-export const subIssues = (...numbers: ReadonlyArray<number>): ExecResult =>
-	okOut(
-		JSON.stringify(
-			numbers.map((number) => ({
-				number,
-				title: `child ${number}`,
-				state: "open",
-				state_reason: null,
-			})),
-		),
-	);
+export const subIssues = (...numbers: ReadonlyArray<number>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(
+		numbers.map((number) => ({
+			number,
+			title: `child ${number}`,
+			state: "open",
+			state_reason: null,
+		})),
+	),
+});
 
 /** A child body that clears the floor: criteria, a story claim, and a containment marker. */
 export const childBody = (
@@ -82,24 +84,26 @@ export const child = (options: {
 	assignees?: ReadonlyArray<string> | null;
 	body?: string;
 	state?: string;
-}): ExecResult =>
-	okOut(
-		JSON.stringify({
-			number: options.number,
-			title: `child ${options.number}`,
-			body: options.body ?? childBody(),
-			state: options.state ?? "open",
-			labels: (options.labels ?? ["type:feature", "p1", "status:planned"]).map((name) => ({name})),
-			// `null` drops the key entirely — the unobserved slot, not an observed-empty one.
-			...(options.assignees === null
-				? {}
-				: {assignees: (options.assignees ?? []).map((login) => ({login}))}),
-			html_url: `https://github.com/o/r/issues/${options.number}`,
-		}),
-	);
+}): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		number: options.number,
+		title: `child ${options.number}`,
+		body: options.body ?? childBody(),
+		state: options.state ?? "open",
+		labels: (options.labels ?? ["type:feature", "p1", "status:planned"]).map((name) => ({name})),
+		// `null` drops the key entirely — the unobserved slot, not an observed-empty one.
+		...(options.assignees === null
+			? {}
+			: {assignees: (options.assignees ?? []).map((login) => ({login}))}),
+		html_url: `https://github.com/o/r/issues/${options.number}`,
+	}),
+});
 
-export const labelSet = (...names: ReadonlyArray<string>): ExecResult =>
-	okOut(`${names.join("\n")}\n`);
+export const labelSet = (...names: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(names.map((name) => ({name}))),
+});
 
 /** The directory a plan verb under test is standing in. Its config is the one the load reads. */
 export const CWD = "/repo";
@@ -123,21 +127,80 @@ export const planContext = (
 	return Layer.merge(shell.layer, fakeFs({files, unreadable}).layer);
 };
 
+/** The GitHub reads this group makes over the fetch client, matched on `METHOD url` (ADR 0315). */
+const API = "https:\\/\\/api\\.github\\.com";
+export const SUB_ISSUES = new RegExp(
+	`^GET ${API}\\/repos\\/o\\/r\\/issues\\/${EPIC}\\/sub_issues\\?`,
+);
+export const CHILD = (number: number): RegExp =>
+	new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/${number}$`);
+/**
+ * The cycle-doc probe. Bound to the doc's own path, not to `contents/`: the roster reads
+ * `.github/CODEOWNERS` through the same endpoint, and a prefix pattern here answers that read too.
+ */
+export const CYCLE_DOC = new RegExp(
+	`^GET ${API}\\/repos\\/o\\/r\\/contents\\/product-development-cycle\\.md`,
+);
+
+/** The cycle doc, served — `present` is any 2xx, and the body is not read. */
+export const cycleDoc: HttpReply = {status: 200, body: "{}"};
+
+/** One scripted answer at either seam; which seam it belongs to is read off its own shape. */
+export type Scripted = readonly [RegExp, ExecResult] | readonly [RegExp, HttpReply];
+
+const isServed = (entry: Scripted): entry is readonly [RegExp, HttpReply] => "status" in entry[1];
+
+export interface PlanSeams {
+	readonly layer: Layer.Layer<
+		| ChildProcessSpawner.ChildProcessSpawner
+		| FileSystem.FileSystem
+		| HttpClient.HttpClient
+		| Path.Path
+	>;
+	readonly shell: FakeShell;
+	readonly http: FakeHttp;
+}
+
+/**
+ * Every seam a plan verb reads through, scripted from **one** list.
+ *
+ * The list is split by each answer's own shape rather than by the caller sorting it, so a test
+ * still reads as the ordered walk the verb makes — splitting it by hand is how a fixture ends up
+ * scripted at a seam nobody calls, which fails as "unscripted command" rather than as the thing the
+ * test is about.
+ */
+export const planSeams = (
+	script: ReadonlyArray<Scripted>,
+	config?: string | {readonly unreadable: true},
+): PlanSeams => {
+	const shell = fakeShell(
+		script.filter((entry): entry is readonly [RegExp, ExecResult] => !isServed(entry)),
+	);
+	const http = fakeHttp(script.filter(isServed));
+	return {layer: Layer.merge(planContext(shell, config), http.layer), shell, http};
+};
+
+/** The environment a plan verb test hands its verb — the repo, plus the client's credential. */
+export const ENV = {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} as Record<
+	string,
+	string | undefined
+>;
+
 export const APPROVER = "usirin";
 
 /**
  * The control-plane roster reads the ADR 0289 approval precondition makes before it looks for a
  * marker — the same three `plan approve`'s write resolves the actor through.
  */
-export const ROSTER: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[/^gh api repos\/o\/r --jq \.default_branch$/, okOut("main\n")],
+export const ROSTER: ReadonlyArray<Scripted> = [
+	[new RegExp(`^GET ${API}\\/repos\\/o\\/r$`), {status: 200, body: '{"default_branch":"main"}'}],
 	[
-		/contents\/\.github\/CODEOWNERS\?ref=main$/,
-		okOut("/packages/fabrika-cli/ @kamp-us/control-plane\n"),
+		new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/contents\\/\\.github\\/CODEOWNERS\\?ref=main$`),
+		{status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"},
 	],
 	[
-		/^gh api --paginate orgs\/kamp-us\/teams\/control-plane\/members/,
-		okOut(JSON.stringify([{login: APPROVER}])),
+		new RegExp(`^GET ${API}\\/orgs\\/kamp-us\\/teams\\/control-plane\\/members`),
+		{status: 200, body: JSON.stringify([{login: APPROVER}])},
 	],
 ];
 
@@ -165,7 +228,7 @@ export const approvalRow = (
  * being derived to write.
  */
 export const digestOver = async (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	options: {
 		readonly env?: Readonly<Record<string, string | undefined>>;
 		readonly config?: string | {readonly unreadable: true} | undefined;
@@ -176,10 +239,10 @@ export const digestOver = async (
 			runRead({
 				number: EPIC,
 				repo: null,
-				env: options.env ?? {CLAUDE_PIPELINE_REPO: "o/r"},
+				env: options.env ?? ENV,
 				cwd: CWD,
 			}),
-			planContext(fakeShell(script), options.config),
+			planSeams(script, options.config).layer,
 		),
 	);
 	// A script the read itself refuses has no digest, and no case that scripts one reaches the gate.

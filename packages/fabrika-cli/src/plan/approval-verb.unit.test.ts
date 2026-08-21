@@ -1,54 +1,60 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {comments} from "../build/fixtures.test-support.ts";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import type {HttpReply} from "../fakes.test-support.ts";
 import {runApproval} from "./approval-verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {
+	CHILD as CHILD_AT,
 	CWD,
+	CYCLE_DOC,
 	child,
+	cycleDoc,
 	digestOver,
+	ENV as env,
 	epic,
 	epicBody,
-	planContext,
+	planSeams,
+	type Scripted,
+	SUB_ISSUES,
 	subIssues,
 } from "./fixtures.test-support.ts";
 
-const EPIC = /^gh api repos\/o\/r\/issues\/4300$/;
-const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
-const CHILD = /^gh api repos\/o\/r\/issues\/4301$/;
-const CYCLE = /^gh api repos\/o\/r\/contents\/product-development-cycle\.md$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4300\/comments/;
-const TRUNK = /^gh api repos\/o\/r --jq \.default_branch$/;
+const API = "https:\\/\\/api\\.github\\.com";
+const EPIC = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/4300$`);
+const SUBS = SUB_ISSUES;
+const CHILD = CHILD_AT(4301);
+const CYCLE = CYCLE_DOC;
+const COMMENTS = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/4300\\/comments`);
+const TRUNK = new RegExp(`^GET ${API}\\/repos\\/o\\/r$`);
 const CODEOWNERS = /contents\/\.github\/CODEOWNERS\?ref=main$/;
-const MEMBERS = /^gh api --paginate orgs\/kamp-us\/teams\/control-plane\/members/;
+const MEMBERS = new RegExp(`^GET ${API}\\/orgs\\/kamp-us\\/teams\\/control-plane\\/members`);
 
-const env = {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>;
+const served = (body: unknown): HttpReply => ({status: 200, body: JSON.stringify(body)});
 
-const ledger: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const ledger: ReadonlyArray<Scripted> = [
 	[EPIC, epic({body: epicBody({dependencies: "- phase 1: #4301"})})],
 	[SUBS, subIssues(4301)],
 	[CHILD, child({number: 4301})],
-	[CYCLE, okOut("{}")],
+	[CYCLE, cycleDoc],
 ];
 
 /** The same roster `plan approve` writes under — resolved again here, over the marker's author. */
-const acl: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[TRUNK, okOut("main\n")],
-	[CODEOWNERS, okOut("/packages/fabrika-cli/ @kamp-us/control-plane\n")],
-	[MEMBERS, okOut(JSON.stringify([{login: "usirin"}, {login: "cansirin"}]))],
+const acl: ReadonlyArray<Scripted> = [
+	[TRUNK, served({default_branch: "main"})],
+	[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"}],
+	[MEMBERS, served([{login: "usirin"}, {login: "cansirin"}])],
 ];
 
 const marker = (epicRef: number, digest: string): string =>
 	`plan-approved: #${epicRef} @ ${digest} · 2026-08-16T07:16:03Z\n`;
 
 /** Earlier entries win, so a case overrides one roster read by naming it before the defaults. */
-const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
+const run = (script: ReadonlyArray<Scripted>) =>
 	Effect.runPromise(
 		Effect.provide(
 			runApproval({number: 4300, repo: null, env, cwd: CWD}),
-			planContext(fakeShell([...script, ...acl])),
+			planSeams([...script, ...acl]).layer,
 		),
 	);
 
@@ -134,7 +140,10 @@ describe("runApproval", () => {
 	});
 
 	it("refuses 11 when the comment list cannot be read — UNKNOWN, not absent", async () => {
-		const outcome = await run([[COMMENTS, errOut("HTTP 502")], ...ledger]);
+		const outcome = await run([
+			[COMMENTS, {status: 502, body: '{"message":"Bad gateway"}'}],
+			...ledger,
+		]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toContain("the approval state is UNKNOWN, not absent");
 	});
@@ -181,7 +190,7 @@ describe("runApproval", () => {
 	it("answers absent when CODEOWNERS names no control-plane owner — nobody may approve here", async () => {
 		const digest = await derivedDigest();
 		const outcome = await run([
-			[CODEOWNERS, okOut("# nobody owns anything\n")],
+			[CODEOWNERS, {status: 200, body: "# nobody owns anything\n"}],
 			[COMMENTS, comments({id: 91, body: marker(4300, digest), author: "usirin"})],
 			...ledger,
 		]);
@@ -193,7 +202,7 @@ describe("runApproval", () => {
 	it("refuses 11 when the roster read fails — never absent and never current", async () => {
 		const digest = await derivedDigest();
 		const outcome = await run([
-			[MEMBERS, errOut("HTTP 502")],
+			[MEMBERS, {status: 502, body: '{"message":"Bad gateway"}'}],
 			[COMMENTS, comments({id: 91, body: marker(4300, digest), author: "usirin"})],
 			...ledger,
 		]);
@@ -203,7 +212,10 @@ describe("runApproval", () => {
 	});
 
 	it("refuses 11 when the CODEOWNERS read fails", async () => {
-		const outcome = await run([[CODEOWNERS, errOut("HTTP 500")], ...ledger]);
+		const outcome = await run([
+			[CODEOWNERS, {status: 500, body: '{"message":"Server error"}'}],
+			...ledger,
+		]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stdout).toBe("");
 	});

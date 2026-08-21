@@ -84,6 +84,19 @@ rewrites `bin`/`main`/`types`/`exports`/`engines` onto the compiled `dist/` at p
 `webidl.util.markAsUncloneable` does not exist. The dev floor `>=24` is conservative — the `.ts`
 `bin` starts on 22.18+ — and `volta.node` pins `26.2.0` here and at the root.
 
+### The one prerequisite: a GitHub token
+
+Every verb that touches GitHub needs a credential in the environment — `GITHUB_TOKEN`, else
+`GH_TOKEN`. There is **no `gh` prerequisite**: the package reaches api.github.com over HTTP
+([`src/io/gh-api.ts`](./src/io/gh-api.ts)), so a verb runs on a machine, a container or a client
+that never installed the binary. `guard no-gh check` is what keeps it that way, on every push.
+
+`gh auth token` is still read, and only as a convenience: with neither env var set and `gh` on
+`PATH`, the credential is resolved from an existing login once, before any request, never on a
+request path. A credential that resolves nowhere is a refusal naming both env vars — never an
+anonymous call. The order and its reasons are ADR
+[0315](../../.decisions/0315-fabrika-cli-github-token-resolution-and-the-three-non-rest-carves.md).
+
 ## Quickstart
 
 ```bash
@@ -424,6 +437,7 @@ node packages/fabrika-cli/src/bin.ts guard readme-guard check
 | `guard decisions-index` | whether the ADR corpus holds a colliding or mismatched number |
 | `guard design-token-guard` | whether component CSS consumes the design-token seam |
 | `guard design-inventory` | whether the committed component inventory still matches its JSDoc (`check`), and the one write mode that regenerates it (`generate`) |
+| `guard no-gh` | whether any `gh` invocation has returned to this package's own source |
 
 **Exit codes.** `0` clean · `7` zero scope (ADR
 [0092](../../.decisions/0092-gates-fail-closed-on-zero-scope.md)) · `11` a read the verdict rests
@@ -873,9 +887,11 @@ permits no merge method at all · `23` a label this run would POST is absent fro
 - **`17` is the loud one.** It says the nudge's close landed and its reopen is unconfirmed, a state
   so much worse than a failed write that folding it into `8` would hide the one fact an operator
   must act on now.
-- **Exactly two verbs use GraphQL** (`threads`, `resolve`), because review-thread resolution state
-  has no REST equivalent. Every other verb is `gh api` REST, paginated, with the platform's
-  declared count carried beside what arrived.
+- **GraphQL is a three-item carve** (ADR 0315): review-thread state and its mutations (`threads`,
+  `resolve`), the auto-merge mutation, and the closing-issue edge `lane`/`recipe` read. Everything
+  else is a REST read, paginated, and it carries the proof its endpoint declares — an envelope read
+  a `total_count` beside what arrived, a bare-array read the `Link` header's exhaustion. Both come
+  back with `exhausted`, and a walk that stopped at the 50-page cap is a refusal, never a short list.
 
 ## The `spend` group
 
@@ -1223,8 +1239,8 @@ history rather than a live constraint.
 A verb is a **pure function of its dependencies** — the `*-verb.ts` modules compute a `VerbOutcome`
 (exit code, stdout, stderr) and never write a stream or exit. The Effect CLI layer in each group's
 `command.ts` does both. That split is what makes each refusal as deterministically testable as each
-answer, which is why the tests can drive an unreadable directory, a `gh` that exits 0 with the
-wrong bytes, and a base ref that cannot be fetched.
+answer, which is why the tests can drive an unreadable directory, a 200 carrying the wrong bytes,
+and a base ref that cannot be fetched.
 
 Those dependencies are the **Effect platform services**, never a raw `node:*` import: the
 filesystem is `FileSystem` / `Path` from `effect`

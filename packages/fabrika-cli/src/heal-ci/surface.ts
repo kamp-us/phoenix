@@ -12,8 +12,7 @@
  * `no-requirements` would tell an adopter their repo gates nothing when it may gate everything.
  */
 import {Effect} from "effect";
-import type {ChildProcessSpawner} from "effect/unstable/process";
-import {httpStatusOf} from "../io/issues.ts";
+import type {Shell} from "../io/git.ts";
 import {isInformational} from "../review/rollup.ts";
 import type {ShipCheckRun} from "../ship/github.ts";
 import {branchProtectionContexts, rulesetContexts} from "./github.ts";
@@ -61,10 +60,7 @@ export type DeclaredRead =
 	/** A read failed for a reason that is not this token's permission — coverage is UNKNOWN. */
 	| {readonly _tag: "Unknown"; readonly what: string; readonly reason: string};
 
-const isPermissionDenial = (reason: string): boolean => {
-	const status = httpStatusOf(reason);
-	return status === 401 || status === 403;
-};
+const isPermissionDenial = (status: number | null): boolean => status === 401 || status === 403;
 
 /**
  * The declared required contexts for one base branch: branch protection ∪ the rulesets that match it.
@@ -72,14 +68,11 @@ const isPermissionDenial = (reason: string): boolean => {
  * `no-requirements` needs a **successful** rules read returning zero required contexts *and* the
  * protection endpoint's 404 — both, never the 404 alone.
  */
-export const readDeclared = (
-	repo: string,
-	base: string,
-): Effect.Effect<DeclaredRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
+export const readDeclared = (repo: string, base: string): Shell<DeclaredRead> =>
 	Effect.gen(function* () {
 		const rules = yield* rulesetContexts(repo, base);
 		if (rules._tag === "Failure") {
-			return isPermissionDenial(rules.reason)
+			return isPermissionDenial(rules.status)
 				? {_tag: "Unprobeable" as const, reason: rules.reason}
 				: {_tag: "Unknown" as const, what: "the ruleset list", reason: rules.reason};
 		}
@@ -87,9 +80,9 @@ export const readDeclared = (
 			return {_tag: "Incomplete" as const, scanned: rules.value.scanned};
 		}
 
-		const protection = yield* branchProtectionContexts(repo, base);
+		const {read: protection, status} = yield* branchProtectionContexts(repo, base);
 		if (protection._tag === "Unknown") {
-			return isPermissionDenial(protection.reason)
+			return isPermissionDenial(status)
 				? {_tag: "Unprobeable" as const, reason: protection.reason}
 				: {_tag: "Unknown" as const, what: "the branch protection", reason: protection.reason};
 		}

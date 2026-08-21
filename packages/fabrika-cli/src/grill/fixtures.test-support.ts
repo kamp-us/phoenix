@@ -89,7 +89,7 @@ export interface FakeComment {
 	readonly body: string;
 }
 
-/** The `gh api --paginate .../comments` payload for a comment list. */
+/** The paged `.../issues/<n>/comments` payload for a comment list. */
 export const commentsPayload = (comments: ReadonlyArray<FakeComment>): string =>
 	JSON.stringify(
 		comments.map((comment) => ({
@@ -101,7 +101,7 @@ export const commentsPayload = (comments: ReadonlyArray<FakeComment>): string =>
 		})),
 	);
 
-/** The `gh api repos/<repo>/issues/<n>` payload for a labelled session issue. */
+/** The `repos/<repo>/issues/<n>` payload for a labelled session issue. */
 export const sessionPayload = (
 	session: number,
 	options: {

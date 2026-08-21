@@ -1,8 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {comments, GIT_DIRS} from "../build/fixtures.test-support.ts";
-import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {comments, GATEWAY, GIT_DIRS} from "../build/fixtures.test-support.ts";
+import {errOut, fakeFs, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import {
 	CLAIM_NOT_MINE,
 	OFF_VOCABULARY,
@@ -12,6 +11,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {
+	backlogPage,
 	CLAIMED,
 	DIR,
 	EXCLUDE_PATH,
@@ -26,37 +26,38 @@ import {manifestPath, parseManifest, parseRunRecord, runJsonPath} from "./run.ts
 
 const SHA = "03135b9188d2be6c0a4b7bd0b7a3ff9c53f0f2b1";
 
-const EPIC_READ = /^gh api repos\/o\/r\/issues\/4300$/;
+const EPIC_READ = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
 const TREE = /^git rev-parse --path-format=absolute/;
-const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
-const CYCLE = /^gh api repos\/o\/r\/contents\/product-development-cycle\.md$/;
-const BACKLOG = /^gh api --paginate repos\/o\/r\/issues\?state=open/;
-const SEARCH = /^gh api --paginate search\/issues/;
+const SUBS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issues/;
+const CYCLE =
+	/^GET https:\/\/api\.github\.com\/repos\/o\/r\/contents\/product-development-cycle\.md$/;
+const BACKLOG = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\?state=open/;
+const SEARCH = /^GET https:\/\/api\.github\.com\/search\/issues\?/;
 const REV_LIST = /^git rev-list --count/;
 
-const GROUND: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const GROUND: ReadonlyArray<Scripted> = [
 	[/^git remote$/, okOut("origin\n")],
 	[/^git fetch --quiet origin main$/, okOut("")],
 	[/^git rev-parse --verify --quiet origin\/main/, okOut(`${SHA}\n`)],
 	[REV_LIST, okOut("0\n")],
 ];
 
-const CLEAN: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const CLEAN: ReadonlyArray<Scripted> = [
 	[EPIC_READ, epic()],
 	[TREE, GIT_DIRS],
 	...CLAIMED,
 	...GROUND,
 	[SUBS, subIssues()],
-	[CYCLE, okOut("{}")],
-	[BACKLOG, issueRows([4180, "queue view for reports"])],
+	[CYCLE, {status: 200, body: "{}"}],
+	[BACKLOG, backlogPage([4180, "queue view for reports"])],
 	[SEARCH, issueRows()],
 ];
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	files: Readonly<Record<string, string | null>> = {},
 ) => {
-	const shell = fakeShell(script);
+	const shell = fakeSeams(script);
 	const fs = fakeFs({files});
 	return Effect.runPromise(
 		Effect.provide(
@@ -199,17 +200,14 @@ describe("runOpen", () => {
 
 	it("refuses a proven-absent epic on 7", async () => {
 		const {outcome} = await run([
-			[EPIC_READ, errOut("gh: Not Found (HTTP 404)")],
+			[EPIC_READ, {status: 404, body: '{"message":"Not Found"}'}],
 			...CLEAN.slice(1),
 		]);
 		expect(outcome.code).toBe(ZERO_SCOPE);
 	});
 
 	it("refuses an unreadable epic on 11 — absence is decided by status, never by text", async () => {
-		const {outcome} = await run([
-			[EPIC_READ, errOut("gh: Bad Gateway (HTTP 502)")],
-			...CLEAN.slice(1),
-		]);
+		const {outcome} = await run([[EPIC_READ, GATEWAY], ...CLEAN.slice(1)]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
@@ -227,7 +225,7 @@ describe("runOpen", () => {
 			[EPIC_READ, epic()],
 			[TREE, GIT_DIRS],
 			[
-				/^gh api --paginate repos\/o\/r\/issues\/4300\/comments/,
+				/^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/comments\?/,
 				comments({id: 1, body: "nothing here"}),
 			],
 			...CLEAN.slice(4),
@@ -240,7 +238,7 @@ describe("runOpen", () => {
 	it("seats an unreadable backlog on 11 rather than a clean none", async () => {
 		const {outcome} = await run([
 			...CLEAN.filter(([pattern]) => pattern !== BACKLOG),
-			[BACKLOG, errOut("gh: Bad Gateway (HTTP 502)")],
+			[BACKLOG, GATEWAY],
 		]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stdout).toBe("");
@@ -249,7 +247,7 @@ describe("runOpen", () => {
 	it("ranks the open backlog and excludes the epic from its own candidates", async () => {
 		const {outcome} = await run([
 			...CLEAN.filter(([pattern]) => pattern !== BACKLOG),
-			[BACKLOG, issueRows([4300, "The moderation queue epic"], [4180, "moderation queue view"])],
+			[BACKLOG, backlogPage([4300, "The moderation queue epic"], [4180, "moderation queue view"])],
 		]);
 		const {candidates} = JSON.parse(outcome.stdout);
 		expect(candidates.outcome).toBe("candidates");

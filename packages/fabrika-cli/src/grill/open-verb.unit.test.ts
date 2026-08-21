@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import {cameFromSection} from "../wire/came-from.ts";
 import {
 	BARE_AT_PATH,
@@ -16,11 +15,15 @@ import {
 import {sessionPayload} from "./fixtures.test-support.ts";
 import {type OpenSubject, openSubject, runOpen} from "./open-verb.ts";
 
-const LABELS = /^gh api --paginate repos\/o\/r\/labels\?/;
-const SEARCH = /^gh api --paginate repos\/o\/r\/issues\?state=open&labels=/;
-const ISSUE = /^gh api repos\/o\/r\/issues\/\d+$/;
-const CREATE = /^gh api --method POST repos\/o\/r\/issues -f title=/;
-const LABEL_WRITE = /^gh api --method POST repos\/o\/r\/issues\/\d+\/labels/;
+const LABELS = /^GET .*\/repos\/o\/r\/labels\?/;
+const SEARCH = /^GET .*\/repos\/o\/r\/issues\?state=open&labels=/;
+const ISSUE = /^GET .*\/repos\/o\/r\/issues\/\d+$/;
+const CREATE = /^POST .*\/repos\/o\/r\/issues$/;
+const LABEL_WRITE = /^POST .*\/repos\/o\/r\/issues\/\d+\/labels$/;
+
+const served = (body: string, status = 200): HttpReply => ({status, body});
+const NOT_FOUND: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
+const GATEWAY: HttpReply = {status: 502, body: '{"message":"Bad gateway"}'};
 
 const TOPIC = "sozluk moderation model";
 
@@ -38,14 +41,27 @@ const subjectOf = (topic: string | null, ticket: number | null): OpenSubject => 
 
 const onTopic = {...options, subject: subjectOf(TOPIC, null)};
 
-const created = okOut(JSON.stringify({number: 9412, html_url: "https://example.test/issues/9412"}));
+const created = served(
+	JSON.stringify({number: 9412, html_url: "https://example.test/issues/9412"}),
+	201,
+);
 
-/** One row of the search's `{number, title, body} | @json` output — the bytes the verb parses. */
-const row = (number: number, title: string, body = ""): string =>
-	JSON.stringify({number, title, body});
+/** One entry of the label-scoped issue list — the payload the verb parses. */
+const row = (number: number, title: string, body = ""): Record<string, unknown> => ({
+	number,
+	title,
+	body,
+});
+
+/** The list read's served page. */
+const listing = (...rows: ReadonlyArray<Record<string, unknown>>): HttpReply =>
+	served(JSON.stringify(rows));
+
+const labelled = (...names: ReadonlyArray<string>): HttpReply =>
+	served(JSON.stringify(names.map((name) => ({name}))));
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	overrides: {readonly topic?: string | null; readonly ticket?: number | null} = {},
 ) =>
 	Effect.runPromise(
@@ -57,19 +73,19 @@ const run = (
 					overrides.ticket ?? null,
 				),
 			}),
-			fakeShell(script).layer,
+			fakeSeams(script).layer,
 		),
 	);
 
-const withLabel: readonly [RegExp, ExecResult] = [LABELS, okOut("grilling:session\nbug")];
+const withLabel: Scripted = [LABELS, labelled("grilling:session", "bug")];
 
 describe("runOpen mints a session when none matches", () => {
-	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+	const script: ReadonlyArray<Scripted> = [
 		withLabel,
-		[SEARCH, okOut("")],
+		[SEARCH, listing()],
 		[CREATE, created],
-		[ISSUE, okOut(sessionPayload(9412, {labels: []}))],
-		[LABEL_WRITE, okOut("{}")],
+		[ISSUE, served(sessionPayload(9412, {labels: []}))],
+		[LABEL_WRITE, served("{}")],
 	];
 
 	it("answers with created:true and the minted number", async () => {
@@ -85,23 +101,23 @@ describe("runOpen mints a session when none matches", () => {
 	});
 
 	it("applies the label as part of the create, never as a caller's follow-up", async () => {
-		const shell = fakeShell(script);
-		await Effect.runPromise(Effect.provide(runOpen(onTopic), shell.layer));
-		expect(shell.calls.some((call) => LABEL_WRITE.test(call))).toBe(true);
+		const seams = fakeSeams(script);
+		await Effect.runPromise(Effect.provide(runOpen(onTopic), seams.layer));
+		expect(seams.requests.some((request) => LABEL_WRITE.test(request))).toBe(true);
 	});
 });
 
 describe("runOpen resumes an existing session", () => {
 	it("answers created:false without writing anything", async () => {
-		const shell = fakeShell([
+		const seams = fakeSeams([
 			withLabel,
-			[SEARCH, okOut(row(9412, TOPIC))],
-			[ISSUE, okOut(sessionPayload(9412))],
+			[SEARCH, listing(row(9412, TOPIC))],
+			[ISSUE, served(sessionPayload(9412))],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runOpen(onTopic), shell.layer));
+		const out = await Effect.runPromise(Effect.provide(runOpen(onTopic), seams.layer));
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({session: 9412, created: false});
-		expect(shell.calls.some((call) => CREATE.test(call))).toBe(false);
+		expect(seams.requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it.each([
@@ -111,8 +127,8 @@ describe("runOpen resumes an existing session", () => {
 	])("matches a title differing only in %s", async (_case, title) => {
 		const out = await run([
 			withLabel,
-			[SEARCH, okOut(row(9412, title))],
-			[ISSUE, okOut(sessionPayload(9412))],
+			[SEARCH, listing(row(9412, title))],
+			[ISSUE, served(sessionPayload(9412))],
 		]);
 		expect(JSON.parse(out.stdout)).toMatchObject({session: 9412, created: false});
 	});
@@ -120,10 +136,10 @@ describe("runOpen resumes an existing session", () => {
 	it("does not match a title a human reads as related but that is not equal", async () => {
 		const out = await run([
 			withLabel,
-			[SEARCH, okOut(row(9412, "sozluk moderation"))],
+			[SEARCH, listing(row(9412, "sozluk moderation"))],
 			[CREATE, created],
-			[ISSUE, okOut(sessionPayload(9412, {labels: []}))],
-			[LABEL_WRITE, okOut("{}")],
+			[ISSUE, served(sessionPayload(9412, {labels: []}))],
+			[LABEL_WRITE, served("{}")],
 		]);
 		expect(JSON.parse(out.stdout)).toMatchObject({created: true});
 	});
@@ -134,7 +150,7 @@ describe("runOpen seats each refusal on its own code, with nothing on stdout", (
 		readonly [
 			string,
 			number,
-			ReadonlyArray<readonly [RegExp, ExecResult]>,
+			ReadonlyArray<Scripted>,
 			{readonly topic?: string | null; readonly ticket?: number | null},
 		]
 	> = [
@@ -145,29 +161,19 @@ describe("runOpen seats each refusal on its own code, with nothing on stdout", (
 			{topic: "why /Users/someone/notes.md is stale"},
 		],
 		["a bare @ path topic", BARE_AT_PATH, [withLabel], {topic: "@/Users/someone/notes.md"}],
-		["the session label not existing", NO_TARGET, [[LABELS, okOut("bug\nchore")]], {}],
-		[
-			"a label read that failed",
-			PRECONDITION_UNKNOWN,
-			[[LABELS, errOut("gh: Bad gateway (HTTP 502)")]],
-			{},
-		],
-		[
-			"a search that could not complete",
-			PRECONDITION_UNKNOWN,
-			[withLabel, [SEARCH, errOut("gh: Bad gateway (HTTP 502)")]],
-			{},
-		],
+		["the session label not existing", NO_TARGET, [[LABELS, labelled("bug", "chore")]], {}],
+		["a label read that failed", PRECONDITION_UNKNOWN, [[LABELS, GATEWAY]], {}],
+		["a search that could not complete", PRECONDITION_UNKNOWN, [withLabel, [SEARCH, GATEWAY]], {}],
 		[
 			"more than one matching session",
 			SESSION_AMBIGUOUS,
-			[withLabel, [SEARCH, okOut(`${row(9412, TOPIC)}\n${row(9431, TOPIC)}`)]],
+			[withLabel, [SEARCH, listing(row(9412, TOPIC), row(9431, TOPIC))]],
 			{},
 		],
 		[
 			"a create that failed",
 			WRITE_UNKNOWN,
-			[withLabel, [SEARCH, okOut("")], [CREATE, errOut("gh: Bad gateway (HTTP 502)")]],
+			[withLabel, [SEARCH, listing()], [CREATE, GATEWAY]],
 			{},
 		],
 		[
@@ -175,9 +181,9 @@ describe("runOpen seats each refusal on its own code, with nothing on stdout", (
 			READBACK_MISMATCH,
 			[
 				withLabel,
-				[SEARCH, okOut("")],
+				[SEARCH, listing()],
 				[CREATE, created],
-				[ISSUE, okOut(sessionPayload(9412, {labels: [], title: "something else entirely"}))],
+				[ISSUE, served(sessionPayload(9412, {labels: [], title: "something else entirely"}))],
 			],
 			{},
 		],
@@ -186,10 +192,10 @@ describe("runOpen seats each refusal on its own code, with nothing on stdout", (
 			WRITE_UNKNOWN,
 			[
 				withLabel,
-				[SEARCH, okOut("")],
+				[SEARCH, listing()],
 				[CREATE, created],
-				[ISSUE, okOut(sessionPayload(9412, {labels: []}))],
-				[LABEL_WRITE, errOut("gh: Bad gateway (HTTP 502)")],
+				[ISSUE, served(sessionPayload(9412, {labels: []}))],
+				[LABEL_WRITE, GATEWAY],
 			],
 			{},
 		],
@@ -205,19 +211,19 @@ describe("runOpen seats each refusal on its own code, with nothing on stdout", (
 	it("names the orphaned issue when the label write is the half that failed", async () => {
 		const out = await run([
 			withLabel,
-			[SEARCH, okOut("")],
+			[SEARCH, listing()],
 			[CREATE, created],
-			[ISSUE, okOut(sessionPayload(9412, {labels: []}))],
-			[LABEL_WRITE, errOut("gh: Bad gateway (HTTP 502)")],
+			[ISSUE, served(sessionPayload(9412, {labels: []}))],
+			[LABEL_WRITE, GATEWAY],
 		]);
 		expect(out.stderr.join("\n")).toContain("#9412");
 		expect(out.stderr.join("\n")).toContain("unlabelled and unfindable");
 	});
 
 	it("mints nothing when the search could not complete", async () => {
-		const shell = fakeShell([withLabel, [once(SEARCH), errOut("gh: Bad gateway (HTTP 502)")]]);
-		await Effect.runPromise(Effect.provide(runOpen(onTopic), shell.layer));
-		expect(shell.calls.some((call) => CREATE.test(call))).toBe(false);
+		const seams = fakeSeams([withLabel, [once(SEARCH), GATEWAY]]);
+		await Effect.runPromise(Effect.provide(runOpen(onTopic), seams.layer));
+		expect(seams.requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("keeps every refusal on a code of its own", () => {
@@ -229,30 +235,30 @@ describe("runOpen seats each refusal on its own code, with nothing on stdout", (
 describe("runOpen binds a session to a wayfinding frontier ticket", () => {
 	const TICKET = 5652;
 	const TITLE = "does the extension seam belong to the plugin or the repo?";
-	const TICKET_READ = /^gh api repos\/o\/r\/issues\/5652$/;
-	const SESSION_READ = /^gh api repos\/o\/r\/issues\/9412$/;
-	const ticketRead: readonly [RegExp, ExecResult] = [
+	const TICKET_READ = /^GET .*\/repos\/o\/r\/issues\/5652$/;
+	const SESSION_READ = /^GET .*\/repos\/o\/r\/issues\/9412$/;
+	const ticketRead: Scripted = [
 		TICKET_READ,
-		okOut(sessionPayload(TICKET, {labels: ["wayfinding:map"], title: TITLE})),
+		served(sessionPayload(TICKET, {labels: ["wayfinding:map"], title: TITLE})),
 	];
-	const bound = (number: number, title = TITLE): string =>
+	const bound = (number: number, title = TITLE): Record<string, unknown> =>
 		row(number, title, `A grilling session.\n\n${cameFromSection(TICKET)}`);
-	const onTicket = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => fakeShell(script);
-	const forTicket = (shell: ReturnType<typeof fakeShell>, topic: string | null = null) =>
+	const onTicket = (script: ReadonlyArray<Scripted>) => fakeSeams(script);
+	const forTicket = (seams: ReturnType<typeof fakeSeams>, topic: string | null = null) =>
 		Effect.runPromise(
-			Effect.provide(runOpen({...options, subject: subjectOf(topic, TICKET)}), shell.layer),
+			Effect.provide(runOpen({...options, subject: subjectOf(topic, TICKET)}), seams.layer),
 		);
 
 	it("takes the title from the ticket and records the ticket on the body", async () => {
-		const shell = onTicket([
+		const seams = onTicket([
 			withLabel,
 			ticketRead,
-			[SEARCH, okOut("")],
+			[SEARCH, listing()],
 			[CREATE, created],
-			[SESSION_READ, okOut(sessionPayload(9412, {labels: [], title: TITLE}))],
-			[LABEL_WRITE, okOut("{}")],
+			[SESSION_READ, served(sessionPayload(9412, {labels: [], title: TITLE}))],
+			[LABEL_WRITE, served("{}")],
 		]);
-		const out = await forTicket(shell);
+		const out = await forTicket(seams);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
 			session: 9412,
@@ -260,21 +266,22 @@ describe("runOpen binds a session to a wayfinding frontier ticket", () => {
 			ticket: TICKET,
 			created: true,
 		});
-		const create = shell.calls.find((call) => CREATE.test(call)) ?? "";
-		expect(create).toContain(`title=${TITLE}`);
-		expect(create).toContain(cameFromSection(TICKET));
+		const at = seams.requests.findIndex((request) => CREATE.test(request));
+		const create = JSON.parse(seams.bodies[at] ?? "{}") as Record<string, string>;
+		expect(create.title).toBe(TITLE);
+		expect(create.body).toContain(cameFromSection(TICKET));
 	});
 
 	it("resumes the bound session on a second run, minting nothing", async () => {
-		const shell = onTicket([
+		const seams = onTicket([
 			withLabel,
 			ticketRead,
-			[SEARCH, okOut(bound(9412))],
-			[SESSION_READ, okOut(sessionPayload(9412, {title: TITLE}))],
+			[SEARCH, listing(bound(9412))],
+			[SESSION_READ, served(sessionPayload(9412, {title: TITLE}))],
 		]);
-		const out = await forTicket(shell);
+		const out = await forTicket(seams);
 		expect(JSON.parse(out.stdout)).toMatchObject({session: 9412, ticket: TICKET, created: false});
-		expect(shell.calls.some((call) => CREATE.test(call))).toBe(false);
+		expect(seams.requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("resumes on the ticket even after both titles were edited apart", async () => {
@@ -283,8 +290,8 @@ describe("runOpen binds a session to a wayfinding frontier ticket", () => {
 			onTicket([
 				withLabel,
 				ticketRead,
-				[SEARCH, okOut(bound(9412, renamed))],
-				[SESSION_READ, okOut(sessionPayload(9412, {title: renamed}))],
+				[SEARCH, listing(bound(9412, renamed))],
+				[SESSION_READ, served(sessionPayload(9412, {title: renamed}))],
 			]),
 			"a topic nobody would match on",
 		);
@@ -296,10 +303,10 @@ describe("runOpen binds a session to a wayfinding frontier ticket", () => {
 			onTicket([
 				withLabel,
 				ticketRead,
-				[SEARCH, okOut(row(9400, TITLE))],
+				[SEARCH, listing(row(9400, TITLE))],
 				[CREATE, created],
-				[SESSION_READ, okOut(sessionPayload(9412, {labels: [], title: TITLE}))],
-				[LABEL_WRITE, okOut("{}")],
+				[SESSION_READ, served(sessionPayload(9412, {labels: [], title: TITLE}))],
+				[LABEL_WRITE, served("{}")],
 			]),
 		);
 		expect(JSON.parse(out.stdout)).toMatchObject({session: 9412, created: true});
@@ -307,32 +314,32 @@ describe("runOpen binds a session to a wayfinding frontier ticket", () => {
 
 	it("refuses on 16 when two open sessions carry the same ticket", async () => {
 		const out = await forTicket(
-			onTicket([withLabel, ticketRead, [SEARCH, okOut(`${bound(9412)}\n${bound(9431)}`)]]),
+			onTicket([withLabel, ticketRead, [SEARCH, listing(bound(9412), bound(9431))]]),
 		);
 		expect(out.code).toBe(SESSION_AMBIGUOUS);
 		expect(out.stderr.join("\n")).toContain(`ticket #${TICKET}`);
 	});
 
 	it.each([
-		[NO_TARGET, "does not exist", "gh: Not Found (HTTP 404)"],
-		[PRECONDITION_UNKNOWN, "could not be read", "gh: Bad gateway (HTTP 502)"],
-	])("refuses on %i when the ticket %s, minting nothing", async (code, _case, reason) => {
-		const shell = onTicket([withLabel, [TICKET_READ, errOut(reason)]]);
-		const out = await forTicket(shell);
+		[NO_TARGET, "does not exist", NOT_FOUND],
+		[PRECONDITION_UNKNOWN, "could not be read", GATEWAY],
+	])("refuses on %i when the ticket %s, minting nothing", async (code, _case, reply) => {
+		const seams = onTicket([withLabel, [TICKET_READ, reply]]);
+		const out = await forTicket(seams);
 		expect(out.code).toBe(code);
 		expect(out.stdout).toBe("");
-		expect(shell.calls.some((call) => CREATE.test(call))).toBe(false);
+		expect(seams.requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("refuses on 19 rather than minting a second session past a body it could not parse", async () => {
 		const drifted = row(9400, TITLE, `A grilling session.\n\n### Came from\n\n#${TICKET}\n`);
-		const shell = onTicket([withLabel, ticketRead, [SEARCH, okOut(drifted)]]);
-		const out = await forTicket(shell);
+		const seams = onTicket([withLabel, ticketRead, [SEARCH, listing(drifted)]]);
+		const out = await forTicket(seams);
 		expect(out.code).toBe(BINDING_MALFORMED);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("#9400");
 		expect(out.stderr.join("\n")).toContain("does not parse");
-		expect(shell.calls.some((call) => CREATE.test(call))).toBe(false);
+		expect(seams.requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("reads a session bound to a different ticket as no match, not as a drift", async () => {
@@ -341,10 +348,10 @@ describe("runOpen binds a session to a wayfinding frontier ticket", () => {
 			onTicket([
 				withLabel,
 				ticketRead,
-				[SEARCH, okOut(other)],
+				[SEARCH, listing(other)],
 				[CREATE, created],
-				[SESSION_READ, okOut(sessionPayload(9412, {labels: [], title: TITLE}))],
-				[LABEL_WRITE, okOut("{}")],
+				[SESSION_READ, served(sessionPayload(9412, {labels: [], title: TITLE}))],
+				[LABEL_WRITE, served("{}")],
 			]),
 		);
 		expect(JSON.parse(out.stdout)).toMatchObject({session: 9412, created: true});

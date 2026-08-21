@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import {instant, packNonce} from "../wire/handoff-pack.ts";
 import {NO_TARGET, PACK_MALFORMED, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {
@@ -9,6 +8,7 @@ import {
 	GROUND,
 	groundScript,
 	ISSUE,
+	ISSUE_READ,
 	NONCE,
 	packBody,
 	REPO,
@@ -16,7 +16,7 @@ import {
 import {composeClaimMarker} from "./markers.ts";
 import {runRead} from "./read-verb.ts";
 
-const LIST = new RegExp(`issues/${ISSUE}/comments`);
+const LIST = new RegExp(`GET .*/issues/${ISSUE}/comments`);
 
 const claim = (packComment: number): string => {
 	const nonce = packNonce(NONCE);
@@ -27,15 +27,13 @@ const claim = (packComment: number): string => {
 
 const options = {issue: ISSUE, base: null, repo: null, env: {CLAUDE_PIPELINE_REPO: REPO}};
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	over: Partial<typeof options> = {},
-) => Effect.runPromise(Effect.provide(runRead({...options, ...over}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, over: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runRead({...options, ...over}), fakeSeams(script).layer));
 
 describe("runRead", () => {
 	it("exits 0 with `none` over an issue nobody handed off — the ordinary case", async () => {
 		const out = await run([
-			[LIST, okOut(commentsJson([{id: 1, body: "picking this up"}]))],
+			[LIST, {status: 200, body: commentsJson([{id: 1, body: "picking this up"}])}],
 			...groundScript(),
 		]);
 		expect(out.code).toBe(0);
@@ -57,7 +55,7 @@ describe("runRead", () => {
 
 	it("reports drift none when the live ground still matches the packed one", async () => {
 		const out = await run([
-			[LIST, okOut(commentsJson([{id: 9234567891, body: packBody()}]))],
+			[LIST, {status: 200, body: commentsJson([{id: 9234567891, body: packBody()}])}],
 			...groundScript(),
 		]);
 		expect(out.code).toBe(0);
@@ -72,7 +70,7 @@ describe("runRead", () => {
 
 	it("re-derives against the PACKED branch, not the successor's HEAD", async () => {
 		const out = await run([
-			[LIST, okOut(commentsJson([{id: 1, body: packBody()}]))],
+			[LIST, {status: 200, body: commentsJson([{id: 1, body: packBody()}])}],
 			// A successor sitting on `main`: were the derivation taken from HEAD, ten rows would move.
 			[/rev-parse --abbrev-ref HEAD$/, okOut("main")],
 			...groundScript(),
@@ -83,7 +81,7 @@ describe("runRead", () => {
 	it("reports the moved field, and only that one", async () => {
 		const moved = "7ab3419e0c25d8f6041a2b3c4d5e6f7089abcdef";
 		const out = await run([
-			[LIST, okOut(commentsJson([{id: 1, body: packBody()}]))],
+			[LIST, {status: 200, body: commentsJson([{id: 1, body: packBody()}])}],
 			[/rev-parse --verify --quiet main\^/, okOut(GROUND.git.base.head)],
 			[/rev-parse --verify --quiet/, okOut(moved)],
 			...groundScript(),
@@ -97,12 +95,13 @@ describe("runRead", () => {
 		const out = await run([
 			[
 				LIST,
-				okOut(
-					commentsJson([
+				{
+					status: 200,
+					body: commentsJson([
 						{id: 1, body: packBody()},
 						{id: 2, body: claim(1)},
 					]),
-				),
+				},
 			],
 			...groundScript(),
 		]);
@@ -119,7 +118,7 @@ describe("runRead", () => {
 
 	it("reports rows 3-10 as moved with a null live value when the packed branch is gone", async () => {
 		const out = await run([
-			[LIST, okOut(commentsJson([{id: 1, body: packBody()}]))],
+			[LIST, {status: 200, body: commentsJson([{id: 1, body: packBody()}])}],
 			[/rev-parse --verify --quiet/, errOut("")],
 			...groundScript(),
 		]);
@@ -131,7 +130,13 @@ describe("runRead", () => {
 
 	it("exits 14 on a malformed latest pack — never `none` over a pack that exists", async () => {
 		const out = await run([
-			[LIST, okOut(commentsJson([{id: 77, body: packBody().replace("## Unsure", "## Doubts")}]))],
+			[
+				LIST,
+				{
+					status: 200,
+					body: commentsJson([{id: 77, body: packBody().replace("## Unsure", "## Doubts")}]),
+				},
+			],
 			...groundScript(),
 		]);
 		expect(out.code).toBe(PACK_MALFORMED);
@@ -140,15 +145,15 @@ describe("runRead", () => {
 	});
 
 	it("exits 11 when the comment walk failed — whether a pack exists is UNKNOWN, never none", async () => {
-		const out = await run([[LIST, errOut("gh: Bad gateway (HTTP 502)")], ...groundScript()]);
+		const out = await run([[LIST, {status: 502, body: "{}"}], ...groundScript()]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 	});
 
 	it("exits 11 when the live re-derivation failed — the drift is not reported as unchanged", async () => {
 		const out = await run([
-			[LIST, okOut(commentsJson([{id: 1, body: packBody()}]))],
-			[/pulls\?state=all/, errOut("gh: Bad gateway (HTTP 502)")],
+			[LIST, {status: 200, body: commentsJson([{id: 1, body: packBody()}])}],
+			[/pulls\?state=all/, {status: 502, body: "{}"}],
 			...groundScript(),
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -157,7 +162,7 @@ describe("runRead", () => {
 
 	it("exits 7 on an issue that does not exist", async () => {
 		const out = await run([
-			[new RegExp(`api repos/${REPO}/issues/${ISSUE}$`), errOut("gh: Not Found (HTTP 404)")],
+			[ISSUE_READ, {status: 404, body: '{"message":"Not Found"}'}],
 			...groundScript(),
 		]);
 		expect(out.code).toBe(NO_TARGET);

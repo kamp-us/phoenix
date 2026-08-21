@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type HttpReply} from "../fakes.test-support.ts";
 import {cameFromSection} from "../wire/came-from.ts";
 import {NO_TARGET, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {
@@ -17,9 +16,14 @@ import {
 } from "./fixtures.test-support.ts";
 import {runRead} from "./read-verb.ts";
 
-const ISSUE = /^gh api repos\/o\/r\/issues\/9412$/;
-const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/9412\/comments\?/;
-const PERMISSION = /^gh api repos\/o\/r\/collaborators\/([a-z-]+)\/permission/;
+const ISSUE = /^GET .*\/repos\/o\/r\/issues\/9412$/;
+const COMMENTS = /^GET .*\/repos\/o\/r\/issues\/9412\/comments\?/;
+const PERMISSION = /^GET .*\/repos\/o\/r\/collaborators\/[a-z-]+\/permission$/;
+
+const served = (body: string): HttpReply => ({status: 200, body});
+const granted = (permission: string): HttpReply => served(JSON.stringify({permission}));
+const NOT_FOUND: HttpReply = {status: 404, body: '{"message":"Not Found"}'};
+const GATEWAY: HttpReply = {status: 502, body: '{"message":"Bad gateway"}'};
 
 const BOUND = roundDigestOf(1);
 const ROUND = {id: 1, author: "acme-founder", body: roundComment(1)} satisfies FakeComment;
@@ -42,14 +46,14 @@ interface ReadAnswer {
 
 const readSession = async (
 	comments: ReadonlyArray<FakeComment>,
-	permission: ExecResult = okOut("write"),
+	permission: HttpReply = granted("write"),
 ): Promise<{code: number; answer: ReadAnswer}> => {
 	const out = await Effect.runPromise(
 		Effect.provide(
 			runRead(options),
-			fakeShell([
-				[ISSUE, okOut(sessionPayload(9412))],
-				[COMMENTS, okOut(commentsPayload(comments))],
+			fakeSeams([
+				[ISSUE, served(sessionPayload(9412))],
+				[COMMENTS, served(commentsPayload(comments))],
 				[PERMISSION, permission],
 			]).layer,
 		),
@@ -62,9 +66,9 @@ describe("the answer names the ticket the session is bound to", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runRead(options),
-				fakeShell([
-					[ISSUE, okOut(sessionPayload(9412, {body}))],
-					[COMMENTS, okOut(commentsPayload([]))],
+				fakeSeams([
+					[ISSUE, served(sessionPayload(9412, {body}))],
+					[COMMENTS, served(commentsPayload([]))],
 				]).layer,
 			),
 		);
@@ -83,9 +87,9 @@ describe("the answer names the ticket the session is bound to", () => {
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runRead(options),
-				fakeShell([
-					[ISSUE, okOut(sessionPayload(9412, {body: "### Came from\n\n#5652\n"}))],
-					[COMMENTS, okOut(commentsPayload([]))],
+				fakeSeams([
+					[ISSUE, served(sessionPayload(9412, {body: "### Came from\n\n#5652\n"}))],
+					[COMMENTS, served(commentsPayload([]))],
 				]).layer,
 			),
 		);
@@ -182,7 +186,7 @@ describe("a ruling resolves only when all four clauses hold", () => {
 				{id: 2, author: "stranger", body: AUTHORIZATION},
 				{id: 3, author: "stranger", body: rulingComment("R1.2", BOUND)},
 			],
-			okOut("read"),
+			granted("read"),
 		);
 		expect(answer.questions[1]).toMatchObject({state: "open"});
 		expect(answer.disregarded[0]).toMatchObject({comment: 3, reason: "unauthorized"});
@@ -270,10 +274,7 @@ describe("supersession comes from the marker and from nothing else", () => {
 describe("the only refusals are an absent session and a read that could not complete", () => {
 	it("refuses an absent session as proven", async () => {
 		const out = await Effect.runPromise(
-			Effect.provide(
-				runRead(options),
-				fakeShell([[ISSUE, errOut("gh: Not Found (HTTP 404)")]]).layer,
-			),
+			Effect.provide(runRead(options), fakeSeams([[ISSUE, NOT_FOUND]]).layer),
 		);
 		expect(out.code).toBe(NO_TARGET);
 		expect(out.stdout).toBe("");
@@ -283,9 +284,9 @@ describe("the only refusals are an absent session and a read that could not comp
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runRead(options),
-				fakeShell([
-					[ISSUE, okOut(sessionPayload(9412))],
-					[COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
+				fakeSeams([
+					[ISSUE, served(sessionPayload(9412))],
+					[COMMENTS, GATEWAY],
 				]).layer,
 			),
 		);
@@ -298,18 +299,18 @@ describe("the only refusals are an absent session and a read that could not comp
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runRead(options),
-				fakeShell([
-					[ISSUE, okOut(sessionPayload(9412))],
+				fakeSeams([
+					[ISSUE, served(sessionPayload(9412))],
 					[
 						COMMENTS,
-						okOut(
+						served(
 							commentsPayload([
 								ROUND,
 								{id: 3, author: "acme-founder", body: rulingComment("R1.2", BOUND)},
 							]),
 						),
 					],
-					[PERMISSION, errOut("gh: Bad gateway (HTTP 502)")],
+					[PERMISSION, GATEWAY],
 				]).layer,
 			),
 		);

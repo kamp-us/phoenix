@@ -32,6 +32,7 @@
  * 0308 — no skill reads its rows by name, and the reason vocabulary is what the contract defends.
  */
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {reasonHistogram} from "../evidence.ts";
 import {TRIAGED} from "../labels.ts";
@@ -131,7 +132,10 @@ export const runPick = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		if (!Number.isInteger(options.limit) || options.limit <= 0) {
@@ -161,7 +165,7 @@ export const runPick = (
 		const blockedEdges: string[] = [];
 		const unreadableEdges: string[] = [];
 		for (const bucket of BUCKETS) {
-			const listed = yield* listLabelled(resolved.repo, [TRIAGED, bucket]);
+			const listed = yield* listLabelled(options.env, resolved.repo, [TRIAGED, bucket]);
 			if (listed._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,

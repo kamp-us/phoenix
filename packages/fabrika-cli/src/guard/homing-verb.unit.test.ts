@@ -1,21 +1,20 @@
 /**
- * `guard homing-guard check` over a scripted `gh` — the two scopes, and every read failure that has
- * to land as UNKNOWN rather than as a clean or a red.
+ * `guard homing-guard check` over a scripted GitHub — the two scopes, and every read failure that
+ * has to land as UNKNOWN rather than as a clean or a red.
  *
- * The scoping reads are asserted by the command lines the verb spawns: the sweep must narrow at the
+ * The scoping reads are asserted by the requests the verb issues: the sweep must narrow at the
  * endpoint, and the label-set read must happen only on the fork that needs it (#4272).
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
 import {runHomingGuard} from "./homing-verb.ts";
 
-const BACKLOG = /^gh api --paginate repos\/o\/r\/issues\?state=open&labels=status%3Atriaged/;
-const ONE = /^gh api repos\/o\/r\/issues\/9$/;
-const LABELS = /^gh api --paginate repos\/o\/r\/labels/;
+const BACKLOG = /^GET .*\/repos\/o\/r\/issues\?state=open&labels=status%3Atriaged/;
+const ONE = /^GET .*\/repos\/o\/r\/issues\/9$/;
+const LABELS = /^GET .*\/repos\/o\/r\/labels/;
 
 const ENV = {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>;
 
@@ -37,18 +36,23 @@ const body = (shape: IssueShape) => ({
 	...(shape.pull === true ? {pull_request: {url: "https://example.test/pulls/9"}} : {}),
 });
 
-const board = (...shapes: ReadonlyArray<IssueShape>): ExecResult =>
-	okOut(JSON.stringify(shapes.map(body)));
+const board = (...shapes: ReadonlyArray<IssueShape>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(shapes.map(body)),
+});
 
-const one = (shape: IssueShape): ExecResult => okOut(JSON.stringify(body(shape)));
+const one = (shape: IssueShape): HttpReply => ({status: 200, body: JSON.stringify(body(shape))});
 
-const labels = (...names: ReadonlyArray<string>): ExecResult => okOut(names.join("\n"));
+const labels = (...names: ReadonlyArray<string>): HttpReply => ({
+	status: 200,
+	body: JSON.stringify(names.map((name) => ({name}))),
+});
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	options: {issue?: number; repo?: string | null; env?: Record<string, string | undefined>} = {},
 ) => {
-	const shell = fakeShell(script);
+	const seams = fakeSeams(script);
 	return Effect.runPromise(
 		Effect.provide(
 			runHomingGuard({
@@ -56,14 +60,14 @@ const run = (
 				repo: options.repo ?? null,
 				env: options.env ?? ENV,
 			}),
-			shell.layer,
+			seams.layer,
 		),
-	).then((outcome) => ({outcome, calls: shell.calls}));
+	).then((outcome) => ({outcome, calls: seams.calls, requests: seams.requests}));
 };
 
 describe("runHomingGuard — the backlog sweep", () => {
 	it("passes and reports what it scanned when every triaged issue is homed or exempt", async () => {
-		const {outcome, calls} = await run([
+		const {outcome, requests} = await run([
 			[
 				BACKLOG,
 				board(
@@ -75,13 +79,13 @@ describe("runHomingGuard — the backlog sweep", () => {
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout).toContain("scanned 2 triaged issue(s)");
 		expect(outcome.stdout).toContain("1 milestone-homed");
-		expect(calls).toHaveLength(1);
+		expect(requests).toHaveLength(1);
 	});
 
 	it("narrows at the endpoint rather than paging the whole open board", async () => {
-		const {calls} = await run([[BACKLOG, board({number: 1, milestone: 17})]]);
-		expect(calls[0]).toContain("labels=status%3Atriaged");
-		expect(calls[0]).toContain("state=open");
+		const {requests} = await run([[BACKLOG, board({number: 1, milestone: 17})]]);
+		expect(requests[0]).toContain("labels=status%3Atriaged");
+		expect(requests[0]).toContain("state=open");
 	});
 
 	it("reds 12 on an un-homed issue and prints the three home-or-exempt-or-kill outcomes", async () => {
@@ -106,19 +110,19 @@ describe("runHomingGuard — the backlog sweep", () => {
 	});
 
 	it("reds 7 on an empty sweep — a vacuous pass would hide every floater (ADR 0092)", async () => {
-		const {outcome} = await run([[BACKLOG, okOut("[]")]]);
+		const {outcome} = await run([[BACKLOG, {status: 200, body: "[]"}]]);
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.join("\n")).toContain("ZERO status:triaged issues");
 	});
 
 	it("reds 11 when the board cannot be read — never clean, never a violation", async () => {
-		const {outcome} = await run([[BACKLOG, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const {outcome} = await run([[BACKLOG, {status: 502, body: "{}"}]]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.join("\n")).toContain("UNKNOWN");
 	});
 
 	it("emits a ::error annotation for every refusal under Actions", async () => {
-		const {outcome} = await run([[BACKLOG, okOut("[]")]], {
+		const {outcome} = await run([[BACKLOG, {status: 200, body: "[]"}]], {
 			env: {...ENV, GITHUB_ACTIONS: "true"},
 		});
 		expect(outcome.stderr.some((line) => line.startsWith("::error"))).toBe(true);
@@ -127,10 +131,10 @@ describe("runHomingGuard — the backlog sweep", () => {
 
 describe("runHomingGuard — the --issue seam", () => {
 	it("scans just that issue and reds it when it left triage un-homed", async () => {
-		const {outcome, calls} = await run([[ONE, one({number: 9})]], {issue: 9});
+		const {outcome, requests} = await run([[ONE, one({number: 9})]], {issue: 9});
 		expect(outcome.code).toBe(VIOLATION);
 		expect(outcome.stderr.join("\n")).toContain("#9 issue 9");
-		expect(calls).toEqual(["gh api repos/o/r/issues/9"]);
+		expect(requests).toEqual(["GET https://api.github.com/repos/o/r/issues/9"]);
 	});
 
 	it("passes a triaged, milestone-homed issue", async () => {
@@ -167,7 +171,7 @@ describe("runHomingGuard — the --issue seam", () => {
 		const {outcome} = await run(
 			[
 				[ONE, one({number: 9, labels: ["type:chore"]})],
-				[LABELS, errOut("gh: Bad gateway (HTTP 502)")],
+				[LABELS, {status: 502, body: "{}"}],
 			],
 			{issue: 9},
 		);
@@ -175,12 +179,14 @@ describe("runHomingGuard — the --issue seam", () => {
 	});
 
 	it("skips the label read entirely when the issue carries the label", async () => {
-		const {calls} = await run([[ONE, one({number: 9, milestone: 17})]], {issue: 9});
-		expect(calls.some((line) => LABELS.test(line))).toBe(false);
+		const {requests} = await run([[ONE, one({number: 9, milestone: 17})]], {issue: 9});
+		expect(requests.some((line) => LABELS.test(line))).toBe(false);
 	});
 
 	it("reds 11 on an issue that does not exist", async () => {
-		const {outcome} = await run([[ONE, errOut("gh: Not Found (HTTP 404)")]], {issue: 9});
+		const {outcome} = await run([[ONE, {status: 404, body: '{"message":"Not Found"}'}]], {
+			issue: 9,
+		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.join("\n")).toContain("does not exist");
 	});
@@ -192,9 +198,9 @@ describe("runHomingGuard — the --issue seam", () => {
 	});
 
 	it("refuses a non-positive issue number as usage, before any read", async () => {
-		const {outcome, calls} = await run([], {issue: 0});
+		const {outcome, requests} = await run([], {issue: 0});
 		expect(outcome.code).toBe(FAILED);
-		expect(calls).toEqual([]);
+		expect(requests).toEqual([]);
 	});
 });
 
@@ -206,9 +212,10 @@ describe("runHomingGuard — the repo", () => {
 	});
 
 	it("honours an explicit --repo over the environment", async () => {
-		const {calls} = await run([[/^gh api --paginate repos\/other\/x\/issues/, okOut("[]")]], {
-			repo: "other/x",
-		});
-		expect(calls[0]).toContain("repos/other/x/issues");
+		const {requests} = await run(
+			[[/^GET .*\/repos\/other\/x\/issues/, {status: 200, body: "[]"}]],
+			{repo: "other/x"},
+		);
+		expect(requests[0]).toContain("repos/other/x/issues");
 	});
 });

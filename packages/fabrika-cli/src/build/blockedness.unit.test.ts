@@ -1,22 +1,20 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
 import {gateOf, readBlockedness} from "./blockedness.ts";
-import {issue} from "./fixtures.test-support.ts";
+import {GATEWAY, issuePayload, NOT_FOUND, served} from "./fixtures.test-support.ts";
 
-const EDGES =
-	/^gh api --paginate repos\/o\/r\/issues\/4312\/dependencies\/blocked_by\?per_page=100$/;
-const BLOCKER = (n: number) => new RegExp(`^gh api repos/o/r/issues/${n}$`);
+const EDGES = /GET .*\/repos\/o\/r\/issues\/4312\/dependencies\/blocked_by/;
+const BLOCKER = (n: number) => new RegExp(`GET .*/repos/o/r/issues/${n}$`);
 
-const NOT_FOUND = errOut("gh: Not Found (HTTP 404)");
-const GATEWAY = errOut("gh: Bad gateway (HTTP 502)");
+/** What `existenceOf` and the paged read both name a served 502. */
+const UNREADABLE = "GitHub answered HTTP 502";
 
-const edges = (...numbers: ReadonlyArray<number>): ExecResult =>
-	okOut(JSON.stringify(numbers.map((number) => ({number, state: "open"}))));
+const edges = (...numbers: ReadonlyArray<number>): HttpReply =>
+	served(numbers.map((number) => ({number, state: "open"})));
 
-const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
-	Effect.runPromise(Effect.provide(readBlockedness("o/r", 4312), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>) =>
+	Effect.runPromise(Effect.provide(readBlockedness("o/r", 4312), fakeSeams(script).layer));
 
 describe("readBlockedness", () => {
 	it("proves not-blocked over an empty edge list, and says how many it scanned", async () => {
@@ -26,8 +24,8 @@ describe("readBlockedness", () => {
 	it("counts an open blocker, and leaves a closed one out", async () => {
 		const out = await run([
 			[EDGES, edges(210, 211)],
-			[BLOCKER(210), issue({number: 210, state: "closed"})],
-			[BLOCKER(211), issue({number: 211, state: "open"})],
+			[BLOCKER(210), served(issuePayload({number: 210, state: "closed"}))],
+			[BLOCKER(211), served(issuePayload({number: 211, state: "open"}))],
 		]);
 		expect(out).toEqual({_tag: "Read", scanned: 2, open: [211], unread: []});
 	});
@@ -44,21 +42,18 @@ describe("readBlockedness", () => {
 		const out = await run([
 			[EDGES, edges(210, 211)],
 			[BLOCKER(210), GATEWAY],
-			[BLOCKER(211), issue({number: 211, state: "open"})],
+			[BLOCKER(211), served(issuePayload({number: 211, state: "open"}))],
 		]);
 		expect(out).toEqual({
 			_tag: "Read",
 			scanned: 2,
 			open: [211],
-			unread: [{number: 210, reason: "gh: Bad gateway (HTTP 502)"}],
+			unread: [{number: 210, reason: UNREADABLE}],
 		});
 	});
 
 	it("is Unknown when the edge list could not be read — never an empty list", async () => {
-		expect(await run([[EDGES, GATEWAY]])).toEqual({
-			_tag: "Unknown",
-			reason: "gh: Bad gateway (HTTP 502)",
-		});
+		expect(await run([[EDGES, GATEWAY]])).toEqual({_tag: "Unknown", reason: UNREADABLE});
 	});
 
 	it("is Unknown on a 404, which the caller has already ruled out by proving the issue open", async () => {
@@ -88,7 +83,7 @@ describe("gateOf", () => {
 			_tag: "Read",
 			scanned: 2,
 			open: [211],
-			unread: [{number: 210, reason: "gh: Bad gateway (HTTP 502)"}],
+			unread: [{number: 210, reason: UNREADABLE}],
 		});
 		expect(out).toEqual({_tag: "Blocked", scanned: 2, open: [211]});
 	});
@@ -99,20 +94,20 @@ describe("gateOf", () => {
 			scanned: 2,
 			open: [],
 			unread: [
-				{number: 210, reason: "gh: Bad gateway (HTTP 502)"},
-				{number: 211, reason: "gh: Bad gateway (HTTP 502)"},
+				{number: 210, reason: UNREADABLE},
+				{number: 211, reason: UNREADABLE},
 			],
 		});
 		expect(out).toEqual({
 			_tag: "Unknown",
-			reason: "blocker #210: gh: Bad gateway (HTTP 502); blocker #211: gh: Bad gateway (HTTP 502)",
+			reason: `blocker #210: ${UNREADABLE}; blocker #211: ${UNREADABLE}`,
 		});
 	});
 
 	it("carries an unreadable edge list straight through as Unknown", () => {
-		expect(gateOf({_tag: "Unknown", reason: "gh: Bad gateway (HTTP 502)"})).toEqual({
+		expect(gateOf({_tag: "Unknown", reason: UNREADABLE})).toEqual({
 			_tag: "Unknown",
-			reason: "gh: Bad gateway (HTTP 502)",
+			reason: UNREADABLE,
 		});
 	});
 });

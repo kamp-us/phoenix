@@ -1,66 +1,78 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import type {HttpReply} from "../fakes.test-support.ts";
 import {read as readApproval} from "../wire/plan-approval.ts";
 import {runApprove} from "./approve-verb.ts";
 import {APPROVAL_UNAUTHORIZED, PRECONDITION_UNKNOWN, READBACK_MISMATCH} from "./codes.ts";
 import {
+	CHILD as CHILD_AT,
 	CWD,
+	CYCLE_DOC,
 	child,
+	cycleDoc,
 	digestOver,
+	ENV as env,
 	epic,
 	epicBody,
-	planContext,
+	planSeams,
+	type Scripted,
+	SUB_ISSUES,
 	subIssues,
 } from "./fixtures.test-support.ts";
 
-const EPIC = /^gh api repos\/o\/r\/issues\/4300$/;
-const SUBS = /^gh api --paginate repos\/o\/r\/issues\/4300\/sub_issues/;
-const CHILD = /^gh api repos\/o\/r\/issues\/4301$/;
-const CYCLE = /^gh api repos\/o\/r\/contents\/product-development-cycle\.md$/;
-const VIEWER = /^gh api user --jq \.login$/;
-const TRUNK = /^gh api repos\/o\/r --jq \.default_branch$/;
+const API = "https:\\/\\/api\\.github\\.com";
+const EPIC = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/4300$`);
+const SUBS = SUB_ISSUES;
+const CHILD = CHILD_AT(4301);
+const CYCLE = CYCLE_DOC;
+const VIEWER = new RegExp(`^GET ${API}\\/user$`);
+const TRUNK = new RegExp(`^GET ${API}\\/repos\\/o\\/r$`);
 const CODEOWNERS = /contents\/\.github\/CODEOWNERS\?ref=main$/;
-const MEMBERS = /^gh api --paginate orgs\/kamp-us\/teams\/control-plane\/members/;
-const POST = /^gh api --method POST repos\/o\/r\/issues\/4300\/comments/;
-const GET_COMMENT = /^gh api repos\/o\/r\/issues\/comments\/512346$/;
+const MEMBERS = new RegExp(`^GET ${API}\\/orgs\\/kamp-us\\/teams\\/control-plane\\/members`);
+const POST = new RegExp(`^POST ${API}\\/repos\\/o\\/r\\/issues\\/4300\\/comments$`);
+const GET_COMMENT = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/issues\\/comments\\/512346$`);
 
-const env = {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>;
 const NOW = () => new Date("2026-08-16T07:16:03.500Z");
 
-const ledger: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+const served = (body: unknown): HttpReply => ({status: 200, body: JSON.stringify(body)});
+
+const ledger: ReadonlyArray<Scripted> = [
 	[EPIC, epic({body: epicBody({dependencies: "- phase 1: #4301"})})],
 	[SUBS, subIssues(4301)],
 	[CHILD, child({number: 4301})],
-	[CYCLE, okOut("{}")],
+	[CYCLE, cycleDoc],
 ];
 
-const acl: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[VIEWER, okOut("usirin\n")],
-	[TRUNK, okOut("main\n")],
-	[CODEOWNERS, okOut("/packages/fabrika-cli/ @kamp-us/control-plane\n")],
-	[MEMBERS, okOut(JSON.stringify([{login: "usirin"}, {login: "cansirin"}]))],
+const acl: ReadonlyArray<Scripted> = [
+	[VIEWER, served({login: "usirin"})],
+	[TRUNK, served({default_branch: "main"})],
+	[CODEOWNERS, {status: 200, body: "/packages/fabrika-cli/ @kamp-us/control-plane\n"}],
+	[MEMBERS, served([{login: "usirin"}, {login: "cansirin"}])],
 ];
 
-const POSTED = okOut(
-	JSON.stringify({id: 512346, html_url: "https://github.com/o/r/issues/4300#c"}),
-);
-
-const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
-	const shell = fakeShell(script);
-	return Effect.runPromise(
-		Effect.provide(
-			runApprove({number: 4300, repo: null, env, cwd: CWD, now: NOW}),
-			planContext(shell),
-		),
-	).then((outcome) => ({outcome, calls: shell.calls}));
+const POSTED: HttpReply = {
+	status: 201,
+	body: JSON.stringify({id: 512346, html_url: "https://github.com/o/r/issues/4300#c"}),
 };
 
-/** The bytes the verb handed `gh` — the `-f body=` operand is last on the POST line. */
-const postedBody = (calls: ReadonlyArray<string>): string => {
-	const line = calls.find((candidate) => POST.test(candidate)) ?? "";
-	return /-f body=([\s\S]*)$/.exec(line)?.[1] ?? "";
+const run = (script: ReadonlyArray<Scripted>) => {
+	const seams = planSeams(script);
+	return Effect.runPromise(
+		Effect.provide(runApprove({number: 4300, repo: null, env, cwd: CWD, now: NOW}), seams.layer),
+	).then((outcome) => ({outcome, calls: seams.http.calls, bodies: seams.http.bodies}));
+};
+
+/** The bytes the verb posted — the marker travels as the request body's `body` field now. */
+const postedBody = (posted: {
+	calls: ReadonlyArray<string>;
+	bodies: ReadonlyArray<string>;
+}): string => {
+	const at = posted.calls.findIndex((line) => POST.test(line));
+	if (at < 0) return "";
+	const sent: unknown = JSON.parse(posted.bodies[at] ?? "{}");
+	return typeof sent === "object" && sent !== null && "body" in sent
+		? String((sent as {body: unknown}).body)
+		: "";
 };
 
 const derivedDigest = (): Promise<string> => digestOver(ledger, {env});
@@ -69,13 +81,8 @@ describe("runApprove", () => {
 	it("posts a marker bound to the digest it derived itself and reads it back", async () => {
 		const digest = await derivedDigest();
 		const first = await run([...ledger, ...acl, [POST, POSTED]]);
-		const body = postedBody(first.calls);
-		const {outcome} = await run([
-			...ledger,
-			...acl,
-			[POST, POSTED],
-			[GET_COMMENT, okOut(JSON.stringify({body}))],
-		]);
+		const body = postedBody(first);
+		const {outcome} = await run([...ledger, ...acl, [POST, POSTED], [GET_COMMENT, served({body})]]);
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout)).toEqual({
 			answer: "approved",
@@ -94,8 +101,8 @@ describe("runApprove", () => {
 	 */
 	it("posts the freshly derived digest, and exposes no flag to supply one", async () => {
 		const digest = await derivedDigest();
-		const {calls} = await run([...ledger, ...acl, [POST, POSTED]]);
-		const marked = readApproval(postedBody(calls));
+		const posted = await run([...ledger, ...acl, [POST, POSTED]]);
+		const marked = readApproval(postedBody(posted));
 		expect(marked._tag).toBe("Found");
 		if (marked._tag !== "Found") return;
 		expect(marked.value).toEqual({epic: 4300, digest, at: "2026-08-16T07:16:03Z"});
@@ -103,7 +110,7 @@ describe("runApprove", () => {
 
 	it("refuses 24 when the invoking account is not on the roster, and posts nothing", async () => {
 		const {outcome, calls} = await run([
-			[VIEWER, okOut("someone-else\n")],
+			[VIEWER, served({login: "someone-else"})],
 			...ledger,
 			...acl,
 			[POST, POSTED],
@@ -115,7 +122,7 @@ describe("runApprove", () => {
 
 	it("refuses 24 when CODEOWNERS names no control-plane owner at all", async () => {
 		const {outcome, calls} = await run([
-			[CODEOWNERS, okOut("# nobody owns anything\n")],
+			[CODEOWNERS, {status: 200, body: "# nobody owns anything\n"}],
 			...ledger,
 			...acl,
 			[POST, POSTED],
@@ -130,7 +137,7 @@ describe("runApprove", () => {
 	 */
 	it("refuses 11 on a failed roster read — neither approved nor unapproved", async () => {
 		const {outcome, calls} = await run([
-			[MEMBERS, errOut("HTTP 502")],
+			[MEMBERS, {status: 502, body: '{"message":"Bad gateway"}'}],
 			...ledger,
 			...acl,
 			[POST, POSTED],
@@ -144,7 +151,7 @@ describe("runApprove", () => {
 
 	it("refuses 11 when the CODEOWNERS read fails, and posts nothing", async () => {
 		const {outcome, calls} = await run([
-			[CODEOWNERS, errOut("HTTP 500")],
+			[CODEOWNERS, {status: 500, body: '{"message":"Server error"}'}],
 			...ledger,
 			...acl,
 			[POST, POSTED],
@@ -158,7 +165,7 @@ describe("runApprove", () => {
 			...ledger,
 			...acl,
 			[POST, POSTED],
-			[GET_COMMENT, okOut(JSON.stringify({body: "plan-approved: #4300 @ ffffffffffff · x\n"}))],
+			[GET_COMMENT, served({body: "plan-approved: #4300 @ ffffffffffff · x\n"})],
 		]);
 		expect(outcome.code).toBe(READBACK_MISMATCH);
 	});

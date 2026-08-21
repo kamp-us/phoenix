@@ -1,7 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeSeams, once, type Scripted} from "../fakes.test-support.ts";
 import {read as readRuling} from "../wire/decision-ruling.ts";
 import {bodyDigest} from "./digest.ts";
 import {
@@ -16,6 +15,7 @@ import {
 	ISSUE,
 	ISSUE_READ,
 	issueRead,
+	LABEL_WRITTEN,
 	LABELS,
 	MARKER_COMMENT,
 	MEMBERS,
@@ -32,19 +32,26 @@ import {
 } from "./fixtures.test-support.ts";
 import {runRule} from "./rule-verb.ts";
 
-type Script = ReadonlyArray<readonly [RegExp, ExecResult]>;
+type Script = ReadonlyArray<Scripted>;
 
 const run = (script: Script, cites: string = RULING_URL) => {
-	const shell = fakeShell(script);
+	const seams = fakeSeams(script);
 	return Effect.runPromise(
-		Effect.provide(runRule({number: ISSUE, cites, repo: null, env, now: NOW}), shell.layer),
-	).then((outcome) => ({outcome, calls: shell.calls}));
+		Effect.provide(runRule({number: ISSUE, cites, repo: null, env, now: NOW}), seams.layer),
+	).then((outcome) => ({outcome, calls: seams.requests, bodies: seams.bodies}));
 };
 
-/** The bytes the verb handed `gh` — the `-f body=` operand is last on the POST line. */
-const postedBody = (calls: ReadonlyArray<string>): string => {
-	const line = calls.find((candidate) => POST.test(candidate)) ?? "";
-	return /-f body=([\s\S]*)$/.exec(line)?.[1] ?? "";
+/** The bytes the verb posted — the marker travels as the request body's `body` field now. */
+const postedBody = (posted: {
+	calls: ReadonlyArray<string>;
+	bodies: ReadonlyArray<string>;
+}): string => {
+	const at = posted.calls.findIndex((line) => POST.test(line));
+	if (at < 0) return "";
+	const sent: unknown = JSON.parse(posted.bodies[at] ?? "{}");
+	return typeof sent === "object" && sent !== null && "body" in sent
+		? String((sent as {body: unknown}).body)
+		: "";
 };
 
 /**
@@ -67,23 +74,24 @@ const wroteLabels = (calls: ReadonlyArray<string>): boolean =>
 	calls.some((line) => ADD_LABEL.test(line) || REMOVE_LABEL.test(line));
 
 /** The marker bytes this fixture's verb composes, taken off a run that stops at the read-back. */
-const marker = async (): Promise<string> => postedBody((await run(upToMarker())).calls);
+const marker = async (): Promise<string> => postedBody(await run(upToMarker()));
 
 /** The whole happy path, with the read-back scripted from the bytes the verb actually posted. */
 const settled = async (observed: ReadonlyArray<string> = ["type:decision", "ready-for:agent"]) => {
 	const body = await marker();
 	return run([
 		...upToMarker(),
-		[GET_MARKER, okOut(JSON.stringify({body}))],
-		[ADD_LABEL, okOut("[]")],
-		[REMOVE_LABEL, okOut("[]")],
+		[GET_MARKER, {status: 200, body: JSON.stringify({body})}],
+		[ADD_LABEL, LABEL_WRITTEN],
+		[REMOVE_LABEL, LABEL_WRITTEN],
 		[ISSUE_READ, issueRead(observed)],
 	]);
 };
 
 describe("runRule", () => {
 	it("posts a marker bound to the digest it derived itself, then flips the audience", async () => {
-		const {outcome, calls} = await settled();
+		const posted = await settled();
+		const {outcome} = posted;
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout)).toEqual({
 			answer: "ruled",
@@ -96,7 +104,7 @@ describe("runRule", () => {
 			audience: "ready-for:agent",
 			observed: ["type:decision", "ready-for:agent"],
 		});
-		expect(readRuling(postedBody(calls))).toMatchObject({
+		expect(readRuling(postedBody(posted))).toMatchObject({
 			_tag: "Found",
 			value: {issue: ISSUE, digest: bodyDigest(BODY), ruling: RULING_URL},
 		});
@@ -113,7 +121,7 @@ describe("runRule", () => {
 	it("proves the marker before it writes the flip: an unread-back marker leaves the labels alone", async () => {
 		const {outcome, calls} = await run([
 			...upToMarker(),
-			[GET_MARKER, okOut(JSON.stringify({body: "somebody edited this\n"}))],
+			[GET_MARKER, {status: 200, body: JSON.stringify({body: "somebody edited this\n"})}],
 		]);
 		expect(outcome.code).toBe(9);
 		expect(outcome.stdout).toBe("");
@@ -122,7 +130,7 @@ describe("runRule", () => {
 
 	it("leaves the labels alone when the marker write itself is UNKNOWN", async () => {
 		const {outcome, calls} = await run([
-			[POST, errOut("gh: Bad gateway (HTTP 502)")],
+			[POST, {status: 502, body: '{"message":"Bad gateway"}'}],
 			...upToMarker(),
 		]);
 		expect(outcome.code).toBe(8);
@@ -131,7 +139,7 @@ describe("runRule", () => {
 
 	it("exits 11 with nothing written when the roster cannot be read", async () => {
 		const {outcome, calls} = await run([
-			[MEMBERS, errOut("gh: Bad gateway (HTTP 502)")],
+			[MEMBERS, {status: 502, body: '{"message":"Bad gateway"}'}],
 			...upToMarker(),
 		]);
 		expect(outcome.code).toBe(11);
@@ -141,12 +149,18 @@ describe("runRule", () => {
 	});
 
 	it("exits 20 for an account off the roster, and for a roster that names nobody", async () => {
-		const offRoster = await run([[VIEWER, okOut("drive-by\n")], ...upToMarker()]);
+		const offRoster = await run([
+			[VIEWER, {status: 200, body: '{"login":"drive-by"}'}],
+			...upToMarker(),
+		]);
 		expect(offRoster.outcome.code).toBe(20);
 		expect(offRoster.calls.some((line) => POST.test(line))).toBe(false);
 
 		// Owners CODEOWNERS admits but this group cannot resolve an account against: nobody may rule.
-		const empty = await run([[CODEOWNERS, okOut("/docs/ docs@example.com\n")], ...upToMarker()]);
+		const empty = await run([
+			[CODEOWNERS, {status: 200, body: "/docs/ docs@example.com\n"}],
+			...upToMarker(),
+		]);
 		expect(empty.outcome.code).toBe(20);
 		expect(empty.calls.some((line) => POST.test(line))).toBe(false);
 	});
@@ -193,7 +207,7 @@ describe("runRule", () => {
 
 	it("refuses when ready-for:agent is absent from the repository's taxonomy", async () => {
 		const {outcome, calls} = await run([
-			[LABELS, okOut("type:decision\nready-for:human")],
+			[LABELS, {status: 200, body: '[{"name":"type:decision"},{"name":"ready-for:human"}]'}],
 			...upToMarker(),
 		]);
 		expect(outcome.code).toBe(7);
@@ -214,10 +228,10 @@ describe("runRule", () => {
 			...acl,
 			[POST, POSTED],
 		];
-		const body = postedBody((await run(already())).calls);
+		const body = postedBody(await run(already()));
 		const {outcome, calls} = await run([
 			...already(),
-			[GET_MARKER, okOut(JSON.stringify({body}))],
+			[GET_MARKER, {status: 200, body: JSON.stringify({body})}],
 			[ISSUE_READ, issueRead(["type:decision", "ready-for:agent"])],
 		]);
 		expect(outcome.code).toBe(0);

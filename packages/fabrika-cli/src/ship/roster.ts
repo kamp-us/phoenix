@@ -23,10 +23,9 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {defaultBranch} from "../build/github.ts";
 import {readBoundary} from "./boundary.ts";
 import {controlPlaneOwnersOf, splitTeam} from "./codeowners.ts";
-import {listTeamMembers} from "./github.ts";
+import {defaultBranch, listTeamMembers} from "./github.ts";
 
 export type RosterRead =
 	| {readonly _tag: "Unknown"; readonly reason: string}

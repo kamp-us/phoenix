@@ -1,7 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {fakeFs, fakeSeams, once, type Scripted} from "../fakes.test-support.ts";
 import {renderOutOfScope, spliceSection} from "./body.ts";
 import {ALREADY_DESCOPED, BAD_SECTIONS, DIGEST_STALE, TICKET_UNKNOWN} from "./codes.ts";
 import {runDescope} from "./descope-verb.ts";
@@ -22,12 +21,14 @@ import {composeTicketMarker} from "./markers.ts";
 const PERMISSION = /collaborators\/.*\/permission/;
 const CHILDREN = /issues\/9140\/sub_issues/;
 const TICKET_COMMENTS = /issues\/9142\/comments/;
-const POST_TICKET = /--method POST repos\/o\/r\/issues\/9142\/comments/;
+const POST_TICKET = /POST .*\/issues\/9142\/comments/;
 const EDGES = /issues\/9142\/dependencies\//;
 const TICKET_ISSUE = /issues\/9142$/;
 const MAP_ISSUE = /issues\/9140$/;
-const PATCH_MAP = /--method PATCH repos\/o\/r\/issues\/9140/;
-const PATCH_TICKET = /--method PATCH repos\/o\/r\/issues\/9142/;
+const PATCH_MAP = /PATCH .*\/issues\/9140/;
+const PATCH_TICKET = /PATCH .*\/issues\/9142/;
+
+const served = (body: string) => ({status: 200, body}) as const;
 
 const REASON = "reason.md";
 const DIRECTION = "a per-topic weight multiplier";
@@ -45,14 +46,14 @@ const options = {
 };
 
 const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	script: ReadonlyArray<Scripted>,
 	over: Partial<typeof options> = {},
 	files: Readonly<Record<string, string | null>> = {[REASON]: `${WHY}\n`},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runDescope({...options, ...over}),
-			Layer.merge(fakeShell(script).layer, fakeFs({files}).layer),
+			Layer.merge(fakeSeams(script).layer, fakeFs({files}).layer),
 		),
 	);
 
@@ -62,8 +63,10 @@ const appended = spliceSection(
 	renderOutOfScope({direction: DIRECTION, reason: WHY, recordedAt: "2026-08-10"}),
 );
 
-const mapOk = (body = MAP_BODY) =>
-	[MAP_ISSUE, okOut(issueJson({number: MAP, body, labels: ["wayfinding:map"]}))] as const;
+const mapOk = (body = MAP_BODY): Scripted => [
+	MAP_ISSUE,
+	served(issueJson({number: MAP, body, labels: ["wayfinding:map"]})),
+];
 
 describe("runDescope", () => {
 	it("exits 4 on an empty reason — an entry with none is one the next session re-proposes", async () => {
@@ -90,18 +93,18 @@ describe("runDescope", () => {
 	it("exits 13 when --ticket is not a frontier ticket of this map", async () => {
 		const out = await run(
 			[
-				[PERMISSION, okOut("write")],
-				[CHILDREN, okOut(`[{"number":${TICKET}}]`)],
+				[PERMISSION, served('{"permission":"write"}')],
+				[CHILDREN, served(`[{"number":${TICKET}}]`)],
 				[
 					TICKET_COMMENTS,
-					okOut(
+					served(
 						commentsJson([
 							{id: 1, body: composeTicketMarker({map: MAP, kind: "research", nonce: NONCE})},
 						]),
 					),
 				],
-				[EDGES, okOut("[]")],
-				[TICKET_ISSUE, okOut(issueJson({number: TICKET}))],
+				[EDGES, served("[]")],
+				[TICKET_ISSUE, served(issueJson({number: TICKET}))],
 				mapOk(),
 			],
 			{ticket: 9999},
@@ -112,12 +115,12 @@ describe("runDescope", () => {
 
 	it("exits 0 and reports the section's new size, which only ever grows", async () => {
 		const out = await run([
-			[PATCH_MAP, okOut("{}")],
+			[PATCH_MAP, served("{}")],
 			[
 				once(MAP_ISSUE),
-				okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+				served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
 			],
-			[MAP_ISSUE, okOut(issueJson({number: MAP, body: appended, labels: ["wayfinding:map"]}))],
+			[MAP_ISSUE, served(issueJson({number: MAP, body: appended, labels: ["wayfinding:map"]}))],
 		]);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({map: MAP, direction: DIRECTION, entries: 1});
@@ -137,13 +140,13 @@ describe("runDescope", () => {
 				}),
 			].join("\n"),
 		);
-		const shell = fakeShell([
-			[PATCH_MAP, okOut("{}")],
+		const seams = fakeSeams([
+			[PATCH_MAP, served("{}")],
 			[
 				once(MAP_ISSUE),
-				okOut(issueJson({number: MAP, body: MAP_BODY_WITH_REJECTION, labels: ["wayfinding:map"]})),
+				served(issueJson({number: MAP, body: MAP_BODY_WITH_REJECTION, labels: ["wayfinding:map"]})),
 			],
-			[MAP_ISSUE, okOut(issueJson({number: MAP, body: twoEntries, labels: ["wayfinding:map"]}))],
+			[MAP_ISSUE, served(issueJson({number: MAP, body: twoEntries, labels: ["wayfinding:map"]}))],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(
@@ -153,49 +156,49 @@ describe("runDescope", () => {
 					direction: "importing the old forum's reputation score",
 				}),
 				Layer.merge(
-					shell.layer,
+					seams.layer,
 					fakeFs({files: {[REASON]: "the old score counted post volume\n"}}).layer,
 				),
 			),
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).entries).toBe(2);
-		const patch = shell.calls.find((line) => line.includes("PATCH")) ?? "";
+		const patch = seams.bodies[seams.requests.findIndex((line) => line.startsWith("PATCH"))] ?? "";
 		expect(patch).toContain("a per-topic weight multiplier");
 	});
 
 	it("retires the named ticket off the frontier and closes it", async () => {
 		const retired = spliceSection(parsed(appended), "Frontier", "");
-		const shell = fakeShell([
-			[POST_TICKET, okOut('{"id":3,"html_url":"u"}')],
-			[PATCH_TICKET, okOut("{}")],
-			[PATCH_MAP, okOut("{}")],
-			[PERMISSION, okOut("write")],
-			[CHILDREN, okOut(`[{"number":${TICKET}}]`)],
+		const seams = fakeSeams([
+			[POST_TICKET, {status: 201, body: '{"id":3,"html_url":"u"}'}],
+			[PATCH_TICKET, served("{}")],
+			[PATCH_MAP, served("{}")],
+			[PERMISSION, served('{"permission":"write"}')],
+			[CHILDREN, served(`[{"number":${TICKET}}]`)],
 			[
 				TICKET_COMMENTS,
-				okOut(
+				served(
 					commentsJson([
 						{id: 1, body: composeTicketMarker({map: MAP, kind: "research", nonce: NONCE})},
 					]),
 				),
 			],
-			[EDGES, okOut("[]")],
-			[TICKET_ISSUE, okOut(issueJson({number: TICKET}))],
+			[EDGES, served("[]")],
+			[TICKET_ISSUE, served(issueJson({number: TICKET}))],
 			[
 				once(MAP_ISSUE),
-				okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+				served(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
 			],
-			[MAP_ISSUE, okOut(issueJson({number: MAP, body: retired, labels: ["wayfinding:map"]}))],
+			[MAP_ISSUE, served(issueJson({number: MAP, body: retired, labels: ["wayfinding:map"]}))],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runDescope({...options, ticket: TICKET}),
-				Layer.merge(shell.layer, fakeFs({files: {[REASON]: `${WHY}\n`}}).layer),
+				Layer.merge(seams.layer, fakeFs({files: {[REASON]: `${WHY}\n`}}).layer),
 			),
 		);
 		expect(out.code).toBe(0);
-		expect(shell.calls.some((line) => line.includes("map-retired:"))).toBe(true);
-		expect(shell.calls.some((line) => line.includes("state_reason=completed"))).toBe(true);
+		expect(seams.bodies.some((body) => body.includes("map-retired:"))).toBe(true);
+		expect(seams.bodies.some((body) => body.includes('"state_reason":"completed"'))).toBe(true);
 	});
 });

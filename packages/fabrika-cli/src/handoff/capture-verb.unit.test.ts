@@ -1,10 +1,17 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import type {ExecResult} from "../io/exec.ts";
+import {errOut, fakeSeams, type Scripted} from "../fakes.test-support.ts";
 import {runCapture} from "./capture-verb.ts";
 import {NO_TARGET, PRECONDITION_UNKNOWN} from "./codes.ts";
-import {BASE, GROUND, groundScript, ISSUE, REPO} from "./fixtures.test-support.ts";
+import {
+	BASE,
+	GROUND,
+	groundScript,
+	ISSUE,
+	ISSUE_READ,
+	REPO,
+	REPO_READ,
+} from "./fixtures.test-support.ts";
 
 const options = {
 	issue: ISSUE,
@@ -14,10 +21,8 @@ const options = {
 	now: () => new Date("2026-08-09T18:36:48.000Z"),
 };
 
-const run = (
-	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
-	over: Partial<typeof options> = {},
-) => Effect.runPromise(Effect.provide(runCapture({...options, ...over}), fakeShell(script).layer));
+const run = (script: ReadonlyArray<Scripted>, over: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runCapture({...options, ...over}), fakeSeams(script).layer));
 
 describe("runCapture", () => {
 	it("exits 0 with the whole ground state on stdout", async () => {
@@ -28,14 +33,14 @@ describe("runCapture", () => {
 	});
 
 	it("reports no pull request as the FACT null, not as an absence", async () => {
-		const out = await run([[/pulls\?state=all/, okOut("[]")], ...groundScript()]);
+		const out = await run([[/pulls\?state=all/, {status: 200, body: "[]"}], ...groundScript()]);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).board.pull).toBeNull();
 	});
 
 	it("exits 7 on an issue that does not exist", async () => {
 		const out = await run([
-			[new RegExp(`api repos/${REPO}/issues/${ISSUE}$`), errOut("gh: Not Found (HTTP 404)")],
+			[ISSUE_READ, {status: 404, body: '{"message":"Not Found"}'}],
 			...groundScript(),
 		]);
 		expect(out.code).toBe(NO_TARGET);
@@ -53,19 +58,13 @@ describe("runCapture", () => {
 	});
 
 	it("exits 11 when the check-run rollup could not be read — reporting none would claim a read that failed", async () => {
-		const out = await run([
-			[/check-runs/, errOut("gh: Bad gateway (HTTP 502)")],
-			...groundScript(),
-		]);
+		const out = await run([[/check-runs/, {status: 502, body: "{}"}], ...groundScript()]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 	});
 
 	it("exits 11 when the default branch could not be read, rather than guessing one", async () => {
-		const out = await run([
-			[new RegExp(`api repos/${REPO} --jq`), errOut("gh: Bad gateway (HTTP 502)")],
-			...groundScript(),
-		]);
+		const out = await run([[REPO_READ, {status: 502, body: "{}"}], ...groundScript()]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 	});
