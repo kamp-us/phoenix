@@ -62,8 +62,35 @@ fabrika report dedup --query "sozluk definition editor loses focus after save" -
 Read `candidates` yourself — shared vocabulary is not a shared observation; `indeterminate` is a
 non-check, so re-query. `--exclude` is this group's extension to the `report` verb, and its grammar
 is the section that adds it:
-`fabrika wire doc-section --heading "report dedup — the --exclude extension" < <skill-base>/contract.md`. A duplicate routes by who filed it (step 8). Done when you can state the
-issue from the code and the dedup outcome is read.
+`fabrika wire doc-section --heading "report dedup — the --exclude extension" < <skill-base>/contract.md`. A duplicate routes by who filed it (step 8).
+
+**On an agent-filed report, read the gap at `origin/main` before you enrich anything on top of it.**
+An agent files from a worktree whose skills and code were cut before a fix merged, so it reports a
+gap main has already closed — and enriching that is a founder ruling spent on a bug that was never
+live. Four parked KILLs in one drain were this one shape
+([#6527](https://github.com/kamp-us/phoenix/issues/6527),
+[#6519](https://github.com/kamp-us/phoenix/issues/6519),
+[#6526](https://github.com/kamp-us/phoenix/issues/6526),
+[#6512](https://github.com/kamp-us/phoenix/issues/6512)). So fetch, then read the file or verb the
+issue names **at main** — never the copy in the checkout you are standing in, which is the filer's
+snapshot or your own:
+
+```bash
+git fetch origin main
+git show origin/main:packages/fabrika-cli/src/lane/assembly-verb.ts
+```
+
+A gap the artifact at main no longer has is **superseded**: close it yourself under §8's `superseded`
+clause with `fabrika triage kill $issue_number --confirm`, and say in the note what landed and where
+you read it. **No founder ruling is owed for that close** — the
+[#6070 (c) ruling](https://github.com/kamp-us/phoenix/issues/6070#issuecomment-5361950454) already
+lets triage close a twin on its own judgment, and ADR
+[0328](../../../../.decisions/0328-report-freshness-check-at-triage.md) puts this check at this
+layer for the same reason. The check reaches agent filings only: §8's rule stands
+unchanged — **a human filing is parked, never killed**, however plainly main already fixed it.
+
+Done when you can state the issue from the code, the dedup outcome is read, and an agent-filed gap
+has been read at main.
 
 ## 3 — Classify into exactly one of six types
 
