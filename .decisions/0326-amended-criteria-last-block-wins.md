@@ -18,7 +18,8 @@ out loud instead of being dropped in silence.
 Every grader in the pipeline reads the acceptance-criteria block through one module,
 [`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../packages/fabrika-cli/src/wire/acceptance-criteria.ts):
 `review criteria`, `build issue`, `build claim`'s criteria axis, `triage apply --ready-for agent`,
-the scope-admission fence, and the plan loader. ADR [0241](0241-wire-formats-owned-by-schema-modules.md)
+the scope-admission fence and the plan loader among them — fourteen non-test modules bind it today.
+ADR [0241](0241-wire-formats-owned-by-schema-modules.md)
 is why there is exactly one of them, and why its read is total — `Found`, `Absent` or `Malformed`,
 never a plausible empty answer.
 
@@ -51,19 +52,18 @@ carry a drifted heading and no conforming block, which this ADR does not touch �
 `Malformed` before and after. So the rule regrades nothing currently open. It is worth landing
 because the shape recurs by convention, not because a backlog of stale grades is waiting.
 
-Two named alternatives were rejected, and both are recorded here because the next reader of this
+Three named alternatives were rejected, and each is recorded here because the next reader of this
 module will reach for one of them:
 
 - **Serve every block, headed, and let the caller decide.** Rejected: it widens the read's answer
-  type, so all seven consumers above grow a branch — and the one that forgets is silently back to
-  the defect this ADR closes.
+  type, so every consumer of the module grows a branch — and the one that forgets is silently back
+  to the defect this ADR closes.
 - **A pinned supersede marker on the amendment naming the block it replaces.** An explicit answer in
   the register of ADR 0241, and more grammar than "last wins" needs today. Rejected for now;
   revisit if last-wins is ever caught misgrading a real body.
-
-**Refuse on any second candidate** was rejected on the same ground the first branch was: it wedges
-every amended issue with no automated repair route, in a repo whose convention produces amended
-issues on purpose.
+- **Refuse on any second candidate.** Rejected on the same ground the first branch was: it wedges
+  every amended issue with no automated repair route, in a repo whose convention produces amended
+  issues on purpose.
 
 The ruling this ADR transcribes is the founder's, recorded at
 [#6822 (comment)](https://github.com/kamp-us/phoenix/issues/6822#issuecomment-5365031897).
