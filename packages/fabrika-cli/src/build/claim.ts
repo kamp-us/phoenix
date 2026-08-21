@@ -30,12 +30,10 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {permissionFor} from "../io/pulls.ts";
+import {sessionIdFrom, sessionIdUnset} from "../io/session-id.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {CLAIM_NOT_MINE, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {nonceOf, parseToken} from "./lane.ts";
-
-/** The env var the session id arrives in. A claim without an identity is not a claim. */
-export const SESSION_ENV = "CLAUDE_CODE_SESSION_ID";
 
 /** The permissions that authorize a marker — the ADR 0055 `write+` set. */
 const AUTHORIZED = new Set(["admin", "maintain", "write"]);
@@ -540,13 +538,13 @@ export const requireSession = (
 	verb: string,
 	env: Readonly<Record<string, string | undefined>>,
 ): Session => {
-	const id = (env[SESSION_ENV] ?? "").trim();
-	return id === ""
+	const id = sessionIdFrom(env);
+	return id === null
 		? {
 				_tag: "Refused",
 				outcome: refuse(
 					FAILED,
-					`${verb}: ${SESSION_ENV} is unset — a claim without an identity is not a claim.`,
+					`${verb}: ${sessionIdUnset} — a claim without an identity is not a claim.`,
 				),
 			}
 		: {_tag: "Session", id};

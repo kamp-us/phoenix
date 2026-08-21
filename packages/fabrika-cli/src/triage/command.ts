@@ -293,7 +293,7 @@ const claim = leafCommand(
 ).pipe(
 	Command.withShortDescription("Take one lane's claim on one issue."),
 	Command.withDescription(
-		"Take one lane's claim on one issue, proven by re-reading the markers back. Prints `won\\t<claim-token>` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Keep the token: passing it back as --token re-enters this lane instead of minting a second one, which is what tells two triagers of ONE session apart. Exits 1 (CLAUDE_CODE_SESSION_ID unset, or --token is not this session's), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read — never \"won\"). Example: fabrika triage claim 4312",
+		"Take one lane's claim on one issue, proven by re-reading the markers back. Prints `won\\t<claim-token>` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Keep the token: passing it back as --token re-enters this lane instead of minting a second one, which is what tells two triagers of ONE session apart. Exits 1 (no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, or --token is not this session's), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read — never \"won\"). Example: fabrika triage claim 4312",
 	),
 );
 
@@ -508,7 +508,7 @@ const scratch = leafCommand(
 ).pipe(
 	Command.withShortDescription("The per-lane scratch path a triager's working files go under."),
 	Command.withDescription(
-		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-triage/<session-id>/<issue>-<claim-nonce>/<slug>, one absolute path on stdout, the directory created if absent. --token's nonce is what keys the namespace per LANE rather than per session, so two triagers of one fan-out cannot clobber each other's fixed-name files. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created, CLAUDE_CODE_SESSION_ID is unset or is not one path segment, --token is not a claim token of this session, or the repo does not resolve), 10 (--slug carries a path separator or is not kebab-case), 11 (the claim state could not be read — UNKNOWN), 19 (proven: this lane holds no live claim on the issue). Example: fabrika triage scratch 4312 --slug authored --token triage:s-9f2e:c1a4d6f8-…",
+		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-triage/<session-id>/<issue>-<claim-nonce>/<slug>, one absolute path on stdout, the directory created if absent. --token's nonce is what keys the namespace per LANE rather than per session, so two triagers of one fan-out cannot clobber each other's fixed-name files. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created, no session id is set (the FABRIKA_SESSION_ID → CLAUDE_CODE_SESSION_ID → PI_SUBAGENT_PARENT_SESSION chain) or the id is not one path segment, --token is not a claim token of this session, or the repo does not resolve), 10 (--slug carries a path separator or is not kebab-case), 11 (the claim state could not be read — UNKNOWN), 19 (proven: this lane holds no live claim on the issue). Example: fabrika triage scratch 4312 --slug authored --token triage:s-9f2e:c1a4d6f8-…",
 	),
 );
 

@@ -72,7 +72,8 @@ node <fabrika> lane claim $lane_key
 Exit `0` is yours to drive — `won` on an issue lane, `unclaimable` on a `chore:<name>` key, which
 carries no board number for a marker to sit on and so races with nobody. Exit `31` is a **proven
 loss**: another driver holds this lane, its token is named on stderr, and this run ends `LANE-HELD`
-having emitted no ledger and spawned no shell. `1` (no `CLAUDE_CODE_SESSION_ID`, or a `--token` that
+having emitted no ledger and spawned no shell. `1` (no session id in `FABRIKA_SESSION_ID` / `CLAUDE_CODE_SESSION_ID` /
+`PI_SUBAGENT_PARENT_SESSION`, or a `--token` that
 is not a lane-claim token of this session), `8` (the marker write is UNKNOWN), `9` (it landed and
 does not read back) and `11` (the marker set could not be read) all end `STOPPED` naming the code —
 an unproven claim is never driven through.
@@ -452,7 +453,7 @@ this order:
   incident reaches the board only if you file it — through [`report`](../report/SKILL.md), as the
   spawn would have.
 - **Release the claim it stranded.** `node <fabrika> build release <issue>`
-  is the whole act: the spawn ran under your `CLAUDE_CODE_SESSION_ID`, so its marker resolves as
+  is the whole act: the spawn ran under your session id, so its marker resolves as
   this session's and the verb that already exists retracts it. No new verb and no widened one — the
   ruling rejected a lease, a TTL and steal outright, and eviction by inference from
   absence stays banned (ADR

@@ -20,6 +20,7 @@ import {
 	listLabels,
 	resolveRepo,
 } from "../io/issues.ts";
+import {sessionIdFrom} from "../io/session-id.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -148,7 +149,7 @@ export const runFile = (
 		}
 
 		const footer = renderFooter({
-			session: options.env.CLAUDE_CODE_SESSION_ID ?? null,
+			session: sessionIdFrom(options.env),
 			model: options.env.ANTHROPIC_MODEL ?? options.env.CLAUDE_MODEL ?? null,
 			branch: yield* currentBranch,
 			timestamp: utc(options.now()),

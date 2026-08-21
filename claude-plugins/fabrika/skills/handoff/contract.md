@@ -866,8 +866,9 @@ held it — a re-run is not an error, and no second comment is posted, so `claim
 claim).
 
 <!-- anchor: CLAIM-KEY-IS-THE-RUN-NONCE --> **The claim key is the caller's run nonce, never a
-session id and never a process id.** `$CLAUDE_CODE_SESSION_ID` is **pane-constant, not per-run**
-(#5028), and sibling subagents of one parent share it (#4516), so two successors booted from one
+session id and never a process id.** The session id (`FABRIKA_SESSION_ID`, else
+`CLAUDE_CODE_SESSION_ID`, else `PI_SUBAGENT_PARENT_SESSION` — #6960) is **pane-constant, not
+per-run** (#5028), and sibling subagents of one parent share it (#4516), so two successors booted from one
 parent would key onto one namespace and each would classify the other's claim as its own. The nonce
 is authored once per run by the caller and passed explicitly, which is also what keeps it out of
 session memory: no verb here reads any session variable for any purpose.

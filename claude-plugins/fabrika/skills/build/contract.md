@@ -908,8 +908,10 @@ which no later verb of this session accepts. Without one it resolves `Foreign` �
 runs under the nonce that run just minted, which no adopt names — so it retracts the marker it just
 posted and refuses on `15` too. Adopt, release, then claim.
 
-The session id arrives from the environment (`CLAUDE_CODE_SESSION_ID`, named in `--help` with its
-unset behavior: unset is a usage error, exit `1` — a claim without an identity is not a claim).
+The session id arrives from the environment — `FABRIKA_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`,
+else `PI_SUBAGENT_PARENT_SESSION`
+([#6960](https://github.com/kamp-us/phoenix/issues/6960)); named in `--help` with its unset
+behavior: unset is a usage error, exit `1` — a claim without an identity is not a claim.
 
 **Output** — machine, one JSON object:
 

@@ -389,7 +389,7 @@ sources, and what happens when each is unset:
 | Field | Source | When unset |
 |---|---|---|
 | `Filed by an agent` | literal | always present — it is the signal, never omitted |
-| `session \`<id>\`` | `$CLAUDE_CODE_SESSION_ID` | omitted |
+| `session \`<id>\`` | `$FABRIKA_SESSION_ID`, else `$CLAUDE_CODE_SESSION_ID`, else `$PI_SUBAGENT_PARENT_SESSION` ([#6960](https://github.com/kamp-us/phoenix/issues/6960)) | omitted |
 | `model \`<name>\`` | `$ANTHROPIC_MODEL`, else `$CLAUDE_MODEL` | omitted |
 | `branch \`<ref>\`` | `git rev-parse --abbrev-ref HEAD` | omitted when it fails, or returns `HEAD` (detached) |
 | timestamp | current UTC time, `%Y-%m-%dT%H:%M:%SZ` | always present |
