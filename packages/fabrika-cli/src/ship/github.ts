@@ -26,6 +26,7 @@ import {execCapture} from "../io/exec.ts";
 import {
 	type Api,
 	ambientToken,
+	attemptOf,
 	authed,
 	authedExistence,
 	pagedEnvelope as envelopeOverHttp,
@@ -248,6 +249,92 @@ export const listShipCheckRuns = (repo: string, sha: string): Shell<Attempt<Chec
 			},
 		),
 	);
+
+/**
+ * What one check-run write says. The two statuses are separate because the platform's are: a
+ * `conclusion` is legal only once `status` reaches `completed`, and sending one alongside
+ * `in_progress` completes the run — which is exactly the pending state `ship floor --publish-check`
+ * needs to hold open ([Checks API](https://docs.github.com/en/rest/checks/runs#create-a-check-run)).
+ */
+export type CheckRunDraft =
+	| {
+			readonly _tag: "Pending";
+			readonly name: string;
+			readonly headSha: string;
+			readonly title: string;
+			readonly summary: string;
+	  }
+	| {
+			readonly _tag: "Concluded";
+			readonly name: string;
+			readonly headSha: string;
+			readonly conclusion: "success" | "failure";
+			readonly title: string;
+			readonly summary: string;
+	  };
+
+/** What the platform echoed back for a check-run this process just wrote. */
+export interface WrittenCheckRun {
+	readonly id: number;
+	readonly name: string;
+	readonly status: string;
+	readonly conclusion: string | null;
+}
+
+const checkRunBody = (draft: CheckRunDraft): Record<string, unknown> => ({
+	name: draft.name,
+	head_sha: draft.headSha,
+	status: draft._tag === "Pending" ? "in_progress" : "completed",
+	...(draft._tag === "Pending" ? {} : {conclusion: draft.conclusion}),
+	output: {title: draft.title, summary: draft.summary},
+});
+
+const toWrittenCheckRun = (body: unknown): Attempt<WrittenCheckRun> => {
+	if (
+		!isRecord(body) ||
+		typeof body.id !== "number" ||
+		typeof body.name !== "string" ||
+		typeof body.status !== "string"
+	) {
+		return fail("GitHub answered 2xx but its output is not a check run");
+	}
+	return ok({
+		id: body.id,
+		name: body.name,
+		status: body.status,
+		conclusion: typeof body.conclusion === "string" ? body.conclusion : null,
+	});
+};
+
+/** Create a check-run at a head. */
+export const createCheckRun = (
+	repo: string,
+	draft: CheckRunDraft,
+): Shell<Attempt<WrittenCheckRun>> =>
+	authed((token) =>
+		Effect.map(
+			restCall(token, {
+				method: "POST",
+				path: `repos/${repo}/check-runs`,
+				body: checkRunBody(draft),
+			}),
+			(outcome) => attemptOf(outcome, toWrittenCheckRun),
+		),
+	);
+
+/** Rewrite one check-run in place — `head_sha` is not among the fields an update may move. */
+export const updateCheckRun = (
+	repo: string,
+	id: number,
+	draft: CheckRunDraft,
+): Shell<Attempt<WrittenCheckRun>> =>
+	authed((token) => {
+		const {head_sha: _pinned, ...mutable} = checkRunBody(draft);
+		return Effect.map(
+			restCall(token, {method: "PATCH", path: `repos/${repo}/check-runs/${id}`, body: mutable}),
+			(outcome) => attemptOf(outcome, toWrittenCheckRun),
+		);
+	});
 
 /** Latest-per-context: the highest run id wins, computed over the joined pages. */
 export const latestPerContext = (

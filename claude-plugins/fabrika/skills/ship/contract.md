@@ -729,7 +729,7 @@ ns	governance	absent	-
 **Invocation**
 
 ```
-fabrika ship floor 4321 --sha 03135b91 [--repo <owner/name>] [--json]
+fabrika ship floor 4321 --sha 03135b91 [--publish-check] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -738,6 +738,7 @@ fabrika ship floor 4321 --sha 03135b91 [--repo <owner/name>] [--json]
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number |
 | `--sha` | string | yes | — | the head the answer binds to (7–40 lowercase hex) |
+| `--publish-check` | boolean | no | `false` | publish the answer as a check-run on the head instead of seating it on this verb's exit code |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -749,6 +750,46 @@ fabrika ship floor 4321 --sha 03135b91 [--repo <owner/name>] [--json]
 none of this repo's governed roots, so the floor does not bind — and the verb says so on stderr, in
 those words, because "the check was green" is exactly the reading that would make this gate
 decorative for the diffs it does not cover.
+
+<a id="publish-check"></a>
+### The check-run mode: pending while nobody has judged this head (#6161)
+
+An Actions job concludes success, failure, cancelled or skipped and nothing else. While the floor was
+seated on this verb's exit code, the ordinary mid-lane state — *no verdict posted at this head yet* —
+showed the same red as a verdict that is FAIL or bound to another head. On 2026-08-18 five of six red
+open PRs were red on exactly that, all healthy, and a red meaning "not yet" is a red people stop
+reading. A check-run has the state a job conclusion does not: it can stay `in_progress`.
+
+So `--publish-check` writes the answer to a check-run named **`governance floor at head`** — a stable
+name, distinct from the job's — and this map is the whole of it:
+
+| Floor | Check-run | Why |
+|---|---|---|
+| `satisfied`, `n/a` | `completed` / `success` | nothing is owed |
+| `absent` | left `in_progress` (**pending**) | nobody has judged this head yet; not wrong, not done |
+| `stale`, `fail` | `completed` / `failure` | a verdict was formed and it is not a head-bound PASS |
+| UNKNOWN (`7` / `11` / `13`) | `completed` / `failure` | UNKNOWN never passes and is not "still going" (ADR 0092) |
+
+**The process then exits 0 whenever the check-run landed, whatever it said.** The floor's polarity is
+the check-run's; a non-zero in this mode says only that the answer could not be published, which is
+the one fact the job still carries. It seats `8` (the write failed) and `9` (GitHub echoed a state
+this run did not decide), both this group's existing meanings — no exit code is repurposed, and every
+other caller of `ship floor` is untouched.
+
+**A pending check-run does not weaken the block.** `ship gate` is unchanged and still refuses while a
+governance verdict is absent, `ship checks` rolls a pending gating run up as `pending` rather than
+`green`, and a required check that is pending is not a passing one. What changed is what a human
+reads, not what a merge is allowed to do.
+
+**One row per head.** A check-run this head already carries is rewritten in place rather than stacked
+on, so the PR shows one row. The exception is the backwards transition — a completed check-run being
+re-opened as pending — which the platform will not model, because an update cannot clear a conclusion
+it has recorded; that one posts a fresh check-run instead.
+
+**What re-fires it.** Nothing new: `governance post` re-fires the floor run at the head it posted to,
+and that re-run re-derives the floor and rewrites the check-run green. Since the job now succeeds
+whenever it *published* an answer, that re-fire keys on the check-run's state rather than the job's
+conclusion, and requests a whole-run re-run rather than a failed-jobs one.
 
 <a id="the-mechanism-choice"></a>
 ### Why a caller verb, and not a new exit code on `ship gate` (#5408)
@@ -796,6 +837,8 @@ it is *present and wrong* (#5416, #4887). All four of these red on `18`, and eac
 | `11` | the PR, its changed-file list, or the conjunction underneath could not be read — the floor is UNKNOWN, never `n/a` |
 | `13` | the changed-file enumeration is provably short — a governance root could sit in the part nobody read |
 | `18` | the diff touches a governance root and its `governance` verdict at this head is `absent`, `stale` or `fail` |
+| `8` | **`--publish-check` only** — the check-run could not be written, so the floor is resolved and nothing published it |
+| `9` | **`--publish-check` only** — the check-run landed and GitHub echoed a state this run did not decide |
 
 **Errors**
 
@@ -816,10 +859,11 @@ the comment authors' ACL). Both scanned counts reach stderr, this verb's first.
 
 **Where it is enforced.** `.github/workflows/governance-floor.yml`, job `floor`, on every
 `pull_request` with no `paths:` filter — the verb's own read of the changed files is the path
-decision, so there is no YAML copy of the root list to drift. The job relays the exit code and does
-nothing else. Making that context **required** is a repository-ruleset change and therefore a
-human's; until it is required the check is red-but-not-blocking, which is a weaker state than the
-ruling asks for and is recorded here rather than glossed.
+decision, so there is no YAML copy of the root list to drift. The job runs `--publish-check` and
+relays what the verb did, deciding nothing. Making the `governance floor at head` context
+**required** is a repository-ruleset change and therefore a human's; until it is, the check is
+visible-but-not-blocking at the ruleset, which is a weaker state than the ruling asks for and is
+recorded here rather than glossed.
 
 **Examples**
 

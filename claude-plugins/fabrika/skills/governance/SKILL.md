@@ -211,8 +211,11 @@ one. Re-review, never re-bind.
 
 **`post` also re-fires the floor check at that head.** The `governance-floor` job runs on
 `pull_request`, so it judged the PR before your verdict existed and nothing else re-fires it. The verb
-re-runs that job, which re-derives `ship floor` against your verdict — it never writes a check-run, so
-the green is the job's own. Its last stderr line says which of `refired` / `restarting` / `green` /
+re-runs that job, which re-derives `ship floor` against your verdict — it never writes a check-run
+itself, so the green is the job's own. What it re-fires on is the `governance floor at head`
+check-run's state rather than the job's conclusion: since #6161 the job succeeds whenever it
+*published* an answer, and a pending check-run beside a green job is exactly the "no verdict yet"
+state your post just cleared. Its last stderr line says which of `refired` / `restarting` / `green` /
 `in-flight` / `no-run` / `unknown` happened.
 
 **Done when** `post` prints `posted`, its read-back conformed, and you have read the floor line — an
@@ -297,7 +300,7 @@ skill cannot touch one.** It holds a shell and a repo-scoped token, and performs
 writes of its own: the namespaced verdict comment, the readout artifact, and one re-run request for
 the `governance-floor` run at the head its verdict binds — which is why the token also needs
 `actions: write`. **That third write asserts nothing:** it writes no check-run and no status, so the
-floor's green stays a green that job derived itself against live comment state, and a token without
+floor's green stays a green that job derived — and published — itself against live comment state, and a token without
 `actions: write` costs a red check, never a false one. (Routing a finding to `/report` fires that
 skill, whose write is that skill's capability and not one claimed here.) Every run ends as exactly
 one of:
