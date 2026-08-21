@@ -9,7 +9,9 @@
  * one verdict out — so the whole table is testable without a network and without a checkout.
  *
  * **Two events carry a claim; the other four carry none.** `DONE` out of a `build` state asserts the
- * work exists, `PASS` out of a `review` state asserts every derived namespace judged it. A
+ * work exists, `PASS` out of a review state asserts the namespaces that state owes judged it —
+ * every derived one out of `review:ui`, every one the plain `review` cell can itself reach out of
+ * `review` (see {@link REVIEW_UI_STATE} for why the two differ). A
  * `BLOCKED`, a `WIP`, an `UNBLOCKED`, a `FAIL`, a `DONE` out of `ship` or a `DONE` out of a child's
  * `integrate` asserts nothing a read could falsify — those answer {@link Claim} `None`, so a caller
  * may prove *every* event and still only pay for the two that can lie.
@@ -26,6 +28,7 @@
 
 import {issueRefsIn} from "../build/commit-message.ts";
 import type {ParentedCommit} from "../io/git.ts";
+import {ROUTED_NAMESPACES} from "../review/classes.ts";
 
 /** The branch grammar's own reader, re-exported so this module's callers take one derivation. */
 export {childLaneBranches} from "../build/lane.ts";
@@ -35,6 +38,19 @@ export const BUILD_STATE = "build";
 
 /** The leaf state a reviewer runs in — a `PASS` out of it claims a verdict that still binds. */
 export const REVIEW_STATE = "review";
+
+/**
+ * The leaf state the rendered-visual gate runs in — the second review cell, and the one whose `PASS`
+ * stands on the **whole** required set.
+ *
+ * Splitting the two cells is what makes the machine's `review → review:ui` arm walkable. That arm is
+ * taken on the `PASS` out of {@link REVIEW_STATE}, so proving that `PASS` against `review-ui` asked
+ * a lane to hold a verdict only the cell it had not reached yet could produce — every rendered-surface
+ * lane deadlocked at exit 23 and needed a hand-spawned reviewer to get out (#6664, #6793). Each cell
+ * now proves what it owes: `review` the namespaces it can reach, `review:ui` all of them. Nothing
+ * reaches `ship` on less, and `ship gate` re-derives the full set regardless.
+ */
+export const REVIEW_UI_STATE = "review:ui";
 
 /** The label a no-PR builder outcome is only legal under (`build`'s `SUCCESS-NO-PR`). */
 export const INVESTIGATION_LABEL = "type:investigation";
@@ -72,23 +88,38 @@ export const roleOf = (taskId: string, epic: number | null): LaneRole => {
 
 export type Claim =
 	| {readonly _tag: "OpenPull"}
-	| {readonly _tag: "HeadVerdicts"}
+	/**
+	 * `defers` is the slice of the required set this cell hands to a later one, subtracted before the
+	 * proof is taken. Empty everywhere but the plain `review` cell, which defers what only
+	 * {@link REVIEW_UI_STATE} can fill.
+	 */
+	| {readonly _tag: "HeadVerdicts"; readonly defers: ReadonlyArray<string>}
 	| {readonly _tag: "RangeCommits"; readonly epic: number}
 	| {readonly _tag: "RangeVerdict"; readonly epic: number}
 	| {readonly _tag: "None"; readonly why: string};
 
-/** What this event, recorded out of this leaf state in this role, asserts about the world. */
+/**
+ * What this event, recorded out of this leaf state in this role, asserts about the world.
+ *
+ * A child's `PASS` defers nothing: its regions carry no `review:ui` cell, so there is no later cell
+ * to defer to and its range-scoped set stands whole.
+ */
 export const claimOf = (event: string, leaf: string, role: LaneRole): Claim => {
 	const child = role._tag === "Child";
 	if (event === "DONE" && leaf === BUILD_STATE) {
 		return child ? {_tag: "RangeCommits", epic: role.epic} : {_tag: "OpenPull"};
 	}
 	if (event === "PASS" && leaf === REVIEW_STATE) {
-		return child ? {_tag: "RangeVerdict", epic: role.epic} : {_tag: "HeadVerdicts"};
+		return child
+			? {_tag: "RangeVerdict", epic: role.epic}
+			: {_tag: "HeadVerdicts", defers: ROUTED_NAMESPACES};
+	}
+	if (event === "PASS" && leaf === REVIEW_UI_STATE && !child) {
+		return {_tag: "HeadVerdicts", defers: []};
 	}
 	return {
 		_tag: "None",
-		why: `${event} out of "${leaf}" asserts no artifact — only DONE out of "${BUILD_STATE}" and PASS out of "${REVIEW_STATE}" do`,
+		why: `${event} out of "${leaf}" asserts no artifact — only DONE out of "${BUILD_STATE}" and PASS out of "${REVIEW_STATE}" / "${REVIEW_UI_STATE}" do`,
 	};
 };
 

@@ -240,6 +240,7 @@ export const runProve = (
 			event,
 			diagnostics,
 			governed.roots,
+			claim.defers,
 		);
 	});
 
@@ -365,11 +366,17 @@ const proveNoPull = (
 	});
 
 /**
- * Every namespace this PR's diff derives, judged at its live head.
+ * Every namespace this PR's diff derives that the state being left owes, judged at its live head.
  *
  * The derivation is `ship scope`'s own pair — the `ui`-bearing partition and the namespace map that
  * appends the `governance` floor — so the bar this proves against is the same object the merge gate
  * enforces rather than a second reading of it.
+ *
+ * `defers` is the one subtraction, and it is a routing fact rather than a relaxation: the machine
+ * enters `review:ui` on the `PASS` out of `review`, so demanding `review-ui` of that very event
+ * demanded a verdict from a cell the lane had not reached (#6664/#6793). Each review cell proves
+ * what it owes and `review:ui` proves the whole set, so nothing reaches `ship` on less — and
+ * `ship gate` re-derives the full set at the merge either way.
  *
  * On a control-plane PR the reviewer's PASS arrives through the §CP advisory carrier by design —
  * no first-line marker, the head in the body (ADR 0111/0226) — so a marker-only read would row it
@@ -393,6 +400,7 @@ const proveVerdicts = (
 	event: string,
 	diagnostics: ReadonlyArray<string>,
 	roots: ReadonlyArray<string>,
+	defers: ReadonlyArray<string>,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const pull = yield* getPullRequest(repo, pr);
@@ -406,7 +414,9 @@ const proveVerdicts = (
 		if (files._tag === "Failure") {
 			return unreadable(`the changed files of #${pr}`, files.reason);
 		}
-		const required = shipNamespacesOf(partitionWithUi(files.value, roots));
+		const derived = shipNamespacesOf(partitionWithUi(files.value, roots));
+		const deferred = derived.filter((namespace) => defers.includes(namespace));
+		const required = derived.filter((namespace) => !defers.includes(namespace));
 
 		const commented = yield* listComments(repo, pr);
 		if (commented._tag === "Failure") {
@@ -476,7 +486,13 @@ const proveVerdicts = (
 			}
 		}
 
-		const notes = [...diagnostics];
+		const notes = [
+			...diagnostics,
+			...deferred.map(
+				(namespace) =>
+					`${VERB}: ${namespace} on #${pr} is owed by a later cell of this lane, not by this one — the event being proven is the arm that routes into that cell, so requiring it here is the deadlock #6664 closed.`,
+			),
+		];
 		if (advisories.length > 0) {
 			const boundary = yield* readBoundary(repo, pull.value.baseRef);
 			if (boundary._tag === "Unreadable") {

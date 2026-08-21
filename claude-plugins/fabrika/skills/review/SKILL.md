@@ -31,13 +31,32 @@ Never invent one nobody named.
 fabrika review scope $pr_number
 ```
 
-<!-- anchor: NAMESPACE-SET-IS-THE-EMISSION-CHECKLIST --> The printed class set derives your
-namespaces (`review-code` / `review-doc` / `review-skill`) and is **both floor and ceiling**: a
-mixed diff gets a verdict in each class present, because one filled namespace fail-closes an
-otherwise passing PR, and a namespace outside the set is one you did not judge and must not emit.
+<!-- anchor: NAMESPACE-SET-IS-THE-EMISSION-CHECKLIST --> The printed `namespace` rows are **what this
+PR requires**, and they are the merge gate's own set — `ship scope` derives them from the same map,
+so the two verbs cannot disagree about what the PR owes. Your emission checklist is that set **minus
+every `routed` row**, and it is **both floor and ceiling**: a mixed diff gets a verdict in each class
+you own, because one filled namespace fail-closes an otherwise passing PR, and a namespace outside
+your checklist is one you did not judge and must not emit.
+
+<!-- anchor: A-ROUTED-ROW-IS-THE-HANDOFF-TRIGGER --> **A `routed` row is a namespace this PR requires
+that this gate cannot reach, and it is the handoff's trigger.** Today the one row is
+`routed\treview-ui`, raised whenever the diff changes a rendered `apps/web/src/**` surface: pixels
+are `review-ui`'s modality, its verbs are the only ones that may post that namespace, and it keeps
+its own refusals (a zero-`--surface` `render`, an evidence-required `post`). So do not judge it and
+do not emit it — and equally, do not read its absence from your verdicts as a gap in yours.
+
+**What a `routed` row costs you is one flag, not a different ending.** Carry the class it names on
+your terminal — `lane report … --class ui` — and the lane's machine takes its guarded arm from
+`review` into `review:ui`, which dispatches the rendered gate with nobody hand-spawning it. Relay
+the class the row printed; never derive one from your own reading of the diff. While no row existed,
+a reviewer read `class code` as the whole bar, PASSed bare, and the merge gate refused on a
+`review-ui` namespace nobody had been told to route — a wasted ship dispatch and a park per PR
+(#6664).
+
 `scope` also prints the head SHA, the issue reference (`fixes:<n>` / `part-of:<n>` / `-`), `self`,
 `harness`, and `governance\t<required|not-required>` — §6's trigger, and a different question from
-`harness`. Done when the set is read.
+`harness`. Governance is never a `routed` row: it is derived-required at every round and fired
+inside this run (§6). Done when the set is read.
 
 The printed head is the commit the file list was **read out of**, not a label beside it: `scope`
 fetches the PR head and reads the changed files from the object database, checking nothing out. It
@@ -224,6 +243,20 @@ Stale/Unbindable — re-review required** · **routed elsewhere** (`review-ui` /
 only). Precedence: **an unseen input blocks PASS, never FAIL** — FAIL on what you did
 see, naming the unread piece UNKNOWN; no namespace PASSes on an unseen input.
 
+**`routed elsewhere` has a mechanical trigger, and it is §1's `routed` rows against your emission
+checklist.** You end `ROUTED` when the routed rows are the *whole* required set — every namespace
+this PR derives is one you may not emit, so there is no round here to run. That is the only shape
+`ROUTED` fits, because `lane report` maps it to a park: a lane routed while you still owed a verdict
+would sit on a human instead of walking to `review:ui`.
+
+**On a mixed diff — the ordinary rendered-surface PR — you own namespaces, so your terminal is the
+ordinary `PASS`/`FAIL` and the route rides §1's class flag.** Every non-`.md` file also classes
+`code`, a rendered `.tsx` included, so a PR whose whole required set is routed is rare by
+construction; do not reach for `ROUTED` because a `routed` row is printed. Whether the diff renders
+anything at all is `review-ui`'s judgment, taken through `review-ui route`, never yours.
+`check-epic-plan` is the other route and has no row: its trigger is being handed a plan ledger
+rather than a PR.
+
 **Governance is not one of the routes, and never was a legal way to end.** `routed elsewhere` carries
 the two modality handoffs and nothing else — `review-ui` for a rendered visual, `check-epic-plan` for
 a plan ledger — each a subject this skill cannot judge at all. Governance it can and must reach: §6
@@ -241,16 +274,21 @@ in its code, with the PR as the event's evidence (#5736). `<fabrika>` is that sa
 `fabrika:` entrypoint, the one path this repo's verbs actually run from (#6012):
 
 ```bash
-node <fabrika> lane report <lane> --root <root> --token PASS --pr <pr-url>
+node <fabrika> lane report <lane> --root <root> --token PASS --pr <pr-url> --class ui
 ```
+
+`--class` is repeatable and carries §1's `routed` rows — `--class ui` on the row this skill routes.
+Omit it where no row printed; a spelling outside the closed set is refused at exit `38`.
 
 One guard is yours before a `FAIL`: record it **only when every derived namespace holds a verdict
 that still binds at the head** — a `FAIL` beside an in-flight namespace is an incomplete read the
 lane must not act on yet, so print the terminal without recording and leave the record to the
 operator's re-read. The verb refuses a token outside this vocabulary (exit `32`) rather than
-interpreting it, and it **proves a `PASS` before it records it** — every namespace the PR's diff
-derives must hold a verdict still binding at the head, read off the PR itself (exit `23` where one
-does not). A refusal is the PR disagreeing with your terminal: print the token, name the exit code,
+interpreting it, and it **proves a `PASS` before it records it** — read off the PR itself, exit `23`
+where a namespace holds no verdict still binding at the head. What it proves is what *this* cell
+owes: out of `review` a routed namespace is left to the `review:ui` cell your class flag routes
+into, and out of `review:ui` the whole derived set must stand — the merge gate re-derives all of it
+either way. A refusal is the PR disagreeing with your terminal: print the token, name the exit code,
 change nothing. Then print the terminal either way; a run whose caller named no lane prints it only
 and records nothing.
 

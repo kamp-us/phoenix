@@ -64,18 +64,25 @@ const closingPulls = (...numbers: ReadonlyArray<number>): HttpReply =>
 		},
 	});
 
-const logLine = (event: string, at: string): string =>
-	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at})}\n`;
+const logLine = (event: string, at: string, classes?: ReadonlyArray<string>): string =>
+	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at, ...(classes === undefined ? {} : {classes})})}\n`;
 
-/** The lane in `build` (one WIP), or in `review` (WIP then DONE). */
-const laneAt = (state: "build" | "review") =>
+/**
+ * The lane in `build` (one WIP), in `review` (WIP then DONE), or in `review:ui` — which is the same
+ * path with `ui` standing from the `WIP`, so the `PASS` out of `review` took the class-guarded arm.
+ */
+const laneAt = (state: "build" | "review" | "review:ui") =>
 	fakeFs({
 		files: {
 			[WORKFLOW]: coderTemplateText(),
 			[LOG]:
 				state === "build"
 					? logLine("WIP", "2026-08-16T01:00:00Z")
-					: logLine("WIP", "2026-08-16T01:00:00Z") + logLine("DONE", "2026-08-16T02:00:00Z"),
+					: state === "review"
+						? logLine("WIP", "2026-08-16T01:00:00Z") + logLine("DONE", "2026-08-16T02:00:00Z")
+						: logLine("WIP", "2026-08-16T01:00:00Z", ["ui"]) +
+							logLine("DONE", "2026-08-16T02:00:00Z") +
+							logLine("PASS", "2026-08-16T03:00:00Z"),
 		},
 	});
 
@@ -172,7 +179,12 @@ describe("lane prove — the two events that carry a claim", () => {
 describe("lane prove — the ui class, derived exactly as `ship scope` derives it", () => {
 	const UI_FILE = served([{filename: "apps/web/src/routes/pano.tsx"}]);
 
-	it("holds a lane whose head raises the ui class and carries no review-ui verdict", async () => {
+	/**
+	 * The deadlock #6664/#6793 closed. This `PASS` **is** the arm into `review:ui`, so requiring
+	 * `review-ui` of it required a verdict from the cell it had not entered — every rendered-surface
+	 * lane needed a hand-spawned ui reviewer to get out. The next case is the floor that replaces it.
+	 */
+	it("lets a ui lane's PASS out of `review` through, so the machine can reach `review:ui`", async () => {
 		const seams = fakeSeams([
 			[CLOSERS, closingPulls()],
 			[SEARCH, nominated(4318)],
@@ -182,6 +194,24 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 		]);
 
 		const out = await run(laneAt("review"), seams, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
+			{namespace: "review-code", state: "pass", commentId: 1},
+		]);
+		expect(out.stderr.join("\n")).toContain("review-ui on #4318 is owed by a later cell");
+	});
+
+	it("holds the PASS out of `review:ui` while the lane carries no review-ui verdict", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, UI_FILE],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await run(laneAt("review:ui"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-ui (absent)");
@@ -202,7 +232,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			],
 		]);
 
-		const out = await run(laneAt("review"), seams, "PASS");
+		const out = await run(laneAt("review:ui"), seams, "PASS");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
@@ -246,7 +276,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			],
 		]);
 
-		const out = await run(laneAt("review"), seams, "PASS");
+		const out = await run(laneAt("review:ui"), seams, "PASS");
 
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
@@ -274,7 +304,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			],
 		]);
 
-		const out = await run(laneAt("review"), seams, "PASS");
+		const out = await run(laneAt("review:ui"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-ui (stale)");
@@ -304,7 +334,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 			],
 		]);
 
-		const out = await run(laneAt("review"), seams, "PASS");
+		const out = await run(laneAt("review:ui"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_CONTRADICTED);
 		expect(out.stderr.join("\n")).toContain("review-ui");

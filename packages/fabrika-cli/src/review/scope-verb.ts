@@ -1,6 +1,18 @@
 /**
  * `review scope` — the head SHA, the linked issue, the artifact-class partition of the PR's changed
- * files, the `self` / `harness` flags, and the `governance` requirement.
+ * files, the namespaces they require, the `self` / `harness` flags, and the `governance`
+ * requirement.
+ *
+ * **The class rows and the namespace rows are `ship scope`'s own derivation, printed here too** —
+ * `partitionWithUi` + `shipNamespacesOf`, the same objects the merge gate enforces. The two verbs
+ * cannot answer differently about one file list, because there is one answer. While this side
+ * partitioned without `ui`, a reviewer on a rendered diff derived `review-code` alone, PASSed, and
+ * `ship gate` refused the `review-ui` namespace nobody had routed (#6664).
+ *
+ * The wider set does **not** widen what this gate emits. `review post`'s fence is `namespacesOf` over
+ * the three text classes and is untouched, and every derived namespace this skill cannot emit is
+ * re-printed on its own `routed` row — the reviewer's trigger to hand the round to `review-ui` under
+ * that skill's `routed elsewhere` terminal.
  *
  * The `governance` line reads {@link touchesGovernanceRoot} over this repo's own `governedRoots` —
  * the same derivation `governance scope` prints, over the same declared list, imported rather than
@@ -27,9 +39,11 @@ import {diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	issueRefOf,
-	namespacesOf,
 	partition,
+	partitionWithUi,
 	renderIssueRef,
+	routedNamespacesOf,
+	shipNamespacesOf,
 	touchesGovernanceRoot,
 } from "./classes.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -115,7 +129,10 @@ export const runScope = (
 			);
 		}
 
-		const result = partition(files);
+		const flags = partition(files);
+		const result = partitionWithUi(files, roots.roots);
+		const namespaces = shipNamespacesOf(result);
+		const routed = routedNamespacesOf(namespaces);
 		const governance = touchesGovernanceRoot(files, roots.roots) ? "required" : "not-required";
 		const issue = issueRefOf(pull.body);
 		if (json) {
@@ -125,11 +142,12 @@ export const runScope = (
 					head: head.sha,
 					issue,
 					classes: result.classes,
-					self: result.self,
-					harness: result.harness,
+					self: flags.self,
+					harness: flags.harness,
 					governance,
 					scanned: result.scanned,
-					namespaces: namespacesOf(result),
+					namespaces,
+					routed,
 				}),
 				diagnostics,
 			);
@@ -138,8 +156,10 @@ export const runScope = (
 			[
 				`scoped\t${head.sha}\t${renderIssueRef(issue, NULL_TOKEN)}`,
 				...result.classes.map((entry) => `class\t${entry.name}\t${entry.files}`),
-				`self\t${result.self}`,
-				`harness\t${result.harness}`,
+				...namespaces.map((namespace) => `namespace\t${namespace}`),
+				...routed.map((namespace) => `routed\t${namespace}`),
+				`self\t${flags.self}`,
+				`harness\t${flags.harness}`,
 				`governance\t${governance}`,
 			].join("\n"),
 			diagnostics,
