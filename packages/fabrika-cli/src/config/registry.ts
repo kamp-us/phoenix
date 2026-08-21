@@ -8,6 +8,7 @@
 
 import {type Registration, register} from "./key-group.ts";
 import {boardVocabularyKey} from "./keys/board-vocabulary.ts";
+import {campaignAuthorsKey} from "./keys/campaign-authors.ts";
 import {capClearAuthorsKey} from "./keys/cap-clear-authors.ts";
 import {ciKey} from "./keys/ci.ts";
 import {codeValidatorsKey} from "./keys/code-validators.ts";
@@ -22,6 +23,7 @@ import {workflowValidatorsKey} from "./keys/workflow-validators.ts";
 
 export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(boardVocabularyKey),
+	register(campaignAuthorsKey),
 	register(capClearAuthorsKey),
 	register(ciKey),
 	register(codeValidatorsKey),

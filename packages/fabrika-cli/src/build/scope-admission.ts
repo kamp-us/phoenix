@@ -342,61 +342,129 @@ const isHeader = (cells: ReadonlyArray<string>): boolean =>
 	cells[1]?.toLowerCase() === "milestone" &&
 	cells[2]?.toLowerCase() === "state";
 
+/** One `## Campaigns` data line as found, before any cell is judged. */
+export interface CampaignLine {
+	/** Its index in `text.split("\n")` — what a writer rewrites in place. */
+	readonly index: number;
+	readonly cells: ReadonlyArray<string>;
+}
+
+/** Where the `## Campaigns` table sits in a roadmap file. `null` is "this file has none". */
+export interface CampaignScan {
+	readonly heading: number | null;
+	readonly header: number | null;
+	readonly separator: number | null;
+	readonly rows: ReadonlyArray<CampaignLine>;
+}
+
 /**
- * Read `ROADMAP.md`'s `## Campaigns` table into the set of milestones its `active` rows permit.
+ * Locate the `## Campaigns` table: the heading, the header, the separator, and every data line.
  *
- * The header row is recognised by its column names and the separator by its dashes, so what is left is
- * a data row **whatever it contains** — which is what makes a mistyped state cell malformed rather than
- * invisible. Skipping unrecognised rows instead would answer "nothing is active" for a broken table,
- * the well-formed-and-always-wrong shape this fence exists to avoid.
+ * The header row is recognised by its column names and the separator by its dashes, so what is left
+ * is a data row **whatever it contains** — which is what makes a mistyped state cell malformed
+ * rather than invisible. Skipping unrecognised rows instead would answer "nothing is active" for a
+ * broken table, the well-formed-and-always-wrong shape this fence exists to avoid.
  *
- * One unreadable row makes the **whole** table malformed rather than degrading to the rows that did
- * parse (ADR 0298's rule, carried onto the surface that replaced it): a partial read reported as the
- * permission is a fence quietly wider or narrower than what was written.
+ * Split out from {@link parseCampaigns} so `campaign open` and `campaign state` can edit the table
+ * without a second copy of these regexes (`claude-plugins/fabrika/skills/campaign/contract.md`).
  */
-export const readCampaigns = (text: string): Dispatch => {
+export const scanCampaigns = (text: string): CampaignScan => {
 	const lines = text.split("\n");
 	const start = lines.findIndex((line) => HEADING.test(line.trim()));
-	if (start === -1) return {_tag: "None"};
+	if (start === -1) return {heading: null, header: null, separator: null, rows: []};
 
-	const rows: ReadonlyArray<string>[] = [];
+	let header: number | null = null;
+	let separator: number | null = null;
+	const rows: CampaignLine[] = [];
 	for (let i = start + 1; i < lines.length; i++) {
 		const line = lines[i] ?? "";
 		if (ANY_HEADING.test(line.trim())) break;
 		const cells = cellsOf(line);
-		if (cells === null || isSeparator(cells) || isHeader(cells)) continue;
-		rows.push(cells);
+		if (cells === null) continue;
+		if (isSeparator(cells)) {
+			separator ??= i;
+			continue;
+		}
+		if (isHeader(cells)) {
+			header ??= i;
+			continue;
+		}
+		rows.push({index: i, cells});
 	}
+	return {heading: start, header, separator, rows};
+};
 
-	const active: ActiveCampaign[] = [];
-	for (const [index, row] of rows.entries()) {
+/** One readable `## Campaigns` row. */
+export interface CampaignRow {
+	readonly milestone: number;
+	readonly state: CampaignState;
+	readonly name: string;
+}
+
+/**
+ * Every declared campaign, or the reason the table cannot be read at all.
+ *
+ * One unreadable row makes the **whole** table malformed rather than degrading to the rows that did
+ * parse (ADR 0298's rule, carried onto the surface that replaced it): a partial read reported as the
+ * permission is a fence quietly wider or narrower than what was written.
+ *
+ * An absent heading and a table with no rows are both `Rows` with an empty array — a fact about the
+ * file, never a failed read. Which of those a caller calls `none` is the caller's question.
+ */
+export type CampaignTable =
+	| {readonly _tag: "Rows"; readonly rows: ReadonlyArray<CampaignRow>}
+	| {readonly _tag: "Malformed"; readonly reason: string};
+
+/**
+ * Judge every scanned row. Its `rows` are positionally aligned with {@link scanCampaigns}'s, because
+ * a table with one unreadable row returns `Malformed` instead of a short list — which is what lets a
+ * writer take a row's line index from the scan and its values from here.
+ */
+export const parseCampaigns = (text: string): CampaignTable => {
+	const rows: CampaignRow[] = [];
+	for (const [index, {cells}] of scanCampaigns(text).rows.entries()) {
 		const where = `## Campaigns row ${index + 1}`;
-		if (row.length !== 3) {
+		if (cells.length !== 3) {
 			return {
 				_tag: "Malformed",
-				reason: `${where} has ${row.length} cells, not the 3 the grammar declares (Campaign | Milestone | State)`,
+				reason: `${where} has ${cells.length} cells, not the 3 the grammar declares (Campaign | Milestone | State)`,
 			};
 		}
-		const name = row[0] ?? "";
+		const name = cells[0] ?? "";
 		if (name === "") {
 			return {_tag: "Malformed", reason: `${where}'s campaign cell is empty`};
 		}
-		const milestone = MILESTONE_CELL.exec(row[1] ?? "");
+		const milestone = MILESTONE_CELL.exec(cells[1] ?? "");
 		if (milestone?.[1] === undefined) {
-			return {_tag: "Malformed", reason: `${where}'s milestone cell "${row[1]}" is not #<int>`};
+			return {_tag: "Malformed", reason: `${where}'s milestone cell "${cells[1]}" is not #<int>`};
 		}
-		const state = (row[2] ?? "").toLowerCase();
-		if (!CAMPAIGN_STATES.some((legal) => legal === state)) {
+		const state = (cells[2] ?? "").toLowerCase();
+		const legal = CAMPAIGN_STATES.find((candidate) => candidate === state);
+		if (legal === undefined) {
 			return {
 				_tag: "Malformed",
-				reason: `${where}'s state cell "${row[2]}" is none of ${CAMPAIGN_STATES.join(" / ")}`,
+				reason: `${where}'s state cell "${cells[2]}" is none of ${CAMPAIGN_STATES.join(" / ")}`,
 			};
 		}
-		if (state === "active") {
-			active.push({milestone: Number.parseInt(milestone[1], 10), name});
-		}
+		rows.push({milestone: Number.parseInt(milestone[1], 10), state: legal, name});
 	}
-	const [first, ...rest] = active;
+	return {_tag: "Rows", rows};
+};
+
+/**
+ * What the fence reads: `ROADMAP.md`'s `## Campaigns` table narrowed to the milestones its `active`
+ * rows permit.
+ *
+ * A narrowing over {@link parseCampaigns} and nothing more — the two cannot disagree about what a
+ * row says, which is the whole reason `campaign list` and the writers bind to the parse below rather
+ * than to a parser of their own.
+ */
+export const readCampaigns = (text: string): Dispatch => {
+	const table = parseCampaigns(text);
+	if (table._tag === "Malformed") return table;
+	const [first, ...rest] = table.rows
+		.filter((row) => row.state === "active")
+		.map(({milestone, name}): ActiveCampaign => ({milestone, name}));
 	return first === undefined ? {_tag: "None"} : {_tag: "Active", campaigns: [first, ...rest]};
 };
 

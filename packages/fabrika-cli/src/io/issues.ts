@@ -479,6 +479,32 @@ export const getComment = (repo: string, id: number): Shell<Attempt<string>> =>
 		),
 	);
 
+/**
+ * One comment as a whole record — its author beside its body.
+ *
+ * Separate from {@link getComment}, which serves the read-back after a write and needs only the
+ * bytes. A citation is read for **who** wrote it as much as for what it says, and folding the author
+ * into the body-only read would leave every caller of that one carrying a field it never asked for.
+ */
+export const getCommentRecord = (repo: string, id: number): Shell<Attempt<CommentRecord>> =>
+	withToken((token) =>
+		Effect.map(restRead(token, "GET", `repos/${repo}/issues/comments/${id}`), (outcome) =>
+			then(servedBody(outcome), (body) => {
+				if (!isRecord(body) || typeof body.body !== "string" || typeof body.id !== "number") {
+					return fail("GitHub answered 200 but its body is not a comment");
+				}
+				const user = body.user;
+				return ok({
+					id: body.id,
+					author: isRecord(user) && typeof user.login === "string" ? user.login : "",
+					createdAt: typeof body.created_at === "string" ? body.created_at : "",
+					updatedAt: typeof body.updated_at === "string" ? body.updated_at : "",
+					body: body.body,
+				});
+			}),
+		),
+	);
+
 // ---------------------------------------------------------------------------------------------
 // The `triage` group's reads and writes, appended as one block so later verb slices extend the
 // file here without colliding with the `report` half above.
