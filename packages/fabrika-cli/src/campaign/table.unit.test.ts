@@ -92,6 +92,30 @@ describe("rewriteState", () => {
 		const at = scanCampaigns(padded).rows[0]?.index ?? -1;
 		expect(rewriteState(padded, at, "done") ?? "").toContain("| #42 |  done  |");
 	});
+
+	it("flips a row whose trailing pipe is absent, which the parse reads and so must the writer", () => {
+		const open = TWO_ROWS.replace("| #42 | paused |", "| #42 | paused");
+		const at = scanCampaigns(open).rows[0]?.index ?? -1;
+		const next = rewriteState(open, at, "active") ?? "";
+		expect(rowsOf(next)[0]).toEqual({milestone: 42, state: "active", name: "Taste-Skill Library"});
+		const before = open.split("\n");
+		expect(next.split("\n").filter((row, index) => row !== before[index])).toEqual([
+			"| Taste-Skill Library | #42 | active",
+		]);
+	});
+
+	it("keeps the padding of a trailing-pipe-less cell, trailing spaces and all", () => {
+		const open = TWO_ROWS.replace("| #42 | paused |", "| #42 |  paused  ");
+		const at = scanCampaigns(open).rows[0]?.index ?? -1;
+		expect(rewriteState(open, at, "done") ?? "").toContain("| #42 |  done  \n");
+	});
+
+	it("returns null on a line carrying more cells than the grammar declares", () => {
+		const lines = TWO_ROWS.split("\n");
+		const at = scanCampaigns(TWO_ROWS).rows[0]?.index ?? -1;
+		lines[at] = "| Taste-Skill Library | #42 | paused | extra |";
+		expect(rewriteState(lines.join("\n"), at, "active")).toBeNull();
+	});
 });
 
 describe("selects", () => {

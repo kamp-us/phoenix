@@ -23,6 +23,7 @@ import {
 	AMBIGUOUS_SELECTOR,
 	AUTHORITY_UNKNOWN,
 	NO_TARGET,
+	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
@@ -119,9 +120,11 @@ export const runState = (options: StateOptions): CampaignEffect<VerbOutcome> =>
 
 		const next = rewriteState(read.text, target.line, to);
 		if (next === null) {
+			// Nothing has been written at this point, so this cannot be an `8`: seating an untouched
+			// file as a possibly half-written one sends the operator to repair bytes nobody moved.
 			return refuse(
-				WRITE_UNKNOWN,
-				`${VERB}: cannot write ${display}: row ${target.line + 1} does not carry three cells between four pipes — UNKNOWN, the row may be half-written; re-read it.`,
+				PRECONDITION_UNKNOWN,
+				`${VERB}: row ${target.line + 1} of ${display} reads as three cells but does not edit as three — UNKNOWN, nothing was attempted; re-read the row. ${NOTHING}`,
 			);
 		}
 		const written = yield* writeFile(path, next).pipe(

@@ -102,6 +102,13 @@ describe("campaign open — usage refusals", () => {
 		expect(outcome.stderr.at(-1)).toContain("must fit one table cell");
 	});
 
+	it("refuses a name that is only whitespace, which would append a cell nothing can read", async () => {
+		const {outcome, written} = await run(APPROVED, tree(), {name: "   "});
+		expect(outcome.code).toBe(1);
+		expect(outcome.stderr.at(-1)).toBe("campaign open: --name is required.");
+		expect(written.size).toBe(0);
+	});
+
 	it("refuses a --cites that is not a comment URL", async () => {
 		const {outcome} = await run(APPROVED, tree(), {cites: "https://github.com/o/r/issues/6289"});
 		expect(outcome.code).toBe(1);
@@ -124,6 +131,14 @@ describe("campaign open — the duplicate check runs before the trace", () => {
 			'campaign open: ROADMAP.md already holds "fabrika everywhere" at #47 — NOTHING was written.',
 		);
 		expect(requests).toEqual([]);
+	});
+
+	it("refuses a padded spelling of a name already on the table, which reads back the same", async () => {
+		const {outcome} = await run(APPROVED, tree(), {name: "  fabrika everywhere  "});
+		expect(outcome.code).toBe(19);
+		expect(outcome.stderr.at(-1)).toBe(
+			'campaign open: ROADMAP.md already holds "fabrika everywhere" at #47 — NOTHING was written.',
+		);
 	});
 
 	it("refuses a milestone already pinned on 19", async () => {
@@ -186,7 +201,9 @@ describe("campaign open — the approval trace", () => {
 			[PERMISSION, permission("read")],
 		]);
 		expect(outcome.code).toBe(21);
-		expect(outcome.stderr.at(-1)).toContain("who resolves to read on o/r, below write");
+		expect(outcome.stderr.at(-1)).toBe(
+			`campaign open: ${CITES} was authored by @usirin, who resolves to read on o/r, below write — authority is the ACL's, never .fabrika.jsonc's alone (ADR 0055). NOTHING was written.`,
+		);
 		expect(written.size).toBe(0);
 	});
 
@@ -214,7 +231,9 @@ describe("campaign open — the approval trace", () => {
 			tree(TWO_ROWS, config("@kamp-us/founders")),
 		);
 		expect(outcome.code).toBe(13);
-		expect(outcome.stderr.at(-1)).toContain("which kamp-us does not have — fix the key");
+		expect(outcome.stderr.at(-1)).toBe(
+			"campaign open: campaignAuthors names @kamp-us/founders, which kamp-us does not have — fix the key; authority is UNKNOWN, NOTHING was written.",
+		);
 	});
 
 	it("reads a 404 membership on a real team as a proven miss, which is 16", async () => {

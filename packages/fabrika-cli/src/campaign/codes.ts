@@ -25,7 +25,13 @@ export const NO_TARGET = REPORT_NO_TARGET;
 export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
 /** The write landed and the read-back does not match it. */
 export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
-/** The roadmap file could not be read, so nothing was attempted — UNKNOWN. */
+/**
+ * The roadmap file could not be read, so nothing was attempted — UNKNOWN.
+ *
+ * Also the seat for a located row that reads as three cells but does not edit as three: the
+ * contract's trigger names the file read, and the half of the `8`/`11` split that carries the
+ * operator's next move is *whether a write was attempted*, which on that arm it was not.
+ */
 export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
 
 /** Proven: a data row under `## Campaigns` will not parse — the whole table is unreadable. */

@@ -167,4 +167,12 @@ describe("campaign state — the write and its read-back", () => {
 		expect(outcome.code).toBe(12);
 		expect(outcome.stderr.at(-1)).toContain("(ADR 0304). NOTHING was written.");
 	});
+
+	it("flips a row carrying no trailing pipe, which the parse reads and campaign list prints", async () => {
+		const open = TWO_ROWS.replace("| #42 | paused |", "| #42 | paused");
+		const {outcome, written} = await run(APPROVED, tree(open));
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toBe("#42\tactive\tTaste-Skill Library\n");
+		expect(written.get(ROADMAP_PATH)).toContain("| Taste-Skill Library | #42 | active\n");
+	});
 });

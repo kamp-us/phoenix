@@ -184,10 +184,15 @@ export const runTrace = (request: TraceRequest): CampaignEffect<Trace> =>
 			outcome: refuse(code, `${verb}: ${reason} — ${NOTHING}`),
 		});
 		// The UNKNOWN family reads "— authority is UNKNOWN, NOTHING was written." on one dash: a
-		// second em dash before the disclosure would split one sentence into two claims.
+		// second em dash before the disclosure would split one sentence into two claims. A reason
+		// that already spent its dash carries its own terminator (the team-typo arm ends "— fix the
+		// key;"), and this joins onto it rather than adding a second dash.
 		const unreadable = (reason: string): Trace => ({
 			_tag: "Refused",
-			outcome: refuse(AUTHORITY_UNKNOWN, `${verb}: ${reason} — authority is UNKNOWN, ${NOTHING}`),
+			outcome: refuse(
+				AUTHORITY_UNKNOWN,
+				`${verb}: ${reason}${reason.endsWith(";") ? "" : " —"} authority is UNKNOWN, ${NOTHING}`,
+			),
 		});
 
 		const key = yield* readKey(request.cwd, campaignAuthorsKey);
@@ -243,10 +248,15 @@ export const runTrace = (request: TraceRequest): CampaignEffect<Trace> =>
 			return unreadable(acl.reason);
 		}
 		if (acl._tag === "BelowFloor") {
-			return no(
-				BELOW_WRITE_FLOOR,
-				`${url} was authored by @${login}, who resolves to ${acl.level ?? "no collaboration"} on ${request.repo}, below write — authority is the ACL's, never ${CONFIG_PATH}'s alone (ADR 0055)`,
-			);
+			// Composed past `no()`: this line spends its em dash on the ADR clause, so the disclosure
+			// starts a second sentence instead of hanging off a second dash.
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					BELOW_WRITE_FLOOR,
+					`${verb}: ${url} was authored by @${login}, who resolves to ${acl.level ?? "no collaboration"} on ${request.repo}, below write — authority is the ACL's, never ${CONFIG_PATH}'s alone (ADR 0055). ${NOTHING}`,
+				),
+			};
 		}
 		return {_tag: "Approved", login, level: acl.level, declared};
 	});

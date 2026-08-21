@@ -37,9 +37,16 @@ const NOTHING = "NOTHING was written.";
 
 export const runOpen = (options: OpenOptions): CampaignEffect<VerbOutcome> =>
 	Effect.gen(function* () {
-		const {name, milestone} = options;
+		const {milestone} = options;
+		// Trimmed once, here, so the name the duplicate check compares is the name the row is written
+		// with and the name it reads back as — cells arrive trimmed from the parse, so an untrimmed
+		// one clears the check and appends a second row nothing can select afterwards.
+		const name = options.name.trim();
 		if (!Number.isInteger(milestone) || milestone <= 0) {
 			return refuse(FAILED, `${VERB}: --milestone must be a positive integer, got "${milestone}".`);
+		}
+		if (name === "") {
+			return refuse(FAILED, `${VERB}: --name is required.`);
 		}
 		if (!nameFitsCell(name)) {
 			return refuse(

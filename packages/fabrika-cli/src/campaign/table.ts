@@ -65,8 +65,13 @@ export const appendRow = (text: string, name: string, milestone: number): string
  * other line of the file is byte-identical afterwards. Re-padding would be a second, silent edit the
  * caller did not ask for.
  *
- * `null` when the line does not carry three cells between four pipes — which `parseCampaigns` has
- * already refused by the time any caller gets here, so it is a floor rather than a branch.
+ * The trailing pipe is optional, exactly as it is for `cellsOf` in the fence's parse: `| a | #1 |
+ * paused` is a readable row there, so it is a writable one here. A writer stricter than the parse
+ * would refuse to flip a row `campaign list` prints, which is the disagreement this module exists to
+ * make unconstructible.
+ *
+ * `null` is the residual: the located line does not carry the three cells the parse read off it.
+ * Nothing is written on that arm, so a caller must seat it where *nothing was attempted* is true.
  */
 export const rewriteState = (text: string, line: number, to: CampaignState): string | null => {
 	const lines = text.split("\n");
@@ -74,8 +79,8 @@ export const rewriteState = (text: string, line: number, to: CampaignState): str
 	if (raw === undefined) return null;
 	const pipes = [...raw].flatMap((char, index) => (char === "|" ? [index] : []));
 	const open = pipes[2];
-	const close = pipes[3];
-	if (pipes.length !== 4 || open === undefined || close === undefined) return null;
+	if (open === undefined || pipes.length > 4) return null;
+	const close = pipes[3] ?? raw.length;
 	const cell = raw.slice(open + 1, close);
 	const spans = /^(\s*)(\S+)(\s*)$/.exec(cell);
 	if (spans === null) return null;

@@ -67,7 +67,9 @@ export const declaredBy = (authors: ReadonlyArray<GrantAuthor>, login: string): 
 			if (read._tag === "NoTeam") {
 				return {
 					_tag: "Unknown" as const,
-					reason: `campaignAuthors names @${org}/${team}, which ${org} does not have — fix the key`,
+					// The trailing `;` is the joiner this reason hands its caller: it has already spent
+					// the sentence's one em dash, so the UNKNOWN disclosure joins onto it.
+					reason: `campaignAuthors names @${org}/${team}, which ${org} does not have — fix the key;`,
 				};
 			}
 			if (read._tag === "Member") return {_tag: "Yes" as const};
