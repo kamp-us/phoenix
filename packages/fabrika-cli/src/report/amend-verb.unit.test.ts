@@ -35,6 +35,15 @@ const issue = (body: string, state = "open"): HttpReply => ({
 	}),
 });
 
+/** What `repos/o/r/issues/4312` answers when 4312 is a pull request: the issue shape plus that key. */
+const pullRequest = (body: string): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({
+		...(JSON.parse(issue(body).body) as Record<string, unknown>),
+		pull_request: {html_url: "https://example.test/pull/4312"},
+	}),
+});
+
 const ACCEPTED: HttpReply = {status: 200, body: "{}"};
 
 const options = {
@@ -187,6 +196,16 @@ describe("runAmend", () => {
 		const outcome = await runScripted([[READ, {status: 404, body: '{"message":"Not Found"}'}]]);
 		expect(outcome.code).toBe(NO_TARGET);
 		expect(outcome.stderr.at(-1)).toBe("report amend: o/r has no issue #4312.");
+	});
+
+	it("refuses a number that is a pull request, and writes nothing", async () => {
+		const seams = fakeSeams([[READ, pullRequest(PRIOR)]]);
+		const outcome = await Effect.runPromise(Effect.provide(runAmend(options), seams.layer));
+		expect(outcome.code).toBe(NO_TARGET);
+		expect(outcome.stderr.at(-1)).toBe(
+			"report amend: #4312 in o/r is a pull request, not an issue — a PR body is written by `build pr-body`.",
+		);
+		expect(written(seams)).toBe(null);
 	});
 
 	it("separates an UNREADABLE issue from an absent one, and writes nothing", async () => {
