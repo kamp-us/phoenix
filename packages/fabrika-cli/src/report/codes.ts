@@ -37,10 +37,10 @@ export const CLASSIFIED = 10;
 /**
  * A precondition read failed, so nothing was written and no outcome is proven.
  *
- * Not in the contract's table, and allocated here rather than folded into an existing code
- * (#4752's class): the label-set read is what makes {@link NO_TARGET} and {@link CLASSIFIED}
- * *proven*, so a failed read of it can be neither. It is not `8` — nothing was attempted — and not
- * `1`, which would fuse an unreachable GitHub with a bad flag.
+ * Allocated its own code rather than folded into an existing one (#4752's class): the label-set
+ * read is what makes {@link NO_TARGET} and {@link CLASSIFIED} *proven*, so a failed read of it can
+ * be neither. It is not `8` — nothing was attempted — and not `1`, which would fuse an unreachable
+ * GitHub with a bad flag.
  */
 export const PRECONDITION_UNKNOWN = 11;
 /**

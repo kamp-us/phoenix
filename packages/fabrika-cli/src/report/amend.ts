@@ -10,13 +10,16 @@
 /** The rule that separates the prior body from the amendment. */
 export const SEPARATOR = "---";
 
-/** The dated heading each amendment opens with, on the `## Amendment` form `.patterns` prose pins. */
+/**
+ * The dated heading each amendment opens with, on the `## Amendment` form pinned by
+ * `claude-plugins/fabrika/skills/build/references/prose.md`.
+ */
 export const heading = (on: Date): string => `## Amendment — ${on.toISOString().slice(0, 10)}`;
 
 export interface Amendment {
 	/** The whole body to PATCH: the prior body, the envelope, then the section. */
 	readonly body: string;
-	/** The envelope plus the section — what the read-back must find, and what the leak scan read. */
+	/** The envelope plus the section — what the read-back must find. */
 	readonly appended: string;
 }
 
