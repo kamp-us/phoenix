@@ -1,3 +1,4 @@
 {
-	"packages/fabrika-cli": "0.5.0"
+	"packages/fabrika-cli": "0.5.0",
+	"packages/fabrika-opencode": "0.1.0"
 }
