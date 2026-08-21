@@ -85,6 +85,18 @@ describe("planRepair — the mechanical repair", () => {
 		expect(result.reason).toContain("undecidable");
 	});
 
+	it("refuses a conforming block followed by a level-drifted one — the wedge ADR 0326 leaves standing", () => {
+		// Rule 4 makes the reader `Malformed` here, and this module's own multi-heading refusal still
+		// fires, so the body has no automated repair route. Pinned as the stated outcome: widening
+		// repair to reach it would be a second selection rule (ADR 0326's binding constraints).
+		const result = plan(
+			enveloped(`### Acceptance criteria\n\n${ITEMS}\n\n## Acceptance criteria\n\n- [ ] again`),
+		);
+		expect(result._tag).toBe("Refused");
+		if (result._tag !== "Refused") return;
+		expect(result.reason).toContain("undecidable");
+	});
+
 	it("refuses a drifted heading whose section holds no checkbox item — pre-verified, never written", () => {
 		const result = plan(enveloped("## Acceptance criteria\n\nProse, no checkboxes."));
 		expect(result._tag).toBe("Refused");

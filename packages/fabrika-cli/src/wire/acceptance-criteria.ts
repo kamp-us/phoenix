@@ -315,6 +315,11 @@ const malformed = (reason: string, evidence: string): WireMalformed => ({
  * {@link read} is this answer with the spans dropped, so there is one scanner and one wrapping rule
  * for both — a second one would be a second definition of "criterion".
  *
+ * Which block is served when a body carries more than one is ADR 0326's rules 3–5: the **last**
+ * conforming block is the contract, because amend-never-rewrite appends a re-scope below the
+ * original; a candidate that misses the spelling *below* the served block is `Malformed` rather than
+ * dropped, and one above it stays dropped. The selection lives here and nowhere else (ADR 0241).
+ *
  * `Found` is unreachable with zero criteria — the only `return` that produces it is guarded by the
  * emptiness check below and the type would reject it regardless.
  */
@@ -333,16 +338,19 @@ export const readSpans = (body: string): AcceptanceCriteriaSpans => {
 	if (conforming.length === 0 && first !== undefined) {
 		return malformed(driftReason(first), quote(first));
 	}
-	if (conforming.length > 1) {
-		return malformed(
-			`the body carries ${conforming.length} acceptance-criteria headings — which one is the contract is undecidable`,
-			conforming.map(quote).join(" | "),
-		);
-	}
-
-	const heading = conforming[0];
+	const heading = conforming[conforming.length - 1];
 	if (heading === undefined) {
 		return malformed("the acceptance-criteria heading could not be resolved", "");
+	}
+
+	const nearMissBelow = candidates.find(
+		(candidate) => candidate.line > heading.line && !conforms(candidate),
+	);
+	if (nearMissBelow !== undefined) {
+		return malformed(
+			`a heading below the acceptance-criteria block reaches for it and misses — heading text "${nearMissBelow.text}" at line ${nearMissBelow.line}; an amendment re-posts its whole revised list under "${"#".repeat(HEADING_LEVEL)} ${HEADING_TEXT}"`,
+			quote(nearMissBelow),
+		);
 	}
 
 	const criteria: CriterionSpan[] = [];
