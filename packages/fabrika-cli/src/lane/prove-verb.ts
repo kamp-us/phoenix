@@ -9,6 +9,10 @@
  * commits its branch adds over the epic branch, read off this tree, and its `PASS` by a range-bound
  * verdict on the child issue that still binds the content it judged (ADR 0276).
  *
+ * A reviewer's park out of a review cell is read here too, and it is the one claim that runs the
+ * other way: it asserts the run reached no verdict, so a still-binding `FAIL` refuses it and every
+ * unreadable half lets it through (`proveParkUncontradicted`, #6112).
+ *
  * **It writes nothing.** The proof sits beside `lane transition` rather than inside it so the
  * append path stays pure, offline and byte-identical on refusal; what makes it non-optional is its
  * two callers, which each run it first and record only on its exit 0 — `operate` step 3 for the
@@ -50,6 +54,7 @@ import {
 	claimOf,
 	epicOf,
 	foldNamespaces,
+	foldPark,
 	INVESTIGATION_LABEL,
 	issueOf,
 	judgeVerdicts,
@@ -138,12 +143,16 @@ export const runProve = (
 			);
 		}
 
+		// Every refusal on a park's path is answered instead of returned: see `proveParkUncontradicted`
+		// — a park nobody can record strands the lane in the state only a human could have left.
+		const park = claim._tag === "ParkUncontradicted";
+
 		const issue = issueOf(taskId, options.lane);
 		if (issue === null) {
-			return refuse(
-				TASK_UNKNOWN,
-				`${VERB}: neither task "${taskId}" nor lane "${options.lane}" names an issue number, so there is no target to prove ${event} against.`,
-			);
+			const why = `neither task "${taskId}" nor lane "${options.lane}" names an issue number, so there is no target to prove ${event} against`;
+			return park
+				? uncontradicted(event, taskId, null, null, [`${VERB}: ${why} — the park stands.`])
+				: refuse(TASK_UNKNOWN, `${VERB}: ${why}.`);
 		}
 
 		// A child's range lives in this tree, not on the board, so the repo is not resolved for it —
@@ -175,7 +184,12 @@ export const runProve = (
 		}
 
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
-		if (resolved._tag === "Refused") return resolved.outcome;
+		if (resolved._tag === "Refused") {
+			if (!park) return resolved.outcome;
+			return uncontradicted(event, taskId, issue, null, [
+				`${VERB}: the target repo did not resolve, so no verdict could contradict the park — it stands.`,
+			]);
+		}
 		const repo = resolved.repo;
 
 		// Only the verdict arms need it: the two arms above prove commits and states, and neither asks
@@ -185,14 +199,24 @@ export const runProve = (
 			options.cwd,
 			"the required namespace set is UNKNOWN, and a set short one namespace would prove an event nobody gated.",
 		);
-		if (governed._tag === "Refused") return refuse(LANE_UNREADABLE, governed.message);
+		if (governed._tag === "Refused") {
+			if (!park) return refuse(LANE_UNREADABLE, governed.message);
+			return uncontradicted(event, taskId, issue, null, [
+				`${VERB}: the governed roots did not read, so the derived namespace set is UNKNOWN and nothing could contradict the park — it stands.`,
+			]);
+		}
 
 		if (claim._tag === "RangeVerdict") {
 			return yield* proveRangeVerdicts(repo, claim.epic, issue, taskId, event, governed.roots);
 		}
 
 		const traced = yield* traceOpenPull(repo, issue);
-		if (traced._tag === "Refused") return traced.outcome;
+		if (traced._tag === "Refused") {
+			if (!park) return traced.outcome;
+			return uncontradicted(event, taskId, issue, null, [
+				`${VERB}: the open PRs linking #${issue} did not read, so no verdict could contradict the park — it stands.`,
+			]);
+		}
 		const diagnostics = [
 			`${VERB}: looked for an open PR in ${repo} whose body links #${issue} (any closing keyword, or Part of, anywhere in the body); ${traced.scanned} candidate(s) read.`,
 		];
@@ -235,6 +259,12 @@ export const runProve = (
 		}
 
 		if (traced.trace._tag !== "One") {
+			if (park) {
+				return uncontradicted(event, taskId, issue, null, [
+					...diagnostics,
+					`${VERB}: no single PR carries #${issue}'s verdicts, so none of them contradicts the park — it stands.`,
+				]);
+			}
 			return seat(
 				traced.trace._tag === "Many"
 					? {
@@ -246,6 +276,17 @@ export const runProve = (
 							what: `${traced.trace.why}, so there is nothing a verdict could have been written on`,
 						},
 				diagnostics,
+			);
+		}
+		if (claim._tag === "ParkUncontradicted") {
+			return yield* proveParkUncontradicted(
+				repo,
+				traced.trace.pr,
+				issue,
+				taskId,
+				event,
+				diagnostics,
+				governed.roots,
 			);
 		}
 		return yield* proveVerdicts(
@@ -381,28 +422,31 @@ const proveNoPull = (
  * nothing, so requiring the namespace without reading the route would hold such a lane at `review`
  * with no work left that could free it (ADR 0316). It is read exactly as `candidateOf` reads it —
  * head-bound, no content binding, one namespace.
+ *
+ * The read stops at the rows. Which bar is asked of them is the caller's, because the two bars are
+ * opposite: a `PASS` must clear {@link foldNamespaces}'s floor, a park must only survive
+ * {@link foldPark}'s single contradiction (#6112).
  */
-const proveVerdicts = (
+const readNamespaceRows = (
 	repo: string,
 	pr: number,
-	issue: number,
-	taskId: string,
-	event: string,
 	diagnostics: ReadonlyArray<string>,
 	roots: ReadonlyArray<string>,
 	defers: ReadonlyArray<string>,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<HeadRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const pull = yield* getPullRequest(repo, pr);
-		if (pull._tag === "Unknown") return unreadable(`PR #${pr}`, pull.reason);
+		if (pull._tag === "Unknown") {
+			return {_tag: "Unread" as const, what: `PR #${pr}`, reason: pull.reason};
+		}
 		if (pull._tag === "Absent") {
-			return seat({_tag: "Absent", what: `PR #${pr} is not there`}, diagnostics);
+			return {_tag: "Gone" as const, what: `PR #${pr} is not there`};
 		}
 		const head = pull.value.headSha;
 
 		const files = yield* listPullFiles(repo, pr);
 		if (files._tag === "Failure") {
-			return unreadable(`the changed files of #${pr}`, files.reason);
+			return {_tag: "Unread" as const, what: `the changed files of #${pr}`, reason: files.reason};
 		}
 		const derived = shipNamespacesOf(partitionWithUi(files.value, roots));
 		const deferred = derived.filter((namespace) => defers.includes(namespace));
@@ -410,7 +454,7 @@ const proveVerdicts = (
 
 		const commented = yield* listComments(repo, pr);
 		if (commented._tag === "Failure") {
-			return unreadable(`the comments on #${pr}`, commented.reason);
+			return {_tag: "Unread" as const, what: `the comments on #${pr}`, reason: commented.reason};
 		}
 
 		// Newest write stamp wins per namespace — the same ordering key `ship gate` folds on, because
@@ -493,7 +537,11 @@ const proveVerdicts = (
 		if (advisories.length > 0) {
 			const boundary = yield* readBoundary(repo, pull.value.baseRef);
 			if (boundary._tag === "Unreadable") {
-				return unreadable(`${CODEOWNERS_PATH} at ${pull.value.baseRef}`, boundary.reason);
+				return {
+					_tag: "Unread" as const,
+					what: `${CODEOWNERS_PATH} at ${pull.value.baseRef}`,
+					reason: boundary.reason,
+				};
 			}
 			const cp = classify(boundary.rows, files.value);
 			if (cp === "control-plane") {
@@ -560,8 +608,36 @@ const proveVerdicts = (
 			`${VERB}: #${pr} at ${head} derives ${required.join(", ")}; read ${commented.value.length} comment(s).`,
 		);
 
-		const proof = foldNamespaces(rows, `#${pr}`);
-		if (proof._tag !== "Proven") return seat(proof, notes);
+		return {_tag: "Rows" as const, head, rows, notes};
+	});
+
+/** What a head-scoped verdict read produced, before either bar is asked of it. */
+type HeadRead =
+	| {
+			readonly _tag: "Rows";
+			readonly head: string;
+			readonly rows: ReadonlyArray<NamespaceRow>;
+			readonly notes: ReadonlyArray<string>;
+	  }
+	| {readonly _tag: "Unread"; readonly what: string; readonly reason: string}
+	| {readonly _tag: "Gone"; readonly what: string};
+
+const proveVerdicts = (
+	repo: string,
+	pr: number,
+	issue: number,
+	taskId: string,
+	event: string,
+	diagnostics: ReadonlyArray<string>,
+	roots: ReadonlyArray<string>,
+	defers: ReadonlyArray<string>,
+): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, defers);
+		if (read._tag === "Unread") return unreadable(read.what, read.reason);
+		if (read._tag === "Gone") return seat({_tag: "Absent", what: read.what}, diagnostics);
+		const proof = foldNamespaces(read.rows, `#${pr}`);
+		if (proof._tag !== "Proven") return seat(proof, read.notes);
 		return answer(
 			JSON.stringify(
 				{
@@ -569,14 +645,67 @@ const proveVerdicts = (
 					event,
 					task: taskId,
 					issue,
-					evidence: {kind: "head-verdicts", pr, head, namespaces: rows},
+					evidence: {kind: "head-verdicts", pr, head: read.head, namespaces: read.rows},
 				},
 				null,
 				2,
 			),
-			notes,
+			read.notes,
 		);
 	});
+
+/**
+ * The park arm: a reviewer's `BLOCKED` out of a review cell, refused by a still-binding `FAIL` and
+ * by nothing else (#6112).
+ *
+ * A park's whole point is that it routes to a human, so **every** unreadable half answers
+ * `uncontradicted` rather than a refusal: an absent PR, a board read that failed, a namespace set
+ * that could not be derived. Holding a park because the board could not be read would strand the
+ * lane in the one state whose exit nobody could take — the shell has already stopped, and there is
+ * no later round to re-read in. What the arm removes is the opposite error, and only it: a run that
+ * posted a dispatchable FAIL and then recorded a park anyway, which is how lane 5661's ledger read
+ * `blocked` over three current-head FAILs with no cell left for the real terminal.
+ *
+ * It stands on the **whole** derived set — nothing is deferred to a later cell — because a FAIL in
+ * any namespace this diff derives means the review round reached a verdict, whichever cell owed it.
+ */
+const proveParkUncontradicted = (
+	repo: string,
+	pr: number,
+	issue: number,
+	taskId: string,
+	event: string,
+	diagnostics: ReadonlyArray<string>,
+	roots: ReadonlyArray<string>,
+): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, []);
+		if (read._tag !== "Rows") {
+			return uncontradicted(event, taskId, issue, pr, [
+				...diagnostics,
+				`${VERB}: ${read._tag === "Unread" ? `cannot read ${read.what}: ${read.reason}` : read.what} — a park is refused only by a FAIL that still binds, so an unread board leaves it recordable.`,
+			]);
+		}
+		const proof = foldPark(read.rows, `#${pr}`);
+		if (proof._tag !== "Proven") return seat(proof, read.notes);
+		return uncontradicted(event, taskId, issue, pr, read.notes);
+	});
+
+const uncontradicted = (
+	event: string,
+	taskId: string,
+	issue: number | null,
+	pr: number | null,
+	notes: ReadonlyArray<string>,
+): VerbOutcome =>
+	answer(
+		JSON.stringify(
+			{proof: "uncontradicted", event, task: taskId, issue, evidence: {kind: "park", pr}},
+			null,
+			2,
+		),
+		notes,
+	);
 
 interface Located {
 	readonly _tag: "Located";

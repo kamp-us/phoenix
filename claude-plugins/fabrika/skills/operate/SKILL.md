@@ -528,16 +528,20 @@ owe the whole set at `review` and refuse there exactly as before
 (ADR [0320](../../../../.decisions/0320-the-review-bar-splits-across-two-cells-and-the-machine-decides.md)).
 The remedy the refusal names is the class relay, and it is the reviewer's to make.
 
-`lane prove` reads the two events a report can lie about — a `DONE` out of `build` and a `PASS` out
-of `review` — and answers `not-required` at exit `0` for every other one, so it is run on every
-event and never skipped as an optimisation. Its refusals each name a different next move:
+`lane prove` reads the three events a report can lie about — a `DONE` out of `build`, a `PASS` out
+of `review`, and a reviewer's park out of either review cell — and answers `not-required` at exit
+`0` for every other one, so it is run on every event and never skipped as an optimisation. The park
+is the one negative claim of the three: it says the run reached no verdict, so a still-binding
+`FAIL` refuses it on `24` and every unreadable half lets it through, because a park nobody can
+record strands the lane in the state only a human could have left (#6112). Its refusals each name a
+different next move:
 
 | Exit | What it read | What you do |
 | --- | --- | --- |
 | `0` | the artifact is there (or the event claims none) | record the event |
 | `22` | the artifact is provably absent — no open PR links the task's issue and no legal no-PR outcome is proven either (the issue is not a `type:investigation`, or it is one but no diagnosis was posted since the task entered `build`); on an epic child, no branch in this tree carries commits naming it | the report is unproven — record `BLOCKED`, never the `DONE` |
 | `23` | a derived namespace has no verdict that still binds — no current-head one on a PR, or, on an epic child, none whose content digest matches what the range carries now | record **nothing**; re-read this pass |
-| `24` | a still-binding `FAIL` under a claimed `PASS` | record the event the artifact supports (`FAIL`) |
+| `24` | a still-binding `FAIL` under a claimed `PASS`, or under a reviewer's claimed park | record the event the artifact supports (`FAIL`) |
 | `25` | several candidates — open PRs linking the issue, or lane branches carrying an epic child's commits that no one of them contains, so a repair round's superseding branch is not one of these (#6049) | park — step 4, naming the ambiguity |
 | `11` | a lane, board or tree read failed | the proof is UNKNOWN — end `STOPPED` naming the code |
 
