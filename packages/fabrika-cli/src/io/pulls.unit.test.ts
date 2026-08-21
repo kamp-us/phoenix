@@ -244,12 +244,20 @@ describe("getPullDiff", () => {
 		expect(http.headers[0]?.accept).toBe("application/vnd.github.diff");
 	});
 
-	it("refuses a diff GitHub did not serve", async () => {
+	it("refuses a diff GitHub did not serve, naming GitHub's own message", async () => {
 		const {layer} = wired([[/pulls/, served(404, {message: "Not Found"})]]);
 		const result = await Effect.runPromise(
 			Effect.provide(getPullDiff("kamp-us/phoenix", 1), layer),
 		);
-		expect(result._tag).toBe("Failure");
+		expect(result).toEqual({_tag: "Failure", reason: "GitHub answered HTTP 404: Not Found"});
+	});
+
+	it("falls back to the bare status when the refusal body carries no message", async () => {
+		const {layer} = wired([[/pulls/, served(404, {})]]);
+		const result = await Effect.runPromise(
+			Effect.provide(getPullDiff("kamp-us/phoenix", 1), layer),
+		);
+		expect(result).toEqual({_tag: "Failure", reason: "GitHub answered HTTP 404"});
 	});
 });
 

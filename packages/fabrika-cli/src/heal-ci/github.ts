@@ -25,6 +25,7 @@ import {
 	type PagedAttempt,
 	pagedEnvelope,
 	pagedWithLinkProof,
+	refusalText,
 	restRead,
 } from "../io/gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
@@ -114,7 +115,7 @@ export const fetchJobLog = (repo: string, job: number): Shell<LogRead> =>
 		}
 		return outcome.status === 410 || outcome.status === 404
 			? {_tag: "Expired" as const}
-			: {_tag: "Failed" as const, reason: `GitHub answered HTTP ${outcome.status}`};
+			: {_tag: "Failed" as const, reason: refusalText(outcome)};
 	});
 
 export interface RunRecord {
@@ -162,7 +163,7 @@ export const rerunFailedJobs = (repo: string, run: number): Shell<Attempt<void>>
 				if (outcome._tag === "Unreachable") return fail(outcome.reason);
 				return outcome.status >= 200 && outcome.status < 300
 					? ok<void>(undefined)
-					: fail(`GitHub answered HTTP ${outcome.status}`);
+					: fail(refusalText(outcome));
 			},
 		),
 	);
@@ -292,7 +293,7 @@ export const readRateLimit = (): Shell<Attempt<RateLimit>> =>
 		Effect.map(restRead(token, "GET", "rate_limit"), (outcome) => {
 			if (outcome._tag === "Unreachable") return fail(outcome.reason);
 			if (outcome.status < 200 || outcome.status >= 300) {
-				return fail(`GitHub answered HTTP ${outcome.status}`);
+				return fail(refusalText(outcome));
 			}
 			const parsed = outcome.body;
 			const core =
@@ -313,7 +314,7 @@ export const commitPushedAt = (repo: string, sha: string): Shell<Attempt<string>
 		Effect.map(restRead(token, "GET", `repos/${repo}/commits/${sha}`), (outcome) => {
 			if (outcome._tag === "Unreachable") return fail(outcome.reason);
 			if (outcome.status < 200 || outcome.status >= 300) {
-				return fail(`GitHub answered HTTP ${outcome.status}`);
+				return fail(refusalText(outcome));
 			}
 			const commit = isRecord(outcome.body) ? outcome.body.commit : null;
 			const committer = isRecord(commit) ? commit.committer : null;

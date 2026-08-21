@@ -18,7 +18,7 @@
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {resolveToken, restRead, restWrite} from "../io/gh-api.ts";
+import {refusalText, resolveToken, restRead, restWrite} from "../io/gh-api.ts";
 import {type Attempt, fail, ok} from "../io/git.ts";
 import {isRecord} from "../io/json.ts";
 import {isQueueGoverned} from "./github.ts";
@@ -62,7 +62,7 @@ export const readAllowedMethods = (repo: string, env: Env): Authed<Attempt<Allow
 		const outcome = yield* restRead(token.value, "GET", `repos/${repo}`);
 		if (outcome._tag === "Unreachable") return fail(outcome.reason);
 		if (outcome.status < 200 || outcome.status >= 300) {
-			return fail(`GitHub answered HTTP ${outcome.status}`);
+			return fail(refusalText(outcome));
 		}
 		const parsed = outcome.body;
 		if (!isRecord(parsed)) return fail("GitHub answered 200 but its body is not a repository");
@@ -122,7 +122,7 @@ export const readMergeProof = (repo: string, pr: number, env: Env): Authed<Attem
 		const outcome = yield* restRead(token.value, "GET", `repos/${repo}/pulls/${pr}`);
 		if (outcome._tag === "Unreachable") return fail(outcome.reason);
 		if (outcome.status < 200 || outcome.status >= 300) {
-			return fail(`GitHub answered HTTP ${outcome.status}`);
+			return fail(refusalText(outcome));
 		}
 		const parsed = outcome.body;
 		if (!isRecord(parsed) || typeof parsed.merged !== "boolean") {
@@ -156,5 +156,5 @@ export const mergePull = (
 		if (outcome._tag === "Unreachable") return fail(outcome.reason);
 		return outcome.status >= 200 && outcome.status < 300
 			? ok(undefined)
-			: fail(`GitHub answered HTTP ${outcome.status}`);
+			: fail(refusalText(outcome));
 	});
