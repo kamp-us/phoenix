@@ -78,18 +78,17 @@ shells"*. A reviewer that quietly accumulated judgement from a file nobody revie
 nobody can reproduce from its skill text. Repo knowledge belongs in
 [`.patterns/`](../../../.patterns/index.md).
 
-## The model allowlist
+## The model a shell runs on
 
-`model:` is either absent or exactly one of `claude-opus-4-8` / `claude-opus-4-8[1m]` —
-`ALLOWLIST` in [`packages/fabrika-cli/src/models.ts`](../../../packages/fabrika-cli/src/models.ts).
-`decideSpawn` in [`packages/fabrika-cli/src/hook/spawn.ts`](../../../packages/fabrika-cli/src/hook/spawn.ts)
-denies an explicit off-allowlist model unconditionally, and no pin overrides that deny. An unset
-`model` reaches the inherit branch **only when the effective pin is itself allowlisted** — the
-`AllowInherit` return sits inside `if (isAllowlisted(effectivePin))`, so a `WORKFLOW_MODEL` that is
-present but off the allowlist denies an unset request too (with `explicit: false`). An absent pin
-resolves to the committed default, which is allowlisted, so an unset `model` passes on a machine
-that never exported `WORKFLOW_MODEL`. All four shells today leave it unset, so a spawn runs on the
-caller's own model whenever the pin is sane.
+**Nothing enforces it.** The `PreToolUse` hook that denied an off-allowlist spawn is retired — ADR
+[0331](../../../.decisions/0331-fabrika-spawn-hook-retired.md), which carries ADR
+[0282](../../../.decisions/0282-spawn-guard-retired.md)'s ruling into fabrika. Which model a
+subagent runs on is a per-run human choice, named at the spawn.
+
+Every shell leaves `model:` unset, so a spawn inherits the caller's model unless the caller names
+one. [`packages/fabrika-cli/src/models.ts`](../../../packages/fabrika-cli/src/models.ts) is still
+the house vocabulary — the canonical ids and their harness aliases — but it is a table a reader
+consults, not a gate anything passes.
 
 ## Which shells carry a spawn tool
 

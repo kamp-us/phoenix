@@ -543,7 +543,6 @@ surface's convention lives in
 |---|---|
 | `hook check` | whether the envelope on stdin is one fabrika can act on |
 | `hook codes` | the exit taxonomy every verb in the group allocates from |
-| `hook spawn` | whether the subagent spawn on stdin may run on the model it asked for |
 
 **Exit codes.** `3` stdin held nothing · `12` bytes arrived and are provably not an envelope ·
 `13` fd 0 could not be read · `14` a readable envelope arrived and is not the event this verb
@@ -553,10 +552,10 @@ judges. Three failure codes rather than one, so an unread pipe cannot pass for a
   envelopes committed at `src/hook/__fixtures__/`, with their capture method and harness version
   beside them (ADR 0180). The golden test runs the argv it reads out of the committed `hooks.json`,
   so a green test cannot be exercising a verb the surface does not declare.
-- **`hook spawn` is a decision, wrapped thinly.** The allow / allow-inherit / deny outcome is a
-  pure function of `(requested model, WORKFLOW_MODEL pin)` in
-  [`src/hook/spawn.ts`](./src/hook/spawn.ts), over the one model vocabulary in
-  [`src/models.ts`](./src/models.ts).
+- **No verb here decides anything about a spawn.** `hook spawn` — the model-allowlist guard on
+  `PreToolUse` — is retired, decision and declaration both (ADR
+  [0331](../../.decisions/0331-fabrika-spawn-hook-retired.md)). Model choice is a per-run human
+  call; [`src/models.ts`](./src/models.ts) survives as the model vocabulary only, enforcing nothing.
 
 ## The `lane` group
 
