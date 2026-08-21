@@ -115,7 +115,9 @@ outlier.
   into a stall, which is worse than the deadlock it replaces.
 - Two lane-state nouns become load-bearing: `build:ui` and `review:ui` are where a lane sits;
   `build-ui` and `review-ui` are the skills, and `ui-builder` and `ui-reviewer` the shells that
-  load them.
+  load them. **Amended 2026-08-21 ([#6721](https://github.com/kamp-us/phoenix/issues/6721)):** a
+  skill and the shell that preloads it never share a spelling — see the amendment below, and ADR
+  [0281](0281-agent-names-are-nouns.md).
 
 ## Records
 
