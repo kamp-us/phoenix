@@ -331,15 +331,18 @@ export const GUARD_SEATS: SharedSeats = {
 };
 
 /**
- * `decision`'s seats: four, under the base's own names.
+ * `decision`'s seats: five, four under the base's own names.
  *
  * The group writes one marker comment and one audience label pair, so it claims the three
  * write-shaped seats plus the unreadable-precondition one. It seats `7` as `NO_TARGET` — the base's
  * own reading, an issue proven absent or proven not to be a `type:decision` — rather than the
- * `ZERO_SCOPE` widening, because both verbs address exactly one named issue and never a scope. Its
- * table says in full why the other five base seats are unreachable here.
+ * `ZERO_SCOPE` widening, because both verbs address exactly one named issue and never a scope. It
+ * seats `4` under its own name, `review-ui`'s idiom: the fact is the base's — a body whose sections
+ * do not hold up — and the name says which section `decision rule` reads (#6734). Its table says in
+ * full why the other four base seats are unreachable here.
  */
 export const DECISION_SEATS: SharedSeats = {
+	CRITERIA_REQUIRED: "BAD_SECTIONS",
 	NO_TARGET: "NO_TARGET",
 	WRITE_UNKNOWN: "WRITE_UNKNOWN",
 	READBACK_MISMATCH: "READBACK_MISMATCH",

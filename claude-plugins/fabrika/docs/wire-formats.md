@@ -316,7 +316,10 @@ marker binds, in the read, because a ruling recorded on another issue rules noth
 admitting one would let a single comment unlock every decision on the board. The marker is what
 `decision rule` proves before it flips the issue from `ready-for:human` to `ready-for:agent` — that
 ordering is the point, since a flip written ahead of a proven marker leaves a decision reading
-pickable with no recorded ruling behind it.
+pickable with no recorded ruling behind it. The proven marker earns the flip and does not compel it:
+a ruled issue whose body carries no readable `### Acceptance criteria` block keeps its marker and
+stays on `ready-for:human`, because `ready-for:agent` promises a builder can grade the issue cold
+and `build claim` refuses one that cannot be graded (#6734).
 
 ### `routed-elsewhere`
 
