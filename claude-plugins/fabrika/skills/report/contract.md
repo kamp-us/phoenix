@@ -62,7 +62,7 @@ corpus-wide work filed separately, and these live here until it does.)
   `report file`, so it is a precondition rather than a verb; minting it would be a wrapper whose
   only behaviour is relaying an upstream answer, which ADR 0238 bans.
 - **A standalone redactor verb.** Same test: a transform with one caller is that caller's
-  precondition. It is the `--redact` flag on the two writing verbs.
+  precondition. It is the `--redact` flag on the three writing verbs.
 
 **The residual this accepts.** Because there is no preview verb, a refusal costs the caller the
 whole heredoc again — and re-sending under refusal pressure is exactly the condition that produced
@@ -127,7 +127,7 @@ is how one observation becomes two issues.
 
 ### The body is a value, never a path
 
-The two writing verbs take the body **on stdin only**. There is deliberately **no `--body` flag, no
+The three writing verbs take the body **on stdin only**. There is deliberately **no `--body` flag, no
 `--body-file`, and no temp file**: a flag that accepts a path turns the body into a string the verb
 could post verbatim, which is precisely how the incidents below happened. A shell redirect
 (`< some-file`) is fine and expected — the *shell* reads the file, so what reaches the verb is
