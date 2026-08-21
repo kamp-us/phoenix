@@ -26,11 +26,29 @@ expect it").
 whether an issue is admitted on the scope axis, off the same `State` cell these verbs write. No verb
 here answers "may a lane open against this milestone".
 
-**One parser, not a third.** `guard/roadmap.ts` already parses `## Campaigns` into
-`{name, milestone, state}` rows and `triage/roadmap.ts` parses the name→milestone join. `campaign
-list` and the two write verbs read through the `guard/roadmap.ts` parser rather than a new one, so
-the reporting surface and the judging surface cannot disagree about what a row says. The write half
-is new — nothing in the tree writes this table today.
+**Bind to the fence's reader, not a fourth.** Three readers of this table are already in tree, and
+they are not interchangeable. `guard/roadmap.ts` parses both roadmap tables for the I1–I5 invariants;
+its `parseMilestoneCell` matches an **unanchored** `/#(\d+)/`, it drops the header **by position**
+(`parseSectionRows`'s `rows.slice(1)`), and its `RoadmapRow.milestone` is already resolved to
+`number | null`, so the raw pin cell is gone by the time any caller sees a row. `triage/roadmap.ts`
+parses the name→milestone join for `triage homes`. And
+[`build/scope-admission.ts`](../../../../packages/fabrika-cli/src/build/scope-admission.ts)'s
+`readCampaigns` reads the same table **as the fence** — strict `MILESTONE_CELL = /^#(\d+)$/`, header
+recognised by its column names rather than its position, and one unreadable row making the whole
+table `Malformed` rather than degrading to the rows that parsed.
+
+`campaign list` and the two write verbs bind to **`readCampaigns`**. It is the reader whose answer
+decides whether a lane may open, so it is the one a writer must not disagree with: a row this skill
+reports or writes and the fence calls `Malformed` is a campaign that reads as declared and dispatches
+nothing. Binding to `guard/roadmap.ts` instead would buy exactly that divergence — a second cell like
+`(was #47)` is a pin to the guard's loose parser and `Malformed` to the fence, and a bad *milestone*
+cell would be invisible to a report the fence refuses to read. The guard's looser parser is not a bug
+to fix here; it serves invariants that judge a pin's referent rather than admit a row, and
+re-pointing it is outside this skill's lane.
+
+The write half is new — nothing in the tree writes this table today. Implementing these verbs means
+exporting `readCampaigns`'s read (it is already `export const`) and adding the writers beside it, not
+copying its regexes into a fourth parser.
 
 **A roadmap with no `## Campaigns` table, or one whose table has no rows, is a state `campaign open`
 writes into rather than refuses.** `list` calls both `none` at exit 0, so both are ordinary states of
@@ -122,13 +140,20 @@ Columns are `Campaign | Milestone | State`, in that order. `Campaign` is the fou
 `Milestone` is `#<number>` — the join key, never the title. `State` is one of `active`, `paused`,
 `done`, lowercase.
 
-**A row counts only when its second cell matches `^#(\d+)$`**, which drops the header and the
-`|---|` separator without matching on their text, so a header rename cannot silently admit a row.
-That is `triage/roadmap.ts`'s existing rule and the writers keep it.
+**Every line under the heading that is neither the header nor the `|---|` separator is a data row,
+whatever it contains.** The header is recognised by its three column names (`campaign`, `milestone`,
+`state`, case-insensitively) and the separator by its dashes; the scan stops at the next `##`
+heading. Recognising rows this way rather than by a shape test is what makes a mistyped cell
+*malformed* rather than *invisible* — a parser that skipped rows it could not read would answer
+"nothing is active" for a broken table, which is the well-formed-and-always-wrong shape the fence
+exists to avoid. That is `readCampaigns`'s rule and the writers keep it.
 
-**A row whose second cell is `#<number>` and whose third cell is not one of the three states makes
-the whole table unreadable** (`12`). A fence never falls back to the rows it could parse (ADR 0304),
-so a partial answer is the one thing no verb here may return.
+**A data row is readable only when it has exactly three cells, a non-empty first cell, a second cell
+matching `^#(\d+)$`, and a third cell that lowercases to one of the three states.** Any row failing
+any of those four makes the **whole** table unreadable (`12`) — not just the row, and not just a bad
+state cell. A fence never falls back to the rows it could parse (ADR 0304), so a partial answer is
+the one thing no verb here may return. The refusal carries `readCampaigns`'s own reason string, so
+`campaign list` and the `build` fence name the same defect in the same words.
 
 **An absent table, a table with no rows, and a table whose every row is `paused` or `done` are one
 well-formed default, and they are a fact rather than a failed read.** `campaign list` answers `none`
@@ -250,7 +275,7 @@ with `rows: []` for the `none` case.
 | `0` | the rows, or `none`, are on stdout |
 | `1` | usage error (an unknown flag, or a `--state` outside the three values), or the verb failed to run |
 | `11` | the roadmap file could not be read |
-| `12` | a row under `## Campaigns` pins a milestone and carries a state outside the three values |
+| `12` | a data row under `## Campaigns` will not parse — wrong cell count, empty name, a milestone cell outside `^#(\d+)$`, or a state outside the three values |
 | `22` | `.fabrika.jsonc` could not be read, or its `roadmapFile` will not decode |
 
 **Errors**
@@ -258,7 +283,7 @@ with `rows: []` for the `none` case.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `campaign list: cannot read <file>: <reason> — UNKNOWN, nothing was parsed.` | 11 | refusal |
-| `campaign list: <file> row "<name>" holds state "<cell>" — the whole ## Campaigns table is unreadable (ADR 0304).` | 12 | refusal |
+| `campaign list: <file>: <reason> — the whole ## Campaigns table is unreadable (ADR 0304).` | 12 | refusal |
 | `campaign list: cannot resolve roadmapFile from .fabrika.jsonc: <reason> — UNKNOWN, no roadmap file was opened.` | 22 | refusal |
 | `campaign list: --state "<value>" is not one of active, paused, done.` | 1 | usage error |
 
@@ -304,7 +329,8 @@ $ fabrika campaign list --json
   means the fence is off, not closed.
 - Founder ruling on #5011 — the empty declaration admits everything, which is why zero rows here is
   `0` and not ADR 0092's red.
-- `guard/roadmap.ts` — the parser this verb reads through, so report and verdict cannot disagree.
+- `build/scope-admission.ts`'s `readCampaigns` — the reader this verb binds to, so the report and the
+  dispatch fence cannot disagree about what a row says.
 
 ---
 
@@ -391,7 +417,7 @@ answer: a run that wrote nothing exits non-zero. Under `--json`:
 | `campaign open: --<flag> is required.` | 1 | usage error |
 | `campaign open: cannot read <file>: <reason> — UNKNOWN, nothing was written.` | 11 | refusal |
 | `campaign open: cannot write <file>: <reason> — UNKNOWN, the table may be half-written; re-read it.` | 11 | refusal |
-| `campaign open: <file> row "<name>" holds state "<cell>" — the whole ## Campaigns table is unreadable (ADR 0304). NOTHING was written.` | 12 | refusal |
+| `campaign open: <file>: <reason> — the whole ## Campaigns table is unreadable (ADR 0304). NOTHING was written.` | 12 | refusal |
 | `campaign open: cannot fetch <url>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
 | `campaign open: cannot resolve membership of <login> in @<org>/<team>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
 | `campaign open: campaignAuthors names @<org>/<team>, which <org> does not have — fix the key; authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
@@ -520,7 +546,7 @@ not ask for, and on a table whose columns are already ragged it would rewrite ro
 | `campaign state: --<flag> is required.` | 1 | usage error |
 | `campaign state: cannot read <file>: <reason> — UNKNOWN, nothing was written.` | 11 | refusal |
 | `campaign state: cannot write <file>: <reason> — UNKNOWN, the row may be half-written; re-read it.` | 11 | refusal |
-| `campaign state: <file> row "<name>" holds state "<cell>" — the whole ## Campaigns table is unreadable (ADR 0304). NOTHING was written.` | 12 | refusal |
+| `campaign state: <file>: <reason> — the whole ## Campaigns table is unreadable (ADR 0304). NOTHING was written.` | 12 | refusal |
 | `campaign state: cannot fetch <url>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
 | `campaign state: cannot resolve membership of <login> in @<org>/<team>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
 | `campaign state: campaignAuthors names @<org>/<team>, which <org> does not have — fix the key; authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
