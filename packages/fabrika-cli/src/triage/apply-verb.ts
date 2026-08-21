@@ -44,6 +44,8 @@ export interface ApplyOptions {
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The claim token `triage claim` handed this lane — which lane of the session is asking. */
+	readonly token: string | null;
 	/** Where the run stands. The repo root above it is where `.fabrika.jsonc` is read. */
 	readonly cwd: string;
 }
@@ -175,6 +177,7 @@ export const runApply = (
 			issue,
 			target: target.value,
 			env: options.env,
+			token: options.token,
 		});
 		if (guarded !== null) return guarded;
 

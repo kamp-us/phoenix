@@ -119,6 +119,7 @@ const options = {
 	issue: 4312,
 	confirm: true,
 	duplicateOf: null as number | null,
+	token: null as string | null,
 	repo: null as string | null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,

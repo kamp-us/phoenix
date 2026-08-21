@@ -85,6 +85,7 @@ const applyOptions = {
 	readyFor: "agent",
 	home: null as number | null,
 	lane: "team:infra" as string | null,
+	token: null as string | null,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
@@ -161,6 +162,7 @@ describe("triage park under a declared board vocabulary", () => {
 			Effect.provide(
 				runPark({
 					issue: 4312,
+					token: null as string | null,
 					repo: null,
 					json: false,
 					env: {CLAUDE_PIPELINE_REPO: "o/r"},
