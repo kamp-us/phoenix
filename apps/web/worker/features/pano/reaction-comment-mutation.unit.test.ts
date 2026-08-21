@@ -76,11 +76,30 @@ const commentRowWith = (reactions: ReactionAggregate): CommentRow => ({
 	reactions,
 });
 
+interface UpdateCall {
+	readonly type: string;
+	readonly data: unknown;
+}
+
+// Records at the `LivePublisher` SERVICE boundary, not in `livePublisherFor`'s `publish`
+// callback: `updateFrame` trims `data` down to `["id", "reactions"]` before the frame
+// leaves, so a frame-level assertion passes with the owner-scoped flags still in the
+// payload the mutation handed over (#4313).
+const recordingLive = (calls: UpdateCall[]): Layer.Layer<LivePublisher> =>
+	Layer.succeed(LivePublisher)({
+		...livePublisherFor({publish: () => Effect.void, waitUntil: () => {}}),
+		update: (type, _id, options) => {
+			calls.push({type, data: options?.data});
+			return Effect.void;
+		},
+	});
+
 const react = (
 	pano: Layer.Layer<Pano>,
 	on: boolean,
 	input: {id: string; emoji: string | null},
 	user: typeof CAYLAK | undefined = CAYLAK,
+	live: Layer.Layer<LivePublisher> = liveStub,
 ) =>
 	resolveWire(mutations["comment.react"], {
 		input,
@@ -90,7 +109,7 @@ const react = (
 			Layer.mergeAll(
 				pano,
 				flagsStub(on),
-				liveStub,
+				live,
 				// Both branches now re-resolve the comment through the real sandbox viewer
 				// (#6424 for the inert one, #6586 for the write's own re-read), so both axes
 				// it probes have to be on the context. `flagsStub` answers every key with
@@ -281,6 +300,50 @@ describe("comment.react — (4) reactions are ungated (a çaylak reacts, no tier
 				(comment as {reactions?: {myReaction?: string}}).reactions?.myReaction,
 				"❤️",
 			);
+		}),
+	);
+});
+
+describe("comment.react — (5) the broadcast payload is viewer-blind", () => {
+	// The reactor IS the author here: `reactToComment` re-resolves the row against the
+	// reactor, so this is the one case where both review-state flags come back `true`.
+	const ownSandboxedRow: CommentRow = {
+		...commentRowWith({counts: [{emoji: "👍", count: 1}], myReaction: "👍"}),
+		authorId: CAYLAK.id,
+		sandboxed: true,
+		sandboxedInPlace: true,
+	};
+
+	it.effect("an author reacting to their own sandboxed comment broadcasts neither flag", () =>
+		Effect.gen(function* () {
+			const calls: UpdateCall[] = [];
+			const comment = yield* react(
+				panoProxy({
+					reactToComment: () => Effect.succeed({comment: ownSandboxedRow, changed: true}),
+				}),
+				true,
+				{id: "comment_1", emoji: "👍"},
+				CAYLAK,
+				recordingLive(calls),
+			);
+
+			assert.strictEqual(calls.length, 1, "the fanned publish still fires");
+			const published = calls[0]?.data as Record<string, unknown>;
+			assert.strictEqual(calls[0]?.type, "Comment");
+			assert.strictEqual(published.sandboxed, false);
+			// Absent rather than `false`: `panoLive`'s `viewerBlindUpdate` deletes the in-place
+			// marker outright (#6462) between the shaper and this boundary. `broadcastComment`'s
+			// literal `false` is asserted on the shaper itself in `comment-sandboxed-wire`.
+			assert.notStrictEqual(published.sandboxedInPlace, true);
+			// The field the mutation actually changed survives the strip.
+			assert.deepStrictEqual(published.reactions, {
+				counts: [{emoji: "👍", count: 1}],
+				myReaction: "👍",
+			});
+
+			// The reactor's own result keeps what they are entitled to see.
+			assert.strictEqual((comment as {sandboxed?: boolean}).sandboxed, true);
+			assert.strictEqual((comment as {sandboxedInPlace?: boolean}).sandboxedInPlace, true);
 		}),
 	);
 });

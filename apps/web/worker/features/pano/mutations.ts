@@ -36,7 +36,7 @@ import {PanoFeedCache} from "./feed-cache.ts";
 import {CommentId, PostId} from "./ids.ts";
 import {panoLive} from "./live.ts";
 import {Pano} from "./Pano.ts";
-import {toComment, toPost, toPostFromPage} from "./shapers.ts";
+import {broadcastComment, toComment, toPost, toPostFromPage} from "./shapers.ts";
 import type {Comment, Post} from "./views.ts";
 import {CommentView, PostView} from "./views.ts";
 
@@ -618,8 +618,15 @@ export const mutations = {
 				emoji: input.emoji,
 				sandboxViewer,
 			});
+			// `r.comment` is re-resolved against the REACTOR, so an author reacting to their own
+			// sandboxed comment would otherwise fan their review state out to the viewer-blind
+			// `Comment` topic. `changed: ["reactions"]` trims both flags off the frame since #6585;
+			// this is the belt to that brace, the same one `comment.edit` keeps (#4313).
 			const comment = toComment(r.comment);
-			yield* live.comment.update(comment.id, {changed: ["reactions"], data: comment});
+			yield* live.comment.update(comment.id, {
+				changed: ["reactions"],
+				data: broadcastComment(comment),
+			});
 			return comment;
 		}),
 	),
