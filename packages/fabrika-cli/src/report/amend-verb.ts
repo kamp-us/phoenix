@@ -112,6 +112,13 @@ export const runAmend = (
 			);
 		}
 
+		if (target.value.isPullRequest) {
+			return refuse(
+				NO_TARGET,
+				`report amend: #${issue} in ${repo} is a pull request, not an issue — a PR body is written by \`build pr-body\`.`,
+			);
+		}
+
 		const prior = target.value.body;
 		const amendment = compose(prior, section, options.now());
 

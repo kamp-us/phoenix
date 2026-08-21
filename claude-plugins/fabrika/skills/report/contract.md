@@ -773,6 +773,7 @@ unused rather than reassigned.
 | `report amend: the amendment carries <n> machine-local path(s) — refusing to append them to a public issue.` (then one indented `line <n>, <class>` per hit) | 5 | refusal |
 | `report amend: the amendment is a bare "@" path reference — the composed section never arrived. Send it on stdin; --redact does not apply.` | 6 | refusal |
 | `report amend: <repo> has no issue #<n>.` | 7 | refusal |
+| `report amend: #<n> in <repo> is a pull request, not an issue — a PR body is written by \`build pr-body\`.` | 7 | refusal |
 | `report amend: cannot read #<n> in <repo>: <reason> — whether the issue exists is UNKNOWN, so nothing was written.` | 11 | refusal |
 | `report amend: could not write the body of #<n>: <reason> — the amendment is UNKNOWN. Re-read the issue before retrying; the append may have landed.` | 8 | refusal |
 | `report amend: wrote the body of #<n> but the read-back is wrong: <what differs>. The issue exists and needs fixing by hand.` | 9 | refusal |
