@@ -29,6 +29,7 @@ makes the implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4
 |---|---|---|
 | `triage queue` | the claimable `status:needs-triage` queue, with the count it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
 | `triage claim` | take one lane's claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
+| `triage scratch` | the per-lane directory this lane's working files go under | keying a namespace on the claim nonce is mechanical; what the file holds is judgment |
 | `triage provenance` | was this issue reported by an agent or hand-typed by a human | a structural marker test over a fetched body, plus a membership test over the configured operator set — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
 | `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes this repo declares AND carries the labels for, with every `active` campaign's milestone marked `running` | the join, the open-milestone filter and reading the campaigns table are mechanical; picking which home fits, and whether an exception applies, is judgment |
 | `triage split` | create one split child, once, keyed on the parent back-reference | idempotency keyed on a durable reference is mechanical; deciding a report *is* a bundle is judgment |
@@ -130,7 +131,7 @@ Stated once rather than repeated per block.
 
 ### The shared exit taxonomy
 
-**All nine verbs allocate from one internal table**, so a code means one thing across *this group*.
+**Every verb in this group allocates from one internal table**, so a code means one thing across *this group*.
 That is a property of this group and not of `fabrika`, and the difference matters to anyone driving
 more than one group: **repo-wide the same number does not mean the same thing.** `wire`'s `3` is
 *the format's block is provably not in the artifact*, where `report`'s and this group's is *stdin was
@@ -143,27 +144,28 @@ that verb reads from the same `report` table: `7` when `--label` is absent, `27`
 or the search index could not be read
 ([#5296](https://github.com/kamp-us/phoenix/issues/5296)).
 
-| Code | Meaning | queue | claim | prov | homes | split | enrich | apply | park | kill |
-|---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `1` | usage error, unresolvable repo, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `3` | stdin was read and held nothing | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ |
-| `4` | *(deliberate gap — see below)* | — | — | — | — | — | — | — | — | — |
-| `5` | the **authored** text carries a machine-local path | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ |
-| `6` | the **authored** text is a bare `@` path reference — **not** redactable | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ |
-| `7` | zero scope: a read that succeeded over nothing, an absent label vocabulary, or a target issue **proven absent (404)** or closed — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `8` | the write itself failed — the outcome is **UNKNOWN** | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `9` | the write landed but the read-back does not match | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `10` | the supplied classification value is not permitted here — off the closed vocabulary, or a non-open milestone | — | — | — | — | — | — | ✓ | — | — |
-| `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `12` | refused: the issue is human-filed | — | — | — | — | — | — | — | — | ✓ |
-| `13` | refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ |
-| `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — |
-| `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — |
-| `17` | refused: a live claim marker on the target names a session other than this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — |
-| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Code | Meaning | queue | claim | prov | homes | split | enrich | apply | park | kill | scratch |
+|---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `1` | usage error, unresolvable repo, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `3` | stdin was read and held nothing | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — |
+| `4` | *(deliberate gap — see below)* | — | — | — | — | — | — | — | — | — | — |
+| `5` | the **authored** text carries a machine-local path | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — |
+| `6` | the **authored** text is a bare `@` path reference — **not** redactable | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ | — |
+| `7` | zero scope: a read that succeeded over nothing, an absent label vocabulary, or a target issue **proven absent (404)** or closed — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| `8` | the write itself failed — the outcome is **UNKNOWN** | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| `9` | the write landed but the read-back does not match | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| `10` | the supplied value is not permitted here — off the closed vocabulary, a non-open milestone, or a slug that is not a kebab-case leaf | — | — | — | — | — | — | ✓ | — | — | ✓ |
+| `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `12` | refused: the issue is human-filed | — | — | — | — | — | — | — | — | ✓ | — |
+| `13` | refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ | — |
+| `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — | — |
+| `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — | — |
+| `17` | refused: a live claim marker on the target names a session other than this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — | — |
+| `19` | refused: the asking lane holds no live claim on the target | — | — | — | — | — | — | — | — | — | ✓ |
+| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
 this group can return `0`, `1`, `126` and `127` with the meanings above, and each of the four is stated
@@ -539,6 +541,113 @@ $ fabrika triage claim 4312 --json
 - #4780 — audience moved to `ready-for:`, so a claim no longer has to be released to keep an issue
   pickable. The TTL replaces v1's mandatory release, whose script swallowed every error
   (`2>/dev/null || true`) and could silently leave an issue unpickable forever.
+
+---
+
+## `triage scratch`
+
+**Invocation**
+
+```
+fabrika triage scratch 4312 --slug authored --token <claim-token> [--repo <owner/name>]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the issue this lane holds the claim on |
+| `--slug` | string | yes | — | the file's leaf name: kebab-case, ≤5 words, no path separators |
+| `--token` | string | yes | — | the token `triage claim` handed THIS lane — what keys the namespace |
+| `--repo` | string | no | resolved | the repository |
+
+**Output** — machine channel. One absolute path:
+`<temp root>/fabrika-triage/<session-id>/<issue>-<claim-nonce>/<slug>`. The directory is created if
+absent, so the path is writable the moment it is printed; the leaf itself is not created. There is no
+`--json`: the answer is one path, and an object around it would carry nothing the path does not.
+
+**The claim nonce is in the key, and that is the whole verb.** A fan-out of triagers runs under one
+`$CLAUDE_CODE_SESSION_ID`, so a namespace keyed on the session alone hands every lane the same
+directory — and a working file under a fixed name like `authored.md` then overwrites a sibling's
+silently. That happened on 2026-08-20 across #6597/#6189/#6146 and was caught only because the
+clobbered content happened to be a different issue's body
+([#6630](https://github.com/kamp-us/phoenix/issues/6630)); the failure it points at is one issue's
+authored body posted onto another. Keying on the lane makes the collision unconstructible rather than
+detectable, exactly as `build scratch` already does for build lanes
+([#6037](https://github.com/kamp-us/phoenix/issues/6037)). The nonce is read off the token the
+**caller** holds, never off the winning marker — that string is the same for two lanes of one
+session, which is how keying on it re-opens the hole it closed.
+
+**Holding the claim is a precondition here, unlike everywhere else in this group.** The five mutating
+verbs pass when nobody holds a claim, because an unclaimed issue is the ordinary first-triage case.
+A scratch path *is* the lane, so a caller that cannot prove one has nothing to be allocated a
+directory under: no live marker of this lane, or a marker that lost the race to a sibling, is exit
+`19` and no path on stdout.
+
+**The printed path is machine-local and must never reach a posted artifact.** `enrich`, `split`,
+`park` and `kill` red on it (`5`) — the temp roots it lives under are three of the leak predicate's
+structural shapes.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `10` | `--slug` carries a path separator, or is not a kebab-case leaf |
+| `11` | the issue's comment list could not be read, or its markers could not be ordered — the claim is UNKNOWN |
+| `19` | proven: this lane holds no live claim on the issue |
+
+`1` additionally covers the two identity refusals and the allocation failure, as the errors table
+below states. `7`, `8` and `9` are unreachable: this verb writes nothing to GitHub and reads no issue
+record, so it has no write to fail and no read-back to mismatch.
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `triage scratch: --slug "<s>" must be a kebab-case leaf, no path separators.` | 10 | refusal |
+| `triage scratch: CLAUDE_CODE_SESSION_ID is unset — refusing to key a scratch namespace on an unattributable session.` | 1 | refusal |
+| `triage scratch: CLAUDE_CODE_SESSION_ID is not a single token — a marker stamped with it would not read back as this session.` | 1 | refusal |
+| `triage scratch: CLAUDE_CODE_SESSION_ID is not one path segment — it cannot name a directory of its own.` | 1 | refusal |
+| `triage scratch: --token "<t>" is not a claim token (triage:<session-id>:<uuid>) — which lane is asking is not stated.` | 1 | refusal |
+| `triage scratch: --token "<t>" carries session <s>, but this run is session <mine> — a lane names itself, never another.` | 1 | refusal |
+| `triage scratch: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN, so no path was allocated.` | 11 | refusal |
+| `triage scratch: cannot resolve the claim on #<n> in <repo>: <reason> — no path was allocated.` | 11 | refusal |
+| `triage scratch: this lane holds no live claim on #<n> — run \`fabrika triage claim <n>\` and act only on \`won\`.` | 19 | refusal |
+| `triage scratch: #<n> is held by the lane on nonce <nonce>, not by this one — back off.` | 19 | refusal |
+| `triage scratch: cannot create <dir>: <reason>` | 1 | refusal |
+
+**Scope** — the issue's comments, paginated, filtered to the marker prefix, with the scanned count on
+stderr like every other read in this group.
+
+**Examples**
+
+```
+$ fabrika triage scratch 4312 --slug authored --token triage:b2e1-…:5f1c9a20-…
+triage scratch: scanned 3 comments in kamp-us/phoenix.
+/var/folders/xy/T/fabrika-triage/b2e1-…/4312-5f1c9a20/authored
+```
+
+A sibling lane of the same session, on the same issue and the same slug, is handed a different
+directory — which is the property the verb exists for:
+
+```
+$ fabrika triage scratch 4312 --slug authored --token triage:b2e1-…:7c3d0e91-…
+/var/folders/xy/T/fabrika-triage/b2e1-…/4312-7c3d0e91/authored
+```
+
+```
+$ fabrika triage scratch 4312 --slug authored --token triage:b2e1-…:5f1c9a20-…
+triage scratch: this lane holds no live claim on #4312 — run `fabrika triage claim 4312` and act only on `won`.
+$ echo $?
+19
+```
+
+**Grounding**
+
+- `packages/fabrika-cli/src/build/scratch-verb.ts` — the same allocator for build lanes, whose
+  docblock records the five clobbers session-only keying cost (#4516, #4544, #4875, #4692, #6037).
+- The `build` skill makes its path the only sanctioned one ("Scratch files go only where this
+  prints"); this verb is what lets the triage skill say the same thing.
 
 ---
 

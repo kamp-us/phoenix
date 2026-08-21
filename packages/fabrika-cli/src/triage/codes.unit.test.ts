@@ -4,6 +4,7 @@ import * as report from "../report/codes.ts";
 import * as codes from "./codes.ts";
 import {
 	BARE_AT_PATH,
+	CLAIM_NOT_HELD,
 	CLAIMED_ELSEWHERE,
 	CRITERIA_REQUIRED,
 	DELIBERATE_GAP,
@@ -83,6 +84,16 @@ describe("the codes this group adds", () => {
 	 * the base's occupied seats off its exports instead, which is the only form that covers a code
 	 * nobody has written yet (#4924).
 	 */
+	/**
+	 * `17` is *a live marker names another session* and deliberately passes a caller holding none;
+	 * `19` is *this lane holds none*, which only the scratch allocator may refuse on. Fusing them
+	 * would either make an unclaimed issue unmutable or hand a claimless lane a namespace.
+	 */
+	it("seats the claim-not-held refusal clear of the claimed-elsewhere one", () => {
+		expect(CLAIM_NOT_HELD).toBe(19);
+		expect(CLAIM_NOT_HELD).not.toBe(CLAIMED_ELSEWHERE);
+	});
+
 	it("clears every seat `report` occupies, read from its exports and not a list", () => {
 		expect(checkAlignment(report, codes, SHARED_SEATS).collisions).toEqual([]);
 	});
@@ -97,7 +108,9 @@ describe("TRIAGE_EXIT_TABLE", () => {
 	});
 
 	it("carries every allocated code exactly once", () => {
-		expect(codes).toEqual([0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 126, 127]);
+		expect(codes).toEqual([
+			0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 126, 127,
+		]);
 	});
 
 	it("gives every code a non-empty meaning", () => {
@@ -114,5 +127,6 @@ describe("TRIAGE_EXIT_TABLE", () => {
 		expect(meaningOf(MALFORMED_CRITERIA)).toContain("acceptance-criteria");
 		expect(meaningOf(CRITERIA_REQUIRED)).toContain("--ready-for agent");
 		expect(meaningOf(CLAIMED_ELSEWHERE)).toContain("another session");
+		expect(meaningOf(CLAIM_NOT_HELD)).toContain("holds no live claim");
 	});
 });

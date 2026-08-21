@@ -19,8 +19,9 @@
  * branches testable without a network: the verb supplies markers, a clock and a caller, and
  * this module decides.
  */
-import type {Caller} from "../build/claim.ts";
+import {type Caller, type LaneCaller, laneCaller} from "../build/claim.ts";
 import {composeToken, nonceOf, parseToken} from "../build/lane.ts";
+import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 
 export {anySessionCaller, type Caller, type LaneCaller, laneCaller} from "../build/claim.ts";
 
@@ -43,6 +44,85 @@ export const claimNonceOf = (token: string): string | null => nonceOf(token, TOK
 export const parseClaimToken = (
 	token: string,
 ): {readonly session: string; readonly uuid: string} | null => parseToken(token, TOKEN_PREFIX);
+
+/** Either half of the "who is asking" read: the answer, or the refusal that ends the verb. */
+export type Asked<A> =
+	| {readonly _tag: "Asked"; readonly value: A}
+	| {readonly refusal: VerbOutcome};
+
+const usage = (verb: string, message: string): {readonly refusal: VerbOutcome} => ({
+	refusal: refuse(FAILED, `${verb}: ${message}`),
+});
+
+/**
+ * The session this run is stamped with, or the refusal that ends the verb.
+ *
+ * Seated on `1` because the merged contract's errors table puts it there — an unstamped environment
+ * is a precondition of *invoking* a verb, not a verdict one reached. `refusing` is what this verb
+ * would otherwise have done with the id, because the contract pins each caller's line verbatim.
+ */
+export const requireSession = (
+	verb: string,
+	env: Readonly<Record<string, string | undefined>>,
+	refusing: string,
+): Asked<string> => {
+	const raw = (env.CLAUDE_CODE_SESSION_ID ?? "").trim();
+	if (raw === "") {
+		return usage(verb, `CLAUDE_CODE_SESSION_ID is unset — ${refusing}.`);
+	}
+	if (!isStampableSession(raw)) {
+		return usage(
+			verb,
+			"CLAUDE_CODE_SESSION_ID is not a single token — a marker stamped with it would not read back as this session.",
+		);
+	}
+	return {_tag: "Asked", value: raw};
+};
+
+/** One resolved lane and the token that names it — non-null by construction, unlike `Caller.token`. */
+export interface AskedLane {
+	readonly caller: LaneCaller;
+	readonly token: string;
+}
+
+/**
+ * The lane a `--token` names, or the refusal that ends the verb.
+ *
+ * A token from another session is refused rather than trusted: the env says which session is
+ * running, the flag says which lane of it, and a pair that disagrees is a token threaded through
+ * from somewhere else.
+ */
+export const requireCallerToken = (
+	verb: string,
+	session: string,
+	token: string,
+): Asked<AskedLane> => {
+	const trimmed = token.trim();
+	const parsed = parseClaimToken(trimmed);
+	const nonce = claimNonceOf(trimmed);
+	if (parsed === null || nonce === null) {
+		return usage(
+			verb,
+			`--token "${trimmed}" is not a claim token (${TOKEN_PREFIX}:<session-id>:<uuid>) — which lane is asking is not stated.`,
+		);
+	}
+	if (parsed.session !== session) {
+		return usage(
+			verb,
+			`--token "${trimmed}" carries session ${parsed.session}, but this run is session ${session} — a lane names itself, never another.`,
+		);
+	}
+	return {_tag: "Asked", value: {caller: laneCaller(session, nonce, trimmed), token: trimmed}};
+};
+
+/** A fresh lane of `session`, minted from `uuid` — `triage claim`'s no-`--token` path. */
+export const mintCaller = (verb: string, session: string, uuid: string): Asked<AskedLane> => {
+	const minted = composeClaimToken(session, uuid);
+	const nonce = claimNonceOf(minted);
+	return nonce === null
+		? usage(verb, `could not mint a lane token for session ${session} — nothing was written.`)
+		: {_tag: "Asked", value: {caller: laneCaller(session, nonce, minted), token: minted}};
+};
 
 /** The exact one-line body a claim marker carries, up to the session id. */
 export const MARKER_PREFIX = "<!-- fabrika-triage-claim session=";
