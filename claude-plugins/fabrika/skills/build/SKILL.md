@@ -198,6 +198,13 @@ which reads under [`code.md`](references/code.md)'s rubric) — and read the mat
 [`references/`](references/) before writing. Done when every acceptance criterion maps to
 something you can point at.
 
+**When the change alters what a fabrika verb prints, the surface is wider than the file you opened.**
+That grammar is hand-copied into six places and nothing compares them, so a sweep scoped to the
+directory you started in leaves a copy that still reads as true — three consecutive repair rounds
+died that way on one child (#6482). The list is
+[`.patterns/verb-output-pin-surfaces.md`](../../../../.patterns/verb-output-pin-surfaces.md); walk it
+and land every surface in this PR.
+
 ## 4 — Branch, build, verify in this tree
 
 ```bash
