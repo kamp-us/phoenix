@@ -39,6 +39,8 @@ export interface EnrichOptions {
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The claim token `triage claim` handed this lane — which lane of the session is asking. */
+	readonly token: string | null;
 	readonly stdin: Effect.Effect<StdinRead>;
 }
 
@@ -91,6 +93,7 @@ export const runEnrich = (
 			issue,
 			target: target.value,
 			env: options.env,
+			token: options.token,
 		});
 		if (guarded !== null) return guarded;
 

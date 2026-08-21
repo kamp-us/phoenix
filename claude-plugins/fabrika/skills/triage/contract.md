@@ -162,7 +162,7 @@ or the search index could not be read
 | `13` | refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ | — |
 | `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — | — |
 | `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — | — |
-| `17` | refused: a live claim marker on the target names a session other than this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| `17` | refused: a live claim marker on the target names a claimant other than the asking lane — another session, or another lane of this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 | `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — | — |
 | `19` | refused: the asking lane holds no live claim on the target | — | — | — | — | — | — | — | — | — | ✓ |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -435,12 +435,19 @@ winner is this session; every unresolvable state answers `lost`, never `won`.
 
 **The claim binds, and every mutating verb is what makes it bind.** `split`, `enrich`, `apply`,
 `park` and `kill` each re-read the markers on their target immediately before their first write, and
-refuse on `17` when a live one names another session — the check reuses this verb's own reader and
-resolver, so there is one marker grammar. Those five read the **session** axis only: they are handed
-no claim token, so a sibling lane of one session still passes that check, exactly as it did before
-the lane nonce existed. Holding **no** marker still passes: an unclaimed issue is
+refuse on `17` when a live one names another claimant — the check reuses this verb's own reader and
+resolver, so there is one marker grammar. Those five decide foreignness on the **session+lane pair**,
+the same identity `claim` resolves on: each takes the optional `--token` this verb handed the lane,
+and a same-session marker under a different nonce is somebody else's
+([#6303](https://github.com/kamp-us/phoenix/issues/6303)). A call that passes no `--token` cannot say
+which lane it is, so it is priced fail-closed on exactly that: it passes while its session's live
+markers all name one lane, and refuses on `17` once two lanes of its session hold live markers.
+Holding **no** marker still passes: an unclaimed issue is
 the ordinary first-triage case, and demanding one would refuse every existing caller. The same
-re-read refuses a closed target on `7`, and a comment read that fails is `11`. Before, the protocol
+re-read refuses a closed target on `7`, and a comment read that fails is `11`. A `--token` that will
+not parse as `triage:<session-id>:<uuid>`, or that carries a session other than the one running, is a
+usage error on `1` on all five — the same two lines `claim` itself prints, verbatim, since it is the
+same reader; a lane names itself, never another. Before, the protocol
 was advisory at exactly the point it needed to bite: on 2026-08-15 a session that had read `lost`
 ran `enrich` anyway and replaced the winner's authored body
 ([#5644](https://github.com/kamp-us/phoenix/issues/5644), on
@@ -1000,7 +1007,7 @@ $ fabrika triage homes --json
 **Invocation**
 
 ```
-fabrika triage split 4312 --title "Editor loses focus after save" [--repo <owner/name>] [--json]
+fabrika triage split 4312 --title "Editor loses focus after save" [--token <claim-token>] [--repo <owner/name>] [--json]
 ```
 
 The child body arrives on **stdin only**. There is no `--body` and no `--body-file`: a flag that
@@ -1014,6 +1021,7 @@ path reaches a public issue while the poster reads success. A shell redirect is 
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the parent issue this unit is split from |
 | `--title` | string | yes | — | the child's single-unit title; also half the create-once key |
+| `--token` | string | no | none | the claim token `triage claim` handed this lane; without it the guard reads the session alone and refuses once two lanes of it hold live markers |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -1091,7 +1099,7 @@ a silent lost split, in the one direction v1's own module says it refuses.
 | `8` | the create failed — UNKNOWN whether a child landed |
 | `9` | the child was created but the read-back does not match |
 | `11` | a precondition read failed — the parent, its comments, the claim on it, the queue, the timeline, or a candidate's body |
-| `17` | a live claim marker on the parent names another session |
+| `17` | a live claim marker on the parent names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 
 **Errors**
 
@@ -1103,6 +1111,8 @@ a silent lost split, in the one direction v1's own module says it refuses.
 | `triage split: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
 | `triage split: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
 | `triage split: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage split: #<n> is claimed by lane <l> of this session, not by this lane (<nonce>) — refusing to mutate a sibling lane's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage split: #<n> carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the `--token` `fabrika triage claim <n>` handed this lane.` | 17 | refusal |
 | `triage split: label status:needs-triage does not exist in <repo> — refusing to create a child over a queue that would scan nothing (ADR 0092).` | 7 | refusal |
 | `triage split: the child body carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage split: the child body is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
@@ -1210,7 +1220,7 @@ $ fabrika triage split 4312 --title "Editor loses focus after save" --json < chi
 **Invocation**
 
 ```
-fabrika triage enrich 4312 [--epic] [--repo <owner/name>] [--json]
+fabrika triage enrich 4312 [--epic] [--token <claim-token>] [--repo <owner/name>] [--json]
 ```
 
 The rewrite — or, with `--epic`, the pitch — arrives on **stdin only**, for the reason given under
@@ -1222,6 +1232,7 @@ The rewrite — or, with `--epic`, the pitch — arrives on **stdin only**, for 
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the issue to enrich |
 | `--epic` | boolean | no | `false` | wrap the original in place under a fixed header and head the pitch above it, instead of writing a rewrite over it; stdin carries the pitch, not a rewrite |
+| `--token` | string | no | none | the claim token `triage claim` handed this lane; without it the guard reads the session alone and refuses once two lanes of it hold live markers |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | markdown | yes | — | the rewritten body that goes above the preserved original — with `--epic`, the pitch's five field lines instead: `**Problem:**`, `**Arc:**`, `**Appetite:** <N> cycles`, `**Rabbit-holes:**`, `**No-gos:**`, one per line |
@@ -1510,7 +1521,7 @@ criteria block; a verb that demanded one would be a different verb.
 | `8` | the `PATCH` failed — UNKNOWN whether the body changed |
 | `9` | the body was written but the read-back does not match |
 | `11` | the issue body could not be read, so there is no original to preserve — or its comments, or the claim on them, could not be read |
-| `17` | a live claim marker on the issue names another session |
+| `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 | `15` | the composed body's **authored region** carries an acceptance-criteria block the wire reader classifies `Malformed` |
 
 **Errors**
@@ -1523,6 +1534,8 @@ criteria block; a verb that demanded one would be a different verb.
 | `triage enrich: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
 | `triage enrich: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
 | `triage enrich: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage enrich: #<n> is claimed by lane <l> of this session, not by this lane (<nonce>) — refusing to mutate a sibling lane's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage enrich: #<n> carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the `--token` `fabrika triage claim <n>` handed this lane.` | 17 | refusal |
 | `triage enrich: #<n> has an empty body — there is no original to preserve, and an empty one must never be preserved as though it were the record.` | 7 | refusal |
 | `triage enrich: cannot read #<n> in <repo>: <reason> — refusing to write an envelope over an original that was never read.` | 11 | refusal |
 | `triage enrich: the text you sent on stdin carries a machine-local path at line <k> (<class>) — rewrite it repo-relative. The preserved original is redacted automatically; this refusal is about the text you wrote.` | 5 | refusal |
@@ -1594,6 +1607,7 @@ $ fabrika triage enrich 4312 --json < enriched.md
 ```
 fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47
 fabrika triage apply 4312 --type chore --priority p2 --ready-for agent --lane axis:pipeline-hardening
+fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --token <claim-token>
 ```
 
 **Inputs**
@@ -1606,6 +1620,7 @@ fabrika triage apply 4312 --type chore --priority p2 --ready-for agent --lane ax
 | `--ready-for` | enum | yes | — | who picks it up: `human` or `agent` |
 | `--home` | integer | one of | — | the **number** of an open milestone to home the issue in |
 | `--lane` | enum | one of | — | a standing lane, taking its values from the `lane` rows `triage homes` prints |
+| `--token` | string | no | none | the claim token `triage claim` handed this lane; without it the guard reads the session alone and refuses once two lanes of it hold live markers |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -1722,7 +1737,7 @@ for drift, not because they are currently absent.)
 | `9` | the writes landed but the read-back does not show the required end state |
 | `10` | an off-vocabulary enum value, or `--home` names a milestone that is not open |
 | `11` | the issue, its comments, the claim on it, the repository's label set, or its milestone set could not be read |
-| `17` | a live claim marker on the issue names another session |
+| `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 | `16` | `--ready-for agent` over a live body the wire reader does not answer `Found` on — every type but `epic`; nothing was written |
 | `18` | `.fabrika.jsonc` yielded no usable value — a key's load-time check refused it (the containment invariant is one such check), the file could not be read, or a key did not decode; refused at load, before the issue is even read |
 
@@ -1745,6 +1760,8 @@ stamp.
 | `triage apply: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
 | `triage apply: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
 | `triage apply: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage apply: #<n> is claimed by lane <l> of this session, not by this lane (<nonce>) — refusing to mutate a sibling lane's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage apply: #<n> carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the `--token` `fabrika triage claim <n>` handed this lane.` | 17 | refusal |
 | `triage apply: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage apply: cannot read <what> in <repo>: <reason> — nothing was written; the transition is UNKNOWN.` | 11 | refusal |
 | `triage apply: write failed after <k> of <m> changes: <reason> — #<n> may be partially labelled; re-run this verb, which is idempotent.` | 8 | refusal |
@@ -1829,7 +1846,7 @@ $ fabrika triage apply 4290 --type chore --priority p2 --ready-for agent --lane 
 **Invocation**
 
 ```
-fabrika triage park 4312 [--repo <owner/name>] [--json]
+fabrika triage park 4312 [--token <claim-token>] [--repo <owner/name>] [--json]
 ```
 
 The questions arrive on **stdin**.
@@ -1839,6 +1856,7 @@ The questions arrive on **stdin**.
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the issue to park |
+| `--token` | string | no | none | the claim token `triage claim` handed this lane; without it the guard reads the session alone and refuses once two lanes of it hold live markers |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | markdown | yes | — | the questions that would unblock the issue |
@@ -1889,7 +1907,7 @@ it.
 | `8` | the comment or the label swap failed — UNKNOWN which landed |
 | `9` | the writes landed but the read-back does not match |
 | `11` | the issue, its comments, the claim on it, or the repository's label set could not be read |
-| `17` | a live claim marker on the issue names another session |
+| `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 | `18` | `.fabrika.jsonc` yielded no usable value — a key's load-time check refused it (the containment invariant is one such check), the file could not be read, or a key did not decode; refused at load, before the comment is posted |
 
 **Errors**
@@ -1902,6 +1920,8 @@ it.
 | `triage park: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
 | `triage park: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
 | `triage park: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage park: #<n> is claimed by lane <l> of this session, not by this lane (<nonce>) — refusing to mutate a sibling lane's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage park: #<n> carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the `--token` `fabrika triage claim <n>` handed this lane.` | 17 | refusal |
 | `triage park: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage park: the questions text carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage park: the questions text is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
@@ -1947,7 +1967,7 @@ $ fabrika triage park 4290 --json < questions.md
 **Invocation**
 
 ```
-fabrika triage kill 4312 --confirm [--duplicate-of <n>] [--repo <owner/name>] [--json]
+fabrika triage kill 4312 --confirm [--duplicate-of <n>] [--token <claim-token>] [--repo <owner/name>] [--json]
 ```
 
 The reason arrives on **stdin**.
@@ -1959,6 +1979,7 @@ The reason arrives on **stdin**.
 | *(positional)* | integer | yes | — | the issue to close not-planned |
 | `--confirm` | boolean | no | `false` | assert that the confirmation step ADR 0159 requires has been performed — salvage was attempted and this filing is genuinely unsalvageable or moves nothing forward. Its absence is a **refusal on `13`**, not a usage error |
 | `--duplicate-of` | integer | no | absent | the surviving issue; this issue's content is folded into it before closing |
+| `--token` | string | no | none | the claim token `triage claim` handed this lane; without it the guard reads the session alone and refuses once two lanes of it hold live markers |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | markdown | yes | — | the reason this issue is being closed not-planned |
@@ -2010,7 +2031,7 @@ location, with the leak matcher literally named for comments.
 | `8` | one of the four writes failed — the message names what did and did not land |
 | `9` | the writes landed but the read-back does not show a not-planned close |
 | `11` | the issue body, its comments, the claim on it, the duplicate, or the label set could not be read — no kill was attempted |
-| `17` | a live claim marker on the issue names another session |
+| `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 | `12` | refused: the issue is human-filed — no agent footer and no operator author |
 | `13` | refused: agent-filed and close-eligible, but `--confirm` was absent (ADR 0159) |
 
@@ -2029,6 +2050,8 @@ location, with the leak matcher literally named for comments.
 | `triage kill: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
 | `triage kill: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
 | `triage kill: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage kill: #<n> is claimed by lane <l> of this session, not by this lane (<nonce>) — refusing to mutate a sibling lane's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage kill: #<n> carries live claim markers from more than one lane of this session and this call names none, so which lane is asking is UNKNOWN — pass the `--token` `fabrika triage claim <n>` handed this lane.` | 17 | refusal |
 | `triage kill: #<n> is human-filed — refusing to close it. Park it with questions instead.` | 12 | refusal |
 | `triage kill: #<n> is agent-filed and close-eligible, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.` | 13 | refusal |
 | `triage kill: the fold comment on #<m> failed: <reason> — #<n> is NOT closed, carries no reason and no label; nothing was lost. Re-run.` | 8 | refusal |

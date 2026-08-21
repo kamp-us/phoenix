@@ -104,6 +104,7 @@ const posted: HttpReply = {
 const options = {
 	parent: 4312,
 	title: TITLE,
+	token: null as string | null,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,

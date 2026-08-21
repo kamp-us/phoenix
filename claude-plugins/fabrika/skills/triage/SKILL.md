@@ -31,11 +31,15 @@ claim, and never re-run without it — a tokenless re-run is a new lane racing y
 proves, and which refusal each exit code carries, is the verb's own section
 (`fabrika wire doc-section --heading "triage claim" < <skill-base>/contract.md`).
 
-**That rule has teeth now.** Every verb below that writes — `enrich`, `apply`, `park`, `kill`,
-`split` — re-reads the claim before its first write and refuses on `17` when a live marker names
-another session, so proceeding on a `lost` no longer overwrites the winner's work; it just fails.
-The same re-read refuses a closed target on `7`. Neither refusal is overridable, and a comment read
-that fails is `11` — never a pass.
+**That rule has teeth now, and the token is what gives it them.** Every verb below that writes —
+`enrich`, `apply`, `park`, `kill`, `split` — re-reads the claim before its first write and refuses
+on `17` when a live marker names another claimant, so proceeding on a `lost` no longer overwrites the
+winner's work; it just fails. **Pass `--token <claim-token>` to every one of those five.** Without it
+the verb can only tell that *some* lane of your session holds the claim, which is exactly the sibling
+it cannot tell you from — so it falls back to a fail-closed reading and refuses the moment two lanes
+of your session hold live markers. With it, a sibling's claim is refused and your own passes. The
+same re-read refuses a closed target on `7`. Neither refusal is overridable, and a comment read that
+fails is `11` — never a pass.
 
 **Every working file you write goes where this prints, and nowhere else:**
 
@@ -155,7 +159,7 @@ Done when you have taken one of the three routes and the reason is written down.
 Two problems agents could work at different times are a bundle; two facets of one change are not.
 
 ```bash
-fabrika triage split $issue_number --title "Editor loses focus after save" <<'EOF'
+fabrika triage split $issue_number --title "Editor loses focus after save" --token <claim-token> <<'EOF'
 …
 EOF
 ```
@@ -186,7 +190,7 @@ fabrika triage homes
 ```
 
 ```bash
-fabrika triage enrich $issue_number <<'EOF'
+fabrika triage enrich $issue_number --token <claim-token> <<'EOF'
 …
 EOF
 ```
@@ -215,7 +219,7 @@ merit: `p0` for ship-work and fires, `p1` for what you would genuinely pull next
 default** and most of a healthy backlog. A roadmap row confers no band either way.
 
 ```bash
-fabrika triage apply $issue_number --type bug --priority p2 --ready-for agent --home 47
+fabrika triage apply $issue_number --type bug --priority p2 --ready-for agent --home 47 --token <claim-token>
 ```
 
 A standing lane takes `--lane wayfinder:backlog` (or `axis:pipeline-hardening`) **instead of**
@@ -273,7 +277,7 @@ verb refuses to infer, is its section
   (`fabrika wire doc-section --heading "triage park" < <skill-base>/contract.md`).
 
 ```bash
-fabrika triage park $issue_number <<'EOF'
+fabrika triage park $issue_number --token <claim-token> <<'EOF'
 …
 EOF
 ```
@@ -287,7 +291,7 @@ EOF
   (`fabrika wire doc-section --heading "triage kill" < <skill-base>/contract.md`).
 
 ```bash
-fabrika triage kill $issue_number --confirm --duplicate-of 4290 <<'EOF'
+fabrika triage kill $issue_number --confirm --duplicate-of 4290 --token <claim-token> <<'EOF'
 …
 EOF
 ```

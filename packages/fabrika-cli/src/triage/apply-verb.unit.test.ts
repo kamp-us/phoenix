@@ -90,6 +90,7 @@ const options = {
 	readyFor: "agent",
 	home: 47 as number | null,
 	lane: null as string | null,
+	token: null as string | null,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
