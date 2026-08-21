@@ -1,10 +1,19 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, okOut, once, type Scripted, unconfigured} from "../fakes.test-support.ts";
-import {accepted, RERUN, RUN, runsAtHead, workflowRun} from "../heal-ci/fixtures.test-support.ts";
+import {
+	accepted,
+	checkRuns,
+	HEAD_CHECK_RUNS,
+	RERUN_ALL as RERUN,
+	RUN,
+	runsAtHead,
+	workflowRun,
+} from "../heal-ci/fixtures.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {CONTENT, PATHS_AT} from "../review/fixtures.test-support.ts";
+import {CHECK_RUN_NAME} from "../ship/floor-check.ts";
 import {
 	BARE_AT_PATH,
 	EMPTY_STDIN,
@@ -250,10 +259,20 @@ describe("runPost asserts the governance floor at the head it posted to", () => 
 		{status: 200, body: runsAtHead(1, [{id: FLOOR, name: "governance-floor"}]).stdout},
 	];
 
+	/** The floor's check-run at the head, still pending — the state a re-fire is owed to (#6161). */
+	const floorPending: Scripted = [
+		HEAD_CHECK_RUNS,
+		{
+			status: 200,
+			body: checkRuns(1, [{name: CHECK_RUN_NAME, status: "in_progress", conclusion: null}]).stdout,
+		},
+	];
+
 	const floorRed = (): ReadonlyArray<Scripted> => [
 		[once(RUN), workflowRun({id: FLOOR, attempt: 1})],
 		[RERUN, accepted],
 		[RUN, workflowRun({id: FLOOR, attempt: 2})],
+		floorPending,
 	];
 
 	it("re-fires the red floor run and names the new attempt on stderr", async () => {

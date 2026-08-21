@@ -14,7 +14,9 @@
  *
  * **Asserting is re-deriving, never claiming.** Nothing here writes a check-run or a status: it
  * re-fires the floor job, which re-runs `ship floor` against live comment state and reaches its own
- * verdict. A fabricated green is the one outcome this module must never be able to produce.
+ * verdict. A fabricated green is the one outcome this module must never be able to produce. Since
+ * #6161 the job publishes that verdict as a check-run and succeeds whenever it published one, so
+ * what a re-fire is owed to is the check-run's state and no longer the job's conclusion.
  *
  * The run IO is imported from the two homes that already serve it — `../ship/github.ts` for the runs
  * at a head, `../heal-ci/github.ts` for one run and the rerun request. A third copy of either is how
@@ -23,14 +25,55 @@
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {getWorkflowRun, rerunFailedJobs} from "../heal-ci/github.ts";
-import {listRunsAtHead} from "../ship/github.ts";
+import {getWorkflowRun, rerunRun} from "../heal-ci/github.ts";
+import {type Attempt, ok} from "../io/git.ts";
+import {CHECK_RUN_NAME} from "../ship/floor-check.ts";
+import {
+	latestPerContext,
+	listRunsAtHead,
+	listShipCheckRuns,
+	type ShipCheckRun,
+} from "../ship/github.ts";
 
 /** The floor workflow's `name:`, which is what a run at a head carries. */
 export const FLOOR_WORKFLOW_NAME = "governance-floor";
 
 /** The conclusions that leave the check red. Anything else at `completed` is not a red to clear. */
 const RED_CONCLUSIONS = new Set(["failure", "timed_out", "cancelled", "action_required"]);
+
+/**
+ * The `governance floor at head` check-run this head carries, latest-per-context, or `null` when the
+ * head carries none.
+ *
+ * `null` is not a failure: a run predating `--publish-check`, or one that could not publish, leaves
+ * the head with no check-run at all, and the job's own conclusion is the only signal there.
+ */
+const floorCheckRun = (
+	repo: string,
+	sha: string,
+): Effect.Effect<
+	Attempt<ShipCheckRun | null>,
+	never,
+	HttpClient.HttpClient | ChildProcessSpawner.ChildProcessSpawner
+> =>
+	Effect.map(listShipCheckRuns(repo, sha), (listed) =>
+		listed._tag === "Failure"
+			? listed
+			: ok(latestPerContext(listed.value.runs).find((run) => run.name === CHECK_RUN_NAME) ?? null),
+	);
+
+/**
+ * Whether the floor's state at this head is one a re-fire could move.
+ *
+ * The job's conclusion is no longer the floor's answer: since #6161 the job succeeds whenever it
+ * *published* one, and the answer itself is the check-run's — which is pending exactly when the
+ * verdict has not landed, the state this whole module exists to clear. So the check-run decides when
+ * there is one, and the job's conclusion decides when there is not.
+ */
+export const needsRefire = (jobConclusion: string | null, check: ShipCheckRun | null): boolean =>
+	check === null
+		? RED_CONCLUSIONS.has(jobConclusion ?? "")
+		: check.status !== "completed" || check.conclusion !== "success";
 
 export type FloorAssertion =
 	/** No floor run at this head: the workflow is not installed here, or it has not fired yet. */
@@ -83,7 +126,10 @@ export const assertFloorAt = (
 		// workflow — and the check the PR shows is the last one.
 		const latest = floors.reduce((held, run) => (run.id > held.id ? run : held));
 		if (latest.status !== "completed") return {_tag: "InFlight", run: latest.id};
-		if (!RED_CONCLUSIONS.has(latest.conclusion ?? "")) return {_tag: "Green", run: latest.id};
+
+		const standing = yield* floorCheckRun(repo, sha);
+		if (standing._tag === "Failure") return unknown(standing.reason);
+		if (!needsRefire(latest.conclusion, standing.value)) return {_tag: "Green", run: latest.id};
 
 		const before = yield* getWorkflowRun(repo, latest.id);
 		if (before._tag !== "Present") {
@@ -93,7 +139,7 @@ export const assertFloorAt = (
 					: `run ${latest.id}: ${before.reason}`,
 			);
 		}
-		const requested = yield* rerunFailedJobs(repo, latest.id);
+		const requested = yield* rerunRun(repo, latest.id);
 		if (requested._tag === "Failure") return unknown(requested.reason);
 		const after = yield* getWorkflowRun(repo, latest.id);
 		if (after._tag !== "Present") {

@@ -147,6 +147,16 @@ export const getWorkflowRun = (repo: string, run: number): Shell<Existence<RunRe
 		),
 	);
 
+const rerunRequest = (path: string): Shell<Attempt<void>> =>
+	authed((token) =>
+		Effect.map(restRead(token, "POST", path), (outcome) => {
+			if (outcome._tag === "Unreachable") return fail(outcome.reason);
+			return outcome.status >= 200 && outcome.status < 300
+				? ok<void>(undefined)
+				: fail(refusalText(outcome));
+		}),
+	);
+
 /**
  * Request a re-run of a run's **failed jobs only**.
  *
@@ -156,17 +166,19 @@ export const getWorkflowRun = (repo: string, run: number): Shell<Existence<RunRe
  * future rerun of a run that never re-ran.
  */
 export const rerunFailedJobs = (repo: string, run: number): Shell<Attempt<void>> =>
-	authed((token) =>
-		Effect.map(
-			restRead(token, "POST", `repos/${repo}/actions/runs/${run}/rerun-failed-jobs`),
-			(outcome) => {
-				if (outcome._tag === "Unreachable") return fail(outcome.reason);
-				return outcome.status >= 200 && outcome.status < 300
-					? ok<void>(undefined)
-					: fail(refusalText(outcome));
-			},
-		),
-	);
+	rerunRequest(`repos/${repo}/actions/runs/${run}/rerun-failed-jobs`);
+
+/**
+ * Request a re-run of **every** job in a run, whatever it concluded.
+ *
+ * {@link rerunFailedJobs} is refused on a run with no failed job, which is the ordinary state of a
+ * governance-floor run since the floor moved off the job's exit code onto a check-run: the job
+ * succeeds — it published an answer — while the check-run it published stays pending (#6161). The
+ * same 2xx-is-not-an-attempt discipline holds; the caller still proves the new attempt from run
+ * state.
+ */
+export const rerunRun = (repo: string, run: number): Shell<Attempt<void>> =>
+	rerunRequest(`repos/${repo}/actions/runs/${run}/rerun`);
 
 /**
  * A read's answer beside the status GitHub served — which is what a permission denial is told apart

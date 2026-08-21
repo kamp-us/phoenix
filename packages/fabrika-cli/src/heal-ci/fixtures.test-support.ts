@@ -35,6 +35,13 @@ export const RUN = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/actions\\/runs\\/\\
 export const RERUN = new RegExp(
 	`^POST ${API}\\/repos\\/o\\/r\\/actions\\/runs\\/\\d+\\/rerun-failed-jobs$`,
 );
+/** The whole-run re-fire, which `RERUN` cannot also match — its own pattern ends on `/rerun`. */
+export const RERUN_ALL = new RegExp(
+	`^POST ${API}\\/repos\\/o\\/r\\/actions\\/runs\\/\\d+\\/rerun$`,
+);
+export const HEAD_CHECK_RUNS = new RegExp(
+	`^GET ${API}\\/repos\\/o\\/r\\/commits\\/[0-9a-f]+\\/check-runs\\?`,
+);
 export const OPEN_PULLS = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/pulls\\?state=open`);
 export const RATE_LIMIT = new RegExp(`^GET ${API}\\/rate_limit$`);
 export const RULES = new RegExp(`^GET ${API}\\/repos\\/o\\/r\\/rules\\/branches\\/main\\?`);

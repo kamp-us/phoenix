@@ -17,6 +17,12 @@
  * {@link GOVERNANCE_FLOOR_UNMET}; a verdict from an author without write+ resolves `absent` through
  * the ADR 0055 ACL gate and lands there too. Only a head-bound PASS from an authorized author is
  * satisfied.
+ *
+ * **What the floor is, and how it is seated, are two things.** {@link resolveFloor} answers the
+ * first and nothing else; {@link runFloor} seats that answer on this verb's exit table, and
+ * `./floor-check.ts` seats the same answer on a check-run. Splitting them is what lets the
+ * check-run mode distinguish "not judged yet" from "judged wrong" without a second derivation of
+ * the floor to disagree with this one (#6161).
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -43,7 +49,8 @@ import {
 
 const VERB = "ship floor";
 
-const NAMESPACE = "governance";
+/** The one namespace the floor asks `ship gate` about. */
+export const NAMESPACE = "governance";
 
 export interface FloorOptions {
 	readonly pr: number;
@@ -82,29 +89,60 @@ const governanceState = (stdout: string): string | null => {
 	return null;
 };
 
-export const runFloor = (
+/**
+ * What the floor is at one head, before any interface decides how to seat it.
+ *
+ * `Bound` carries the namespace state verbatim rather than a pass/blocked boolean: `absent` and
+ * `fail` are one refusal on the exit table and two different conclusions on a check-run, and a type
+ * that had already collapsed them could not tell them apart again.
+ */
+export type FloorResolution =
+	/** The diff touches no governance root, so the floor does not bind — never a discharged verdict. */
+	| {
+			readonly _tag: "Unbound";
+			readonly sha: string;
+			readonly scanned: number;
+			readonly stderr: ReadonlyArray<string>;
+	  }
+	/** The floor binds, and `ship gate` resolved `governance` to this state at this head. */
+	| {
+			readonly _tag: "Bound";
+			readonly state: string;
+			readonly sha: string;
+			readonly scanned: number;
+			readonly stderr: ReadonlyArray<string>;
+	  }
+	/** Nothing was proven. The refusal carries its own code and its own reason — UNKNOWN, never n/a. */
+	| {readonly _tag: "Unresolved"; readonly outcome: VerbOutcome};
+
+const unresolved = (outcome: VerbOutcome): FloorResolution => ({_tag: "Unresolved", outcome});
+
+/** The floor itself, answered once, for every interface that seats it. */
+export const resolveFloor = (
 	options: FloorOptions,
 ): Effect.Effect<
-	VerbOutcome,
+	FloorResolution,
 	never,
 	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > =>
 	Effect.gen(function* () {
-		const {pr, json} = options;
+		const {pr} = options;
 		const bad = badNumber(VERB, "a pull-request number", pr);
-		if (bad !== null) return bad;
+		if (bad !== null) return unresolved(bad);
 		const bound = inspectedSha(VERB, options.sha);
-		if (typeof bound !== "string") return bound;
+		if (typeof bound !== "string") return unresolved(bound);
 
 		const governed = yield* governedRootsOr(
 			VERB,
 			options.cwd,
 			'whether the floor binds is UNKNOWN, never "n/a".',
 		);
-		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
+		if (governed._tag === "Refused") {
+			return unresolved(refuse(PRECONDITION_UNKNOWN, governed.message));
+		}
 
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
-		if (resolved._tag === "Refused") return resolved.outcome;
+		if (resolved._tag === "Refused") return unresolved(resolved.outcome);
 		const repo = resolved.repo;
 
 		const target = yield* resolvePull(VERB, repo, pr, {
@@ -112,48 +150,48 @@ export const runFloor = (
 			unknownMessage: (reason) =>
 				`${VERB}: cannot read PR #${pr} in ${repo}: ${reason} — whether the floor binds is UNKNOWN, never "n/a".`,
 		});
-		if (target._tag === "Refused") return target.outcome;
+		if (target._tag === "Refused") return unresolved(target.outcome);
 		const pull = target.pull;
 
 		const listed = yield* listPullFiles(repo, pr);
 		if (listed._tag === "Failure") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the changed-file list for #${pr}: ${listed.reason} — whether the floor binds is UNKNOWN, never "n/a".`,
+			return unresolved(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read the changed-file list for #${pr}: ${listed.reason} — whether the floor binds is UNKNOWN, never "n/a".`,
+				),
 			);
 		}
 		const scanned = [
 			scannedLine(VERB, listed.value.length, "changed file", `${pull.changedFiles} declared`),
 		];
 		if (listed.value.length < pull.changedFiles) {
-			return refuse(
-				INCOMPLETE_SCAN,
-				`${VERB}: received ${listed.value.length} of ${pull.changedFiles} changed files — a governance root could sit in the part nobody read.`,
-				scanned,
+			return unresolved(
+				refuse(
+					INCOMPLETE_SCAN,
+					`${VERB}: received ${listed.value.length} of ${pull.changedFiles} changed files — a governance root could sit in the part nobody read.`,
+					scanned,
+				),
 			);
 		}
 		if (listed.value.length === 0) {
-			return refuse(
-				ZERO_SCOPE,
-				`${VERB}: PR #${pr} has zero changed files — whether it touches a governance root is unanswerable (ADR 0092).`,
-				scanned,
+			return unresolved(
+				refuse(
+					ZERO_SCOPE,
+					`${VERB}: PR #${pr} has zero changed files — whether it touches a governance root is unanswerable (ADR 0092).`,
+					scanned,
+				),
 			);
 		}
 
 		if (!touchesGovernanceRoot(listed.value, governed.roots)) {
 			const clear = `${VERB}: #${pr}'s diff touches no governance root, so the floor does not bind — this is an answer about the diff, not a discharged verdict.`;
-			return answer(
-				json
-					? JSON.stringify({
-							outcome: "n/a",
-							sha: bound,
-							namespace: NAMESPACE,
-							state: null,
-							scanned: listed.value.length,
-						})
-					: `floor\tn/a\t${bound}\nns\t${NAMESPACE}\t${NULL_TOKEN}`,
-				[...scanned, clear],
-			);
+			return {
+				_tag: "Unbound",
+				sha: bound,
+				scanned: listed.value.length,
+				stderr: [...scanned, clear],
+			};
 		}
 
 		// The floor's whole resolution — marker read, ADR 0055 ACL, head-binding, in-force ordering —
@@ -172,34 +210,66 @@ export const runFloor = (
 		});
 		const relayed = [...scanned, ...gated.stderr];
 		if (gated.code !== 0) {
-			return {...gated, stderr: relayed};
+			return unresolved({...gated, stderr: relayed});
 		}
 
 		const state = governanceState(gated.stdout);
 		if (state === null) {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: \`ship gate\` answered without a resolvable ${NAMESPACE} row — the floor is UNKNOWN, never discharged.`,
-				relayed,
+			return unresolved(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: \`ship gate\` answered without a resolvable ${NAMESPACE} row — the floor is UNKNOWN, never discharged.`,
+					relayed,
+				),
 			);
 		}
-		if (state !== "pass") {
+		return {_tag: "Bound", state, sha: bound, scanned: listed.value.length, stderr: relayed};
+	});
+
+/** Why a blocking state blocks, in the words the person reading the check needs. */
+export const floorRefusalLine = (pr: number, state: string, sha: string): string =>
+	`${VERB}: #${pr} touches a governance root and its ${NAMESPACE} verdict at ${sha} is ${state} — ${REMEDY[state] ?? "the floor is not discharged"} (#5408).`;
+
+export const runFloor = (
+	options: FloorOptions,
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
+	Effect.map(resolveFloor(options), (resolution) => {
+		if (resolution._tag === "Unresolved") return resolution.outcome;
+		if (resolution._tag === "Unbound") {
+			return answer(
+				options.json
+					? JSON.stringify({
+							outcome: "n/a",
+							sha: resolution.sha,
+							namespace: NAMESPACE,
+							state: null,
+							scanned: resolution.scanned,
+						})
+					: `floor\tn/a\t${resolution.sha}\nns\t${NAMESPACE}\t${NULL_TOKEN}`,
+				resolution.stderr,
+			);
+		}
+		if (resolution.state !== "pass") {
 			return refuse(
 				GOVERNANCE_FLOOR_UNMET,
-				`${VERB}: #${pr} touches a governance root and its ${NAMESPACE} verdict at ${bound} is ${state} — ${REMEDY[state] ?? "the floor is not discharged"} (#5408).`,
-				relayed,
+				floorRefusalLine(options.pr, resolution.state, resolution.sha),
+				resolution.stderr,
 			);
 		}
 		return answer(
-			json
+			options.json
 				? JSON.stringify({
 						outcome: "satisfied",
-						sha: bound,
+						sha: resolution.sha,
 						namespace: NAMESPACE,
-						state,
-						scanned: listed.value.length,
+						state: resolution.state,
+						scanned: resolution.scanned,
 					})
-				: `floor\tsatisfied\t${bound}\nns\t${NAMESPACE}\t${state}`,
-			relayed,
+				: `floor\tsatisfied\t${resolution.sha}\nns\t${NAMESPACE}\t${resolution.state}`,
+			resolution.stderr,
 		);
 	});

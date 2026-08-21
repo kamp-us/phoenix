@@ -19,7 +19,7 @@ import {runCpApproval} from "./cp-approval-verb.ts";
 import {runDisarm} from "./disarm-verb.ts";
 import {runEnqueue} from "./enqueue-verb.ts";
 import {runEvidence} from "./evidence-verb.ts";
-import {runFloor} from "./floor-verb.ts";
+import {floorRunner} from "./floor-check.ts";
 import {runGate} from "./gate-verb.ts";
 import {runMerge} from "./merge-verb.ts";
 import {runNote} from "./note-verb.ts";
@@ -139,23 +139,32 @@ const gate = leafCommand(
 
 const floor = leafCommand(
 	"floor",
-	{pr: prArg, sha: shaFlag, repo: repoFlag, json: jsonFlag},
-	Effect.fn(function* ({pr, sha, repo, json}) {
-		yield* emit(
-			yield* runFloor({
-				pr,
-				sha,
-				repo: Option.getOrNull(repo),
-				json,
-				cwd: process.cwd(),
-				env: process.env,
-			}),
-		);
+	{
+		pr: prArg,
+		sha: shaFlag,
+		publishCheck: Flag.boolean("publish-check").pipe(
+			Flag.withDescription(
+				"publish the answer as a check-run on the head instead of seating it on this verb's exit code; the process then exits 0 whenever the check-run landed",
+			),
+		),
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({pr, sha, publishCheck, repo, json}) {
+		const options = {
+			pr,
+			sha,
+			repo: Option.getOrNull(repo),
+			json,
+			cwd: process.cwd(),
+			env: process.env,
+		};
+		yield* emit(yield* floorRunner(publishCheck)(options));
 	}),
 ).pipe(
 	Command.withShortDescription("Whether a governance-root diff carries its governance verdict."),
 	Command.withDescription(
-		"Decide whether the governance floor binds on this PR at one head, and seat the answer on an exit code a CI job can red on. Prints `floor\\t<satisfied|n/a>\\t<sha>` then `ns\\tgovernance\\t<pass|->`; `n/a` is a proven answer about the diff — it touches no governance root — and never a discharged verdict. The verdict itself is `ship gate`'s, asked for the one `governance` namespace, so this is not a second conjunction and it decides nothing about enqueue. Exits 7 (PR proven absent or closed, or zero changed files), 11 (the PR, its file list or the conjunction could not be read — the floor is UNKNOWN, never n/a), 13 (the changed-file enumeration is provably short — a governance root could sit in the part nobody read), 18 (the diff touches a governance root and its governance verdict is absent, stale or fail — the one refusal that means a human owes this PR a verdict, #5408). Example: fabrika ship floor 4321 --sha 03135b91",
+		"Decide whether the governance floor binds on this PR at one head, and seat the answer on an exit code a CI job can red on. Prints `floor\\t<satisfied|n/a>\\t<sha>` then `ns\\tgovernance\\t<pass|->`; `n/a` is a proven answer about the diff — it touches no governance root — and never a discharged verdict. The verdict itself is `ship gate`'s, asked for the one `governance` namespace, so this is not a second conjunction and it decides nothing about enqueue. Exits 7 (PR proven absent or closed, or zero changed files), 11 (the PR, its file list or the conjunction could not be read — the floor is UNKNOWN, never n/a), 13 (the changed-file enumeration is provably short — a governance root could sit in the part nobody read), 18 (the diff touches a governance root and its governance verdict is absent, stale or fail — the one refusal that means a human owes this PR a verdict, #5408). With --publish-check the same answer is seated on a check-run named `governance floor at head` instead (`checks: write` required): `satisfied`/`n/a` conclude success, `absent` leaves the check-run in_progress so \"no verdict yet\" reads as waiting rather than as a failure, `stale`/`fail` conclude failure, and UNKNOWN concludes failure too (ADR 0092). In that mode the process exits 0 whenever the check-run landed — a non-zero means the verb could not publish, never that the floor is unmet — and it seats 8 (the check-run could not be written) and 9 (GitHub echoed a state this run did not decide). Every other caller's exit semantics are unchanged (#6161). Example: fabrika ship floor 4321 --sha 03135b91",
 	),
 );
 
