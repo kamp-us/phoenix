@@ -533,7 +533,7 @@ const adopt = leafCommand(
 	},
 	Effect.fn(function* ({lane, session, reason, repo}) {
 		yield* emit(
-			yield* onKey(lane, Option.none(), (key) =>
+			yield* onBoardKey(lane, (key) =>
 				runLaneAdopt({
 					key,
 					lane,
