@@ -34,8 +34,10 @@ export class ContributionView extends FateDataView<ContributionViewRow>()("Contr
 	id: true,
 	score: true,
 	createdAt: true,
-	// Carries no reviewer identity (one-way-glass, #1316).
+	// The two-field çaylak split (#6464): `sandboxed` is owner-scoped, `sandboxedInPlace`
+	// is the reader-facing marker. Both are derived per viewer, never row-intrinsic.
 	sandboxed: true,
+	sandboxedInPlace: true,
 	bodyExcerpt: true,
 	termSlug: true,
 	termTitle: true,

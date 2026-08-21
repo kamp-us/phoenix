@@ -177,44 +177,103 @@ describe("Pasaport.listContributions — every feed read filters the sandbox (th
 	);
 });
 
-// The per-item review-state flag (#1316) the status block badges "incelemede" off, derived
-// in the feed map as `sandboxed: sandboxed_at != null`.
-describe("Pasaport.listContributions — the per-item sandboxed flag (#1316)", () => {
-	const sandboxedDef = {
-		id: "d-sandboxed",
-		createdAt: new Date("2026-01-02T00:00:00Z"),
-		score: 0,
-		sandboxedAt: new Date("2026-01-03T00:00:00Z"),
-		bodyExcerpt: "in review",
-		termSlug: "s",
-		termTitle: "T",
-	};
-	const liveDef = {
-		id: "d-live",
-		createdAt: new Date("2026-01-01T00:00:00Z"),
-		score: 0,
-		sandboxedAt: null,
-		bodyExcerpt: "live",
-		termSlug: "s",
-		termTitle: "T",
-	};
+const sandboxedDef = {
+	id: "d-sandboxed",
+	createdAt: new Date("2026-01-02T00:00:00Z"),
+	score: 0,
+	sandboxedAt: new Date("2026-01-03T00:00:00Z"),
+	authorId: AUTHOR,
+	bodyExcerpt: "in review",
+	termSlug: "s",
+	termTitle: "T",
+};
+const liveDef = {
+	id: "d-live",
+	createdAt: new Date("2026-01-01T00:00:00Z"),
+	score: 0,
+	sandboxedAt: null,
+	authorId: AUTHOR,
+	bodyExcerpt: "live",
+	termSlug: "s",
+	termTitle: "T",
+};
 
+// Order: def/post/comment feed SELECTs, then the three COUNT(*) totals.
+const readFeedAs = (sandboxViewer: SandboxViewer) =>
+	Effect.gen(function* () {
+		const {access} = scriptedAccess([[sandboxedDef, liveDef], [], [], 2, 0, 0]);
+		const connection = yield* Effect.gen(function* () {
+			const pasaport = yield* Pasaport;
+			return yield* pasaport.listContributions({authorId: AUTHOR, first: 10, sandboxViewer});
+		}).pipe(Effect.provide(pasaportOver(access)));
+		return new Map(connection.rows.map((r) => [r.node.id, r.node]));
+	});
+
+// The per-item review-state flag (#1316) the status block badges "incelemede" off, now
+// owner-scoped through `ownSandboxed`.
+describe("Pasaport.listContributions — the per-item sandboxed flag (#1316)", () => {
 	it.effect("flags a sandboxed item `sandboxed: true` and a live item `sandboxed: false`", () =>
 		Effect.gen(function* () {
-			// Order: def/post/comment feed SELECTs, then the three COUNT(*) totals.
-			const {access} = scriptedAccess([[sandboxedDef, liveDef], [], [], 2, 0, 0]);
-			const connection = yield* Effect.gen(function* () {
-				const pasaport = yield* Pasaport;
-				return yield* pasaport.listContributions({
-					authorId: AUTHOR,
-					first: 10,
-					sandboxViewer: viewers.author,
-				});
-			}).pipe(Effect.provide(pasaportOver(access)));
-
-			const byId = new Map(connection.rows.map((r) => [r.node.id, r.node]));
+			const byId = yield* readFeedAs(viewers.author);
 			assert.strictEqual(byId.get("d-sandboxed")?.sandboxed, true, "sandboxed item flagged true");
 			assert.strictEqual(byId.get("d-live")?.sandboxed, false, "live item flagged false");
 		}),
 	);
+});
+
+/**
+ * The two-field split (#6464) this feed was missing: `sandboxed` is the AUTHOR's own
+ * "incelemede" signal, `sandboxedInPlace` is the #6423 in-place reader's marker about
+ * somebody ELSE's row. Both derive from the resolved `SandboxViewer` the read carries, so
+ * the fifth çaylak surface can no longer hand a reader the author-facing badge.
+ */
+describe("Pasaport.listContributions — the owner/reader split (#6464)", () => {
+	const inPlaceReader = {
+		viewerId: OTHER,
+		canSeeSandboxed: false,
+		seesSandboxedInPlace: true,
+	} satisfies SandboxViewer;
+
+	it.effect("the author reads their own row as `sandboxed`, never as the reader marker", () =>
+		Effect.gen(function* () {
+			const row = (yield* readFeedAs(viewers.author)).get("d-sandboxed");
+			assert.strictEqual(row?.sandboxed, true);
+			assert.strictEqual(row?.sandboxedInPlace, false, "the owner is not a reader of their own");
+		}),
+	);
+
+	it.effect("the opted-in in-place reader gets the marker and NO owner flag", () =>
+		Effect.gen(function* () {
+			const row = (yield* readFeedAs(inPlaceReader)).get("d-sandboxed");
+			assert.strictEqual(row?.sandboxed, false, "review state never leaves the author");
+			assert.strictEqual(row?.sandboxedInPlace, true);
+		}),
+	);
+
+	it.effect("a live row carries neither field for the in-place reader", () =>
+		Effect.gen(function* () {
+			const row = (yield* readFeedAs(inPlaceReader)).get("d-live");
+			assert.strictEqual(row?.sandboxed, false);
+			assert.strictEqual(row?.sandboxedInPlace, false, "nothing to mark on promoted work");
+		}),
+	);
+
+	// Every non-author viewer reachable with `PHOENIX_CAYLAK_VISIBILITY` down: the flag is
+	// what resolves `seesSandboxedInPlace`, so with it off there is no third viewer class and
+	// `sandboxedInPlace` is structurally false — matching `SandboxVisibility.unit.test.ts`.
+	const flagDownNonAuthors = {
+		"a plain signed-in non-author": viewers.otherMember,
+		"an anonymous viewer": viewers.anonymous,
+		"a moderator": viewers.moderator,
+	} satisfies Record<string, SandboxViewer>;
+
+	for (const [label, viewer] of Object.entries(flagDownNonAuthors)) {
+		it.effect(`${label} reads both fields false with the flag off`, () =>
+			Effect.gen(function* () {
+				const row = (yield* readFeedAs(viewer)).get("d-sandboxed");
+				assert.strictEqual(row?.sandboxed, false, "owner flag is author-only");
+				assert.strictEqual(row?.sandboxedInPlace, false, "marker is flag-gated");
+			}),
+		);
+	}
 });
