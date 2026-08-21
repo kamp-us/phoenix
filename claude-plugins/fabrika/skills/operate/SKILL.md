@@ -95,7 +95,10 @@ node <fabrika> lane status $lane_key
 ```
 
 Exit `0` is resume — the lane exists and its fold is the state; go to step 2. Exit `7` (no lane)
-is boot:
+is boot, and it is the **only** exit that is: exit `39` says this cwd is not a repo at all, so the
+root the verb resolved is not the one your lane lives under, and booting on it writes a second
+ledger over a live lane ([#6212](https://github.com/kamp-us/phoenix/issues/6212)). On `39`, move to
+the repo root and re-read — never boot.
 
 ```bash
 node <fabrika> lane emit $lane_key

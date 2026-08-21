@@ -1,0 +1,70 @@
+/** The ground guard: a drifted cwd refuses on its own code, a repo with no such lane still boots. */
+import {Effect} from "effect";
+import {describe, expect, it} from "vitest";
+import {fakeFs} from "../fakes.test-support.ts";
+import {LANE_ABSENT, LANE_UNREADABLE, NOT_A_REPO} from "./codes.ts";
+import {coderTemplateText} from "./fixtures.test-support.ts";
+import {onGround} from "./ground.ts";
+import {runStatus} from "./status-verb.ts";
+import {DEFAULT_LANES_ROOT} from "./store.ts";
+
+const REPO = "/work/phoenix";
+const DRIFTED = "/work/phoenix/scratchpad";
+const REF = {root: DEFAULT_LANES_ROOT, lane: "42"};
+
+/** `lane status` behind the guard, exactly as the adapter composes it. */
+const status = (fs: ReturnType<typeof fakeFs>, cwd: string) =>
+	Effect.runPromise(
+		Effect.provide(
+			onGround("status", [REF.root], cwd, () => runStatus(REF)),
+			fs.layer,
+		),
+	);
+
+describe("the ground under a lane verb's root", () => {
+	it("proves a lane absent as before when the cwd IS a repo — a genuine boot is unaffected", async () => {
+		const out = await status(fakeFs({files: {}, directories: [`${REPO}/.git`]}), REPO);
+
+		expect(out.code).toBe(LANE_ABSENT);
+		expect(out.stderr.join("\n")).toContain("copy a workflow template");
+	});
+
+	it("refuses a cwd holding neither marker on its own code, never the lane's absence", async () => {
+		const out = await status(fakeFs({files: {}}), DRIFTED);
+
+		expect(out.code).toBe(NOT_A_REPO);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain(`${DRIFTED} is not a repo`);
+		expect(out.stderr.join("\n")).toContain('NOT "no lane here"');
+	});
+
+	it("takes `.fabrika` alone as a repo — a checkout with lanes and no git dir of its own", async () => {
+		const fs = fakeFs({
+			files: {[`${DEFAULT_LANES_ROOT}/42/workflow.json`]: coderTemplateText()},
+			directories: [`${REPO}/.fabrika`],
+		});
+		const out = await status(fs, REPO);
+
+		expect(out.code).toBe(0);
+	});
+
+	it("owes no probe on an absolute root — nothing resolves against the cwd to drift", async () => {
+		const fs = fakeFs({files: {}});
+		const out = await Effect.runPromise(
+			Effect.provide(
+				onGround("status", ["/elsewhere/.fabrika/lanes"], DRIFTED, () => runStatus(REF)),
+				fs.layer,
+			),
+		);
+
+		expect(out.code).toBe(LANE_ABSENT);
+	});
+
+	it("keeps an unprobeable marker UNKNOWN rather than reading it as a repo or as drift", async () => {
+		const fs = fakeFs({files: {}, unprobeable: [`${REPO}/.fabrika`]});
+		const out = await status(fs, REPO);
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stderr.join("\n")).toContain("UNKNOWN");
+	});
+});

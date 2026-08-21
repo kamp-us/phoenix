@@ -274,7 +274,7 @@ export const PATTERN_SEATS: SharedSeats = {
  * did not land (`APPEND_UNKNOWN`), and the read that failed before any of that could be proven
  * (`LANE_UNREADABLE`). `lane claim` adds the fifth: it posts a marker and reads it back, so alone in
  * this group it can establish *the write landed and the read-back contradicts it* (`MARKER_READBACK`,
- * #5761). The private band runs `12`-`34`, skipping `27` and `28` because the base already speaks for
+ * #5761). The private band runs `12`-`39`, skipping `27` and `28` because the base already speaks for
  * both.
  */
 export const LANE_SEATS: SharedSeats = {
