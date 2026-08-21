@@ -270,3 +270,15 @@ export const MIGRATION_UNSAFE = 37;
  * class, and the event must not land until it is.
  */
 export const CLASS_UNRECOGNISED = 38;
+
+/**
+ * The directory a relative lanes root would resolve against holds neither `.fabrika` nor `.git` —
+ * the verb is not standing in a repo, so the root it would read or write is somewhere nobody meant.
+ *
+ * Its own seat rather than {@link LANE_ABSENT}'s, and that is the whole point: a drifted cwd used to
+ * prove the lane *absent*, which `operate` reads as the boot signal, so a driver whose shell reset
+ * into a scratchpad would boot a second ledger over a live lane — duplicate spawns on one issue, the
+ * collision the claim machinery exists to prevent (#6212). "No lane in this repo" may mean boot;
+ * "not a repo at all" never may.
+ */
+export const NOT_A_REPO = 39;

@@ -1,6 +1,6 @@
 ---
 name: build
-description: "Execute one triaged, agent-ready issue end to end and land it as a PR — or, given a PR number, enter repair mode on that PR's branch. Trigger on \"work the next issue\", \"pick up an issue\", \"implement issue #N\", \"build #N\", \"repair PR #N\", \"fix the FAIL on #N\", and whenever triaged backlog work needs turning into a pull request. Rendered-visual construction is `build-ui`'s lane, not this skill's."
+description: "Execute one triaged, agent-ready issue end to end and land it as a PR — or, given a PR number, enter repair mode on that PR's branch. Trigger on \"work the next issue\", \"pick up an issue\", \"implement issue #N\", \"build #N\", \"repair PR #N\", \"fix the FAIL on #N\", and whenever triaged backlog work needs turning into a pull request. Rendered-visual construction is `build-ui`'s lane, not this skill's — unless a shell preloads both, and then the diff's class picks the law per file."
 arguments: [issue_or_pr_number]
 argument-hint: "[issue-number|pr-number] — an issue number builds, a PR number repairs; omit to pick from the pool"
 context: fork
@@ -58,7 +58,9 @@ whether any campaign is active at all — an inert fence is a fact to report, no
 explain.
 Two refusals before claiming: a `type:decision`'s deliverable is a recorded choice
 (`/adr`'s, not yours), and a rendered-visual deliverable is outside this skill's modality
-(`build-ui`'s) — **do not claim either**. The decision refusal has one arm, and a citation is the only
+(`build-ui`'s) — **do not claim either**. Each refusal has exactly one arm. The rendered-visual one
+opens only when `build-ui` is loaded beside you, which is the composition clause below; with that
+skill absent it is unconditional. The decision refusal's arm is a citation, and that is the only
 thing that opens it: when the issue carries a founder ruling comment that already made the choice,
 the deciding is done and the writing is all that is left, so claim it and transcribe — turn that
 ruling into the ADR or amendment it names, nothing more. **The citation goes inside the artifact you
@@ -77,6 +79,19 @@ triage, when it first reads a decision that already carries a ruling comment —
 already parked. On `ready-for:human` the claim is exit `21` and step 2's rule holds unchanged: end
 the run naming the code, and name that verb as the way back in — a control-plane human runs it, never
 you, and never an override on your own authority, however good the citation.
+
+**Composition — what holds when `build-ui` is loaded beside this skill.** A shell's `skills:` list is
+its capability set, so a shell preloading both carries both construction laws and a mixed-deliverable
+ticket routes to it whole (ADR
+[0319](../../../../.decisions/0319-skill-composition-via-shell-skills-list.md)). Under that co-load
+the rendered-visual refusal above does not fire: claim the ticket and build all of it. **The diff's
+class picks the law per file** — a text file builds under this skill, a ui-class file under
+`build-ui`'s — and **`fabrika ui manifest` stays mandatory before any ui-class file is touched**.
+Co-load is the only thing that lifts the refusal, and it lifts that one alone: with `build-ui` absent
+the refusal reads exactly as it does above, and either way you never invoke another stage skill
+mid-run to cover a law you lack — a ticket whose class the seed got wrong stops here and the lane
+re-spawns the right shell.
+
 This skill is not a router: on its own text surfaces
 it executes the whole loop itself. In pick mode neither the argument nor your caller gave you a
 number, so the one `pick` returned stands in its place everywhere below. Then gate your choice:
@@ -357,14 +372,19 @@ to a `BLOCKED` event, which is already the routing a denial wants, so no sixth t
 bypass read the same in the transcript, which is the whole reason the denial is worth reporting.
 
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
-step is the verb — pass back the `lane` and `root` its `## Task` section carries, and the token→event
-map is the verb's code; the event lands on the lane's own ledger with the PR as its evidence (#5736).
-`<fabrika>` is that same section's `fabrika:` entrypoint, the one path this repo's verbs actually run
-from (#6012):
+step is the verb — pass back the `lane`, `root` and `task` its `## Task` section carries, and the
+token→event map is the verb's code; the event lands on the lane's own ledger with the PR as its
+evidence (#5736). `<fabrika>` is that same section's `fabrika:` entrypoint, the one path this repo's
+verbs actually run from (#6012):
 
 ```bash
-node <fabrika> lane report <lane> --root <root> --token SHIPPED-PR --pr <pr-url>
+node <fabrika> lane report <lane> --root <root> --task <task> --token SHIPPED-PR --pr <pr-url>
 ```
+
+`--task` names which task of the lane your terminal addresses, and it is not optional wherever a
+lane has more than one — every epic run. The verb resolves a missing one only on a single-task lane
+and otherwise refuses at exit `13` before it appends anything, so a report that omits it records
+nothing (#6084).
 
 `--pr` whenever the terminal names one; `--comment` for the diagnosis comment behind a
 `SUCCESS-NO-PR`; a `BUILT-NO-PR` carries neither, because its evidence is the commits themselves.
@@ -375,7 +395,7 @@ else, because only a park has a cause to be gone. The one token that names a sto
 `build branch --resume-lane` refuses at exit `11` — another worktree still holds the lane branch:
 
 ```bash
-node <fabrika> lane report <lane> --root <root> --token STOPPED --cause worktree-holds-branch
+node <fabrika> lane report <lane> --root <root> --task <task> --token STOPPED --cause worktree-holds-branch
 ```
 
 That cause is the whole difference between a park `recipe unpark` clears itself and one that spends

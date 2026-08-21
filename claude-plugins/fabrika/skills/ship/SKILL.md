@@ -264,8 +264,8 @@ A note that routes another lane opens with the fixed first line
 branded reference, no steering prose; the receiver re-fetches from the PR itself.
 
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
-step is the verb — pass back the `lane` and `root` its `## Task` section carries, one token per
-terminal above (`ALREADY-MERGED`, `QUEUED`, `LANDED`, `REFUSED`, `AWAITING-CP-APPROVAL`,
+step is the verb — pass back the `lane`, `root` and `task` its `## Task` section carries, one token
+per terminal above (`ALREADY-MERGED`, `QUEUED`, `LANDED`, `REFUSED`, `AWAITING-CP-APPROVAL`,
 `ROUTED-REPAIR`, `ROUTED-HEAL-CI`, `ROUTED-REVIEW`, `UNRESOLVED`, `EJECTED`, `UNKNOWN`), mapped to a
 lane event in its code, with the PR as the event's evidence (#5736). The routing token names the arm
 your note's first line already names — report the one you took, never a bare `ROUTED`, which is the
@@ -273,8 +273,13 @@ reviewer's token and means something else. `<fabrika>` is that same section's `f
 the one path this repo's verbs actually run from (#6012):
 
 ```bash
-node <fabrika> lane report <lane> --root <root> --token LANDED --pr <pr-url>
+node <fabrika> lane report <lane> --root <root> --task <task> --token LANDED --pr <pr-url>
 ```
+
+`--task` names which task of the lane your terminal addresses, and it is not optional wherever a
+lane has more than one — every epic run. The verb resolves a missing one only on a single-task lane
+and otherwise refuses at exit `13` before it appends anything, so a report that omits it records
+nothing (#6084).
 
 The reason behind a `refused` stays in your note and report — the verb takes the bare token. It
 refuses a token outside this vocabulary (exit `32`) rather than interpreting it. It proves an event
