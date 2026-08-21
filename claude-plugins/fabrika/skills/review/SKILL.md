@@ -269,20 +269,25 @@ governance held no binding verdict, the machine had no state that could fire it,
 filled only because an unrelated second driver happened to run governance on the same lane.
 
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
-step is the verb — pass back the `lane` and `root` its `## Task` section carries, one token per
-terminal above (`PASS`, `FAIL`, `UNKNOWN`, `STALE`, `UNBINDABLE`, `ROUTED`), mapped to a lane event
-in its code, with the PR as the event's evidence (#5736). `<fabrika>` is that same section's
+step is the verb — pass back the `lane`, `root` and `task` its `## Task` section carries, one token
+per terminal above (`PASS`, `FAIL`, `UNKNOWN`, `STALE`, `UNBINDABLE`, `ROUTED`), mapped to a lane
+event in its code, with the PR as the event's evidence (#5736). `<fabrika>` is that same section's
 `fabrika:` entrypoint, the one path this repo's verbs actually run from (#6012):
 
 ```bash
-node <fabrika> lane report <lane> --root <root> --token PASS --pr <pr-url>
+node <fabrika> lane report <lane> --root <root> --task <task> --token PASS --pr <pr-url>
 ```
+
+`--task` names which task of the lane your verdict addresses, and it is not optional wherever a lane
+has more than one — every epic run. The verb resolves a missing one only on a single-task lane and
+otherwise refuses at exit `13` before it appends anything, so a report that omits it records nothing
+(#6084).
 
 **Add `--class ui` to that line only when §1 printed a `routed\treview-ui` row**, and never
 otherwise:
 
 ```bash
-node <fabrika> lane report <lane> --root <root> --token PASS --pr <pr-url> --class ui
+node <fabrika> lane report <lane> --root <root> --task <task> --token PASS --pr <pr-url> --class ui
 ```
 
 `--class` is repeatable and carries §1's `routed` rows and nothing else — relay what printed, never

@@ -357,14 +357,19 @@ to a `BLOCKED` event, which is already the routing a denial wants, so no sixth t
 bypass read the same in the transcript, which is the whole reason the denial is worth reporting.
 
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
-step is the verb — pass back the `lane` and `root` its `## Task` section carries, and the token→event
-map is the verb's code; the event lands on the lane's own ledger with the PR as its evidence (#5736).
-`<fabrika>` is that same section's `fabrika:` entrypoint, the one path this repo's verbs actually run
-from (#6012):
+step is the verb — pass back the `lane`, `root` and `task` its `## Task` section carries, and the
+token→event map is the verb's code; the event lands on the lane's own ledger with the PR as its
+evidence (#5736). `<fabrika>` is that same section's `fabrika:` entrypoint, the one path this repo's
+verbs actually run from (#6012):
 
 ```bash
-node <fabrika> lane report <lane> --root <root> --token SHIPPED-PR --pr <pr-url>
+node <fabrika> lane report <lane> --root <root> --task <task> --token SHIPPED-PR --pr <pr-url>
 ```
+
+`--task` names which task of the lane your terminal addresses, and it is not optional wherever a
+lane has more than one — every epic run. The verb resolves a missing one only on a single-task lane
+and otherwise refuses at exit `13` before it appends anything, so a report that omits it records
+nothing (#6084).
 
 `--pr` whenever the terminal names one; `--comment` for the diagnosis comment behind a
 `SUCCESS-NO-PR`; a `BUILT-NO-PR` carries neither, because its evidence is the commits themselves.
@@ -375,7 +380,7 @@ else, because only a park has a cause to be gone. The one token that names a sto
 `build branch --resume-lane` refuses at exit `11` — another worktree still holds the lane branch:
 
 ```bash
-node <fabrika> lane report <lane> --root <root> --token STOPPED --cause worktree-holds-branch
+node <fabrika> lane report <lane> --root <root> --task <task> --token STOPPED --cause worktree-holds-branch
 ```
 
 That cause is the whole difference between a park `recipe unpark` clears itself and one that spends
