@@ -27,7 +27,7 @@ import {getIssue, listComments} from "../io/issues.ts";
 import {getPullRequest, listPullFiles, openPullsClosing, searchOpenPulls} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
 import {
-	issueRefOf,
+	issueRefsOf,
 	partitionWithUi,
 	ROUTED_NAMESPACES,
 	shipNamespacesOf,
@@ -199,7 +199,7 @@ export const runProve = (
 		const traced = yield* traceOpenPull(repo, issue);
 		if (traced._tag === "Refused") return traced.outcome;
 		const diagnostics = [
-			`${VERB}: looked for an open PR in ${repo} whose body links #${issue} (Fixes/Part of); ${traced.scanned} candidate(s) read.`,
+			`${VERB}: looked for an open PR in ${repo} whose body links #${issue} (any closing keyword, or Part of, anywhere in the body); ${traced.scanned} candidate(s) read.`,
 		];
 
 		if (claim._tag === "OpenPull") {
@@ -228,7 +228,15 @@ export const runProve = (
 					diagnostics,
 				);
 			}
-			return yield* proveNoPull(repo, issue, taskId, event, loaded.entries, diagnostics);
+			return yield* proveNoPull(
+				repo,
+				issue,
+				taskId,
+				event,
+				loaded.entries,
+				diagnostics,
+				traced.trace.why,
+			);
 		}
 
 		if (traced.trace._tag !== "One") {
@@ -240,7 +248,7 @@ export const runProve = (
 						}
 					: {
 							_tag: "Absent",
-							what: `no open PR links #${issue}, so there is nothing a verdict could have been written on`,
+							what: `${traced.trace.why}, so there is nothing a verdict could have been written on`,
 						},
 				diagnostics,
 			);
@@ -271,12 +279,19 @@ interface Traced {
  * `build --partial` emits; the search index sees any body but lags a fresh PR — and this verb runs
  * at the worst moment for that lag, right after a builder reports `SHIPPED-PR`. Reading the edge
  * first means a lagging index can only fail to add a candidate, never hide the closing one, so a
- * lane that shipped is not recorded `BLOCKED` on exit `22`. `lane brief` asks the same question
- * through the same edge, so the two lane verbs agree on the closing-link half.
+ * lane that shipped is not recorded `BLOCKED` on exit `22`.
  *
- * Both reads only nominate; the body's link decides. A candidate that has closed since it was
+ * Both reads only nominate; the body's links decide. A candidate that has closed since it was
  * nominated, or that only mentions the number in prose, drops out here rather than counting as
  * proof — so unioning in the looser read widens candidates without widening what counts.
+ *
+ * **What `lane brief` and this verb still differ on.** Both start from the same edge, and since
+ * #6797 the body read is plural, so a tail closing N+1 issues traces to each of them here exactly as
+ * it does on the edge. The residue is that `brief` answers off the edge alone while this verb
+ * re-derives the link from body text, so a PR linked through the sidebar's Development panel rather
+ * than a keyword in its body (GitHub's "Manually linking a pull request to an issue using the pull
+ * request sidebar") is on the edge and is not a proof here. That is deliberate — a proof
+ * this verb records has to be readable in the artifact it names — not an agreement claim.
  */
 const traceOpenPull = (
 	repo: string,
@@ -315,7 +330,7 @@ const traceOpenPull = (
 			facts.push({
 				number: pull.value.number,
 				open: pull.value.state === "open",
-				linkedIssue: issueRefOf(pull.value.body).number,
+				linkedIssues: issueRefsOf(pull.value.body).numbers,
 			});
 		}
 		return {_tag: "Traced" as const, trace: tracePulls(issue, facts), scanned: facts.length};
@@ -333,13 +348,14 @@ const proveNoPull = (
 	event: string,
 	entries: ReadonlyArray<{readonly task: string; readonly at: string}>,
 	diagnostics: ReadonlyArray<string>,
+	unlinked: string,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const found = yield* getIssue(repo, issue);
 		if (found._tag === "Unknown") return unreadable(`issue #${issue}`, found.reason);
 		if (found._tag === "Absent") {
 			return seat(
-				{_tag: "Absent", what: `no open PR links #${issue}, and #${issue} itself is not there`},
+				{_tag: "Absent", what: `${unlinked}, and #${issue} itself is not there`},
 				diagnostics,
 			);
 		}
@@ -357,7 +373,7 @@ const proveNoPull = (
 			return seat(
 				{
 					_tag: "Absent",
-					what: `no open PR links #${issue}, and ${diagnosis.why} — the ${event} rests on the spawn's word alone`,
+					what: `${unlinked}, and ${diagnosis.why} — the ${event} rests on the spawn's word alone`,
 				},
 				looked,
 			);

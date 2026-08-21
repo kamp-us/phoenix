@@ -3,7 +3,9 @@ import {
 	classOf,
 	SHIPPED_GOVERNED_ROOTS as GOVERNANCE_ROOTS,
 	issueRefOf,
+	issueRefsOf,
 	linkedIssueOf,
+	linkedIssuesOf,
 	namespacesOf,
 	partition,
 	partitionWithUi,
@@ -171,6 +173,50 @@ describe("linkedIssueOf", () => {
 		expect(linkedIssueOf("relates to #4287")).toBeNull();
 		expect(linkedIssueOf("Part of #4287")).toBeNull();
 		expect(linkedIssueOf("")).toBeNull();
+	});
+});
+
+describe("linkedIssuesOf", () => {
+	/** The #6797 shape: the epic's own reference is last among N+1, and a scalar reader lost it. */
+	it("reports every closing reference an epic tail body carries, epic included", () => {
+		const tail = "Closes #6642. Closes #6643. Closes #6648. Closes #6629.";
+		expect(linkedIssuesOf(tail)).toEqual([6642, 6643, 6648, 6629]);
+		expect(linkedIssuesOf(tail)).toContain(6629);
+	});
+
+	it("agrees with the scalar reader on a single-reference body", () => {
+		for (const body of ["does things\n\nFixes #4287\n", "Resolved #7", "relates to #4287", ""]) {
+			expect(linkedIssuesOf(body)[0] ?? null).toBe(linkedIssueOf(body));
+		}
+		expect(linkedIssuesOf("does things\n\nFixes #4287\n")).toEqual([4287]);
+		expect(linkedIssuesOf("Part of #4287")).toEqual([]);
+	});
+
+	it("names a repeated reference once", () => {
+		expect(linkedIssuesOf("Closes #12\nFixes #12")).toEqual([12]);
+	});
+});
+
+describe("issueRefsOf", () => {
+	it("keeps the scalar reader's precedence, and reports the whole set of the winning kind", () => {
+		expect(issueRefsOf("Closes #6642. Closes #6629.\n\nPart of #6000")).toEqual({
+			kind: "fixes",
+			numbers: [6642, 6629],
+		});
+		expect(issueRefsOf("does things\n\nPart of #5434\nPart of #5437\n")).toEqual({
+			kind: "part-of",
+			numbers: [5434, 5437],
+		});
+		expect(issueRefsOf("see #4000")).toEqual({kind: "none", numbers: []});
+	});
+
+	it("answers the scalar reader's kind and first number on every single-reference body", () => {
+		for (const body of ["Fixes #4287", "Part of #4000", "part of: #12", "see #4000", ""]) {
+			const ref = issueRefOf(body);
+			const refs = issueRefsOf(body);
+			expect(refs.kind).toBe(ref.kind);
+			expect(refs.numbers[0] ?? null).toBe(ref.number);
+		}
 	});
 });
 
