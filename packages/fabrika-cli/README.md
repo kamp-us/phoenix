@@ -95,7 +95,7 @@ that never installed the binary. `guard no-gh check` is what keeps it that way, 
 `PATH`, the credential is resolved from an existing login once, before any request, never on a
 request path. A credential that resolves nowhere is a refusal naming both env vars — never an
 anonymous call. The order and its reasons are ADR
-[0315](../../.decisions/0315-fabrika-cli-github-token-resolution-and-the-two-non-rest-carves.md).
+[0315](../../.decisions/0315-fabrika-cli-github-token-resolution-and-the-three-non-rest-carves.md).
 
 ## Quickstart
 

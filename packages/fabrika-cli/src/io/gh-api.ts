@@ -448,9 +448,10 @@ export const pagedEnvelope = (
 /**
  * The one non-REST leg, and it is a carve rather than a default (ADR 0315).
  *
- * Three things need it and nothing else may: review-thread resolution state, the reply and resolve
- * mutations, and `enablePullRequestAutoMerge`. Issue queries stay REST — this org's Projects-classic
- * integration errors GraphQL issue queries out.
+ * Three things need it and nothing else may: review-thread resolution state with the reply and
+ * resolve mutations, `enablePullRequestAutoMerge`, and `openPullsClosing` in `./pulls.ts`. Issue
+ * *search* stays REST — what this org's Projects-classic integration errors out is the GraphQL
+ * search connection, not the `repository(...){issue(number:)}` node `openPullsClosing` reaches.
  */
 export const graphqlRead = (
 	token: string,
