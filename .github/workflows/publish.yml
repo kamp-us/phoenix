@@ -122,6 +122,9 @@ jobs:
           elif [[ "$TAG" =~ ^fabrika-pi-v([0-9].*)$ ]]; then
             PKG_DIR="packages/fabrika-pi"
             TAG_VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ^fabrika-opencode-v([0-9].*)$ ]]; then
+            PKG_DIR="packages/fabrika-opencode"
+            TAG_VERSION="${BASH_REMATCH[1]}"
           else
             echo "::error::release tag '$TAG' matches no published package's <name>-v<version> grammar — refusing to publish"
             exit 1

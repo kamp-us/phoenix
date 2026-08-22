@@ -116,8 +116,8 @@ which makes it worse rather than better, because it looks trustworthy while gati
 pipeline-cli action on a fabrika-cli release.
 
 `release-please.yml`'s only condition keys on the per-path
-`<path>--release_created` outputs (`packages/pipeline-cli--release_created`,
-`packages/fabrika-cli--release_created`) and reports from the `paths_released` JSON array.
+`<path>--release_created` outputs (`packages/fabrika-cli--release_created`,
+`packages/fabrika-opencode--release_created`) and reports from the `paths_released` JSON array.
 `releases_created` appears nowhere in the file, deliberately. A later "simplification" back
 to the single output is the regression ADR 0239 §5 Hazard A names.
 
@@ -205,11 +205,13 @@ corrupted by it — no version is consumed, because nothing was published.
 
 ## Current state
 
-Both published packages have an npm Trusted Publisher registration naming this repo and this
-workflow file — but only one of them has ever been *exercised* by it, and those are two
-different facts.
+Two package roots are configured today (`fabrika-cli`, `fabrika-opencode`).
+`pipeline-cli` was deleted from the repo with its release machinery (#6326) — its npm
+artifacts remain, so its history below stays recorded. Registrations that exist name this
+repo and this workflow file, but only some have ever been *exercised* by it, and those are
+two different facts.
 
-- **`pipeline-cli` — proven by exercise.** Its registration has carried two green `publish.yml`
+- **`pipeline-cli` — proven by exercise (retired).** Its registration has carried two green `publish.yml`
   release runs, and the published artifact carries the publish attestations
   (`npm view @kampus/pipeline-cli --json` → a `dist.attestations` key) that only an OIDC publish
   stamps.
@@ -219,16 +221,23 @@ different facts.
   for the package. `fabrika-cli@0.1.0` reached the registry through the bootstrap `pnpm publish`
   of step 4 above, not through this path (its artifact carries no attestations). Its **first**
   release run is the first use of that registration, and that run is the proof.
+- **`fabrika-opencode` — wired, not yet bootstrapped (#6965).** The resolve arm, the
+  release-please root and manifest entry all exist; steps 4–5 do not. A human must run the
+  bootstrap `pnpm publish` of `0.1.0` from a checkout at the merge that introduced it, then
+  register the Trusted Publisher on npmjs.com. Until both happen, a Release PR merge for the
+  package creates a tag whose publish run 403s after install/build pass — the fail-closed
+  shape above, recovering cleanly once the registration exists.
 
 That record is the authority, because nothing here can re-derive it: npm exposes no
 trusted-publisher field over the CLI or the registry API, so registration state is a web-UI
 fact and npmjs.com (Settings → Publishing) is the only place to check it. Never restate it as
 tool-verified.
 
-So expect no outcome in either direction for that first run. If it 403s, the path failed closed:
+So expect no outcome in either direction for a first run. If it 403s, the path failed closed:
 nothing was published, **no version number is burned**, and re-running the release after fixing
 the registration recovers cleanly.
 
 Because `release-please-config.json` sets `separate-pull-requests: false`, one Release PR can
-carry both packages and its merge can create both tags — two publish runs, one over a
-registration proven by exercise and one over a registration being used for the first time.
+carry several packages and its merge can create their tags together — one publish run per tag,
+some over registrations proven by exercise and some over registrations being used for the
+first time.

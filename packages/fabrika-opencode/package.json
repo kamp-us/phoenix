@@ -1,0 +1,40 @@
+{
+	"name": "@kampus/fabrika-opencode",
+	"version": "0.1.0",
+	"description": "@kampus/fabrika-opencode — the opencode plugin that installs fabrika's eight agent shells and bundled skills with one config line (issue #6965)",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/fabrika-opencode"
+	},
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json && node ./scripts/sync-bundle.mjs",
+		"prepublishOnly": "pnpm run build",
+		"typecheck": "tsc -p tsconfig.json",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"yaml": "catalog:"
+	},
+	"devDependencies": {
+		"@opencode-ai/plugin": "catalog:",
+		"@opencode-ai/sdk": "catalog:",
+		"@types/node": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	}
+}
