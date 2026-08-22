@@ -305,7 +305,8 @@ to-do the next builder may pick up: a row leaves this section when the founder r
   question either: a gate the repo does not declare and a declared gate that never ran were both
   simply no row. `heal-ci surface` answers both, printing every declared context as `producing` or
   `absent` and every undeclared gating run as `extra`, so `review-ui` now reads its named gates
-  there — off **both** lists, since on phoenix all three land in `extra`. A collapse that deletes a reader's only read is repaired by
+  there — off **both** lists, keyed on the check-run name (the job's `name:`), not the workflow
+  filename; on phoenix today all three land in `extra`. A collapse that deletes a reader's only read is repaired by
   finding the reader a better one, not by putting the rows back.
 - **A mis-classification is a silent break.** Collapsing an answer-array leaves the skill that
   iterates it reading a shape that no longer exists, and nothing fails loudly. Every collapse
