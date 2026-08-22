@@ -11,20 +11,12 @@
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {discoverRepoRoot} from "../delegate/root.ts";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {exists, readFile, writeFile} from "../io/fs.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {CONFIG_SCHEMA_FILE} from "./json-schema.ts";
 import {KEY_GROUPS} from "./registry.ts";
 import {runSchema, type SchemaRead, type SchemaRoot, type SchemaSave} from "./schema-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const jsonFlag = Flag.boolean("json").pipe(
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),

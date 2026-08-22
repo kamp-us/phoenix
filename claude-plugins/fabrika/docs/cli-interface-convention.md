@@ -108,6 +108,13 @@ exit taxonomy, and the verdict-vs-invocation rule proven in v1 at
 
 - **`0` means "I produced the answer on stdout". Any non-zero means "I could not produce one"** —
   UNKNOWN, never the permissive reading. A caller reads the status before the bytes.
+- **The whole answer reaches the caller, or the verb has not answered.** A write to stdout is
+  asynchronous when stdout is a pipe — and `x=$(fabrika …)` is a pipe — so `process.exit` on the line
+  after the write discards whatever is still queued, silently and on exit `0`. Every group adapter
+  emits through the one shared helper,
+  [`emit.ts`](../../../packages/fabrika-cli/src/emit.ts), which exits from the write callback
+  instead; a group that hand-rolls its own truncates its long answers again
+  ([#6226](https://github.com/kamp-us/phoenix/issues/6226)).
 - **A verdict a verb proved must never share an exit code with a failure to invoke.** `1` is what
   the Effect CLI returns for a usage error and what a failed module load returns; `127` is the
   shell's missing-binary code. A proven verdict seated on either is unreadable as proof, because

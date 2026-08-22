@@ -9,6 +9,7 @@
 import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {corpusOverride, decisionsDirOr} from "../config/paths.ts";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {CORPUS_DECLINED, DIR_UNREADABLE} from "./codes.ts";
@@ -19,20 +20,6 @@ import {runRelate} from "./relate-verb.ts";
 import {runResolve} from "./resolve-verb.ts";
 import {DEFAULT_LIMIT} from "./sweep.ts";
 import {runSweep} from "./sweep-verb.ts";
-
-/**
- * Write the outcome and exit on its code.
- *
- * stdout carries the answer and nothing else; the scope line and every refusal go to stderr. The
- * exit is explicit even for 0 so the code a verb computed is the code the process returns, never
- * whatever the runtime would have inferred.
- */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const dirFlag = Flag.string("dir").pipe(
 	Flag.optional,

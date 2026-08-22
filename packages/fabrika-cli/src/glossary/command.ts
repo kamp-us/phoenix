@@ -18,23 +18,15 @@
 
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {runAdd} from "./add-verb.ts";
 import {runCheck} from "./check-verb.ts";
 import {runDrift} from "./drift-verb.ts";
 import {runInit} from "./init-verb.ts";
 import {runLookup} from "./lookup-verb.ts";
 import {runSections} from "./sections-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const dirFlag = Flag.string("dir").pipe(
 	Flag.withDefault(".glossary"),

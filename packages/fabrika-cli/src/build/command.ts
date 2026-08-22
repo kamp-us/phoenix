@@ -16,11 +16,12 @@ import {randomUUID} from "node:crypto";
 import {tmpdir} from "node:os";
 import {Effect, type FileSystem, Option, Result} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readFile} from "../io/fs.ts";
 import {readStdin} from "../io/stdin.ts";
 import {DEFAULT_LANES_ROOT} from "../lane/store.ts";
-import {refuse, type VerbOutcome} from "../verb.ts";
+import {refuse} from "../verb.ts";
 import {runBranch} from "./branch-verb.ts";
 import {runCheck} from "./check-verb.ts";
 import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
@@ -48,14 +49,6 @@ import {
 import {runScratch} from "./scratch-verb.ts";
 import {runTree} from "./tree-verb.ts";
 import {runChildVerdicts, runVerdicts} from "./verdicts-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const repoFlag = Flag.string("repo").pipe(
 	Flag.optional,
