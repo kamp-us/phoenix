@@ -80,11 +80,36 @@ describe("runTopology", () => {
 			document: "topology",
 			phases: 2,
 			children: 2,
-			edges: [["#4303", "#4301"]],
+			edges: {rows: [["#4303", "#4301"]], more: 0},
 		});
 		expect(written.get(topologyPath(DIR))).toBe(
 			"## Dependencies\n\n- phase 1: #4301\n- phase 2: #4303\n- #4303 requires: #4301\n",
 		);
+	});
+
+	/**
+	 * `edges` is an evidence-array under ADR 0308 — a validated echo of the caller's own stdin — so
+	 * it caps at 5 pairs and counts the rest; the rendered block still carries every edge.
+	 */
+	it("caps the echoed edges and counts the remainder", async () => {
+		const seven = [record(4301)];
+		for (let number = 4302; number <= 4307; number += 1) seven.push(record(number));
+		const lines = [
+			"#4301 phase 1\n#4302 phase 1\n#4303 phase 1\n#4304 phase 1\n#4305 phase 1\n#4306 phase 1",
+			"#4307 phase 2 requires #4301, #4302, #4303, #4304, #4305, #4306\n",
+		].join("\n");
+		const {outcome} = await run(lines, files(...seven));
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout).edges).toEqual({
+			rows: [
+				["#4307", "#4301"],
+				["#4307", "#4302"],
+				["#4307", "#4303"],
+				["#4307", "#4304"],
+				["#4307", "#4305"],
+			],
+			more: 1,
+		});
 	});
 
 	it("is order-indifferent over its lines", async () => {

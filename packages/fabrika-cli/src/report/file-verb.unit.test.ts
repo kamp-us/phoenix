@@ -96,7 +96,9 @@ describe("runFile", () => {
 			number: 4732,
 			url: "https://example.test/issues/4732",
 			label: "status:needs-triage",
-			redactions: [],
+			// ADR 0308: `redactions` is an evidence-array collapsed to a per-class tally; empty means
+			// the empty object, exactly as an empty array meant "nothing was masked".
+			redactions: {},
 		});
 		expect(payload.bodyBytes).toBeGreaterThan(0);
 	});
@@ -176,6 +178,32 @@ describe("runFile", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(out.stderr.join("\n")).toContain("redacted a machine-local path");
+	});
+
+	/**
+	 * ADR 0308: the answer channel carries one count per leak class — each hit's `line <n>, <class>`
+	 * note is already on the notes channel, so per-row `{line, class}` objects there were a second
+	 * copy of a diagnostic.
+	 */
+	it("collapses --json redactions to a per-class tally, never rows", async () => {
+		const text = sections
+			.replace("content for ## Pointers", "/tmp/session/body.md and /Users/someone/case.md")
+			.concat("\nand /private/var/folders/zz/log.txt once more");
+		const masked = composeBody(
+			text
+				.replace("/tmp/session/body.md", "/tmp/<redacted>")
+				.replace("/Users/someone/case.md", "/Users/<redacted>")
+				.replace("/private/var/folders/zz/log.txt", "/private/var/<redacted>"),
+			renderFooter({session: null, model: null, branch: null, timestamp: "2026-08-01T14:22:07Z"}),
+		);
+		const out = await run(
+			[[READBACK, landed(masked)], [CREATE, created], labelsOk, branchDetached],
+			{stdin: Effect.succeed({_tag: "Text", text} satisfies StdinRead), redact: true, json: true},
+		);
+		expect(out.code).toBe(0);
+		const payload = JSON.parse(out.stdout);
+		expect(payload.redactions).toEqual({"absolute home root": 1, "temp root": 2});
+		expect(out.stdout).not.toContain('"line"');
 	});
 
 	it("refuses a label that does not exist in the repo", async () => {

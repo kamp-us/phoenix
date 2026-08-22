@@ -76,7 +76,8 @@ describe("runNote", () => {
 		expect(JSON.parse(out.stdout)).toMatchObject({
 			id: 5154891644,
 			issue: 4312,
-			redactions: [],
+			// ADR 0308: an evidence-array collapsed to a per-class tally; empty means `{}`.
+			redactions: {},
 		});
 	});
 
@@ -163,6 +164,32 @@ describe("runNote", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(out.stderr.join("\n")).toContain("redacted a machine-local path");
+	});
+
+	/** ADR 0308: `--json` carries one count per leak class; the per-hit lines stay on stderr. */
+	it("collapses --json redactions to a per-class tally, never rows", async () => {
+		const masked = "reproduced from /Users/<redacted> and /tmp/<redacted>";
+		const out = await run(
+			[
+				[COMMENT, comment(masked)],
+				[ISSUE, issueOpen],
+				[POST, posted],
+			],
+			{
+				stdin: Effect.succeed({
+					_tag: "Text",
+					text: "reproduced from /Users/a/case.md and /tmp/b/log.txt",
+				} satisfies StdinRead),
+				redact: true,
+				json: true,
+			},
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).redactions).toEqual({
+			"absolute home root": 1,
+			"temp root": 1,
+		});
+		expect(out.stdout).not.toContain('"line"');
 	});
 
 	it("refuses an issue that does not exist", async () => {

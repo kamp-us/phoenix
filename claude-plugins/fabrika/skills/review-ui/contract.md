@@ -62,6 +62,7 @@ this contract (one registry-side enum addition; flagged in the implementation ti
 | `review-ui render` | capture named surfaces from the PR's preview deployment at the inspected head, one validated PNG per surface, each surface's outcome proven | preview resolution, head-binding, capture and per-surface outcome typing are mechanical; *choosing the surfaces and looking at the pixels* stays in the skill |
 | `review-ui post` | the single sanctioned `review-ui` verdict emit: verify-upload the evidence set, compose through the wire format, bind to the inspected head at post time, post one comment, read it back | upload-verify-compose-post-readback is a protocol; *the polarity and every finding behind it* are judgment |
 | `review-ui note` | the single sanctioned non-verdict write: post one plain comment naming a proven blocker state (can't-see, escalation), leak-scanned, read back — never a marker | compose-scan-post-readback is a protocol; *whether the state warrants a note* is judgment |
+| `review-ui route` | the single sanctioned way to resolve this namespace with no verdict: post one head-bound `routed-elsewhere` record stating that the PR renders nothing, leak-scanned, upserted, read back | binding, upsert and read-back are a protocol; *whether the diff renders anything* is judgment, and no verb may take it |
 
 ### Considered and deliberately not derived
 
@@ -570,6 +571,115 @@ EOF
 
 ---
 
+## `review-ui route`
+
+**Invocation**
+
+```
+fabrika review-ui route 6326 --sha <head> --clause "<why>" [--repo <owner/name>]
+```
+
+The reasoning arrives on **stdin only**, for the same reason as `post` and `note`.
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the pull-request number |
+| `--sha` | string | yes | — | the head whose diff was read, 7–40 lowercase hex |
+| `--clause` | string | yes | — | the one-line why, carried on the record's first line; blank is refused |
+| `--repo` | string | no | resolved | the repository |
+| stdin | markdown | yes | — | which files changed and why none of them renders anything |
+
+**Output** — machine. One JSON object:
+`{"answer":"routed","namespace":"review-ui","sha":"6c6fe226…","uiFiles":2,"upsert":"created","commentUrl":"…"}`.
+
+**Why it exists.** `ship scope` raises the `ui` class from a path test that cannot see whether
+pixels moved, so a PR whose only `apps/web/src/**` change is prose requires this namespace — and
+`render` refuses zero surfaces while `post` refuses without captures, so nothing legal could fill
+it and `ship gate` blocked forever (#6376). This verb records the answer that was missing. It is
+**not** a second verdict path: the `routed-elsewhere` wire format carries no polarity, so
+`verdict-marker` reads it as `Absent` and it can never be counted as a PASS; `ship gate` resolves
+it as its own `routed` state and admits it for `review-ui` alone; and the record is head-bound, so
+any push voids it. ADR
+[0316](../../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md) is the ruling.
+
+**The mechanism, in order.** Validate `--sha` and `--clause` (`10`). Read stdin (`3` on empty) —
+an unexplained route is an assertion nobody can check. Resolve the PR, open and non-empty
+(`7`/`11`). Refuse if the live head has moved past `--sha` (`12`): the record binds the tree whose
+diff was read, and is re-read rather than re-bound. Read the changed-file list; a truncated read is
+`11`, never a derivation, because truncation can only shrink the `ui` count and would refuse a PR
+the gate is meanwhile blocking. Refuse a diff that raises no `ui` class (`7`) — nothing required
+this namespace, so there is nothing to route; the predicate is `review/classes.ts`'s own
+`isUiSurface`, never a second copy. Compose the record's first line through the `routed-elsewhere`
+wire format, leak-scan the assembled comment (`5`/`6`), upsert one record for this namespace on the
+emitter's own comment, and read it back from live state (`9` on mismatch, `8` on an unproven
+write).
+
+**What this verb does not decide.** Whether the diff renders anything. That is the skill's judgment
+over `review diff`'s refusal-guarded bytes, and it is the branch #6376's candidate 2 proposed and
+the founder rejected: no path test can decide whether pixels moved, so a verb that tried would just
+relocate the defect. This verb takes the judgment as `--clause` plus a body and records it.
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `3` | stdin was read and held nothing |
+| `5` | the assembled comment carries a machine-local path |
+| `6` | the body is a bare `@` path reference |
+| `7` | the PR is proven absent (404), closed, has zero changed files, or its diff raises no `ui` class |
+| `8` | the create/edit failed — UNKNOWN whether the record landed |
+| `9` | the record landed but does not read back as sent |
+| `10` | `--sha` is not a head SHA, or `--clause` is blank |
+| `11` | a precondition read failed, or the changed-file list came back truncated — nothing was posted |
+| `12` | the live head moved past `--sha` — the diff you read is gone |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review-ui route: no body on stdin — a route with no reasoning is an assertion nobody can check; pipe the reasoning in.` | 3 | refusal |
+| `review-ui route: the assembled comment carries a machine-local path at line <k> (<class>).` | 5 | refusal |
+| `review-ui route: the body is a bare "@" path reference — the body never arrived. Send its bytes on stdin.` | 6 | refusal |
+| `review-ui route: PR #<n> not found in <repo>.` | 7 | refusal |
+| `review-ui route: PR #<n> is closed — a route on a closed PR resolves nothing.` | 7 | refusal |
+| `review-ui route: #<n>'s diff raises no ui class, so ship gate requires no review-ui namespace — there is nothing to route.` | 7 | refusal |
+| `review-ui route: create/edit failed: <reason> — UNKNOWN whether the route landed; re-read the PR before retrying.` | 8 | refusal |
+| `review-ui route: posted, but the read-back does not yield this record (<why>) — inspect comment <id>.` | 9 | refusal |
+| `review-ui route: --sha "<value>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
+| `review-ui route: --clause is blank — a route with no stated reason records nothing a reader can check.` | 10 | refusal |
+| `review-ui route: received <m> of <n> changed files — refusing to derive the ui class from a truncated read.` | 11 | refusal |
+| `review-ui route: cannot read <what> for #<n>: <reason> — nothing was posted.` | 11 | refusal |
+| `review-ui route: the live head is <live>, not <sha> — the diff you read is gone; re-read at <live> (ADR 0058).` | 12 | refusal |
+
+**Scope** — one PR, one comment write, the caller's stdin.
+
+**Example**
+
+```
+$ fabrika review-ui route 6326 --sha 6c6fe226 \
+    --clause "no rendered delta; both apps/web/src files are prose only" <<'EOF'
+`shell-keys.ts` rewrites one JSDoc paragraph to drop a `pipeline-cli` reference — no statement,
+export or type changed. `design-token-lint.config.json` rewrites two note strings; the guard's
+data fields are byte-identical. No component, route, token or style is touched.
+EOF
+{"answer":"routed","namespace":"review-ui","sha":"6c6fe226","uiFiles":2,"upsert":"created","commentUrl":"https://github.com/kamp-us/phoenix/pull/6326#issuecomment-512399"}
+```
+
+**Grounding**
+
+- #6376 — the two rules that could not both hold, and the founder ruling that picked this shape
+  over narrowing the `ui` class.
+- ADR 0092 — the zero-scope refusals this verb inherits rather than loosens: `render` still
+  refuses zero surfaces, `post` still refuses without captures, and this verb refuses a diff that
+  raises no `ui` class.
+- ADR 0055 — the record is authored, so the write+ ACL binds it at `ship gate` exactly as it binds
+  a verdict marker.
+- ADR 0058 — the head binding, and why a moved head is re-read rather than re-bound.
+
+---
+
 ## Completeness self-test
 
 Per the [interface convention](../../docs/cli-interface-convention.md) Part 2: every flag
@@ -578,7 +688,8 @@ enumerated with its trigger (per-verb tables own the group-local rows; the unive
 live once in the shared matrix, which owns every code's single meaning); every error names
 message, stream, and code; every verb states scope and zero-scope behavior (`render` refuses
 zero surfaces at `1`; `post` refuses an empty body at `3` and an unreadable evidence set at
-`4`/`11`; `note` refuses an empty body at `3` and a verdict-shaped body at `10`); and no clause
+`4`/`11`; `note` refuses an empty body at `3` and a verdict-shaped body at `10`; `route` refuses an
+empty body at `3` and a diff raising no `ui` class at `7`); and no clause
 defers to a v1 script, another skill's prose, or the authoring session —
 the `review` and `build-ui` references are to sibling fabrika contracts, the sanctioned
 cross-contract shape, with the `build-ui` reference flagged as pre-merge in the authoring PR.
@@ -589,4 +700,5 @@ refusal); every example value derives from stated rules (the set path from the d
 sibling verbs guard shared preconditions identically (`render` and `post` resolve PR + live head
 on the same `7`/`11` and treat capture invalidity as `15`; `render` binds preview-to-head and
 `post` binds set-to-`--sha` on the same `12`; `note` shares the `7`/`11` PR resolve and the
-`3`/`5`/`6`/`8`/`9` posting seats with `post`).
+`3`/`5`/`6`/`8`/`9` posting seats with `post`; `route` shares all of those and binds
+head-to-`--sha` on the same `12` as `post`).

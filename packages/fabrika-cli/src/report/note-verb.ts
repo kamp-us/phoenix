@@ -25,7 +25,7 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {normalizeForReadback} from "./compose.ts";
-import {isBareAtReference, renderLeaks, scanBody} from "./leaks.ts";
+import {isBareAtReference, redactionTally, renderLeaks, scanBody} from "./leaks.ts";
 
 export interface NoteOptions {
 	readonly issue: number;
@@ -89,11 +89,10 @@ export const runNote = (
 			);
 		}
 		const body = options.redact ? scan.redacted : note;
-		const redactions = options.redact
-			? scan.leaks.map((leak) => ({line: leak.line, class: leak.class}))
-			: [];
-		const redactionNotes = redactions.map(
-			(r) => `report note: redacted a machine-local path — line ${r.line}, ${r.class}`,
+		const redacted = options.redact ? scan.leaks : [];
+		const redactions = redactionTally(redacted);
+		const redactionNotes = redacted.map(
+			(leak) => `report note: redacted a machine-local path — line ${leak.line}, ${leak.class}`,
 		);
 
 		const target = yield* getIssue(repo, issue);

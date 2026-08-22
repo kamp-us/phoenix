@@ -111,9 +111,11 @@ examples named in the ruling and the report did not survive that check the way t
 
 ## Per-field classification
 
-**This table is complete over the CLI as of 2026-08-19**, filled in by the closing sweep of epic
+**This table is complete over the CLI as of 2026-08-22**, filled in by the closing sweep of epic
 [#6147](https://github.com/kamp-us/phoenix/issues/6147) so no field is re-litigated ticket by ticket.
-The sweep read all 27 registered verb groups (`packages/fabrika-cli/src/registry.ts:51-77`), checked every field that reaches
+The sweep read all 30 registered verb groups (`packages/fabrika-cli/src/registry.ts:53-84`; the
+`campaign`, `config` and `decision` groups registered after the sweep first ran are classified
+below too), checked every field that reaches
 the **answer channel** against the live skill/contract corpus, and recorded the verdict below. A
 field that reaches only the stderr notes channel is out of scope — that channel is diagnostics, and
 this ADR does not govern it. A verb absent from the table prints no array on the answer channel.
@@ -139,6 +141,18 @@ The `build` group's other verbs (`branch`, `commit`, `clear`, `pr`, `pr-body`, `
 `release`, `adopt`, `note`, `eligible`, `scratch`, `tree`, `push`) print no array-valued field on the
 answer channel — their multi-line context rides the stderr notes channel, which is not this ADR's
 surface.
+
+### `campaign` · `config` · `decision`
+
+| Verb | Field | Class | Shape | Why |
+|---|---|---|---|---|
+| `campaign list` | `rows` | answer | whole | "**Rows** are the live declaration — every row, whatever state it holds" (`campaign/SKILL.md:30`) — the reader routes off the rows themselves; bounded by the ROADMAP's own table |
+| `decision rule` | `observed` | evidence | whole — bounded | the labels of the one issue, read back after the audience flip; a proof-of-write read-back over a fixed-small label set |
+
+The `campaign` group's other verbs (`open`, `state`) print one flipped `row` object beside the file —
+a proof-of-write echo, no array field. `config schema` prints `{file, outcome, keys}` with `keys` a
+count — no array on the answer channel. `decision ruling` prints scan counts (`disregarded`,
+`unauthorized` are numbers) — no array.
 
 ### `adr` · `ci`
 

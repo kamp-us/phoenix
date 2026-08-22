@@ -432,8 +432,10 @@ belongs here.
 
 **Output** — one **tab-separated** line: `<number>`, `<url>`. The number is bare, with no `#` sigil
 and no prose prefix, so `cut -f1` yields something a caller can interpolate without stripping
-anything. With `--json`, one object with keys `number`, `url`, `label`, `redactions` (array of
-`{line, class}`, empty when none) and `bodyBytes`.
+anything. With `--json`, one object with keys `number`, `url`, `label`, `redactions` (a per-class
+tally under ADR [0308](../../../../.decisions/0308-bounded-evidence-output-shape.md) — one
+`<class>: <count>` entry per leak class masked, `{}` when none; each hit's own
+`line <n>, <class>` note is on the notes channel) and `bodyBytes`.
 
 **Exit status** — allocated from the shared table above. This verb can return `0`, `1`, `3`, `4`,
 `5`, `6`, `7`, `8`, `9` and `10`; `7` is *the `--label` does not exist in `--repo`*.
@@ -507,7 +509,7 @@ EOF
 
 ```
 $ fabrika report file --title "Aborted requests surface as plain timeouts" --json < body.md
-{"number":4732,"url":"https://github.com/kamp-us/phoenix/issues/4732","label":"status:needs-triage","redactions":[],"bodyBytes":812}
+{"number":4732,"url":"https://github.com/kamp-us/phoenix/issues/4732","label":"status:needs-triage","redactions":{},"bodyBytes":812}
 ```
 
 ```
@@ -625,7 +627,7 @@ sibling verb does both, and an implementer would otherwise have to guess whether
 bind here.
 
 **Output** — one **tab-separated** line: `<comment-id>`, `<url>`. With `--json`, one object with
-keys `id`, `url`, `issue`, `redactions` and `bodyBytes`.
+keys `id`, `url`, `issue`, `redactions` (the same per-class tally as `file`) and `bodyBytes`.
 
 **Exit status** — allocated from the shared table above. This verb can return `0`, `1`, `3`, `5`,
 `6`, `7`, `8`, `9` and `11`; `7` is *`--issue` names no issue in `--repo`*. Codes `4` and `10` are
@@ -668,7 +670,7 @@ EOF
 
 ```
 $ fabrika report note --issue 4312 --json < note.md
-{"id":5154891644,"url":"https://github.com/kamp-us/phoenix/issues/4312#issuecomment-5154891644","issue":4312,"redactions":[],"bodyBytes":94}
+{"id":5154891644,"url":"https://github.com/kamp-us/phoenix/issues/4312#issuecomment-5154891644","issue":4312,"redactions":{},"bodyBytes":94}
 ```
 
 ```

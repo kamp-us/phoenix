@@ -9,6 +9,8 @@
  * renamed tool directory or a different machine needs no edit here.
  */
 
+import {type ReasonHistogram, reasonHistogram} from "../evidence.ts";
+
 export type LeakClass = "home-relative" | "absolute home root" | "temp root";
 
 export interface Leak {
@@ -103,3 +105,13 @@ export const isBareAtReference = (body: string): boolean => {
 /** The stderr detail lines a refusal prints under its message: one `line <n>, <class>` per hit. */
 export const renderLeaks = (leaks: ReadonlyArray<Leak>): ReadonlyArray<string> =>
 	leaks.map((leak) => `  line ${leak.line}, ${leak.class}`);
+
+/**
+ * What `report file` and `report note` print for a redacted body: one count per {@link LeakClass}.
+ *
+ * `redactions` is an evidence-array under ADR 0308 — no skill reads a row, and both verbs already
+ * emit a `line <n>, <class>` note per hit on the notes channel, so the rows on the answer channel
+ * were a second copy of a diagnostic. The class is the whole vocabulary a reader acts on.
+ */
+export const redactionTally = (leaks: ReadonlyArray<Leak>): ReasonHistogram =>
+	reasonHistogram(leaks, (leak) => leak.class);

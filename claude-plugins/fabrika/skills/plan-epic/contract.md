@@ -894,7 +894,7 @@ EOF
 
 ```
 {"answer": "staged", "epic": 4300, "document": "topology", "phases": 2, "children": 3,
- "edges": [["#4303","#4301"]], "bytes": 214}
+ "edges": {"rows": [["#4303","#4301"]], "more": 0}, "bytes": 214}
 ```
 
 Lines are order-indifferent. **Every child in the run manifest appears exactly once — and the
@@ -902,7 +902,11 @@ manifest is the epic's whole child set, retained children included**, which is w
 `re-plan` placeable; a manifest
 child with no line is an unplaced child and a line naming a number that is not in the manifest is
 a dangling reference — both `24`. Edges are ordered `[dependent, prerequisite]`:
-`["#4303","#4301"]` reads *#4303 requires #4301*.
+`["#4303","#4301"]` reads *#4303 requires #4301*. `edges` is an evidence-array under ADR
+[0308](../../../../.decisions/0308-bounded-evidence-output-shape.md) — a validated echo of the
+caller's own stdin, one pair per declared `requires` — so it collapses to a cap-and-count: the
+first 5 pairs in `rows`, with `more` counting what followed (`0` when the array was whole); the
+rendered block still carries every edge.
 
 The verb renders the `## Dependencies` block into `<dir>/topology.md` and then **parses its own
 output back through the imported `readTopology`**, refusing on `24` if the round trip does not
@@ -955,7 +959,7 @@ of calling it defect number one (ADR 0092).
 
 ```
 $ fabrika ledger topology 4300 --token <claim-token> < topo.txt
-{"answer":"staged","epic":4300,"document":"topology","phases":2,"children":3,"edges":[["#4303","#4301"]],"bytes":214}
+{"answer":"staged","epic":4300,"document":"topology","phases":2,"children":3,"edges":{"rows":[["#4303","#4301"]],"more":0},"bytes":214}
 ```
 
 ```
