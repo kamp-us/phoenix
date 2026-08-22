@@ -78,6 +78,12 @@ is not a lane-claim token of this session), `8` (the marker write is UNKNOWN), `
 does not read back) and `11` (the marker set could not be read) all end `STOPPED` naming the code —
 an unproven claim is never driven through.
 
+**Harness note — opencode exports no session id.** Verified against upstream `sst/opencode` at
+`v1.18.21`: the bash tool spawns shells with inherited environment only, and the shipped binary
+carries no `OPENCODE_SESSION_ID`. So under opencode the chain comes up empty on its own — export
+`FABRIKA_SESSION_ID` (any stable value you control) before your first attribution-bearing verb, or
+every verb refuses with the three-variable unset message above.
+
 **Keep the `token` a `won` prints — it is this driver's name, and `lane release` takes it as
 `--token`.** One session routinely spawns several operators, so a release handed only the session id
 cannot tell a sibling driver's marker from yours, and used to delete it: an unrecoverable retraction
