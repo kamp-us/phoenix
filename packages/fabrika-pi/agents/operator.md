@@ -10,4 +10,4 @@ An agent shell: the **operator** is a spawn target that exists so a driver can a
 the skill it loads, so the `operator` shell runs the `operate` skill. Every step, rubric and
 terminal token is the skill's. Read it there.
 
-This is the pi mirror of [`claude-plugins/fabrika/agents/operator.md`](../../claude-plugins/fabrika/agents/operator.md).
+This is the pi mirror of [`claude-plugins/fabrika/agents/operator.md`](../../../claude-plugins/fabrika/agents/operator.md).

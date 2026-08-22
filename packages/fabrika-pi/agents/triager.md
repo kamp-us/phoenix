@@ -10,4 +10,4 @@ An agent shell: the **triager** is a spawn target that exists so a driver can ad
 skill it loads, so the `triager` shell runs the `triage` skill. Every step, rubric and terminal
 token is the skill's. Read it there.
 
-This is the pi mirror of [`claude-plugins/fabrika/agents/triager.md`](../../claude-plugins/fabrika/agents/triager.md).
+This is the pi mirror of [`claude-plugins/fabrika/agents/triager.md`](../../../claude-plugins/fabrika/agents/triager.md).
