@@ -10,4 +10,4 @@ An agent shell: the **builder** is a spawn target that exists so a driver can ad
 skill it loads, so the `builder` shell runs the `build` skill. Every step, rubric and terminal token
 is the skill's. Read it there.
 
-This is the pi mirror of [`claude-plugins/fabrika/agents/builder.md`](../../claude-plugins/fabrika/agents/builder.md); the rules live in [docs/agent-shells.md](../../claude-plugins/fabrika/docs/agent-shells.md).
+This is the pi mirror of [`claude-plugins/fabrika/agents/builder.md`](../../../claude-plugins/fabrika/agents/builder.md); the rules live in [docs/agent-shells.md](../../../claude-plugins/fabrika/docs/agent-shells.md).

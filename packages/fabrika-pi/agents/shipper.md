@@ -10,4 +10,4 @@ An agent shell: the **shipper** is a spawn target that exists so a driver can ad
 skill it loads, so the `shipper` shell runs the `ship` skill. Every step, rubric and terminal token
 is the skill's. Read it there.
 
-This is the pi mirror of [`claude-plugins/fabrika/agents/shipper.md`](../../claude-plugins/fabrika/agents/shipper.md).
+This is the pi mirror of [`claude-plugins/fabrika/agents/shipper.md`](../../../claude-plugins/fabrika/agents/shipper.md).

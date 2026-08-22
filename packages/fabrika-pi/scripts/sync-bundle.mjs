@@ -6,10 +6,11 @@
  * the manifest keys (`pi.skills`, `pi.subagents.agents`) point at bundled paths:
  *
  *   claude-plugins/fabrika/skills/<skill>/…  →  dist/skills/<skill>/…
- *   .pi/agents/<shell>.md                    →  dist/agents/<shell>.md
+ *   agents/<shell>.md                        →  dist/agents/<shell>.md
  *
- * The single-source rule (#6985): nothing here is hand-maintained — authored content lives only in
- * `claude-plugins/fabrika/skills/` and `.pi/agents/`, and this script is the only thing that
+ * The single-source rule (#6985): nothing here is hand-maintained — skills are authored only in
+ * `claude-plugins/fabrika/skills/`, agent shells only in this package's `agents/` (they are
+ * pi-specific authored content, not consumer wiring), and this script is the only thing that
  * produces the bundled copies. Editing anything under `dist/` by hand is lost on the next sync.
  *
  * Fail-closed, mirroring #6967's sync: a source tree that yields zero skills or zero agents is a
@@ -27,7 +28,7 @@ const REPO_ROOT = resolve(PACKAGE_ROOT, "../..");
 /** The authored sources, resolved off this script's own location — never off cwd. */
 export const SOURCES = {
 	skills: join(REPO_ROOT, "claude-plugins", "fabrika", "skills"),
-	agents: join(REPO_ROOT, ".pi", "agents"),
+	agents: join(PACKAGE_ROOT, "agents"),
 };
 
 /** Where the bundled copies land — the paths the manifest keys point at. */

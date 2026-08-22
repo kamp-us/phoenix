@@ -10,4 +10,4 @@ An agent shell: the **UI builder** is a spawn target that exists so a driver can
 skill it loads, so the `ui-builder` shell runs the `build-ui` skill. Every step, rubric and terminal
 token is the skill's. Read it there.
 
-This is the pi mirror of [`claude-plugins/fabrika/agents/ui-builder.md`](../../claude-plugins/fabrika/agents/ui-builder.md).
+This is the pi mirror of [`claude-plugins/fabrika/agents/ui-builder.md`](../../../claude-plugins/fabrika/agents/ui-builder.md).

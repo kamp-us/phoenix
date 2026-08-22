@@ -10,4 +10,4 @@ An agent shell: the **reviewer** is a spawn target that exists so a driver can a
 skill it loads, so the `reviewer` shell runs the `review` skill. Every step, rubric and terminal
 token is the skill's. Read it there.
 
-This is the pi mirror of [`claude-plugins/fabrika/agents/reviewer.md`](../../claude-plugins/fabrika/agents/reviewer.md).
+This is the pi mirror of [`claude-plugins/fabrika/agents/reviewer.md`](../../../claude-plugins/fabrika/agents/reviewer.md).

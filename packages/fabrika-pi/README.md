@@ -22,8 +22,8 @@ skills work without it**: skills are standard SKILL.md trees, which pi loads nat
 Nothing in this package is hand-maintained. Authored content lives only at:
 
 - [`claude-plugins/fabrika/skills/`](../../claude-plugins/fabrika/skills/) — ~25 SKILL.md trees,
-- [`.pi/agents/`](../../.pi/agents/) — the 8 agent shells (builder, mixed-builder, operator,
-  reviewer, shipper, triager, ui-builder, ui-reviewer).
+- [`agents/`](./agents/) — the 8 agent shells (builder, mixed-builder, operator, reviewer,
+  shipper, triager, ui-builder, ui-reviewer); pi-specific authored content, living in-package.
 
 `scripts/sync-bundle.mjs` copies both into `dist/` at build/pack time (`prepack` runs it; so does
 `pnpm --filter @kampus/fabrika-pi sync`). The script refuses to bundle zero skills or zero agent
