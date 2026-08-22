@@ -1,0 +1,35 @@
+{
+	"name": "@kampus/fabrika-pi",
+	"version": "0.1.0",
+	"description": "@kampus/fabrika-pi — every fabrika skill and agent shell, bundled for pi projects (ADR 0332)",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/fabrika-pi"
+	},
+	"type": "module",
+	"files": [
+		"dist",
+		"scripts",
+		"README.md"
+	],
+	"scripts": {
+		"sync": "node scripts/sync-bundle.mjs",
+		"prepack": "node scripts/sync-bundle.mjs",
+		"test": "node --test 'scripts/*.unit.test.mjs'"
+	},
+	"pi": {
+		"skills": [
+			"./dist/skills"
+		],
+		"subagents": {
+			"agents": [
+				"./dist/agents"
+			]
+		}
+	},
+	"engines": {
+		"node": ">=22.12"
+	}
+}
