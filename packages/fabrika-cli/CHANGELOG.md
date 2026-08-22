@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.6.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.5.0...fabrika-cli-v0.6.0) (2026-08-22)
+
+
+### Features
+
+* Build the campaign verb group specified by claude-plugins/fabrika/skills/campaign/contract.md ([#6975](https://github.com/kamp-us/phoenix/issues/6975)) ([8698384](https://github.com/kamp-us/phoenix/commit/8698384135fd223738f5cc54989d8e0acabb011c))
+* **build:** retire an orphaned build worktree on a board-attested license ([#6610](https://github.com/kamp-us/phoenix/issues/6610)) ([#6883](https://github.com/kamp-us/phoenix/issues/6883)) ([a42b3c0](https://github.com/kamp-us/phoenix/commit/a42b3c015219da4e95e4bcf412c75cc47f814636))
+* **fabrika-cli:** name the issues a dead session left claimed ([#6771](https://github.com/kamp-us/phoenix/issues/6771)) ([#6837](https://github.com/kamp-us/phoenix/issues/6837)) ([8590427](https://github.com/kamp-us/phoenix/commit/8590427de4d53aabbb0bae79de5695d8b461b1ae))
+* **fabrika:** triage scratch allocates a per-lane directory so fanned triagers stop clobbering ([#6630](https://github.com/kamp-us/phoenix/issues/6630)) ([#6880](https://github.com/kamp-us/phoenix/issues/6880)) ([05085f2](https://github.com/kamp-us/phoenix/commit/05085f2247423300faee40190682731f90de32c4))
+* Issue-body amendments via gh api -f body=[@file](https://github.com/file) post the path string, not the file ([#6901](https://github.com/kamp-us/phoenix/issues/6901)) ([0b903f6](https://github.com/kamp-us/phoenix/commit/0b903f653f9f3f3254567fabb2e3e2854f4fb742))
+* The governance-verdict-at-head check reads FAILURE while a lane is simply not reviewed yet ([#6805](https://github.com/kamp-us/phoenix/issues/6805)) ([4bcd354](https://github.com/kamp-us/phoenix/commit/4bcd354350c9c0498d568b3ddb37e60b8ff32928))
+* triage kill --duplicate-of refuses a human-filed twin, so every dup close costs a founder ruling ([#6935](https://github.com/kamp-us/phoenix/issues/6935)) ([f1b9c33](https://github.com/kamp-us/phoenix/commit/f1b9c33bc9735898bd2c6aa2af8c2d5e3ddef4b3))
+
+
+### Bug Fixes
+
+* A base-drift ship stop routes to review, which re-verdicts the same head and spends the budget ([#6919](https://github.com/kamp-us/phoenix/issues/6919)) ([3f91398](https://github.com/kamp-us/phoenix/commit/3f9139829c3a23f9ed91862f81c2dc7d8937123c))
+* A repair round's second build-deviations marker makes the disclosure unreadable through wire read ([#6843](https://github.com/kamp-us/phoenix/issues/6843)) ([c8f506a](https://github.com/kamp-us/phoenix/commit/c8f506ae6a14dd535e31ff97eb24c45d77dc6021))
+* A shallow boundary on the epic assembly tip makes lane brief compute a wrong review range ([#6930](https://github.com/kamp-us/phoenix/issues/6930)) ([bf36891](https://github.com/kamp-us/phoenix/commit/bf3689138f1d94be91456d33e294836fbeff830d))
+* **cli:** one session-id reader with FABRIKA → CC → pi precedence ([#6960](https://github.com/kamp-us/phoenix/issues/6960)) ([#6966](https://github.com/kamp-us/phoenix/issues/6966)) ([cfb0860](https://github.com/kamp-us/phoenix/commit/cfb0860056bcd0ccc2685b93d13cc43fd49392b5))
+* **decision:** hold the audience flip when the ruled body has no acceptance criteria ([#6734](https://github.com/kamp-us/phoenix/issues/6734)) ([#6803](https://github.com/kamp-us/phoenix/issues/6803)) ([e55f4e7](https://github.com/kamp-us/phoenix/commit/e55f4e74b2a51b62d3dfe00b6190e5271d921e86))
+* **fabrika-cli:** name GitHub's own message in a gh-api refusal ([#6708](https://github.com/kamp-us/phoenix/issues/6708)) ([#6836](https://github.com/kamp-us/phoenix/issues/6836)) ([30c0af5](https://github.com/kamp-us/phoenix/commit/30c0af532c16510b591e8f12b02f030fdb245904))
+* **fabrika-cli:** route the remaining nineteen non-2xx arms through refusalText ([#6838](https://github.com/kamp-us/phoenix/issues/6838)) ([#6845](https://github.com/kamp-us/phoenix/issues/6845)) ([163dd19](https://github.com/kamp-us/phoenix/commit/163dd19ccbf4b5b71325e01d16d1b57287ec53a6))
+* **fabrika:** read a superseded concurrency-cancel as pending, not red ([#6834](https://github.com/kamp-us/phoenix/issues/6834)) ([#6876](https://github.com/kamp-us/phoenix/issues/6876)) ([ce3117f](https://github.com/kamp-us/phoenix/commit/ce3117f44bd128aad474abd563e68b19cb92cc87))
+* **fabrika:** read every closing reference a PR body carries, so an epic tail proves against its epic ([#6797](https://github.com/kamp-us/phoenix/issues/6797)) ([#6874](https://github.com/kamp-us/phoenix/issues/6874)) ([83dc38f](https://github.com/kamp-us/phoenix/commit/83dc38f5b9ef35cceb48e7da9b767e727931e305))
+* **fabrika:** refuse a fresh build claim on an epic child holding any standing verdict ([#6715](https://github.com/kamp-us/phoenix/issues/6715)) ([#6802](https://github.com/kamp-us/phoenix/issues/6802)) ([89c94f4](https://github.com/kamp-us/phoenix/commit/89c94f46217d5c2434005e8761ce0dc75ddd494e))
+* **fabrika:** report amend refuses a pull-request number before it PATCHes a body ([#6903](https://github.com/kamp-us/phoenix/issues/6903)) ([#6907](https://github.com/kamp-us/phoenix/issues/6907)) ([f23f50d](https://github.com/kamp-us/phoenix/commit/f23f50debc058f0d7d9c39c71692b4c1ee7136b8))
+* **fabrika:** say UNKNOWN-never-green on review ci's ungated-head refusal ([#6086](https://github.com/kamp-us/phoenix/issues/6086)) ([#6914](https://github.com/kamp-us/phoenix/issues/6914)) ([98ec808](https://github.com/kamp-us/phoenix/commit/98ec808fe5db121361aa621ed25bbf2f1867c6ba))
+* **fabrika:** serve the last acceptance-criteria block and refuse a near-miss below it ([#6898](https://github.com/kamp-us/phoenix/issues/6898)) ([#6905](https://github.com/kamp-us/phoenix/issues/6905)) ([a178f76](https://github.com/kamp-us/phoenix/commit/a178f7614b40d7cdf616b2605a790ef8cce7ae0f))
+* **fabrika:** type the epic tail merge subject so release-please shows the epic's changes ([#6754](https://github.com/kamp-us/phoenix/issues/6754)) ([#6851](https://github.com/kamp-us/phoenix/issues/6851)) ([8e8d59f](https://github.com/kamp-us/phoenix/commit/8e8d59f6870631fc9652cf967e728c5d6280e63d))
+* **fabrika:** write an epic plan's stated dependencies onto the blocked_by graph ([#6616](https://github.com/kamp-us/phoenix/issues/6616)) ([#6865](https://github.com/kamp-us/phoenix/issues/6865)) ([3121208](https://github.com/kamp-us/phoenix/commit/3121208558e623a0d3c8f1c60ae54512c7569f58))
+* **lane:** hold the reviewer's terminal and proof-gate its park on the FAILs at head ([#6112](https://github.com/kamp-us/phoenix/issues/6112)) ([#6932](https://github.com/kamp-us/phoenix/issues/6932)) ([3a54d4b](https://github.com/kamp-us/phoenix/commit/3a54d4bb9e5bfd961329c760723f97bf75a22a1c))
+* **lane:** refuse a drifted cwd on its own code instead of proving the lane absent ([#6212](https://github.com/kamp-us/phoenix/issues/6212)) ([#6895](https://github.com/kamp-us/phoenix/issues/6895)) ([7f24761](https://github.com/kamp-us/phoenix/commit/7f247614ffd2ca0659e9b09218dffe407118f5c3))
+* **lane:** resolve a repair round's superseding branch instead of parking at exit 25 ([#6049](https://github.com/kamp-us/phoenix/issues/6049)) ([#6929](https://github.com/kamp-us/phoenix/issues/6929)) ([acf7995](https://github.com/kamp-us/phoenix/commit/acf799572b98df72a61c937845ca66da01aa339f))
+* **lane:** share one PR nominator across prove, brief and unpark ([#6179](https://github.com/kamp-us/phoenix/issues/6179)) ([#6887](https://github.com/kamp-us/phoenix/issues/6887)) ([39ac409](https://github.com/kamp-us/phoenix/commit/39ac409dc0b6f94023eac7e523d081cdb0fb7468))
+* **report:** fold amend's unreadable read-back into its one exit-9 message ([#6904](https://github.com/kamp-us/phoenix/issues/6904)) ([#6910](https://github.com/kamp-us/phoenix/issues/6910)) ([360d5dd](https://github.com/kamp-us/phoenix/commit/360d5dddd6c73f30e52d40f69520c2399d296f45))
+* review and ship disagree on which review namespaces a diff requires ([#6807](https://github.com/kamp-us/phoenix/issues/6807)) ([2357066](https://github.com/kamp-us/phoenix/commit/2357066c646db987b940aab1e0ef2d02fdc6f13b))
+* **triage:** decide the mutating verbs' claim guard on the session+lane pair ([#6303](https://github.com/kamp-us/phoenix/issues/6303)) ([#6927](https://github.com/kamp-us/phoenix/issues/6927)) ([3d86558](https://github.com/kamp-us/phoenix/commit/3d865589bc9c094c5c699bee784ee34ee97ebf09))
+
 ## [0.5.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.4.0...fabrika-cli-v0.5.0) (2026-08-21)
 
 
