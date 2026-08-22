@@ -16,6 +16,7 @@ import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {readAuthored} from "../build/authored.ts";
 import {scannedLine} from "../build/target.ts";
+import {capAndCount} from "../evidence.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -31,6 +32,9 @@ import {loadManifest, loadRun, stage} from "./run-io.ts";
 import {checkTopology, type DeclaredLine, parseLine} from "./topology-doc.ts";
 
 const VERB = "ledger topology";
+
+/** Enough pairs to recognise the parse, not enough to reprint the caller's own stdin (ADR 0308). */
+const EDGE_CAP = 5;
 
 export const MESSAGES: LedgerMessages = {
 	verb: VERB,
@@ -120,7 +124,7 @@ export const runTopology = (
 				document: "topology",
 				phases: checked.phases,
 				children: lines.length,
-				edges: checked.edges,
+				edges: capAndCount(checked.edges, EDGE_CAP),
 				bytes: new TextEncoder().encode(checked.block).length,
 			}),
 			[...notes, scannedLine(VERB, manifest.value.length, "recorded child")],

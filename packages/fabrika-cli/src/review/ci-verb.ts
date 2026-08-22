@@ -6,18 +6,24 @@
  * refusals are what keep it honest — zero declared runs is a vacuous green (ADR 0092), an
  * enumeration short of `total_count` is never read as "no red checks" (#3999), and a complete
  * enumeration that no gate of this repo produced is not green either (#6522, `gate-coverage.ts`).
+ *
+ * `checks` is a status tally, not a row per run: it is an evidence-array under ADR 0308 — the review
+ * skill acts on `rollup` and no skill iterates the rows — and a repo with 34 workflows paid ~20 rows
+ * of it on every read. What the rows were *for*, naming the red and still-running checks, moves to
+ * the notes channel below, the same split `ship checks` landed on.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {producerFor, resolveCi} from "../config/ci-producer.ts";
-import {commitExists, listCheckRuns} from "../io/pulls.ts";
+import {type ReasonHistogram, reasonHistogram} from "../evidence.ts";
+import {type CheckRun, commitExists, listCheckRuns} from "../io/pulls.ts";
 // The workflow inventory is read through the `ship` group's reader for the same reason `ship checks`
 // rolls up through this group's `rollup.ts`: one read, so the two verbs cannot drift on the fact.
 import {listRunsAtHead, listWorkflowPaths, listWorkflows} from "../ship/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {gateCoverageOf} from "./gate-coverage.ts";
-import {rollupOf, statusOf} from "./rollup.ts";
+import {isFailing, rollupOf, statusOf} from "./rollup.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 
 const VERB = "review ci";
@@ -54,14 +60,35 @@ const noProducerAnswer = (
 					outcome: "ci",
 					sha,
 					rollup: NO_PRODUCER,
-					checks: [],
+					checks: {},
 					scanned: 0,
 					declared: 0,
 					gates: null,
 				}),
 				diagnostics,
 			)
-		: answer([`ci\t${sha}\t${NO_PRODUCER}`, "check\t0"].join("\n"), diagnostics);
+		: answer([`ci\t${sha}\t${NO_PRODUCER}`, "run\t0"].join("\n"), diagnostics);
+
+/**
+ * The check runs a reader still needs by name, on the notes channel (ADR 0308).
+ *
+ * The rows the tally replaces existed so "a red or still-running check is in the gate's context by
+ * name, not as a rollup boolean" — that sentence is about the red and the in-flight runs, and every
+ * other row it also printed was a passing name nobody read. So the names survive, addressed to the
+ * channel diagnostics belong on, and the answer channel carries the counts.
+ */
+export const namedLines = (verb: string, runs: ReadonlyArray<CheckRun>): ReadonlyArray<string> => {
+	const failing = runs.filter(isFailing).map((run) => run.name);
+	const running = runs.filter((run) => run.status !== "completed").map((run) => run.name);
+	return [
+		...(failing.length === 0
+			? []
+			: [`${verb}: failing at this head: ${[...failing].sort().join(", ")}.`]),
+		...(running.length === 0
+			? []
+			: [`${verb}: still running at this head: ${[...running].sort().join(", ")}.`]),
+	];
+};
 
 export const runCi = (
 	options: CiOptions,
@@ -152,6 +179,8 @@ export const runCi = (
 		}
 
 		const rollup = rollupOf(runs);
+		const checks: ReasonHistogram = reasonHistogram(runs, statusOf);
+		const notes = [...diagnostics, ...namedLines(VERB, runs)];
 		// A red rollup is already the answer a caller must act on, so the coverage question is asked
 		// only where it changes one: `green` and `pending` are the two words that read as "nothing to
 		// do here", and both are wrong over bytes no gate inspected.
@@ -185,12 +214,12 @@ export const runCi = (
 				);
 			}
 			if (coverage._tag === "NoGates") {
-				diagnostics.push(
+				notes.push(
 					`${VERB}: ${repo} authors no workflow of its own — every run at ${sha} is platform-provided, so there is no gate coverage to judge.`,
 				);
 			} else {
 				gates = {declared: coverage.declared, covered: coverage.covered};
-				diagnostics.push(
+				notes.push(
 					`${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha}.`,
 				);
 			}
@@ -201,19 +230,19 @@ export const runCi = (
 						outcome: "ci",
 						sha,
 						rollup,
-						checks: runs.map((run) => ({name: run.name, status: statusOf(run)})),
+						checks,
 						scanned: runs.length,
 						declared,
 						gates,
 					}),
-					diagnostics,
+					notes,
 				)
 			: answer(
 					[
 						`ci\t${sha}\t${rollup}`,
-						`check\t${runs.length}`,
-						...runs.map((run) => `${run.name}\t${statusOf(run)}`),
+						`run\t${runs.length}`,
+						...Object.entries(checks).map(([status, count]) => `check\t${status}\t${count}`),
 					].join("\n"),
-					diagnostics,
+					notes,
 				);
 	});

@@ -340,7 +340,6 @@ never refuses. The class partition is total over what was read; the refusals exi
 run over less than everything, and never over a different tree than the head it prints.
 
 **Examples**
-
 ```
 $ fabrika review scope 4321
 scoped	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	fixes:4287
@@ -379,6 +378,7 @@ namespace	governance
 self	false
 harness	false
 governance	required
+
 ```
 
 ```
@@ -589,13 +589,28 @@ fabrika review ci 4321 [--sha <head>] [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line: `ci\t<sha>\t<green|red|pending|no-producer>`. Second line:
-`check\t<count>` — the number of check-run lines that follow, so the line channel carries its
-own completeness proof. Then one line per check run —
-`<name>\t<success|failure|neutral|cancelled|skipped|timed_out|action_required|in_progress|queued>` —
-so a red or still-running check is in the gate's context by name, not as a rollup boolean.
+`run\t<count>` — how many check runs were enumerated, so the line channel carries its own
+completeness proof. Then one line per status present —
+`check\t<success|failure|neutral|cancelled|skipped|timed_out|action_required|in_progress|queued>\t<count>`.
 
 With `--json`:
-`{"outcome":"ci","sha":…,"rollup":…,"checks":[{name,status}…],"scanned":<n>,"declared":<m>,"gates":{"declared":<g>,"covered":<c>}|null}`.
+`{"outcome":"ci","sha":…,"rollup":…,"checks":{<status>:<count>…},"scanned":<n>,"declared":<m>,"gates":{"declared":<g>,"covered":<c>}|null}`.
+
+`checks` is an **evidence-array collapsed to a status tally** under ADR
+[0308](../../../../.decisions/0308-bounded-evidence-output-shape.md): this skill acts on `rollup`,
+and nothing here or in `SKILL.md` iterates a check row. What the rows carried that a reader does act
+on — **which** check is red or still running — moves to the notes channel, where the verb names the
+failing runs and the in-flight runs on their own lines. A passing check's name was the bulk of the
+old payload and no reader ever wanted it.
+
+**The one caller that did want a passing name reads it elsewhere now.** `review-ui`'s §5 named three
+design gates and read their live state here; a green name reaches neither channel after the collapse,
+so it would have read a gate that never ran as a gate that passed. That read moved to
+`fabrika heal-ci surface`, which prints every declared required context as `producing` or `absent`
+and every undeclared gating run as `extra`. That is an answer this verb could never give even
+uncollapsed: a check run that does not exist has no row here, so a required gate that never ran and
+a gate the repo does not declare at all were always the same silence. This verb answers "is the head
+green"; `heal-ci surface` answers "is the gate armed and did it post".
 
 **The rollup is total over the status vocabulary, fail-closed on the ambiguous rows:** `red`
 when any completed run concluded `failure`, `timed_out`, `action_required` or `cancelled` (a
@@ -611,7 +626,7 @@ still going to report, and a repo with no Actions workflows never will. The evid
 workflow *inventory* and nothing else: **existence is the whole test, and nothing inspects what a
 workflow does** (#5603, R17.1 — "only if workflows exist is fine dude"). Zero workflows refuses on
 `7`, unless the repo declares `ci.noProducer: "degrade"` in `.fabrika.jsonc`, which rolls up
-`no-producer` at exit `0` with `check\t0` — its own token, never `green` and never `pending`. The
+`no-producer` at exit `0` with `run\t0` — its own token, never `green` and never `pending`. The
 inventory is read only when the enumeration came back empty: a check run that reported already
 proves a producer.
 
@@ -667,10 +682,8 @@ workflows that produced a run there, against the repo's live inventory.
 ```
 $ fabrika review ci 4321 --sha 03135b91
 ci	03135b91	green
-check	3
-lint / format / typecheck	success
-unit tests	success
-leak-guard	success
+run	3
+check	success	3
 ```
 
 **Grounding**
