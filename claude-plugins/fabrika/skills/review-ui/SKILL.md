@@ -122,14 +122,21 @@ on a gated question**, because a second answer can contradict the gate and a che
 truly see its subject answers confidently instead of erroring. Where a repo lacks those gates, say
 so in the verdict — your visual read is then advisory cover on that seam, not a substitute gate.
 
-`surface` is the verb that answers this by name, and **it prints two lists — read both**. Each
-declared required context prints as `required\t<name>\t<producing|absent>`, so a gate that never ran
-is `absent` rather than invisible. A gate that runs at the head without answering any declared
-requirement prints as `extra\t<name>` — which is where all three design gates land on phoenix, whose
-`main` ruleset declares three other contexts while `design-token-guard.yml`,
-`design-inventory-guard.yml` and `a11y-pbt.yml` each run `on: pull_request`. A gate in neither list
-is the one that is genuinely absent, and that is the "repo lacks those gates" case above; reading
-only the `required` list would report a gate that just ran green as missing. `fabrika review ci`
+`surface` is the verb that answers this by name, and **it prints two lists — read both**. Both lists
+key on the **check-run name** — the job's `name:` inside each workflow file, never its filename — so
+take each gate's name from its job before matching; searching either list for
+`design-token-guard.yml` finds nothing and misreads an armed gate as missing. On phoenix those names
+are `check every component CSS file consumes the design-token seam`, `descriptive inventory is fresh
+and the normative manifest is untouched` and `property-based a11y over the ui/ primitives
+(warning-to-enforced)`. Each declared required context prints as
+`required\t<check-run name>\t<producing|absent>`, so a gate that never ran is `absent` rather than
+invisible; a gate that runs at the head without answering any declared requirement prints as
+`extra\t<check-run name>`. On phoenix today all three design gates land in `extra` — its `main`
+ruleset declares three other contexts while the three guard workflows each run `on: pull_request` —
+but that placement belongs to the live ruleset, not to these gates: arm one of those contexts and
+the same green gate moves to `required`. A gate in neither list is the one that is genuinely absent,
+and that is the "repo lacks those gates" case above; reading only the `required` list would report a
+gate that just ran green as missing. `fabrika review ci`
 will not answer it — its check rows are a status tally under ADR
 [0308](../../../../.decisions/0308-bounded-evidence-output-shape.md), and even before that collapse
 it could not tell a required gate that never ran from a gate the repo does not declare at all: both

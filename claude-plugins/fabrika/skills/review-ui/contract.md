@@ -31,7 +31,8 @@ out binds regardless of whether the implementation imports or reimplements.
   `review deviations`. The skill invokes them as-is; restating one here would be the second home
   a shared fact drifts from.
 - **The named-gate read** is `heal-ci`'s ([`../heal-ci/contract.md`](../heal-ci/contract.md)):
-  `heal-ci surface`. §5 names three design gates and needs each one's live state *by name*;
+  `heal-ci surface`. §5 names three design gates and needs each one's live state *by name* — the
+  check-run name, the job's `name:` inside each workflow file, never its filename;
   `review ci` collapsed its check rows to a status tally under ADR
   [0308](../../../../.decisions/0308-bounded-evidence-output-shape.md), and even uncollapsed it could
   never tell a required gate that never ran from a gate the repo does not declare at all — both are
