@@ -7,7 +7,13 @@
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer, Logger} from "effect";
-import {Drizzle, type DrizzleAccess, type DrizzleDb, DrizzleError} from "../../db/Drizzle.ts";
+import {
+	Drizzle,
+	type DrizzleAccess,
+	type DrizzleDb,
+	DrizzleError,
+	relations,
+} from "../../db/Drizzle.ts";
 import {type BetterAuthInstance, makePasaportLive, Pasaport, type Session} from "./Pasaport.ts";
 import {
 	recordCaptured,
