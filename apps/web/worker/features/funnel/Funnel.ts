@@ -9,6 +9,7 @@ import {and, count, eq, inArray, isNotNull, or} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
+import {makeRollupWeeklyCohorts} from "./cohort-rollup.ts";
 
 export interface TierPopulation {
 	readonly caylakCount: number;
@@ -198,12 +199,15 @@ export class Funnel extends Context.Service<
 		readonly firstContribution: () => Effect.Effect<FirstContribution>;
 		readonly vouchRate: () => Effect.Effect<VouchRate>;
 		readonly timeToPromotion: () => Effect.Effect<TimeToPromotion>;
+		/** The weekly cohort rollup pass (#7030) — the cron's entry point. */
+		readonly rollupWeeklyCohorts: (now: Date) => Effect.Effect<{readonly cohorts: number}>;
 	}
 >()("@kampus/funnel/Funnel") {}
 
 export const FunnelLive = Layer.effect(Funnel)(
 	Effect.gen(function* () {
-		const {run} = orDieAccess(yield* Drizzle);
+		const {run, batch} = orDieAccess(yield* Drizzle);
+		const rollupWeeklyCohorts = makeRollupWeeklyCohorts(run, batch);
 
 		return {
 			tierPopulation: Effect.fn("Funnel.tierPopulation")(function* () {
@@ -226,6 +230,7 @@ export const FunnelLive = Layer.effect(Funnel)(
 				const rows = yield* run((db) => yazarPromotionTimesQuery(db));
 				return computeTimeToPromotion(rows);
 			}),
+			rollupWeeklyCohorts,
 		};
 	}),
 );
