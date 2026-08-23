@@ -21,35 +21,35 @@
  */
 
 import {
-	BAD_SECTIONS as REPORT_BAD_SECTIONS,
-	BARE_AT_PATH as REPORT_BARE_AT_PATH,
-	CLASSIFIED as REPORT_CLASSIFIED,
-	EMPTY_STDIN as REPORT_EMPTY_STDIN,
-	LEAKED_PATH as REPORT_LEAKED_PATH,
-	NO_TARGET as REPORT_NO_TARGET,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
-	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
-} from "../report/codes.ts";
+	BAD_SECTIONS as SHARED_BAD_SECTIONS,
+	BARE_AT_PATH as SHARED_BARE_AT_PATH,
+	CLASSIFIED as SHARED_CLASSIFIED,
+	EMPTY_STDIN as SHARED_EMPTY_STDIN,
+	LEAKED_PATH as SHARED_LEAKED_PATH,
+	NO_TARGET as SHARED_NO_TARGET,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
+	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
+} from "../exit-codes.ts";
 
 /** Stdin was read and held nothing. `graduate compose` only — the one verb that reads fd 0. */
-export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
+export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 /** An authored section is missing, out of order, or empty; or a map body that does not parse. */
-export const BAD_SECTIONS = REPORT_BAD_SECTIONS;
+export const BAD_SECTIONS = SHARED_BAD_SECTIONS;
 /** The text carries a machine-local path. No verb here offers `--redact`, so it fires always. */
-export const LEAKED_PATH = REPORT_LEAKED_PATH;
+export const LEAKED_PATH = SHARED_LEAKED_PATH;
 /** The text is a bare `@` path reference — not redactable, so a second code. */
-export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
+export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 /** Proven: the named target does not exist — the source issue, or the `status:needs-triage` label. */
-export const NO_TARGET = REPORT_NO_TARGET;
+export const NO_TARGET = SHARED_NO_TARGET;
 /** A write was attempted and its outcome could not be proven — UNKNOWN, deliberately not `1`. */
-export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
+export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
 /** The write landed but the read-back differs; the artifact exists and needs a human. */
-export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
+export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 /** Proven: `--title` carries a type or priority classification. Triage's seat, not this group's. */
-export const CLASSIFIED = REPORT_CLASSIFIED;
+export const CLASSIFIED = SHARED_CLASSIFIED;
 /** A precondition read failed, so nothing was written and no outcome is proven. */
-export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
+export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /** Proven: the issue carries neither `grilling:session` nor `wayfinding:map`, or carries both. */
 export const SOURCE_UNRECOGNIZED = 12;

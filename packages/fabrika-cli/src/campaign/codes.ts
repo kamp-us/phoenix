@@ -13,18 +13,18 @@
  */
 
 import {
-	NO_TARGET as REPORT_NO_TARGET,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
-	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
-} from "../report/codes.ts";
+	NO_TARGET as SHARED_NO_TARGET,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
+	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
+} from "../exit-codes.ts";
 
 /** Proven: the selector names no row on the table. `campaign state` only. */
-export const NO_TARGET = REPORT_NO_TARGET;
+export const NO_TARGET = SHARED_NO_TARGET;
 /** The write to the roadmap file failed, so the file may be half-written — UNKNOWN. */
-export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
+export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
 /** The write landed and the read-back does not match it. */
-export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
+export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 /**
  * The roadmap file could not be read, so nothing was attempted — UNKNOWN.
  *
@@ -32,7 +32,7 @@ export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
  * contract's trigger names the file read, and the half of the `8`/`11` split that carries the
  * operator's next move is *whether a write was attempted*, which on that arm it was not.
  */
-export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
+export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /** Proven: a data row under `## Campaigns` will not parse — the whole table is unreadable. */
 export const TABLE_UNREADABLE = 12;

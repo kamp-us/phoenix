@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {checkAlignment, SHARED_SEATS} from "../exit-code-alignment.ts";
-import * as report from "../report/codes.ts";
+import * as report from "../exit-codes.ts";
 import * as codes from "./codes.ts";
 import {
 	BARE_AT_PATH,

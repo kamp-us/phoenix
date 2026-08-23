@@ -11,7 +11,6 @@ import * as config from "./config/codes.ts";
 import * as decision from "./decision/codes.ts";
 import {
 	ALIGNED_GROUPS,
-	ALIGNMENT_BASE,
 	allocatedCodes,
 	type CodeTable,
 	checkAlignment,
@@ -22,6 +21,7 @@ import {
 	verbSeatedExitCodes,
 	ZeroCoverageScope,
 } from "./exit-code-alignment.ts";
+import * as exitCodes from "./exit-codes.ts";
 import * as glossary from "./glossary/codes.ts";
 import * as governance from "./governance/codes.ts";
 import * as graduate from "./graduate/codes.ts";
@@ -144,24 +144,20 @@ describe("no group's exit table seats the harness's blocking code", () => {
  */
 describe("the coverage scan can see a group that ships no table", () => {
 	it("reports a shipped group with no table and no registration", () => {
-		expect(
-			coverageGaps({registered: [ALIGNMENT_BASE, "ghost"], onDisk: [ALIGNMENT_BASE]}),
-		).toMatchObject({unclassified: ["ghost"]});
+		expect(coverageGaps({registered: ["report", "ghost"], onDisk: ["report"]})).toMatchObject({
+			unclassified: ["ghost"],
+		});
 	});
 
 	it("reports a table on disk that no registry classifies", () => {
-		expect(
-			coverageGaps({registered: [ALIGNMENT_BASE], onDisk: [ALIGNMENT_BASE, "ghost"]}),
-		).toMatchObject({unclassified: ["ghost"]});
+		expect(coverageGaps({registered: ["report"], onDisk: ["report", "ghost"]})).toMatchObject({
+			unclassified: ["ghost"],
+		});
 	});
 
 	it("throws rather than reporting no gaps when there is nothing to scan (ADR 0092)", () => {
-		expect(() => coverageGaps({registered: [], onDisk: [ALIGNMENT_BASE]})).toThrow(
-			ZeroCoverageScope,
-		);
-		expect(() => coverageGaps({registered: [ALIGNMENT_BASE], onDisk: []})).toThrow(
-			ZeroCoverageScope,
-		);
+		expect(() => coverageGaps({registered: [], onDisk: ["report"]})).toThrow(ZeroCoverageScope);
+		expect(() => coverageGaps({registered: ["report"], onDisk: []})).toThrow(ZeroCoverageScope);
 	});
 });
 
@@ -176,11 +172,7 @@ describe("the untabled groups are genuinely untabled", () => {
 	});
 
 	it("names no group that also appears in an alignment registry", () => {
-		const aligned = new Set([
-			ALIGNMENT_BASE,
-			...Object.keys(ALIGNED_GROUPS),
-			...Object.keys(UNALIGNED_GROUPS),
-		]);
+		const aligned = new Set([...Object.keys(ALIGNED_GROUPS), ...Object.keys(UNALIGNED_GROUPS)]);
 		expect(Object.keys(UNTABLED_GROUPS).filter((name) => aligned.has(name))).toEqual([]);
 	});
 });
@@ -239,7 +231,9 @@ describe("no verb file seats an exit code its group's table does not", () => {
 	});
 });
 
-describe.each(Object.entries(ALIGNED_GROUPS))("`%s` against `report`", (group, seats) => {
+describe.each(
+	Object.entries(ALIGNED_GROUPS),
+)("`%s` against the shared registry", (group, seats) => {
 	const table = TABLES[group];
 
 	it("has a module to check", () => {
@@ -247,11 +241,11 @@ describe.each(Object.entries(ALIGNED_GROUPS))("`%s` against `report`", (group, s
 	});
 
 	it("seats every shared meaning on the base's number", () => {
-		expect(checkAlignment(report, table as CodeTable, seats).drifted).toEqual([]);
+		expect(checkAlignment(exitCodes, table as CodeTable, seats).drifted).toEqual([]);
 	});
 
 	it("adds no code the base already spoke for", () => {
-		expect(checkAlignment(report, table as CodeTable, seats).collisions).toEqual([]);
+		expect(checkAlignment(exitCodes, table as CodeTable, seats).collisions).toEqual([]);
 	});
 });
 

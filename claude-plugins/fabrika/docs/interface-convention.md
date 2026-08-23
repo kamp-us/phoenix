@@ -154,7 +154,8 @@ exit taxonomy, and the verdict-vs-invocation separation proven in v1 at
 
 - **The `report` ↔ `triage` ↔ `review` code-for-code alignment is a deliberate, bounded courtesy —
   not a repo-wide namespace.** Those three groups hold `3`, `5`, `6`, `7`, `8`, `9`, `10` and `11` on
-  one meaning each, and `triage` and `review` *import* the constants from `report` rather than
+  one meaning each, and every aligning group — the three included — *imports* the constants from
+  the shared registry (`packages/fabrika-cli/src/exit-codes.ts`) rather than
   restating numerals, so a drift there is unrepresentable rather than merely detectable. The reason
   is one caller commonly driving all three in a single sweep.
   [`exit-code-alignment.ts`](../../../packages/fabrika-cli/src/exit-code-alignment.ts) mechanizes

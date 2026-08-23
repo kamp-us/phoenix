@@ -15,17 +15,17 @@
  */
 
 import {
-	BAD_SECTIONS as REPORT_BAD_SECTIONS,
-	CLASSIFIED as REPORT_CLASSIFIED,
-	EMPTY_STDIN as REPORT_EMPTY_STDIN,
-	NO_TARGET as REPORT_NO_TARGET,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
-	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
-} from "../report/codes.ts";
+	BAD_SECTIONS as SHARED_BAD_SECTIONS,
+	CLASSIFIED as SHARED_CLASSIFIED,
+	EMPTY_STDIN as SHARED_EMPTY_STDIN,
+	NO_TARGET as SHARED_NO_TARGET,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
+	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
+} from "../exit-codes.ts";
 
 /** Stdin was read and held nothing. `glossary add --definition-file -` only — the one fd 0 read. */
-export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
+export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 /**
  * The register was read and a structure this verb needs — its term table, or its headings — is
  * unusable.
@@ -33,7 +33,7 @@ export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
  * A register with **no** term table at all is zero rows, never this: absence is `bootstrap` and an
  * empty table is the verb's zero-row behaviour. Only a table that exists and is malformed lands here.
  */
-export const BAD_SECTIONS = REPORT_BAD_SECTIONS;
+export const BAD_SECTIONS = SHARED_BAD_SECTIONS;
 /**
  * Held empty. Machine-local paths in a register are decided by the merge-blocking leak gate over
  * changed markdown, and a second answer here could report clean while that gate reds.
@@ -44,20 +44,20 @@ export const BAD_SECTIONS = REPORT_BAD_SECTIONS;
  */
 export const DELIBERATE_GAP = 5;
 /** Proven: a judging verb scanned nothing it could judge (ADR 0092). */
-export const ZERO_SCOPE = REPORT_NO_TARGET;
+export const ZERO_SCOPE = SHARED_NO_TARGET;
 /** A register write was attempted and its outcome could not be proven — UNKNOWN, deliberately not `1`. */
-export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
+export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
 /** The write landed and the re-read differs from what was composed; the register needs a human. */
-export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
+export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 /**
  * A closed-enum flag carried an off-enum value — `--register` outside its vocabulary, or `both` where
  * a verb writes and a term has exactly one register.
  *
  * A semantic refusal on a *value*; a malformed *flag* stays `1`, which is the parser's.
  */
-export const OFF_VOCABULARY = REPORT_CLASSIFIED;
+export const OFF_VOCABULARY = SHARED_CLASSIFIED;
 /** A precondition read failed; nothing was written and no outcome is proven. */
-export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
+export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /** Proven: the term is already declared and `--replace` was not given — `add` refused. */
 export const TERM_COLLISION = 12;

@@ -52,7 +52,7 @@ not a probe's inability to run. Only outcome (2) may gate.
 *runs*, is the authority for a decision, and finds its input unreadable fails **closed** — the
 canonical instance is `fabrika ship checks` ([`packages/fabrika-cli/src/ship/checks-verb.ts`](../packages/fabrika-cli/src/ship/checks-verb.ts)),
 which answers the rollup on exit `0` and seats an unreadable precondition on its own code
-`PRECONDITION_UNKNOWN` (`11`, from [`packages/fabrika-cli/src/report/codes.ts`](../packages/fabrika-cli/src/report/codes.ts))
+`PRECONDITION_UNKNOWN` (`11`, from [`packages/fabrika-cli/src/exit-codes.ts`](../packages/fabrika-cli/src/exit-codes.ts))
 — never on `1`, which means a bad flag or a verb that failed to run, and never on `2`, which fabrika
 never allocates because it is the harness's block code
 ([`packages/fabrika-cli/src/verb.ts`](../packages/fabrika-cli/src/verb.ts)). Refusing there costs one

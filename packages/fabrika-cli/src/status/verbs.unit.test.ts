@@ -9,6 +9,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {audienceLabel, type BoardVocabulary, statusList, typeLabel} from "../config/board.ts";
 import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
+import * as report from "../exit-codes.ts";
 import {fakeFs, fakeSeams, fakeShell, type HttpReply} from "../fakes.test-support.ts";
 import {ok} from "../io/git.ts";
 import type {StdinRead} from "../io/stdin.ts";
@@ -17,7 +18,6 @@ import {coderTemplateText} from "../lane/fixtures.test-support.ts";
 import {DEFAULT_STALE_MINUTES} from "../lane/stale.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
-import * as report from "../report/codes.ts";
 import {
 	AUDIENCES,
 	PRIORITIES,

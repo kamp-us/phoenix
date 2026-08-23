@@ -13,14 +13,14 @@
  */
 
 import {
-	BAD_SECTIONS as REPORT_BAD_SECTIONS,
-	EMPTY_STDIN as REPORT_EMPTY_STDIN,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
-} from "../report/codes.ts";
+	BAD_SECTIONS as SHARED_BAD_SECTIONS,
+	EMPTY_STDIN as SHARED_EMPTY_STDIN,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
+} from "../exit-codes.ts";
 
 /** Nothing arrived on fd 0 — `ci pr-body` was handed no body to repair. */
-export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
+export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 
 /**
  * An input document parsed and then violated its schema: an entries JSON that is not
@@ -28,10 +28,10 @@ export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
  * that is not a `Check`. The base's reading of a body whose sections are missing or out of order,
  * widened to a whole derived document exactly as `review-ui` widens it.
  */
-export const MALFORMED_DOCUMENT = REPORT_BAD_SECTIONS;
+export const MALFORMED_DOCUMENT = SHARED_BAD_SECTIONS;
 
 /** The output file could not be written, so whether it landed is UNKNOWN. */
-export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
+export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
 
 /** A read the answer rests on failed — an input file, or `git rev-parse HEAD`. */
-export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
+export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
