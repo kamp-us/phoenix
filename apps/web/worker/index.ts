@@ -29,6 +29,7 @@ import {deliverFrameOf} from "./features/fate-live/protocol.ts";
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
 import {Flagship, FlagshipLive} from "./features/flagship/Flagship.ts";
 import {Flagship as FlagshipResource} from "./features/flagship/resources.ts";
+import {subscribeCohortRollup} from "./features/funnel/cohort-rollup-cron.ts";
 import {subscribeHotScoreDecay} from "./features/pano/hot-score-decay-cron.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
 import {EmailDeliveryLogLive} from "./features/pasaport/email-delivery-log.ts";
@@ -167,6 +168,7 @@ export default Phoenix.make(
 		// `subscribe` only registers a listener (no async/timer work), so it is init-safe.
 		yield* subscribeHotScoreDecay(fateLayer);
 		yield* subscribeSozlukReconcile(fateLayer);
+		yield* subscribeCohortRollup(fateLayer);
 
 		// One `LiveDO` namespace plays both roles, keyed by instance name (ADRs 0028/0029);
 		// addressing + name grammar live at the `live-do.ts` seam.
