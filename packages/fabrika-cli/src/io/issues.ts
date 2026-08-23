@@ -493,10 +493,16 @@ export const getCommentRecord = (repo: string, id: number): Shell<Attempt<Commen
 				if (!isRecord(body) || typeof body.body !== "string" || typeof body.id !== "number") {
 					return fail("GitHub answered 200 but its body is not a comment");
 				}
+				// An unreadable author is a failed read, never a blank one: a blank login would
+				// downstream as AUTHOR_UNDECLARED (16) — a proven negative about a person GitHub
+				// never named. Callers seat this arm on their read-failure exit instead (#6983).
 				const user = body.user;
+				if (!isRecord(user) || typeof user.login !== "string") {
+					return fail("GitHub answered 200 but the comment carries no readable author login");
+				}
 				return ok({
 					id: body.id,
-					author: isRecord(user) && typeof user.login === "string" ? user.login : "",
+					author: user.login,
 					createdAt: typeof body.created_at === "string" ? body.created_at : "",
 					updatedAt: typeof body.updated_at === "string" ? body.updated_at : "",
 					body: body.body,
