@@ -22,9 +22,9 @@
  */
 
 import {
-	NO_TARGET as REPORT_NO_TARGET,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-} from "../report/codes.ts";
+	NO_TARGET as SHARED_NO_TARGET,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+} from "../exit-codes.ts";
 
 /**
  * The record the caller named is not there: `<id>` under `--dir`, or `--new`'s id or path.
@@ -33,7 +33,7 @@ import {
  * seat for `adr supersede`'s subject and `adr sweep`'s `--new` is the collision this table was
  * written to end.
  */
-export const NO_SUBJECT = REPORT_NO_TARGET;
+export const NO_SUBJECT = SHARED_NO_TARGET;
 
 /**
  * The record directory could not be read in full, so every answer over it is UNKNOWN.
@@ -47,7 +47,7 @@ export const NO_SUBJECT = REPORT_NO_TARGET;
  * below keep their own codes because they read something else — a git ref, GitHub's open pull
  * requests — and neither is the precondition of a seat in this table.
  */
-export const DIR_UNREADABLE = REPORT_PRECONDITION_UNKNOWN;
+export const DIR_UNREADABLE = SHARED_PRECONDITION_UNKNOWN;
 
 /** The target path already exists — refused, never overwritten. */
 export const ALREADY_EXISTS = 12;

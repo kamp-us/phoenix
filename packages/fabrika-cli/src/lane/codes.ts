@@ -13,44 +13,44 @@
  */
 
 import {
-	BAD_SECTIONS as REPORT_BAD_SECTIONS,
-	NO_TARGET as REPORT_NO_TARGET,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
-	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
-} from "../report/codes.ts";
+	BAD_SECTIONS as SHARED_BAD_SECTIONS,
+	NO_TARGET as SHARED_NO_TARGET,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
+	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
+} from "../exit-codes.ts";
 
 /**
  * The lane is not there: no `workflow.json` under the lane directory. A proven absence — the lane
  * was never opened. The base's target seat: the thing the verb was pointed at does not exist.
  */
-export const LANE_ABSENT = REPORT_NO_TARGET;
+export const LANE_ABSENT = SHARED_NO_TARGET;
 
 /**
  * The lane was read in full and is not the shape: a `workflow.json` the compiler refuses (each
  * defect named), an `events.jsonl` line that does not parse, or a log the machine cannot replay.
  * The base's section seat widened to a whole on-disk record, on the `review-ui` precedent.
  */
-export const MALFORMED_RECORD = REPORT_BAD_SECTIONS;
+export const MALFORMED_RECORD = SHARED_BAD_SECTIONS;
 
 /**
  * The append did not land, or `lane claim`'s marker write did not. The caller refuses; it never
  * reports the event as recorded, nor the claim as held.
  */
-export const APPEND_UNKNOWN = REPORT_WRITE_UNKNOWN;
+export const APPEND_UNKNOWN = SHARED_WRITE_UNKNOWN;
 
 /**
  * `lane claim`'s marker landed and does not read back as the token this run posted. The comment
  * exists, so it is neither a failed write nor a lost race — it needs a human eye.
  */
-export const MARKER_READBACK = REPORT_READBACK_MISMATCH;
+export const MARKER_READBACK = SHARED_READBACK_MISMATCH;
 
 /**
  * The lane could not be read, or its absence could not be established. UNKNOWN, never a fresh
  * lane: the read is what makes {@link LANE_ABSENT} and {@link MALFORMED_RECORD} *proven*, so a
  * failed read can be neither.
  */
-export const LANE_UNREADABLE = REPORT_PRECONDITION_UNKNOWN;
+export const LANE_UNREADABLE = SHARED_PRECONDITION_UNKNOWN;
 
 /**
  * The event is refused and the log is left unappended: the machine holds no cell for it in the

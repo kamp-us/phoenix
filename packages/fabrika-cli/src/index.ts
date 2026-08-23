@@ -19,6 +19,7 @@ export * as StatusLine from "./adr/status-line.ts";
 export * as Sweep from "./adr/sweep.ts";
 export * as AdrSweep from "./adr/sweep-verb.ts";
 export * as Template from "./adr/template.ts";
+export * as ExitCodes from "./exit-codes.ts";
 export * as Exec from "./io/exec.ts";
 export * as Fs from "./io/fs.ts";
 export * as Git from "./io/git.ts";

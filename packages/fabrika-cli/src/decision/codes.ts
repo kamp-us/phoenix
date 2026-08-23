@@ -18,12 +18,12 @@
  */
 
 import {
-	BAD_SECTIONS as REPORT_BAD_SECTIONS,
-	NO_TARGET as REPORT_NO_TARGET,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
-	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
-} from "../report/codes.ts";
+	BAD_SECTIONS as SHARED_BAD_SECTIONS,
+	NO_TARGET as SHARED_NO_TARGET,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
+	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
+} from "../exit-codes.ts";
 
 /**
  * Proven: the ruled issue's body carries no readable `### Acceptance criteria` block, so the
@@ -34,16 +34,16 @@ import {
  * promise with none of the same proof manufactures a lane that parks at `build claim` exit 32
  * (#6734).
  */
-export const CRITERIA_REQUIRED = REPORT_BAD_SECTIONS;
+export const CRITERIA_REQUIRED = SHARED_BAD_SECTIONS;
 
 /** Proven absent: the issue does not exist, is a pull request, or is not a `type:decision`. */
-export const NO_TARGET = REPORT_NO_TARGET;
+export const NO_TARGET = SHARED_NO_TARGET;
 /** The write failed and may or may not have landed — re-read the issue before retrying. */
-export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
+export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
 /** The write landed and does not read back as what was sent. */
-export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
+export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 /** A precondition could not be read — the roster, the comments, the invoking account. Never a state. */
-export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
+export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /**
  * Proven: the invoking account may not rule a decision here — it is outside the

@@ -17,19 +17,19 @@
  */
 
 import {
-	BAD_SECTIONS as REPORT_BAD_SECTIONS,
-	BARE_AT_PATH as REPORT_BARE_AT_PATH,
-	CLASSIFIED as REPORT_CLASSIFIED,
-	EMPTY_STDIN as REPORT_EMPTY_STDIN,
-	LEAKED_PATH as REPORT_LEAKED_PATH,
-	NO_TARGET as REPORT_NO_TARGET,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
-	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
-} from "../report/codes.ts";
+	BAD_SECTIONS as SHARED_BAD_SECTIONS,
+	BARE_AT_PATH as SHARED_BARE_AT_PATH,
+	CLASSIFIED as SHARED_CLASSIFIED,
+	EMPTY_STDIN as SHARED_EMPTY_STDIN,
+	LEAKED_PATH as SHARED_LEAKED_PATH,
+	NO_TARGET as SHARED_NO_TARGET,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
+	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
+} from "../exit-codes.ts";
 
 /** Stdin was read and held nothing. `spike capture` only — the one verb that reads fd 0. */
-export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
+export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 /**
  * A required document is missing, malformed, or out of place — here the workspace manifest or the
  * evidence log exists and does not parse.
@@ -37,7 +37,7 @@ export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
  * Refused whole-file rather than per-field: a verb holding half a manifest would compare against a
  * digest it cannot vouch for.
  */
-export const MALFORMED_RECORD = REPORT_BAD_SECTIONS;
+export const MALFORMED_RECORD = SHARED_BAD_SECTIONS;
 /**
  * The authored text carries a machine-local path.
  *
@@ -45,9 +45,9 @@ export const MALFORMED_RECORD = REPORT_BAD_SECTIONS;
  * verb offers `--redact`, so here the refusal fires unconditionally. The condition narrows; the
  * meaning does not drift.
  */
-export const LEAKED_PATH = REPORT_LEAKED_PATH;
+export const LEAKED_PATH = SHARED_LEAKED_PATH;
 /** The authored text is a bare `@` path reference — not redactable, so a second code. */
-export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
+export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 /**
  * Proven: the write target is absent — the spike issue, or the `prototyping:spike` label — or the
  * spike is proven closed when the verb needed it open.
@@ -55,18 +55,18 @@ export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
  * Never fused with {@link READ_OR_EXEC_UNKNOWN}: a proven absence is a verdict, a failed read is a
  * verdict about nothing, and no message in this group reads "does not exist, or is not readable".
  */
-export const ZERO_SCOPE = REPORT_NO_TARGET;
+export const ZERO_SCOPE = SHARED_NO_TARGET;
 /** A write was attempted and its outcome could not be proven — UNKNOWN, deliberately not `1`. */
-export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
+export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
 /** The write landed but the read-back does not match; the artifact exists and needs a human. */
-export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
+export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 /**
  * A value off its closed vocabulary or naming grammar — an off-grammar `--nonce`, a `--kind` outside
  * `logic`/`ui`, a malformed `--timeout` or `--env`.
  *
  * A semantic refusal on a *value*; a malformed *flag* stays `1`, which is the parser's.
  */
-export const OFF_VOCABULARY = REPORT_CLASSIFIED;
+export const OFF_VOCABULARY = SHARED_CLASSIFIED;
 /**
  * A required read or execution failed — no outcome is proven.
  *
@@ -75,7 +75,7 @@ export const OFF_VOCABULARY = REPORT_CLASSIFIED;
  * an attempt rather than a read. `../exit-code-alignment.ts` records that a group's reading may be a
  * documented superset and that a number cannot say so on its own; the name is where this one says it.
  */
-export const READ_OR_EXEC_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
+export const READ_OR_EXEC_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /**
  * Proven: no workspace exists for this nonce — never opened, or already disposed.

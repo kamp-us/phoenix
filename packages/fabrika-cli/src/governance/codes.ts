@@ -20,14 +20,14 @@
  */
 
 import {
-	BARE_AT_PATH as REPORT_BARE_AT_PATH,
-	EMPTY_STDIN as REPORT_EMPTY_STDIN,
-	LEAKED_PATH as REPORT_LEAKED_PATH,
-	NO_TARGET as REPORT_NO_TARGET,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
-	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
-} from "../report/codes.ts";
+	BARE_AT_PATH as SHARED_BARE_AT_PATH,
+	EMPTY_STDIN as SHARED_EMPTY_STDIN,
+	LEAKED_PATH as SHARED_LEAKED_PATH,
+	NO_TARGET as SHARED_NO_TARGET,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
+	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
+} from "../exit-codes.ts";
 import {
 	INCOMPLETE_SCAN as REVIEW_INCOMPLETE_SCAN,
 	STALE_HEAD as REVIEW_STALE_HEAD,
@@ -35,11 +35,11 @@ import {
 import {OFF_VOCABULARY as TRIAGE_OFF_VOCABULARY} from "../triage/codes.ts";
 
 /** Stdin was read and held nothing. `governance post` and `governance readout` only. */
-export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
+export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 /** The **authored** text carries a machine-local path. */
-export const LEAKED_PATH = REPORT_LEAKED_PATH;
+export const LEAKED_PATH = SHARED_LEAKED_PATH;
 /** The **authored** text is a bare `@` path reference — not redactable, so a second code. */
-export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
+export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 /**
  * Zero scope: the target is **proven absent (404)** or closed, the PR has zero changed files, the
  * corpus holds zero decision records, the window holds zero landings, or the readout artifact is
@@ -48,11 +48,11 @@ export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
  * *Proven* is the operative word. A 404 is a fact about the repository; an unreachable GitHub is not
  * a fact about anything and lands on {@link PRECONDITION_UNKNOWN}.
  */
-export const ZERO_SCOPE = REPORT_NO_TARGET;
+export const ZERO_SCOPE = SHARED_NO_TARGET;
 /** The write itself failed — the outcome is **UNKNOWN**, deliberately not `1`. */
-export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
+export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
 /** The write landed but the read-back does not match. The artifact exists and needs a human. */
-export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
+export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 /**
  * A supplied value is off the closed vocabulary — a bad `--polarity`, a `--sha` that is not a head
  * SHA, an unparseable `--since`, a `--record` that is not a four-digit id, a `--path` outside this
@@ -60,7 +60,7 @@ export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
  */
 export const OFF_VOCABULARY = TRIAGE_OFF_VOCABULARY;
 /** A precondition read failed — nothing was written and the outcome is UNKNOWN. */
-export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
+export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /** Refused: the `--sha` given is not the PR's head — `review`'s seat, for the same proven fact. */
 export const STALE_HEAD = REVIEW_STALE_HEAD;

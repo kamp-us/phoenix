@@ -12,25 +12,25 @@
  */
 
 import {
-	BAD_SECTIONS as REPORT_BAD_SECTIONS,
-	BARE_AT_PATH as REPORT_BARE_AT_PATH,
-	CLASSIFIED as REPORT_CLASSIFIED,
-	EMPTY_STDIN as REPORT_EMPTY_STDIN,
-	LEAKED_PATH as REPORT_LEAKED_PATH,
-	NO_TARGET as REPORT_NO_TARGET,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
-	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
-} from "../report/codes.ts";
+	BAD_SECTIONS as SHARED_BAD_SECTIONS,
+	BARE_AT_PATH as SHARED_BARE_AT_PATH,
+	CLASSIFIED as SHARED_CLASSIFIED,
+	EMPTY_STDIN as SHARED_EMPTY_STDIN,
+	LEAKED_PATH as SHARED_LEAKED_PATH,
+	NO_TARGET as SHARED_NO_TARGET,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
+	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
+} from "../exit-codes.ts";
 
 /** Stdin was read and held nothing. Distinct from a read that failed, which is `1`. */
-export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
+export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 /** A required section is missing, malformed, empty, or out of place — authored, or derived from. */
-export const BAD_SECTIONS = REPORT_BAD_SECTIONS;
+export const BAD_SECTIONS = SHARED_BAD_SECTIONS;
 /** The authored text carries a machine-local path, unredacted. */
-export const LEAKED_PATH = REPORT_LEAKED_PATH;
+export const LEAKED_PATH = SHARED_LEAKED_PATH;
 /** The authored text is a bare `@` path reference — not redactable, so a second code. */
-export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
+export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 /**
  * Zero scope: the target is **proven** absent (404) or closed, or there is nothing to judge.
  *
@@ -38,15 +38,15 @@ export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
  * whole group rests on: a 404 is a verdict about the repository, a 5xx is a verdict about nothing.
  * No verb fuses them, and no message here is worded "does not exist, or is not readable".
  */
-export const ZERO_SCOPE = REPORT_NO_TARGET;
+export const ZERO_SCOPE = SHARED_NO_TARGET;
 /** A write was attempted and its outcome could not be proven — UNKNOWN, deliberately not `1`. */
-export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
+export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
 /** The write landed but the read-back does not match; the artifact exists and needs a human. */
-export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
+export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 /** A value off its closed vocabulary, or a classification claim where none is permitted. */
-export const OFF_VOCABULARY = REPORT_CLASSIFIED;
+export const OFF_VOCABULARY = SHARED_CLASSIFIED;
 /** A required read or validator execution failed — nothing was written, no outcome is proven. */
-export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
+export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /**
  * `12` is a **retired seat, deliberately left empty.** It was "not in a linked worktree", and the

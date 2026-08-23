@@ -2,9 +2,9 @@
  * Which exit tables in this package must agree, what "agree" means, and the derivation that decides
  * it — read from the shipped modules' own exports, never from a copied list of numbers.
  *
- * `report/codes.ts` is the **base**: the table the writing verbs shipped first, so every other group
- * seats itself against it rather than the other way round. An aligning group owes the base two
- * things, and they are different obligations that need different machinery:
+ * `exit-codes.ts` is the **base**: the shared registry every aligning group reads its common seats
+ * from, `report` included. An aligning group owes the base two things, and they are different
+ * obligations that need different machinery:
  *
  *   - **The shared seats carry the same number.** Handled by identity, not by assertion: an aligning
  *     group *imports* the base's constant (`review/codes.ts` already does; `triage/codes.ts` now does
@@ -13,9 +13,10 @@
  *     drifting quietly.
  *   - **The codes the group adds on its own account clear the base's whole table.** This one cannot
  *     be an import — the group's private codes are its own — so it is a check, and the check derives
- *     the base's occupied seats from `report`'s exports. That is the direction that bit: `triage`'s
- *     `HUMAN_FILED` had to be re-seated `12` because `11` was already `PRECONDITION_UNKNOWN`
- *     upstream, and it was a human reading both files side by side who caught it (#4924).
+ *     the base's occupied seats from the registry's exports. That is the direction that bit:
+ *     `triage`'s `HUMAN_FILED` had to be re-seated `12` because `11` was already
+ *     `PRECONDITION_UNKNOWN` upstream, and it was a human reading both files side by side who caught
+ *     it (#4924).
  *
  * Not every group aligns. `wire` allocates `3`-`6` for entirely different facts and is right to —
  * see {@link UNALIGNED_GROUPS}, which lists it rather than omitting it, because an omission is
@@ -32,8 +33,12 @@
 import {existsSync, readdirSync, readFileSync, realpathSync} from "node:fs";
 import {join} from "node:path";
 
-/** The group whose table every aligning group seats itself against. */
-export const ALIGNMENT_BASE = "report";
+/** The group whose table every aligning group seats itself against — retired. The base is now the
+ * shared registry, `../exit-codes.ts`; `report` is an ordinary aligned group ({@link REPORT_SEATS}).
+ *
+ * @deprecated removed alongside the registry move; kept out of the exports entirely so a caller
+ * cannot silently keep classifying `report` as the base.
+ */
 
 /**
  * The seats an aligning group shares with the base, as `<group export> → <base export>`.
@@ -365,7 +370,26 @@ export const CAMPAIGN_SEATS: SharedSeats = {
 	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
 };
 
-/** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
+/**
+ * `report`'s seats: all nine, under the registry's own names.
+ *
+ * The group that authored the shared band first re-exports it verbatim (`report/codes.ts`), so its
+ * map is the identity — and its two private seats (`27`, `28`) sit above every aligning group's
+ * private band for the reason its table records.
+ */
+export const REPORT_SEATS: SharedSeats = {
+	BAD_SECTIONS: "BAD_SECTIONS",
+	BARE_AT_PATH: "BARE_AT_PATH",
+	CLASSIFIED: "CLASSIFIED",
+	EMPTY_STDIN: "EMPTY_STDIN",
+	LEAKED_PATH: "LEAKED_PATH",
+	NO_TARGET: "NO_TARGET",
+	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
+	READBACK_MISMATCH: "READBACK_MISMATCH",
+	WRITE_UNKNOWN: "WRITE_UNKNOWN",
+};
+
+/** The groups that align to the shared registry (`../exit-codes.ts`), each with the seats it claims. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	adr: ADR_SEATS,
 	build: BUILD_SEATS,
@@ -386,6 +410,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	pattern: PATTERN_SEATS,
 	plan: BUILD_SEATS,
 	recipe: RECIPE_SEATS,
+	report: REPORT_SEATS,
 	triage: SHARED_SEATS,
 	review: SHARED_SEATS,
 	"review-ui": REVIEW_UI_SEATS,
@@ -423,7 +448,6 @@ export const UNTABLED_GROUPS: Readonly<Record<string, string>> = {};
 /** Every group this module has an answer for, whichever of the three registries holds it. */
 export const classifiedGroups = (): ReadonlySet<string> =>
 	new Set([
-		ALIGNMENT_BASE,
 		...Object.keys(ALIGNED_GROUPS),
 		...Object.keys(UNALIGNED_GROUPS),
 		...Object.keys(UNTABLED_GROUPS),

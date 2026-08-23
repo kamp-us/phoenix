@@ -17,19 +17,19 @@
  */
 
 import {
-	BAD_SECTIONS as REPORT_BAD_SECTIONS,
-	BARE_AT_PATH as REPORT_BARE_AT_PATH,
-	CLASSIFIED as REPORT_CLASSIFIED,
-	EMPTY_STDIN as REPORT_EMPTY_STDIN,
-	LEAKED_PATH as REPORT_LEAKED_PATH,
-	NO_TARGET as REPORT_NO_TARGET,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
-	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
-} from "../report/codes.ts";
+	BAD_SECTIONS as SHARED_BAD_SECTIONS,
+	BARE_AT_PATH as SHARED_BARE_AT_PATH,
+	CLASSIFIED as SHARED_CLASSIFIED,
+	EMPTY_STDIN as SHARED_EMPTY_STDIN,
+	LEAKED_PATH as SHARED_LEAKED_PATH,
+	NO_TARGET as SHARED_NO_TARGET,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
+	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
+} from "../exit-codes.ts";
 
 /** Stdin was read and held nothing. Distinct from a read that failed, which is `1`. */
-export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
+export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 /**
  * A required file this group derives from is absent, does not parse, or violates its schema — a
  * capture set's `manifest.json`, or `design-harness.json` at the tier-choice read.
@@ -37,11 +37,11 @@ export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
  * The base's section seat, widened to the whole-file rule the `ui` group states: a document read
  * for a decision is read whole, and a half-read one decides nothing.
  */
-export const MALFORMED_DOCUMENT = REPORT_BAD_SECTIONS;
+export const MALFORMED_DOCUMENT = SHARED_BAD_SECTIONS;
 /** The **authored** text carries a machine-local path. This group offers no `--redact`. */
-export const LEAKED_PATH = REPORT_LEAKED_PATH;
+export const LEAKED_PATH = SHARED_LEAKED_PATH;
 /** The authored text is a bare `@` path reference — not redactable, so a second code. */
-export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
+export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 /**
  * Zero scope: the target is **proven absent (404)**, or the PR is closed.
  *
@@ -49,15 +49,15 @@ export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
  * scope. *Proven* is the operative word: a 404 is a fact about the repository, an unreachable
  * GitHub is not a fact about anything and lands on {@link PRECONDITION_UNKNOWN}.
  */
-export const ZERO_SCOPE = REPORT_NO_TARGET;
+export const ZERO_SCOPE = SHARED_NO_TARGET;
 /** A write was attempted and its outcome could not be proven — UNKNOWN, deliberately not `1`. */
-export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
+export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
 /** The write landed but the read-back does not match. The artifact exists and needs a human. */
-export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
+export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 /** A semantic refusal on a value or a body: off a closed vocabulary, or a marker-shaped note. */
-export const OFF_VOCABULARY = REPORT_CLASSIFIED;
+export const OFF_VOCABULARY = SHARED_CLASSIFIED;
 /** A required read or execution failed — no outcome is proven, and nothing was written. */
-export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
+export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /**
  * Refused, proven: the artifact is not the PR's current tree.
