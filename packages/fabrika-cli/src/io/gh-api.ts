@@ -198,7 +198,6 @@ const served = <A>(
 	read: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, unknown>,
 ): Api<Served<A>> =>
 	HttpClient.execute(request).pipe(
-		Effect.timeout(Duration.seconds(githubHttpTimeoutSeconds())),
 		Effect.flatMap((response) =>
 			Effect.map(
 				read(response),
@@ -210,6 +209,10 @@ const served = <A>(
 				}),
 			),
 		),
+		// The bound covers the WHOLE exchange — connect through final body byte. Above
+		// `flatMap(read)` it would spare a stalled body stream, which dies exactly as hard as a
+		// black-holed connect (#7025 criterion 4).
+		Effect.timeout(Duration.seconds(githubHttpTimeoutSeconds())),
 		Effect.catch((error: unknown) =>
 			Effect.succeed<Served<A>>({
 				_tag: "Unreachable",

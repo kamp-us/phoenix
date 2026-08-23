@@ -1,5 +1,7 @@
 import {Effect, Layer} from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeHttp, fakeShell, linkNext, okOut} from "../fakes.test-support.ts";
 import {
@@ -492,6 +494,35 @@ describe("pagedExistence — 404 is a verdict", () => {
 });
 
 describe("githubHttpTimeoutSeconds", () => {
+	it("bounds a stalled body stream, not just a silent connect", async () => {
+		const before = process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
+		try {
+			process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"] = "1";
+			// Headers arrive instantly; the body stream never produces a byte — the shape of a
+			// silent post-header drop (#7025 criterion 4).
+			const request = HttpClientRequest.get("https://api.github.com/repos/o/r/pulls/1");
+			const http = Layer.succeed(HttpClient.HttpClient)(
+				HttpClient.make(() =>
+					Effect.succeed(
+						HttpClientResponse.fromWeb(request, new Response(new ReadableStream({start() {}}))),
+					),
+				),
+			);
+			const started = Date.now();
+			const result = await Effect.runPromise(
+				Effect.provide(restRead(TOKEN, "GET", "repos/o/r/pulls/1"), http),
+			);
+			expect(result._tag).toBe("Unreachable");
+			if (result._tag === "Unreachable") {
+				expect(result.reason).toContain("client-side bound");
+			}
+			expect(Date.now() - started).toBeLessThan(10_000);
+		} finally {
+			if (before === undefined) delete process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
+			else process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"] = before;
+		}
+	});
+
 	it("bounds a never-responding endpoint into Unreachable instead of hanging forever", async () => {
 		const before = process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
 		try {
