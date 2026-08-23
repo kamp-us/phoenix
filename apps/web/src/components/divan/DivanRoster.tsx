@@ -5,26 +5,10 @@
  * per-row by-id `Profile` read and no per-row Suspense boundary (ADR 0021's no-waterfalls
  * contract); a since-deleted profile degrades to the bare "çaylak" label.
  */
-import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
-import type {DivanCaylak} from "../../../worker/features/fate/views";
+import {useListView, useRequest, useView, type ViewRef} from "react-fate";
 import {Button} from "../ui/Button";
 import {CaylakIdentity} from "./CaylakIdentity";
-
-const ROSTER_PAGE_SIZE = 50;
-
-const RosterRowView = view<DivanCaylak>()({
-	id: true,
-	authorId: true,
-	username: true,
-	displayName: true,
-	totalKarma: true,
-	definitionCount: true,
-	postCount: true,
-	commentCount: true,
-	totalCount: true,
-});
-
-const RosterConnectionView = {items: {node: RosterRowView}} as const;
+import {divanRosterRequest, RosterConnectionView, RosterRowView} from "./divanReads";
 
 export function DivanRoster({
 	selectedId,
@@ -33,9 +17,7 @@ export function DivanRoster({
 	readonly selectedId: string | null;
 	readonly onSelect: (authorId: string) => void;
 }) {
-	const result = useRequest({
-		"divan.roster": {list: RosterConnectionView, args: {first: ROSTER_PAGE_SIZE}},
-	});
+	const result = useRequest(divanRosterRequest());
 	const [items] = useListView(RosterConnectionView, result["divan.roster"]);
 
 	if (items.length === 0) {

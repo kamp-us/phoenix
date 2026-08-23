@@ -95,6 +95,16 @@ export function promoteOutcomeMessage(outcome: PromoteOutcome): string {
 	}
 }
 
+/**
+ * Which promote outcomes warrant re-pulling the review reads (#7036). A flip leaves
+ * roster/backlog stale; an "already yazar" answer means the screen was ALREADY stale
+ * when pressed (the double-press case), so it refreshes too. A denial or transport
+ * error says nothing about the lists — their rendering stays untouched.
+ */
+export function promoteRefreshWarranted(outcome: PromoteOutcome): boolean {
+	return outcome === "promoted" || outcome === "alreadyYazar";
+}
+
 export type VouchOutcome = "promoted" | "recorded" | "limit" | "denied" | "error";
 
 export function vouchOutcome(

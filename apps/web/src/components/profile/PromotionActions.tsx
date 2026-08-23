@@ -11,7 +11,7 @@ import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {PromotionReceipt} from "../../../worker/features/fate/views";
 import {codeOf} from "../../fate/wire";
-import {promoteVisible} from "../divan/divanGating";
+import {promoteRefreshWarranted, promoteVisible} from "../divan/divanGating";
 import {Alert} from "../ui/Alert";
 import {Button} from "../ui/Button";
 
@@ -58,7 +58,14 @@ export function promotionOutcomeMessage(outcome: PromotionOutcome): string {
 	}
 }
 
-export function PromotionActions({userId}: {userId: string}) {
+export function PromotionActions({
+	userId,
+	onSuccessRefresh,
+}: {
+	userId: string;
+	/** Invoked when the answer is evidence about the user's tier — the page re-pulls its own read. */
+	onSuccessRefresh?: () => void;
+}) {
 	const fate = useFateClient();
 	const [busy, setBusy] = useState(false);
 	const [message, setMessage] = useState("");
@@ -71,7 +78,9 @@ export function PromotionActions({userId}: {userId: string}) {
 				input: {userId},
 				view: PromotionReceiptView,
 			});
-			setMessage(promotionOutcomeMessage(promoteOutcome(result, error)));
+			const outcome = promoteOutcome(result, error);
+			setMessage(promotionOutcomeMessage(outcome));
+			if (promoteRefreshWarranted(outcome)) onSuccessRefresh?.();
 		} catch (caught) {
 			setMessage(promotionOutcomeMessage(errorOutcome(caught)));
 		} finally {

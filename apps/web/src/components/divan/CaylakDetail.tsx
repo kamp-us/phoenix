@@ -8,7 +8,6 @@
 import {useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {
-	DivanBacklogItem,
 	DivanVoteReceipt,
 	PromotionReceipt,
 	ReportReceipt,
@@ -27,22 +26,17 @@ import {
 	parseBacklogItemId,
 	promoteOutcome,
 	promoteOutcomeMessage,
+	promoteRefreshWarranted,
 	promoteVisible,
 	vouchVisible,
 } from "./divanGating";
+import {
+	BacklogConnectionView,
+	BacklogItemView,
+	divanBacklogRequest,
+	refreshDivanReview,
+} from "./divanReads";
 import {VouchSheet} from "./VouchSheet";
-
-const BACKLOG_PAGE_SIZE = 50;
-
-const BacklogItemView = view<DivanBacklogItem>()({
-	id: true,
-	kind: true,
-	authorId: true,
-	createdAt: true,
-	preview: true,
-});
-
-const BacklogConnectionView = {items: {node: BacklogItemView}} as const;
 
 const VoteReceiptView = view<DivanVoteReceipt>()({
 	id: true,
@@ -72,9 +66,7 @@ export function CaylakDetail({
 	readonly viewerTier: Tier | undefined;
 	readonly viewerIsModerator: boolean;
 }) {
-	const result = useRequest({
-		"divan.backlog": {list: BacklogConnectionView, args: {authorId, first: BACKLOG_PAGE_SIZE}},
-	});
+	const result = useRequest(divanBacklogRequest(authorId));
 	const [items] = useListView(BacklogConnectionView, result["divan.backlog"]);
 
 	return (
@@ -139,6 +131,11 @@ function ReviewerActions({
 				!!error && !denied,
 			);
 			setMessage(promoteOutcomeMessage(outcome));
+			// Fire-and-forget: the promote DID succeed, so a failed refresh must not
+			// overwrite its message — the lists just stay as they were.
+			if (promoteRefreshWarranted(outcome)) {
+				void refreshDivanReview(fate, authorId).catch(() => undefined);
+			}
 		} catch (caught) {
 			const code = codeOf(caught);
 			const denied = code === "UNAUTHORIZED" || code === "FORBIDDEN";
