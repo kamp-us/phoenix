@@ -12,7 +12,14 @@ import {
 } from "./claim.ts";
 import {CLAIM_NOT_MINE} from "./codes.ts";
 import {
+	adoptMarker,
 	comments,
+	GONE_NONCE,
+	GONE_TOKEN,
+	GONE_UUID,
+	HEIR_NONCE,
+	HEIR_TOKEN,
+	HEIR_UUID,
 	LANE_TOKEN,
 	LANE_UUID,
 	marker,
@@ -99,6 +106,60 @@ describe("resolveOwnership", () => {
 	});
 });
 
+describe("resolveOwnership — the adopt fence (#7010)", () => {
+	/** A claim by the gone session, then an authorized succession handing it to the heir. */
+	const SUCCEEDED: ReadonlyArray<Scripted> = [
+		[
+			COMMENTS,
+			comments(
+				{id: 9101, body: marker("s-gone", GONE_UUID)},
+				{id: 9102, body: adoptMarker("s-gone", "s-heir", HEIR_UUID)},
+			),
+		],
+		[PERM, WRITE],
+	];
+
+	it("reads Foreign for the resumed dead lane — never Mine across one succession", async () => {
+		const {ownership} = await run(
+			resolveOwnership("o/r", 4312, laneCaller("s-gone", GONE_NONCE, GONE_TOKEN)),
+			SUCCEEDED,
+		);
+		expect(ownership._tag).toBe("Foreign");
+	});
+
+	it("still reads Mine for the heir the adopt names, carrying the adopt", async () => {
+		const {ownership} = await run(
+			resolveOwnership("o/r", 4312, laneCaller("s-heir", HEIR_NONCE, HEIR_TOKEN)),
+			SUCCEEDED,
+		);
+		expect(ownership._tag).toBe("Mine");
+		expect(ownership._tag === "Mine" && ownership.adopt?.token).toBe(HEIR_TOKEN);
+	});
+
+	it("does not fence on an unauthorized adoption — the succession never legally happened", async () => {
+		const {ownership, unauthorizedAdopts} = await run(
+			resolveOwnership("o/r", 4312, laneCaller("s-gone", GONE_NONCE, GONE_TOKEN)),
+			[
+				[
+					COMMENTS,
+					comments(
+						{id: 9101, body: marker("s-gone", GONE_UUID)},
+						{
+							id: 9102,
+							body: adoptMarker("s-gone", "s-heir", HEIR_UUID),
+							author: "ghost",
+						},
+					),
+				],
+				[PERM, WRITE],
+				[/GET .*\/repos\/o\/r\/collaborators\/ghost\/permission/, served({permission: "read"})],
+			],
+		);
+		expect(ownership._tag).toBe("Mine");
+		expect(unauthorizedAdopts.length).toBe(1);
+	});
+});
+
 describe("requireClaim", () => {
 	it("refuses the sibling lane on 15, naming the winner and the asking lane", async () => {
 		const held = await run(
@@ -119,6 +180,43 @@ describe("requireClaim", () => {
 			BOTH_LANES,
 		);
 		expect(held._tag).toBe("Held");
+	});
+
+	it("carries the succession on Held, so a run keys on the adopt token (#7010)", async () => {
+		const held = await run(
+			requireClaim("build note", "o/r", 4312, laneCaller("s-heir", HEIR_NONCE, HEIR_TOKEN)),
+			[
+				[
+					COMMENTS,
+					comments(
+						{id: 9101, body: marker("s-gone", GONE_UUID)},
+						{id: 9102, body: adoptMarker("s-gone", "s-heir", HEIR_UUID)},
+					),
+				],
+				[PERM, WRITE],
+			],
+		);
+		expect(held._tag).toBe("Held");
+		expect(held._tag === "Held" && held.adopt?.token).toBe(HEIR_TOKEN);
+	});
+
+	it("refuses the resumed dead lane on 15 across a succession (#7010)", async () => {
+		const held = await run(
+			requireClaim("build note", "o/r", 4312, laneCaller("s-gone", GONE_NONCE, GONE_TOKEN)),
+			[
+				[
+					COMMENTS,
+					comments(
+						{id: 9101, body: marker("s-gone", GONE_UUID)},
+						{id: 9102, body: adoptMarker("s-gone", "s-heir", HEIR_UUID)},
+					),
+				],
+				[PERM, WRITE],
+			],
+		);
+		expect(held._tag).toBe("Refused");
+		if (held._tag !== "Refused") return;
+		expect(held.outcome.code).toBe(CLAIM_NOT_MINE);
 	});
 });
 

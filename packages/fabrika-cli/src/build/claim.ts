@@ -416,14 +416,39 @@ export const resolveOwnership = (
 		}
 		const parsed = parseToken(winner.token, grammar.prefix);
 		const sameSession = parsed !== null && parsed.session === caller.session;
+		const unauthorizedAdopts: AdoptMarker[] = [];
 		if (namesCaller(winner.token)) {
+			// ADOPT-FENCE (#7010): the winning marker names this lane, but an authorized adopt marker
+			// handing that session's claim to a DIFFERENT lane means succession already happened —
+			// the resumed "dead" lane reads Foreign, never Mine, so one succession can never answer
+			// Mine to two lanes.
+			for (const adopt of adoptMarkersIn(listed.value, grammar)) {
+				if (parsed === null || adopt.adopted !== parsed.session) continue;
+				if (namesCaller(adopt.token)) continue;
+				const permission = yield* authorizationOf(adopt.author);
+				if (permission._tag === "Unknown") {
+					return {
+						ownership: {_tag: "Unknown", reason: permission.reason},
+						unauthorized,
+						unauthorizedAdopts,
+					};
+				}
+				if (permission._tag === "Unauthorized") {
+					unauthorizedAdopts.push(adopt);
+					continue;
+				}
+				return {
+					ownership: {_tag: "Foreign" as const, marker: winner, sameSession},
+					unauthorized,
+					unauthorizedAdopts,
+				};
+			}
 			return {
 				ownership: {_tag: "Mine" as const, marker: winner, adopt: null},
 				unauthorized,
-				unauthorizedAdopts: [],
+				unauthorizedAdopts,
 			};
 		}
-		const unauthorizedAdopts: AdoptMarker[] = [];
 		for (const adopt of adoptMarkersIn(listed.value, grammar)) {
 			if (parsed === null || adopt.adopted !== parsed.session) continue;
 			if (!namesCaller(adopt.token)) continue;
@@ -558,7 +583,13 @@ export type Held =
 			readonly ownership: Ownership;
 			readonly notes: ReadonlyArray<string>;
 	  }
-	| {readonly _tag: "Held"; readonly marker: ClaimMarker; readonly notes: ReadonlyArray<string>};
+	| {
+			readonly _tag: "Held";
+			readonly marker: ClaimMarker;
+			/** Non-null when this lane holds through succession — what the run key keys on (#7010). */
+			readonly adopt: AdoptMarker | null;
+			readonly notes: ReadonlyArray<string>;
+	  };
 
 /**
  * The precondition every mutating verb runs: this lane holds `number`'s claim, proven now.
@@ -615,5 +646,5 @@ export const requireClaim = (
 				),
 			};
 		}
-		return {_tag: "Held" as const, marker: ownership.marker, notes};
+		return {_tag: "Held" as const, marker: ownership.marker, adopt: ownership.adopt, notes};
 	});

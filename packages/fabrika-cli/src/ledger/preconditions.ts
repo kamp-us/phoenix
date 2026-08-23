@@ -19,14 +19,13 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {requireCallerToken, requireClaim, requireSession} from "../build/claim.ts";
-import {nonceOf} from "../build/lane.ts";
 import {badNumber, openIssue, resolveTargetRepo} from "../build/target.ts";
 import {assertGround} from "../build/tree.ts";
 import type {IssueRecord} from "../io/issues.ts";
 import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {CLAIM_NOT_MINE, OFF_VOCABULARY, PRECONDITION_UNKNOWN} from "./codes.ts";
-import {runDir, runKey} from "./run.ts";
+import {runDir, runKey, runKeyNonce} from "./run.ts";
 
 /** The per-verb halves of the shared refusals — the same facts, each verb's own wording. */
 export interface LedgerMessages {
@@ -109,7 +108,10 @@ export const openGround = (
 			);
 		}
 
-		const nonce = nonceOf(held.marker.token);
+		// A succession keys the run on the ADOPT token's nonce (#7010): inheriting the dead lane's
+		// nonce is how both sides of one succession wrote one manifest. The adopt token is the
+		// successor's own and stable across its re-opens — a resume stays a resume.
+		const nonce = runKeyNonce(held.marker.token, held.adopt?.token ?? null);
 		if (nonce === null) {
 			return refused(
 				refuse(

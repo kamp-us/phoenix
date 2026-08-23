@@ -8,6 +8,7 @@ import {
 	renderRunRecord,
 	runDir,
 	runKey,
+	runKeyNonce,
 } from "./run.ts";
 
 const CHILD: ChildRecord = {
@@ -32,6 +33,21 @@ describe("the run key", () => {
 
 	it("excludes its own root from the tree", () => {
 		expect(EXCLUDE_ENTRY).toBe(".fabrika-plan/");
+	});
+
+	it("keys a succession on the adopt token's nonce, never the dead lane's (#7010)", () => {
+		expect(runKeyNonce("build:s-gone:9f3c7a21-5d44", "build:s-heir:b2ee7f04-8a19")).toBe(
+			"b2ee7f04",
+		);
+	});
+
+	it("keys an ordinary claim on the winning marker's own token", () => {
+		expect(runKeyNonce("build:s-9f2e:c1a4d6f8-3b7e", null)).toBe("c1a4d6f8");
+	});
+
+	it("falls back to the marker when the adopt token is unparseable, and nulls when neither reads", () => {
+		expect(runKeyNonce("build:s-9f2e:c1a4d6f8-3b7e", "not-a-token")).toBe("c1a4d6f8");
+		expect(runKeyNonce("garbage", "also-garbage")).toBeNull();
 	});
 });
 

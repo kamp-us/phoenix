@@ -15,6 +15,7 @@
  * an unreadable manifest and an empty one take opposite branches, and only one of them is a fact.
  */
 
+import {nonceOf} from "../build/lane.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 
 /** The directory the run tree lives under, inside the epic's tree. */
@@ -30,6 +31,16 @@ export const EXCLUDE_ENTRY = `${RUN_ROOT}/`;
 
 /** The run key: `<epic>-<claim-nonce>`. */
 export const runKey = (epic: number, nonce: string): string => `${epic}-${nonce}`;
+
+/**
+ * The nonce a ledger run keys on: through a succession, the ADOPT token's — never the dead lane's.
+ *
+ * Inheriting the dead marker's nonce is how both sides of one succession wrote one manifest (#7010).
+ * The adopt token is the successor's own, stable across its re-opens, so keying on it keeps a resume
+ * a resume while giving the two sides of a succession separate manifests.
+ */
+export const runKeyNonce = (markerToken: string, adoptToken: string | null): string | null =>
+	nonceOf(adoptToken ?? markerToken) ?? nonceOf(markerToken);
 
 /** The run’s directory inside the epic tree. */
 export const runDir = (treeRoot: string, key: string): string =>
