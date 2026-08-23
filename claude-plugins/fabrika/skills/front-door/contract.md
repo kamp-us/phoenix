@@ -56,7 +56,7 @@ same tracked debt the sibling contracts carry.)
   publish a decision nobody made.
 - **A cross-group exit-code decoder.** The interface convention permits cross-group code reuse
   precisely because no reader resolves a numeral without knowing its group
-  ([rule 3](../../docs/cli-interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is)).
+  ([rule 3](../../docs/interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is)).
   A composite readout that shelled out to sibling verbs and mapped their exit codes would be **the
   first such reader**, turning every legitimate reuse in the package into a defect. `status open`
   composes by **importing pure cores** ([mapping](#core-to-field)), never by spawning a sibling verb
