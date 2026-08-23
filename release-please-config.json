@@ -8,6 +8,12 @@
 	"packages": {
 		"packages/fabrika-cli": {
 			"component": "fabrika-cli"
+		},
+		"packages/fabrika-pi": {
+			"component": "fabrika-pi"
+		},
+		"packages/fabrika-opencode": {
+			"component": "fabrika-opencode"
 		}
 	}
 }

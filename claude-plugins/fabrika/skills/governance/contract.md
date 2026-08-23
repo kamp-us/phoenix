@@ -275,9 +275,12 @@ readers. So the requirement is a property of the diff, not of what a session rem
 `ship gate` seats `blocked` at exit 0 and no workflow invoked it, so the floor bound on nothing but
 prose in the `ship` skill and two fabrika-tree PRs merged with no governance verdict after it
 shipped. `fabrika ship floor` reads the same conjunction for this one namespace and refuses on `18`
-when the verdict is absent, stale or fail; `.github/workflows/governance-floor.yml` relays that exit
-code. The mechanism choice and why the alternatives were rejected are recorded once, in
-[the `ship` contract](../ship/contract.md#the-mechanism-choice).
+when the verdict is absent, stale or fail; `.github/workflows/governance-floor.yml` runs it with
+`--publish-check`, which publishes that answer as the `governance floor at head` check-run — pending
+while no verdict exists, red once one exists and is wrong (#6161, ADR 0318). The mechanism choice and
+why the alternatives were rejected are recorded once, in
+[the `ship` contract](../ship/contract.md#the-mechanism-choice); the conclusion map is
+[its check-run section](../ship/contract.md#publish-check).
 
 **The founder ruled this instead of a §CP row** ([veto on
 #5036](https://github.com/kamp-us/phoenix/issues/5036#issuecomment-5234614633), 2026-08-10):
@@ -958,17 +961,22 @@ namespace is a constant, so it cannot be aimed anywhere else even by a confused 
    variable instead of live state re-ships #3173's false PASS.
 7. **Assert the floor at this head.** `governance-floor.yml` triggers on `pull_request` alone, so it
    ran before this verdict could exist, judged a head with no verdict on it, and no comment write can
-   re-fire a `pull_request`-triggered job — every governance-root PR reds at least once and stays red
-   until something re-runs the job (#5585). The verb reads the runs at the bound head, and when the
-   newest `governance-floor` run there is completed-and-red it requests a re-run of that run's failed
-   jobs, then re-reads the run and requires the re-fire to be **proven from run state** — either
+   re-fire a `pull_request`-triggered job — every governance-root PR carries an unsatisfied floor at
+   least once and carries it until something re-runs the job (#5585). The verb reads the runs at the
+   bound head, and when the newest `governance-floor` run there is completed it asks the
+   `governance floor at head` check-run whether the floor still needs clearing — pending or red, both
+   do; the job's own conclusion decides only where no such check-run exists, because since #6161 the
+   job succeeds whenever it *published* an answer (ADR 0318). Where it does, it requests a re-run of
+   the whole run — `rerun-failed-jobs` is refused on a run with no failed job, which is now the
+   ordinary shape — then re-reads the run and requires the re-fire to be **proven from run state** —
+   either
    `run_attempt` increased, or that same run id is no longer `completed`, which only this dispatch
    could have caused. The counter lags the dispatch by a beat, and calling that beat unproven is what
    sent three agents chasing a `heal-ci` pass over re-fires that had taken (#5982). **The re-run is a
    re-derivation, never a claim**: nothing here writes a check-run or a status, so the green a PR ends
    with is one `ship floor` reached itself against live comment state. **This step is the one place
    the verb needs `actions: write`** on its token; no earlier step asks for it. Without it the
-   `rerun-failed-jobs` request 403s, the floor reads `unknown`, and the fix degrades to
+   re-run request 403s, the floor reads `unknown`, and the fix degrades to
    #5585's own symptom — a red check a human clears — never to a false green.
 
 **The floor assertion never changes the exit code.** By step 7 the verdict is landed and read back, so

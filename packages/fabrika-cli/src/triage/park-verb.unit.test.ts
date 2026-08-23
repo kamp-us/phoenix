@@ -75,6 +75,7 @@ const POSTED: HttpReply = {
 
 const options = {
 	issue: 4290,
+	token: null as string | null,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,

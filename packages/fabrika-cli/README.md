@@ -543,7 +543,6 @@ surface's convention lives in
 |---|---|
 | `hook check` | whether the envelope on stdin is one fabrika can act on |
 | `hook codes` | the exit taxonomy every verb in the group allocates from |
-| `hook spawn` | whether the subagent spawn on stdin may run on the model it asked for |
 
 **Exit codes.** `3` stdin held nothing · `12` bytes arrived and are provably not an envelope ·
 `13` fd 0 could not be read · `14` a readable envelope arrived and is not the event this verb
@@ -553,10 +552,10 @@ judges. Three failure codes rather than one, so an unread pipe cannot pass for a
   envelopes committed at `src/hook/__fixtures__/`, with their capture method and harness version
   beside them (ADR 0180). The golden test runs the argv it reads out of the committed `hooks.json`,
   so a green test cannot be exercising a verb the surface does not declare.
-- **`hook spawn` is a decision, wrapped thinly.** The allow / allow-inherit / deny outcome is a
-  pure function of `(requested model, WORKFLOW_MODEL pin)` in
-  [`src/hook/spawn.ts`](./src/hook/spawn.ts), over the one model vocabulary in
-  [`src/models.ts`](./src/models.ts).
+- **No verb here decides anything about a spawn.** `hook spawn` — the model-allowlist guard on
+  `PreToolUse` — is retired, decision and declaration both (ADR
+  [0331](../../.decisions/0331-fabrika-spawn-hook-retired.md)). Model choice is a per-run human
+  call; [`src/models.ts`](./src/models.ts) survives as the model vocabulary only, enforcing nothing.
 
 ## The `lane` group
 
@@ -1064,16 +1063,16 @@ Take one intake-queue issue from arrival to triaged. Contract:
 | `triage enrich` | an issue body replaced with the rewrite on stdin |
 | `triage apply` | type, priority, audience, status and home stamped as one owned-facet reconcile, read back |
 | `triage park` | an issue demoted to needs-info with the questions on stdin |
-| `triage kill` | an agent-filed issue closed not-planned, with a reason |
+| `triage kill` | an agent-filed issue — or any issue folded into a survivor with `--duplicate-of` — closed not-planned, with a reason |
 | `triage repair-criteria` | an acceptance-criteria block's shape repaired mechanically |
 | `triage scratch` | the per-lane directory a triager's working files go under |
 
-**Exit codes.** The shared table, plus `12` the issue is human-filed · `13` agent-filed and
-close-eligible, but the kill is unconfirmed (ADR 0159) · `14` the criteria block is drifted in a
-way no mechanical repair covers · `15` the composed body's authored region carries a `Malformed`
-criteria block · `16` `--ready-for agent` over a body whose criteria block does not read `Found` ·
-`17` a live claim marker names another session · `18` no value of `.fabrika.jsonc` may be used ·
-`19` the asking lane holds no live claim on the target. `4` is a deliberate gap.
+**Exit codes.** The shared table, plus `12` the issue is human-filed and no `--duplicate-of` fold
+was named · `13` close-eligible, but the kill is unconfirmed (ADR 0159) · `14` the criteria block is
+drifted in a way no mechanical repair covers · `15` the composed body's authored region carries a
+`Malformed` criteria block · `16` `--ready-for agent` over a body whose criteria block does not
+read `Found` · `17` a live claim marker names another session · `18` no value of `.fabrika.jsonc`
+may be used · `19` the asking lane holds no live claim on the target. `4` is a deliberate gap.
 
 Two repairs are worth spelling out, because they are what `repair-criteria` will and will not do.
 It rewrites a level-drifted `## Acceptance criteria` heading to the conforming `###`, and, when the

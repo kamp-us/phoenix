@@ -65,7 +65,7 @@ const run = (
 	);
 
 describe("runCi", () => {
-	it("prints the rollup, the count of lines that follow, and one line per run", async () => {
+	it("prints the rollup, the run count, and one line per status present", async () => {
 		const out = await run(
 			[
 				[PULL, served(pull())],
@@ -74,31 +74,30 @@ describe("runCi", () => {
 			GATED,
 		);
 		expect(out.code).toBe(0);
-		expect(out.stdout).toBe(
-			[
-				`ci\t${HEAD}\tgreen`,
-				"check\t3",
-				"lint / format / typecheck\tsuccess",
-				"unit tests\tsuccess",
-				"leak-guard\tsuccess",
-				"",
-			].join("\n"),
-		);
+		expect(out.stdout).toBe([`ci\t${HEAD}\tgreen`, "run\t3", "check\tsuccess\t3", ""].join("\n"));
 	});
 
-	it("names a red check by name, not as a rollup boolean", async () => {
+	/**
+	 * ADR 0308: `checks` is an evidence-array collapsed to a status tally; what the rows were for
+	 * — naming the red and in-flight runs — moves to the notes channel.
+	 */
+	it("names the failing and still-running runs on stderr, never as answer rows", async () => {
 		const out = await run([
 			[PULL, served(pull())],
 			[
 				RUNS,
-				runs(2, [
+				runs(3, [
 					{name: "unit tests", status: "completed", conclusion: "failure"},
 					{name: "leak-guard", status: "completed", conclusion: "success"},
+					{name: "CodeQL", status: "in_progress", conclusion: null},
 				]),
 			],
 		]);
 		expect(out.stdout).toContain("\tred\n");
-		expect(out.stdout).toContain("unit tests\tfailure");
+		expect(out.stdout).toContain("check\tfailure\t1");
+		expect(out.stderr.join("\n")).toContain("review ci: failing at this head: unit tests.");
+		expect(out.stderr.join("\n")).toContain("review ci: still running at this head: CodeQL.");
+		expect(out.stdout).not.toContain("unit tests\tfailure");
 	});
 
 	it("enumerates at --sha and notices when the live head has moved past it", async () => {
@@ -199,7 +198,25 @@ describe("the gate-coverage read", () => {
 		expect(out.code).toBe(NO_GATE_COVERAGE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`review ci: none of the 2 workflow(s) o/r authors produced a run at ${HEAD} — the 4 check run(s) here came from elsewhere, so no gate inspected these bytes (#6522).`,
+			`review ci: none of the 2 workflow(s) o/r authors produced a run at ${HEAD} — the 4 check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green (#6522).`,
+		);
+	});
+
+	it("answers when one authored run sits among the platform's — one gate is coverage", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[RUNS, CODEQL_ONLY],
+			],
+			[
+				[WORKFLOWS, served(inventory(CI_YML, GUARD_YML, CODEQL))],
+				[AT_HEAD, served(runsAtHead(CI_YML, CODEQL))],
+			],
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain(`ci\t${HEAD}\tgreen`);
+		expect(out.stderr).toContain(
+			`review ci: 1 of 2 workflow(s) o/r authors produced a run at ${HEAD}.`,
 		);
 	});
 
@@ -241,6 +258,22 @@ describe("the gate-coverage read", () => {
 			{json: true},
 		);
 		expect(JSON.parse(out.stdout).gates).toEqual({declared: 2, covered: 2});
+	});
+
+	/** ADR 0308: `checks` is a status histogram under `--json`, never a row per run. */
+	it("collapses --json checks to a status tally beside the coverage", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[RUNS, GREEN],
+			],
+			GATED,
+			{json: true},
+		);
+		const payload = JSON.parse(out.stdout);
+		expect(payload.checks).toEqual({success: 3});
+		expect(payload.scanned).toBe(3);
+		expect(out.stdout).not.toContain('"name"');
 	});
 
 	it("never asks the coverage question over a red rollup — red is already the answer", async () => {
@@ -342,7 +375,7 @@ describe("the no-producer split", () => {
 			},
 		);
 		expect(out.code).toBe(0);
-		expect(out.stdout).toBe([`ci\t${HEAD}\tno-producer`, "check\t0", ""].join("\n"));
+		expect(out.stdout).toBe([`ci\t${HEAD}\tno-producer`, "run\t0", ""].join("\n"));
 		expect(out.stdout).not.toContain("green");
 	});
 

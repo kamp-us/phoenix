@@ -534,6 +534,25 @@ export const isShallowClone: Shell<Attempt<boolean>> = Effect.gen(function* () {
 });
 
 /**
+ * The parents git's *traversal* reports for one commit — the reading every ancestry answer rests on.
+ *
+ * Not the parents in the commit object: on a shallow clone's graft boundary the two disagree.
+ * `git cat-file -p` still prints the recorded parents while every traversal treats the commit as a
+ * root, so `merge-base`, `rev-list` and `--is-ancestor` answer wrongly and none of them errors
+ * (#6343). This read is on the traversal side of that split, so an empty answer on a commit the
+ * object database knows the parents of is exactly the boundary.
+ */
+export const traversedParents = (sha: string): Shell<Attempt<ReadonlyArray<string>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["log", "-1", "--format=%P", sha]);
+		if (!r.ok) return fail(r.reason);
+		const text = r.stdout.trim();
+		if (text === "") return ok([]);
+		const names = text.split(/\s+/);
+		return names.every(isObjectName) ? ok(names) : fail(`unreadable parent list "${text}"`);
+	});
+
+/**
  * The dates of `ref`'s parentless commits, in UTC `YYYY-MM-DD`.
  *
  * In a shallow clone the graft boundary *is* a parentless commit, so these are the dates a window

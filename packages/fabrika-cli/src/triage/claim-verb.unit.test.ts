@@ -379,9 +379,29 @@ describe("runClaim — preconditions", () => {
 		});
 		expect(outcome.code).toBe(1);
 		expect(outcome.stderr.join("\n")).toContain(
-			"CLAUDE_CODE_SESSION_ID is unset — refusing to post an unattributable claim.",
+			"no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID, PI_SUBAGENT_PARENT_SESSION are all unset — refusing to post an unattributable claim.",
 		);
 		expect(requests).toHaveLength(0);
+	});
+
+	it("resolves the session from pi's variable alone and still wins (#6960)", async () => {
+		const {outcome} = await run(winning(), {
+			env: {CLAUDE_PIPELINE_REPO: "o/r", PI_SUBAGENT_PARENT_SESSION: MINE},
+		});
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toBe(`won\t${MY_TOKEN}\n`);
+	});
+
+	it("prefers FABRIKA_SESSION_ID over CLAUDE_CODE_SESSION_ID when both are set (#6960)", async () => {
+		const {outcome} = await run(winning(), {
+			json: true,
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				FABRIKA_SESSION_ID: MINE,
+				CLAUDE_CODE_SESSION_ID: THEIRS,
+			},
+		});
+		expect(JSON.parse(outcome.stdout)).toMatchObject({outcome: "won", session: MINE});
 	});
 
 	it("refuses at 1 on a session id that would not read back as itself", async () => {

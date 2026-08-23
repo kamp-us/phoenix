@@ -1,0 +1,13 @@
+{
+	"$schema": "https://opencode.ai/config.json",
+	"subagent_depth": 2,
+	"skills": {
+		"paths": ["claude-plugins/fabrika/skills"]
+	},
+	"permission": {
+		"external_directory": {
+			"*": "ask",
+			"**/fabrika-triage/**": "allow"
+		}
+	}
+}

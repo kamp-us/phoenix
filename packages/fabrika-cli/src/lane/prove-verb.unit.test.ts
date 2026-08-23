@@ -209,6 +209,153 @@ describe("lane prove — the two events that carry a claim", () => {
 	});
 });
 
+/**
+ * Lane 5661's shape (#6112): a reviewer that reported `UNKNOWN` on a malformed criteria heading and
+ * then landed three FAILs at head had no cell left for its real terminal, and the ledger read a wait
+ * on a human over a PR that needed a repair round. The park is a claim like any other now — that the
+ * run reached no verdict — and one FAIL that still binds is what falsifies it.
+ */
+describe("lane prove — a reviewer's park, refused only by a FAIL that still binds", () => {
+	/** The 5661 diff's own shape: a skill file and a package file, so all three namespaces derive. */
+	const FIVE_SIX_SIX_ONE = served([
+		{filename: "claude-plugins/fabrika/skills/review/SKILL.md"},
+		{filename: "packages/fabrika-cli/src/lane/prove.ts"},
+	]);
+
+	it("refuses the park lane 5661 recorded, naming every FAIL that still binds at the head", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, FIVE_SIX_SIX_ONE],
+			[
+				PR_COMMENTS,
+				comments(
+					{id: 1, body: `governance: FAIL @ ${HEAD} — contradicts an ADR`},
+					{id: 2, body: `review-code: FAIL @ ${HEAD} — criteria unmet`},
+					{id: 3, body: `review-skill: FAIL @ ${HEAD} — criteria unmet`},
+				),
+			],
+		]);
+
+		const out = await run(laneAt("review"), seams, "BLOCKED");
+
+		expect(out.code).toBe(PROOF_CONTRADICTED);
+		expect(out.stderr.join("\n")).toContain(
+			"#4318 holds a FAIL that still binds in review-code, review-skill, governance",
+		);
+		expect(out.stderr.join("\n")).toContain("its terminal is that FAIL and not a park");
+	});
+
+	it("lets a park through when the namespaces hold no verdict at all — the ordinary park", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull({comments: 0})],
+			[FILES, FIVE_SIX_SIX_ONE],
+			[PR_COMMENTS, comments()],
+		]);
+
+		const out = await run(laneAt("review"), seams, "BLOCKED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			proof: "uncontradicted",
+			event: "BLOCKED",
+			evidence: {kind: "park", pr: 4318},
+		});
+	});
+
+	/**
+	 * The reviewer's own precedence: an unseen input blocks PASS and never FAIL, so a namespace that
+	 * passed beside an unreadable one still parks. Only a FAIL is dispatchable.
+	 */
+	it("lets a park through beside a passing namespace", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, FIVE_SIX_SIX_ONE],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`})],
+		]);
+
+		const out = await run(laneAt("review"), seams, "BLOCKED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).proof).toBe("uncontradicted");
+	});
+
+	/** A FAIL at another head is not a verdict on this one, so it cannot contradict this run's park. */
+	it("lets a park through past a FAIL that no longer binds", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, FIVE_SIX_SIX_ONE],
+			[PR_COMMENTS, comments({id: 1, body: `review-code: FAIL @ ${OLD} — criteria unmet`})],
+		]);
+
+		const out = await run(laneAt("review"), seams, "BLOCKED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).proof).toBe("uncontradicted");
+	});
+
+	/**
+	 * Fail-open, and deliberately: a park routes to a human, the shell reporting it has already
+	 * stopped, and there is no later round to re-read in — so holding it on an unreadable board would
+	 * strand the lane in the one state nobody could leave.
+	 */
+	it("records the park when the board cannot be read at all", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, GATEWAY],
+		]);
+
+		const out = await run(laneAt("review"), seams, "BLOCKED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).proof).toBe("uncontradicted");
+		expect(out.stderr.join("\n")).toContain("no verdict could contradict the park — it stands");
+	});
+
+	it("records the park when the PR is there and its diff is not", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated(4318)],
+			[PULL, pull()],
+			[FILES, GATEWAY],
+		]);
+
+		const out = await run(laneAt("review"), seams, "BLOCKED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).proof).toBe("uncontradicted");
+		expect(out.stderr.join("\n")).toContain("an unread board leaves it recordable");
+	});
+
+	it("records the park when no PR carries the issue's verdicts", async () => {
+		const seams = fakeSeams([
+			[CLOSERS, closingPulls()],
+			[SEARCH, nominated()],
+		]);
+
+		const out = await run(laneAt("review"), seams, "BLOCKED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).proof).toBe("uncontradicted");
+	});
+
+	/** A builder's park is out of `build`, reads nothing, and this arm must not reach it. */
+	it("reads nothing for a park out of `build` — the builder's back-off is unchanged", async () => {
+		const out = await run(laneAt("build"), fakeSeams([]), "BLOCKED");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "not-required", state: "build"});
+	});
+});
+
 describe("lane prove — the ui class, derived exactly as `ship scope` derives it", () => {
 	const UI_FILE = served([{filename: "apps/web/src/routes/pano.tsx"}]);
 
@@ -817,6 +964,8 @@ const literally = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g,
 const REV = (rev: string) =>
 	new RegExp(`^git rev-parse --verify --quiet ${literally(rev)}\\^\\{commit\\}$`);
 const BRANCHES = /^git for-each-ref --format=%\(refname:short\) refs\/heads$/;
+/** The shallow probe every range read takes before it trusts an ancestry answer (#6343). */
+const COMPLETE_CLONE = [/^git rev-parse --is-shallow-repository$/, okOut("false\n")] as const;
 const LOG_RANGE = /^git log --format=/;
 const MERGE_BASE = /^git merge-base /;
 const ANCESTRY = /^git rev-list --parents --ancestry-path /;
@@ -851,6 +1000,7 @@ const locating = (
 	branches: ReadonlyArray<string> = [CHILD_BRANCH, "main", "epic/4300"],
 	commits: ReadonlyArray<readonly [string, string]> = [[CHILD_TIP, CHILD_MESSAGE]],
 ): ReadonlyArray<Scripted> => [
+	COMPLETE_CLONE,
 	[REV("epic/4300"), okOut(`${EPIC_BASE}\n`)],
 	[BRANCHES, okOut(`${branches.join("\n")}\n`)],
 	[REV(CHILD_BRANCH), okOut(`${CHILD_TIP}\n`)],
@@ -924,6 +1074,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 		// The merge base of a contained tip IS that tip, so the range only survives integration if the
 		// verb recovers the epic branch as it stood before the merge that took the child in (#5984).
 		const seams = fakeSeams([
+			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
@@ -945,6 +1096,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 
 	it("measures a not-yet-integrated child over its fork point, not over the moved epic tip", async () => {
 		const seams = fakeSeams([
+			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
@@ -974,6 +1126,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 		// The tip is an epic commit, so it is contained and a later merge names it — as its FIRST
 		// parent. Reading the second there would hand back a sibling's fork point and prove nothing.
 		const seams = fakeSeams([
+			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
@@ -1004,6 +1157,7 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 
 	it("refuses a child DONE when two lane branches both carry its commits", async () => {
 		const seams = fakeSeams([
+			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_BASE}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\nbuild/4301-second-try-deadbeef\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
@@ -1024,6 +1178,20 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain("UNKNOWN");
+		expect(seams.calls.some((line) => BRANCHES.test(line))).toBe(false);
+	});
+
+	it("leaves a child DONE UNKNOWN when the range's base sits on a shallow graft boundary", async () => {
+		const seams = fakeSeams([
+			[/^git rev-parse --is-shallow-repository$/, okOut("true\n")],
+			[REV("epic/4300"), okOut(`${EPIC_BASE}\n`)],
+			[/^git log -1 --format=%P /, okOut("\n")],
+		]);
+
+		const out = await runEpic(epicLaneAt("build"), seams, "DONE", "issue_4301");
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stderr.join("\n")).toContain("git fetch --deepen=25");
 		expect(seams.calls.some((line) => BRANCHES.test(line))).toBe(false);
 	});
 
@@ -1080,6 +1248,7 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 		// The binding is content and only content (ADR 0276), so an integrated child's PASS reads
 		// `Current` only while prove diffs the same two endpoints the marker was posted over (#5984).
 		const seams = fakeSeams([
+			COMPLETE_CLONE,
 			[REV("epic/4300"), okOut(`${EPIC_MOVED}\n`)],
 			[BRANCHES, okOut(`${CHILD_BRANCH}\n`)],
 			[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],

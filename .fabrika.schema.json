@@ -81,6 +81,14 @@
 			},
 			"additionalProperties": false
 		},
+		"campaignAuthors": {
+			"type": "array",
+			"description": "Who may declare a campaign or flip its lifecycle state (`fabrika campaign open` / `fabrika campaign state`), narrowing the repository's collaborator ACL — an entry here still needs `write` or above on the repo (ADR 0294). Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means nobody may declare.",
+			"items": {
+				"type": "string",
+				"pattern": "^@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)$|^@([^/\\s]+)\\/([^/\\s]+)$"
+			}
+		},
 		"capClearAuthors": {
 			"type": "array",
 			"description": "Who may clear one extra repair round on a PR (`fabrika build clear`). Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means nobody may grant.",

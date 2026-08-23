@@ -199,6 +199,13 @@ in the body. Four endpoints, all REST (skill conventions
 Writes: `POST repos/<repo>/issues/<n>/dependencies/blocked_by` and
 `POST repos/<repo>/issues/<map>/sub_issues`.
 
+**The edges this group writes are read as blockedness by the build seams.**
+[`src/build/blockedness.ts`](../../../../packages/fabrika-cli/src/build/blockedness.ts) is the one
+reader, and `build claim`, `build pick` and `build eligible` all gate on it — so a destination
+carrying an open frontier ticket is answered blocked until that ticket closes. No edge is carved out
+by who wrote it: ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md), ruled
+for map edges at [#6271](https://github.com/kamp-us/phoenix/issues/6271#issuecomment-5362260727).
+
 <!-- anchor: EDGE-BODY-TAKES-AN-INTERNAL-ID --> **Both POST bodies take the target's internal `id`,
 not its issue number**, and the sub-issue key is the singular `sub_issue_id`. Passing a number
 silently addresses a different issue. This is the trap v1 already recorded once for `sub_issue_id`;
@@ -545,10 +552,9 @@ frontier with nothing to retire it.
 
 **A ticket is `blocked` when its `blockedBy` holds an unresolved ticket**, which is a derived
 property reported in `counts` rather than a `state` — a ticket can be both `open` and blocked, and
-collapsing them would lose which. This is derived, never stored: whether a standalone issue may
-carry stored blockedness is open at [#4840](https://github.com/kamp-us/phoenix/issues/4840), and
-this verb takes no position on it. The native edges here are map topology, and the derivation stays
-in the reader.
+collapsing them would lose which. This is `map read`'s own derivation — computed per read, never
+stored — and it is unchanged by the edges also gating build eligibility (see *The edge reads*
+above).
 
 **`frontier` is a closed set of four, and all four exit `0`:**
 
@@ -787,8 +793,9 @@ fabrika map lane 9140 --ticket 9143 --nonce 7f3a9c21 [--repo <owner/name>]
 held it — a re-run is not an error).
 
 <!-- anchor: LANE-KEY-IS-THE-RUN-NONCE --> **The lane key is the caller's run nonce, never a
-session id and never a process id.** `$CLAUDE_CODE_SESSION_ID` is **pane-constant, not per-run**
-(#5028), and sibling subagents of one parent share it (#4516), so two lanes of one charting run
+session id and never a process id.** The session id (`FABRIKA_SESSION_ID`, else
+`CLAUDE_CODE_SESSION_ID`, else `PI_SUBAGENT_PARENT_SESSION` — #6960) is **pane-constant, not
+per-run** (#5028), and sibling subagents of one parent share it (#4516), so two lanes of one charting run
 would key onto one namespace and each would classify the other's claim as its own. The nonce is
 generated once per run by the caller and passed explicitly, which is also what keeps it out of
 session memory: no verb infers it from the environment.

@@ -21,6 +21,7 @@
  */
 import {type Caller, type LaneCaller, laneCaller} from "../build/claim.ts";
 import {composeToken, nonceOf, parseToken} from "../build/lane.ts";
+import {sessionIdFrom, sessionIdUnset} from "../io/session-id.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 
 export {anySessionCaller, type Caller, type LaneCaller, laneCaller} from "../build/claim.ts";
@@ -66,14 +67,14 @@ export const requireSession = (
 	env: Readonly<Record<string, string | undefined>>,
 	refusing: string,
 ): Asked<string> => {
-	const raw = (env.CLAUDE_CODE_SESSION_ID ?? "").trim();
-	if (raw === "") {
-		return usage(verb, `CLAUDE_CODE_SESSION_ID is unset — ${refusing}.`);
+	const raw = sessionIdFrom(env);
+	if (raw === null) {
+		return usage(verb, `${sessionIdUnset} — ${refusing}.`);
 	}
 	if (!isStampableSession(raw)) {
 		return usage(
 			verb,
-			"CLAUDE_CODE_SESSION_ID is not a single token — a marker stamped with it would not read back as this session.",
+			"the session id is not a single token — a marker stamped with it would not read back as this session.",
 		);
 	}
 	return {_tag: "Asked", value: raw};

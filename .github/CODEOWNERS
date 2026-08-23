@@ -15,6 +15,10 @@
 # The §CP `^\.claude-plugin/` branch; root-anchored, so nested plugin.json files are NOT
 # owned here (ADR 0212, #3933).
 /.claude-plugin/                @kamp-us/control-plane
+# Control-plane: biome's root config and plugin dir — formatter/lint policy for every surface,
+# the §CP `^biome\.jsonc$|^biome-plugins/` branches (#955: every §CP path needs a covering row).
+/biome.jsonc                     @kamp-us/control-plane
+/biome-plugins/                  @kamp-us/control-plane
 # Control-plane: enforcement guard packages — the platform half of the §CP regex (ADR 0100).
 # The standalone *-guard packages were folded into the verb router and deleted (#1003);
 # ci-required stays standalone (ADR 0092) and keeps its own owner line.
@@ -25,11 +29,6 @@
 # `packages/fabrika-cli/` is ordinary (founder ruling on #6164). Must stay in lockstep with the
 # §CP `^packages/fabrika-cli/src/ci/` branch.
 /packages/fabrika-cli/src/ci/   @kamp-us/control-plane
-# Control-plane: lint/GritQL governance config — the biome config + GritQL plugin rules. An
-# ungated path to weaken a lint rule (disable a security lint, downgrade a GritQL guard) is a
-# guard-relaxing vector. The §CP `biome\.jsonc$` + `biome-plugins/` branches (ADR 0193).
-/biome.jsonc                    @kamp-us/control-plane
-/biome-plugins/                 @kamp-us/control-plane
 # Control-plane: the local hook-wiring config — `lefthook.yml` wires the pre-commit/pre-push guard
 # legs, and `.lefthookrc` is sourced by every generated hook wrapper.
 # The §CP `([^/]+/)*(lefthook|\.lefthook)[^/]+$` branch (founder ruling on #3402); `**/` is the

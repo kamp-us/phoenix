@@ -323,8 +323,8 @@ Every `ledger` verb obeys these; stated once.
   are `3`. The two must never collapse: a non-blocking pipe throws `EAGAIN` before its producer
   writes, and swallowing that to `""` makes an unread pipe byte-identical to an empty one.
 - **The run directory is keyed on the claim nonce, never the session.** `runKey(epic, nonce)` →
-  `<treeRoot>/.fabrika-plan/<epic>-<nonce>/`. Every sibling subagent of one session shares
-  `CLAUDE_CODE_SESSION_ID` (measured, #4500), so a session-keyed namespace collapses exactly the
+  `<treeRoot>/.fabrika-plan/<epic>-<nonce>/`. Every sibling subagent of one session shares the
+  session id (measured, #4500; resolved per #6960's chain), so a session-keyed namespace collapses exactly the
   isolation two parallel planning lanes need (#4516, #4544). Every file inside it is named for what
   it holds — no fixed leaf shared across runs. The shipped precedents are
   `build/scratch-verb.ts:33` and `ledger/run.ts:31-36`.
@@ -894,7 +894,7 @@ EOF
 
 ```
 {"answer": "staged", "epic": 4300, "document": "topology", "phases": 2, "children": 3,
- "edges": [["#4303","#4301"]], "bytes": 214}
+ "edges": {"rows": [["#4303","#4301"]], "more": 0}, "bytes": 214}
 ```
 
 Lines are order-indifferent. **Every child in the run manifest appears exactly once — and the
@@ -902,7 +902,11 @@ manifest is the epic's whole child set, retained children included**, which is w
 `re-plan` placeable; a manifest
 child with no line is an unplaced child and a line naming a number that is not in the manifest is
 a dangling reference — both `24`. Edges are ordered `[dependent, prerequisite]`:
-`["#4303","#4301"]` reads *#4303 requires #4301*.
+`["#4303","#4301"]` reads *#4303 requires #4301*. `edges` is an evidence-array under ADR
+[0308](../../../../.decisions/0308-bounded-evidence-output-shape.md) — a validated echo of the
+caller's own stdin, one pair per declared `requires` — so it collapses to a cap-and-count: the
+first 5 pairs in `rows`, with `more` counting what followed (`0` when the array was whole); the
+rendered block still carries every edge.
 
 The verb renders the `## Dependencies` block into `<dir>/topology.md` and then **parses its own
 output back through the imported `readTopology`**, refusing on `24` if the round trip does not
@@ -955,7 +959,7 @@ of calling it defect number one (ADR 0092).
 
 ```
 $ fabrika ledger topology 4300 --token <claim-token> < topo.txt
-{"answer":"staged","epic":4300,"document":"topology","phases":2,"children":3,"edges":[["#4303","#4301"]],"bytes":214}
+{"answer":"staged","epic":4300,"document":"topology","phases":2,"children":3,"edges":{"rows":[["#4303","#4301"]],"more":0},"bytes":214}
 ```
 
 ```

@@ -4,11 +4,11 @@
  * `Schema.brand` makes them distinct types while staying plain strings at runtime: the brand
  * is type-only, so wire and D1 bytes are byte-identical.
  *
- * Idiom grounded in effect-smol `SCHEMA.md` §Branding.
+ * Idiom grounded in Effect-TS/effect `SCHEMA.md` §Branding.
  */
 import * as Schema from "effect/Schema";
 
-// Type-only: adds no runtime check or transform (effect-smol `SCHEMA.md` §Branding).
+// Type-only: adds no runtime check or transform (Effect-TS/effect `SCHEMA.md` §Branding).
 export const brandedId = <const B extends string>(brand: B) =>
 	Schema.String.pipe(Schema.brand(brand));
 

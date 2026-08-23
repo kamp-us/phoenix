@@ -20,6 +20,7 @@ import {
 	listLabels,
 	resolveRepo,
 } from "../io/issues.ts";
+import {sessionIdFrom} from "../io/session-id.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -43,7 +44,7 @@ import {
 	REQUIRED_SECTIONS,
 	renderFooter,
 } from "./compose.ts";
-import {isBareAtReference, renderLeaks, scanBody} from "./leaks.ts";
+import {isBareAtReference, redactionTally, renderLeaks, scanBody} from "./leaks.ts";
 
 export interface FileOptions {
 	readonly title: string;
@@ -148,7 +149,7 @@ export const runFile = (
 		}
 
 		const footer = renderFooter({
-			session: options.env.CLAUDE_CODE_SESSION_ID ?? null,
+			session: sessionIdFrom(options.env),
 			model: options.env.ANTHROPIC_MODEL ?? options.env.CLAUDE_MODEL ?? null,
 			branch: yield* currentBranch,
 			timestamp: utc(options.now()),
@@ -164,11 +165,10 @@ export const runFile = (
 			);
 		}
 		const body = options.redact ? scan.redacted : composed;
-		const redactions = options.redact
-			? scan.leaks.map((leak) => ({line: leak.line, class: leak.class}))
-			: [];
-		const redactionNotes = redactions.map(
-			(r) => `report file: redacted a machine-local path — line ${r.line}, ${r.class}`,
+		const redacted = options.redact ? scan.leaks : [];
+		const redactions = redactionTally(redacted);
+		const redactionNotes = redacted.map(
+			(leak) => `report file: redacted a machine-local path — line ${leak.line}, ${leak.class}`,
 		);
 
 		const labels = yield* listLabels(repo);

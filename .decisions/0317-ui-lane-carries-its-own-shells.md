@@ -1,7 +1,7 @@
 ---
 id: 0317
 title: A UI-class lane carries its own build and review shells, and the lane state carries the class
-status: accepted
+status: amended-in-part by [0327](0327-ship-fail-routes-to-build.md)
 date: 2026-08-20
 tags: [fabrika, lane, pipeline, review, state-machine]
 ---
@@ -87,7 +87,7 @@ ends a rendered-visual subject on the *routed elsewhere* terminal, a handoff to 
 nothing in the loop was there to receive. Folding the rubrics together does not remove that terminal;
 it hides it inside one shell that now owns a modality it cannot judge.
 
-### Why `ISSUE.FAIL` at `ship` routes back to `review`
+### Why `ISSUE.FAIL` at `ship` routes back to `review` — holds for the epic tail only, per ADR [0327](0327-ship-fail-routes-to-build.md)
 
 The single-issue coder template
 ([`packages/fabrika-cli/src/lane/templates/coder.workflow.json`](../packages/fabrika-cli/src/lane/templates/coder.workflow.json))
@@ -115,9 +115,28 @@ outlier.
   into a stall, which is worse than the deadlock it replaces.
 - Two lane-state nouns become load-bearing: `build:ui` and `review:ui` are where a lane sits;
   `build-ui` and `review-ui` are the skills, and `ui-builder` and `ui-reviewer` the shells that
-  load them.
+  load them. **Amended 2026-08-21 ([#6721](https://github.com/kamp-us/phoenix/issues/6721)):** a
+  skill and the shell that preloads it never share a spelling — see the amendment below, and ADR
+  [0281](0281-agent-names-are-nouns.md).
 
 ## Records
 
 - Ruling: https://github.com/kamp-us/phoenix/issues/6505#issuecomment-5360947091
 - Epic: https://github.com/kamp-us/phoenix/issues/6505
+
+## Amendment (2026-08-21, [#6721](https://github.com/kamp-us/phoenix/issues/6721)) — a skill and the shell that loads it never share a spelling
+
+The last `## Consequences` bullet names four nouns in one clause: `build-ui` and `review-ui` are the
+skills, `ui-builder` and `ui-reviewer` the shells that load them. It states the pairing and stops, so
+a reader who wants a shell name and only skims the clause can derive it from the skill name and get a
+pair nobody can spawn. One build already did, on [#6688](https://github.com/kamp-us/phoenix/issues/6688),
+and wrote `"build:ui": "build-ui"` into the lane routing table; it took a `review-code` FAIL.
+
+**The rule.** A skill and the shell that preloads it never share a spelling. ADR
+[0281](0281-agent-names-are-nouns.md) is why: an agent definition whose `name:` is the bare spelling
+of the skill it preloads is banned there, so a shell name derived from a skill name names nothing.
+Read a shell name off `claude-plugins/fabrika/agents/`, never off the skill it loads.
+
+The decision itself is unchanged — the direction, the lane-state nouns `build:ui` and `review:ui`,
+and the `lane prove` consequences all stand as written above. This amendment adds the reason the four
+nouns differ, which the bullet assumed and never said.

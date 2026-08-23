@@ -6,6 +6,7 @@ import {
 	CAUSE_UNRECOGNISED,
 	LANE_ABSENT,
 	PROOF_ABSENT,
+	PROOF_CONTRADICTED,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
 } from "./codes.ts";
@@ -315,5 +316,58 @@ describe("lane report — the park cause a BLOCKED carries (#6480)", () => {
 		expect(out.code).toBe(CAUSE_UNRECOGNISED);
 		expect(prover.asked).toEqual([]);
 		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * Lane 5661 replayed (#6112). The run's inputs are the ones that lane had: a criteria heading it
+ * could not read, and then three FAIL verdicts current at the head. What changed is where the
+ * terminal is picked — at the end of the run, once, off everything it reached — so the ledger ends
+ * on the failed review the verdicts say, and on the repair round the retry budget pays for rather
+ * than on a wait for a human.
+ */
+describe("lane report — a reviewer's terminal is the one its run reached", () => {
+	const contradicted = () =>
+		fakeProver(
+			refuse(
+				PROOF_CONTRADICTED,
+				"fabrika lane prove: unproven — #6108 holds a FAIL that still binds in review-code, review-skill, governance — the run reached a verdict, so its terminal is that FAIL and not a park",
+			),
+		);
+
+	it("records the FAIL, and the lane folds into the repair round rather than a human's park", async () => {
+		const fs = laneAt(LOG_AT.review);
+
+		const out = await run(fs, "FAIL", {pr: "https://github.com/kamp-us/phoenix/pull/6108"});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			event: "ISSUE.FAIL",
+			previous: {pipeline: {issue: "review"}},
+			current: {pipeline: {issue: "build"}},
+		});
+	});
+
+	it("refuses the park the run did not reach, log byte-identical, naming the FAIL to record", async () => {
+		const fs = laneAt(LOG_AT.review);
+
+		const out = await run(fs, "UNKNOWN", {prover: contradicted()});
+
+		expect(out.code).toBe(PROOF_CONTRADICTED);
+		expect(out.stderr.at(-1)).toContain("log unappended");
+		expect(out.stderr.join("\n")).toContain("its terminal is that FAIL and not a park");
+		expect(fs.written.size).toBe(0);
+	});
+
+	/** The same refusal reaches every park token, not `UNKNOWN` alone — all three map to `BLOCKED`. */
+	it("refuses STALE and UNBINDABLE on the same read", async () => {
+		for (const token of ["STALE", "UNBINDABLE"]) {
+			const fs = laneAt(LOG_AT.review);
+
+			const out = await run(fs, token, {prover: contradicted()});
+
+			expect(out.code).toBe(PROOF_CONTRADICTED);
+			expect(fs.written.size).toBe(0);
+		}
 	});
 });

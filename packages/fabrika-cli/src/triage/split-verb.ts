@@ -31,6 +31,7 @@ import {
 	openIssuesWithLabel,
 	resolveRepo,
 } from "../io/issues.ts";
+import {sessionIdFrom} from "../io/session-id.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback, renderFooter} from "../report/compose.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -62,6 +63,8 @@ export interface SplitOptions {
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The claim token `triage claim` handed this lane — which lane of the session is asking. */
+	readonly token: string | null;
 	/** The fd-0 read, injected so the failed-read and TTY paths are testable without a descriptor. */
 	readonly stdin: Effect.Effect<StdinRead>;
 	/** The footer's timestamp, injected so a child body is byte-reproducible in a test. */
@@ -155,7 +158,7 @@ export const runSplit = Effect.fn(function* (options: SplitOptions) {
 	if (authored._tag === "Refused") return authored.outcome;
 
 	const footer = renderFooter({
-		session: options.env.CLAUDE_CODE_SESSION_ID ?? null,
+		session: sessionIdFrom(options.env),
 		model: options.env.ANTHROPIC_MODEL ?? options.env.CLAUDE_MODEL ?? null,
 		branch: yield* currentBranch,
 		timestamp: utc(options.now()),
@@ -179,6 +182,7 @@ export const runSplit = Effect.fn(function* (options: SplitOptions) {
 		target: parentIssue.value,
 		noun: "parent",
 		env: options.env,
+		token: options.token,
 		now: options.now,
 	});
 	if (guarded !== null) return guarded;

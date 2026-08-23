@@ -66,6 +66,20 @@ export const jsonFlag = Flag.boolean("json").pipe(
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
 );
 
+/**
+ * The identity every mutating verb re-proves its claim against (#6303).
+ *
+ * Optional, because the guard has a fail-closed reading for a call that names no lane: it passes an
+ * uncontested session and refuses one whose markers name two lanes. Making it required would refuse
+ * every existing call site over a race most of them are not in.
+ */
+export const laneTokenFlag = Flag.string("token").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"the claim token `triage claim` handed this lane — what tells two triagers of ONE session apart",
+	),
+);
+
 const codes = leafCommand(
 	"codes",
 	{json: jsonFlag},
@@ -99,15 +113,17 @@ const kill = leafCommand(
 				"the surviving issue; this issue's body is folded into it, leak-redacted, before the close",
 			),
 		),
+		token: laneTokenFlag,
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({issue, confirm, duplicateOf, repo, json}) {
+	Effect.fn(function* ({issue, confirm, duplicateOf, token, repo, json}) {
 		yield* emit(
 			yield* runKill({
 				issue,
 				confirm,
 				duplicateOf: Option.getOrNull(duplicateOf),
+				token: Option.getOrNull(token),
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -118,7 +134,7 @@ const kill = leafCommand(
 ).pipe(
 	Command.withShortDescription("Close an agent-filed issue not-planned, with a reason."),
 	Command.withDescription(
-		"Close an agent-filed issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the closed-by-triage label, then the close — and read back that it says not_planned. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close), 11 (a precondition read failed, including the claim on the issue), 12 (human-filed — no agent footer and no operator author, see $FABRIKA_OPERATOR_ACCOUNTS), 13 (unconfirmed), 17 (a live claim marker on the issue names another session). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
+		"Close an agent-filed issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the closed-by-triage label, then the close — and read back that it says not_planned. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close), 11 (a precondition read failed, including the claim on the issue), 12 (human-filed — no agent footer and no operator author, see $FABRIKA_OPERATOR_ACCOUNTS), 13 (unconfirmed), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
 	),
 );
 
@@ -137,14 +153,16 @@ const split = leafCommand(
 		title: Flag.string("title").pipe(
 			Flag.withDescription("the child's single-unit title; also half the create-once key"),
 		),
+		token: laneTokenFlag,
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({parent, title, repo, json}) {
+	Effect.fn(function* ({parent, title, token, repo, json}) {
 		yield* emit(
 			yield* runSplit({
 				parent,
 				title,
+				token: Option.getOrNull(token),
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -156,7 +174,7 @@ const split = leafCommand(
 ).pipe(
 	Command.withShortDescription("Create one child of a bundled report, exactly once."),
 	Command.withDescription(
-		'Create one child of a bundled report from the body on STDIN, exactly once, and cross-link the parent. Prints `<created|reused>\\t<number>\\t<url>`; both outcomes exit 0. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (parent absent or closed, or the queue label does not exist), 8 (create failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed, including the claim on the parent — never a silent create), 17 (a live claim marker on the parent names another session). Example: fabrika triage split 4312 --title "Editor loses focus after save" < child.md',
+		'Create one child of a bundled report from the body on STDIN, exactly once, and cross-link the parent. Prints `<created|reused>\\t<number>\\t<url>`; both outcomes exit 0. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (parent absent or closed, or the queue label does not exist), 8 (create failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed, including the claim on the parent — never a silent create), 17 (a live claim marker on the parent names another session, or — with --token — another lane of this one). Example: fabrika triage split 4312 --title "Editor loses focus after save" < child.md',
 	),
 );
 
@@ -197,10 +215,11 @@ const apply = leafCommand(
 				`a standing lane instead of a milestone; this repo's own set, defaulting to ${STANDING_LANES.join(" or ")}`,
 			),
 		),
+		token: laneTokenFlag,
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({issue, type, priority, readyFor, home, lane, repo, json}) {
+	Effect.fn(function* ({issue, type, priority, readyFor, home, lane, token, repo, json}) {
 		yield* emit(
 			yield* runApply({
 				issue,
@@ -209,6 +228,7 @@ const apply = leafCommand(
 				readyFor,
 				home: Option.getOrNull(home),
 				lane: Option.getOrNull(lane),
+				token: Option.getOrNull(token),
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -219,17 +239,18 @@ const apply = leafCommand(
 ).pipe(
 	Command.withShortDescription("Stamp the whole triaged transition as one reconcile."),
 	Command.withDescription(
-		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>`. Exits 7 (no such issue, it is closed, or a label this run would write does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed, including the claim on the issue), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47",
+		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>`. Exits 7 (no such issue, it is closed, or a label this run would write does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed, including the claim on the issue), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47",
 	),
 );
 
 const park = leafCommand(
 	"park",
-	{issue: issueArg, repo: repoFlag, json: jsonFlag},
-	Effect.fn(function* ({issue, repo, json}) {
+	{issue: issueArg, token: laneTokenFlag, repo: repoFlag, json: jsonFlag},
+	Effect.fn(function* ({issue, token, repo, json}) {
 		yield* emit(
 			yield* runPark({
 				issue,
+				token: Option.getOrNull(token),
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -241,7 +262,7 @@ const park = leafCommand(
 ).pipe(
 	Command.withShortDescription("Demote an issue to needs-info with the questions on stdin."),
 	Command.withDescription(
-		"Demote an issue to status:needs-info with the questions on STDIN, clearing every priced facet — type, priority, audience, lane and milestone. The comment is posted BEFORE the labels move. Prints `parked\\t<n>\\t<comment-url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue, it is closed, or status:needs-info does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed, including the claim on the issue), 17 (a live claim marker on the issue names another session), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable). Example: fabrika triage park 4290 < questions.md",
+		"Demote an issue to status:needs-info with the questions on STDIN, clearing every priced facet — type, priority, audience, lane and milestone. The comment is posted BEFORE the labels move. Prints `parked\\t<n>\\t<comment-url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue, it is closed, or status:needs-info does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed, including the claim on the issue), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable). Example: fabrika triage park 4290 < questions.md",
 	),
 );
 
@@ -272,7 +293,7 @@ const claim = leafCommand(
 ).pipe(
 	Command.withShortDescription("Take one lane's claim on one issue."),
 	Command.withDescription(
-		"Take one lane's claim on one issue, proven by re-reading the markers back. Prints `won\\t<claim-token>` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Keep the token: passing it back as --token re-enters this lane instead of minting a second one, which is what tells two triagers of ONE session apart. Exits 1 (CLAUDE_CODE_SESSION_ID unset, or --token is not this session's), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read — never \"won\"). Example: fabrika triage claim 4312",
+		"Take one lane's claim on one issue, proven by re-reading the markers back. Prints `won\\t<claim-token>` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Keep the token: passing it back as --token re-enters this lane instead of minting a second one, which is what tells two triagers of ONE session apart. Exits 1 (no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, or --token is not this session's), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read — never \"won\"). Example: fabrika triage claim 4312",
 	),
 );
 
@@ -394,14 +415,16 @@ const enrich = leafCommand(
 				"wrap the original under a fixed header and head a pitch above it; stdin carries the pitch's five field lines, not a rewrite",
 			),
 		),
+		token: laneTokenFlag,
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({issue, epic, repo, json}) {
+	Effect.fn(function* ({issue, epic, token, repo, json}) {
 		yield* emit(
 			yield* runEnrich({
 				issue,
 				epic,
+				token: Option.getOrNull(token),
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -412,7 +435,7 @@ const enrich = leafCommand(
 ).pipe(
 	Command.withShortDescription("Replace an issue body with the rewrite on stdin."),
 	Command.withDescription(
-		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent or closed, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue, or the claim on it, could not be read), 17 (a live claim marker on the issue names another session). Example: fabrika triage enrich 4312 < enriched.md",
+		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent or closed, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue, or the claim on it, could not be read), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one). Example: fabrika triage enrich 4312 < enriched.md",
 	),
 );
 
@@ -485,7 +508,7 @@ const scratch = leafCommand(
 ).pipe(
 	Command.withShortDescription("The per-lane scratch path a triager's working files go under."),
 	Command.withDescription(
-		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-triage/<session-id>/<issue>-<claim-nonce>/<slug>, one absolute path on stdout, the directory created if absent. --token's nonce is what keys the namespace per LANE rather than per session, so two triagers of one fan-out cannot clobber each other's fixed-name files. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created, CLAUDE_CODE_SESSION_ID is unset or is not one path segment, --token is not a claim token of this session, or the repo does not resolve), 10 (--slug carries a path separator or is not kebab-case), 11 (the claim state could not be read — UNKNOWN), 19 (proven: this lane holds no live claim on the issue). Example: fabrika triage scratch 4312 --slug authored --token triage:s-9f2e:c1a4d6f8-…",
+		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-triage/<session-id>/<issue>-<claim-nonce>/<slug>, one absolute path on stdout, the directory created if absent. --token's nonce is what keys the namespace per LANE rather than per session, so two triagers of one fan-out cannot clobber each other's fixed-name files. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created, no session id is set (the FABRIKA_SESSION_ID → CLAUDE_CODE_SESSION_ID → PI_SUBAGENT_PARENT_SESSION chain) or the id is not one path segment, --token is not a claim token of this session, or the repo does not resolve), 10 (--slug carries a path separator or is not kebab-case), 11 (the claim state could not be read — UNKNOWN), 19 (proven: this lane holds no live claim on the issue). Example: fabrika triage scratch 4312 --slug authored --token triage:s-9f2e:c1a4d6f8-…",
 	),
 );
 

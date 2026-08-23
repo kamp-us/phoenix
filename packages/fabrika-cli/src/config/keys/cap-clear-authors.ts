@@ -16,36 +16,50 @@ export type GrantAuthor =
 	| {readonly _tag: "User"; readonly login: string}
 	| {readonly _tag: "Team"; readonly org: string; readonly team: string};
 
-const USER = /^@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)$/;
-const TEAM = /^@([^/\s]+)\/([^/\s]+)$/;
+export const AUTHOR_USER = /^@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)$/;
+export const AUTHOR_TEAM = /^@([^/\s]+)\/([^/\s]+)$/;
 
-const decode = (raw: unknown): Decoded<ReadonlyArray<GrantAuthor>> => {
+/** One written entry as a {@link GrantAuthor}, or `null` when it is neither spelling. */
+export const grantAuthorEntry = (entry: string): GrantAuthor | null => {
+	const value = entry.trim();
+	const team = AUTHOR_TEAM.exec(value);
+	if (team?.[1] !== undefined && team[2] !== undefined) {
+		return {_tag: "Team", org: team[1], team: team[2]};
+	}
+	const user = AUTHOR_USER.exec(value);
+	return user?.[1] === undefined ? null : {_tag: "User", login: user[1]};
+};
+
+/**
+ * The author-set decoder, parameterized by the key raising the refusal.
+ *
+ * Shared because `campaignAuthors` decodes the identical grammar (ADR 0294 binds the second key to
+ * the first's shape *and* its authority clause), and a hand-copied second regex pair is free to
+ * drift from the one every refusal message quotes.
+ */
+export const decodeGrantAuthors = (
+	key: string,
+	raw: unknown,
+): Decoded<ReadonlyArray<GrantAuthor>> => {
 	if (!Array.isArray(raw)) {
-		return {_tag: "Malformed", reason: `\`${CAP_CLEAR_AUTHORS}\` is not an array`};
+		return {_tag: "Malformed", reason: `\`${key}\` is not an array`};
 	}
 	const authors: GrantAuthor[] = [];
 	for (const entry of raw) {
 		if (typeof entry !== "string") {
 			return {
 				_tag: "Malformed",
-				reason: `\`${CAP_CLEAR_AUTHORS}\` holds a non-string entry — expected "@user" or "@org/team"`,
+				reason: `\`${key}\` holds a non-string entry — expected "@user" or "@org/team"`,
 			};
 		}
-		const value = entry.trim();
-		const team = TEAM.exec(value);
-		if (team?.[1] !== undefined && team[2] !== undefined) {
-			authors.push({_tag: "Team", org: team[1], team: team[2]});
-			continue;
+		const author = grantAuthorEntry(entry);
+		if (author === null) {
+			return {
+				_tag: "Malformed",
+				reason: `"${entry}" is not a \`${key}\` entry — expected "@user" or "@org/team"`,
+			};
 		}
-		const user = USER.exec(value);
-		if (user?.[1] !== undefined) {
-			authors.push({_tag: "User", login: user[1]});
-			continue;
-		}
-		return {
-			_tag: "Malformed",
-			reason: `"${entry}" is not a \`${CAP_CLEAR_AUTHORS}\` entry — expected "@user" or "@org/team"`,
-		};
+		authors.push(author);
 	}
 	return {_tag: "Value", value: authors};
 };
@@ -57,7 +71,7 @@ export const grantAuthorText = (author: GrantAuthor): string =>
 export const capClearAuthorsKey: KeyGroup<ReadonlyArray<GrantAuthor>> = {
 	key: CAP_CLEAR_AUTHORS,
 	shippedDefault: [],
-	decode,
+	decode: (raw) => decodeGrantAuthors(CAP_CLEAR_AUTHORS, raw),
 	render: (authors) => authors.map(grantAuthorText),
 	jsonSchema: {
 		type: "array",
@@ -65,6 +79,6 @@ export const capClearAuthorsKey: KeyGroup<ReadonlyArray<GrantAuthor>> = {
 			"Who may clear one extra repair round on a PR (`fabrika build clear`). Each entry is a GitHub `@user` or `@org/team`, `@`-prefixed. Empty (or absent) means nobody may grant.",
 		// Composed from the two regexes `decode` runs, never restated: a hand-copied alternation is
 		// free to drift from the decoder it claims to describe.
-		items: {type: "string", pattern: `${USER.source}|${TEAM.source}`},
+		items: {type: "string", pattern: `${AUTHOR_USER.source}|${AUTHOR_TEAM.source}`},
 	},
 };

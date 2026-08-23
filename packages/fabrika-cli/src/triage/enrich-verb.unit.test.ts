@@ -53,6 +53,7 @@ const issue = (body: string): HttpReply => ({
 const options = {
 	issue: 4312,
 	epic: false,
+	token: null as string | null,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,

@@ -5,6 +5,7 @@ import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import * as adr from "./adr/codes.ts";
 import * as build from "./build/codes.ts";
+import * as campaign from "./campaign/codes.ts";
 import * as ci from "./ci/codes.ts";
 import * as config from "./config/codes.ts";
 import * as decision from "./decision/codes.ts";
@@ -58,6 +59,7 @@ const SRC_DIR = fileURLToPath(new URL(".", import.meta.url));
 const TABLES: Readonly<Record<string, CodeTable>> = {
 	adr,
 	build,
+	campaign,
 	ci,
 	config,
 	decision,

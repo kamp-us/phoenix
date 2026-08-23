@@ -3,17 +3,60 @@ import {describe, expect, it} from "vitest";
 import {fakeSeams, once, type Scripted} from "../fakes.test-support.ts";
 import {
 	accepted,
+	checkRuns,
+	HEAD_CHECK_RUNS,
 	httpError,
-	RERUN,
+	RERUN_ALL as RERUN,
 	RUN,
 	runsAtHead,
 	workflowRun,
 } from "../heal-ci/fixtures.test-support.ts";
+import {CHECK_RUN_NAME} from "../ship/floor-check.ts";
 import {HEAD} from "./fixtures.test-support.ts";
-import {assertFloorAt, floorLine, floorToken} from "./floor-assert.ts";
+import {assertFloorAt, floorLine, floorToken, needsRefire} from "./floor-assert.ts";
 
 /** The paged envelope read at the head — `&per_page=100&page=1` follows, so no `$` anchor. */
 const RUNS = /^GET .*\/repos\/o\/r\/actions\/runs\?head_sha=/;
+
+/** The floor's own check-run at the head, in whichever state the case is about. */
+const floorCheck = (
+	over: {status?: string; conclusion?: string | null} = {},
+): ReadonlyArray<Scripted> => [
+	[
+		HEAD_CHECK_RUNS,
+		{
+			status: 200,
+			body: checkRuns(1, [
+				{
+					name: CHECK_RUN_NAME,
+					status: over.status ?? "completed",
+					conclusion: over.conclusion === undefined ? "failure" : over.conclusion,
+				},
+			]).stdout,
+		},
+	],
+];
+
+/** A head carrying no check-run of the floor's name at all — a run that predates `--publish-check`. */
+const noFloorCheck: ReadonlyArray<Scripted> = [
+	[
+		HEAD_CHECK_RUNS,
+		{
+			status: 200,
+			body: checkRuns(1, [{name: "ci", status: "completed", conclusion: "success"}]).stdout,
+		},
+	],
+];
+
+/**
+ * Whether one recorded request WROTE a check-run — the fence this module must never trip.
+ *
+ * Every method that is not a GET counts. `ship floor --publish-check` creates with POST and rewrites
+ * with PATCH, so a POST-shaped fence would let a PATCH-shaped fabricated conclusion straight through
+ * (#6161).
+ */
+const writesCheckRun = (call: string): boolean =>
+	call.includes("check-runs") && !call.startsWith("GET ");
 
 const FLOOR = 31_863_008_185;
 
@@ -43,13 +86,17 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 	it("re-fires the red floor run at this head and proves the new attempt", async () => {
 		const {assertion, seams} = await withCalls([
 			...red(),
+			...floorCheck(),
 			...listed({id: 1, name: "ci"}, {id: FLOOR, name: "governance-floor"}),
 		]);
 		expect(assertion).toEqual({_tag: "Refired", run: FLOOR, attempt: 2});
 		expect(seams.requests.some((call) => RERUN.test(call))).toBe(true);
-		// The re-fire re-runs `ship floor` in CI. Nothing here writes a check-run or a status, so the
-		// green a PR ends up with is one the gate's own job derived (#5585).
-		expect(seams.log.some((call) => call.includes("check-runs"))).toBe(false);
+		// The re-fire re-runs `ship floor` in CI. Nothing here WRITES a check-run — the read above is
+		// how this module learns the floor's state, and the green a PR ends up with is one the job
+		// derived for itself (#5585). The fence is every method that is not a GET, not `POST` alone:
+		// `ship floor --publish-check` rewrites a held row with `PATCH /check-runs/{id}`, so a
+		// method-specific fence would let the PATCH-shaped fabrication through (#6161).
+		expect(seams.requests.some(writesCheckRun)).toBe(false);
 	});
 
 	it("picks the NEWEST floor run at the head, not the first one listed", async () => {
@@ -57,6 +104,7 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 			[once(RUN), workflowRun({id: 900, attempt: 1})],
 			[RERUN, accepted],
 			[RUN, workflowRun({id: 900, attempt: 2})],
+			...floorCheck(),
 			...listed({id: 700, name: "governance-floor"}, {id: 900, name: "governance-floor"}),
 		]);
 		expect(seams.requests.some((call) => call.endsWith("/actions/runs/900"))).toBe(true);
@@ -71,10 +119,33 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 		expect(seams.requests.some((call) => RERUN.test(call))).toBe(false);
 	});
 
-	it("re-fires nothing when the run at this head already reads green", async () => {
-		const {assertion, seams} = await withCalls(
-			listed({id: FLOOR, name: "governance-floor", conclusion: "success"}),
-		);
+	it("re-fires nothing when the check-run at this head already reads green", async () => {
+		const {assertion, seams} = await withCalls([
+			...floorCheck({conclusion: "success"}),
+			...listed({id: FLOOR, name: "governance-floor", conclusion: "success"}),
+		]);
+		expect(assertion).toEqual({_tag: "Green", run: FLOOR});
+		expect(seams.requests.some((call) => RERUN.test(call))).toBe(false);
+	});
+
+	// The job now succeeds whenever it PUBLISHED an answer, so its green says nothing about the floor
+	// (#6161). A pending check-run beside a green job is the ordinary "no verdict yet" state, and it is
+	// exactly the state this module exists to clear.
+	it("re-fires a green job whose check-run is still pending", async () => {
+		const {assertion, seams} = await withCalls([
+			...red(),
+			...floorCheck({status: "in_progress", conclusion: null}),
+			...listed({id: FLOOR, name: "governance-floor", conclusion: "success"}),
+		]);
+		expect(assertion).toEqual({_tag: "Refired", run: FLOOR, attempt: 2});
+		expect(seams.requests.some((call) => RERUN.test(call))).toBe(true);
+	});
+
+	it("falls back to the job's conclusion when the head carries no floor check-run", async () => {
+		const {assertion, seams} = await withCalls([
+			...noFloorCheck,
+			...listed({id: FLOOR, name: "governance-floor", conclusion: "success"}),
+		]);
 		expect(assertion).toEqual({_tag: "Green", run: FLOOR});
 		expect(seams.requests.some((call) => RERUN.test(call))).toBe(false);
 	});
@@ -86,6 +157,7 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 			[once(RUN), workflowRun({id: FLOOR, attempt: 1})],
 			[RERUN, accepted],
 			[RUN, workflowRun({id: FLOOR, attempt: 1, status: "in_progress", conclusion: null})],
+			...floorCheck(),
 			...listed({id: FLOOR, name: "governance-floor"}),
 		]);
 		expect(assertion).toEqual({_tag: "Restarting", run: FLOOR, status: "in_progress"});
@@ -97,6 +169,7 @@ describe("assertFloorAt re-derives the floor rather than claiming it", () => {
 			[once(RUN), workflowRun({id: FLOOR, attempt: 1})],
 			[RERUN, accepted],
 			[RUN, workflowRun({id: FLOOR, attempt: 1, status: "queued", conclusion: null})],
+			...floorCheck(),
 			...listed({id: FLOOR, name: "governance-floor"}),
 		]);
 		expect(assertion).toEqual({_tag: "Restarting", run: FLOOR, status: "queued"});
@@ -120,6 +193,7 @@ describe("every unread state is UNKNOWN, never a re-fire nobody proved", () => {
 		const assertion = await assert([
 			[once(RUN), workflowRun({id: FLOOR, attempt: 1})],
 			[RERUN, httpError(403, "Forbidden")],
+			...floorCheck(),
 			...listed({id: FLOOR, name: "governance-floor"}),
 		]);
 		expect(assertion._tag).toBe("Unknown");
@@ -132,6 +206,7 @@ describe("every unread state is UNKNOWN, never a re-fire nobody proved", () => {
 		const assertion = await assert([
 			[RUN, workflowRun({id: FLOOR, attempt: 1})],
 			[RERUN, accepted],
+			...floorCheck(),
 			...listed({id: FLOOR, name: "governance-floor"}),
 		]);
 		expect(assertion._tag).toBe("Unknown");
@@ -140,6 +215,14 @@ describe("every unread state is UNKNOWN, never a re-fire nobody proved", () => {
 
 	it("reports an unreadable run list as UNKNOWN", async () => {
 		const assertion = await assert([[RUNS, {status: 502, body: "{}"}]]);
+		expect(assertion._tag).toBe("Unknown");
+	});
+
+	it("reports an unreadable check-run list as UNKNOWN rather than as a green", async () => {
+		const assertion = await assert([
+			[HEAD_CHECK_RUNS, {status: 502, body: "{}"}],
+			...listed({id: FLOOR, name: "governance-floor", conclusion: "success"}),
+		]);
 		expect(assertion._tag).toBe("Unknown");
 	});
 });
@@ -165,5 +248,43 @@ describe("floorLine says what the caller must do next", () => {
 		expect(line).toContain("wait and re-read");
 		expect(line).toContain("nothing to escalate");
 		expect(floorToken({_tag: "Restarting", run: FLOOR, status: "in_progress"})).toBe("restarting");
+	});
+});
+
+describe("needsRefire reads the check-run, and the job only where there is none", () => {
+	const check = (status: string, conclusion: string | null) => ({
+		name: CHECK_RUN_NAME,
+		status,
+		conclusion,
+		startedAt: null,
+		id: 1,
+		checkSuiteId: 1,
+	});
+
+	it("holds a pending check-run to be re-fireable however the job concluded", () => {
+		expect(needsRefire("success", check("in_progress", null))).toBe(true);
+		expect(needsRefire("failure", check("in_progress", null))).toBe(true);
+	});
+
+	it("clears only on a completed, successful check-run", () => {
+		expect(needsRefire("success", check("completed", "success"))).toBe(false);
+		expect(needsRefire("success", check("completed", "failure"))).toBe(true);
+	});
+
+	it("reads the job's conclusion when the head carries no check-run", () => {
+		expect(needsRefire("success", null)).toBe(false);
+		expect(needsRefire("failure", null)).toBe(true);
+		expect(needsRefire(null, null)).toBe(false);
+	});
+});
+
+describe("the check-run fence these cases assert on", () => {
+	it("catches every write method and lets the read through", () => {
+		expect(writesCheckRun("POST https://api.github.com/repos/o/r/check-runs")).toBe(true);
+		expect(writesCheckRun("PATCH https://api.github.com/repos/o/r/check-runs/55")).toBe(true);
+		expect(writesCheckRun("DELETE https://api.github.com/repos/o/r/check-runs/55")).toBe(true);
+		expect(
+			writesCheckRun("GET https://api.github.com/repos/o/r/commits/abc/check-runs?per_page=100"),
+		).toBe(false);
 	});
 });

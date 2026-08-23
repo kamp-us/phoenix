@@ -72,10 +72,17 @@ node <fabrika> lane claim $lane_key
 Exit `0` is yours to drive — `won` on an issue lane, `unclaimable` on a `chore:<name>` key, which
 carries no board number for a marker to sit on and so races with nobody. Exit `31` is a **proven
 loss**: another driver holds this lane, its token is named on stderr, and this run ends `LANE-HELD`
-having emitted no ledger and spawned no shell. `1` (no `CLAUDE_CODE_SESSION_ID`, or a `--token` that
+having emitted no ledger and spawned no shell. `1` (no session id in `FABRIKA_SESSION_ID` / `CLAUDE_CODE_SESSION_ID` /
+`PI_SUBAGENT_PARENT_SESSION`, or a `--token` that
 is not a lane-claim token of this session), `8` (the marker write is UNKNOWN), `9` (it landed and
 does not read back) and `11` (the marker set could not be read) all end `STOPPED` naming the code —
 an unproven claim is never driven through.
+
+**Harness note — opencode exports no session id.** Verified against upstream `sst/opencode` at
+`v1.18.21`: the bash tool spawns shells with inherited environment only, and the shipped binary
+carries no `OPENCODE_SESSION_ID`. So under opencode the chain comes up empty on its own — export
+`FABRIKA_SESSION_ID` (any stable value you control) before your first attribution-bearing verb, or
+every verb refuses with the three-variable unset message above.
 
 **Keep the `token` a `won` prints — it is this driver's name, and `lane release` takes it as
 `--token`.** One session routinely spawns several operators, so a release handed only the session id
@@ -452,7 +459,7 @@ this order:
   incident reaches the board only if you file it — through [`report`](../report/SKILL.md), as the
   spawn would have.
 - **Release the claim it stranded.** `node <fabrika> build release <issue>`
-  is the whole act: the spawn ran under your `CLAUDE_CODE_SESSION_ID`, so its marker resolves as
+  is the whole act: the spawn ran under your session id, so its marker resolves as
   this session's and the verb that already exists retracts it. No new verb and no widened one — the
   ruling rejected a lease, a TTL and steal outright, and eviction by inference from
   absence stays banned (ADR
@@ -528,17 +535,21 @@ owe the whole set at `review` and refuse there exactly as before
 (ADR [0320](../../../../.decisions/0320-the-review-bar-splits-across-two-cells-and-the-machine-decides.md)).
 The remedy the refusal names is the class relay, and it is the reviewer's to make.
 
-`lane prove` reads the two events a report can lie about — a `DONE` out of `build` and a `PASS` out
-of `review` — and answers `not-required` at exit `0` for every other one, so it is run on every
-event and never skipped as an optimisation. Its refusals each name a different next move:
+`lane prove` reads the three events a report can lie about — a `DONE` out of `build`, a `PASS` out
+of `review`, and a reviewer's park out of either review cell — and answers `not-required` at exit
+`0` for every other one, so it is run on every event and never skipped as an optimisation. The park
+is the one negative claim of the three: it says the run reached no verdict, so a still-binding
+`FAIL` refuses it on `24` and every unreadable half lets it through, because a park nobody can
+record strands the lane in the state only a human could have left (#6112). Its refusals each name a
+different next move:
 
 | Exit | What it read | What you do |
 | --- | --- | --- |
 | `0` | the artifact is there (or the event claims none) | record the event |
 | `22` | the artifact is provably absent — no open PR links the task's issue and no legal no-PR outcome is proven either (the issue is not a `type:investigation`, or it is one but no diagnosis was posted since the task entered `build`); on an epic child, no branch in this tree carries commits naming it | the report is unproven — record `BLOCKED`, never the `DONE` |
 | `23` | a derived namespace has no verdict that still binds — no current-head one on a PR, or, on an epic child, none whose content digest matches what the range carries now | record **nothing**; re-read this pass |
-| `24` | a still-binding `FAIL` under a claimed `PASS` | record the event the artifact supports (`FAIL`) |
-| `25` | several candidates — open PRs linking the issue, or lane branches carrying an epic child's commits | park — step 4, naming the ambiguity |
+| `24` | a still-binding `FAIL` under a claimed `PASS`, or under a reviewer's claimed park | record the event the artifact supports (`FAIL`) |
+| `25` | several candidates — open PRs linking the issue, or lane branches carrying an epic child's commits that no one of them contains, so a repair round's superseding branch is not one of these (#6049) | park — step 4, naming the ambiguity |
 | `11` | a lane, board or tree read failed | the proof is UNKNOWN — end `STOPPED` naming the code |
 
 A builder's `SUCCESS-NO-PR` is a proven `DONE`, not an unproven one: the verb takes the no-PR arm

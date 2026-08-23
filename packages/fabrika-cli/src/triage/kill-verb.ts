@@ -4,10 +4,12 @@
  * This is the group's only irreversible act on a public board, which shapes every decision below:
  * no precondition resolves to a plausible value, and no write runs before all of them are proven.
  *
- * **Two guards, and they are different guards (ADR 0159, as narrowed by the #4619 ruling).** A
- * filing with no agent signal — no footer *and* no operator author — is human-owned and the verb
- * refuses outright; an agent signal makes it *eligible*, not closeable — a human-invoked `/report`
- * emits the same footer, so `--confirm` is the confirmation step made
+ * **Two guards, and they are different guards (ADR 0159, as narrowed by the #4619 and #6070
+ * rulings).** A filing with no agent signal — no footer *and* no operator author — is human-owned
+ * and the verb refuses outright, *unless* `--duplicate-of` names a survivor: a fold moves the
+ * content rather than discarding it, so #6070 licensed it whatever the provenance (ADR 0181's
+ * 2026-08-21 amendment). An agent signal makes a filing *eligible*, not closeable — a human-invoked
+ * `/report` emits the same footer, so `--confirm` is the confirmation step made
  * structural. That is why `--confirm` is optional at the parser and refused at the verb: a
  * parser-required flag's absence is a usage error, indistinguishable from a typo, while ADR 0159's
  * confirmation is a decision whose absence must be a proven refusal a caller can read as one.
@@ -61,6 +63,8 @@ export interface KillOptions {
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The claim token `triage claim` handed this lane — which lane of the session is asking. */
+	readonly token: string | null;
 	readonly stdin: Effect.Effect<StdinRead>;
 }
 
@@ -118,6 +122,7 @@ export const runKill = (
 			issue,
 			target: target.value,
 			env: options.env,
+			token: options.token,
 		});
 		if (guarded !== null) return guarded;
 
@@ -133,7 +138,10 @@ export const runKill = (
 					]
 				: [];
 
-		if (provenance === "human") {
+		// The fold exception is conditional, never merely later: gating on `duplicateOf` here keeps
+		// `12` ahead of `13` on every non-fold path, which moving this test below `--confirm` would
+		// silently swap.
+		if (provenance === "human" && duplicateOf === null) {
 			// An unset operator set makes every footerless filing read human, including the operator's
 			// own — the refusal is correct but its cause is invisible, so name the config that decides it.
 			const unconfiguredNotice =
@@ -150,9 +158,13 @@ export const runKill = (
 		}
 
 		if (!options.confirm) {
+			const standing =
+				provenance === "human"
+					? `is human-filed and would be folded into #${duplicateOf}`
+					: "is agent-filed and close-eligible";
 			return refuse(
 				UNCONFIRMED,
-				`triage kill: #${issue} is agent-filed and close-eligible, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.`,
+				`triage kill: #${issue} ${standing}, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.`,
 			);
 		}
 
