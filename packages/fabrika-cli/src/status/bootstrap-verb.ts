@@ -13,7 +13,9 @@
  * "unbuildable" would make the most important onboarding surface unreachable.
  *
  * **`exists` is an exit-`0` answer, not a refusal.** A target already there is a proven fact the
- * caller acts on, and a non-zero exit cannot carry it. Nothing is written and nothing is overwritten.
+ * caller acts on, and a non-zero exit cannot carry it. Nothing is written and nothing is overwritten
+ * — bar the merge arm ADR 0334 rules for adoption surfaces, which touches only the keys a surface
+ * declares and never bytes it does not own.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -31,6 +33,7 @@ import {
 	listLabels,
 	openIssuesTitled,
 } from "../io/issues.ts";
+import {isRecord, parseJsonOrReason} from "../io/json.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
@@ -49,6 +52,7 @@ import {
 } from "./codes.ts";
 import {EMPTY_CELL, row} from "./fields.ts";
 import {ARTIFACT_TITLE} from "./readout-verb.ts";
+import {PLUGIN, SETTINGS_PATH} from "./wiring-verb.ts";
 
 const VERB = "status bootstrap";
 
@@ -185,6 +189,17 @@ export type BuildableSurface =
 	  }
 	| {
 			readonly id: string;
+			readonly kind: "json";
+			/** The registry default write path — where this lands in a repo that declares nothing. */
+			readonly defaultPath: string;
+			/**
+			 * The keys this surface owns. Present file: merged over the parsed object, every undeclared
+			 * key preserved through the re-serialize. Absent file: serialized whole.
+			 */
+			readonly patch: Readonly<Record<string, unknown>>;
+	  }
+	| {
+			readonly id: string;
 			readonly kind: "labels";
 			/**
 			 * Derived from the resolved board rather than fixed, so a repo that declared its own
@@ -202,7 +217,23 @@ const FABRIKA_IGNORE_BLOCK = `# fabrika's local machine state — the per-lane l
 # \`.fabrika/lanes/<n>/\`. One machine's run log; never committed.
 ${FABRIKA_IGNORE_ROW}`;
 
-/** Six ids. A seventh is a change to this table, not a new rule. */
+/**
+ * The `settings-patch` keys: the `kampus` marketplace registration and the plugin flip, spelled as an
+ * adopted repo carries them (kamp-us/demlik#5 is the hand-authored origin). Fixed in the registry for
+ * the reason the line surface's row is fixed there: a caller supplying the JSON would let two repos
+ * spell one marketplace two ways.
+ */
+export const SETTINGS_PATCH: Readonly<Record<string, unknown>> = {
+	extraKnownMarketplaces: {
+		kampus: {
+			source: {source: "github", repo: "kamp-us/phoenix"},
+			autoUpdate: true,
+		},
+	},
+	enabledPlugins: {[`${PLUGIN}@kampus`]: true},
+};
+
+/** Seven ids. An eighth is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
 	{
@@ -222,6 +253,7 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "label-taxonomy", kind: "labels", labels: taxonomy},
 	{id: "issue-shape-markers", kind: "labels", labels: () => ISSUE_SHAPE_MARKERS},
 	{id: "readout-artifact", kind: "issue"},
+	{id: "settings-patch", kind: "json", defaultPath: SETTINGS_PATH, patch: SETTINGS_PATCH},
 ];
 
 export const findSurface = (id: string): BuildableSurface | undefined =>
@@ -405,6 +437,152 @@ const buildFile = (
 			`${VERB}: created ${relative} for ${surface.id}, read-back conformed${count === undefined ? "" : ` — ${count.clause}`}.`,
 			count?.fields,
 		);
+	});
+
+/**
+ * JSON value equality, key-order-insensitive: a hand-authored settings object may spell its keys in
+ * any order, and an adoption that differs only in key order is adopted, not a delta to rewrite.
+ */
+const jsonEquals = (a: unknown, b: unknown): boolean => {
+	if (a === b) return true;
+	if (Array.isArray(a) || Array.isArray(b)) {
+		return (
+			Array.isArray(a) &&
+			Array.isArray(b) &&
+			a.length === b.length &&
+			a.every((item, index) => jsonEquals(item, b[index]))
+		);
+	}
+	if (!isRecord(a) || !isRecord(b)) return false;
+	const aKeys = Object.keys(a);
+	const bKeys = new Set(Object.keys(b));
+	return (
+		aKeys.length === bKeys.size &&
+		aKeys.every((key) => bKeys.has(key) && jsonEquals(a[key], b[key]))
+	);
+};
+
+/**
+ * The key-merge proper: the patch's own paths overwrite, everything else survives verbatim —
+ * including siblings *under* a key the patch names, so an `enabledPlugins` carrying other plugins
+ * keeps them. Recursion follows the patch's shape only; the merge never descends into content the
+ * surface does not declare.
+ */
+const mergeJsonPatch = (
+	present: Readonly<Record<string, unknown>>,
+	patch: Readonly<Record<string, unknown>>,
+): Record<string, unknown> => {
+	const merged: Record<string, unknown> = {...present};
+	for (const [key, value] of Object.entries(patch)) {
+		merged[key] =
+			isRecord(value) && isRecord(merged[key]) ? mergeJsonPatch(merged[key], value) : value;
+	}
+	return merged;
+};
+
+const serializeJsonPatch = (value: Readonly<Record<string, unknown>>): string =>
+	`${JSON.stringify(value, null, "\t")}\n`;
+
+/**
+ * **The JSON key-merge arm (ADR 0334).** An adopting repo's `.claude/settings.json` exists before
+ * fabrika ever sees it, so the file arm's absence guard cannot serve it. A present target must parse
+ * as a JSON object: the surface's declared keys merge over it, every undeclared key survives the
+ * re-serialize verbatim, and bytes that refuse to parse are exit `11` naming the file and the parse
+ * failure, nothing written. Already merged — the parsed object equals what merging would produce — is
+ * `exists`, so idempotency stays absolute. Absent, the declared keys are written whole through the
+ * same write-and-read-back protocol the file arm runs.
+ */
+const buildJsonPatch = (
+	surface: Extract<BuildableSurface, {kind: "json"}>,
+	input: BootstrapInput,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const target = yield* targetOf(surface, input);
+		if (!isTarget(target)) return target;
+		const {relative, absolute} = target;
+		const probe = yield* Effect.result(exists(absolute));
+		if (Result.isFailure(probe)) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot probe ${relative}: ${probe.failure.reason} — nothing was written.`,
+			);
+		}
+		if (!probe.success) {
+			return yield* writeAndReadBack(
+				surface.id,
+				relative,
+				absolute,
+				serializeJsonPatch(surface.patch),
+				input,
+				`created ${relative} for ${surface.id}, read-back conformed.`,
+			);
+		}
+		const read = yield* Effect.result(readFile(absolute));
+		if (Result.isFailure(read)) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read ${relative}: ${read.failure.reason} — whether the declared keys are already there is UNKNOWN, and nothing was written.`,
+			);
+		}
+		const parsed = parseJsonOrReason(read.success);
+		if (parsed._tag === "Failed") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${relative} does not parse as a JSON object: ${parsed.reason} — nothing was written.`,
+			);
+		}
+		if (!isRecord(parsed.value)) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${relative} parses to ${Array.isArray(parsed.value) ? "an array" : typeof parsed.value}, not a JSON object — nothing was written.`,
+			);
+		}
+		const merged = mergeJsonPatch(parsed.value, surface.patch);
+		if (jsonEquals(parsed.value, merged)) return already(surface.id, relative, input.json);
+		return yield* writeAndReadBack(
+			surface.id,
+			relative,
+			absolute,
+			serializeJsonPatch(merged),
+			input,
+			`merged the declared keys into ${relative} for ${surface.id}, read-back conformed.`,
+		);
+	});
+
+/**
+ * One write, one re-read, one comparison — the protocol every byte-writing arm here runs. The notice
+ * prefix (`created …` / `merged …`) is the caller's, because the arms differ in what landed.
+ */
+const writeAndReadBack = (
+	surfaceId: string,
+	relative: string,
+	absolute: string,
+	content: string,
+	input: BootstrapInput,
+	notice: string,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const written = yield* Effect.result(writeFile(absolute, content));
+		if (Result.isFailure(written)) {
+			return refuse(
+				WRITE_UNKNOWN,
+				`${VERB}: writing ${relative} failed: ${written.failure.reason} — whether it landed is UNKNOWN. Re-read before retrying.`,
+			);
+		}
+		const back = yield* Effect.result(readFile(absolute));
+		if (Result.isFailure(back)) {
+			return refuse(
+				WRITE_UNKNOWN,
+				`${VERB}: wrote ${relative} and it could not be read back: ${back.failure.reason} — the outcome is UNKNOWN.`,
+			);
+		}
+		if (normalizeForReadback(back.success) !== normalizeForReadback(content)) {
+			return refuse(
+				READBACK_MISMATCH,
+				`${VERB}: wrote ${relative} and the read-back differs — the outcome is UNKNOWN.`,
+			);
+		}
+		return created(surfaceId, relative, input.json, `${VERB}: ${notice}`);
 	});
 
 /**
@@ -619,5 +797,6 @@ export const runBootstrap = (
 	}
 	if (surface.kind === "file") return buildFile(surface, input);
 	if (surface.kind === "line") return buildLine(surface, input);
+	if (surface.kind === "json") return buildJsonPatch(surface, input);
 	return surface.kind === "labels" ? buildLabels(surface, input) : buildArtifact(surface, input);
 };

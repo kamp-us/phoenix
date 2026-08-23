@@ -38,6 +38,7 @@ import {
 	MARKER_COLOR,
 	roadmapCount,
 	runBootstrap,
+	SETTINGS_PATCH,
 	TAXONOMY,
 	taxonomy as taxonomyFor,
 } from "./bootstrap-verb.ts";
@@ -504,12 +505,12 @@ describe("status bootstrap", () => {
 	it("refuses an id outside the registry on 12, naming what IS buildable", () => {
 		expect(findSurface("merge-queue")).toBeUndefined();
 		expect(knownIds()).toBe(
-			"design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact",
+			"design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch",
 		);
 	});
 
-	it("carries exactly six ids", () => {
-		expect(BUILDABLE_SURFACES).toHaveLength(6);
+	it("carries exactly seven ids", () => {
+		expect(BUILDABLE_SURFACES).toHaveLength(7);
 		expect(NOT_BUILDABLE).toBe(12);
 	});
 
@@ -601,6 +602,136 @@ describe("the .fabrika/ gitignore row", () => {
 			Effect.provide(
 				runBootstrap({
 					surfaceId: "gitignore-row",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * ADR 0334's JSON key-merge arm, as `settings-patch` ships it: an adopting repo's settings file
+ * exists before fabrika ever runs there, so the file arm's absence guard cannot serve it.
+ */
+describe("the settings-patch surface", () => {
+	const SETTINGS = "/repo/.claude/settings.json";
+
+	const bootstrapWith = (
+		files: Record<string, string | null>,
+		unreadable: ReadonlyArray<string> = [],
+	) => {
+		const fs = fakeFs({files, unreadable});
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "settings-patch",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		).then((outcome) => ({outcome, written: fs.written}));
+	};
+
+	it("merges both declared keys into a present file and preserves every unknown key", async () => {
+		const {outcome, written} = await bootstrapWith({
+			[SETTINGS]: JSON.stringify({
+				hooks: {PreToolUse: [{matcher: "Bash"}]},
+				enabledPlugins: {"other@market": true},
+			}),
+		});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({
+			outcome: "created",
+			target: ".claude/settings.json",
+		});
+		const merged = JSON.parse(written.get(SETTINGS) ?? "");
+		expect(merged.hooks).toEqual({PreToolUse: [{matcher: "Bash"}]});
+		expect(merged.enabledPlugins).toEqual({"other@market": true, "fabrika@kampus": true});
+		expect(merged.extraKnownMarketplaces.kampus.source).toEqual({
+			source: "github",
+			repo: "kamp-us/phoenix",
+		});
+	});
+
+	it("flips a fabrika entry that is already present but switched off", async () => {
+		const {written} = await bootstrapWith({
+			[SETTINGS]: JSON.stringify({enabledPlugins: {"fabrika@kampus": false}}),
+		});
+		expect(JSON.parse(written.get(SETTINGS) ?? "").enabledPlugins).toEqual({
+			"fabrika@kampus": true,
+		});
+	});
+
+	// The parse failure is the one fact that makes the refusal actionable — a bare exit 11 would send
+	// the caller hunting through the whole file for what JSON rejected.
+	it("refuses a target that does not parse as JSON, naming the file and the parse failure", async () => {
+		const {outcome, written} = await bootstrapWith({[SETTINGS]: "{not json"});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		const stderr = outcome.stderr.join("\n");
+		expect(stderr).toContain(".claude/settings.json does not parse as a JSON object");
+		// The reason is the engine's own wording, which moves between Node releases — pin the shape,
+		// never the sentence: the file, then its parse failure, then the no-write guarantee.
+		expect(stderr).toMatch(/does not parse as a JSON object: .+ — nothing was written\.$/);
+		expect(written.size).toBe(0);
+	});
+
+	it("refuses a target whose top level is not an object, writing nothing", async () => {
+		const {outcome, written} = await bootstrapWith({[SETTINGS]: "[1, 2]"});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("an array, not a JSON object");
+		expect(written.size).toBe(0);
+	});
+
+	/** Idempotency is absolute (ADR 0334): key-order differences are not a delta to rewrite. */
+	it("reads an adopted file as `exists`, whatever order its keys spell, and writes nothing", async () => {
+		const {outcome, written} = await bootstrapWith({
+			[SETTINGS]: JSON.stringify({
+				enabledPlugins: {"fabrika@kampus": true},
+				extraKnownMarketplaces: {
+					kampus: {autoUpdate: true, source: {repo: "kamp-us/phoenix", source: "github"}},
+				},
+				permissions: {allow: ["Bash"]},
+			}),
+		});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout).outcome).toBe("exists");
+		expect(written.size).toBe(0);
+	});
+
+	it("creates the file whole when it is absent", async () => {
+		const {outcome, written} = await bootstrapWith({});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "settings-patch",
+			target: ".claude/settings.json",
+			readback: "ok",
+		});
+		expect(JSON.parse(written.get(SETTINGS) ?? "")).toEqual(SETTINGS_PATCH);
+		expect(outcome.stderr).toEqual([
+			"status bootstrap: created .claude/settings.json for settings-patch, read-back conformed.",
+		]);
+	});
+
+	it("never writes over a file it could not read — an unreadable target is UNKNOWN, not absent", async () => {
+		const fs = fakeFs({files: {[SETTINGS]: "{}"}, unreadable: [SETTINGS]});
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "settings-patch",
 					path: null,
 					json: true,
 					repoRoot: "/repo",

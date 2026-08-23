@@ -1082,12 +1082,14 @@ $ fabrika status board --json
 fabrika status bootstrap <surface-id> [--path <repo-relative>] [--repo <owner/name>] [--json]
 ```
 
-Creates **one** missing surface from this group's own registry and reads it back. The content is the
+Creates **one** missing surface from this group's own registry and reads it back; an adoption
+surface merges into a file that is already there instead (ADR
+[0334](../../../../.decisions/0334-bootstrap-merge-into-present-files.md)). The content is the
 skill's judgement; the write, the collision guard and the read-back are this verb's.
 
 <a id="buildable-surfaces"></a>**The buildable-surface registry.** What this verb builds is fixed
-here, not inferred from any declaration. Six ids, and
-a seventh is a change to this table, not a new rule.
+here, not inferred from any declaration. Seven ids, and
+an eighth is a change to this table, not a new rule.
 
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
@@ -1097,6 +1099,7 @@ a seventh is a change to this table, not a new rule.
 | `label-taxonomy` | the repo's labels | **none** — the set is every imported `STATUSES` member (`status:needs-triage`, `status:triaged`, `status:needs-info`, `status:planned`, `status:awaiting-release`), every imported `PRIORITIES` member (`p0`, `p1`, `p2`), `type:` + every imported `TYPES` member, and `ready-for:` + every imported `AUDIENCES` member — sixteen today, each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
 | `issue-shape-markers` | the repo's labels | **none** — three labels, each at colour `1D76DB`, with the descriptions fixed below | every label in the set resolves on a re-read |
 | `readout-artifact` | one open issue in the repo | **none** — title exactly `Governance readout`; body exactly the two lines below | the issue resolves open, its title matches exactly, and its body matches through `normalizeForReadback` |
+| `settings-patch` | `--path`, default `.claude/settings.json` at the repo root | **none** — the two keys [fixed below](#json-key-merge), merged into the object a present file parses to, written whole into a file that is absent | a present file re-reads to the merged object — every undeclared key intact, the declared keys at their registry values — through `normalizeForReadback` |
 
 <a id="taxonomy-is-derived"></a>**The taxonomy is derived from the vocabularies, never restated.**
 Every name comes from the constant the writing verb already reads — `STATUSES` for the five statuses,
@@ -1184,6 +1187,34 @@ the same marker, so a hand-added row spelled the same way is recognised as the r
 this verb cannot *read* is exit `11` — whether the row is already there is UNKNOWN, and appending
 blind would be the duplicate row this guard exists to prevent.
 
+<a id="json-key-merge"></a>**A json surface merges its declared keys into a present file; it never
+touches keys it did not declare.** `.claude/settings.json` exists before fabrika is ever adopted, so
+the file surfaces' absence guard cannot serve it (ADR
+[0334](../../../../.decisions/0334-bootstrap-merge-into-present-files.md)). The `settings-patch`
+keys, fixed here so no clause defers to source:
+
+```json
+{
+	"extraKnownMarketplaces": {
+		"kampus": {
+			"source": { "source": "github", "repo": "kamp-us/phoenix" },
+			"autoUpdate": true
+		}
+	},
+	"enabledPlugins": { "fabrika@kampus": true }
+}
+```
+
+Present, the file must parse as a JSON object: the two keys above merge in over it, following only
+the paths the patch itself spells — an `enabledPlugins` already carrying other plugins keeps them —
+and every key the patch does not name survives the re-serialize verbatim: a permissions block,
+hooks, whatever else the repo carries.
+Bytes that refuse to parse, or a top level that is not an object, are exit `11` naming the file and
+the parse failure, and nothing is written. Absent, the two keys are written whole through the file
+arm's write-and-read-back protocol. Already merged — the parsed object equals what merging would
+produce, however its keys are ordered — is `exists` at exit `0`: a second run over an adopted repo
+is byte-for-byte a no-op, because idempotency is absolute (ADR 0334).
+
 The `readout-artifact` body, fixed here so no clause defers to another skill's prose:
 
 ```markdown
@@ -1196,7 +1227,7 @@ here; `fabrika status readout` displays it. This issue stays open and is not wor
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | string | yes | — | one `<surface-id>` from the registry above |
-| `--path` | string | no | the registry default | override the target path for a file or line surface; must resolve inside the repository root |
+| `--path` | string | no | the registry default | override the target path for a file, line or json surface; must resolve inside the repository root |
 | `--repo` | string | no | resolved | the repository, for the two non-file surfaces |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | text | yes for `design-manifest` and `roadmap-focus` | — | the content. `NoStdin` and `Text("")` are exit `3`; a **failed** stdin read is exit `1` — the content is UNKNOWN, never empty, the split `packages/fabrika-cli/src/report/file-verb.ts` already ships |
@@ -1246,7 +1277,7 @@ creating several would have to report a partial outcome, and a partial write rep
 | `8` | the write failed — whether anything landed is **UNKNOWN**; re-read before retrying |
 | `9` | the write landed and the read-back does not match |
 | `10` | `--path` resolves outside the repository root |
-| `11` | a precondition read failed — the existence probe could not be performed; **nothing was written** |
+| `11` | a precondition read failed — the existence probe could not be performed, or a present json target's bytes do not parse as a JSON object; **nothing was written** |
 | `12` | `<surface-id>` is not in the [buildable-surface registry](#buildable-surfaces) |
 
 **Errors**
@@ -1263,13 +1294,16 @@ creating several would have to report a partial outcome, and a partial write rep
 | `status bootstrap: --path <v> resolves outside the repository root.` | 10 | usage error |
 | `status bootstrap: cannot probe <target>: <reason> — nothing was written.` | 11 | refusal |
 | `status bootstrap: cannot read <target>: <reason> — whether <marker> is already there is UNKNOWN, and nothing was written.` | 11 | refusal |
+| `status bootstrap: <target> does not parse as a JSON object: <reason> — nothing was written.` | 11 | refusal |
+| `status bootstrap: <target> parses to <array|string|number|boolean|null>, not a JSON object — nothing was written.` | 11 | refusal |
 | `status bootstrap: appending <marker> to <target> failed: <reason> — whether it landed is UNKNOWN. Re-read before retrying.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and it could not be read back: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
-| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact.` | 12 | refusal |
+| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch.` | 12 | refusal |
 | `status bootstrap: created <target> for <surface-id>, read-back conformed.` | 0 | notice |
 | `status bootstrap: created <target> for roadmap-focus, read-back conformed — <n> arc(s), <n> campaign(s).` | 0 | notice |
 | `status bootstrap: appended <marker> to <target> for <surface-id>, read-back conformed.` | 0 | notice |
+| `status bootstrap: merged the declared keys into <target> for settings-patch, read-back conformed.` | 0 | notice |
 
 **Scope** — the single write target named by `<surface-id>`.
 
@@ -1312,8 +1346,19 @@ The second is a draft whose milestone cells carry titles rather than `#<n>`: wri
 joining nothing. It exits `0` — the count is the signal, not a gate.
 
 ```
+$ fabrika status bootstrap settings-patch --json
+{"outcome":"created","surfaceId":"settings-patch","target":".claude/settings.json","readback":"ok"}
+status bootstrap: merged the declared keys into .claude/settings.json for settings-patch, read-back conformed.
+$ echo $?
+0
+```
+
+The file was already there carrying hooks and permissions of its own; the two keys merged in and
+nothing else moved. A second run over it reads `{"outcome":"exists",…}` and writes nothing.
+
+```
 $ fabrika status bootstrap merge-queue
-status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, label-taxonomy, issue-shape-markers, readout-artifact.
+status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch.
 $ echo $?
 12
 ```

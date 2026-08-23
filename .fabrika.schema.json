@@ -217,6 +217,7 @@
 					"git-history",
 					"collaborator-permissions",
 					"issue-dependencies",
+					"settings-patch",
 					"label-taxonomy",
 					"issue-shape-markers",
 					"standing-lanes",
