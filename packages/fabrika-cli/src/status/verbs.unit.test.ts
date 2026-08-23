@@ -9,7 +9,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {audienceLabel, type BoardVocabulary, statusList, typeLabel} from "../config/board.ts";
 import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
-import {fakeFs, fakeSeams, fakeShell, type HttpReply} from "../fakes.test-support.ts";
+import {fakeFs, fakeHttp, fakeSeams, fakeShell, type HttpReply} from "../fakes.test-support.ts";
 import {ok} from "../io/git.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {AWAITING_RELEASE, DEFAULT_STATUS_NAMES, PLANNED, STATUSES} from "../labels.ts";
@@ -505,12 +505,12 @@ describe("status bootstrap", () => {
 	it("refuses an id outside the registry on 12, naming what IS buildable", () => {
 		expect(findSurface("merge-queue")).toBeUndefined();
 		expect(knownIds()).toBe(
-			"design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch",
+			"design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin",
 		);
 	});
 
-	it("carries exactly seven ids", () => {
-		expect(BUILDABLE_SURFACES).toHaveLength(7);
+	it("carries exactly eight ids", () => {
+		expect(BUILDABLE_SURFACES).toHaveLength(8);
 		expect(NOT_BUILDABLE).toBe(12);
 	});
 
@@ -744,6 +744,177 @@ describe("the settings-patch surface", () => {
 		);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * dep-pin is the JSON key-merge arm over `package.json`, with the version read live from the npm
+ * registry (#7007): the pin is only ever as current as the registry's answer, so an unreachable or
+ * malformed answer refuses instead of pinning a guess. No package manager ever spawns and no
+ * lockfile is read or written — the exact install command is printed instead (#6995 R1.3).
+ */
+describe("the dep-pin surface", () => {
+	const MANIFEST = "/repo/package.json";
+	/** `encodeURIComponent` spells the scoped name `%40kampus%2Ffabrika-cli`. */
+	const REGISTRY = /GET https:\/\/registry\.npmjs\.org\/%40kampus%2Ffabrika-cli\/latest/;
+	const RELEASE = (version: string): HttpReply => ({status: 200, body: JSON.stringify({version})});
+
+	const bootstrapWith = (
+		files: Record<string, string | null>,
+		script: ReadonlyArray<readonly [RegExp, HttpReply]> = [[REGISTRY, RELEASE("0.5.0")]],
+	) => {
+		const seams = fakeSeams(script);
+		const fs = fakeFs({files});
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "dep-pin",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(seams.layer, fs.layer),
+			),
+		).then((outcome) => ({outcome, written: fs.written, seams}));
+	};
+
+	it("pins the row at the registry's current release into a present manifest, preserving every other key", async () => {
+		const {outcome, written} = await bootstrapWith({
+			[MANIFEST]: JSON.stringify({
+				name: "adopting-repo",
+				private: true,
+				scripts: {build: "tsc"},
+				dependencies: {express: "^4.21.0"},
+			}),
+		});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "dep-pin",
+			target: "package.json",
+			readback: "ok",
+		});
+		const merged = JSON.parse(written.get(MANIFEST) ?? "");
+		expect(merged.dependencies).toEqual({express: "^4.21.0", "@kampus/fabrika-cli": "0.5.0"});
+		// Everything dep-pin did not declare survives the re-serialize verbatim.
+		expect(merged.name).toBe("adopting-repo");
+		expect(merged.private).toBe(true);
+		expect(merged.scripts).toEqual({build: "tsc"});
+	});
+
+	it("prints the exact install command on the same notice channel — the lockfile handoff", async () => {
+		const {outcome} = await bootstrapWith({[MANIFEST]: '{"dependencies":{}}'});
+		expect(outcome.code).toBe(ANSWER);
+		expect(outcome.stderr).toContain(
+			"status bootstrap: the lockfile stays yours — install with: pnpm add --save-exact @kampus/fabrika-cli@0.5.0",
+		);
+	});
+
+	it("creates the manifest whole when it is absent", async () => {
+		const {outcome, written} = await bootstrapWith({});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({outcome: "created", target: "package.json"});
+		expect(JSON.parse(written.get(MANIFEST) ?? "")).toEqual({
+			dependencies: {"@kampus/fabrika-cli": "0.5.0"},
+		});
+	});
+
+	// The version is never a constant here: a re-run reads the registry again, so a stale row moves
+	// forward to whatever npm publishes next rather than being declared already-adopted.
+	it("moves a stale pin forward to the current release", async () => {
+		const {outcome, written} = await bootstrapWith({
+			[MANIFEST]: JSON.stringify({dependencies: {"@kampus/fabrika-cli": "0.4.1"}}),
+		});
+		expect(JSON.parse(outcome.stdout).outcome).toBe("created");
+		expect(JSON.parse(written.get(MANIFEST) ?? "").dependencies["@kampus/fabrika-cli"]).toBe(
+			"0.5.0",
+		);
+	});
+
+	/** Idempotency is absolute (ADR 0334): a manifest already at the current release writes nothing. */
+	it("reports a present, current row as exists at exit 0 and writes nothing", async () => {
+		const {outcome, written} = await bootstrapWith({
+			[MANIFEST]: JSON.stringify({
+				name: "adopting-repo",
+				dependencies: {"@kampus/fabrika-cli": "0.5.0"},
+			}),
+		});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout).outcome).toBe("exists");
+		expect(written.size).toBe(0);
+	});
+
+	// The no-package-manager law (#6995 R1.3): every shell call is a violation; the only request the
+	// verb may issue is the registry read; a lockfile in the tree must not even be touched.
+	it("spawns no package manager, touches no lockfile — the registry GET is its whole footprint", async () => {
+		const {written, seams} = await bootstrapWith({
+			[MANIFEST]: '{"dependencies":{}}',
+			"/repo/pnpm-lock.yaml": "lockfileVersion: '9.0'",
+		});
+		expect(seams.calls).toEqual([]);
+		for (const line of seams.requests) expect(line).toMatch(REGISTRY);
+		expect([...written.keys()]).toEqual([MANIFEST]);
+	});
+
+	it("refuses a manifest that does not parse as JSON, writing nothing", async () => {
+		const {outcome, written} = await bootstrapWith({[MANIFEST]: "{not json"});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("package.json does not parse as a JSON object");
+		expect(written.size).toBe(0);
+	});
+
+	it("refuses a manifest whose top level is not an object, writing nothing", async () => {
+		const {outcome, written} = await bootstrapWith({[MANIFEST]: "[]"});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("an array, not a JSON object");
+		expect(written.size).toBe(0);
+	});
+
+	it("refuses loudly when the registry cannot be reached — never pins a guessed version", async () => {
+		const seams = fakeSeams([]);
+		const http = fakeHttp([], undefined, [/registry\.npmjs\.org/]);
+		const fs = fakeFs({files: {[MANIFEST]: "{}"}});
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "dep-pin",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(seams.layer, http.layer, fs.layer),
+			),
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		const stderr = outcome.stderr.join("\n");
+		expect(stderr).toContain("cannot resolve @kampus/fabrika-cli's current release from npm");
+		expect(stderr).toContain("could not be reached");
+		expect(stderr).toContain("nothing pinned, nothing written");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses when the registry answers non-200, naming the status", async () => {
+		const {outcome, written} = await bootstrapWith({[MANIFEST]: "{}"}, [
+			[REGISTRY, {status: 404, body: '{"error":"Not Found"}'}],
+		]);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("answered 404");
+		expect(written.size).toBe(0);
+	});
+
+	it("refuses a 200 body that names no version", async () => {
+		const {outcome, written} = await bootstrapWith({[MANIFEST]: "{}"}, [
+			[REGISTRY, {status: 200, body: '{"name":"@kampus/fabrika-cli"}'}],
+		]);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("names no version");
+		expect(written.size).toBe(0);
 	});
 });
 
