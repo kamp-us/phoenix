@@ -53,7 +53,7 @@ export default defineConfig({
 		// A held `/fate/live` SSE stream that's still open when its client
 		// disconnects has its response-body Effect fiber interrupted; the
 		// interrupt-only `Cause` squashes to a generic
-		// `Error("All fibers interrupted without error")` (effect-smol
+		// `Error("All fibers interrupted without error")` (Effect-TS/effect
 		// `Cause.squash`), which the workerd isolate logs as an uncaught
 		// exception and Vitest's main-process StateManager then collects as an
 		// unhandled error — flipping a fully-green run's exit code to non-zero

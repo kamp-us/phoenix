@@ -5,7 +5,7 @@
  * `.patterns/alchemy-durable-objects.md`. The GET SSE-open `.fetch` path is a second
  * channel: alchemy wraps it in an uncaught `Effect.promise`, so the same cold-DO
  * rejection arrives as a DEFECT and must be lifted before the shared retry sees it
- * (#1048). Schedule shape grounds in effect-smol `LLMS.md` §"Working with Schedules".
+ * (#1048). Schedule shape grounds in Effect-TS/effect `LLMS.md` §"Working with Schedules".
  */
 import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
