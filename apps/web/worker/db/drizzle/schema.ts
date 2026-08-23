@@ -528,3 +528,19 @@ export const caylakVisibilityPreference = sqliteTable("caylak_visibility_prefere
 	userId: text("user_id").primaryKey(),
 	setAt: timestamp("set_at").notNull(),
 });
+
+/**
+ * One UTC-day presence marker per user (#7029, epic #6767): a row means a validated
+ * session existed for this user on this day. Append-only and forward-only — capture
+ * ships live on deploy with no backfill because a day that already passed is gone
+ * (founder ruling R1.2 on #7028). Written by the memoized upsert in
+ * `features/pasaport/user-activity-day.ts`, never read by the write path.
+ */
+export const userActivityDay = sqliteTable(
+	"user_activity_day",
+	{
+		userId: text("user_id").notNull(),
+		day: text("day").notNull(),
+	},
+	(t) => [primaryKey({columns: [t.userId, t.day]})],
+);
