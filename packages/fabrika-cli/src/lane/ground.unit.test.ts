@@ -4,7 +4,7 @@ import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {LANE_ABSENT, LANE_UNREADABLE, NOT_A_REPO} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
-import {onGround} from "./ground.ts";
+import {deriveRepoRoot, onGround} from "./ground.ts";
 import {runStatus} from "./status-verb.ts";
 import {DEFAULT_LANES_ROOT} from "./store.ts";
 
@@ -66,5 +66,51 @@ describe("the ground under a lane verb's root", () => {
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain("UNKNOWN");
+	});
+});
+
+describe("deriveRepoRoot — the default root resolves off the owning repository (#5815)", () => {
+	const PRIMARY = "/primary";
+	const WORKTREE = "/wt";
+	/** A primary checkout plus a linked worktree whose `.git` file and `commondir` point home. */
+	const repoFs = () =>
+		fakeFs({
+			directories: [`${PRIMARY}/.git`],
+			dirs: {
+				[`${PRIMARY}`]: [".git", ".fabrika"],
+				[`${PRIMARY}/.git/worktrees/wt`]: [],
+			},
+			files: {
+				[`${WORKTREE}/.git`]: "gitdir: /primary/.git/worktrees/wt",
+				[`${PRIMARY}/.git/worktrees/wt/commondir`]: "../..",
+			},
+		});
+
+	it("a worktree cwd and the primary cwd derive the same repository root", async () => {
+		const fs = repoFs();
+		const fromWorktree = await Effect.runPromise(
+			Effect.provide(deriveRepoRoot(`${WORKTREE}/packages/app`), fs.layer),
+		);
+		const fromPrimary = await Effect.runPromise(
+			Effect.provide(deriveRepoRoot(`${PRIMARY}/packages/cli`), fs.layer),
+		);
+		expect(fromWorktree).toEqual({_tag: "Derived", repoRoot: PRIMARY});
+		expect(fromPrimary).toEqual(fromWorktree);
+	});
+
+	it("a cwd with no .git ancestor is NotARepo — never a cwd-relative fallback", async () => {
+		const fs = fakeFs({directories: ["/scratch/sub"]});
+		const out = await Effect.runPromise(
+			Effect.provide(deriveRepoRoot("/scratch/sub/deep"), fs.layer),
+		);
+		expect(out).toEqual({_tag: "NotARepo", cwd: "/scratch/sub/deep"});
+	});
+
+	it("a .git entry that names no readable repository is Unestablished — UNKNOWN, never absent", async () => {
+		const fs = fakeFs({
+			files: {["/wt/.git"]: "gitdir: /primary/.git/worktrees/gone"},
+		});
+		const out = await Effect.runPromise(Effect.provide(deriveRepoRoot("/wt"), fs.layer));
+		expect(out._tag).toBe("Unestablished");
 	});
 });

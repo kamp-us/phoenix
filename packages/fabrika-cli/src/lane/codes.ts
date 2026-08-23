@@ -22,7 +22,10 @@ import {
 
 /**
  * The lane is not there: no `workflow.json` under the lane directory. A proven absence — the lane
- * was never opened. The base's target seat: the thing the verb was pointed at does not exist.
+ * was never opened **in the repository's own ledger**: the root a verb reads is derived from the
+ * repository the cwd belongs to (#5815), so an absence proven from any worktree of the repo is the
+ * primary ledger's absence, not that tree's empty one. The base's target seat: the thing the verb
+ * was pointed at does not exist.
  */
 export const LANE_ABSENT = REPORT_NO_TARGET;
 

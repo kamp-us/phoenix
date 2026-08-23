@@ -8,7 +8,7 @@
  */
 import {randomUUID} from "node:crypto";
 import {fileURLToPath} from "node:url";
-import {Effect, type FileSystem, Option, type Path} from "effect";
+import {Effect, type FileSystem, Option, Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {claimReader} from "../build/claimants-verb.ts";
 import {resolveEntrypoint} from "../delegate/entrypoint.ts";
@@ -20,9 +20,9 @@ import {runBrief} from "./brief-verb.ts";
 import {runLaneAdopt, runLaneClaim, runLaneRelease} from "./claim-verb.ts";
 import {CLASS_UNRECOGNISED} from "./codes.ts";
 import {runEmit} from "./emit-verb.ts";
-import {onGround} from "./ground.ts";
+import {deriveRepoRoot, onGround, repoGroundRefusal} from "./ground.ts";
 import {runHistory} from "./history-verb.ts";
-import {type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
+import {defaultRoot, type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
 import {runMigrate} from "./migrate-verb.ts";
 import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
@@ -55,14 +55,16 @@ const laneArgument = Argument.string("lane").pipe(
 const rootFlag = Flag.string("root").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		`the lanes root directory (default: ${DEFAULT_LANES_ROOT}, or ${DEFAULT_CHORES_ROOT} for a chore key)`,
+		`the lanes root directory (default: the owning repository's ${DEFAULT_LANES_ROOT}, derived off the primary checkout so every worktree reads the same ledger; or ${DEFAULT_CHORES_ROOT} for a chore key)`,
 	),
 );
 
 /**
  * Resolve the `lane` argument to a key and its directory, or refuse it — the one step every keyed
  * verb shares, so a malformed key is caught before any verb reads or writes anything, and the ground
- * under the resolved root is proven before either.
+ * under the resolved root is proven before either. An explicit `--root` wins; otherwise the root is
+ * derived off the repository the cwd belongs to (#5815), so a linked worktree reads the same ledger
+ * as the primary checkout instead of proving the lane absent against its own empty one.
  */
 const onKey = <R>(
 	verb: string,
@@ -72,9 +74,40 @@ const onKey = <R>(
 ): Effect.Effect<VerbOutcome, never, R | FileSystem.FileSystem | Path.Path> => {
 	const parsed = parseKey(raw);
 	if (parsed._tag === "Malformed") return Effect.succeed(keyRefusal(parsed));
-	const ref = laneRef(parsed.key, Option.getOrNull(root));
-	return onGround(verb, [ref.root], process.cwd(), () => run(parsed.key, ref));
+	if (Option.isSome(root)) {
+		const ref = laneRef(parsed.key, root.value);
+		return onGround(verb, [ref.root], process.cwd(), () => run(parsed.key, ref));
+	}
+	return Effect.gen(function* () {
+		const path = yield* Path.Path;
+		const ground = yield* deriveRepoRoot(process.cwd());
+		if (ground._tag !== "Derived") {
+			return repoGroundRefusal(`fabrika lane ${verb}`, ground);
+		}
+		const ref = laneRef(parsed.key, path.join(ground.repoRoot, defaultRoot(parsed.key)));
+		return yield* onGround(verb, [ref.root], process.cwd(), () => run(parsed.key, ref));
+	});
 };
+
+/**
+ * The lanes root one verb invocation resolves when `--root` is absent: derived off the repository
+ * the cwd belongs to (#5815), with the leaf joined under its primary checkout. An explicit `--root`
+ * wins over whatever would be derived.
+ */
+const resolveRootOrRefuse = (
+	verb: string,
+	root: Option.Option<string>,
+	leaf: string,
+): Effect.Effect<string | VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
+	Option.isSome(root)
+		? Effect.succeed(root.value)
+		: Effect.gen(function* () {
+				const path = yield* Path.Path;
+				const ground = yield* deriveRepoRoot(process.cwd());
+				return ground._tag === "Derived"
+					? path.join(ground.repoRoot, leaf)
+					: repoGroundRefusal(`fabrika lane ${verb}`, ground);
+			});
 
 /**
  * Resolve the `lane` argument for a verb whose ground is the **board**, not the disk — `claim` and
@@ -336,12 +369,16 @@ const emitLane = leafCommand(
 		),
 	},
 	Effect.fn(function* ({epic, root, repo}) {
-		const resolved = Option.getOrNull(root) ?? DEFAULT_LANES_ROOT;
+		const resolvedRoot = yield* resolveRootOrRefuse("fabrika lane emit", root, DEFAULT_LANES_ROOT);
+		if (typeof resolvedRoot !== "string") {
+			yield* emit(resolvedRoot);
+			return;
+		}
 		yield* emit(
-			yield* onGround("emit", [resolved], process.cwd(), () =>
+			yield* onGround("emit", [resolvedRoot], process.cwd(), () =>
 				runEmit({
 					epic,
-					root: resolved,
+					root: resolvedRoot,
 					repo: Option.getOrNull(repo),
 					env: process.env,
 				}),
@@ -367,10 +404,18 @@ const assembly = leafCommand(
 		root: rootFlag,
 	},
 	Effect.fn(function* ({epic, remove, root}) {
-		const resolved = Option.getOrNull(root) ?? DEFAULT_LANES_ROOT;
+		const resolvedRoot = yield* resolveRootOrRefuse(
+			"fabrika lane assembly",
+			root,
+			DEFAULT_LANES_ROOT,
+		);
+		if (typeof resolvedRoot !== "string") {
+			yield* emit(resolvedRoot);
+			return;
+		}
 		yield* emit(
-			yield* onGround("assembly", [resolved], process.cwd(), () =>
-				runAssembly({epic, remove, root: resolved, lane: String(epic)}),
+			yield* onGround("assembly", [resolvedRoot], process.cwd(), () =>
+				runAssembly({epic, remove, root: resolvedRoot, lane: String(epic)}),
 			),
 		);
 	}),
@@ -390,10 +435,14 @@ const pushLane = leafCommand(
 		root: rootFlag,
 	},
 	Effect.fn(function* ({epic, root}) {
-		const resolved = Option.getOrNull(root) ?? DEFAULT_LANES_ROOT;
+		const resolvedRoot = yield* resolveRootOrRefuse("fabrika lane push", root, DEFAULT_LANES_ROOT);
+		if (typeof resolvedRoot !== "string") {
+			yield* emit(resolvedRoot);
+			return;
+		}
 		yield* emit(
-			yield* onGround("push", [resolved], process.cwd(), () =>
-				runPush({epic, root: resolved, lane: String(epic)}),
+			yield* onGround("push", [resolvedRoot], process.cwd(), () =>
+				runPush({epic, root: resolvedRoot, lane: String(epic)}),
 			),
 		);
 	}),
@@ -577,10 +626,20 @@ const stale = leafCommand(
 		),
 	},
 	Effect.fn(function* ({root, olderThan, claims, repo}) {
-		const roots = Option.match(root, {
-			onNone: () => [DEFAULT_LANES_ROOT, DEFAULT_CHORES_ROOT],
-			onSome: (only) => [only],
-		});
+		let roots: ReadonlyArray<string>;
+		if (Option.isSome(root)) {
+			roots = [root.value];
+		} else {
+			const ground = yield* deriveRepoRoot(process.cwd());
+			if (ground._tag !== "Derived") {
+				yield* emit(repoGroundRefusal("fabrika lane stale", ground));
+				return;
+			}
+			roots = [
+				`${ground.repoRoot}/${DEFAULT_LANES_ROOT}`,
+				`${ground.repoRoot}/${DEFAULT_CHORES_ROOT}`,
+			];
+		}
 		yield* emit(
 			yield* onGround("stale", roots, process.cwd(), () =>
 				runStale({
@@ -608,10 +667,21 @@ const migrate = leafCommand(
 		),
 	},
 	Effect.fn(function* ({root, check}) {
+		let base: string | undefined;
+		if (Option.isSome(root)) {
+			base = root.value;
+		} else {
+			const ground = yield* deriveRepoRoot(process.cwd());
+			if (ground._tag !== "Derived") {
+				yield* emit(repoGroundRefusal("fabrika lane migrate", ground));
+				return;
+			}
+			base = ground.repoRoot;
+		}
 		const roots = Option.match(root, {
 			onNone: () => [
-				{root: DEFAULT_LANES_ROOT, templatePaths: [templatePath("Issue")]},
-				{root: DEFAULT_CHORES_ROOT, templatePaths: [templatePath("Chore")]},
+				{root: `${base}/${DEFAULT_LANES_ROOT}`, templatePaths: [templatePath("Issue")]},
+				{root: `${base}/${DEFAULT_CHORES_ROOT}`, templatePaths: [templatePath("Chore")]},
 			],
 			// A relocated root holds whatever was opened into it, so both templates are
 			// candidates and the lane's own machine id picks — never the root's position.
@@ -646,11 +716,15 @@ const view = leafCommand(
 	},
 	Effect.fn(function* ({root, port}) {
 		const chosen = Option.getOrElse(port, () => DEFAULT_VIEW_PORT);
-		const resolved = Option.getOrElse(root, () => DEFAULT_LANES_ROOT);
+		const resolvedRoot = yield* resolveRootOrRefuse("fabrika lane view", root, DEFAULT_LANES_ROOT);
+		if (typeof resolvedRoot !== "string") {
+			yield* emit(resolvedRoot);
+			return;
+		}
 		yield* Effect.logInfo(listeningAt(chosen));
 		yield* emit(
-			yield* onGround("view", [resolved], process.cwd(), () =>
-				runView({root: resolved, port: chosen}),
+			yield* onGround("view", [resolvedRoot], process.cwd(), () =>
+				runView({root: resolvedRoot, port: chosen}),
 			),
 		);
 	}),
