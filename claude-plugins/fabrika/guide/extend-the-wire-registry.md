@@ -16,9 +16,10 @@ own checkout's registry, which does not know your row until it ships.
 ## 1. Write the schema module
 
 New file: `packages/fabrika-cli/src/wire/<key>.ts`, where `<key>` is the `--format` selector,
-kebab-case. Copy [`came-from.ts`](../../../packages/fabrika-cli/src/wire/came-from.ts) — the
-smallest module in the directory — and swap in your grammar. The module owns your format's bytes and
-nothing else:
+kebab-case. Copy [`came-from.ts`](../../../packages/fabrika-cli/src/wire/came-from.ts) as the
+template — one self-contained file carrying every piece listed below, from the branded value type to
+both byte-level adapters — and swap in your grammar. The module owns your format's bytes and nothing
+else:
 
 - the typed core: a branded value type with one field per thing the block carries
 - `read(artifact)` — total over three answers: `Found` / `Absent` / `Malformed`. The type is
