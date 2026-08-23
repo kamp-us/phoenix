@@ -5,12 +5,8 @@ writes one fabrika skill. This doc fixes what a brief carries and what the sessi
 
 **Every authoring session works out of a GitHub issue, and every skill gets its own fresh
 session** — founder workflow ruling, recorded on
-[#4650](https://github.com/kamp-us/phoenix/issues/4650#issuecomment-5150192649). The freshness is
-deliberate: no context inheritance, no authoring bias carried from the last skill. The cost of a
-stateless session is that nothing survives between them, and the issue seam is what pays it — a
-brief that is complete is the *only* reason a session with no memory can author correctly.
-
-So the bar every rule below serves is one sentence:
+[#4650](https://github.com/kamp-us/phoenix/issues/4650#issuecomment-5150192649), which also holds
+the why of the freshness. The bar every rule below serves:
 
 > **A fresh session, given only the brief issue and this repo, can author the skill without asking a
 > question and without reading any prior session's transcript.**
@@ -47,14 +43,12 @@ an explicit **none**.
 **It is reference, never source of truth** ([#4638
 ruling](https://github.com/kamp-us/phoenix/issues/4638)). The session reads it to learn what
 problems the skill solves and what scars it carries; it does not port it, mirror its structure, or
-treat its shell scripts as the contract. v1 is the frozen comparison baseline, not the design. A
-brief that says "rebuild this" has specified nothing; the fields below are the specification.
+treat its shell scripts as the contract.
 
 ### 3. Incidents — what the rebuild must not regress
 
 The rows from the **ruled KEEP corpus** that bear on this skill, each as a number plus the one-line
-behavior it records — the pipeline's observed scar tissue, kept because each row is a real incident.
-The corpus lives on the tracker, not in the repo: [#4642](https://github.com/kamp-us/phoenix/issues/4642)
+behavior it records. The corpus lives on the tracker, not in the repo: [#4642](https://github.com/kamp-us/phoenix/issues/4642)
 ruled it and the per-issue verdict table on
 [#4634](https://github.com/kamp-us/phoenix/issues/4634) enumerates it. #4642 published the size as
 74; that figure double-counts the 7 borderline items, and the real membership is **66 plus 1
@@ -62,14 +56,9 @@ pending** ([#4823](https://github.com/kamp-us/phoenix/issues/4823)). The committ
 used to mirror those two issues went out with the eval tooling
 ([#5510](https://github.com/kamp-us/phoenix/issues/5510)), so read them directly.
 
-This is the field that makes a stateless session safe. Without it the session re-derives the skill
-from its purpose alone and silently re-opens every hole the v1 skill closed the hard way — which is
-the one thing a first-principles rebuild is most likely to do.
-
 Two rules keep the field honest:
 
-- **Cite by number, with the behavior stated.** "See the corpus" is not a list. A session cannot
-  open the whole corpus and guess which four are its own.
+- **Cite by number, with the behavior stated.** "See the corpus" is not a list.
 - **A skill with no corpus rows says so explicitly.** An empty list and an unwritten list read the
   same on the page and mean opposite things.
 
@@ -77,21 +66,16 @@ Two rules keep the field honest:
 
 The existing v1 verbs that already solve some part of this skill's problem, named — as **prior art
 to read, never as a runtime to call**. fabrika calls `pipeline-cli` nowhere (CLI interface
-convention, rule 6): where v1 already does the work, the session reads its source for the semantics
-and the scars it carries, then specifies fabrika's own. The inventory is the
+convention, rule 6); the read-don't-call posture and its price live in
+[ADR 0238](../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md). Per entry, a brief
+states what v1's verb computes and — where known — what it gets *wrong*. The inventory is the
 [#4635](https://github.com/kamp-us/phoenix/issues/4635) gap analysis of `packages/pipeline-cli`
-(76 tools, verified 2026-08-01).
-
-Naming it is still what stops a session from re-deriving a solved problem from zero — it just changes
-what the session does with the answer. Two things a brief should say per entry: what v1's verb
-computes, and what it gets *wrong*, because a scar recorded in the old implementation is the cheapest
-thing a rebuild can inherit. The pilot found two worth carrying: `adr-sweep` exits non-zero on its
-own informative case, and its `--json` payload goes to stderr (#4723). Both were designed out rather
-than reproduced.
+(76 tools, verified 2026-08-01). The pilot found two scars worth carrying: `adr-sweep` exits
+non-zero on its own informative case, and its `--json` payload goes to stderr (#4723). Both were
+designed out rather than reproduced.
 
 **Not every entry becomes a verb.** Where the thing is already *enforced* elsewhere — a CI gate, a
-merge check — fabrika does not compute a second answer to it. Ask whether the skill needs the answer
-or only needs to expect it.
+merge check — the skill expects the answer rather than computing a second one.
 
 ### 5. Conventions — the two pointers, not their content
 
@@ -103,123 +87,83 @@ Every brief points at both, and neither is summarised in the brief:
   shape of the contract spec the session emits
   ([#4654](https://github.com/kamp-us/phoenix/issues/4654)).
 
-A brief that paraphrases a convention creates a second source of truth for it, and the paraphrase is
-the copy that rots. Point.
+A brief points; it never paraphrases a convention into the brief.
 
 ### 6. Output contract — one PR, linked back
 
-Stated in the brief itself, so the session reads its own deliverable rather than inferring it:
+Stated in the brief itself:
 
 - **`skill-reviewer` runs on the authored skill *before* the PR opens** — the plugin-dev
   `skill-reviewer` agent is the ruled gate for fabrika skill PRs from day one, and it is **step 5.5
   of the founder's runbook**: author, review, fix the findings, *then* open the PR, which carries the
   review pass ([#4650 build-order ruling](https://github.com/kamp-us/phoenix/issues/4650#issuecomment-5150261966),
   restated as constraint 4 of the [decomposition-dispatch contract](https://github.com/kamp-us/phoenix/issues/4650#issuecomment-5150265328)).
-  A session booting from the brief alone reads this here or not at all, so every brief states it —
-  and because the gate is `skill-reviewer`, nothing waits on fabrika's own `/review-skill`.
+  Every brief states this; the gate is `skill-reviewer`, so nothing waits on fabrika's own
+  `/review-skill`.
 - **The calibration inputs are handed over, and the hand-off is written down as it happens.**
-  `skill-reviewer` is a generic upstream `plugin-dev` agent that applies its own rubric and is handed
-  fabrika's conventions by nothing ([#4701](https://github.com/kamp-us/phoenix/issues/4701)), so the
-  session hands it [`skill-conventions.md`](skill-conventions.md) and a landed sibling skill, and
-  **names those inputs in the PR body during step 5.5** rather than reconstructing them at PR-open
-  time. The acceptance criterion asks for the **record**, not the act — *"the PR records which
-  calibration inputs `skill-reviewer` was handed"* — because the record is what a reader can check;
-  that closes a forgotten hand-off, not an untrue one
-  ([ADR 0270](../../../.decisions/0270-calibration-record-is-written-at-the-handoff.md), where the
-  price of verb-mediating it instead is recorded). Briefs already minted carry the older *"was
-  handed … as calibration"* wording and are read at this same evidence class.
+  The session hands `skill-reviewer` — a generic upstream `plugin-dev` agent handed fabrika's
+  conventions by nothing ([#4701](https://github.com/kamp-us/phoenix/issues/4701)) —
+  [`skill-conventions.md`](skill-conventions.md) and a landed sibling skill, and **names those
+  inputs in the PR body during step 5.5**
+  ([ADR 0270](../../../.decisions/0270-calibration-record-is-written-at-the-handoff.md), which owns
+  the record-not-act wording and the price of verb-mediating it instead). Briefs already minted
+  carry the older *"was handed … as calibration"* wording and are read at this same evidence class.
 - **One pull request**, carrying the authored `SKILL.md` **and** the derived contract spec
   (`contract.md` beside it, per the CLI interface convention's Part 2).
 - **Linked back to the brief issue** — `Fixes #<brief>` in the PR body, so the brief closes on merge
   and the authored artifact is traceable to the document it was authored from.
 - **No line target, and no sizing acceptance criterion.** Sizing is `skill-conventions.md` §2's
-  structural split — `SKILL.md` routes, `contract.md` carries the depth — which the gate judges case
-  by case; a number in a brief would be a second source of truth for a rule that deliberately has
-  none ([#4701](https://github.com/kamp-us/phoenix/issues/4701#issuecomment-5234580426)).
+  structural split — `SKILL.md` routes, `contract.md` carries the depth — judged case by case by
+  the gate ([#4701](https://github.com/kamp-us/phoenix/issues/4701#issuecomment-5234580426)).
 
 **Where the session's job ends.** The PR carries the skill and the *specification* of the verbs it
 needs. Implementing those verbs is downstream `write-code` work against that spec — "the crew
-implements the contract from there", per the workflow ruling. A session that also implements its
-verbs has left its lane; a session that emits no contract spec has skipped its deliverable.
+implements the contract from there", per the workflow ruling. A session neither implements its verbs
+nor skips emitting the contract spec.
 
 **Who files the implementation ticket: this session, at handoff.** The lane ends at the spec, but
 the *hand-off* is the session's, and it is not complete until the implementation ticket exists and
 the handoff names its number
-([ADR 0248](../../../.decisions/0248-authoring-session-mints-the-implementation-ticket.md)). Nothing
-mints it by machine — a machine-minted ticket is un-sized, un-priced work entering the build pool
-without passing triage, which is the second door #4637-C closed. The session is the filer because it
-holds the context: it just derived the verb inventory and ran the split test, so it can name what is
-to be built without a second reader reconstructing it from the spec.
-
-The ticket carries, at minimum: the skill it serves, the repo-relative path of its `contract.md`,
-the verb inventory, and any sequencing dependency on the verb package existing. It goes through
-triage like any other issue; the session files it and stops.
+([ADR 0248](../../../.decisions/0248-authoring-session-mints-the-implementation-ticket.md) — which
+also rules out machine-minting and holds the filer choice). The ticket carries, at minimum: the
+skill it serves, the repo-relative path of its `contract.md`, the verb inventory, and any sequencing
+dependency on the verb package existing. It goes through triage like any other issue; the session
+files it and stops.
 
 **It is checked, not merely asked for.** `review-skill` lists this as a criterion on a PR that adds
 or changes a `contract.md`: the implementation ticket must exist, be open, and be named in the PR
 body or the handoff comment. The brief's own `Fixes #<brief>` line does **not** satisfy it — that is
-a done-signal for the brief, not the hand-off. This is why "someone will file it" is not a plan: the
-seam has already failed twice by depending on somebody noticing (#4725, #4748).
+a done-signal for the brief, not the hand-off. The two seams already lost to somebody noticing are
+recorded in [ADR 0248](../../../.decisions/0248-authoring-session-mints-the-implementation-ticket.md)
+(#4725, #4748).
 
 ## A brief is not write-code work
 
-A brief issue must never enter the `write-code` candidate pool. If it does, a coder agent picks it
-up and implements the skill directly — from a document written to boot an authoring session, not to
-be built from. A brief specifies the session's inputs; it is not a build ticket.
+A brief issue never enters the `write-code` candidate pool: a brief specifies an authoring session's
+inputs and is fired by a human starting that session — it is not a build ticket. **A brief is
+emitted assigned**, to the human who will fire its session, applied by `plan-epic` at child
+creation; an unassigned brief is not a valid brief, and the picker steps over it for as long as it
+is open.
 
-The pool predicate is mechanical
-(`step1-candidate-pool.sh`):
-**open**, labelled **`status:triaged`** and a priority bucket, and **`assignee == null`**. A brief
-could in principle miss the label or hold an assignee — and only one of those two survives the
-pipeline that emits it.
-
-**Label-absence does not survive, so the rule may not rest on it.** A brief is minted by `plan-epic`
-as an epic child; a child must carry a `status:` label to clear the ledger floor
-(`REQUIRED_LABEL_PREFIXES` in
-`validate.ts`), so it is minted
-`status:planned`. `review-plan` then flips **every** `status:planned` child of a clean ledger to
-`status:triaged` — the filter is that label and nothing else (`plannedChildren` in
-`gate.ts`), with no per-child
-exception hook, and the skill states it owns that flip exclusively. So "the planner emits the brief
-without `status:triaged`" is undone one stage later, deterministically, for every brief in the
-decomposition at once.
-
-**The assignee does survive, so that is the barrier.** Nothing in `plan-epic`, `review-plan` or the
-`epic-ledger` gate reads or writes an assignee — the gate's only mutation is the label flip.
-
-> **A brief is emitted assigned**, to the human who will fire its session — applied by `plan-epic` at
-> child creation, in the same per-child attribute pass that sets the labels, the milestone and the
-> containment marker. An unassigned brief is not a valid brief. The picker steps over it for as long
-> as it is open, whatever label `review-plan` puts on it.
-
-The obligation sits on `plan-epic` because `plan-epic` is the one actor that both emits the brief and
-can set an attribute nothing downstream undoes.
-
-**The residual gap, stated rather than assumed away.** This is an obligation on the emitting
-planner's prompt, not yet a guarantee: `plan-epic` sets no assignee at child creation as written, and
-`review-plan` verifies no such invariant — so this contract cannot enforce the rule alone, and today
-nothing else does either. Tracked at [#4693](https://github.com/kamp-us/phoenix/issues/4693), which
-is where the enforcement shape (planner-applies, plan-gate-verifies, or both) gets decided. It goes
-live on the very next run: #4650's decomposition is held until this contract lands and mints 19+
-briefs immediately after, so **check the minted briefs' assignees before the pilot returns**.
-
-A repo-wide *guard* on brief board-state is not the near-term answer for the same reason the CLI
-convention has no conformance guard: with zero brief issues in existence such a check has zero scope
-and reds on itself ([ADR 0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)) —
-which is part of what #4693 has to resolve.
+Assignment, not label-absence, is the barrier: `review-plan` flips every `status:planned` child to
+`status:triaged` with no per-child exception, while the assignee is the one attribute nothing
+downstream touches. The reasoning lives in the founder rulings on
+[#4650](https://github.com/kamp-us/phoenix/issues/4650) and the open enforcement gap is tracked at
+[#4693](https://github.com/kamp-us/phoenix/issues/4693); a repo-wide guard on brief board-state is
+ruled out on zero-scope grounds in
+[ADR 0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md).
 
 ## Who writes a brief
 
 `plan-epic`, decomposing a sibling founding epic, emits **one brief per skill** — 19 for the
 execution core ([#4650](https://github.com/kamp-us/phoenix/issues/4650)), the same shape for the
 ideation quartet ([#4651](https://github.com/kamp-us/phoenix/issues/4651)). This doc is the format
-those planners emit against; it emits no briefs itself. Emission carries the board-state obligation
-above with it: each brief is created **assigned**, or it is in the coder pool.
+those planners emit against; it emits no briefs itself. Each brief is created **assigned**
+([a brief is not write-code work](#a-brief-is-not-write-code-work)).
 
 ## Completeness test
 
-A brief is bootable when all six hold. Each is checkable by reading the brief alone — which is the
-point: a session can tell an unbootable brief from a bootable one before it starts authoring.
+A brief is bootable when all six hold. Each is checkable by reading the brief alone.
 
 1. The skill name and its destination directory are both stated.
 2. The v1 baseline is a real repo-relative path, or an explicit **none**.
@@ -240,8 +184,7 @@ point: a session can tell an unbootable brief from a bootable one before it star
   [#4654](https://github.com/kamp-us/phoenix/issues/4654) own them; field 5 points.
 - **The skill's design.** A brief supplies ground, not architecture. Which instructions survive as
   judgment and which become verbs is the two-layer split test the session performs
-  (the skill conventions, §1) — a brief that pre-decides it has authored the skill through the
-  wrong door.
+  (the skill conventions, §1).
 
 ---
 

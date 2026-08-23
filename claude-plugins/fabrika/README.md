@@ -18,15 +18,16 @@ and points at the other fabrika surfaces.
 claude-plugins/fabrika/
 ├── .claude-plugin/plugin.json   the plugin manifest (no version — ADR 0110, continuous ship)
 ├── README.md                    this file
-├── agents/                      builder, reviewer, shipper, operator (see docs/agent-shells.md)
+├── agents/                      the eight agent shells, one per stage role (see docs/agent-shells.md)
 ├── docs/                        the agent-facing convention + contract docs (see docs/README.md)
 ├── guide/                       the human-facing pages, one Diátaxis mode each (see guide/README.md)
 └── skills/                      one dir per skill, each a SKILL.md under a per-skill directory
 ```
 
-`agents/` holds exactly four **agent shells** — behaviour-free spawn targets that each preload one
-skill. The shell names the actor, never the skill, so the `builder` shell runs the `build` skill.
-The rules are in [docs/agent-shells.md](docs/agent-shells.md).
+`agents/` holds eight **agent shells** — behaviour-free spawn targets that each preload one skill:
+`builder`, `mixed-builder`, `operator`, `reviewer`, `shipper`, `triager`, `ui-builder`,
+`ui-reviewer`. The shell names the actor, never the skill, so the `builder` shell runs the `build`
+skill. The rules are in [docs/agent-shells.md](docs/agent-shells.md).
 
 Every skill is written under [`writing-for-agents`](skills/writing-for-agents/SKILL.md) and must
 meet [docs/skill-conventions.md](docs/skill-conventions.md). Nothing lands in `skills/` unread, and
