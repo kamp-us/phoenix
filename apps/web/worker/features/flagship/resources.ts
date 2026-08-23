@@ -15,6 +15,7 @@ import {
 	PHOENIX_CAYLAK_VISIBILITY,
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
 	PHOENIX_EMAIL_DELIVERY_NOTICE,
+	PHOENIX_FUNNEL_COHORT,
 	PHOENIX_KARMA_GATES,
 	PHOENIX_PANO_STAMP_WAVE,
 	PHOENIX_REACTIONS,
@@ -281,3 +282,28 @@ export const CAYLAK_VISIBILITY_FLAG = {
  */
 export const caylakVisibilityFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_caylak_visibility", {appId, ...CAYLAK_VISIBILITY_FLAG});
+
+/**
+ * The `/funnel` cohort-section display dark-ship seam (#7031, epic #6767): the single seam the
+ * `funnel.cohorts` report, the live cohort-week list, the rollup-record list and the client
+ * section gate behind. Default-OFF so the cohort DISPLAY ships dark independently of the
+ * always-on `user_activity_day` capture (#7029) — founder ruling R1.2 on #7028 gates the
+ * display separately from capture; flipping it on is the human release act (ADR 0083).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           funnel (the moderation readout surface)
+ *   - originating:     #7031 (epic: week-1 survival cohort funnel, #6767)
+ *   - removal trigger: once the cohort section is on at 100% and stable for one release,
+ *                      retire the flag and inline the now-permanent read.
+ */
+export const FUNNEL_COHORT_FLAG = {
+	key: PHOENIX_FUNNEL_COHORT,
+	description:
+		"/funnel cohort-section display dark-ship (#7031, epic #6767). owner: funnel. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/** A plain boolean kill-switch, no targeting rules — see `caylakVisibilityFlag`. */
+export const funnelCohortFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_funnel_cohort", {appId, ...FUNNEL_COHORT_FLAG});

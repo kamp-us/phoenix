@@ -5,11 +5,16 @@
  * seeded `system` sentinel (ADR 0097) and any `bot` account never enter the funnel.
  * The gate + flag live at the fate resolver, not in these reads.
  */
-import {and, count, eq, inArray, isNotNull, or} from "drizzle-orm";
+import {and, asc, count, eq, inArray, isNotNull, isNull, notInArray, or} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
-import {makeRollupWeeklyCohorts} from "./cohort-rollup.ts";
+import {
+	type CohortRollupRow,
+	foldCohortRollup,
+	makeCohortRollupPorts,
+	makeRollupWeeklyCohorts,
+} from "./cohort-rollup.ts";
 
 export interface TierPopulation {
 	readonly caylakCount: number;
@@ -192,6 +197,65 @@ export const computeTimeToPromotion = (
 	};
 };
 
+/**
+ * Tracer B's durable weekly record (#7030), read for display — oldest week first. The
+ * rollup cron owns every write to this table, so the read model never recomputes it.
+ */
+export const cohortRollupRowsQuery = (db: DrizzleDb) =>
+	db.select().from(schema.cohortWeekRollup).orderBy(asc(schema.cohortWeekRollup.cohortWeek));
+
+/** The pre-#1590 founding cohort: promoted, but never stamped — see {@link CohortUnmeasurable}. */
+export const foundingPromotionsQuery = (db: DrizzleDb) =>
+	db
+		.select({value: count()})
+		.from(schema.user)
+		.where(
+			and(
+				eq(schema.user.type, "human"),
+				eq(schema.user.tier, "yazar"),
+				isNull(schema.user.promotedAt),
+			),
+		);
+
+/** Yazars whose vouch-stage timing has no surviving row — see {@link CohortUnmeasurable}. */
+export const vouchEvidenceMissingQuery = (db: DrizzleDb) =>
+	db
+		.select({value: count()})
+		.from(schema.user)
+		.where(
+			and(
+				eq(schema.user.type, "human"),
+				eq(schema.user.tier, "yazar"),
+				notInArray(
+					schema.user.id,
+					db.select({id: schema.authorshipVouch.candidateId}).from(schema.authorshipVouch),
+				),
+			),
+		);
+
+/**
+ * The known data holes of the cohort funnel (epic #6767 fact floor), surfaced as explicit
+ * counts and never reconstructed:
+ *
+ * - `foundingPromotionsUnmeasurable` — yazars promoted before #1590 began stamping
+ *   (`promoted_at` null): they DID promote, but whether it happened within 7 days of signup
+ *   has no surviving answer, so they never enter the promoted stage.
+ * - `vouchEvidenceUnmeasurable` — yazars with no surviving `authorship_vouch` row: a
+ *   withdrawn vouch deletes its ledger row (`VouchLedger.withdraw`) and a mod-granted
+ *   promotion casts none, so their vouch-stage timing is unmeasurable.
+ */
+export interface CohortUnmeasurable {
+	readonly foundingPromotionsUnmeasurable: number;
+	readonly vouchEvidenceUnmeasurable: number;
+}
+
+/** The live per-signup-cohort week-1 funnel ({@link Funnel.cohorts}). */
+export interface CohortFunnel {
+	/** One row per UTC-Monday signup week, oldest first — {@link foldCohortRollup}'s shape. */
+	readonly weeks: ReadonlyArray<CohortRollupRow>;
+	readonly unmeasurable: CohortUnmeasurable;
+}
+
 export class Funnel extends Context.Service<
 	Funnel,
 	{
@@ -201,6 +265,10 @@ export class Funnel extends Context.Service<
 		readonly timeToPromotion: () => Effect.Effect<TimeToPromotion>;
 		/** The weekly cohort rollup pass (#7030) — the cron's entry point. */
 		readonly rollupWeeklyCohorts: (now: Date) => Effect.Effect<{readonly cohorts: number}>;
+		/** The live five-stage cohort funnel plus D1/D7 returns (#7031), over existing rows only. */
+		readonly cohorts: () => Effect.Effect<CohortFunnel>;
+		/** Tracer B's durable weekly record (#7030), read for display — the cron owns every write. */
+		readonly cohortRollups: () => Effect.Effect<ReadonlyArray<CohortRollupRow>>;
 	}
 >()("@kampus/funnel/Funnel") {}
 
@@ -231,6 +299,22 @@ export const FunnelLive = Layer.effect(Funnel)(
 				return computeTimeToPromotion(rows);
 			}),
 			rollupWeeklyCohorts,
+			cohorts: Effect.fn("Funnel.cohorts")(function* () {
+				const inputs = yield* makeCohortRollupPorts(run, batch).loadInputs;
+				const weeks = foldCohortRollup(inputs);
+				const founding = yield* run((db) => foundingPromotionsQuery(db));
+				const missing = yield* run((db) => vouchEvidenceMissingQuery(db));
+				return {
+					weeks,
+					unmeasurable: {
+						foundingPromotionsUnmeasurable: founding[0]?.value ?? 0,
+						vouchEvidenceUnmeasurable: missing[0]?.value ?? 0,
+					},
+				};
+			}),
+			cohortRollups: Effect.fn("Funnel.cohortRollups")(function* () {
+				return yield* run((db) => cohortRollupRowsQuery(db));
+			}),
 		};
 	}),
 );
