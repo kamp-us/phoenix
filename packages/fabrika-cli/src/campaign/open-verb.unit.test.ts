@@ -105,7 +105,7 @@ describe("campaign open — usage refusals", () => {
 	it("refuses a name that is only whitespace, which would append a cell nothing can read", async () => {
 		const {outcome, written} = await run(APPROVED, tree(), {name: "   "});
 		expect(outcome.code).toBe(1);
-		expect(outcome.stderr.at(-1)).toBe("campaign open: --name is required.");
+		expect(outcome.stderr.at(-1)).toBe("campaign open: <name> is required.");
 		expect(written.size).toBe(0);
 	});
 
