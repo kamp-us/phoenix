@@ -5,10 +5,11 @@ import {Link, NavLink} from "react-router";
 import {isSearchShortcut} from "../../lib/searchShortcut";
 import type {ThemeChoice} from "../../lib/theme";
 import {BildirimPopover} from "../bildirim/BildirimPopover";
-import {showUnreadBadge} from "../bildirim/bildirim";
+import {formatUnreadBadge, showUnreadBadge} from "../bildirim/bildirim";
 import {Icon} from "../Icon";
 import {Karma} from "../karma/Karma";
 import {Kbd} from "../ui/atoms";
+import {Badge} from "../ui/Badge";
 import {Input} from "../ui/Form";
 import {ThemeChoicePicker} from "./ThemeChoicePicker";
 import {UserMenu} from "./UserMenu";
@@ -21,6 +22,7 @@ export function Topbar({
 	brandTo = "/",
 	nav = [],
 	divanTo,
+	divanPending,
 	user,
 	karma,
 	bildirim,
@@ -36,6 +38,8 @@ export function Topbar({
 	brandTo?: string;
 	nav?: NavItem[];
 	divanTo?: string;
+	/** The divan glyph's pending-review count (#6760); `undefined`/0 renders no badge. */
+	divanPending?: number;
 	user?: {name: string; src?: string; username?: string | null};
 	karma?: number;
 	bildirim?: {to: string; unread: number};
@@ -90,6 +94,14 @@ export function Topbar({
 			title="divan"
 		>
 			<Icon icon={Gavel} size={16} />
+			{/* The bildirim bell's exact badge grammar (#6760): the same Badge + the same two
+		    helpers, so zero hides and >99 caps at 99+. aria-hidden — the glyph's accessible
+		    name stays "divan", the count is a visual pull, not a value to announce. */}
+			{divanPending !== undefined && showUnreadBadge(divanPending) ? (
+				<Badge variant="secondary" size="sm" className="kp-topbar__count" aria-hidden="true">
+					{formatUnreadBadge(divanPending)}
+				</Badge>
+			) : null}
 		</NavLink>
 	) : null;
 	const searchForm = (

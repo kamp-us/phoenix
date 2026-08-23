@@ -67,6 +67,26 @@ export const divanBacklogItemDataView = DivanBacklogItemView.view;
 export type DivanBacklogItem = WorkerEntity<typeof DivanBacklogItemView>;
 
 /**
+ * The topbar badge's synthetic singleton (#6760): one row carrying how many
+ * sandbox-backlog items await divan review. Delivered inline by the
+ * `divan.pendingCount` query (no by-id read), so like the other two private views its
+ * source is capability-less.
+ */
+export type DivanPendingViewRow = ViewRow<{
+	id: string;
+	count: number;
+}>;
+
+export class DivanPendingView extends FateDataView<DivanPendingViewRow>()("DivanPending")({
+	id: true,
+	count: true,
+} as const satisfies {[K in keyof DivanPendingViewRow]: true}) {}
+
+export const divanPendingDataView = DivanPendingView.view;
+
+export type DivanPending = WorkerEntity<typeof DivanPendingView>;
+
+/**
  * The receipt a `divan.vote` returns, delivered inline by the mutation (no by-id read), so
  * its source is a capability-less `Fate.syntheticSource` like the other two. `id` is the
  * `<kind>:<itemId>` composite — the same identity as {@link DivanBacklogItemView}.

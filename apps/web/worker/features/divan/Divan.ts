@@ -33,6 +33,12 @@ export class Divan extends Context.Service<
 		// plain-string author id — branding this param would fail typecheck in that
 		// out-of-feature site, which epic #2700's report slice (#2721) does not touch.
 		readonly pendingCountOf: (authorId: string) => Effect.Effect<number>;
+		/**
+		 * The whole-roster pending total (#6760) — the topbar badge's read. Unlike
+		 * {@link pendingCountOf} it needs no identity join, so it skips the profile read
+		 * entirely: the badge is a number, not a roster.
+		 */
+		readonly pendingTotal: () => Effect.Effect<number>;
 	}
 >()("divan/Divan") {}
 
@@ -108,6 +114,7 @@ export const DivanLive = Layer.effect(Divan)(
 					[...items].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
 				),
 			pendingCountOf: (authorId) => Effect.map(collect({authorId}), (items) => items.length),
+			pendingTotal: () => Effect.map(collect(), (items) => items.length),
 		};
 	}),
 );
