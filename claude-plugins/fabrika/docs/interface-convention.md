@@ -132,7 +132,7 @@ exit taxonomy, and the verdict-vs-invocation separation proven in v1 at
   the inverse of the fail-open polarity ADR
   [0250](../../../.decisions/0250-fabrika-hook-cannot-run-fails-open.md) rules for a hook whose verb
   cannot run ([#5423](https://github.com/kamp-us/phoenix/issues/5423)). The full harness contract,
-  and why it is `PreToolUse`-only, is in [`hook-surface.md`](hook-surface.md#the-harness-exit-code-contract).
+  and why it is `PreToolUse`-only, is in [`hook-surface.md`](hook-surface.md#the-harness-exit-code-contract--exit-2-blocks-and-only-on-pretooluse).
   The rule is checked as data: `packages/fabrika-cli/src/exit-code-alignment.unit.test.ts` reds if
   any group's table allocates it.
 - **The `3`+ band is scoped to the verb group that seats it. A code above the reserved band means one
