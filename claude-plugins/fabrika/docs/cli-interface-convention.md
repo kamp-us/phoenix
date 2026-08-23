@@ -20,7 +20,7 @@ sections*, *Completeness test*, *Worked example*) resolve on `contract-spec-form
 |---|---|
 | [Part 1 — the interface convention](interface-convention.md) | rules 1–6 with *Delivery* under rule 5 |
 | [`#3-the-exit-status-is-the-answer-empty-stdout-never-is`](interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is) | same fragment, `interface-convention.md` |
-| [*Delivery — one name, two installs, both of them real*](interface-convention.md#delivery--one-name-two-installs) | same fragment, under rule 5 |
+| [*Delivery — one name, two installs, both of them real*](interface-convention.md#delivery--one-name-two-installs-both-of-them-real) | same fragment, under rule 5 |
 | [Part 2 — the contract-spec format](contract-spec-format.md) | required sections, completeness test, worked example |
 
 Update links you own to point at the new pages directly; this note keeps links you do not own
