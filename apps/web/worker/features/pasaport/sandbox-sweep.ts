@@ -48,3 +48,8 @@ export const isEmptySweep = (sweep: SandboxSweep): boolean =>
 	sweep.postIds.length === 0 &&
 	sweep.commentIds.length === 0 &&
 	sweep.definitionIds.length === 0;
+
+/** The rows the sweep un-hid, across all three content kinds (#7061) — what the
+ * backlog-release notification's count carries. */
+export const sweptEntryCount = ({postIds, commentIds, definitionIds}: SandboxSweep): number =>
+	postIds.length + commentIds.length + definitionIds.length;

@@ -42,6 +42,8 @@ const KIND_COPY = {
 	"report-filed": (count) =>
 		count > 1 ? `${count} yeni içerik bildirildi` : "yeni bir içerik bildirildi",
 	"caylak-pending": () => "yeni bir çaylak divanda incelenmeyi bekliyor",
+	"backlog-release": (count) =>
+		count > 0 ? `${count} yazınız artık herkese açık` : "yayımlanacak yazınız yoktu",
 } satisfies Record<NotificationKind, (count: number) => string>;
 
 /** An unknown kind — a future emitter's, read by an older client — degrades to the raw kind. */

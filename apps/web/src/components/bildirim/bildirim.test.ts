@@ -82,6 +82,16 @@ describe("bildirimCopy — Turkish product voice per kind (#1695)", () => {
 		expect(bildirimCopy("terfi", 1)).toBe("tebrikler, artık bir yazarsın!");
 	});
 
+	it("backlog-release carries the swept count inline (R1.1 on #7049)", () => {
+		expect(bildirimCopy("backlog-release", 3)).toBe("3 yazınız artık herkese açık");
+		expect(bildirimCopy("backlog-release", 1)).toBe("1 yazınız artık herkese açık");
+	});
+
+	it("a zero-entry sweep renders the zero arm — never '0 yazınız…' (#7061)", () => {
+		expect(bildirimCopy("backlog-release", 0)).toBe("yayımlanacak yazınız yoktu");
+		expect(bildirimCopy("backlog-release", 0)).not.toContain("0 yazınız");
+	});
+
 	it("reply renders Turkish copy — the raw `reply` identifier no longer surfaces (#2016)", () => {
 		expect(bildirimCopy("reply", 1)).toBe("gönderine yanıt geldi");
 		expect(bildirimCopy("reply", 3)).toBe("gönderine 3 yanıt geldi");

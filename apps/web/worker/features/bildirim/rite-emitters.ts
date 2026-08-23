@@ -18,6 +18,7 @@ import {Notification} from "./Notification.ts";
 export const DIVAN_VOTE_KIND: NotificationKind = "divan-vote";
 export const KEFIL_KIND: NotificationKind = "kefil";
 export const PROMOTION_KIND: NotificationKind = "terfi";
+export const BACKLOG_RELEASE_KIND: NotificationKind = "backlog-release";
 
 // Self-suppression: `null` when the recipient IS the actor.
 export const riteRecipient = (recipientId: string, actorId: string): string | null =>
@@ -82,3 +83,21 @@ export const notifyPromotion = (input: {userId: string}) =>
 			actorId: null,
 		});
 	}).pipe(swallow(PROMOTION_KIND));
+
+// The swept-backlog announcement (#7061), emitted by the ONE promotion sweep both
+// triggers funnel through (`Pasaport.promoteToYazar`), so it fires exactly once per real
+// flip. Same no-actor posture as notifyPromotion; the count is what the copy renders
+// verbatim, and a zero-entry sweep still records — its own copy arm.
+export const notifyBacklogRelease = (input: {userId: string; releasedCount: number}) =>
+	Effect.gen(function* () {
+		if (!(yield* bildirimOn)) return;
+		const bildirim = yield* Notification;
+		yield* bildirim.record({
+			recipientId: input.userId,
+			kind: BACKLOG_RELEASE_KIND,
+			targetKind: "user",
+			targetId: input.userId,
+			actorId: null,
+			count: input.releasedCount,
+		});
+	}).pipe(swallow(BACKLOG_RELEASE_KIND));

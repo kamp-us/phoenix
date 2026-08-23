@@ -3,6 +3,9 @@
  * `DrizzleError` (`orDieAccess` at layer build), so the public signatures carry
  * domain errors only. Validation lives inside the methods (ADR 0013).
  */
+
+import type {CurrentUser, LivePublisher} from "@kampus/fate-effect";
+import type {RuntimeContext as AlchemyRuntimeContext} from "alchemy";
 import type {Auth as BetterAuth} from "better-auth";
 import {and, desc, eq, inArray, isNull, like, or, type SQL, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
@@ -16,6 +19,10 @@ import {
 	resolveCursor,
 } from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
+import type {Notification} from "../bildirim/Notification.ts";
+import {notifyBacklogRelease} from "../bildirim/rite-emitters.ts";
+import type {Flags} from "../flagship/Flags.ts";
+import type {RequestFlagOverrides} from "../flagship/FlagsContext.ts";
 import {moderatorTuple, type PlatformRole} from "../kunye/moderate.ts";
 import type {StoredTier} from "../kunye/standing.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
@@ -56,7 +63,7 @@ import {
 } from "./errors.ts";
 import {contributionOrdering} from "./ordering.ts";
 import type {ProfileRow} from "./profile-fields.ts";
-import {NO_SANDBOX_SWEEP, type SandboxSweep} from "./sandbox-sweep.ts";
+import {NO_SANDBOX_SWEEP, type SandboxSweep, sweptEntryCount} from "./sandbox-sweep.ts";
 import {
 	recordCaptured,
 	shouldCapture,
@@ -259,10 +266,20 @@ export class Pasaport extends Context.Service<
 		// The AUTHORITY (a mod, or a valid vouch) is discharged at the resolver, never
 		// here. `promoted: true` iff the tier flip actually fired, and `sweep` names the
 		// live topics whose subscribers must re-read the rows it un-sandboxed (#6462) —
-		// empty on a no-op flip, since nothing moved.
+		// empty on a no-op flip, since nothing moved. A real flip also emits ONE
+		// backlog-release notification (#7061), which is why the emit services ride R.
 		readonly promoteToYazar: (input: {
 			userId: string;
-		}) => Effect.Effect<{promoted: boolean; sweep: SandboxSweep}>;
+		}) => Effect.Effect<
+			{promoted: boolean; sweep: SandboxSweep},
+			never,
+			| Notification
+			| LivePublisher
+			| Flags
+			| AlchemyRuntimeContext
+			| CurrentUser
+			| RequestFlagOverrides
+		>;
 
 		// A FRESH read of the append-only `user_ban_event` log, never a cached session
 		// flag (epic #968).
@@ -1036,6 +1053,14 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 					// `changes` count is `1` iff the account was a çaylak.
 					const result = yield* batch((db) => buildPromotionStatements(db, input.userId, now));
 					const promoted = result[0].meta.changes > 0;
+					// Inside this method — not at its callers — so every promotion trigger
+					// announces exactly once, keyed on the committed flip (#7061).
+					if (promoted) {
+						yield* notifyBacklogRelease({
+							userId: input.userId,
+							releasedCount: sweptEntryCount(sweep),
+						});
+					}
 					return {promoted, sweep: promoted ? sweep : NO_SANDBOX_SWEEP};
 				}),
 

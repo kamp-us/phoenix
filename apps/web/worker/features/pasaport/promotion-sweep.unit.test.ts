@@ -5,6 +5,8 @@
  * the batch's `.toSQL()` over a no-op D1, so no engine runs and this stays unit tier.
  */
 import {assert, describe, it} from "@effect/vitest";
+import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
+import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {
@@ -15,7 +17,13 @@ import {
 	relations,
 	type Stmt,
 } from "../../db/Drizzle.ts";
+import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
+import type {Notification, NotificationRecordInput} from "../bildirim/Notification.ts";
+import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
+import {Flags} from "../flagship/Flags.ts";
+import type {RequestFlagOverrides} from "../flagship/FlagsContext.ts";
 import {type BetterAuthInstance, makePasaportLive, Pasaport} from "./Pasaport.ts";
+import {NO_SANDBOX_SWEEP, type SandboxSweep, sweptEntryCount} from "./sandbox-sweep.ts";
 
 // A real drizzle client over a no-op D1, used ONLY to render `.toSQL()`; nothing executes.
 // biome-ignore lint/plugin: `D1Database` is a host binding that can't be structurally constructed in a fake; nothing here executes against it.
@@ -45,8 +53,64 @@ const renderDb = drizzle(noopD1, {relations});
 
 const inertAuth = {} as BetterAuthInstance;
 
-// The first result's `meta.changes` is what drives `promoted`.
-function capturingBatch(tierChanges: number): {
+// The backlog-release emit (#7061) rides per-request services, so every case below carries
+// the same request-context stubs the bildirim emitter tests use.
+const runtimeContextStub: BaseRuntimeContext = {
+	Type: "promotion-sweep-test",
+	id: "promotion-sweep-test",
+	env: {},
+	get: () => Effect.succeed(undefined),
+	set: (id) => Effect.succeed(id),
+};
+
+const flagsStub = (on: boolean): Layer.Layer<Flags> =>
+	Layer.succeed(
+		Flags,
+		// biome-ignore lint/plugin: a Flags test double — only getBoolean is exercised here.
+		{
+			getBoolean: () => Effect.succeed(on),
+			getString: () => Effect.die(new Error("unused")),
+			getNumber: () => Effect.die(new Error("unused")),
+			getObject: () => Effect.die(new Error("unused")),
+		} as unknown as typeof Flags.Service,
+	);
+
+// The stub `record` never publishes, so a do-nothing publisher just satisfies the requirement.
+const noopLivePublisher = Layer.succeed(LivePublisher)({
+	update: () => Effect.void,
+	delete: () => Effect.void,
+	invalidate: () => Effect.void,
+	topic: () => {
+		throw new Error("noopLivePublisher.topic unused");
+	},
+} as typeof LivePublisher.Service);
+
+const emitContext = (
+	on: boolean,
+	onRecord?: (input: NotificationRecordInput) => void,
+): Layer.Layer<
+	Flags | CurrentUser | RuntimeContext | RequestFlagOverrides | LivePublisher | Notification
+> =>
+	Layer.mergeAll(
+		flagsStub(on),
+		Layer.succeed(CurrentUser, {user: undefined}),
+		Layer.succeed(RuntimeContext, runtimeContextStub),
+		noRequestFlagOverrides,
+		noopLivePublisher,
+		makeNotificationStub({
+			record: (input) => {
+				onRecord?.(input);
+				return Effect.succeed({id: "n1"});
+			},
+		}),
+	);
+
+// The first result's `meta.changes` is what drives `promoted`; `events` records the batch's
+// commit so a test can pin what runs after it.
+function capturingBatch(
+	tierChanges: number,
+	events?: string[],
+): {
 	access: DrizzleAccess;
 	statements: () => {sql: string; params: unknown[]}[];
 } {
@@ -68,6 +132,7 @@ function capturingBatch(tierChanges: number): {
 				const renderable = s as unknown as {toSQL: () => {sql: string; params: unknown[]}};
 				captured.push(renderable.toSQL());
 			}
+			if (events) events.push("batch");
 			// The method reads only `.meta.changes`; the real `BatchResult` shape is not
 			// reconstructable in a no-engine double.
 			const result = stmts.map((_, i) => ({meta: {changes: i === 0 ? tierChanges : 0}}));
@@ -77,8 +142,18 @@ function capturingBatch(tierChanges: number): {
 	return {access, statements: () => captured};
 }
 
-const pasaportOver = (access: DrizzleAccess) =>
-	makePasaportLive(inertAuth).pipe(Layer.provide(Layer.succeed(Drizzle, access)));
+const pasaportOver = (
+	access: DrizzleAccess,
+	emit: Layer.Layer<
+		Flags | CurrentUser | RuntimeContext | RequestFlagOverrides | LivePublisher | Notification
+	> = emitContext(true),
+) =>
+	// The emit services ride the AMBIENT context — like production, where the fate
+	// layer merges every domain service flat — not the layer build's inputs.
+	Layer.mergeAll(
+		makePasaportLive(inertAuth).pipe(Layer.provide(Layer.succeed(Drizzle, access))),
+		emit,
+	);
 
 describe("Pasaport.promoteToYazar — atomic, idempotent backlog sweep", () => {
 	it.effect("emits ONE batch of four statements: the tier flip + the three content sweeps", () => {
@@ -195,4 +270,83 @@ describe("Pasaport.promoteToYazar — atomic, idempotent backlog sweep", () => {
 				assert.isFalse(promoted);
 			}).pipe(Effect.provide(pasaportOver(capturingBatch(0).access))),
 	);
+
+	it.effect(
+		"the backlog-release emit fires exactly once, AFTER the tier-flip batch commits (#7061)",
+		() => {
+			const events: string[] = [];
+			const cap = capturingBatch(1, events);
+			const emitted: NotificationRecordInput[] = [];
+			return Effect.gen(function* () {
+				const pasaport = yield* Pasaport;
+				const {promoted} = yield* pasaport.promoteToYazar({userId: "u-caylak"});
+				assert.isTrue(promoted);
+				assert.strictEqual(emitted.length, 1, "one emit per promotion, never per caller");
+				assert.deepStrictEqual(events, ["batch", "notify"]);
+			}).pipe(
+				Effect.provide(
+					pasaportOver(
+						cap.access,
+						emitContext(true, (input) => {
+							emitted.push(input);
+							events.push("notify");
+						}),
+					),
+				),
+			);
+		},
+	);
+
+	it.effect("a non-promoting re-fire notifies nothing", () => {
+		const cap = capturingBatch(0);
+		const emitted: NotificationRecordInput[] = [];
+		return Effect.gen(function* () {
+			const pasaport = yield* Pasaport;
+			yield* pasaport.promoteToYazar({userId: "u-yazar-already"});
+			assert.strictEqual(emitted.length, 0);
+		}).pipe(
+			Effect.provide(
+				pasaportOver(
+					cap.access,
+					emitContext(true, (input) => emitted.push(input)),
+				),
+			),
+		);
+	});
+
+	it.effect("with the bildirim flag OFF nothing emits even on a real flip (dark ship)", () => {
+		const cap = capturingBatch(1);
+		const emitted: NotificationRecordInput[] = [];
+		return Effect.gen(function* () {
+			const pasaport = yield* Pasaport;
+			const {promoted} = yield* pasaport.promoteToYazar({userId: "u-caylak"});
+			assert.isTrue(promoted);
+			assert.strictEqual(emitted.length, 0);
+		}).pipe(
+			Effect.provide(
+				pasaportOver(
+					cap.access,
+					emitContext(false, (input) => emitted.push(input)),
+				),
+			),
+		);
+	});
+});
+
+describe("sweptEntryCount — the rows the sweep un-hid, together (#7061)", () => {
+	it("sums the swept posts, comments and definitions", () => {
+		const sweep: SandboxSweep = {
+			feed: true,
+			commentThreads: ["p1"],
+			definitionTerms: ["t1"],
+			postIds: ["p1", "p2"],
+			commentIds: ["c1"],
+			definitionIds: ["d1", "d2", "d3"],
+		};
+		assert.strictEqual(sweptEntryCount(sweep), 6);
+	});
+
+	it("an empty sweep counts zero — the copy's zero arm renders this", () => {
+		assert.strictEqual(sweptEntryCount(NO_SANDBOX_SWEEP), 0);
+	});
 });
