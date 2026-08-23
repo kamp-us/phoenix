@@ -128,6 +128,15 @@ export const MEMBER_MUTE = "member-mute";
  */
 export const PHOENIX_CAYLAK_VISIBILITY = "phoenix-caylak-visibility";
 
+/**
+ * The /funnel cohort-section display dark-ship seam (#7031, epic #6767). The SINGLE seam the
+ * whole cohort read gates behind: the `funnel.cohorts` report, the live cohort-week list and
+ * the rollup-record list, and the client section that renders them. Default-off so the display
+ * can be enabled independently of the always-on capture (#7029) per founder ruling R1.2 on
+ * #7028 — with it off, `/funnel` renders exactly the pool snapshot it shipped with.
+ */
+export const PHOENIX_FUNNEL_COHORT = "phoenix-funnel-cohort";
+
 /** A declared flag paired with its default variation — the row the flags console lists (#2742). */
 export interface FlagDeclaration {
 	readonly key: string;
@@ -154,4 +163,5 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PROFILE_CANVAS, defaultValue: false},
 	{key: MEMBER_MUTE, defaultValue: false},
 	{key: PHOENIX_CAYLAK_VISIBILITY, defaultValue: false},
+	{key: PHOENIX_FUNNEL_COHORT, defaultValue: false},
 ];
