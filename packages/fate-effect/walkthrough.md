@@ -1,15 +1,6 @@
-# @kampus/fate-effect walkthrough
+# @kampus/fate-effect — worked walkthrough
 
-The full numbered walkthrough — building one small feature (a `Note` entity with a read, a
-write, and a live update) end to end. Every piece is the real API; the in-repo worked example
-is sozluk ([views](../../apps/web/worker/features/sozluk/views.ts),
-[sources](../../apps/web/worker/features/sozluk/sources.ts),
-[queries](../../apps/web/worker/features/sozluk/queries.ts),
-[mutations](../../apps/web/worker/features/sozluk/mutations.ts),
-[errors](../../apps/web/worker/features/sozluk/errors.ts)). The README carries the shape and
-the reference; this page carries the narrative.
-
-## Getting started
+A guided build of one small feature — a `Note` entity with a read, a write, and a live update — against the real API, end to end. Every piece is production API; the in-repo worked example is sozluk ([views](../../apps/web/worker/features/sozluk/views.ts), [sources](../../apps/web/worker/features/sozluk/sources.ts), [queries](../../apps/web/worker/features/sozluk/queries.ts), [mutations](../../apps/web/worker/features/sozluk/mutations.ts), [errors](../../apps/web/worker/features/sozluk/errors.ts)). Start from the [README](./README.md) for the shape of the package; this page is the start-to-finish lesson.
 
 The walkthrough builds one small feature — a `Note` entity with a read, a write, and a live
 update. Every piece below is the real API; the in-repo worked example is sozluk

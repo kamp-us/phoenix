@@ -1,7 +1,10 @@
 # @kampus/fate-effect
 
 Effect-native [fate](https://github.com/nkzw-tech/fate) integration — fate's structure with
-Effect's semantics.
+Effect's semantics. Phoenix's domain↔protocol seam: feature code keeps fate's record shapes
+(`queries` / `lists` / `mutations` / `sources` / views), and every record entry pairs a
+**pure-data definition** (Effect Schema inputs, the success view, a declared error union) with an
+**`Effect.fn` handler**.
 
 ```
 defining things                 composing                serving
@@ -15,108 +18,111 @@ Fate.mutation (resolvers) ┘            │
                                                           (build-time client codegen)
 ```
 
-## What it is
-
-Feature code keeps fate's record shapes (`queries` / `lists` / `mutations` / `sources` / views),
-but every record entry pairs a **pure-data definition** (Effect Schema inputs, the success view,
-a declared error union) with an **`Effect.fn` handler**. The types carry the contracts: an
-unloadable source, an undeclared wire error, or a forgotten domain layer is a *compile* error,
-not a runtime surprise.
-
-Requests are served by a native Effect interpreter on the request fiber — no Effect→Promise hop
-per request, sources batched per request (N+1 is structurally impossible), and one error codec
-for the whole wire surface. The interpreter is verified **byte-equal** to fate's own server by a
-differential oracle in this package's test suite.
-
-The authoring surfaces, one line each (full detail in the module map below):
-
-- **`FateWireCode`** (`WireError.ts`) — annotate a domain error and it becomes a wire error;
-  `encodeWireError` is the one codec, there is no registry.
-- **`FateDataView`** (`DataView.ts`) — the view class factory; its static `view` *is* the kernel
-  data view. A field-map symbol slip loud-fails at construction instead of degrading to `never`
-  far away.
-- **`Fate.source`** (`Source.ts`) — per-entity loaders; handlers are plain generators wrapped in
-  `Effect.fn`, batched per request.
-- **`Fate.query` / `Fate.list` / `Fate.mutation`** (`Operation.ts`) — record entries keyed by
-  wire name; inputs are decoded before your handler runs, declared errors are compile-checked.
-- **`FateServer`** (`Server.ts`) — one config, one layer; config validation names every offender
-  at layer build *and* at codegen, so a bad config fails `pnpm build`.
-- **`CurrentUser` / `LivePublisher`** — the per-request pair; fresh values provided onto each
-  handler from the request context.
-
 ## Why it exists
 
-fate is the data layer phoenix's frontend already speaks (its protocol, its live wire), but its
-semantics are Promise-shaped. This package keeps fate's structure so the client story stays
-byte-compatible, and swaps the semantics to Effect so every contract a feature team cares about
-— declared errors, required domain services, input decoding — moves from runtime surprise to
-compile error. The v1 architecture decision is [ADR 0042](../../.decisions/0042-fate-effect-v1-architecture.md);
-the native-interpreter cutover (v2 serves exactly what fate would, verified by the differential
-oracle) is [ADR 0043](../../.decisions/0043-fate-effect-v2-native-interpreter-cutover.md).
+The types carry the contracts, so the failure modes a hand-rolled data layer grows silently are
+*compile* errors here:
 
-Scope boundary: this package owns the server/authoring substrate only — no HTTP routing (the
-worker's route calls `FateInterpreter.handleRequest` inside its own handler), no database
-clients (loaders receive your domain services), and no client bundle (codegen emits what the
-fate Vite plugin consumes).
+- an unloadable source doesn't type (`SourceLoaderContract`),
+- an undeclared wire error doesn't compile (`E extends DefinitionErrors<D>`),
+- a forgotten domain layer doesn't compile (`FateServer.layer`'s `R`).
+
+Requests are served by a native Effect interpreter on the request fiber — no Effect→Promise hop
+per request, sources batched per request (N+1 is structurally impossible), one error codec for
+the whole wire surface. The interpreter is verified **byte-equal** to fate's own server by a
+differential oracle in this package's test suite. The why and history:
+[ADR 0042](../../.decisions/0042-fate-effect-v1-architecture.md) (v1 architecture),
+[ADR 0043](../../.decisions/0043-fate-effect-v2-native-interpreter-cutover.md) (native interpreter
+cutover).
+
+**What this package is not:** not a general Effect HTTP framework (the host owns routing and
+abort wiring); no client lives here — the SPA consumes generated types through
+[react-fate](https://github.com/kamp-us/phoenix/blob/main/package.json). Authoring guidance lives
+in the pattern docs, not here ([see below](#going-deeper)).
 
 ## How to use it
 
-Depend on it via `workspace:*` and author four record kinds, then compose:
+**Author entries** — errors carry a `FateWireCode`, views are `FateDataView` classes, sources are
+`Fate.source(...)` loaders, operations are `Fate.query`/`list`/`mutation` definitions + handlers.
+The recipes live in the pattern docs:
+[data views](../../.patterns/fate-effect-data-views.md) ·
+[sources](../../.patterns/fate-effect-sources.md) ·
+[operations](../../.patterns/fate-effect-operations.md) ·
+[wire errors](../../.patterns/fate-effect-wire-errors.md).
+A start-to-finish guided build of one feature is at [walkthrough.md](./walkthrough.md).
+
+**Guard view field maps against symbol slips.** A view whose kernel `view` recovery slipped
+(renamed export, moved field map) fails loudly at the definition site when you assert it:
 
 ```ts
-import {Fate} from "@kampus/fate-effect";
-
-export const noteSource = Fate.source(NoteView, {id: "id"}, {
-	byIds: function* (ids) {
-		const notes = yield* Notes;
-		return yield* notes.getByIds(ids);
-	},
-});
-
-export const mutations = {
-	"note.add": Fate.mutation(
-		{input: AddNoteInput, type: NoteView, error: Schema.Union([Unauthorized, NoteNotFound])},
-		Effect.fn("note.add")(function* ({input}) {
-			/* ... */
-		}),
-	),
-};
-
-export const fateConfig = FateServer.config({queries, lists, mutations, sources: [noteSource]});
+import {AssertFieldMapResolved} from "@kampus/fate-effect";
+export const NoteView = AssertFieldMapResolved(NoteViewBase);
 ```
 
-Serve it as one Effect on your request fiber — per request:
+**Compose one config, one layer** — the package's only composition construct:
 
 ```ts
+import {FateServer} from "@kampus/fate-effect";
+
+export const fateConfig = FateServer.config({
+	queries: panoQueries,
+	lists: panoLists,
+	mutations: panoMutations,
+	sources: panoSources,
+});
+export const FateLive = FateServer.layer(fateConfig).pipe(Layer.provide(Pano));
+```
+
+Init-time validation runs against the same config the codegen imports, so a bad config also fails
+the build ([server pattern](../../.patterns/fate-effect-server.md)).
+
+**Serve per request** — one Effect on your request fiber; the interpreter owns no runtime and the
+context deliberately carries no abort signal (the caller wires both):
+
+```ts
+import {FateInterpreter, type FateRequestContext} from "@kampus/fate-effect";
+
 const context: FateRequestContext = {
 	currentUser: {user: session?.user},
-	livePublisher,
+	livePublisher, // the worker builds this from its live topics + waitUntil
 };
 const response = yield* FateInterpreter.handleRequest(request, context);
 ```
 
-Build-time client codegen needs the same config with inert handlers:
+See the worker's [route](../../apps/web/worker/features/fate/route.ts) for the
+abort→interruption pattern.
+
+**Generate client types at build time** — the same config with inert handlers, importable at
+build time:
 
 ```ts
+// schema.ts — the fate Vite plugin imports this via runnerImport
 import {FateExecutor} from "@kampus/fate-effect";
 import {fateConfig} from "./config.ts";
 
 export const fateServer = FateExecutor.toCodegenServer(fateConfig);
 ```
 
-The full narrative walkthrough — building a `Note` entity end to end with real code — lives in
-[WALKTHROUGH.md](./WALKTHROUGH.md). Per-topic pattern docs:
-[data views](../../.patterns/fate-effect-data-views.md) ·
-[sources](../../.patterns/fate-effect-sources.md) ·
-[operations](../../.patterns/fate-effect-operations.md) ·
-[wire errors](../../.patterns/fate-effect-wire-errors.md) ·
-[server](../../.patterns/fate-effect-server.md) ·
-[interpreter](../../.patterns/fate-effect-interpreter.md) ·
-[compiler/codegen](../../.patterns/fate-effect-compiler.md) ·
-[worker wiring](../../.patterns/fate-effect-worker-wiring.md) ·
-[per-feature assembly](../../.patterns/per-feature-fate-aggregators.md)
+`InferFateAPI<typeof fateServer>` produces the same client types as the live server.
 
-## The rules, in one list
+## Reference
+
+**Live publish surface** — `LivePublisher` publishes three ways to a row and four to a
+connection:
+
+| Call | Tells subscribers |
+| --- | --- |
+| `live.update(type, id, {changed, data})` | here are these fields' new values |
+| `live.delete(type, id)` | this row is gone |
+| `live.invalidate(type, id)` | read this row again — no data attached |
+| `live.topic(procedure, args).{appendNode,prependNode,deleteEdge,invalidate}(…)` | this connection's membership moved, or re-load it whole |
+
+`invalidate` is the only honest repair for a **viewer-derived** field — one whose value depends on
+who is reading. Its true new value differs per subscriber, so a broadcast payload would overwrite
+every reader with the mutator's answer; attaching no data forces each subscriber to re-read on its
+own viewer ([ADR 0314](../../.decisions/0314-entity-invalidate-frame-upstream.md)).
+
+**Invariants, in one list**
 
 | Invariant | Enforced by |
 | --- | --- |
@@ -126,21 +132,20 @@ The full narrative walkthrough — building a `Note` entity end to end with real
 | Invalid input never reaches a handler | Schema decode in the entry's `resolve` |
 | A missing domain layer doesn't compile | `FateServer.layer`'s `R` |
 | Wire codes can't silently drift | per-feature enumeration pin tests |
-| A field-map symbol slip loud-fails at view construction | `AssertFieldMapResolved` in `DataView.ts` (the #2805 class of silent `never`s) |
 | A failed live publish can't fail a mutation | `LivePublisher` methods are `Effect<void>` |
 | One Effect→Promise conversion in the package — the oracle baseline's runner in `Executor.ts`; the serving path converts at the platform edge, outside the package | an enumeration test source-greps `src/` for `run*` |
 | v2 serves exactly what fate would | the differential oracle (byte-equal corpus, per-plane suites) |
 
-## Module map
+**Module map**
 
 | Module | What it is |
 | --- | --- |
 | `WireError.ts` | `FateWireCode` annotation + `encodeWireError` (the one error codec) |
-| `DataView.ts` | `FateDataView` class factory, `Entity<>`, `FateDataView.list`; the `AssertFieldMapResolved` loud-fail guard |
-| `Source.ts` | `Fate.source` — per-entity loaders, span-named handlers |
+| `DataView.ts` | `FateDataView` class factory, `Entity<>`, `FateDataView.list`, the `AssertFieldMapResolved` slip guard |
+| `Source.ts` | `Fate.source` — per-entity loaders, span-named handlers; `syntheticSource` for non-table views |
 | `Operation.ts` | `Fate.query` / `Fate.list` / `Fate.mutation` + `InputValidationError` |
 | `Fate.ts` | the `Fate` authoring namespace (the constructors + `Entity` + `FateWireCode`; every member is also flat-exported) |
-| `Server.ts` | `FateServer` tag, `config`, `layer`; config validation (shared with codegen, so a bad config also fails the build); the per-request provision seam ([ADR 0107](../../.decisions/0107-capability-authz-framework.md) §7) |
+| `Server.ts` | `FateServer` tag, `config`, `layer`; config validation (shared with codegen, so a bad config also fails the build) |
 | `CurrentUser.ts`, `LivePublisher.ts` | the per-request pair (tags; values come from the host) |
 | `RequestContext.ts` | `FateRequestContext` — the per-request contract (the pair as values; deliberately no `signal`) |
 | `Provision.ts` | `provideRequestPair` — the one per-request provision pipeline (request values innermost, captured build-time services beneath) |
@@ -150,17 +155,25 @@ The full narrative walkthrough — building a `Note` entity end to end with real
 | `Codegen.ts` | `toCodegenServer` — the build-time codegen surface (inert handlers; what `schema.ts` exports) |
 | `Compiled.ts` | the compiled-definition internals `Executor.ts` and `Codegen.ts` share (so the two lifecycles never import each other) |
 
-Decisions (the why): [ADR 0042](../../.decisions/0042-fate-effect-v1-architecture.md) (v1
-architecture), [ADR 0043](../../.decisions/0043-fate-effect-v2-native-interpreter-cutover.md)
-(native interpreter cutover).
-
 ## Testing
 
-```bash
-pnpm --filter @kampus/fate-effect test        # vitest run
-pnpm --filter @kampus/fate-effect typecheck   # tsc -p tsconfig.json
-```
+`pnpm --filter @kampus/fate-effect test` runs the suite: the differential oracle pinning the
+interpreter byte-equal to fate's server (per-plane suites over a fixed corpus), type-level pins
+for the codegen surface, enumeration tests that source-grep `src/` for wire-code and
+conversion-drift drift. Typecheck: `pnpm --filter @kampus/fate-effect typecheck`.
 
-The suite carries the differential oracle (the interpreter must serve byte-equal to fate's own
-server across the corpus), type-level pin tests (client types identical between live server and
-codegen server), and the enumeration tests behind the rules table above.
+## Going deeper
+
+- Pattern docs (how to write feature code):
+  [data views](../../.patterns/fate-effect-data-views.md) ·
+  [sources](../../.patterns/fate-effect-sources.md) ·
+  [operations](../../.patterns/fate-effect-operations.md) ·
+  [wire errors](../../.patterns/fate-effect-wire-errors.md) ·
+  [server](../../.patterns/fate-effect-server.md) ·
+  [interpreter](../../.patterns/fate-effect-interpreter.md) ·
+  [compiler/codegen](../../.patterns/fate-effect-compiler.md) ·
+  [worker wiring](../../.patterns/fate-effect-worker-wiring.md) ·
+  [per-feature assembly](../../.patterns/per-feature-fate-aggregators.md)
+- Guided lesson: [walkthrough.md](./walkthrough.md) — one feature, end to end
+- Decisions (the why): [ADR 0042](../../.decisions/0042-fate-effect-v1-architecture.md),
+  [ADR 0043](../../.decisions/0043-fate-effect-v2-native-interpreter-cutover.md)

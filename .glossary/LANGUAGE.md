@@ -300,6 +300,17 @@ is addressed by a key, and the key decides where its ledger lives:
 above ("The composition shell / recipe", ADR 0182) — one flat element-prop per zone. They share
 nothing but the word; name which one you mean when the context does not fix it.
 
+### Diátaxis-lite README shape
+
+The canonical section order every `packages/*/README.md` follows — explanation (*what it is* /
+*why it exists*, citing the forcing ADR) → how-to (runnable recipes) → reference (dry,
+look-it-up, last or linked out) → a short testing tail — with two hard rules: no tutorial at
+package scale (a walkthrough moves to its own linked surface), and scope/non-goals live in the
+explanation half. A small package may satisfy it in three short sections; the order is canonical,
+the length is not. The [`diataxis`](../claude-plugins/fabrika/skills/diataxis/SKILL.md) skill is
+the single-mode classifier over any page. Pinned by
+[package-readme-shape.md](../.patterns/package-readme-shape.md).
+
 ### The three senses of "phoenix"
 
 "phoenix" carries **three distinct meanings**, each with a graduation name —
