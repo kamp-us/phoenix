@@ -1088,8 +1088,8 @@ surface merges into a file that is already there instead (ADR
 skill's judgement; the write, the collision guard and the read-back are this verb's.
 
 <a id="buildable-surfaces"></a>**The buildable-surface registry.** What this verb builds is fixed
-here, not inferred from any declaration. Seven ids, and
-an eighth is a change to this table, not a new rule.
+here, not inferred from any declaration. Eight ids, and
+a ninth is a change to this table, not a new rule.
 
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
@@ -1100,6 +1100,7 @@ an eighth is a change to this table, not a new rule.
 | `issue-shape-markers` | the repo's labels | **none** — three labels, each at colour `1D76DB`, with the descriptions fixed below | every label in the set resolves on a re-read |
 | `readout-artifact` | one open issue in the repo | **none** — title exactly `Governance readout`; body exactly the two lines below | the issue resolves open, its title matches exactly, and its body matches through `normalizeForReadback` |
 | `settings-patch` | `--path`, default `.claude/settings.json` at the repo root | **none** — the two keys [fixed below](#json-key-merge), merged into the object a present file parses to, written whole into a file that is absent | a present file re-reads to the merged object — every undeclared key intact, the declared keys at their registry values — through `normalizeForReadback` |
+| `dep-pin` | `--path`, default `package.json` at the repo root | **none** — the `dependencies.@kampus/fabrika-cli` row at the version npm's registry currently [publishes](#json-key-merge), merged into the object a present manifest parses to, written whole into a manifest that is absent | a present manifest re-reads to the merged object — every undeclared key intact, the row at exactly the resolved version — through `normalizeForReadback`; an unreachable registry refuses unwritten |
 
 <a id="taxonomy-is-derived"></a>**The taxonomy is derived from the vocabularies, never restated.**
 Every name comes from the constant the writing verb already reads — `STATUSES` for the five statuses,
@@ -1215,6 +1216,18 @@ arm's write-and-read-back protocol. Already merged — the parsed object equals 
 produce, however its keys are ordered — is `exists` at exit `0`: a second run over an adopted repo
 is byte-for-byte a no-op, because idempotency is absolute (ADR 0334).
 
+**`dep-pin` resolves the version at run time; the registry's answer is the only pin it knows.** The
+row it merges is `dependencies.@kampus/fabrika-cli`, at exactly what
+`https://registry.npmjs.org/@kampus/fabrika-cli/latest` publishes when the verb runs — never a
+constant in this table, which is what makes a re-run move a stale row forward instead of declaring
+it already adopted. A registry that cannot be reached or answers without a version is exit `11` —
+nothing pinned, nothing written; a guessed version is the one outcome this surface refuses. The
+edit itself rides the same key-merge arm as `settings-patch`: unknown keys preserved verbatim,
+unparseable bytes refused unwritten, absolute idempotency. And per the founder's ruling on #6995
+(R1.3), no package manager ever spawns and no lockfile is read or written — the exact install
+command (`pnpm add --save-exact @kampus/fabrika-cli@<version>`) is printed on the notice channel,
+because the lockfile stays the caller's.
+
 The `readout-artifact` body, fixed here so no clause defers to another skill's prose:
 
 ```markdown
@@ -1227,7 +1240,7 @@ here; `fabrika status readout` displays it. This issue stays open and is not wor
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | string | yes | — | one `<surface-id>` from the registry above |
-| `--path` | string | no | the registry default | override the target path for a file, line or json surface; must resolve inside the repository root |
+| `--path` | string | no | the registry default | override the target path for a file, line, json or dep-pin surface; must resolve inside the repository root |
 | `--repo` | string | no | resolved | the repository, for the two non-file surfaces |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | text | yes for `design-manifest` and `roadmap-focus` | — | the content. `NoStdin` and `Text("")` are exit `3`; a **failed** stdin read is exit `1` — the content is UNKNOWN, never empty, the split `packages/fabrika-cli/src/report/file-verb.ts` already ships |
@@ -1277,7 +1290,7 @@ creating several would have to report a partial outcome, and a partial write rep
 | `8` | the write failed — whether anything landed is **UNKNOWN**; re-read before retrying |
 | `9` | the write landed and the read-back does not match |
 | `10` | `--path` resolves outside the repository root |
-| `11` | a precondition read failed — the existence probe could not be performed, or a present json target's bytes do not parse as a JSON object; **nothing was written** |
+| `11` | a precondition read failed — the existence probe could not be performed, a present json target's bytes do not parse as a JSON object, or dep-pin's registry read failed (unreachable, non-200, or no version named); **nothing was written** |
 | `12` | `<surface-id>` is not in the [buildable-surface registry](#buildable-surfaces) |
 
 **Errors**
@@ -1299,11 +1312,13 @@ creating several would have to report a partial outcome, and a partial write rep
 | `status bootstrap: appending <marker> to <target> failed: <reason> — whether it landed is UNKNOWN. Re-read before retrying.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and it could not be read back: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
-| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch.` | 12 | refusal |
+| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.` | 12 | refusal |
 | `status bootstrap: created <target> for <surface-id>, read-back conformed.` | 0 | notice |
 | `status bootstrap: created <target> for roadmap-focus, read-back conformed — <n> arc(s), <n> campaign(s).` | 0 | notice |
 | `status bootstrap: appended <marker> to <target> for <surface-id>, read-back conformed.` | 0 | notice |
 | `status bootstrap: merged the declared keys into <target> for settings-patch, read-back conformed.` | 0 | notice |
+| `status bootstrap: cannot resolve @kampus/fabrika-cli's current release from npm: <reason> — nothing pinned, nothing written.` | 11 | refusal |
+| `status bootstrap: the lockfile stays yours — install with: pnpm add --save-exact @kampus/fabrika-cli@<version>` | 0 | notice |
 
 **Scope** — the single write target named by `<surface-id>`.
 
@@ -1357,8 +1372,22 @@ The file was already there carrying hooks and permissions of its own; the two ke
 nothing else moved. A second run over it reads `{"outcome":"exists",…}` and writes nothing.
 
 ```
+$ fabrika status bootstrap dep-pin
+bootstrap	created	dep-pin	package.json	ok
+status bootstrap: created package.json for dep-pin, read-back conformed.
+status bootstrap: the lockfile stays yours — install with: pnpm add --save-exact @kampus/fabrika-cli@0.7.1
+$ echo $?
+0
+```
+
+The manifest was there carrying scripts and other dependencies of its own; the one row merged in at
+the version npm publishes right now, and the install command is printed for the caller to run —
+no package manager ever spawns and no lockfile moves. A re-run with the row already current reads
+`{"outcome":"exists",…}`; a re-run over an older pin moves it forward.
+
+```
 $ fabrika status bootstrap merge-queue
-status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch.
+status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.
 $ echo $?
 12
 ```
