@@ -22,13 +22,13 @@ The two cannot quietly disagree any more. The table below is **generated from th
 format has no section here, or when a section here names no registered format. The narrative under
 each heading is the hand-written half — it is the part no registry row holds.
 
-## The staging rule — an unwritten format is not a missing one
+## The staging rule
 
-Formats arrive **with their first consumer**, never in a batch. The first two are here because the
-`review` authoring session had to derive its contract against both at once: the format it grades a
-PR against, and the one it emits. Every later format lands when the skill that first reads or writes
-it is authored. So a format you cannot find below is almost certainly *unwritten* — its consumer
-does not exist yet — rather than missing; check the registry before assuming a gap.
+A format lands **with its first consumer**, never in a batch: a format absent from the table above
+is almost certainly *unwritten* — its consumer does not exist yet — rather than missing, and the
+registry is the place to check before assuming a gap. The rule, and the reason for it, live in ADR
+[0241](../../../.decisions/0241-wire-formats-owned-by-schema-modules.md), which bans building
+formats ahead of their first consumer.
 
 ## Registered formats
 
@@ -62,26 +62,23 @@ does not exist yet — rather than missing; check the registry before assuming a
 This is the checkbox contract a gate grades a PR against, carried on the sub-issue body. The two
 sides never meet: the skill that writes the criteria has long finished by the time a gate reads them
 back, and the only thing connecting them is the block's placement in a body neither one owns
-outright. That is exactly the seam an agreement is for. The producer touches it once, at intake or
-at decomposition; the consumers touch it twice more, when a coder builds to it and when a reviewer
-grades against it. Drift here is worse than loud failure — a block that has shifted out of
-recognition reads back as *a body with no criteria*, which is byte-identical to a body that
-genuinely has none, so a grader scores against nothing and passes. Reading through the owner module
-is what keeps a drifted block reportable as a defect instead of arriving as a plausible empty
-answer.
+outright. The producer touches it once, at intake or at decomposition; the consumers touch it twice
+more, when a coder builds to it and when a reviewer grades against it. A block that has shifted out
+of recognition reads back as *a body with no criteria* — byte-identical to a body that genuinely
+has none — and the module-owned total read is what reports that drift as `Malformed` instead of
+returning a plausible empty answer (ADR
+[0241](../../../.decisions/0241-wire-formats-owned-by-schema-modules.md)).
 
 ### `deviations`
 
 This is what a PR body discloses about where the build departed from its contract — the `##
-Deviations` section, carried as four-field entries or the literal `None.`. It is the one format
-whose two sides used to disagree *by construction*: `build pr` asked only that the heading exist
-with something under it, while the review reader dropped every bullet carrying no `Said` field and
-then called a section of zero surviving entries malformed. A body that fully satisfied the producer
-was therefore guaranteed to fail the consumer closed, and no author-facing doc stated the grammar
-either side judged against (#5566). Registering it is what makes that unrepresentable: the entry
-shape is written down once, in the owner module, and both sides resolve it there — so the refusal
-now lands at the point the body is written, naming the missing field, instead of costing a review
-round that could not say what was wrong.
+Deviations` section, carried as four-field entries or the literal `None.`. The entry shape is owned
+once, in this format's schema module, and both sides resolve it there; the producing verb runs the
+consumer-side read before posting (ADR
+[0288](../../../.decisions/0288-producers-run-consumer-readers.md)), so a section the review gate
+would reject is refused where the body is written, not a round later. The disclosure obligation
+itself is ADR
+[0216](../../../.decisions/0216-deviation-disclosure-is-a-pr-body-obligation.md).
 
 The read is total over three answers where the section has four meanings, so `None.` is a `Found`
 carrying a tag of its own rather than an empty entry list. That is the load-bearing distinction:
@@ -94,7 +91,7 @@ missing *Why* or *Disposition* states what changed without stating whether anyon
 
 This is the deviations disclosure for a build that opens no PR — an epic run's child, which lands by
 merging into the assembly branch (ADR 0285) and so has no PR body to carry the `## Deviations`
-section above. Ruled on #5903: the disclosure lands as a marker comment on the child's own issue,
+section above. The disclosure lands as a marker comment on the child's own issue,
 `build-deviations: #<issue>` over the same `## Deviations` section a PR body carries, and the
 epic-tail review — the one gate the run's single PR passes — reads every landed child's comment from
 there. The producer is the child's build shell, at the moment it would have opened a PR; the
@@ -107,72 +104,65 @@ not a disclosure — and the Absent/Malformed split for comments: an ordinary co
 while a marker line whose promised section is missing or drifted is `Malformed`, so a tail reviewer
 cannot mistake a broken disclosure for a child with nothing to say.
 
-**One marker per issue, and the producer is what enforces it.** A child that takes a repair round
-discloses again, and a second comment is not a second disclosure — the `deviations` reader counts
-the conforming `## Deviations` headings and refuses two as undecidable, so a stacked marker leaves
-the tail review reading `malformed` where a human reads two comments fine, and UNKNOWN blocks a PASS
-(#6691). The reader keeps that refusal: `wire read` judges bytes on stdin and cannot see which
-comment is newer, so a "newest wins" rule there would have it guess at a genuinely ambiguous body.
-The rule is therefore held at the write seam — `fabrika build deviations <issue>` edits the standing
-marker in place and retracts any superseded one, and it is the only sanctioned way this marker is
-posted. A raw `gh issue comment` appends, which is the shape that produced the bug.
+One marker per issue, enforced at the write seam. The `deviations` reader counts conforming `##
+Deviations` headings and refuses two as undecidable, so a stacked marker leaves the tail review
+reading `malformed`; and because `wire read` judges bytes on stdin and cannot see which comment is
+newer, the one-marker rule lives where the bytes are written — `fabrika build deviations <issue>`
+edits the standing marker in place and retracts any superseded one, and it is the only sanctioned
+way this marker is posted.
 
 ### `verdict-marker`
 
 This is the first line of a gate's verdict comment on a PR, and the artifact the merge decision
 rests on. A gate writes it once, when it finishes reviewing; a repairing coder reads it to learn
-whether it owes a fix, and a shipper reads it to learn whether it may merge. The agreement has to
-carry more than the outcome, because a verdict attests the exact tree it was formed over — so the
-head the reviewer inspected is bound into the marker, and a marker bound to a head that has since
-moved is stale rather than passing. Drift costs both directions: a marker the readers cannot
-recognise makes a reviewed PR look unreviewed and stalls it, while one whose binding is lost would
-let a stale approval carry an unreviewed tree through a merge. The module owns the composing and the
-reading, including the staleness question; the skills keep the judgement of when to flip a verdict.
+whether it owes a fix, and a shipper reads it to learn whether it may merge. The marker attests the
+tree the verdict was formed over: the head the reviewer inspected is bound into it (ADR
+[0058](../../../.decisions/0058-sha-bound-verdict-contract.md)), and a marker bound to a head that
+has since moved is stale rather than passing. A marker the readers cannot recognise makes a reviewed
+PR look unreviewed and stalls it; one whose binding is lost would let a stale approval carry an
+unreviewed tree through a merge. The module owns the composing and the reading, including the
+staleness question; the skills keep the judgement of when to flip a verdict.
 
 ### `range-verdict-marker`
 
-This is the same verdict, over a commit range instead of a pull request head — what a child's local
-review judges on its own branch, posted on the child issue. It exists because the head binding above
-cannot survive the one event every child's verdict has to survive: the moment the range is merged
-into the epic branch, the SHAs the verdict names stop being that branch's history, and a reader
-holding only those SHAs has to re-review work nobody changed. So this form drops the head and makes
-the **content digest mandatory** — the twelve hex of the same ADR 0276 serialization, over the same
+This is the same verdict over a commit range instead of a pull request head — what a child's local
+review judges on its own branch, posted on the child issue. The head binding above cannot survive
+the range being merged into the epic branch: at that moment the SHAs the verdict names stop being
+that branch's history, and a reader holding only those SHAs would have to re-review work nobody
+changed (ADR 0285). So this form drops the head and makes the **content digest mandatory** — the
+twelve hex of the same ADR
+[0276](../../../.decisions/0276-verdict-binds-content-not-only-head.md) serialization, over the same
 `<base>...<tip>` records. A clean merge that preserves every judged blob leaves that digest
 derivable from the epic branch and the verdict in force; a conflict resolution, or any later commit
-touching a judged path, moves it and kills the verdict, which is exactly the re-review that is owed.
-A marker of this form written with no digest binds nothing at all, so it is malformed rather than a
-weaker verdict — the one place this format is stricter than the head-bound one.
+touching a judged path, moves it and kills the verdict — the re-review that is owed. A marker of
+this form written with no digest binds nothing at all, so it is malformed rather than a weaker
+verdict — the one place this format is stricter than the head-bound one.
 
 ### `lane-brief`
 
-This is the spawn prompt a lane driver hands one fabrika shell, and it exists because the prompt is
-the whole interface between the machine and the work. Written per dispatch, two drivers driving the
-same state send materially different instructions, and the rule that matters most — carry the URLs,
-never a restatement, because a restated spec is a stale spec — is enforced by nothing but the
-driver's care. So the format owns the rules text byte for byte and the state → shell routing table
-with it, and `lane brief` prints what it derives instead of composing anything. Both the section
-set and the field set are closed, and closing only the first is a hole this format shipped with: an
-appended `## Note from the driver` read back malformed, while the same sentence written as `note: …`
-inside `## Ground` parsed, was stored, and was never looked at again (#5809). So each field belongs
-to exactly one section — `## Task` owns `lane`, `root`, `fabrika`, `task`, `state` and `shell`,
-`## Ground` owns `issue`, `pr`, `epic`, `branch` and `range` — and an unknown key, a key under the
-wrong heading, or a key set twice under its own heading is malformed. The last two are the same
-defect as the first: the sections used to fold into one map, so a `state:` under `## Ground` quietly
-beat the one the driver's fold derived and re-routed the brief to a shell `## Task` never named. `## Ground` carries
-links and no content at all: the shell re-reads its own issue, PR and verdicts through its own
-verbs. A `review` or `ship` brief with no PR is malformed rather than dispatchable, because that
-shell would have nothing to read.
+This is the spawn prompt a lane driver hands one fabrika shell, and it is the whole interface
+between the machine and the work. Written per dispatch, two drivers driving the same state send
+materially different instructions, so the format owns the rules text byte for byte and the state →
+shell routing table with it, and `lane brief` prints what it derives instead of composing anything.
+Both the section set and the field set are closed, and each field belongs to exactly one section —
+`## Task` owns `lane`, `root`, `fabrika`, `task`, `state` and `shell`, `## Ground` owns `issue`,
+`pr`, `epic`, `branch` and `range`. An unknown key, a key under the wrong heading, or a key set twice
+under its own heading is malformed: a misplaced key would quietly beat the one the driver's fold
+derived and re-route the brief to a shell `## Task` never named. `## Ground` carries links and no
+content at all: the shell re-reads its own issue, PR and verdicts through its own verbs. A `review`
+or `ship` brief with no PR is malformed rather than dispatchable, because that shell would have
+nothing to read. The machine this brief serves is held in ADR
+[0290](../../../.decisions/0290-retire-epic-conduction-onto-lane-machines.md).
 
 Ground comes in two shapes, because an epic run is one branch and one pull request (ADR 0285). A
 child state on an epic lane has no PR to name at all: it carries the epic issue, the branch its
 worktree is cut from, and — at `review` — the commit range whose verdict lands on the child issue as
 a `range-verdict-marker`. Both of that range's endpoints are commits the driver's tree already
 resolved, never a `HEAD` the spawned shell resolves for itself: a reviewer's worktree is cut fresh
-from the driver's checkout and stands on the assembly branch, so a `HEAD`-tipped range read as empty
-and the gate judged nothing while still able to land a verdict (#6023). Those briefs carry a second
-byte-fixed rules paragraph saying so, so a child brief holding only the single-issue rules — the one
-that would let a child push and open its own PR — reads back malformed. The run's tail task is the
-PR shape again, unchanged.
+from the driver's checkout and stands on the assembly branch, where a `HEAD`-tipped range reads as
+empty. Those briefs carry a second byte-fixed rules paragraph saying so, so a child brief holding
+only the single-issue rules — the one that would let a child push and open its own PR — reads back
+malformed. The run's tail task is the PR shape again, unchanged.
 
 ### `map-ticket`
 
@@ -184,9 +174,9 @@ issue as one of the map's open questions, and it would look perfectly well-forme
 marker is the claim and the edge is only the link; a ticket whose marker names a different map is
 disregarded with the mismatch reported, not silently dropped and not silently counted.
 
-The nonce is the filing run's, not a session's, for the reason recorded at #5028 and #4516: a
-session id is pane-constant and shared across sibling subagents, so two lanes of one charting run
-would key onto one namespace and each would read the other's marker as its own.
+The nonce is the filing run's, not a session's: a session id is pane-constant and shared across
+sibling subagents, so two lanes of one charting run would key onto one namespace and each would
+read the other's marker as its own.
 
 ### `grill-ruling`
 
@@ -203,35 +193,28 @@ again. A ruling that drifted out from under the founder must never keep reading 
 ### `cap-clearance`
 
 This is the founder's grant of one extra repair round, carried on the pull request the round belongs
-to. The agreement it closes is the one the repair loop had no way to express: the round budget is
-counted off the FAIL markers and enforced again by the lane machine, and a clearance that lived only
-as prose could not reach either, so a legitimately cleared round could only land as an edit outside
-the loop. The marker names the round it clears and nothing else — deliberately no head SHA, because a
-clearance exists precisely so a *new* head can be pushed, and a head-bound grant would be void the
-moment it was used. Naming the round is also what spends it exactly once: the grant covers the round
-it names, and the next FAIL round leaves it behind. Like the ruling marker, it is not authority on
-its own — the reader settles that against the repo's configured grant-author set and a dated
-authorization comment beside it.
+to. The marker names the round it clears and nothing else — deliberately no head SHA, because a
+clearance exists so a *new* head can be pushed, and a head-bound grant would be void the moment it
+was used. Naming the round is also what spends it exactly once: the grant covers the round it names,
+and the next FAIL round leaves it behind. Like the ruling marker, it is not authority on its own —
+the reader settles that against the repo's configured grant-author set and a dated authorization
+comment beside it.
 
 ### `grill-answer`
 
-This is the same three fields under a different key, and the difference in key is the whole point.
-These bytes are the agent's own record of a fact it established, never a ruling, and a reader that
-resolves a founder decision looks for the other key and finds nothing here. Keeping them apart as two
-formats rather than one polarity field means a reader never has to parse a field to learn which kind
-of authority it is holding — which is exactly the mistake a shared format invites the first time
-someone reads the key and stops. Its digest is informational: it records which text was answered so a
-later reader can see the question moved, and it never changes the state.
+These bytes are the agent's own record of a fact it established, never a ruling: a reader that
+resolves a founder decision looks for the other key and finds nothing here. Keeping them apart as
+two formats rather than one polarity field means a reader never has to parse a field to learn which
+kind of authority it is holding. Its digest is informational: it records which text was answered so
+a later reader can see the question moved, and it never changes the state.
 
 ### `grill-supersede`
 
 This is the comment that retires questions, one line per question, written after the round that
 replaced them. It asserts no answer at all — only that a question is no longer the one the session
-turns on — which is why it is a third format rather than a flag on the other two. It exists because a
-re-worded question is un-ruled and would otherwise hold the frontier open forever, so a session in
-which anything was ever re-worded could never finish. Two details carry weight. Its digest is the
-**retired** question's round, captured at retirement, because the marker's job is to record which text
-was removed. And the record is a **new comment, never an edit** to the round it retires: editing that
+turns on. A re-worded question is un-ruled, so without retirement it would hold the frontier open
+forever. Two details carry weight. Its digest is the **retired** question's round, captured at
+retirement, because the marker's job is to record which text was removed. And the record is a **new comment, never an edit** to the round it retires: editing that
 round would change text its digest covers, breaking every ruling bound to it.
 
 ### `handoff-pack`
@@ -271,16 +254,14 @@ two buildable things graduates its remainder later at a different digest, and a 
 trail would refuse that second filing forever while claiming to prevent duplicates. And `covers`
 names the refs the spec rendered, which is what makes coverage answerable from the artifact alone: a
 digest by itself is opaque, so a reader holding one could say a source had graduated but not which
-parts of its trail were specified. Its separator is `;` rather than `,` for readability — a
-map-sourced ref already carries a space (`#9301 R1.2`), and `R1.1, #9301 R1.2` reads as one run-on
-list where `;` keeps the refs visually apart. A comma would parse the same; this is a legibility
-choice, not a hazard.
+parts of its trail were specified. Its separator is `;` rather than `,`: a map-sourced ref already
+carries a space (`#9301 R1.2`), and `;` keeps the refs visually apart where a run-on `,` list would
+not.
 
 It is a new format rather than a widening of `verdict-marker`. That reader is guarded by a separate
 namespace-prefix gate that returns `Absent` for a non-member, so a widening that missed either
-constant would emit markers it could never read back — and an emission is not a verdict anyway: it
-carries no `PASS`/`FAIL` polarity, binds a spec digest rather than a head SHA, and nothing recorded
-in it can block a merge.
+constant would emit markers it could never read back; an emission also carries no `PASS`/`FAIL`
+polarity, binds a spec digest rather than a head SHA, and nothing recorded in it can block a merge.
 
 ### `came-from`
 
@@ -294,19 +275,18 @@ a writer here is silent.
 `standalone` is a value rather than a blank, so an artifact opened with no ticket says so instead of
 leaving a reader to infer it from an empty section. And the `Malformed` answer is load-bearing beyond
 the usual: a session whose heading drifted, answered as "bound to nothing", would make the resume
-find no match and mint a **second** session on one ticket — the split #5661 was filed about, except
-silent, where the failure it replaced was at least a visibly duplicate topic. `grill open` refuses on
-that answer rather than resuming past it.
+find no match and mint a **second** session on one ticket — silently, where the failure it replaced
+was at least a visibly duplicate topic. `grill open` refuses on that answer rather than resuming
+past it.
 
 ### `plan-approval`
 
 This is a control-plane human's approval of one epic's plan, carried as a marker comment on the epic
 itself. What makes it a format rather than a label is the digest: it binds the ledger scope the plan
 gate re-derives, so a plan rewritten after the founder read it no longer matches and does not inherit
-the approval (ADR 0289). A label carries no scope, which is why one was rejected on the record. The
-epic is named on the marker too, because bytes travel — a comment quoting another epic's approval
-must never read as this one's, and `approves` checks both halves as equality rather than either as a
-courtesy. Like the ruling and clearance markers, it is not authority on its own, and both sides of
+the approval (ADR 0289). The epic is named on the marker too, because bytes travel — a comment
+quoting another epic's approval must never read as this one's, and `approves` checks both halves as
+equality rather than either as a courtesy. Like the ruling and clearance markers, it is not authority on its own, and both sides of
 the format are what makes that true: the writer resolves the `@<org>/<team>` roster before it posts,
 and the reader resolves it again over the marker's author before it reports `current`. Only the
 second half covers the bytes that reach the epic some other way, which is every account that can
@@ -328,20 +308,18 @@ admitting one would let a single comment unlock every decision on the board. The
 ordering is the point, since a flip written ahead of a proven marker leaves a decision reading
 pickable with no recorded ruling behind it. The proven marker earns the flip and does not compel it:
 a ruled issue whose body carries no readable `### Acceptance criteria` block keeps its marker and
-stays on `ready-for:human`, because `ready-for:agent` promises a builder can grade the issue cold
-and `build claim` refuses one that cannot be graded (#6734).
+stays on `ready-for:human`, because `ready-for:agent` promises a builder can grade the issue cold.
 
 ### `routed-elsewhere`
 
 This is a gate saying, at one head, that this PR owes it no verdict. `review-ui` writes it, and both
 gates that compute a required set read it — `ship gate` and `lane prove`, which must agree or a
-lane that ships clean never leaves `review`. It exists because two readings disagreed in a way
-neither could resolve: `ship scope` raises the `ui` class from a path test that cannot see whether
-pixels moved, so a PR whose only `apps/web/src/**` change is a docblock required a `review-ui`
-verdict — and `review-ui` cannot produce one, because `render` refuses zero surfaces and `post`
-refuses to compose without a capture set. The namespace was unfillable, `ship gate` blocks on
-absence, and the PR was stuck forever (#6376). The record is the missing answer, and ADR
-[0316](../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md) is why it is this shape.
+lane that ships clean never leaves `review`. The two readings it reconciles: `ship scope` raises the
+`ui` class from a path test that cannot see whether pixels moved, while `review-ui` cannot produce a
+verdict where `render` refuses zero surfaces and `post` refuses to compose without a capture set —
+the namespace was unfillable and `ship gate` blocks on absence. The record is the missing answer,
+and ADR
+[0316](../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md) holds that account.
 
 It carries no polarity, and that is the whole safety story. A PASS says a gate looked and found
 nothing wrong; this says the gate's subject is not in the diff at all. Fold them and "I judged
@@ -352,17 +330,22 @@ rather than inheriting a judgement formed over a diff nobody has read since.
 
 ## Adding a format
 
-A new format lands as a sibling schema module plus one registry row — never as a branch inside a
-verb, and never as a paragraph in a skill body. The row carries the owner module path, the producers
-and the consumers, so **the table above is generated from it, never typed here**: write the row,
-then run `fabrika wire index --write` and commit what it renders. Add one paragraph of protocol
-narrative under a level-3 heading carrying the format's key in backticks at the same time — that is
-the half the row cannot hold, and the only half of this page you write by hand.
+A new format is one sibling schema module plus one registry row — never a branch inside a verb, and
+never a paragraph in a skill body (ADR
+[0241](../../../.decisions/0241-wire-formats-owned-by-schema-modules.md)). The row carries the owner
+module path, the producers and the consumers, so **the table above is generated from the registry,
+never typed here**: `fabrika wire index --write` renders it. Each format also carries one paragraph
+of protocol narrative under a level-3 heading whose text is the format's key in backticks — that is
+the half the row cannot hold, and the only half of this page written by hand.
 
 `fabrika wire index` (no flag) is the check, and it runs in CI on a change to either side. It reds
 on three things: a registered format with no narrative section here, a section here naming no
-registered format, and a generated region that is not what the registry renders today. Editing
-inside the generated markers is pointless — the generator overwrites it and the check reds on it in
-the meantime. The interface and totality law the module meets are stated once in ADR
+registered format, and a generated region that is not what the registry renders today. Hand edits
+inside the generated markers are overwritten by the generator and red in CI in the meantime. The
+interface and totality law the module meets are stated once in ADR
 [0241](../../../.decisions/0241-wire-formats-owned-by-schema-modules.md) and typed in
 [`wire/format.ts`](../../../packages/fabrika-cli/src/wire/format.ts).
+
+The ordered recipe — minting the module, registering the row, writing the narrative and proving the
+format reads back — lives in the extension how-to:
+[`guide/extend-the-wire-registry.md`](../guide/extend-the-wire-registry.md).
