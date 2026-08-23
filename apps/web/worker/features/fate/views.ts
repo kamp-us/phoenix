@@ -14,7 +14,12 @@ import type {
 	NotificationView,
 } from "../bildirim/views.ts";
 import type {CaylakVisibilityPreferenceView} from "../caylak-visibility/views.ts";
-import type {DivanBacklogItemView, DivanCaylakView, DivanVoteReceiptView} from "../divan/views.ts";
+import type {
+	DivanBacklogItemView,
+	DivanCaylakView,
+	DivanPendingView,
+	DivanVoteReceiptView,
+} from "../divan/views.ts";
 import type {FunnelCohortsView, FunnelCohortWeekView, FunnelSummaryView} from "../funnel/views.ts";
 import type {MecmuaPostView, MecmuaSubscriptionReceiptView} from "../mecmua/views.ts";
 import type {MutedMemberView, MuteReceiptView} from "../mute/views.ts";
@@ -59,10 +64,16 @@ export {
 } from "../bildirim/views.ts";
 export type {CaylakVisibilityPreference} from "../caylak-visibility/views.ts";
 export {caylakVisibilityPreferenceDataView} from "../caylak-visibility/views.ts";
-export type {DivanBacklogItem, DivanCaylak, DivanVoteReceipt} from "../divan/views.ts";
+export type {
+	DivanBacklogItem,
+	DivanCaylak,
+	DivanPending,
+	DivanVoteReceipt,
+} from "../divan/views.ts";
 export {
 	divanBacklogItemDataView,
 	divanCaylakDataView,
+	divanPendingDataView,
 	divanVoteReceiptDataView,
 } from "../divan/views.ts";
 export type {FunnelCohorts, FunnelCohortWeek, FunnelSummary} from "../funnel/views.ts";
@@ -167,6 +178,7 @@ type _FateViewsFieldMapResolved = [
 	>,
 	AssertResolved<typeof DivanCaylakView, AssertFieldMapResolved<typeof DivanCaylakView>>,
 	AssertResolved<typeof DivanBacklogItemView, AssertFieldMapResolved<typeof DivanBacklogItemView>>,
+	AssertResolved<typeof DivanPendingView, AssertFieldMapResolved<typeof DivanPendingView>>,
 	AssertResolved<typeof DivanVoteReceiptView, AssertFieldMapResolved<typeof DivanVoteReceiptView>>,
 	AssertResolved<typeof FunnelSummaryView, AssertFieldMapResolved<typeof FunnelSummaryView>>,
 	AssertResolved<typeof FunnelCohortsView, AssertFieldMapResolved<typeof FunnelCohortsView>>,

@@ -80,12 +80,14 @@ const divanPending = (count: number): Layer.Layer<Divan> =>
 		roster: () => Effect.die(new Error("Divan.roster not exercised")),
 		backlogOf: () => Effect.die(new Error("Divan.backlogOf not exercised")),
 		pendingCountOf: () => Effect.succeed(count),
+		pendingTotal: () => Effect.die(new Error("Divan.pendingTotal not exercised")),
 	});
 
 const divanDies: Layer.Layer<Divan> = Layer.succeed(Divan, {
 	roster: () => Effect.die(new Error("Divan.roster not exercised")),
 	backlogOf: () => Effect.die(new Error("Divan.backlogOf not exercised")),
 	pendingCountOf: () => Effect.die(new Error("Divan.pendingCountOf must not be read")),
+	pendingTotal: () => Effect.die(new Error("Divan.pendingTotal must not be read")),
 });
 
 describe("modRecipients — moderator resolution + actor self-suppression, pure", () => {

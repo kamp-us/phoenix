@@ -229,6 +229,30 @@ describe("Topbar status/signal zone (#2613)", () => {
 		expect(divan.querySelector("svg")).not.toBeNull();
 		expect(screen.getByRole("link", {name: "divan"})).toBe(divan);
 	});
+
+	// #6760: the pending-count badge rides the existing glyph with the bildirim bell's exact
+	// grammar — the same two helpers, so zero hides and >99 caps at 99+.
+	it("the divan glyph renders a nonzero pending count as a badge", () => {
+		renderStatus({divanPending: 3});
+		const divan = screen.getByTestId("topbar-divan-link");
+		expect(divan.textContent).toContain("3");
+		expect(screen.getByRole("link", {name: "divan"})).toBe(divan);
+	});
+
+	it("a zero pending count hides the badge", () => {
+		renderStatus({divanPending: 0});
+		expect(screen.getByTestId("topbar-divan-link").textContent).not.toContain("0");
+	});
+
+	it("an unset pending count renders no badge", () => {
+		renderStatus({divanPending: undefined});
+		expect(screen.getByTestId("topbar-divan-link").textContent).toBe("");
+	});
+
+	it("a pending count over 99 renders the 99+ overflow cap", () => {
+		renderStatus({divanPending: 150});
+		expect(screen.getByTestId("topbar-divan-link").textContent).toContain("99+");
+	});
 });
 
 describe("Topbar tema toggle → theme picker (#2612)", () => {

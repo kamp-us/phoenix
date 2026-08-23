@@ -58,6 +58,21 @@ export interface UseImperativeViewOptions {
 }
 
 /**
+ * A disabled read needs no client, so a missing provider is only fatal when enabled
+ * (#6760): the shell mounts enabled-off imperative hooks above any FateProvider, and
+ * demanding a context there would break every fate-free first-paint render. The hook
+ * call itself stays unconditional — the catch demotes the throw, not the read.
+ */
+function useFateClientWhenEnabled(enabled: boolean): ImperativeViewClient | null {
+	try {
+		return useFateClient();
+	} catch (err) {
+		if (enabled) throw err;
+		return null;
+	}
+}
+
+/**
  * A `null` ref (root resolved to nothing) is a successful `ok` with `data: null`, NOT
  * an error — the caller decides what a null result means (#448).
  */
@@ -66,11 +81,11 @@ export function useImperativeView<V extends View<any, any>>(
 	view: V,
 	{args, enabled, deps = []}: UseImperativeViewOptions,
 ): {readonly state: ImperativeViewState<V>; readonly refetch: () => Promise<void>} {
-	const fate = useFateClient();
+	const fate = useFateClientWhenEnabled(enabled);
 	const [state, setState] = useState<ImperativeViewState<V>>({status: "idle"});
 
 	const refetch = useCallback(async () => {
-		if (!enabled) {
+		if (!enabled || fate == null) {
 			setState({status: "idle"});
 			return;
 		}

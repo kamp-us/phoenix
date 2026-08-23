@@ -62,6 +62,7 @@ const divanStub = Layer.succeed(Divan, {
 	roster: () => Effect.die("Divan.roster not exercised in definition-mutation"),
 	backlogOf: () => Effect.die("Divan.backlogOf not exercised in definition-mutation"),
 	pendingCountOf: () => Effect.die("Divan.pendingCountOf not exercised in definition-mutation"),
+	pendingTotal: () => Effect.die("Divan.pendingTotal not exercised in definition-mutation"),
 });
 const relationStoreStub = Layer.succeed(RelationStore, {
 	has: () => Effect.die("RelationStore.has not exercised in definition-mutation"),

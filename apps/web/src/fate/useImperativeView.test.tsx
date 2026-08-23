@@ -37,6 +37,19 @@ describe("useImperativeView — the hook over its React interface", () => {
 		expect(request).not.toHaveBeenCalled();
 	});
 
+	it("stays idle with NO FateClient provider while disabled (#6760)", async () => {
+		// The shell mounts enabled-off imperative hooks fate-free (first paint #2160),
+		// so a missing provider must not throw until the read actually enables.
+		const {result} = renderHook(() => useImperativeView("test", TestView, {enabled: false}));
+		await waitFor(() => expect(result.current.state.status).toBe("idle"));
+	});
+
+	it("still throws when enabled with no FateClient provider", () => {
+		expect(() => renderHook(() => useImperativeView("test", TestView, {enabled: true}))).toThrow(
+			/FateClient/,
+		);
+	});
+
 	it("drives the mount read to an ok state carrying the cast-surfaced data", async () => {
 		const request = vi.fn().mockResolvedValue({test: "ref-1"});
 		const readView = vi.fn().mockResolvedValue({data: DATA, coverage: []});

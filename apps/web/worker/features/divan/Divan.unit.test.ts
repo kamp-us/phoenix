@@ -223,6 +223,29 @@ describe("Divan.roster — person-grouped, removed & live excluded", () => {
 	});
 });
 
+describe("Divan.pendingTotal — the whole-roster count the badge reads (#6760)", () => {
+	// DEFS+POSTS+COMMENTS hold four live sandboxed rows (d1, d3, p1, c1); the removed and
+	// never-sandboxed ones must not count.
+	it("counts every pending item across authors; removed and live rows excluded", () => {
+		assert.strictEqual(
+			Effect.runSync(Effect.flatMap(Divan, (d) => d.pendingTotal()).pipe(Effect.provide(layer))),
+			4,
+		);
+	});
+
+	it("an empty backlog reads 0", () => {
+		const emptyLayer = DivanLive.pipe(
+			Layer.provideMerge(Layer.mergeAll(sozlukStub([]), panoStub([], []), pasaportStub([]))),
+		);
+		assert.strictEqual(
+			Effect.runSync(
+				Effect.flatMap(Divan, (d) => d.pendingTotal()).pipe(Effect.provide(emptyLayer)),
+			),
+			0,
+		);
+	});
+});
+
 describe("Divan preview — a short excerpt, never the full node", () => {
 	const longBody = "söz ".repeat(200).trim(); // ~799 chars, well past the 280 excerpt cap
 	const longLayer = DivanLive.pipe(
