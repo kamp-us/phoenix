@@ -18,6 +18,7 @@ const failOnContact: FunnelShape = {
 	firstContribution: die("firstContribution"),
 	vouchRate: die("vouchRate"),
 	timeToPromotion: die("timeToPromotion"),
+	rollupWeeklyCohorts: die("rollupWeeklyCohorts"),
 };
 
 export const makeFunnelStub = (overrides: Partial<FunnelShape> = {}): Layer.Layer<Funnel> =>
