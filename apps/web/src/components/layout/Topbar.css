@@ -65,6 +65,11 @@
 .kp-topbar__signal-link .kp-icon {
 	color: inherit;
 }
+/* The divan glyph's pending-count badge (#6760) — the bildirim bell's count idiom, so it
+   rides the link's inline-flex box and only needs its type token pinned here. */
+.kp-topbar__signal-link .kp-topbar__count {
+	font: var(--t-meta);
+}
 .kp-topbar__nav a:hover,
 .kp-topbar__signal-link:hover {
 	color: var(--text-primary);

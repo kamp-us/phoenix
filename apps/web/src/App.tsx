@@ -15,6 +15,7 @@ import {useMe} from "./auth/useMe";
 import {useBildirimUnread} from "./components/bildirim/useBildirimUnread";
 import {DivanSubnavLayout} from "./components/divan/DivanSubnavLayout";
 import {useDivanAccess} from "./components/divan/useDivanAccess";
+import {useDivanPendingCount} from "./components/divan/useDivanPendingCount";
 import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
@@ -69,6 +70,7 @@ type TopbarChips = {
 	userProps: {user: {name: string; username: string | null}} | undefined;
 	karma: number | undefined;
 	divanTo: string | undefined;
+	divanCount: number | undefined;
 	bildirim: {to: string; unread: number} | undefined;
 };
 
@@ -170,6 +172,7 @@ function Layout() {
 								...(mecmuaOn ? [{to: "/mecmua", label: "mecmua"}] : []),
 							]}
 							divanTo={chips?.divanTo}
+							divanPending={chips?.divanCount}
 							// Boot props carry the first paint, before `LayoutContent` publishes any chips.
 							// A signed-out publish leaves `userProps` undefined, so they land again there —
 							// inert, because `reserveSignedInSlots` is false and gates the whole account side.
@@ -241,6 +244,10 @@ function LayoutContent() {
 	// çaylak/non-mod skips the guaranteed-`UNAUTHORIZED` probe; the ambiguous case
 	// still probes.
 	const showDivan = useDivanAccess(me);
+	// The divan glyph's pending-review badge (#6760). Same gate as the entry itself —
+	// `showDivan` is the probe's answer — so the gated count read fires only for a subject
+	// the wire would let read `divan.roster`, and stays unissued for everyone else.
+	const divanCount = useDivanPendingCount(showDivan);
 	const {value: bildirimOn} = useFlag(PHOENIX_BILDIRIM, false);
 	const bildirimUnread = useBildirimUnread(bildirimOn && !!session.data, me?.id ?? null);
 	// #1888: hold the off-/auth redirect while a chosen-username signup is still
@@ -276,9 +283,20 @@ function LayoutContent() {
 				: undefined,
 			karma: selfKarma,
 			divanTo: showDivan ? "/divan" : undefined,
+			divanCount: showDivan ? divanCount : undefined,
 			bildirim: bildirimOn && isSignedIn ? {to: "/bildirimler", unread: bildirimUnread} : undefined,
 		}),
-		[sessionUser, me?.name, username, selfKarma, showDivan, bildirimOn, isSignedIn, bildirimUnread],
+		[
+			sessionUser,
+			me?.name,
+			username,
+			selfKarma,
+			showDivan,
+			divanCount,
+			bildirimOn,
+			isSignedIn,
+			bildirimUnread,
+		],
 	);
 
 	useEffect(() => {
