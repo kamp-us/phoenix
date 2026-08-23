@@ -24,7 +24,9 @@
  * theirs, and they erase the transport requirement with {@link onTransport} rather than publishing
  * `HttpClient` up through 45 verb annotations (ADR 0315, as amended).
  */
-import {Effect, Option} from "effect";
+
+import {Duration, Effect, Option} from "effect";
+import * as Cause from "effect/Cause";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
@@ -42,6 +44,22 @@ const GRAPHQL_URL = `${API_ROOT}/graphql`;
 
 /** How many pages a bare-array read walks before it gives up and reports non-exhaustion. */
 export const PAGE_CAP = 50;
+
+/** The default client-side bound on one GitHub HTTP exchange, in seconds. */
+const DEFAULT_HTTP_TIMEOUT_SECONDS = 60;
+
+/**
+ * The client-side bound on one GitHub HTTP exchange. `HttpClient.execute` has no timeout of its
+ * own, so a stalled transport (black-holed connect, silent drop) blocks a verb indefinitely —
+ * observed live as gate shells stuck 240s+ on one call (#7025). Failing fast turns the stall into
+ * the existing `Unreachable` outcome, which every caller already treats as data. Override for
+ * tests and pathological networks with `FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS`.
+ */
+export const githubHttpTimeoutSeconds = (): number => {
+	const raw = process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
+	const parsed = raw === undefined ? DEFAULT_HTTP_TIMEOUT_SECONDS : Number(raw);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_HTTP_TIMEOUT_SECONDS;
+};
 
 const NEXT_LINK = /<[^>]*>\s*;\s*rel="next"/i;
 
@@ -180,6 +198,7 @@ const served = <A>(
 	read: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, unknown>,
 ): Api<Served<A>> =>
 	HttpClient.execute(request).pipe(
+		Effect.timeout(Duration.seconds(githubHttpTimeoutSeconds())),
 		Effect.flatMap((response) =>
 			Effect.map(
 				read(response),
@@ -194,7 +213,9 @@ const served = <A>(
 		Effect.catch((error: unknown) =>
 			Effect.succeed<Served<A>>({
 				_tag: "Unreachable",
-				reason: `the GitHub API could not be reached: ${String(error)}`,
+				reason: Cause.isTimeoutError(error)
+					? `the GitHub API call exceeded its ${githubHttpTimeoutSeconds()}s client-side bound`
+					: `the GitHub API could not be reached: ${String(error)}`,
 			}),
 		),
 	);

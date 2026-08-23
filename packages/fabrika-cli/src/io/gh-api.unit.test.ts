@@ -1,9 +1,11 @@
 import {Effect, Layer} from "effect";
+import * as HttpClient from "effect/unstable/http/HttpClient";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeHttp, fakeShell, linkNext, okOut} from "../fakes.test-support.ts";
 import {
 	ambientToken,
 	existenceOf,
+	githubHttpTimeoutSeconds,
 	graphqlRead,
 	NO_TOKEN,
 	onTransport,
@@ -486,6 +488,45 @@ describe("pagedExistence — 404 is a verdict", () => {
 			Effect.provide(pagedExistence(TOKEN, "repos/o/r/x"), http.layer),
 		);
 		expect(result._tag).toBe("Unknown");
+	});
+});
+
+describe("githubHttpTimeoutSeconds", () => {
+	it("bounds a never-responding endpoint into Unreachable instead of hanging forever", async () => {
+		const before = process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
+		try {
+			process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"] = "1";
+			const http = Layer.succeed(HttpClient.HttpClient)(HttpClient.make(() => Effect.never));
+			const started = Date.now();
+			const result = await Effect.runPromise(
+				Effect.provide(restRead(TOKEN, "GET", "repos/o/r/pulls/1"), http),
+			);
+			expect(result._tag).toBe("Unreachable");
+			if (result._tag === "Unreachable") {
+				expect(result.reason).toContain("client-side bound");
+			}
+			expect(Date.now() - started).toBeLessThan(10_000);
+		} finally {
+			if (before === undefined) delete process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
+			else process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"] = before;
+		}
+	});
+
+	it("defaults to 60s and ignores non-positive or non-numeric overrides", () => {
+		const before = process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
+		try {
+			delete process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
+			expect(githubHttpTimeoutSeconds()).toBe(60);
+			process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"] = "30";
+			expect(githubHttpTimeoutSeconds()).toBe(30);
+			for (const junk of ["0", "-5", "nope", "Infinity"]) {
+				process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"] = junk;
+				expect(githubHttpTimeoutSeconds()).toBe(60);
+			}
+		} finally {
+			if (before === undefined) delete process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
+			else process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"] = before;
+		}
 	});
 });
 
