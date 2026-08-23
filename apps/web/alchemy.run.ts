@@ -49,6 +49,7 @@ import {
 	Flagship,
 	funnelCohortFlag,
 	karmaGatesFlag,
+	landingCaylakRiteFlag,
 	mecmuaFeedFlag,
 	mecmuaPublicReadFlag,
 	mecmuaWriteFlag,
@@ -145,6 +146,10 @@ export default Alchemy.Stack(
 		// rollup-record list and the client section gate behind, so the cohort DISPLAY can be
 		// enabled independently of the always-on capture until a human release.
 		yield* funnelCohortFlag(flagship.appId);
+		// The signed-in-çaylak landing-rite dark-ship flag, default-off (#7046, epic #4304) —
+		// the single seam the landing page's signed-in-çaylak rite explainer gates behind, so
+		// the copy ships dark until a human release.
+		yield* landingCaylakRiteFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

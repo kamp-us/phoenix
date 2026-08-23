@@ -17,6 +17,7 @@ import {
 	PHOENIX_EMAIL_DELIVERY_NOTICE,
 	PHOENIX_FUNNEL_COHORT,
 	PHOENIX_KARMA_GATES,
+	PHOENIX_LANDING_CAYLAK_RITE,
 	PHOENIX_PANO_STAMP_WAVE,
 	PHOENIX_REACTIONS,
 	PHOENIX_SOZLUK_STAMP_WAVE,
@@ -307,3 +308,27 @@ export const FUNNEL_COHORT_FLAG = {
 /** A plain boolean kill-switch, no targeting rules — see `caylakVisibilityFlag`. */
 export const funnelCohortFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_funnel_cohort", {appId, ...FUNNEL_COHORT_FLAG});
+
+/**
+ * The signed-in-çaylak landing-rite dark-ship flag config (#7046, epic #4304). The single seam
+ * the landing page's signed-in-çaylak rite explainer gates behind — with it off the landing page
+ * renders exactly as today for every visitor (the anonymous join CTA untouched, every signed-in
+ * landing quiet); flipping it on is the human release act (ADR 0083).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           landing (the `/` hero surface)
+ *   - originating:     #7046 (epic: one-PR product run, #4304)
+ *   - removal trigger: once the signed-in-çaylak rite is on at 100% and stable for one
+ *                      release, retire the flag and inline the now-permanent render.
+ */
+export const LANDING_CAYLAK_RITE_FLAG = {
+	key: PHOENIX_LANDING_CAYLAK_RITE,
+	description:
+		"signed-in-çaylak landing-rite copy dark-ship (#7046, epic #4304). owner: landing. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/** A plain boolean kill-switch, no targeting rules — see `funnelCohortFlag`. */
+export const landingCaylakRiteFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_landing_caylak_rite", {appId, ...LANDING_CAYLAK_RITE_FLAG});

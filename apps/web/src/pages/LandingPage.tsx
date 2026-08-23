@@ -8,8 +8,10 @@ import {useMe} from "../auth/useMe";
 import {Icon} from "../components/Icon";
 import {Screen} from "../fate/Screen";
 import {toIso} from "../fate/wire";
+import {PHOENIX_LANDING_CAYLAK_RITE} from "../flags/keys";
+import {useFlag} from "../flags/useFlag";
 import {formatAgoTR} from "../lib/datetime";
-import {landingCtaPhase, showJoinCta} from "./landingGating";
+import {landingCtaPhase, showJoinCta, showSignedInRite} from "./landingGating";
 import "./LandingPage.css";
 
 const LANDING_LIST_SIZE = 5;
@@ -60,11 +62,15 @@ function formatStat(n: number): string {
 }
 
 export function LandingPage() {
-	// Gating rules (and why the phase is three-valued) live in `landingGating`.
+	// Gating rules live in `landingGating`; auth reads only `useMe`, as the topbar does.
 	const session = useSession();
-	const {status} = useMe();
-	const phase = landingCtaPhase(session.isPending, status);
+	const {me, status} = useMe();
+	const phase = landingCtaPhase(session.isPending, status, me?.tier);
 	const joinVisible = showJoinCta(phase);
+	// The signed-in-çaylak rite explainer rides its own dark-ship seam (#7046); off ⇒ today's
+	// quiet signed-in landing, exactly as the anonymous CTA path stays untouched.
+	const {value: caylakRiteOn} = useFlag(PHOENIX_LANDING_CAYLAK_RITE, false);
+	const caylakRiteVisible = caylakRiteOn && showSignedInRite(phase);
 
 	return (
 		<div className="kp-landing">
@@ -88,6 +94,12 @@ export function LandingPage() {
 							<strong>söz hakkı kazanılır:</strong> ilk yazdıkların çaylak olarak divanda incelenir;
 							katkı verdikçe bir yazar sana kefil olur, yazar olursun — o zaman yazdıkların doğrudan
 							yayına girer.
+						</p>
+					) : caylakRiteVisible ? (
+						<p className="kp-landing__rite" data-testid="landing-signedin-rite">
+							<strong>neredesin:</strong> çaylaksın — ilk yazdıkların divanda incelenir.{" "}
+							<strong>sırada yazarlık var:</strong> katkı verdikçe bir yazar sana kefil olur, yazar
+							olursun — o zaman yazdıkların doğrudan yayına girer.
 						</p>
 					) : null}
 				</div>
