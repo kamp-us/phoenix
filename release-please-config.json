@@ -4,7 +4,7 @@
 	"bootstrap-sha": "97f3022228eeeb850b02ef4cb10b64c772fbd77f",
 	"release-type": "node",
 	"include-component-in-tag": true,
-	"separate-pull-requests": false,
+	"separate-pull-requests": true,
 	"packages": {
 		"packages/fabrika-cli": {
 			"component": "fabrika-cli"
