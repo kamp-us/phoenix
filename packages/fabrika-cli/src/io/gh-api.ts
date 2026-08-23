@@ -56,7 +56,7 @@ const DEFAULT_HTTP_TIMEOUT_SECONDS = 60;
  * tests and pathological networks with `FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS`.
  */
 export const githubHttpTimeoutSeconds = (): number => {
-	const raw = process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
+	const raw = process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS;
 	const parsed = raw === undefined ? DEFAULT_HTTP_TIMEOUT_SECONDS : Number(raw);
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_HTTP_TIMEOUT_SECONDS;
 };
@@ -197,31 +197,41 @@ const served = <A>(
 	request: HttpClientRequest.HttpClientRequest,
 	read: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, unknown>,
 ): Api<Served<A>> =>
-	HttpClient.execute(request).pipe(
-		Effect.flatMap((response) =>
-			Effect.map(
-				read(response),
-				(value): Served<A> => ({
-					_tag: "Response",
-					status: response.status,
-					headers: response.headers,
-					value,
-				}),
+	Effect.gen(function* () {
+		// Read once per exchange: the bound that is applied and the bound a refusal reports must be
+		// the same number even if the env moves between the two reads (review finding on #7048).
+		const boundSeconds = githubHttpTimeoutSeconds();
+		const startedAtMs = Date.now();
+		return yield* Effect.catch(
+			HttpClient.execute(request).pipe(
+				Effect.flatMap((response) =>
+					Effect.map(
+						read(response),
+						(value): Served<A> => ({
+							_tag: "Response",
+							status: response.status,
+							headers: response.headers,
+							value,
+						}),
+					),
+				),
+				// The bound covers the WHOLE exchange — connect through final body byte. Above
+				// `flatMap(read)` it would spare a stalled body stream, which dies exactly as hard as
+				// a black-holed connect (#7025 criterion 4).
+				Effect.timeout(Duration.seconds(boundSeconds)),
 			),
-		),
-		// The bound covers the WHOLE exchange — connect through final body byte. Above
-		// `flatMap(read)` it would spare a stalled body stream, which dies exactly as hard as a
-		// black-holed connect (#7025 criterion 4).
-		Effect.timeout(Duration.seconds(githubHttpTimeoutSeconds())),
-		Effect.catch((error: unknown) =>
-			Effect.succeed<Served<A>>({
-				_tag: "Unreachable",
-				reason: Cause.isTimeoutError(error)
-					? `the GitHub API call exceeded its ${githubHttpTimeoutSeconds()}s client-side bound`
-					: `the GitHub API could not be reached: ${String(error)}`,
-			}),
-		),
-	);
+			(error: unknown) =>
+				Effect.succeed<Served<A>>({
+					_tag: "Unreachable",
+					reason: Cause.isTimeoutError(error)
+						? // The hung invocation's own record: which call, which bound, how long it actually
+							// held the lane (#7025 criterion 1) — measured wall-clock, not the configured
+							// bound restated.
+							`${request.method} ${request.url} exceeded its ${boundSeconds}s client-side bound after ${((Date.now() - startedAtMs) / 1000).toFixed(1)}s`
+						: `the GitHub API could not be reached: ${String(error)}`,
+				}),
+		);
+	});
 
 const send = (request: HttpClientRequest.HttpClientRequest): Api<Rest> =>
 	Effect.map(

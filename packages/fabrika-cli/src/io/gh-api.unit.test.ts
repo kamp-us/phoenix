@@ -495,9 +495,9 @@ describe("pagedExistence — 404 is a verdict", () => {
 
 describe("githubHttpTimeoutSeconds", () => {
 	it("bounds a stalled body stream, not just a silent connect", async () => {
-		const before = process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
+		const before = process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS;
 		try {
-			process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"] = "1";
+			process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS = "1";
 			// Headers arrive instantly; the body stream never produces a byte — the shape of a
 			// silent post-header drop (#7025 criterion 4).
 			const request = HttpClientRequest.get("https://api.github.com/repos/o/r/pulls/1");
@@ -514,19 +514,23 @@ describe("githubHttpTimeoutSeconds", () => {
 			);
 			expect(result._tag).toBe("Unreachable");
 			if (result._tag === "Unreachable") {
-				expect(result.reason).toContain("client-side bound");
+				// The hung invocation's own record — which exchange, which bound, measured elapsed
+				// (#7025 criterion 1).
+				expect(result.reason).toMatch(
+					/^GET https:\/\/api\.github\.com\/repos\/o\/r\/pulls\/1 exceeded its 1s client-side bound after \d+\.\ds$/,
+				);
 			}
 			expect(Date.now() - started).toBeLessThan(10_000);
 		} finally {
-			if (before === undefined) delete process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
-			else process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"] = before;
+			if (before === undefined) delete process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS;
+			else process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS = before;
 		}
 	});
 
 	it("bounds a never-responding endpoint into Unreachable instead of hanging forever", async () => {
-		const before = process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
+		const before = process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS;
 		try {
-			process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"] = "1";
+			process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS = "1";
 			const http = Layer.succeed(HttpClient.HttpClient)(HttpClient.make(() => Effect.never));
 			const started = Date.now();
 			const result = await Effect.runPromise(
@@ -534,29 +538,30 @@ describe("githubHttpTimeoutSeconds", () => {
 			);
 			expect(result._tag).toBe("Unreachable");
 			if (result._tag === "Unreachable") {
-				expect(result.reason).toContain("client-side bound");
+				expect(result.reason).toContain("GET https://api.github.com/repos/o/r/pulls/1");
+				expect(result.reason).toMatch(/client-side bound after \d+\.\ds$/);
 			}
 			expect(Date.now() - started).toBeLessThan(10_000);
 		} finally {
-			if (before === undefined) delete process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
-			else process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"] = before;
+			if (before === undefined) delete process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS;
+			else process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS = before;
 		}
 	});
 
 	it("defaults to 60s and ignores non-positive or non-numeric overrides", () => {
-		const before = process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
+		const before = process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS;
 		try {
-			delete process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
+			delete process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS;
 			expect(githubHttpTimeoutSeconds()).toBe(60);
-			process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"] = "30";
+			process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS = "30";
 			expect(githubHttpTimeoutSeconds()).toBe(30);
 			for (const junk of ["0", "-5", "nope", "Infinity"]) {
-				process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"] = junk;
+				process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS = junk;
 				expect(githubHttpTimeoutSeconds()).toBe(60);
 			}
 		} finally {
-			if (before === undefined) delete process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"];
-			else process.env["FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS"] = before;
+			if (before === undefined) delete process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS;
+			else process.env.FABRIKA_GITHUB_HTTP_TIMEOUT_SECONDS = before;
 		}
 	});
 });
