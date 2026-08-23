@@ -218,6 +218,7 @@
 					"collaborator-permissions",
 					"issue-dependencies",
 					"settings-patch",
+					"dep-pin",
 					"label-taxonomy",
 					"issue-shape-markers",
 					"standing-lanes",

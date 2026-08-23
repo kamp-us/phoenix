@@ -34,6 +34,7 @@ import {
 	openIssuesTitled,
 } from "../io/issues.ts";
 import {isRecord, parseJsonOrReason} from "../io/json.ts";
+import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
@@ -200,6 +201,16 @@ export type BuildableSurface =
 	  }
 	| {
 			readonly id: string;
+			readonly kind: "dep-pin";
+			/** The registry default write path — the adopting repo's manifest. */
+			readonly defaultPath: string;
+			/** The manifest section this surface's dependency row belongs to. */
+			readonly section: string;
+			/** The dependency row this surface owns — resolved from npm at run time, never restated. */
+			readonly packageName: string;
+	  }
+	| {
+			readonly id: string;
 			readonly kind: "labels";
 			/**
 			 * Derived from the resolved board rather than fixed, so a repo that declared its own
@@ -233,7 +244,21 @@ export const SETTINGS_PATCH: Readonly<Record<string, unknown>> = {
 	enabledPlugins: {[`${PLUGIN}@kampus`]: true},
 };
 
-/** Seven ids. An eighth is a change to this table, not a new rule. */
+/**
+ * The dependency row `dep-pin` owns. Named here once so the manifest merge, the install command and
+ * the npm resolution all read the same spelling.
+ */
+export const FABRIKA_CLI_PACKAGE = "@kampus/fabrika-cli";
+
+/**
+ * The exact install command printed once the row lands, at the version just pinned. The lockfile is
+ * the caller's to resolve — fabrika never shells to a package manager (#6995 R1.3) — so this line
+ * on the notice is the whole handoff.
+ */
+export const installCommand = (packageName: string, version: string): string =>
+	`pnpm add --save-exact ${packageName}@${version}`;
+
+/** Eight ids. A ninth is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
 	{
@@ -254,6 +279,13 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "issue-shape-markers", kind: "labels", labels: () => ISSUE_SHAPE_MARKERS},
 	{id: "readout-artifact", kind: "issue"},
 	{id: "settings-patch", kind: "json", defaultPath: SETTINGS_PATH, patch: SETTINGS_PATCH},
+	{
+		id: "dep-pin",
+		kind: "dep-pin",
+		defaultPath: "package.json",
+		section: "dependencies",
+		packageName: FABRIKA_CLI_PACKAGE,
+	},
 ];
 
 export const findSurface = (id: string): BuildableSurface | undefined =>
@@ -289,11 +321,12 @@ const created = (
 	json: boolean,
 	notice: string,
 	fields?: Readonly<Record<string, number>>,
+	extraNotices?: ReadonlyArray<string>,
 ): VerbOutcome => {
 	const stdout = json
 		? `${JSON.stringify({outcome: "created", surfaceId, target, readback: "ok", ...fields})}\n`
 		: `${row("bootstrap", "created", surfaceId, target, "ok")}\n`;
-	return answer(stdout, [notice]);
+	return answer(stdout, [notice, ...(extraNotices ?? [])]);
 };
 
 const already = (surfaceId: string, target: string, json: boolean): VerbOutcome => {
@@ -484,22 +517,23 @@ const serializeJsonPatch = (value: Readonly<Record<string, unknown>>): string =>
 	`${JSON.stringify(value, null, "\t")}\n`;
 
 /**
- * **The JSON key-merge arm (ADR 0334).** An adopting repo's `.claude/settings.json` exists before
- * fabrika ever sees it, so the file arm's absence guard cannot serve it. A present target must parse
- * as a JSON object: the surface's declared keys merge over it, every undeclared key survives the
- * re-serialize verbatim, and bytes that refuse to parse are exit `11` naming the file and the parse
- * failure, nothing written. Already merged — the parsed object equals what merging would produce — is
- * `exists`, so idempotency stays absolute. Absent, the declared keys are written whole through the
- * same write-and-read-back protocol the file arm runs.
+ * **The JSON key-merge arm (ADR 0334), shared by every json-shaped target.** An adopting repo's
+ * file usually exists before fabrika ever sees it, so the file arm's absence guard cannot serve it.
+ * A present target must parse as a JSON object: the patch's declared keys merge over it, every
+ * undeclared key survives the re-serialize verbatim, and bytes that refuse to parse are exit `11`
+ * naming the file and the parse failure, nothing written. Already merged — the parsed object equals
+ * what merging would produce — is `exists`, so idempotency stays absolute. Absent, the declared keys
+ * are written whole through the same write-and-read-back protocol the file arm runs.
  */
-const buildJsonPatch = (
-	surface: Extract<BuildableSurface, {kind: "json"}>,
+const mergePatchAt = (
+	surfaceId: string,
+	relative: string,
+	absolute: string,
+	patch: Readonly<Record<string, unknown>>,
 	input: BootstrapInput,
+	extraNotices?: ReadonlyArray<string>,
 ): Effect.Effect<VerbOutcome, never, Requirements> =>
 	Effect.gen(function* () {
-		const target = yield* targetOf(surface, input);
-		if (!isTarget(target)) return target;
-		const {relative, absolute} = target;
 		const probe = yield* Effect.result(exists(absolute));
 		if (Result.isFailure(probe)) {
 			return refuse(
@@ -509,12 +543,13 @@ const buildJsonPatch = (
 		}
 		if (!probe.success) {
 			return yield* writeAndReadBack(
-				surface.id,
+				surfaceId,
 				relative,
 				absolute,
-				serializeJsonPatch(surface.patch),
+				serializeJsonPatch(patch),
 				input,
-				`created ${relative} for ${surface.id}, read-back conformed.`,
+				`created ${relative} for ${surfaceId}, read-back conformed.`,
+				extraNotices,
 			);
 		}
 		const read = yield* Effect.result(readFile(absolute));
@@ -537,21 +572,72 @@ const buildJsonPatch = (
 				`${VERB}: ${relative} parses to ${Array.isArray(parsed.value) ? "an array" : typeof parsed.value}, not a JSON object — nothing was written.`,
 			);
 		}
-		const merged = mergeJsonPatch(parsed.value, surface.patch);
-		if (jsonEquals(parsed.value, merged)) return already(surface.id, relative, input.json);
+		const merged = mergeJsonPatch(parsed.value, patch);
+		if (jsonEquals(parsed.value, merged)) return already(surfaceId, relative, input.json);
 		return yield* writeAndReadBack(
-			surface.id,
+			surfaceId,
 			relative,
 			absolute,
 			serializeJsonPatch(merged),
 			input,
-			`merged the declared keys into ${relative} for ${surface.id}, read-back conformed.`,
+			`merged the declared keys into ${relative} for ${surfaceId}, read-back conformed.`,
+			extraNotices,
+		);
+	});
+
+/** The settings arm: the registry's static keys through {@link mergePatchAt}. */
+const buildJsonPatch = (
+	surface: Extract<BuildableSurface, {kind: "json"}>,
+	input: BootstrapInput,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const target = yield* targetOf(surface, input);
+		if (!isTarget(target)) return target;
+		return yield* mergePatchAt(surface.id, target.relative, target.absolute, surface.patch, input);
+	});
+
+/**
+ * **dep-pin resolves the release at run time; the edit itself is the json arm's.** The pinned
+ * version is never a constant here — the npm registry's current published release is what makes a
+ * re-run move an old row forward — and an unreachable or malformed answer refuses instead of
+ * pinning a guess (#7007). The merge rides {@link mergePatchAt} over one key path:
+ * `dependencies.@kampus/fabrika-cli` at exactly the resolved version, every other key verbatim,
+ * absolute idempotency (ADR 0334). No package manager ever spawns and no lockfile is read or
+ * written — the exact install command is printed instead, because the lockfile stays the caller's
+ * (#6995 R1.3).
+ */
+const buildDepPin = (
+	surface: Extract<BuildableSurface, {kind: "dep-pin"}>,
+	input: BootstrapInput,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const target = yield* targetOf(surface, input);
+		if (!isTarget(target)) return target;
+		const {relative, absolute} = target;
+
+		const resolved = yield* latestPublishedVersion(surface.packageName);
+		if (resolved._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot resolve ${surface.packageName}'s current release from npm: ${resolved.reason} — nothing pinned, nothing written.`,
+			);
+		}
+		return yield* mergePatchAt(
+			surface.id,
+			relative,
+			absolute,
+			{[surface.section]: {[surface.packageName]: resolved.value}},
+			input,
+			[
+				`${VERB}: the lockfile stays yours — install with: ${installCommand(surface.packageName, resolved.value)}`,
+			],
 		);
 	});
 
 /**
  * One write, one re-read, one comparison — the protocol every byte-writing arm here runs. The notice
- * prefix (`created …` / `merged …`) is the caller's, because the arms differ in what landed.
+ * prefix (`created …` / `merged …`) is the caller's, because the arms differ in what landed; extra
+ * notices ride the same channel, which is how dep-pin hands over the install command.
  */
 const writeAndReadBack = (
 	surfaceId: string,
@@ -560,6 +646,7 @@ const writeAndReadBack = (
 	content: string,
 	input: BootstrapInput,
 	notice: string,
+	extraNotices?: ReadonlyArray<string>,
 ): Effect.Effect<VerbOutcome, never, Requirements> =>
 	Effect.gen(function* () {
 		const written = yield* Effect.result(writeFile(absolute, content));
@@ -582,7 +669,7 @@ const writeAndReadBack = (
 				`${VERB}: wrote ${relative} and the read-back differs — the outcome is UNKNOWN.`,
 			);
 		}
-		return created(surfaceId, relative, input.json, `${VERB}: ${notice}`);
+		return created(surfaceId, relative, input.json, `${VERB}: ${notice}`, undefined, extraNotices);
 	});
 
 /**
@@ -798,5 +885,6 @@ export const runBootstrap = (
 	if (surface.kind === "file") return buildFile(surface, input);
 	if (surface.kind === "line") return buildLine(surface, input);
 	if (surface.kind === "json") return buildJsonPatch(surface, input);
+	if (surface.kind === "dep-pin") return buildDepPin(surface, input);
 	return surface.kind === "labels" ? buildLabels(surface, input) : buildArtifact(surface, input);
 };
