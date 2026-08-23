@@ -1,23 +1,19 @@
 # fabrika §CP classification — CODEOWNERS is the single source of truth
 
 The rule a fabrika verb answers "is this change control plane?" by, and the rule every fabrika skill
-that *mentions* §CP is held to. Founder ruling, 2026-08-08, recorded first-hand on
-[#4927](https://github.com/kamp-us/phoenix/issues/4927) and transcribed here so a brief, a contract
-spec or a verb implementer can cite a file instead of a comment
-([#4932](https://github.com/kamp-us/phoenix/issues/4932)).
+that *mentions* §CP is held to. This page states the rules only; the reasoning and ruling history
+behind each clause live under [`.decisions/`](../../../.decisions/) and are pointed at inline.
 
 ## The model
 
 1. **CODEOWNERS is the single source of truth.** A change is control-plane **iff** it touches paths
    owned by a control-plane owner in [`.github/CODEOWNERS`](../../../.github/CODEOWNERS). There is
-   no second source. **An owner is either an `@org/team` or an individual `@login`, and the two count
-   the same** — founder ruling on
-   [#5603](https://github.com/kamp-us/phoenix/issues/5603) comment 16, built as
-   [#6299](https://github.com/kamp-us/phoenix/issues/6299). A team-only reading deadlocked every PR
-   in a repo whose boundary names people rather than a team, and sent `cp-approval` to a team-roster
-   endpoint a personal repo has no org for. An owner that is neither shape — a bare email — names no
-   account an approval resolves against, so it bounds nothing. In this repo nothing moves: every
-   CODEOWNERS row here names `@kamp-us/control-plane`.
+   no second source ([ADR 0330](../../../.decisions/0330-codeowners-is-the-cp-boundary.md), ADR
+   [0053](../../../.decisions/0053-control-plane-boundary.md)). **An owner is either an `@org/team`
+   or an individual `@login`, and the two count the same**; an owner that is neither shape — a bare
+   email — names no account an approval resolves against, so it bounds nothing
+   ([ADR 0330](../../../.decisions/0330-codeowners-is-the-cp-boundary.md)). In this repo nothing
+   moves: every CODEOWNERS row here names `@kamp-us/control-plane`.
 2. **A verb computes it, from two inputs and nothing else** — the CODEOWNERS file and the diff's
    changed paths. **No agent judgement, and no content regex.** A skill may state the expectation;
    it never asserts the answer.
@@ -34,23 +30,17 @@ spec or a verb implementer can cite a file instead of a comment
    parsed and classified, and a file that reads fine but bounds nobody is the `UNKNOWN` hold too.
    *Unreadable* is neither, and §4 says what happens to it.
 
-4. **`UNKNOWN` is treated as §CP — fail closed.** A read that failed and a change that is genuinely
-   ordinary are different facts, and collapsing them is this repo's dominant defect class (a check
-   that cannot see its subject answering confidently instead of erroring). A false §CP costs one
-   approval; a false ordinary reaches `main` with none.
-
-   **An unreadable CODEOWNERS is not that `UNKNOWN` either — it is exit `11`, in every repo.** A
-   failed read proves nothing, so the verb refuses rather than answering. This is unconditional: no
-   config value waives it. ADR
-   [0220](../../../.decisions/0220-cp-surface-declared-at-standup.md) §4 names collapsing `UNKNOWN` →
-   `not-§CP` the recurring fail-open defect, and §CP has no residual gate behind it — under a ruleset
-   with `required_approving_review_count: 0`, CODEOWNERS is the only source of required human review.
-
-   A per-repo `unreadableCodeowners` key briefly made this behaviour configurable
-   ([#6299](https://github.com/kamp-us/phoenix/issues/6299), ADR
-   [0307](../../../.decisions/0307-unreadable-codeowners-is-per-repo.md)); the founder reverted it on
-   [#5631](https://github.com/kamp-us/phoenix/issues/5631). The key still exists in
-   `.fabrika.jsonc`'s vocabulary and nothing reads it.
+4. **`UNKNOWN` is treated as §CP — fail closed.** An unreadable CODEOWNERS is not that `UNKNOWN`
+   either — it is exit `11`, in every repo: a failed read proves nothing, so the verb refuses rather
+   than answering, and no config value waives it. Collapsing `UNKNOWN` → `not-§CP` is the recurring
+   fail-open defect (ADR
+   [0220](../../../.decisions/0220-cp-surface-declared-at-standup.md) §4); a boundary that resolves
+   to zero owned paths stays a red (ADR
+   [0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). §CP has no residual gate
+   behind it — under a ruleset with `required_approving_review_count: 0`, CODEOWNERS is the only
+   source of required human review. A deprecated per-repo `unreadableCodeowners` key still resolves
+   in `.fabrika.jsonc`'s vocabulary and nothing reads it (ADR
+   [0307](../../../.decisions/0307-unreadable-codeowners-is-per-repo.md), retired).
 5. **Enforcement is GitHub's, not the verb's.** The block is the native code-owner review
    requirement on the `main` ruleset (ADR
    [0135](../../../.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md),
@@ -59,76 +49,55 @@ spec or a verb implementer can cite a file instead of a comment
 
 ## No semantic detection exists — path-set completeness is a maintenance obligation
 
-**Stated explicitly, because it is the model's one load-bearing assumption:** nothing in fabrika
-inspects what a change *says*. A guard-relaxing edit in a file no CODEOWNERS row owns classifies
-`not-§CP`, correctly per this model and by design.
-
-That makes **coverage of the owned-path set the whole protection**, and therefore an obligation
-somebody owns rather than a property that holds by itself:
+Nothing in fabrika inspects what a change *says*. A guard-relaxing edit in a file no CODEOWNERS row
+owns classifies `not-§CP`, correctly per this model and by design.
 
 > **Obligation.** When a surface becomes governance-bearing, its path is added to CODEOWNERS in the
 > same change that creates it. **Owner: the `@kamp-us/control-plane` team** — CODEOWNERS lives under
 > `/.github/`, which that team already owns, so every edit to the boundary is itself a §CP change
 > reviewed by the people accountable for it.
 
-ADR [0164](../../../.decisions/0164-guard-relaxing-adr-cp-gate.md)'s "§CP by what it says" case
-resolves **here**, by path completeness — not by a probe. Where 0164 wanted a content signal, the
-answer is a CODEOWNERS row.
+A content-signal case — ADR
+[0164](../../../.decisions/0164-guard-relaxing-adr-cp-gate.md)'s "§CP by what it says" — resolves by
+path completeness, not by a probe ([ADR 0330](../../../.decisions/0330-codeowners-is-the-cp-boundary.md)).
 
 ### The one surface deliberately left uncovered: `.decisions/`
 
-Later the same day (2026-08-08, on the same thread) the founder ruled the ADR case specifically, and
-that ruling supersedes any reading of the above that would put `.decisions/` in CODEOWNERS:
+`.decisions/` carries no CODEOWNERS row: an entirely-ADR change set classifies `not-§CP` and owes no
+code-owner review.
 
-- `.decisions/` does **not** become team-owned; ADRs get **no** code-owner review. This declines a
-  widening — `.decisions/` has no CODEOWNERS row today — rather than removing a protection.
-- The guard that stays is machine-run: the citation-independent ADR contradiction sweep, run today
-  by [`governance`](../skills/governance/SKILL.md) (its corpus half, `§2`). The v1 `review-doc`
-  skill that first carried the sweep is deleted (ADR 0303).
-- **The condition attached to the ruling, and not droppable:** the gate is replaced by a periodic,
-  non-blocking **readout** of landed ADRs, ranked for consequence and tension by the
-  governance-corpus-integrity skill and surfaced on the front door. Without it, "supersede later" is
-  fiction.
-
-So an ADR classifies `not-§CP` under this model, and that is the ruled outcome, not a gap.
-
-**Re-ruled 2026-08-15 ([#5531](https://github.com/kamp-us/phoenix/issues/5531)), because the code
-had drifted the other way.** `classify()` in
-[`packages/fabrika-cli/src/ship/codeowners.ts`](../../../packages/fabrika-cli/src/ship/codeowners.ts)
-was returning a fourth state, `content-undetermined`, for any change set touching `.decisions/`,
-which routed every ADR PR onto the approval path this section says it does not owe. The founder
-ruled the doc's side — *"adrs shouldn't be control-plane"* — so the state left fabrika's `CpState`
-entirely and the verb is three-valued in code as well as here.
-
-Two boundaries on that, so nothing wider was narrowed:
-
-- **A mixed PR is unaffected.** This governs a change set that is *entirely* `.decisions/`. A PR
-  touching `.decisions/` alongside a team-owned path is `§CP` by that other path, unchanged.
-- **The machine gate is untouched.** `.decisions/` remains one of the four `GOVERNANCE_ROOTS` in
+- **A mixed PR is unaffected.** A change set touching `.decisions/` alongside a team-owned path is
+  `§CP` by that other path.
+- **The machine gate stays.** `.decisions/` remains one of the four `GOVERNANCE_ROOTS` in
   [`packages/fabrika-cli/src/review/classes.ts`](../../../packages/fabrika-cli/src/review/classes.ts),
-  so an ADR PR still owes a current-head `governance` verdict before `ship gate` is satisfied — the
-  diff-derived floor, not a caller-asserted flag. This removed a human approval, not a gate, which
-  is ADR [0274](../../../.decisions/0274-fabrika-tree-is-not-control-plane.md) §2's
-  substitution applied to the ADR case. `.github/CODEOWNERS` gained no row and lost none.
+  so an ADR PR still owes a current-head `governance` verdict before `ship gate` is satisfied — at
+  every review round ([ADR 0293](../../../.decisions/0293-governance-fires-every-round.md)), with
+  the floor reported through a check-run
+  ([ADR 0318](../../../.decisions/0318-the-governance-floor-reports-through-a-check-run.md)). This
+  is the substitution of a machine gate plus after-the-fact visibility for human approval (ADR
+  [0274](../../../.decisions/0274-fabrika-tree-is-not-control-plane.md) §2) applied to the ADR case;
+  it removed a human approval, not a gate.
+- **The sweep that stays is machine-run**: the citation-independent ADR contradiction sweep run today
+  by [`governance`](../skills/governance/SKILL.md) (its corpus half, `§2`). The v1 `review-doc`
+  skill that first carried the sweep is deleted (ADR
+  [0303](../../../.decisions/0303-retire-kampus-pipeline-plugin.md)).
+- **The visibility half of the substitution**: a periodic, non-blocking readout of landed ADRs,
+  ranked for consequence and tension by the governance-corpus-integrity skill and surfaced on the
+  front door (ADR [0274](../../../.decisions/0274-fabrika-tree-is-not-control-plane.md)).
 
-## What this changes relative to v1
+## Relation to v1
 
-v1's `pipeline-cli cp-classify`
-answers a **different** question and is not wrong at what it does: it has two independent sources —
-the `CONTROL_PLANE_RE` path regex *and* an ADR-0164 content probe over touched `.decisions/**` files
-— and four states, including `content-undetermined`, which is an obligation to probe rather than a
-verdict. fabrika's verb is CODEOWNERS-only and three-valued.
-
-Per ADR [0238](../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md), fabrika does not
-call v1 and does not patch it. v1's model is described here only so a reader who meets both knows
-which one governs a fabrika artifact.
+v1's `pipeline-cli cp-classify` answers a different question: two independent sources (the
+`CONTROL_PLANE_RE` path regex plus an ADR-0164-style content probe over touched `.decisions/**`
+files) and four states, including `content-undetermined`. Fabrika's verb is CODEOWNERS-only and
+three-valued, and fabrika does not call v1 and does not patch it (ADR
+[0238](../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)); v1's model governs no
+fabrika artifact.
 
 ## Who reads this
 
 - **Authoring sessions and briefs** naming `cp-classify`, `control-plane-paths`, `cp-cardinality` or
   `codeowners-cp` — this is the contract those verbs implement; the interface they meet is
   [the CLI interface convention](cli-interface-convention.md).
-- **Skills that mention §CP.** The rule is: state the expectation, never compute a second answer to
-  a merge-gating question ([#4227](https://github.com/kamp-us/phoenix/issues/4227) is the cost of
-  the second opinion — a routing note contradicted a settled ruling and a lane was planned around an
-  approval that never fires).
+- **Skills that mention §CP.** State the expectation; never compute a second answer to a
+  merge-gating question.
