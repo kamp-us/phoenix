@@ -91,5 +91,10 @@ regardless of membership.
 ## Pages carrying the gate today
 
 `BildirimlerPage`, `CaylakVisibilityPage`, `MecmuaDraftsPage`, `MecmuaEditorPage`,
-`MecmuaFeedPage`, `MecmuaIndexPage`, `MecmuaPostPage`, `MutesPage` — all under
+`MecmuaFeedPage`, `MecmuaIndexPage`, `MecmuaPostPage`, `MutesPage`, `WelcomePage` — all under
 `apps/web/src/pages/`.
+
+`WelcomePage` is the one whose gate also decides a **suppression**: past `sign-in` it asks whether
+this account has already been welcomed and, if so, redirects to the carried `returnTo` instead of
+rendering. That fifth rung is why its states are lifted into the pure `welcomeGate`
+([`welcomeGating.ts`](../apps/web/src/pages/welcomeGating.ts)), per the two-condition rule above.
