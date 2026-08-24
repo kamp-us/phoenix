@@ -9,7 +9,7 @@ import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
 import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
 import type {NotificationRecordInput} from "../bildirim/Notification.ts";
-import {PROMOTION_KIND} from "../bildirim/rite-emitters.ts";
+import {BACKLOG_RELEASE_KIND, PROMOTION_KIND} from "../bildirim/rite-emitters.ts";
 import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {Kunye} from "../kunye/Kunye.ts";
@@ -155,9 +155,10 @@ describe("resolveTandem — order-independent promotion", () => {
 	);
 });
 
-// The emit is keyed on `promoted`: a landed flip emits ONE `terfi` bildirimi, an
-// idempotent no-op flip emits nothing (#1696).
-describe("resolveTandem — promotion ceremony bildirimi (#1696)", () => {
+// The emits are keyed on `promoted`: a landed flip emits ONE `terfi` bildirimi and ONE
+// `backlog-release` carrying the swept-entry count (#7061); an idempotent no-op flip
+// emits nothing (#1696).
+describe("resolveTandem — promotion ceremony bildirimleri (#1696, #7061)", () => {
 	const promotionRecording = () => {
 		const emits: NotificationRecordInput[] = [];
 		const layer = makeNotificationStub({
@@ -169,7 +170,7 @@ describe("resolveTandem — promotion ceremony bildirimi (#1696)", () => {
 		return {layer, emits};
 	};
 
-	it.effect("a landed flip emits one terfi notification for the promoted çaylak", () => {
+	it.effect("a landed flip emits terfi + backlog-release (count 0 — empty backlog)", () => {
 		const {layer, emits} = promotionRecording();
 		return Effect.gen(function* () {
 			yield* resolveTandem("u-caylak");
@@ -180,6 +181,14 @@ describe("resolveTandem — promotion ceremony bildirimi (#1696)", () => {
 					targetKind: "user",
 					targetId: "u-caylak",
 					actorId: null,
+				},
+				{
+					recipientId: "u-caylak",
+					kind: BACKLOG_RELEASE_KIND,
+					targetKind: "user",
+					targetId: "u-caylak",
+					actorId: null,
+					count: 0,
 				},
 			]);
 		}).pipe(

@@ -29,6 +29,14 @@ export function rowUnread(
 	return readAt == null && !markedThisSession && !allMarkedThisSession;
 }
 
+// R1.1 on #7049 ruled the count into the backlog-release copy, with a distinct zero arm
+// for a sweep that published nothing. Both arms are required fields, so shipping the kind
+// with either arm missing is a compile error — "0 yazınız…" stays unrepresentable.
+const BACKLOG_RELEASE_COPY: {zero: string; some: (count: number) => string} = {
+	zero: "bundan sonra yazılarınız herkese açık",
+	some: (count) => `${count} yazınız artık herkese açık`,
+};
+
 // `satisfies Record<NotificationKind, …>` keeps the map exhaustive over the shared kind
 // union (#2016): a new emitter kind without its copy is a compile error, not a raw wire
 // identifier rendered to a reader.
@@ -42,6 +50,8 @@ const KIND_COPY = {
 	"report-filed": (count) =>
 		count > 1 ? `${count} yeni içerik bildirildi` : "yeni bir içerik bildirildi",
 	"caylak-pending": () => "yeni bir çaylak divanda incelenmeyi bekliyor",
+	"backlog-release": (count) =>
+		count > 0 ? BACKLOG_RELEASE_COPY.some(count) : BACKLOG_RELEASE_COPY.zero,
 } satisfies Record<NotificationKind, (count: number) => string>;
 
 /** An unknown kind — a future emitter's, read by an older client — degrades to the raw kind. */

@@ -26,7 +26,7 @@ import {Mute} from "../mute/Mute.ts";
 import {mutations} from "./mutations.ts";
 import {makePasaportStub} from "./Pasaport.testing.ts";
 import {noopLive, relationStoreNoModerators} from "./promote-live.testing.ts";
-import {NO_SANDBOX_SWEEP} from "./sandbox-sweep.ts";
+import {NO_SANDBOX_SWEEP, type SandboxSweep} from "./sandbox-sweep.ts";
 
 // A landed flip re-resolves the promoted `User` for the #1886 live-publish, so a
 // `promoted: true` stub must answer `getUsersByIds`.
@@ -419,7 +419,7 @@ describe("user.vouch — kefil bildirimi (#1695)", () => {
 	);
 });
 
-describe("user.promote — terfi bildirimi (#1696)", () => {
+describe("user.promote — terfi + backlog-release bildirimleri (#1696, #7061)", () => {
 	const promotionRecording = () => {
 		const emits: NotificationRecordInput[] = [];
 		const layer = makeNotificationStub({
@@ -431,13 +431,24 @@ describe("user.promote — terfi bildirimi (#1696)", () => {
 		return {layer, emits};
 	};
 
+	// 2 posts + 1 comment swept public ⇒ the backlog-release count is 3.
+	const sweptBacklog: SandboxSweep = {
+		feed: true,
+		commentThreads: ["p-parent"],
+		definitionTerms: [],
+		postIds: ["p1", "p2"],
+		commentIds: ["c1"],
+		definitionIds: [],
+	};
+
 	const promoteLayers = (
 		notification: ReturnType<typeof makeNotificationStub>,
 		promoted: boolean,
+		sweep: SandboxSweep = NO_SANDBOX_SWEEP,
 	) =>
 		Layer.mergeAll(
 			makePasaportStub({
-				promoteToYazar: () => Effect.succeed({promoted, sweep: NO_SANDBOX_SWEEP}),
+				promoteToYazar: () => Effect.succeed({promoted, sweep}),
 				...promotedUsersByIds("u-target"),
 			}),
 			relationStoreOf(["u-mod"]),
@@ -447,19 +458,40 @@ describe("user.promote — terfi bildirimi (#1696)", () => {
 			noopLive,
 		);
 
-	it.effect("a landed mod promotion emits ONE terfi notification for the promoted member", () => {
+	it.effect(
+		"a landed mod promotion emits ONE terfi and ONE backlog-release carrying the swept count",
+		() => {
+			const {layer, emits} = promotionRecording();
+			return Effect.gen(function* () {
+				yield* promote("u-target");
+				assert.deepStrictEqual(emits, [
+					{
+						recipientId: "u-target",
+						kind: "terfi",
+						targetKind: "user",
+						targetId: "u-target",
+						actorId: null,
+					},
+					{
+						recipientId: "u-target",
+						kind: "backlog-release",
+						targetKind: "user",
+						targetId: "u-target",
+						actorId: null,
+						count: 3,
+					},
+				]);
+			}).pipe(Effect.provide(promoteLayers(layer, true, sweptBacklog)));
+		},
+	);
+
+	it.effect("a zero-entry promotion's backlog-release carries count 0 (the zero arm's row)", () => {
 		const {layer, emits} = promotionRecording();
 		return Effect.gen(function* () {
 			yield* promote("u-target");
-			assert.deepStrictEqual(emits, [
-				{
-					recipientId: "u-target",
-					kind: "terfi",
-					targetKind: "user",
-					targetId: "u-target",
-					actorId: null,
-				},
-			]);
+			const backlogEmits = emits.filter((e) => e.kind === "backlog-release");
+			assert.strictEqual(backlogEmits.length, 1);
+			assert.strictEqual(backlogEmits[0]?.count, 0);
 		}).pipe(Effect.provide(promoteLayers(layer, true)));
 	});
 
