@@ -137,6 +137,15 @@ export const PHOENIX_CAYLAK_VISIBILITY = "phoenix-caylak-visibility";
  */
 export const PHOENIX_FUNNEL_COHORT = "phoenix-funnel-cohort";
 
+/**
+ * The signed-in-çaylak landing-rite dark-ship seam (#7046, epic #4304). The SINGLE seam the
+ * landing page's signed-in-çaylak rite explainer gates behind: with it off (default) `/`
+ * renders exactly as today for anonymous and signed-in visitors alike — the anonymous join CTA
+ * untouched, every signed-in landing quiet; with it on, a signed-in çaylak sees the rite
+ * framing addressed to them instead of no framing. Default-off, ADR 0083.
+ */
+export const PHOENIX_LANDING_CAYLAK_RITE = "phoenix-landing-caylak-rite";
+
 /** A declared flag paired with its default variation — the row the flags console lists (#2742). */
 export interface FlagDeclaration {
 	readonly key: string;
@@ -164,4 +173,5 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: MEMBER_MUTE, defaultValue: false},
 	{key: PHOENIX_CAYLAK_VISIBILITY, defaultValue: false},
 	{key: PHOENIX_FUNNEL_COHORT, defaultValue: false},
+	{key: PHOENIX_LANDING_CAYLAK_RITE, defaultValue: false},
 ];
