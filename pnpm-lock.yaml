@@ -189,7 +189,7 @@ patchedDependencies:
     hash: e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c
     path: patches/@nkzw__fate@1.3.1.patch
   alchemy@2.0.0-beta.59:
-    hash: 204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc
+    hash: 7ebf6db1dec6c55e393f386de54a0a96badd1651cb0eed08392551254552ede9
     path: patches/alchemy@2.0.0-beta.59.patch
   effect@4.0.0-beta.92:
     hash: ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89
@@ -282,7 +282,7 @@ importers:
         version: 0.2.0
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
+        version: 2.0.0-beta.59(patch_hash=7ebf6db1dec6c55e393f386de54a0a96badd1651cb0eed08392551254552ede9)(234b374c9d508cf92321aefc5efec8fe)
       better-auth:
         specifier: 'catalog:'
         version: 1.6.23(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
@@ -388,7 +388,7 @@ importers:
     dependencies:
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
+        version: 2.0.0-beta.59(patch_hash=7ebf6db1dec6c55e393f386de54a0a96badd1651cb0eed08392551254552ede9)(234b374c9d508cf92321aefc5efec8fe)
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
@@ -419,7 +419,7 @@ importers:
         version: 1.6.23(21577f855b9191067dbbab69dd47e65a)
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
+        version: 2.0.0-beta.59(patch_hash=7ebf6db1dec6c55e393f386de54a0a96badd1651cb0eed08392551254552ede9)(234b374c9d508cf92321aefc5efec8fe)
       better-auth:
         specifier: 'catalog:'
         version: 1.6.23(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
@@ -484,7 +484,7 @@ importers:
         version: 25.6.2
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
+        version: 2.0.0-beta.59(patch_hash=7ebf6db1dec6c55e393f386de54a0a96badd1651cb0eed08392551254552ede9)(234b374c9d508cf92321aefc5efec8fe)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -815,7 +815,7 @@ importers:
         version: 25.6.2
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
+        version: 2.0.0-beta.59(patch_hash=7ebf6db1dec6c55e393f386de54a0a96badd1651cb0eed08392551254552ede9)(234b374c9d508cf92321aefc5efec8fe)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -957,7 +957,7 @@ importers:
         version: 25.6.2
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
+        version: 2.0.0-beta.59(patch_hash=7ebf6db1dec6c55e393f386de54a0a96badd1651cb0eed08392551254552ede9)(234b374c9d508cf92321aefc5efec8fe)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -4685,7 +4685,7 @@ snapshots:
 
   '@alchemy.run/better-auth@2.0.0-beta.59(1bff1674407b05b4dd562007a8f75a43)':
     dependencies:
-      alchemy: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
+      alchemy: 2.0.0-beta.59(patch_hash=7ebf6db1dec6c55e393f386de54a0a96badd1651cb0eed08392551254552ede9)(234b374c9d508cf92321aefc5efec8fe)
       better-auth: 1.6.23(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     transitivePeerDependencies:
@@ -6924,7 +6924,7 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  alchemy@2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe):
+  alchemy@2.0.0-beta.59(patch_hash=7ebf6db1dec6c55e393f386de54a0a96badd1651cb0eed08392551254552ede9)(234b374c9d508cf92321aefc5efec8fe):
     dependencies:
       '@alchemy.run/node-utils': 0.0.5
       '@aws-sdk/credential-providers': 3.1053.0

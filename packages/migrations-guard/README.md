@@ -45,8 +45,12 @@ The pure core ([`src/migrations-guard.ts`](src/migrations-guard.ts)) evaluates a
 1. **Consistency** — the tree is a shape both tools accept: every `.sql` under
    `migrationsDir` is one of the two layouts above, every migration directory carries a
    `snapshot.json`, no `meta/` directory is back, no two migrations share an apply prefix,
-   every migration has a numeric prefix, and no **new** flat migration was hand-added (the
-   flat layout is frozen history). The `.sql` sweep matches alchemy's reach exactly:
+   every migration has a numeric prefix, no **new** flat migration was hand-added (the
+   flat layout is frozen history), and **every migration is in the baseline** — a new one
+   lands with its baseline row in the same change (ADR 0309 amendment,
+   [#7055](https://github.com/kamp-us/phoenix/issues/7055)), so the immutability property
+   below covers the whole tree from the moment a migration exists. The `.sql` sweep
+   matches alchemy's reach exactly:
    `listSqlFiles` recurses, so the guard recurses. `0001_x/evil.sql` — which would sort
    *into* applied history — and `<dir>/sub/y.sql` both red rather than passing unseen. A
    tree with zero migrations is a violation, not a pass: fail-closed on zero scope, ADR
@@ -56,19 +60,19 @@ The pure core ([`src/migrations-guard.ts`](src/migrations-guard.ts)) evaluates a
    (`Number.parseInt(name.split("_")[0], 10)`), so a new migration can never be applied
    ahead of applied history.
 3. **Immutability** — every migration recorded in the baseline (`migration-hashes.json`)
-   has an **unchanged** SQL content hash. An edit to landed history fails; a **new
-   trailing** migration absent from the baseline passes (it is not yet history); a
-   deleted/renamed baselined migration fails.
+   still exists under its exact apply id with an **unchanged** SQL content hash. An edit
+   to landed history fails, and so does a deleted/renamed baselined migration — the rename
+   changes the apply id production recorded, which is what makes the set replay.
 
 ## The baseline (`migration-hashes.json`)
 
 Immutability is checked against a **committed baseline** — `tag → sha256` of the
 migration's SQL, where the tag is the flat file's stem or the migration directory's name.
-`check` recomputes and compares. A new trailing migration is simply absent from the
-baseline and passes; adding it is a **deliberate, audited** act:
+`check` recomputes and compares. A migration absent from the baseline is a consistency
+violation, so the row is added in the same reviewed change that adds the migration:
 
 ```bash
-node packages/migrations-guard/src/bin.ts baseline   # regenerate after a deliberate re-baseline
+node packages/migrations-guard/src/bin.ts baseline   # regenerate; commit beside the new migration
 ```
 
 Because the tag for a flat migration is unchanged by the v7 cutover, the hashes recorded
@@ -85,7 +89,7 @@ migrations newly brought under the check.
 - **`src/bin.ts`** — the `effect/unstable/cli` bin. `check` is the gate (exits **1** on
   any violation); `baseline` regenerates the committed baseline.
 - **`src/*.unit.test.ts`** — the core's unit tests: each property's violations, the
-  new-trailing-migration pass, and the fs round-trip against a temp tree.
+  baseline-row-lands-with-the-migration rule, and the fs round-trip against a temp tree.
 
 ## Usage
 

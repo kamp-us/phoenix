@@ -99,3 +99,36 @@ covers. It still fails closed on zero scope (ADR
   directory under the immutability check.
 - `.patterns/alchemy-drizzle-d1.md` and `DEVELOPMENT.md` are updated to the `generate`
   path; ADR 0108 is marked superseded and points here.
+
+## Amendment (2026-08-23, #7055): landed migrations are immutable in name, and the migrate path refuses drift
+
+The cutover's no-replay property held only for migrations the baseline knew. A migration
+that landed *after* the last deliberate re-baseline passed the guard as "new trailing
+history" — so a later rename or deletion of it (which changes its apply id) was invisible
+to CI, and alchemy's exact-id skip then replayed its SQL against every stage that had
+already applied it. PR #7034 hit this live: its stage applied two migrations as flat
+files, an in-PR repair moved them to the directory layout, and the redeploy died on
+`table user_activity_day already exists`. Two changes close the two halves:
+
+1. **Every migration lands with its baseline row** (`migrations-guard` consistency). A
+   directory migration absent from `migration-hashes.json` is now a violation — the fix is
+   running `node packages/migrations-guard/src/bin.ts baseline` in the same change. That
+   puts the whole tree under the immutability check from the moment it exists, so any
+   later rename or deletion of a landed migration file reds in CI (the existing
+   baselined-tag-missing violation) and a purely additive change keeps passing. Writing
+   the baseline stays a reviewed act — it is now reviewed inside the PR that adds the
+   migration, not deferred to an eventual re-baseline.
+2. **The migrate path surfaces record-vs-disk drift and asks adopt-or-wipe** (the
+   `patches/alchemy@2.0.0-beta.59.patch` D1 hunk, ADR 0038). Before applying anything,
+   `applyMigrations` compares the database's recorded migration ids against the on-disk
+   files; a recorded id gone from disk refuses the deploy instead of replaying. Renames
+   are classified by content hash against the resource state's last-deploy
+   `migrationsHashes`: `migrationsDriftStrategy: "adopt"` (phoenix: deploy with
+   `D1_MIGRATIONS_DRIFT=adopt`, `worker/env.ts`) re-keys a content-identical rename in the
+   migrations table without re-running its SQL, and never covers a deletion — those take
+   the wipe route (`alchemy destroy --stage <stage>`) or restoring the file. This is what
+   covers the within-PR window CI cannot see: a migration applied to a stage and then
+   renamed before it was ever baselined.
+
+The behavior is pinned by `patch-pin-alchemy-d1-migrations-drift.unit.test.ts`
+(`.patterns/dependency-patch-behavior-pins.md`).

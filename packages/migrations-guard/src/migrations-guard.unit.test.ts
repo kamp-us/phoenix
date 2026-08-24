@@ -128,6 +128,22 @@ describe("consistency", () => {
 		});
 		expect(kinds(t)).toContain("consistency");
 	});
+	it("flags a directory migration absent from the baseline (ADR 0309 amendment)", () => {
+		const t = tree({migrations: [...tree().migrations, dir("20260901120000_next", "hNEW")]});
+		const v = evaluate(t, baseline);
+		expect(v.ok).toBe(false);
+		expect(
+			v.violations.some(
+				(x) => x.kind === "consistency" && x.message.includes("lands with its baseline row"),
+			),
+		).toBe(true);
+	});
+	it("accepts a purely additive directory migration landed with its baseline row", () => {
+		const t = tree({migrations: [...tree().migrations, dir("20260901120000_next", "hNEW")]});
+		const v = evaluate(t, {...baseline, "20260901120000_next": "hNEW"});
+		expect(v.ok).toBe(true);
+		expect(v.violations).toEqual([]);
+	});
 });
 
 describe("ordering", () => {
@@ -171,9 +187,23 @@ describe("immutability", () => {
 		});
 		expect(kinds(t)).toContain("immutability");
 	});
-	it("PASSES a new trailing directory migration absent from the baseline", () => {
-		const t = tree({migrations: [...tree().migrations, dir("20260901120000_next", "hNEW")]});
-		expect(evaluate(t, baseline).ok).toBe(true);
+	it("judges a renamed baselined migration as both a missing tag and (unbaselined) new id", () => {
+		// The #7034 shape: `0002_c.sql` became `0002_c/migration.sql` — the baseline tag is
+		// keyed the same, so the rename reads as an edited-or-moved id, never a silent pass.
+		const t = tree({
+			migrations: [
+				flat("0000_a", "h0"),
+				flat("0001_b", "h1"),
+				dir("20260901120000_c_moved", "h2"),
+				dir("20260820035306_v7_baseline", "hb"),
+			],
+		});
+		const v = evaluate(t, baseline);
+		expect(v.ok).toBe(false);
+		expect(
+			v.violations.some((x) => x.kind === "immutability" && x.message.includes("0002_c")),
+		).toBe(true);
+		expect(v.violations.some((x) => x.kind === "consistency")).toBe(true);
 	});
 });
 

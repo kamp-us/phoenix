@@ -82,10 +82,20 @@ To add a migration:
 1. Edit `worker/db/drizzle/schema.ts`.
 2. Run `pnpm exec drizzle-kit generate --config=worker/db/drizzle.config.ts --name=<name>` in `apps/web`. It diffs against the newest committed `snapshot.json` and writes one new `<timestamp>_<name>/` directory.
 3. Read the emitted `migration.sql`. SQLite has no `ALTER COLUMN`, so a column change comes out as a `__new_*` table rebuild — check that shape is what you want before committing it.
+4. Run `node packages/migrations-guard/src/bin.ts baseline` and commit the regenerated `packages/migrations-guard/migration-hashes.json` beside the migration — every migration lands with its baseline row (ADR 0309 amendment, #7055), so a later rename or deletion of it reds in CI.
 
-Both files in the directory are committed. `packages/migrations-guard` (the `migrations-guard.yml` job) reds on a hand-added flat migration, a directory missing its `snapshot.json`, a second `.sql` beside `migration.sql`, and any edit to a landed migration.
+Both files in the directory are committed. `packages/migrations-guard` (the `migrations-guard.yml` job) reds on a hand-added flat migration, a directory missing its `snapshot.json`, a second `.sql` beside `migration.sql`, a migration missing its baseline row, and any edit — or rename/deletion, which changes the apply id — of a landed migration.
 
 alchemy applies the committed `.sql` on deploy; the integration tier applies the full set against real D1.
+
+### Never rename or delete an applied migration — the deploy refuses drift
+
+A migration's apply id is its path relative to `migrationsDir`, and alchemy skips an applied migration by exact id match — so renaming or deleting an already-applied file re-runs its SQL against every database that recorded the old id (the #7034 stage outage: a flat→directory repair replayed `CREATE TABLE` on the PR stage). The patched `D1.Database` (`patches/alchemy@2.0.0-beta.59.patch`, ADR 0038 + ADR 0309 amendment) compares the database's recorded ids against the on-disk files before applying anything and **refuses the deploy with an adopt-or-wipe report** instead of replaying:
+
+- **adopt** — for a rename whose SQL is byte-identical (proven against the state's last-deploy hash map): deploy with `D1_MIGRATIONS_DRIFT=adopt` (`worker/env.ts` → `migrationsDriftStrategy` on `PhoenixDb`) to re-key the record in `drizzle_migrations` without re-running the SQL. One-shot operator consent, never a standing setting.
+- **wipe** — for a deletion, or a rename whose content also changed: destroy and recreate the stage's database (`alchemy destroy --stage <stage>`), or restore the recorded file unchanged.
+
+The behavior is pinned by `apps/web/tests/integration/patch-pin-alchemy-d1-migrations-drift.unit.test.ts` ([dependency-patch-behavior-pins.md](./dependency-patch-behavior-pins.md)).
 
 ### Dev binds D1 *remote* and applies *no* migrations
 
