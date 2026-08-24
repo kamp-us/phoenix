@@ -1,0 +1,100 @@
+/* The /hosgeldin welcome moment (#7043, epic #4304) — one screen, explicitly not a
+   tour (#4266). Role tokens only — no color literal. */
+
+.kp-welcome {
+	padding: var(--s-4) 0;
+}
+
+.kp-welcome__inner {
+	max-width: calc(var(--s-8) * 16);
+	margin: 0 auto;
+	padding: 0 var(--s-4);
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-4);
+}
+
+.kp-welcome__masthead {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-welcome__title {
+	font: var(--t-h-page);
+	color: var(--text-primary);
+	margin: 0;
+}
+
+.kp-welcome__lede {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.kp-welcome__section {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-welcome__heading {
+	font: var(--t-h-feed);
+	color: var(--text-primary);
+	margin: 0;
+}
+
+.kp-welcome__line {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	margin: 0;
+}
+
+/* The unvouched çaylak's standing (#4261, via CaylakStatusBlock's settled copy):
+   words instead of a bar, because no karma number promotes an unvouched account. */
+.kp-welcome__vouch-needed {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-welcome__vouch-message {
+	font: var(--t-h-feed);
+	color: var(--text-primary);
+	margin: 0;
+}
+
+.kp-welcome__vouch-hint {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.kp-welcome__facts {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	margin: 0;
+}
+
+.kp-welcome__fact {
+	display: flex;
+	gap: var(--s-2);
+}
+
+.kp-welcome__term {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	min-width: 6ch;
+	margin: 0;
+}
+
+.kp-welcome__value {
+	font: var(--t-body-sm);
+	color: var(--text-primary);
+	margin: 0;
+}
+
+.kp-welcome__continue {
+	align-self: flex-start;
+}
