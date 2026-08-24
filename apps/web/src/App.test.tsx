@@ -11,6 +11,8 @@ import type {ReactNode} from "react";
 import {MemoryRouter} from "react-router";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {App} from "./App";
+import {WELCOME_SEEN_SCHEMA, welcomeSeenKey} from "./components/onboarding/welcomeSeen";
+import {WELCOME_PATH} from "./pages/welcomeGating";
 
 const {PUBLIC_CLIENT} = vi.hoisted(() => ({PUBLIC_CLIENT: {__tier: "public"} as never}));
 
@@ -43,6 +45,24 @@ vi.mock("react-fate", async (importOriginal) => {
 vi.mock("./pages/PanoFeed", () => ({
 	PanoFeed: ({host}: {host?: string}) => <div data-testid="eager-pano-feed">{host ?? "all"}</div>,
 }));
+
+// Stubbed inert for the same reason as PanoFeed: the intercept tests assert WHERE the post-auth
+// redirect landed, and the surface's own contract is proven in `WelcomePage.test.tsx`. The stub
+// echoes the live location, which is what carries the original `returnTo` through the detour.
+vi.mock("./pages/WelcomePage", async () => {
+	const {useLocation} = await import("react-router");
+	return {
+		WelcomePage: () => {
+			const location = useLocation();
+			return <div data-testid="welcome-stub">{`${location.pathname}${location.search}`}</div>;
+		},
+	};
+});
+
+// `AuthPage` calls `useFateClient()` at render, and the spied `FateClient` above provides no real
+// context — so the one route the intercept starts from needs an inert stand-in to be reachable
+// here at all. Its own behaviour is not under test in this file.
+vi.mock("./pages/AuthPage", () => ({AuthPage: () => <div data-testid="auth-stub" />}));
 
 vi.mock("./fate/publicClient", () => ({getPublicFateClient: () => PUBLIC_CLIENT}));
 
@@ -103,14 +123,21 @@ vi.mock("./components/bildirim/useBildirimUnread", () => ({useBildirimUnread: ()
 const flags = vi.hoisted(() => ({
 	mecmua: false,
 	mecmuaFeed: false,
+	welcome: false,
 	signedIn: false,
 }));
 vi.mock("./flags/useFlag", async () => {
-	const {MECMUA_PUBLIC_READ, MECMUA_FEED} = await import("./flags/keys");
+	const {MECMUA_PUBLIC_READ, MECMUA_FEED, PHOENIX_WELCOME} = await import("./flags/keys");
 	return {
 		useFlag: (key: string) => ({
 			value:
-				key === MECMUA_PUBLIC_READ ? flags.mecmua : key === MECMUA_FEED ? flags.mecmuaFeed : false,
+				key === MECMUA_PUBLIC_READ
+					? flags.mecmua
+					: key === MECMUA_FEED
+						? flags.mecmuaFeed
+						: key === PHOENIX_WELCOME
+							? flags.welcome
+							: false,
 			loading: false,
 		}),
 	};
@@ -647,5 +674,94 @@ describe("Authed feed snapshot wiring (#2321)", () => {
 		});
 		expect(snapshotSpies.hydrateAuthedClient).not.toHaveBeenCalled();
 		expect(snapshotSpies.installAuthedSnapshotPersistence).not.toHaveBeenCalled();
+	});
+});
+
+// The post-auth welcome intercept (#7043, epic #4304). These pin the WIRING at the redirect
+// itself — the pure decision is `postAuthDestination` (`welcomeGating.unit.test.ts`) and the
+// surface is `WelcomePage.test.tsx`; what only shows up here is whether the effect consults the
+// marker and carries the original `returnTo` through the detour.
+describe("post-auth welcome intercept (#7043)", () => {
+	const AUTH_ROUTE = `/auth?returnTo=${encodeURIComponent("/pano")}`;
+
+	beforeEach(() => {
+		fateMounts.length = 0;
+		sessionState = {data: null, isPending: true};
+		flags.welcome = false;
+		localStorage.clear();
+	});
+	afterEach(() => {
+		flags.welcome = false;
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	// REGRESSION (criterion 1): with the flag at its default the redirect is exactly today's —
+	// the marker is never even read, so a stale marker cannot change where a signup lands.
+	it("flag off: the post-auth redirect lands on the returnTo, never the welcome surface", () => {
+		renderApp(AUTH_ROUTE);
+		act(() => {
+			setSession(SIGNED_IN);
+		});
+		expect(screen.queryByTestId("welcome-stub")).toBeNull();
+		expect(screen.getByTestId("eager-pano-feed")).toBeTruthy();
+	});
+
+	it("flag off with a marker already set: still today's redirect", () => {
+		localStorage.setItem(welcomeSeenKey(WELCOME_SEEN_SCHEMA, "u1"), "1");
+		renderApp(AUTH_ROUTE);
+		act(() => {
+			setSession(SIGNED_IN);
+		});
+		expect(screen.queryByTestId("welcome-stub")).toBeNull();
+		expect(screen.getByTestId("eager-pano-feed")).toBeTruthy();
+	});
+
+	// Criterion 2: the brand-new account's first post-signup navigation detours, and the target it
+	// was headed for rides along so "devam et" can hand it back.
+	it("flag on, never welcomed: the first post-auth navigation lands on the welcome surface", () => {
+		flags.welcome = true;
+		renderApp(AUTH_ROUTE);
+		act(() => {
+			setSession(SIGNED_IN);
+		});
+		expect(screen.getByTestId("welcome-stub").textContent).toBe(
+			`${WELCOME_PATH}?returnTo=${encodeURIComponent("/pano")}`,
+		);
+	});
+
+	it("flag on, no returnTo: the detour carries the cold fallback /", () => {
+		flags.welcome = true;
+		renderApp("/auth");
+		act(() => {
+			setSession(SIGNED_IN);
+		});
+		expect(screen.getByTestId("welcome-stub").textContent).toBe(
+			`${WELCOME_PATH}?returnTo=${encodeURIComponent("/")}`,
+		);
+	});
+
+	// Criterion 4, at the intercept: the marker suppresses the detour on every later arrival.
+	it("flag on, already welcomed: the intercept is suppressed and the redirect is today's", () => {
+		flags.welcome = true;
+		localStorage.setItem(welcomeSeenKey(WELCOME_SEEN_SCHEMA, "u1"), "1");
+		renderApp(AUTH_ROUTE);
+		act(() => {
+			setSession(SIGNED_IN);
+		});
+		expect(screen.queryByTestId("welcome-stub")).toBeNull();
+		expect(screen.getByTestId("eager-pano-feed")).toBeTruthy();
+	});
+
+	// The marker is per account, so one welcomed account on a shared browser never silently
+	// swallows another's welcome.
+	it("flag on, a DIFFERENT account's marker set: this account is still welcomed", () => {
+		flags.welcome = true;
+		localStorage.setItem(welcomeSeenKey(WELCOME_SEEN_SCHEMA, "someone-else"), "1");
+		renderApp(AUTH_ROUTE);
+		act(() => {
+			setSession(SIGNED_IN);
+		});
+		expect(screen.getByTestId("welcome-stub")).toBeTruthy();
 	});
 });
