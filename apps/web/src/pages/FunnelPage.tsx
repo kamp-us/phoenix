@@ -2,9 +2,12 @@
  * Access is server-authoritative: `funnel.summary` denies a non-mod `UNAUTHORIZED`, which
  * `<Screen>` renders as "yetkin yok". Deliberately no client-side role check here.
  */
+import {FunnelCohorts} from "../components/funnel/FunnelCohorts";
 import {FunnelSummary} from "../components/funnel/FunnelSummary";
 import {Alert} from "../components/ui/Alert";
 import {Screen} from "../fate/Screen";
+import {FlagGate} from "../flags/FlagGate";
+import {PHOENIX_FUNNEL_COHORT} from "../flags/keys";
 import "../components/funnel/Funnel.css";
 
 export function FunnelPage() {
@@ -26,6 +29,21 @@ export function FunnelPage() {
 						<FunnelSummary />
 					</Screen>
 				</section>
+
+				{/* The cohort display gates on BOTH sides of the wire (founder ruling R1.2 on
+				    #7028): the resolvers resolve behind `phoenix-funnel-cohort`, and this client
+				    gate keeps the section — requests included — out of the DOM entirely while the
+				    flag is off, so the page stays byte-identical to the pool readout. */}
+				<FlagGate flag={PHOENIX_FUNNEL_COHORT}>
+					<section aria-label="kozet hunisi">
+						<Screen
+							fallback={<p className="kp-funnel__loading">yükleniyor…</p>}
+							error={({code}) => <AccessError code={code} />}
+						>
+							<FunnelCohorts />
+						</Screen>
+					</section>
+				</FlagGate>
 			</div>
 		</main>
 	);

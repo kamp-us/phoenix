@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import * as report from "../report/codes.ts";
+import * as report from "../exit-codes.ts";
 import * as review from "../review/codes.ts";
 import * as triage from "../triage/codes.ts";
 import * as governance from "./codes.ts";

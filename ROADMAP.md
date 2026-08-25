@@ -48,7 +48,7 @@ flowchart TD
 		camp_ge_it_product_push["Geçit product push"]:::active
 		camp_lane_integrity["Lane integrity"]:::active
 		camp_epic_lanes["Epic lanes"]:::paused
-		camp_di_taxis_readme_passes["Diátaxis README passes"]:::paused
+		camp_di_taxis_readme_passes["Diátaxis README passes"]:::active
 	end
 	ext_3642["#3642"]:::external
 	ext_3833["#3833"]:::external
@@ -110,7 +110,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Geçit product push | #24 | active |
 | Lane integrity | #48 | active |
 | Epic lanes | #49 | paused |
-| Diátaxis README passes | #50 | paused |
+| Diátaxis README passes | #50 | active |
 
 **The table is a parsed contract.** It is the single source whatever writes a campaign row (appending it `paused` and later flipping its state) and the lifecycle guard that reads it both bind to, so the grammar is pinned here rather than re-derived at either end:
 

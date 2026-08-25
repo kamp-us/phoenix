@@ -24,7 +24,7 @@
  * (`claude-plugins/fabrika/docs/hook-surface.md`, *The dispatch-failure policy point*).
  */
 
-import {EMPTY_STDIN as REPORT_EMPTY_STDIN} from "../report/codes.ts";
+import {EMPTY_STDIN as SHARED_EMPTY_STDIN} from "../exit-codes.ts";
 import {NO_IMPLEMENTATION} from "../verb.ts";
 
 /** The answer is on stdout. Restated because {@link HOOK_EXIT_TABLE} spans the whole matrix. */
@@ -33,7 +33,7 @@ const ANSWER = 0;
 const FAILED = 1;
 
 /** Stdin was read and held nothing. An absent envelope is not an envelope to judge. */
-export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
+export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 
 /**
  * Bytes arrived on fd 0 and they are not a harness hook envelope — unparseable JSON, a non-object,

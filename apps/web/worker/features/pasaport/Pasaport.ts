@@ -57,6 +57,12 @@ import {
 import {contributionOrdering} from "./ordering.ts";
 import type {ProfileRow} from "./profile-fields.ts";
 import {NO_SANDBOX_SWEEP, type SandboxSweep} from "./sandbox-sweep.ts";
+import {
+	recordCaptured,
+	shouldCapture,
+	upsertUserActivityDay,
+	utcDayBucket,
+} from "./user-activity-day.ts";
 import {toUserRow, type UserRow} from "./user-fields.ts";
 import {checkUsername, normalizeUsername} from "./username-rule.ts";
 
@@ -630,6 +636,23 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 					if (session?.user) {
 						const banState = yield* readBanState(session.user.id);
 						if (banState.banned) return null;
+					}
+					// Activity-day capture (#7029, epic #6767): live on deploy, no flag (R1.2 on
+					// #7028). Memo-gated so the hot path costs ~one D1 write per active user per
+					// day. The memo is recorded BEFORE the write: even a failing attempt is spent
+					// once — `ON CONFLICT DO NOTHING` makes any post-restart re-attempt idempotent.
+					if (session?.user) {
+						const day = utcDayBucket(new Date());
+						if (shouldCapture(session.user.id, day)) {
+							recordCaptured(session.user.id, day);
+							// The capture never fails a login (#7029): both errors and defects are
+							// logged into the worker error pipeline (Sentry-surfaced) and swallowed.
+							yield* run((db) => upsertUserActivityDay(db, session.user.id, day)).pipe(
+								Effect.catchCause((cause) =>
+									Effect.logError("[pasaport.captureUserActivityDay]", cause),
+								),
+							);
+						}
 					}
 					return session;
 				}),

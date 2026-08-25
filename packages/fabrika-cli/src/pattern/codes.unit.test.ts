@@ -1,7 +1,7 @@
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {allocatedCodes, verbLocalCodesIn} from "../exit-code-alignment.ts";
-import * as report from "../report/codes.ts";
+import * as report from "../exit-codes.ts";
 import * as codes from "./codes.ts";
 
 const GROUP_DIR = fileURLToPath(new URL(".", import.meta.url));

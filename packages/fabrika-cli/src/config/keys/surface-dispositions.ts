@@ -254,6 +254,11 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 		note: "a `.gitignore` covering the lane ledger's root; every lane verb works without it and the only cost is a machine-local ledger committed by accident (#5777)",
 	},
 	{
+		id: "claude-md-section",
+		disposition: "degrade",
+		note: 'the operator-first "work flows through fabrika" CLAUDE.md section routing sessions into the pipeline; no verb reads it, and the only cost of its absence is work dispatched around the gates — `status bootstrap claude-md-section` appends the canonical text, which is the other axis',
+	},
+	{
 		id: "temp-root",
 		disposition: "fail-loud",
 		note: "a writable OS temp root outside the tree; a spike workspace inside the repo is the contamination the disposal check exists to prevent",

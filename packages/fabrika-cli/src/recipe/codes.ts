@@ -14,40 +14,40 @@
  */
 
 import {
-	BAD_SECTIONS as REPORT_BAD_SECTIONS,
-	NO_TARGET as REPORT_NO_TARGET,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
-	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
-} from "../report/codes.ts";
+	BAD_SECTIONS as SHARED_BAD_SECTIONS,
+	NO_TARGET as SHARED_NO_TARGET,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
+	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
+} from "../exit-codes.ts";
 
 /**
  * The target is proven absent: no lane under the lanes root, or a pull request that does not exist
  * or is closed. The base's target seat — the thing the verb was pointed at is not there to act on.
  */
-export const TARGET_ABSENT = REPORT_NO_TARGET;
+export const TARGET_ABSENT = SHARED_NO_TARGET;
 
 /**
  * A record was read in full and is not the shape: a `workflow.json` the lane compiler refuses, an
  * `events.jsonl` line that does not parse, or a log the machine cannot replay. The base's section
  * seat widened to a whole on-disk record, on the `lane` precedent.
  */
-export const MALFORMED_RECORD = REPORT_BAD_SECTIONS;
+export const MALFORMED_RECORD = SHARED_BAD_SECTIONS;
 
 /** The fix's own write did not land. The verb never reports the recipe as applied. */
-export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
+export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
 
 /**
  * The write landed and the read-back contradicts it — the lane did not leave the park, or the
  * rerun's own run record shows no new attempt. The artifact moved and needs a human.
  */
-export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
+export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 
 /**
  * A precondition read failed, so nothing was written and no outcome is proven. UNKNOWN, never a
  * permissive reading: the read is what makes every proven code above *proven*.
  */
-export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
+export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /**
  * The park's cause is outside the known-recipe set. **Nothing was mutated** — the verb refuses

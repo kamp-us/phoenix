@@ -8,6 +8,7 @@ import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, relations} from "../../db/Drizzle.ts";
 import {
+	cohortRollupRowsQuery,
 	computeFirstContribution,
 	computeTimeToPromotion,
 	computeVouchRate,
@@ -15,9 +16,11 @@ import {
 	Funnel,
 	FunnelLive,
 	foldTierPopulation,
+	foundingPromotionsQuery,
 	promotionRate,
 	type TierCountRow,
 	tierPopulationQuery,
+	vouchEvidenceMissingQuery,
 	vouchedCaylaksQuery,
 	yazarPromotionTimesQuery,
 } from "./Funnel.ts";
@@ -444,4 +447,146 @@ describe("tierPopulationQuery — humans-only, grouped by tier (rendered SQL)", 
 		assert.match(sql, /from\s+"user"/i);
 		assert.match(sql, /count\(\*\)/i);
 	});
+});
+
+// ---------------------------------------------------------------------------
+// The cohort read model (#7031) — the live five-stage funnel over existing rows,
+// the rollup-table read, and the two known data holes as explicit counts.
+// ---------------------------------------------------------------------------
+
+/** `2026-08-03` is a UTC Monday — every fixture cohort week buckets there. */
+const at = (iso: string): Date => new Date(iso);
+
+const cohortUserRow = (
+	id: string,
+	createdAt: Date,
+	promotedAt: Date | null = null,
+): {id: string; createdAt: Date; promotedAt: Date | null} => ({id, createdAt, promotedAt});
+
+describe("foundingPromotionsQuery — the pre-#1590 founding cohort (rendered SQL)", () => {
+	const {sql, params} = foundingPromotionsQuery(renderDb).toSQL();
+
+	it("counts human yazars with no promoted_at stamp", () => {
+		assert.match(sql, /from\s+"user"/i);
+		assert.match(sql, /count\(\*\)/i);
+		assert.match(sql, /"user"\."type"\s*=\s*\?/i);
+		assert.match(sql, /"user"\."tier"\s*=\s*\?/i);
+		assert.match(sql, /"promoted_at"\s+is\s+null/i);
+		assert.include(params, "human");
+		assert.include(params, "yazar");
+	});
+});
+
+describe("vouchEvidenceMissingQuery — yazars with no surviving vouch row (rendered SQL)", () => {
+	const {sql, params} = vouchEvidenceMissingQuery(renderDb).toSQL();
+
+	it("counts human yazars outside the authorship_vouch candidate set", () => {
+		assert.match(sql, /from\s+"user"/i);
+		assert.match(sql, /count\(\*\)/i);
+		assert.match(sql, /"user"\."type"\s*=\s*\?/i);
+		assert.match(sql, /"user"\."tier"\s*=\s*\?/i);
+		assert.include(params, "human");
+		assert.include(params, "yazar");
+	});
+
+	it("excludes via NOT IN over the ledger's candidate set — withdrawn rows leave no trace", () => {
+		assert.match(sql, /"authorship_vouch"/i);
+		assert.match(sql, /"candidate_id"/i);
+		assert.match(sql, /"user"\."id"\s+not\s+in/i);
+	});
+});
+
+describe("cohortRollupRowsQuery — tracer B's durable weekly record (rendered SQL)", () => {
+	const {sql} = cohortRollupRowsQuery(renderDb).toSQL();
+
+	it("reads the whole rollup table, oldest week first", () => {
+		assert.match(sql, /from\s+"cohort_week_rollup"/i);
+		assert.match(sql, /order by\s+"cohort_week_rollup"\."cohort_week"\s+asc/i);
+	});
+});
+
+describe("Funnel.cohorts — the live fold + holes through the Drizzle seam", () => {
+	// The fold's input order: users, activity days, definitions, posts, comments, vouches.
+	// Funnel.cohorts then adds the two hole counts.
+	const scriptedCohortInputs = (
+		overrides: Partial<Record<number, ReadonlyArray<unknown>>> = {},
+	): DrizzleAccess => {
+		const base: ReadonlyArray<ReadonlyArray<unknown>> = [
+			[
+				cohortUserRow("u1", at("2026-08-03T10:00:00Z")),
+				cohortUserRow("u2", at("2026-08-05T10:00:00Z")),
+			],
+			[{userId: "u1", day: "2026-08-04"}],
+			[{key: "u1", firstAt: at("2026-08-05T12:00:00Z")}],
+			[],
+			[],
+			[{key: "u1", firstAt: at("2026-08-06T09:00:00Z")}],
+		];
+		const responses = base.map((rows, i) => overrides[i] ?? rows);
+		return scriptedSequence([...responses, [{value: 2}], [{value: 1}]]);
+	};
+
+	it.effect("folds per-week stages plus D1/D7 returns and surfaces both holes", () =>
+		Effect.gen(function* () {
+			const funnel = yield* Funnel;
+			const {weeks, unmeasurable} = yield* funnel.cohorts();
+			assert.deepStrictEqual(weeks, [
+				{
+					cohortWeek: "2026-08-03",
+					signedUp: 2,
+					returnedDays2to7: 0,
+					firstContributed7d: 1,
+					vouched7d: 1,
+					promoted7d: 0,
+					d1Returned: 1,
+					d7Returned: 1,
+					d1ReturnRate: 0.5,
+					d7ReturnRate: 0.5,
+				},
+			]);
+			assert.deepStrictEqual(unmeasurable, {
+				foundingPromotionsUnmeasurable: 2,
+				vouchEvidenceUnmeasurable: 1,
+			});
+		}).pipe(Effect.provide(funnelLayer(scriptedCohortInputs()))),
+	);
+
+	it.effect("an untouched population reads all-zero weeks with empty holes", () =>
+		Effect.gen(function* () {
+			const funnel = yield* Funnel;
+			const {weeks, unmeasurable} = yield* funnel.cohorts();
+			assert.deepStrictEqual(weeks, []);
+			assert.deepStrictEqual(unmeasurable, {
+				foundingPromotionsUnmeasurable: 0,
+				vouchEvidenceUnmeasurable: 0,
+			});
+		}).pipe(
+			Effect.provide(
+				funnelLayer(scriptedSequence([[], [], [], [], [], [], [{value: 0}], [{value: 0}]])),
+			),
+		),
+	);
+});
+
+const rollupRow = {
+	cohortWeek: "2026-07-27",
+	signedUp: 4,
+	returnedDays2to7: 2,
+	firstContributed7d: 1,
+	vouched7d: 1,
+	promoted7d: 1,
+	d1Returned: 2,
+	d7Returned: 3,
+	d1ReturnRate: 0.5,
+	d7ReturnRate: 0.75,
+};
+
+describe("Funnel.cohortRollups — the durable weekly record through the Drizzle seam", () => {
+	it.effect("reads the rollup table rows back unchanged, oldest first", () =>
+		Effect.gen(function* () {
+			const funnel = yield* Funnel;
+			const rollups = yield* funnel.cohortRollups();
+			assert.deepStrictEqual(rollups, [rollupRow]);
+		}).pipe(Effect.provide(funnelLayer(scriptedSequence([[rollupRow]])))),
+	);
 });

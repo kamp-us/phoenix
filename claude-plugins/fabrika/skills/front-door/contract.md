@@ -56,7 +56,7 @@ same tracked debt the sibling contracts carry.)
   publish a decision nobody made.
 - **A cross-group exit-code decoder.** The interface convention permits cross-group code reuse
   precisely because no reader resolves a numeral without knowing its group
-  ([rule 3](../../docs/cli-interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is)).
+  ([rule 3](../../docs/interface-convention.md#3-the-exit-status-is-the-answer-empty-stdout-never-is)).
   A composite readout that shelled out to sibling verbs and mapped their exit codes would be **the
   first such reader**, turning every legitimate reuse in the package into a defect. `status open`
   composes by **importing pure cores** ([mapping](#core-to-field)), never by spawning a sibling verb
@@ -1088,14 +1088,20 @@ surface merges into a file that is already there instead (ADR
 skill's judgement; the write, the collision guard and the read-back are this verb's.
 
 <a id="buildable-surfaces"></a>**The buildable-surface registry.** What this verb builds is fixed
+<<<<<<< HEAD
 here, not inferred from any declaration. Eight ids, and
 a ninth is a change to this table, not a new rule.
+=======
+here, not inferred from any declaration. Seven ids, and
+an eighth is a change to this table, not a new rule.
+>>>>>>> a6dccc0d2989f5201318e546f2b296bd55f97fad
 
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
 | `design-manifest` | `--path`, default `design-system-manifest.md` at the repo root | **stdin**, required — the skill's inferred draft | the file's bytes match stdin through `normalizeForReadback` |
 | `roadmap-focus` | `--path`, default the `roadmapFile` this repo declares, itself defaulting to `ROADMAP.md` | **stdin**, required — to the [grammar below](#roadmap-grammar), which is not the drafting skill's judgement | same, plus the parsed row count in the notice ([why](#roadmap-grammar)) |
 | `gitignore-row` | `--path`, default `.gitignore` at the repo root | **none** — the two comment lines and the row `/.fabrika/`, fixed below, appended to whatever the file already holds | the re-read contains both the row and the whole of the pre-existing text, each through `normalizeForReadback` |
+| `claude-md-section` | `--path`, default `CLAUDE.md` at the repo root | **none** — the canonical operator-first "work flows through fabrika" section, fixed below, appended when its marker heading `## Work flows through fabrika` is absent (ADR [0334](../../../../.decisions/0334-bootstrap-merge-into-present-files.md)'s append-if-absent arm) | the re-read contains both the heading and the whole of the pre-existing text, each through `normalizeForReadback` |
 | `label-taxonomy` | the repo's labels | **none** — the set is every imported `STATUSES` member (`status:needs-triage`, `status:triaged`, `status:needs-info`, `status:planned`, `status:awaiting-release`), every imported `PRIORITIES` member (`p0`, `p1`, `p2`), `type:` + every imported `TYPES` member, and `ready-for:` + every imported `AUDIENCES` member — sixteen today, each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
 | `issue-shape-markers` | the repo's labels | **none** — three labels, each at colour `1D76DB`, with the descriptions fixed below | every label in the set resolves on a re-read |
 | `readout-artifact` | one open issue in the repo | **none** — title exactly `Governance readout`; body exactly the two lines below | the issue resolves open, its title matches exactly, and its body matches through `normalizeForReadback` |
@@ -1179,14 +1185,50 @@ itself, and it is also the marker the collision guard and the read-back match on
 /.fabrika/
 ```
 
+The `claude-md-section` block, fixed here so no clause defers to source. The first line is the
+marker heading the collision guard and the read-back match on — which is what recognises a
+hand-adapted section (repo tone, carve-outs) as the section it is, and leaves it alone. The
+canonical text carries no repo-specific branches; adaptation stays with the adopting agent
+(ADR [0334](../../../../.decisions/0334-bootstrap-merge-into-present-files.md)):
+
+```markdown
+## Work flows through fabrika
+
+report → triage → plan → build → review → ship. Every unit of work is a GitHub issue moving
+through those stages; the fabrika skills run them, and the `fabrika` CLI's verbs are the ground
+truth at every step.
+
+**The default unit of work is a lane, and the operator drives it.** To get an issue built,
+reviewed and shipped, spawn ONE **operator** on it (`operate` skill) — it runs the builder,
+reviewer and shipper shells itself, feeds every outcome back to the lane ledger, and parks to a
+human only when a gate genuinely needs one. Do not hand-dispatch the per-stage shells for normal
+work, and never route around them with an ad-hoc general-purpose subagent — an off-pipeline run
+skips the gates.
+
+| Work intent | Skill | Agent |
+|---|---|---|
+| Get one issue built → reviewed → shipped | `operate` | **operator** |
+| Capture an observation / bug / idea | `report` | — |
+| Classify + prioritize the backlog | `triage` | **triager** |
+| Decompose a triaged epic into children | `plan-epic`, then `check-epic-plan` | — |
+| Record a decision | `adr` | — |
+| Record how the code is shaped | `write-pattern` | — |
+
+The per-stage shells are surgical — resume a half-dead lane, re-run one gate, repair one PR —
+never the normal entry point: `build` (**builder**), `review` (**reviewer**), `ship`
+(**shipper**), and `heal-ci` for a PR that is green but going nowhere.
+```
+
 <a id="line-surface"></a>**A line surface appends; it never rewrites what is already in the file.**
-A `.gitignore` carries rows from every tool in the tree, so this verb is one contributor to a file it
-does not author — which makes the file's existence the wrong collision guard. The guard is the row:
-present anywhere in the text, this is `exists` at exit `0` and nothing is written; absent, the block
-goes on the end and the pre-existing bytes are re-read intact. Both halves are substring reads over
-the same marker, so a hand-added row spelled the same way is recognised as the row it is. A target
-this verb cannot *read* is exit `11` — whether the row is already there is UNKNOWN, and appending
-blind would be the duplicate row this guard exists to prevent.
+A `.gitignore` carries rows from every tool in the tree, and a CLAUDE.md is the repo's own prose —
+either way this verb is one contributor to a file it does not author, which makes the file's
+existence the wrong collision guard. The guard is the marker — `gitignore-row`'s row,
+`claude-md-section`'s heading: present anywhere in the text, this is `exists` at exit `0` and
+nothing is written; absent, the block goes on the end and the pre-existing bytes are re-read intact.
+Both halves are substring reads over the same marker, so a hand-added row — or a hand-adapted
+section under the same heading — is recognised as the thing it is. A target
+this verb cannot *read* is exit `11` — whether the marker is already there is UNKNOWN, and appending
+blind would be the duplicate this guard exists to prevent.
 
 <a id="json-key-merge"></a>**A json surface merges its declared keys into a present file; it never
 touches keys it did not declare.** `.claude/settings.json` exists before fabrika is ever adopted, so
@@ -1272,7 +1314,7 @@ same name. Reconciling a hand-made label's colour is a hand fix.
 **The operation.** Resolve the id against the registry — not in it is `12`. Probe the target; already
 present is `exists` at `0`. For a stdin surface: read stdin, leak-scan the content (`5`, `6`), write,
 re-read and compare through `normalizeForReadback` (`9` on mismatch), and for `roadmap-focus` parse
-the written bytes and [report the counts](#roadmap-grammar). For the [line
+the written bytes and [report the counts](#roadmap-grammar). For a [line
 surface](#line-surface) the probe is the marker rather than the path, the content is the registry's
 own block so no stdin is read and no leak scan is owed, and the read-back asserts the marker **and**
 the prior text. A write whose outcome cannot be
@@ -1312,7 +1354,11 @@ creating several would have to report a partial outcome, and a partial write rep
 | `status bootstrap: appending <marker> to <target> failed: <reason> — whether it landed is UNKNOWN. Re-read before retrying.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and it could not be read back: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
+<<<<<<< HEAD
 | `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.` | 12 | refusal |
+=======
+| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact.` | 12 | refusal |
+>>>>>>> a6dccc0d2989f5201318e546f2b296bd55f97fad
 | `status bootstrap: created <target> for <surface-id>, read-back conformed.` | 0 | notice |
 | `status bootstrap: created <target> for roadmap-focus, read-back conformed — <n> arc(s), <n> campaign(s).` | 0 | notice |
 | `status bootstrap: appended <marker> to <target> for <surface-id>, read-back conformed.` | 0 | notice |
@@ -1336,6 +1382,12 @@ bootstrap	created	design-manifest	design-system-manifest.md	ok
 ```
 $ fabrika status bootstrap readout-artifact
 bootstrap	created	readout-artifact	acme/storefront#9420	ok
+```
+
+```
+$ fabrika status bootstrap claude-md-section
+bootstrap	created	claude-md-section	CLAUDE.md	ok
+status bootstrap: appended ## Work flows through fabrika to CLAUDE.md for claude-md-section, read-back conformed.
 ```
 
 ```
@@ -1387,7 +1439,11 @@ no package manager ever spawns and no lockfile moves. A re-run with the row alre
 
 ```
 $ fabrika status bootstrap merge-queue
+<<<<<<< HEAD
 status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.
+=======
+status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact.
+>>>>>>> a6dccc0d2989f5201318e546f2b296bd55f97fad
 $ echo $?
 12
 ```

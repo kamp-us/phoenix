@@ -3,7 +3,7 @@
  * group whichever verb produced it
  * (`claude-plugins/fabrika/skills/front-door/contract.md`, "The shared exit taxonomy").
  *
- * Every shared seat is **imported** from `../report/codes.ts` rather than restated as a numeral —
+ * Every shared seat is **imported** from `../exit-codes.ts` rather than restated as a numeral —
  * the discipline `../triage/codes.ts` and `../ui/codes.ts` state in full: an import makes a drift
  * unrepresentable where a copied number makes it merely detectable.
  *
@@ -15,32 +15,32 @@
  */
 
 import {
-	BARE_AT_PATH as REPORT_BARE_AT_PATH,
-	CLASSIFIED as REPORT_CLASSIFIED,
-	EMPTY_STDIN as REPORT_EMPTY_STDIN,
-	LEAKED_PATH as REPORT_LEAKED_PATH,
-	NO_TARGET as REPORT_NO_TARGET,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
-	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
-} from "../report/codes.ts";
+	BARE_AT_PATH as SHARED_BARE_AT_PATH,
+	CLASSIFIED as SHARED_CLASSIFIED,
+	EMPTY_STDIN as SHARED_EMPTY_STDIN,
+	LEAKED_PATH as SHARED_LEAKED_PATH,
+	NO_TARGET as SHARED_NO_TARGET,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
+	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
+} from "../exit-codes.ts";
 
 /** Stdin was read and held nothing. A read that *failed* is `1` — the content is UNKNOWN. */
-export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
+export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 /** The authored content carries a machine-local path. */
-export const LEAKED_PATH = REPORT_LEAKED_PATH;
+export const LEAKED_PATH = SHARED_LEAKED_PATH;
 /** The authored content is a bare `@` path reference — not redactable, so a second code. */
-export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
+export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 /** Zero scope: an **explicitly passed** `--skills-dir` is proven absent (ADR 0092). */
-export const ZERO_SCOPE = REPORT_NO_TARGET;
+export const ZERO_SCOPE = SHARED_NO_TARGET;
 /** The write itself failed — whether anything landed is UNKNOWN. Re-read before retrying. */
-export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
+export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
 /** The write landed and the read-back does not match. The artifact exists and needs a human. */
-export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
+export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 /** A supplied value is off its closed vocabulary — an unknown `--field`, a non-integer issue. */
-export const OFF_VOCABULARY = REPORT_CLASSIFIED;
+export const OFF_VOCABULARY = SHARED_CLASSIFIED;
 /** A precondition read failed — nothing was written and the outcome is UNKNOWN. */
-export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
+export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 
 /** Refused: the surface named is not in `status bootstrap`'s buildable-surface registry. */
 export const NOT_BUILDABLE = 12;

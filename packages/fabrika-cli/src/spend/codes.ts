@@ -20,9 +20,9 @@
  */
 
 import {
-	NO_TARGET as REPORT_NO_TARGET,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-} from "../report/codes.ts";
+	NO_TARGET as SHARED_NO_TARGET,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+} from "../exit-codes.ts";
 
 /**
  * The input this verb measures is not there: no transcript at `--transcript`, no ledger at
@@ -30,7 +30,7 @@ import {
  *
  * The base's target seat, and the same fact: the thing the verb was pointed at does not exist.
  */
-export const INPUT_ABSENT = REPORT_NO_TARGET;
+export const INPUT_ABSENT = SHARED_NO_TARGET;
 
 /**
  * The input could not be read, or its absence could not be established. UNKNOWN, never zero.
@@ -38,7 +38,7 @@ export const INPUT_ABSENT = REPORT_NO_TARGET;
  * The base's precondition seat, for the base's own reason: the read is what makes
  * {@link INPUT_ABSENT} and {@link NOTHING_MEASURED} *proven*, so a failed read can be neither.
  */
-export const INPUT_UNREADABLE = REPORT_PRECONDITION_UNKNOWN;
+export const INPUT_UNREADABLE = SHARED_PRECONDITION_UNKNOWN;
 
 /**
  * The input was read in full and carries nothing to measure: zero billed assistant turns, or zero

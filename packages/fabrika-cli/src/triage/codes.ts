@@ -9,7 +9,7 @@
  *
  * **The alignment with `report` is deliberate, code-for-code, and re-exported rather than
  * re-typed.** Where this table overlaps `report`'s writing verbs — `3`, `5`, `6`, `7`, `8`, `9`,
- * `10`, `11` — the values are *imported* from `../report/codes.ts`, so a caller driving `report` and
+ * `10`, `11` — the values are *imported* from `../exit-codes.ts`, so a caller driving `report` and
  * `triage` in one sweep reads one meaning and a drift between the two is unrepresentable rather than
  * merely detectable (`../review/codes.ts` set the precedent; `../exit-code-alignment.ts` owns the
  * policy and checks the direction an import cannot cover — that the codes added below clear
@@ -23,15 +23,15 @@
  */
 
 import {
-	BARE_AT_PATH as REPORT_BARE_AT_PATH,
-	CLASSIFIED as REPORT_CLASSIFIED,
-	EMPTY_STDIN as REPORT_EMPTY_STDIN,
-	LEAKED_PATH as REPORT_LEAKED_PATH,
-	NO_TARGET as REPORT_NO_TARGET,
-	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
-	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
-	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
-} from "../report/codes.ts";
+	BARE_AT_PATH as SHARED_BARE_AT_PATH,
+	CLASSIFIED as SHARED_CLASSIFIED,
+	EMPTY_STDIN as SHARED_EMPTY_STDIN,
+	LEAKED_PATH as SHARED_LEAKED_PATH,
+	NO_TARGET as SHARED_NO_TARGET,
+	PRECONDITION_UNKNOWN as SHARED_PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH as SHARED_READBACK_MISMATCH,
+	WRITE_UNKNOWN as SHARED_WRITE_UNKNOWN,
+} from "../exit-codes.ts";
 import {NO_IMPLEMENTATION} from "../verb.ts";
 
 /** The answer is on stdout. Restated here because {@link TRIAGE_EXIT_TABLE} spans the whole matrix. */
@@ -40,16 +40,16 @@ const ANSWER = 0;
 const FAILED = 1;
 
 /** Stdin was read and held nothing. Distinct from a read that failed, which is `1`. */
-export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
+export const EMPTY_STDIN = SHARED_EMPTY_STDIN;
 /** The **authored** text carries a machine-local path and it was not redacted. */
-export const LEAKED_PATH = REPORT_LEAKED_PATH;
+export const LEAKED_PATH = SHARED_LEAKED_PATH;
 /**
  * The **authored** text is a bare `@` path reference — **not** redactable.
  *
  * Separate from {@link LEAKED_PATH} because the fixes are opposite: the caller's loop on a path
  * refusal is *redact and re-send*, and on a body that IS a path that loop never terminates.
  */
-export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
+export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 /**
  * Zero scope: a read that succeeded over nothing, an absent label vocabulary, or a target issue
  * **proven absent (404)** or closed — a fail-closed refusal (ADR 0092).
@@ -57,7 +57,7 @@ export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
  * *Proven* is the operative word. A 404 is a fact about the repository; an unreachable GitHub is not
  * a fact about anything, and lands on {@link PRECONDITION_UNKNOWN} instead.
  */
-export const ZERO_SCOPE = REPORT_NO_TARGET;
+export const ZERO_SCOPE = SHARED_NO_TARGET;
 /**
  * The write itself failed, so the outcome is **UNKNOWN** — deliberately not `1`.
  *
@@ -67,9 +67,9 @@ export const ZERO_SCOPE = REPORT_NO_TARGET;
  * message carries its recovery instruction, because a blind retry is how one split becomes two
  * children.
  */
-export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
+export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
 /** The write landed but the read-back does not match. The artifact exists and needs a human. */
-export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
+export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
 /**
  * The supplied value is not permitted in this position — off a closed enum, a `--home` naming a
  * milestone that is not open, or a `--slug` that is not a kebab-case leaf.
@@ -80,9 +80,9 @@ export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
  * one — re-run with another value — which is exactly what `1` cannot tell a caller (`build scratch`
  * seats it here for the same reason).
  */
-export const OFF_VOCABULARY = REPORT_CLASSIFIED;
+export const OFF_VOCABULARY = SHARED_CLASSIFIED;
 /** A precondition read failed — nothing was written and no outcome is proven. `report`'s `11`. */
-export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
+export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 /**
  * Refused: the issue is human-filed and this is not a `--duplicate-of` fold.
  *

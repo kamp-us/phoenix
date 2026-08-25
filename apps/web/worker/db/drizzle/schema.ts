@@ -4,7 +4,7 @@
  * through its drizzle adapter, not by us.
  */
 import {sql} from "drizzle-orm";
-import {index, integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-core";
+import {index, integer, primaryKey, real, sqliteTable, text} from "drizzle-orm/sqlite-core";
 import {NOTIFICATION_TARGET_KINDS} from "../../features/bildirim/target.ts";
 import {STORED_TIERS} from "../../features/kunye/standing.ts";
 import {REPORT_STATUSES, RESOLUTIONS} from "../../features/report/resolution.ts";
@@ -527,4 +527,42 @@ export const mecmuaSubscription = sqliteTable(
 export const caylakVisibilityPreference = sqliteTable("caylak_visibility_preference", {
 	userId: text("user_id").primaryKey(),
 	setAt: timestamp("set_at").notNull(),
+});
+
+/**
+ * One UTC-day presence marker per user (#7029, epic #6767): a row means a validated
+ * session existed for this user on this day. Append-only and forward-only — capture
+ * ships live on deploy with no backfill because a day that already passed is gone
+ * (founder ruling R1.2 on #7028). Written by the memoized upsert in
+ * `features/pasaport/user-activity-day.ts`, never read by the write path.
+ */
+export const userActivityDay = sqliteTable(
+	"user_activity_day",
+	{
+		userId: text("user_id").notNull(),
+		day: text("day").notNull(),
+	},
+	(t) => [primaryKey({columns: [t.userId, t.day]})],
+);
+
+/**
+ * Per-signup-cohort weekly survival rollup (#7030, epic #6767): one row per signup
+ * week (`cohort_week` = the UTC Monday bucket of `user.created_at`) holding the
+ * five-stage funnel counts — signed up, returned any of days 2–7, first contribution,
+ * vouched, promoted, each within 7 days of signup — plus raw D1/D7 return counts.
+ * Written ONLY by the idempotent weekly rollup fold (`features/funnel/cohort-rollup.ts`),
+ * which recomputes every row from live tables each pass, so no read ever depends on a
+ * stale increment surviving.
+ */
+export const cohortWeekRollup = sqliteTable("cohort_week_rollup", {
+	cohortWeek: text("cohort_week").primaryKey(),
+	signedUp: integer("signed_up").notNull(),
+	returnedDays2to7: integer("returned_days_2_to_7").notNull(),
+	firstContributed7d: integer("first_contributed_7d").notNull(),
+	vouched7d: integer("vouched_7d").notNull(),
+	promoted7d: integer("promoted_7d").notNull(),
+	d1Returned: integer("d1_returned").notNull(),
+	d7Returned: integer("d7_returned").notNull(),
+	d1ReturnRate: real("d1_return_rate").notNull(),
+	d7ReturnRate: real("d7_return_rate").notNull(),
 });

@@ -34,37 +34,37 @@ non-obvious.
 fabrika status settings --surfaces
 ```
 
-Every key on the config surface, with what it resolves to here and whether that came from your file
-or the shipped default. `--surfaces` is what expands `surfaceDispositions` into one row per repo
-surface with a note saying what each surface *is*; without it you get the raw id-to-word value,
-which does not tell you what you are missing. **A `read-back conformed` from `status bootstrap` means one surface landed —
-it does not mean the setup is finished**, and nothing in that verb's output says so
+Every key on the config surface lists with its resolved value and whether that came from your file or
+the shipped default; `--surfaces` expands `surfaceDispositions` into one row per repo surface, each
+naming what the surface *is* — without it that key prints as one raw id-to-word value. Each row's
+disposition is what a missing surface costs you: `fail-loud` makes a verb refuse and name the
+surface, `degrade` continues with a narrower answer and says so, and `bootstrap` marks a surface you
+have not adopted yet — those are the ones the CLI can create for you, which is step 3. The registry
+itself,
+[`packages/fabrika-cli/src/config/keys/surface-dispositions.ts`](../../../packages/fabrika-cli/src/config/keys/surface-dispositions.ts),
+says in one line what each surface is.
+
+**A `read-back conformed` from `status bootstrap` means one surface landed — it does not mean the
+setup is finished**, and nothing in that verb's output says so
 ([#5772](https://github.com/kamp-us/phoenix/issues/5772)).
 
-The `surfaceDispositions` key is the list of every repo surface fabrika reads, each with what happens
-when it is missing:
-
-- **fail-loud** — a verb refuses and names the surface. Build these for the skills you will use.
-- **degrade** — fabrika continues with a narrower answer and says so. Optional by declaration.
-- **bootstrap** — the verb answers `bootstrap` at exit 0: you have not adopted that surface yet.
-
-**A `fail-loud` surface can still be one the CLI builds for you.** The two are separate questions —
-what happens to a run, and who can create the thing — and step 3 below is the answer to the second.
-
-The dispositions are yours to change. A repo that runs no design system declares
+The dispositions are yours to change: a repo that runs no design system declares
 `"surfaceDispositions": {"design-manifest": "degrade"}` and stops being told to build one; every key
-you do not name keeps its shipped value. The registry itself is
-[`packages/fabrika-cli/src/config/keys/surface-dispositions.ts`](../../../packages/fabrika-cli/src/config/keys/surface-dispositions.ts),
-which says in one line what each surface is.
+you do not name keeps its shipped value.
 
 ## 3. Create the surfaces the CLI can create
 
+<<<<<<< HEAD
 Eight surface ids are buildable today. Read them off the verb rather than off any prose:
+=======
+Read the buildable ids off the verb rather than off any prose:
+>>>>>>> a6dccc0d2989f5201318e546f2b296bd55f97fad
 
 ```bash
 fabrika status bootstrap --help
 ```
 
+<<<<<<< HEAD
 ```
 surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin
 ```
@@ -82,6 +82,14 @@ an unreachable registry refused unwritten — and prints the exact install comma
 package manager or touches a lockfile. `label-taxonomy`, `issue-shape-markers` and
 `readout-artifact` write to GitHub and need a resolvable repo — `--repo`, `$CLAUDE_PIPELINE_REPO`,
 `$GITHUB_REPOSITORY`, or an `origin` remote.
+=======
+One id per invocation; a target already present is `exists` at exit 0 and nothing is overwritten.
+The ids differ only in how they take content: stdin for `design-manifest` and `roadmap-focus`, a bare
+append for `gitignore-row` and `claude-md-section`, and a resolvable repo — `--repo`, `$CLAUDE_PIPELINE_REPO`,
+`$GITHUB_REPOSITORY`, or an `origin` remote — for the three GitHub-writing ids. The full inventory is
+`BUILDABLE_SURFACES` in
+[`packages/fabrika-cli/src/status/bootstrap-verb.ts`](../../../packages/fabrika-cli/src/status/bootstrap-verb.ts).
+>>>>>>> a6dccc0d2989f5201318e546f2b296bd55f97fad
 
 ## 4. Create the labels
 
@@ -90,28 +98,13 @@ fabrika status bootstrap label-taxonomy
 fabrika status bootstrap issue-shape-markers
 ```
 
-**The `label-taxonomy` set is derived, not listed** — read it off `TAXONOMY` in
-[`bootstrap-verb.ts`](../../../packages/fabrika-cli/src/status/bootstrap-verb.ts), which composes
-four closed vocabularies:
+Both sets are derived, not listed here: `TAXONOMY` in
+[`bootstrap-verb.ts`](../../../packages/fabrika-cli/src/status/bootstrap-verb.ts) composes the label
+vocabularies and widens on its own when one grows, and `issue-shape-markers` adds the shape markers
+declared beside it in the same file.
 
-| Vocabulary | Where it is declared | Count |
-|---|---|---|
-| `STATUSES` | [`packages/fabrika-cli/src/labels.ts`](../../../packages/fabrika-cli/src/labels.ts) | 5 |
-| `PRIORITIES` | [`packages/fabrika-cli/src/triage/facets.ts`](../../../packages/fabrika-cli/src/triage/facets.ts) | 3 |
-| `TYPES` (as `type:<x>`) | same file | 6 |
-| `AUDIENCES` (as `ready-for:<x>`) | same file | 2 |
-
-Sixteen, and it widens on its own when a vocabulary grows — which is why the number is not worth
-writing down anywhere. `issue-shape-markers` adds three more (`wayfinding:map`,
-`prototyping:spike`, `grilling:session`), declared as `ISSUE_SHAPE_MARKERS` in the same file. They
-are a separate surface because nothing ranks or counts them.
-
-Partial existence is not existence here: where some labels are present the verb creates only the
-missing ones and reports what it created. A label already there under another colour is left alone.
-
-This is the step that used to cost the most. Until
-[#5772](https://github.com/kamp-us/phoenix/issues/5772) landed, the verb minted 5 of the 16 and the
-other 11 had to be reverse-engineered off skill tables and created by hand.
+Where some labels are present the verb creates only the missing ones and reports what it created;
+a label already there under another colour is left alone.
 
 ## 5. Ignore fabrika's run state
 
@@ -135,39 +128,17 @@ spelling reads as `exists`. Commit the change before running a lane
 unless you say otherwise, and an absent file means no focus is declared and the scope fence is
 inert.
 
-An absent roadmap no longer stops you: `triage homes` degrades on it
-([#5773](https://github.com/kamp-us/phoenix/issues/5773)). A file proven not to exist is a proven
-negative, so every open milestone lists with no arc name, any standing lane your board carries lists
-beside them, and stderr says so:
+An absent roadmap no longer stops you — `triage homes` degrades on it
+([#5773](https://github.com/kamp-us/phoenix/issues/5773)) — but without the file nothing homes to an
+arc and the scope fence never fires, so writing it is a first-triage quality step, not a blocker.
 
-```
-triage homes: no roadmap at ROADMAP.md — every milestone lists with no arc name.
-```
-
-The campaigns fence reads the absent file as an empty document, so its scope line is
-`campaigns: none active — scope fence inert.` The two refusals that remain are narrower: a roadmap
-that *exists* and parses to zero arc rows is a grammar drift and refuses, and a filesystem probe or
-a read that could not be performed is exit `11`. Writing the file is still what you want — without
-it nothing is homed to an arc and the scope fence never fires — but it is a first-triage quality
-step, not a blocker.
-
-The file's grammar is a real parse contract, not a convention
-([`packages/fabrika-cli/src/triage/roadmap.ts`](../../../packages/fabrika-cli/src/triage/roadmap.ts)):
-
-- Headings exactly `## Arcs` and `## Campaigns`. A section ends at the next `## ` heading.
-- Each table row's **second cell** is the join key and must match `^#(\d+)$` — the milestone's
-  number. The row's title is never matched on, so an arc named anything at all can pin any milestone.
-- The first cell is the row's name and must be non-empty. A `State` column is allowed and is not read.
-- Zero `## Campaigns` rows is legal. **Zero `## Arcs` rows is a refusal** — `triage homes` exits 7
-  rather than answer over a roadmap it could not join, on the reading that an empty parse means the
-  table grammar drifted.
-
-The `## Campaigns` table is read a second time, by a stricter parser
-([`packages/fabrika-cli/src/build/scope-admission.ts`](../../../packages/fabrika-cli/src/build/scope-admission.ts)),
-because a row's `State` cell is the build fence's dispatch permission (ADR 0304). There, the columns
-are exactly `Campaign | Milestone | State`, the milestone is `#<int>`, and the state is one of
-`active` / `paused` / `done`. `build` opens lanes against the `active` rows' milestones only, and one
-unreadable row makes the whole table malformed — there is no fallback to the rows that parsed.
+The grammar is a parse contract, not a convention
+([`packages/fabrika-cli/src/triage/roadmap.ts`](../../../packages/fabrika-cli/src/triage/roadmap.ts)),
+and two facts carry this recipe: headings exactly `## Arcs` and `## Campaigns`, and each row's second
+cell naming the pinned milestone as `#<number>` — the arc's name is never matched on. Zero campaign
+rows is legal and zero arc rows refuses; the campaigns table is parsed a second time by the build
+fence, stricter because a row's `State` cell is its dispatch permission
+([ADR 0304](../../../.decisions/0304-campaign-active-is-the-dispatch-permission.md)).
 
 Draft it and hand it to the verb, which reports what its own parser joined out of the bytes it wrote:
 
@@ -225,51 +196,23 @@ homes on a milestone, and `triage apply --lane` refuses. Leaving the key out is 
 it falls to phoenix's pair, which then gets filtered against your board.
 
 [ADR 0286](../../../.decisions/0286-standing-lanes-come-from-config.md) rules that lanes come from
-your repo, never from a CLI literal. `boardVocabulary.standingLanes` still ships phoenix's pair as
-the default for an absent key, which 0286 says it should not; evicting that default is
-[#6469](https://github.com/kamp-us/phoenix/issues/6469). Until then the default reaches no board that
-has not created the labels, and the empty declaration is how you opt out of it entirely.
+your repo, never from a CLI literal. Until
+[#6469](https://github.com/kamp-us/phoenix/issues/6469) evicts the shipped default, it reaches no
+board that has not created the labels, and the empty declaration above is how you opt out of it
+entirely.
 
 ## 9. Add the config file
 
-`.fabrika.jsonc` at your repo root carries the keys the CLI reads — the whole surface is one
-`register(...)` line per key in
-([`packages/fabrika-cli/src/config/registry.ts`](../../../packages/fabrika-cli/src/config/registry.ts)).
-Every key is fail-closed: an absent file, an absent key, an empty array and a malformed entry all
-give the narrowest behaviour, never the permissive one.
+`.fabrika.jsonc` at your repo root carries the keys the CLI reads — one `register(...)` line per key
+in
+[`packages/fabrika-cli/src/config/registry.ts`](../../../packages/fabrika-cli/src/config/registry.ts).
+Every key is fail-closed — an absent file, an absent key, an empty array and a malformed entry all
+give the narrowest behaviour, never the permissive one — and a key you leave out falls back to
+phoenix's value, which is what every repo ran on before these keys existed.
 
-- `capClearAuthors` — the GitHub accounts and teams that may clear one extra repair round on a pull
-  request. Declare none and nobody can.
-- `docLeakExempt` — repo-relative path suffixes of docs whose subject *is* path hygiene, skipped by
-  the prose leak scan. Declare none and nothing is exempt.
-- `workflowValidators` — your repo's own commands that machine-read `.github/workflows/**`. Declare
-  none and that surface stands on `actionlint` alone.
-- `unreadableCodeowners` — `"ship"` or `"refuse"`. **Nothing reads it.** A §CP read that fails is
-  exit `11` in every repo and an absent `.github/CODEOWNERS` is the `unknown` hold, whatever you
-  declare here: the founder reverted the per-repo policy on #5631, back to ADR 0220 §4.
-
-The path keys say where your repo keeps the files fabrika reads by name. **Leave a key out and you
-get phoenix's value**, which is what every repo ran on before these keys existed:
-
-- `governedRoots` — the roots a diff derives the `governance` namespace over. Default:
-  `.decisions/`, `.claude/`, `.github/`, `claude-plugins/` and `.fabrika.jsonc` itself. An empty
-  list is refused rather than read as "nothing is governed", and a list that does not cover
-  `.fabrika.jsonc` is refused too — a config cannot un-govern itself.
-- `decisionsDir` — your decision corpus. Default `.decisions`. **Write `null` to say your repo keeps
-  none**: `adr` then refuses to write, and `governance` runs only its weakens-a-guard half
-  (`governance guards`) and says so, rather than reporting a clean contradiction check over a corpus
-  that is not there.
-- `roadmapFile` — the file whose `## Arcs` / `## Campaigns` tables the scope fence reads. Default
-  `ROADMAP.md`.
-- `cycleDoc` — the doc the containment class is gated on. Default `product-development-cycle.md`.
-- `designHarness` — your headless render config. Default `design-harness.json`.
-
-An absent key and a declined one are different answers: absent is "this repo said nothing", declined
-is "this repo has no such surface". Only `decisionsDir` can be declined; the other paths name files
-whose absence the filesystem already reports.
-
-phoenix's own file at [`.fabrika.jsonc`](../../../.fabrika.jsonc) is a worked example, with the
-reasoning for each value in comments.
+Add the file only when a default does not fit your repo. phoenix's own file at
+[`.fabrika.jsonc`](../../../.fabrika.jsonc) is the worked example, with the reasoning for each value
+in comments.
 
 ## 10. Re-run the front door
 
