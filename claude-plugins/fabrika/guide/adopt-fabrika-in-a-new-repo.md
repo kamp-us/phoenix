@@ -62,7 +62,7 @@ fabrika status bootstrap --help
 
 One id per invocation; a target already present is `exists` at exit 0 and nothing is overwritten.
 The ids differ only in how they take content: stdin for `design-manifest` and `roadmap-focus`, a bare
-append for `gitignore-row`, and a resolvable repo — `--repo`, `$CLAUDE_PIPELINE_REPO`,
+append for `gitignore-row` and `claude-md-section`, and a resolvable repo — `--repo`, `$CLAUDE_PIPELINE_REPO`,
 `$GITHUB_REPOSITORY`, or an `origin` remote — for the three GitHub-writing ids. The full inventory is
 `BUILDABLE_SURFACES` in
 [`packages/fabrika-cli/src/status/bootstrap-verb.ts`](../../../packages/fabrika-cli/src/status/bootstrap-verb.ts).

@@ -30,6 +30,8 @@ import {ANSWER} from "../verb.ts";
 import {type BoardRead, type Bucket, boardState, runBoard} from "./board-verb.ts";
 import {
 	BUILDABLE_SURFACES,
+	CLAUDE_MD_MARKER,
+	CLAUDE_MD_SECTION,
 	FABRIKA_IGNORE_ROW,
 	findSurface,
 	ISSUE_SHAPE_MARKERS,
@@ -504,12 +506,12 @@ describe("status bootstrap", () => {
 	it("refuses an id outside the registry on 12, naming what IS buildable", () => {
 		expect(findSurface("merge-queue")).toBeUndefined();
 		expect(knownIds()).toBe(
-			"design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact",
+			"design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact",
 		);
 	});
 
-	it("carries exactly six ids", () => {
-		expect(BUILDABLE_SURFACES).toHaveLength(6);
+	it("carries exactly seven ids", () => {
+		expect(BUILDABLE_SURFACES).toHaveLength(7);
 		expect(NOT_BUILDABLE).toBe(12);
 	});
 
@@ -613,6 +615,73 @@ describe("the .fabrika/ gitignore row", () => {
 		);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * #7008: the canonical operator-first section, appended under ADR 0334's append-if-absent arm. The
+ * template is the single source — the drift it kills is one consumer repo's hand-edited section
+ * moving on while another's stands still.
+ */
+describe("the CLAUDE.md work-flows-through-fabrika section", () => {
+	const bootstrap = (files: Record<string, string | null>) => {
+		const fs = fakeFs({files});
+		return Effect.runPromise(
+			Effect.provide(
+				runBootstrap({
+					surfaceId: "claude-md-section",
+					path: null,
+					json: true,
+					repoRoot: "/repo",
+					configSource: {_tag: "Absent"},
+					repo: ok("o/r"),
+					stdin: Effect.succeed({_tag: "NoStdin"} as StdinRead),
+				}),
+				Layer.mergeAll(fs.layer, fakeShell([]).layer),
+			),
+		).then((outcome) => ({outcome, written: fs.written}));
+	};
+
+	it("opens on the marker heading, so the collision guard can never drift off the template", () => {
+		expect(CLAUDE_MD_SECTION.startsWith(`${CLAUDE_MD_MARKER}\n`)).toBe(true);
+	});
+
+	it("appends the section once to a present CLAUDE.md and leaves the prior bytes intact", async () => {
+		const before = "# acme\n\nHow this repo is built.\n";
+		const {outcome, written} = await bootstrap({"/repo/CLAUDE.md": before});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			outcome: "created",
+			surfaceId: "claude-md-section",
+			target: "CLAUDE.md",
+			readback: "ok",
+		});
+		const after = written.get("/repo/CLAUDE.md") ?? "";
+		expect(after.startsWith(before)).toBe(true);
+		expect(after).toContain(CLAUDE_MD_MARKER);
+	});
+
+	it("creates CLAUDE.md whole — exactly the canonical section — where none exists", async () => {
+		const {outcome, written} = await bootstrap({});
+		expect(outcome.code).toBe(ANSWER);
+		expect(written.get("/repo/CLAUDE.md")).toBe(`${CLAUDE_MD_SECTION}\n`);
+	});
+
+	it("is idempotent — a second invocation reports exists and writes nothing", async () => {
+		const {outcome, written} = await bootstrap({
+			"/repo/CLAUDE.md": `# acme\n\n${CLAUDE_MD_SECTION}\n`,
+		});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout).outcome).toBe("exists");
+		expect(written.size).toBe(0);
+	});
+
+	it("recognises a hand-adapted section by its heading alone and rewrites none of it", async () => {
+		const adapted = `# acme\n\n${CLAUDE_MD_MARKER}\n\nThis repo adopts no ADRs; decisions land as enforcement.\n`;
+		const {outcome, written} = await bootstrap({"/repo/CLAUDE.md": adapted});
+		expect(outcome.code).toBe(ANSWER);
+		expect(JSON.parse(outcome.stdout).outcome).toBe("exists");
+		expect(written.size).toBe(0);
 	});
 });
 

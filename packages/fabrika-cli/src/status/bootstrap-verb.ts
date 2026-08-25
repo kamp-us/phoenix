@@ -5,7 +5,7 @@
  * The content is the skill's judgement; the write, the collision guard and the read-back are this
  * verb's. That split is why file content arrives on stdin: *"/fabrika shows what's missing, then
  * runs the primitives to build the missing thing"* (#4952). A **line** surface is the exception and
- * carries its own row here: a caller supplying its text would let two repos spell one row two ways.
+ * carries its own text here: a caller supplying it would let two repos spell one block two ways.
  *
  * **What this builds is fixed in {@link BUILDABLE_SURFACES}, never read off a disposition.** A
  * surface's disposition in `surfaceDispositions` says what happens to a *run* that finds it missing —
@@ -176,9 +176,9 @@ export type BuildableSurface =
 	| {
 			readonly id: string;
 			readonly kind: "line";
-			/** The registry default target — a line-oriented file this appends to, never rewrites. */
+			/** The registry default target — a file the repo owns that this appends to, never rewrites. */
 			readonly defaultPath: string;
-			/** The block appended when {@link marker} is absent; the last line is the row itself. */
+			/** The block appended when {@link marker} is absent; the marker is a line of the block itself. */
 			readonly block: string;
 			/** The substring that decides `exists`, and the whole of the read-back. */
 			readonly marker: string;
@@ -202,7 +202,42 @@ const FABRIKA_IGNORE_BLOCK = `# fabrika's local machine state — the per-lane l
 # \`.fabrika/lanes/<n>/\`. One machine's run log; never committed.
 ${FABRIKA_IGNORE_ROW}`;
 
-/** Six ids. A seventh is a change to this table, not a new rule. */
+/** The marker heading that decides `exists` for the CLAUDE.md section, and its first line. */
+export const CLAUDE_MD_MARKER = "## Work flows through fabrika";
+
+/**
+ * The canonical operator-first "work flows through fabrika" CLAUDE.md section, fixed in code as
+ * the single source (ADR 0334's append-if-absent arm). Repo-specific adaptation — tone, carve-outs
+ * like a no-ADRs rule — stays with the adopting agent in the front-door flow; this verb emits the
+ * canonical text and no repo-specific branches (#7008).
+ */
+export const CLAUDE_MD_SECTION = `${CLAUDE_MD_MARKER}
+
+report → triage → plan → build → review → ship. Every unit of work is a GitHub issue moving
+through those stages; the fabrika skills run them, and the \`fabrika\` CLI's verbs are the ground
+truth at every step.
+
+**The default unit of work is a lane, and the operator drives it.** To get an issue built,
+reviewed and shipped, spawn ONE **operator** on it (\`operate\` skill) — it runs the builder,
+reviewer and shipper shells itself, feeds every outcome back to the lane ledger, and parks to a
+human only when a gate genuinely needs one. Do not hand-dispatch the per-stage shells for normal
+work, and never route around them with an ad-hoc general-purpose subagent — an off-pipeline run
+skips the gates.
+
+| Work intent | Skill | Agent |
+|---|---|---|
+| Get one issue built → reviewed → shipped | \`operate\` | **operator** |
+| Capture an observation / bug / idea | \`report\` | — |
+| Classify + prioritize the backlog | \`triage\` | **triager** |
+| Decompose a triaged epic into children | \`plan-epic\`, then \`check-epic-plan\` | — |
+| Record a decision | \`adr\` | — |
+| Record how the code is shaped | \`write-pattern\` | — |
+
+The per-stage shells are surgical — resume a half-dead lane, re-run one gate, repair one PR —
+never the normal entry point: \`build\` (**builder**), \`review\` (**reviewer**), \`ship\`
+(**shipper**), and \`heal-ci\` for a PR that is green but going nowhere.`;
+
+/** Seven ids. An eighth is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
 	{
@@ -218,6 +253,13 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 		defaultPath: ".gitignore",
 		block: FABRIKA_IGNORE_BLOCK,
 		marker: FABRIKA_IGNORE_ROW,
+	},
+	{
+		id: "claude-md-section",
+		kind: "line",
+		defaultPath: "CLAUDE.md",
+		block: CLAUDE_MD_SECTION,
+		marker: CLAUDE_MD_MARKER,
 	},
 	{id: "label-taxonomy", kind: "labels", labels: taxonomy},
 	{id: "issue-shape-markers", kind: "labels", labels: () => ISSUE_SHAPE_MARKERS},
@@ -411,11 +453,12 @@ const buildFile = (
  * **A line surface appends; it never rewrites what is already in the file.**
  *
  * The target is a file the repo owns and this verb is one contributor to — a `.gitignore` carries
- * rows from every tool in the tree — so the collision guard cannot be the file's existence, the way
- * it is for a file surface this verb authors whole. It is the row: present anywhere in the text,
- * this is `exists` at exit `0` and nothing is written; absent, the block goes on the end and the
- * pre-existing bytes are re-read intact. Both halves are substring reads over the same marker, so a
- * hand-added row spelled the same way is recognised as the row it is.
+ * rows from every tool in the tree, a CLAUDE.md is the repo's own prose — so the collision guard
+ * cannot be the file's existence, the way it is for a file surface this verb authors whole. It is
+ * the marker: present anywhere in the text, this is `exists` at exit `0` and nothing is written;
+ * absent, the block goes on the end and the pre-existing bytes are re-read intact. Both halves are
+ * substring reads over the same marker, so a hand-added row — or a hand-adapted section under the
+ * same heading — is recognised as the thing it is (ADR 0334's append-if-absent arm).
  */
 const buildLine = (
 	surface: Extract<BuildableSurface, {kind: "line"}>,
