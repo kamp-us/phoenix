@@ -59,14 +59,14 @@ which says in one line what each surface is.
 
 ## 3. Create the surfaces the CLI can create
 
-Seven surface ids are buildable today. Read them off the verb rather than off any prose:
+Eight surface ids are buildable today. Read them off the verb rather than off any prose:
 
 ```bash
 fabrika status bootstrap --help
 ```
 
 ```
-surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch
+surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin
 ```
 
 The registry is `BUILDABLE_SURFACES` in
@@ -76,7 +76,10 @@ overwritten. `design-manifest` and `roadmap-focus` take their content on stdin. 
 appends its own row and reads no stdin. `settings-patch` merges the `kampus` marketplace
 registration and the `fabrika@kampus` flip into a `.claude/settings.json` that is already there —
 unknown keys preserved, unparseable bytes refused unwritten — and creates the file when it is
-absent; it reads no stdin either way. `label-taxonomy`, `issue-shape-markers` and
+absent; it reads no stdin either way. `dep-pin` pins the `@kampus/fabrika-cli` dependency row to
+the version npm's registry publishes at run time — same merge law over the repo's `package.json`,
+an unreachable registry refused unwritten — and prints the exact install command; it never runs a
+package manager or touches a lockfile. `label-taxonomy`, `issue-shape-markers` and
 `readout-artifact` write to GitHub and need a resolvable repo — `--repo`, `$CLAUDE_PIPELINE_REPO`,
 `$GITHUB_REPOSITORY`, or an `origin` remote.
 
