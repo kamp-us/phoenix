@@ -43,6 +43,7 @@ Named because a spec that leaves the substrate open makes the implementer guess 
 | `ship cp-approval` | the ADR 0175 cardinality discharge: `discharge` / `stop` / `n/a` from head-bound signals only | the roster-cardinality case split and head-binding are a transcription of a ruled table; nothing in it is judgment (#2435 is what judgment did) |
 | `ship gate` | the verdict conjunction: every required namespace's in-force, current-head verdict, §CP advisory resolution and native-review fold included | in-force resolution (write-stamp ordering, staleness, authorization) is mechanical; what to do with `blocked` is judgment |
 | `ship floor` | whether the governance floor binds on this diff and is discharged at this head — `n/a` / `satisfied` / a refusal CI reds on | asking `ship gate` for the one `governance` namespace and seating the answer on an exit code is mechanical; nothing about the verdict itself is decided here |
+| `ship floor-batch` | the same required context on a merge queue's batched `merge_group` head, concluded success — the batch ref has no pull request to resolve a floor over | publishing a named row is mechanical; the verb decides nothing, and what the floor means was settled at each PR's own head |
 | `ship checks` | the head CI rollup — green/red/pending with the running/wedged split and the zero-checkset facts; `--wait` adds the bounded settle poll | latest-per-context dedupe, status vocabulary, and a budgeted poll are mechanical; the wedge remedy is a human's |
 | `ship evidence` | the SHA-bound run-evidence bundle read as five states: present / pending / failed / absent / unknown | the lookup chain and the positive-evidence rules for each state are mechanical; none of it is judgment |
 | `ship threads` | every unresolved review thread, fully paginated, with per-thread class facts | pagination, count proof, and author-type classification are mechanical; nit-vs-substantive is THE retained judgment and never enters this verb |
@@ -888,10 +889,11 @@ the comment authors' ACL). Both scanned counts reach stderr, this verb's first.
 **Where it is enforced.** `.github/workflows/governance-floor.yml`, job `floor`, on every
 `pull_request` with no `paths:` filter — the verb's own read of the changed files is the path
 decision, so there is no YAML copy of the root list to drift. The job runs `--publish-check` and
-relays what the verb did, deciding nothing. Making the `governance floor at head` context
-**required** is a repository-ruleset change and therefore a human's; until it is, the check is
-visible-but-not-blocking at the ruleset, which is a weaker state than the ruling asks for and is
-recorded here rather than glossed.
+relays what the verb did, deciding nothing. The queue's half of the same context is the `batch` job,
+which runs [`ship floor-batch`](#ship-floor-batch) on `merge_group`. Making the `governance floor at
+head` context **required** is a repository-ruleset change and therefore a human's; until it is, the
+check is visible-but-not-blocking at the ruleset, which is a weaker state than the ruling asks for
+and is recorded here rather than glossed.
 
 **Examples**
 
@@ -943,6 +945,122 @@ $ echo $?
   rather than re-derived, which is what makes an unauthorized or stale PASS red here.
 - ADR 0092 — an unreadable answer reds. `11` and `13` are not softer than `18`; they are a different
   fact, and neither is a pass.
+
+---
+
+<a id="ship-floor-batch"></a>
+
+## `ship floor-batch`
+
+**Invocation**
+
+```
+fabrika ship floor-batch --sha 03135b91 [--repo <owner/name>] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--sha` | string | yes | — | the batch head — `github.event.merge_group.head_sha`, the commit that actually merges |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
+
+There is no PR argument, and its absence is the point: a `merge_group` ref is not a pull request.
+
+**Output** — three lines, the same grammar the check-run mode prints:
+
+```
+check	completed	success	<check-run id>
+floor	batch	<sha>
+ns	governance	-
+```
+
+`batch` is the one floor word no diff produces. With `--json`, an object with keys `outcome`, `sha`,
+`namespace`, `state` (always `null`) and `checkRun` (`{id, name, status, conclusion}`).
+
+### Why the batch ref gets a pass, and what still holds the floor
+
+A required status check is demanded on the queue's batched `merge_group` ref, and a workflow only
+runs there if it carries a `merge_group:` trigger (ADR [0132](../../../../.decisions/0132-merge-queue-for-base-freshness.md), §CI-under-batch). `governance-floor.yml` had `pull_request:` alone, so when `governance floor at
+head` was added to the ruleset's required set on 2026-08-21 the batch could never carry the context
+and every queued merge in the repository hung toward the check timeout — a ~40-minute freeze, ended
+by reverting the flip (#6968). It is the identical failure ADR 0132 records for `ci-required`.
+
+**This verb resolves no floor, because a batch ref carries nothing to resolve one from.** It has no
+number, no changed-file list against the base a verdict was written over, no comments and no reviews.
+`ship floor` reads all four, so on a batch it has no input at all — the pass here is the absence of a
+question, not a question waved through.
+
+**The floor is held where it always was, at the PR ref, by two independent things:**
+
+- each PR in a batch was floor-gated at its own head by `ship floor --publish-check`, the `floor` job;
+- `ship gate` — the single merge authority — refuses a governance-root PR whose `governance` verdict
+  is `absent`, `stale` or `fail`, and the `ship` skill runs it before `ship enqueue` is reached.
+
+**Why a verb and not a job named after the context.** A branch protection matches a required check by
+name. Naming a `merge_group`-only job `governance floor at head` would satisfy the queue with no CLI
+change — and would put a second copy of `CHECK_RUN_NAME` in YAML that nothing reds when it drifts
+(the #4604 failure class, and ADR 0228's rule that a workflow step relays and never decides). It
+would also stack a second check of that name on every PR ref, since a job skipped by its `if:` still
+reports; a required context resolved from two producers is exactly the ambiguity this floor cannot
+afford. So the name stays in one place and the workflow relays a verb.
+
+**One row per head** and the read-back are `ship floor --publish-check`'s, shared rather than copied
+— `publishFloorCheck` in `ship/floor-check.ts` is the single implementation.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `1` | usage: `--sha` is not 7–40 lowercase hex, or no target repository resolves |
+| `8` | the check-run could not be written |
+| `9` | the check-run landed and GitHub echoed a state this run did not decide |
+| `11` | the check-runs at the head could not be enumerated, so nothing was published rather than a duplicate row |
+
+There is no `18` here and no state that reds on the floor's own polarity: this verb has no polarity
+to report. A non-zero means the context could not be published, which leaves the queue's required
+check missing — it holds rather than merges, which is the fail-closed direction.
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `ship floor-batch: --sha "<raw>" is not 7-40 lowercase hex — an empty or malformed SHA is a usage error, never a pattern that matches every head.` | 1 | refusal |
+| `ship floor-batch: cannot enumerate the check runs at <sha>: <reason> — nothing was published, so the floor stays UNKNOWN rather than posting a duplicate row.` | 11 | refusal |
+| `ship floor-batch: the check-run could not be written: <reason> — the floor is resolved and nothing published it.` | 8 | refusal |
+| `ship floor-batch: wrote <status>/<conclusion> to check-run <id> and GitHub echoed <status>/<conclusion> — what the PR shows is not what this run decided.` | 9 | refusal |
+| `ship floor-batch: posted check-run <id> at <sha> — the batch carries the context; no floor was resolved on it.` | 0 | notice |
+| `ship floor-batch: rewrote check-run <id> at <sha> — the batch carries the context; no floor was resolved on it.` | 0 | notice |
+
+**Scope** — the check-runs already at the batch head, and nothing else. No pull-request surface is
+read, and a unit test asserts that absence rather than assuming it.
+
+**Where it is enforced.** `.github/workflows/governance-floor.yml`, job `batch`, gated
+`if: github.event_name == 'merge_group'`. The `floor` job is gated to `pull_request` in the same
+change, so a batch event can never reach it with an empty `github.event.pull_request`.
+
+**Examples**
+
+```
+$ fabrika ship floor-batch --sha 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c
+ship floor-batch: posted check-run 48899104 at 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c — the batch carries the context; no floor was resolved on it.
+check	completed	success	48899104
+floor	batch	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c
+ns	governance	-
+$ echo $?
+0
+```
+
+**Grounding**
+
+- #6968 — the freeze. Adding the context to the ruleset with no `merge_group:` arm on its producer
+  froze every merge in the repository until the flip was reverted.
+- ADR 0132, §CI-under-batch — "You **must** use the `merge_group` event to trigger your GitHub
+  Actions workflow when a pull request is added to a merge queue"; `ci.yml` and `leak-guard.yml` are
+  the in-repo precedents.
+- ADR 0318 — the check-run mechanism this verb reuses, name and read-back included.
+- ADR 0228 — the workflow relays; the name and the decision both live in the verb.
 
 ---
 
