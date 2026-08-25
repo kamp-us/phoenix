@@ -228,7 +228,6 @@ const FABRIKA_IGNORE_BLOCK = `# fabrika's local machine state — the per-lane l
 # \`.fabrika/lanes/<n>/\`. One machine's run log; never committed.
 ${FABRIKA_IGNORE_ROW}`;
 
-<<<<<<< HEAD
 /**
  * The `settings-patch` keys: the `kampus` marketplace registration and the plugin flip, spelled as an
  * adopted repo carries them (kamp-us/demlik#5 is the hand-authored origin). Fixed in the registry for
@@ -259,8 +258,6 @@ export const FABRIKA_CLI_PACKAGE = "@kampus/fabrika-cli";
 export const installCommand = (packageName: string, version: string): string =>
 	`pnpm add --save-exact ${packageName}@${version}`;
 
-/** Eight ids. A ninth is a change to this table, not a new rule. */
-=======
 /** The marker heading that decides `exists` for the CLAUDE.md section, and its first line. */
 export const CLAUDE_MD_MARKER = "## Work flows through fabrika";
 
@@ -296,8 +293,7 @@ The per-stage shells are surgical — resume a half-dead lane, re-run one gate, 
 never the normal entry point: \`build\` (**builder**), \`review\` (**reviewer**), \`ship\`
 (**shipper**), and \`heal-ci\` for a PR that is green but going nowhere.`;
 
-/** Seven ids. An eighth is a change to this table, not a new rule. */
->>>>>>> a6dccc0d2989f5201318e546f2b296bd55f97fad
+/** Nine ids. A tenth is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
 	{
