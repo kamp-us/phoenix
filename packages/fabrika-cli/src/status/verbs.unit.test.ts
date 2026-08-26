@@ -40,6 +40,7 @@ import {
 	MARKER_COLOR,
 	roadmapCount,
 	runBootstrap,
+	SETTINGS_PATCH,
 	TAXONOMY,
 	taxonomy as taxonomyFor,
 } from "./bootstrap-verb.ts";
@@ -506,12 +507,12 @@ describe("status bootstrap", () => {
 	it("refuses an id outside the registry on 12, naming what IS buildable", () => {
 		expect(findSurface("merge-queue")).toBeUndefined();
 		expect(knownIds()).toBe(
-			"design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact",
+			"design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin",
 		);
 	});
 
-	it("carries exactly seven ids", () => {
-		expect(BUILDABLE_SURFACES).toHaveLength(7);
+	it("carries exactly nine ids", () => {
+		expect(BUILDABLE_SURFACES).toHaveLength(9);
 		expect(NOT_BUILDABLE).toBe(12);
 	});
 
