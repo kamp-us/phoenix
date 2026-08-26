@@ -328,6 +328,14 @@ independently; the product simply comes home to **kamp.us**. Rebirth named in En
 English-for-technical rule (§3). `anka` is a **framework name**, not user-facing product
 copy, so it lives here in sense (3) rather than as a §3 Turkish-surface brand-noun row.
 
+### Diátaxis-lite README shape
+
+The canonical section order every `packages/*/README.md` follows — explanation (`What it is` /
+`Why it exists`) → how-to → reference tail → testing — scaled down to a three-section minimum
+for small packages. No tutorial at package scale: walkthroughs live on their own linked
+surface. The pattern doc is [`.patterns/package-readme-shape.md`](../.patterns/package-readme-shape.md);
+the `diataxis` skill is the single-mode classifier over any docs page, READMEs included.
+
 ### Milestone
 
 **A milestone is an *initiative*. An initiative has a Definition of Done.** A catch-all with

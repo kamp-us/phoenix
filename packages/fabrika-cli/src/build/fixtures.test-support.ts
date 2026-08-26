@@ -196,3 +196,13 @@ export const LANE_TOKEN = `build:s-9f2e:${LANE_UUID}`;
 export const SIBLING_UUID = "7bab0955-616f-4a6a-af6e-71c34b7c68c7";
 export const SIBLING_NONCE = "7bab0955";
 export const SIBLING_TOKEN = `build:s-9f2e:${SIBLING_UUID}`;
+
+/** The presumed-dead session whose claim a successor adopted — the resume-fence shape (#7010). */
+export const GONE_UUID = "9f3c7a21-5d44-4e08-b1c2-77aa0f3e91d0";
+export const GONE_NONCE = "9f3c7a21";
+export const GONE_TOKEN = `build:s-gone:${GONE_UUID}`;
+
+/** The session that adopted the gone lane's claim (ADR 0295). */
+export const HEIR_UUID = "b2ee7f04-8a19-4d57-93ba-1c5d92e6f7a8";
+export const HEIR_NONCE = "b2ee7f04";
+export const HEIR_TOKEN = `build:s-heir:${HEIR_UUID}`;

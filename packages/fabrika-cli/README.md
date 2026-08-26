@@ -629,6 +629,7 @@ Author an epic's plan and its children — the write half of epic planning. Cont
 | `ledger child` | one child issue minted with every birth attribute at once |
 | `ledger topology` | the declared topology validated, and its Dependencies block rendered |
 | `ledger write` | the staged plan and topology spliced into the epic body |
+| `ledger edges` | the epic's declared dependencies reconciled into GitHub's native blocked_by graph |
 | `ledger supersede` | a child the re-plan no longer contains, retired |
 
 **Exit codes.** The shared table and the `build` lane seats (`13`–`19`), plus `20` the ground moved
@@ -727,7 +728,7 @@ Gate an epic's plan before its children build — the read-and-verdict half of e
 | Verb | Answers |
 |---|---|
 | `plan read` | the epic, its children and its parsed ledger |
-| `plan check` | the deterministic floor over the thirteen hard defect types |
+| `plan check` | the deterministic floor over the fourteen hard defect types |
 | `plan flip` | every planned child flipped to triaged, re-gated first |
 | `plan verdict` | the plan gate's verdict, posted bound to the scope digest |
 

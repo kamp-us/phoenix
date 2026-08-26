@@ -16,6 +16,7 @@ export const NOTIFICATION_KINDS = [
 	"vote",
 	"report-filed",
 	"caylak-pending",
+	"backlog-release",
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];

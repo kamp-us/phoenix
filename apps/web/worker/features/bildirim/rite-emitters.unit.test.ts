@@ -13,8 +13,10 @@ import {Mute} from "../mute/Mute.ts";
 import {makeNotificationStub} from "./Notification.testing.ts";
 import type {NotificationAggregateInput, NotificationRecordInput} from "./Notification.ts";
 import {
+	BACKLOG_RELEASE_KIND,
 	DIVAN_VOTE_KIND,
 	KEFIL_KIND,
+	notifyBacklogRelease,
 	notifyDivanVote,
 	notifyKefil,
 	notifyPromotion,
@@ -233,6 +235,73 @@ describe("notifyPromotion — the çaylak→yazar ceremony emit", () => {
 	it.effect("a DYING notification write is swallowed — the promotion caller still succeeds", () =>
 		Effect.gen(function* () {
 			const exit = yield* notifyPromotion({userId: "u-promoted"}).pipe(
+				Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(true))),
+				Effect.exit,
+			);
+			assert.strictEqual(exit._tag, "Success");
+		}),
+	);
+});
+
+describe("notifyBacklogRelease — the terfi sweep's what-went-public emit (#7061)", () => {
+	it.effect("records ONE notification carrying the swept-entry count (no actor identity)", () =>
+		Effect.gen(function* () {
+			const calls: NotificationRecordInput[] = [];
+			yield* notifyBacklogRelease({userId: "u-promoted", releasedCount: 3}).pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						makeNotificationStub({
+							record: (input) => {
+								calls.push(input);
+								return Effect.succeed({id: "n1"});
+							},
+						}),
+						requestContext(true),
+					),
+				),
+			);
+			assert.strictEqual(calls.length, 1);
+			assert.deepStrictEqual(calls[0], {
+				recipientId: "u-promoted",
+				kind: BACKLOG_RELEASE_KIND,
+				targetKind: "user",
+				targetId: "u-promoted",
+				actorId: null,
+				count: 3,
+			});
+		}),
+	);
+
+	it.effect("a zero-entry sweep still emits, carrying count 0 for the client's zero arm", () =>
+		Effect.gen(function* () {
+			const calls: NotificationRecordInput[] = [];
+			yield* notifyBacklogRelease({userId: "u-promoted", releasedCount: 0}).pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						makeNotificationStub({
+							record: (input) => {
+								calls.push(input);
+								return Effect.succeed({id: "n1"});
+							},
+						}),
+						requestContext(true),
+					),
+				),
+			);
+			assert.strictEqual(calls.length, 1);
+			assert.strictEqual(calls[0]?.count, 0);
+		}),
+	);
+
+	it.effect("with the bildirim flag OFF the write never happens (dark by default)", () =>
+		notifyBacklogRelease({userId: "u-promoted", releasedCount: 3}).pipe(
+			Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(false))),
+		),
+	);
+
+	it.effect("a DYING notification write is swallowed — the promotion caller still succeeds", () =>
+		Effect.gen(function* () {
+			const exit = yield* notifyBacklogRelease({userId: "u-promoted", releasedCount: 3}).pipe(
 				Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(true))),
 				Effect.exit,
 			);
