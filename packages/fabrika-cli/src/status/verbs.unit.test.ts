@@ -6,12 +6,16 @@
  * an unread source is `unknown`, and the two never collapse.
  */
 import {Effect, Layer} from "effect";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import {describe, expect, it} from "vitest";
 import {audienceLabel, type BoardVocabulary, statusList, typeLabel} from "../config/board.ts";
 import {SURFACE_REGISTRY} from "../config/keys/surface-dispositions.ts";
 import * as report from "../exit-codes.ts";
 import {fakeFs, fakeHttp, fakeSeams, fakeShell, type HttpReply} from "../fakes.test-support.ts";
 import {ok} from "../io/git.ts";
+import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {AWAITING_RELEASE, DEFAULT_STATUS_NAMES, PLANNED, STATUSES} from "../labels.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
@@ -891,6 +895,39 @@ describe("the dep-pin surface", () => {
 		expect(JSON.parse(written.get(MANIFEST) ?? "")).toEqual({
 			dependencies: {"@kampus/fabrika-cli": "0.5.0"},
 		});
+	});
+
+	// The npm read carries the same client-side bound as every GitHub exchange (#7048's standard):
+	// a stalled body stream — headers arrive, bytes never do — must become data, not a hung verb.
+	it("bounds a stalled npm registry body stream into the loud unreachable refusal", async () => {
+		const before = process.env.FABRIKA_NPM_HTTP_TIMEOUT_SECONDS;
+		try {
+			process.env.FABRIKA_NPM_HTTP_TIMEOUT_SECONDS = "1";
+			const request = HttpClientRequest.get(
+				"https://registry.npmjs.org/@kampus%2Ffabrika-cli/latest",
+			);
+			const http = Layer.succeed(HttpClient.HttpClient)(
+				HttpClient.make(() =>
+					Effect.succeed(
+						HttpClientResponse.fromWeb(request, new Response(new ReadableStream({start() {}}))),
+					),
+				),
+			);
+			const started = Date.now();
+			const result = await Effect.runPromise(
+				Effect.provide(latestPublishedVersion("@kampus/fabrika-cli"), http),
+			);
+			expect(result._tag).toBe("Failure");
+			if (result._tag === "Failure") {
+				expect(result.reason).toMatch(
+					/^GET https:\/\/registry\.npmjs\.org\/%40kampus%2Ffabrika-cli\/latest exceeded its 1s client-side bound after \d+\.\ds$/,
+				);
+			}
+			expect(Date.now() - started).toBeLessThan(10_000);
+		} finally {
+			if (before === undefined) delete process.env.FABRIKA_NPM_HTTP_TIMEOUT_SECONDS;
+			else process.env.FABRIKA_NPM_HTTP_TIMEOUT_SECONDS = before;
+		}
 	});
 
 	// The version is never a constant here: a re-run reads the registry again, so a stale row moves
