@@ -261,7 +261,7 @@ const bootstrap = leafCommand(
 		path: Flag.string("path").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"override the target path for a file or line surface; must resolve inside the repository root",
+				"override the target path for a file, line, json or dep-pin surface; must resolve inside the repository root",
 			),
 		),
 		repo: repoFlag,
@@ -283,7 +283,7 @@ const bootstrap = leafCommand(
 ).pipe(
 	Command.withShortDescription("Create one missing repo surface and read it back."),
 	Command.withDescription(
-		"Create one missing repo surface from this group's own buildable-surface registry and read it back. The content of a file surface arrives on STDIN — the write, the collision guard and the read-back are this verb's; what the file says is the skill's. A line surface (`gitignore-row`, `claude-md-section`) instead appends its own registry block to a file the repo already owns, reads no STDIN, and rewrites nothing that is already there. A target already present is `exists` at exit 0 and nothing is written. Stdout is the single line `bootstrap\\t<created|exists>\\t<surface-id>\\t<target>\\t<readback>`. Exits 3 (stdin held nothing), 5 (the content carries a machine-local path), 6 (the content is a bare @ path reference), 8 (the write failed — UNKNOWN), 9 (the read-back differs), 10 (--path resolves outside the repository root), 11 (the existence probe failed — nothing was written), 12 (the surface is not in the registry). Example: fabrika status bootstrap readout-artifact",
+		"Create one missing repo surface from this group's own buildable-surface registry and read it back. The content of a file surface arrives on STDIN — the write, the collision guard and the read-back are this verb's; what the file says is the skill's. A line surface (`gitignore-row`, `claude-md-section`) instead appends its own registry row to a file the repo already owns, reads no STDIN, and rewrites nothing that is already there. A json surface (`settings-patch`) carries its own keys in the registry: a present file has them merged into the parsed object — every undeclared key preserved, bytes that do not parse refused unwritten — and an absent file is written whole; it reads no STDIN either way. A dep-pin surface (`dep-pin`) resolves the package's current published version from the npm registry at run time, merges the dependency row into the manifest at exactly that version, and prints the install command — no package manager ever runs and no lockfile is read or written; an unreachable registry refuses unwritten. A target already present in its adopted form is `exists` at exit 0 and nothing is written. Stdout is the single line `bootstrap\\t<created|exists>\\t<surface-id>\\t<target>\\t<readback>`. Exits 3 (stdin held nothing), 5 (the content carries a machine-local path), 6 (the content is a bare @ path reference), 8 (the write failed — UNKNOWN), 9 (the read-back differs), 10 (--path resolves outside the repository root), 11 (the existence probe failed, a present json target does not parse as a JSON object, or the npm registry could not be reached — nothing was written), 12 (the surface is not in the registry). Example: fabrika status bootstrap readout-artifact",
 	),
 );
 

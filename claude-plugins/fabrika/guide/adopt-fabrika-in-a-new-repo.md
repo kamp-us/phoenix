@@ -54,18 +54,29 @@ you do not name keeps its shipped value.
 
 ## 3. Create the surfaces the CLI can create
 
-Read the buildable ids off the verb rather than off any prose:
+Nine surface ids are buildable today. Read them off the verb rather than off any prose:
 
 ```bash
 fabrika status bootstrap --help
 ```
 
-One id per invocation; a target already present is `exists` at exit 0 and nothing is overwritten.
-The ids differ only in how they take content: stdin for `design-manifest` and `roadmap-focus`, a bare
-append for `gitignore-row` and `claude-md-section`, and a resolvable repo — `--repo`, `$CLAUDE_PIPELINE_REPO`,
-`$GITHUB_REPOSITORY`, or an `origin` remote — for the three GitHub-writing ids. The full inventory is
-`BUILDABLE_SURFACES` in
+```
+surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin
+```
+
+The registry is `BUILDABLE_SURFACES` in
 [`packages/fabrika-cli/src/status/bootstrap-verb.ts`](../../../packages/fabrika-cli/src/status/bootstrap-verb.ts).
+One id per invocation; a target already present is `exists` at exit 0 and nothing is written or
+overwritten. `design-manifest` and `roadmap-focus` take their content on stdin. `gitignore-row`
+and `claude-md-section` append their own row/block and read no stdin. `settings-patch` merges the
+`kampus` marketplace registration and the `fabrika@kampus` flip into a `.claude/settings.json`
+that is already there — unknown keys preserved, unparseable bytes refused unwritten — and creates
+the file when it is absent; it reads no stdin either way. `dep-pin` pins the `@kampus/fabrika-cli`
+dependency row to the version npm's registry publishes at run time — same merge law over the
+repo's `package.json`, an unreachable registry refused unwritten — and prints the exact install
+command; it never runs a package manager or touches a lockfile. `label-taxonomy`,
+`issue-shape-markers` and `readout-artifact` write to GitHub and need a resolvable repo —
+`--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote.
 
 ## 4. Create the labels
 
@@ -204,6 +215,8 @@ machine.
 about something the CLI reads, so it is the only one that catches a repo where every verb answers
 and no fabrika skill can load in a session. `unwired` means `.claude/settings.json` does not enable
 `fabrika@<marketplace>`, and until it does nothing in this guide's pipeline can start.
+`status bootstrap settings-patch` is the remedy: it merges the marketplace registration and the flip
+into a settings file that is already there, and creates the file whole when it is absent.
 
 The `readout` field reads `absent` with the detail
 `no readout artifact` until you run `fabrika status bootstrap readout-artifact`, which opens the
