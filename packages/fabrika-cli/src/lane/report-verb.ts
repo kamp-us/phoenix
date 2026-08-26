@@ -17,13 +17,15 @@
  * remedies are `lane prove`'s, unchanged. The prover is a parameter so this verb's unit tier stays
  * offline; the CLI always hands it `runProve`, which is the only prover a shell ever invokes.
  */
-import {Effect, type FileSystem, type Path, Result} from "effect";
+import {Effect, FileSystem, Path, Result} from "effect";
 import {appendText} from "../io/fs.ts";
 import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
+import {lockedRefusal, withLedgerLock} from "./append-lock.ts";
 import {
 	APPEND_UNKNOWN,
 	CAUSE_UNRECOGNISED,
 	CLASS_UNRECOGNISED,
+	CONCURRENT_WRITE,
 	EVENT_REFUSED,
 	TASK_UNKNOWN,
 	TOKEN_UNRECOGNISED,
@@ -62,6 +64,8 @@ export const runReport = <R>(
 	prove: (options: ProveOptions) => Effect.Effect<VerbOutcome, never, R>,
 ): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path | R> =>
 	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
 		const resolved = eventForToken(options.token);
 		if (resolved._tag === "Unrecognised") {
 			return refuse(TOKEN_UNRECOGNISED, `${VERB}: refused (log unappended): ${resolved.reason}`);
@@ -96,6 +100,9 @@ export const runReport = <R>(
 			return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${applied.reason}`);
 		}
 
+		// The proof runs BEFORE the lock: it is read-only over the artifacts, never over the lane's
+		// bytes, so holding writers up behind a slow board read buys nothing (#5994). What the lock
+		// covers is the authoritative second pass below, where a fresh fold decides and appends.
 		const proved = yield* prove({
 			root: options.root,
 			lane: options.lane,
@@ -116,37 +123,69 @@ export const runReport = <R>(
 			);
 		}
 
-		const entry: LogEntry = {
-			...applied.entry,
-			...(options.pr === null ? {} : {pr: options.pr}),
-			...(options.comment === null ? {} : {comment: options.comment}),
-			...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
-		};
-		const wrote = yield* Effect.result(appendText(loaded.logPath, `${JSON.stringify(entry)}\n`));
-		if (Result.isFailure(wrote)) {
-			return refuse(
-				APPEND_UNKNOWN,
-				`${VERB}: the append to ${loaded.logPath} did not land: ${wrote.failure.reason} — the event is NOT recorded.`,
-			);
-		}
-		return answer(
-			JSON.stringify(
-				{
-					token: resolved.token,
-					previous: applied.previous.stateValue,
-					event: entry.event,
-					current: applied.current.stateValue,
-					taskAffected: task.taskId,
+		// Authoritative pass, inside the write lock: a fresh load → fold → validate → append against
+		// the bytes as they exist under the lock, so a shell recording its terminal cannot validate
+		// against a state another writer is about to move under it (#5994). The pre-lock pass above
+		// only gated whether proving was worth its board read; this pass decides.
+		return yield* withLedgerLock(
+			{fs, path, dir: path.join(options.root, options.lane), verb: VERB},
+			Effect.gen(function* () {
+				const fresh = yield* loadLane(options);
+				if (fresh._tag !== "Loaded") return loadRefusal(VERB, fresh);
+				const freshTask = resolveTask(fresh.lane, options.task);
+				if (freshTask._tag === "Unresolved") {
+					return refuse(TASK_UNKNOWN, `${VERB}: ${freshTask.reason}`);
+				}
+				const freshFold = foldLog(fresh.lane, fresh.entries);
+				if (freshFold._tag !== "Folded") return replayRefusal(VERB, fresh.logPath, freshFold);
+
+				const now = yield* Effect.sync(() => new Date().toISOString());
+				const reapplied = applyEvent(
+					fresh.lane,
+					freshFold.states,
+					freshTask.taskId,
+					resolved.event,
+					now,
+					classed.classes,
+				);
+				if (reapplied._tag === "Refused") {
+					return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${reapplied.reason}`);
+				}
+
+				const entry: LogEntry = {
+					...reapplied.entry,
 					...(options.pr === null ? {} : {pr: options.pr}),
 					...(options.comment === null ? {} : {comment: options.comment}),
 					...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
-				},
-				null,
-				2,
-			),
-			[
-				...proved.stderr,
-				`${VERB}: appended ${entry.event} (token ${resolved.token}) to ${loaded.logPath}, proven first.`,
-			],
+				};
+				const wrote = yield* Effect.result(appendText(fresh.logPath, `${JSON.stringify(entry)}\n`));
+				if (Result.isFailure(wrote)) {
+					return refuse(
+						APPEND_UNKNOWN,
+						`${VERB}: the append to ${fresh.logPath} did not land: ${wrote.failure.reason} — the event is NOT recorded.`,
+					);
+				}
+				return answer(
+					JSON.stringify(
+						{
+							token: resolved.token,
+							previous: reapplied.previous.stateValue,
+							event: entry.event,
+							current: reapplied.current.stateValue,
+							taskAffected: freshTask.taskId,
+							...(options.pr === null ? {} : {pr: options.pr}),
+							...(options.comment === null ? {} : {comment: options.comment}),
+							...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
+						},
+						null,
+						2,
+					),
+					[
+						...proved.stderr,
+						`${VERB}: appended ${entry.event} (token ${resolved.token}) to ${fresh.logPath}, proven first.`,
+					],
+				);
+			}),
+			(lockDir) => refuse(CONCURRENT_WRITE, lockedRefusal(VERB, lockDir)),
 		);
 	});

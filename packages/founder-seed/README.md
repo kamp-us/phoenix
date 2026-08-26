@@ -4,39 +4,55 @@ Offline direct-D1 CLI that mints the **founding author-mod cohort** as both
 `moderator` and `yazar`, and lists the current founder tuples (issues #1231/#1207,
 ADR [0107](../../.decisions/0107-capability-authz-framework.md)).
 
-The founding cohort writes the seed corpus *and* holds promotion authority — "earning
-mod later" is North Star, so for v1 mod is fused into this cohort. The seed establishes
-each founder as:
+## What it is
 
-- **moderator** — the legacy `user.role` column (ADR 0098) **and** the
-  `(id, "moderates", "platform:platform")` relation tuple on the `Relation` axis (ADR
-  0107). A tuple's presence IS the capability grant; the column is the coarse role read.
+A Node CLI (`effect/unstable/cli`) mirroring `@kampus/admin-grant` — not Python,
+not an ad-hoc script. It runs as a **server-side direct-D1 script, never a runtime
+worker route**: an operator who holds the D1 write token runs it against a named
+stage's bound database. Two commands:
+
+- `seed` — promotes every founder in the roster to `moderator` and `yazar`.
+- `list` — prints the current founder `(subject, "moderates", "platform:platform")`
+  tuples.
+
+The cohort is **data, not logic**: `src/cohort.ts` exports `FOUNDER_COHORT`, an
+editable list of founder `user.id`s the seed reads. The roster changes there without
+touching the seed core; an **empty** roster makes the seed a clean no-op.
+
+The committed roster is **deliberately empty, and that is the permanent, correct
+state** (opsec): real better-auth account ids are personal identifiers that don't
+belong in an open-source repo, so they are never committed. The seed HAS run — the
+operator fills the real cohort locally at run time (an out-of-band, uncommitted
+edit) and runs the CLI against the bound D1; the grant lives in the seeded D1 rows,
+not in a committed roster. Read the empty array as by-design, not as an un-run
+bootstrap.
+
+## Why it exists
+
+The founding cohort writes the seed corpus *and* holds promotion authority —
+"earning mod later" is North Star, so for v1 mod is fused into this cohort. The
+seed establishes each founder as:
+
+- **moderator** — the legacy `user.role` column (ADR
+  [0098](../../.decisions/0098-moderation-role-resolution-lifecycle.md)) **and** the
+  `(id, "moderates", "platform:platform")` relation tuple on the `Relation` axis
+  (ADR 0107). A tuple's presence IS the capability grant; the column is the coarse
+  role read.
 - **yazar** — the server-managed `user.tier` (#1203), the top of the stored
   `çaylak < yazar` authorship ladder.
 
-It runs as a **server-side direct-D1 script, never a runtime worker route** — per
-CLAUDE.md's "Sözlük seed" section, the admin mutation routes were deleted as a fail-open
-hole, so this is a CLI run against the bound database by an operator who holds the D1
-write token. There is no in-product way to write a relation tuple or set a tier; this
-package is that path for founders.
+Per CLAUDE.md's "Sözlük seed" section, the admin mutation routes were deleted as a
+fail-open hole, and there is no in-product way to write a relation tuple or set a
+tier — this package is that path for founders.
 
-The cohort is **data, not logic**: `src/cohort.ts` exports `FOUNDER_COHORT`, an editable
-list of founder `user.id`s the seed reads. The roster changes there without touching the
-seed core; an **empty** roster makes the seed a clean no-op.
+The `object` key is `@kampus/authz`'s canonical `key(platform)`
+(`"platform:platform"`) — the SAME encoding the worker's `RelationStoreLive` reads
+with, so a seeded founder discharges `Moderate.over(platform)` end to end (the
+write→read seam).
 
-The committed roster is **deliberately empty, and that is the permanent, correct state**
-(opsec): real better-auth account ids are personal identifiers that don't belong in an
-open-source repo, so they are never committed. The seed HAS run — the operator fills the
-real cohort locally at run time (an out-of-band, uncommitted edit) and runs the CLI
-against the bound D1; the grant lives in the seeded D1 rows, not in a committed roster.
-Read the empty array as by-design, not as an un-run bootstrap.
-
-The `object` key is `@kampus/authz`'s canonical `key(platform)` (`"platform:platform"`)
-— the SAME encoding the worker's `RelationStoreLive` reads with, so a seeded founder
-discharges `Moderate.over(platform)` end to end (the write→read seam).
-
-It's authored as Node tooling — an Effect CLI (`effect/unstable/cli`), mirroring
-`@kampus/admin-grant` — not Python, not an ad-hoc script.
+Scope boundary: the seed promotes already-registered accounts; it does not create
+users, so the founders must exist before it runs. It writes nothing outside the
+`user` role/tier columns and the `moderates` tuples.
 
 ## What it does
 
@@ -60,7 +76,9 @@ A pure, unit-tested core + a thin Effect bin (the repo tooling idiom):
 - `src/cohort.ts` — `FOUNDER_COHORT`, the editable founder roster (data, not logic).
 - `src/seed.ts` — the pure core: `seedFounders`/`listFounderTuples` over a `D1Database`
   slice. Reads the cohort, idempotently promotes the rows + mints the tuples; returns the
-  changed-row counts.
+  changed-row counts. Also exports the constants the tuple encoding pins:
+  `MODERATES` (`"moderates"`), `PLATFORM` (`key(platform)`), `FOUNDER_ROLE`
+  (`"moderator"`), `FOUNDER_TIER` (`"yazar"`).
 - `src/schema.ts` — the `user` (`id` + `role` + `tier`) + `relation_tuple` columns this
   touches (a narrow local copy of the canonical `apps/web/worker/db/drizzle/schema.ts`
   columns; `relation_tuple` is added by migration `0010_relation_tuple`, `tier` by
@@ -83,13 +101,38 @@ node packages/founder-seed/src/bin.ts list --database-id <stage-d1-uuid>
 - `$CLOUDFLARE_API_TOKEN` — the minted token (carries `D1 Write`); read by
   `CredentialsFromEnv`.
 
+The package.json also exposes `pnpm seed` / `pnpm list` shims that run the same bin
+(the flags above are still required).
+
 The cohort lives in `src/cohort.ts` (`FOUNDER_COHORT`) — each founder's `user.id`
 for an already-registered account. Because the committed roster is deliberately empty
 (opsec, above), the operator fills the real ids locally before running and leaves that
-edit uncommitted. The seed promotes those accounts; it does not create users, so the
-founders must exist before it runs.
+edit uncommitted.
+
+A rejected D1 REST call surfaces as the bin's typed `D1RestError` fault, not an
+unhandled rejection.
 
 Transport is the Cloudflare D1 REST query API via alchemy's already-installed
 `@distilled.cloud/cloudflare` (`@kampus/d1-rest`) — the same primitive alchemy
 uses to apply migrations to a deployed D1, so no new Cloudflare dependency and no
 workerd.
+
+## Testing
+
+Two tiers, per ADR 0082 (`vitest run --project <tier>`):
+
+```bash
+pnpm --filter @kampus/founder-seed test               # unit tier
+pnpm --filter @kampus/founder-seed test:integration   # integration tier
+```
+
+- **unit** — `src/seed.unit.test.ts`: the empty-cohort no-op plus the statement
+  shapes (cohort read, guarded promotion, `onConflictDoNothing` insert) asserted via
+  drizzle's `.toSQL()` with no DB engine.
+- **integration** — `tests/integration/seed.test.ts`: real remote Cloudflare D1,
+  provisioned per-file by an alchemy `Test.make` D1-only stack over the production
+  REST transport. Needs `$CLOUDFLARE_API_TOKEN` / `$CLOUDFLARE_ACCOUNT_ID` /
+  `$ALCHEMY_PASSWORD`; off CI those are absent and the deploy fails at
+  `Unauthorized` (expected locally).
+
+`pnpm --filter @kampus/founder-seed typecheck` typechecks the package.

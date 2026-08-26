@@ -86,6 +86,11 @@ export interface FakeFsOptions {
 	readonly unremovable?: ReadonlyArray<string>;
 	/** Paths a removal is scripted to NOT actually remove, so the re-probe has something to catch. */
 	readonly survivesRemoval?: ReadonlyArray<string>;
+	/**
+	 * Directory paths whose creation fails `AlreadyExists` even when nothing is there — modeling a
+	 * lock another writer holds, so the losing side of an append race is testable on demand (#5994).
+	 */
+	readonly mkdirExisting?: ReadonlyArray<string>;
 }
 
 export interface FakeFs {
@@ -131,6 +136,16 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 			},
 			makeDirectory: (path: string) => {
 				if (options.unwritable?.includes(path) === true) return notFound("makeDirectory", path);
+				if (options.mkdirExisting?.includes(path) === true) {
+					return Effect.fail(
+						PlatformError.systemError({
+							_tag: "AlreadyExists",
+							module: "FileSystem",
+							method: "makeDirectory",
+							pathOrDescriptor: path,
+						}),
+					);
+				}
 				directories.add(path);
 				return Effect.void;
 			},

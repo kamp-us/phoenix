@@ -36,6 +36,7 @@ import {
 	latestPerContext,
 	listShipCheckRuns,
 	updateCheckRun,
+	type WrittenCheckRun,
 } from "./github.ts";
 import {inspectedSha, NULL_TOKEN, resolveTargetRepo} from "./target.ts";
 
@@ -50,8 +51,13 @@ const VERB = "ship floor --publish-check";
  */
 export const CHECK_RUN_NAME = "governance floor at head";
 
-/** The floor word the payload carries — what was decided, beside how the check-run seats it. */
-export type FloorWord = "n/a" | "satisfied" | "blocked" | "unresolved";
+/**
+ * The floor word the payload carries — what was decided, beside how the check-run seats it.
+ *
+ * `batch` is the one word no diff produces: it is `ship floor-batch`'s answer about a merge-queue
+ * batch ref, which carries no pull request to resolve a floor over (`./floor-batch.ts`).
+ */
+export type FloorWord = "n/a" | "satisfied" | "blocked" | "unresolved" | "batch";
 
 /**
  * What to write, in the two shapes the platform distinguishes.
@@ -141,6 +147,90 @@ const draftFor = (plan: CheckPlan, headSha: string): CheckRunDraft =>
 				summary: plan.summary,
 			};
 
+/**
+ * What {@link publishFloorCheck} did, in the two shapes its caller routes on.
+ *
+ * The rendering stays outside: the two callers print different line grammars over the same write —
+ * the PR mode carries the resolved `governance` row, `ship floor-batch` has no namespace to report —
+ * and folding both in would put a second answer about the floor inside the thing that only publishes.
+ */
+export type Publication =
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {readonly _tag: "Written"; readonly written: WrittenCheckRun; readonly rewritten: boolean};
+
+/**
+ * Write one {@link CheckPlan} to a head as the `governance floor at head` check-run.
+ *
+ * Shared by the PR mode and `./floor-batch.ts` so the name, the one-row-per-head invariant and the
+ * read-back have one implementation. A branch protection matches a required context by name, so two
+ * copies of this drifting apart is a frozen merge queue rather than a cosmetic difference (#6968).
+ */
+export const publishFloorCheck = (
+	verb: string,
+	repo: string,
+	headSha: string,
+	plan: CheckPlan,
+	relayed: ReadonlyArray<string>,
+): Effect.Effect<Publication, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		// A check-run this head already carries is rewritten rather than duplicated, so the PR shows
+		// one row per head instead of a column of superseded ones. The exception is the backwards
+		// transition — a completed check-run being re-opened as pending — which the platform does not
+		// model: a `conclusion` already set is not cleared by an update, so that one posts a fresh run.
+		const listed = yield* listShipCheckRuns(repo, headSha);
+		if (listed._tag === "Failure") {
+			// An unreadable list is not a head carrying no row: collapsing the two would post a second
+			// check-run and quietly break the one-row-per-head invariant above. Every sibling reader of
+			// this seam refuses here too (`ship checks`, `heal-ci surface`, `governance post`), so the
+			// group holds one disposition for one read (#6161).
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${verb}: cannot enumerate the check runs at ${headSha}: ${listed.reason} — nothing was published, so the floor stays UNKNOWN rather than posting a duplicate row.`,
+					relayed,
+				),
+			};
+		}
+		const held =
+			latestPerContext(listed.value.runs).find((run) => run.name === CHECK_RUN_NAME) ?? null;
+		const rewritable = held !== null && !(held.status === "completed" && plan._tag === "Pending");
+
+		const draft = draftFor(plan, headSha);
+		const written = yield* rewritable && held !== null
+			? updateCheckRun(repo, held.id, draft)
+			: createCheckRun(repo, draft);
+		if (written._tag === "Failure") {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					WRITE_UNKNOWN,
+					`${verb}: the check-run could not be written: ${written.reason} — the floor is resolved and nothing published it.`,
+					relayed,
+				),
+			};
+		}
+
+		const expectedStatus = plan._tag === "Pending" ? "in_progress" : "completed";
+		const expectedConclusion = plan._tag === "Pending" ? null : plan.conclusion;
+		if (
+			written.value.name !== CHECK_RUN_NAME ||
+			written.value.status !== expectedStatus ||
+			written.value.conclusion !== expectedConclusion
+		) {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					READBACK_MISMATCH,
+					`${verb}: wrote ${expectedStatus}/${expectedConclusion ?? NULL_TOKEN} to check-run ${written.value.id} and GitHub echoed ${written.value.status}/${written.value.conclusion ?? NULL_TOKEN} — what the PR shows is not what this run decided.`,
+					relayed,
+				),
+			};
+		}
+
+		return {_tag: "Written" as const, written: written.value, rewritten: rewritable};
+	});
+
 const stateOf = (resolution: FloorResolution): string =>
 	resolution._tag === "Bound" ? resolution.state : NULL_TOKEN;
 
@@ -169,53 +259,11 @@ export const runFloorCheck = (
 		const relayed =
 			resolution._tag === "Unresolved" ? resolution.outcome.stderr : [...resolution.stderr];
 
-		// A check-run this head already carries is rewritten rather than duplicated, so the PR shows
-		// one row per head instead of a column of superseded ones. The exception is the backwards
-		// transition — a completed check-run being re-opened as pending — which the platform does not
-		// model: a `conclusion` already set is not cleared by an update, so that one posts a fresh run.
-		const listed = yield* listShipCheckRuns(repo, bound);
-		if (listed._tag === "Failure") {
-			// An unreadable list is not a head carrying no row: collapsing the two would post a second
-			// check-run and quietly break the one-row-per-head invariant above. Every sibling reader of
-			// this seam refuses here too (`ship checks`, `heal-ci surface`, `governance post`), so the
-			// group holds one disposition for one read (#6161).
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot enumerate the check runs at ${bound}: ${listed.reason} — nothing was published, so the floor stays UNKNOWN rather than posting a duplicate row.`,
-				relayed,
-			);
-		}
-		const held =
-			latestPerContext(listed.value.runs).find((run) => run.name === CHECK_RUN_NAME) ?? null;
-		const rewritable = held !== null && !(held.status === "completed" && plan._tag === "Pending");
+		const published = yield* publishFloorCheck(VERB, repo, bound, plan, relayed);
+		if (published._tag === "Refused") return published.outcome;
+		const {written, rewritten} = published;
 
-		const draft = draftFor(plan, bound);
-		const written = yield* rewritable && held !== null
-			? updateCheckRun(repo, held.id, draft)
-			: createCheckRun(repo, draft);
-		if (written._tag === "Failure") {
-			return refuse(
-				WRITE_UNKNOWN,
-				`${VERB}: the check-run could not be written: ${written.reason} — the floor is resolved and nothing published it.`,
-				relayed,
-			);
-		}
-
-		const expectedStatus = plan._tag === "Pending" ? "in_progress" : "completed";
-		const expectedConclusion = plan._tag === "Pending" ? null : plan.conclusion;
-		if (
-			written.value.name !== CHECK_RUN_NAME ||
-			written.value.status !== expectedStatus ||
-			written.value.conclusion !== expectedConclusion
-		) {
-			return refuse(
-				READBACK_MISMATCH,
-				`${VERB}: wrote ${expectedStatus}/${expectedConclusion ?? NULL_TOKEN} to check-run ${written.value.id} and GitHub echoed ${written.value.status}/${written.value.conclusion ?? NULL_TOKEN} — what the PR shows is not what this run decided.`,
-				relayed,
-			);
-		}
-
-		const posted = `${VERB}: ${rewritable ? "rewrote" : "posted"} check-run ${written.value.id} — the job's own exit code no longer carries the floor (#6161).`;
+		const posted = `${VERB}: ${rewritten ? "rewrote" : "posted"} check-run ${written.id} — the job's own exit code no longer carries the floor (#6161).`;
 		return answer(
 			options.json
 				? JSON.stringify({
@@ -224,13 +272,13 @@ export const runFloorCheck = (
 						namespace: NAMESPACE,
 						state: resolution._tag === "Bound" ? resolution.state : null,
 						checkRun: {
-							id: written.value.id,
-							name: written.value.name,
-							status: written.value.status,
-							conclusion: written.value.conclusion,
+							id: written.id,
+							name: written.name,
+							status: written.status,
+							conclusion: written.conclusion,
 						},
 					})
-				: `check\t${written.value.status}\t${written.value.conclusion ?? NULL_TOKEN}\t${written.value.id}\nfloor\t${plan.floor}\t${bound}\nns\t${NAMESPACE}\t${stateOf(resolution)}`,
+				: `check\t${written.status}\t${written.conclusion ?? NULL_TOKEN}\t${written.id}\nfloor\t${plan.floor}\t${bound}\nns\t${NAMESPACE}\t${stateOf(resolution)}`,
 			[...relayed, posted],
 		);
 	});

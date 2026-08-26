@@ -99,6 +99,16 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 		note: "GitHub's native sub-issue and issue-dependency endpoints; the frontier's edges and an epic's child set live there and nowhere else",
 	},
 	{
+		id: "settings-patch",
+		disposition: "degrade",
+		note: "`.claude/settings.json` carrying the kampus marketplace registration and the `fabrika@kampus` flip; `status wiring` answers `unwired` over its absence, every CLI verb still runs, and only the skills do not load — buildable through `status bootstrap settings-patch`, which is the other axis",
+	},
+	{
+		id: "dep-pin",
+		disposition: "degrade",
+		note: "the manifest's `@kampus/fabrika-cli` row pinned at a published release; no verb reads the row yet, so nothing refuses and no answer narrows over its absence — buildable through `status bootstrap dep-pin`, which resolves the release from npm at run time, edits only the manifest, and prints the install command (#6995 R1.3)",
+	},
+	{
 		id: "label-taxonomy",
 		disposition: "fail-loud",
 		note: "the board vocabulary's statuses, types, priorities and audiences; `ledger child` exits 10 and `triage apply` refuses rather than minting a label nobody declared (#4285) — `status bootstrap label-taxonomy` is the remedy, which is the other axis",
@@ -242,6 +252,11 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 		id: "gitignore-row",
 		disposition: "degrade",
 		note: "a `.gitignore` covering the lane ledger's root; every lane verb works without it and the only cost is a machine-local ledger committed by accident (#5777)",
+	},
+	{
+		id: "claude-md-section",
+		disposition: "degrade",
+		note: 'the operator-first "work flows through fabrika" CLAUDE.md section routing sessions into the pipeline; no verb reads it, and the only cost of its absence is work dispatched around the gates — `status bootstrap claude-md-section` appends the canonical text, which is the other axis',
 	},
 	{
 		id: "temp-root",

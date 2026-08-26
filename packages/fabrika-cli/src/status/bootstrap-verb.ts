@@ -5,7 +5,7 @@
  * The content is the skill's judgement; the write, the collision guard and the read-back are this
  * verb's. That split is why file content arrives on stdin: *"/fabrika shows what's missing, then
  * runs the primitives to build the missing thing"* (#4952). A **line** surface is the exception and
- * carries its own row here: a caller supplying its text would let two repos spell one row two ways.
+ * carries its own text here: a caller supplying it would let two repos spell one block two ways.
  *
  * **What this builds is fixed in {@link BUILDABLE_SURFACES}, never read off a disposition.** A
  * surface's disposition in `surfaceDispositions` says what happens to a *run* that finds it missing —
@@ -13,7 +13,9 @@
  * "unbuildable" would make the most important onboarding surface unreachable.
  *
  * **`exists` is an exit-`0` answer, not a refusal.** A target already there is a proven fact the
- * caller acts on, and a non-zero exit cannot carry it. Nothing is written and nothing is overwritten.
+ * caller acts on, and a non-zero exit cannot carry it. Nothing is written and nothing is overwritten
+ * — bar the merge arm ADR 0334 rules for adoption surfaces, which touches only the keys a surface
+ * declares and never bytes it does not own.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -31,6 +33,8 @@ import {
 	listLabels,
 	openIssuesTitled,
 } from "../io/issues.ts";
+import {isRecord, parseJsonOrReason} from "../io/json.ts";
+import {latestPublishedVersion} from "../io/npm.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
@@ -49,6 +53,7 @@ import {
 } from "./codes.ts";
 import {EMPTY_CELL, row} from "./fields.ts";
 import {ARTIFACT_TITLE} from "./readout-verb.ts";
+import {PLUGIN, SETTINGS_PATH} from "./wiring-verb.ts";
 
 const VERB = "status bootstrap";
 
@@ -176,12 +181,33 @@ export type BuildableSurface =
 	| {
 			readonly id: string;
 			readonly kind: "line";
-			/** The registry default target — a line-oriented file this appends to, never rewrites. */
+			/** The registry default target — a file the repo owns that this appends to, never rewrites. */
 			readonly defaultPath: string;
-			/** The block appended when {@link marker} is absent; the last line is the row itself. */
+			/** The block appended when {@link marker} is absent; the marker is a line of the block itself. */
 			readonly block: string;
 			/** The substring that decides `exists`, and the whole of the read-back. */
 			readonly marker: string;
+	  }
+	| {
+			readonly id: string;
+			readonly kind: "json";
+			/** The registry default write path — where this lands in a repo that declares nothing. */
+			readonly defaultPath: string;
+			/**
+			 * The keys this surface owns. Present file: merged over the parsed object, every undeclared
+			 * key preserved through the re-serialize. Absent file: serialized whole.
+			 */
+			readonly patch: Readonly<Record<string, unknown>>;
+	  }
+	| {
+			readonly id: string;
+			readonly kind: "dep-pin";
+			/** The registry default write path — the adopting repo's manifest. */
+			readonly defaultPath: string;
+			/** The manifest section this surface's dependency row belongs to. */
+			readonly section: string;
+			/** The dependency row this surface owns — resolved from npm at run time, never restated. */
+			readonly packageName: string;
 	  }
 	| {
 			readonly id: string;
@@ -202,7 +228,72 @@ const FABRIKA_IGNORE_BLOCK = `# fabrika's local machine state — the per-lane l
 # \`.fabrika/lanes/<n>/\`. One machine's run log; never committed.
 ${FABRIKA_IGNORE_ROW}`;
 
-/** Six ids. A seventh is a change to this table, not a new rule. */
+/**
+ * The `settings-patch` keys: the `kampus` marketplace registration and the plugin flip, spelled as an
+ * adopted repo carries them (kamp-us/demlik#5 is the hand-authored origin). Fixed in the registry for
+ * the reason the line surface's row is fixed there: a caller supplying the JSON would let two repos
+ * spell one marketplace two ways.
+ */
+export const SETTINGS_PATCH: Readonly<Record<string, unknown>> = {
+	extraKnownMarketplaces: {
+		kampus: {
+			source: {source: "github", repo: "kamp-us/phoenix"},
+			autoUpdate: true,
+		},
+	},
+	enabledPlugins: {[`${PLUGIN}@kampus`]: true},
+};
+
+/**
+ * The dependency row `dep-pin` owns. Named here once so the manifest merge, the install command and
+ * the npm resolution all read the same spelling.
+ */
+export const FABRIKA_CLI_PACKAGE = "@kampus/fabrika-cli";
+
+/**
+ * The exact install command printed once the row lands, at the version just pinned. The lockfile is
+ * the caller's to resolve — fabrika never shells to a package manager (#6995 R1.3) — so this line
+ * on the notice is the whole handoff.
+ */
+export const installCommand = (packageName: string, version: string): string =>
+	`pnpm add --save-exact ${packageName}@${version}`;
+
+/** The marker heading that decides `exists` for the CLAUDE.md section, and its first line. */
+export const CLAUDE_MD_MARKER = "## Work flows through fabrika";
+
+/**
+ * The canonical operator-first "work flows through fabrika" CLAUDE.md section, fixed in code as
+ * the single source (ADR 0334's append-if-absent arm). Repo-specific adaptation — tone, carve-outs
+ * like a no-ADRs rule — stays with the adopting agent in the front-door flow; this verb emits the
+ * canonical text and no repo-specific branches (#7008).
+ */
+export const CLAUDE_MD_SECTION = `${CLAUDE_MD_MARKER}
+
+report → triage → plan → build → review → ship. Every unit of work is a GitHub issue moving
+through those stages; the fabrika skills run them, and the \`fabrika\` CLI's verbs are the ground
+truth at every step.
+
+**The default unit of work is a lane, and the operator drives it.** To get an issue built,
+reviewed and shipped, spawn ONE **operator** on it (\`operate\` skill) — it runs the builder,
+reviewer and shipper shells itself, feeds every outcome back to the lane ledger, and parks to a
+human only when a gate genuinely needs one. Do not hand-dispatch the per-stage shells for normal
+work, and never route around them with an ad-hoc general-purpose subagent — an off-pipeline run
+skips the gates.
+
+| Work intent | Skill | Agent |
+|---|---|---|
+| Get one issue built → reviewed → shipped | \`operate\` | **operator** |
+| Capture an observation / bug / idea | \`report\` | — |
+| Classify + prioritize the backlog | \`triage\` | **triager** |
+| Decompose a triaged epic into children | \`plan-epic\`, then \`check-epic-plan\` | — |
+| Record a decision | \`adr\` | — |
+| Record how the code is shaped | \`write-pattern\` | — |
+
+The per-stage shells are surgical — resume a half-dead lane, re-run one gate, repair one PR —
+never the normal entry point: \`build\` (**builder**), \`review\` (**reviewer**), \`ship\`
+(**shipper**), and \`heal-ci\` for a PR that is green but going nowhere.`;
+
+/** Nine ids. A tenth is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
 	{
@@ -219,9 +310,24 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 		block: FABRIKA_IGNORE_BLOCK,
 		marker: FABRIKA_IGNORE_ROW,
 	},
+	{
+		id: "claude-md-section",
+		kind: "line",
+		defaultPath: "CLAUDE.md",
+		block: CLAUDE_MD_SECTION,
+		marker: CLAUDE_MD_MARKER,
+	},
 	{id: "label-taxonomy", kind: "labels", labels: taxonomy},
 	{id: "issue-shape-markers", kind: "labels", labels: () => ISSUE_SHAPE_MARKERS},
 	{id: "readout-artifact", kind: "issue"},
+	{id: "settings-patch", kind: "json", defaultPath: SETTINGS_PATH, patch: SETTINGS_PATCH},
+	{
+		id: "dep-pin",
+		kind: "dep-pin",
+		defaultPath: "package.json",
+		section: "dependencies",
+		packageName: FABRIKA_CLI_PACKAGE,
+	},
 ];
 
 export const findSurface = (id: string): BuildableSurface | undefined =>
@@ -257,11 +363,12 @@ const created = (
 	json: boolean,
 	notice: string,
 	fields?: Readonly<Record<string, number>>,
+	extraNotices?: ReadonlyArray<string>,
 ): VerbOutcome => {
 	const stdout = json
 		? `${JSON.stringify({outcome: "created", surfaceId, target, readback: "ok", ...fields})}\n`
 		: `${row("bootstrap", "created", surfaceId, target, "ok")}\n`;
-	return answer(stdout, [notice]);
+	return answer(stdout, [notice, ...(extraNotices ?? [])]);
 };
 
 const already = (surfaceId: string, target: string, json: boolean): VerbOutcome => {
@@ -408,14 +515,215 @@ const buildFile = (
 	});
 
 /**
+ * JSON value equality, key-order-insensitive: a hand-authored settings object may spell its keys in
+ * any order, and an adoption that differs only in key order is adopted, not a delta to rewrite.
+ */
+const jsonEquals = (a: unknown, b: unknown): boolean => {
+	if (a === b) return true;
+	if (Array.isArray(a) || Array.isArray(b)) {
+		return (
+			Array.isArray(a) &&
+			Array.isArray(b) &&
+			a.length === b.length &&
+			a.every((item, index) => jsonEquals(item, b[index]))
+		);
+	}
+	if (!isRecord(a) || !isRecord(b)) return false;
+	const aKeys = Object.keys(a);
+	const bKeys = new Set(Object.keys(b));
+	return (
+		aKeys.length === bKeys.size &&
+		aKeys.every((key) => bKeys.has(key) && jsonEquals(a[key], b[key]))
+	);
+};
+
+/**
+ * The key-merge proper: the patch's own paths overwrite, everything else survives verbatim —
+ * including siblings *under* a key the patch names, so an `enabledPlugins` carrying other plugins
+ * keeps them. Recursion follows the patch's shape only; the merge never descends into content the
+ * surface does not declare.
+ */
+const mergeJsonPatch = (
+	present: Readonly<Record<string, unknown>>,
+	patch: Readonly<Record<string, unknown>>,
+): Record<string, unknown> => {
+	const merged: Record<string, unknown> = {...present};
+	for (const [key, value] of Object.entries(patch)) {
+		merged[key] =
+			isRecord(value) && isRecord(merged[key]) ? mergeJsonPatch(merged[key], value) : value;
+	}
+	return merged;
+};
+
+const serializeJsonPatch = (value: Readonly<Record<string, unknown>>): string =>
+	`${JSON.stringify(value, null, "\t")}\n`;
+
+/**
+ * **The JSON key-merge arm (ADR 0334), shared by every json-shaped target.** An adopting repo's
+ * file usually exists before fabrika ever sees it, so the file arm's absence guard cannot serve it.
+ * A present target must parse as a JSON object: the patch's declared keys merge over it, every
+ * undeclared key survives the re-serialize verbatim, and bytes that refuse to parse are exit `11`
+ * naming the file and the parse failure, nothing written. Already merged — the parsed object equals
+ * what merging would produce — is `exists`, so idempotency stays absolute. Absent, the declared keys
+ * are written whole through the same write-and-read-back protocol the file arm runs.
+ */
+const mergePatchAt = (
+	surfaceId: string,
+	relative: string,
+	absolute: string,
+	patch: Readonly<Record<string, unknown>>,
+	input: BootstrapInput,
+	extraNotices?: ReadonlyArray<string>,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const probe = yield* Effect.result(exists(absolute));
+		if (Result.isFailure(probe)) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot probe ${relative}: ${probe.failure.reason} — nothing was written.`,
+			);
+		}
+		if (!probe.success) {
+			return yield* writeAndReadBack(
+				surfaceId,
+				relative,
+				absolute,
+				serializeJsonPatch(patch),
+				input,
+				`created ${relative} for ${surfaceId}, read-back conformed.`,
+				extraNotices,
+			);
+		}
+		const read = yield* Effect.result(readFile(absolute));
+		if (Result.isFailure(read)) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read ${relative}: ${read.failure.reason} — whether the declared keys are already there is UNKNOWN, and nothing was written.`,
+			);
+		}
+		const parsed = parseJsonOrReason(read.success);
+		if (parsed._tag === "Failed") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${relative} does not parse as a JSON object: ${parsed.reason} — nothing was written.`,
+			);
+		}
+		if (!isRecord(parsed.value)) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${relative} parses to ${Array.isArray(parsed.value) ? "an array" : typeof parsed.value}, not a JSON object — nothing was written.`,
+			);
+		}
+		const merged = mergeJsonPatch(parsed.value, patch);
+		if (jsonEquals(parsed.value, merged)) return already(surfaceId, relative, input.json);
+		return yield* writeAndReadBack(
+			surfaceId,
+			relative,
+			absolute,
+			serializeJsonPatch(merged),
+			input,
+			`merged the declared keys into ${relative} for ${surfaceId}, read-back conformed.`,
+			extraNotices,
+		);
+	});
+
+/** The settings arm: the registry's static keys through {@link mergePatchAt}. */
+const buildJsonPatch = (
+	surface: Extract<BuildableSurface, {kind: "json"}>,
+	input: BootstrapInput,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const target = yield* targetOf(surface, input);
+		if (!isTarget(target)) return target;
+		return yield* mergePatchAt(surface.id, target.relative, target.absolute, surface.patch, input);
+	});
+
+/**
+ * **dep-pin resolves the release at run time; the edit itself is the json arm's.** The pinned
+ * version is never a constant here — the npm registry's current published release is what makes a
+ * re-run move an old row forward — and an unreachable or malformed answer refuses instead of
+ * pinning a guess (#7007). The merge rides {@link mergePatchAt} over one key path:
+ * `dependencies.@kampus/fabrika-cli` at exactly the resolved version, every other key verbatim,
+ * absolute idempotency (ADR 0334). No package manager ever spawns and no lockfile is read or
+ * written — the exact install command is printed instead, because the lockfile stays the caller's
+ * (#6995 R1.3).
+ */
+const buildDepPin = (
+	surface: Extract<BuildableSurface, {kind: "dep-pin"}>,
+	input: BootstrapInput,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const target = yield* targetOf(surface, input);
+		if (!isTarget(target)) return target;
+		const {relative, absolute} = target;
+
+		const resolved = yield* latestPublishedVersion(surface.packageName);
+		if (resolved._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot resolve ${surface.packageName}'s current release from npm: ${resolved.reason} — nothing pinned, nothing written.`,
+			);
+		}
+		return yield* mergePatchAt(
+			surface.id,
+			relative,
+			absolute,
+			{[surface.section]: {[surface.packageName]: resolved.value}},
+			input,
+			[
+				`${VERB}: the lockfile stays yours — install with: ${installCommand(surface.packageName, resolved.value)}`,
+			],
+		);
+	});
+
+/**
+ * One write, one re-read, one comparison — the protocol every byte-writing arm here runs. The notice
+ * prefix (`created …` / `merged …`) is the caller's, because the arms differ in what landed; extra
+ * notices ride the same channel, which is how dep-pin hands over the install command.
+ */
+const writeAndReadBack = (
+	surfaceId: string,
+	relative: string,
+	absolute: string,
+	content: string,
+	input: BootstrapInput,
+	notice: string,
+	extraNotices?: ReadonlyArray<string>,
+): Effect.Effect<VerbOutcome, never, Requirements> =>
+	Effect.gen(function* () {
+		const written = yield* Effect.result(writeFile(absolute, content));
+		if (Result.isFailure(written)) {
+			return refuse(
+				WRITE_UNKNOWN,
+				`${VERB}: writing ${relative} failed: ${written.failure.reason} — whether it landed is UNKNOWN. Re-read before retrying.`,
+			);
+		}
+		const back = yield* Effect.result(readFile(absolute));
+		if (Result.isFailure(back)) {
+			return refuse(
+				WRITE_UNKNOWN,
+				`${VERB}: wrote ${relative} and it could not be read back: ${back.failure.reason} — the outcome is UNKNOWN.`,
+			);
+		}
+		if (normalizeForReadback(back.success) !== normalizeForReadback(content)) {
+			return refuse(
+				READBACK_MISMATCH,
+				`${VERB}: wrote ${relative} and the read-back differs — the outcome is UNKNOWN.`,
+			);
+		}
+		return created(surfaceId, relative, input.json, `${VERB}: ${notice}`, undefined, extraNotices);
+	});
+
+/**
  * **A line surface appends; it never rewrites what is already in the file.**
  *
  * The target is a file the repo owns and this verb is one contributor to — a `.gitignore` carries
- * rows from every tool in the tree — so the collision guard cannot be the file's existence, the way
- * it is for a file surface this verb authors whole. It is the row: present anywhere in the text,
- * this is `exists` at exit `0` and nothing is written; absent, the block goes on the end and the
- * pre-existing bytes are re-read intact. Both halves are substring reads over the same marker, so a
- * hand-added row spelled the same way is recognised as the row it is.
+ * rows from every tool in the tree, a CLAUDE.md is the repo's own prose — so the collision guard
+ * cannot be the file's existence, the way it is for a file surface this verb authors whole. It is
+ * the marker: present anywhere in the text, this is `exists` at exit `0` and nothing is written;
+ * absent, the block goes on the end and the pre-existing bytes are re-read intact. Both halves are
+ * substring reads over the same marker, so a hand-added row — or a hand-adapted section under the
+ * same heading — is recognised as the thing it is (ADR 0334's append-if-absent arm).
  */
 const buildLine = (
 	surface: Extract<BuildableSurface, {kind: "line"}>,
@@ -619,5 +927,7 @@ export const runBootstrap = (
 	}
 	if (surface.kind === "file") return buildFile(surface, input);
 	if (surface.kind === "line") return buildLine(surface, input);
+	if (surface.kind === "json") return buildJsonPatch(surface, input);
+	if (surface.kind === "dep-pin") return buildDepPin(surface, input);
 	return surface.kind === "labels" ? buildLabels(surface, input) : buildArtifact(surface, input);
 };

@@ -8,6 +8,13 @@
 	// on #5959: the grant-author set is repo configuration, not a compiled-in "founder" concept —
 	// GitHub usernames and teams, both `@`-prefixed as GitHub writes them. In phoenix it is the
 	// three founder accounts. One grant buys exactly one round.
+	// The governed roots — declared verbatim per the shipped default (config/keys/governed-roots.ts):
+	// phoenix's four roots plus this file. Declared explicitly 2026-08-26 after the two-derivations
+	// mismatch (#4730-class) parked PRs #7085/#7114: ship gate raises governance from raw paths
+	// (#5036) while review scope/post dropped the namespace absent this declaration — the gate
+	// demanded what the reviewer verb could not emit.
+	"governedRoots": [".decisions/", ".claude/", ".github/", "claude-plugins/", ".fabrika.jsonc"],
+
 	"capClearAuthors": ["@usirin", "@notusirin", "@cansirin"],
 
 	// Who may declare a campaign or flip its lifecycle state (`fabrika campaign open` / `campaign
