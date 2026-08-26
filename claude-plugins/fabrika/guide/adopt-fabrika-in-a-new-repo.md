@@ -54,42 +54,29 @@ you do not name keeps its shipped value.
 
 ## 3. Create the surfaces the CLI can create
 
-<<<<<<< HEAD
-Eight surface ids are buildable today. Read them off the verb rather than off any prose:
-=======
-Read the buildable ids off the verb rather than off any prose:
->>>>>>> a6dccc0d2989f5201318e546f2b296bd55f97fad
+Nine surface ids are buildable today. Read them off the verb rather than off any prose:
 
 ```bash
 fabrika status bootstrap --help
 ```
 
-<<<<<<< HEAD
 ```
-surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin
+surface-id string    one id from the buildable-surface registry: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin
 ```
 
 The registry is `BUILDABLE_SURFACES` in
 [`packages/fabrika-cli/src/status/bootstrap-verb.ts`](../../../packages/fabrika-cli/src/status/bootstrap-verb.ts).
 One id per invocation; a target already present is `exists` at exit 0 and nothing is written or
 overwritten. `design-manifest` and `roadmap-focus` take their content on stdin. `gitignore-row`
-appends its own row and reads no stdin. `settings-patch` merges the `kampus` marketplace
-registration and the `fabrika@kampus` flip into a `.claude/settings.json` that is already there —
-unknown keys preserved, unparseable bytes refused unwritten — and creates the file when it is
-absent; it reads no stdin either way. `dep-pin` pins the `@kampus/fabrika-cli` dependency row to
-the version npm's registry publishes at run time — same merge law over the repo's `package.json`,
-an unreachable registry refused unwritten — and prints the exact install command; it never runs a
-package manager or touches a lockfile. `label-taxonomy`, `issue-shape-markers` and
-`readout-artifact` write to GitHub and need a resolvable repo — `--repo`, `$CLAUDE_PIPELINE_REPO`,
-`$GITHUB_REPOSITORY`, or an `origin` remote.
-=======
-One id per invocation; a target already present is `exists` at exit 0 and nothing is overwritten.
-The ids differ only in how they take content: stdin for `design-manifest` and `roadmap-focus`, a bare
-append for `gitignore-row` and `claude-md-section`, and a resolvable repo — `--repo`, `$CLAUDE_PIPELINE_REPO`,
-`$GITHUB_REPOSITORY`, or an `origin` remote — for the three GitHub-writing ids. The full inventory is
-`BUILDABLE_SURFACES` in
-[`packages/fabrika-cli/src/status/bootstrap-verb.ts`](../../../packages/fabrika-cli/src/status/bootstrap-verb.ts).
->>>>>>> a6dccc0d2989f5201318e546f2b296bd55f97fad
+and `claude-md-section` append their own row/block and read no stdin. `settings-patch` merges the
+`kampus` marketplace registration and the `fabrika@kampus` flip into a `.claude/settings.json`
+that is already there — unknown keys preserved, unparseable bytes refused unwritten — and creates
+the file when it is absent; it reads no stdin either way. `dep-pin` pins the `@kampus/fabrika-cli`
+dependency row to the version npm's registry publishes at run time — same merge law over the
+repo's `package.json`, an unreachable registry refused unwritten — and prints the exact install
+command; it never runs a package manager or touches a lockfile. `label-taxonomy`,
+`issue-shape-markers` and `readout-artifact` write to GitHub and need a resolvable repo —
+`--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote.
 
 ## 4. Create the labels
 

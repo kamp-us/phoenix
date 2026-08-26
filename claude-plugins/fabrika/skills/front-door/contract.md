@@ -1088,13 +1088,8 @@ surface merges into a file that is already there instead (ADR
 skill's judgement; the write, the collision guard and the read-back are this verb's.
 
 <a id="buildable-surfaces"></a>**The buildable-surface registry.** What this verb builds is fixed
-<<<<<<< HEAD
-here, not inferred from any declaration. Eight ids, and
-a ninth is a change to this table, not a new rule.
-=======
-here, not inferred from any declaration. Seven ids, and
-an eighth is a change to this table, not a new rule.
->>>>>>> a6dccc0d2989f5201318e546f2b296bd55f97fad
+here, not inferred from any declaration. Nine ids, and
+a tenth is a change to this table, not a new rule.
 
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
@@ -1354,11 +1349,7 @@ creating several would have to report a partial outcome, and a partial write rep
 | `status bootstrap: appending <marker> to <target> failed: <reason> — whether it landed is UNKNOWN. Re-read before retrying.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and it could not be read back: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
 | `status bootstrap: appended <marker> to <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
-<<<<<<< HEAD
-| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.` | 12 | refusal |
-=======
-| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact.` | 12 | refusal |
->>>>>>> a6dccc0d2989f5201318e546f2b296bd55f97fad
+| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.
 | `status bootstrap: created <target> for <surface-id>, read-back conformed.` | 0 | notice |
 | `status bootstrap: created <target> for roadmap-focus, read-back conformed — <n> arc(s), <n> campaign(s).` | 0 | notice |
 | `status bootstrap: appended <marker> to <target> for <surface-id>, read-back conformed.` | 0 | notice |
@@ -1439,11 +1430,7 @@ no package manager ever spawns and no lockfile moves. A re-run with the row alre
 
 ```
 $ fabrika status bootstrap merge-queue
-<<<<<<< HEAD
-status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.
-=======
-status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact.
->>>>>>> a6dccc0d2989f5201318e546f2b296bd55f97fad
+status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, claude-md-section, label-taxonomy, issue-shape-markers, readout-artifact, settings-patch, dep-pin.
 $ echo $?
 12
 ```
