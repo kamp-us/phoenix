@@ -7,12 +7,15 @@
  *   1. consistency  — the tree is a shape alchemy can apply and drizzle-kit can diff: no `.sql`
  *                     at any depth outside the two known layouts, every directory migration
  *                     carries a `snapshot.json`, the retired `meta/` layout is gone, no two
- *                     migrations share an apply prefix, and the flat history gained no member;
+ *                     migrations share an apply prefix, the flat history gained no member, and
+ *                     every migration is in the baseline — a new one lands with its baseline
+ *                     row in the same change (ADR 0309 amendment, #7055), so the whole tree
+ *                     stays under the immutability property below;
  *   2. ordering     — the flat `NNNN_` numbers run contiguous from 0, and every directory
  *                     migration sorts after all of them under alchemy's own prefix sort;
- *   3. immutability — every migration already recorded in the baseline has an unchanged SQL
- *                     content hash (an edit to landed history is caught; a *new* trailing
- *                     migration absent from the baseline passes).
+ *   3. immutability — every migration recorded in the baseline still exists under its exact
+ *                     apply id with an unchanged SQL content hash, so both an edit to landed
+ *                     history and a rename/deletion of it are caught.
  *
  * It never touches the filesystem and is total over the loaded input, so every branch is
  * unit-testable.
@@ -124,6 +127,16 @@ const checkConsistency = (tree: MigrationTree, baseline: Baseline): Violation[] 
 					message: `migration directory "${m.tag}" has no snapshot.json — drizzle-kit cannot diff the next generate against it`,
 				});
 			}
+			// A migration outside the baseline is one the immutability check has no memory of,
+			// so a later PR could rename or delete it — and change its apply id — unjudged
+			// (ADR 0309 amendment, #7055). Landing the baseline row with the migration is what
+			// puts every applied file under that check from the moment it exists.
+			if (baseline[m.tag] === undefined) {
+				v.push({
+					kind: "consistency",
+					message: `directory migration "${m.tag}" is not in the baseline — every migration lands with its baseline row (ADR 0309 amendment); run \`node packages/migrations-guard/src/bin.ts baseline\` and commit the regenerated migration-hashes.json in the same change`,
+				});
+			}
 		} else if (baseline[m.tag] === undefined) {
 			v.push({
 				kind: "consistency",
@@ -201,8 +214,9 @@ const checkOrdering = (tree: MigrationTree): Violation[] => {
 };
 
 // (3) Immutability: every migration recorded in the baseline must have the SAME SQL content hash
-// now. A migration present in the tree but ABSENT from the baseline is a new trailing migration
-// and passes — it is not yet landed history. A baseline tag missing from the tree (a deleted or
+// now. A migration present in the tree but ABSENT from the baseline is not judged here — since
+// the ADR 0309 amendment (#7055) that state is a consistency violation above, so it can no
+// longer pass as "new trailing history". A baseline tag missing from the tree (a deleted or
 // renamed migration) is itself a violation, and the sharpest one: its apply id is what production
 // recorded, so losing it is what makes the whole set replay.
 const checkImmutability = (tree: MigrationTree, baseline: Baseline): Violation[] => {

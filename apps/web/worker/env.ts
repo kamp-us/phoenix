@@ -39,6 +39,11 @@ export interface DeployEnvInput {
 	 * @see node_modules/alchemy/lib/Test/Core.js — `resolveDev`
 	 */
 	readonly ALCHEMY_DEV?: string | undefined;
+	/**
+	 * The operator's "adopt" answer to a D1 migration-drift refusal (#7055, ADR 0309
+	 * amendment). Read by `migrationsDriftStrategy` below; only the literal `adopt` counts.
+	 */
+	readonly D1_MIGRATIONS_DRIFT?: string | undefined;
 }
 
 export type StateMode = "local" | "cloudflare";
@@ -99,6 +104,16 @@ export const devDatabaseName = (env: DeployEnvInput): string | undefined => {
 	if (!stage) return undefined;
 	return `phoenix-phoenix_db-${stage}`.replaceAll(/[^a-zA-Z0-9-]/g, "-");
 };
+
+/**
+ * The patched `D1.Database` (ADR 0038, #7055) refuses a deploy whose recorded migration ids
+ * no longer match the on-disk files, naming adopt-or-wipe as the ways out. This resolves the
+ * operator's per-run "adopt" consent from the deploy environment: only the literal `adopt`
+ * re-keys content-identical renames without re-running their SQL; anything else keeps the
+ * refuse default. Pure over an injected snapshot, like `resolveStateMode` above.
+ */
+export const migrationsDriftStrategy = (env: DeployEnvInput): "adopt" | undefined =>
+	env.D1_MIGRATIONS_DRIFT === "adopt" ? "adopt" : undefined;
 
 export const PHOENIX_APEX_HOSTNAME = "phoenix.kamp.us" as const;
 

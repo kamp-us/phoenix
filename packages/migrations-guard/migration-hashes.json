@@ -34,6 +34,8 @@
 		"0031_user_mute": "6eca28cb5ded9a1c6846147bbe9e74c037cb3919fe44adf7e2988b08b12a0d7f",
 		"0032_user_role_event": "fda5671c62478b321c588293a45e2bc468148ec6b0ec568e9099d2641a2b8b41",
 		"0033_caylak_visibility_preference": "140d5b441061820dfea18f2ec849f25d467ae0a09046895557493a83bae062a5",
+		"0034_user_activity_day": "b6c952e28b35661fdc4cbdb19d254d35dec04df0df40c634a5f1ee12daf897b9",
+		"0035_cohort_week_rollup": "c30fd9406f498d6ea0f8ae2fa70996b6b9fd3cb46859966e4772f459ce1ff136",
 		"20260820113338_v7_baseline": "1c8acad69a9ae7a80e576d8df3f11bf460706e5b6143b2dceef9de3af4d80ebb"
 	}
 }

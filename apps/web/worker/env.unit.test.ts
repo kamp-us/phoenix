@@ -3,6 +3,7 @@ import {describe, expect, it} from "vitest";
 import {
 	customHostname,
 	devDatabaseName,
+	migrationsDriftStrategy,
 	PHOENIX_APEX_HOSTNAME,
 	resolveDevStage,
 	resolveStateMode,
@@ -129,5 +130,18 @@ describe("customHostname (production-only — #594/#983)", () => {
 		expect(customHostname("production", "preview")).toBeUndefined();
 		// And a prod ENVIRONMENT serves the apex regardless of the stage label.
 		expect(customHostname("anything", "production")).toBe("phoenix.kamp.us");
+	});
+});
+
+describe("migrationsDriftStrategy (#7055 — the operator's adopt answer)", () => {
+	it("only the literal `adopt` opts in", () => {
+		expect(migrationsDriftStrategy({D1_MIGRATIONS_DRIFT: "adopt"})).toBe("adopt");
+	});
+
+	it("everything else keeps the refuse default", () => {
+		expect(migrationsDriftStrategy({})).toBeUndefined();
+		expect(migrationsDriftStrategy({D1_MIGRATIONS_DRIFT: ""})).toBeUndefined();
+		expect(migrationsDriftStrategy({D1_MIGRATIONS_DRIFT: "ADOPT"})).toBeUndefined();
+		expect(migrationsDriftStrategy({D1_MIGRATIONS_DRIFT: "wipe"})).toBeUndefined();
 	});
 });

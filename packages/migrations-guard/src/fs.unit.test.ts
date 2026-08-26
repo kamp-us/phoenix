@@ -107,12 +107,19 @@ describe("baseline round-trip drives the immutability check", () => {
 		expect(verdict.violations.some((v) => v.kind === "immutability")).toBe(true);
 	});
 
-	it("a new migration directory added after the baseline passes", () => {
+	it("a new migration directory reds until its baseline row lands beside it (#7055)", () => {
 		writeBaseline();
 		const next = join(dir, "20260901120000_next");
 		mkdirSync(next);
 		writeFileSync(join(next, "migration.sql"), "ALTER TABLE a ADD COLUMN x TEXT;\n");
 		writeFileSync(join(next, "snapshot.json"), '{"version":"7"}');
+		const before = evaluate(loadMigrationTree(dir), loadBaseline(baselinePath()));
+		expect(before.ok).toBe(false);
+		expect(before.violations.some((v) => v.message.includes("lands with its baseline row"))).toBe(
+			true,
+		);
+
+		writeBaseline();
 		expect(evaluate(loadMigrationTree(dir), loadBaseline(baselinePath())).ok).toBe(true);
 	});
 

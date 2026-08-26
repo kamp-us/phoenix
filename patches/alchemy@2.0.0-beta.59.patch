@@ -24,6 +24,168 @@ index e23fa78794661504bbd4ae48457b37c3a2a094d1..31aca3fb0b20f668239a7a7e6c56afa3
  	const stackEffect = (yield* Effect.promise(() => import(__rewriteRelativeImportExtension(url)))).default;
  	if (!Effect.isEffect(stackEffect)) return yield* Effect.die(/* @__PURE__ */ new Error(`Main file '${main}' must export a default stack definition (export default Alchemy.Stack({...}))`));
  	return stackEffect;
+diff --git a/lib/Cloudflare/D1/ApplyMigrations.d.ts b/lib/Cloudflare/D1/ApplyMigrations.d.ts
+index 3c2ca8188c74fdd6b89e8070c1c6c65b5a7ffffd..655422264b0d63cdda0eacb9ca55a52f962f0409 100644
+--- a/lib/Cloudflare/D1/ApplyMigrations.d.ts
++++ b/lib/Cloudflare/D1/ApplyMigrations.d.ts
+@@ -7,7 +7,22 @@ export interface ApplyMigrationsOptions {
+     databaseId: string;
+     migrationsTable: string;
+     migrationsFiles: ReadonlyArray<SqlFile>;
++    /** phoenix in-repo patch (ADR 0038, #7055): see `detectMigrationsDrift`. */
++    driftStrategy?: "adopt";
++    /** id → sha256 from the resource state's last successful deploy (`migrationsHashes`). */
++    previousHashes?: Readonly<Record<string, string>>;
+ }
++/** phoenix in-repo patch (ADR 0038, #7055): record-vs-disk drift, classified. */
++export interface MigrationsDriftReport {
++    readonly drifted: boolean;
++    readonly renames: ReadonlyArray<{
++        readonly from: string;
++        readonly to: string;
++    }>;
++    readonly deletions: ReadonlyArray<string>;
++}
++export declare const detectMigrationsDrift: (applied: ReadonlySet<string>, migrationsFiles: ReadonlyArray<SqlFile>, previousHashes: Readonly<Record<string, string>>) => MigrationsDriftReport;
++export declare const renderMigrationsDrift: (report: MigrationsDriftReport) => string;
+ /**
+  * Apply pending D1 migrations in order. Uses the wrangler-compatible
+  * 3-column schema `(id TEXT PK, name TEXT, applied_at TEXT)`.
+diff --git a/lib/Cloudflare/D1/ApplyMigrations.js b/lib/Cloudflare/D1/ApplyMigrations.js
+index ba1c3be608856556930a5895497c1071cec015c1..f6be386f2756b255b882bdb47960856959b80f4a 100644
+--- a/lib/Cloudflare/D1/ApplyMigrations.js
++++ b/lib/Cloudflare/D1/ApplyMigrations.js
+@@ -1,13 +1,77 @@
+ import * as d1 from "@distilled.cloud/cloudflare/d1";
+ import * as Effect from "effect/Effect";
++/**
++ * phoenix in-repo patch (ADR 0038, #7055): migration-record drift detection. A migration is
++ * skipped by exact id (= relative path) match, so renaming or deleting an already-applied file
++ * orphans its record and makes the file's SQL replay against a database that already ran it.
++ * Pure so the behavior pin can exercise it directly (dependency-patch-behavior-pins pattern).
++ *
++ * `previousHashes` is the resource state's id → sha256 map from the last successful deploy; an
++ * orphaned record whose tracked hash matches a pending on-disk file is a content-identical
++ * rename (queue-consumed, so two identical-content files cannot both claim one candidate).
++ * Everything else is a deletion — or a rename whose content also changed, which must not be
++ * adopted because the pending file's SQL would still run.
++ */
++export const detectMigrationsDrift = (applied, migrationsFiles, previousHashes) => {
++    const onDisk = new Set(migrationsFiles.map((m) => m.id));
++    const orphaned = [...applied].filter((name) => !onDisk.has(name)).sort();
++    if (orphaned.length === 0)
++        return { drifted: false, renames: [], deletions: [] };
++    const pendingByHash = new Map();
++    for (const file of migrationsFiles) {
++        if (applied.has(file.id))
++            continue;
++        const queue = pendingByHash.get(file.hash) ?? [];
++        queue.push(file.id);
++        pendingByHash.set(file.hash, queue);
++    }
++    const renames = [];
++    const deletions = [];
++    for (const name of orphaned) {
++        const hash = previousHashes[name];
++        const to = hash === undefined ? undefined : pendingByHash.get(hash)?.shift();
++        if (to === undefined)
++            deletions.push(name);
++        else
++            renames.push({ from: name, to });
++    }
++    return { drifted: true, renames, deletions };
++};
++export const renderMigrationsDrift = (report) => {
++    const lines = [
++        "D1 migration drift: the database's recorded migration ids no longer match the on-disk migration files.",
++        "Applying the tree as-is would re-run SQL this database already ran. Refusing.",
++    ];
++    for (const r of report.renames)
++        lines.push(`  renamed (content-identical): "${r.from}" -> "${r.to}"`);
++    for (const name of report.deletions)
++        lines.push(`  recorded but gone from disk (deleted, or renamed with edited content): "${name}"`);
++    lines.push("Decide adopt or wipe:");
++    lines.push('  adopt — set `migrationsDriftStrategy: "adopt"` on the D1 resource: re-keys each content-identical rename in the migrations table WITHOUT re-running its SQL. Refused while any non-rename row is listed above.');
++    lines.push("  wipe  — destroy and recreate this stage's database (e.g. `alchemy destroy --stage <stage>`), or restore the recorded file unchanged.");
++    return lines.join("\n");
++};
+ /**
+  * Apply pending D1 migrations in order. Uses the wrangler-compatible
+  * 3-column schema `(id TEXT PK, name TEXT, applied_at TEXT)`.
+  */
+ export const applyMigrations = (options) => Effect.gen(function* () {
+-    const { accountId, databaseId, migrationsTable, migrationsFiles } = options;
++    const { accountId, databaseId, migrationsTable, migrationsFiles, driftStrategy, previousHashes } = options;
+     yield* ensureMigrationsTable(accountId, databaseId, migrationsTable);
+     const applied = yield* getAppliedMigrations(accountId, databaseId, migrationsTable);
++    // phoenix in-repo patch (ADR 0038, #7055): surface record-vs-disk drift and refuse instead
++    // of blindly replaying; "adopt" re-keys hash-proven renames and never covers a deletion.
++    const drift = detectMigrationsDrift(applied, migrationsFiles, previousHashes ?? {});
++    if (drift.drifted) {
++        if (driftStrategy !== "adopt" || drift.deletions.length > 0) {
++            return yield* Effect.die(renderMigrationsDrift(drift));
++        }
++        for (const { from, to } of drift.renames) {
++            yield* executeSQL(accountId, databaseId, `UPDATE ${migrationsTable} SET name = '${to}' WHERE name = '${from}';`);
++            applied.delete(from);
++            applied.add(to);
++        }
++    }
+     let nextSeq = yield* getNextSeq(accountId, databaseId, migrationsTable);
+     for (const migration of migrationsFiles) {
+         if (applied.has(migration.id))
+diff --git a/lib/Cloudflare/D1/Database.d.ts b/lib/Cloudflare/D1/Database.d.ts
+index 7401b8590b495c8618baf2e18ebe02df615e17ca..6dc4de80ec09c98f8aeede3b3f51d4118fe7e324 100644
+--- a/lib/Cloudflare/D1/Database.d.ts
++++ b/lib/Cloudflare/D1/Database.d.ts
+@@ -65,6 +65,14 @@ export type DatabaseProps = {
+      * @default "d1_migrations"
+      */
+     migrationsTable?: string;
++    /**
++     * phoenix in-repo patch (ADR 0038, #7055): what to do when the database's recorded
++     * migration ids no longer match the on-disk migration files (a rename or deletion of an
++     * already-applied migration). Unset, the deploy is refused with an adopt-or-wipe report
++     * instead of replaying already-applied SQL. `"adopt"` re-keys content-identical renames
++     * in the migrations table without re-running their SQL; it never covers a deletion.
++     */
++    migrationsDriftStrategy?: "adopt";
+     /**
+      * Paths to additional `.sql` files to import after migrations are
+      * applied. Each file is uploaded via Cloudflare's D1 import API and
+diff --git a/lib/Cloudflare/D1/Database.js b/lib/Cloudflare/D1/Database.js
+index 98b9ed148fb18e108f737d6fcc20a75dc24e4394..bbbdcebe93d584e27a96af2d24fd3da228b4dceb 100644
+--- a/lib/Cloudflare/D1/Database.js
++++ b/lib/Cloudflare/D1/Database.js
+@@ -334,7 +334,7 @@ export const DatabaseProvider = () => Provider.succeed(Database, {
+             output?.migrationsTable ??
+             DEFAULT_MIGRATIONS_TABLE;
+         const migrationsHashes = news.migrationsDir
+-            ? yield* runMigrations(acct, databaseId, news.migrationsDir, migrationsTable)
++            ? yield* runMigrations(acct, databaseId, news.migrationsDir, migrationsTable, news.migrationsDriftStrategy, output?.migrationsHashes ?? {})
+             : isFirstCreation
+                 ? {}
+                 : (output?.migrationsHashes ?? {});
+@@ -393,14 +393,18 @@ const resolveCloneSource = (source, accountId, listDbs) => Effect.gen(function*
+  * Read all migration files from `migrationsDir`, run pending migrations,
+  * and return the per-file content hashes for state tracking.
+  */
+-const runMigrations = (accountId, databaseId, migrationsDir, migrationsTable) => Effect.gen(function* () {
++const runMigrations = (accountId, databaseId, migrationsDir, migrationsTable, driftStrategy, previousHashes) => Effect.gen(function* () {
+     const files = yield* listSqlFiles(migrationsDir);
+     if (files.length > 0) {
++        // phoenix in-repo patch (ADR 0038, #7055): thread the drift strategy + the state's
++        // last-deploy hash map so `applyMigrations` can classify renames vs deletions.
+         yield* applyMigrations({
+             accountId,
+             databaseId,
+             migrationsTable,
+             migrationsFiles: files,
++            driftStrategy,
++            previousHashes,
+         });
+     }
+     const hashes = {};
 diff --git a/lib/Cloudflare/Flagship/Flag.js b/lib/Cloudflare/Flagship/Flag.js
 index 7de47700579646b223752697256ea351f4532a69..b5eee14cc9948af0ae34480301cdb3a0b3f1c402 100644
 --- a/lib/Cloudflare/Flagship/Flag.js
@@ -126,7 +288,7 @@ index 5a3a52dccf3fa3cc5e21ac2190027801fc646b53..d3d9c6762a8b4a04e8ed3bd1c0b0b882
              tailConsumers: undefined,
              usageModel: undefined,
 diff --git a/lib/Test/Vitest.js b/lib/Test/Vitest.js
-index a16382c..5e4bba2 100644
+index a16382c840eba20dab4e1d74aa70058dda46ce6f..5e4bba29e5fb54adcbb97965bdc65f0a7f8fd777 100644
 --- a/lib/Test/Vitest.js
 +++ b/lib/Test/Vitest.js
 @@ -69,19 +69,19 @@ export const make = (options) => {
