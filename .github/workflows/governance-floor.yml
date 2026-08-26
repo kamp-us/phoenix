@@ -27,6 +27,12 @@ name: governance-floor
 # this job passes on.
 on:
   pull_request:
+  # `governance floor at head` is bound for the ruleset's required set, and the merge queue awaits a
+  # required context on the batched `merge_group` ref — which only a `merge_group:` trigger reaches.
+  # Without this arm the flip froze every merge in the repo for ~40 minutes on 2026-08-21 (#6968),
+  # the same failure ADR 0132 records for `ci-required`. The batch is served by the `batch` job
+  # below, never by `floor`: a batch ref has no `github.event.pull_request` to resolve a floor over.
+  merge_group:
 
 # Least-privilege: the job checks out the repo and reads the PR's metadata, changed files, comments,
 # reviews and the comment authors' repository permission (the ADR 0055 write+ gate), and writes the
@@ -43,6 +49,7 @@ concurrency:
 jobs:
   floor:
     name: a governance-root diff carries a governance verdict at its head
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       # `fetch-depth: 0`, not the action's default 1. Under ADR 0276 `ship floor` resolves a
@@ -77,3 +84,40 @@ jobs:
             ${{ github.event.pull_request.number }} \
             --sha ${{ github.event.pull_request.head.sha }} \
             --publish-check
+
+  # The queue's half of the same context. `floor` above cannot serve it: on a `merge_group` event
+  # `github.event.pull_request` is empty, so it would ask the verb about PR #0 at an empty head.
+  #
+  # This job publishes the row and derives nothing, because a batch ref carries nothing to derive
+  # from — no PR number, no comments, no reviews. The floor is still held where it was: each PR in
+  # the batch was gated at its own head by the `floor` job, and `ship gate` refuses a governance-root
+  # PR whose verdict is absent, stale or FAIL before `ship enqueue` is reached. `floor-batch` is a
+  # verb, not a bash decision, so the required context's NAME lives once in `CHECK_RUN_NAME` — a job
+  # named after it here would be a second copy that nothing reds when it drifts (ADR 0228, #6968).
+  #
+  # The default shallow checkout is enough: nothing here reads git history.
+  batch:
+    name: the batch ref carries the floor's context by construction
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Same relay contract as the PR job: exit 0 means the check-run landed, and a non-zero means it
+      # could not be published — UNKNOWN, so the job reds and the queue holds rather than merging.
+      - name: Publish the floor's required context on the batch ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLAUDE_PIPELINE_REPO: ${{ github.repository }}
+        run: |
+          node packages/fabrika-cli/src/bin.ts ship floor-batch \
+            --sha ${{ github.event.merge_group.head_sha }}
