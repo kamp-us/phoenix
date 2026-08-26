@@ -189,3 +189,35 @@ index 92e6608cda58cb4a325931a9be154ae86b2807b2..d596537dd79d204425310f276286114d
      case "Ping":
      case "Pong":
      case "Interrupt":
+diff --git a/dist/unstable/cli/internal/parser.js b/dist/unstable/cli/internal/parser.js
+
+--- a/dist/unstable/cli/internal/parser.js
++++ b/dist/unstable/cli/internal/parser.js
+@@ -72,15 +72,25 @@ export const parseArgs = (lexResult, command, commandPath = []) => Effect.gen(fu
+       })
+     };
+   }
++  // phoenix patch (#7115): thread the lexer's post-`--` operands through subcommand recursion.
++  // Upstream reset them to [] here, so every token after `--` was bound to the INTERMEDIATE
++  // command's `arguments` and dropped before the leaf's declared params ever saw it — a documented
++  // invocation like `spike run --nonce X -- echo hello` then failed with "0 values" for an argument
++  // the caller did supply, and a verb with optional variadic positionals silently bound zero. The
++  // leaf branch below already appends `trailingOperands` to its own collected arguments, so handing
++  // the operands to the child lets them land where the leaf declared them (or in the excess catch-all).
+   const subLex = {
+     tokens: result.childTokens,
+-    trailingOperands: []
++    trailingOperands: afterEndOfOptions
+   };
+   const subParsed = yield* parseArgs(subLex, result.sub, newCommandPath);
+   const allErrors = [...result.errors, ...(subParsed.errors ?? [])];
+   return {
+     flags: result.flags,
+-    arguments: afterEndOfOptions,
++    // A subcommand is only ever detected on the FIRST value token (`resolveFirstValue` runs once),
++    // so this level can hold no positional of its own when the recursion fires — the operands ride
++    // with the child, never here.
++    arguments: [],
+     subcommand: Option.some({
+       name: result.sub.name,
+       parsedInput: subParsed
