@@ -282,3 +282,13 @@ export const CLASS_UNRECOGNISED = 38;
  * "not a repo at all" never may.
  */
 export const NOT_A_REPO = 39;
+
+/**
+ * Another writer held the lane's write lock for this writer's whole wait budget, so nothing was
+ * validated or appended (#5994). Its own seat rather than {@link EVENT_REFUSED}'s because the
+ * remedies are opposite: an ordinary refusal says this event is invalid against the state that
+ * exists and a different event is wanted, while this one says the event may be exactly right and
+ * the caller should retry it once the holder clears. The stderr detail names the lock directory;
+ * the code is what lets a shell tell "retry me" from "rethink me" without parsing prose.
+ */
+export const CONCURRENT_WRITE = 40;

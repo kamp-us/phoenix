@@ -17,8 +17,9 @@
  * operator re-runs the verb and the budget is the same as if it had landed the first time.
  */
 
-import {Effect, type FileSystem, type Path, Result} from "effect";
+import {Effect, FileSystem, Path, Result} from "effect";
 import {appendText} from "../io/fs.ts";
+import {lockedRefusal, withLedgerLock} from "./append-lock.ts";
 import {applyClearance, resolveTask} from "./fold.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
@@ -34,35 +35,49 @@ export const recordClearedRound = (
 	ref: LaneRef,
 	task: string | null,
 	round: number,
-): Effect.Effect<Recorded, never, FileSystem.FileSystem | Path.Path> =>
-	Effect.gen(function* () {
-		const loaded = yield* loadLane(ref);
-		if (loaded._tag === "Absent") return {_tag: "NoLane" as const, dir: loaded.dir};
-		if (loaded._tag === "Unreadable") {
-			return {_tag: "Unusable" as const, path: loaded.path, reason: loaded.reason};
-		}
-		if (loaded._tag === "Malformed") {
-			return {_tag: "Unusable" as const, path: loaded.path, reason: loaded.defects.join("; ")};
-		}
+): Effect.Effect<Recorded, never, FileSystem.FileSystem | Path.Path> => {
+	const VERB = "lane clearance";
+	return Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		return yield* withLedgerLock(
+			{fs, path, dir: path.join(ref.root, ref.lane), verb: VERB},
+			Effect.gen(function* () {
+				const loaded = yield* loadLane(ref);
+				if (loaded._tag === "Absent") return {_tag: "NoLane" as const, dir: loaded.dir};
+				if (loaded._tag === "Unreadable") {
+					return {_tag: "Unusable" as const, path: loaded.path, reason: loaded.reason};
+				}
+				if (loaded._tag === "Malformed") {
+					return {_tag: "Unusable" as const, path: loaded.path, reason: loaded.defects.join("; ")};
+				}
 
-		const resolved = resolveTask(loaded.lane, task);
-		if (resolved._tag === "Unresolved") {
-			return {_tag: "Unusable" as const, path: loaded.logPath, reason: resolved.reason};
-		}
+				const resolved = resolveTask(loaded.lane, task);
+				if (resolved._tag === "Unresolved") {
+					return {_tag: "Unusable" as const, path: loaded.logPath, reason: resolved.reason};
+				}
 
-		const at = yield* Effect.sync(() => new Date().toISOString());
-		const applied = applyClearance(loaded.lane, loaded.entries, resolved.taskId, round, at);
-		if (applied._tag === "Refused") {
-			return {_tag: "Unusable" as const, path: loaded.logPath, reason: applied.reason};
-		}
-		if (applied._tag === "AlreadyHeld") {
-			return {_tag: "AlreadyHeld" as const, task: resolved.taskId, path: loaded.logPath};
-		}
+				const at = yield* Effect.sync(() => new Date().toISOString());
+				const applied = applyClearance(loaded.lane, loaded.entries, resolved.taskId, round, at);
+				if (applied._tag === "Refused") {
+					return {_tag: "Unusable" as const, path: loaded.logPath, reason: applied.reason};
+				}
+				if (applied._tag === "AlreadyHeld") {
+					return {_tag: "AlreadyHeld" as const, task: resolved.taskId, path: loaded.logPath};
+				}
 
-		const wrote = yield* Effect.result(
-			appendText(loaded.logPath, `${JSON.stringify(applied.entry)}\n`),
+				const wrote = yield* Effect.result(
+					appendText(loaded.logPath, `${JSON.stringify(applied.entry)}\n`),
+				);
+				return Result.isFailure(wrote)
+					? ({_tag: "Unusable", path: loaded.logPath, reason: wrote.failure.reason} as const)
+					: ({_tag: "Recorded", task: resolved.taskId, path: loaded.logPath} as const);
+			}),
+			(lockDir) => ({
+				_tag: "Unusable" as const,
+				path: lockDir,
+				reason: lockedRefusal(VERB, lockDir),
+			}),
 		);
-		return Result.isFailure(wrote)
-			? ({_tag: "Unusable", path: loaded.logPath, reason: wrote.failure.reason} as const)
-			: ({_tag: "Recorded", task: resolved.taskId, path: loaded.logPath} as const);
 	});
+};
