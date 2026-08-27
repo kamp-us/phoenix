@@ -58,3 +58,10 @@ claude plugin install fabrika@kampus
 Both lines are needed — registering a marketplace installs nothing. Already on the GitHub `kampus`
 marketplace? The same `add ./` overwrites that entry's source in place, and the installed plugin
 survives. Do not `claude plugin marketplace remove kampus` first: that uninstalls its plugins.
+
+## opencode
+
+fabrika is not Claude Code-only: it also runs in [opencode](https://opencode.ai) through the
+[`@kampus/fabrika-opencode`](../../packages/fabrika-opencode/) plugin, which registers the same
+eight agent shells as subagents and loads the bundled skills with one config line. See
+[packages/fabrika-opencode/README.md](../../packages/fabrika-opencode/README.md).
