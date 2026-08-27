@@ -87,25 +87,34 @@ const tree = leafCommand(
 		issue: Flag.integer("issue").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"additionally prove the checked-out branch carries this claim's nonce — the pre-mutation posture",
+				"additionally prove the checked-out branch serves this issue — the pre-mutation posture",
+			),
+		),
+		repair: Flag.integer("repair").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the repair PR whose claim and resumed branch must uniquely serve --issue",
 			),
 		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({requireClean, issue, repo}) {
+	Effect.fn(function* ({requireClean, issue, repair, repo}) {
 		yield* emit(
 			yield* runTree({
 				requireClean,
 				issue: Option.getOrNull(issue),
+				repair: Option.getOrNull(repair),
 				repo: Option.getOrNull(repo),
 				env: process.env,
 			}),
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Prove the ground is clean and this lane's, wherever it sits."),
+	Command.withShortDescription(
+		"Prove clean ground and the complete fresh or repair lane relationship.",
+	),
 	Command.withDescription(
-		"Prove the ground: optionally clean, optionally this lane's. Where the tree sits is not asserted — isolation is the operator's call, not fabrika's. Prints the tree root's absolute path on stdout. Reads and NEVER repairs — it cleans, creates and removes nothing. Exits 11 (the tree root could not be read, or with --issue the claim state could not be read — UNKNOWN), 13 (proven: uncommitted changes at a --require-clean open), 14 (proven: the checked-out branch is not a lane branch, or does not carry the winning claim's nonce), 15 (proven: the claim on --issue is held by another session). Example: fabrika build tree --require-clean",
+		'Prove the ground: optionally clean; with --issue, prove the checked-out branch, winning claim, and served issue as one relationship. Add --repair <pr> on a resumed repair branch: the branch must name that PR, carry that PR claim\'s nonce, and the live PR must uniquely serve --issue. Armed success prints {"answer":"proven","root":"<absolute>","branch":"<name>","claim":{"number":<issue-or-pr>,"nonce":"<nonce>"},"servedIssue":{"number":<issue>,"kind":"issue|fixes|part-of"}}. An unarmed success prints only the absolute root. Reads and NEVER repairs. Exits 4 (repair linkage malformed or not unique), 7 (repair PR or served issue absent/closed), 10 (--repair without --issue), 11 (ground, claim, PR, or served issue unreadable — UNKNOWN), 13 (dirty at --require-clean), 14 (wrong branch, nonce, PR, or served issue), 15 (claim foreign). Example: fabrika build tree --issue 7181 --repair 7182',
 	),
 );
 
