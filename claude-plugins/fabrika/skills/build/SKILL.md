@@ -42,8 +42,9 @@ Done when it printed this tree's root. Work wherever you were spawned; where tha
 the operator's call, not yours. On exit 13 (dirty) or 14 (wrong lane) **stop and report the
 code** — never clean up an unauthored hunk, never build on another lane's branch.
 Re-prove before every mutation. Before `build branch` has cut the lane branch, use
-`fabrika build tree --require-clean`; there is no branch identity for `--issue` to prove yet. Once
-the lane branch exists, use `fabrika build tree --issue <n>` so the lane check arms too.
+`fabrika build tree --require-clean`; there is no branch identity to prove yet. Once the lane branch
+exists, a fresh build uses `fabrika build tree --issue <n>`. A PR repair uses the complete relationship
+proof in Repair: `fabrika build tree --issue <served-issue> --repair <pr>`.
 
 ```bash
 fabrika build pick
@@ -214,9 +215,10 @@ fabrika build branch $issue_or_pr_number --slug editor-focus-loss --token <claim
 
 Construct. Match the surrounding artifact's idiom; for code: domain logic in domain objects,
 invalid states unrepresentable. Before the first `build branch` cut, re-run
-`fabrika build tree --require-clean`; after that cut, re-run
-`fabrika build tree --issue $issue_or_pr_number` before every git mutation. The cwd resets between
-shell calls, so the tree you proved is not the tree you are standing in until you prove it again.
+`fabrika build tree --require-clean`; after that cut, re-run `fabrika build tree --issue
+$issue_or_pr_number` before every fresh-build git mutation. PR repair uses the two-subject form in
+Repair instead. The cwd resets between shell calls, so the tree you proved is not the tree you are
+standing in until you prove it again.
 
 **A lane never runs `git stash` — not scoped, not any form.** `refs/stash` lives in the common git
 dir, so every worktree of this clone shares one stack: between your push and your pop a sibling
@@ -427,11 +429,16 @@ a run whose caller named no lane prints the token only and records nothing.
 
 ## Repair
 
+A repair brief carries two distinct Ground URLs: the PR being repaired and the issue it serves.
+Retain them as `<repair-pr>` and `<served-issue>`; they are operands, not values to rediscover from a
+stderr subject line. If the brief does not name exactly one of each, stop `STOPPED`: never reuse the
+PR number as the issue, never claim the issue as a substitute, and never guess from a branch name.
+
 Claim the PR's number first — repair mutates a shared lane exactly like a build does:
 
 ```bash
-fabrika build claim $issue_or_pr_number
-fabrika build verdicts --pr $issue_or_pr_number
+fabrika build claim <repair-pr>
+fabrika build verdicts --pr <repair-pr>
 ```
 
 **Step 1's refusal of a `type:decision` is about picking one up fresh, and it does not reach here.**
@@ -454,15 +461,30 @@ you never do is grant one: `build clear` is the operator's verb, it refuses an a
 repo's configured set or below `write` at the ACL, and an escalation is your whole move when the cap
 is reached. One grant is one
 round — it survives the push it permits, and the next FAIL round spends it, so a second round needs a
-second grant. Fix findings on the same branch
-(`fabrika build tree --issue $issue_or_pr_number`, then `fabrika build branch --resume $issue_or_pr_number --token <claim-token>`), re-validate with
-`fabrika build check --surface <yours>`, push with `fabrika build push --force-with-lease`, answer
-the findings in a `fabrika build note $issue_or_pr_number --token <claim-token>` naming each one
-addressed, then release with `fabrika build release $issue_or_pr_number --token <claim-token>`. Exit `23` on that push
-means your head **drops commits the PR already published** — `build branch --resume` again so you
-rebuild on the published head, never `--drop-remote-commits`, which is for a rewrite you actually
-intend. The fold's `frozenCriteria` rows are the review-appended criteria past the freeze — note
-them, do not chase them.
+second grant. Before the branch mutation, re-run `build confirm <repair-pr> --token <claim-token>`
+and `build tree --require-clean`; then resume and arm the complete repair proof:
+
+```bash
+fabrika build branch --resume <repair-pr> --token <claim-token>
+fabrika build tree --issue <served-issue> --repair <repair-pr>
+```
+
+Proceed only on the documented JSON answer whose `claim.number` is `<repair-pr>` and whose
+`servedIssue.number` is `<served-issue>`; this is one verb proving that the resumed branch names the
+PR, carries that PR claim's nonce, and the live PR uniquely serves the issue. Do not parse any
+incidental diagnostic. Exit `4` means the unique linkage is malformed, `7` means the PR or issue is
+absent/closed, `10` means the repair PR lacked its issue operand, `11` means a claim/linkage read is
+UNKNOWN, `14` means the branch, nonce, PR, or issue relationship is wrong, and `15` means the PR
+claim is foreign: stop on every one before
+mutation, naming the code. Re-run this same two-subject proof before each later git mutation.
+
+Then re-validate with `fabrika build check --surface <yours>`, push with `fabrika build push
+--force-with-lease`, answer the findings in a `fabrika build note <repair-pr> --token <claim-token>`
+naming each one addressed, then release with `fabrika build release <repair-pr> --token
+<claim-token>`. Exit `23` on that push means your head **drops commits the PR already published** —
+`build branch --resume` again so you rebuild on the published head, never
+`--drop-remote-commits`, which is for a rewrite you actually intend. The fold's `frozenCriteria`
+rows are the review-appended criteria past the freeze — note them, do not chase them.
 
 **When the whole fix is the PR body, the route is `fabrika build pr-body <pr>` and nothing else.**
 The recurring one is a FAIL reading `deviations malformed`: the head does not need to move, so a

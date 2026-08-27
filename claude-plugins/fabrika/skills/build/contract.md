@@ -360,7 +360,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 **Invocation**
 
 ```
-fabrika build tree [--require-clean] [--issue <n>]
+fabrika build tree [--require-clean] [--issue <n> [--repair <pr>]]
 ```
 
 **Inputs**
@@ -368,32 +368,47 @@ fabrika build tree [--require-clean] [--issue <n>]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--require-clean` | boolean | no | `false` | additionally refuse a tree with any uncommitted change — the lane-open posture |
-| `--issue` | integer | no | — | additionally prove the checked-out branch carries this claim's nonce — the pre-mutation posture |
+| `--issue` | integer | no | — | additionally prove the checked-out branch serves this issue — the pre-mutation posture |
+| `--repair` | integer | no | — | with `--issue`, prove this repair PR's claim, resumed branch and unique served-issue linkage as one relationship |
 
-**Output** — machine. One line, the tree root's absolute path, newline-terminated. This verb
-**reads and never repairs**: it creates nothing, cleans nothing, removes nothing. It also asserts
-nothing about *where* the tree is — that is the operator's call, not fabrika's (#5386).
+**Output** — machine. With neither `--issue` nor `--repair`, one line containing the tree root's
+absolute path. With `--issue`, one JSON object:
+`{"answer":"proven","root":"<absolute>","branch":"<name>","claim":{"number":<issue-or-pr>,"nonce":"<nonce>"},"servedIssue":{"number":<issue>,"kind":"issue|fixes|part-of"}}`.
+A fresh proof puts the issue number in both `claim.number` and `servedIssue.number`, with kind
+`issue`. A repair proof puts the PR in `claim.number`, the issue in `servedIssue.number`, and the
+live PR body's unique winning reference kind in `servedIssue.kind`. This is the whole successful
+repair answer; the skill consumes this object, never a scope line or incidental diagnostic.
 
-The two assertions, each proven from git state alone:
+This verb **reads and never repairs**: it creates nothing, cleans nothing, removes nothing. It also
+asserts nothing about *where* the tree is — that is the operator's call, not fabrika's (#5386).
+
+The assertions:
 
 1. **Clean at open** (`--require-clean`) — any uncommitted change is `13`. A fresh tree carrying
    an unauthored hunk is not yours to keep *or* to clean (#2666).
-2. **This lane's branch** (`--issue`) — the checked-out branch parses as a lane branch whose
-   number is `--issue` and whose nonce matches the confirmed claim (the lane-identity rule, defined
-   in `build branch`); a non-lane, wrong-number, or nonce-mismatched branch is `14`. **The branch's
-   own nonce is the identity the claim is read under** — the question is whether the winning marker
-   belongs to THIS lane, not to this session (#6037) — so a claim won by a sibling lane of the same
-   session is `14` as well, and only another session's claim is `15`. No stamp file exists to check:
-   ownership is derivable, not recorded.
+2. **Fresh lane** (`--issue`, without `--repair`) — the checked-out create branch names that issue
+   and carries that issue's winning claim nonce. A non-lane, wrong-number, or nonce mismatch is `14`.
+3. **Repair lane** (`--issue <n> --repair <pr>`) — one fail-closed flow proves all subjects: the
+   checked-out resume branch names `<pr>`; its nonce owns `<pr>`'s winning claim; the live, open PR
+   names exactly one issue through the same closing-keyword/`Part of` grammar review reads; that issue
+   is `<n>`, is live and readable, and is an issue rather than another pull request. The PR is never passed as the issue operand, the issue is never
+   queried for the repair claim, and no branch number is guessed into a served issue.
+
+**The branch's own nonce is the identity the claim is read under** — the question is whether the
+winning marker belongs to THIS lane, not to this session (#6037). A sibling lane of the same session
+is `14`; only another session's claim is `15`. No stamp file exists to check.
 
 **Exit status** (beyond the universal four)
 
 | Code | Trigger |
 |---|---|
-| `11` | the tree root could not be read, or with `--issue` the claim state could not be read — UNKNOWN |
+| `4` | the PR body names zero or several served issues — no unique repair subject |
+| `7` | the repair PR or its uniquely linked served issue is proven absent or closed |
+| `10` | `--repair` was given without its required `--issue` operand |
+| `11` | the tree root, claim state, repair PR, or linked served issue could not be read — UNKNOWN |
 | `13` | proven: uncommitted changes present at a `--require-clean` open |
-| `14` | proven: the checked-out branch is not a lane branch, or does not carry the winning claim's nonce (including a sibling lane of this session) |
-| `15` | proven: the claim on `--issue` is held by another session |
+| `14` | proven: non-lane/wrong-number branch, nonce mismatch, wrong repair PR branch, or PR linked to an issue other than `--issue` |
+| `15` | proven: the issue claim in fresh mode or PR claim in repair mode is held by another session |
 
 **Errors**
 
@@ -401,18 +416,38 @@ The two assertions, each proven from git state alone:
 |---|---|---|
 | `build tree: cannot read the tree root: <reason> — the ground is UNKNOWN.` | 11 | refusal |
 | `build tree: <n> uncommitted change(s) at open — refusing; an unauthored hunk is not yours to keep or clean.` | 13 | refusal |
+| `build tree: --repair <pr> requires --issue <n>.` | 10 | refusal |
 | `build tree: the checked-out branch "<name>" is not a lane branch — wrong lane.` | 14 | refusal |
+| `build tree: the checked-out branch "<name>" names claim #<actual>, not issue #<n>|repair PR #<pr> — wrong lane.` | 14 | refusal |
 | `build tree: the checked-out branch "<name>" does not carry claim <token>'s nonce — wrong lane.` | 14 | refusal |
 | `build tree: cannot read the claim markers on #<n>: <reason> — the lane is UNKNOWN.` | 11 | refusal |
 | `build tree: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
+| `build tree: cannot read repair PR #<pr>: <reason> — its served issue is UNKNOWN; nothing is proven.` | 11 | refusal |
+| `build tree: PR #<pr> is proven absent or closed.` | 7 | refusal |
+| `build tree: repair PR #<pr> names <count> served issues through <kind>; exactly one is required, so the repair subject is not uniquely readable.` | 4 | refusal |
+| `build tree: repair PR #<pr> serves issue #<actual>, not requested issue #<n> — wrong lane.` | 14 | refusal |
+| `build tree: cannot read issue #<n>, which repair PR #<pr> serves: <reason> — the repair subject is UNKNOWN; nothing is proven.` | 11 | refusal |
+| `build tree: issue #<n> is proven absent or closed.` | 7 | refusal |
+| `build tree: repair PR #<pr> links #<n>, but that record is itself a pull request, not the served issue — wrong lane.` | 14 | refusal |
 
-**Scope** — not a judging verb: it reads this process's git state and, with `--issue`, one claim.
+**Scope** — not a judging verb: it reads this process's git state, one claim, and in repair the live
+PR plus its one served issue.
 
 **Examples**
 
 ```
 $ fabrika build tree --require-clean
 /private/var/<redacted>/lanes/build-4312
+```
+
+```
+$ fabrika build tree --issue 4312
+{"answer":"proven","root":"/private/var/<redacted>/lanes/build-4312","branch":"build/4312-editor-focus-loss-c1a4d6f8","claim":{"number":4312,"nonce":"c1a4d6f8"},"servedIssue":{"number":4312,"kind":"issue"}}
+```
+
+```
+$ fabrika build tree --issue 7181 --repair 7182
+{"answer":"proven","root":"/private/var/<redacted>/lanes/repair-7182","branch":"build/pr-7182-c1a4d6f8","claim":{"number":7182,"nonce":"c1a4d6f8"},"servedIssue":{"number":7181,"kind":"fixes"}}
 ```
 
 ```
@@ -428,6 +463,8 @@ $ echo $?
 - #4500 — eight trees under one stamp; the nonce comparison has no stamp to duplicate.
 - #4162 — the cwd resets between shell calls, so the skill re-runs this verb before every git
   mutation: a pass is a fact about this invocation and nothing later.
+- #7183 — a repair branch carries a PR claim nonce while its contract belongs to a distinct issue;
+  the repair proof binds both subjects instead of weakening either one.
 - 2026-08-13 ruling on #5386 — fabrika holds no worktree opinion; `12` is retired and this verb
   asserts nothing about where the tree sits.
 
