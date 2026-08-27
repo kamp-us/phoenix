@@ -360,8 +360,20 @@ describe("runTree", () => {
 	});
 
 	it("does not accept the PR number as the served issue", async () => {
-		const out = await run(repairProof(), {issue: 7182, repair: 7182});
+		const out = await run(
+			[
+				[REV_PARSE, GIT_DIRS],
+				[BRANCH, repairBranch],
+				[REPAIR_CLAIM, repairClaim],
+				[REPAIR_COMMENTS, repairMine],
+				[PERM, WRITE],
+				[REPAIR_PULL, repairPull("Fixes #7182\n\n## Deviations\nNone.\n")],
+				[REPAIR_CLAIM, repairClaim],
+			],
+			{issue: 7182, repair: 7182},
+		);
 		expect(out.code).toBe(WRONG_LANE);
+		expect(out.stderr.at(-1)).toContain("that record is itself a pull request");
 	});
 
 	it("does not accept the served issue as the repair claim subject", async () => {
