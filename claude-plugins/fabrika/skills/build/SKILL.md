@@ -41,8 +41,9 @@ fabrika build tree --require-clean
 Done when it printed this tree's root. Work wherever you were spawned; where that is, is
 the operator's call, not yours. On exit 13 (dirty) or 14 (wrong lane) **stop and report the
 code** — never clean up an unauthored hunk, never build on another lane's branch.
-Re-prove before every mutation — once you hold a claim, use `fabrika build tree --issue <n>` so the
-lane check arms too.
+Re-prove before every mutation. Before `build branch` has cut the lane branch, use
+`fabrika build tree --require-clean`; there is no branch identity for `--issue` to prove yet. Once
+the lane branch exists, use `fabrika build tree --issue <n>` so the lane check arms too.
 
 ```bash
 fabrika build pick
@@ -212,9 +213,10 @@ fabrika build branch $issue_or_pr_number --slug editor-focus-loss --token <claim
 ```
 
 Construct. Match the surrounding artifact's idiom; for code: domain logic in domain objects,
-invalid states unrepresentable. Re-run `fabrika build tree --issue $issue_or_pr_number` before every
-git mutation — the cwd resets between shell calls, so the tree you proved is not the tree you are
-standing in until you prove it again.
+invalid states unrepresentable. Before the first `build branch` cut, re-run
+`fabrika build tree --require-clean`; after that cut, re-run
+`fabrika build tree --issue $issue_or_pr_number` before every git mutation. The cwd resets between
+shell calls, so the tree you proved is not the tree you are standing in until you prove it again.
 
 **A lane never runs `git stash` — not scoped, not any form.** `refs/stash` lives in the common git
 dir, so every worktree of this clone shares one stack: between your push and your pop a sibling
