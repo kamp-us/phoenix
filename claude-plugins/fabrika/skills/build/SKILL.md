@@ -427,17 +427,24 @@ a run whose caller named no lane prints the token only and records nothing.
 
 ## Repair
 
-A repair brief carries two identifiers: `$issue_number` is the served issue and `$pr_number` is the
-existing PR under repair. Keep both names for the whole round. `$issue_or_pr_number` selects repair
-mode from the PR the caller handed you, but after that selection it is retired — never pass the PR
-number to an issue-bound verb merely because it chose the mode.
-
-Claim the PR's number first — repair mutates a shared lane exactly like a build does:
+`$issue_or_pr_number` is the existing PR throughout this section — it is the one declared argument
+that selected repair mode. Claim it first; repair mutates a shared lane exactly like a build does:
 
 ```bash
-fabrika build claim $pr_number
-fabrika build verdicts --pr $pr_number
+fabrika build claim $issue_or_pr_number
+fabrika build verdicts --pr $issue_or_pr_number
 ```
+
+A successful repair claim prints this deterministic subject line:
+
+```text
+build claim: subject: PR #<pr-number> serves #<served-issue-number> (…)
+```
+
+Read the served issue from that verb answer, keep it beside the PR for the whole round, and replace
+`<served-issue-number>` below with that concrete numeral. Do not invent a second `$<name>` operand:
+the harness substitutes only the argument declared in this skill's frontmatter, and the claim answer
+is what supplies the other identifier.
 
 **Step 1's refusal of a `type:decision` is about picking one up fresh, and it does not reach here.**
 An ADR PR is served by a decision issue, and repairing it is the ordinary path: the claim admits it
@@ -450,7 +457,7 @@ The fold is the only entry: paginated, current-head, per-gate — polarity visib
 included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer, but an
 UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**. The budget is the
 fold's own `capReached` field, never a number you carry: on `true`, end `ESCALATED` and post the
-escalation via `fabrika build note $pr_number --token <claim-token>` instead of another push.
+escalation via `fabrika build note $issue_or_pr_number --token <claim-token>` instead of another push.
 
 **A founder can clear one more round, and you read that through the same field.** The clearance is
 data on the PR — an authorized account records it with `fabrika build clear`, and the fold counts it,
@@ -461,12 +468,13 @@ is reached. One grant is one
 round — it survives the push it permits, and the next FAIL round spends it, so a second round needs a
 second grant. Fix findings on the existing PR branch: prove the clean pre-branch ground with
 `fabrika build tree --require-clean`, run
-`fabrika build branch --resume $pr_number --token <claim-token>`, then prove that checked-out lane
-with `fabrika build tree --issue $issue_number`. The branch command is PR-bound; the armed tree
-proof is issue-bound and keeps its exit-14 refusal for a genuinely wrong lane. Re-validate with
-`fabrika build check --surface <yours>`, push with `fabrika build push --force-with-lease`, answer
-the findings in a `fabrika build note $pr_number --token <claim-token>` naming each one addressed,
-then release with `fabrika build release $pr_number --token <claim-token>`. Exit `23` on that push
+`fabrika build branch --resume $issue_or_pr_number --token <claim-token>`, then prove that checked-out
+lane with `fabrika build tree --issue <served-issue-number>`. The branch command is PR-bound; the
+armed tree proof is issue-bound and keeps its exit-14 refusal for a genuinely wrong lane. Re-validate
+with `fabrika build check --surface <yours>`, push with `fabrika build push --force-with-lease`,
+answer the findings in a `fabrika build note $issue_or_pr_number --token <claim-token>` naming each
+one addressed, then release with
+`fabrika build release $issue_or_pr_number --token <claim-token>`. Exit `23` on that push
 means your head **drops commits the PR already published** — `build branch --resume` again so you
 rebuild on the published head, never `--drop-remote-commits`, which is for a rewrite you actually
 intend. The fold's `frozenCriteria` rows are the review-appended criteria past the freeze — note
