@@ -1,0 +1,38 @@
+{
+	"name": "tuval",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Local, loopback-only workspace over installed pi sessions",
+	"type": "module",
+	"bin": {
+		"tuval": "./dist/bin.js"
+	},
+	"exports": {
+		".": "./dist/index.js",
+		"./wire": "./dist/shared/wire.js"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
+		"typecheck": "tsc -p tsconfig.json",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@earendil-works/pi-coding-agent": "catalog:",
+		"@effect/platform-node": "catalog:",
+		"@earendil-works/pi-protocol": "catalog:",
+		"@nkzw/fate": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@types/node": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}

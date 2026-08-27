@@ -5,6 +5,8 @@ packages:
 
 catalog:
   '@alchemy.run/better-auth': 2.0.0-beta.59
+  '@earendil-works/pi-coding-agent': 0.84.3
+  '@earendil-works/pi-protocol': 0.84.3
   # Lockstep with better-auth 1.6.23 (the `^1.6.13` catalog pin resolves there):
   # api-key + core pinned to the EXACT version better-auth links transitively, so ONE
   # `@better-auth/core` lives in the tree. A stale `core: 1.6.10` left apps/web's direct
