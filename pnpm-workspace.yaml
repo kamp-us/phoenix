@@ -19,6 +19,8 @@ catalog:
   # (NoCellError refusal, Transitions-form cells), so the version is part of the contract (#5673).
   '@demlik/tea': 0.12.0
   '@distilled.cloud/cloudflare': 0.27.0
+  '@earendil-works/pi-client': 0.84.3
+  '@earendil-works/pi-protocol': 0.84.3
   '@effect/language-service': ^0.85.1
   '@effect/platform-bun': 4.0.0-beta.92
   '@effect/platform-node': 4.0.0-beta.92
