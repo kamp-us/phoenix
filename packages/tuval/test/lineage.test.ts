@@ -1,7 +1,7 @@
 import type {SessionMetadata} from "@earendil-works/pi-protocol";
 import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, FileSystem, Path, PlatformError, Result, Schema} from "effect";
+import {Deferred, Effect, Fiber, FileSystem, Path, PlatformError, Result, Schema} from "effect";
 import fc from "fast-check";
 import {
 	defaultLineageOptions,
@@ -1433,6 +1433,94 @@ describe("Tuval lineage index", () => {
 			}),
 		);
 
+		it.effect("retains direct ownership when its authoritative parent is unresolved", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-direct-retained-"});
+				const sessionsRoot = path.join(root, "sessions");
+				const runRoot = path.join(root, "runs");
+				const storePath = path.join(root, "lineage.json");
+				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+				const firstFile = yield* writeSession(sessionsRoot, "first.jsonl", {id: "first"});
+				const laterFile = yield* writeSession(sessionsRoot, "later.jsonl", {id: "later"});
+				yield* writeStatus(runRoot, "parent", {
+					runId: "retained-parent-run",
+					parentRunId: "missing-authoritative-parent",
+					sessionFile: parentFile,
+					startedAt: 1,
+				});
+				yield* writeStatus(runRoot, "first", {
+					runId: "first-run",
+					parentRunId: "retained-parent-run",
+					sessionFile: firstFile,
+					startedAt: 2,
+				});
+				const first = yield* refreshLineage({
+					runRoots: [runRoot],
+					sessionRoots: [sessionsRoot],
+					storePath,
+				});
+				assert.deepInclude(
+					first.graph.ownership.find((entry) => entry.runId === "retained-parent-run"),
+					{runId: "retained-parent-run", session: sessionIdentity("parent")},
+				);
+				yield* fs.remove(runRoot, {recursive: true});
+				yield* writeStatus(runRoot, "later", {
+					runId: "later-run",
+					parentRunId: "retained-parent-run",
+					sessionFile: laterFile,
+					startedAt: 3,
+				});
+				const restored = yield* refreshLineage({
+					runRoots: [runRoot],
+					sessionRoots: [sessionsRoot],
+					storePath,
+				});
+				assert.deepInclude(
+					restored.graph.edges.find((edge) => edge.id === "spawn:later-run"),
+					{parent: sessionIdentity("parent"), child: sessionIdentity("later")},
+				);
+			}),
+		);
+
+		it.effect("refuses a wrapper that conflicts with a transient direct ownership", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({
+					prefix: "tuval-lineage-transient-conflict-",
+				});
+				const sessionsRoot = path.join(root, "sessions");
+				const runRoot = path.join(root, "runs");
+				const parentA = yield* writeSession(sessionsRoot, "parent-a.jsonl", {id: "parent-a"});
+				const parentB = yield* writeSession(sessionsRoot, "parent-b.jsonl", {id: "parent-b"});
+				const child = yield* writeSession(sessionsRoot, "child.jsonl", {id: "child"});
+				yield* writeStatus(runRoot, "direct", {
+					runId: "shared-run",
+					parentRunId: "missing-parent",
+					sessionFile: parentA,
+					startedAt: 1,
+				});
+				yield* writeStatus(runRoot, "wrapper", {
+					runId: "shared-run",
+					sessionId: parentB,
+					steps: [{runId: "child-run", sessionFile: child, startedAt: 2}],
+				});
+				const result = yield* Effect.result(
+					refreshLineage({
+						runRoots: [runRoot],
+						sessionRoots: [sessionsRoot],
+						storePath: path.join(root, "lineage.json"),
+					}),
+				);
+				assert.isTrue(Result.isFailure(result));
+				if (Result.isFailure(result)) {
+					assert.strictEqual(result.failure._tag, "tuval/LineageConflictError");
+				}
+			}),
+		);
+
 		it.effect("retains wrapper ownership after source deletion", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
@@ -1687,6 +1775,45 @@ describe("Tuval lineage index", () => {
 				}),
 		);
 
+		it.effect("refuses missing and mismatched run-valued parent ownership", () =>
+			Effect.sync(() => {
+				const parent = {
+					id: sessionIdentity("parent"),
+					piSessionId: "parent",
+					createdAt: 1,
+					updatedAt: 1,
+					cwd: "/tmp",
+					sourceFiles: [],
+				};
+				const other = {...parent, id: sessionIdentity("other"), piSessionId: "other"};
+				const child = {...parent, id: sessionIdentity("child"), piSessionId: "child"};
+				const childOwnership = {
+					kind: "observation" as const,
+					runId: "child-run",
+					session: child.id,
+					parentReference: {kind: "run" as const, value: "parent-run"},
+					parent: parent.id,
+					observedAt: 2,
+				};
+				const missing = validateLineageStore({
+					version: 2,
+					nodes: [parent, child],
+					edges: [],
+					continuity: [],
+					ownership: [childOwnership],
+				});
+				assert.isTrue(Result.isFailure(missing));
+				const mismatched = validateLineageStore({
+					version: 2,
+					nodes: [parent, other, child],
+					edges: [],
+					continuity: [],
+					ownership: [{kind: "wrapper", runId: "parent-run", session: other.id}, childOwnership],
+				});
+				assert.isTrue(Result.isFailure(mismatched));
+			}),
+		);
+
 		it.effect("canonicalizes durable order and rejects the pre-round-11 store version", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
@@ -1739,7 +1866,7 @@ describe("Tuval lineage index", () => {
 			}),
 		);
 
-		it.effect("serializes independent file-lock callers and recovers a stale lock", () =>
+		it.effect("serializes independent callers and competing stale-lock recovery", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
 				const path = yield* Path.Path;
@@ -1760,17 +1887,54 @@ describe("Tuval lineage index", () => {
 				yield* Effect.all([caller, caller], {concurrency: "unbounded"});
 				assert.strictEqual(maximum, 1);
 				const lockPath = `${storePath}.lock`;
-				yield* fs.makeDirectory(lockPath);
+				const ownerPath = path.join(lockPath, "owner");
+				const orphanedGeneration = `${lockPath}.generation-orphan`;
+				yield* fs.makeDirectory(orphanedGeneration);
 				const stale = new Date(Date.now() - 10 * 60 * 1_000);
-				yield* fs.utimes(lockPath, stale, stale);
-				let recovered = false;
-				yield* withLineageStoreFileLock(
+				yield* fs.utimes(orphanedGeneration, stale, stale);
+				yield* caller;
+				assert.isFalse(yield* fs.exists(orphanedGeneration));
+				yield* fs.makeDirectory(lockPath);
+				yield* fs.writeFileString(ownerPath, "dead-owner");
+				yield* fs.utimes(ownerPath, stale, stale);
+				maximum = 0;
+				yield* Effect.all([caller, caller], {concurrency: "unbounded"});
+				assert.strictEqual(maximum, 1);
+				assert.isFalse(yield* fs.exists(lockPath));
+			}),
+		);
+
+		it.effect("an old holder cannot remove a successor lock generation", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-lock-generation-"});
+				const storePath = path.join(root, "lineage.json");
+				const lockPath = `${storePath}.lock`;
+				const ownerPath = path.join(lockPath, "owner");
+				const enteredOld = yield* Deferred.make<void>();
+				const releaseOld = yield* Deferred.make<void>();
+				const enteredNew = yield* Deferred.make<void>();
+				const releaseNew = yield* Deferred.make<void>();
+				const oldFiber = yield* withLineageStoreFileLock(
 					storePath,
-					Effect.sync(() => {
-						recovered = true;
-					}),
-				);
-				assert.isTrue(recovered);
+					Deferred.succeed(enteredOld, undefined).pipe(Effect.andThen(Deferred.await(releaseOld))),
+					{poll: Effect.yieldNow, staleMs: 1, disableHeartbeat: true},
+				).pipe(Effect.forkChild);
+				yield* Deferred.await(enteredOld);
+				const stale = new Date(Date.now() - 1_000);
+				yield* fs.utimes(ownerPath, stale, stale);
+				const newFiber = yield* withLineageStoreFileLock(
+					storePath,
+					Deferred.succeed(enteredNew, undefined).pipe(Effect.andThen(Deferred.await(releaseNew))),
+					{poll: Effect.yieldNow, staleMs: 1},
+				).pipe(Effect.forkChild);
+				yield* Deferred.await(enteredNew);
+				yield* Deferred.succeed(releaseOld, undefined);
+				yield* Fiber.join(oldFiber);
+				assert.isTrue(yield* fs.exists(lockPath));
+				yield* Deferred.succeed(releaseNew, undefined);
+				yield* Fiber.join(newFiber);
 				assert.isFalse(yield* fs.exists(lockPath));
 			}),
 		);
@@ -2109,6 +2273,118 @@ describe("Tuval lineage index", () => {
 			],
 		});
 		assert.isTrue(Result.isFailure(orphan));
+	});
+
+	it("rejects same-run and equal-time pre-origin continuity", () => {
+		const node = (id: string) => ({
+			id: sessionIdentity(id),
+			piSessionId: id,
+			createdAt: 1,
+			updatedAt: 1,
+			cwd: "/tmp",
+			sourceFiles: [],
+		});
+		const parent = node("chronology-parent");
+		const child = node("chronology-child");
+		const origin = {
+			kind: "observation" as const,
+			runId: "z-origin",
+			session: child.id,
+			parentReference: {kind: "session" as const, value: "chronology-parent"},
+			parent: parent.id,
+			observedAt: 10,
+		};
+		const graph = {
+			version: 2 as const,
+			nodes: [parent, child],
+			edges: [
+				{
+					id: "spawn:z-origin",
+					kind: "spawn" as const,
+					parent: parent.id,
+					child: child.id,
+					runId: "z-origin",
+					observedAt: 10,
+				},
+			],
+			ownership: [origin],
+		};
+		const sameRun = validateLineageStore({
+			...graph,
+			continuity: [
+				{
+					id: "resume:z-origin",
+					runId: "z-origin",
+					session: child.id,
+					parent: parent.id,
+					observedAt: 11,
+				},
+			],
+		});
+		assert.isTrue(Result.isFailure(sameRun));
+		const preOrigin = validateLineageStore({
+			...graph,
+			continuity: [
+				{
+					id: "resume:a-resume",
+					runId: "a-resume",
+					session: child.id,
+					parent: parent.id,
+					observedAt: 10,
+				},
+			],
+			ownership: [
+				origin,
+				{
+					kind: "observation" as const,
+					runId: "a-resume",
+					session: child.id,
+					parentReference: {kind: "session" as const, value: "chronology-parent"},
+					parent: parent.id,
+					observedAt: 10,
+				},
+			],
+		});
+		assert.isTrue(Result.isFailure(preOrigin));
+	});
+
+	it("canonical ordering is total for locale-equivalent distinct strings", () => {
+		const values = ["é", "e\u0301", "I", "ı"];
+		fc.assert(
+			fc.property(
+				fc.shuffledSubarray(values, {minLength: values.length, maxLength: values.length}),
+				(order) => {
+					const nodes = order.map((id) => ({
+						id: sessionIdentity(id),
+						piSessionId: id,
+						createdAt: 1,
+						updatedAt: 1,
+						cwd: id,
+						sourceFiles: [`/${id}`],
+					}));
+					const validated = validateLineageStore({
+						version: 2,
+						nodes,
+						edges: [],
+						continuity: [],
+						ownership: [],
+					});
+					if (Result.isFailure(validated)) return false;
+					return (
+						JSON.stringify(validated.success) ===
+						JSON.stringify(
+							validateLineageStore({
+								version: 2,
+								nodes: [...nodes].reverse(),
+								edges: [],
+								continuity: [],
+								ownership: [],
+							}).pipe(Result.getOrThrow),
+						)
+					);
+				},
+			),
+		);
 	});
 
 	it("upserts individual edges and continuity idempotently in arbitrary order", () => {

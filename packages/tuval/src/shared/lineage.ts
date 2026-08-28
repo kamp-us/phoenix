@@ -56,6 +56,11 @@ export const RunOwnership = Schema.Union([
 		session: SessionIdentity,
 	}),
 	Schema.Struct({
+		kind: Schema.Literal("direct"),
+		runId: Schema.String,
+		session: SessionIdentity,
+	}),
+	Schema.Struct({
 		kind: Schema.Literal("observation"),
 		runId: Schema.String,
 		session: SessionIdentity,
@@ -128,14 +133,27 @@ const decodeRecord = <A>(
 		: Result.succeed(decoded.success);
 };
 
+export const compareLineageText = (left: string, right: string): number =>
+	left === right ? 0 : left < right ? -1 : 1;
+
+export const compareLineageObservation = (
+	left: {readonly observedAt: number; readonly runId: string},
+	right: {readonly observedAt: number; readonly runId: string},
+): number => left.observedAt - right.observedAt || compareLineageText(left.runId, right.runId);
+
 const canonicalDocument = (document: LineageStoreDocument): LineageStoreDocument => ({
 	version: 2,
 	nodes: document.nodes
-		.map((node) => ({...node, sourceFiles: [...new Set(node.sourceFiles)].sort()}))
-		.sort((left, right) => left.id.localeCompare(right.id)),
-	edges: [...document.edges].sort((left, right) => left.id.localeCompare(right.id)),
-	continuity: [...document.continuity].sort((left, right) => left.id.localeCompare(right.id)),
-	ownership: [...document.ownership].sort((left, right) => left.runId.localeCompare(right.runId)),
+		.map((node) => ({
+			...node,
+			sourceFiles: [...new Set(node.sourceFiles)].sort(compareLineageText),
+		}))
+		.sort((left, right) => compareLineageText(left.id, right.id)),
+	edges: [...document.edges].sort((left, right) => compareLineageText(left.id, right.id)),
+	continuity: [...document.continuity].sort((left, right) => compareLineageText(left.id, right.id)),
+	ownership: [...document.ownership].sort((left, right) =>
+		compareLineageText(left.runId, right.runId),
+	),
 });
 
 const mergeNode = (
@@ -147,7 +165,7 @@ const mergeNode = (
 	}
 	const latest =
 		left.updatedAt > right.updatedAt ||
-		(left.updatedAt === right.updatedAt && left.cwd.localeCompare(right.cwd) <= 0)
+		(left.updatedAt === right.updatedAt && compareLineageText(left.cwd, right.cwd) <= 0)
 			? left
 			: right;
 	return Result.succeed({
@@ -156,7 +174,7 @@ const mergeNode = (
 		createdAt: Math.min(left.createdAt, right.createdAt),
 		updatedAt: Math.max(left.updatedAt, right.updatedAt),
 		cwd: latest.cwd,
-		sourceFiles: [...new Set([...left.sourceFiles, ...right.sourceFiles])].sort(),
+		sourceFiles: [...new Set([...left.sourceFiles, ...right.sourceFiles])].sort(compareLineageText),
 	});
 };
 
@@ -216,8 +234,14 @@ const mergeOwnership = (
 	if (left.session !== right.session) {
 		return conflict(left.runId, `Run ${left.runId} maps to conflicting sessions`);
 	}
-	if (left.kind === "wrapper") return Result.succeed(right);
-	if (right.kind === "wrapper") return Result.succeed(left);
+	if (left.kind === "observation" && right.kind !== "observation") return Result.succeed(left);
+	if (right.kind === "observation" && left.kind !== "observation") return Result.succeed(right);
+	if (left.kind !== "observation" && right.kind !== "observation") {
+		return Result.succeed(left.kind === "direct" ? left : right);
+	}
+	if (left.kind !== "observation" || right.kind !== "observation") {
+		return conflict(left.runId, `Run ${left.runId} has incompatible ownership records`);
+	}
 	return left.observedAt === right.observedAt &&
 		left.parent === right.parent &&
 		sameParentReference(left.parentReference, right.parentReference)
@@ -315,6 +339,22 @@ export const validateLineageStore = (
 		}
 		ownershipByRun.set(ownership.runId, ownership);
 	}
+	for (const ownership of document.ownership) {
+		if (ownership.kind !== "observation" || ownership.parentReference.kind !== "run") continue;
+		const referenced = ownershipByRun.get(ownership.parentReference.value);
+		if (referenced === undefined) {
+			return conflict(
+				ownership.runId,
+				`Run ${ownership.runId} references missing parent run ${ownership.parentReference.value}`,
+			);
+		}
+		if (referenced.session !== ownership.parent) {
+			return conflict(
+				ownership.runId,
+				`Run ${ownership.runId} disagrees with parent run ${ownership.parentReference.value}`,
+			);
+		}
+	}
 
 	const edgeIds = new Set<string>();
 	const spawnChildren = new Map<string, SpawnLineageEdge>();
@@ -387,7 +427,11 @@ export const validateLineageStore = (
 			return conflict(observation.id, `Continuity observation ${observation.id} is non-canonical`);
 		}
 		const origin = spawnChildren.get(observation.session);
-		if (origin === undefined || observation.observedAt < origin.observedAt) {
+		if (
+			origin === undefined ||
+			observation.runId === origin.runId ||
+			compareLineageObservation(observation, origin) <= 0
+		) {
 			return conflict(
 				observation.id,
 				`Continuity observation ${observation.id} precedes its spawn origin`,

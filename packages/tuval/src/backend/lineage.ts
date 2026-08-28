@@ -15,6 +15,8 @@ import {type SessionIdentity, sessionIdentity} from "../shared/discovery.js";
 import {
 	type AuthoritativeParentReference,
 	type ContinuityObservation,
+	compareLineageObservation,
+	compareLineageText,
 	emptyLineageStore,
 	LineageConflictError,
 	type LineageEdge,
@@ -228,8 +230,8 @@ const scanFiles = Effect.fn("Lineage.scanFiles")(function* (
 
 	for (const root of roots) yield* walk(path.resolve(root));
 	return {
-		files: files.sort(),
-		problems: problems.sort((left, right) => left.source.localeCompare(right.source)),
+		files: files.sort(compareLineageText),
+		problems: problems.sort((left, right) => compareLineageText(left.source, right.source)),
 	} satisfies ScannedFiles;
 });
 
@@ -805,16 +807,8 @@ const lineageRecords = (
 			continue;
 		}
 		candidateChildren.set(candidate, child);
-		const existing = runSessions.get(candidate.runId);
-		if (existing !== undefined && existing !== child) {
-			return Result.fail(
-				new LineageConflictError({
-					recordId: candidate.runId,
-					message: `Run ${candidate.runId} maps to conflicting sessions`,
-				}),
-			);
-		}
-		runSessions.set(candidate.runId, child);
+		const inserted = insertOwnership({kind: "direct", runId: candidate.runId, session: child});
+		if (Result.isFailure(inserted)) return Result.fail(inserted.failure);
 	}
 	for (const candidate of candidates) {
 		if (candidate.parentSessionRef === undefined || candidate.wrapperRunId === undefined) continue;
@@ -916,9 +910,7 @@ const lineageRecords = (
 	}
 	const continuity: Array<ContinuityObservation> = [];
 	for (const [child, observations] of observationsBySession) {
-		const ordered = observations.sort(
-			(left, right) => left.observedAt - right.observedAt || left.runId.localeCompare(right.runId),
-		);
+		const ordered = observations.sort(compareLineageObservation);
 		const originIndex = ordered.findIndex(
 			(observation) =>
 				observation.parent !== undefined &&
@@ -1043,13 +1035,97 @@ export const writeLineageStore = Effect.fn("LineageStore.write")(function* (
 		);
 });
 
-const acquireStoreFileLock = Effect.fn("LineageStore.acquireFileLock")(function* (
-	storePath: string,
-	poll: Effect.Effect<void> = Effect.sleep(`${STORE_LOCK_POLL_MS} millis`),
+interface StoreFileLock {
+	readonly lockPath: string;
+	readonly ownerPath: string;
+	readonly ownerToken: string;
+}
+
+interface StoreFileLockOptions {
+	readonly poll?: Effect.Effect<void>;
+	readonly staleMs?: number;
+	readonly heartbeatIntervalMs?: number;
+	readonly disableHeartbeat?: boolean;
+}
+
+const lockGenerationPrefix = (path: Path.Path, lockPath: string): string =>
+	`${path.basename(lockPath)}.generation-`;
+
+const generationMoveExists = Effect.fn("LineageStore.generationMoveExists")(function* (
+	lockPath: string,
+	staleMs: number,
 ) {
 	const fs = yield* FileSystem.FileSystem;
 	const path = yield* Path.Path;
+	const directory = path.dirname(lockPath);
+	const listed = yield* Effect.result(fs.readDirectory(directory));
+	if (Result.isFailure(listed)) return false;
+	const prefix = lockGenerationPrefix(path, lockPath);
+	let active = false;
+	for (const entry of listed.success.filter((candidate) => candidate.startsWith(prefix))) {
+		const generationPath = path.join(directory, entry);
+		const stat = yield* Effect.result(fs.stat(generationPath));
+		const mtime = Result.isSuccess(stat) ? Option.getOrUndefined(stat.success.mtime) : undefined;
+		if (mtime !== undefined && Date.now() - mtime.getTime() > staleMs) {
+			yield* fs.remove(generationPath, {recursive: true}).pipe(Effect.ignore);
+			continue;
+		}
+		active = true;
+	}
+	return active;
+});
+
+const moveOwnedLockGeneration = Effect.fn("LineageStore.moveOwnedLockGeneration")(function* (
+	lock: StoreFileLock,
+	expectedToken: string | undefined,
+) {
+	const fs = yield* FileSystem.FileSystem;
+	const path = yield* Path.Path;
+	const crypto = yield* Crypto.Crypto;
+	const quarantine = path.join(
+		path.dirname(lock.lockPath),
+		`${lockGenerationPrefix(path, lock.lockPath)}${yield* crypto.randomUUIDv4}`,
+	);
+	const marker = yield* Effect.result(fs.makeDirectory(quarantine, {recursive: false}));
+	if (Result.isFailure(marker)) return false;
+	const quarantinedLock = path.join(quarantine, "lock");
+	const moved = yield* Effect.result(fs.rename(lock.lockPath, quarantinedLock));
+	if (Result.isFailure(moved)) {
+		yield* fs.remove(quarantine, {recursive: true}).pipe(Effect.ignore);
+		return false;
+	}
+	const quarantinedOwner = yield* Effect.result(
+		fs.readFileString(path.join(quarantinedLock, "owner")),
+	);
+	const actualToken = Result.isSuccess(quarantinedOwner)
+		? quarantinedOwner.success.trim()
+		: undefined;
+	if (actualToken === expectedToken) {
+		yield* fs.remove(quarantine, {recursive: true}).pipe(Effect.ignore);
+		return true;
+	}
+	const restored = yield* Effect.result(fs.rename(quarantinedLock, lock.lockPath));
+	if (Result.isFailure(restored)) {
+		return yield* new LineageStoreReadError({
+			path: lock.lockPath,
+			message: "A newer lineage lock generation could not be restored",
+		});
+	}
+	yield* fs.remove(quarantine, {recursive: true}).pipe(Effect.ignore);
+	return false;
+});
+
+const acquireStoreFileLock = Effect.fn("LineageStore.acquireFileLock")(function* (
+	storePath: string,
+	options?: StoreFileLockOptions,
+) {
+	const fs = yield* FileSystem.FileSystem;
+	const path = yield* Path.Path;
+	const crypto = yield* Crypto.Crypto;
 	const lockPath = `${storePath}.lock`;
+	const ownerPath = path.join(lockPath, "owner");
+	const poll = options?.poll ?? Effect.sleep(`${STORE_LOCK_POLL_MS} millis`);
+	const staleMs = options?.staleMs ?? STORE_LOCK_STALE_MS;
 	yield* fs
 		.makeDirectory(path.dirname(storePath), {recursive: true})
 		.pipe(
@@ -1059,23 +1135,43 @@ const acquireStoreFileLock = Effect.fn("LineageStore.acquireFileLock")(function*
 		);
 	const deadline = Date.now() + STORE_LOCK_WAIT_MS;
 	while (true) {
-		const made = yield* Effect.result(fs.makeDirectory(lockPath, {recursive: false}));
-		if (Result.isSuccess(made)) return lockPath;
-		const stat = yield* Effect.result(fs.stat(lockPath));
-		if (Result.isFailure(stat)) {
+		if (yield* generationMoveExists(lockPath, staleMs)) {
 			if (Date.now() >= deadline) {
 				return yield* new LineageStoreReadError({
 					path: lockPath,
-					message: "Lineage store lock could not be inspected",
+					message: "Timed out waiting for lineage lock generation recovery",
 				});
 			}
 			yield* poll;
 			continue;
 		}
-		const mtime = Option.getOrUndefined(stat.success.mtime);
-		if (mtime !== undefined && Date.now() - mtime.getTime() > STORE_LOCK_STALE_MS) {
-			yield* fs.remove(lockPath, {recursive: true}).pipe(Effect.ignore);
-			continue;
+		const made = yield* Effect.result(fs.makeDirectory(lockPath, {recursive: false}));
+		if (Result.isSuccess(made)) {
+			const ownerToken = yield* crypto.randomUUIDv4;
+			const wrote = yield* Effect.result(fs.writeFileString(ownerPath, ownerToken));
+			if (Result.isFailure(wrote)) {
+				yield* fs.remove(lockPath, {recursive: true}).pipe(Effect.ignore);
+				return yield* new LineageStoreReadError({
+					path: ownerPath,
+					message: messageOf(wrote.failure),
+				});
+			}
+			return {lockPath, ownerPath, ownerToken} satisfies StoreFileLock;
+		}
+		const owner = yield* Effect.result(fs.readFileString(ownerPath));
+		const ownerToken = Result.isSuccess(owner) ? owner.success.trim() : undefined;
+		const stat = yield* Effect.result(fs.stat(Result.isSuccess(owner) ? ownerPath : lockPath));
+		const mtime = Result.isSuccess(stat) ? Option.getOrUndefined(stat.success.mtime) : undefined;
+		if (mtime !== undefined && Date.now() - mtime.getTime() > staleMs) {
+			if (yield* generationMoveExists(lockPath, staleMs)) {
+				yield* poll;
+				continue;
+			}
+			const removed = yield* moveOwnedLockGeneration(
+				{lockPath, ownerPath, ownerToken: ownerToken ?? ""},
+				ownerToken,
+			);
+			if (removed) continue;
 		}
 		if (Date.now() >= deadline) {
 			return yield* new LineageStoreReadError({
@@ -1087,20 +1183,56 @@ const acquireStoreFileLock = Effect.fn("LineageStore.acquireFileLock")(function*
 	}
 });
 
+const heartbeatStoreFileLock = (
+	lock: StoreFileLock,
+	intervalMs: number,
+): Effect.Effect<never, LineageStoreReadError, FileSystem.FileSystem> =>
+	Effect.forever(
+		Effect.sleep(`${intervalMs} millis`).pipe(
+			Effect.andThen(
+				Effect.gen(function* () {
+					const fs = yield* FileSystem.FileSystem;
+					const owner = yield* Effect.result(fs.readFileString(lock.ownerPath));
+					if (Result.isFailure(owner) || owner.success.trim() !== lock.ownerToken) {
+						return yield* new LineageStoreReadError({
+							path: lock.lockPath,
+							message: "Lineage store lock ownership was lost",
+						});
+					}
+					const now = new Date();
+					yield* fs.utimes(lock.ownerPath, now, now).pipe(
+						Effect.mapError(
+							(error) =>
+								new LineageStoreReadError({
+									path: lock.ownerPath,
+									message: messageOf(error),
+								}),
+						),
+					);
+				}),
+			),
+		),
+	);
+
 export const withLineageStoreFileLock = <A, E, R>(
 	storePath: string,
 	effect: Effect.Effect<A, E, R>,
-	options?: {readonly poll?: Effect.Effect<void>},
-): Effect.Effect<A, E | LineageStoreReadError, R | FileSystem.FileSystem | Path.Path> =>
+	options?: StoreFileLockOptions,
+) =>
 	Effect.acquireUseRelease(
-		acquireStoreFileLock(storePath, options?.poll),
-		() => effect,
-		(lockPath) => {
-			return Effect.gen(function* () {
-				const fs = yield* FileSystem.FileSystem;
-				yield* fs.remove(lockPath, {recursive: true}).pipe(Effect.ignore);
-			});
-		},
+		acquireStoreFileLock(storePath, options),
+		(lock) =>
+			options?.disableHeartbeat === true
+				? effect
+				: Effect.raceFirst(
+						effect,
+						heartbeatStoreFileLock(
+							lock,
+							options?.heartbeatIntervalMs ??
+								Math.max(1, Math.floor((options?.staleMs ?? STORE_LOCK_STALE_MS) / 3)),
+						),
+					),
+		(lock) => moveOwnedLockGeneration(lock, lock.ownerToken).pipe(Effect.ignore),
 	);
 
 const storeLocks = new Map<string, Semaphore.Semaphore>();
@@ -1158,7 +1290,7 @@ const refreshLineageUnlocked = Effect.fn("Lineage.refreshUnlocked")(function* (
 			...normalized.success.problems,
 		].sort(
 			(left, right) =>
-				left.source.localeCompare(right.source) || left.code.localeCompare(right.code),
+				compareLineageText(left.source, right.source) || compareLineageText(left.code, right.code),
 		),
 	} satisfies LineageProjection;
 });

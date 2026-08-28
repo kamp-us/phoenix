@@ -148,8 +148,8 @@ catalogs:
       specifier: 4.0.0-beta.92
       version: 4.0.0-beta.92
     fast-check:
-      specifier: ^3.23.2
-      version: 3.23.2
+      specifier: 4.8.0
+      version: 4.8.0
     fast-xml-parser:
       specifier: 5.8.0
       version: 5.8.0
@@ -379,7 +379,7 @@ importers:
         version: 1.0.0-rc.4
       fast-check:
         specifier: 'catalog:'
-        version: 3.23.2
+        version: 4.8.0
       jsdom:
         specifier: 'catalog:'
         version: 26.1.0
@@ -1039,7 +1039,7 @@ importers:
         version: 19.2.3(@types/react@19.2.14)
       fast-check:
         specifier: 'catalog:'
-        version: 3.23.2
+        version: 4.8.0
       jsdom:
         specifier: 'catalog:'
         version: 26.1.0
@@ -3732,10 +3732,6 @@ packages:
     resolution: {integrity: sha512-knvyeauYhqjOYvQ66MznSMs83wmHrCycNEN6Ao+2AeYEfxUIkuiVxdEa1qlGEPK+We3n0THiDciYSsCcgW/DoA==}
     engines: {node: '>=12.0.0'}
 
-  fast-check@3.23.2:
-    resolution: {integrity: sha512-h5+1OzzfCC3Ef7VbtKdcv7zsstUQwUDlYpUTvjeUsJAssPgLn7QzbboPtL5ro04Mq0rPOsMzl7q5hIbRs2wD1A==}
-    engines: {node: '>=8.0.0'}
-
   fast-check@4.8.0:
     resolution: {integrity: sha512-GOJ158CUMnN6cSahsv4+ExARvIDuzzinFjkp0E9WtiBa5zcVeLozVkWaE4IzFcc+Y48Wp1EDlUZsXRyAztQcSg==}
     engines: {node: '>=12.17.0'}
@@ -4380,9 +4376,6 @@ packages:
   punycode@2.3.1:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
-
-  pure-rand@6.1.0:
-    resolution: {integrity: sha512-bVWawvoZoBYpp6yIoQtQXHZjmz35RSVHnUOTefl8Vcjr8snTPY1wnpSPMWekcFwbxI6gtmT7rSYPFvz71ldiOA==}
 
   pure-rand@8.4.0:
     resolution: {integrity: sha512-IoM8YF/jY0hiugFo/wOWqfmarlE6J0wc6fDK1PhftMk7MGhVZl88sZimmqBBFomLOCSmcCCpsfj7wXASCpvK9A==}
@@ -7525,10 +7518,6 @@ snapshots:
 
   expect-type@1.3.0: {}
 
-  fast-check@3.23.2:
-    dependencies:
-      pure-rand: 6.1.0
-
   fast-check@4.8.0:
     dependencies:
       pure-rand: 8.4.0
@@ -8177,8 +8166,6 @@ snapshots:
   proxy-compare@3.0.1: {}
 
   punycode@2.3.1: {}
-
-  pure-rand@6.1.0: {}
 
   pure-rand@8.4.0: {}
 
