@@ -50,15 +50,12 @@ layer:
 ```ts
 import {FateServer} from "@kampus/fate-effect";
 import * as Layer from "effect/Layer";
+import {fateConfig} from "./config.ts";
+import {makeFateLayer} from "./layers.ts";
 
-export const fateConfig = FateServer.config({
-	queries: panoQueries,
-	lists: panoLists,
-	mutations: panoMutations,
-	sources: panoSources,
-});
-
-export const FateLive = FateServer.layer(fateConfig).pipe(Layer.provide(Pano));
+export const PhoenixFateLive = FateServer.layer(fateConfig).pipe(
+	Layer.provideMerge(makeFateLayer),
+);
 ```
 
 Use the [server pattern](../../.patterns/fate-effect-server.md) when adding sources or request
