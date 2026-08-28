@@ -107,6 +107,26 @@ interface RunObservation {
 	readonly source: string;
 }
 
+type AuthoritativeParentReference =
+	| {readonly _tag: "ParentRun"; readonly value: string}
+	| {readonly _tag: "ParentSession"; readonly value: string}
+	| {readonly _tag: "Parentless"};
+
+const authoritativeParentReference = (candidate: RunCandidate): AuthoritativeParentReference =>
+	candidate.parentRunId !== undefined
+		? {_tag: "ParentRun", value: candidate.parentRunId}
+		: candidate.parentSessionRef !== undefined
+			? {_tag: "ParentSession", value: candidate.parentSessionRef}
+			: {_tag: "Parentless"};
+
+const sameAuthoritativeParent = (
+	left: AuthoritativeParentReference,
+	right: AuthoritativeParentReference,
+): boolean => {
+	if (left._tag === "Parentless") return right._tag === "Parentless";
+	return right._tag === left._tag && right.value === left.value;
+};
+
 interface ScannedFiles {
 	readonly files: ReadonlyArray<string>;
 	readonly problems: ReadonlyArray<LineageProblem>;
@@ -688,6 +708,21 @@ const lineageRecords = (
 		});
 	}
 
+	const parentReferences = new Map<string, AuthoritativeParentReference>();
+	for (const candidate of candidates) {
+		const reference = authoritativeParentReference(candidate);
+		const existing = parentReferences.get(candidate.runId);
+		if (existing !== undefined && !sameAuthoritativeParent(existing, reference)) {
+			return Result.fail(
+				new LineageConflictError({
+					recordId: `spawn:${candidate.runId}`,
+					message: `Run ${candidate.runId} has conflicting authoritative parent references`,
+				}),
+			);
+		}
+		parentReferences.set(candidate.runId, reference);
+	}
+
 	const runSessions = new Map<string, SessionIdentity>();
 	for (const candidate of candidates) {
 		const child = resolveSession(candidate.sessionRef, byFile, knownNodes, path);
@@ -749,6 +784,22 @@ const lineageRecords = (
 			}
 		} else if (candidate.parentSessionRef !== undefined) {
 			parent = resolveSession(candidate.parentSessionRef, byFile, knownNodes, path);
+			if (parent === undefined) {
+				if (currentByRun.has(candidate.runId)) {
+					return Result.fail(
+						new LineageConflictError({
+							recordId: `spawn:${candidate.runId}`,
+							message: `Persisted run ${candidate.runId} was rewritten with unresolved authoritative parent ${candidate.parentSessionRef}`,
+						}),
+					);
+				}
+				problems.push({
+					code: "retention-loss",
+					source: candidate.source,
+					message: `Authoritative parent session ${candidate.parentSessionRef} for ${candidate.runId} is not retained`,
+				});
+				continue;
+			}
 		}
 		const observation: RunObservation = {
 			runId: candidate.runId,

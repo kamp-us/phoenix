@@ -70,10 +70,11 @@ observation; a parentless observation before the first spawn-eligible run is lik
 diagnostic-only.
 
 The normalized version-1 store lives under `~/.pi/agent/tuval/lineage.json` by default. Serialized
-rescans preserve exact observations and retained records after source cleanup. Reused run ids —
-including rewrites to unknown sessions or unresolved authoritative parents — multiple spawn
-origins for one session, changed continuity parentage, dangling references, invalid source ownership,
-and unknown store versions are refused rather than silently collapsed.
+rescans preserve exact observations and retained records after source cleanup. Candidates for one
+run compare their authoritative run, session, or parentless parent facts before resolution;
+unresolved parents remain diagnostic-only, and adding one to a retained run is refused. Reused run
+ids with changed sessions, timestamps, or parentage, multiple spawn origins for one session,
+dangling references, invalid source ownership, and unknown store versions are likewise refused.
 
 ## Live-session contract
 

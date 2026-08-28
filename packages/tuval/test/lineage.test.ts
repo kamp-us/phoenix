@@ -715,6 +715,158 @@ describe("Tuval lineage index", () => {
 			}),
 		);
 
+		it.effect("refuses an unresolved parent rewrite of retained parentless continuity", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({
+					prefix: "tuval-lineage-parentless-rewrite-",
+				});
+				const sessionsRoot = path.join(root, "sessions");
+				const runsRoot = path.join(root, "runs");
+				const storePath = path.join(root, "lineage.json");
+				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+				const childFile = yield* writeSession(sessionsRoot, "child.jsonl", {id: "child"});
+				yield* writeStatus(runsRoot, "origin", {
+					runId: "origin-run",
+					sessionId: parentFile,
+					sessionFile: childFile,
+					startedAt: 1,
+				});
+				const resumePath = yield* writeStatus(runsRoot, "resume", {
+					runId: "resume-run",
+					sessionFile: childFile,
+					startedAt: 2,
+				});
+				const initial = yield* refreshLineage({
+					runRoots: [runsRoot],
+					sessionRoots: [sessionsRoot],
+					storePath,
+				});
+				assert.isDefined(
+					initial.graph.continuity.find(
+						(observation) =>
+							observation.id === "resume:resume-run" && observation.parent === undefined,
+					),
+				);
+
+				yield* fs.writeFileString(
+					resumePath,
+					JSON.stringify({
+						runId: "resume-run",
+						sessionId: "unknown-parent",
+						sessionFile: childFile,
+						startedAt: 2,
+					}),
+				);
+				const rewritten = yield* Effect.result(
+					refreshLineage({runRoots: [runsRoot], sessionRoots: [sessionsRoot], storePath}),
+				);
+				assert.isTrue(Result.isFailure(rewritten));
+				if (Result.isFailure(rewritten)) {
+					assert.strictEqual(rewritten.failure._tag, "tuval/LineageConflictError");
+				}
+			}),
+		);
+
+		it.effect("compares unresolved and parentless parent facts before resolution", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				for (const [index, parents] of (
+					[
+						["unknown-a", "unknown-b"],
+						["unknown-a", undefined],
+						[undefined, "unknown-a"],
+					] as const
+				).entries()) {
+					const root = yield* fs.makeTempDirectoryScoped({
+						prefix: `tuval-lineage-parent-fact-${index}-`,
+					});
+					const sessionsRoot = path.join(root, "sessions");
+					const runsRoot = path.join(root, "runs");
+					const storePath = path.join(root, "lineage.json");
+					const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+					const childFile = yield* writeSession(sessionsRoot, "child.jsonl", {id: "child"});
+					yield* writeStatus(runsRoot, "origin", {
+						runId: "origin-run",
+						sessionId: parentFile,
+						sessionFile: childFile,
+						startedAt: 1,
+					});
+					for (const [name, parent] of ["a", "b"].map(
+						(name, parentIndex) => [name, parents[parentIndex]] as const,
+					)) {
+						yield* writeStatus(runsRoot, `resume-${name}`, {
+							runId: "resume-run",
+							...(parent === undefined ? {} : {sessionId: parent}),
+							sessionFile: childFile,
+							startedAt: 2,
+						});
+					}
+					const projected = yield* Effect.result(
+						refreshLineage({runRoots: [runsRoot], sessionRoots: [sessionsRoot], storePath}),
+					);
+					assert.isTrue(Result.isFailure(projected));
+					if (Result.isFailure(projected)) {
+						assert.strictEqual(projected.failure._tag, "tuval/LineageConflictError");
+					}
+				}
+			}),
+		);
+
+		it.effect("keeps identical parentless and unresolved rescans idempotent", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				for (const [index, parent] of [undefined, "unknown-parent"].entries()) {
+					const root = yield* fs.makeTempDirectoryScoped({
+						prefix: `tuval-lineage-parent-rescan-${index}-`,
+					});
+					const sessionsRoot = path.join(root, "sessions");
+					const runsRoot = path.join(root, "runs");
+					const storePath = path.join(root, "lineage.json");
+					const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+					const childFile = yield* writeSession(sessionsRoot, "child.jsonl", {id: "child"});
+					yield* writeStatus(runsRoot, "origin", {
+						runId: "origin-run",
+						sessionId: parentFile,
+						sessionFile: childFile,
+						startedAt: 1,
+					});
+					yield* writeStatus(runsRoot, "resume", {
+						runId: "resume-run",
+						...(parent === undefined ? {} : {sessionId: parent}),
+						sessionFile: childFile,
+						startedAt: 2,
+					});
+					const first = yield* refreshLineage({
+						runRoots: [runsRoot],
+						sessionRoots: [sessionsRoot],
+						storePath,
+					});
+					const bytes = yield* fs.readFileString(storePath);
+					const second = yield* refreshLineage({
+						runRoots: [runsRoot],
+						sessionRoots: [sessionsRoot],
+						storePath,
+					});
+					assert.deepEqual(second, first);
+					assert.strictEqual(yield* fs.readFileString(storePath), bytes);
+					if (parent === undefined) {
+						assert.isDefined(
+							first.graph.continuity.find((observation) => observation.runId === "resume-run"),
+						);
+					} else {
+						assert.isUndefined(
+							first.graph.continuity.find((observation) => observation.runId === "resume-run"),
+						);
+						assert.isTrue(first.problems.some((problem) => problem.code === "retention-loss"));
+					}
+				}
+			}),
+		);
+
 		it.effect("reclassifies a retained later origin when an earlier artifact is restored", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
