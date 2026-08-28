@@ -25,6 +25,7 @@ import type {
 } from "../shared/live-session.js";
 
 const EVENT_HISTORY_LIMIT = 500;
+const CORRELATED_PROMPT_LIMIT = 100;
 
 type Listener = (event: LiveSessionEvent) => void;
 
@@ -41,6 +42,7 @@ interface Attachment {
 interface CorrelatedPrompt {
 	readonly text: string;
 	readonly result: Promise<PromptLiveSessionOutcome>;
+	settled: boolean;
 }
 
 interface PendingAttachment {
@@ -93,31 +95,42 @@ const replaceOrAppend = (
 const appendAssistantDelta = (
 	transcript: Array<LiveTranscriptEntry>,
 	progress: Extract<TranscriptProgress, {type: "assistant_delta"}>,
-): void => {
+): string | undefined => {
 	const index = transcript.findIndex((item) => item.id === progress.messageId);
 	const entry = transcript[index];
-	if (entry === undefined || entry.role !== "assistant") return;
+	if (entry === undefined) {
+		return `assistant delta targets missing transcript item ${progress.messageId}`;
+	}
+	if (entry.role !== "assistant") {
+		return `assistant delta target ${progress.messageId} has role ${entry.role}, not assistant`;
+	}
 	const content = [...entry.content];
 	const part = content[progress.contentIndex];
-	if (part === undefined || part.type !== progress.kind) return;
+	if (part === undefined) {
+		return `assistant delta targets missing content index ${progress.contentIndex} on ${progress.messageId}`;
+	}
+	if (progress.kind === "toolCall") {
+		return `assistant delta for ${progress.messageId} has unsupported toolCall kind`;
+	}
+	if (part.type !== progress.kind) {
+		return `assistant delta kind ${progress.kind} does not match ${part.type} content on ${progress.messageId}`;
+	}
 	if (part.type === "text") {
 		content[progress.contentIndex] = {...part, text: part.text + progress.delta};
-	}
-	if (part.type === "thinking") {
+	} else {
 		content[progress.contentIndex] = {...part, thinking: part.thinking + progress.delta};
 	}
 	transcript[index] = {...entry, content};
+	return undefined;
 };
 
 const reduceProgress = (
 	transcript: Array<LiveTranscriptEntry>,
 	progress: TranscriptProgress,
-): void => {
-	if (progress.type === "assistant_delta") {
-		appendAssistantDelta(transcript, progress);
-		return;
-	}
+): string | undefined => {
+	if (progress.type === "assistant_delta") return appendAssistantDelta(transcript, progress);
 	replaceOrAppend(transcript, entryOf(progress.item));
+	return undefined;
 };
 
 const refusalCode = (
@@ -158,6 +171,7 @@ export class PiLiveSessionState implements LiveSessionState {
 	#pendingAttachment: PendingAttachment | undefined;
 	#sequence = 0;
 	#generation = 0;
+	#promptGeneration: number | undefined;
 	#lifecycle: Promise<void> = Promise.resolve();
 	#disposed = false;
 
@@ -197,18 +211,34 @@ export class PiLiveSessionState implements LiveSessionState {
 	attach = (sessionId: string): Promise<AttachLiveSessionOutcome> => this.#attach(sessionId);
 
 	prompt = (request: PromptLiveSessionRequest): Promise<PromptLiveSessionOutcome> => {
+		const generation = this.#attachment?.generation;
+		if (generation === undefined) return this.#runPrompt(request);
+		this.#scopePromptsTo(generation);
 		const existing = this.#prompts.get(request.correlationId);
 		if (existing !== undefined) {
 			if (existing.text === request.text) return existing.result;
-			return Promise.resolve({
-				_tag: "refused",
-				correlationId: request.correlationId,
-				code: "protocol",
-				reason: "Correlation id was already used for a different prompt",
-			});
+			return this.#refusePrompt(
+				request.correlationId,
+				"Correlation id was already used for a different prompt",
+			);
+		}
+		if (!this.#makePromptRoom()) {
+			return this.#refusePrompt(
+				request.correlationId,
+				"Too many prompts are awaiting acknowledgement",
+			);
 		}
 		const result = this.#runPrompt(request);
-		this.#prompts.set(request.correlationId, {text: request.text, result});
+		const correlated: CorrelatedPrompt = {text: request.text, result, settled: false};
+		this.#prompts.set(request.correlationId, correlated);
+		void result.then(
+			() => {
+				correlated.settled = true;
+			},
+			() => {
+				correlated.settled = true;
+			},
+		);
 		return result;
 	};
 
@@ -337,8 +367,44 @@ export class PiLiveSessionState implements LiveSessionState {
 				};
 			}
 		}
-		this.#publish({_tag: "prompt", sequence: this.#nextSequence(), outcome});
+		this.#publishPrompt(outcome);
 		return outcome;
+	}
+
+	#refusePrompt(correlationId: string, reason: string): Promise<PromptLiveSessionOutcome> {
+		const outcome: PromptLiveSessionOutcome = {
+			_tag: "refused",
+			correlationId,
+			code: "protocol",
+			reason,
+		};
+		this.#publishPrompt(outcome);
+		return Promise.resolve(outcome);
+	}
+
+	#publishPrompt(outcome: PromptLiveSessionOutcome): void {
+		this.#publish({_tag: "prompt", sequence: this.#nextSequence(), outcome});
+	}
+
+	#scopePromptsTo(generation: number): void {
+		if (this.#promptGeneration === generation) return;
+		this.#prompts.clear();
+		this.#promptGeneration = generation;
+	}
+
+	#makePromptRoom(): boolean {
+		if (this.#prompts.size < CORRELATED_PROMPT_LIMIT) return true;
+		for (const [correlationId, prompt] of this.#prompts) {
+			if (!prompt.settled) continue;
+			this.#prompts.delete(correlationId);
+			return true;
+		}
+		return false;
+	}
+
+	#clearPrompts(): void {
+		this.#prompts.clear();
+		this.#promptGeneration = undefined;
 	}
 
 	#acceptSnapshot(generation: number, snapshot: SessionSnapshot): void {
@@ -360,7 +426,14 @@ export class PiLiveSessionState implements LiveSessionState {
 		}
 		try {
 			if (event.type === "session_progress") {
-				reduceProgress(attachment.transcript, event.progress);
+				const incoherence = reduceProgress(attachment.transcript, event.progress);
+				if (incoherence !== undefined) {
+					this.#publishDiagnostic(
+						`Malformed live event was ignored: ${incoherence}`,
+						attachment.snapshot.id,
+					);
+					return;
+				}
 				this.#publishSession(attachment);
 			}
 			if (event.type === "session_removed") {
@@ -392,6 +465,7 @@ export class PiLiveSessionState implements LiveSessionState {
 	}
 
 	async #releaseAttachment(): Promise<void> {
+		this.#clearPrompts();
 		const attachment = this.#attachment;
 		if (attachment === undefined) return;
 		this.#attachment = undefined;

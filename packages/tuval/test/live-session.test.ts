@@ -63,6 +63,22 @@ function assistant(
 			};
 }
 
+const toolCallingAssistant = (id: string, timestamp: number): StreamingAssistant => ({
+	id,
+	role: "assistant",
+	content: [
+		{
+			type: "toolCall",
+			toolCallId: `${id}-call`,
+			toolName: "read",
+			input: {},
+		},
+	],
+	model: {provider: "anthropic", id: "claude-sonnet"},
+	timestamp,
+	status: "streaming",
+});
+
 const snapshot = (
 	id: string,
 	revision: number,
@@ -370,6 +386,62 @@ describe("PiLiveSession", () => {
 		}),
 	);
 
+	it.effect("scopes prompt correlation to one attachment and publishes reuse refusals", () =>
+		Effect.gen(function* () {
+			const first = snapshot("correlation-first", 1);
+			const second = snapshot("correlation-second", 1);
+			const protocol = new SyntheticPiProtocol(first, second);
+			const service = yield* connect(protocol);
+			yield* service.attach(first.id);
+
+			const firstPrompt = yield* service
+				.prompt({correlationId: "shared-correlation", text: "same text"})
+				.pipe(Effect.forkChild);
+			yield* Effect.yieldNow;
+			protocol.acknowledgePrompt("same text", snapshot(first.id, 2));
+			assert.deepInclude(yield* Fiber.join(firstPrompt), {
+				_tag: "acknowledged",
+				correlationId: "shared-correlation",
+			});
+
+			const beforeReuse = (yield* service.eventsAfter()).at(-1)?.sequence ?? 0;
+			assert.deepInclude(
+				yield* service.prompt({correlationId: "shared-correlation", text: "different text"}),
+				{
+					_tag: "refused",
+					correlationId: "shared-correlation",
+					code: "protocol",
+				},
+			);
+			const reuseEvents = yield* service.eventsAfter(beforeReuse);
+			assert.lengthOf(reuseEvents, 1);
+			const reuseEvent = reuseEvents[0];
+			assert.strictEqual(reuseEvent?._tag, "prompt");
+			if (reuseEvent?._tag !== "prompt") return;
+			assert.deepInclude(reuseEvent.outcome, {
+				_tag: "refused",
+				correlationId: "shared-correlation",
+				code: "protocol",
+			});
+
+			yield* service.attach(second.id);
+			const secondPrompt = yield* service
+				.prompt({correlationId: "shared-correlation", text: "same text"})
+				.pipe(Effect.forkChild);
+			yield* Effect.yieldNow;
+			assert.isUndefined(secondPrompt.pollUnsafe());
+			protocol.acknowledgePrompt("same text", snapshot(second.id, 2));
+			const secondOutcome = yield* Fiber.join(secondPrompt);
+			assert.strictEqual(secondOutcome._tag, "acknowledged");
+			if (secondOutcome._tag !== "acknowledged") return;
+			assert.strictEqual(secondOutcome.session.sessionId, second.id);
+			assert.lengthOf(
+				protocol.commands.filter((command) => command === "prompt"),
+				2,
+			);
+		}),
+	);
+
 	it.effect(
 		"replaces attachments by cleaning the prior subscription and lease before attaching the next",
 		() =>
@@ -453,6 +525,102 @@ describe("PiLiveSession", () => {
 			assert.include(
 				(yield* service.current())?.transcript.map((item) => item.id) ?? [],
 				"after-reattach",
+			);
+		}),
+	);
+
+	it.effect("diagnoses every incoherent assistant delta without publishing session state", () =>
+		Effect.gen(function* () {
+			const live = snapshot("incoherent-deltas", 1, [
+				user("user-target", "existing", 1),
+				assistant("text-target", "hello", 2, "streaming"),
+				toolCallingAssistant("tool-target", 3),
+			]);
+			const protocol = new SyntheticPiProtocol(live);
+			const service = yield* connect(protocol);
+			const attached = yield* service.attach(live.id);
+			const afterSequence = attached._tag === "attached" ? attached.session.lastEventSequence : 0;
+			const deltas: ReadonlyArray<ServerEvent> = [
+				{
+					type: "session_progress",
+					sessionId: live.id,
+					progress: {
+						type: "assistant_delta",
+						messageId: "missing-target",
+						contentIndex: 0,
+						kind: "text",
+						delta: "!",
+					},
+				},
+				{
+					type: "session_progress",
+					sessionId: live.id,
+					progress: {
+						type: "assistant_delta",
+						messageId: "user-target",
+						contentIndex: 0,
+						kind: "text",
+						delta: "!",
+					},
+				},
+				{
+					type: "session_progress",
+					sessionId: live.id,
+					progress: {
+						type: "assistant_delta",
+						messageId: "text-target",
+						contentIndex: 1,
+						kind: "text",
+						delta: "!",
+					},
+				},
+				{
+					type: "session_progress",
+					sessionId: live.id,
+					progress: {
+						type: "assistant_delta",
+						messageId: "text-target",
+						contentIndex: 0,
+						kind: "thinking",
+						delta: "!",
+					},
+				},
+				{
+					type: "session_progress",
+					sessionId: live.id,
+					progress: {
+						type: "assistant_delta",
+						messageId: "tool-target",
+						contentIndex: 0,
+						kind: "toolCall",
+						delta: "!",
+					},
+				},
+			];
+
+			for (const delta of deltas) protocol.emit(delta);
+
+			const events = yield* service.eventsAfter(afterSequence);
+			assert.lengthOf(events, deltas.length);
+			assert.isTrue(events.every((event) => event._tag === "diagnostic"));
+			assert.isFalse(events.some((event) => event._tag === "session"));
+			const messages = events.flatMap((event) =>
+				event._tag === "diagnostic" ? [event.message] : [],
+			);
+			assert.isTrue(messages.some((message) => /missing-target/.test(message)));
+			assert.isTrue(messages.some((message) => /user-target/.test(message)));
+			assert.isTrue(messages.some((message) => /content index 1/i.test(message)));
+			assert.isTrue(messages.some((message) => /thinking.*text/i.test(message)));
+			assert.isTrue(messages.some((message) => /toolCall/i.test(message)));
+			assert.deepEqual(
+				(yield* service.current())?.transcript,
+				live.transcript.map((item) => ({
+					id: item.id,
+					role: item.role,
+					content: [...item.content],
+					timestamp: item.timestamp,
+					status: item.role === "user" ? "complete" : item.status,
+				})),
 			);
 		}),
 	);
