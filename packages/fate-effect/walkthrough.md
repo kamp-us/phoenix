@@ -1,9 +1,7 @@
 # @kampus/fate-effect — worked walkthrough
 
-A guided build of one small feature — a `Note` entity with a read, a write, and a live update — against the real API, end to end. Every piece is production API; the in-repo worked example is sozluk ([views](../../apps/web/worker/features/sozluk/views.ts), [sources](../../apps/web/worker/features/sozluk/sources.ts), [queries](../../apps/web/worker/features/sozluk/queries.ts), [mutations](../../apps/web/worker/features/sozluk/mutations.ts), [errors](../../apps/web/worker/features/sozluk/errors.ts)). Start from the [README](./README.md) for the shape of the package; this page is the start-to-finish lesson.
-
-The walkthrough builds one small feature — a `Note` entity with a read, a write, and a live
-update. Every piece below is the real API; the in-repo worked example is sozluk
+Build one small feature — a `Note` entity with a read, a write, and a live update — against the
+real API, end to end. The in-repo worked example is sozluk
 ([views](../../apps/web/worker/features/sozluk/views.ts),
 [sources](../../apps/web/worker/features/sozluk/sources.ts),
 [queries](../../apps/web/worker/features/sozluk/queries.ts),
@@ -136,20 +134,9 @@ full contract is the pattern doc's: [operations](../../.patterns/fate-effect-ope
 `CurrentUser` and `LivePublisher` are ordinary services from the handler's point of view; the
 serving layer provides fresh per-request values.
 
-`LivePublisher` publishes three ways to a row and four to a connection:
-
-| Call | Tells subscribers |
-| --- | --- |
-| `live.update(type, id, {changed, data})` | here are these fields' new values |
-| `live.delete(type, id)` | this row is gone |
-| `live.invalidate(type, id)` | read this row again — no data attached |
-| `live.topic(procedure, args).{appendNode,prependNode,deleteEdge,invalidate}(…)` | this connection's membership moved, or re-load it whole |
-
-`invalidate` is the only honest repair for a **viewer-derived** field — one whose value depends on
-who is reading, like a viewer's own vote or a moderation marker. Its true new value differs per
-subscriber, so a broadcast payload would overwrite every reader with the mutator's answer;
-attaching no data is what forces each subscriber to re-read on its own viewer
-([ADR 0314](../../.decisions/0314-entity-invalidate-frame-upstream.md)).
+The mutation publishes one connection change with `appendNode`. Use the
+[live-publish reference](./reference.md#live-publish-surface) when your feature needs another row or
+connection operation.
 
 Queries are the same minus `input`: `Fate.query({args: ArgsSchema, type: NoteView}, handler)`,
 where the handler bag is `{args, select}` — `select` is the client's field selection, useful for

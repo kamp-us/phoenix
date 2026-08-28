@@ -1,32 +1,44 @@
 # package-readme-shape — the canonical `packages/*/README.md` section order
 
-> Forged against real READMEs (`cf-credentials`, `composer`, `depo`, `fate-effect`) rather than declared in the abstract. The `diataxis` skill is the classifier that checks a page holds one mode; this doc states the shape it classifies against.
+Use the [`diataxis` skill](../claude-plugins/fabrika/skills/diataxis/SKILL.md) to classify the README
+before applying this shape. A README has one dominant mode; entries for other reader needs link to
+their own pages instead of embedding a second mode.
 
-Every `packages/*/README.md` follows one section order, scaled to README size:
+## Canonical order
 
 ```text
 # <package name>
-## What it is          ← explanation
-## Why it exists       ← explanation (the ADR that forced the package)
-## How to use it       ← how-to (runnable commands, import-and-call)
-## Reference           ← reference last or linked out (exports, flags, config keys)
-## Testing             ← a short testing tail
+## What it is          ← explanation, or a link to the explanation home
+## Why it exists       ← explanation, or links to the governing ADRs
+## How to use it       ← how-to recipes
+## Reference           ← reference content or a link to the reference page
+## Testing             ← short task-oriented validation commands
 ```
 
-## The rules that make it checkable
+The navigation order is explanation → how-to → reference → testing even when the README's dominant
+mode moves some entries to linked pages.
 
-1. **Explanation first.** A reader decides whether to care before they decide how to act. *What it is* names the thing in one paragraph; *why it exists* cites the decision that forced it (an ADR number, an incident) instead of re-arguing the why.
-2. **No tutorial at package scale.** A step-by-step walkthrough ("build your first X", numbered lessons followed start to finish) never blends into the README — it moves to its own linked surface next to the package. A README is mid-task material; a tutorial is study material. The two modes on one page serve neither reader ([diataxis](../../claude-plugins/fabrika/skills/diataxis/SKILL.md)).
-3. **Scope and non-goals live in the explanation half.** What the package deliberately does not cover is a *why-it-exists* concern, stated once up front — not scattered through reference sections as apologies.
-4. **How-to is recipes, not lessons.** Each how-to entry targets one real result (run this command, call this export), assumes competence, and links out for the concepts behind it.
-5. **Reference is dry and complete.** Exports, flags, config keys, module maps — look-it-up tables matching the code's structure, at the tail or on a linked page. No persuasion, no narration.
-6. **Small-package minimum.** A small package may satisfy the whole shape in three short sections (*What it is* carrying the why, *How to use it*, *Testing*) — the order is canonical, the length is not.
+## Rules
 
-## The mode contract
+1. **Explanation first.** State what the package is and point to the decision that forced it. Do not
+   re-argue an ADR in the README.
+2. **No tutorial at package scale.** Move every start-to-finish lesson to a linked tutorial next to
+   the package.
+3. **Scope and non-goals live in the explanation half.** State them once on the explanation surface.
+4. **How-to is recipes, not lessons.** Each recipe targets one result and assumes competence.
+5. **Reference is dry and complete.** Keep exports, flags, configuration keys, and module maps on a
+   reference surface at the tail or on a linked page.
+6. **Small-package minimum.** A small package may use three short entries: what/why, how to use it,
+   and testing.
+7. **One dominant mode.** A page that answers more than one reader need must split; section labels do
+   not make a mixed page single-mode.
 
-One README serves one dominant mode at a time per section, and the sections appear in explanation → how-to → reference order. When a draft reads like it wanders, run the `diataxis` classification over it: a single dominant mode with no unresolved type-mixing flag is the pass condition. Rewriting a flagged page is `build`'s job, not the classifier's.
+## Classification contract
+
+Record one dominant mode with no unresolved type-mixing flag. The `diataxis` skill classifies; a
+`build` repair splits any mixed page it reports.
 
 ## See also
 
-- [index.md](./index.md) — the pattern library front door
-- [diataxis skill](../../claude-plugins/fabrika/skills/diataxis/SKILL.md) — the single-mode classifier
+- [Pattern library index](./index.md)
+- [`diataxis` classifier](../claude-plugins/fabrika/skills/diataxis/SKILL.md)
