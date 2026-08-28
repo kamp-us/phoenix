@@ -11,18 +11,11 @@
 
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {runList} from "./list-verb.ts";
 import {runOpen} from "./open-verb.ts";
 import {runState} from "./state-verb.ts";
-
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const fileFlag = Flag.string("file").pipe(
 	Flag.optional,
