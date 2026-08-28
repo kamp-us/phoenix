@@ -45,7 +45,7 @@ handle, and viewport shape lives in `.patterns/react-flow-canvas.md`, not in thi
 - The Tuval frontend migrates to React 19 before later UI children extend the canvas.
 - Session and relationship truth stays in Tuval domain state; React Flow is not a second product-data store.
 - React Flow's viewport and interaction state must preserve the founder-ruled free-pan canvas.
-- Tuval's custom node paint uses Phoenix design tokens and shared components; adopting React Flow does not create a second design system.
+- Tuval's custom node paint uses Phoenix role tokens; adopting React Flow does not create a second design system.
 - A hand-built DOM, SVG, or canvas interaction engine that merely resembles React Flow is banned.
 
 ## Consequences

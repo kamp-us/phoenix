@@ -95,6 +95,7 @@ function TuvalCanvas({sessions, relationships}: TuvalCanvasProps) {
 			onEdgesChange={onEdgesChange}
 			nodeTypes={nodeTypes}
 			edgeTypes={edgeTypes}
+			ariaLabelConfig={tuvalFlowAriaLabels}
 			nodesConnectable={false}
 			deleteKeyCode={null}
 			fitView
@@ -121,13 +122,37 @@ Every relationship edge must name real endpoints. If an edge supplies `sourceHan
 `targetHandle`, the corresponding custom node renders a `<Handle>` with that exact id and type. The
 edge-position source returns `null` and emits error `008` when either handle cannot be resolved. A
 node with one unnamed handle of a type may omit the edge handle id; multiple handles require stable,
-explicit ids. Inner controls that must not start a drag carry React Flow's `nodrag` class, as the
-upstream custom-node example does.
+explicit ids.
+
+Inner buttons, links, and inputs that must not start a node drag carry React Flow's `nodrag` class.
+A scrollable region also carries `nowheel` so its wheel input does not zoom the canvas. Add `nopan`
+when an inner control does not stop pointer events and would otherwise pan the viewport. These are
+React Flow's default interaction-class names; do not replace them with Tuval-only event suppression.
 
 Node cards remain Phoenix UI. They consume role tokens and shared components, and their detail level
 is Tuval's `bare`/`meta`/`live`/`full` domain setting. Do not copy React Flow example colors or build
 a second card/button system. The package stylesheet is imported once for graph mechanics; Phoenix
 styles layer the paint above it.
+
+## Focus and accessibility
+
+The node and edge projections set `ariaLabel` from user-visible session and relationship text. Do
+not leave relationship edges on the wrapper's fallback `Edge from <id> to <id>` label. Keep
+`nodesFocusable`, `edgesFocusable`, and keyboard accessibility at their defaults: the pinned store
+enables node and edge focus, and the wrappers then provide one `tabIndex=0` graph-item target, an
+ARIA role, descriptions, Enter/Space selection, Escape clearing, and arrow-key movement for a
+selected draggable node. Keep `autoPanOnNodeFocus` enabled so an off-screen focused node is brought
+into view.
+
+Do not add `tabIndex` to `SessionNodeCard`'s root: React Flow's wrapper is the graph-item focus
+target. Real controls inside the card remain separate native focus targets and carry the interaction
+classes above. Keep `disableKeyboardA11y` false so the wrapper descriptions and live movement
+announcements remain wired through `A11yDescriptions`.
+
+Because Tuval sets `deleteKeyCode={null}`, provide a stable Turkish `ariaLabelConfig` that removes
+the default node and edge instructions to press Delete. Override both node-description variants,
+the edge description, the movement announcement, and the visible control labels so assistive copy
+matches the enabled commands; do not disable keyboard support to hide a stale instruction.
 
 ## Provider and viewport
 
@@ -147,6 +172,26 @@ never pass a viewport without relaying user pan/zoom changes back.
 The canvas parent must have non-zero dimensions: React Flow's root wrapper is `width: 100%` and
 `height: 100%`. Render `Background` and `Controls` as children so they read the same internal
 transform; `Background` derives its scale and offset directly from that transform.
+
+## Test contracts
+
+Test the adapter as pure functions before rendering: stable ids, accessible labels, relationship
+handle ids, and domain reconciliation must be deterministic, and a live update must preserve an
+existing node's position, dimensions, selection, and drag state.
+
+Rendered component tests mount the real `ReactFlow` in a non-zero-size container. Assert the custom
+node and relationship edge render, each has its projected accessible name, the node and edge
+wrappers are keyboard-focusable without a second focusable custom-node root, the relationship uses
+existing source/target handles, and inner controls carry the required interaction classes. Treat a
+missing edge or React Flow handle-resolution error as a failure, not as a screenshot difference.
+
+Playwright covers the browser-owned interaction contract: Tab reaches named nodes and edges;
+Enter/Space and Escape select and clear them; arrow keys move a selected draggable node; pointer
+drag moves a node; pane drag and wheel/controls change pan and zoom; and valid handle ids keep the
+relationship edge rendered. After moving a node and the viewport, inject a live session update and
+assert both the node transform and viewport transform remain unchanged while the node's live content
+updates. This is the integration proof that `fitView` stayed initial and reconciliation did not
+steal the user's position.
 
 ## Prospective scope
 
@@ -180,6 +225,19 @@ All dependency links below are pinned to the recorded commit:
   [custom-node example](https://github.com/xyflow/xyflow/blob/b1b99e9773040e25bd6099762491ab23d8ea6910/examples/react/src/examples/CustomNode/ColorSelectorNode.tsx),
   and [edge-position resolver](https://github.com/xyflow/xyflow/blob/b1b99e9773040e25bd6099762491ab23d8ea6910/packages/system/src/utils/edges/positions.ts)
   ground the registration, provider, handle, and fit/viewport boundaries.
+- [`NodeWrapper`](https://github.com/xyflow/xyflow/blob/b1b99e9773040e25bd6099762491ab23d8ea6910/packages/react/src/components/NodeWrapper/index.tsx),
+  [`EdgeWrapper`](https://github.com/xyflow/xyflow/blob/b1b99e9773040e25bd6099762491ab23d8ea6910/packages/react/src/components/EdgeWrapper/index.tsx),
+  [`A11yDescriptions`](https://github.com/xyflow/xyflow/blob/b1b99e9773040e25bd6099762491ab23d8ea6910/packages/react/src/components/A11yDescriptions/index.tsx),
+  the public [component props](https://github.com/xyflow/xyflow/blob/b1b99e9773040e25bd6099762491ab23d8ea6910/packages/react/src/types/component-props.ts),
+  [node](https://github.com/xyflow/xyflow/blob/b1b99e9773040e25bd6099762491ab23d8ea6910/packages/react/src/types/nodes.ts)
+  and [edge](https://github.com/xyflow/xyflow/blob/b1b99e9773040e25bd6099762491ab23d8ea6910/packages/react/src/types/edges.ts)
+  types, the pinned [store defaults](https://github.com/xyflow/xyflow/blob/b1b99e9773040e25bd6099762491ab23d8ea6910/packages/react/src/store/initialState.ts),
+  and [ARIA defaults](https://github.com/xyflow/xyflow/blob/b1b99e9773040e25bd6099762491ab23d8ea6910/packages/system/src/constants.ts)
+  define focus, labels, keyboard behavior, live descriptions, and interaction classes.
+- The upstream [basic-props](https://github.com/xyflow/xyflow/blob/b1b99e9773040e25bd6099762491ab23d8ea6910/examples/react/cypress/components/reactflow/basic-props.cy.tsx),
+  [view-props](https://github.com/xyflow/xyflow/blob/b1b99e9773040e25bd6099762491ab23d8ea6910/examples/react/cypress/components/reactflow/view-props.cy.tsx),
+  and [interaction](https://github.com/xyflow/xyflow/blob/b1b99e9773040e25bd6099762491ab23d8ea6910/examples/react/cypress/e2e/interaction.cy.ts)
+  Cypress tests exercise rendered custom nodes/edges, dragging, panning, zooming, and fitting.
 - The package [README](https://github.com/xyflow/xyflow/blob/b1b99e9773040e25bd6099762491ab23d8ea6910/packages/react/README.md)
   supplies the controlled quickstart, stylesheet import, and supported pan/zoom/custom-node scope.
 
