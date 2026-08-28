@@ -1,8 +1,10 @@
+import type {ByteTransportFactory} from "@earendil-works/pi-client";
 import type {SessionMetadata} from "@earendil-works/pi-protocol";
 import {Context, Effect, FileSystem, Layer, Path, Result} from "effect";
 import type {DiscoveryOutcome} from "../shared/discovery.js";
 import {defaultSessionRoots, scanPiHomes, toSessionMetadata} from "./pi-home.js";
 import {
+	listSessionsFromTransport,
 	listSessionsThroughProtocol,
 	type PiProtocolError,
 	type ProtocolTransportOptions,
@@ -11,6 +13,7 @@ import {
 export interface PiDiscoveryOptions {
 	readonly sessionRoots?: ReadonlyArray<string>;
 	readonly transport?: ProtocolTransportOptions;
+	readonly protocolTransport?: ByteTransportFactory;
 }
 
 export interface PiDiscoveryService {
@@ -63,11 +66,8 @@ export const discoverPiSessions = Effect.fn("PiDiscovery.discover")(function* (
 export const discoverPiSessionMetadata = Effect.fn("PiDiscovery.sessionMetadata")(function* (
 	options: PiDiscoveryOptions = {},
 ) {
-	const roots = options.sessionRoots ?? (yield* defaultSessionRoots());
-	const scan = yield* scanPiHomes(roots);
-	const metadata = yield* Effect.result(
-		listSessionsThroughProtocol(scan.sessions.map(toSessionMetadata), options.transport),
-	);
+	if (options.protocolTransport === undefined) return [];
+	const metadata = yield* Effect.result(listSessionsFromTransport(options.protocolTransport));
 	return Result.isSuccess(metadata) ? metadata.success : [];
 });
 

@@ -28,7 +28,8 @@ then opens that URL in the default browser unless browser opening is disabled.
 
 Live attachment requires a pi server Unix socket supplied through `--pi-socket`. Session discovery
 reads `PI_CODING_AGENT_SESSION_DIR` when set. Otherwise it reads the `sessions` directory beneath
-`PI_CODING_AGENT_DIR`, falling back to `~/.pi/agent/sessions`.
+`PI_CODING_AGENT_DIR`, falling back to `~/.pi/agent/sessions`. Lineage reads pi-subagents lifecycle
+artifacts beneath `PI_SUBAGENTS_TEMP_ROOT` when set, otherwise the current user's scoped temp root.
 
 ## Discovery contract
 
@@ -52,13 +53,15 @@ entry is reported as a source problem without discarding sessions that were read
 The package exports the schema-backed graph types from `tuval/lineage`. The `lineage` fate query
 projects session nodes, `spawn` and `fork` edges, resume-continuity observations, and isolated source
 problems. `LineageIndex` scans the same configured session roots as discovery and joins status-level
-and nested pi-subagents lifecycle records to retained session headers. Forks prefer Pi protocol
-parent metadata; run parent ids are authoritative and never fall back to wrapper parentage.
+and nested pi-subagents lifecycle records to retained session headers. With `--pi-socket`, fork
+parents prefer the server's durable `SessionMetadata.parentSessionId`; when that field is absent,
+lineage reads only the child session's bounded first header line. An unresolved authoritative run
+parent is reported and does not become a spawn or continuity observation.
 
 The normalized version-1 store lives under `~/.pi/agent/tuval/lineage.json` by default. Serialized
 rescans preserve exact observations and retained records after source cleanup. Reused run ids,
-conflicting store records, dangling references, and unknown store versions are refused rather than
-silently collapsed or interpreted as the current schema.
+multiple spawn origins for one session, changed continuity parentage, dangling references, invalid
+source ownership, and unknown store versions are refused rather than silently collapsed.
 
 ## Live-session contract
 

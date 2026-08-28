@@ -3,8 +3,9 @@ import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
-import {discoverPiSessions} from "../src/backend/pi-discovery.js";
+import {discoverPiSessionMetadata, discoverPiSessions} from "../src/backend/pi-discovery.js";
 import {defaultSessionRoots} from "../src/backend/pi-home.js";
+import {makeDiscoveryTransport} from "../src/backend/pi-protocol.js";
 import {DiscoveryOutcome} from "../src/shared/discovery.js";
 
 const decodeOutcome = Schema.decodeUnknownSync(DiscoveryOutcome);
@@ -58,6 +59,26 @@ describe("pi home discovery", () => {
 					assert.strictEqual(second.sessions[0]?.identity, first.sessions[0]?.identity);
 					assert.strictEqual(first.problems[0]?.message, "session header is not valid JSON");
 				}),
+		);
+
+		it.effect("returns only metadata read from a real protocol transport", () =>
+			Effect.gen(function* () {
+				const authoritative = [
+					{
+						id: "child",
+						createdAt: 2,
+						parentSessionId: "protocol-parent",
+						cwd: "/tmp/project",
+					},
+				];
+				assert.deepEqual(yield* discoverPiSessionMetadata(), []);
+				assert.deepEqual(
+					yield* discoverPiSessionMetadata({
+						protocolTransport: makeDiscoveryTransport(authoritative),
+					}),
+					authoritative,
+				);
+			}),
 		);
 
 		it.effect("falls back to the OS home when pi directory variables are absent", () =>

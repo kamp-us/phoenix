@@ -254,7 +254,13 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 				));
 	yield* Effect.addFinalizer(() => liveSession.dispose().pipe(Effect.ignore));
 
-	const discoveryLayer = PiDiscoveryLive(options);
+	const discoveryOptions = {
+		...options,
+		...(options.protocolTransport !== undefined || options.liveSessionTransport === undefined
+			? {}
+			: {protocolTransport: options.liveSessionTransport}),
+	};
+	const discoveryLayer = PiDiscoveryLive(discoveryOptions);
 	const lineageOptions = {
 		...options.lineage,
 		...(options.lineage?.sessionRoots !== undefined || options.sessionRoots === undefined
