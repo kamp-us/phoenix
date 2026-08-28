@@ -534,6 +534,74 @@ for (const refreshCase of clearingRefreshCases) {
 	});
 }
 
+test("an older overlapping refresh cannot clear a session retained by the newer refresh", async ({
+	page,
+}) => {
+	const errors = pageErrors(page);
+	await installEventSource(page);
+	const selectedSession = session("overlap-selected", "/work/selected");
+	const newerSession = session("overlap-newer", "/work/newer");
+	let discoveryCalls = 0;
+	let discoveryResponses = 0;
+	let releaseCalls = 0;
+	let releaseStarted: (() => void) | undefined;
+	let finishRelease: (() => void) | undefined;
+	const releaseRequest = new Promise<void>((resolve) => {
+		releaseStarted = resolve;
+	});
+	const releaseGate = new Promise<void>((resolve) => {
+		finishRelease = resolve;
+	});
+	await page.route("**/fate", async (route) => {
+		const body = route.request().postDataJSON() as {
+			readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
+		};
+		const operation = body.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		if (operation?.name === "discovery") {
+			discoveryCalls += 1;
+			const outcome: DiscoveryOutcome =
+				discoveryCalls === 2
+					? {_tag: "empty", sessions: []}
+					: {
+							_tag: "ready",
+							sessions: discoveryCalls === 1 ? [selectedSession] : [selectedSession, newerSession],
+						};
+			await fulfill(route, id, outcome);
+			discoveryResponses += 1;
+			return;
+		}
+		if (operation?.name === "liveSession.attach") {
+			await fulfill(route, id, {_tag: "attached", session: liveSession("overlap-selected")});
+			return;
+		}
+		releaseCalls += 1;
+		releaseStarted?.();
+		await releaseGate;
+		await fulfill(route, id, {_tag: "released", sessionId: "overlap-selected"});
+	});
+	await page.goto(tuvalUrl);
+	await selectNode(page, "pi:overlap-selected");
+	await expect(page.locator("#chat-title")).toHaveText("selected");
+
+	await page.getByRole("button", {name: "Oturumları yenile"}).click();
+	await releaseRequest;
+	await page.getByRole("button", {name: "Oturumları yenile"}).click();
+	await expect.poll(() => discoveryResponses).toBe(3);
+	await expect(page.locator('[data-id="pi:overlap-newer"]')).toBeVisible();
+	await expect(page.locator("#chat-title")).toHaveText("selected");
+
+	finishRelease?.();
+	await expect.poll(() => releaseCalls).toBe(1);
+	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator("#chat-title")).toHaveText("selected");
+	await expect(page.getByText("Canlı", {exact: true})).toBeVisible();
+	await expect(page.locator("#status-label")).toHaveText("Bağlı");
+	await expect(page.locator('[data-id="pi:overlap-newer"]')).toBeVisible();
+	await expect(page.getByRole("button", {name: "Oturumları yenile"})).toBeFocused();
+	expect(errors).toEqual([]);
+});
+
 test("one chat pane swaps sessions, restores focus, and streams Composer prompts", async ({
 	page,
 }) => {
@@ -655,19 +723,18 @@ test("one chat pane swaps sessions, restores focus, and streams Composer prompts
 	expect(errors).toEqual([]);
 });
 
-test("a stale prompt completion cannot overwrite the replacement pane", async ({page}) => {
+test("an original prompt completion cannot corrupt a newly attached pane after an ABA swap", async ({
+	page,
+}) => {
 	const errors = pageErrors(page);
 	await installEventSource(page);
 	const alpha = session("prompt-alpha", "/work/alpha");
 	const beta = session("prompt-beta", "/work/beta");
-	let finishAlpha: (() => void) | undefined;
-	let finishBeta: (() => void) | undefined;
-	let alphaResponses = 0;
-	const alphaGate = new Promise<void>((resolve) => {
-		finishAlpha = resolve;
-	});
-	const betaGate = new Promise<void>((resolve) => {
-		finishBeta = resolve;
+	let finishOriginalAlpha: (() => void) | undefined;
+	let originalAlphaResponses = 0;
+	let alphaAttachments = 0;
+	const originalAlphaGate = new Promise<void>((resolve) => {
+		finishOriginalAlpha = resolve;
 	});
 	await page.route("**/fate", async (route) => {
 		const body = route.request().postDataJSON() as {
@@ -681,28 +748,26 @@ test("a stale prompt completion cannot overwrite the replacement pane", async ({
 		}
 		if (operation?.name === "liveSession.attach") {
 			const input = operation.input as {readonly sessionId: string};
-			await fulfill(route, id, {_tag: "attached", session: liveSession(input.sessionId)});
+			if (input.sessionId === "prompt-alpha") alphaAttachments += 1;
+			await fulfill(route, id, {
+				_tag: "attached",
+				session: liveSession(
+					input.sessionId,
+					input.sessionId === "prompt-alpha" ? alphaAttachments : 1,
+				),
+			});
 			return;
 		}
 		if (operation?.name === "liveSession.prompt") {
-			const input = operation.input as {readonly correlationId: string; readonly text: string};
-			if (input.text === "alpha istemi") {
-				await alphaGate;
-				await fulfill(route, id, {
-					_tag: "acknowledged",
-					correlationId: input.correlationId,
-					session: liveSession("prompt-alpha", 2),
-				});
-				alphaResponses += 1;
-				return;
-			}
-			await betaGate;
+			const input = operation.input as {readonly correlationId: string};
+			await originalAlphaGate;
 			await fulfill(route, id, {
 				_tag: "refused",
 				correlationId: input.correlationId,
-				code: "protocol",
-				reason: "Beta iletisi gönderilemedi.",
+				code: "lease-refused",
+				reason: "Eski Alpha sahipliği artık geçerli değil.",
 			});
+			originalAlphaResponses += 1;
 			return;
 		}
 		await fulfill(route, id, {_tag: "released", sessionId: null});
@@ -710,29 +775,29 @@ test("a stale prompt completion cannot overwrite the replacement pane", async ({
 	await page.goto(tuvalUrl);
 
 	await selectNode(page, "pi:prompt-alpha");
-	const alphaEditor = page.getByRole("textbox", {name: "İstem"});
-	await alphaEditor.fill("alpha istemi");
-	await alphaEditor.press("Enter");
+	const originalAlphaEditor = page.getByRole("textbox", {name: "İstem"});
+	await originalAlphaEditor.fill("özgün alpha istemi");
+	await originalAlphaEditor.press("Enter");
 	await expect(page.getByText("Gönderiliyor; onay bekleniyor.")).toBeVisible();
 
 	await selectNode(page, "pi:prompt-beta");
 	await expect(page.locator("#chat-title")).toHaveText("beta");
-	const betaEditor = page.getByRole("textbox", {name: "İstem"});
-	await betaEditor.fill("beta istemi");
-	await betaEditor.press("Enter");
-	const submit = page.locator('.composer-shell button[type="submit"]');
-	await expect(page.getByText("Gönderiliyor; onay bekleniyor.")).toBeVisible();
-	await expect(submit).toBeDisabled();
+	await expect(page.getByText("Canlı", {exact: true})).toBeVisible();
+	await selectNode(page, "pi:prompt-alpha");
+	await expect.poll(() => alphaAttachments).toBe(2);
+	await expect(page.locator("#chat-title")).toHaveText("alpha");
+	await expect(page.getByText("Canlı", {exact: true})).toBeVisible();
+	const newAlphaSubmit = page.locator('.composer-shell button[type="submit"]');
+	await expect(newAlphaSubmit).toBeEnabled();
 
-	finishAlpha?.();
-	await expect.poll(() => alphaResponses).toBe(1);
-	await expect(page.locator("#chat-title")).toHaveText("beta");
-	await expect(page.getByText("Gönderiliyor; onay bekleniyor.")).toBeVisible();
-	await expect(page.getByText("İleti pi tarafından onaylandı.")).toHaveCount(0);
-	await expect(submit).toBeDisabled();
-
-	finishBeta?.();
-	await expect(page.getByRole("alert")).toContainText("Beta iletisi gönderilemedi.");
+	finishOriginalAlpha?.();
+	await expect.poll(() => originalAlphaResponses).toBe(1);
+	await expect(page.locator("#chat-title")).toHaveText("alpha");
+	await expect(page.getByText("Canlı", {exact: true})).toBeVisible();
+	await expect(page.getByText("Eski Alpha sahipliği artık geçerli değil.")).toHaveCount(0);
+	await expect(page.getByText("Oturum açılamadı")).toHaveCount(0);
+	await expect(page.getByText("Gönderiliyor; onay bekleniyor.")).toHaveCount(0);
+	await expect(newAlphaSubmit).toBeEnabled();
 	expect(errors).toEqual([]);
 });
 

@@ -161,6 +161,7 @@ export function TuvalApp() {
 	const [selected, setSelected] = useState<DiscoveredSession | null>(null);
 	const [pane, setPane] = useState<PaneState>({connection: "pending", session: null});
 	const discoveryGeneration = useRef(0);
+	const selectionGeneration = useRef(0);
 	const ignoreSelectionChange = useRef(false);
 	const selectedRef = useRef<DiscoveredSession | null>(null);
 	selectedRef.current = selected;
@@ -181,6 +182,7 @@ export function TuvalApp() {
 		async (next: DiscoveryOutcome, generation: number): Promise<void> => {
 			if (generation !== discoveryGeneration.current) return;
 			const target = selectedRef.current;
+			const targetGeneration = selectionGeneration.current;
 			if (
 				target === null ||
 				sessionsOf(next).some((session) => session.identity === target.identity)
@@ -189,29 +191,32 @@ export function TuvalApp() {
 				return;
 			}
 
-			ignoreSelectionChange.current = true;
+			const isCurrentTarget = (): boolean =>
+				generation === discoveryGeneration.current &&
+				targetGeneration === selectionGeneration.current &&
+				selectedRef.current?.identity === target.identity;
+
 			try {
 				await releaseLiveSession();
 			} catch (error) {
-				ignoreSelectionChange.current = false;
-				if (selectedRef.current?.identity === target.identity) {
-					setPane((current) => ({
-						...current,
-						connection: "disconnected",
-						message:
-							error instanceof Error
-								? error.message
-								: "Oturum sahipliği bırakılamadı; sohbet açık tutuluyor.",
-					}));
-				}
+				if (!isCurrentTarget()) return;
+				setPane((current) => ({
+					...current,
+					connection: "disconnected",
+					message:
+						error instanceof Error
+							? error.message
+							: "Oturum sahipliği bırakılamadı; sohbet açık tutuluyor.",
+				}));
 				return;
 			}
 
-			if (selectedRef.current?.identity === target.identity) {
-				selectedRef.current = null;
-				setSelected(null);
-			}
-			if (generation === discoveryGeneration.current) setOutcome(next);
+			if (!isCurrentTarget()) return;
+			ignoreSelectionChange.current = true;
+			selectionGeneration.current += 1;
+			selectedRef.current = null;
+			setSelected(null);
+			setOutcome(next);
 			ignoreSelectionChange.current = false;
 			focusCanvas();
 		},
@@ -357,6 +362,8 @@ export function TuvalApp() {
 		if (selected === null) return;
 		const identity = selected.identity;
 		ignoreSelectionChange.current = true;
+		selectionGeneration.current += 1;
+		selectedRef.current = null;
 		setNodes((current) => current.map((node) => ({...node, selected: false})));
 		setSelected(null);
 		void releaseLiveSession().catch(() => undefined);
@@ -368,10 +375,14 @@ export function TuvalApp() {
 
 	const sendPrompt = async (text: string): Promise<SendResult> => {
 		const target = selectedRef.current;
+		const targetGeneration = selectionGeneration.current;
 		if (target === null) return {ok: false, message: "Açık bir oturum yok."};
+		const isCurrentTarget = (): boolean =>
+			targetGeneration === selectionGeneration.current &&
+			selectedRef.current?.identity === target.identity;
 		try {
 			const response = await promptLiveSession(crypto.randomUUID(), text);
-			if (selectedRef.current?.identity !== target.identity) {
+			if (!isCurrentTarget()) {
 				return {ok: false, message: "İleti gönderilirken başka bir oturuma geçildi."};
 			}
 			if (response._tag === "acknowledged") {
@@ -385,6 +396,9 @@ export function TuvalApp() {
 			}
 			return {ok: false, message: response.reason};
 		} catch (error) {
+			if (!isCurrentTarget()) {
+				return {ok: false, message: "İleti gönderilirken başka bir oturuma geçildi."};
+			}
 			return {
 				ok: false,
 				message: error instanceof Error ? error.message : "İleti gönderilemedi.",
@@ -433,9 +447,13 @@ export function TuvalApp() {
 							onEdgesChange={onEdgesChange}
 							onSelect={(session) => {
 								if (ignoreSelectionChange.current) return;
-								if (session === null && selectedRef.current !== null) {
+								const current = selectedRef.current;
+								if (session?.identity === current?.identity) return;
+								if (session === null && current !== null) {
 									void releaseLiveSession().catch(() => undefined);
 								}
+								selectionGeneration.current += 1;
+								selectedRef.current = session;
 								setSelected(session);
 							}}
 						/>
@@ -482,7 +500,7 @@ export function TuvalApp() {
 
 				{selected === null ? null : (
 					<ChatPane
-						key={selected.identity}
+						key={`${selected.identity}:${selectionGeneration.current}`}
 						selected={selected}
 						connection={pane.connection}
 						session={pane.session}
