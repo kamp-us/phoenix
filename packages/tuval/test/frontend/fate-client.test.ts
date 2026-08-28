@@ -1,6 +1,25 @@
 import {strict as assert} from "node:assert";
 import {describe, it} from "@effect/vitest";
-import {decodeLiveEvent} from "../../src/frontend-shell/fate-client.js";
+import {
+	bindAttachOutcome,
+	bindPromptOutcome,
+	decodeLiveEvent,
+} from "../../src/frontend-shell/fate-client.js";
+import type {AttachedLiveSession} from "../../src/shared/live-session.js";
+
+const attachedSession = (sessionId: string): AttachedLiveSession => ({
+	_tag: "attached",
+	sessionId,
+	revision: 2,
+	phase: "idle",
+	model: {provider: "anthropic", id: "claude-sonnet"},
+	thinkingLevel: "high",
+	completion: "idle",
+	transcript: [],
+	lastEventSequence: 5,
+	connection: "connected",
+	ownership: "exclusive",
+});
 
 const sessionEvent = (toolCall: Readonly<Record<string, unknown>>): unknown => ({
 	_tag: "session",
@@ -48,5 +67,44 @@ describe("Tuval live event decoder", () => {
 			),
 			undefined,
 		);
+	});
+});
+
+describe("Tuval fate request identity", () => {
+	it("turns a valid attach response for another session into a protocol refusal", () => {
+		const outcome = bindAttachOutcome("alpha", {
+			_tag: "attached",
+			session: attachedSession("beta"),
+		});
+
+		assert.equal(outcome._tag, "refused");
+		if (outcome._tag === "refused") {
+			assert.equal(outcome.sessionId, "alpha");
+			assert.equal(outcome.code, "protocol");
+		}
+	});
+
+	it("turns a prompt response with another correlation into a protocol refusal", () => {
+		const outcome = bindPromptOutcome("alpha", "request-1", {
+			_tag: "acknowledged",
+			correlationId: "request-2",
+			session: attachedSession("alpha"),
+		});
+
+		assert.equal(outcome._tag, "refused");
+		assert.equal(outcome.correlationId, "request-1");
+		if (outcome._tag === "refused") assert.equal(outcome.code, "protocol");
+	});
+
+	it("turns a prompt acknowledgement for another session into a protocol refusal", () => {
+		const outcome = bindPromptOutcome("alpha", "request-1", {
+			_tag: "acknowledged",
+			correlationId: "request-1",
+			session: attachedSession("beta"),
+		});
+
+		assert.equal(outcome._tag, "refused");
+		assert.equal(outcome.correlationId, "request-1");
+		if (outcome._tag === "refused") assert.equal(outcome.code, "protocol");
 	});
 });

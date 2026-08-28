@@ -738,8 +738,16 @@ test("one chat pane swaps sessions, restores focus, and streams Composer prompts
 	let discoveryResponses = 0;
 	let releaseCalls = 0;
 	let finishRefresh: (() => void) | undefined;
+	let finishBetaAttach: (() => void) | undefined;
+	let finishPrompt: (() => void) | undefined;
 	const refreshGate = new Promise<void>((resolve) => {
 		finishRefresh = resolve;
+	});
+	const betaAttachGate = new Promise<void>((resolve) => {
+		finishBetaAttach = resolve;
+	});
+	const promptGate = new Promise<void>((resolve) => {
+		finishPrompt = resolve;
 	});
 	await page.route("**/fate", async (route) => {
 		const body = route.request().postDataJSON() as {
@@ -756,13 +764,14 @@ test("one chat pane swaps sessions, restores focus, and streams Composer prompts
 		}
 		if (operation?.name === "liveSession.attach") {
 			const input = operation.input as {readonly sessionId: string};
+			if (input.sessionId === "chat-beta") await betaAttachGate;
 			await fulfill(route, id, {_tag: "attached", session: liveSession(input.sessionId)});
 			return;
 		}
 		if (operation?.name === "liveSession.prompt") {
 			const input = operation.input as {readonly correlationId: string; readonly text: string};
 			promptText = input.text;
-			await new Promise((resolve) => setTimeout(resolve, 200));
+			await promptGate;
 			await fulfill(route, id, {
 				_tag: "acknowledged",
 				correlationId: input.correlationId,
@@ -792,6 +801,9 @@ test("one chat pane swaps sessions, restores focus, and streams Composer prompts
 	await selectNode(page, "pi:chat-beta");
 	await expect(page.locator("aside")).toHaveCount(1);
 	await expect(page.locator("#chat-title")).toHaveText("beta");
+	await expect(page.getByText("Bağlanıyor", {exact: true})).toBeVisible();
+	await expect(page.getByText("chat-alpha mevcut konuşma")).toHaveCount(0);
+	finishBetaAttach?.();
 	await expect(page.getByText("chat-beta mevcut konuşma")).toBeVisible();
 
 	await page.getByRole("button", {name: "Oturumları yenile"}).click();
@@ -818,29 +830,43 @@ test("one chat pane swaps sessions, restores focus, and streams Composer prompts
 	await editor.press("Enter");
 	await expect(page.getByText("Gönderiliyor; onay bekleniyor.")).toBeVisible();
 	await expect(page.locator(".transcript-entry")).toHaveCount(beforeEntries);
+
+	const newestSession = {
+		...liveSession("chat-alpha", 3, [
+			...liveSession("chat-alpha").transcript,
+			{
+				id: "streamed",
+				role: "assistant" as const,
+				content: [{type: "text" as const, text: "Akıştan geldi"}],
+				timestamp: 3,
+				status: "error" as const,
+			},
+		]),
+		phase: "idle" as const,
+		completion: "error" as const,
+		lastEventSequence: 9,
+	};
+	await emitLive(page, {_tag: "session", sequence: 9, session: newestSession});
+	await expect(page.getByText("Akıştan geldi")).toBeVisible();
+	await expect(page.getByText("Tur hatayla sonlandı")).toBeVisible();
+
+	finishPrompt?.();
 	await expect(page.getByText("İleti pi tarafından onaylandı.")).toBeVisible();
 	expect(promptText).toContain("ilk satır");
 	expect(promptText).toContain("ikinci satır");
 	await expect(editor).toBeEmpty();
+	await expect(page.getByText("Akıştan geldi")).toBeVisible();
+	await expect(page.getByText("Tur hatayla sonlandı")).toBeVisible();
 
 	await emitLive(page, {
 		_tag: "session",
+		sequence: 8,
+		session: liveSession("chat-alpha", 2),
+	});
+	await emitLive(page, {
+		_tag: "session",
 		sequence: 9,
-		session: {
-			...liveSession("chat-alpha", 3, [
-				...liveSession("chat-alpha").transcript,
-				{
-					id: "streamed",
-					role: "assistant",
-					content: [{type: "text", text: "Akıştan geldi"}],
-					timestamp: 3,
-					status: "error",
-				},
-			]),
-			phase: "idle",
-			completion: "error",
-			lastEventSequence: 9,
-		},
+		session: liveSession("chat-alpha", 2),
 	});
 	await expect(page.getByText("Akıştan geldi")).toBeVisible();
 	await expect(page.getByText("Tur hatayla sonlandı")).toBeVisible();

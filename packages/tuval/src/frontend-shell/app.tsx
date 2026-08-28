@@ -35,6 +35,26 @@ interface PaneState {
 	readonly message?: string;
 }
 
+type PaneSelection =
+	| {readonly _tag: "closed"}
+	| {
+			readonly _tag: "open";
+			readonly selected: DiscoveredSession;
+			readonly generation: number;
+			readonly pane: PaneState;
+	  };
+
+type PaneUpdate = PaneState | ((current: PaneState) => PaneState);
+
+interface StreamCursor {
+	readonly sessionId: string;
+	readonly generation: number;
+	readonly sequence: number;
+	readonly revision: number;
+}
+
+const pendingPane = (): PaneState => ({connection: "pending", session: null});
+
 interface DiscoveryView {
 	readonly tone: string;
 	readonly label: string;
@@ -154,17 +174,34 @@ export function TuvalApp() {
 	const [outcome, setOutcome] = useState<DiscoveryOutcome | null>(null);
 	const [nodes, setNodes] = useState<ReadonlyArray<SessionCanvasNode>>([]);
 	const [edges, setEdges] = useState<ReadonlyArray<SessionRelationshipEdge>>([]);
-	const [selected, setSelected] = useState<DiscoveredSession | null>(null);
-	const [pane, setPane] = useState<PaneState>({connection: "pending", session: null});
+	const [paneSelection, setPaneSelection] = useState<PaneSelection>({_tag: "closed"});
 	const [discovering, setDiscovering] = useState(false);
 	const discoveryGeneration = useRef(0);
 	const discoveryInFlight = useRef(false);
 	const selectionGeneration = useRef(0);
 	const ignoreSelectionChange = useRef(false);
 	const selectedRef = useRef<DiscoveredSession | null>(null);
-	selectedRef.current = selected;
+	const streamCursor = useRef<StreamCursor | null>(null);
+	const selected = paneSelection._tag === "open" ? paneSelection.selected : null;
 	const view = discoveryView(outcome);
 	const sessions = useMemo(() => sessionsOf(outcome), [outcome]);
+
+	const updatePaneForSelection = useCallback(
+		(identity: string, generation: number, update: PaneUpdate): void => {
+			setPaneSelection((current) => {
+				if (
+					current._tag !== "open" ||
+					current.selected.identity !== identity ||
+					current.generation !== generation
+				) {
+					return current;
+				}
+				const pane = typeof update === "function" ? update(current.pane) : update;
+				return {...current, pane};
+			});
+		},
+		[],
+	);
 
 	useEffect(() => {
 		setNodes((current) =>
@@ -198,7 +235,7 @@ export function TuvalApp() {
 				await releaseLiveSession();
 			} catch (error) {
 				if (!isCurrentTarget()) return;
-				setPane((current) => ({
+				updatePaneForSelection(target.identity, targetGeneration, (current) => ({
 					...current,
 					connection: "disconnected",
 					message:
@@ -213,14 +250,15 @@ export function TuvalApp() {
 			ignoreSelectionChange.current = true;
 			selectionGeneration.current += 1;
 			selectedRef.current = null;
-			setSelected(null);
+			streamCursor.current = null;
+			setPaneSelection({_tag: "closed"});
 			setOutcome(next);
 			requestAnimationFrame(() => {
 				ignoreSelectionChange.current = false;
 				document.querySelector<HTMLElement>("#canvas")?.focus();
 			});
 		},
-		[],
+		[updatePaneForSelection],
 	);
 
 	const discover = useCallback(async (): Promise<void> => {
@@ -249,16 +287,30 @@ export function TuvalApp() {
 
 	useEffect(() => {
 		if (selected === null) return;
+		const targetGeneration = selectionGeneration.current;
 		let active = true;
 		let eventSource: EventSource | undefined;
 		let lastSequence = 0;
-		setPane({connection: "pending", session: null});
+		const setCurrentPane = (update: PaneUpdate): void =>
+			updatePaneForSelection(selected.identity, targetGeneration, update);
+		const advanceCursor = (sequence: number, revision?: number): void => {
+			const current = streamCursor.current;
+			if (current?.sessionId !== selected.piSessionId || current.generation !== targetGeneration) {
+				return;
+			}
+			streamCursor.current = {
+				...current,
+				sequence: Math.max(current.sequence, sequence),
+				revision: revision === undefined ? current.revision : Math.max(current.revision, revision),
+			};
+		};
+		setCurrentPane(pendingPane());
 
 		void attachLiveSession(selected.piSessionId)
 			.then((attached) => {
 				if (!active) return;
 				if (attached._tag === "refused") {
-					setPane({
+					setCurrentPane({
 						connection: attached.code === "disconnected" ? "disconnected" : "refused",
 						session: null,
 						message: attached.reason,
@@ -266,11 +318,17 @@ export function TuvalApp() {
 					return;
 				}
 				lastSequence = attached.session.lastEventSequence;
-				setPane({connection: "attached", session: attached.session});
+				streamCursor.current = {
+					sessionId: selected.piSessionId,
+					generation: targetGeneration,
+					sequence: lastSequence,
+					revision: attached.session.revision,
+				};
+				setCurrentPane({connection: "attached", session: attached.session});
 				eventSource = new EventSource(`/fate/live?afterSequence=${lastSequence}`);
 				eventSource.onopen = () => {
 					if (!active) return;
-					setPane((current) =>
+					setCurrentPane((current) =>
 						current.session?._tag === "attached"
 							? {connection: "attached", session: current.session}
 							: current,
@@ -282,7 +340,7 @@ export function TuvalApp() {
 					try {
 						raw = JSON.parse(message.data);
 					} catch {
-						setPane((current) => ({
+						setCurrentPane((current) => ({
 							...current,
 							connection: "malformed",
 							message: "Canlı akış geçerli JSON taşımadı.",
@@ -292,7 +350,7 @@ export function TuvalApp() {
 					}
 					const event = decodeLiveEvent(raw);
 					if (event === undefined) {
-						setPane((current) => ({
+						setCurrentPane((current) => ({
 							...current,
 							connection: "malformed",
 							message: "Canlı akış olayı doğrulanamadı.",
@@ -302,8 +360,10 @@ export function TuvalApp() {
 					}
 					if (event.sequence <= lastSequence) return;
 					lastSequence = event.sequence;
+					advanceCursor(event.sequence);
 					if (event._tag === "session" && event.session.sessionId === selected.piSessionId) {
-						setPane({
+						advanceCursor(event.sequence, event.session.revision);
+						setCurrentPane({
 							connection: event.session._tag === "attached" ? "attached" : "disconnected",
 							session: event.session,
 							...(event.session._tag === "disconnected" ? {message: event.session.reason} : {}),
@@ -313,9 +373,10 @@ export function TuvalApp() {
 						event.outcome._tag === "acknowledged" &&
 						event.outcome.session.sessionId === selected.piSessionId
 					) {
-						setPane({connection: "attached", session: event.outcome.session});
+						advanceCursor(event.sequence, event.outcome.session.revision);
+						setCurrentPane({connection: "attached", session: event.outcome.session});
 					} else if (event._tag === "released" && event.sessionId === selected.piSessionId) {
-						setPane((current) => ({
+						setCurrentPane((current) => ({
 							...current,
 							connection: "disconnected",
 							message: "Oturum sahipliği bırakıldı.",
@@ -324,7 +385,7 @@ export function TuvalApp() {
 						event._tag === "diagnostic" &&
 						(event.sessionId === null || event.sessionId === selected.piSessionId)
 					) {
-						setPane((current) => ({
+						setCurrentPane((current) => ({
 							...current,
 							connection: "malformed",
 							message: event.message,
@@ -333,7 +394,7 @@ export function TuvalApp() {
 				};
 				eventSource.onerror = () => {
 					if (!active) return;
-					setPane((current) => ({
+					setCurrentPane((current) => ({
 						...current,
 						connection: "disconnected",
 						message: "Canlı olay bağlantısı kesildi; yeniden bağlanma bekleniyor.",
@@ -342,7 +403,7 @@ export function TuvalApp() {
 			})
 			.catch((error) => {
 				if (!active) return;
-				setPane({
+				setCurrentPane({
 					connection: "disconnected",
 					session: null,
 					message: error instanceof Error ? error.message : "Oturuma bağlanılamadı.",
@@ -352,8 +413,12 @@ export function TuvalApp() {
 		return () => {
 			active = false;
 			eventSource?.close();
+			const cursor = streamCursor.current;
+			if (cursor?.sessionId === selected.piSessionId && cursor.generation === targetGeneration) {
+				streamCursor.current = null;
+			}
 		};
-	}, [selected]);
+	}, [selected, updatePaneForSelection]);
 
 	const onNodesChange = useCallback<OnNodesChange<SessionCanvasNode>>(
 		(changes) => setNodes((current) => applyNodeChanges(changes, [...current])),
@@ -370,8 +435,9 @@ export function TuvalApp() {
 		ignoreSelectionChange.current = true;
 		selectionGeneration.current += 1;
 		selectedRef.current = null;
+		streamCursor.current = null;
 		setNodes((current) => current.map((node) => ({...node, selected: false})));
-		setSelected(null);
+		setPaneSelection({_tag: "closed"});
 		void releaseLiveSession().catch(() => undefined);
 		requestAnimationFrame(() => {
 			ignoreSelectionChange.current = false;
@@ -387,18 +453,43 @@ export function TuvalApp() {
 			targetGeneration === selectionGeneration.current &&
 			selectedRef.current?.identity === target.identity;
 		try {
-			const response = await promptLiveSession(crypto.randomUUID(), text);
+			const correlationId = crypto.randomUUID();
+			const response = await promptLiveSession(target.piSessionId, correlationId, text);
 			if (!isCurrentTarget()) {
 				return {ok: false, message: "İleti gönderilirken başka bir oturuma geçildi."};
 			}
 			if (response._tag === "acknowledged") {
-				setPane({connection: "attached", session: response.session});
+				const cursor = streamCursor.current;
+				if (
+					cursor?.sessionId === target.piSessionId &&
+					cursor.generation === targetGeneration &&
+					response.session.lastEventSequence >= cursor.sequence &&
+					response.session.revision >= cursor.revision
+				) {
+					streamCursor.current = {
+						...cursor,
+						sequence: response.session.lastEventSequence,
+						revision: response.session.revision,
+					};
+					updatePaneForSelection(target.identity, targetGeneration, {
+						connection: "attached",
+						session: response.session,
+					});
+				}
 				return {ok: true, message: "İleti pi tarafından onaylandı."};
 			}
 			if (response.code === "lease-refused") {
-				setPane((current) => ({...current, connection: "refused", message: response.reason}));
+				updatePaneForSelection(target.identity, targetGeneration, (current) => ({
+					...current,
+					connection: "refused",
+					message: response.reason,
+				}));
 			} else if (response.code === "disconnected") {
-				setPane((current) => ({...current, connection: "disconnected", message: response.reason}));
+				updatePaneForSelection(target.identity, targetGeneration, (current) => ({
+					...current,
+					connection: "disconnected",
+					message: response.reason,
+				}));
 			}
 			return {ok: false, message: response.reason};
 		} catch (error) {
@@ -459,9 +550,15 @@ export function TuvalApp() {
 								if (session === null && current !== null) {
 									void releaseLiveSession().catch(() => undefined);
 								}
-								selectionGeneration.current += 1;
+								const generation = selectionGeneration.current + 1;
+								selectionGeneration.current = generation;
 								selectedRef.current = session;
-								setSelected(session);
+								streamCursor.current = null;
+								setPaneSelection(
+									session === null
+										? {_tag: "closed"}
+										: {_tag: "open", selected: session, generation, pane: pendingPane()},
+								);
 							}}
 						/>
 					</div>
@@ -506,13 +603,15 @@ export function TuvalApp() {
 					</p>
 				</section>
 
-				{selected === null ? null : (
+				{paneSelection._tag === "closed" ? null : (
 					<ChatPane
-						key={`${selected.identity}:${selectionGeneration.current}`}
-						selected={selected}
-						connection={pane.connection}
-						session={pane.session}
-						{...(pane.message === undefined ? {} : {message: pane.message})}
+						key={`${paneSelection.selected.identity}:${paneSelection.generation}`}
+						selected={paneSelection.selected}
+						connection={paneSelection.pane.connection}
+						session={paneSelection.pane.session}
+						{...(paneSelection.pane.message === undefined
+							? {}
+							: {message: paneSelection.pane.message})}
 						onClose={closePane}
 						onSend={sendPrompt}
 					/>

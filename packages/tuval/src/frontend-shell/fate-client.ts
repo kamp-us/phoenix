@@ -179,6 +179,39 @@ export const decodePromptOutcome = (value: unknown): PromptLiveSessionOutcome | 
 	return undefined;
 };
 
+export const bindAttachOutcome = (
+	sessionId: string,
+	outcome: AttachLiveSessionOutcome,
+): AttachLiveSessionOutcome => {
+	const responseSessionId =
+		outcome._tag === "attached" ? outcome.session.sessionId : outcome.sessionId;
+	return responseSessionId === sessionId
+		? outcome
+		: {
+				_tag: "refused",
+				sessionId,
+				code: "protocol",
+				reason: "Bağlanma yanıtı istenen oturumla eşleşmedi.",
+			};
+};
+
+export const bindPromptOutcome = (
+	sessionId: string,
+	correlationId: string,
+	outcome: PromptLiveSessionOutcome,
+): PromptLiveSessionOutcome => {
+	const matchesCorrelation = outcome.correlationId === correlationId;
+	const matchesSession = outcome._tag === "refused" || outcome.session.sessionId === sessionId;
+	return matchesCorrelation && matchesSession
+		? outcome
+		: {
+				_tag: "refused",
+				correlationId,
+				code: "protocol",
+				reason: "Gönderim yanıtı istek kimliğiyle eşleşmedi.",
+			};
+};
+
 export const decodeLiveEvent = (value: unknown): LiveSessionEvent | undefined => {
 	if (!isRecord(value) || typeof value._tag !== "string" || typeof value.sequence !== "number") {
 		return undefined;
@@ -250,10 +283,11 @@ export const attachLiveSession = async (sessionId: string): Promise<AttachLiveSe
 		}),
 	);
 	if (outcome === undefined) throw new Error("Bağlanma yanıtı okunamadı");
-	return outcome;
+	return bindAttachOutcome(sessionId, outcome);
 };
 
 export const promptLiveSession = async (
+	sessionId: string,
 	correlationId: string,
 	text: string,
 ): Promise<PromptLiveSessionOutcome> => {
@@ -266,7 +300,7 @@ export const promptLiveSession = async (
 		}),
 	);
 	if (outcome === undefined) throw new Error("Gönderim yanıtı okunamadı");
-	return outcome;
+	return bindPromptOutcome(sessionId, correlationId, outcome);
 };
 
 export const releaseLiveSession = async (): Promise<void> => {
