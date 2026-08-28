@@ -38,15 +38,18 @@ const writeSession = Effect.fn("LineageTest.writeSession")(function* (
 		readonly filenameId?: string;
 		readonly parentSession?: string;
 		readonly body?: string;
+		readonly exactPath?: boolean;
 	},
 ) {
 	const fs = yield* FileSystem.FileSystem;
 	const path = yield* Path.Path;
-	const target = path.join(
-		root,
-		path.dirname(relativePath),
-		`2026-08-27T12-00-00-000Z_${input.filenameId ?? input.id}.jsonl`,
-	);
+	const target = input.exactPath
+		? path.join(root, relativePath)
+		: path.join(
+				root,
+				path.dirname(relativePath),
+				`2026-08-27T12-00-00-000Z_${input.filenameId ?? input.id}.jsonl`,
+			);
 	yield* fs.makeDirectory(path.dirname(target), {recursive: true});
 	yield* fs.writeFileString(
 		target,
@@ -89,11 +92,16 @@ describe("Tuval lineage index", () => {
 					id: "child",
 					parentSession: parentFile,
 				});
-				const nestedFile = yield* writeSession(sessionsRoot, "root/nested/session.jsonl", {
-					id: "nested",
-					parentSession: parentFile,
-					body: `${"x".repeat(256 * 1024)} not-json {"parentSessionId":"body-parent"}`,
-				});
+				const nestedFile = yield* writeSession(
+					sessionsRoot,
+					"root/run-0/session/nested-child/run-0/session.jsonl",
+					{
+						id: "nested",
+						parentSession: parentFile,
+						body: `${"x".repeat(256 * 1024)} not-json {"parentSessionId":"body-parent"}`,
+						exactPath: true,
+					},
+				);
 				yield* writeStatus(asyncRunsRoot, "root-run", {
 					lifecycleArtifactVersion: 3,
 					runId: "wrapper-run",
@@ -148,6 +156,10 @@ describe("Tuval lineage index", () => {
 					first.graph.nodes.map((node) => node.piSessionId),
 					["child", "nested", "parent"],
 				);
+				assert.deepInclude(
+					first.graph.nodes.find((node) => node.piSessionId === "nested"),
+					{sourceFiles: [nestedFile]},
+				);
 				assert.deepEqual(edgeKinds(first.graph), ["fork", "fork", "spawn", "spawn"]);
 				assert.deepInclude(
 					first.graph.edges.find((edge) => edge.id === "spawn:child-run"),
@@ -172,6 +184,35 @@ describe("Tuval lineage index", () => {
 					source: "protocol",
 				});
 				assert.lengthOf(first.problems, 0);
+			}),
+		);
+
+		it.effect("rejects a generic nested session file without a lifecycle owner", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-unowned-"});
+				const sessionsRoot = path.join(root, "sessions");
+				const sourceFile = yield* writeSession(
+					sessionsRoot,
+					"owner/run-0/session/child/run-0/session.jsonl",
+					{id: "unowned", exactPath: true},
+				);
+
+				const projection = yield* refreshLineage({
+					runRoots: [],
+					sessionRoots: [sessionsRoot],
+					storePath: path.join(root, "lineage.json"),
+				});
+
+				assert.lengthOf(projection.graph.nodes, 0);
+				assert.deepInclude(
+					projection.problems.find((problem) => problem.source === sourceFile),
+					{
+						code: "malformed-session",
+						message: "generic session.jsonl has no matching lifecycle observation",
+					},
+				);
 			}),
 		);
 

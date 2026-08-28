@@ -226,7 +226,9 @@ const readFirstLine = Effect.fn("Lineage.readFirstLine")(function* (sourceFile: 
 
 const readSessionArtifact = Effect.fn("Lineage.readSessionArtifact")(function* (
 	sourceFile: string,
+	lifecycleSessionFiles: ReadonlySet<string>,
 ) {
+	const path = yield* Path.Path;
 	const fs = yield* FileSystem.FileSystem;
 	const firstLine = yield* readFirstLine(sourceFile).pipe(
 		Effect.mapError((error) => new LineageSourceParseError({message: messageOf(error)})),
@@ -240,10 +242,17 @@ const readSessionArtifact = Effect.fn("Lineage.readSessionArtifact")(function* (
 	if (header.id.length === 0) {
 		return yield* new LineageSourceParseError({message: "session id is empty"});
 	}
-	const sessionId = sessionIdFromFilename(sourceFile);
+	const filenameSessionId = sessionIdFromFilename(sourceFile);
+	const lifecycleOwned = lifecycleSessionFiles.has(path.resolve(sourceFile));
+	const sessionId =
+		filenameSessionId ??
+		(path.basename(sourceFile) === "session.jsonl" && lifecycleOwned ? header.id : undefined);
 	if (sessionId === undefined || sessionId.length === 0) {
 		return yield* new LineageSourceParseError({
-			message: "session filename does not end in _<session-id>.jsonl",
+			message:
+				path.basename(sourceFile) === "session.jsonl"
+					? "generic session.jsonl has no matching lifecycle observation"
+					: "session filename does not end in _<session-id>.jsonl",
 		});
 	}
 	const info = yield* fs.stat(sourceFile);
@@ -251,12 +260,15 @@ const readSessionArtifact = Effect.fn("Lineage.readSessionArtifact")(function* (
 	return Option.some({header, sessionId, sourceFile, updatedAt} satisfies SessionArtifact);
 });
 
-const scanSessions = Effect.fn("Lineage.scanSessions")(function* (roots: ReadonlyArray<string>) {
+const scanSessions = Effect.fn("Lineage.scanSessions")(function* (
+	roots: ReadonlyArray<string>,
+	lifecycleSessionFiles: ReadonlySet<string>,
+) {
 	const scanned = yield* scanFiles(roots, (name) => name.endsWith(".jsonl"), "retention-loss");
 	const artifacts: Array<SessionArtifact> = [];
 	const problems: Array<LineageProblem> = [...scanned.problems];
 	for (const sourceFile of scanned.files) {
-		const artifact = yield* Effect.result(readSessionArtifact(sourceFile));
+		const artifact = yield* Effect.result(readSessionArtifact(sourceFile, lifecycleSessionFiles));
 		if (Result.isFailure(artifact)) {
 			problems.push({
 				code: "malformed-session",
@@ -909,8 +921,11 @@ const refreshLineageUnlocked = Effect.fn("Lineage.refreshUnlocked")(function* (
 ) {
 	const path = yield* Path.Path;
 	const current = yield* loadLineageStore(options.storePath);
-	const sessions = yield* scanSessions(options.sessionRoots);
 	const runs = yield* scanRuns(options.runRoots);
+	const lifecycleSessionFiles = new Set(
+		runs.candidates.map((candidate) => path.resolve(candidate.sessionRef)),
+	);
+	const sessions = yield* scanSessions(options.sessionRoots, lifecycleSessionFiles);
 	const protocolSessions = yield* decodeProtocolSessions(options.protocolSessions ?? []);
 	const normalized = lineageRecords(
 		current,
