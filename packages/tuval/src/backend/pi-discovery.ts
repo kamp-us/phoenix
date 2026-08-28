@@ -16,9 +16,14 @@ export interface PiDiscoveryOptions {
 	readonly protocolTransport?: ByteTransportFactory;
 }
 
+export type PiSessionMetadataOutcome =
+	| {readonly _tag: "not-configured"}
+	| {readonly _tag: "available"; readonly sessions: ReadonlyArray<SessionMetadata>}
+	| {readonly _tag: "failed"; readonly message: string};
+
 export interface PiDiscoveryService {
 	readonly discover: () => Effect.Effect<DiscoveryOutcome>;
-	readonly sessionMetadata: () => Effect.Effect<ReadonlyArray<SessionMetadata>>;
+	readonly sessionMetadata: () => Effect.Effect<PiSessionMetadataOutcome>;
 }
 
 export class PiDiscovery extends Context.Service<PiDiscovery, PiDiscoveryService>()(
@@ -66,9 +71,16 @@ export const discoverPiSessions = Effect.fn("PiDiscovery.discover")(function* (
 export const discoverPiSessionMetadata = Effect.fn("PiDiscovery.sessionMetadata")(function* (
 	options: PiDiscoveryOptions = {},
 ) {
-	if (options.protocolTransport === undefined) return [];
+	if (options.protocolTransport === undefined) {
+		return {_tag: "not-configured" as const} satisfies PiSessionMetadataOutcome;
+	}
 	const metadata = yield* Effect.result(listSessionsFromTransport(options.protocolTransport));
-	return Result.isSuccess(metadata) ? metadata.success : [];
+	return Result.isSuccess(metadata)
+		? ({_tag: "available", sessions: metadata.success} satisfies PiSessionMetadataOutcome)
+		: ({
+				_tag: "failed",
+				message: messageOf(metadata.failure.cause),
+			} satisfies PiSessionMetadataOutcome);
 });
 
 export const PiDiscoveryLive = (

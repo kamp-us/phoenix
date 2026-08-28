@@ -68,7 +68,7 @@ const handle = (live: LiveSessionService, operations: ReadonlyArray<Record<strin
 							}),
 							Layer.succeed(PiDiscovery, {
 								discover: () => Effect.succeed({_tag: "empty", sessions: [] as const}),
-								sessionMetadata: () => Effect.succeed([]),
+								sessionMetadata: () => Effect.succeed({_tag: "not-configured"}),
 							}),
 						),
 					),

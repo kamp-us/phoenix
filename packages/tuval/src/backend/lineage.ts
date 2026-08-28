@@ -26,7 +26,7 @@ import {
 	upsertLineageRecords,
 	validateLineageStore,
 } from "../shared/lineage.js";
-import {PiDiscovery} from "./pi-discovery.js";
+import {PiDiscovery, type PiSessionMetadataOutcome} from "./pi-discovery.js";
 import {defaultSessionRoots, sessionIdFromFilename} from "./pi-home.js";
 
 const STORE_VERSION = 1;
@@ -99,6 +99,14 @@ interface RunCandidate {
 	readonly source: string;
 }
 
+interface RunObservation {
+	readonly runId: string;
+	readonly child: SessionIdentity;
+	readonly observedAt: number;
+	readonly parent?: SessionIdentity;
+	readonly source: string;
+}
+
 interface ScannedFiles {
 	readonly files: ReadonlyArray<string>;
 	readonly problems: ReadonlyArray<LineageProblem>;
@@ -123,14 +131,14 @@ export interface RefreshLineageOptions {
 	readonly runRoots: ReadonlyArray<string>;
 	readonly sessionRoots: ReadonlyArray<string>;
 	readonly storePath: string;
-	readonly protocolSessions?: ReadonlyArray<unknown>;
+	readonly protocolMetadata?: PiSessionMetadataOutcome;
 }
 
 export interface LineageIndexOptions {
 	readonly runRoots?: ReadonlyArray<string>;
 	readonly sessionRoots?: ReadonlyArray<string>;
 	readonly storePath?: string;
-	readonly protocolSessions?: ReadonlyArray<unknown>;
+	readonly protocolMetadata?: PiSessionMetadataOutcome;
 }
 
 export class LineageIndexError extends Schema.TaggedErrorClass<LineageIndexError>()(
@@ -659,10 +667,39 @@ const lineageRecords = (
 		edges.push({id: `fork:${child}`, kind: "fork", parent, child, source: "protocol"});
 	}
 
+	const currentByRun = new Map<string, RunObservation>();
+	for (const edge of current.edges) {
+		if (edge.kind !== "spawn") continue;
+		currentByRun.set(edge.runId, {
+			runId: edge.runId,
+			child: edge.child,
+			parent: edge.parent,
+			observedAt: edge.observedAt,
+			source: "retained lineage store",
+		});
+	}
+	for (const observation of current.continuity) {
+		currentByRun.set(observation.runId, {
+			runId: observation.runId,
+			child: observation.session,
+			...(observation.parent === undefined ? {} : {parent: observation.parent}),
+			observedAt: observation.observedAt,
+			source: "retained lineage store",
+		});
+	}
+
 	const runSessions = new Map<string, SessionIdentity>();
 	for (const candidate of candidates) {
 		const child = resolveSession(candidate.sessionRef, byFile, knownNodes, path);
 		if (child === undefined) {
+			if (currentByRun.has(candidate.runId)) {
+				return Result.fail(
+					new LineageConflictError({
+						recordId: `spawn:${candidate.runId}`,
+						message: `Persisted run ${candidate.runId} was rewritten to an unresolved session`,
+					}),
+				);
+			}
 			problems.push({
 				code: "unresolved-session",
 				source: candidate.source,
@@ -687,13 +724,6 @@ const lineageRecords = (
 		if (parent !== undefined) runSessions.set(candidate.wrapperRunId, parent);
 	}
 
-	interface RunObservation {
-		readonly runId: string;
-		readonly child: SessionIdentity;
-		readonly observedAt: number;
-		readonly parent?: SessionIdentity;
-		readonly source: string;
-	}
 	const candidateByRun = new Map<string, RunObservation>();
 	for (const candidate of candidates) {
 		const child = runSessions.get(candidate.runId);
@@ -702,6 +732,14 @@ const lineageRecords = (
 		if (candidate.parentRunId !== undefined) {
 			parent = runSessions.get(candidate.parentRunId);
 			if (parent === undefined) {
+				if (currentByRun.has(candidate.runId)) {
+					return Result.fail(
+						new LineageConflictError({
+							recordId: `spawn:${candidate.runId}`,
+							message: `Persisted run ${candidate.runId} was rewritten with unresolved authoritative parent ${candidate.parentRunId}`,
+						}),
+					);
+				}
 				problems.push({
 					code: "retention-loss",
 					source: candidate.source,
@@ -736,26 +774,6 @@ const lineageRecords = (
 		candidateByRun.set(candidate.runId, observation);
 	}
 
-	const currentByRun = new Map<string, RunObservation>();
-	for (const edge of current.edges) {
-		if (edge.kind !== "spawn") continue;
-		currentByRun.set(edge.runId, {
-			runId: edge.runId,
-			child: edge.child,
-			parent: edge.parent,
-			observedAt: edge.observedAt,
-			source: "retained lineage store",
-		});
-	}
-	for (const observation of current.continuity) {
-		currentByRun.set(observation.runId, {
-			runId: observation.runId,
-			child: observation.session,
-			...(observation.parent === undefined ? {} : {parent: observation.parent}),
-			observedAt: observation.observedAt,
-			source: "retained lineage store",
-		});
-	}
 	for (const [runId, observation] of candidateByRun) {
 		const persisted = currentByRun.get(runId);
 		if (
@@ -926,7 +944,20 @@ const refreshLineageUnlocked = Effect.fn("Lineage.refreshUnlocked")(function* (
 		runs.candidates.map((candidate) => path.resolve(candidate.sessionRef)),
 	);
 	const sessions = yield* scanSessions(options.sessionRoots, lifecycleSessionFiles);
-	const protocolSessions = yield* decodeProtocolSessions(options.protocolSessions ?? []);
+	const protocolMetadata = options.protocolMetadata ?? {_tag: "not-configured" as const};
+	const protocolSessions = yield* decodeProtocolSessions(
+		protocolMetadata._tag === "available" ? protocolMetadata.sessions : [],
+	);
+	const protocolProblems: ReadonlyArray<LineageProblem> =
+		protocolMetadata._tag === "failed"
+			? [
+					{
+						code: "protocol-unavailable",
+						source: "pi-protocol",
+						message: protocolMetadata.message,
+					},
+				]
+			: [];
 	const normalized = lineageRecords(
 		current,
 		sessions.artifacts,
@@ -942,7 +973,12 @@ const refreshLineageUnlocked = Effect.fn("Lineage.refreshUnlocked")(function* (
 	yield* writeLineageStore(options.storePath, validated.success);
 	return {
 		graph: validated.success,
-		problems: [...sessions.problems, ...runs.problems, ...normalized.success.problems].sort(
+		problems: [
+			...sessions.problems,
+			...runs.problems,
+			...protocolProblems,
+			...normalized.success.problems,
+		].sort(
 			(left, right) =>
 				left.source.localeCompare(right.source) || left.code.localeCompare(right.code),
 		),
@@ -1026,7 +1062,7 @@ export const defaultLineageOptions = Effect.fn("Lineage.defaultOptions")(functio
 		],
 		sessionRoots: options.sessionRoots ?? (yield* defaultSessionRoots(environment, home)),
 		storePath: options.storePath ?? path.join(home, ".pi", "agent", "tuval", "lineage.json"),
-		...(options.protocolSessions === undefined ? {} : {protocolSessions: options.protocolSessions}),
+		...(options.protocolMetadata === undefined ? {} : {protocolMetadata: options.protocolMetadata}),
 	} satisfies RefreshLineageOptions;
 });
 
@@ -1047,8 +1083,8 @@ export const LineageIndexLive = (
 			const resolved = yield* defaultLineageOptions(options);
 			return {
 				project: Effect.fn("LineageIndex.project")(function* () {
-					const protocolSessions = options.protocolSessions ?? (yield* discovery.sessionMetadata());
-					return yield* refreshLineage({...resolved, protocolSessions}).pipe(
+					const protocolMetadata = options.protocolMetadata ?? (yield* discovery.sessionMetadata());
+					return yield* refreshLineage({...resolved, protocolMetadata}).pipe(
 						Effect.provideService(Crypto.Crypto, crypto),
 						Effect.provideService(FileSystem.FileSystem, fs),
 						Effect.provideService(Path.Path, path),

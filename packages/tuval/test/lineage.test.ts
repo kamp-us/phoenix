@@ -1,3 +1,4 @@
+import type {SessionMetadata} from "@earendil-works/pi-protocol";
 import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, FileSystem, Path, Result, Schema} from "effect";
@@ -75,6 +76,9 @@ const writeStatus = Effect.fn("LineageTest.writeStatus")(function* (
 const edgeKinds = (graph: {readonly edges: ReadonlyArray<{readonly kind: string}>}) =>
 	graph.edges.map((edge) => edge.kind).sort();
 
+const availableProtocol = (sessions: ReadonlyArray<SessionMetadata>) =>
+	({_tag: "available", sessions}) as const;
+
 describe("Tuval lineage index", () => {
 	it.layer(NodeServices.layer)((it) => {
 		it.effect("joins default top-level and sibling nested run roots", () =>
@@ -129,11 +133,11 @@ describe("Tuval lineage index", () => {
 					{
 						sessionRoots: [sessionsRoot],
 						storePath,
-						protocolSessions: [
+						protocolMetadata: availableProtocol([
 							{id: "parent", createdAt: 1, cwd: "/tmp/tuval"},
 							{id: "child", createdAt: 2, cwd: "/tmp/tuval"},
 							{id: "nested", createdAt: 3, parentSessionId: "child", cwd: "/tmp/tuval"},
-						],
+						]),
 					},
 					{PI_SUBAGENTS_TEMP_ROOT: tempRoot},
 					"/home/tuval",
@@ -143,11 +147,11 @@ describe("Tuval lineage index", () => {
 				const first = yield* refreshLineage(options);
 				const second = yield* refreshLineage({
 					...options,
-					protocolSessions: [
+					protocolMetadata: availableProtocol([
 						{id: "parent", createdAt: 1},
 						{id: "child", createdAt: 2},
 						{id: "nested", createdAt: 3, parentSessionId: "child"},
-					],
+					]),
 				});
 
 				assert.doesNotThrow(() => Schema.decodeUnknownSync(LineageProjection)(first));
@@ -546,6 +550,52 @@ describe("Tuval lineage index", () => {
 			}),
 		);
 
+		it.effect("keeps protocol failure visible while bounded header fallback remains usable", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-protocol-failure-"});
+				const sessionsRoot = path.join(root, "sessions");
+				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+				yield* writeSession(sessionsRoot, "child.jsonl", {
+					id: "child",
+					parentSession: parentFile,
+				});
+				const failed = yield* refreshLineage({
+					runRoots: [],
+					sessionRoots: [sessionsRoot],
+					storePath: path.join(root, "failed.json"),
+					protocolMetadata: {_tag: "failed", message: "metadata transport unavailable"},
+				});
+				const absentParent = yield* refreshLineage({
+					runRoots: [],
+					sessionRoots: [sessionsRoot],
+					storePath: path.join(root, "available.json"),
+					protocolMetadata: availableProtocol([
+						{id: "parent", createdAt: 1},
+						{id: "child", createdAt: 2},
+					]),
+				});
+
+				assert.deepInclude(
+					failed.graph.edges.find((edge) => edge.kind === "fork"),
+					{parent: sessionIdentity("parent"), child: sessionIdentity("child"), source: "header"},
+				);
+				assert.deepEqual(failed.problems, [
+					{
+						code: "protocol-unavailable",
+						source: "pi-protocol",
+						message: "metadata transport unavailable",
+					},
+				]);
+				assert.deepInclude(
+					absentParent.graph.edges.find((edge) => edge.kind === "fork"),
+					{parent: sessionIdentity("parent"), child: sessionIdentity("child"), source: "header"},
+				);
+				assert.lengthOf(absentParent.problems, 0);
+			}),
+		);
+
 		it.effect("diagnoses a protocol-only child whose parent is not retained", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
@@ -555,7 +605,9 @@ describe("Tuval lineage index", () => {
 					runRoots: [],
 					sessionRoots: [],
 					storePath: path.join(root, "lineage.json"),
-					protocolSessions: [{id: "child", createdAt: 1, parentSessionId: "missing-parent"}],
+					protocolMetadata: availableProtocol([
+						{id: "child", createdAt: 1, parentSessionId: "missing-parent"},
+					]),
 				});
 
 				assert.lengthOf(projected.graph.nodes, 1);
@@ -757,6 +809,80 @@ describe("Tuval lineage index", () => {
 						startedAt: 11,
 					}),
 				);
+				const rewritten = yield* Effect.result(
+					refreshLineage({runRoots: [runsRoot], sessionRoots: [sessionsRoot], storePath}),
+				);
+				assert.isTrue(Result.isFailure(rewritten));
+				if (Result.isFailure(rewritten)) {
+					assert.strictEqual(rewritten.failure._tag, "tuval/LineageConflictError");
+				}
+			}),
+		);
+
+		it.effect("refuses a persisted run rewritten to an unresolved session", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-session-rewrite-"});
+				const sessionsRoot = path.join(root, "sessions");
+				const runsRoot = path.join(root, "runs");
+				const storePath = path.join(root, "lineage.json");
+				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+				const childFile = yield* writeSession(sessionsRoot, "child.jsonl", {id: "child"});
+				const statusPath = yield* writeStatus(runsRoot, "stable", {
+					runId: "stable-run",
+					sessionId: parentFile,
+					sessionFile: childFile,
+					startedAt: 10,
+				});
+				yield* refreshLineage({runRoots: [runsRoot], sessionRoots: [sessionsRoot], storePath});
+				yield* fs.writeFileString(
+					statusPath,
+					JSON.stringify({
+						runId: "stable-run",
+						sessionId: parentFile,
+						sessionFile: path.join(sessionsRoot, "missing.jsonl"),
+						startedAt: 10,
+					}),
+				);
+
+				const rewritten = yield* Effect.result(
+					refreshLineage({runRoots: [runsRoot], sessionRoots: [sessionsRoot], storePath}),
+				);
+				assert.isTrue(Result.isFailure(rewritten));
+				if (Result.isFailure(rewritten)) {
+					assert.strictEqual(rewritten.failure._tag, "tuval/LineageConflictError");
+				}
+			}),
+		);
+
+		it.effect("refuses a persisted run rewritten with an unresolved authoritative parent", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-parent-rewrite-"});
+				const sessionsRoot = path.join(root, "sessions");
+				const runsRoot = path.join(root, "runs");
+				const storePath = path.join(root, "lineage.json");
+				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+				const childFile = yield* writeSession(sessionsRoot, "child.jsonl", {id: "child"});
+				const statusPath = yield* writeStatus(runsRoot, "stable", {
+					runId: "stable-run",
+					sessionId: parentFile,
+					sessionFile: childFile,
+					startedAt: 10,
+				});
+				yield* refreshLineage({runRoots: [runsRoot], sessionRoots: [sessionsRoot], storePath});
+				yield* fs.writeFileString(
+					statusPath,
+					JSON.stringify({
+						runId: "stable-run",
+						parentRunId: "missing-parent-run",
+						sessionFile: childFile,
+						startedAt: 10,
+					}),
+				);
+
 				const rewritten = yield* Effect.result(
 					refreshLineage({runRoots: [runsRoot], sessionRoots: [sessionsRoot], storePath}),
 				);

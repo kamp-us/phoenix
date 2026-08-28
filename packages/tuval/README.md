@@ -56,21 +56,24 @@ The package exports the schema-backed graph types from `tuval/lineage`. The `lin
 projects session nodes, `spawn` and `fork` edges, resume-continuity observations, and isolated source
 problems. `LineageIndex` scans the same configured session roots as discovery and joins complete
 run/session pairs from both pi-subagents lifecycle directories to retained session headers. Standard
-Pi session files own identity through their timestamped filename. A generic nested
-`run-0/session.jsonl` is admitted only when a complete lifecycle observation owns that exact path;
-an unmatched generic file is diagnosed instead of guessed. A sole step session may complete a
-top-level run identity; multiple steps without run ids remain unpaired.
+Pi session files own identity through the timestamped final filename segment on POSIX and Windows.
+A generic nested `run-0/session.jsonl` is admitted only when a complete lifecycle observation owns
+that exact path; an unmatched generic file is diagnosed instead of guessed. A sole step session may
+complete a top-level run identity; multiple steps without run ids remain unpaired.
 Completed workflow return values are opaque and never interpreted as lineage. Each malformed run
 entry is reported independently without discarding complete siblings in the same status. With
-`--pi-socket`, fork parents prefer the server's durable `SessionMetadata.parentSessionId`; when that
-field is absent, lineage reads only the child session's bounded first header line. An unresolved
-protocol or run parent is reported and does not become a spawn or continuity observation; a
-parentless observation before the first spawn-eligible run is likewise diagnostic-only.
+`--pi-socket`, fork parents prefer the server's durable `SessionMetadata.parentSessionId`; when a
+successful metadata read has no parent, lineage reads only the child's bounded first header line.
+A failed metadata read remains a `protocol-unavailable` problem even when that fallback succeeds.
+An unresolved protocol or run parent is reported and does not become a spawn or continuity
+observation; a parentless observation before the first spawn-eligible run is likewise
+diagnostic-only.
 
 The normalized version-1 store lives under `~/.pi/agent/tuval/lineage.json` by default. Serialized
-rescans preserve exact observations and retained records after source cleanup. Reused run ids,
-multiple spawn origins for one session, changed continuity parentage, dangling references, invalid
-source ownership, and unknown store versions are refused rather than silently collapsed.
+rescans preserve exact observations and retained records after source cleanup. Reused run ids —
+including rewrites to unknown sessions or unresolved authoritative parents — multiple spawn
+origins for one session, changed continuity parentage, dangling references, invalid source ownership,
+and unknown store versions are refused rather than silently collapsed.
 
 ## Live-session contract
 
