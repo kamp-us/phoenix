@@ -46,7 +46,7 @@ export const runOpen = (options: OpenOptions): CampaignEffect<VerbOutcome> =>
 			return refuse(FAILED, `${VERB}: --milestone must be a positive integer, got "${milestone}".`);
 		}
 		if (name === "") {
-			return refuse(FAILED, `${VERB}: --name is required.`);
+			return refuse(FAILED, `${VERB}: <name> is required.`);
 		}
 		if (!nameFitsCell(name)) {
 			return refuse(
