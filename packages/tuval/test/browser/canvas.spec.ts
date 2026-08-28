@@ -180,11 +180,17 @@ test("stable identity updates reuse nodes and never duplicate them", async ({pag
 		_tag: "ready",
 		sessions: [{...alpha, cwd: "/work/alpha-renamed"}, gamma],
 	};
+	await alphaNode.click();
+	await expect(page.locator("#selection-title")).toHaveText("alpha");
+	await expect(page.locator("#selection-path")).toHaveText("/work/alpha");
+
 	await page.locator("#refresh-sessions").click();
 	await expect(page.locator('[data-session-identity="pi:stable-gamma"]')).toBeVisible();
 	await expect(page.locator('[data-session-identity="pi:stable-beta"]')).toHaveCount(0);
 	await expect(page.locator(".session-node")).toHaveCount(2);
 	expect(await alphaNode.getAttribute("style")).toBe(position);
+	await expect(page.locator("#selection-title")).toHaveText("alpha-renamed");
+	await expect(page.locator("#selection-path")).toHaveText("/work/alpha-renamed");
 	expect(
 		await page.evaluate(
 			() =>
@@ -201,6 +207,11 @@ test("loading is explicit while discovery is in flight", async ({page}) => {
 	await page.goto(tuvalUrl);
 	await expect(page.locator("#status-label")).toHaveText("Discovering");
 	await expect(page.locator("#state-title")).toHaveText("Finding active work");
+	await expect(page.locator("#state-action")).toBeEnabled();
+	await expect(page.locator("#refresh-sessions")).toBeEnabled();
+	const retryRequest = page.waitForRequest("**/fate");
+	await page.locator("#state-action").click();
+	await retryRequest;
 	await expect(page.locator("#status-label")).toHaveText("No sessions");
 	expect(errors).toEqual([]);
 });

@@ -239,9 +239,12 @@ const reconcileSessions = (sessions: ReadonlyArray<DiscoveredSession>): void => 
 		nodes.set(identity, node);
 		nodeLayer.append(node);
 	}
-	if (selectedIdentity !== null && !nodes.has(selectedIdentity)) {
-		selectedIdentity = null;
-		selection.hidden = true;
+	if (selectedIdentity !== null) {
+		if (nodes.has(selectedIdentity)) selectSession(selectedIdentity);
+		else {
+			selectedIdentity = null;
+			selection.hidden = true;
+		}
 	}
 };
 
@@ -357,8 +360,6 @@ const discover = async (): Promise<void> => {
 		description: "Tuval is asking the local pi agent for sessions. The canvas stays navigable.",
 		action: "Scan again",
 	});
-	stateAction.disabled = true;
-	refreshButton.disabled = true;
 	try {
 		const response = await fetch("/fate", {
 			method: "POST",
@@ -379,11 +380,6 @@ const discover = async (): Promise<void> => {
 			message: error instanceof Error ? error.message : String(error),
 			retryable: true,
 		});
-	} finally {
-		if (generation === requestGeneration) {
-			stateAction.disabled = false;
-			refreshButton.disabled = false;
-		}
 	}
 };
 
