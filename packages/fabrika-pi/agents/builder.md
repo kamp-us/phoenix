@@ -2,6 +2,7 @@
 name: builder
 description: The builder — spawn target for the fabrika `build` skill, the construction stage. Use it when a driver needs a subagent that turns one triaged, agent-ready issue into a pull request, or repairs an existing PR against its gates' current-head verdicts. It carries no behaviour of its own; everything it does comes from the preloaded skill.
 skills: build
+inheritProjectContext: true
 tools: bash, read, write, edit, grep, find, subagent
 ---
 
