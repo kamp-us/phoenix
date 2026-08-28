@@ -1,0 +1,9 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"types": ["node", "@playwright/test"]
+	},
+	"include": ["test/browser", "playwright.config.ts", "src/shared/discovery.ts"]
+}

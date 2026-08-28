@@ -992,6 +992,9 @@ importers:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.36.4
+      '@playwright/test':
+        specifier: 'catalog:'
+        version: 1.62.1
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2

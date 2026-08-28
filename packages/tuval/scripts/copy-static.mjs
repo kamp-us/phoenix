@@ -1,7 +1,19 @@
-import {cp, mkdir} from "node:fs/promises";
+import {mkdir, readFile, writeFile} from "node:fs/promises";
 
-await mkdir(new URL("../dist/frontend-shell/", import.meta.url), {recursive: true});
-await cp(
-	new URL("../src/frontend-shell/index.html", import.meta.url),
-	new URL("../dist/frontend-shell/index.html", import.meta.url),
-);
+const source = new URL("../src/frontend-shell/", import.meta.url);
+const output = new URL("../dist/frontend-shell/", import.meta.url);
+
+await mkdir(output, {recursive: true});
+const [template, styles, compiledApp] = await Promise.all([
+	readFile(new URL("index.html", source), "utf8"),
+	readFile(new URL("styles.css", source), "utf8"),
+	readFile(new URL("app.js", output), "utf8"),
+]);
+const styleMarker = "/* TUVAL_STYLES */";
+const appMarker = "/* TUVAL_APP */";
+if (!template.includes(styleMarker) || !template.includes(appMarker)) {
+	throw new Error("Tuval static template is missing its style or application marker");
+}
+const app = compiledApp.replace(/^\/\/# sourceMappingURL=.*$/mu, "");
+const html = template.replace(styleMarker, styles).replace(appMarker, app);
+await writeFile(new URL("index.html", output), html);

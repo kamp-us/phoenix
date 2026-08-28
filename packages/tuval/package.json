@@ -14,9 +14,10 @@
 		"dist"
 	],
 	"scripts": {
-		"build": "tsc -p tsconfig.build.json && node scripts/copy-static.mjs",
-		"typecheck": "tsc -p tsconfig.json",
-		"test": "pnpm run build && vitest run"
+		"build": "tsc -p tsconfig.build.json && tsc -p tsconfig.frontend.json && node scripts/copy-static.mjs",
+		"typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.frontend.json --noEmit && tsc -p tsconfig.browser.json",
+		"test": "pnpm run build && vitest run && pnpm run test:browser",
+		"test:browser": "playwright test --config playwright.config.ts"
 	},
 	"dependencies": {
 		"@earendil-works/pi-client": "catalog:",
@@ -27,6 +28,7 @@
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",
+		"@playwright/test": "catalog:",
 		"@types/node": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"

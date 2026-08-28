@@ -1,0 +1,14 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"noEmit": false,
+		"outDir": "./dist",
+		"rootDir": "./src",
+		"declaration": false,
+		"declarationMap": false,
+		"sourceMap": true,
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"types": []
+	},
+	"include": ["src/frontend-shell/app.ts"]
+}
