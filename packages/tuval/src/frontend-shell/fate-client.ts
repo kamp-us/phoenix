@@ -85,7 +85,11 @@ const isTranscriptContent = (value: unknown): value is TranscriptContent => {
 		);
 	}
 	if (value.type === "toolCall") {
-		return typeof value.toolCallId === "string" && typeof value.toolName === "string";
+		return (
+			typeof value.toolCallId === "string" &&
+			typeof value.toolName === "string" &&
+			Object.hasOwn(value, "input")
+		);
 	}
 	return false;
 };

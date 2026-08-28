@@ -1,6 +1,9 @@
 import {Composer, useComposerEditor} from "@kampus/composer";
 import type {FormEvent, KeyboardEvent, ReactNode} from "react";
 import {useEffect, useRef, useState} from "react";
+import {Button} from "../../../../apps/web/src/components/ui/Button.js";
+import {Card, Surface} from "../../../../apps/web/src/components/ui/Card.js";
+import {EmptyState} from "../../../../apps/web/src/components/ui/EmptyState.js";
 import type {DiscoveredSession} from "../shared/discovery.js";
 import type {
 	LiveSessionView,
@@ -78,7 +81,9 @@ const renderContent = (content: TranscriptContent, index: number): ReactNode => 
 };
 
 const TranscriptEntry = ({entry}: {readonly entry: LiveTranscriptEntry}) => (
-	<article
+	<Card
+		as="article"
+		tone={entry.role === "user" ? "raised" : "default"}
 		className="transcript-entry"
 		data-role={entry.role}
 		aria-label={`${roleLabel[entry.role]} iletisi`}
@@ -90,7 +95,7 @@ const TranscriptEntry = ({entry}: {readonly entry: LiveTranscriptEntry}) => (
 		<div className="transcript-entry__content">
 			{entry.content.map((content, index) => renderContent(content, index))}
 		</div>
-	</article>
+	</Card>
 );
 
 const connectionCopy = (
@@ -194,48 +199,71 @@ export function ChatPane({selected, connection, session, message, onClose, onSen
 	};
 
 	return (
-		<aside className="chat-pane" aria-labelledby="chat-title" data-connection={connection}>
+		<Surface
+			as="aside"
+			className="chat-pane"
+			aria-labelledby="chat-title"
+			data-connection={connection}
+			tone="default"
+			elevation="overlay"
+			radius="lg"
+			padding="md"
+			border
+		>
 			<header className="chat-pane__header">
 				<div>
 					<p className="chat-pane__eyebrow">Canlı oturum</p>
 					<h2 id="chat-title">{sessionTitle(selected.cwd)}</h2>
 					<p className="chat-pane__path">{selected.cwd}</p>
 				</div>
-				<button className="control-button" type="button" onClick={onClose}>
+				<Button variant="secondary" type="button" onClick={onClose}>
 					Sohbeti kapat
-				</button>
+				</Button>
 			</header>
 
-			<div
+			<Surface
 				className="chat-connection"
 				data-tone={connectionStatus.tone}
 				role={connectionStatus.tone === "danger" ? "alert" : "status"}
 				aria-live={connectionStatus.tone === "danger" ? "assertive" : "polite"}
+				tone="raised"
+				radius="md"
+				padding="sm"
+				border
 			>
 				<strong>{connectionStatus.title}</strong>
 				<span>{connectionStatus.detail}</span>
-			</div>
+			</Surface>
 
 			{session === null ? (
-				<div className="chat-empty" role="status">
-					<strong>Konuşma bekleniyor</strong>
-					<span>Bağlantı doğrulanınca mevcut konuşma burada açılacak.</span>
-				</div>
+				<EmptyState
+					className="chat-empty"
+					title="Konuşma bekleniyor"
+					description="Bağlantı doğrulanınca mevcut konuşma burada açılacak."
+				/>
 			) : (
 				<>
-					<div className="session-phase" data-completion={session.completion}>
+					<Surface
+						className="session-phase"
+						data-completion={session.completion}
+						tone="raised"
+						radius="md"
+						padding="sm"
+						border
+					>
 						<strong>{completionLabel[session.completion]}</strong>
 						<span>{phaseLabel[session.phase]}</span>
 						<span>
 							{session.model.provider} · {session.model.id} · {session.thinkingLevel}
 						</span>
-					</div>
+					</Surface>
 					<section className="transcript nowheel nodrag nopan" aria-label="Oturum konuşması">
 						{session.transcript.length === 0 ? (
-							<div className="chat-empty">
-								<strong>Henüz ileti yok</strong>
-								<span>İlk istemi gönderdiğinde konuşma burada başlayacak.</span>
-							</div>
+							<EmptyState
+								className="chat-empty"
+								title="Henüz ileti yok"
+								description="İlk istemi gönderdiğinde konuşma burada başlayacak."
+							/>
 						) : (
 							session.transcript.map((entry) => <TranscriptEntry key={entry.id} entry={entry} />)
 						)}
@@ -261,14 +289,10 @@ export function ChatPane({selected, connection, session, message, onClose, onSen
 						{sendStatus.text}
 					</p>
 				)}
-				<button
-					className="control-button control-button--primary"
-					type="submit"
-					disabled={!canSend}
-				>
+				<Button variant="primary" type="submit" disabled={!canSend} loading={sending}>
 					{sending ? "Gönderiliyor" : "Gönder"}
-				</button>
+				</Button>
 			</form>
-		</aside>
+		</Surface>
 	);
 }

@@ -83,3 +83,14 @@ export const toRelationshipEdges = (
 		];
 	});
 };
+
+export const reconcileRelationshipEdges = (
+	current: ReadonlyArray<SessionRelationshipEdge>,
+	sessions: ReadonlyArray<DiscoveredSession>,
+): ReadonlyArray<SessionRelationshipEdge> => {
+	const previous = new Map(current.map((edge) => [edge.id, edge]));
+	return toRelationshipEdges(sessions).map((next) => {
+		const edge = previous.get(next.id);
+		return edge === undefined ? next : {...edge, ...next, data: next.data ?? {}};
+	});
+};

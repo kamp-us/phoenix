@@ -47,8 +47,8 @@ const attached: AttachedLiveSession = {
 afterEach(cleanup);
 
 describe("ChatPane", () => {
-	it("renders the existing transcript and truthful terminal phase", () => {
-		render(
+	it("renders the existing transcript and truthful terminal phase through shared primitives", () => {
+		const view = render(
 			<ChatPane
 				selected={selected}
 				connection="attached"
@@ -62,6 +62,9 @@ describe("ChatPane", () => {
 		expect(screen.getByText("Arayüz hazır.")).toBeTruthy();
 		expect(screen.getByText("Tur tamamlandı")).toBeTruthy();
 		expect(screen.getByRole("textbox", {name: "İstem"})).toBeTruthy();
+		expect(view.container.querySelector(".chat-pane.kp-surface")).toBeTruthy();
+		expect(view.container.querySelectorAll(".transcript-entry.kp-card")).toHaveLength(2);
+		expect(screen.getByRole("button", {name: "Gönder"}).getAttribute("data-scope")).toBe("button");
 	});
 
 	it("announces ownership refusal and malformed stream states as accessible errors", () => {
@@ -77,6 +80,7 @@ describe("ChatPane", () => {
 		);
 		expect(screen.getByRole("alert").textContent).toContain("Oturum açılamadı");
 		expect(screen.getByRole("alert").textContent).toContain("Başka bir Tuval");
+		expect(screen.getByTestId("empty-state")).toBeTruthy();
 
 		view.rerender(
 			<ChatPane

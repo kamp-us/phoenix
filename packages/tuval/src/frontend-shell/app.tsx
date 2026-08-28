@@ -1,29 +1,20 @@
 import {
 	applyEdgeChanges,
 	applyNodeChanges,
-	Background,
-	BaseEdge,
-	Controls,
-	type EdgeProps,
-	type EdgeTypes,
-	getBezierPath,
-	Handle,
-	type NodeProps,
-	type NodeTypes,
 	type OnEdgesChange,
 	type OnNodesChange,
-	Position,
-	ReactFlow,
 } from "@xyflow/react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {createRoot} from "react-dom/client";
+import {Button} from "../../../../apps/web/src/components/ui/Button.js";
+import {Surface} from "../../../../apps/web/src/components/ui/Card.js";
 import type {DiscoveredSession, DiscoveryOutcome, DiscoveryProblem} from "../shared/discovery.js";
 import type {LiveSessionView} from "../shared/live-session.js";
 import {
+	reconcileRelationshipEdges,
 	reconcileSessionNodes,
 	type SessionCanvasNode,
 	type SessionRelationshipEdge,
-	toRelationshipEdges,
 } from "./canvas-adapter.js";
 import {ChatPane, type PaneConnection, type SendResult} from "./chat-pane.js";
 import {
@@ -33,6 +24,8 @@ import {
 	promptLiveSession,
 	releaseLiveSession,
 } from "./fate-client.js";
+import {SessionCanvas} from "./session-canvas.js";
+import "@manti-ui/styles/index.css";
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
 
@@ -141,69 +134,6 @@ const discoveryView = (outcome: DiscoveryOutcome | null): DiscoveryView => {
 	};
 };
 
-function SessionNodeCard({data, selected}: NodeProps<SessionCanvasNode>) {
-	return (
-		<article className="session-node" data-selected={selected ? "true" : "false"}>
-			<Handle id="relation-in" type="target" position={Position.Left} isConnectable={false} />
-			<span className="session-node__signal" aria-hidden="true" />
-			<strong className="session-node__title">{data.title}</strong>
-			<span className="session-node__id">{data.session.piSessionId}</span>
-			<span className="session-node__path">{data.session.cwd}</span>
-			<span className="session-node__relation">
-				{data.session.parentSessionId === undefined ? "Kök oturum" : "Alt oturum"}
-			</span>
-			<Handle id="relation-out" type="source" position={Position.Right} isConnectable={false} />
-		</article>
-	);
-}
-
-function RelationshipEdgeView({
-	id,
-	sourceX,
-	sourceY,
-	targetX,
-	targetY,
-	sourcePosition,
-	targetPosition,
-}: EdgeProps<SessionRelationshipEdge>) {
-	const [path] = getBezierPath({
-		sourceX,
-		sourceY,
-		targetX,
-		targetY,
-		sourcePosition,
-		targetPosition,
-	});
-	return <BaseEdge id={id} path={path} className="relationship-edge" />;
-}
-
-const nodeTypes = {session: SessionNodeCard} satisfies NodeTypes;
-const edgeTypes = {relationship: RelationshipEdgeView} satisfies EdgeTypes;
-
-const ariaLabelConfig = {
-	"node.a11yDescription.default":
-		"Bir oturumu açmak için Enter veya Boşluk tuşuna bas. Seçiliyken ok tuşları oturumu taşır; Escape seçimi kaldırır.",
-	"node.a11yDescription.keyboardDisabled": "Bu oturum çalışma alanında seçilebilir.",
-	"node.a11yDescription.ariaLiveMessage": ({
-		direction,
-		x,
-		y,
-	}: {
-		direction: string;
-		x: number;
-		y: number;
-	}) => `Oturum ${direction} yönünde taşındı. Yeni konum x ${Math.round(x)}, y ${Math.round(y)}.`,
-	"edge.a11yDescription.default":
-		"Bu ilişki bağlantısını seçmek için Enter veya Boşluk tuşuna bas.",
-	"controls.ariaLabel": "Tuval yakınlaştırma denetimleri",
-	"controls.zoomIn.ariaLabel": "Yakınlaştır",
-	"controls.zoomOut.ariaLabel": "Uzaklaştır",
-	"controls.fitView.ariaLabel": "Tüm oturumları göster",
-	"controls.interactive.ariaLabel": "Oturum etkileşimini aç veya kapat",
-	"minimap.ariaLabel": "Oturum haritası",
-	"handle.ariaLabel": "Oturum ilişkisi bağlantısı",
-};
-
 const sessionsOf = (outcome: DiscoveryOutcome | null): ReadonlyArray<DiscoveredSession> => {
 	if (outcome?._tag === "ready" || outcome?._tag === "partial-source") return outcome.sessions;
 	return [];
@@ -240,7 +170,7 @@ export function TuvalApp() {
 				selected: node.id === selected?.identity,
 			})),
 		);
-		setEdges(toRelationshipEdges(sessions));
+		setEdges((current) => reconcileRelationshipEdges(current, sessions));
 		if (selected !== null && !sessions.some((session) => session.identity === selected.identity)) {
 			setSelected(null);
 		}
@@ -436,52 +366,46 @@ export function TuvalApp() {
 					<strong id="status-label">{view.label}</strong>
 					<span id="status-description">{view.description}</span>
 				</div>
-				<button
+				<Button
 					id="refresh-sessions"
-					className="control-button"
+					variant="secondary"
 					type="button"
 					onClick={() => void discover()}
 				>
 					Oturumları yenile
-				</button>
+				</Button>
 			</header>
 
 			<main className="workspace" aria-label="Tuval oturum çalışma alanı">
 				<section id="canvas" className="canvas" aria-label="Serbest kaydırılabilir oturum tuvali">
 					<div id="canvas-stage" className="canvas-stage">
-						<ReactFlow<SessionCanvasNode, SessionRelationshipEdge>
-							nodes={[...nodes]}
-							edges={[...edges]}
+						<SessionCanvas
+							nodes={nodes}
+							edges={edges}
 							onNodesChange={onNodesChange}
 							onEdgesChange={onEdgesChange}
-							onNodeClick={(_, node) => setSelected(node.data.session)}
-							onSelectionChange={({nodes: selectedNodes}) => {
+							onSelect={(session) => {
 								if (ignoreSelectionChange.current) return;
-								const node = selectedNodes.at(-1);
-								if (node !== undefined) setSelected(node.data.session);
+								if (session === null && selectedRef.current !== null) {
+									void releaseLiveSession().catch(() => undefined);
+								}
+								setSelected(session);
 							}}
-							nodeTypes={nodeTypes}
-							edgeTypes={edgeTypes}
-							ariaLabelConfig={ariaLabelConfig}
-							nodesConnectable={false}
-							deleteKeyCode={null}
-							fitView
-							minZoom={0.55}
-							maxZoom={1.8}
-							colorMode="dark"
-							proOptions={{hideAttribution: true}}
-						>
-							<Background color="var(--border-faint)" gap={24} size={1} />
-							<Controls showInteractive={false} />
-						</ReactFlow>
+						/>
 					</div>
 
 					{view.state === undefined ? null : (
-						<section
+						<Surface
+							as="section"
 							id="discovery-state"
 							className="state-panel"
 							data-tone={view.tone}
 							aria-labelledby="state-title"
+							tone="default"
+							elevation="overlay"
+							radius="lg"
+							padding="lg"
+							border
 						>
 							<p className="state-panel__eyebrow">{view.state.eyebrow}</p>
 							<h2 id="state-title">{view.state.title}</h2>
@@ -493,15 +417,15 @@ export function TuvalApp() {
 									))}
 								</ul>
 							)}
-							<button
+							<Button
 								id="state-action"
-								className="control-button control-button--primary"
+								variant="primary"
 								type="button"
 								onClick={() => void discover()}
 							>
 								{view.state.action}
-							</button>
-						</section>
+							</Button>
+						</Surface>
 					)}
 
 					<p className="canvas-help">

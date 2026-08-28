@@ -1,6 +1,7 @@
 import {strict as assert} from "node:assert";
 import {describe, it} from "@effect/vitest";
 import {
+	reconcileRelationshipEdges,
 	reconcileSessionNodes,
 	toRelationshipEdges,
 	toSessionNodes,
@@ -51,5 +52,19 @@ describe("Tuval React Flow adapter", () => {
 				data: {},
 			},
 		]);
+	});
+
+	it("keeps React Flow edge interaction fields while refreshing relationship data", () => {
+		const root = session("root", "/work/root");
+		const child = session("child", "/work/child", "root");
+		const [initial] = toRelationshipEdges([root, child]);
+		assert.ok(initial);
+		const selected = {...initial, selected: true, animated: true, zIndex: 7};
+		const [updated] = reconcileRelationshipEdges([selected], [root, child]);
+		assert.ok(updated);
+		assert.equal(updated.selected, true);
+		assert.equal(updated.animated, true);
+		assert.equal(updated.zIndex, 7);
+		assert.equal(updated.ariaLabel, "root oturumundan child oturumuna ilişki");
 	});
 });

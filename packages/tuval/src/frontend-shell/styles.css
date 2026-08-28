@@ -47,6 +47,21 @@
 	--radius-lg: 12px;
 	--radius-pill: 999px;
 	--control-min: 36px;
+	--tap-min: var(--control-min);
+	--s-1: var(--space-1);
+	--s-2: var(--space-2);
+	--s-3: var(--space-3);
+	--s-4: var(--space-4);
+	--s-5: var(--space-5);
+	--s-6: var(--space-6);
+	--s-7: var(--space-8);
+	--s-8: var(--space-10);
+	--r-sm: var(--radius-sm);
+	--r-md: var(--radius-md);
+	--r-lg: var(--radius-lg);
+	--accent-9: var(--accent);
+	--motion-fast: 80ms;
+	--ease-standard: ease-out;
 	--topbar-height: 72px;
 	--node-width: 248px;
 	--pane-width: min(456px, calc(100vw - var(--space-8)));
@@ -222,33 +237,6 @@ button:disabled {
 	font: var(--t-micro);
 }
 
-.control-button {
-	min-width: var(--control-min);
-	min-height: var(--control-min);
-	padding: var(--space-2) var(--space-3);
-	border: 1px solid var(--border);
-	border-radius: var(--radius-md);
-	background: var(--surface-raised);
-	color: var(--text-primary);
-	font-weight: 620;
-	cursor: pointer;
-}
-
-.control-button:hover:not(:disabled) {
-	border-color: var(--border-strong);
-	background: color-mix(in oklch, var(--surface-raised), var(--accent-faint) 28%);
-}
-
-.control-button--primary {
-	border-color: transparent;
-	background: var(--accent);
-	color: var(--accent-fg);
-}
-
-.control-button--primary:hover:not(:disabled) {
-	background: color-mix(in oklch, var(--accent), var(--text-primary) 12%);
-}
-
 .workspace {
 	position: relative;
 	min-height: 0;
@@ -298,11 +286,6 @@ button:disabled {
 	gap: var(--space-1) var(--space-3);
 	width: var(--node-width);
 	min-height: 132px;
-	padding: var(--space-4);
-	border: 1px solid var(--border);
-	border-radius: var(--radius-lg);
-	background: color-mix(in oklch, var(--surface-raised), transparent 4%);
-	box-shadow: var(--shadow-raised);
 	color: var(--text-primary);
 	text-align: left;
 }
@@ -382,31 +365,14 @@ button:disabled {
 	stroke: var(--accent);
 }
 
-.react-flow__controls {
-	top: var(--space-4);
-	bottom: auto;
-	left: var(--space-4);
+.canvas-controls {
 	display: flex;
 	gap: var(--space-2);
-	padding: var(--space-2);
-	border: 1px solid var(--border);
-	border-radius: var(--radius-lg);
-	background: color-mix(in oklch, var(--surface), transparent 5%);
-	box-shadow: var(--shadow-raised);
+	margin: var(--space-4);
 }
 
-.react-flow__controls-button {
-	width: var(--control-min);
-	height: var(--control-min);
-	border: 1px solid var(--border);
-	border-radius: var(--radius-md);
-	background: var(--surface-raised);
-	color: var(--text-primary);
-	fill: currentcolor;
-}
-
-.react-flow__controls-button:hover {
-	background: color-mix(in oklch, var(--surface-raised), var(--accent-faint) 28%);
+.canvas-controls svg {
+	stroke: currentcolor;
 }
 
 .state-panel {
@@ -417,12 +383,7 @@ button:disabled {
 	display: grid;
 	gap: var(--space-3);
 	width: var(--state-width);
-	padding: var(--space-6);
 	transform: translate(-50%, -50%);
-	border: 1px solid var(--border);
-	border-radius: var(--radius-lg);
-	background: color-mix(in oklch, var(--surface), transparent 2%);
-	box-shadow: var(--shadow-overlay);
 	text-align: center;
 }
 
@@ -492,11 +453,11 @@ button:disabled {
 	list-style-position: inside;
 }
 
-.state-panel .control-button {
+.state-panel .kp-btn {
 	justify-self: center;
 }
 
-.state-panel[data-tone="warning"] .control-button {
+.state-panel[data-tone="warning"] .kp-btn {
 	justify-self: start;
 }
 
@@ -534,11 +495,6 @@ kbd {
 	grid-template-rows: auto auto auto minmax(0, 1fr) auto;
 	gap: var(--space-3);
 	width: var(--pane-width);
-	padding: var(--space-4);
-	border: 1px solid var(--border);
-	border-radius: var(--radius-lg);
-	background: color-mix(in oklch, var(--surface), transparent 2%);
-	box-shadow: var(--shadow-overlay);
 	animation: pane-in 180ms ease-out;
 }
 
@@ -582,10 +538,6 @@ kbd {
 	display: grid;
 	grid-template-columns: auto minmax(0, 1fr);
 	gap: var(--space-1) var(--space-2);
-	padding: var(--space-2) var(--space-3);
-	border: 1px solid var(--border);
-	border-radius: var(--radius-md);
-	background: var(--surface-raised);
 }
 
 .chat-connection::before {
@@ -651,15 +603,10 @@ kbd {
 	display: grid;
 	gap: var(--space-2);
 	max-width: 92%;
-	padding: var(--space-3);
-	border: 1px solid var(--border-faint);
-	border-radius: var(--radius-lg);
-	background: var(--surface-raised);
 }
 
 .transcript-entry[data-role="user"] {
 	justify-self: end;
-	background: color-mix(in oklch, var(--surface-raised), var(--accent-faint) 32%);
 }
 
 .transcript-entry header {
@@ -702,19 +649,8 @@ kbd {
 }
 
 .chat-empty {
-	display: grid;
-	place-content: center;
-	gap: var(--space-2);
 	min-height: 120px;
 	padding: var(--space-5);
-	border: 1px dashed var(--border);
-	border-radius: var(--radius-lg);
-	color: var(--text-muted);
-	text-align: center;
-}
-
-.chat-empty strong {
-	color: var(--text-secondary);
 }
 
 .composer-shell {
@@ -767,7 +703,7 @@ kbd {
 	color: var(--text-secondary);
 }
 
-.composer-shell .control-button {
+.composer-shell .kp-btn {
 	grid-column: 2;
 	grid-row: 2;
 	align-self: end;

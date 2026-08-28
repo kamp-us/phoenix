@@ -5,19 +5,20 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {expect, type Page, type Route, test} from "@playwright/test";
 import type {DiscoveredSession, DiscoveryOutcome} from "../../src/shared/discovery.js";
-import type {AttachedLiveSession, LiveSessionEvent} from "../../src/shared/live-session.js";
+import type {AttachedLiveSession} from "../../src/shared/live-session.js";
 
 let processRoot = "";
 let tuval: ChildProcess | undefined;
 let tuvalUrl = "";
 
-const session = (id: string, cwd: string): DiscoveredSession => ({
+const session = (id: string, cwd: string, parentSessionId?: string): DiscoveredSession => ({
 	identity: `pi:${id}` as DiscoveredSession["identity"],
 	piSessionId: id,
 	createdAt: Date.parse("2026-08-27T12:00:00.000Z"),
 	updatedAt: Date.parse("2026-08-27T12:04:00.000Z"),
 	cwd,
 	sourceFile: `/controlled/${id}.jsonl`,
+	...(parentSessionId === undefined ? {} : {parentSessionId}),
 });
 
 const liveSession = (
@@ -168,7 +169,7 @@ const installEventSource = async (page: Page): Promise<void> => {
 	});
 };
 
-const emitLive = async (page: Page, event: LiveSessionEvent | string): Promise<void> => {
+const emitLive = async (page: Page, event: unknown): Promise<void> => {
 	await page.evaluate((data) => {
 		const emit = Reflect.get(window, "__tuvalEmit") as ((value: string) => void) | undefined;
 		emit?.(typeof data === "string" ? data : JSON.stringify(data));
@@ -244,7 +245,61 @@ test("the existing tuval process renders the React Flow pan and zoom canvas", as
 	expect(errors).toEqual([]);
 });
 
-test("stable identity updates preserve a moved React Flow node", async ({page}) => {
+test("React Flow renders and operates the complete keyboard relationship contract", async ({
+	page,
+}) => {
+	const errors = pageErrors(page);
+	const root = session("flow-root", "/work/root");
+	const child = session("flow-child", "/work/child", "flow-root");
+	await routeOutcome(page, () => ({_tag: "ready", sessions: [root, child]}));
+	await page.goto(tuvalUrl);
+
+	const rootNode = page.locator('[data-id="pi:flow-root"]');
+	const childNode = page.locator('[data-id="pi:flow-child"]');
+	const edge = page.locator('[data-id="relationship:pi:flow-root:pi:flow-child"]');
+	await expect(rootNode).toHaveAttribute("aria-label", "root oturumu, flow-root");
+	await expect(childNode).toHaveAttribute("aria-label", "child oturumu, flow-child");
+	await expect(edge).toHaveAttribute(
+		"aria-label",
+		"flow-root oturumundan flow-child oturumuna ilişki",
+	);
+	await expect(rootNode).toHaveAttribute("tabindex", "0");
+	await expect(edge).toHaveAttribute("tabindex", "0");
+	await expect(
+		page.locator('[data-nodeid="pi:flow-root"][data-handleid="relation-out"]'),
+	).toHaveCount(1);
+	await expect(
+		page.locator('[data-nodeid="pi:flow-child"][data-handleid="relation-in"]'),
+	).toHaveCount(1);
+
+	const tabLabels: Array<string | null> = [];
+	for (let index = 0; index < 12; index += 1) {
+		await page.keyboard.press("Tab");
+		tabLabels.push(
+			await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? null),
+		);
+	}
+	expect(tabLabels).toContain("root oturumu, flow-root");
+	expect(tabLabels).toContain("child oturumu, flow-child");
+	expect(tabLabels).toContain("flow-root oturumundan flow-child oturumuna ilişki");
+
+	await rootNode.focus();
+	await page.keyboard.press("Enter");
+	await expect(page.locator("aside")).toHaveCount(1);
+	await page.keyboard.press("Escape");
+	await expect(page.locator("aside")).toHaveCount(0);
+	await expect(rootNode).not.toHaveClass(/selected/);
+
+	await childNode.focus();
+	await page.keyboard.press("Enter");
+	const beforeMove = await childNode.getAttribute("style");
+	await page.keyboard.press("ArrowRight");
+	await expect(childNode).not.toHaveAttribute("style", beforeMove ?? "");
+	await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+	expect(errors).toEqual([]);
+});
+
+test("stable identity updates preserve a moved React Flow node and viewport", async ({page}) => {
 	const errors = pageErrors(page);
 	const alpha = session("stable-alpha", "/work/alpha");
 	const beta = session("stable-beta", "/work/beta");
@@ -253,6 +308,17 @@ test("stable identity updates preserve a moved React Flow node", async ({page}) 
 	await routeOutcome(page, () => outcome);
 	await page.goto(tuvalUrl);
 	await expect(page.locator(".react-flow__node")).toHaveCount(2);
+	const pane = page.locator(".react-flow__pane");
+	const viewport = page.locator(".react-flow__viewport");
+	const paneBounds = await pane.boundingBox();
+	expect(paneBounds).not.toBeNull();
+	if (paneBounds !== null) {
+		await page.mouse.move(paneBounds.x + 720, paneBounds.y + 520);
+		await page.mouse.down();
+		await page.mouse.move(paneBounds.x + 776, paneBounds.y + 552);
+		await page.mouse.up();
+	}
+	const viewportPosition = await viewport.getAttribute("style");
 	const alphaNode = page.locator('[data-id="pi:stable-alpha"]');
 	await alphaNode.hover();
 	const bounds = await alphaNode.boundingBox();
@@ -274,6 +340,7 @@ test("stable identity updates preserve a moved React Flow node", async ({page}) 
 	await expect(page.locator('[data-id="pi:stable-beta"]')).toHaveCount(0);
 	await expect(page.locator(".react-flow__node")).toHaveCount(2);
 	expect(/transform:[^;]+/.exec((await alphaNode.getAttribute("style")) ?? "")?.[0]).toBe(position);
+	await expect(viewport).toHaveAttribute("style", viewportPosition ?? "");
 	await expect(alphaNode.locator(".session-node__title")).toHaveText("alpha-renamed");
 	expect(errors).toEqual([]);
 });
@@ -507,7 +574,23 @@ test("ownership, disconnect, malformed stream, and send failures are accessible"
 
 	await selectNode(page, "pi:error-alpha");
 	await expect(page.getByText("Canlı", {exact: true})).toBeVisible();
-	await emitLive(page, "not-json");
+	await emitLive(page, {
+		_tag: "session",
+		sequence: 9,
+		session: {
+			...liveSession("error-alpha"),
+			transcript: [
+				{
+					id: "malformed-tool",
+					role: "assistant",
+					content: [{type: "toolCall", toolCallId: "call-1", toolName: "read"}],
+					timestamp: 2,
+					status: "running",
+				},
+			],
+			lastEventSequence: 9,
+		},
+	});
 	await expect(page.getByRole("alert")).toContainText("Canlı akış okunamadı");
 
 	await selectNode(page, "pi:error-beta");

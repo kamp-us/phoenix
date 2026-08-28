@@ -33,15 +33,17 @@ export function Button({block, icon, pressed, className = "", children, ...rest}
 	return (
 		<MantiButton
 			{...rest}
-			fullWidth={block}
-			leadingIcon={
-				icon ? (
-					<span className="kp-btn__icon" aria-hidden="true">
-						{icon}
-					</span>
-				) : undefined
-			}
-			aria-pressed={pressed}
+			{...(block === undefined ? {} : {fullWidth: block})}
+			{...(icon === undefined
+				? {}
+				: {
+						leadingIcon: (
+							<span className="kp-btn__icon" aria-hidden="true">
+								{icon}
+							</span>
+						),
+					})}
+			{...(pressed === undefined ? {} : {"aria-pressed": pressed})}
 			className={`kp-btn ${className}`.trim()}
 		>
 			{children}

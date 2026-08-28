@@ -26,9 +26,12 @@
 		"@effect/platform-node": "catalog:",
 		"@kampus/composer": "workspace:*",
 		"@kampus/fate-effect": "workspace:*",
+		"@manti-ui/react": "catalog:",
+		"@manti-ui/styles": "catalog:",
 		"@nkzw/fate": "catalog:",
 		"@xyflow/react": "catalog:",
 		"effect": "catalog:",
+		"lucide-react": "catalog:",
 		"react": "catalog:",
 		"react-dom": "catalog:"
 	},
