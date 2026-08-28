@@ -131,13 +131,15 @@ test("packaged builder and reviewer inherit the canonical project contract and k
 			skills: ["review"],
 		});
 
-		const agentsLink = join(REPO_ROOT, "AGENTS.md");
-		assert.ok(lstatSync(agentsLink).isSymbolicLink(), "AGENTS.md must be a symlink");
-		assert.equal(readlinkSync(agentsLink), "CLAUDE.md");
+		const agentsFile = join(REPO_ROOT, "AGENTS.md");
+		const claudeLink = join(REPO_ROOT, "CLAUDE.md");
+		assert.ok(lstatSync(agentsFile).isFile(), "AGENTS.md must be the canonical regular file");
+		assert.ok(lstatSync(claudeLink).isSymbolicLink(), "CLAUDE.md must be a symlink");
+		assert.equal(readlinkSync(claudeLink), "AGENTS.md");
 		assert.equal(
-			readFileSync(agentsLink, "utf8"),
-			readFileSync(join(REPO_ROOT, "CLAUDE.md"), "utf8"),
-			"the inherited AGENTS.md contract must resolve to canonical CLAUDE.md contents",
+			readFileSync(claudeLink, "utf8"),
+			readFileSync(agentsFile, "utf8"),
+			"the inherited CLAUDE.md contract must resolve to canonical AGENTS.md contents",
 		);
 	} finally {
 		rmSync(fx.root, {recursive: true, force: true});
