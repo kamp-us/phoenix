@@ -150,17 +150,15 @@ const focusCanvasNode = (identity: string): void => {
 	});
 };
 
-const focusCanvas = (): void => {
-	requestAnimationFrame(() => document.querySelector<HTMLElement>("#canvas")?.focus());
-};
-
 export function TuvalApp() {
 	const [outcome, setOutcome] = useState<DiscoveryOutcome | null>(null);
 	const [nodes, setNodes] = useState<ReadonlyArray<SessionCanvasNode>>([]);
 	const [edges, setEdges] = useState<ReadonlyArray<SessionRelationshipEdge>>([]);
 	const [selected, setSelected] = useState<DiscoveredSession | null>(null);
 	const [pane, setPane] = useState<PaneState>({connection: "pending", session: null});
+	const [discovering, setDiscovering] = useState(false);
 	const discoveryGeneration = useRef(0);
+	const discoveryInFlight = useRef(false);
 	const selectionGeneration = useRef(0);
 	const ignoreSelectionChange = useRef(false);
 	const selectedRef = useRef<DiscoveredSession | null>(null);
@@ -217,13 +215,18 @@ export function TuvalApp() {
 			selectedRef.current = null;
 			setSelected(null);
 			setOutcome(next);
-			ignoreSelectionChange.current = false;
-			focusCanvas();
+			requestAnimationFrame(() => {
+				ignoreSelectionChange.current = false;
+				document.querySelector<HTMLElement>("#canvas")?.focus();
+			});
 		},
 		[],
 	);
 
 	const discover = useCallback(async (): Promise<void> => {
+		if (discoveryInFlight.current) return;
+		discoveryInFlight.current = true;
+		setDiscovering(true);
 		const generation = ++discoveryGeneration.current;
 		try {
 			await applyDiscovery(await discoverSessions(), generation);
@@ -236,6 +239,9 @@ export function TuvalApp() {
 				},
 				generation,
 			);
+		} finally {
+			discoveryInFlight.current = false;
+			setDiscovering(false);
 		}
 	}, [applyDiscovery]);
 
@@ -426,6 +432,7 @@ export function TuvalApp() {
 					id="refresh-sessions"
 					variant="secondary"
 					type="button"
+					disabled={discovering}
 					onClick={() => void discover()}
 				>
 					Oturumları yenile
@@ -486,6 +493,7 @@ export function TuvalApp() {
 								id="state-action"
 								variant="primary"
 								type="button"
+								disabled={discovering}
 								onClick={() => void discover()}
 							>
 								{view.state.action}

@@ -184,8 +184,11 @@ const disconnectLive = async (page: Page): Promise<void> => {
 };
 
 const selectNode = async (page: Page, identity: string): Promise<void> => {
-	await page.locator(`[data-id="${identity}"]`).focus();
-	await page.keyboard.press("Enter");
+	await page.locator(`[data-id="${identity}"]`).evaluate((node) => {
+		if (!(node instanceof HTMLElement)) throw new Error("session node is not focusable");
+		node.focus();
+		node.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", code: "Enter", bubbles: true}));
+	});
 };
 
 const pageErrors = (page: Page): Array<string> => {
@@ -534,16 +537,19 @@ for (const refreshCase of clearingRefreshCases) {
 	});
 }
 
-test("an older overlapping refresh cannot clear a session retained by the newer refresh", async ({
+test("discovery remains serialized through a stateful release and its live event", async ({
 	page,
 }) => {
 	const errors = pageErrors(page);
 	await installEventSource(page);
 	const selectedSession = session("overlap-selected", "/work/selected");
 	const newerSession = session("overlap-newer", "/work/newer");
+	let attachment: string | null = null;
 	let discoveryCalls = 0;
 	let discoveryResponses = 0;
 	let releaseCalls = 0;
+	let releasedEvents = 0;
+	let sequence = 4;
 	let releaseStarted: (() => void) | undefined;
 	let finishRelease: (() => void) | undefined;
 	const releaseRequest = new Promise<void>((resolve) => {
@@ -572,33 +578,136 @@ test("an older overlapping refresh cannot clear a session retained by the newer 
 			return;
 		}
 		if (operation?.name === "liveSession.attach") {
-			await fulfill(route, id, {_tag: "attached", session: liveSession("overlap-selected")});
+			const input = operation.input as {readonly sessionId: string};
+			attachment = input.sessionId;
+			await fulfill(route, id, {_tag: "attached", session: liveSession(input.sessionId)});
 			return;
 		}
 		releaseCalls += 1;
+		const releasedSessionId = attachment;
+		attachment = null;
+		if (releasedSessionId !== null) {
+			releasedEvents += 1;
+			await emitLive(page, {
+				_tag: "released",
+				sequence: ++sequence,
+				sessionId: releasedSessionId,
+			});
+		}
 		releaseStarted?.();
 		await releaseGate;
-		await fulfill(route, id, {_tag: "released", sessionId: "overlap-selected"});
+		await fulfill(route, id, {_tag: "released", sessionId: releasedSessionId});
 	});
 	await page.goto(tuvalUrl);
 	await selectNode(page, "pi:overlap-selected");
 	await expect(page.locator("#chat-title")).toHaveText("selected");
+	await expect.poll(() => attachment).toBe("overlap-selected");
 
-	await page.getByRole("button", {name: "Oturumları yenile"}).click();
+	const refresh = page.getByRole("button", {name: "Oturumları yenile"});
+	await refresh.evaluate((button) => {
+		if (!(button instanceof HTMLButtonElement)) throw new Error("refresh control is not a button");
+		button.click();
+		button.click();
+	});
 	await releaseRequest;
-	await page.getByRole("button", {name: "Oturumları yenile"}).click();
-	await expect.poll(() => discoveryResponses).toBe(3);
-	await expect(page.locator('[data-id="pi:overlap-newer"]')).toBeVisible();
-	await expect(page.locator("#chat-title")).toHaveText("selected");
+
+	await expect(refresh).toBeDisabled();
+	await expect.poll(() => discoveryCalls).toBe(2);
+	expect(discoveryResponses).toBe(2);
+	expect(releaseCalls).toBe(1);
+	expect(releasedEvents).toBe(1);
+	expect(attachment).toBeNull();
+	await expect(page.getByRole("alert")).toContainText("Oturum sahipliği bırakıldı.");
 
 	finishRelease?.();
-	await expect.poll(() => releaseCalls).toBe(1);
-	await expect(page.locator("aside")).toHaveCount(1);
-	await expect(page.locator("#chat-title")).toHaveText("selected");
-	await expect(page.getByText("Canlı", {exact: true})).toBeVisible();
-	await expect(page.locator("#status-label")).toHaveText("Bağlı");
-	await expect(page.locator('[data-id="pi:overlap-newer"]')).toBeVisible();
-	await expect(page.getByRole("button", {name: "Oturumları yenile"})).toBeFocused();
+	await expect(page.locator("aside")).toHaveCount(0);
+	await expect(page.locator("#status-label")).toHaveText("Oturum yok");
+	await expect(refresh).toBeEnabled();
+	expect(discoveryResponses).toBe(2);
+	expect(releasedEvents).toBe(1);
+	expect(attachment).toBeNull();
+	expect(errors).toEqual([]);
+});
+
+test("Composer keeps its keyboard focus ring visible while the editor scrolls", async ({
+	page,
+}, testInfo) => {
+	const errors = pageErrors(page);
+	await installEventSource(page);
+	const selectedSession = session("focus-selected", "/work/focus");
+	await page.route("**/fate", async (route) => {
+		const body = route.request().postDataJSON() as {
+			readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
+		};
+		const operation = body.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		if (operation?.name === "discovery") {
+			await fulfill(route, id, {_tag: "ready", sessions: [selectedSession]});
+			return;
+		}
+		if (operation?.name === "liveSession.attach") {
+			await fulfill(route, id, {_tag: "attached", session: liveSession("focus-selected")});
+			return;
+		}
+		await fulfill(route, id, {_tag: "released", sessionId: "focus-selected"});
+	});
+	await page.goto(tuvalUrl);
+	await selectNode(page, "pi:focus-selected");
+
+	const editor = page.getByRole("textbox", {name: "İstem"});
+	await editor.focus();
+	await expect(editor).toBeFocused();
+	const focusPaint = await editor.evaluate((element) => {
+		const shell = element.closest(".tuval-composer");
+		if (!(shell instanceof HTMLElement)) throw new Error("Composer shell is missing");
+		const editorStyle = getComputedStyle(element);
+		const shellStyle = getComputedStyle(shell);
+		return {
+			outlineWidth: editorStyle.outlineWidth,
+			outlineStyle: editorStyle.outlineStyle,
+			outlineOffset: editorStyle.outlineOffset,
+			editorOverflowY: editorStyle.overflowY,
+			editorMaxHeight: editorStyle.maxHeight,
+			shellOverflowX: shellStyle.overflowX,
+			shellOverflowY: shellStyle.overflowY,
+		};
+	});
+	expect(focusPaint).toEqual({
+		outlineWidth: "2px",
+		outlineStyle: "solid",
+		outlineOffset: "2px",
+		editorOverflowY: "auto",
+		editorMaxHeight: "180px",
+		shellOverflowX: "visible",
+		shellOverflowY: "visible",
+	});
+
+	const composerBox = await page.locator(".tuval-composer").boundingBox();
+	if (composerBox === null) throw new Error("Composer did not render");
+	const evidenceInset = 6;
+	await testInfo.attach("composer-focus-ring", {
+		body: await page.screenshot({
+			clip: {
+				x: composerBox.x - evidenceInset,
+				y: composerBox.y - evidenceInset,
+				width: composerBox.width + evidenceInset * 2,
+				height: composerBox.height + evidenceInset * 2,
+			},
+		}),
+		contentType: "image/png",
+	});
+
+	await editor.fill(Array.from({length: 30}, (_, index) => `satır ${index + 1}`).join("\n"));
+	const scrollState = await editor.evaluate((element) => {
+		element.scrollTop = element.scrollHeight;
+		return {
+			clientHeight: element.clientHeight,
+			scrollHeight: element.scrollHeight,
+			scrollTop: element.scrollTop,
+		};
+	});
+	expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight);
+	expect(scrollState.scrollTop).toBeGreaterThan(0);
 	expect(errors).toEqual([]);
 });
 

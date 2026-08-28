@@ -668,8 +668,7 @@ kbd {
 
 .tuval-composer {
 	min-height: 80px;
-	max-height: 180px;
-	overflow: auto;
+	overflow: visible;
 	border: 1px solid var(--border);
 	border-radius: var(--radius-md);
 	background: var(--surface-sunken);
@@ -682,7 +681,9 @@ kbd {
 
 .tuval-composer .ProseMirror {
 	min-height: 80px;
+	max-height: 180px;
 	padding: var(--space-3);
+	overflow: auto;
 }
 
 .tuval-composer .ProseMirror p {
