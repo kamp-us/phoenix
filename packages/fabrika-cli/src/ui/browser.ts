@@ -11,6 +11,11 @@
  *
  * A missing browser provision surfaces here as `Unknown` carrying the exact remediation command —
  * never a silent skip, and never a "surface is fine" reading.
+ *
+ * The context is fresh per shot — isolation is the point — so a repo whose surfaces sit behind a
+ * login seeds it from the harness's `storageState` file. The verb has already proven that file
+ * exists; a session that is present but expired lands the login page, which the surface's own
+ * assertions catch.
  */
 import {mkdir, writeFile} from "node:fs/promises";
 import {dirname} from "node:path";
@@ -36,7 +41,12 @@ const isProvisionFailure = (message: string): boolean =>
 	message.includes("Executable doesn't exist") || message.includes("playwright install");
 
 const shoot = async (browser: Browser, request: ShotRequest): Promise<ShotOutcome> => {
-	const context = await attempt(browser.newContext({viewport: {...request.viewport}}));
+	const context = await attempt(
+		browser.newContext({
+			viewport: {...request.viewport},
+			...(request.storageState === null ? {} : {storageState: request.storageState}),
+		}),
+	);
 	if (context instanceof Error) return {_tag: "Unknown", reason: context.message};
 	const page = await attempt(context.newPage());
 	if (page instanceof Error) return {_tag: "Unknown", reason: page.message};
