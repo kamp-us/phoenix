@@ -1,65 +1,55 @@
 # Tuval
 
-A localhost-only workspace for discovering and opening installed
-[pi](https://github.com/badlogic/pi-mono) sessions.
+Tuval is a localhost-only workspace for discovering and opening installed
+[pi](https://github.com/badlogic/pi-mono) sessions without adding a Phoenix production route.
 
-## What it is
+## Package layout
 
-Tuval is a single-process Node application with three boundaries:
+| Path | Responsibility |
+| --- | --- |
+| `src/backend/` | Loopback HTTP server, pi session discovery, and fate endpoint |
+| `src/frontend-shell/` | Static placeholder served by the backend |
+| `src/shared/` | Frontend-independent discovery schema and stable session identities |
 
-- `src/backend/` starts the loopback HTTP server, discovers pi sessions, and exposes discovery
-  through fate.
-- `src/frontend-shell/` is the static placeholder served by that server.
-- `src/shared/` owns the frontend-independent discovery schema and stable session identities.
+## Runtime interface
 
-The `tuval` executable binds `127.0.0.1`, reports its selected URL after the server is ready, and
-then opens that URL in the default browser. `GET /health` reports readiness, `GET /` serves the
-static shell, and `POST /fate` carries the discovery query.
+The `tuval` executable binds `127.0.0.1`. It reports the selected URL after the server is ready,
+then opens that URL in the default browser unless browser opening is disabled.
 
-## Why it exists
-
-Tuval needs to inspect local pi state without adding a Phoenix production route or coupling its
-wire contract to frontend code. The backend keeps filesystem and framed-CBOR protocol access
-behind the `PiDiscovery` Effect service. Discovery returns explicit `ready`, `empty`,
-`partial-source`, `transport`, or `fatal` outcomes, so one malformed session entry does not erase
-sessions that were read successfully.
-
-## Run it
-
-Build the package, then run its declared binary:
-
-```bash
-pnpm --filter tuval build
-node packages/tuval/dist/backend/bin.js
-```
-
-The server chooses an available port by default. For a fixed port or a headless launch:
-
-```bash
-node packages/tuval/dist/backend/bin.js --port 4310 --no-open
-```
+| Interface | Purpose |
+| --- | --- |
+| `GET /health` | Report server readiness |
+| `GET /` | Serve the static shell |
+| `POST /fate` | Run the discovery query |
+| `--port <port>` | Bind a fixed port instead of selecting an available port |
+| `--no-open` | Start without opening a browser |
 
 Session discovery reads `PI_CODING_AGENT_SESSION_DIR` when set. Otherwise it reads the `sessions`
 directory beneath `PI_CODING_AGENT_DIR`, falling back to `~/.pi/agent/sessions`.
 
-## Use the discovery contract
+## Discovery contract
 
-The package exports its Effect Schema contract from `tuval/discovery`:
+The package exports `DiscoveryOutcome` and `sessionIdentity` from `tuval/discovery`.
+`sessionIdentity(piSessionId)` returns the stable `pi:<session-id>` identity used by successful
+outcomes.
 
-```ts
-import {DiscoveryOutcome, sessionIdentity} from "tuval/discovery";
-```
+| Outcome | Meaning |
+| --- | --- |
+| `ready` | Every readable source completed successfully |
+| `empty` | Discovery completed without sessions |
+| `partial-source` | Readable sessions remain available alongside source problems |
+| `transport` | The pi protocol transport failed |
+| `fatal` | Discovery could not produce a usable result |
 
-`sessionIdentity(piSessionId)` produces the stable `pi:<session-id>` identity used by every
-successful discovery outcome.
+Filesystem and framed-CBOR access sit behind the `PiDiscovery` Effect service. A malformed session
+entry is reported as a source problem without discarding sessions that were read successfully.
 
-## Develop it
+## Commands
 
-```bash
-pnpm --filter tuval typecheck
-pnpm --filter tuval test
-```
+| Command | Purpose |
+| --- | --- |
+| `pnpm --filter tuval build` | Build the executable and copy static files |
+| `pnpm --filter tuval typecheck` | Check TypeScript types |
+| `pnpm --filter tuval test` | Build and run unit and integration tests |
 
-The test command builds the executable and runs the unit and integration suites for protocol
-framing, identity, malformed-source isolation, loopback binding, readiness order, static serving,
-and startup failures.
+See [DEVELOPMENT.md](./DEVELOPMENT.md) for local workflows.
