@@ -42,11 +42,36 @@ export const ContinuityObservation = Schema.Struct({
 });
 export type ContinuityObservation = (typeof ContinuityObservation)["Type"];
 
+export const AuthoritativeParentReference = Schema.Union([
+	Schema.Struct({kind: Schema.Literal("none")}),
+	Schema.Struct({kind: Schema.Literal("run"), value: Schema.String}),
+	Schema.Struct({kind: Schema.Literal("session"), value: Schema.String}),
+]);
+export type AuthoritativeParentReference = (typeof AuthoritativeParentReference)["Type"];
+
+export const RunOwnership = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literal("wrapper"),
+		runId: Schema.String,
+		session: SessionIdentity,
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("observation"),
+		runId: Schema.String,
+		session: SessionIdentity,
+		parentReference: AuthoritativeParentReference,
+		parent: Schema.optionalKey(SessionIdentity),
+		observedAt: Schema.Finite,
+	}),
+]);
+export type RunOwnership = (typeof RunOwnership)["Type"];
+
 export const LineageStoreDocument = Schema.Struct({
-	version: Schema.Literal(1),
+	version: Schema.Literal(2),
 	nodes: Schema.Array(LineageNode),
 	edges: Schema.Array(LineageEdge),
 	continuity: Schema.Array(ContinuityObservation),
+	ownership: Schema.Array(RunOwnership),
 });
 export type LineageStoreDocument = (typeof LineageStoreDocument)["Type"];
 
@@ -73,6 +98,7 @@ export interface LineageRecords {
 	readonly nodes: ReadonlyArray<LineageNode>;
 	readonly edges: ReadonlyArray<LineageEdge>;
 	readonly continuity: ReadonlyArray<ContinuityObservation>;
+	readonly ownership?: ReadonlyArray<RunOwnership>;
 }
 
 export class LineageConflictError extends Schema.TaggedErrorClass<LineageConflictError>()(
@@ -81,10 +107,35 @@ export class LineageConflictError extends Schema.TaggedErrorClass<LineageConflic
 ) {}
 
 export const emptyLineageStore = (): LineageStoreDocument => ({
-	version: 1,
+	version: 2,
 	nodes: [],
 	edges: [],
 	continuity: [],
+	ownership: [],
+});
+
+const conflict = (recordId: string, message: string): Result.Result<never, LineageConflictError> =>
+	Result.fail(new LineageConflictError({recordId, message}));
+
+const decodeRecord = <A>(
+	schema: Schema.Codec<A, unknown, never, never>,
+	value: unknown,
+	recordId: string,
+): Result.Result<A, LineageConflictError> => {
+	const decoded = Schema.decodeUnknownResult(schema)(value);
+	return Result.isFailure(decoded)
+		? conflict(recordId, `Lineage record ${recordId} is structurally invalid`)
+		: Result.succeed(decoded.success);
+};
+
+const canonicalDocument = (document: LineageStoreDocument): LineageStoreDocument => ({
+	version: 2,
+	nodes: document.nodes
+		.map((node) => ({...node, sourceFiles: [...new Set(node.sourceFiles)].sort()}))
+		.sort((left, right) => left.id.localeCompare(right.id)),
+	edges: [...document.edges].sort((left, right) => left.id.localeCompare(right.id)),
+	continuity: [...document.continuity].sort((left, right) => left.id.localeCompare(right.id)),
+	ownership: [...document.ownership].sort((left, right) => left.runId.localeCompare(right.runId)),
 });
 
 const mergeNode = (
@@ -92,12 +143,7 @@ const mergeNode = (
 	right: LineageNode,
 ): Result.Result<LineageNode, LineageConflictError> => {
 	if (left.piSessionId !== right.piSessionId) {
-		return Result.fail(
-			new LineageConflictError({
-				recordId: left.id,
-				message: `Session ${left.id} maps to conflicting pi session ids`,
-			}),
-		);
+		return conflict(left.id, `Session ${left.id} maps to conflicting pi session ids`);
 	}
 	const latest =
 		left.updatedAt > right.updatedAt ||
@@ -125,25 +171,13 @@ const mergeFork = (
 	right: ForkLineageEdge,
 ): Result.Result<ForkLineageEdge, LineageConflictError> => {
 	if (left.child !== right.child) {
-		return Result.fail(
-			new LineageConflictError({
-				recordId: left.id,
-				message: `Fork edge ${left.id} maps to conflicting children`,
-			}),
-		);
+		return conflict(left.id, `Fork edge ${left.id} maps to conflicting children`);
 	}
-	if (left.parent === right.parent) {
+	if (left.parent === right.parent)
 		return Result.succeed(left.source === "protocol" ? left : right);
-	}
-	if (left.source !== right.source) {
+	if (left.source !== right.source)
 		return Result.succeed(left.source === "protocol" ? left : right);
-	}
-	return Result.fail(
-		new LineageConflictError({
-			recordId: left.id,
-			message: `Fork edge ${left.id} has conflicting ${left.source} parents`,
-		}),
-	);
+	return conflict(left.id, `Fork edge ${left.id} has conflicting ${left.source} parents`);
 };
 
 const mergeEdge = (
@@ -154,12 +188,7 @@ const mergeEdge = (
 	if (left.kind === "spawn" && right.kind === "spawn" && sameSpawn(left, right)) {
 		return Result.succeed(left);
 	}
-	return Result.fail(
-		new LineageConflictError({
-			recordId: left.id,
-			message: `Lineage edge ${left.id} has conflicting observations`,
-		}),
-	);
+	return conflict(left.id, `Lineage edge ${left.id} has conflicting observations`);
 };
 
 const mergeContinuity = (
@@ -171,15 +200,47 @@ const mergeContinuity = (
 	left.parent === right.parent &&
 	left.observedAt === right.observedAt
 		? Result.succeed(left)
-		: Result.fail(
-				new LineageConflictError({
-					recordId: left.id,
-					message: `Continuity observation ${left.id} has conflicting values`,
-				}),
-			);
+		: conflict(left.id, `Continuity observation ${left.id} has conflicting values`);
 
-const conflict = (recordId: string, message: string): Result.Result<never, LineageConflictError> =>
-	Result.fail(new LineageConflictError({recordId, message}));
+const sameParentReference = (
+	left: AuthoritativeParentReference,
+	right: AuthoritativeParentReference,
+): boolean =>
+	left.kind === right.kind &&
+	(left.kind === "none" || (right.kind !== "none" && left.value === right.value));
+
+const mergeOwnership = (
+	left: RunOwnership,
+	right: RunOwnership,
+): Result.Result<RunOwnership, LineageConflictError> => {
+	if (left.session !== right.session) {
+		return conflict(left.runId, `Run ${left.runId} maps to conflicting sessions`);
+	}
+	if (left.kind === "wrapper") return Result.succeed(right);
+	if (right.kind === "wrapper") return Result.succeed(left);
+	return left.observedAt === right.observedAt &&
+		left.parent === right.parent &&
+		sameParentReference(left.parentReference, right.parentReference)
+		? Result.succeed(left)
+		: conflict(left.runId, `Run ${left.runId} has conflicting authoritative observations`);
+};
+
+const cycleFrom = (
+	start: string,
+	adjacency: ReadonlyMap<string, ReadonlyArray<string>>,
+	visiting: Set<string>,
+	visited: Set<string>,
+): boolean => {
+	if (visiting.has(start)) return true;
+	if (visited.has(start)) return false;
+	visiting.add(start);
+	for (const child of adjacency.get(start) ?? []) {
+		if (cycleFrom(child, adjacency, visiting, visited)) return true;
+	}
+	visiting.delete(start);
+	visited.add(start);
+	return false;
+};
 
 export const validateLineageStore = (
 	document: LineageStoreDocument,
@@ -190,6 +251,9 @@ export const validateLineageStore = (
 	for (const node of document.nodes) {
 		if (!Number.isFinite(node.createdAt) || !Number.isFinite(node.updatedAt)) {
 			return conflict(node.id, `Session node ${node.id} has a non-finite timestamp`);
+		}
+		if (node.createdAt > node.updatedAt) {
+			return conflict(node.id, `Session node ${node.id} has a backward time interval`);
 		}
 		if (node.piSessionId.trim().length === 0) {
 			return conflict(node.id, `Session node ${node.id} has an empty pi session id`);
@@ -215,64 +279,98 @@ export const validateLineageStore = (
 		}
 	}
 
+	const ownershipByRun = new Map<string, RunOwnership>();
+	for (const ownership of document.ownership) {
+		if (ownership.runId.trim().length === 0) {
+			return conflict(ownership.runId, "Run ownership has an empty run id");
+		}
+		if (ownershipByRun.has(ownership.runId)) {
+			return conflict(ownership.runId, `Run ${ownership.runId} has duplicate durable ownership`);
+		}
+		if (!nodeIds.has(ownership.session)) {
+			return conflict(ownership.runId, `Run ${ownership.runId} owns an unknown session`);
+		}
+		if (ownership.kind === "observation") {
+			if (!Number.isFinite(ownership.observedAt)) {
+				return conflict(ownership.runId, `Run ${ownership.runId} has a non-finite timestamp`);
+			}
+			if (ownership.parent !== undefined && !nodeIds.has(ownership.parent)) {
+				return conflict(ownership.runId, `Run ${ownership.runId} has an unknown parent session`);
+			}
+			if (ownership.parentReference.kind === "none" && ownership.parent !== undefined) {
+				return conflict(
+					ownership.runId,
+					`Run ${ownership.runId} has parent data but no parent reference`,
+				);
+			}
+			if (ownership.parentReference.kind !== "none" && ownership.parent === undefined) {
+				return conflict(ownership.runId, `Run ${ownership.runId} lost its resolved parent`);
+			}
+			if (
+				ownership.parentReference.kind !== "none" &&
+				ownership.parentReference.value.trim().length === 0
+			) {
+				return conflict(ownership.runId, `Run ${ownership.runId} has an empty parent reference`);
+			}
+		}
+		ownershipByRun.set(ownership.runId, ownership);
+	}
+
 	const edgeIds = new Set<string>();
-	const runOwners = new Set<string>();
-	const spawnChildren = new Set<string>();
+	const spawnChildren = new Map<string, SpawnLineageEdge>();
+	const adjacency = new Map<string, Array<string>>();
 	for (const edge of document.edges) {
 		if (edgeIds.has(edge.id)) return conflict(edge.id, `Duplicate lineage edge ${edge.id}`);
 		if (!nodeIds.has(edge.parent) || !nodeIds.has(edge.child)) {
 			return conflict(edge.id, `Lineage edge ${edge.id} references an unknown session`);
 		}
-		if (edge.parent === edge.child) {
+		if (edge.parent === edge.child)
 			return conflict(edge.id, `Lineage edge ${edge.id} is a self edge`);
-		}
-		if (edge.kind === "spawn" && !Number.isFinite(edge.observedAt)) {
-			return conflict(edge.id, `Spawn edge ${edge.id} has a non-finite timestamp`);
-		}
 		const expectedId = edge.kind === "spawn" ? `spawn:${edge.runId}` : `fork:${edge.child}`;
-		if (edge.kind === "spawn" && edge.runId.trim().length === 0) {
-			return conflict(edge.id, `Spawn edge ${edge.id} has an empty run id`);
-		}
-		if (edge.kind === "spawn" && spawnChildren.has(edge.child)) {
-			return conflict(edge.child, `Session ${edge.child} has multiple spawn origins`);
-		}
-		if (edge.kind === "spawn" && runOwners.has(edge.runId)) {
-			return conflict(edge.runId, `Run ${edge.runId} has duplicate durable ownership`);
-		}
-		if (edge.kind === "spawn") {
-			runOwners.add(edge.runId);
-			spawnChildren.add(edge.child);
-		}
 		if (edge.id !== expectedId) {
 			return conflict(edge.id, `Lineage edge ${edge.id} has a non-canonical identity`);
 		}
+		if (edge.kind === "spawn") {
+			if (!Number.isFinite(edge.observedAt) || edge.runId.trim().length === 0) {
+				return conflict(edge.id, `Spawn edge ${edge.id} has invalid run data`);
+			}
+			if (spawnChildren.has(edge.child)) {
+				return conflict(edge.child, `Session ${edge.child} has multiple spawn origins`);
+			}
+			const ownership = ownershipByRun.get(edge.runId);
+			if (
+				ownership?.kind !== "observation" ||
+				ownership.session !== edge.child ||
+				ownership.parent !== edge.parent ||
+				ownership.observedAt !== edge.observedAt
+			) {
+				return conflict(edge.runId, `Spawn edge ${edge.id} disagrees with durable run ownership`);
+			}
+			spawnChildren.set(edge.child, edge);
+		}
+		const children = adjacency.get(edge.parent) ?? [];
+		children.push(edge.child);
+		adjacency.set(edge.parent, children);
 		edgeIds.add(edge.id);
+	}
+	const visited = new Set<string>();
+	for (const nodeId of nodeIds) {
+		if (cycleFrom(nodeId, adjacency, new Set(), visited)) {
+			return conflict(nodeId, `Lineage graph contains a cycle through ${nodeId}`);
+		}
 	}
 
 	const continuityIds = new Set<string>();
 	for (const observation of document.continuity) {
-		if (!Number.isFinite(observation.observedAt)) {
+		if (!Number.isFinite(observation.observedAt) || observation.runId.trim().length === 0) {
 			return conflict(
 				observation.id,
-				`Continuity observation ${observation.id} has a non-finite timestamp`,
-			);
-		}
-		if (observation.runId.trim().length === 0) {
-			return conflict(
-				observation.id,
-				`Continuity observation ${observation.id} has an empty run id`,
+				`Continuity observation ${observation.id} has invalid run data`,
 			);
 		}
 		if (continuityIds.has(observation.id)) {
 			return conflict(observation.id, `Duplicate continuity observation ${observation.id}`);
 		}
-		if (runOwners.has(observation.runId)) {
-			return conflict(
-				observation.runId,
-				`Run ${observation.runId} has duplicate durable ownership`,
-			);
-		}
-		runOwners.add(observation.runId);
 		if (!nodeIds.has(observation.session)) {
 			return conflict(
 				observation.id,
@@ -288,29 +386,72 @@ export const validateLineageStore = (
 		if (observation.id !== `resume:${observation.runId}`) {
 			return conflict(observation.id, `Continuity observation ${observation.id} is non-canonical`);
 		}
+		const origin = spawnChildren.get(observation.session);
+		if (origin === undefined || observation.observedAt < origin.observedAt) {
+			return conflict(
+				observation.id,
+				`Continuity observation ${observation.id} precedes its spawn origin`,
+			);
+		}
+		const ownership = ownershipByRun.get(observation.runId);
+		if (
+			ownership?.kind !== "observation" ||
+			ownership.session !== observation.session ||
+			ownership.parent !== observation.parent ||
+			ownership.observedAt !== observation.observedAt
+		) {
+			return conflict(
+				observation.runId,
+				`Continuity ${observation.id} disagrees with durable run ownership`,
+			);
+		}
 		continuityIds.add(observation.id);
 	}
-	return Result.succeed(document);
+	return Result.succeed(canonicalDocument(document));
+};
+
+const validateIncoming = (records: LineageRecords): Result.Result<void, LineageConflictError> => {
+	for (const node of records.nodes) {
+		const decoded = decodeRecord(LineageNode, node, node.id);
+		if (Result.isFailure(decoded)) return Result.fail(decoded.failure);
+		if (node.createdAt > node.updatedAt) {
+			return conflict(node.id, `Session node ${node.id} has a backward time interval`);
+		}
+	}
+	for (const edge of records.edges) {
+		const decoded = decodeRecord(LineageEdge, edge, edge.id);
+		if (Result.isFailure(decoded)) return Result.fail(decoded.failure);
+	}
+	for (const observation of records.continuity) {
+		const decoded = decodeRecord(ContinuityObservation, observation, observation.id);
+		if (Result.isFailure(decoded)) return Result.fail(decoded.failure);
+	}
+	for (const ownership of records.ownership ?? []) {
+		const decoded = decodeRecord(RunOwnership, ownership, ownership.runId);
+		if (Result.isFailure(decoded)) return Result.fail(decoded.failure);
+	}
+	return Result.succeed(undefined);
 };
 
 export const upsertLineageRecords = (
 	current: LineageStoreDocument,
 	incoming: LineageRecords,
 ): Result.Result<LineageStoreDocument, LineageConflictError> => {
-	const nodes = new Map(current.nodes.map((node) => [node.id, node]));
+	const currentValidated = validateLineageStore(current);
+	if (Result.isFailure(currentValidated)) return Result.fail(currentValidated.failure);
+	const incomingValidated = validateIncoming(incoming);
+	if (Result.isFailure(incomingValidated)) return Result.fail(incomingValidated.failure);
+	const nodes = new Map(currentValidated.success.nodes.map((node) => [node.id, node]));
 	const sourceOwners = new Map(
-		current.nodes.flatMap((node) => node.sourceFiles.map((source) => [source, node.id] as const)),
+		currentValidated.success.nodes.flatMap((node) =>
+			node.sourceFiles.map((source) => [source, node.id] as const),
+		),
 	);
 	for (const node of incoming.nodes) {
 		for (const source of node.sourceFiles) {
 			const owner = sourceOwners.get(source);
 			if (owner !== undefined && owner !== node.id) {
-				return Result.fail(
-					new LineageConflictError({
-						recordId: source,
-						message: `Session file ${source} maps to conflicting session identities`,
-					}),
-				);
+				return conflict(source, `Session file ${source} maps to conflicting session identities`);
 			}
 			sourceOwners.set(source, node.id);
 		}
@@ -323,7 +464,7 @@ export const upsertLineageRecords = (
 		}
 	}
 
-	const edges = new Map(current.edges.map((edge) => [edge.id, edge]));
+	const edges = new Map(currentValidated.success.edges.map((edge) => [edge.id, edge]));
 	for (const edge of incoming.edges) {
 		const existing = edges.get(edge.id);
 		if (existing === undefined) edges.set(edge.id, edge);
@@ -335,7 +476,7 @@ export const upsertLineageRecords = (
 	}
 
 	const continuity = new Map(
-		current.continuity.map((observation) => [observation.id, observation]),
+		currentValidated.success.continuity.map((observation) => [observation.id, observation]),
 	);
 	for (const observation of incoming.continuity) {
 		const existing = continuity.get(observation.id);
@@ -347,10 +488,24 @@ export const upsertLineageRecords = (
 		}
 	}
 
+	const ownership = new Map(
+		currentValidated.success.ownership.map((record) => [record.runId, record]),
+	);
+	for (const record of incoming.ownership ?? []) {
+		const existing = ownership.get(record.runId);
+		if (existing === undefined) ownership.set(record.runId, record);
+		else {
+			const merged = mergeOwnership(existing, record);
+			if (Result.isFailure(merged)) return Result.fail(merged.failure);
+			ownership.set(record.runId, merged.success);
+		}
+	}
+
 	return validateLineageStore({
-		version: 1,
-		nodes: [...nodes.values()].sort((left, right) => left.id.localeCompare(right.id)),
-		edges: [...edges.values()].sort((left, right) => left.id.localeCompare(right.id)),
-		continuity: [...continuity.values()].sort((left, right) => left.id.localeCompare(right.id)),
+		version: 2,
+		nodes: [...nodes.values()],
+		edges: [...edges.values()],
+		continuity: [...continuity.values()],
+		ownership: [...ownership.values()],
 	});
 };

@@ -13,6 +13,7 @@ import {
 } from "effect";
 import {type SessionIdentity, sessionIdentity} from "../shared/discovery.js";
 import {
+	type AuthoritativeParentReference,
 	type ContinuityObservation,
 	emptyLineageStore,
 	LineageConflictError,
@@ -23,14 +24,18 @@ import {
 	type LineageRecords,
 	LineageStoreDocument,
 	type LineageStoreDocument as LineageStoreDocumentType,
+	type RunOwnership,
 	upsertLineageRecords,
 	validateLineageStore,
 } from "../shared/lineage.js";
 import {PiDiscovery, type PiSessionMetadataOutcome} from "./pi-discovery.js";
 import {defaultSessionRoots, sessionIdFromFilename} from "./pi-home.js";
 
-const STORE_VERSION = 1;
+const STORE_VERSION = 2;
 const FIRST_LINE_LIMIT = 64 * 1024;
+const STORE_LOCK_STALE_MS = 5 * 60 * 1_000;
+const STORE_LOCK_WAIT_MS = 30 * 1_000;
+const STORE_LOCK_POLL_MS = 25;
 
 const SessionHeader = Schema.Struct({
 	type: Schema.Literal("session"),
@@ -103,29 +108,24 @@ interface RunObservation {
 	readonly runId: string;
 	readonly child: SessionIdentity;
 	readonly observedAt: number;
+	readonly parentReference: AuthoritativeParentReference;
 	readonly parent?: SessionIdentity;
 	readonly source: string;
 }
 
-type AuthoritativeParentReference =
-	| {readonly _tag: "ParentRun"; readonly value: string}
-	| {readonly _tag: "ParentSession"; readonly value: string}
-	| {readonly _tag: "Parentless"};
-
 const authoritativeParentReference = (candidate: RunCandidate): AuthoritativeParentReference =>
 	candidate.parentRunId !== undefined
-		? {_tag: "ParentRun", value: candidate.parentRunId}
+		? {kind: "run", value: candidate.parentRunId}
 		: candidate.parentSessionRef !== undefined
-			? {_tag: "ParentSession", value: candidate.parentSessionRef}
-			: {_tag: "Parentless"};
+			? {kind: "session", value: candidate.parentSessionRef}
+			: {kind: "none"};
 
 const sameAuthoritativeParent = (
 	left: AuthoritativeParentReference,
 	right: AuthoritativeParentReference,
-): boolean => {
-	if (left._tag === "Parentless") return right._tag === "Parentless";
-	return right._tag === left._tag && right.value === left.value;
-};
+): boolean =>
+	left.kind === right.kind &&
+	(left.kind === "none" || (right.kind !== "none" && left.value === right.value));
 
 interface ScannedFiles {
 	readonly files: ReadonlyArray<string>;
@@ -688,51 +688,111 @@ const lineageRecords = (
 	}
 
 	const currentByRun = new Map<string, RunObservation>();
-	for (const edge of current.edges) {
-		if (edge.kind !== "spawn") continue;
-		currentByRun.set(edge.runId, {
-			runId: edge.runId,
-			child: edge.child,
-			parent: edge.parent,
-			observedAt: edge.observedAt,
-			source: "retained lineage store",
-		});
-	}
-	for (const observation of current.continuity) {
-		currentByRun.set(observation.runId, {
-			runId: observation.runId,
-			child: observation.session,
-			...(observation.parent === undefined ? {} : {parent: observation.parent}),
-			observedAt: observation.observedAt,
+	for (const ownership of current.ownership) {
+		if (ownership.kind !== "observation") continue;
+		currentByRun.set(ownership.runId, {
+			runId: ownership.runId,
+			child: ownership.session,
+			parentReference: ownership.parentReference,
+			...(ownership.parent === undefined ? {} : {parent: ownership.parent}),
+			observedAt: ownership.observedAt,
 			source: "retained lineage store",
 		});
 	}
 
-	const parentReferences = new Map<string, AuthoritativeParentReference>();
+	const runSessions = new Map<string, SessionIdentity>(
+		current.ownership.map((ownership) => [ownership.runId, ownership.session]),
+	);
+	const incomingOwnership = new Map<string, RunOwnership>();
+	const insertOwnership = (ownership: RunOwnership): Result.Result<void, LineageConflictError> => {
+		const existing =
+			incomingOwnership.get(ownership.runId) ??
+			current.ownership.find((record) => record.runId === ownership.runId);
+		if (existing === undefined) {
+			incomingOwnership.set(ownership.runId, ownership);
+			runSessions.set(ownership.runId, ownership.session);
+			return Result.succeed(undefined);
+		}
+		if (existing.session !== ownership.session) {
+			return Result.fail(
+				new LineageConflictError({
+					recordId: ownership.runId,
+					message: `Run ${ownership.runId} maps to conflicting sessions`,
+				}),
+			);
+		}
+		if (existing.kind === "observation" && ownership.kind === "observation") {
+			if (
+				existing.observedAt !== ownership.observedAt ||
+				existing.parent !== ownership.parent ||
+				!sameAuthoritativeParent(existing.parentReference, ownership.parentReference)
+			) {
+				return Result.fail(
+					new LineageConflictError({
+						recordId: ownership.runId,
+						message: `Run ${ownership.runId} has conflicting authoritative observations`,
+					}),
+				);
+			}
+			incomingOwnership.set(ownership.runId, existing);
+			return Result.succeed(undefined);
+		}
+		incomingOwnership.set(ownership.runId, existing.kind === "observation" ? existing : ownership);
+		runSessions.set(ownership.runId, ownership.session);
+		return Result.succeed(undefined);
+	};
+
+	const parentFacts = new Map<string, AuthoritativeParentReference>(
+		current.ownership.flatMap((ownership) =>
+			ownership.kind === "observation"
+				? ([[ownership.runId, ownership.parentReference]] as const)
+				: [],
+		),
+	);
 	for (const candidate of candidates) {
 		const reference = authoritativeParentReference(candidate);
-		const existing = parentReferences.get(candidate.runId);
+		const existing = parentFacts.get(candidate.runId);
 		if (existing !== undefined && !sameAuthoritativeParent(existing, reference)) {
 			return Result.fail(
 				new LineageConflictError({
-					recordId: `spawn:${candidate.runId}`,
+					recordId: candidate.runId,
 					message: `Run ${candidate.runId} has conflicting authoritative parent references`,
 				}),
 			);
 		}
-		parentReferences.set(candidate.runId, reference);
+		parentFacts.set(candidate.runId, reference);
 	}
 
-	const runSessions = new Map<string, SessionIdentity>(
-		[...currentByRun].map(([runId, observation]) => [runId, observation.child]),
-	);
+	const candidateChildren = new Map<RunCandidate, SessionIdentity>();
+	const childFacts = new Map<
+		string,
+		{readonly reference: string; readonly child?: SessionIdentity}
+	>();
 	for (const candidate of candidates) {
 		const child = resolveSession(candidate.sessionRef, byFile, knownNodes, path);
+		const fact = childFacts.get(candidate.runId);
+		if (
+			fact !== undefined &&
+			((fact.child !== undefined && child !== undefined && fact.child !== child) ||
+				((fact.child === undefined || child === undefined) &&
+					fact.reference !== candidate.sessionRef))
+		) {
+			return Result.fail(
+				new LineageConflictError({
+					recordId: candidate.runId,
+					message: `Run ${candidate.runId} has conflicting session ownership facts`,
+				}),
+			);
+		}
+		childFacts.set(candidate.runId, {
+			reference: candidate.sessionRef,
+			...(child === undefined ? {} : {child}),
+		});
 		if (child === undefined) {
-			if (currentByRun.has(candidate.runId)) {
+			if (runSessions.has(candidate.runId)) {
 				return Result.fail(
 					new LineageConflictError({
-						recordId: `spawn:${candidate.runId}`,
+						recordId: candidate.runId,
 						message: `Persisted run ${candidate.runId} was rewritten to an unresolved session`,
 					}),
 				);
@@ -744,11 +804,12 @@ const lineageRecords = (
 			});
 			continue;
 		}
+		candidateChildren.set(candidate, child);
 		const existing = runSessions.get(candidate.runId);
 		if (existing !== undefined && existing !== child) {
 			return Result.fail(
 				new LineageConflictError({
-					recordId: `spawn:${candidate.runId}`,
+					recordId: candidate.runId,
 					message: `Run ${candidate.runId} maps to conflicting sessions`,
 				}),
 			);
@@ -758,13 +819,20 @@ const lineageRecords = (
 	for (const candidate of candidates) {
 		if (candidate.parentSessionRef === undefined || candidate.wrapperRunId === undefined) continue;
 		const parent = resolveSession(candidate.parentSessionRef, byFile, knownNodes, path);
-		if (parent !== undefined) runSessions.set(candidate.wrapperRunId, parent);
+		if (parent === undefined) continue;
+		const inserted = insertOwnership({
+			kind: "wrapper",
+			runId: candidate.wrapperRunId,
+			session: parent,
+		});
+		if (Result.isFailure(inserted)) return Result.fail(inserted.failure);
 	}
 
 	const candidateByRun = new Map<string, RunObservation>();
 	for (const candidate of candidates) {
-		const child = runSessions.get(candidate.runId);
+		const child = candidateChildren.get(candidate);
 		if (child === undefined) continue;
+		const parentReference = authoritativeParentReference(candidate);
 		let parent: SessionIdentity | undefined;
 		if (candidate.parentRunId !== undefined) {
 			parent = runSessions.get(candidate.parentRunId);
@@ -772,7 +840,7 @@ const lineageRecords = (
 				if (currentByRun.has(candidate.runId)) {
 					return Result.fail(
 						new LineageConflictError({
-							recordId: `spawn:${candidate.runId}`,
+							recordId: candidate.runId,
 							message: `Persisted run ${candidate.runId} was rewritten with unresolved authoritative parent ${candidate.parentRunId}`,
 						}),
 					);
@@ -790,7 +858,7 @@ const lineageRecords = (
 				if (currentByRun.has(candidate.runId)) {
 					return Result.fail(
 						new LineageConflictError({
-							recordId: `spawn:${candidate.runId}`,
+							recordId: candidate.runId,
 							message: `Persisted run ${candidate.runId} was rewritten with unresolved authoritative parent ${candidate.parentSessionRef}`,
 						}),
 					);
@@ -806,42 +874,36 @@ const lineageRecords = (
 		const observation: RunObservation = {
 			runId: candidate.runId,
 			child,
+			parentReference,
 			observedAt: candidate.observedAt,
 			...(parent === undefined ? {} : {parent}),
 			source: candidate.source,
 		};
+		const inserted = insertOwnership({
+			kind: "observation",
+			runId: observation.runId,
+			session: observation.child,
+			parentReference: observation.parentReference,
+			...(observation.parent === undefined ? {} : {parent: observation.parent}),
+			observedAt: observation.observedAt,
+		});
+		if (Result.isFailure(inserted)) return Result.fail(inserted.failure);
 		const existing = candidateByRun.get(candidate.runId);
 		if (
 			existing !== undefined &&
 			(existing.child !== observation.child ||
 				existing.parent !== observation.parent ||
-				existing.observedAt !== observation.observedAt)
+				existing.observedAt !== observation.observedAt ||
+				!sameAuthoritativeParent(existing.parentReference, observation.parentReference))
 		) {
 			return Result.fail(
 				new LineageConflictError({
-					recordId: `spawn:${candidate.runId}`,
+					recordId: candidate.runId,
 					message: `Run ${candidate.runId} has conflicting observations`,
 				}),
 			);
 		}
 		candidateByRun.set(candidate.runId, observation);
-	}
-
-	for (const [runId, observation] of candidateByRun) {
-		const persisted = currentByRun.get(runId);
-		if (
-			persisted !== undefined &&
-			(persisted.child !== observation.child ||
-				persisted.observedAt !== observation.observedAt ||
-				persisted.parent !== observation.parent)
-		) {
-			return Result.fail(
-				new LineageConflictError({
-					recordId: `spawn:${runId}`,
-					message: `Persisted run ${runId} conflicts with its source observation`,
-				}),
-			);
-		}
 	}
 
 	const touchedSessions = new Set([...candidateByRun.values()].map((value) => value.child));
@@ -919,6 +981,7 @@ const lineageRecords = (
 			nodes: sessionGraph.success.nodes,
 			edges,
 			continuity,
+			ownership: [...incomingOwnership.values()],
 		},
 		problems,
 	});
@@ -961,7 +1024,7 @@ export const loadLineageStore = Effect.fn("LineageStore.load")(function* (storeP
 	return validated.success;
 });
 
-const writeLineageStore = Effect.fn("LineageStore.write")(function* (
+export const writeLineageStore = Effect.fn("LineageStore.write")(function* (
 	storePath: string,
 	document: LineageStoreDocumentType,
 ) {
@@ -972,11 +1035,73 @@ const writeLineageStore = Effect.fn("LineageStore.write")(function* (
 	const text = `${JSON.stringify(encoded, null, 2)}\n`;
 	yield* fs.makeDirectory(path.dirname(storePath), {recursive: true});
 	const temporaryPath = `${storePath}.${yield* crypto.randomUUIDv4}.tmp`;
-	yield* fs.writeFileString(temporaryPath, text);
 	yield* fs
-		.rename(temporaryPath, storePath)
-		.pipe(Effect.ensuring(fs.remove(temporaryPath).pipe(Effect.ignore)));
+		.writeFileString(temporaryPath, text)
+		.pipe(
+			Effect.andThen(fs.rename(temporaryPath, storePath)),
+			Effect.ensuring(fs.remove(temporaryPath).pipe(Effect.ignore)),
+		);
 });
+
+const acquireStoreFileLock = Effect.fn("LineageStore.acquireFileLock")(function* (
+	storePath: string,
+	poll: Effect.Effect<void> = Effect.sleep(`${STORE_LOCK_POLL_MS} millis`),
+) {
+	const fs = yield* FileSystem.FileSystem;
+	const path = yield* Path.Path;
+	const lockPath = `${storePath}.lock`;
+	yield* fs
+		.makeDirectory(path.dirname(storePath), {recursive: true})
+		.pipe(
+			Effect.mapError(
+				(error) => new LineageStoreReadError({path: lockPath, message: messageOf(error)}),
+			),
+		);
+	const deadline = Date.now() + STORE_LOCK_WAIT_MS;
+	while (true) {
+		const made = yield* Effect.result(fs.makeDirectory(lockPath, {recursive: false}));
+		if (Result.isSuccess(made)) return lockPath;
+		const stat = yield* Effect.result(fs.stat(lockPath));
+		if (Result.isFailure(stat)) {
+			if (Date.now() >= deadline) {
+				return yield* new LineageStoreReadError({
+					path: lockPath,
+					message: "Lineage store lock could not be inspected",
+				});
+			}
+			yield* poll;
+			continue;
+		}
+		const mtime = Option.getOrUndefined(stat.success.mtime);
+		if (mtime !== undefined && Date.now() - mtime.getTime() > STORE_LOCK_STALE_MS) {
+			yield* fs.remove(lockPath, {recursive: true}).pipe(Effect.ignore);
+			continue;
+		}
+		if (Date.now() >= deadline) {
+			return yield* new LineageStoreReadError({
+				path: lockPath,
+				message: "Timed out waiting for the lineage store lock",
+			});
+		}
+		yield* poll;
+	}
+});
+
+export const withLineageStoreFileLock = <A, E, R>(
+	storePath: string,
+	effect: Effect.Effect<A, E, R>,
+	options?: {readonly poll?: Effect.Effect<void>},
+): Effect.Effect<A, E | LineageStoreReadError, R | FileSystem.FileSystem | Path.Path> =>
+	Effect.acquireUseRelease(
+		acquireStoreFileLock(storePath, options?.poll),
+		() => effect,
+		(lockPath) => {
+			return Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				yield* fs.remove(lockPath, {recursive: true}).pipe(Effect.ignore);
+			});
+		},
+	);
 
 const storeLocks = new Map<string, Semaphore.Semaphore>();
 const storeLock = (storePath: string): Semaphore.Semaphore => {
@@ -1042,8 +1167,9 @@ export const refreshLineage = Effect.fn("Lineage.refresh")(function* (
 	options: RefreshLineageOptions,
 ) {
 	const path = yield* Path.Path;
-	return yield* storeLock(path.resolve(options.storePath)).withPermit(
-		refreshLineageUnlocked(options),
+	const storePath = path.resolve(options.storePath);
+	return yield* storeLock(storePath).withPermit(
+		withLineageStoreFileLock(storePath, refreshLineageUnlocked({...options, storePath})),
 	);
 });
 

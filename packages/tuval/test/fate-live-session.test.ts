@@ -5,11 +5,16 @@ import {
 	type LivePublisher,
 	type LiveTopicPublisher,
 } from "@kampus/fate-effect";
-import {Effect, Layer, Stream} from "effect";
+import {Effect, Layer, Schema, Stream} from "effect";
 import {TuvalFateServerLive} from "../src/backend/fate.js";
 import {LineageIndex} from "../src/backend/lineage.js";
 import {LiveSession, type LiveSessionService} from "../src/backend/live-session.js";
 import {PiDiscovery} from "../src/backend/pi-discovery.js";
+import {sessionIdentity} from "../src/shared/discovery.js";
+import {
+	LineageProjection,
+	type LineageProjection as LineageProjectionType,
+} from "../src/shared/lineage.js";
 import type {LiveSessionView} from "../src/shared/live-session.js";
 import {tryPromise} from "./test-effect.js";
 
@@ -51,7 +56,16 @@ const context = {
 	} satisfies typeof LivePublisher.Service,
 };
 
-const handle = (live: LiveSessionService, operations: ReadonlyArray<Record<string, unknown>>) =>
+const emptyLineage: LineageProjectionType = {
+	graph: {version: 2, nodes: [], edges: [], continuity: [], ownership: []},
+	problems: [],
+};
+
+const handle = (
+	live: LiveSessionService,
+	operations: ReadonlyArray<Record<string, unknown>>,
+	lineage: LineageProjectionType = emptyLineage,
+) =>
 	Effect.scoped(
 		Effect.gen(function* () {
 			const app = yield* Layer.build(
@@ -59,13 +73,7 @@ const handle = (live: LiveSessionService, operations: ReadonlyArray<Record<strin
 					Layer.provide(
 						Layer.mergeAll(
 							Layer.succeed(LiveSession, live),
-							Layer.succeed(LineageIndex, {
-								project: () =>
-									Effect.succeed({
-										graph: {version: 1, nodes: [], edges: [], continuity: []},
-										problems: [],
-									}),
-							}),
+							Layer.succeed(LineageIndex, {project: () => Effect.succeed(lineage)}),
 							Layer.succeed(PiDiscovery, {
 								discover: () => Effect.succeed({_tag: "empty", sessions: [] as const}),
 								sessionMetadata: () => Effect.succeed({_tag: "not-configured"}),
@@ -143,10 +151,7 @@ describe("live-session fate-effect contract", () => {
 			assert.strictEqual(responseBody.results[1]?.id, "prompt");
 			assert.strictEqual(responseBody.results[1]?.data._tag, "acknowledged");
 			assert.strictEqual(responseBody.results[1]?.data.correlationId, "prompt-1");
-			assert.deepEqual(responseBody.results[2]?.data, {
-				graph: {version: 1, nodes: [], edges: [], continuity: []},
-				problems: [],
-			});
+			assert.deepEqual(responseBody.results[2]?.data, emptyLineage);
 
 			yield* handle(live, [
 				{
@@ -158,6 +163,85 @@ describe("live-session fate-effect contract", () => {
 				},
 			]);
 			assert.deepEqual(calls, ["attach:session-one", "prompt:prompt-1:hello", "release"]);
+		}),
+	);
+
+	it.effect("round-trips every typed lineage projection arm through Fate", () =>
+		Effect.gen(function* () {
+			const root = sessionIdentity("root");
+			const parent = sessionIdentity("parent");
+			const child = sessionIdentity("child");
+			const node = (id: string, source: string) => ({
+				id: sessionIdentity(id),
+				piSessionId: id,
+				createdAt: 1,
+				updatedAt: 2,
+				cwd: "/tmp/tuval",
+				sourceFiles: [source],
+			});
+			const lineage: LineageProjectionType = {
+				graph: {
+					version: 2,
+					nodes: [
+						node("child", "/tmp/child.jsonl"),
+						node("parent", "/tmp/parent.jsonl"),
+						node("root", "/tmp/root.jsonl"),
+					],
+					edges: [
+						{id: `fork:${parent}`, kind: "fork", parent: root, child: parent, source: "protocol"},
+						{
+							id: "spawn:spawn-run",
+							kind: "spawn",
+							parent,
+							child,
+							runId: "spawn-run",
+							observedAt: 10,
+						},
+					],
+					continuity: [
+						{id: "resume:resume-run", runId: "resume-run", session: child, parent, observedAt: 20},
+					],
+					ownership: [
+						{
+							kind: "observation",
+							runId: "resume-run",
+							session: child,
+							parentReference: {kind: "run", value: "wrapper-run"},
+							parent,
+							observedAt: 20,
+						},
+						{
+							kind: "observation",
+							runId: "spawn-run",
+							session: child,
+							parentReference: {kind: "session", value: "/tmp/parent.jsonl"},
+							parent,
+							observedAt: 10,
+						},
+						{kind: "wrapper", runId: "wrapper-run", session: parent},
+					],
+				},
+				problems: [{code: "retention-loss", source: "fixture", message: "missing source"}],
+			};
+			const live: LiveSessionService = {
+				current: () => Effect.succeed(null),
+				attach: (sessionId) =>
+					Effect.succeed({_tag: "refused", sessionId, code: "protocol", reason: "unused"}),
+				prompt: ({correlationId}) =>
+					Effect.succeed({_tag: "refused", correlationId, code: "no-attachment", reason: "unused"}),
+				release: () => Effect.succeed({_tag: "released", sessionId: null}),
+				eventsAfter: () => Effect.succeed([]),
+				events: () => Stream.empty,
+				dispose: () => Effect.void,
+			};
+			const response = yield* handle(
+				live,
+				[{id: "lineage", kind: "query", name: "lineage", select: []}],
+				lineage,
+			);
+			const body = (yield* resultOf(response)) as {results: Array<{data?: unknown}>};
+			const decoded = Schema.decodeUnknownSync(LineageProjection)(body.results[0]?.data);
+			assert.deepEqual(decoded, lineage);
 		}),
 	);
 

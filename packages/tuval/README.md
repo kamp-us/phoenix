@@ -69,16 +69,19 @@ An unresolved protocol or run parent is reported and does not become a spawn or 
 observation; a parentless observation before the first spawn-eligible run is likewise
 diagnostic-only.
 
-The normalized version-1 store lives under `~/.pi/agent/tuval/lineage.json` by default and accepts
-only finite timestamps. Non-finite lifecycle timestamps are isolated as malformed, invalid protocol
-timestamps are refused, and a store carrying one is refused before projection. For accepted
-records, serialized rescans preserve exact observations after source cleanup, and retained
-run-to-session ownership resolves later descendants
-whose parent run artifact has disappeared. Candidates for one run compare their authoritative run,
-session, or parentless parent facts before resolution; unresolved parents remain diagnostic-only,
-and adding one to a retained run is refused. Reused run ids with changed sessions, timestamps, or
-parentage, multiple spawn origins for one session, dangling references, invalid source ownership,
-and unknown store versions are likewise refused.
+The normalized version-2 store lives under `~/.pi/agent/tuval/lineage.json` by default. This
+unshipped format has no migration path: version 1 and unknown versions are refused. It persists one
+conflict-checked run-to-session ownership record for direct, wrapper, and retained run ids, plus the
+authoritative parent-reference kind and value for observations. Those records restore parent lookup
+and parent-fact comparison after lifecycle sources disappear.
+
+Every input is validated before merge, so retained finite values cannot hide a non-finite update.
+Accepted stores have canonical record and source-file ordering, finite forward time intervals, an
+acyclic graph, one spawn origin before each continuity observation, and no dangling or conflicting
+ownership. Load, merge, and atomic rename run under a stale-recoverable filesystem lock shared by
+processes; failed writes and renames remove their temporary files without replacing the committed
+store. Reused run ids with changed sessions, timestamps, or parent facts are refused, while
+unresolved parents remain diagnostic-only.
 
 ## Live-session contract
 
