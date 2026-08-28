@@ -76,6 +76,19 @@ const sessionFilesIn = Effect.fn("PiHome.sessionFilesIn")(function* (root: strin
 	return files;
 });
 
+const readFirstLine = Effect.fn("PiHome.readFirstLine")(function* (sessionPath: string) {
+	const fs = yield* FileSystem.FileSystem;
+	return yield* Effect.scoped(
+		Effect.gen(function* () {
+			const file = yield* fs.open(sessionPath, {flag: "r"});
+			const bytes = Option.getOrElse(yield* file.readAlloc(64 * 1024), () => new Uint8Array());
+			const text = new TextDecoder().decode(bytes);
+			const newline = text.indexOf("\n");
+			return newline === -1 ? text : text.slice(0, newline);
+		}),
+	);
+});
+
 const readSession = Effect.fn("PiHome.readSession")(function* (sessionPath: string) {
 	const fs = yield* FileSystem.FileSystem;
 	const filenameId = sessionIdFromFilename(sessionPath);
@@ -84,9 +97,7 @@ const readSession = Effect.fn("PiHome.readSession")(function* (sessionPath: stri
 			message: "session filename does not end in _<session-id>.jsonl",
 		});
 	}
-	const text = yield* fs.readFileString(sessionPath);
-	const newline = text.indexOf("\n");
-	const firstLine = newline === -1 ? text : text.slice(0, newline);
+	const firstLine = yield* readFirstLine(sessionPath);
 	const parsed = yield* Effect.try({
 		try: () => JSON.parse(firstLine) as unknown,
 		catch: () => new PiHomeReadError({message: "session header is not valid JSON"}),

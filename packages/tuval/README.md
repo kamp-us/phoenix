@@ -24,7 +24,10 @@ then opens that URL in the default browser unless browser opening is disabled.
 | `GET /fate/live?afterSequence=<n>` | Stream ordered live-session events over SSE |
 | `--port <port>` | Bind a fixed port instead of selecting an available port |
 | `--no-open` | Start without opening a browser |
+| `--pi-socket <path>` | Connect live sessions to a pi server Unix socket |
 
+A live attachment requires a pi server started with an address such as
+`pi --experimental server --listen unix:///tmp/pi.sock`, then `tuval --pi-socket /tmp/pi.sock`.
 Session discovery reads `PI_CODING_AGENT_SESSION_DIR` when set. Otherwise it reads the `sessions`
 directory beneath `PI_CODING_AGENT_DIR`, falling back to `~/.pi/agent/sessions`.
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {createUnixTransportFactory} from "@earendil-works/pi-client/unix";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Effect, Option, Schema} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
@@ -18,19 +19,28 @@ const openFlag = Flag.boolean("open").pipe(
 	Flag.withDescription("Open Tuval in the default browser after readiness"),
 );
 
+const piSocketFlag = Flag.string("pi-socket").pipe(
+	Flag.optional,
+	Flag.withDescription("Unix socket exposed by `pi --experimental server --listen unix:///path`"),
+);
+
 export const tuvalCommand = Command.make(
 	"tuval",
-	{port: portFlag, open: openFlag},
-	Effect.fn("tuval")(function* ({port, open}) {
+	{port: portFlag, open: openFlag, piSocket: piSocketFlag},
+	Effect.fn("tuval")(function* ({port, open, piSocket}) {
 		const selectedPort = Option.getOrUndefined(port);
 		if (selectedPort !== undefined && (selectedPort < 0 || selectedPort > 65_535)) {
 			return yield* new CliFailure({message: "--port requires an integer between 0 and 65535"});
 		}
+		const socketPath = Option.getOrUndefined(piSocket);
 		return yield* Effect.scoped(
 			Effect.gen(function* () {
 				yield* startTuval({
 					...(selectedPort === undefined ? {} : {port: selectedPort}),
 					...(open ? {} : {openBrowser: () => Effect.void}),
+					...(socketPath === undefined
+						? {}
+						: {liveSessionTransport: createUnixTransportFactory({path: socketPath})}),
 					log: (line) => console.log(line),
 				});
 				return yield* Effect.never;

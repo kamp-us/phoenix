@@ -8,7 +8,7 @@ import {
 	type LivePublisher,
 	type LiveTopicPublisher,
 } from "@kampus/fate-effect";
-import {Effect, FileSystem, Layer, Schema, Stream} from "effect";
+import {Effect, Fiber, FileSystem, Layer, Queue, Schema, Stream} from "effect";
 import {TuvalFateServerLive} from "./fate.js";
 import {
 	LiveSession,
@@ -164,6 +164,13 @@ const writeFailure = (response: ServerResponse, error: unknown): void => {
 	);
 };
 
+const responseClosed = (response: ServerResponse) =>
+	Effect.callback<void>((resume) => {
+		const close = () => resume(Effect.void);
+		response.once("close", close);
+		return Effect.sync(() => response.off("close", close));
+	});
+
 const handleRequest = Effect.fn("TuvalServer.handleRequest")(function* (
 	request: IncomingMessage,
 	response: ServerResponse,
@@ -240,14 +247,33 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 	const staticAsset =
 		options.staticAsset ?? fileURLToPath(new URL("../frontend-shell/index.html", import.meta.url));
 	let origin = `http://${TUVAL_HOST}`;
-	const server = createServer((request, response) => {
-		const fiber = Effect.runFork(
-			handleRequest(request, response, origin, staticAsset, fs).pipe(
-				Effect.catch((error) => Effect.sync(() => writeFailure(response, error))),
-				Effect.provideContext(appContext),
+	type RequestJob = {readonly request: IncomingMessage; readonly response: ServerResponse};
+	const requests = yield* Queue.unbounded<RequestJob>();
+	const requestSupervisor = yield* Effect.forkScoped(
+		Effect.forever(
+			Queue.take(requests).pipe(
+				Effect.flatMap(({request, response}) =>
+					Effect.forkChild(
+						Effect.raceFirst(
+							handleRequest(request, response, origin, staticAsset, fs).pipe(
+								Effect.catch((error) => Effect.sync(() => writeFailure(response, error))),
+								Effect.provideContext(appContext),
+							),
+							responseClosed(response),
+						).pipe(
+							Effect.ensuring(
+								Effect.sync(() => {
+									if (!response.writableEnded) response.end();
+								}),
+							),
+						),
+					),
+				),
 			),
-		);
-		response.once("close", () => fiber.interruptUnsafe());
+		),
+	);
+	const server = createServer((request, response) => {
+		Queue.offerUnsafe(requests, {request, response});
 	});
 	const port = options.port ?? 0;
 	yield* Effect.callback<void, StartupFailure>((resume) => {
@@ -276,7 +302,11 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 		Effect.suspend(() => {
 			if (closed) return Effect.void;
 			closed = true;
-			return closeServer(server);
+			return Effect.gen(function* () {
+				yield* Fiber.interrupt(requestSupervisor);
+				yield* Queue.shutdown(requests);
+				yield* closeServer(server);
+			});
 		}),
 	);
 	yield* Effect.addFinalizer(() => close().pipe(Effect.ignore));

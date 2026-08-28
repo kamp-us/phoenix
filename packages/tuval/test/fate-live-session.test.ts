@@ -1,3 +1,4 @@
+import {describe, expect, it} from "@effect/vitest";
 import {
 	type CurrentUser,
 	FateInterpreter,
@@ -5,11 +6,11 @@ import {
 	type LiveTopicPublisher,
 } from "@kampus/fate-effect";
 import {Effect, Layer, Stream} from "effect";
-import {describe, expect, it} from "vitest";
 import {TuvalFateServerLive} from "../src/backend/fate.js";
 import {LiveSession, type LiveSessionService} from "../src/backend/live-session.js";
 import {PiDiscovery} from "../src/backend/pi-discovery.js";
 import type {LiveSessionView} from "../src/shared/live-session.js";
+import {tryPromise} from "./test-effect.js";
 
 const session: LiveSessionView = {
 	_tag: "attached",
@@ -70,38 +71,38 @@ const handle = (live: LiveSessionService, operations: ReadonlyArray<Record<strin
 		}),
 	);
 
-const resultOf = async (response: Response): Promise<unknown> => response.json();
+const resultOf = (response: Response) => tryPromise(() => response.json());
 
 describe("live-session fate-effect contract", () => {
-	it("exposes attach, current state, correlated prompt, and release", async () => {
-		const calls: Array<string> = [];
-		let current: LiveSessionView | null = null;
-		const live: LiveSessionService = {
-			current: () => Effect.succeed(current),
-			attach: (sessionId) =>
-				Effect.sync(() => {
-					calls.push(`attach:${sessionId}`);
-					current = session;
-					return {_tag: "attached" as const, session};
-				}),
-			prompt: ({correlationId, text}) =>
-				Effect.sync(() => {
-					calls.push(`prompt:${correlationId}:${text}`);
-					return {_tag: "acknowledged" as const, correlationId, session};
-				}),
-			release: () =>
-				Effect.sync(() => {
-					calls.push("release");
-					current = null;
-					return {_tag: "released" as const, sessionId: session.sessionId};
-				}),
-			eventsAfter: () => Effect.succeed([]),
-			events: () => Stream.empty,
-			dispose: () => Effect.void,
-		};
+	it.effect("exposes attach, current state, correlated prompt, and release", () =>
+		Effect.gen(function* () {
+			const calls: Array<string> = [];
+			let current: LiveSessionView | null = null;
+			const live: LiveSessionService = {
+				current: () => Effect.succeed(current),
+				attach: (sessionId) =>
+					Effect.sync(() => {
+						calls.push(`attach:${sessionId}`);
+						current = session;
+						return {_tag: "attached" as const, session};
+					}),
+				prompt: ({correlationId, text}) =>
+					Effect.sync(() => {
+						calls.push(`prompt:${correlationId}:${text}`);
+						return {_tag: "acknowledged" as const, correlationId, session};
+					}),
+				release: () =>
+					Effect.sync(() => {
+						calls.push("release");
+						current = null;
+						return {_tag: "released" as const, sessionId: session.sessionId};
+					}),
+				eventsAfter: () => Effect.succeed([]),
+				events: () => Stream.empty,
+				dispose: () => Effect.void,
+			};
 
-		const attached = await Effect.runPromise(
-			handle(live, [
+			const attached = yield* handle(live, [
 				{
 					id: "attach",
 					kind: "mutation",
@@ -109,14 +110,12 @@ describe("live-session fate-effect contract", () => {
 					input: {sessionId: session.sessionId},
 					select: [],
 				},
-			]),
-		);
-		await expect(resultOf(attached)).resolves.toMatchObject({
-			results: [{id: "attach", ok: true, data: {_tag: "attached", session}}],
-		});
+			]);
+			expect(yield* resultOf(attached)).toMatchObject({
+				results: [{id: "attach", ok: true, data: {_tag: "attached", session}}],
+			});
 
-		const response = await Effect.runPromise(
-			handle(live, [
+			const response = yield* handle(live, [
 				{id: "current", kind: "query", name: "liveSession.current", select: []},
 				{
 					id: "prompt",
@@ -125,17 +124,15 @@ describe("live-session fate-effect contract", () => {
 					input: {correlationId: "prompt-1", text: "hello"},
 					select: [],
 				},
-			]),
-		);
-		await expect(resultOf(response)).resolves.toMatchObject({
-			results: [
-				{id: "current", ok: true, data: session},
-				{id: "prompt", ok: true, data: {_tag: "acknowledged", correlationId: "prompt-1"}},
-			],
-		});
+			]);
+			expect(yield* resultOf(response)).toMatchObject({
+				results: [
+					{id: "current", ok: true, data: session},
+					{id: "prompt", ok: true, data: {_tag: "acknowledged", correlationId: "prompt-1"}},
+				],
+			});
 
-		await Effect.runPromise(
-			handle(live, [
+			yield* handle(live, [
 				{
 					id: "release",
 					kind: "mutation",
@@ -143,39 +140,39 @@ describe("live-session fate-effect contract", () => {
 					input: {},
 					select: [],
 				},
-			]),
-		);
-		expect(calls).toEqual(["attach:session-one", "prompt:prompt-1:hello", "release"]);
-	});
+			]);
+			expect(calls).toEqual(["attach:session-one", "prompt:prompt-1:hello", "release"]);
+		}),
+	);
 
-	it("rejects malformed mutation input before invoking the service", async () => {
-		let called = false;
-		const live: LiveSessionService = {
-			current: () => Effect.succeed(null),
-			attach: () =>
-				Effect.sync(() => {
-					called = true;
-					return {
-						_tag: "refused" as const,
-						sessionId: "never",
-						code: "protocol" as const,
-						reason: "never",
-					};
-				}),
-			prompt: ({correlationId}) =>
-				Effect.succeed({
-					_tag: "refused",
-					correlationId,
-					code: "no-attachment",
-					reason: "none",
-				}),
-			release: () => Effect.succeed({_tag: "released", sessionId: null}),
-			eventsAfter: () => Effect.succeed([]),
-			events: () => Stream.empty,
-			dispose: () => Effect.void,
-		};
-		const response = await Effect.runPromise(
-			handle(live, [
+	it.effect("rejects malformed mutation input before invoking the service", () =>
+		Effect.gen(function* () {
+			let called = false;
+			const live: LiveSessionService = {
+				current: () => Effect.succeed(null),
+				attach: () =>
+					Effect.sync(() => {
+						called = true;
+						return {
+							_tag: "refused" as const,
+							sessionId: "never",
+							code: "protocol" as const,
+							reason: "never",
+						};
+					}),
+				prompt: ({correlationId}) =>
+					Effect.succeed({
+						_tag: "refused",
+						correlationId,
+						code: "no-attachment",
+						reason: "none",
+					}),
+				release: () => Effect.succeed({_tag: "released", sessionId: null}),
+				eventsAfter: () => Effect.succeed([]),
+				events: () => Stream.empty,
+				dispose: () => Effect.void,
+			};
+			const response = yield* handle(live, [
 				{
 					id: "bad",
 					kind: "mutation",
@@ -183,11 +180,11 @@ describe("live-session fate-effect contract", () => {
 					input: {sessionId: 42},
 					select: [],
 				},
-			]),
-		);
-		await expect(resultOf(response)).resolves.toMatchObject({
-			results: [{id: "bad", ok: false, error: {code: "VALIDATION_ERROR"}}],
-		});
-		expect(called).toBe(false);
-	});
+			]);
+			expect(yield* resultOf(response)).toMatchObject({
+				results: [{id: "bad", ok: false, error: {code: "VALIDATION_ERROR"}}],
+			});
+			expect(called).toBe(false);
+		}),
+	);
 });
