@@ -3,8 +3,14 @@ import {readFile} from "node:fs/promises";
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from "node:http";
 import type {AddressInfo} from "node:net";
 import {fileURLToPath} from "node:url";
+import type {ByteTransportFactory} from "@earendil-works/pi-client";
 import {Effect, ManagedRuntime} from "effect";
 import {makeFateServer} from "./fate.js";
+import {
+	type LiveSessionService,
+	makeUnavailableLiveSession,
+	PiLiveSession,
+} from "./live-session.js";
 import {PiDiscovery, PiDiscoveryLive, type PiDiscoveryOptions} from "./pi-discovery.js";
 
 export const TUVAL_HOST = "127.0.0.1";
@@ -24,6 +30,8 @@ export interface StartTuvalOptions extends PiDiscoveryOptions {
 	readonly openBrowser?: (url: string) => Promise<void>;
 	readonly staticAsset?: string;
 	readonly log?: (line: string) => void;
+	readonly liveSession?: LiveSessionService;
+	readonly liveSessionTransport?: ByteTransportFactory;
 }
 
 export interface RunningTuval {
@@ -92,8 +100,14 @@ const closeServer = (server: Server): Promise<void> =>
 
 export const startTuval = async (options: StartTuvalOptions = {}): Promise<RunningTuval> => {
 	const runtime = ManagedRuntime.make(PiDiscoveryLive(options));
-	const fateServer = makeFateServer(() =>
-		runtime.runPromise(Effect.flatMap(PiDiscovery, (service) => service.discover)),
+	const liveSession =
+		options.liveSession ??
+		(options.liveSessionTransport === undefined
+			? makeUnavailableLiveSession()
+			: await PiLiveSession.connect(options.liveSessionTransport));
+	const fateServer = makeFateServer(
+		() => runtime.runPromise(Effect.flatMap(PiDiscovery, (service) => service.discover)),
+		liveSession,
 	);
 	const staticAsset =
 		options.staticAsset ?? fileURLToPath(new URL("../frontend-shell/index.html", import.meta.url));
@@ -141,6 +155,7 @@ export const startTuval = async (options: StartTuvalOptions = {}): Promise<Runni
 			});
 		});
 	} catch (error) {
+		await liveSession.dispose();
 		await runtime.dispose();
 		throw new StartupFailure(
 			`Tuval could not bind ${TUVAL_HOST}:${options.port ?? 0}. Check whether the port is already in use.`,
@@ -168,6 +183,7 @@ export const startTuval = async (options: StartTuvalOptions = {}): Promise<Runni
 			if (closed) return;
 			closed = true;
 			await closeServer(server);
+			await liveSession.dispose();
 			await runtime.dispose();
 		},
 	};

@@ -8,7 +8,8 @@
 		"tuval": "./dist/backend/bin.js"
 	},
 	"exports": {
-		"./discovery": "./dist/shared/discovery.js"
+		"./discovery": "./dist/shared/discovery.js",
+		"./live-session": "./dist/shared/live-session.js"
 	},
 	"files": [
 		"dist"

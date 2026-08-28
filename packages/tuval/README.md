@@ -7,9 +7,9 @@ Tuval is a localhost-only workspace for discovering and opening installed
 
 | Path | Responsibility |
 | --- | --- |
-| `src/backend/` | Loopback HTTP server, pi session discovery, and fate endpoint |
+| `src/backend/` | Loopback HTTP server, pi discovery, and PiClient live-session leases |
 | `src/frontend-shell/` | Static placeholder served by the backend |
-| `src/shared/` | Frontend-independent discovery schema and stable session identities |
+| `src/shared/` | Frontend-independent discovery and live-session schemas |
 
 ## Runtime interface
 
@@ -20,7 +20,7 @@ then opens that URL in the default browser unless browser opening is disabled.
 | --- | --- |
 | `GET /health` | Report server readiness |
 | `GET /` | Serve the static shell |
-| `POST /fate` | Run the discovery query |
+| `POST /fate` | Run discovery and live-session queries or mutations |
 | `--port <port>` | Bind a fixed port instead of selecting an available port |
 | `--no-open` | Start without opening a browser |
 
@@ -43,6 +43,21 @@ outcomes.
 
 Filesystem and framed-CBOR access sit behind the `PiDiscovery` Effect service. A malformed session
 entry is reported as a source problem without discarding sessions that were read successfully.
+
+## Live-session contract
+
+The package exports the schema-backed live-session wire types from `tuval/live-session`. The fate
+endpoint exposes `liveSession.current` and `liveSession.events` queries plus `liveSession.attach`,
+`liveSession.prompt`, and `liveSession.release` mutations. Attachments hold one exclusive PiClient
+lease at a time. Selecting another session releases the old subscription and lease before attaching
+the replacement.
+
+Transcript snapshots are reduced with ordered Pi protocol progress events by item identity, so an
+item present at the attach boundary is updated rather than duplicated. Prompt mutations require a
+caller-supplied correlation id and return `acknowledged` only after PiClient resolves the matching
+protocol result; ownership, disconnect, and protocol failures return explicit refusals. A malformed
+protocol event produces a diagnostic and a disconnected snapshot while retaining the last validated
+transcript.
 
 ## Commands
 
