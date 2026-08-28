@@ -15,7 +15,7 @@
 		"dist"
 	],
 	"scripts": {
-		"build": "tsc -p tsconfig.build.json && tsc -p tsconfig.frontend.json && node scripts/copy-static.mjs",
+		"build": "tsc -p tsconfig.build.json && node scripts/build-frontend.mjs",
 		"typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.frontend.json --noEmit && tsc -p tsconfig.browser.json",
 		"test": "pnpm run build && vitest run && pnpm run test:browser",
 		"test:browser": "playwright test --config playwright.config.ts"
@@ -24,16 +24,25 @@
 		"@earendil-works/pi-client": "catalog:",
 		"@earendil-works/pi-protocol": "catalog:",
 		"@effect/platform-node": "catalog:",
+		"@kampus/composer": "workspace:*",
 		"@kampus/fate-effect": "workspace:*",
 		"@nkzw/fate": "catalog:",
-		"effect": "catalog:"
+		"@xyflow/react": "catalog:",
+		"effect": "catalog:",
+		"react": "catalog:",
+		"react-dom": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:",
 		"@playwright/test": "catalog:",
+		"@testing-library/react": "catalog:",
 		"@types/node": "catalog:",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"jsdom": "catalog:",
 		"typescript": "catalog:",
+		"vite": "catalog:",
 		"vitest": "catalog:"
 	},
 	"volta": {

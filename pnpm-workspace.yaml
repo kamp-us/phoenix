@@ -51,6 +51,7 @@ catalog:
   '@types/react-dom': ^19.2.3
   '@usirin/forge': ^0.2.0
   '@vitejs/plugin-react': ^6.0.2
+  '@xyflow/react': 12.11.5
   alchemy: 2.0.0-beta.59
   axe-core: ^4.10.3
   # better-auth's drizzle-adapter speaks RQB v1 (raw-SQL `eq()` where-shape); drizzle-orm 1.x

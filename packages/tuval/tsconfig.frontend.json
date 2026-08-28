@@ -2,13 +2,15 @@
 	"extends": "../../tsconfig.json",
 	"compilerOptions": {
 		"noEmit": false,
+		"allowImportingTsExtensions": true,
 		"outDir": "./dist",
 		"rootDir": "./src",
 		"declaration": false,
 		"declarationMap": false,
 		"sourceMap": true,
+		"jsx": "react-jsx",
 		"lib": ["ES2023", "DOM", "DOM.Iterable"],
 		"types": []
 	},
-	"include": ["src/frontend-shell/app.ts"]
+	"include": ["src/frontend-shell", "src/shared/discovery.ts", "src/shared/live-session.ts"]
 }
