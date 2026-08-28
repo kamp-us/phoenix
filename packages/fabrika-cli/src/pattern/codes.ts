@@ -8,8 +8,8 @@
  * `../exit-codes.ts`, with `OFF_VOCABULARY` named locally over the registry's `CLASSIFIED` — this
  * group reads section names, not labels.
  *
- * This group shares four seats over `8`-`11` and adds `12`-`16` for facts about a doc, an index and
- * a one-row edit. `3`-`7` are deliberate gaps, each for a stated reason: no verb reads stdin (`3`),
+ * This group shares four seats over `8`-`11` and adds `12`-`17` for facts about a doc, an index, a
+ * one-row edit, and a supplied source checkout. `3`-`7` are deliberate gaps, each for a stated reason: no verb reads stdin (`3`),
  * none validates a doc's heading grammar (`4`), the repo's leak gate is the authority over
  * `.patterns/` (`5`), nothing composes a body from authored input (`6`) — and `7` `ZERO_SCOPE`
  * stays unseated because no verb here judges over a corpus, so none has a vacuous pass to prevent.
@@ -57,3 +57,5 @@ export const INDEX_UNPARSEABLE = 15;
  * disambiguating.
  */
 export const SECTION_AMBIGUOUS = 16;
+/** Proven: a supplied source checkout cannot yield complete portable grounding evidence. */
+export const SOURCE_REPOSITORY_REFUSED = 17;

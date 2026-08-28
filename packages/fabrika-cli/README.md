@@ -693,13 +693,14 @@ Read and write the pattern library. A **pattern doc** is one flat `<slug>.md` un
 | `pattern corpus` | the library at a base ref: every doc, its registration, its section, its last-touching commit |
 | `pattern drift` | whether the in-repo source a doc cites moved since the doc was last written |
 | `pattern anchor` | whether the dependency version a doc declares still matches what the workspace pins |
-| `pattern new` | scaffolds `<dir>/<slug>.md` from the canonical template |
+| `pattern new` | scaffolds a current or prospective doc; optional local-source inspection emits portable grounding evidence |
 | `pattern register` | inserts the doc's row into `<dir>/index.md` under a named section |
 
 **Exit codes.** `8`–`11` from the shared table, plus `12` the named slug has no doc file · `13` the
 target path already exists · `14` the edit would have changed a line beyond the one row, aborted
 before writing · `15` the index is absent or holds no parseable table · `16` the named section
-matches more than one heading.
+matches more than one heading · `17` a supplied source checkout cannot yield complete portable
+evidence, so nothing is written.
 
 Four behaviours are worth knowing:
 
@@ -717,7 +718,12 @@ Four behaviours are worth knowing:
   resolution alone.
 
 `corpus`, `drift` and `anchor` read at a fetched `--base`; `new` and `register` write the **working
-tree**, so a doc created by `new` is invisible to `corpus` until it is committed.
+tree**, so a doc created by `new` is invisible to `corpus` until it is committed. `pattern new
+--decision <url>` selects the prospective scaffold. `--source-repo <path>` validates a local Git
+checkout and records only its canonical origin, full HEAD, relevant package/version and
+repo-relative source/test/docs paths; use `--source-package` when a monorepo is ambiguous. The local
+path never enters the scaffold or JSON evidence, and the derived package token also uses the
+existing dependency anchor so pin bumps still demand re-verification.
 
 ## The `plan` group
 

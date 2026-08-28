@@ -62,6 +62,7 @@ describe("the shared seats are the base's", () => {
 			codes.MULTI_LINE_DIFF,
 			codes.INDEX_UNPARSEABLE,
 			codes.SECTION_AMBIGUOUS,
+			codes.SOURCE_REPOSITORY_REFUSED,
 		]) {
 			expect(occupied.has(code)).toBe(false);
 		}

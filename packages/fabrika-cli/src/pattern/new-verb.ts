@@ -7,24 +7,38 @@
  * adopting fabrika has no `.patterns/`, and its first doc has to be writable on the documented path.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
+import type {ChildProcessSpawner} from "effect/unstable/process";
 import {exists, writeFile} from "../io/fs.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
-import {ALREADY_EXISTS, PRECONDITION_UNKNOWN, WRITE_UNKNOWN} from "./codes.ts";
+import {
+	ALREADY_EXISTS,
+	PRECONDITION_UNKNOWN,
+	SOURCE_REPOSITORY_REFUSED,
+	WRITE_UNKNOWN,
+} from "./codes.ts";
 import {docTemplate, isKebabCase, splitAnchorToken, titleFrom} from "./doc.ts";
+import {inspectSourceRepository, sourceEvidenceLine} from "./source.ts";
 
 export interface NewOptions {
 	readonly slug: string;
 	readonly dir: string;
 	readonly title: string | null;
 	readonly anchor: string | null;
+	readonly decision: string | null;
+	readonly sourceRepo: string | null;
+	readonly sourcePackage: string | null;
 	readonly json: boolean;
 }
 
 export const runNew = (
 	options: NewOptions,
-): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> =>
 	Effect.gen(function* () {
-		const {slug, dir, anchor, json} = options;
+		const {slug, dir, anchor, decision, sourceRepo, sourcePackage, json} = options;
 		if (!isKebabCase(slug)) {
 			return refuse(
 				FAILED,
@@ -36,6 +50,27 @@ export const runNew = (
 		if (anchor !== null && splitAnchorToken(anchor) === null) {
 			return refuse(FAILED, `pattern new: --anchor "${anchor}" is not <pkg>@<version>.`);
 		}
+		if (sourcePackage !== null && sourceRepo === null) {
+			return refuse(FAILED, "pattern new: --source-package requires --source-repo.");
+		}
+
+		const inspection =
+			sourceRepo === null ? null : yield* inspectSourceRepository(sourceRepo, sourcePackage);
+		if (inspection?._tag === "Refused") {
+			return refuse(
+				SOURCE_REPOSITORY_REFUSED,
+				`pattern new: supplied source repository refused: ${inspection.reason} — nothing was written.`,
+			);
+		}
+		const evidence = inspection?._tag === "Evidence" ? inspection.evidence : null;
+		const evidenceAnchor = evidence === null ? null : `${evidence.package}@${evidence.version}`;
+		if (anchor !== null && evidenceAnchor !== null && anchor !== evidenceAnchor) {
+			return refuse(
+				SOURCE_REPOSITORY_REFUSED,
+				`pattern new: --anchor ${anchor} conflicts with source evidence ${evidenceAnchor} — nothing was written.`,
+			);
+		}
+		const resolvedAnchor = anchor ?? evidenceAnchor;
 
 		const path = `${dir.replace(/\/+$/, "")}/${slug}.md`;
 		const present = yield* Effect.result(exists(path));
@@ -52,7 +87,17 @@ export const runNew = (
 		}
 
 		const title = options.title ?? titleFrom(slug);
-		const written = yield* Effect.result(writeFile(path, docTemplate(title, anchor)));
+		const written = yield* Effect.result(
+			writeFile(
+				path,
+				docTemplate(
+					title,
+					resolvedAnchor,
+					decision,
+					evidence === null ? null : sourceEvidenceLine(evidence),
+				),
+			),
+		);
 		if (Result.isFailure(written)) {
 			return refuse(
 				WRITE_UNKNOWN,
@@ -60,7 +105,19 @@ export const runNew = (
 			);
 		}
 
-		return answer(json ? JSON.stringify({path, slug, title, anchored: anchor}) : path, [
-			`pattern new: wrote ${path}${anchor === null ? "" : ` with the anchor line for ${anchor}`}; the index row is pattern register's.`,
-		]);
+		return answer(
+			json
+				? JSON.stringify({
+						path,
+						slug,
+						title,
+						anchored: resolvedAnchor,
+						decision,
+						sourceEvidence: evidence,
+					})
+				: path,
+			[
+				`pattern new: wrote ${path}${resolvedAnchor === null ? "" : ` with the anchor line for ${resolvedAnchor}`}${evidence === null ? "" : ` and portable source evidence from ${evidence.origin}`}; the index row is pattern register's.`,
+			],
+		);
 	});
