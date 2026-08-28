@@ -82,6 +82,12 @@ const run = (
 	);
 
 const harnessFile = JSON.stringify({command: "pnpm dev", url: "http://127.0.0.1:5173"});
+const SESSION = `${ROOT}/.fabrika/design-session.json`;
+const withSession = JSON.stringify({
+	command: "pnpm dev",
+	url: "http://127.0.0.1:5173",
+	storageState: ".fabrika/design-session.json",
+});
 const captured = {files: {[HARNESS]: harnessFile, [`${SET_DIR}/pano.png`]: PNG}};
 
 describe("runRender operands", () => {
@@ -201,6 +207,42 @@ describe("runRender", () => {
 	it("refuses a harness that violates its schema on 4", async () => {
 		const outcome = await run(LANE_OK, {files: {[HARNESS]: "{}"}});
 		expect(outcome.code).toBe(BAD_SECTIONS);
+	});
+
+	it("refuses on 11 when the harness declares a storageState no file backs", async () => {
+		const outcome = await run(LANE_OK, {
+			files: {...captured.files, [HARNESS]: withSession},
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain("would capture the login page");
+	});
+
+	it("hands the resolved storageState path to the browse leg", async () => {
+		const seen: Array<string | null> = [];
+		const outcome = await run(
+			LANE_OK,
+			{files: {...captured.files, [HARNESS]: withSession, [SESSION]: PNG}},
+			{
+				browse: (request) => {
+					seen.push(request.storageState);
+					return Effect.succeed({_tag: "Captured"});
+				},
+			},
+		);
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([SESSION]);
+	});
+
+	it("browses signed out when no storageState is declared", async () => {
+		const seen: Array<string | null> = [];
+		const outcome = await run(LANE_OK, captured, {
+			browse: (request) => {
+				seen.push(request.storageState);
+				return Effect.succeed({_tag: "Captured"});
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([null]);
 	});
 
 	it("refuses a foreign lane on 18", async () => {

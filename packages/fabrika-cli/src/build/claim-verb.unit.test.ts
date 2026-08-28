@@ -660,14 +660,6 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		expect(out.stderr.some((line) => line.includes("PR #4312 serves #5553 (fixes)"))).toBe(true);
 	});
 
-	it("prints the distinct PR and served issue operands a repair skill consumes (#7181)", async () => {
-		const {out} = await claimPull("Fixes #5553\n", servedTicket(44));
-		expect(out.code).toBe(0);
-		expect(out.stderr).toContain(
-			"build claim: subject: PR #4312 serves #5553 (fixes) — the admission test judges that issue, not the PR's own empty home.",
-		);
-	});
-
 	it("reads Part of #<n> too — the partial-PR shape build --partial emits", async () => {
 		const {out} = await claimPull("Part of #5553\n", servedTicket(44));
 		expect(out.code).toBe(0);

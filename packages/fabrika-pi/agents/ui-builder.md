@@ -2,6 +2,7 @@
 name: ui-builder
 description: The UI builder — spawn target for the fabrika `build-ui` skill, the rendered-visual construction stage. Use it when a driver needs a subagent that turns one triaged issue whose deliverable is a rendered surface into a pull request, or repairs an existing PR against its design gate's current-head verdicts. It carries no behaviour of its own; everything it does comes from the preloaded skill.
 skills: build-ui
+inheritProjectContext: true
 tools: bash, read, write, edit, grep, find, subagent
 ---
 

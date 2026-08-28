@@ -2,6 +2,7 @@
 name: operator
 description: The operator — spawn target for the fabrika `operate` skill, the lane drive loop. Use it when a driver needs a subagent that carries one lane — an issue number, or a `chore:<name>` chore lane — to a terminal state or a human park, spawning the builder/reviewer/shipper shells or applying the recipe verb a chore state names, and feeding each outcome back to the ledger. It carries no behaviour of its own; everything it does comes from the preloaded skill.
 skills: operate
+inheritProjectContext: true
 tools: bash, read, subagent
 ---
 

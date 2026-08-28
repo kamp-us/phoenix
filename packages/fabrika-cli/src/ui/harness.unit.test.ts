@@ -15,8 +15,16 @@ describe("parseHarness", () => {
 				readyPath: "/",
 				viewport: DEFAULT_VIEWPORT,
 				evidenceStore: null,
+				storageState: null,
 			},
 		});
+	});
+
+	it("carries a declared storageState through", () => {
+		const parsed = parseHarness(config({storageState: ".fabrika/design-session.json"}));
+		expect(parsed._tag).toBe("Config");
+		if (parsed._tag !== "Config") return;
+		expect(parsed.config.storageState).toBe(".fabrika/design-session.json");
 	});
 
 	it("carries a declared viewport, readyPath and evidenceStore through", () => {
@@ -52,6 +60,16 @@ describe("parseHarness", () => {
 			'"viewport.width" is not a positive integer',
 		],
 		["an unknown key", config({browser: "chromium"}), 'unknown key "browser"'],
+		[
+			"an absolute storageState",
+			config({storageState: "/Users/someone/session.json"}),
+			'"storageState" is not a repo-root-relative path',
+		],
+		[
+			"an empty storageState",
+			config({storageState: "   "}),
+			'"storageState" is not a repo-root-relative path',
+		],
 		[
 			"a non-string command",
 			config({command: 3}),
