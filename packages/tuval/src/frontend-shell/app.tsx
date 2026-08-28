@@ -178,7 +178,6 @@ export function TuvalApp() {
 
 	const discover = useCallback(async (): Promise<void> => {
 		const generation = ++discoveryGeneration.current;
-		setOutcome(null);
 		try {
 			const next = await discoverSessions();
 			if (generation === discoveryGeneration.current) setOutcome(next);

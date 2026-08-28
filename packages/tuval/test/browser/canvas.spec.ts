@@ -431,6 +431,13 @@ test("one chat pane swaps sessions, restores focus, and streams Composer prompts
 	const alpha = session("chat-alpha", "/work/alpha");
 	const beta = session("chat-beta", "/work/beta");
 	let promptText = "";
+	let discoveryCalls = 0;
+	let discoveryResponses = 0;
+	let releaseCalls = 0;
+	let finishRefresh: (() => void) | undefined;
+	const refreshGate = new Promise<void>((resolve) => {
+		finishRefresh = resolve;
+	});
 	await page.route("**/fate", async (route) => {
 		const body = route.request().postDataJSON() as {
 			readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
@@ -438,7 +445,10 @@ test("one chat pane swaps sessions, restores focus, and streams Composer prompts
 		const operation = body.operations?.[0];
 		const id = typeof operation?.id === "string" ? operation.id : "unknown";
 		if (operation?.name === "discovery") {
+			discoveryCalls += 1;
+			if (discoveryCalls === 2) await refreshGate;
 			await fulfill(route, id, {_tag: "ready", sessions: [alpha, beta]});
+			discoveryResponses += 1;
 			return;
 		}
 		if (operation?.name === "liveSession.attach") {
@@ -466,6 +476,7 @@ test("one chat pane swaps sessions, restores focus, and streams Composer prompts
 			});
 			return;
 		}
+		releaseCalls += 1;
 		await fulfill(route, id, {_tag: "released", sessionId: null});
 	});
 	await page.goto(tuvalUrl);
@@ -480,9 +491,20 @@ test("one chat pane swaps sessions, restores focus, and streams Composer prompts
 	await expect(page.locator("#chat-title")).toHaveText("beta");
 	await expect(page.getByText("chat-beta mevcut konuşma")).toBeVisible();
 
+	await page.getByRole("button", {name: "Oturumları yenile"}).click();
+	await expect.poll(() => discoveryCalls).toBe(2);
+	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator("#chat-title")).toHaveText("beta");
+	expect(releaseCalls).toBe(0);
+	finishRefresh?.();
+	await expect.poll(() => discoveryResponses).toBe(2);
+	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator("#chat-title")).toHaveText("beta");
+
 	await page.getByRole("button", {name: "Sohbeti kapat"}).click();
 	await expect(page.locator("aside")).toHaveCount(0);
 	await expect(page.locator('[data-id="pi:chat-beta"]')).toBeFocused();
+	await expect.poll(() => releaseCalls).toBe(1);
 
 	await selectNode(page, "pi:chat-alpha");
 	const editor = page.getByRole("textbox", {name: "İstem"});
