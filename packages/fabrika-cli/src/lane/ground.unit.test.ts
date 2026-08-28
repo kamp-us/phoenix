@@ -1,5 +1,5 @@
 /** The ground guard: a drifted cwd refuses on its own code, a repo with no such lane still boots. */
-import {Effect} from "effect";
+import {Effect, Path} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {LANE_ABSENT, LANE_UNREADABLE, NOT_A_REPO} from "./codes.ts";
@@ -83,6 +83,7 @@ describe("deriveRepoRoot — the default root resolves off the owning repository
 			files: {
 				[`${WORKTREE}/.git`]: "gitdir: /primary/.git/worktrees/wt",
 				[`${PRIMARY}/.git/worktrees/wt/commondir`]: "../..",
+				[`${PRIMARY}/${DEFAULT_LANES_ROOT}/42/workflow.json`]: coderTemplateText(),
 			},
 		});
 
@@ -96,6 +97,34 @@ describe("deriveRepoRoot — the default root resolves off the owning repository
 		);
 		expect(fromWorktree).toEqual({_tag: "Derived", repoRoot: PRIMARY});
 		expect(fromPrimary).toEqual(fromWorktree);
+	});
+
+	it("loads the primary ledger's same lane through status from either checkout cwd", async () => {
+		const fs = repoFs();
+		const statusFrom = (cwd: string) =>
+			Effect.runPromise(
+				Effect.provide(
+					Effect.gen(function* () {
+						const path = yield* Path.Path;
+						const ground = yield* deriveRepoRoot(cwd);
+						if (ground._tag !== "Derived") return ground;
+						return yield* runStatus({
+							root: path.join(ground.repoRoot, DEFAULT_LANES_ROOT),
+							lane: "42",
+						});
+					}),
+					fs.layer,
+				),
+			);
+
+		const fromPrimary = await statusFrom(`${PRIMARY}/packages/cli`);
+		const fromWorktree = await statusFrom(`${WORKTREE}/packages/app`);
+
+		expect(fromPrimary).toMatchObject({code: 0});
+		expect(fromWorktree).toEqual(fromPrimary);
+		expect("stdout" in fromWorktree && JSON.parse(fromWorktree.stdout)).toMatchObject({
+			stateValue: {pipeline: {issue: "queued"}},
+		});
 	});
 
 	it("a cwd with no .git ancestor is NotARepo — never a cwd-relative fallback", async () => {
