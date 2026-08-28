@@ -13,7 +13,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit, Fiber, FileSystem, Path} from "effect";
 import * as Latch from "effect/Latch";
 import {startTuval, TUVAL_HOST} from "../src/backend/server.js";
-import {tryPromise} from "./test-effect.js";
+import {TestFailure, tryPromise} from "./test-effect.js";
 
 const fixture = Effect.fn("test.fixture")(function* () {
 	const fs = yield* FileSystem.FileSystem;
@@ -25,9 +25,12 @@ const fixture = Effect.fn("test.fixture")(function* () {
 });
 
 const waitForUrl = (child: ReturnType<typeof spawn>) =>
-	Effect.callback<string, Error>((resume) => {
+	Effect.callback<string, TestFailure>((resume) => {
 		const timeout = setTimeout(
-			() => resume(Effect.fail(new Error("tuval bin did not report readiness"))),
+			() =>
+				resume(
+					Effect.fail(new TestFailure({cause: new Error("tuval bin did not report readiness")})),
+				),
 			10_000,
 		);
 		let stdout = "";
@@ -36,9 +39,13 @@ const waitForUrl = (child: ReturnType<typeof spawn>) =>
 			const match = /Tuval ready at (http:\/\/127\.0\.0\.1:\d+)/.exec(stdout);
 			if (match?.[1] !== undefined) resume(Effect.succeed(match[1]));
 		};
-		const onError = (error: Error) => resume(Effect.fail(error));
+		const onError = (cause: Error) => resume(Effect.fail(new TestFailure({cause})));
 		const onExit = (code: number | null) =>
-			resume(Effect.fail(new Error(`tuval bin exited before readiness (${code})`)));
+			resume(
+				Effect.fail(
+					new TestFailure({cause: new Error(`tuval bin exited before readiness (${code})`)}),
+				),
+			);
 		child.stdout?.on("data", onData);
 		child.once("error", onError);
 		child.once("exit", onExit);
