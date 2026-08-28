@@ -507,9 +507,19 @@ On a standing `FAIL` there is a repair to take, and the route the refusal names 
 ```bash
 fabrika build claim $issue_or_pr_number --resume
 fabrika build verdicts --issue $issue_or_pr_number
-fabrika build tree --issue $issue_or_pr_number
+fabrika build confirm $issue_or_pr_number --token <claim-token>
+fabrika build tree --require-clean
 fabrika build branch $issue_or_pr_number --resume-lane --token <claim-token>
+fabrika build tree --issue $issue_or_pr_number
 ```
+
+That order separates the generic isolated checkout from the lane branch it does not stand on yet.
+`confirm` proves the repair claim before the branch mutation, and `tree --require-clean` proves the
+generic checkout without arming lane identity. Only `--resume-lane` may re-key and check out the
+prior branch. After it succeeds, the armed `tree --issue` proof checks the child number, the current
+repair-claim nonce, and live claim ownership. Re-run that armed proof before every later git
+mutation; never move it ahead of `--resume-lane`, and never weaken wrong-lane exit `14` to admit a
+generic harness branch.
 
 `--resume` is checked against the board, not trusted: on a child holding no standing `FAIL` it
 refuses on `31` too, so the flag can never be typed past the fence. `--resume-lane` **re-keys** the
