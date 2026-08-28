@@ -59,6 +59,7 @@ export const RunOwnership = Schema.Union([
 		kind: Schema.Literal("direct"),
 		runId: Schema.String,
 		session: SessionIdentity,
+		parentReference: AuthoritativeParentReference,
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("observation"),
@@ -234,17 +235,22 @@ const mergeOwnership = (
 	if (left.session !== right.session) {
 		return conflict(left.runId, `Run ${left.runId} maps to conflicting sessions`);
 	}
-	if (left.kind === "observation" && right.kind !== "observation") return Result.succeed(left);
-	if (right.kind === "observation" && left.kind !== "observation") return Result.succeed(right);
-	if (left.kind !== "observation" && right.kind !== "observation") {
-		return Result.succeed(left.kind === "direct" ? left : right);
+	if (left.kind === "wrapper" && right.kind === "wrapper") return Result.succeed(left);
+	if (left.kind === "wrapper") return Result.succeed(right);
+	if (right.kind === "wrapper") return Result.succeed(left);
+	if (!sameParentReference(left.parentReference, right.parentReference)) {
+		return conflict(
+			left.runId,
+			`Run ${left.runId} has conflicting authoritative parent references`,
+		);
 	}
+	if (left.kind === "direct" && right.kind === "direct") return Result.succeed(left);
+	if (left.kind === "observation" && right.kind === "direct") return Result.succeed(left);
+	if (left.kind === "direct" && right.kind === "observation") return Result.succeed(right);
 	if (left.kind !== "observation" || right.kind !== "observation") {
 		return conflict(left.runId, `Run ${left.runId} has incompatible ownership records`);
 	}
-	return left.observedAt === right.observedAt &&
-		left.parent === right.parent &&
-		sameParentReference(left.parentReference, right.parentReference)
+	return left.observedAt === right.observedAt && left.parent === right.parent
 		? Result.succeed(left)
 		: conflict(left.runId, `Run ${left.runId} has conflicting authoritative observations`);
 };
@@ -314,6 +320,13 @@ export const validateLineageStore = (
 		if (!nodeIds.has(ownership.session)) {
 			return conflict(ownership.runId, `Run ${ownership.runId} owns an unknown session`);
 		}
+		if (
+			ownership.kind !== "wrapper" &&
+			ownership.parentReference.kind !== "none" &&
+			ownership.parentReference.value.trim().length === 0
+		) {
+			return conflict(ownership.runId, `Run ${ownership.runId} has an empty parent reference`);
+		}
 		if (ownership.kind === "observation") {
 			if (!Number.isFinite(ownership.observedAt)) {
 				return conflict(ownership.runId, `Run ${ownership.runId} has a non-finite timestamp`);
@@ -329,12 +342,6 @@ export const validateLineageStore = (
 			}
 			if (ownership.parentReference.kind !== "none" && ownership.parent === undefined) {
 				return conflict(ownership.runId, `Run ${ownership.runId} lost its resolved parent`);
-			}
-			if (
-				ownership.parentReference.kind !== "none" &&
-				ownership.parentReference.value.trim().length === 0
-			) {
-				return conflict(ownership.runId, `Run ${ownership.runId} has an empty parent reference`);
 			}
 		}
 		ownershipByRun.set(ownership.runId, ownership);

@@ -5,6 +5,7 @@ import {Deferred, Effect, Fiber, FileSystem, Path, PlatformError, Result, Schema
 import fc from "fast-check";
 import {
 	defaultLineageOptions,
+	LineageStoreReadError,
 	loadLineageStore,
 	refreshLineage,
 	resolvePiSubagentsTempScopeId,
@@ -1484,6 +1485,53 @@ describe("Tuval lineage index", () => {
 			}),
 		);
 
+		it.effect("retains unresolved direct parent facts across restart", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({
+					prefix: "tuval-lineage-direct-parent-fact-",
+				});
+				const sessionsRoot = path.join(root, "sessions");
+				const runRoot = path.join(root, "runs");
+				const storePath = path.join(root, "lineage.json");
+				const child = yield* writeSession(sessionsRoot, "child.jsonl", {id: "child"});
+				const writeChild = (parentRunId?: string) =>
+					writeStatus(runRoot, "child", {
+						runId: "child-run",
+						...(parentRunId === undefined ? {} : {parentRunId}),
+						sessionFile: child,
+						startedAt: 1,
+					});
+
+				yield* writeChild("missing-a");
+				const first = yield* refreshLineage({
+					runRoots: [runRoot],
+					sessionRoots: [sessionsRoot],
+					storePath,
+				});
+				assert.deepInclude(
+					first.graph.ownership.find((entry) => entry.runId === "child-run"),
+					{kind: "direct", parentReference: {kind: "run", value: "missing-a"}},
+				);
+				yield* fs.remove(runRoot, {recursive: true});
+				yield* writeChild("missing-a");
+				yield* refreshLineage({runRoots: [runRoot], sessionRoots: [sessionsRoot], storePath});
+
+				for (const parentRunId of ["missing-b", undefined]) {
+					yield* fs.remove(runRoot, {recursive: true});
+					yield* writeChild(parentRunId);
+					const changed = yield* Effect.result(
+						refreshLineage({runRoots: [runRoot], sessionRoots: [sessionsRoot], storePath}),
+					);
+					assert.isTrue(Result.isFailure(changed));
+					if (Result.isFailure(changed)) {
+						assert.strictEqual(changed.failure._tag, "tuval/LineageConflictError");
+					}
+				}
+			}),
+		);
+
 		it.effect("refuses a wrapper that conflicts with a transient direct ownership", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
@@ -1866,6 +1914,98 @@ describe("Tuval lineage index", () => {
 			}),
 		);
 
+		it.effect("publishes owner metadata atomically before the lock becomes visible", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-lock-publish-"});
+				const storePath = path.join(root, "lineage.json");
+				const lockPath = `${storePath}.lock`;
+				const publicationPaused = yield* Deferred.make<void>();
+				const resumePublication = yield* Deferred.make<void>();
+				let pauseFirst = true;
+				const delayedPublication = FileSystem.FileSystem.of({
+					...fs,
+					rename: (from, to) =>
+						pauseFirst && from.includes(".preparing-") && to === lockPath
+							? Effect.sync(() => {
+									pauseFirst = false;
+								}).pipe(
+									Effect.andThen(Deferred.succeed(publicationPaused, undefined)),
+									Effect.andThen(Deferred.await(resumePublication)),
+									Effect.andThen(fs.rename(from, to)),
+								)
+							: fs.rename(from, to),
+				});
+				const order: Array<string> = [];
+				const first = yield* withLineageStoreFileLock(
+					storePath,
+					() => Effect.sync(() => order.push("first")),
+					{poll: Effect.yieldNow},
+				).pipe(Effect.provideService(FileSystem.FileSystem, delayedPublication), Effect.forkChild);
+				yield* Deferred.await(publicationPaused);
+				assert.isFalse(yield* fs.exists(lockPath));
+				yield* withLineageStoreFileLock(storePath, () => Effect.sync(() => order.push("second")), {
+					poll: Effect.yieldNow,
+				});
+				yield* Deferred.succeed(resumePublication, undefined);
+				yield* Fiber.join(first);
+				assert.deepEqual(order, ["second", "first"]);
+				assert.isFalse(yield* fs.exists(lockPath));
+			}),
+		);
+
+		it.effect("does not steal a live owner refreshed after stale observation", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectory({prefix: "tuval-lineage-lock-heartbeat-"});
+				const storePath = path.join(root, "lineage.json");
+				const lockPath = `${storePath}.lock`;
+				const ownerPath = path.join(lockPath, "owner");
+				const enteredOld = yield* Deferred.make<void>();
+				const releaseOld = yield* Deferred.make<void>();
+				const enteredNew = yield* Deferred.make<void>();
+				const staleObserved = yield* Deferred.make<void>();
+				const ownerRestored = yield* Deferred.make<void>();
+				const old = yield* withLineageStoreFileLock(
+					storePath,
+					() =>
+						Deferred.succeed(enteredOld, undefined).pipe(
+							Effect.andThen(Deferred.await(releaseOld)),
+						),
+					{poll: Effect.yieldNow, staleMs: 60_000, disableHeartbeat: true},
+				).pipe(Effect.forkChild);
+				yield* Deferred.await(enteredOld);
+				const stale = new Date(Date.now() - 600_000);
+				yield* fs.utimes(ownerPath, stale, stale);
+				const successor = yield* withLineageStoreFileLock(
+					storePath,
+					() => Deferred.succeed(enteredNew, undefined),
+					{
+						poll: Effect.yieldNow,
+						staleMs: 60_000,
+						disableHeartbeat: true,
+						onStaleObserved: fs
+							.utimes(ownerPath, new Date(), new Date())
+							.pipe(Effect.orDie, Effect.andThen(Deferred.succeed(staleObserved, undefined))),
+						onLiveOwnerRestored: Deferred.succeed(ownerRestored, undefined).pipe(
+							Effect.andThen(Effect.interrupt),
+						),
+					},
+				).pipe(Effect.forkChild);
+				yield* Deferred.await(staleObserved);
+				yield* Deferred.await(ownerRestored);
+				const enteredTooEarly = yield* Deferred.poll(enteredNew);
+				assert.strictEqual(enteredTooEarly._tag, "None");
+				yield* Fiber.await(successor);
+				yield* Deferred.succeed(releaseOld, undefined);
+				yield* Fiber.join(old);
+				assert.isFalse(yield* fs.exists(lockPath));
+				yield* fs.remove(root, {recursive: true});
+			}),
+		);
+
 		it.effect("serializes independent callers and competing stale-lock recovery", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
@@ -1876,12 +2016,13 @@ describe("Tuval lineage index", () => {
 				let maximum = 0;
 				const caller = withLineageStoreFileLock(
 					storePath,
-					Effect.gen(function* () {
-						active += 1;
-						maximum = Math.max(maximum, active);
-						yield* Effect.yieldNow;
-						active -= 1;
-					}),
+					() =>
+						Effect.gen(function* () {
+							active += 1;
+							maximum = Math.max(maximum, active);
+							yield* Effect.yieldNow;
+							active -= 1;
+						}),
 					{poll: Effect.yieldNow},
 				);
 				yield* Effect.all([caller, caller], {concurrency: "unbounded"});
@@ -1904,7 +2045,7 @@ describe("Tuval lineage index", () => {
 			}),
 		);
 
-		it.effect("an old holder cannot remove a successor lock generation", () =>
+		it.effect("fences a resumed predecessor and preserves the successor generation", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
 				const path = yield* Path.Path;
@@ -1916,22 +2057,33 @@ describe("Tuval lineage index", () => {
 				const releaseOld = yield* Deferred.make<void>();
 				const enteredNew = yield* Deferred.make<void>();
 				const releaseNew = yield* Deferred.make<void>();
+				let predecessorCommitted = false;
 				const oldFiber = yield* withLineageStoreFileLock(
 					storePath,
-					Deferred.succeed(enteredOld, undefined).pipe(Effect.andThen(Deferred.await(releaseOld))),
+					(fence) =>
+						Deferred.succeed(enteredOld, undefined).pipe(
+							Effect.andThen(Deferred.await(releaseOld)),
+							Effect.andThen(fence),
+							Effect.andThen(Effect.sync(() => (predecessorCommitted = true))),
+						),
 					{poll: Effect.yieldNow, staleMs: 1, disableHeartbeat: true},
-				).pipe(Effect.forkChild);
+				).pipe(Effect.result, Effect.forkChild);
 				yield* Deferred.await(enteredOld);
 				const stale = new Date(Date.now() - 1_000);
 				yield* fs.utimes(ownerPath, stale, stale);
 				const newFiber = yield* withLineageStoreFileLock(
 					storePath,
-					Deferred.succeed(enteredNew, undefined).pipe(Effect.andThen(Deferred.await(releaseNew))),
+					() =>
+						Deferred.succeed(enteredNew, undefined).pipe(
+							Effect.andThen(Deferred.await(releaseNew)),
+						),
 					{poll: Effect.yieldNow, staleMs: 1},
 				).pipe(Effect.forkChild);
 				yield* Deferred.await(enteredNew);
 				yield* Deferred.succeed(releaseOld, undefined);
-				yield* Fiber.join(oldFiber);
+				const oldResult = yield* Fiber.join(oldFiber);
+				assert.isTrue(Result.isFailure(oldResult));
+				assert.isFalse(predecessorCommitted);
 				assert.isTrue(yield* fs.exists(lockPath));
 				yield* Deferred.succeed(releaseNew, undefined);
 				yield* Fiber.join(newFiber);
@@ -1980,6 +2132,21 @@ describe("Tuval lineage index", () => {
 					),
 				);
 				assert.isTrue(Result.isFailure(renameFailure));
+				assert.deepEqual(yield* fs.readDirectory(root), ["lineage.json"]);
+				assert.strictEqual(yield* fs.readFileString(storePath), "stable\n");
+				const fenced = yield* Effect.result(
+					writeLineageStore(
+						storePath,
+						emptyLineageStore(),
+						Effect.fail(
+							new LineageStoreReadError({
+								path: `${storePath}.lock`,
+								message: "ownership changed",
+							}),
+						),
+					),
+				);
+				assert.isTrue(Result.isFailure(fenced));
 				assert.deepEqual(yield* fs.readDirectory(root), ["lineage.json"]);
 				assert.strictEqual(yield* fs.readFileString(storePath), "stable\n");
 			}),
