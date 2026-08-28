@@ -365,6 +365,10 @@ describe("Tuval lineage index", () => {
 								sessionFile: workflowFile,
 								startedAt: 100,
 								steps: reverse ? [ordinarySteps[1], ordinarySteps[0]] : ordinarySteps,
+								workflow: {
+									value: reverse ? "completed output" : ["first output", {ok: true}],
+									trace: [],
+								},
 							}),
 							writeStatus(runsRoot, "parallel", {
 								runId: "parallel-wrapper",
@@ -408,6 +412,120 @@ describe("Tuval lineage index", () => {
 				);
 				assert.deepEqual(reordered.graph, first.graph);
 				assert.strictEqual(after, before);
+			}),
+		);
+
+		it.effect("isolates malformed siblings while preserving complete run entries", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-siblings-"});
+				const sessionsRoot = path.join(root, "sessions");
+				const runsRoot = path.join(root, "runs");
+				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+				const alphaFile = yield* writeSession(sessionsRoot, "alpha.jsonl", {id: "alpha"});
+				const betaFile = yield* writeSession(sessionsRoot, "beta.jsonl", {id: "beta"});
+				yield* writeStatus(runsRoot, "mixed", {
+					runId: "wrapper",
+					sessionId: parentFile,
+					steps: [
+						{runId: "alpha-run", sessionFile: alphaFile, startedAt: 10},
+						{},
+						{runId: "half-run"},
+						{runId: "beta-run", sessionFile: betaFile, startedAt: 20},
+					],
+					workflow: {
+						value: {
+							results: [{runId: "invented-run", sessionFile: alphaFile}],
+						},
+						trace: [],
+					},
+				});
+
+				const projected = yield* refreshLineage({
+					runRoots: [runsRoot],
+					sessionRoots: [sessionsRoot],
+					storePath: path.join(root, "lineage.json"),
+				});
+
+				assert.deepEqual(
+					projected.graph.edges.filter((edge) => edge.kind === "spawn").map((edge) => edge.runId),
+					["alpha-run", "beta-run"],
+				);
+				assert.isUndefined(
+					projected.graph.edges.find(
+						(edge) => edge.kind === "spawn" && edge.runId === "invented-run",
+					),
+				);
+				assert.lengthOf(projected.problems, 2);
+				assert.deepEqual(
+					projected.problems.map((problem) => problem.source.split("#")[1]),
+					["status.steps[1]", "status.steps[2]"],
+				);
+			}),
+		);
+
+		it.effect("keeps a parentless pre-origin run diagnostic-only", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-pre-origin-"});
+				const sessionsRoot = path.join(root, "sessions");
+				const runsRoot = path.join(root, "runs");
+				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+				const childFile = yield* writeSession(sessionsRoot, "child.jsonl", {id: "child"});
+				yield* writeStatus(runsRoot, "early", {
+					runId: "early-run",
+					sessionFile: childFile,
+					startedAt: 100,
+				});
+				yield* writeStatus(runsRoot, "origin", {
+					runId: "origin-run",
+					sessionId: parentFile,
+					sessionFile: childFile,
+					startedAt: 200,
+				});
+
+				const projected = yield* refreshLineage({
+					runRoots: [runsRoot],
+					sessionRoots: [sessionsRoot],
+					storePath: path.join(root, "lineage.json"),
+				});
+
+				assert.deepInclude(
+					projected.graph.edges.find((edge) => edge.id === "spawn:origin-run"),
+					{parent: sessionIdentity("parent"), child: sessionIdentity("child")},
+				);
+				assert.isUndefined(projected.graph.continuity.find((value) => value.runId === "early-run"));
+				assert.isTrue(
+					projected.problems.some((problem) =>
+						problem.message.includes("pre-origin run early-run"),
+					),
+				);
+			}),
+		);
+
+		it.effect("diagnoses a protocol-only child whose parent is not retained", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-protocol-loss-"});
+				const projected = yield* refreshLineage({
+					runRoots: [],
+					sessionRoots: [],
+					storePath: path.join(root, "lineage.json"),
+					protocolSessions: [{id: "child", createdAt: 1, parentSessionId: "missing-parent"}],
+				});
+
+				assert.lengthOf(projected.graph.nodes, 1);
+				assert.lengthOf(projected.graph.edges, 0);
+				assert.deepEqual(projected.problems, [
+					{
+						code: "retention-loss",
+						source: "protocol:child",
+						message: "Fork parent for child is not retained",
+					},
+				]);
 			}),
 		);
 

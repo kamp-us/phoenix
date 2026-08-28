@@ -82,12 +82,6 @@ const RawRunStatus = Schema.Struct({
 	workflow: Schema.optionalKey(Schema.Unknown),
 });
 
-const RawWorkflow = Schema.Struct({
-	value: Schema.optionalKey(
-		Schema.Struct({results: Schema.optionalKey(Schema.Array(Schema.Unknown))}),
-	),
-});
-
 interface SessionArtifact {
 	readonly header: SessionHeader;
 	readonly sessionId: string;
@@ -336,10 +330,17 @@ const emptyIdentityField = (
 ): string | undefined =>
 	fields.find(([, value]) => value !== undefined && value.trim().length === 0)?.[0];
 
+const malformedRunProblem = (source: string, message: string): LineageProblem => ({
+	code: "malformed-run",
+	source,
+	message,
+});
+
 const collectEntryCandidates = (
 	values: ReadonlyArray<unknown>,
 	input: {
 		readonly source: string;
+		readonly location: string;
 		readonly wrapperRunId?: string;
 		readonly parentSessionRef?: string;
 		readonly inheritedParentRunId?: string;
@@ -347,21 +348,22 @@ const collectEntryCandidates = (
 		readonly statusSessionEntries: ReadonlySet<unknown>;
 	},
 	candidates: Array<RunCandidate>,
-): Result.Result<void, LineageSourceParseError> => {
+	problems: Array<LineageProblem>,
+): void => {
 	for (const [index, value] of values.entries()) {
+		const location = `${input.location}[${index}]`;
+		const source = `${input.source}#${location}`;
 		const decoded = Schema.decodeUnknownResult(RawRunEntry)(value);
 		if (Result.isFailure(decoded)) {
-			return Result.fail(
-				new LineageSourceParseError({
-					message: `nested run entry ${index} is invalid: ${messageOf(decoded.failure)}`,
-				}),
+			problems.push(
+				malformedRunProblem(source, `run entry is invalid: ${messageOf(decoded.failure)}`),
 			);
+			continue;
 		}
 		const entry = decoded.success;
 		if (!hasRunEntryContent(entry)) {
-			return Result.fail(
-				new LineageSourceParseError({message: `nested run entry ${index} is empty`}),
-			);
+			problems.push(malformedRunProblem(source, "run entry is empty"));
+			continue;
 		}
 		const emptyField = emptyIdentityField([
 			["id", entry.id],
@@ -370,34 +372,30 @@ const collectEntryCandidates = (
 			["parentWorkflowRunId", entry.parentWorkflowRunId],
 			["sessionFile", entry.sessionFile],
 		]);
-		if (emptyField !== undefined) {
-			return Result.fail(
-				new LineageSourceParseError({
-					message: `nested run entry ${index} has an empty ${emptyField}`,
-				}),
-			);
-		}
 		const runId = entry.runId ?? entry.id;
 		const sessionRef = firstSessionFile(entry);
-		const nestedValues = [entry.steps ?? [], entry.children ?? [], entry.results ?? []];
-		const hasNested = nestedValues.some((nested) => nested.length > 0);
+		const nestedValues = [
+			["steps", entry.steps ?? []],
+			["children", entry.children ?? []],
+			["results", entry.results ?? []],
+		] as const;
+		const hasNested = nestedValues.some(([, nested]) => nested.length > 0);
+		let usable = true;
+		if (emptyField !== undefined) {
+			problems.push(malformedRunProblem(source, `run entry has an empty ${emptyField}`));
+			usable = false;
+		}
 		if (runId === undefined && sessionRef !== undefined && !input.statusSessionEntries.has(value)) {
-			return Result.fail(
-				new LineageSourceParseError({
-					message: `nested run entry ${index} has a session file without a run id`,
-				}),
-			);
+			problems.push(malformedRunProblem(source, "run entry has a session file without a run id"));
+			usable = false;
 		}
 		if (runId !== undefined && sessionRef === undefined && !hasNested) {
-			return Result.fail(
-				new LineageSourceParseError({
-					message: `nested run entry ${index} has a run id without a session file`,
-				}),
-			);
+			problems.push(malformedRunProblem(source, "run entry has a run id without a session file"));
+			usable = false;
 		}
 		const explicitParentRunId = entry.parentRunId ?? input.inheritedParentRunId;
 		const wrapperParent = entry.parentWorkflowRunId ?? input.wrapperRunId;
-		if (runId !== undefined && sessionRef !== undefined) {
+		if (usable && runId !== undefined && sessionRef !== undefined) {
 			candidates.push({
 				runId,
 				...(input.wrapperRunId === undefined ? {} : {wrapperRunId: input.wrapperRunId}),
@@ -411,17 +409,20 @@ const collectEntryCandidates = (
 				source: input.source,
 			});
 		}
-		const inheritedParentRunId = runId ?? explicitParentRunId;
-		const nestedInput = {
-			...input,
-			...(inheritedParentRunId === undefined ? {} : {inheritedParentRunId}),
-		};
-		for (const nested of nestedValues) {
-			const collected = collectEntryCandidates(nested, nestedInput, candidates);
-			if (Result.isFailure(collected)) return collected;
+		const inheritedParentRunId = usable ? (runId ?? explicitParentRunId) : explicitParentRunId;
+		for (const [name, nested] of nestedValues) {
+			collectEntryCandidates(
+				nested,
+				{
+					...input,
+					location: `${location}.${name}`,
+					...(inheritedParentRunId === undefined ? {} : {inheritedParentRunId}),
+				},
+				candidates,
+				problems,
+			);
 		}
 	}
-	return Result.succeed(undefined);
 };
 
 const statusSessionFile = (
@@ -458,6 +459,7 @@ const readRunCandidates = Effect.fn("Lineage.readRunCandidates")(function* (sour
 		Effect.mapError((error) => new LineageSourceParseError({message: messageOf(error)})),
 	);
 	const candidates: Array<RunCandidate> = [];
+	const problems: Array<LineageProblem> = [];
 	const emptyField = emptyIdentityField([
 		["id", status.id],
 		["runId", status.runId],
@@ -466,29 +468,30 @@ const readRunCandidates = Effect.fn("Lineage.readRunCandidates")(function* (sour
 		["sessionId", status.sessionId],
 		["sessionFile", status.sessionFile],
 	]);
+	const topLevelUsable = emptyField === undefined;
 	if (emptyField !== undefined) {
-		return yield* new LineageSourceParseError({message: `run status has an empty ${emptyField}`});
+		problems.push(malformedRunProblem(`${source}#status`, `run status has an empty ${emptyField}`));
 	}
-	const wrapperRunId = status.runId ?? status.id;
-	const parentSessionRef = status.sessionId;
-	const nestedValues = [status.steps ?? [], status.results ?? [], status.children ?? []];
-	if (
-		wrapperRunId === undefined &&
-		parentSessionRef === undefined &&
-		status.sessionFile === undefined &&
-		nestedValues.every((values) => values.length === 0) &&
-		status.workflow === undefined
-	) {
-		return yield* new LineageSourceParseError({message: "run status is empty"});
-	}
+	const wrapperRunId = topLevelUsable ? (status.runId ?? status.id) : undefined;
+	const parentSessionRef = topLevelUsable ? status.sessionId : undefined;
+	const nestedValues = [
+		["steps", status.steps ?? []],
+		["results", status.results ?? []],
+		["children", status.children ?? []],
+	] as const;
 	const statusSession = statusSessionFile(status);
 	if (Result.isFailure(statusSession)) return yield* statusSession.failure;
 	if (statusSession.success.sessionFile?.trim().length === 0) {
-		return yield* new LineageSourceParseError({
-			message: "run status has an empty step sessionFile",
-		});
+		problems.push(
+			malformedRunProblem(`${source}#status`, "run status has an empty step sessionFile"),
+		);
 	}
-	if (wrapperRunId !== undefined && statusSession.success.sessionFile !== undefined) {
+	if (
+		topLevelUsable &&
+		wrapperRunId !== undefined &&
+		statusSession.success.sessionFile !== undefined &&
+		statusSession.success.sessionFile.trim().length > 0
+	) {
 		candidates.push({
 			runId: wrapperRunId,
 			...(status.parentRunId === undefined ? {} : {parentRunId: status.parentRunId}),
@@ -503,35 +506,21 @@ const readRunCandidates = Effect.fn("Lineage.readRunCandidates")(function* (sour
 	}
 	const base = {
 		source,
+		location: "status",
 		...(wrapperRunId === undefined ? {} : {wrapperRunId}),
 		...(parentSessionRef === undefined ? {} : {parentSessionRef}),
 		fallbackStartedAt: status.startedAt ?? 0,
 		statusSessionEntries: statusSession.success.claimedEntries,
 	};
-	for (const values of nestedValues) {
-		const collected = collectEntryCandidates(values, base, candidates);
-		if (Result.isFailure(collected)) return yield* collected.failure;
+	for (const [name, values] of nestedValues) {
+		collectEntryCandidates(values, {...base, location: `status.${name}`}, candidates, problems);
 	}
-	if (status.workflow !== undefined) {
-		const workflow = Schema.decodeUnknownResult(RawWorkflow)(status.workflow);
-		if (Result.isFailure(workflow)) {
-			return yield* new LineageSourceParseError({
-				message: `workflow run metadata is invalid: ${messageOf(workflow.failure)}`,
-			});
-		}
-		const collected = collectEntryCandidates(
-			workflow.success.value?.results ?? [],
-			base,
-			candidates,
+	if (candidates.length === 0 && problems.length === 0) {
+		problems.push(
+			malformedRunProblem(`${source}#status`, "run status contains no complete identity"),
 		);
-		if (Result.isFailure(collected)) return yield* collected.failure;
 	}
-	if (candidates.length === 0) {
-		return yield* new LineageSourceParseError({
-			message: "run status contains no complete identity",
-		});
-	}
-	return candidates;
+	return {candidates, problems};
 });
 
 const scanRuns = Effect.fn("Lineage.scanRuns")(function* (roots: ReadonlyArray<string>) {
@@ -541,8 +530,11 @@ const scanRuns = Effect.fn("Lineage.scanRuns")(function* (roots: ReadonlyArray<s
 	for (const source of scanned.files) {
 		const run = yield* Effect.result(readRunCandidates(source));
 		if (Result.isFailure(run)) {
-			problems.push({code: "malformed-run", source, message: messageOf(run.failure)});
-		} else candidates.push(...run.success);
+			problems.push(malformedRunProblem(source, messageOf(run.failure)));
+		} else {
+			candidates.push(...run.success.candidates);
+			problems.push(...run.success.problems);
+		}
 	}
 	return {candidates, problems};
 });
@@ -643,7 +635,15 @@ const lineageRecords = (
 		if (artifactsById.has(childId)) continue;
 		const child = knownNodes.get(childId)?.id;
 		const parent = knownNodes.get(parentId)?.id;
-		if (child === undefined || parent === undefined) continue;
+		if (child === undefined) continue;
+		if (parent === undefined) {
+			problems.push({
+				code: "retention-loss",
+				source: `protocol:${childId}`,
+				message: `Fork parent for ${childId} is not retained`,
+			});
+			continue;
+		}
 		edges.push({id: `fork:${child}`, kind: "fork", parent, child, source: "protocol"});
 	}
 
@@ -774,13 +774,13 @@ const lineageRecords = (
 		const ordered = observations.sort(
 			(left, right) => left.observedAt - right.observedAt || left.runId.localeCompare(right.runId),
 		);
-		const origin = ordered.find(
+		const originIndex = ordered.findIndex(
 			(observation) =>
 				observation.parent !== undefined &&
 				observation.parent !== child &&
 				nodesByIdentity.has(observation.parent),
 		);
-		if (origin === undefined) {
+		if (originIndex === -1) {
 			for (const observation of ordered.filter((value) => value.parent === undefined)) {
 				if (!problems.some((problem) => problem.source === observation.source)) {
 					problems.push({
@@ -792,6 +792,16 @@ const lineageRecords = (
 			}
 			continue;
 		}
+		const origin = ordered[originIndex] as RunObservation;
+		for (const observation of ordered.slice(0, originIndex)) {
+			if (!problems.some((problem) => problem.source === observation.source)) {
+				problems.push({
+					code: "retention-loss",
+					source: observation.source,
+					message: `Spawn parent for pre-origin run ${observation.runId} is not retained`,
+				});
+			}
+		}
 		edges.push({
 			id: `spawn:${origin.runId}`,
 			kind: "spawn",
@@ -800,8 +810,7 @@ const lineageRecords = (
 			runId: origin.runId,
 			observedAt: origin.observedAt,
 		});
-		for (const observation of ordered) {
-			if (observation.runId === origin.runId) continue;
+		for (const observation of ordered.slice(originIndex + 1)) {
 			continuity.push({
 				id: `resume:${observation.runId}`,
 				runId: observation.runId,
