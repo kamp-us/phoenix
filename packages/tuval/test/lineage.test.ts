@@ -325,6 +325,92 @@ describe("Tuval lineage index", () => {
 			}),
 		);
 
+		it.effect("keeps complete runs from multi-step statuses with uid-less sessions", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-multi-step-"});
+				const sessionsRoot = path.join(root, "sessions");
+				const runsRoot = path.join(root, "runs");
+				const storePath = path.join(root, "lineage.json");
+				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+				const workflowFile = yield* writeSession(sessionsRoot, "workflow.jsonl", {
+					id: "workflow",
+				});
+				const parallelChildFile = yield* writeSession(sessionsRoot, "parallel-child.jsonl", {
+					id: "parallel-child",
+				});
+				const ordinaryA = yield* writeSession(sessionsRoot, "ordinary-a.jsonl", {
+					id: "ordinary-a",
+				});
+				const ordinaryB = yield* writeSession(sessionsRoot, "ordinary-b.jsonl", {
+					id: "ordinary-b",
+				});
+				const ordinarySteps = [
+					{agent: "scout", status: "complete", sessionFile: ordinaryA},
+					{agent: "reviewer", status: "complete", sessionFile: ordinaryB},
+				];
+				const parallelChild = {
+					runId: "parallel-child-run",
+					parentRunId: "workflow-run",
+					sessionFile: parallelChildFile,
+					startedAt: 210,
+				};
+				const writeStatuses = (reverse: boolean) =>
+					Effect.all(
+						[
+							writeStatus(runsRoot, "workflow", {
+								runId: "workflow-run",
+								sessionId: parentFile,
+								sessionFile: workflowFile,
+								startedAt: 100,
+								steps: reverse ? [ordinarySteps[1], ordinarySteps[0]] : ordinarySteps,
+							}),
+							writeStatus(runsRoot, "parallel", {
+								runId: "parallel-wrapper",
+								sessionId: parentFile,
+								startedAt: 200,
+								steps: reverse
+									? [ordinarySteps[1], parallelChild, ordinarySteps[0]]
+									: [ordinarySteps[0], parallelChild, ordinarySteps[1]],
+							}),
+						],
+						{concurrency: "unbounded"},
+					);
+				yield* writeStatuses(false);
+
+				const first = yield* refreshLineage({
+					runRoots: [runsRoot],
+					sessionRoots: [sessionsRoot],
+					storePath,
+				});
+				const before = yield* fs.readFileString(storePath);
+				yield* writeStatuses(true);
+				const reordered = yield* refreshLineage({
+					runRoots: [runsRoot],
+					sessionRoots: [sessionsRoot],
+					storePath,
+				});
+				const after = yield* fs.readFileString(storePath);
+
+				assert.lengthOf(first.problems, 0);
+				assert.deepEqual(
+					first.graph.edges.filter((edge) => edge.kind === "spawn").map((edge) => edge.id),
+					["spawn:parallel-child-run", "spawn:workflow-run"],
+				);
+				assert.deepInclude(
+					first.graph.edges.find((edge) => edge.id === "spawn:workflow-run"),
+					{parent: sessionIdentity("parent"), child: sessionIdentity("workflow")},
+				);
+				assert.deepInclude(
+					first.graph.edges.find((edge) => edge.id === "spawn:parallel-child-run"),
+					{parent: sessionIdentity("workflow"), child: sessionIdentity("parallel-child")},
+				);
+				assert.deepEqual(reordered.graph, first.graph);
+				assert.strictEqual(after, before);
+			}),
+		);
+
 		it.effect("keeps an unresolved authoritative parent diagnostic-only", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;

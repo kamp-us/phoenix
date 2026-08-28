@@ -430,20 +430,6 @@ const statusSessionFile = (
 	{readonly sessionFile: string | undefined; readonly claimedEntries: ReadonlySet<unknown>},
 	LineageSourceParseError
 > => {
-	if (status.sessionFile !== undefined) {
-		const claimedEntries = new Set(
-			(status.steps ?? []).filter((value) => {
-				const decoded = Schema.decodeUnknownResult(RawRunEntry)(value);
-				return (
-					Result.isSuccess(decoded) &&
-					decoded.success.runId === undefined &&
-					decoded.success.id === undefined &&
-					decoded.success.sessionFile === status.sessionFile
-				);
-			}),
-		);
-		return Result.succeed({sessionFile: status.sessionFile, claimedEntries});
-	}
 	const matches: Array<readonly [unknown, string]> = [];
 	for (const value of status.steps ?? []) {
 		const decoded = Schema.decodeUnknownResult(RawRunEntry)(value);
@@ -453,15 +439,14 @@ const statusSessionFile = (
 			matches.push([value, entry.sessionFile]);
 		}
 	}
-	const files = [...new Set(matches.map(([, file]) => file))];
-	if (files.length > 1) {
-		return Result.fail(
-			new LineageSourceParseError({message: "run status has ambiguous step session files"}),
-		);
+	const claimedEntries = new Set(matches.map(([value]) => value));
+	if (status.sessionFile !== undefined) {
+		return Result.succeed({sessionFile: status.sessionFile, claimedEntries});
 	}
+	const files = [...new Set(matches.map(([, file]) => file))];
 	return Result.succeed({
-		sessionFile: files[0],
-		claimedEntries: new Set(matches.map(([value]) => value)),
+		sessionFile: files.length === 1 ? files[0] : undefined,
+		claimedEntries,
 	});
 };
 

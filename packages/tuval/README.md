@@ -54,9 +54,10 @@ entry is reported as a source problem without discarding sessions that were read
 
 The package exports the schema-backed graph types from `tuval/lineage`. The `lineage` fate query
 projects session nodes, `spawn` and `fork` edges, resume-continuity observations, and isolated source
-problems. `LineageIndex` scans the same configured session roots as discovery and joins status-level
-records from both pi-subagents lifecycle run directories to retained session headers. With
-`--pi-socket`, fork
+problems. `LineageIndex` scans the same configured session roots as discovery and joins complete
+run/session pairs from both pi-subagents lifecycle directories to retained session headers. A sole
+step session may complete a top-level run identity; multiple steps without run ids remain unpaired
+without discarding complete entries in the same status. With `--pi-socket`, fork
 parents prefer the server's durable `SessionMetadata.parentSessionId`; when that field is absent,
 lineage reads only the child session's bounded first header line. An unresolved authoritative run
 parent is reported and does not become a spawn or continuity observation.
