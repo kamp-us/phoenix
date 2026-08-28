@@ -1,89 +1,19 @@
 <!doctype html>
-<html lang="en">
+<html lang="tr">
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<meta
 			name="description"
-			content="Tuval is a local free-pan workspace for discovered pi coding sessions."
+			content="Tuval, yerel pi oturumlarını canlı bir çalışma alanında bir araya getirir."
 		/>
-		<title>Tuval · pi session canvas</title>
+		<title>Tuval · pi oturum alanı</title>
 		<style>
 			/* TUVAL_STYLES */
 		</style>
 	</head>
 	<body>
-		<div class="tuval-shell">
-			<header class="topbar">
-				<div class="brand">
-					<div class="brand__mark" aria-hidden="true">TV</div>
-					<div class="brand__copy">
-						<h1>Tuval</h1>
-						<p>Local pi session canvas</p>
-					</div>
-				</div>
-				<div
-					id="discovery-status"
-					class="status-badge"
-					data-tone="loading"
-					role="status"
-					aria-live="polite"
-				>
-					<strong id="status-label">Discovering</strong>
-					<span id="status-description">Reading configured pi session sources</span>
-				</div>
-				<button id="refresh-sessions" class="control-button" type="button">
-					Refresh sessions
-				</button>
-			</header>
-
-			<main class="workspace" aria-label="Tuval discovery workspace">
-				<section
-					id="canvas"
-					class="canvas"
-					tabindex="0"
-					aria-label="Free-pan session canvas. Use arrow keys to pan, plus and minus to zoom, and Home to reset."
-				>
-					<div class="canvas-toolbar" role="toolbar" aria-label="Canvas controls">
-						<button id="zoom-out" class="control-button" type="button">Zoom out</button>
-						<output id="zoom-output" class="zoom-output" aria-label="Canvas zoom">100%</output>
-						<button id="zoom-in" class="control-button" type="button">Zoom in</button>
-						<button id="reset-view" class="control-button" type="button">Reset view</button>
-					</div>
-
-					<div id="canvas-stage" class="canvas-stage" aria-live="off">
-						<div id="session-nodes" class="session-nodes"></div>
-					</div>
-
-					<section
-						id="discovery-state"
-						class="state-panel"
-						data-tone="loading"
-						aria-labelledby="state-title"
-						aria-describedby="state-description"
-					>
-						<p id="state-eyebrow" class="state-panel__eyebrow">Discovery in progress</p>
-						<h2 id="state-title">Finding active work</h2>
-						<p id="state-description">
-							Tuval is asking the local pi agent for sessions. The canvas stays navigable.
-						</p>
-						<ul id="state-details" class="state-panel__details" hidden></ul>
-						<button id="state-action" class="control-button control-button--primary" type="button">
-							Scan again
-						</button>
-					</section>
-
-					<div id="selection" class="selection" role="status" aria-live="polite" hidden>
-						<strong id="selection-title"></strong>
-						<span id="selection-path"></span>
-					</div>
-
-					<p class="canvas-help">
-						Drag to pan · scroll to zoom · <kbd>Arrow keys</kbd> pan · <kbd>Home</kbd> resets
-					</p>
-				</section>
-			</main>
-		</div>
+		<div id="root"></div>
 		<script type="module">
 			/* TUVAL_APP */
 		</script>

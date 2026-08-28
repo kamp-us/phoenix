@@ -9,5 +9,5 @@
 		"types": ["node"]
 	},
 	"include": ["src", "test", "vitest.config.ts"],
-	"exclude": ["src/frontend-shell", "test/browser"]
+	"exclude": ["src/frontend-shell", "test/browser", "test/frontend"]
 }

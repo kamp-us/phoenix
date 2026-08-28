@@ -2,8 +2,17 @@
 	"extends": "../../tsconfig.json",
 	"compilerOptions": {
 		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"jsx": "react-jsx",
 		"lib": ["ES2023", "DOM", "DOM.Iterable"],
 		"types": ["node", "@playwright/test"]
 	},
-	"include": ["test/browser", "playwright.config.ts", "src/shared/discovery.ts"]
+	"include": [
+		"test/browser",
+		"test/frontend",
+		"playwright.config.ts",
+		"src/frontend-shell",
+		"src/shared/discovery.ts",
+		"src/shared/live-session.ts"
+	]
 }
