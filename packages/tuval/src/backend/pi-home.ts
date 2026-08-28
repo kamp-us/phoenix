@@ -1,3 +1,4 @@
+import {homedir} from "node:os";
 import type {SessionMetadata} from "@earendil-works/pi-protocol";
 import {Effect, FileSystem, Option, Path, Result, Schema} from "effect";
 import type {DiscoveredSession, DiscoveryProblem} from "../shared/discovery.js";
@@ -55,6 +56,7 @@ const sessionFilesIn = Effect.fn("PiHome.sessionFilesIn")(function* (root: strin
 	const files: Array<string> = [];
 	for (const name of entries) {
 		const entryPath = path.join(root, name);
+		if (yield* Effect.isSuccess(fs.readLink(entryPath))) continue;
 		const info = yield* Effect.result(fs.stat(entryPath));
 		if (Result.isSuccess(info) && info.success.type === "File" && name.endsWith(".jsonl")) {
 			files.push(entryPath);
@@ -69,6 +71,7 @@ const sessionFilesIn = Effect.fn("PiHome.sessionFilesIn")(function* (root: strin
 		for (const child of children.success) {
 			if (!child.endsWith(".jsonl")) continue;
 			const childPath = path.join(entryPath, child);
+			if (yield* Effect.isSuccess(fs.readLink(childPath))) continue;
 			const childInfo = yield* Effect.result(fs.stat(childPath));
 			if (Result.isFailure(childInfo) || childInfo.success.type === "File") files.push(childPath);
 		}
@@ -126,7 +129,7 @@ const readSession = Effect.fn("PiHome.readSession")(function* (sessionPath: stri
 
 export const defaultSessionRoots = Effect.fn("PiHome.defaultSessionRoots")(function* (
 	environment: NodeJS.ProcessEnv = process.env,
-	home: string = environment.HOME ?? "",
+	home: string = homedir(),
 ) {
 	const path = yield* Path.Path;
 	const direct = environment.PI_CODING_AGENT_SESSION_DIR;

@@ -4,7 +4,7 @@ import {
 	ServerMessageDecoder,
 	type SessionMetadata,
 } from "@earendil-works/pi-protocol";
-import {describe, expect, it} from "@effect/vitest";
+import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {listSessionsThroughProtocol, makeDiscoveryTransport} from "../src/backend/pi-protocol.js";
 import {tryPromise} from "./test-effect.js";
@@ -37,26 +37,25 @@ describe("framed pi protocol discovery", () => {
 				);
 				const hello = encodeClientMessage({type: "hello", version: PROTOCOL_VERSION});
 				yield* tryPromise(() => transport.send(hello.subarray(0, 3)));
-				expect(chunks).toHaveLength(0);
+				assert.lengthOf(chunks, 0);
 				yield* tryPromise(() => transport.send(hello.subarray(3)));
 
 				const decoder = new ServerMessageDecoder();
 				const messages = chunks.flatMap((chunk) => decoder.push(chunk));
-				expect(transportError).toBeUndefined();
-				expect(messages).toEqual([
-					expect.objectContaining({
-						type: "hello",
-						version: PROTOCOL_VERSION,
-						snapshot: expect.objectContaining({sessions}),
-					}),
-				]);
+				assert.isUndefined(transportError);
+				assert.lengthOf(messages, 1);
+				const message = messages[0];
+				assert.strictEqual(message?.type, "hello");
+				if (message?.type !== "hello") return;
+				assert.strictEqual(message.version, PROTOCOL_VERSION);
+				assert.deepEqual(message.snapshot.sessions, sessions);
 				transport.close();
 			}),
 	);
 
 	it.effect("enumerates through PiClient instead of bypassing its framed transport", () =>
 		Effect.gen(function* () {
-			expect(yield* listSessionsThroughProtocol(sessions)).toEqual(sessions);
+			assert.deepEqual(yield* listSessionsThroughProtocol(sessions), sessions);
 		}),
 	);
 });

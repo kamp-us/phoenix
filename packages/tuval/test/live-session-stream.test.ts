@@ -6,7 +6,7 @@ import {
 	type SessionSnapshot,
 } from "@earendil-works/pi-protocol";
 import {NodeServices} from "@effect/platform-node";
-import {describe, expect, it} from "@effect/vitest";
+import {assert, describe, it} from "@effect/vitest";
 import {Effect, Stream} from "effect";
 import type {LiveSessionService} from "../src/backend/live-session.js";
 import {startTuval} from "../src/backend/server.js";
@@ -150,14 +150,14 @@ describe("live-session server transport", () => {
 					const response = yield* tryPromise(() =>
 						fetch(`${server.url}/fate/live?afterSequence=1`),
 					);
-					expect(response.headers.get("content-type")).toContain("text/event-stream");
+					assert.include(response.headers.get("content-type") ?? "", "text/event-stream");
 					const chunk = yield* tryPromise(() => response.body!.getReader().read());
-					expect(new TextDecoder().decode(chunk.value)).toContain(`data: ${JSON.stringify(event)}`);
+					assert.include(new TextDecoder().decode(chunk.value), `data: ${JSON.stringify(event)}`);
 
 					const hanging = yield* tryPromise(() => fetch(`${server.url}/fate/live?afterSequence=2`));
 					yield* server.close();
 					const closed = yield* tryPromise(() => hanging.body!.getReader().read());
-					expect(closed.done).toBe(true);
+					assert.isTrue(closed.done);
 				}),
 		);
 
@@ -192,11 +192,14 @@ describe("live-session server transport", () => {
 						select: [],
 					},
 				]);
-				expect(prompted).toMatchObject({
-					results: [{data: {_tag: "acknowledged", correlationId: "prompt-product"}, ok: true}],
-				});
+				const promptResult = prompted as {
+					results: Array<{ok: boolean; data: {_tag: string; correlationId: string}}>;
+				};
+				assert.isTrue(promptResult.results[0]?.ok ?? false);
+				assert.strictEqual(promptResult.results[0]?.data._tag, "acknowledged");
+				assert.strictEqual(promptResult.results[0]?.data.correlationId, "prompt-product");
 				const chunk = yield* tryPromise(() => streamed.body!.getReader().read());
-				expect(new TextDecoder().decode(chunk.value)).toContain('"streamed"');
+				assert.include(new TextDecoder().decode(chunk.value), '"streamed"');
 			}),
 		);
 	});

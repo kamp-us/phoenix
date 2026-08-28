@@ -34,6 +34,8 @@ export interface StartTuvalOptions extends PiDiscoveryOptions {
 	readonly log?: (line: string) => void;
 	readonly liveSession?: LiveSessionService;
 	readonly liveSessionTransport?: ByteTransportFactory;
+	readonly requestDispatchGate?: Effect.Effect<void>;
+	readonly onRequestQueued?: () => void;
 }
 
 export interface RunningTuval {
@@ -171,6 +173,20 @@ const responseClosed = (response: ServerResponse) =>
 		return Effect.sync(() => response.off("close", close));
 	});
 
+const endQueuedResponse = Effect.fn("TuvalServer.endQueuedResponse")((response: ServerResponse) =>
+	Effect.callback<void>((resume) => {
+		const done = () => resume(Effect.void);
+		response.once("finish", done);
+		response.once("close", done);
+		response.statusCode = 503;
+		response.end("Tuval is shutting down");
+		return Effect.sync(() => {
+			response.off("finish", done);
+			response.off("close", done);
+		});
+	}),
+);
+
 const handleRequest = Effect.fn("TuvalServer.handleRequest")(function* (
 	request: IncomingMessage,
 	response: ServerResponse,
@@ -251,7 +267,8 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 	const requests = yield* Queue.unbounded<RequestJob>();
 	const requestSupervisor = yield* Effect.forkScoped(
 		Effect.forever(
-			Queue.take(requests).pipe(
+			(options.requestDispatchGate ?? Effect.void).pipe(
+				Effect.andThen(Queue.take(requests)),
 				Effect.flatMap(({request, response}) =>
 					Effect.forkChild(
 						Effect.raceFirst(
@@ -272,8 +289,14 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 			),
 		),
 	);
+	let acceptingRequests = true;
 	const server = createServer((request, response) => {
-		Queue.offerUnsafe(requests, {request, response});
+		if (!acceptingRequests || !Queue.offerUnsafe(requests, {request, response})) {
+			response.statusCode = 503;
+			response.end("Tuval is shutting down");
+			return;
+		}
+		options.onRequestQueued?.();
 	});
 	const port = options.port ?? 0;
 	yield* Effect.callback<void, StartupFailure>((resume) => {
@@ -303,8 +326,15 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 			if (closed) return Effect.void;
 			closed = true;
 			return Effect.gen(function* () {
+				acceptingRequests = false;
 				yield* Fiber.interrupt(requestSupervisor);
+				const queued = yield* Queue.takeBetween(requests, 0, Number.POSITIVE_INFINITY);
+				yield* Effect.forEach(queued, ({response}) => endQueuedResponse(response), {
+					concurrency: 1,
+					discard: true,
+				});
 				yield* Queue.shutdown(requests);
+				yield* Effect.sync(() => server.closeAllConnections());
 				yield* closeServer(server);
 			});
 		}),

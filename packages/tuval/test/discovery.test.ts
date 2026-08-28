@@ -1,8 +1,10 @@
+import {homedir} from "node:os";
 import {NodeServices} from "@effect/platform-node";
-import {describe, expect, it} from "@effect/vitest";
+import {assert, describe, it} from "@effect/vitest";
 import {Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
 import {discoverPiSessions} from "../src/backend/pi-discovery.js";
+import {defaultSessionRoots} from "../src/backend/pi-home.js";
 import {DiscoveryOutcome} from "../src/shared/discovery.js";
 
 const decodeOutcome = Schema.decodeUnknownSync(DiscoveryOutcome);
@@ -32,24 +34,39 @@ describe("pi home discovery", () => {
 						path.join(project, "2026-08-27T12-01-00-000Z_broken.jsonl"),
 						"not-json\n",
 					);
+					const outside = yield* fs.makeTempDirectoryScoped({prefix: "tuval-linked-session-"});
+					const linkedTarget = path.join(outside, "2026-08-27T12-02-00-000Z_linked.jsonl");
+					yield* fs.writeFileString(
+						linkedTarget,
+						`${JSON.stringify({type: "session", id: "linked", cwd: "/linked"})}\n`,
+					);
+					yield* fs.symlink(
+						linkedTarget,
+						path.join(project, "2026-08-27T12-02-00-000Z_linked.jsonl"),
+					);
 
 					const first = yield* discoverPiSessions({sessionRoots: [root]});
 					const second = yield* discoverPiSessions({sessionRoots: [root]});
 
-					expect(() => decodeOutcome(first)).not.toThrow();
-					expect(first._tag).toBe("partial-source");
+					assert.doesNotThrow(() => decodeOutcome(first));
+					assert.strictEqual(first._tag, "partial-source");
 					if (first._tag !== "partial-source" || second._tag !== "partial-source") return;
-					expect(first.sessions).toHaveLength(1);
-					expect(first.sessions[0]).toMatchObject({
-						identity: "pi:filename-session",
-						piSessionId: "filename-session",
-						cwd: "/Users/test/project",
-					});
-					expect(second.sessions[0]?.identity).toBe(first.sessions[0]?.identity);
-					expect(first.problems).toEqual([
-						expect.objectContaining({message: "session header is not valid JSON"}),
-					]);
+					assert.lengthOf(first.sessions, 1);
+					assert.strictEqual(first.sessions[0]?.identity, "pi:filename-session");
+					assert.strictEqual(first.sessions[0]?.piSessionId, "filename-session");
+					assert.strictEqual(first.sessions[0]?.cwd, "/Users/test/project");
+					assert.strictEqual(second.sessions[0]?.identity, first.sessions[0]?.identity);
+					assert.strictEqual(first.problems[0]?.message, "session header is not valid JSON");
 				}),
+		);
+
+		it.effect("falls back to the OS home when pi directory variables are absent", () =>
+			Effect.gen(function* () {
+				const path = yield* Path.Path;
+				assert.deepEqual(yield* defaultSessionRoots({}), [
+					path.join(homedir(), ".pi", "agent", "sessions"),
+				]);
+			}),
 		);
 
 		it.effect("distinguishes empty, fatal, and framed transport failures", () =>
@@ -58,21 +75,21 @@ describe("pi home discovery", () => {
 				const path = yield* Path.Path;
 				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-discovery-"});
 				const empty = yield* discoverPiSessions({sessionRoots: [path.join(root, "missing")]});
-				expect(() => decodeOutcome(empty)).not.toThrow();
-				expect(empty).toEqual({_tag: "empty", sessions: []});
+				assert.doesNotThrow(() => decodeOutcome(empty));
+				assert.deepEqual(empty, {_tag: "empty", sessions: []});
 
 				const notDirectory = path.join(root, "not-a-directory");
 				yield* fs.writeFileString(notDirectory, "x");
 				const fatal = yield* discoverPiSessions({sessionRoots: [notDirectory]});
-				expect(() => decodeOutcome(fatal)).not.toThrow();
-				expect(fatal).toMatchObject({_tag: "fatal"});
+				assert.doesNotThrow(() => decodeOutcome(fatal));
+				assert.deepInclude(fatal, {_tag: "fatal"});
 
 				const transport = yield* discoverPiSessions({
 					sessionRoots: [path.join(root, "missing")],
 					transport: {failWith: new Error("synthetic transport break")},
 				});
-				expect(() => decodeOutcome(transport)).not.toThrow();
-				expect(transport).toEqual({
+				assert.doesNotThrow(() => decodeOutcome(transport));
+				assert.deepEqual(transport, {
 					_tag: "transport",
 					message: "synthetic transport break",
 					retryable: true,

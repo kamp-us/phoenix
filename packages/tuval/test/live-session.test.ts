@@ -10,7 +10,7 @@ import {
 	type ServerMessage,
 	type SessionSnapshot,
 } from "@earendil-works/pi-protocol";
-import {describe, expect, it} from "@effect/vitest";
+import {assert, describe, it} from "@effect/vitest";
 import {Effect, Fiber, Schema, Stream} from "effect";
 import {PiLiveSession} from "../src/backend/live-session.js";
 import {
@@ -257,21 +257,22 @@ describe("PiLiveSession", () => {
 				const service = yield* connect(protocol);
 
 				const attached = yield* service.attach(initial.id);
-				expect(Schema.decodeUnknownSync(AttachLiveSessionOutcome)(attached)).toEqual(attached);
-				expect(attached).toMatchObject({
-					_tag: "attached",
-					session: {
-						phase: "idle",
-						model: {provider: "anthropic", id: "claude-sonnet"},
-						thinkingLevel: "high",
-						ownership: "exclusive",
-						connection: "connected",
-						completion: "running",
-					},
+				assert.deepEqual(Schema.decodeUnknownSync(AttachLiveSessionOutcome)(attached), attached);
+				assert.strictEqual(attached._tag, "attached");
+				if (attached._tag !== "attached") return;
+				assert.strictEqual(attached.session.phase, "idle");
+				assert.deepEqual(attached.session.model, {
+					provider: "anthropic",
+					id: "claude-sonnet",
 				});
-				expect(
+				assert.strictEqual(attached.session.thinkingLevel, "high");
+				assert.strictEqual(attached.session.ownership, "exclusive");
+				assert.strictEqual(attached.session.connection, "connected");
+				assert.strictEqual(attached.session.completion, "running");
+				assert.deepEqual(
 					attached._tag === "attached" && attached.session.transcript.map((item) => item.id),
-				).toEqual(["u1", "a1", "a2"]);
+					["u1", "a1", "a2"],
+				);
 
 				protocol.emit({
 					type: "session_progress",
@@ -291,21 +292,27 @@ describe("PiLiveSession", () => {
 				});
 
 				const current = yield* service.current();
-				expect(Schema.decodeUnknownSync(LiveSessionView)(current)).toEqual(current);
-				expect(current?.transcript.map((item) => item.id)).toEqual(["u1", "a1", "a2"]);
-				expect(current?.transcript.at(-1)).toMatchObject({
+				assert.deepEqual(Schema.decodeUnknownSync(LiveSessionView)(current), current);
+				assert.deepEqual(
+					current?.transcript.map((item) => item.id),
+					["u1", "a1", "a2"],
+				);
+				assert.deepInclude(current?.transcript.at(-1), {
 					id: "a2",
 					content: [{type: "text", text: "hello"}],
 					status: "complete",
 				});
 				const events = yield* service.eventsAfter();
 				for (const event of events) {
-					expect(Schema.decodeUnknownSync(LiveSessionEvent)(event)).toEqual(event);
+					assert.deepEqual(Schema.decodeUnknownSync(LiveSessionEvent)(event), event);
 				}
 				const sequences = events.map((event) => event.sequence);
-				expect(sequences).toEqual([...sequences].sort((a, b) => a - b));
+				assert.deepEqual(
+					sequences,
+					[...sequences].sort((a, b) => a - b),
+				);
 				yield* service.release();
-				expect(protocol.detached).toEqual([initial.id]);
+				assert.deepEqual(protocol.detached, [initial.id]);
 			}),
 	);
 
@@ -323,7 +330,7 @@ describe("PiLiveSession", () => {
 				.prompt({correlationId: "prompt-1", text: "say hello"})
 				.pipe(Effect.forkChild);
 			yield* Effect.yieldNow;
-			expect(pending.pollUnsafe()).toBeUndefined();
+			assert.isUndefined(pending.pollUnsafe());
 
 			protocol.emit({
 				type: "session_progress",
@@ -331,32 +338,31 @@ describe("PiLiveSession", () => {
 				progress: {type: "item_started", item: assistant("streamed", "hello", 2, "streaming")},
 			});
 			const streamedEvents = Array.from(yield* Fiber.join(streamed));
-			expect(streamedEvents).toHaveLength(1);
-			expect(streamedEvents[0]).toMatchObject({_tag: "session"});
-			expect((yield* service.current())?.transcript.at(-1)?.id).toBe("streamed");
-			expect(pending.pollUnsafe()).toBeUndefined();
+			assert.lengthOf(streamedEvents, 1);
+			assert.deepInclude(streamedEvents[0], {_tag: "session"});
+			assert.strictEqual((yield* service.current())?.transcript.at(-1)?.id, "streamed");
+			assert.isUndefined(pending.pollUnsafe());
 
 			const acknowledged = snapshot("session-prompt", 2, [
 				...initial.transcript,
 				assistant("streamed", "hello", 2),
 			]);
 			protocol.acknowledgePrompt("say hello", acknowledged);
-			expect(yield* Fiber.join(pending)).toMatchObject({
-				_tag: "acknowledged",
-				correlationId: "prompt-1",
-			});
-			expect((yield* service.eventsAfter()).find((event) => event._tag === "prompt")).toMatchObject(
-				{
-					outcome: {_tag: "acknowledged", correlationId: "prompt-1"},
-				},
-			);
+			const promptOutcome = yield* Fiber.join(pending);
+			assert.strictEqual(promptOutcome._tag, "acknowledged");
+			assert.strictEqual(promptOutcome.correlationId, "prompt-1");
+			const promptEvent = (yield* service.eventsAfter()).find((event) => event._tag === "prompt");
+			assert.strictEqual(promptEvent?._tag, "prompt");
+			if (promptEvent?._tag !== "prompt") return;
+			assert.strictEqual(promptEvent.outcome._tag, "acknowledged");
+			assert.strictEqual(promptEvent.outcome.correlationId, "prompt-1");
 
 			const refused = yield* service
 				.prompt({correlationId: "prompt-2", text: "blocked"})
 				.pipe(Effect.forkChild);
 			yield* Effect.yieldNow;
 			protocol.refusePrompt("blocked");
-			expect(yield* Fiber.join(refused)).toMatchObject({
+			assert.deepInclude(yield* Fiber.join(refused), {
 				_tag: "refused",
 				correlationId: "prompt-2",
 				code: "lease-refused",
@@ -375,20 +381,20 @@ describe("PiLiveSession", () => {
 				yield* service.attach(first.id);
 				yield* service.attach(second.id);
 
-				expect(protocol.commands).toEqual(["attach", "detach", "attach"]);
-				expect(protocol.detached).toEqual([first.id]);
+				assert.deepEqual(protocol.commands, ["attach", "detach", "attach"]);
+				assert.deepEqual(protocol.detached, [first.id]);
 				protocol.emit({
 					type: "session_progress",
 					sessionId: first.id,
 					progress: {type: "item_started", item: user("late-first", "ignored", 5)},
 				});
 				const current = yield* service.current();
-				expect(current?.sessionId).toBe(second.id);
-				expect(current?.transcript.map((item) => item.id)).not.toContain("late-first");
+				assert.strictEqual(current?.sessionId, second.id);
+				assert.notInclude(current?.transcript.map((item) => item.id) ?? [], "late-first");
 
 				yield* service.release();
-				expect(protocol.detached).toEqual([first.id, second.id]);
-				expect(yield* service.current()).toBeNull();
+				assert.deepEqual(protocol.detached, [first.id, second.id]);
+				assert.isNull(yield* service.current());
 			}),
 	);
 
@@ -400,21 +406,22 @@ describe("PiLiveSession", () => {
 			protocol.locked.add(refusedSession.id);
 			const service = yield* connect(protocol);
 
-			expect(yield* service.attach(refusedSession.id)).toMatchObject({
+			assert.deepInclude(yield* service.attach(refusedSession.id), {
 				_tag: "refused",
 				code: "lease-refused",
 			});
 			yield* service.attach(live.id);
 			protocol.disconnect();
 
-			expect(yield* service.current()).toMatchObject({
+			const disconnected = yield* service.current();
+			assert.deepInclude(disconnected, {
 				_tag: "disconnected",
 				connection: "disconnected",
 				ownership: "none",
 				completion: "disconnected",
-				transcript: [{id: "live-user"}],
 			});
-			expect(yield* service.prompt({correlationId: "after-disconnect", text: "no"})).toMatchObject({
+			assert.strictEqual(disconnected?.transcript[0]?.id, "live-user");
+			assert.deepInclude(yield* service.prompt({correlationId: "after-disconnect", text: "no"}), {
 				_tag: "refused",
 				code: "disconnected",
 			});
@@ -429,21 +436,22 @@ describe("PiLiveSession", () => {
 			yield* service.attach(live.id);
 
 			protocol.emit({type: "session_removed", sessionId: live.id});
-			expect(yield* service.current()).toMatchObject({
+			assert.deepInclude(yield* service.current(), {
 				_tag: "disconnected",
 				ownership: "none",
 				completion: "disconnected",
 			});
 			const reattached = yield* service.attach(live.id);
-			expect(reattached).toMatchObject({_tag: "attached"});
-			expect(protocol.commands).toEqual(["attach", "attach"]);
+			assert.deepInclude(reattached, {_tag: "attached"});
+			assert.deepEqual(protocol.commands, ["attach", "attach"]);
 
 			protocol.emit({
 				type: "session_progress",
 				sessionId: live.id,
 				progress: {type: "item_started", item: user("after-reattach", "accepted", 2)},
 			});
-			expect((yield* service.current())?.transcript.map((item) => item.id)).toContain(
+			assert.include(
+				(yield* service.current())?.transcript.map((item) => item.id) ?? [],
 				"after-reattach",
 			);
 		}),
@@ -458,15 +466,14 @@ describe("PiLiveSession", () => {
 
 			protocol.emitMalformedEvent();
 
-			expect(yield* service.current()).toMatchObject({
-				_tag: "disconnected",
-				transcript: [{id: "malformed-user"}],
-			});
-			expect(
+			const malformed = yield* service.current();
+			assert.deepInclude(malformed, {_tag: "disconnected"});
+			assert.strictEqual(malformed?.transcript[0]?.id, "malformed-user");
+			assert.isTrue(
 				(yield* service.eventsAfter()).some(
 					(event) => event._tag === "diagnostic" && /session_progress|invalid/i.test(event.message),
 				),
-			).toBe(true);
+			);
 		}),
 	);
 });

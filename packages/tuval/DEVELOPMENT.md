@@ -16,6 +16,20 @@
 
 The process prints its selected URL after the server is ready and opens it in the default browser.
 
+## Launch with live pi sessions
+
+1. Start pi's experimental server on a Unix socket:
+
+   ```bash
+   pi --experimental server --listen unix:///tmp/pi.sock
+   ```
+
+2. Launch Tuval against that socket:
+
+   ```bash
+   node packages/tuval/dist/backend/bin.js --pi-socket /tmp/pi.sock
+   ```
+
 ## Launch headless on a fixed port
 
 1. Build the package:

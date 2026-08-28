@@ -1,4 +1,4 @@
-import {describe, expect, it} from "@effect/vitest";
+import {assert, describe, it} from "@effect/vitest";
 import {
 	type CurrentUser,
 	FateInterpreter,
@@ -111,7 +111,7 @@ describe("live-session fate-effect contract", () => {
 					select: [],
 				},
 			]);
-			expect(yield* resultOf(attached)).toMatchObject({
+			assert.deepInclude(yield* resultOf(attached), {
 				results: [{id: "attach", ok: true, data: {_tag: "attached", session}}],
 			});
 
@@ -125,12 +125,14 @@ describe("live-session fate-effect contract", () => {
 					select: [],
 				},
 			]);
-			expect(yield* resultOf(response)).toMatchObject({
-				results: [
-					{id: "current", ok: true, data: session},
-					{id: "prompt", ok: true, data: {_tag: "acknowledged", correlationId: "prompt-1"}},
-				],
-			});
+			const responseBody = (yield* resultOf(response)) as {
+				results: Array<{id: string; ok: boolean; data: Record<string, unknown>}>;
+			};
+			assert.strictEqual(responseBody.results[0]?.id, "current");
+			assert.deepEqual(responseBody.results[0]?.data, session);
+			assert.strictEqual(responseBody.results[1]?.id, "prompt");
+			assert.strictEqual(responseBody.results[1]?.data._tag, "acknowledged");
+			assert.strictEqual(responseBody.results[1]?.data.correlationId, "prompt-1");
 
 			yield* handle(live, [
 				{
@@ -141,7 +143,7 @@ describe("live-session fate-effect contract", () => {
 					select: [],
 				},
 			]);
-			expect(calls).toEqual(["attach:session-one", "prompt:prompt-1:hello", "release"]);
+			assert.deepEqual(calls, ["attach:session-one", "prompt:prompt-1:hello", "release"]);
 		}),
 	);
 
@@ -181,10 +183,13 @@ describe("live-session fate-effect contract", () => {
 					select: [],
 				},
 			]);
-			expect(yield* resultOf(response)).toMatchObject({
-				results: [{id: "bad", ok: false, error: {code: "VALIDATION_ERROR"}}],
-			});
-			expect(called).toBe(false);
+			const responseBody = (yield* resultOf(response)) as {
+				results: Array<{id: string; ok: boolean; error: {code: string}}>;
+			};
+			assert.strictEqual(responseBody.results[0]?.id, "bad");
+			assert.isFalse(responseBody.results[0]?.ok ?? true);
+			assert.strictEqual(responseBody.results[0]?.error.code, "VALIDATION_ERROR");
+			assert.isFalse(called);
 		}),
 	);
 });

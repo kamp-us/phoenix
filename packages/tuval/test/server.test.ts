@@ -9,8 +9,9 @@ import {
 	type SessionSnapshot,
 } from "@earendil-works/pi-protocol";
 import {NodeServices} from "@effect/platform-node";
-import {describe, expect, it} from "@effect/vitest";
-import {Effect, Exit, FileSystem, Path} from "effect";
+import {assert, describe, it} from "@effect/vitest";
+import {Effect, Exit, Fiber, FileSystem, Path} from "effect";
+import * as Latch from "effect/Latch";
 import {startTuval, TUVAL_HOST} from "../src/backend/server.js";
 import {tryPromise} from "./test-effect.js";
 
@@ -148,17 +149,22 @@ describe("Tuval local server", () => {
 					sessionRoots: [`${root}/missing-sessions`],
 					openBrowser: (url) =>
 						tryPromise(async () => {
-							const health = await fetch(`${url}/health`).then((response) => response.json());
-							expect(health).toMatchObject({status: "ready", url});
+							const health = (await fetch(`${url}/health`).then((response) => response.json())) as {
+								status?: unknown;
+								url?: unknown;
+							};
+							assert.strictEqual(health.status, "ready");
+							assert.strictEqual(health.url, url);
 							opened = url;
 						}),
 				});
 
-				expect(server.host).toBe(TUVAL_HOST);
-				expect(server.url).toBe(opened);
-				expect(
+				assert.strictEqual(server.host, TUVAL_HOST);
+				assert.strictEqual(server.url, opened);
+				assert.include(
 					yield* tryPromise(() => fetch(server.url).then((response) => response.text())),
-				).toContain("Tuval test shell");
+					"Tuval test shell",
+				);
 				const fate = yield* tryPromise(() =>
 					fetch(`${server.url}/fate`, {
 						method: "POST",
@@ -169,7 +175,7 @@ describe("Tuval local server", () => {
 						}),
 					}).then((response) => response.json()),
 				);
-				expect(fate).toEqual({
+				assert.deepEqual(fate, {
 					version: 1,
 					results: [{id: "discovery", ok: true, data: {_tag: "empty", sessions: []}}],
 				});
@@ -203,9 +209,32 @@ describe("Tuval local server", () => {
 								}),
 						}),
 					);
-					expect(Exit.isFailure(exit)).toBe(true);
-					expect(opened).toBe(false);
+					assert.isTrue(Exit.isFailure(exit));
+					assert.isFalse(opened);
 				}),
+		);
+
+		it.effect("ends a queued request before waiting for Node server close", () =>
+			Effect.gen(function* () {
+				const gate = yield* Latch.make();
+				let markQueued: () => void = () => {};
+				const queued = new Promise<void>((resolve) => {
+					markQueued = resolve;
+				});
+				const server = yield* startTuval({
+					requestDispatchGate: gate.await,
+					onRequestQueued: markQueued,
+					openBrowser: () => Effect.void,
+				});
+				const pending = yield* tryPromise(() => fetch(`${server.url}/health`)).pipe(
+					Effect.forkChild,
+				);
+				yield* tryPromise(() => queued);
+
+				yield* server.close();
+				const exit = yield* Effect.exit(Fiber.join(pending));
+				assert.isTrue(Exit.isFailure(exit));
+			}),
 		);
 
 		it.effect("runs the cold executable with a production Unix transport through live attach", () =>
@@ -237,11 +266,14 @@ describe("Tuval local server", () => {
 						}),
 					}).then((response) => response.json()),
 				);
-				expect(attached).toMatchObject({
-					results: [{ok: true, data: {_tag: "attached", session: {sessionId: liveSnapshot.id}}}],
-				});
+				const attachedResult = attached as {
+					results: Array<{ok: boolean; data: {_tag: string; session: {sessionId: string}}}>;
+				};
+				assert.isTrue(attachedResult.results[0]?.ok ?? false);
+				assert.strictEqual(attachedResult.results[0]?.data._tag, "attached");
+				assert.strictEqual(attachedResult.results[0]?.data.session.sessionId, liveSnapshot.id);
 				child.kill("SIGTERM");
-				expect(yield* waitForExit(child)).toBe(130);
+				assert.strictEqual(yield* waitForExit(child), 130);
 			}),
 		);
 	});
