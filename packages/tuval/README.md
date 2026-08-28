@@ -69,12 +69,16 @@ An unresolved protocol or run parent is reported and does not become a spawn or 
 observation; a parentless observation before the first spawn-eligible run is likewise
 diagnostic-only.
 
-The normalized version-1 store lives under `~/.pi/agent/tuval/lineage.json` by default. Serialized
-rescans preserve exact observations and retained records after source cleanup. Candidates for one
-run compare their authoritative run, session, or parentless parent facts before resolution;
-unresolved parents remain diagnostic-only, and adding one to a retained run is refused. Reused run
-ids with changed sessions, timestamps, or parentage, multiple spawn origins for one session,
-dangling references, invalid source ownership, and unknown store versions are likewise refused.
+The normalized version-1 store lives under `~/.pi/agent/tuval/lineage.json` by default and accepts
+only finite timestamps. Non-finite lifecycle timestamps are isolated as malformed, invalid protocol
+timestamps are refused, and a store carrying one is refused before projection. For accepted
+records, serialized rescans preserve exact observations after source cleanup, and retained
+run-to-session ownership resolves later descendants
+whose parent run artifact has disappeared. Candidates for one run compare their authoritative run,
+session, or parentless parent facts before resolution; unresolved parents remain diagnostic-only,
+and adding one to a retained run is refused. Reused run ids with changed sessions, timestamps, or
+parentage, multiple spawn origins for one session, dangling references, invalid source ownership,
+and unknown store versions are likewise refused.
 
 ## Live-session contract
 

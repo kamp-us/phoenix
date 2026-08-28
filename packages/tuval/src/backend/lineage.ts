@@ -47,8 +47,8 @@ const SourceType = Schema.Struct({type: Schema.String});
 
 const ProtocolSession = Schema.Struct({
 	id: Schema.String,
-	createdAt: Schema.Number,
-	updatedAt: Schema.optionalKey(Schema.Number),
+	createdAt: Schema.Finite,
+	updatedAt: Schema.optionalKey(Schema.Finite),
 	parentSessionId: Schema.optionalKey(Schema.String),
 	cwd: Schema.optionalKey(Schema.String),
 });
@@ -60,7 +60,7 @@ const RawRunEntry = Schema.Struct({
 	parentRunId: Schema.optionalKey(Schema.String),
 	parentWorkflowRunId: Schema.optionalKey(Schema.String),
 	sessionFile: Schema.optionalKey(Schema.String),
-	startedAt: Schema.optionalKey(Schema.Number),
+	startedAt: Schema.optionalKey(Schema.Finite),
 	children: Schema.optionalKey(Schema.Array(Schema.Unknown)),
 	steps: Schema.optionalKey(Schema.Array(Schema.Unknown)),
 	results: Schema.optionalKey(Schema.Array(Schema.Unknown)),
@@ -75,7 +75,7 @@ const RawRunStatus = Schema.Struct({
 	parentWorkflowRunId: Schema.optionalKey(Schema.String),
 	sessionId: Schema.optionalKey(Schema.String),
 	sessionFile: Schema.optionalKey(Schema.String),
-	startedAt: Schema.optionalKey(Schema.Number),
+	startedAt: Schema.optionalKey(Schema.Finite),
 	steps: Schema.optionalKey(Schema.Array(Schema.Unknown)),
 	results: Schema.optionalKey(Schema.Array(Schema.Unknown)),
 	children: Schema.optionalKey(Schema.Array(Schema.Unknown)),
@@ -723,7 +723,9 @@ const lineageRecords = (
 		parentReferences.set(candidate.runId, reference);
 	}
 
-	const runSessions = new Map<string, SessionIdentity>();
+	const runSessions = new Map<string, SessionIdentity>(
+		[...currentByRun].map(([runId, observation]) => [runId, observation.child]),
+	);
 	for (const candidate of candidates) {
 		const child = resolveSession(candidate.sessionRef, byFile, knownNodes, path);
 		if (child === undefined) {

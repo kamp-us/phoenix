@@ -4,8 +4,8 @@ import {SessionIdentity, sessionIdentity} from "./discovery.js";
 export const LineageNode = Schema.Struct({
 	id: SessionIdentity,
 	piSessionId: Schema.String,
-	createdAt: Schema.Number,
-	updatedAt: Schema.Number,
+	createdAt: Schema.Finite,
+	updatedAt: Schema.Finite,
 	cwd: Schema.String,
 	sourceFiles: Schema.Array(Schema.String),
 });
@@ -17,7 +17,7 @@ export const SpawnLineageEdge = Schema.Struct({
 	parent: SessionIdentity,
 	child: SessionIdentity,
 	runId: Schema.String,
-	observedAt: Schema.Number,
+	observedAt: Schema.Finite,
 });
 export type SpawnLineageEdge = (typeof SpawnLineageEdge)["Type"];
 
@@ -38,7 +38,7 @@ export const ContinuityObservation = Schema.Struct({
 	runId: Schema.String,
 	session: SessionIdentity,
 	parent: Schema.optionalKey(SessionIdentity),
-	observedAt: Schema.Number,
+	observedAt: Schema.Finite,
 });
 export type ContinuityObservation = (typeof ContinuityObservation)["Type"];
 
@@ -188,6 +188,9 @@ export const validateLineageStore = (
 	const piSessionIds = new Set<string>();
 	const sourceOwners = new Map<string, string>();
 	for (const node of document.nodes) {
+		if (!Number.isFinite(node.createdAt) || !Number.isFinite(node.updatedAt)) {
+			return conflict(node.id, `Session node ${node.id} has a non-finite timestamp`);
+		}
 		if (node.piSessionId.trim().length === 0) {
 			return conflict(node.id, `Session node ${node.id} has an empty pi session id`);
 		}
@@ -223,6 +226,9 @@ export const validateLineageStore = (
 		if (edge.parent === edge.child) {
 			return conflict(edge.id, `Lineage edge ${edge.id} is a self edge`);
 		}
+		if (edge.kind === "spawn" && !Number.isFinite(edge.observedAt)) {
+			return conflict(edge.id, `Spawn edge ${edge.id} has a non-finite timestamp`);
+		}
 		const expectedId = edge.kind === "spawn" ? `spawn:${edge.runId}` : `fork:${edge.child}`;
 		if (edge.kind === "spawn" && edge.runId.trim().length === 0) {
 			return conflict(edge.id, `Spawn edge ${edge.id} has an empty run id`);
@@ -245,6 +251,12 @@ export const validateLineageStore = (
 
 	const continuityIds = new Set<string>();
 	for (const observation of document.continuity) {
+		if (!Number.isFinite(observation.observedAt)) {
+			return conflict(
+				observation.id,
+				`Continuity observation ${observation.id} has a non-finite timestamp`,
+			);
+		}
 		if (observation.runId.trim().length === 0) {
 			return conflict(
 				observation.id,
