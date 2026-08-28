@@ -7,6 +7,7 @@ import {
 } from "@kampus/fate-effect";
 import {Effect, Layer, Stream} from "effect";
 import {TuvalFateServerLive} from "../src/backend/fate.js";
+import {LineageIndex} from "../src/backend/lineage.js";
 import {LiveSession, type LiveSessionService} from "../src/backend/live-session.js";
 import {PiDiscovery} from "../src/backend/pi-discovery.js";
 import type {LiveSessionView} from "../src/shared/live-session.js";
@@ -58,8 +59,16 @@ const handle = (live: LiveSessionService, operations: ReadonlyArray<Record<strin
 					Layer.provide(
 						Layer.mergeAll(
 							Layer.succeed(LiveSession, live),
+							Layer.succeed(LineageIndex, {
+								project: () =>
+									Effect.succeed({
+										graph: {version: 1, nodes: [], edges: [], continuity: []},
+										problems: [],
+									}),
+							}),
 							Layer.succeed(PiDiscovery, {
 								discover: () => Effect.succeed({_tag: "empty", sessions: [] as const}),
+								sessionMetadata: () => Effect.succeed([]),
 							}),
 						),
 					),
@@ -124,6 +133,7 @@ describe("live-session fate-effect contract", () => {
 					input: {correlationId: "prompt-1", text: "hello"},
 					select: [],
 				},
+				{id: "lineage", kind: "query", name: "lineage", select: []},
 			]);
 			const responseBody = (yield* resultOf(response)) as {
 				results: Array<{id: string; ok: boolean; data: Record<string, unknown>}>;
@@ -133,6 +143,10 @@ describe("live-session fate-effect contract", () => {
 			assert.strictEqual(responseBody.results[1]?.id, "prompt");
 			assert.strictEqual(responseBody.results[1]?.data._tag, "acknowledged");
 			assert.strictEqual(responseBody.results[1]?.data.correlationId, "prompt-1");
+			assert.deepEqual(responseBody.results[2]?.data, {
+				graph: {version: 1, nodes: [], edges: [], continuity: []},
+				problems: [],
+			});
 
 			yield* handle(live, [
 				{

@@ -1,3 +1,4 @@
+import type {SessionMetadata} from "@earendil-works/pi-protocol";
 import {Context, Effect, FileSystem, Layer, Path, Result} from "effect";
 import type {DiscoveryOutcome} from "../shared/discovery.js";
 import {defaultSessionRoots, scanPiHomes, toSessionMetadata} from "./pi-home.js";
@@ -14,6 +15,7 @@ export interface PiDiscoveryOptions {
 
 export interface PiDiscoveryService {
 	readonly discover: () => Effect.Effect<DiscoveryOutcome>;
+	readonly sessionMetadata: () => Effect.Effect<ReadonlyArray<SessionMetadata>>;
 }
 
 export class PiDiscovery extends Context.Service<PiDiscovery, PiDiscoveryService>()(
@@ -58,6 +60,17 @@ export const discoverPiSessions = Effect.fn("PiDiscovery.discover")(function* (
 	return {_tag: "ready" as const, sessions};
 });
 
+export const discoverPiSessionMetadata = Effect.fn("PiDiscovery.sessionMetadata")(function* (
+	options: PiDiscoveryOptions = {},
+) {
+	const roots = options.sessionRoots ?? (yield* defaultSessionRoots());
+	const scan = yield* scanPiHomes(roots);
+	const metadata = yield* Effect.result(
+		listSessionsThroughProtocol(scan.sessions.map(toSessionMetadata), options.transport),
+	);
+	return Result.isSuccess(metadata) ? metadata.success : [];
+});
+
 export const PiDiscoveryLive = (
 	options: PiDiscoveryOptions = {},
 ): Layer.Layer<PiDiscovery, never, FileSystem.FileSystem | Path.Path> =>
@@ -69,6 +82,12 @@ export const PiDiscoveryLive = (
 			return {
 				discover: Effect.fn("PiDiscovery.discover")(() =>
 					discoverPiSessions(options).pipe(
+						Effect.provideService(FileSystem.FileSystem, fs),
+						Effect.provideService(Path.Path, path),
+					),
+				),
+				sessionMetadata: Effect.fn("PiDiscovery.sessionMetadata")(() =>
+					discoverPiSessionMetadata(options).pipe(
 						Effect.provideService(FileSystem.FileSystem, fs),
 						Effect.provideService(Path.Path, path),
 					),

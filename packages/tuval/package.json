@@ -9,6 +9,7 @@
 	},
 	"exports": {
 		"./discovery": "./dist/shared/discovery.js",
+		"./lineage": "./dist/shared/lineage.js",
 		"./live-session": "./dist/shared/live-session.js"
 	},
 	"files": [
@@ -43,6 +44,7 @@
 		"@types/node": "catalog:",
 		"@types/react": "catalog:",
 		"@types/react-dom": "catalog:",
+		"fast-check": "catalog:",
 		"jsdom": "catalog:",
 		"typescript": "catalog:",
 		"vite": "catalog:",

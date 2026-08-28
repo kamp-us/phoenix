@@ -1037,6 +1037,9 @@ importers:
       '@types/react-dom':
         specifier: 'catalog:'
         version: 19.2.3(@types/react@19.2.14)
+      fast-check:
+        specifier: 'catalog:'
+        version: 3.23.2
       jsdom:
         specifier: 'catalog:'
         version: 26.1.0

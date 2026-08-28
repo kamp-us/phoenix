@@ -7,9 +7,9 @@ Tuval is a localhost-only workspace for discovering and opening installed
 
 | Path | Responsibility |
 | --- | --- |
-| `src/backend/` | Loopback HTTP server, pi discovery, and PiClient live-session leases |
+| `src/backend/` | Loopback HTTP server, pi discovery, durable lineage indexing, and PiClient live-session leases |
 | `src/frontend-shell/` | Static placeholder served by the backend |
-| `src/shared/` | Frontend-independent discovery and live-session schemas |
+| `src/shared/` | Frontend-independent discovery, lineage, and live-session schemas |
 
 ## Runtime interface
 
@@ -20,7 +20,7 @@ then opens that URL in the default browser unless browser opening is disabled.
 | --- | --- |
 | `GET /health` | Report server readiness |
 | `GET /` | Serve the static shell |
-| `POST /fate` | Run Effect-native discovery and live-session queries or mutations |
+| `POST /fate` | Run Effect-native discovery, lineage, and live-session queries or mutations |
 | `GET /fate/live?afterSequence=<n>` | Stream ordered live-session events over SSE |
 | `--port <port>` | Bind a fixed port instead of selecting an available port |
 | `--no-open` | Start without opening a browser |
@@ -46,6 +46,17 @@ outcomes.
 
 Filesystem and framed-CBOR access sit behind the `PiDiscovery` Effect service. A malformed session
 entry is reported as a source problem without discarding sessions that were read successfully.
+
+## Lineage contract
+
+The package exports the schema-backed graph types from `tuval/lineage`. The `lineage` fate query
+projects session nodes, `spawn` and `fork` edges, resume-continuity observations, and isolated source
+problems. `LineageIndex` joins pi-subagents lifecycle artifacts to pi session headers while preferring
+Pi protocol parent metadata for forks.
+
+The normalized version-1 store lives under `~/.pi/agent/tuval/lineage.json` by default. Rescans are
+idempotent, retained records survive source cleanup, and an unknown store version is refused rather
+than interpreted as the current schema.
 
 ## Live-session contract
 
