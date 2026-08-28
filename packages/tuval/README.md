@@ -30,7 +30,8 @@ Live attachment requires a pi server Unix socket supplied through `--pi-socket`.
 reads `PI_CODING_AGENT_SESSION_DIR` when set. Otherwise it reads the `sessions` directory beneath
 `PI_CODING_AGENT_DIR`, falling back to `~/.pi/agent/sessions`. Lineage reads pi-subagents lifecycle
 artifacts from the sibling `async-subagent-runs` and `nested-subagent-runs` directories beneath
-`PI_SUBAGENTS_TEMP_ROOT` when set, otherwise beneath the current user's scoped temp root.
+`PI_SUBAGENTS_TEMP_ROOT` when set. Otherwise it uses pi-subagents' scoped temp root: uid first, then
+username, home directory, and finally the shared scope when no user identity is available.
 
 ## Discovery contract
 

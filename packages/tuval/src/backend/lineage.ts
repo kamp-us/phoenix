@@ -1,4 +1,4 @@
-import {homedir, tmpdir} from "node:os";
+import {homedir, tmpdir, userInfo} from "node:os";
 import {
 	Context,
 	Crypto,
@@ -27,7 +27,7 @@ import {
 	validateLineageStore,
 } from "../shared/lineage.js";
 import {PiDiscovery} from "./pi-discovery.js";
-import {defaultSessionRoots} from "./pi-home.js";
+import {defaultSessionRoots, sessionIdFromFilename} from "./pi-home.js";
 
 const STORE_VERSION = 1;
 const FIRST_LINE_LIMIT = 64 * 1024;
@@ -90,6 +90,7 @@ const RawWorkflow = Schema.Struct({
 
 interface SessionArtifact {
 	readonly header: SessionHeader;
+	readonly sessionId: string;
 	readonly sourceFile: string;
 	readonly updatedAt: number;
 }
@@ -245,9 +246,15 @@ const readSessionArtifact = Effect.fn("Lineage.readSessionArtifact")(function* (
 	if (header.id.length === 0) {
 		return yield* new LineageSourceParseError({message: "session id is empty"});
 	}
+	const sessionId = sessionIdFromFilename(sourceFile);
+	if (sessionId === undefined || sessionId.length === 0) {
+		return yield* new LineageSourceParseError({
+			message: "session filename does not end in _<session-id>.jsonl",
+		});
+	}
 	const info = yield* fs.stat(sourceFile);
 	const updatedAt = Option.getOrElse(info.mtime, () => new Date(0)).getTime();
-	return Option.some({header, sourceFile, updatedAt} satisfies SessionArtifact);
+	return Option.some({header, sessionId, sourceFile, updatedAt} satisfies SessionArtifact);
 });
 
 const scanSessions = Effect.fn("Lineage.scanSessions")(function* (roots: ReadonlyArray<string>) {
@@ -291,8 +298,8 @@ const sessionNodeFromArtifact = (artifact: SessionArtifact): LineageNode => {
 		artifact.header.timestamp === undefined ? Number.NaN : Date.parse(artifact.header.timestamp);
 	const createdAt = Number.isFinite(headerTime) ? Math.floor(headerTime) : artifact.updatedAt;
 	return {
-		id: sessionIdentity(artifact.header.id),
-		piSessionId: artifact.header.id,
+		id: sessionIdentity(artifact.sessionId),
+		piSessionId: artifact.sessionId,
 		createdAt,
 		updatedAt: artifact.updatedAt,
 		cwd: artifact.header.cwd,
@@ -576,7 +583,7 @@ const lineageRecords = (
 	},
 	LineageConflictError
 > => {
-	const artifactsById = new Map(sessionArtifacts.map((artifact) => [artifact.header.id, artifact]));
+	const artifactsById = new Map(sessionArtifacts.map((artifact) => [artifact.sessionId, artifact]));
 	let sessionGraph = upsertLineageRecords(emptyLineageStore(), {
 		nodes: sessionArtifacts.map(sessionNodeFromArtifact),
 		edges: [],
@@ -620,8 +627,8 @@ const lineageRecords = (
 	}
 
 	for (const artifact of sessionArtifacts) {
-		const child = sessionIdentity(artifact.header.id);
-		const protocolParentId = protocolParents.get(artifact.header.id);
+		const child = sessionIdentity(artifact.sessionId);
+		const protocolParentId = protocolParents.get(artifact.sessionId);
 		const headerParent = artifact.header.parentSessionId ?? artifact.header.parentSession;
 		const parent =
 			protocolParentId === undefined
@@ -634,7 +641,7 @@ const lineageRecords = (
 				problems.push({
 					code: "retention-loss",
 					source: artifact.sourceFile,
-					message: `Fork parent for ${artifact.header.id} is not retained`,
+					message: `Fork parent for ${artifact.sessionId} is not retained`,
 				});
 			}
 			continue;
@@ -942,17 +949,50 @@ export const refreshLineage = Effect.fn("Lineage.refresh")(function* (
 	);
 });
 
-const tempScope = (
-	environment: NodeJS.ProcessEnv = process.env,
-	getuid: (() => number) | undefined = process.getuid?.bind(process),
-): string => {
-	if (getuid !== undefined) return `uid-${getuid()}`;
-	const candidate = environment.USERNAME ?? environment.USER ?? environment.LOGNAME ?? "shared";
-	const sanitized = candidate
+const sanitizeTempScopeSegment = (value: string): string => {
+	const sanitized = value
 		.trim()
 		.replace(/[^A-Za-z0-9._-]+/g, "-")
 		.replace(/^-+|-+$/g, "");
-	return `user-${sanitized.length === 0 ? "unknown" : sanitized}`;
+	return sanitized || "unknown";
+};
+
+export const resolvePiSubagentsTempScopeId = (options?: {
+	readonly env?: NodeJS.ProcessEnv;
+	readonly getuid?: (() => number) | undefined;
+	readonly userInfo?: (() => {readonly username?: string | null}) | undefined;
+	readonly homedir?: (() => string) | undefined;
+}): string => {
+	const environment = options?.env ?? process.env;
+	const getuid =
+		options !== undefined && Object.hasOwn(options, "getuid")
+			? options.getuid
+			: process.getuid?.bind(process);
+	if (typeof getuid === "function") return `uid-${getuid()}`;
+
+	for (const key of ["USERNAME", "USER", "LOGNAME"] as const) {
+		const value = environment[key];
+		if (value) return `user-${sanitizeTempScopeSegment(value)}`;
+	}
+
+	const readUserInfo =
+		options !== undefined && Object.hasOwn(options, "userInfo") ? options.userInfo : userInfo;
+	const resolvedUser = Result.try({try: () => readUserInfo?.(), catch: () => undefined});
+	if (Result.isSuccess(resolvedUser)) {
+		const username = resolvedUser.success?.username;
+		if (username) return `user-${sanitizeTempScopeSegment(username)}`;
+	}
+
+	const configuredHome = environment.USERPROFILE ?? environment.HOME;
+	if (configuredHome) return `home-${sanitizeTempScopeSegment(configuredHome)}`;
+
+	const readHomedir =
+		options !== undefined && Object.hasOwn(options, "homedir") ? options.homedir : homedir;
+	const resolvedHome = Result.try({try: () => readHomedir?.(), catch: () => undefined});
+	if (Result.isSuccess(resolvedHome) && resolvedHome.success) {
+		return `home-${sanitizeTempScopeSegment(resolvedHome.success)}`;
+	}
+	return "shared";
 };
 
 export const defaultLineageOptions = Effect.fn("Lineage.defaultOptions")(function* (
@@ -965,7 +1005,10 @@ export const defaultLineageOptions = Effect.fn("Lineage.defaultOptions")(functio
 	const configuredTempRoot = environment.PI_SUBAGENTS_TEMP_ROOT?.trim();
 	const tempRoot =
 		configuredTempRoot === undefined || configuredTempRoot.length === 0
-			? path.join(temporaryDirectory, `pi-subagents-${tempScope(environment)}`)
+			? path.join(
+					temporaryDirectory,
+					`pi-subagents-${resolvePiSubagentsTempScopeId({env: environment})}`,
+				)
 			: path.resolve(configuredTempRoot);
 	return {
 		runRoots: options.runRoots ?? [

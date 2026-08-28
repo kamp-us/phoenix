@@ -22,7 +22,7 @@ class PiHomeReadError extends Schema.TaggedErrorClass<PiHomeReadError>()("tuval/
 	message: Schema.String,
 }) {}
 
-const sessionIdFromFilename = (path: string): string | undefined => {
+export const sessionIdFromFilename = (path: string): string | undefined => {
 	const match = /_([^/]+)\.jsonl$/.exec(path);
 	return match?.[1];
 };

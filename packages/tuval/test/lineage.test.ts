@@ -2,7 +2,12 @@ import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, FileSystem, Path, Result, Schema} from "effect";
 import fc from "fast-check";
-import {defaultLineageOptions, loadLineageStore, refreshLineage} from "../src/backend/lineage.js";
+import {
+	defaultLineageOptions,
+	loadLineageStore,
+	refreshLineage,
+	resolvePiSubagentsTempScopeId,
+} from "../src/backend/lineage.js";
 import {sessionIdentity} from "../src/shared/discovery.js";
 import {
 	emptyLineageStore,
@@ -28,11 +33,20 @@ const sessionHeader = (input: {
 const writeSession = Effect.fn("LineageTest.writeSession")(function* (
 	root: string,
 	relativePath: string,
-	input: {readonly id: string; readonly parentSession?: string; readonly body?: string},
+	input: {
+		readonly id: string;
+		readonly filenameId?: string;
+		readonly parentSession?: string;
+		readonly body?: string;
+	},
 ) {
 	const fs = yield* FileSystem.FileSystem;
 	const path = yield* Path.Path;
-	const target = path.join(root, relativePath);
+	const target = path.join(
+		root,
+		path.dirname(relativePath),
+		`2026-08-27T12-00-00-000Z_${input.filenameId ?? input.id}.jsonl`,
+	);
 	yield* fs.makeDirectory(path.dirname(target), {recursive: true});
 	yield* fs.writeFileString(
 		target,
@@ -158,6 +172,50 @@ describe("Tuval lineage index", () => {
 					source: "protocol",
 				});
 				assert.lengthOf(first.problems, 0);
+			}),
+		);
+
+		it.effect("owns copied session files by filename instead of stale header ids", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-copied-"});
+				const sessionsRoot = path.join(root, "sessions");
+				const runsRoot = path.join(root, "runs");
+				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {
+					id: "stale-parent-header",
+					filenameId: "parent",
+				});
+				const childFile = yield* writeSession(sessionsRoot, "child.jsonl", {
+					id: "stale-child-header",
+					filenameId: "child",
+					parentSession: parentFile,
+				});
+				yield* writeStatus(runsRoot, "child-run", {
+					runId: "wrapper",
+					sessionId: parentFile,
+					steps: [{runId: "child-run", sessionFile: childFile, startedAt: 100}],
+				});
+
+				const projection = yield* refreshLineage({
+					runRoots: [runsRoot],
+					sessionRoots: [sessionsRoot],
+					storePath: path.join(root, "lineage.json"),
+				});
+
+				assert.deepEqual(
+					projection.graph.nodes.map((node) => node.piSessionId),
+					["child", "parent"],
+				);
+				assert.deepInclude(
+					projection.graph.edges.find((edge) => edge.id === "spawn:child-run"),
+					{parent: sessionIdentity("parent"), child: sessionIdentity("child")},
+				);
+				assert.deepInclude(
+					projection.graph.edges.find((edge) => edge.kind === "fork"),
+					{parent: sessionIdentity("parent"), child: sessionIdentity("child"), source: "header"},
+				);
+				assert.lengthOf(projection.problems, 0);
 			}),
 		);
 
@@ -672,6 +730,57 @@ describe("Tuval lineage index", () => {
 				if (Result.isFailure(version))
 					assert.strictEqual(version.failure._tag, "tuval/LineageStoreVersionError");
 			}),
+		);
+	});
+
+	it("matches every pi-subagents temp-scope fallback", () => {
+		assert.strictEqual(resolvePiSubagentsTempScopeId({env: {}, getuid: () => 42}), "uid-42");
+		assert.strictEqual(
+			resolvePiSubagentsTempScopeId({
+				env: {USERNAME: "Ada Lovelace"},
+				getuid: undefined,
+				userInfo: undefined,
+				homedir: undefined,
+			}),
+			"user-Ada-Lovelace",
+		);
+		assert.strictEqual(
+			resolvePiSubagentsTempScopeId({
+				env: {USERNAME: "", USER: ""},
+				getuid: undefined,
+				userInfo: () => ({username: "Grace Hopper"}),
+				homedir: undefined,
+			}),
+			"user-Grace-Hopper",
+		);
+		assert.strictEqual(
+			resolvePiSubagentsTempScopeId({
+				env: {HOME: "/Users/test person"},
+				getuid: undefined,
+				userInfo: () => {
+					throw new Error("no passwd entry");
+				},
+				homedir: undefined,
+			}),
+			"home-Users-test-person",
+		);
+		assert.strictEqual(
+			resolvePiSubagentsTempScopeId({
+				env: {},
+				getuid: undefined,
+				userInfo: () => ({}),
+				homedir: () => "/home/fallback user",
+			}),
+			"home-home-fallback-user",
+		);
+		assert.strictEqual(
+			resolvePiSubagentsTempScopeId({
+				env: {},
+				getuid: undefined,
+				userInfo: undefined,
+				homedir: undefined,
+			}),
+			"shared",
 		);
 	});
 
