@@ -72,22 +72,23 @@ diagnostic-only.
 The normalized version-2 store lives under `~/.pi/agent/tuval/lineage.json` by default. This
 unshipped format has no migration path: version 1 and unknown versions are refused. Every direct
 run with a resolved session identity is conflict-checked and persisted before parent resolution,
-alongside wrapper and retained ownership. Direct and observation records retain the authoritative
-parent-reference kind and value even when that parent cannot resolve. A run-valued observation
-parent must name retained ownership for the same resolved parent session, so lookup and parent-fact
-comparison survive lifecycle-source deletion.
+alongside wrapper and retained ownership. Direct and observation records retain both the
+authoritative parent-reference kind/value and the observed timestamp even when that parent cannot
+resolve. A run-valued observation parent must name retained ownership for the same resolved parent
+session, so lookup and parent-fact comparison survive lifecycle-source deletion.
 
 Every input is validated before merge, so retained finite values cannot hide a non-finite update.
 Accepted stores use total code-unit ordering for records and source files, finite forward time
 intervals, an acyclic graph, and one spawn origin strictly before each continuity observation by
 `(observedAt, runId)`. One run cannot be both origin and continuity. Load, merge, and atomic rename
-run under an owner-token filesystem lease shared by processes. A prepared owner token and lease
-become visible in one directory rename; live holders heartbeat; stale contenders atomically claim and
-then revalidate the owner lease; release removes only its own token. The writer refreshes and rechecks
-that token immediately before the committed-store rename, so a resumed predecessor cannot commit over
-a successor. Failed writes and renames remove temporary files without replacing the committed store.
-Reused run ids with changed sessions, timestamps, or parent facts are refused, while unresolved
-parents remain diagnostic-only.
+run under a same-host process-shared filesystem lock. Complete owner metadata becomes visible in one
+directory rename. A contender recovers an owner only when Node's signal-zero probe proves that exact
+same-host pid absent; live, remote, malformed, and unknown owners are never stolen. Recovery
+atomically quarantines the dead generation, while release atomically moves and removes only its own
+token-matched generation. Because a live process cannot lose its lock, the writer's token fence
+immediately before rename remains valid through the committed-store rename. Failed writes and
+renames remove temporary files without replacing the committed store. Reused run ids with changed
+sessions, timestamps, or parent facts are refused, while unresolved parents remain diagnostic-only.
 
 ## Live-session contract
 

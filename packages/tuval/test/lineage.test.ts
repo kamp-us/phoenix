@@ -1,10 +1,22 @@
 import type {SessionMetadata} from "@earendil-works/pi-protocol";
 import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Deferred, Effect, Fiber, FileSystem, Path, PlatformError, Result, Schema} from "effect";
+import {
+	Deferred,
+	Effect,
+	Fiber,
+	FileSystem,
+	Layer,
+	Path,
+	PlatformError,
+	Result,
+	Schema,
+} from "effect";
 import fc from "fast-check";
 import {
 	defaultLineageOptions,
+	LineageLockProcess,
+	LineageLockProcessLive,
 	LineageStoreReadError,
 	loadLineageStore,
 	refreshLineage,
@@ -85,7 +97,7 @@ const availableProtocol = (sessions: ReadonlyArray<SessionMetadata>) =>
 	({_tag: "available", sessions}) as const;
 
 describe("Tuval lineage index", () => {
-	it.layer(NodeServices.layer)((it) => {
+	it.layer(Layer.merge(NodeServices.layer, LineageLockProcessLive))((it) => {
 		it.effect("joins default top-level and sibling nested run roots", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
@@ -1496,12 +1508,12 @@ describe("Tuval lineage index", () => {
 				const runRoot = path.join(root, "runs");
 				const storePath = path.join(root, "lineage.json");
 				const child = yield* writeSession(sessionsRoot, "child.jsonl", {id: "child"});
-				const writeChild = (parentRunId?: string) =>
+				const writeChild = (parentRunId: string | undefined, startedAt = 1) =>
 					writeStatus(runRoot, "child", {
 						runId: "child-run",
 						...(parentRunId === undefined ? {} : {parentRunId}),
 						sessionFile: child,
-						startedAt: 1,
+						startedAt,
 					});
 
 				yield* writeChild("missing-a");
@@ -1512,15 +1524,23 @@ describe("Tuval lineage index", () => {
 				});
 				assert.deepInclude(
 					first.graph.ownership.find((entry) => entry.runId === "child-run"),
-					{kind: "direct", parentReference: {kind: "run", value: "missing-a"}},
+					{
+						kind: "direct",
+						parentReference: {kind: "run", value: "missing-a"},
+						observedAt: 1,
+					},
 				);
 				yield* fs.remove(runRoot, {recursive: true});
 				yield* writeChild("missing-a");
 				yield* refreshLineage({runRoots: [runRoot], sessionRoots: [sessionsRoot], storePath});
 
-				for (const parentRunId of ["missing-b", undefined]) {
+				for (const [parentRunId, startedAt] of [
+					["missing-b", 1],
+					[undefined, 1],
+					["missing-a", 2],
+				] as const) {
 					yield* fs.remove(runRoot, {recursive: true});
-					yield* writeChild(parentRunId);
+					yield* writeChild(parentRunId, startedAt);
 					const changed = yield* Effect.result(
 						refreshLineage({runRoots: [runRoot], sessionRoots: [sessionsRoot], storePath}),
 					);
@@ -1914,7 +1934,15 @@ describe("Tuval lineage index", () => {
 			}),
 		);
 
-		it.effect("publishes owner metadata atomically before the lock becomes visible", () =>
+		it.effect("uses Node signal zero as a fail-closed process liveness probe", () =>
+			Effect.gen(function* () {
+				const service = yield* LineageLockProcess;
+				assert.strictEqual(service.identity.pid, process.pid);
+				assert.strictEqual(yield* service.status(process.pid), "alive");
+			}),
+		);
+
+		it.effect("publishes complete owner metadata before the lock becomes visible", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
 				const path = yield* Path.Path;
@@ -1955,138 +1983,175 @@ describe("Tuval lineage index", () => {
 			}),
 		);
 
-		it.effect("does not steal a live owner refreshed after stale observation", () =>
+		it.effect("never steals a live owner, including one paused past the old lease window", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
 				const path = yield* Path.Path;
-				const root = yield* fs.makeTempDirectory({prefix: "tuval-lineage-lock-heartbeat-"});
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-lock-live-"});
 				const storePath = path.join(root, "lineage.json");
-				const lockPath = `${storePath}.lock`;
-				const ownerPath = path.join(lockPath, "owner");
 				const enteredOld = yield* Deferred.make<void>();
 				const releaseOld = yield* Deferred.make<void>();
 				const enteredNew = yield* Deferred.make<void>();
-				const staleObserved = yield* Deferred.make<void>();
-				const ownerRestored = yield* Deferred.make<void>();
+				const firstProcess = LineageLockProcess.of({
+					identity: {host: "test-host", pid: 101},
+					status: () => Effect.succeed("alive" as const),
+				});
+				const secondProcess = LineageLockProcess.of({
+					identity: {host: "test-host", pid: 202},
+					status: () => Effect.succeed("alive" as const),
+				});
 				const old = yield* withLineageStoreFileLock(
 					storePath,
 					() =>
 						Deferred.succeed(enteredOld, undefined).pipe(
 							Effect.andThen(Deferred.await(releaseOld)),
 						),
-					{poll: Effect.yieldNow, staleMs: 60_000, disableHeartbeat: true},
-				).pipe(Effect.forkChild);
+					{poll: Effect.yieldNow},
+				).pipe(Effect.provideService(LineageLockProcess, firstProcess), Effect.forkChild);
 				yield* Deferred.await(enteredOld);
-				const stale = new Date(Date.now() - 600_000);
-				yield* fs.utimes(ownerPath, stale, stale);
 				const successor = yield* withLineageStoreFileLock(
 					storePath,
 					() => Deferred.succeed(enteredNew, undefined),
-					{
-						poll: Effect.yieldNow,
-						staleMs: 60_000,
-						disableHeartbeat: true,
-						onStaleObserved: fs
-							.utimes(ownerPath, new Date(), new Date())
-							.pipe(Effect.orDie, Effect.andThen(Deferred.succeed(staleObserved, undefined))),
-						onLiveOwnerRestored: Deferred.succeed(ownerRestored, undefined).pipe(
-							Effect.andThen(Effect.interrupt),
-						),
-					},
-				).pipe(Effect.forkChild);
-				yield* Deferred.await(staleObserved);
-				yield* Deferred.await(ownerRestored);
-				const enteredTooEarly = yield* Deferred.poll(enteredNew);
-				assert.strictEqual(enteredTooEarly._tag, "None");
-				yield* Fiber.await(successor);
+					{poll: Effect.yieldNow},
+				).pipe(Effect.provideService(LineageLockProcess, secondProcess), Effect.forkChild);
+				yield* Effect.yieldNow;
+				assert.strictEqual((yield* Deferred.poll(enteredNew))._tag, "None");
 				yield* Deferred.succeed(releaseOld, undefined);
 				yield* Fiber.join(old);
-				assert.isFalse(yield* fs.exists(lockPath));
-				yield* fs.remove(root, {recursive: true});
+				yield* Deferred.await(enteredNew);
+				yield* Fiber.join(successor);
+				assert.isFalse(yield* fs.exists(`${storePath}.lock`));
 			}),
 		);
 
-		it.effect("serializes independent callers and competing stale-lock recovery", () =>
+		it.effect("recovers a proven-dead owner and serializes competing recoverers", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
 				const path = yield* Path.Path;
-				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-file-lock-"});
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-lock-dead-"});
 				const storePath = path.join(root, "lineage.json");
+				const lockPath = `${storePath}.lock`;
+				yield* fs.makeDirectory(lockPath);
+				yield* fs.writeFileString(
+					path.join(lockPath, "owner.json"),
+					JSON.stringify({version: 1, token: "dead-token", host: "test-host", pid: 101}),
+				);
 				let active = 0;
 				let maximum = 0;
-				const caller = withLineageStoreFileLock(
-					storePath,
-					() =>
-						Effect.gen(function* () {
-							active += 1;
-							maximum = Math.max(maximum, active);
-							yield* Effect.yieldNow;
-							active -= 1;
-						}),
-					{poll: Effect.yieldNow},
-				);
-				yield* Effect.all([caller, caller], {concurrency: "unbounded"});
+				let entries = 0;
+				const firstEntered = yield* Deferred.make<void>();
+				const releaseFirst = yield* Deferred.make<void>();
+				const processFor = (pid: number) =>
+					LineageLockProcess.of({
+						identity: {host: "test-host", pid},
+						status: (ownerPid) => Effect.succeed(ownerPid === 101 ? "dead" : "alive"),
+					});
+				const caller = (pid: number) =>
+					withLineageStoreFileLock(
+						storePath,
+						() =>
+							Effect.gen(function* () {
+								active += 1;
+								entries += 1;
+								maximum = Math.max(maximum, active);
+								if (entries === 1) {
+									yield* Deferred.succeed(firstEntered, undefined);
+									yield* Deferred.await(releaseFirst);
+								}
+							}).pipe(Effect.ensuring(Effect.sync(() => (active -= 1)))),
+						{poll: Effect.yieldNow},
+					).pipe(Effect.provideService(LineageLockProcess, processFor(pid)));
+				const fibers = yield* Effect.all([caller(201), caller(202)], {
+					concurrency: "unbounded",
+				}).pipe(Effect.forkChild);
+				yield* Deferred.await(firstEntered);
+				yield* Effect.yieldNow;
 				assert.strictEqual(maximum, 1);
-				const lockPath = `${storePath}.lock`;
-				const ownerPath = path.join(lockPath, "owner");
-				const orphanedGeneration = `${lockPath}.generation-orphan`;
-				yield* fs.makeDirectory(orphanedGeneration);
-				const stale = new Date(Date.now() - 10 * 60 * 1_000);
-				yield* fs.utimes(orphanedGeneration, stale, stale);
-				yield* caller;
-				assert.isFalse(yield* fs.exists(orphanedGeneration));
-				yield* fs.makeDirectory(lockPath);
-				yield* fs.writeFileString(ownerPath, "dead-owner");
-				yield* fs.utimes(ownerPath, stale, stale);
-				maximum = 0;
-				yield* Effect.all([caller, caller], {concurrency: "unbounded"});
+				yield* Deferred.succeed(releaseFirst, undefined);
+				yield* Fiber.join(fibers);
 				assert.strictEqual(maximum, 1);
 				assert.isFalse(yield* fs.exists(lockPath));
 			}),
 		);
 
-		it.effect("fences a resumed predecessor and preserves the successor generation", () =>
+		it.effect("fails safe for malformed, remote, and unknown lock owners", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
 				const path = yield* Path.Path;
-				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-lock-generation-"});
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-lock-unknown-"});
+				const processService = LineageLockProcess.of({
+					identity: {host: "test-host", pid: 202},
+					status: () => Effect.succeed("unknown" as const),
+				});
+				for (const [name, owner] of [
+					["malformed", "not-json"],
+					[
+						"remote",
+						JSON.stringify({version: 1, token: "remote-token", host: "remote-host", pid: 101}),
+					],
+					[
+						"unknown",
+						JSON.stringify({version: 1, token: "unknown-token", host: "test-host", pid: 101}),
+					],
+				] as const) {
+					const storePath = path.join(root, `${name}.json`);
+					const lockPath = `${storePath}.lock`;
+					yield* fs.makeDirectory(lockPath);
+					yield* fs.writeFileString(path.join(lockPath, "owner.json"), owner);
+					const result = yield* Effect.result(
+						withLineageStoreFileLock(storePath, () => Effect.void, {
+							poll: Effect.yieldNow,
+							waitMs: 0,
+						}).pipe(Effect.provideService(LineageLockProcess, processService)),
+					);
+					assert.isTrue(Result.isFailure(result));
+					assert.isTrue(yield* fs.exists(lockPath));
+				}
+			}),
+		);
+
+		it.effect("an obsolete releaser cannot delete a recovered successor", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-lock-release-"});
 				const storePath = path.join(root, "lineage.json");
 				const lockPath = `${storePath}.lock`;
-				const ownerPath = path.join(lockPath, "owner");
 				const enteredOld = yield* Deferred.make<void>();
 				const releaseOld = yield* Deferred.make<void>();
 				const enteredNew = yield* Deferred.make<void>();
 				const releaseNew = yield* Deferred.make<void>();
-				let predecessorCommitted = false;
-				const oldFiber = yield* withLineageStoreFileLock(
+				const oldProcess = LineageLockProcess.of({
+					identity: {host: "test-host", pid: 101},
+					status: () => Effect.succeed("alive" as const),
+				});
+				const successorProcess = LineageLockProcess.of({
+					identity: {host: "test-host", pid: 202},
+					status: (pid) => Effect.succeed(pid === 101 ? "dead" : "alive"),
+				});
+				const old = yield* withLineageStoreFileLock(
 					storePath,
-					(fence) =>
+					() =>
 						Deferred.succeed(enteredOld, undefined).pipe(
 							Effect.andThen(Deferred.await(releaseOld)),
-							Effect.andThen(fence),
-							Effect.andThen(Effect.sync(() => (predecessorCommitted = true))),
 						),
-					{poll: Effect.yieldNow, staleMs: 1, disableHeartbeat: true},
-				).pipe(Effect.result, Effect.forkChild);
+					{poll: Effect.yieldNow},
+				).pipe(Effect.provideService(LineageLockProcess, oldProcess), Effect.forkChild);
 				yield* Deferred.await(enteredOld);
-				const stale = new Date(Date.now() - 1_000);
-				yield* fs.utimes(ownerPath, stale, stale);
-				const newFiber = yield* withLineageStoreFileLock(
+				const successor = yield* withLineageStoreFileLock(
 					storePath,
 					() =>
 						Deferred.succeed(enteredNew, undefined).pipe(
 							Effect.andThen(Deferred.await(releaseNew)),
 						),
-					{poll: Effect.yieldNow, staleMs: 1},
-				).pipe(Effect.forkChild);
+					{poll: Effect.yieldNow},
+				).pipe(Effect.provideService(LineageLockProcess, successorProcess), Effect.forkChild);
 				yield* Deferred.await(enteredNew);
 				yield* Deferred.succeed(releaseOld, undefined);
-				const oldResult = yield* Fiber.join(oldFiber);
-				assert.isTrue(Result.isFailure(oldResult));
-				assert.isFalse(predecessorCommitted);
+				yield* Fiber.join(old);
 				assert.isTrue(yield* fs.exists(lockPath));
 				yield* Deferred.succeed(releaseNew, undefined);
-				yield* Fiber.join(newFiber);
+				yield* Fiber.join(successor);
 				assert.isFalse(yield* fs.exists(lockPath));
 			}),
 		);

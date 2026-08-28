@@ -60,6 +60,7 @@ export const RunOwnership = Schema.Union([
 		runId: Schema.String,
 		session: SessionIdentity,
 		parentReference: AuthoritativeParentReference,
+		observedAt: Schema.Finite,
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("observation"),
@@ -244,6 +245,9 @@ const mergeOwnership = (
 			`Run ${left.runId} has conflicting authoritative parent references`,
 		);
 	}
+	if (left.observedAt !== right.observedAt) {
+		return conflict(left.runId, `Run ${left.runId} has conflicting authoritative timestamps`);
+	}
 	if (left.kind === "direct" && right.kind === "direct") return Result.succeed(left);
 	if (left.kind === "observation" && right.kind === "direct") return Result.succeed(left);
 	if (left.kind === "direct" && right.kind === "observation") return Result.succeed(right);
@@ -326,6 +330,9 @@ export const validateLineageStore = (
 			ownership.parentReference.value.trim().length === 0
 		) {
 			return conflict(ownership.runId, `Run ${ownership.runId} has an empty parent reference`);
+		}
+		if (ownership.kind !== "wrapper" && !Number.isFinite(ownership.observedAt)) {
+			return conflict(ownership.runId, `Run ${ownership.runId} has a non-finite timestamp`);
 		}
 		if (ownership.kind === "observation") {
 			if (!Number.isFinite(ownership.observedAt)) {
