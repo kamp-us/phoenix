@@ -13,6 +13,7 @@
  * `lane brief` hands a shell its driver's root absolute for exactly that reason.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
+import {repositoryOf} from "../delegate/repository.ts";
 import {exists} from "../io/fs.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_UNREADABLE, NOT_A_REPO} from "./codes.ts";
@@ -65,6 +66,64 @@ export const groundRefusal = (
 		: refuse(
 				NOT_A_REPO,
 				`${verb}: ${ground.cwd} is not a repo — it holds neither ${REPO_MARKERS.join(" nor ")}, so ${ground.roots.join(", ")} resolves somewhere nobody meant. This is NOT "no lane here": run from the repo root, or pass --root as an absolute path.`,
+			);
+
+/**
+ * The default lanes root resolved against the repository the cwd belongs to — never against the
+ * cwd itself (#5815). The owning repository is the one whose common dir the cwd's nearest `.git`
+ * entry answers to (`delegate/repository.ts`, ADR 0287's identity), so a linked worktree and the
+ * primary checkout derive the SAME ledger: the worktree's `.git` file points into the primary's
+ * git dir, whose `commondir` file names it back. A cwd whose repository cannot be established is
+ * UNKNOWN — never a cwd-relative fallback, which would reintroduce the drift bug quietly.
+ */
+export type RepoGround =
+	| {readonly _tag: "Derived"; readonly repoRoot: string}
+	| {readonly _tag: "NotARepo"; readonly cwd: string}
+	| {readonly _tag: "Unestablished"; readonly cwd: string; readonly reason: string};
+
+/** Walk up from the cwd to the nearest `.git` entry, then read its repository's common dir. */
+export const deriveRepoRoot = (
+	cwd: string,
+): Effect.Effect<RepoGround, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		let current = path.resolve(cwd);
+		for (;;) {
+			const probe = yield* Effect.result(exists(path.join(current, ".git")));
+			if (Result.isFailure(probe)) {
+				return {_tag: "Unestablished", cwd, reason: probe.failure.reason} as const;
+			}
+			if (probe.success) break;
+			const parent = path.dirname(current);
+			if (parent === current) return {_tag: "NotARepo", cwd} as const;
+			current = parent;
+		}
+		const common = yield* Effect.result(repositoryOf(current));
+		if (Result.isFailure(common)) {
+			return {_tag: "Unestablished", cwd, reason: common.failure.reason} as const;
+		}
+		return common.success === undefined
+			? ({
+					_tag: "Unestablished",
+					cwd,
+					reason: `${path.join(current, ".git")} does not name a readable repository`,
+				} as const)
+			: ({_tag: "Derived", repoRoot: path.dirname(common.success)} as const);
+	});
+
+/** Seat a derivation that did not reach a repository — each fact on its own code. */
+export const repoGroundRefusal = (
+	verb: string,
+	ground: Exclude<RepoGround, {_tag: "Derived"}>,
+): VerbOutcome =>
+	ground._tag === "NotARepo"
+		? refuse(
+				NOT_A_REPO,
+				`${verb}: ${ground.cwd} is not a repo — no ancestor holds a .git entry, so the lanes root has no repository to resolve against. This is NOT "no lane here": run from the repo, or pass --root.`,
+			)
+		: refuse(
+				LANE_UNREADABLE,
+				`${verb}: whether ${ground.cwd} belongs to a repository is UNKNOWN (${ground.reason}) — the lanes root stays unresolved rather than guessed from the cwd (#5815).`,
 			);
 
 /**

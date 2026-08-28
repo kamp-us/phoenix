@@ -17,6 +17,11 @@ import {exists, readFile, writeFile} from "../io/fs.ts";
 import {type LogEntry, parseLog} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
 
+/**
+ * The lanes root leaf — `.fabrika/lanes` — and its chore sibling. Relative leaves, joined onto the
+ * repository root a verb derives from the cwd (#5815); an explicit `--root` replaces the whole
+ * resolved path.
+ */
 export const DEFAULT_LANES_ROOT = ".fabrika/lanes";
 
 /** Where a chore lane lives: keyed by name, because a chore has no issue number (#5840). */
