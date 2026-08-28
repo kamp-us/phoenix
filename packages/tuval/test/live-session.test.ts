@@ -364,6 +364,54 @@ describe("PiLiveSession", () => {
 			}),
 	);
 
+	it.effect("lets a newer attach-boundary snapshot supersede earlier buffered progress", () =>
+		Effect.gen(function* () {
+			const initial = snapshot("snapshot-order", 1);
+			const authoritative = snapshot(initial.id, 2, [
+				user("authoritative-user", "snapshot wins", 2),
+			]);
+			const protocol = new SyntheticPiProtocol(initial);
+			protocol.eventsOnAttach.set(initial.id, [
+				{
+					type: "session_progress",
+					sessionId: initial.id,
+					progress: {
+						type: "item_started",
+						item: assistant("before-snapshot", "superseded", 2, "streaming"),
+					},
+				},
+				{type: "session_snapshot", snapshot: authoritative},
+				{
+					type: "session_progress",
+					sessionId: initial.id,
+					progress: {
+						type: "item_started",
+						item: assistant("after-snapshot", "retained", 3, "streaming"),
+					},
+				},
+			]);
+			const service = yield* connect(protocol);
+
+			const attached = yield* service.attach(initial.id);
+			assert.strictEqual(attached._tag, "attached");
+			if (attached._tag !== "attached") return;
+			assert.strictEqual(attached.session.revision, authoritative.revision);
+			assert.deepEqual(
+				attached.session.transcript.map((item) => item.id),
+				["authoritative-user", "after-snapshot"],
+			);
+			const sessionEvents = (yield* service.eventsAfter()).flatMap((event) =>
+				event._tag === "session" ? [event.session] : [],
+			);
+			assert.isTrue(sessionEvents.length > 0);
+			assert.isTrue(
+				sessionEvents.every((session) =>
+					session.transcript.every((item) => item.id !== "before-snapshot"),
+				),
+			);
+		}),
+	);
+
 	it.effect("correlates prompts and streams progress before protocol acknowledgement", () =>
 		Effect.gen(function* () {
 			const initial = snapshot("session-prompt", 1);

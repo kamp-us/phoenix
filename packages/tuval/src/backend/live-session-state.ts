@@ -49,7 +49,7 @@ interface CorrelatedPrompt {
 
 interface PendingAttachment {
 	readonly sessionId: string;
-	readonly events: Array<ServerEvent>;
+	readonly eventsAfterSnapshot: Array<ServerEvent>;
 }
 
 export interface LiveSessionState {
@@ -226,7 +226,8 @@ export class PiLiveSessionState implements LiveSessionState {
 			}
 			const pending = this.#pendingAttachment;
 			if (pending !== undefined && eventSessionId(event) === pending.sessionId) {
-				pending.events.push(event);
+				if (event.type === "session_snapshot") pending.eventsAfterSnapshot.length = 0;
+				else pending.eventsAfterSnapshot.push(event);
 			}
 		});
 	}
@@ -316,7 +317,7 @@ export class PiLiveSessionState implements LiveSessionState {
 				return {_tag: "attached", session: this.#attachedViewOf(this.#attachment, this.#sequence)};
 			}
 			await this.#releaseAttachment();
-			const pending: PendingAttachment = {sessionId, events: []};
+			const pending: PendingAttachment = {sessionId, eventsAfterSnapshot: []};
 			this.#pendingAttachment = pending;
 			let lease: PiSessionHandle;
 			try {
@@ -354,7 +355,7 @@ export class PiLiveSessionState implements LiveSessionState {
 			const unsubscribes = [lease.subscribe((next) => this.#acceptSnapshot(generation, next))];
 			this.#attachment = {...attachment, unsubscribes};
 			if (this.#pendingAttachment === pending) this.#pendingAttachment = undefined;
-			for (const event of pending.events) this.#acceptEvent(generation, event);
+			for (const event of pending.eventsAfterSnapshot) this.#acceptEvent(generation, event);
 			this.#publishSession(this.#attachment);
 			return {_tag: "attached", session: this.#attachedViewOf(this.#attachment, this.#sequence)};
 		});
