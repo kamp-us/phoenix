@@ -116,15 +116,45 @@ const create = leafCommand(
 				"a <pkg>@<version> this doc is derived from; adds the anchor line pattern anchor reads",
 			),
 		),
+		decision: Flag.string("decision").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the binding-decision citation for a prospective pattern; selects the prospective scaffold",
+			),
+		),
+		sourceRepo: Flag.string("source-repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"a local authoritative Git checkout to inspect before writing; its path is never serialized",
+			),
+		),
+		sourcePackage: Flag.string("source-package").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the relevant package name in --source-repo; required when package selection is ambiguous",
+			),
+		),
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({slug, dir, title, anchor: anchorToken, json}) {
+	Effect.fn(function* ({
+		slug,
+		dir,
+		title,
+		anchor: anchorToken,
+		decision,
+		sourceRepo,
+		sourcePackage,
+		json,
+	}) {
 		yield* emit(
 			yield* runNew({
 				slug,
 				dir,
 				title: Option.getOrNull(title),
 				anchor: Option.getOrNull(anchorToken),
+				decision: Option.getOrNull(decision),
+				sourceRepo: Option.getOrNull(sourceRepo),
+				sourcePackage: Option.getOrNull(sourcePackage),
 				json,
 			}),
 		);
@@ -132,7 +162,7 @@ const create = leafCommand(
 ).pipe(
 	Command.withShortDescription("Scaffold a new pattern doc from the canonical template."),
 	Command.withDescription(
-		"Scaffold <dir>/<slug>.md from the canonical template, creating <dir> when it is absent. Prints the path written. Writes exactly one file and never edits another — the index row is pattern register's. Exits 8 (the write failed, so whether anything landed is UNKNOWN), 13 (the target already exists — refused, never overwritten). Example: fabrika pattern new worker-queue-retry --anchor acme-queue@4.2.0",
+		"Scaffold <dir>/<slug>.md for a current pattern, or a prospective pattern with --decision. Optional --source-repo inspection derives a canonical origin, full HEAD commit, relevant package version and representative source/test/docs paths without serializing the local path; use --source-package when a monorepo is ambiguous. Writes exactly one file. Exits 8 (write UNKNOWN), 13 (target exists), 17 (source evidence refused). Example: fabrika pattern new worker-queue-retry --decision https://github.com/acme/repo/issues/1 --source-repo ../acme --source-package acme-queue",
 	),
 );
 

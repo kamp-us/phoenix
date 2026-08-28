@@ -254,3 +254,26 @@ rather than thirty-two tables, so the checkable violations above read against
 `surfaceDispositions` — a surface fabrika reads with no entry there, or an entry that contradicts
 what its verb does — rather than against a skill's own section. The `undeclared` row and the reader
 that emitted it are gone with the tables.
+
+## Amendment (2026-08-28) — prospective pattern grounding may read a supplied source checkout
+
+The founder ruling on [#7197](https://github.com/kamp-us/phoenix/issues/7197), clarified in
+[the issue thread](https://github.com/kamp-us/phoenix/issues/7197#issuecomment-5449904461), creates
+one narrow exception to this ADR's repo-resident-input rule. `write-pattern` may accept an optional
+caller-supplied local checkout of authoritative dependency source. The exception exists so a binding
+technology or shape decision can be documented before its first implementation; generic framework
+advice, speculative convention, obvious description, and intuition-only rules remain inadmissible.
+There is no fixed current-call-site count for either current-source or prospective admission.
+
+The local path is an invocation input, never durable evidence. Before authoring from it, the verb must
+resolve the checkout's Git root and derive source, test, documentation, origin, commit, package, and
+version evidence from one commit tree. A missing or unusable supplied checkout refuses without a
+write; no local path enters CLI answer text intended for the document or the committed pattern. The
+portable origin, full commit, package version, and repository-relative inspected paths are the only
+derived evidence that may cross the checkout boundary.
+
+`authoritative-source-checkout` records this optional surface in `surfaceDispositions`: omission
+degrades to the existing recurrence-based authoring path, while an explicitly supplied checkout that
+cannot produce the required portable evidence fails loudly. The broader rule still stands for every
+other fabrika input: installed skills do not gain general permission to read machine-local state,
+hosted infrastructure, or files outside the repository they run in.

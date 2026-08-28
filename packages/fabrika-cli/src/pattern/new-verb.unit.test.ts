@@ -1,7 +1,12 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {type FakeFsOptions, fakeFs} from "../fakes.test-support.ts";
-import {ALREADY_EXISTS, PRECONDITION_UNKNOWN, WRITE_UNKNOWN} from "./codes.ts";
+import {type FakeFsOptions, fakeFs, fakeShell} from "../fakes.test-support.ts";
+import {
+	ALREADY_EXISTS,
+	PRECONDITION_UNKNOWN,
+	SOURCE_REPOSITORY_REFUSED,
+	WRITE_UNKNOWN,
+} from "./codes.ts";
 import {ANCHOR_DECLARATION} from "./doc.ts";
 import {type NewOptions, runNew} from "./new-verb.ts";
 
@@ -10,14 +15,18 @@ const options: NewOptions = {
 	dir: ".patterns",
 	title: null,
 	anchor: null,
+	decision: null,
+	sourceRepo: null,
+	sourcePackage: null,
 	json: false,
 };
 
 const run = (opts: Partial<typeof options> = {}, fs: FakeFsOptions = {}) => {
 	const fake = fakeFs(fs);
-	return Effect.runPromise(Effect.provide(runNew({...options, ...opts}), fake.layer)).then(
-		(outcome) => ({outcome, written: fake.written}),
-	);
+	const shell = fakeShell([]);
+	return Effect.runPromise(
+		Effect.provide(runNew({...options, ...opts}), Layer.merge(fake.layer, shell.layer)),
+	).then((outcome) => ({outcome, written: fake.written}));
 };
 
 describe("runNew", () => {
@@ -48,10 +57,10 @@ describe("runNew", () => {
 	// The contract's third and fourth worked examples.
 	it("carries the write record through --json, with and without an anchor", async () => {
 		expect((await run({json: true})).outcome.stdout).toBe(
-			'{"path":".patterns/worker-queue-retry.md","slug":"worker-queue-retry","title":"Worker queue retry","anchored":null}\n',
+			'{"path":".patterns/worker-queue-retry.md","slug":"worker-queue-retry","title":"Worker queue retry","anchored":null,"decision":null,"sourceEvidence":null}\n',
 		);
 		expect((await run({json: true, anchor: "acme-queue@4.2.0"})).outcome.stdout).toBe(
-			'{"path":".patterns/worker-queue-retry.md","slug":"worker-queue-retry","title":"Worker queue retry","anchored":"acme-queue@4.2.0"}\n',
+			'{"path":".patterns/worker-queue-retry.md","slug":"worker-queue-retry","title":"Worker queue retry","anchored":"acme-queue@4.2.0","decision":null,"sourceEvidence":null}\n',
 		);
 	});
 
@@ -103,5 +112,27 @@ describe("runNew", () => {
 		expect(
 			written.get(".patterns/worker-queue-retry.md")?.startsWith("# Fate (Effect) server\n"),
 		).toBe(true);
+	});
+
+	it("selects the prospective scaffold from a binding-decision citation", async () => {
+		const {written} = await run({decision: "https://github.com/acme/repo/issues/1"});
+		const text = written.get(".patterns/worker-queue-retry.md") ?? "";
+		expect(text).toContain("## Prospective scope");
+		expect(text).toContain("[the binding decision](https://github.com/acme/repo/issues/1)");
+		expect(text).toContain("Do not claim current call sites that do not exist");
+	});
+
+	it("refuses an unusable source checkout before writing", async () => {
+		const fake = fakeFs({});
+		const shell = fakeShell([]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runNew({...options, sourceRepo: "/missing/source"}),
+				Layer.merge(fake.layer, shell.layer),
+			),
+		);
+		expect(outcome.code).toBe(SOURCE_REPOSITORY_REFUSED);
+		expect(outcome.stdout).toBe("");
+		expect(fake.written.size).toBe(0);
 	});
 });

@@ -38,16 +38,12 @@ small to earn its own record has none. Neither is routed; both are `DECLINED-BEL
 already carries it. And if the target surface does not exist in this repo, say so rather than routing
 into a directory nobody will create.
 
-**The already-carried decline is bounded to single-home material.** Before you decline on it, count
-the sites the material spans — the places a reader meets it, not the places its *why* happens to be
-written down. One site is a home and the decline stands. **Two or more and the decline is not
-available to you**: the recurrence is itself the pattern signal, and a comment at each site carries
-the *why* at that site while saying nothing about the shape a reader meets across all of them. That
-material falls through to the admission bar below and is decided there, on the merits. The bar's
-first criterion is *used in 2+ places*; declining a repetition here for being locally commented
-would put the very material that criterion was written for out of its reach. Falling through is not
-admission — the bar still declines it if it is short. Single-home material, and material too small
-to earn a record anywhere, decline here exactly as before.
+**The already-carried decline is bounded to material with no reusable or prospective shape.** A
+current shape can be demonstrated by representative in-repo source and tests without meeting a
+numeric call-site quota. A prospective shape can exist before any call site when a cited binding
+decision names it and authoritative dependency source or docs ground it. Either falls through to
+the admission bar below; neither is admitted merely by falling through. Material that is only a
+local rationale, and material too small to earn a record anywhere, still declines here.
 
 Route when another surface genuinely owns it. Decline when nothing does. A skill that routes
 everything with a *why* in it never declines anything, and declining is the job.
@@ -64,19 +60,19 @@ skill does** — a corpus grows by accretion and nobody ever removes a doc. The 
 authority: read it in `.patterns/index.md` under *"When to add a new pattern doc here"* and apply it
 as written, softening nothing.
 
-The three below are the **fallback for a repo that declares no bar**, and in a repo that does declare
-one they are the gloss on how to apply it against source — not a second copy of it. Answer each
-against the source rather than against how the material feels:
+The fallback for a repo that declares no bar has two admission paths. Choose one and answer it
+against evidence rather than against how the material feels:
 
-- **Used in 2+ places** — name both, with paths. One call site is an implementation detail wearing a
-  pattern's clothes, and it is the most common thing that gets written here by mistake.
-- **Non-obvious from reading the code** — it codifies a *choice*. If a reader would derive it in a
-  minute from the file itself, the doc is a second copy of the code that can now drift from it.
-- **A future agent would otherwise invent a worse version.** This is the load-bearing one: it is
-  what separates a pattern from a description.
+- **Current shape:** representative in-repo source and tests demonstrate a reusable shape and its
+  boundary. No fixed number of pre-existing call sites is required.
+- **Prospective shape:** a cited binding decision names the technology or shape, and authoritative
+  dependency source or docs ground it before the first implementation. State intended scope and do
+  not invent current call sites.
 
-Fail any of them and end at `DECLINED-BELOW-BAR`, naming which one and what you saw. Writing nothing
-is the correct outcome, not a failure to deliver.
+Both paths must be non-obvious choices and prevent a foreseeable worse implementation. Obvious
+code narration, generic framework advice, speculative conventions, and intuition-only rules are
+below bar. Every rule traces to current in-repo source/tests or authoritative dependency source/docs.
+Fail any part and end at `DECLINED-BELOW-BAR`, naming what you saw; writing nothing is correct.
 
 ## 3 — Read the library before you add to it
 
@@ -150,10 +146,35 @@ in-repo path. Do not treat one as a stale pointer.
 fabrika pattern new worker-queue-retry
 ```
 
-Scaffolds the file and nothing else; it never touches the index and never overwrites. **A
+Scaffolds the current-shape form. For a prospective pattern, cite the binding decision so the
+scaffold states intended scope without pretending current call sites exist:
+
+```bash
+fabrika pattern new worker-queue-retry --decision <binding-decision-url>
+```
+
+The verb writes the file and nothing else; it never touches the index and never overwrites. **A
 re-grounding does not run this** — the file already exists, so `new` would refuse at exit `13`; edit
 the doc in place instead. The scaffold's exact bytes are the verb's section
 (`fabrika wire doc-section --heading "pattern new" < <skill-base>/contract.md`).
+
+When authoritative source is available as a local checkout, pass it before authoring:
+
+```bash
+fabrika pattern new worker-queue-retry --decision <binding-decision-url> --source-repo <path> --source-package <pkg> --json
+```
+
+`--source-package` may be omitted only when the checkout has one unambiguous versioned public
+package. The verb resolves the validated repository root, reads tracked source, tests and docs at
+`HEAD`, and returns portable evidence in the JSON answer's `sourceEvidence`: canonical origin URL,
+full `commit`, relevant package version and repo-relative inspected paths. It writes that evidence
+and the dependency anchor into the scaffold; the supplied path is never serialized. Exit `17` is a
+proven refusal before any write when the path, Git root, origin, source/test/docs set, package
+selection, or version is unusable. Never continue from that refusal by reading intuition instead.
+The returned `sourceEvidence.commit` binds every follow-up source, test and docs read. Resolve the
+root with `git -C <path> rev-parse --show-toplevel`, then read each path with
+`git -C <validated-root> show <sourceEvidence.commit>:<repo-relative-path>`. Never re-resolve `HEAD`
+after the verb returns; a moving checkout must not change the bytes behind the recorded evidence.
 
 **The source is the authority and the doc is the claim.** When they disagree the doc is wrong, and
 that holds with particular force during a re-grounding: the doc you are fixing is the least
@@ -171,7 +192,8 @@ Match the house style the corpus already has rather than importing a shape: flat
 `.patterns/<slug>.md`, no frontmatter, prose with fenced examples. Where the doc is derived from a
 pinned dependency, pass `--anchor <pkg>@<version>` and let the verb write the anchor line — its
 bytes are `pattern anchor`'s grammar, and the writer and the reader of that line have one home
-between them, so they cannot drift apart.
+between them, so they cannot drift apart. A source checkout derives the same anchor automatically;
+an explicit conflicting `--anchor` refuses instead of bypassing pin-bump re-verification.
 
 ## 6 — Register it, or nobody finds it
 
@@ -227,12 +249,12 @@ it needs most.
 | `PATTERN-REGROUNDED` | success | every verb answered `0`; an existing doc now matches the source it describes; edits left uncommitted |
 | `DECLINED-BELOW-BAR` | success | reached at `0`; the material fails the index's admission bar (step 2), **or** step 1's tiebreak found it has no destination — a *why* already carried at its single home, or too small to earn a record anywhere. Name which; **nothing written**, tree as found |
 | `ROUTED-ELSEWHERE` | success | reached at `0`; the material belongs to another surface, named; **nothing written here** |
-| `HALTED-REFUSED` | back-off | a verb **proved** a refusal this session could not correct (`12`, `13`) before anything was written; tree as found |
+| `HALTED-REFUSED` | back-off | a verb **proved** a refusal this session could not correct (`12`, `13`, `17`) before anything was written; tree as found |
 | `HALTED-UNKNOWN` | back-off | a verb could not establish the answer (`1`, `8`, `9`, `11`, `126`, `127`). Tree as found, **except** after `8` or `9`, where a write was already attempted — name the path so a human can look |
 
 A non-zero exit is never the permissive reading. It splits two ways, and the split is the point:
 `1`, `8`, `9`, `11`, `126` and `127` are **UNKNOWN** — nothing was established, so re-run once. `10`
-and `12` through `16` are **proven** refusals; re-running changes nothing and the fix is to correct the input
+and `12` through `17` are **proven** refusals; re-running changes nothing and the fix is to correct the input
 or accept the narrower ending. Which verb raises which code is the matrix
 (`fabrika wire doc-section --heading "The shared exit matrix" < <skill-base>/contract.md`). Improvising past a verb that refused is how a session writes a doc
 against a corpus it never read.
