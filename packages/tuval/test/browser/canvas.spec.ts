@@ -320,16 +320,27 @@ test("stable identity updates preserve a moved React Flow node and viewport", as
 	}
 	const viewportPosition = await viewport.getAttribute("style");
 	const alphaNode = page.locator('[data-id="pi:stable-alpha"]');
+	const positionBeforeDrag = /transform:[^;]+/.exec(
+		(await alphaNode.getAttribute("style")) ?? "",
+	)?.[0];
+	expect(positionBeforeDrag).toBeDefined();
 	await alphaNode.hover();
 	const bounds = await alphaNode.boundingBox();
 	expect(bounds).not.toBeNull();
 	if (bounds !== null) {
 		await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
 		await page.mouse.down();
-		await page.mouse.move(bounds.x + bounds.width / 2 + 48, bounds.y + bounds.height / 2 + 32);
+		await page.mouse.move(bounds.x + bounds.width / 2 + 48, bounds.y + bounds.height / 2 + 32, {
+			steps: 8,
+		});
 		await page.mouse.up();
 	}
-	const position = /transform:[^;]+/.exec((await alphaNode.getAttribute("style")) ?? "")?.[0];
+	await expect
+		.poll(async () => /transform:[^;]+/.exec((await alphaNode.getAttribute("style")) ?? "")?.[0])
+		.not.toBe(positionBeforeDrag);
+	const positionAfterDrag = /transform:[^;]+/.exec(
+		(await alphaNode.getAttribute("style")) ?? "",
+	)?.[0];
 
 	outcome = {
 		_tag: "ready",
@@ -339,7 +350,9 @@ test("stable identity updates preserve a moved React Flow node and viewport", as
 	await expect(page.locator('[data-id="pi:stable-gamma"]')).toBeVisible();
 	await expect(page.locator('[data-id="pi:stable-beta"]')).toHaveCount(0);
 	await expect(page.locator(".react-flow__node")).toHaveCount(2);
-	expect(/transform:[^;]+/.exec((await alphaNode.getAttribute("style")) ?? "")?.[0]).toBe(position);
+	expect(/transform:[^;]+/.exec((await alphaNode.getAttribute("style")) ?? "")?.[0]).toBe(
+		positionAfterDrag,
+	);
 	await expect(viewport).toHaveAttribute("style", viewportPosition ?? "");
 	await expect(alphaNode.locator(".session-node__title")).toHaveText("alpha-renamed");
 	expect(errors).toEqual([]);
@@ -419,6 +432,104 @@ for (const stateCase of stateCases) {
 		await expect(page.locator("#state-action")).toHaveText(stateCase.action);
 		await expect(page.locator(".react-flow__node")).toHaveCount(stateCase.nodes);
 		await expect(page.locator(".status-badge")).toHaveAttribute("data-tone", /.+/);
+		expect(errors).toEqual([]);
+	});
+}
+
+const clearingRefreshCases: ReadonlyArray<{
+	readonly name: string;
+	readonly outcome: DiscoveryOutcome;
+	readonly status: string;
+}> = [
+	{
+		name: "empty",
+		outcome: {_tag: "empty", sessions: []},
+		status: "Oturum yok",
+	},
+	{
+		name: "transport failure",
+		outcome: {_tag: "transport", message: "synthetic connection loss", retryable: true},
+		status: "Bağlantı kesildi",
+	},
+	{
+		name: "fatal failure",
+		outcome: {
+			_tag: "fatal",
+			message: "Tuval could not read any configured pi session source",
+			problems: [{source: "/fixtures/sessions", message: "permission denied"}],
+		},
+		status: "Başlatma engellendi",
+	},
+	{
+		name: "incomplete source",
+		outcome: {
+			_tag: "partial-source",
+			sessions: [session("refresh-survivor", "/work/survivor")],
+			problems: [{source: "/fixtures/broken.jsonl", message: "header is not valid JSON"}],
+		},
+		status: "Kısmi kaynak",
+	},
+];
+
+for (const refreshCase of clearingRefreshCases) {
+	test(`${refreshCase.name} refresh releases before clearing the pane and focuses the canvas`, async ({
+		page,
+	}) => {
+		const errors = pageErrors(page);
+		await installEventSource(page);
+		const selectedSession = session("refresh-selected", "/work/selected");
+		const survivor = session("refresh-survivor", "/work/survivor");
+		let discoveryCalls = 0;
+		let releaseCalls = 0;
+		let releaseStarted: (() => void) | undefined;
+		let finishRelease: (() => void) | undefined;
+		const releaseRequest = new Promise<void>((resolve) => {
+			releaseStarted = resolve;
+		});
+		const releaseGate = new Promise<void>((resolve) => {
+			finishRelease = resolve;
+		});
+		await page.route("**/fate", async (route) => {
+			const body = route.request().postDataJSON() as {
+				readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
+			};
+			const operation = body.operations?.[0];
+			const id = typeof operation?.id === "string" ? operation.id : "unknown";
+			if (operation?.name === "discovery") {
+				discoveryCalls += 1;
+				await fulfill(
+					route,
+					id,
+					discoveryCalls === 1
+						? {_tag: "ready", sessions: [selectedSession, survivor]}
+						: refreshCase.outcome,
+				);
+				return;
+			}
+			if (operation?.name === "liveSession.attach") {
+				await fulfill(route, id, {_tag: "attached", session: liveSession("refresh-selected")});
+				return;
+			}
+			releaseCalls += 1;
+			releaseStarted?.();
+			await releaseGate;
+			await fulfill(route, id, {_tag: "released", sessionId: "refresh-selected"});
+		});
+		await page.goto(tuvalUrl);
+		await selectNode(page, "pi:refresh-selected");
+		await expect(page.locator("#chat-title")).toHaveText("selected");
+
+		await page.getByRole("button", {name: "Oturumları yenile"}).click();
+		await releaseRequest;
+		expect(releaseCalls).toBe(1);
+		await expect(page.locator("aside")).toHaveCount(1);
+		await expect(page.locator("#chat-title")).toHaveText("selected");
+		await expect(page.locator("#status-label")).toHaveText("Bağlı");
+
+		finishRelease?.();
+		await expect(page.locator("aside")).toHaveCount(0);
+		await expect(page.locator("#status-label")).toHaveText(refreshCase.status);
+		await expect(page.locator("#canvas")).toBeFocused();
 		expect(errors).toEqual([]);
 	});
 }
@@ -541,6 +652,87 @@ test("one chat pane swaps sessions, restores focus, and streams Composer prompts
 	});
 	await expect(page.getByText("Akıştan geldi")).toBeVisible();
 	await expect(page.getByText("Tur hatayla sonlandı")).toBeVisible();
+	expect(errors).toEqual([]);
+});
+
+test("a stale prompt completion cannot overwrite the replacement pane", async ({page}) => {
+	const errors = pageErrors(page);
+	await installEventSource(page);
+	const alpha = session("prompt-alpha", "/work/alpha");
+	const beta = session("prompt-beta", "/work/beta");
+	let finishAlpha: (() => void) | undefined;
+	let finishBeta: (() => void) | undefined;
+	let alphaResponses = 0;
+	const alphaGate = new Promise<void>((resolve) => {
+		finishAlpha = resolve;
+	});
+	const betaGate = new Promise<void>((resolve) => {
+		finishBeta = resolve;
+	});
+	await page.route("**/fate", async (route) => {
+		const body = route.request().postDataJSON() as {
+			readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
+		};
+		const operation = body.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		if (operation?.name === "discovery") {
+			await fulfill(route, id, {_tag: "ready", sessions: [alpha, beta]});
+			return;
+		}
+		if (operation?.name === "liveSession.attach") {
+			const input = operation.input as {readonly sessionId: string};
+			await fulfill(route, id, {_tag: "attached", session: liveSession(input.sessionId)});
+			return;
+		}
+		if (operation?.name === "liveSession.prompt") {
+			const input = operation.input as {readonly correlationId: string; readonly text: string};
+			if (input.text === "alpha istemi") {
+				await alphaGate;
+				await fulfill(route, id, {
+					_tag: "acknowledged",
+					correlationId: input.correlationId,
+					session: liveSession("prompt-alpha", 2),
+				});
+				alphaResponses += 1;
+				return;
+			}
+			await betaGate;
+			await fulfill(route, id, {
+				_tag: "refused",
+				correlationId: input.correlationId,
+				code: "protocol",
+				reason: "Beta iletisi gönderilemedi.",
+			});
+			return;
+		}
+		await fulfill(route, id, {_tag: "released", sessionId: null});
+	});
+	await page.goto(tuvalUrl);
+
+	await selectNode(page, "pi:prompt-alpha");
+	const alphaEditor = page.getByRole("textbox", {name: "İstem"});
+	await alphaEditor.fill("alpha istemi");
+	await alphaEditor.press("Enter");
+	await expect(page.getByText("Gönderiliyor; onay bekleniyor.")).toBeVisible();
+
+	await selectNode(page, "pi:prompt-beta");
+	await expect(page.locator("#chat-title")).toHaveText("beta");
+	const betaEditor = page.getByRole("textbox", {name: "İstem"});
+	await betaEditor.fill("beta istemi");
+	await betaEditor.press("Enter");
+	const submit = page.locator('.composer-shell button[type="submit"]');
+	await expect(page.getByText("Gönderiliyor; onay bekleniyor.")).toBeVisible();
+	await expect(submit).toBeDisabled();
+
+	finishAlpha?.();
+	await expect.poll(() => alphaResponses).toBe(1);
+	await expect(page.locator("#chat-title")).toHaveText("beta");
+	await expect(page.getByText("Gönderiliyor; onay bekleniyor.")).toBeVisible();
+	await expect(page.getByText("İleti pi tarafından onaylandı.")).toHaveCount(0);
+	await expect(submit).toBeDisabled();
+
+	finishBeta?.();
+	await expect(page.getByRole("alert")).toContainText("Beta iletisi gönderilemedi.");
 	expect(errors).toEqual([]);
 });
 

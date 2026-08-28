@@ -150,6 +150,10 @@ const focusCanvasNode = (identity: string): void => {
 	});
 };
 
+const focusCanvas = (): void => {
+	requestAnimationFrame(() => document.querySelector<HTMLElement>("#canvas")?.focus());
+};
+
 export function TuvalApp() {
 	const [outcome, setOutcome] = useState<DiscoveryOutcome | null>(null);
 	const [nodes, setNodes] = useState<ReadonlyArray<SessionCanvasNode>>([]);
@@ -171,25 +175,64 @@ export function TuvalApp() {
 			})),
 		);
 		setEdges((current) => reconcileRelationshipEdges(current, sessions));
-		if (selected !== null && !sessions.some((session) => session.identity === selected.identity)) {
-			setSelected(null);
-		}
 	}, [selected, sessions]);
+
+	const applyDiscovery = useCallback(
+		async (next: DiscoveryOutcome, generation: number): Promise<void> => {
+			if (generation !== discoveryGeneration.current) return;
+			const target = selectedRef.current;
+			if (
+				target === null ||
+				sessionsOf(next).some((session) => session.identity === target.identity)
+			) {
+				setOutcome(next);
+				return;
+			}
+
+			ignoreSelectionChange.current = true;
+			try {
+				await releaseLiveSession();
+			} catch (error) {
+				ignoreSelectionChange.current = false;
+				if (selectedRef.current?.identity === target.identity) {
+					setPane((current) => ({
+						...current,
+						connection: "disconnected",
+						message:
+							error instanceof Error
+								? error.message
+								: "Oturum sahipliği bırakılamadı; sohbet açık tutuluyor.",
+					}));
+				}
+				return;
+			}
+
+			if (selectedRef.current?.identity === target.identity) {
+				selectedRef.current = null;
+				setSelected(null);
+			}
+			if (generation === discoveryGeneration.current) setOutcome(next);
+			ignoreSelectionChange.current = false;
+			focusCanvas();
+		},
+		[],
+	);
 
 	const discover = useCallback(async (): Promise<void> => {
 		const generation = ++discoveryGeneration.current;
 		try {
-			const next = await discoverSessions();
-			if (generation === discoveryGeneration.current) setOutcome(next);
+			await applyDiscovery(await discoverSessions(), generation);
 		} catch (error) {
-			if (generation !== discoveryGeneration.current) return;
-			setOutcome({
-				_tag: "transport",
-				message: error instanceof Error ? error.message : String(error),
-				retryable: true,
-			});
+			await applyDiscovery(
+				{
+					_tag: "transport",
+					message: error instanceof Error ? error.message : String(error),
+					retryable: true,
+				},
+				generation,
+			);
 		}
-	}, []);
+	}, [applyDiscovery]);
 
 	useEffect(() => void discover(), [discover]);
 
@@ -376,7 +419,12 @@ export function TuvalApp() {
 			</header>
 
 			<main className="workspace" aria-label="Tuval oturum çalışma alanı">
-				<section id="canvas" className="canvas" aria-label="Serbest kaydırılabilir oturum tuvali">
+				<section
+					id="canvas"
+					className="canvas"
+					aria-label="Serbest kaydırılabilir oturum tuvali"
+					tabIndex={-1}
+				>
 					<div id="canvas-stage" className="canvas-stage">
 						<SessionCanvas
 							nodes={nodes}
@@ -434,6 +482,7 @@ export function TuvalApp() {
 
 				{selected === null ? null : (
 					<ChatPane
+						key={selected.identity}
 						selected={selected}
 						connection={pane.connection}
 						session={pane.session}
