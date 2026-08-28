@@ -39,8 +39,8 @@ const isSource = (path: string, root: string): boolean =>
 	/(^|\/)(src|source|lib)\//i.test(path.slice(root === "" ? 0 : root.length + 1)) &&
 	!isTest(path);
 
-const readAtHead = (root: string, path: string) =>
-	execCapture("git", ["-C", root, "show", `HEAD:${path}`]);
+const readAtCommit = (root: string, commit: string, path: string) =>
+	execCapture("git", ["-C", root, "show", `${commit}:${path}`]);
 
 export const inspectSourceRepository = (
 	repoPath: string,
@@ -72,8 +72,16 @@ export const inspectSourceRepository = (
 		const origin = canonicalOriginUrl(originRead.stdout);
 		if (origin === null) return refused("the origin remote is absent, local, or unparseable");
 
-		const filesRead = yield* execCapture("git", ["-C", root, "ls-files", "-z"]);
-		if (!filesRead.ok) return refused(`cannot enumerate tracked source: ${filesRead.reason}`);
+		const filesRead = yield* execCapture("git", [
+			"-C",
+			root,
+			"ls-tree",
+			"-r",
+			"-z",
+			"--name-only",
+			commit,
+		]);
+		if (!filesRead.ok) return refused(`cannot enumerate source at HEAD: ${filesRead.reason}`);
 		const files = filesRead.stdout.split("\0").filter((path) => path !== "");
 		const manifestPaths = files.filter(
 			(path) => path === "package.json" || path.endsWith("/package.json"),
@@ -82,7 +90,7 @@ export const inspectSourceRepository = (
 
 		const manifests: SourceManifest[] = [];
 		for (const path of manifestPaths) {
-			const read = yield* readAtHead(root, path);
+			const read = yield* readAtCommit(root, commit, path);
 			if (!read.ok) return refused(`cannot read ${path} at HEAD: ${read.reason}`);
 			const manifest = parseSourceManifest(path, read.stdout);
 			if (manifest !== null) manifests.push(manifest);
@@ -121,7 +129,7 @@ export const inspectSourceRepository = (
 		if (docs === undefined) return refused("the checkout has no tracked docs or examples");
 
 		for (const path of [source, tests, docs]) {
-			const read = yield* readAtHead(root, path);
+			const read = yield* readAtCommit(root, commit, path);
 			if (!read.ok) return refused(`cannot read ${path} at HEAD: ${read.reason}`);
 		}
 		return {

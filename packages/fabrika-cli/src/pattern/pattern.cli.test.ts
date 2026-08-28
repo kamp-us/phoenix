@@ -54,7 +54,7 @@ describe("fabrika pattern, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, (
 		expect(run.stderr).toContain("is not kebab-case");
 	});
 
-	it("derives portable prospective evidence from a temporary monorepo checkout", () => {
+	it("derives portable prospective evidence from HEAD despite a staged index addition", () => {
 		const root = mkdtempSync(join(tmpdir(), "fabrika-pattern-source-"));
 		const upstream = join(root, "xyflow");
 		try {
@@ -91,6 +91,12 @@ describe("fabrika pattern, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, (
 				"-qm",
 				"fixture",
 			]);
+			mkdirSync(join(upstream, "packages/index-only"), {recursive: true});
+			writeFileSync(
+				join(upstream, "packages/index-only/package.json"),
+				'{"name":"@xyflow/react","version":"99.0.0"}\n',
+			);
+			execFileSync("git", ["-C", upstream, "add", "packages/index-only/package.json"]);
 
 			const run = fabrika(
 				[

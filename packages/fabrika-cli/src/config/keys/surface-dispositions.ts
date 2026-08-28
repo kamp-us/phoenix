@@ -89,6 +89,11 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 		note: "history for the doc surface plus a resolvable base ref; `pattern drift` reports a doc unaged instead of refusing",
 	},
 	{
+		id: "authoritative-source-checkout",
+		disposition: "degrade",
+		note: "an optional local Git checkout supplied to `pattern new`; omission keeps recurrence-based authoring available, while a supplied checkout that cannot yield HEAD-bound origin, package, source, test, and docs evidence refuses at exit 17",
+	},
+	{
 		id: "collaborator-permissions",
 		disposition: "fail-loud",
 		note: "`repos/<repo>/collaborators/<login>/permission` readable; every ACL-resolved claim and ruling is UNKNOWN without it, never permissive (ADR 0055)",

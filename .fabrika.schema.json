@@ -215,6 +215,7 @@
 					"git-worktree",
 					"git-origin",
 					"git-history",
+					"authoritative-source-checkout",
 					"collaborator-permissions",
 					"issue-dependencies",
 					"settings-patch",

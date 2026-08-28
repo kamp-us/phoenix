@@ -69,6 +69,14 @@ describe("what the key refuses whole", () => {
 });
 
 describe("the registry itself", () => {
+	it("declares the optional authoritative source checkout and its refusal boundary", () => {
+		const surface = SURFACE_REGISTRY.find(
+			(candidate) => candidate.id === "authoritative-source-checkout",
+		);
+		expect(surface).toMatchObject({disposition: "degrade"});
+		expect(surface?.note).toContain("exit 17");
+	});
+
 	it("carries one entry per id, with no duplicate", () => {
 		const ids = SURFACE_REGISTRY.map((surface) => surface.id);
 		expect(new Set(ids).size).toBe(ids.length);

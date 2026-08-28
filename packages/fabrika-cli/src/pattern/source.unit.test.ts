@@ -16,21 +16,30 @@ const script = [
 	[/git -C \/local\/xyflow rev-parse --show-toplevel$/, okOut("/upstream\n")],
 	[/git -C \/upstream rev-parse --verify HEAD\^\{commit\}$/, okOut(`${SHA}\n`)],
 	[/git -C \/upstream remote get-url origin$/, okOut("git@github.com:xyflow/xyflow.git\n")],
-	[/git -C \/upstream ls-files -z$/, okOut(`${FILES}\0`)],
 	[
-		/git -C \/upstream show HEAD:package.json$/,
+		/git -C \/upstream ls-tree -r -z --name-only b1b99e9773040e25bd6099762491ab23d8ea6910$/,
+		okOut(`${FILES}\0`),
+	],
+	[
+		/git -C \/upstream show b1b99e9773040e25bd6099762491ab23d8ea6910:package.json$/,
 		okOut('{"name":"@xyflow/monorepo","version":"0.0.0","private":true}'),
 	],
 	[
-		/git -C \/upstream show HEAD:packages\/react\/package.json$/,
+		/git -C \/upstream show b1b99e9773040e25bd6099762491ab23d8ea6910:packages\/react\/package.json$/,
 		okOut('{"name":"@xyflow/react","version":"12.11.5"}'),
 	],
-	[/git -C \/upstream show HEAD:packages\/react\/src\/index.ts$/, okOut("export {}")],
 	[
-		/git -C \/upstream show HEAD:packages\/react\/src\/index.test.ts$/,
+		/git -C \/upstream show b1b99e9773040e25bd6099762491ab23d8ea6910:packages\/react\/src\/index.ts$/,
+		okOut("export {}"),
+	],
+	[
+		/git -C \/upstream show b1b99e9773040e25bd6099762491ab23d8ea6910:packages\/react\/src\/index.test.ts$/,
 		okOut("test('x', () => {})"),
 	],
-	[/git -C \/upstream show HEAD:packages\/react\/README.md$/, okOut("# React")],
+	[
+		/git -C \/upstream show b1b99e9773040e25bd6099762491ab23d8ea6910:packages\/react\/README.md$/,
+		okOut("# React"),
+	],
 ] as const;
 
 describe("canonicalOriginUrl", () => {
@@ -69,9 +78,13 @@ describe("inspectSourceRepository", () => {
 				},
 			},
 		});
-		expect(shell.calls).toContain("git -C /upstream show HEAD:packages/react/src/index.ts");
-		expect(shell.calls).toContain("git -C /upstream show HEAD:packages/react/src/index.test.ts");
-		expect(shell.calls).toContain("git -C /upstream show HEAD:packages/react/README.md");
+		expect(shell.calls).toContain(`git -C /upstream ls-tree -r -z --name-only ${SHA}`);
+		expect(shell.calls).toContain(`git -C /upstream show ${SHA}:packages/react/src/index.ts`);
+		expect(shell.calls).toContain(`git -C /upstream show ${SHA}:packages/react/src/index.test.ts`);
+		expect(shell.calls).toContain(`git -C /upstream show ${SHA}:packages/react/README.md`);
+		expect(
+			shell.calls.some((call) => call.includes("ls-files") || call.includes("show HEAD:")),
+		).toBe(false);
 	});
 
 	it("keeps the local checkout path out of portable evidence", async () => {
@@ -93,13 +106,16 @@ describe("inspectSourceRepository", () => {
 			[/git -C \/local\/mono rev-parse --show-toplevel$/, okOut("/mono\n")],
 			[/git -C \/mono rev-parse --verify HEAD\^\{commit\}$/, okOut(`${SHA}\n`)],
 			[/git -C \/mono remote get-url origin$/, okOut("https://github.com/acme/mono.git\n")],
-			[/git -C \/mono ls-files -z$/, okOut(`${files}\0`)],
 			[
-				/git -C \/mono show HEAD:packages\/a\/package.json$/,
+				/git -C \/mono ls-tree -r -z --name-only b1b99e9773040e25bd6099762491ab23d8ea6910$/,
+				okOut(`${files}\0`),
+			],
+			[
+				/git -C \/mono show b1b99e9773040e25bd6099762491ab23d8ea6910:packages\/a\/package.json$/,
 				okOut('{"name":"a","version":"1.0.0"}'),
 			],
 			[
-				/git -C \/mono show HEAD:packages\/b\/package.json$/,
+				/git -C \/mono show b1b99e9773040e25bd6099762491ab23d8ea6910:packages\/b\/package.json$/,
 				okOut('{"name":"b","version":"2.0.0"}'),
 			],
 		]);
@@ -119,8 +135,14 @@ describe("inspectSourceRepository", () => {
 			[/git -C \/local\/pkg rev-parse --show-toplevel$/, okOut("/pkg\n")],
 			[/git -C \/pkg rev-parse --verify HEAD\^\{commit\}$/, okOut(`${SHA}\n`)],
 			[/git -C \/pkg remote get-url origin$/, okOut("https://github.com/acme/pkg.git\n")],
-			[/git -C \/pkg ls-files -z$/, okOut(`${files}\0`)],
-			[/git -C \/pkg show HEAD:package.json$/, okOut('{"name":"pkg"}')],
+			[
+				/git -C \/pkg ls-tree -r -z --name-only b1b99e9773040e25bd6099762491ab23d8ea6910$/,
+				okOut(`${files}\0`),
+			],
+			[
+				/git -C \/pkg show b1b99e9773040e25bd6099762491ab23d8ea6910:package.json$/,
+				okOut('{"name":"pkg"}'),
+			],
 		]);
 		const result = await Effect.runPromise(
 			Effect.provide(inspectSourceRepository("/local/pkg", "pkg"), shell.layer),
