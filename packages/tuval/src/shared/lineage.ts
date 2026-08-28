@@ -1,5 +1,5 @@
 import {Result, Schema} from "effect";
-import {SessionIdentity} from "./discovery.js";
+import {SessionIdentity, sessionIdentity} from "./discovery.js";
 
 export const LineageNode = Schema.Struct({
 	id: SessionIdentity,
@@ -174,6 +174,84 @@ const mergeContinuity = (
 					message: `Continuity observation ${left.id} has conflicting values`,
 				}),
 			);
+
+const conflict = (recordId: string, message: string): Result.Result<never, LineageConflictError> =>
+	Result.fail(new LineageConflictError({recordId, message}));
+
+export const validateLineageStore = (
+	document: LineageStoreDocument,
+): Result.Result<LineageStoreDocument, LineageConflictError> => {
+	const nodeIds = new Set<string>();
+	const piSessionIds = new Set<string>();
+	const sourceOwners = new Map<string, string>();
+	for (const node of document.nodes) {
+		if (nodeIds.has(node.id)) return conflict(node.id, `Duplicate session node ${node.id}`);
+		if (piSessionIds.has(node.piSessionId)) {
+			return conflict(node.piSessionId, `Duplicate pi session ${node.piSessionId}`);
+		}
+		if (node.id !== sessionIdentity(node.piSessionId)) {
+			return conflict(node.id, `Session node ${node.id} has a non-canonical identity`);
+		}
+		nodeIds.add(node.id);
+		piSessionIds.add(node.piSessionId);
+		for (const source of node.sourceFiles) {
+			const owner = sourceOwners.get(source);
+			if (owner !== undefined) {
+				return conflict(
+					source,
+					`Session file ${source} has duplicate owners ${owner} and ${node.id}`,
+				);
+			}
+			sourceOwners.set(source, node.id);
+		}
+	}
+
+	const edgeIds = new Set<string>();
+	const runOwners = new Set<string>();
+	for (const edge of document.edges) {
+		if (edgeIds.has(edge.id)) return conflict(edge.id, `Duplicate lineage edge ${edge.id}`);
+		if (!nodeIds.has(edge.parent) || !nodeIds.has(edge.child)) {
+			return conflict(edge.id, `Lineage edge ${edge.id} references an unknown session`);
+		}
+		if (edge.parent === edge.child) {
+			return conflict(edge.id, `Lineage edge ${edge.id} is a self edge`);
+		}
+		const expectedId = edge.kind === "spawn" ? `spawn:${edge.runId}` : `fork:${edge.child}`;
+		if (edge.kind === "spawn" && runOwners.has(edge.runId)) {
+			return conflict(edge.runId, `Run ${edge.runId} has duplicate durable ownership`);
+		}
+		if (edge.kind === "spawn") runOwners.add(edge.runId);
+		if (edge.id !== expectedId) {
+			return conflict(edge.id, `Lineage edge ${edge.id} has a non-canonical identity`);
+		}
+		edgeIds.add(edge.id);
+	}
+
+	const continuityIds = new Set<string>();
+	for (const observation of document.continuity) {
+		if (continuityIds.has(observation.id)) {
+			return conflict(observation.id, `Duplicate continuity observation ${observation.id}`);
+		}
+		if (runOwners.has(observation.runId)) {
+			return conflict(
+				observation.runId,
+				`Run ${observation.runId} has duplicate durable ownership`,
+			);
+		}
+		runOwners.add(observation.runId);
+		if (!nodeIds.has(observation.session)) {
+			return conflict(
+				observation.id,
+				`Continuity observation ${observation.id} references an unknown session`,
+			);
+		}
+		if (observation.id !== `resume:${observation.runId}`) {
+			return conflict(observation.id, `Continuity observation ${observation.id} is non-canonical`);
+		}
+		continuityIds.add(observation.id);
+	}
+	return Result.succeed(document);
+};
 
 export const upsertLineageRecords = (
 	current: LineageStoreDocument,

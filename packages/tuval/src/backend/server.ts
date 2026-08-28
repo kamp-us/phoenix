@@ -255,10 +255,13 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 	yield* Effect.addFinalizer(() => liveSession.dispose().pipe(Effect.ignore));
 
 	const discoveryLayer = PiDiscoveryLive(options);
-	const lineageLayer = LineageIndexLive(
-		options.lineage ??
-			(options.sessionRoots === undefined ? {} : {sessionRoots: options.sessionRoots}),
-	).pipe(Layer.provide(discoveryLayer));
+	const lineageOptions = {
+		...options.lineage,
+		...(options.lineage?.sessionRoots !== undefined || options.sessionRoots === undefined
+			? {}
+			: {sessionRoots: options.sessionRoots}),
+	};
+	const lineageLayer = LineageIndexLive(lineageOptions).pipe(Layer.provide(discoveryLayer));
 	const serviceLayers = Layer.mergeAll(
 		discoveryLayer,
 		lineageLayer,

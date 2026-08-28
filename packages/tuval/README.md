@@ -51,12 +51,14 @@ entry is reported as a source problem without discarding sessions that were read
 
 The package exports the schema-backed graph types from `tuval/lineage`. The `lineage` fate query
 projects session nodes, `spawn` and `fork` edges, resume-continuity observations, and isolated source
-problems. `LineageIndex` joins pi-subagents lifecycle artifacts to pi session headers while preferring
-Pi protocol parent metadata for forks.
+problems. `LineageIndex` scans the same configured session roots as discovery and joins status-level
+and nested pi-subagents lifecycle records to retained session headers. Forks prefer Pi protocol
+parent metadata; run parent ids are authoritative and never fall back to wrapper parentage.
 
-The normalized version-1 store lives under `~/.pi/agent/tuval/lineage.json` by default. Rescans are
-idempotent, retained records survive source cleanup, and an unknown store version is refused rather
-than interpreted as the current schema.
+The normalized version-1 store lives under `~/.pi/agent/tuval/lineage.json` by default. Serialized
+rescans preserve exact observations and retained records after source cleanup. Reused run ids,
+conflicting store records, dangling references, and unknown store versions are refused rather than
+silently collapsed or interpreted as the current schema.
 
 ## Live-session contract
 

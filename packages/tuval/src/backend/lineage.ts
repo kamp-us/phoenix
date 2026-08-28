@@ -1,5 +1,16 @@
 import {homedir, tmpdir} from "node:os";
-import {Context, Effect, FileSystem, Layer, Option, Path, Result, Schema} from "effect";
+import {
+	Context,
+	Crypto,
+	Effect,
+	FileSystem,
+	Layer,
+	Option,
+	Path,
+	Result,
+	Schema,
+	Semaphore,
+} from "effect";
 import {type SessionIdentity, sessionIdentity} from "../shared/discovery.js";
 import {
 	type ContinuityObservation,
@@ -13,8 +24,10 @@ import {
 	LineageStoreDocument,
 	type LineageStoreDocument as LineageStoreDocumentType,
 	upsertLineageRecords,
+	validateLineageStore,
 } from "../shared/lineage.js";
 import {PiDiscovery} from "./pi-discovery.js";
+import {defaultSessionRoots} from "./pi-home.js";
 
 const STORE_VERSION = 1;
 const FIRST_LINE_LIMIT = 64 * 1024;
@@ -58,6 +71,8 @@ const RawRunStatus = Schema.Struct({
 	lifecycleArtifactVersion: Schema.optionalKey(Schema.Number),
 	id: Schema.optionalKey(Schema.String),
 	runId: Schema.optionalKey(Schema.String),
+	parentRunId: Schema.optionalKey(Schema.String),
+	parentWorkflowRunId: Schema.optionalKey(Schema.String),
 	sessionId: Schema.optionalKey(Schema.String),
 	sessionFile: Schema.optionalKey(Schema.String),
 	startedAt: Schema.optionalKey(Schema.Number),
@@ -308,6 +323,16 @@ const firstSessionFile = (entry: RawRunEntry): string | undefined => {
 	return undefined;
 };
 
+const hasRunEntryContent = (entry: RawRunEntry): boolean =>
+	entry.id !== undefined ||
+	entry.runId !== undefined ||
+	entry.parentRunId !== undefined ||
+	entry.parentWorkflowRunId !== undefined ||
+	entry.sessionFile !== undefined ||
+	(entry.children?.length ?? 0) > 0 ||
+	(entry.steps?.length ?? 0) > 0 ||
+	(entry.results?.length ?? 0) > 0;
+
 const collectEntryCandidates = (
 	values: ReadonlyArray<unknown>,
 	input: {
@@ -318,11 +343,22 @@ const collectEntryCandidates = (
 		readonly fallbackStartedAt: number;
 	},
 	candidates: Array<RunCandidate>,
-): void => {
-	for (const value of values) {
+): Result.Result<void, LineageSourceParseError> => {
+	for (const [index, value] of values.entries()) {
 		const decoded = Schema.decodeUnknownResult(RawRunEntry)(value);
-		if (Result.isFailure(decoded)) continue;
+		if (Result.isFailure(decoded)) {
+			return Result.fail(
+				new LineageSourceParseError({
+					message: `nested run entry ${index} is invalid: ${messageOf(decoded.failure)}`,
+				}),
+			);
+		}
 		const entry = decoded.success;
+		if (!hasRunEntryContent(entry)) {
+			return Result.fail(
+				new LineageSourceParseError({message: `nested run entry ${index} is empty`}),
+			);
+		}
 		const runId = entry.runId ?? entry.id;
 		const sessionRef = firstSessionFile(entry);
 		const explicitParentRunId = entry.parentRunId ?? input.inheritedParentRunId;
@@ -342,16 +378,16 @@ const collectEntryCandidates = (
 			});
 		}
 		const inheritedParentRunId = runId ?? explicitParentRunId;
-		collectEntryCandidates(
-			entry.children ?? [],
-			{
-				...input,
-				...(inheritedParentRunId === undefined ? {} : {inheritedParentRunId}),
-			},
-			candidates,
-		);
-		collectEntryCandidates(entry.results ?? [], input, candidates);
+		const nestedInput = {
+			...input,
+			...(inheritedParentRunId === undefined ? {} : {inheritedParentRunId}),
+		};
+		for (const nested of [entry.steps ?? [], entry.children ?? [], entry.results ?? []]) {
+			const collected = collectEntryCandidates(nested, nestedInput, candidates);
+			if (Result.isFailure(collected)) return collected;
+		}
 	}
+	return Result.succeed(undefined);
 };
 
 const readRunCandidates = Effect.fn("Lineage.readRunCandidates")(function* (source: string) {
@@ -364,20 +400,60 @@ const readRunCandidates = Effect.fn("Lineage.readRunCandidates")(function* (sour
 	const candidates: Array<RunCandidate> = [];
 	const wrapperRunId = status.runId ?? status.id;
 	const parentSessionRef = status.sessionId;
+	const nestedValues = [status.steps ?? [], status.results ?? [], status.children ?? []];
+	if (
+		wrapperRunId === undefined &&
+		parentSessionRef === undefined &&
+		status.sessionFile === undefined &&
+		nestedValues.every((values) => values.length === 0) &&
+		status.workflow === undefined
+	) {
+		return yield* new LineageSourceParseError({message: "run status is empty"});
+	}
+	if (wrapperRunId !== undefined && status.sessionFile !== undefined) {
+		candidates.push({
+			runId: wrapperRunId,
+			...(status.parentRunId === undefined ? {} : {parentRunId: status.parentRunId}),
+			...(status.parentRunId !== undefined || status.parentWorkflowRunId === undefined
+				? {}
+				: {parentRunId: status.parentWorkflowRunId}),
+			...(parentSessionRef === undefined ? {} : {parentSessionRef}),
+			sessionRef: status.sessionFile,
+			observedAt: status.startedAt ?? 0,
+			source,
+		});
+	}
 	const base = {
 		source,
 		...(wrapperRunId === undefined ? {} : {wrapperRunId}),
 		...(parentSessionRef === undefined ? {} : {parentSessionRef}),
 		fallbackStartedAt: status.startedAt ?? 0,
 	};
-	collectEntryCandidates(status.steps ?? [], base, candidates);
-	collectEntryCandidates(status.results ?? [], base, candidates);
-	collectEntryCandidates(status.children ?? [], base, candidates);
+	for (const values of nestedValues) {
+		const collected = collectEntryCandidates(values, base, candidates);
+		if (Result.isFailure(collected)) return yield* collected.failure;
+	}
 	if (status.workflow !== undefined) {
 		const workflow = Schema.decodeUnknownResult(RawWorkflow)(status.workflow);
-		if (Result.isSuccess(workflow)) {
-			collectEntryCandidates(workflow.success.value?.results ?? [], base, candidates);
+		if (Result.isFailure(workflow)) {
+			return yield* new LineageSourceParseError({
+				message: `workflow run metadata is invalid: ${messageOf(workflow.failure)}`,
+			});
 		}
+		const collected = collectEntryCandidates(
+			workflow.success.value?.results ?? [],
+			base,
+			candidates,
+		);
+		if (Result.isFailure(collected)) return yield* collected.failure;
+	}
+	if (
+		candidates.length === 0 &&
+		wrapperRunId === undefined &&
+		parentSessionRef === undefined &&
+		status.sessionFile === undefined
+	) {
+		return yield* new LineageSourceParseError({message: "run status contains no identity"});
 	}
 	return candidates;
 });
@@ -409,7 +485,11 @@ const lineageRecords = (
 	candidates: ReadonlyArray<RunCandidate>,
 	path: typeof Path.Path.Service,
 ): Result.Result<
-	{readonly records: LineageRecords; readonly problems: ReadonlyArray<LineageProblem>},
+	{
+		readonly base: LineageStoreDocumentType;
+		readonly records: LineageRecords;
+		readonly problems: ReadonlyArray<LineageProblem>;
+	},
 	LineageConflictError
 > => {
 	const artifactsById = new Map(sessionArtifacts.map((artifact) => [artifact.header.id, artifact]));
@@ -519,79 +599,151 @@ const lineageRecords = (
 		if (parent !== undefined) runSessions.set(candidate.wrapperRunId, parent);
 	}
 
-	const candidateByRun = new Map<string, {candidate: RunCandidate; child: SessionIdentity}>();
+	interface RunObservation {
+		readonly runId: string;
+		readonly child: SessionIdentity;
+		readonly observedAt: number;
+		readonly parent?: SessionIdentity;
+		readonly source: string;
+	}
+	const candidateByRun = new Map<string, RunObservation>();
 	for (const candidate of candidates) {
 		const child = runSessions.get(candidate.runId);
 		if (child === undefined) continue;
-		const existing = candidateByRun.get(candidate.runId);
-		if (existing === undefined) candidateByRun.set(candidate.runId, {candidate, child});
-		else {
-			const leftParent = existing.candidate.parentRunId ?? existing.candidate.parentSessionRef;
-			const rightParent = candidate.parentRunId ?? candidate.parentSessionRef;
-			if (existing.child !== child || leftParent !== rightParent) {
-				return Result.fail(
-					new LineageConflictError({
-						recordId: `spawn:${candidate.runId}`,
-						message: `Run ${candidate.runId} has conflicting parentage`,
-					}),
-				);
+		let parent: SessionIdentity | undefined;
+		if (candidate.parentRunId !== undefined) {
+			parent = runSessions.get(candidate.parentRunId);
+			if (parent === undefined) {
+				problems.push({
+					code: "retention-loss",
+					source: candidate.source,
+					message: `Authoritative parent run ${candidate.parentRunId} for ${candidate.runId} is not retained`,
+				});
 			}
+		} else if (candidate.parentSessionRef !== undefined) {
+			parent = resolveSession(candidate.parentSessionRef, byFile, knownNodes, path);
+		}
+		const observation: RunObservation = {
+			runId: candidate.runId,
+			child,
+			observedAt: candidate.observedAt,
+			...(parent === undefined ? {} : {parent}),
+			source: candidate.source,
+		};
+		const existing = candidateByRun.get(candidate.runId);
+		if (
+			existing !== undefined &&
+			(existing.child !== observation.child ||
+				existing.parent !== observation.parent ||
+				existing.observedAt !== observation.observedAt)
+		) {
+			return Result.fail(
+				new LineageConflictError({
+					recordId: `spawn:${candidate.runId}`,
+					message: `Run ${candidate.runId} has conflicting observations`,
+				}),
+			);
+		}
+		candidateByRun.set(candidate.runId, observation);
+	}
+
+	const currentByRun = new Map<string, RunObservation>();
+	for (const edge of current.edges) {
+		if (edge.kind !== "spawn") continue;
+		currentByRun.set(edge.runId, {
+			runId: edge.runId,
+			child: edge.child,
+			parent: edge.parent,
+			observedAt: edge.observedAt,
+			source: "retained lineage store",
+		});
+	}
+	for (const observation of current.continuity) {
+		currentByRun.set(observation.runId, {
+			runId: observation.runId,
+			child: observation.session,
+			observedAt: observation.observedAt,
+			source: "retained lineage store",
+		});
+	}
+	for (const [runId, observation] of candidateByRun) {
+		const persisted = currentByRun.get(runId);
+		if (
+			persisted !== undefined &&
+			(persisted.child !== observation.child ||
+				persisted.observedAt !== observation.observedAt ||
+				(persisted.parent !== undefined && persisted.parent !== observation.parent))
+		) {
+			return Result.fail(
+				new LineageConflictError({
+					recordId: `spawn:${runId}`,
+					message: `Persisted run ${runId} conflicts with its source observation`,
+				}),
+			);
 		}
 	}
 
-	const existingSpawnIds = new Set(
-		current.edges.filter((edge) => edge.kind === "spawn").map((edge) => edge.id),
-	);
-	const origins = new Set(
-		current.edges.filter((edge) => edge.kind === "spawn").map((edge) => edge.child),
-	);
+	const touchedSessions = new Set([...candidateByRun.values()].map((value) => value.child));
+	const observationsBySession = new Map<SessionIdentity, Array<RunObservation>>();
+	for (const observation of [...currentByRun.values(), ...candidateByRun.values()]) {
+		if (!touchedSessions.has(observation.child)) continue;
+		const bucket = observationsBySession.get(observation.child) ?? [];
+		if (!bucket.some((value) => value.runId === observation.runId)) bucket.push(observation);
+		observationsBySession.set(observation.child, bucket);
+	}
 	const continuity: Array<ContinuityObservation> = [];
-	const ordered = [...candidateByRun.values()].sort(
-		(left, right) =>
-			left.candidate.observedAt - right.candidate.observedAt ||
-			left.candidate.runId.localeCompare(right.candidate.runId),
-	);
-	for (const {candidate, child} of ordered) {
-		const spawnId = `spawn:${candidate.runId}`;
-		if (existingSpawnIds.has(spawnId)) continue;
-		const parent =
-			candidate.parentRunId === undefined
-				? candidate.parentSessionRef === undefined
-					? undefined
-					: resolveSession(candidate.parentSessionRef, byFile, knownNodes, path)
-				: (runSessions.get(candidate.parentRunId) ??
-					(candidate.parentSessionRef === undefined
-						? undefined
-						: resolveSession(candidate.parentSessionRef, byFile, knownNodes, path)));
-		if (origins.has(child) || parent === child) {
-			continuity.push({
-				id: `resume:${candidate.runId}`,
-				runId: candidate.runId,
-				session: child,
-				observedAt: candidate.observedAt,
-			});
-			continue;
-		}
-		if (parent === undefined || !nodesByIdentity.has(parent)) {
-			problems.push({
-				code: "retention-loss",
-				source: candidate.source,
-				message: `Spawn parent for run ${candidate.runId} is not retained`,
-			});
+	for (const [child, observations] of observationsBySession) {
+		const ordered = observations.sort(
+			(left, right) => left.observedAt - right.observedAt || left.runId.localeCompare(right.runId),
+		);
+		const origin = ordered.find(
+			(observation) =>
+				observation.parent !== undefined &&
+				observation.parent !== child &&
+				nodesByIdentity.has(observation.parent),
+		);
+		if (origin === undefined) {
+			for (const observation of ordered.filter((value) => value.parent === undefined)) {
+				if (!problems.some((problem) => problem.source === observation.source)) {
+					problems.push({
+						code: "retention-loss",
+						source: observation.source,
+						message: `Spawn parent for run ${observation.runId} is not retained`,
+					});
+				}
+			}
 			continue;
 		}
 		edges.push({
-			id: spawnId,
+			id: `spawn:${origin.runId}`,
 			kind: "spawn",
-			parent,
+			parent: origin.parent as SessionIdentity,
 			child,
-			runId: candidate.runId,
-			observedAt: candidate.observedAt,
+			runId: origin.runId,
+			observedAt: origin.observedAt,
 		});
-		origins.add(child);
+		for (const observation of ordered) {
+			if (observation.runId === origin.runId) continue;
+			continuity.push({
+				id: `resume:${observation.runId}`,
+				runId: observation.runId,
+				session: child,
+				observedAt: observation.observedAt,
+			});
+		}
 	}
+	const base = {
+		...current,
+		edges: current.edges.filter(
+			(edge) => edge.kind !== "spawn" || !touchedSessions.has(edge.child),
+		),
+		continuity: current.continuity.filter(
+			(observation) => !touchedSessions.has(observation.session),
+		),
+	};
 
 	return Result.succeed({
+		base,
 		records: {
 			nodes: sessionGraph.success.nodes,
 			edges,
@@ -628,11 +780,14 @@ export const loadLineageStore = Effect.fn("LineageStore.load")(function* (storeP
 			supported: STORE_VERSION,
 		});
 	}
-	return yield* Schema.decodeUnknownEffect(LineageStoreDocument)(parsed).pipe(
+	const decoded = yield* Schema.decodeUnknownEffect(LineageStoreDocument)(parsed).pipe(
 		Effect.mapError(
 			(error) => new LineageStoreReadError({path: storePath, message: messageOf(error)}),
 		),
 	);
+	const validated = validateLineageStore(decoded);
+	if (Result.isFailure(validated)) return yield* validated.failure;
+	return validated.success;
 });
 
 const writeLineageStore = Effect.fn("LineageStore.write")(function* (
@@ -641,15 +796,27 @@ const writeLineageStore = Effect.fn("LineageStore.write")(function* (
 ) {
 	const fs = yield* FileSystem.FileSystem;
 	const path = yield* Path.Path;
+	const crypto = yield* Crypto.Crypto;
 	const encoded = yield* Schema.encodeEffect(LineageStoreDocument)(document);
 	const text = `${JSON.stringify(encoded, null, 2)}\n`;
 	yield* fs.makeDirectory(path.dirname(storePath), {recursive: true});
-	const temporaryPath = `${storePath}.tmp`;
+	const temporaryPath = `${storePath}.${yield* crypto.randomUUIDv4}.tmp`;
 	yield* fs.writeFileString(temporaryPath, text);
-	yield* fs.rename(temporaryPath, storePath);
+	yield* fs
+		.rename(temporaryPath, storePath)
+		.pipe(Effect.ensuring(fs.remove(temporaryPath).pipe(Effect.ignore)));
 });
 
-export const refreshLineage = Effect.fn("Lineage.refresh")(function* (
+const storeLocks = new Map<string, Semaphore.Semaphore>();
+const storeLock = (storePath: string): Semaphore.Semaphore => {
+	const existing = storeLocks.get(storePath);
+	if (existing !== undefined) return existing;
+	const created = Semaphore.makeUnsafe(1);
+	storeLocks.set(storePath, created);
+	return created;
+};
+
+const refreshLineageUnlocked = Effect.fn("Lineage.refreshUnlocked")(function* (
 	options: RefreshLineageOptions,
 ) {
 	const path = yield* Path.Path;
@@ -665,16 +832,27 @@ export const refreshLineage = Effect.fn("Lineage.refresh")(function* (
 		path,
 	);
 	if (Result.isFailure(normalized)) return yield* normalized.failure;
-	const merged = upsertLineageRecords(current, normalized.success.records);
+	const merged = upsertLineageRecords(normalized.success.base, normalized.success.records);
 	if (Result.isFailure(merged)) return yield* merged.failure;
-	yield* writeLineageStore(options.storePath, merged.success);
+	const validated = validateLineageStore(merged.success);
+	if (Result.isFailure(validated)) return yield* validated.failure;
+	yield* writeLineageStore(options.storePath, validated.success);
 	return {
-		graph: merged.success,
+		graph: validated.success,
 		problems: [...sessions.problems, ...runs.problems, ...normalized.success.problems].sort(
 			(left, right) =>
 				left.source.localeCompare(right.source) || left.code.localeCompare(right.code),
 		),
 	} satisfies LineageProjection;
+});
+
+export const refreshLineage = Effect.fn("Lineage.refresh")(function* (
+	options: RefreshLineageOptions,
+) {
+	const path = yield* Path.Path;
+	return yield* storeLock(path.resolve(options.storePath)).withPermit(
+		refreshLineageUnlocked(options),
+	);
 });
 
 const tempScope = (
@@ -704,7 +882,7 @@ export const defaultLineageOptions = Effect.fn("Lineage.defaultOptions")(functio
 			: path.resolve(configuredTempRoot);
 	return {
 		runRoots: options.runRoots ?? [path.join(tempRoot, "async-subagent-runs")],
-		sessionRoots: options.sessionRoots ?? [path.join(home, ".pi", "agent", "sessions")],
+		sessionRoots: options.sessionRoots ?? (yield* defaultSessionRoots(environment, home)),
 		storePath: options.storePath ?? path.join(home, ".pi", "agent", "tuval", "lineage.json"),
 		...(options.protocolSessions === undefined ? {} : {protocolSessions: options.protocolSessions}),
 	} satisfies RefreshLineageOptions;
@@ -712,10 +890,15 @@ export const defaultLineageOptions = Effect.fn("Lineage.defaultOptions")(functio
 
 export const LineageIndexLive = (
 	options: LineageIndexOptions = {},
-): Layer.Layer<LineageIndex, never, FileSystem.FileSystem | Path.Path | PiDiscovery> =>
+): Layer.Layer<
+	LineageIndex,
+	never,
+	Crypto.Crypto | FileSystem.FileSystem | Path.Path | PiDiscovery
+> =>
 	Layer.effect(
 		LineageIndex,
 		Effect.gen(function* () {
+			const crypto = yield* Crypto.Crypto;
 			const fs = yield* FileSystem.FileSystem;
 			const path = yield* Path.Path;
 			const discovery = yield* PiDiscovery;
@@ -724,6 +907,7 @@ export const LineageIndexLive = (
 				project: Effect.fn("LineageIndex.project")(function* () {
 					const protocolSessions = options.protocolSessions ?? (yield* discovery.sessionMetadata());
 					return yield* refreshLineage({...resolved, protocolSessions}).pipe(
+						Effect.provideService(Crypto.Crypto, crypto),
 						Effect.provideService(FileSystem.FileSystem, fs),
 						Effect.provideService(Path.Path, path),
 						Effect.mapError((error) => new LineageIndexError({message: messageOf(error)})),

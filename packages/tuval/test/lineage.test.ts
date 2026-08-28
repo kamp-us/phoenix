@@ -2,7 +2,7 @@ import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, FileSystem, Path, Result, Schema} from "effect";
 import fc from "fast-check";
-import {loadLineageStore, refreshLineage} from "../src/backend/lineage.js";
+import {defaultLineageOptions, loadLineageStore, refreshLineage} from "../src/backend/lineage.js";
 import {sessionIdentity} from "../src/shared/discovery.js";
 import {
 	emptyLineageStore,
@@ -216,6 +216,308 @@ describe("Tuval lineage index", () => {
 			}),
 		);
 
+		it.effect("indexes status-level runs and records a later revival as continuity", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-status-"});
+				const sessionsRoot = path.join(root, "sessions");
+				const runsRoot = path.join(root, "runs");
+				const storePath = path.join(root, "lineage.json");
+				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+				const childFile = yield* writeSession(sessionsRoot, "child.jsonl", {id: "child"});
+				yield* writeStatus(runsRoot, "single", {
+					runId: "single-run",
+					sessionId: parentFile,
+					sessionFile: childFile,
+					startedAt: 100,
+				});
+				yield* writeStatus(runsRoot, "revival", {
+					runId: "revival-run",
+					sessionId: parentFile,
+					sessionFile: childFile,
+					startedAt: 200,
+				});
+
+				const projected = yield* refreshLineage({
+					runRoots: [runsRoot],
+					sessionRoots: [sessionsRoot],
+					storePath,
+				});
+				assert.deepInclude(
+					projected.graph.edges.find((edge) => edge.id === "spawn:single-run"),
+					{parent: sessionIdentity("parent"), child: sessionIdentity("child")},
+				);
+				assert.deepEqual(projected.graph.continuity, [
+					{
+						id: "resume:revival-run",
+						runId: "revival-run",
+						session: sessionIdentity("child"),
+						observedAt: 200,
+					},
+				]);
+			}),
+		);
+
+		it.effect("keeps authoritative missing parents unresolved instead of using the wrapper", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-parent-"});
+				const sessionsRoot = path.join(root, "sessions");
+				const runsRoot = path.join(root, "runs");
+				const storePath = path.join(root, "lineage.json");
+				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+				const childFile = yield* writeSession(sessionsRoot, "child.jsonl", {id: "child"});
+				yield* writeStatus(runsRoot, "missing-parent", {
+					runId: "wrapper",
+					sessionId: parentFile,
+					steps: [
+						{
+							runId: "child-run",
+							parentRunId: "missing-run",
+							sessionFile: childFile,
+							startedAt: 10,
+						},
+					],
+				});
+
+				const projected = yield* refreshLineage({
+					runRoots: [runsRoot],
+					sessionRoots: [sessionsRoot],
+					storePath,
+				});
+				assert.lengthOf(
+					projected.graph.edges.filter((edge) => edge.kind === "spawn"),
+					0,
+				);
+				assert.isTrue(
+					projected.problems.some((problem) =>
+						problem.message.includes("Authoritative parent run missing-run"),
+					),
+				);
+			}),
+		);
+
+		it.effect("reclassifies a retained later origin when an earlier artifact is restored", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-order-"});
+				const sessionsRoot = path.join(root, "sessions");
+				const runsRoot = path.join(root, "runs");
+				const storePath = path.join(root, "lineage.json");
+				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+				const childFile = yield* writeSession(sessionsRoot, "child.jsonl", {id: "child"});
+				yield* writeStatus(runsRoot, "later", {
+					runId: "later-run",
+					sessionId: parentFile,
+					sessionFile: childFile,
+					startedAt: 200,
+				});
+				yield* refreshLineage({runRoots: [runsRoot], sessionRoots: [sessionsRoot], storePath});
+				yield* writeStatus(runsRoot, "earlier", {
+					runId: "earlier-run",
+					sessionId: parentFile,
+					sessionFile: childFile,
+					startedAt: 100,
+				});
+
+				const restored = yield* refreshLineage({
+					runRoots: [runsRoot],
+					sessionRoots: [sessionsRoot],
+					storePath,
+				});
+				assert.isDefined(restored.graph.edges.find((edge) => edge.id === "spawn:earlier-run"));
+				assert.isUndefined(restored.graph.edges.find((edge) => edge.id === "spawn:later-run"));
+				assert.isDefined(
+					restored.graph.continuity.find((value) => value.id === "resume:later-run"),
+				);
+				const bytes = yield* fs.readFileString(storePath);
+				yield* refreshLineage({runRoots: [runsRoot], sessionRoots: [sessionsRoot], storePath});
+				assert.strictEqual(yield* fs.readFileString(storePath), bytes);
+			}),
+		);
+
+		it.effect("diagnoses empty statuses and malformed nested entries", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-malformed-"});
+				const runsRoot = path.join(root, "runs");
+				const sessionsRoot = path.join(root, "sessions");
+				yield* writeStatus(runsRoot, "empty", {});
+				yield* writeStatus(runsRoot, "nested", {runId: "wrapper", steps: [{}]});
+				const projected = yield* refreshLineage({
+					runRoots: [runsRoot],
+					sessionRoots: [sessionsRoot],
+					storePath: path.join(root, "lineage.json"),
+				});
+				assert.deepEqual(
+					projected.problems.map((problem) => problem.code),
+					["malformed-run", "malformed-run"],
+				);
+			}),
+		);
+
+		it.effect("refuses a changed observation for a persisted run id", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-rewrite-"});
+				const sessionsRoot = path.join(root, "sessions");
+				const runsRoot = path.join(root, "runs");
+				const storePath = path.join(root, "lineage.json");
+				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+				const childFile = yield* writeSession(sessionsRoot, "child.jsonl", {id: "child"});
+				const statusPath = yield* writeStatus(runsRoot, "run", {
+					runId: "stable-run",
+					sessionId: parentFile,
+					sessionFile: childFile,
+					startedAt: 10,
+				});
+				yield* refreshLineage({runRoots: [runsRoot], sessionRoots: [sessionsRoot], storePath});
+				yield* fs.writeFileString(
+					statusPath,
+					JSON.stringify({
+						runId: "stable-run",
+						sessionId: parentFile,
+						sessionFile: childFile,
+						startedAt: 11,
+					}),
+				);
+				const rewritten = yield* Effect.result(
+					refreshLineage({runRoots: [runsRoot], sessionRoots: [sessionsRoot], storePath}),
+				);
+				assert.isTrue(Result.isFailure(rewritten));
+				if (Result.isFailure(rewritten)) {
+					assert.strictEqual(rewritten.failure._tag, "tuval/LineageConflictError");
+				}
+			}),
+		);
+
+		it.effect("serializes concurrent projections without losing either update", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-concurrent-"});
+				const sessionsRoot = path.join(root, "sessions");
+				const storePath = path.join(root, "store", "lineage.json");
+				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
+				const alphaFile = yield* writeSession(sessionsRoot, "alpha.jsonl", {id: "alpha"});
+				const betaFile = yield* writeSession(sessionsRoot, "beta.jsonl", {id: "beta"});
+				const roots = [path.join(root, "alpha-runs"), path.join(root, "beta-runs")];
+				yield* writeStatus(roots[0] as string, "run", {
+					runId: "alpha-run",
+					sessionId: parentFile,
+					sessionFile: alphaFile,
+					startedAt: 10,
+				});
+				yield* writeStatus(roots[1] as string, "run", {
+					runId: "beta-run",
+					sessionId: parentFile,
+					sessionFile: betaFile,
+					startedAt: 20,
+				});
+				yield* Effect.all(
+					roots.map((runRoot) =>
+						refreshLineage({runRoots: [runRoot], sessionRoots: [sessionsRoot], storePath}),
+					),
+					{concurrency: "unbounded"},
+				);
+				const stored = yield* loadLineageStore(storePath);
+				assert.deepEqual(
+					stored.edges.filter((edge) => edge.kind === "spawn").map((edge) => edge.runId),
+					["alpha-run", "beta-run"],
+				);
+				const storeEntries = yield* fs.readDirectory(path.dirname(storePath));
+				assert.deepEqual(storeEntries, ["lineage.json"]);
+			}),
+		);
+
+		it.effect("refuses duplicate and dangling records in a shape-valid durable store", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-store-"});
+				const storePath = path.join(root, "lineage.json");
+				const node = {
+					id: sessionIdentity("a"),
+					piSessionId: "a",
+					createdAt: 1,
+					updatedAt: 1,
+					cwd: "/tmp",
+					sourceFiles: ["/tmp/a.jsonl"],
+				};
+				yield* fs.writeFileString(
+					storePath,
+					JSON.stringify({version: 1, nodes: [node, node], edges: [], continuity: []}),
+				);
+				const duplicate = yield* Effect.result(loadLineageStore(storePath));
+				assert.isTrue(Result.isFailure(duplicate));
+				if (Result.isFailure(duplicate)) {
+					assert.strictEqual(duplicate.failure._tag, "tuval/LineageConflictError");
+				}
+				yield* fs.writeFileString(
+					storePath,
+					JSON.stringify({
+						version: 1,
+						nodes: [
+							node,
+							{
+								...node,
+								id: sessionIdentity("b"),
+								piSessionId: "b",
+							},
+						],
+						edges: [],
+						continuity: [],
+					}),
+				);
+				const sourceConflict = yield* Effect.result(loadLineageStore(storePath));
+				assert.isTrue(Result.isFailure(sourceConflict));
+				yield* fs.writeFileString(
+					storePath,
+					JSON.stringify({
+						version: 1,
+						nodes: [node],
+						edges: [
+							{
+								id: "spawn:r",
+								kind: "spawn",
+								parent: sessionIdentity("missing"),
+								child: node.id,
+								runId: "r",
+								observedAt: 1,
+							},
+						],
+						continuity: [],
+					}),
+				);
+				const dangling = yield* Effect.result(loadLineageStore(storePath));
+				assert.isTrue(Result.isFailure(dangling));
+			}),
+		);
+
+		it.effect("uses discovery's configured environment roots by default", () =>
+			Effect.gen(function* () {
+				const direct = yield* defaultLineageOptions(
+					{},
+					{PI_CODING_AGENT_SESSION_DIR: "/configured/sessions"},
+					"/home/tuval",
+					"/tmp",
+				);
+				assert.deepEqual(direct.sessionRoots, ["/configured/sessions"]);
+				const agent = yield* defaultLineageOptions(
+					{},
+					{PI_CODING_AGENT_DIR: "/configured/agent"},
+					"/home/tuval",
+					"/tmp",
+				);
+				assert.deepEqual(agent.sessionRoots, ["/configured/agent/sessions"]);
+			}),
+		);
+
 		it.effect("isolates torn sources and refuses conflicts and unknown store versions", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
@@ -277,17 +579,38 @@ describe("Tuval lineage index", () => {
 				fc.uniqueArray(fc.stringMatching(/^[a-z]{1,8}$/), {maxLength: 30}),
 				fc.array(fc.nat({max: 10}), {maxLength: 100}),
 				(runIds, order) => {
+					const parent = {
+						id: sessionIdentity("property-parent"),
+						piSessionId: "property-parent",
+						createdAt: 0,
+						updatedAt: 0,
+						cwd: "/tmp/tuval",
+						sourceFiles: [],
+					};
+					const children = runIds.map((runId, index) => ({
+						id: sessionIdentity(runId),
+						piSessionId: runId,
+						createdAt: index + 1,
+						updatedAt: index + 1,
+						cwd: "/tmp/tuval",
+						sourceFiles: [],
+					}));
 					const records: LineageRecords = {
-						nodes: runIds.map((runId, index) => ({
-							id: sessionIdentity(runId),
-							piSessionId: runId,
-							createdAt: index,
-							updatedAt: index,
-							cwd: "/tmp/tuval",
-							sourceFiles: [],
+						nodes: [parent, ...children],
+						edges: children.map((node, index) => ({
+							id: `spawn:${runIds[index] as string}`,
+							kind: "spawn" as const,
+							parent: parent.id,
+							child: node.id,
+							runId: runIds[index] as string,
+							observedAt: index,
 						})),
-						edges: [],
-						continuity: [],
+						continuity: children.map((node, index) => ({
+							id: `resume:resume-${runIds[index] as string}`,
+							runId: `resume-${runIds[index] as string}`,
+							session: node.id,
+							observedAt: index + 100,
+						})),
 					};
 					let graph = emptyLineageStore();
 					for (const index of order) {
