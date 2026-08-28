@@ -968,7 +968,10 @@ export const defaultLineageOptions = Effect.fn("Lineage.defaultOptions")(functio
 			? path.join(temporaryDirectory, `pi-subagents-${tempScope(environment)}`)
 			: path.resolve(configuredTempRoot);
 	return {
-		runRoots: options.runRoots ?? [path.join(tempRoot, "async-subagent-runs")],
+		runRoots: options.runRoots ?? [
+			path.join(tempRoot, "async-subagent-runs"),
+			path.join(tempRoot, "nested-subagent-runs"),
+		],
 		sessionRoots: options.sessionRoots ?? (yield* defaultSessionRoots(environment, home)),
 		storePath: options.storePath ?? path.join(home, ".pi", "agent", "tuval", "lineage.json"),
 		...(options.protocolSessions === undefined ? {} : {protocolSessions: options.protocolSessions}),

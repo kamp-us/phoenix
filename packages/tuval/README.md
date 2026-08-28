@@ -29,7 +29,8 @@ then opens that URL in the default browser unless browser opening is disabled.
 Live attachment requires a pi server Unix socket supplied through `--pi-socket`. Session discovery
 reads `PI_CODING_AGENT_SESSION_DIR` when set. Otherwise it reads the `sessions` directory beneath
 `PI_CODING_AGENT_DIR`, falling back to `~/.pi/agent/sessions`. Lineage reads pi-subagents lifecycle
-artifacts beneath `PI_SUBAGENTS_TEMP_ROOT` when set, otherwise the current user's scoped temp root.
+artifacts from the sibling `async-subagent-runs` and `nested-subagent-runs` directories beneath
+`PI_SUBAGENTS_TEMP_ROOT` when set, otherwise beneath the current user's scoped temp root.
 
 ## Discovery contract
 
@@ -53,7 +54,8 @@ entry is reported as a source problem without discarding sessions that were read
 The package exports the schema-backed graph types from `tuval/lineage`. The `lineage` fate query
 projects session nodes, `spawn` and `fork` edges, resume-continuity observations, and isolated source
 problems. `LineageIndex` scans the same configured session roots as discovery and joins status-level
-and nested pi-subagents lifecycle records to retained session headers. With `--pi-socket`, fork
+records from both pi-subagents lifecycle run directories to retained session headers. With
+`--pi-socket`, fork
 parents prefer the server's durable `SessionMetadata.parentSessionId`; when that field is absent,
 lineage reads only the child session's bounded first header line. An unresolved authoritative run
 parent is reported and does not become a spawn or continuity observation.

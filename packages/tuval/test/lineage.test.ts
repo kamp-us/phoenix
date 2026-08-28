@@ -60,13 +60,15 @@ const edgeKinds = (graph: {readonly edges: ReadonlyArray<{readonly kind: string}
 
 describe("Tuval lineage index", () => {
 	it.layer(NodeServices.layer)((it) => {
-		it.effect("joins top-level and nested runs while preferring protocol fork metadata", () =>
+		it.effect("joins default top-level and sibling nested run roots", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
 				const path = yield* Path.Path;
 				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-"});
 				const sessionsRoot = path.join(root, "sessions");
-				const runsRoot = path.join(root, "runs");
+				const tempRoot = path.join(root, "pi-subagents");
+				const asyncRunsRoot = path.join(tempRoot, "async-subagent-runs");
+				const nestedRunsRoot = path.join(tempRoot, "nested-subagent-runs");
 				const storePath = path.join(root, "tuval", "lineage.json");
 				const parentFile = yield* writeSession(sessionsRoot, "parent.jsonl", {id: "parent"});
 				const childFile = yield* writeSession(sessionsRoot, "root/run-0/session.jsonl", {
@@ -78,7 +80,7 @@ describe("Tuval lineage index", () => {
 					parentSession: parentFile,
 					body: `${"x".repeat(256 * 1024)} not-json {"parentSessionId":"body-parent"}`,
 				});
-				yield* writeStatus(runsRoot, "root-run", {
+				yield* writeStatus(asyncRunsRoot, "root-run", {
 					lifecycleArtifactVersion: 3,
 					runId: "wrapper-run",
 					sessionId: parentFile,
@@ -89,32 +91,36 @@ describe("Tuval lineage index", () => {
 							parentWorkflowRunId: "wrapper-run",
 							sessionFile: childFile,
 							startedAt: 110,
-							children: [
-								{
-									id: "nested-run",
-									parentRunId: "child-run",
-									sessionFile: nestedFile,
-									startedAt: 120,
-								},
-							],
 						},
 					],
 				});
-
-				const first = yield* refreshLineage({
-					runRoots: [runsRoot],
-					sessionRoots: [sessionsRoot],
-					storePath,
-					protocolSessions: [
-						{id: "parent", createdAt: 1, cwd: "/tmp/tuval"},
-						{id: "child", createdAt: 2, cwd: "/tmp/tuval"},
-						{id: "nested", createdAt: 3, parentSessionId: "child", cwd: "/tmp/tuval"},
-					],
+				yield* writeStatus(nestedRunsRoot, "child-run/nested-run", {
+					lifecycleArtifactVersion: 3,
+					runId: "nested-run",
+					sessionId: childFile,
+					sessionFile: nestedFile,
+					startedAt: 120,
+					steps: [{agent: "worker", sessionFile: nestedFile, startedAt: 120, status: "complete"}],
 				});
+
+				const options = yield* defaultLineageOptions(
+					{
+						sessionRoots: [sessionsRoot],
+						storePath,
+						protocolSessions: [
+							{id: "parent", createdAt: 1, cwd: "/tmp/tuval"},
+							{id: "child", createdAt: 2, cwd: "/tmp/tuval"},
+							{id: "nested", createdAt: 3, parentSessionId: "child", cwd: "/tmp/tuval"},
+						],
+					},
+					{PI_SUBAGENTS_TEMP_ROOT: tempRoot},
+					"/home/tuval",
+					root,
+				);
+				assert.deepEqual(options.runRoots, [asyncRunsRoot, nestedRunsRoot]);
+				const first = yield* refreshLineage(options);
 				const second = yield* refreshLineage({
-					runRoots: [runsRoot],
-					sessionRoots: [sessionsRoot],
-					storePath,
+					...options,
 					protocolSessions: [
 						{id: "parent", createdAt: 1},
 						{id: "child", createdAt: 2},
