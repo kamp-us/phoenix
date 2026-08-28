@@ -24,6 +24,7 @@
 		"@earendil-works/pi-client": "catalog:",
 		"@earendil-works/pi-protocol": "catalog:",
 		"@effect/platform-node": "catalog:",
+		"@kampus/fate-effect": "workspace:*",
 		"@nkzw/fate": "catalog:",
 		"effect": "catalog:"
 	},

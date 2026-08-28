@@ -1,6 +1,8 @@
 import {mkdir, mkdtemp, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {NodeServices} from "@effect/platform-node";
+import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {afterEach, describe, expect, it} from "vitest";
 import {discoverPiSessions} from "../src/backend/pi-discovery.js";
@@ -9,6 +11,9 @@ import {DiscoveryOutcome} from "../src/shared/discovery.js";
 const decodeOutcome = Schema.decodeUnknownSync(DiscoveryOutcome);
 
 const temporary: Array<string> = [];
+
+const discover = (options: Parameters<typeof discoverPiSessions>[0]) =>
+	Effect.runPromise(discoverPiSessions(options).pipe(Effect.provide(NodeServices.layer)));
 
 const temp = async (): Promise<string> => {
 	const path = await mkdtemp(join(tmpdir(), "tuval-discovery-"));
@@ -37,8 +42,8 @@ describe("pi home discovery", () => {
 		);
 		await writeFile(join(project, "2026-08-27T12-01-00-000Z_broken.jsonl"), "not-json\n");
 
-		const first = await discoverPiSessions({sessionRoots: [root]});
-		const second = await discoverPiSessions({sessionRoots: [root]});
+		const first = await discover({sessionRoots: [root]});
+		const second = await discover({sessionRoots: [root]});
 
 		expect(() => decodeOutcome(first)).not.toThrow();
 		expect(first._tag).toBe("partial-source");
@@ -57,7 +62,7 @@ describe("pi home discovery", () => {
 
 	it("distinguishes empty, fatal, and framed transport failures", async () => {
 		const root = await temp();
-		const empty = await discoverPiSessions({sessionRoots: [join(root, "missing")]});
+		const empty = await discover({sessionRoots: [join(root, "missing")]});
 		expect(() => decodeOutcome(empty)).not.toThrow();
 		expect(empty).toEqual({
 			_tag: "empty",
@@ -66,11 +71,11 @@ describe("pi home discovery", () => {
 
 		const notDirectory = join(root, "not-a-directory");
 		await writeFile(notDirectory, "x");
-		const fatal = await discoverPiSessions({sessionRoots: [notDirectory]});
+		const fatal = await discover({sessionRoots: [notDirectory]});
 		expect(() => decodeOutcome(fatal)).not.toThrow();
 		expect(fatal).toMatchObject({_tag: "fatal"});
 
-		const transport = await discoverPiSessions({
+		const transport = await discover({
 			sessionRoots: [join(root, "missing")],
 			transport: {failWith: new Error("synthetic transport break")},
 		});

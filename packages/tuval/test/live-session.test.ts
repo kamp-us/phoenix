@@ -10,7 +10,7 @@ import {
 	type ServerMessage,
 	type SessionSnapshot,
 } from "@earendil-works/pi-protocol";
-import {Schema} from "effect";
+import {Effect, Schema, Stream} from "effect";
 import {afterEach, describe, expect, it} from "vitest";
 import {PiLiveSession} from "../src/backend/live-session.js";
 import {
@@ -228,13 +228,14 @@ class SyntheticPiProtocol {
 }
 
 const services: Array<PiLiveSession> = [];
+const run = Effect.runPromise;
 
 afterEach(async () => {
-	await Promise.all(services.splice(0).map((service) => service.dispose()));
+	await Promise.all(services.splice(0).map((service) => run(service.dispose())));
 });
 
 const connect = async (protocol: SyntheticPiProtocol): Promise<PiLiveSession> => {
-	const service = await PiLiveSession.connect(protocol.factory);
+	const service = await run(PiLiveSession.connect(protocol.factory));
 	services.push(service);
 	return service;
 };
@@ -260,7 +261,7 @@ describe("PiLiveSession", () => {
 		]);
 		const service = await connect(protocol);
 
-		const attached = await service.attach(initial.id);
+		const attached = await run(service.attach(initial.id));
 		expect(Schema.decodeUnknownSync(AttachLiveSessionOutcome)(attached)).toEqual(attached);
 		expect(attached).toMatchObject({
 			_tag: "attached",
@@ -273,10 +274,10 @@ describe("PiLiveSession", () => {
 				completion: "running",
 			},
 		});
-
 		expect(
 			attached._tag === "attached" && attached.session.transcript.map((item) => item.id),
 		).toEqual(["u1", "a1", "a2"]);
+
 		protocol.emit({
 			type: "session_progress",
 			sessionId: initial.id,
@@ -294,7 +295,7 @@ describe("PiLiveSession", () => {
 			progress: {type: "item_finished", item: assistant("a2", "hello", 3)},
 		});
 
-		const current = service.current();
+		const current = await run(service.current());
 		expect(Schema.decodeUnknownSync(LiveSessionView)(current)).toEqual(current);
 		expect(current?.transcript.map((item) => item.id)).toEqual(["u1", "a1", "a2"]);
 		expect(current?.transcript.at(-1)).toMatchObject({
@@ -302,29 +303,31 @@ describe("PiLiveSession", () => {
 			content: [{type: "text", text: "hello"}],
 			status: "complete",
 		});
-		const events = service.eventsAfter();
+		const events = await run(service.eventsAfter());
 		for (const event of events) {
 			expect(Schema.decodeUnknownSync(LiveSessionEvent)(event)).toEqual(event);
 		}
 		const sequences = events.map((event) => event.sequence);
 		expect(sequences).toEqual([...sequences].sort((a, b) => a - b));
-		await service.release();
+		await run(service.release());
 		expect(protocol.detached).toEqual([initial.id]);
 	});
 
-	it("correlates prompts, streams progress while pending, and acknowledges only after the result", async () => {
+	it("correlates prompts and streams progress before protocol acknowledgement", async () => {
 		const initial = snapshot("session-prompt", 1);
 		const protocol = new SyntheticPiProtocol(initial);
 		const service = await connect(protocol);
-		await service.attach(initial.id);
-		const streamedEvents: Array<string> = [];
-		service.subscribe((event) => streamedEvents.push(event._tag));
+		const attached = await run(service.attach(initial.id));
+		const afterSequence = attached._tag === "attached" ? attached.session.lastEventSequence : 0;
+		const streamed = run(service.events(afterSequence).pipe(Stream.take(1), Stream.runCollect));
 
 		let settled = false;
-		const pending = service.prompt({correlationId: "prompt-1", text: "say hello"}).then((value) => {
-			settled = true;
-			return value;
-		});
+		const pending = run(service.prompt({correlationId: "prompt-1", text: "say hello"})).then(
+			(value) => {
+				settled = true;
+				return value;
+			},
+		);
 		await Promise.resolve();
 		expect(settled).toBe(false);
 		protocol.emit({
@@ -332,8 +335,10 @@ describe("PiLiveSession", () => {
 			sessionId: initial.id,
 			progress: {type: "item_started", item: assistant("streamed", "hello", 2, "streaming")},
 		});
-		expect(service.current()?.transcript.at(-1)?.id).toBe("streamed");
-		expect(streamedEvents).toEqual(["session"]);
+		const streamedEvents = Array.from(await streamed);
+		expect(streamedEvents).toHaveLength(1);
+		expect(streamedEvents[0]).toMatchObject({_tag: "session"});
+		expect((await run(service.current()))?.transcript.at(-1)?.id).toBe("streamed");
 		expect(settled).toBe(false);
 
 		const acknowledged = snapshot("session-prompt", 2, [
@@ -345,11 +350,13 @@ describe("PiLiveSession", () => {
 			_tag: "acknowledged",
 			correlationId: "prompt-1",
 		});
-		expect(service.eventsAfter().find((event) => event._tag === "prompt")).toMatchObject({
+		expect(
+			(await run(service.eventsAfter())).find((event) => event._tag === "prompt"),
+		).toMatchObject({
 			outcome: {_tag: "acknowledged", correlationId: "prompt-1"},
 		});
 
-		const refused = service.prompt({correlationId: "prompt-2", text: "blocked"});
+		const refused = run(service.prompt({correlationId: "prompt-2", text: "blocked"}));
 		await Promise.resolve();
 		protocol.refusePrompt("blocked");
 		await expect(refused).resolves.toMatchObject({
@@ -364,8 +371,8 @@ describe("PiLiveSession", () => {
 		const second = snapshot("second", 1);
 		const protocol = new SyntheticPiProtocol(first, second);
 		const service = await connect(protocol);
-		await service.attach(first.id);
-		await service.attach(second.id);
+		await run(service.attach(first.id));
+		await run(service.attach(second.id));
 
 		expect(protocol.commands).toEqual(["attach", "detach", "attach"]);
 		expect(protocol.detached).toEqual([first.id]);
@@ -374,29 +381,30 @@ describe("PiLiveSession", () => {
 			sessionId: first.id,
 			progress: {type: "item_started", item: user("late-first", "ignored", 5)},
 		});
-		expect(service.current()?.sessionId).toBe(second.id);
-		expect(service.current()?.transcript.map((item) => item.id)).not.toContain("late-first");
+		const current = await run(service.current());
+		expect(current?.sessionId).toBe(second.id);
+		expect(current?.transcript.map((item) => item.id)).not.toContain("late-first");
 
-		await service.release();
+		await run(service.release());
 		expect(protocol.detached).toEqual([first.id, second.id]);
-		expect(service.current()).toBeNull();
+		expect(await run(service.current())).toBeNull();
 	});
 
-	it("reports lease refusal and preserves the last validated transcript on disconnect", async () => {
+	it("reports lease refusal and protocol-sourced disconnected state", async () => {
 		const refusedSession = snapshot("locked", 1);
 		const live = snapshot("live", 1);
 		const protocol = new SyntheticPiProtocol(refusedSession, live);
 		protocol.locked.add(refusedSession.id);
 		const service = await connect(protocol);
 
-		await expect(service.attach(refusedSession.id)).resolves.toMatchObject({
+		await expect(run(service.attach(refusedSession.id))).resolves.toMatchObject({
 			_tag: "refused",
 			code: "lease-refused",
 		});
-		await service.attach(live.id);
+		await run(service.attach(live.id));
 		protocol.disconnect();
 
-		expect(service.current()).toMatchObject({
+		expect(await run(service.current())).toMatchObject({
 			_tag: "disconnected",
 			connection: "disconnected",
 			ownership: "none",
@@ -404,28 +412,49 @@ describe("PiLiveSession", () => {
 			transcript: [{id: "live-user"}],
 		});
 		await expect(
-			service.prompt({correlationId: "after-disconnect", text: "no"}),
+			run(service.prompt({correlationId: "after-disconnect", text: "no"})),
 		).resolves.toMatchObject({_tag: "refused", code: "disconnected"});
+	});
+
+	it("releases the selected lease when the protocol removes the session", async () => {
+		const live = snapshot("removed", 1);
+		const protocol = new SyntheticPiProtocol(live);
+		const service = await connect(protocol);
+		await run(service.attach(live.id));
+
+		protocol.emit({type: "session_removed", sessionId: live.id});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		protocol.emit({
+			type: "session_progress",
+			sessionId: live.id,
+			progress: {type: "item_started", item: user("late", "ignored", 2)},
+		});
+		const current = await run(service.current());
+		expect(current).toMatchObject({
+			_tag: "disconnected",
+			ownership: "none",
+			completion: "disconnected",
+		});
+		expect(current?.transcript.map((item) => item.id)).not.toContain("late");
 	});
 
 	it("isolates a malformed protocol event and emits an actionable diagnostic", async () => {
 		const live = snapshot("malformed", 1);
 		const protocol = new SyntheticPiProtocol(live);
 		const service = await connect(protocol);
-		await service.attach(live.id);
+		await run(service.attach(live.id));
 
 		protocol.emitMalformedEvent();
 
-		expect(service.current()).toMatchObject({
+		expect(await run(service.current())).toMatchObject({
 			_tag: "disconnected",
 			transcript: [{id: "malformed-user"}],
 		});
 		expect(
-			service
-				.eventsAfter()
-				.some(
-					(event) => event._tag === "diagnostic" && /session_progress|invalid/i.test(event.message),
-				),
+			(await run(service.eventsAfter())).some(
+				(event) => event._tag === "diagnostic" && /session_progress|invalid/i.test(event.message),
+			),
 		).toBe(true);
 	});
 });

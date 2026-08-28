@@ -20,7 +20,8 @@ then opens that URL in the default browser unless browser opening is disabled.
 | --- | --- |
 | `GET /health` | Report server readiness |
 | `GET /` | Serve the static shell |
-| `POST /fate` | Run discovery and live-session queries or mutations |
+| `POST /fate` | Run Effect-native discovery and live-session queries or mutations |
+| `GET /fate/live?afterSequence=<n>` | Stream ordered live-session events over SSE |
 | `--port <port>` | Bind a fixed port instead of selecting an available port |
 | `--no-open` | Start without opening a browser |
 
@@ -46,11 +47,12 @@ entry is reported as a source problem without discarding sessions that were read
 
 ## Live-session contract
 
-The package exports the schema-backed live-session wire types from `tuval/live-session`. The fate
-endpoint exposes `liveSession.current` and `liveSession.events` queries plus `liveSession.attach`,
-`liveSession.prompt`, and `liveSession.release` mutations. Attachments hold one exclusive PiClient
-lease at a time. Selecting another session releases the old subscription and lease before attaching
-the replacement.
+The package exports the schema-backed live-session wire types from `tuval/live-session`.
+`@kampus/fate-effect` exposes the `liveSession.current` query plus `liveSession.attach`,
+`liveSession.prompt`, and `liveSession.release` mutations. `GET /fate/live` streams the service's
+ordered events directly, starting after the optional sequence cursor; clients do not poll a query.
+Attachments hold one exclusive PiClient lease at a time. Replacing or disconnecting a session
+releases its subscription and lease before more work can use it.
 
 Transcript snapshots are reduced with ordered Pi protocol progress events by item identity, so an
 item present at the attach boundary is updated rather than duplicated. Prompt mutations require a

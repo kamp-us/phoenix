@@ -5,14 +5,33 @@ import type {AddressInfo} from "node:net";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
+import {NodeServices} from "@effect/platform-node";
+import {Effect, Exit, Scope} from "effect";
 import {afterEach, describe, expect, it} from "vitest";
-import {type RunningTuval, startTuval, TUVAL_HOST} from "../src/backend/server.js";
+import {type RunningTuval, StartupFailure, startTuval, TUVAL_HOST} from "../src/backend/server.js";
 
 const running: Array<RunningTuval> = [];
+const scopes: Array<Scope.Closeable> = [];
 const temporary: Array<string> = [];
 
+const start = async (options: Parameters<typeof startTuval>[0]): Promise<RunningTuval> => {
+	const scope = await Effect.runPromise(Scope.make());
+	scopes.push(scope);
+	const server = await Effect.runPromise(
+		startTuval(options).pipe(
+			Effect.provideService(Scope.Scope, scope),
+			Effect.provide(NodeServices.layer),
+		),
+	);
+	running.push(server);
+	return server;
+};
+
 afterEach(async () => {
-	await Promise.all(running.splice(0).map((server) => server.close()));
+	await Promise.all(
+		scopes.splice(0).map((scope) => Effect.runPromise(Scope.close(scope, Exit.succeed(undefined)))),
+	);
+	running.splice(0);
 	await Promise.all(temporary.splice(0).map((path) => rm(path, {recursive: true, force: true})));
 });
 
@@ -28,16 +47,19 @@ describe("Tuval local server", () => {
 	it("binds loopback, serves static and fate discovery, then opens after readiness", async () => {
 		const {root, asset} = await fixture();
 		let opened: string | undefined;
-		const server = await startTuval({
+		const server = await start({
 			staticAsset: asset,
 			sessionRoots: [join(root, "missing-sessions")],
-			openBrowser: async (url) => {
-				const health = await fetch(`${url}/health`).then((response) => response.json());
-				expect(health).toMatchObject({status: "ready", url});
-				opened = url;
-			},
+			openBrowser: (url) =>
+				Effect.tryPromise({
+					try: async () => {
+						const health = await fetch(`${url}/health`).then((response) => response.json());
+						expect(health).toMatchObject({status: "ready", url});
+						opened = url;
+					},
+					catch: (cause) => new StartupFailure({message: "Health probe failed", cause}),
+				}),
 		});
-		running.push(server);
 
 		expect(server.host).toBe(TUVAL_HOST);
 		expect(server.url).toBe(opened);
@@ -66,11 +88,12 @@ describe("Tuval local server", () => {
 		let opened = false;
 		try {
 			await expect(
-				startTuval({
+				start({
 					port,
-					openBrowser: async () => {
-						opened = true;
-					},
+					openBrowser: () =>
+						Effect.sync(() => {
+							opened = true;
+						}),
 				}),
 			).rejects.toMatchObject({
 				name: "StartupFailure",

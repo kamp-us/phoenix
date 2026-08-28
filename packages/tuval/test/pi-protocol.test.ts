@@ -4,6 +4,7 @@ import {
 	ServerMessageDecoder,
 	type SessionMetadata,
 } from "@earendil-works/pi-protocol";
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {listSessionsThroughProtocol, makeDiscoveryTransport} from "../src/backend/pi-protocol.js";
 
@@ -45,6 +46,8 @@ describe("framed pi protocol discovery", () => {
 	});
 
 	it("enumerates through PiClient instead of bypassing its framed transport", async () => {
-		await expect(listSessionsThroughProtocol(sessions)).resolves.toEqual(sessions);
+		await expect(Effect.runPromise(listSessionsThroughProtocol(sessions))).resolves.toEqual(
+			sessions,
+		);
 	});
 });
