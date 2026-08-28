@@ -3,7 +3,7 @@
  * answers again, silently and on exit 0 (#6226). Reds instead.
  *
  * It reads source text rather than behaviour on purpose — the defect is invisible in-process, so
- * only a spawn can observe it (`./emit.cli.test.ts` does, once), and spawning all 29 groups to prove
+ * only a spawn can observe it (`./emit.cli.test.ts` does, once), and spawning every group to prove
  * a shared helper is still shared is not a budget this package has.
  */
 import {readdirSync, readFileSync} from "node:fs";
