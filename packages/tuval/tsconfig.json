@@ -4,6 +4,8 @@
 		"composite": true,
 		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
 		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"rewriteRelativeImportExtensions": true,
 		"types": ["node"]
 	},
 	"include": ["src", "test", "vitest.config.ts"],

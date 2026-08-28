@@ -8,7 +8,8 @@
 		"tuval": "./dist/backend/bin.js"
 	},
 	"exports": {
-		"./discovery": "./dist/shared/discovery.js"
+		"./discovery": "./dist/shared/discovery.js",
+		"./live-session": "./dist/shared/live-session.js"
 	},
 	"files": [
 		"dist"
@@ -23,11 +24,13 @@
 		"@earendil-works/pi-client": "catalog:",
 		"@earendil-works/pi-protocol": "catalog:",
 		"@effect/platform-node": "catalog:",
+		"@kampus/fate-effect": "workspace:*",
 		"@nkzw/fate": "catalog:",
 		"effect": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
 		"@playwright/test": "catalog:",
 		"@types/node": "catalog:",
 		"typescript": "catalog:",

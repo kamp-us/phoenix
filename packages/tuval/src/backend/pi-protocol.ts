@@ -6,6 +6,12 @@ import {
 	type ServerMessage,
 	type SessionMetadata,
 } from "@earendil-works/pi-protocol";
+import {Effect, Schema} from "effect";
+
+export class PiProtocolError extends Schema.TaggedErrorClass<PiProtocolError>()(
+	"tuval/PiProtocolError",
+	{cause: Schema.Defect()},
+) {}
 
 export interface ProtocolTransportOptions {
 	readonly failWith?: Error;
@@ -92,6 +98,8 @@ export const makeDiscoveryTransport =
 			close() {
 				if (closed) return;
 				closed = true;
+				// The transport callback must report decoder faults through PiClient's callback interface.
+				// biome-ignore lint/plugin: This synchronous non-Effect adapter has no failure channel.
 				try {
 					decoder.end();
 					handlers.onClose();
@@ -102,16 +110,27 @@ export const makeDiscoveryTransport =
 		};
 	};
 
-export const listSessionsThroughProtocol = async (
+export const listSessionsThroughProtocol = Effect.fn("PiProtocol.listSessions")(function* (
 	sessions: ReadonlyArray<SessionMetadata>,
 	options?: ProtocolTransportOptions,
-): Promise<ReadonlyArray<SessionMetadata>> => {
-	const client = await PiClient.connect({
-		transportFactory: makeDiscoveryTransport(sessions, options),
-	});
-	try {
-		return await client.listSessions();
-	} finally {
-		await client.dispose();
-	}
-};
+) {
+	return yield* Effect.acquireUseRelease(
+		Effect.tryPromise({
+			try: () =>
+				PiClient.connect({
+					transportFactory: makeDiscoveryTransport(sessions, options),
+				}),
+			catch: (cause) => new PiProtocolError({cause}),
+		}),
+		(client) =>
+			Effect.tryPromise({
+				try: () => client.listSessions(),
+				catch: (cause) => new PiProtocolError({cause}),
+			}),
+		(client) =>
+			Effect.tryPromise({
+				try: () => client.dispose(),
+				catch: (cause) => new PiProtocolError({cause}),
+			}).pipe(Effect.ignore),
+	);
+});

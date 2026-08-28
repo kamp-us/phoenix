@@ -1,136 +1,287 @@
 import {spawn} from "node:child_process";
-import {mkdtemp, rm, writeFile} from "node:fs/promises";
-import {createServer} from "node:http";
-import type {AddressInfo} from "node:net";
-import {tmpdir} from "node:os";
-import {join} from "node:path";
+import {createServer as createHttpServer} from "node:http";
+import {createServer as createUnixServer} from "node:net";
 import {fileURLToPath} from "node:url";
-import {afterEach, describe, expect, it} from "vitest";
-import {type RunningTuval, startTuval, TUVAL_HOST} from "../src/backend/server.js";
+import {
+	ClientMessageDecoder,
+	encodeServerMessage,
+	PROTOCOL_VERSION,
+	type SessionSnapshot,
+} from "@earendil-works/pi-protocol";
+import {NodeServices} from "@effect/platform-node";
+import {assert, describe, it} from "@effect/vitest";
+import {Effect, Exit, Fiber, FileSystem, Path} from "effect";
+import * as Latch from "effect/Latch";
+import {startTuval, TUVAL_HOST} from "../src/backend/server.js";
+import {TestFailure, tryPromise} from "./test-effect.js";
 
-const running: Array<RunningTuval> = [];
-const temporary: Array<string> = [];
-
-afterEach(async () => {
-	await Promise.all(running.splice(0).map((server) => server.close()));
-	await Promise.all(temporary.splice(0).map((path) => rm(path, {recursive: true, force: true})));
+const fixture = Effect.fn("test.fixture")(function* () {
+	const fs = yield* FileSystem.FileSystem;
+	const path = yield* Path.Path;
+	const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-server-"});
+	const asset = path.join(root, "index.html");
+	yield* fs.writeFileString(asset, "<!doctype html><main>Tuval test shell</main>");
+	return {root, asset, socket: path.join(root, "pi.sock")};
 });
 
-const fixture = async (): Promise<{root: string; asset: string}> => {
-	const root = await mkdtemp(join(tmpdir(), "tuval-server-"));
-	temporary.push(root);
-	const asset = join(root, "index.html");
-	await writeFile(asset, "<!doctype html><main>Tuval test shell</main>");
-	return {root, asset};
+const waitForUrl = (child: ReturnType<typeof spawn>) =>
+	Effect.callback<string, TestFailure>((resume) => {
+		const timeout = setTimeout(
+			() =>
+				resume(
+					Effect.fail(new TestFailure({cause: new Error("tuval bin did not report readiness")})),
+				),
+			10_000,
+		);
+		let stdout = "";
+		const onData = (chunk: Buffer) => {
+			stdout += chunk.toString();
+			const match = /Tuval ready at (http:\/\/127\.0\.0\.1:\d+)/.exec(stdout);
+			if (match?.[1] !== undefined) resume(Effect.succeed(match[1]));
+		};
+		const onError = (cause: Error) => resume(Effect.fail(new TestFailure({cause})));
+		const onExit = (code: number | null) =>
+			resume(
+				Effect.fail(
+					new TestFailure({cause: new Error(`tuval bin exited before readiness (${code})`)}),
+				),
+			);
+		child.stdout?.on("data", onData);
+		child.once("error", onError);
+		child.once("exit", onExit);
+		return Effect.sync(() => {
+			clearTimeout(timeout);
+			child.stdout?.off("data", onData);
+			child.off("error", onError);
+			child.off("exit", onExit);
+		});
+	});
+
+const waitForExit = (child: ReturnType<typeof spawn>) =>
+	Effect.callback<number | null>((resume) => {
+		const exit = (code: number | null) => resume(Effect.succeed(code));
+		child.once("exit", exit);
+		return Effect.sync(() => child.off("exit", exit));
+	});
+
+const liveSnapshot: SessionSnapshot = {
+	id: "cold-live-session",
+	cwd: "/tmp/tuval",
+	createdAt: 1,
+	updatedAt: 1,
+	phase: "idle",
+	model: {provider: "anthropic", id: "claude-sonnet"},
+	thinkingLevel: "high",
+	attached: true,
+	locked: false,
+	revision: 1,
+	transcript: [],
+	queuedSteer: [],
+	queuedSteerCount: 0,
 };
 
-describe("Tuval local server", () => {
-	it("binds loopback, serves static and fate discovery, then opens after readiness", async () => {
-		const {root, asset} = await fixture();
-		let opened: string | undefined;
-		const server = await startTuval({
-			staticAsset: asset,
-			sessionRoots: [join(root, "missing-sessions")],
-			openBrowser: async (url) => {
-				const health = await fetch(`${url}/health`).then((response) => response.json());
-				expect(health).toMatchObject({status: "ready", url});
-				opened = url;
-			},
+const syntheticUnixPiServer = Effect.fn("test.syntheticUnixPiServer")(function* (
+	socketPath: string,
+) {
+	const server = createUnixServer((socket) => {
+		const decoder = new ClientMessageDecoder();
+		socket.on("data", (chunk) => {
+			const bytes = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+			for (const message of decoder.push(bytes)) {
+				if (message.type === "hello") {
+					socket.write(
+						encodeServerMessage({
+							type: "hello",
+							version: PROTOCOL_VERSION,
+							connectionId: "cold-tuval-test",
+							snapshot: {
+								serverId: "synthetic",
+								protocolVersion: PROTOCOL_VERSION,
+								revision: 1,
+								sessions: [{id: liveSnapshot.id, createdAt: 1, cwd: liveSnapshot.cwd}],
+								models: [],
+							},
+						}),
+					);
+					continue;
+				}
+				const request = message.request;
+				if (request.command === "attach") {
+					socket.write(
+						encodeServerMessage({
+							type: "response",
+							id: message.id,
+							ok: true,
+							result: {command: "attach", session: liveSnapshot},
+						}),
+					);
+					continue;
+				}
+				if (request.command === "detach") {
+					socket.write(
+						encodeServerMessage({
+							type: "response",
+							id: message.id,
+							ok: true,
+							result: {command: "detach", sessionId: request.sessionId},
+						}),
+					);
+				}
+			}
 		});
-		running.push(server);
+	});
+	yield* Effect.callback<void, Error>((resume) => {
+		const error = (cause: Error) => resume(Effect.fail(cause));
+		server.once("error", error);
+		server.listen(socketPath, () => {
+			server.off("error", error);
+			resume(Effect.void);
+		});
+	});
+	yield* Effect.addFinalizer(() =>
+		Effect.callback<void>((resume) => {
+			server.close(() => resume(Effect.void));
+		}),
+	);
+});
 
-		expect(server.host).toBe(TUVAL_HOST);
-		expect(server.url).toBe(opened);
-		await expect(fetch(server.url).then((response) => response.text())).resolves.toContain(
-			"Tuval test shell",
+describe("Tuval local server", () => {
+	it.layer(NodeServices.layer)((it) => {
+		it.effect("binds loopback, serves static and fate discovery, then opens after readiness", () =>
+			Effect.gen(function* () {
+				const {root, asset} = yield* fixture();
+				let opened: string | undefined;
+				const server = yield* startTuval({
+					staticAsset: asset,
+					sessionRoots: [`${root}/missing-sessions`],
+					openBrowser: (url) =>
+						tryPromise(async () => {
+							const health = (await fetch(`${url}/health`).then((response) => response.json())) as {
+								status?: unknown;
+								url?: unknown;
+							};
+							assert.strictEqual(health.status, "ready");
+							assert.strictEqual(health.url, url);
+							opened = url;
+						}),
+				});
+
+				assert.strictEqual(server.host, TUVAL_HOST);
+				assert.strictEqual(server.url, opened);
+				assert.include(
+					yield* tryPromise(() => fetch(server.url).then((response) => response.text())),
+					"Tuval test shell",
+				);
+				const fate = yield* tryPromise(() =>
+					fetch(`${server.url}/fate`, {
+						method: "POST",
+						headers: {"content-type": "application/json"},
+						body: JSON.stringify({
+							version: 1,
+							operations: [{id: "discovery", kind: "query", name: "discovery", select: []}],
+						}),
+					}).then((response) => response.json()),
+				);
+				assert.deepEqual(fate, {
+					version: 1,
+					results: [{id: "discovery", ok: true, data: {_tag: "empty", sessions: []}}],
+				});
+			}),
 		);
 
-		const fate = await fetch(`${server.url}/fate`, {
-			method: "POST",
-			headers: {"content-type": "application/json"},
-			body: JSON.stringify({
-				version: 1,
-				operations: [{id: "discovery", kind: "query", name: "discovery", select: []}],
-			}),
-		}).then((response) => response.json());
-		expect(fate).toEqual({
-			version: 1,
-			results: [{id: "discovery", ok: true, data: {_tag: "empty", sessions: []}}],
-		});
-	});
-
-	it("returns an actionable startup failure and never opens the browser when binding fails", async () => {
-		const occupied = createServer();
-		await new Promise<void>((resolve) => occupied.listen(0, TUVAL_HOST, resolve));
-		const port = (occupied.address() as AddressInfo).port;
-		let opened = false;
-		try {
-			await expect(
-				startTuval({
-					port,
-					openBrowser: async () => {
-						opened = true;
-					},
+		it.effect(
+			"returns an actionable startup failure and never opens the browser when binding fails",
+			() =>
+				Effect.gen(function* () {
+					const occupied = createHttpServer();
+					yield* Effect.callback<void>((resume) => {
+						occupied.listen(0, TUVAL_HOST, () => resume(Effect.void));
+					});
+					yield* Effect.addFinalizer(() =>
+						Effect.callback<void>((resume) => {
+							occupied.close(() => resume(Effect.void));
+						}),
+					);
+					const address = occupied.address();
+					if (address === null || typeof address === "string") {
+						return yield* Effect.die(new Error("occupied server did not expose a TCP address"));
+					}
+					let opened = false;
+					const exit = yield* Effect.exit(
+						startTuval({
+							port: address.port,
+							openBrowser: () =>
+								Effect.sync(() => {
+									opened = true;
+								}),
+						}),
+					);
+					assert.isTrue(Exit.isFailure(exit));
+					assert.isFalse(opened);
 				}),
-			).rejects.toMatchObject({
-				name: "StartupFailure",
-				message: expect.stringContaining(`could not bind ${TUVAL_HOST}:${port}`),
-			});
-			expect(opened).toBe(false);
+		);
 
-			const bin = fileURLToPath(new URL("../dist/backend/bin.js", import.meta.url));
-			const child = spawn(process.execPath, [bin, "--no-open", "--port", String(port)], {
-				stdio: ["ignore", "ignore", "pipe"],
-			});
-			let stderr = "";
-			child.stderr.on("data", (chunk) => {
-				stderr += chunk.toString();
-			});
-			const exitCode = await new Promise<number | null>((resolve) => child.once("exit", resolve));
-			expect(exitCode).not.toBe(0);
-			expect(stderr).toContain(`could not bind ${TUVAL_HOST}:${port}`);
-		} finally {
-			await new Promise<void>((resolve, reject) =>
-				occupied.close((error) => (error === undefined ? resolve() : reject(error))),
-			);
-		}
-	});
+		it.effect("ends a queued request before waiting for Node server close", () =>
+			Effect.gen(function* () {
+				const gate = yield* Latch.make();
+				let markQueued: () => void = () => {};
+				const queued = new Promise<void>((resolve) => {
+					markQueued = resolve;
+				});
+				const server = yield* startTuval({
+					requestDispatchGate: gate.await,
+					onRequestQueued: markQueued,
+					openBrowser: () => Effect.void,
+				});
+				const pending = yield* tryPromise(() => fetch(`${server.url}/health`)).pipe(
+					Effect.forkChild,
+				);
+				yield* tryPromise(() => queued);
 
-	it("runs the declared bin cold with the HTTP server in the same process", async () => {
-		const {root} = await fixture();
-		const bin = fileURLToPath(new URL("../dist/backend/bin.js", import.meta.url));
-		const child = spawn(process.execPath, [bin, "--no-open"], {
-			env: {...process.env, PI_CODING_AGENT_DIR: root},
-			stdio: ["ignore", "pipe", "pipe"],
-		});
-		const url = await new Promise<string>((resolve, reject) => {
-			const timeout = setTimeout(
-				() => reject(new Error("tuval bin did not report readiness")),
-				10_000,
-			);
-			let stdout = "";
-			child.stdout.on("data", (chunk) => {
-				stdout += chunk.toString();
-				const match = /Tuval ready at (http:\/\/127\.0\.0\.1:\d+)/.exec(stdout);
-				if (match?.[1] !== undefined) {
-					clearTimeout(timeout);
-					resolve(match[1]);
-				}
-			});
-			child.once("error", reject);
-			child.once("exit", (code) =>
-				reject(new Error(`tuval bin exited before readiness (${code})`)),
-			);
-		});
-		try {
-			const health = (await fetch(`${url}/health`).then((response) => response.json())) as {
-				status: string;
-				pid: number;
-			};
-			expect(health).toEqual(expect.objectContaining({status: "ready", pid: child.pid}));
-		} finally {
-			child.kill("SIGTERM");
-			await new Promise<void>((resolve) => child.once("exit", () => resolve()));
-		}
+				yield* server.close();
+				const exit = yield* Effect.exit(Fiber.join(pending));
+				assert.isTrue(Exit.isFailure(exit));
+			}),
+		);
+
+		it.effect("runs the cold executable with a production Unix transport through live attach", () =>
+			Effect.gen(function* () {
+				const {root, socket} = yield* fixture();
+				yield* syntheticUnixPiServer(socket);
+				const bin = fileURLToPath(new URL("../dist/backend/bin.js", import.meta.url));
+				const child = spawn(process.execPath, [bin, "--no-open", "--pi-socket", socket], {
+					env: {...process.env, PI_CODING_AGENT_DIR: root},
+					stdio: ["ignore", "pipe", "pipe"],
+				});
+				yield* Effect.addFinalizer(() => Effect.sync(() => child.kill("SIGTERM")));
+				const url = yield* waitForUrl(child);
+				const attached = yield* tryPromise(() =>
+					fetch(`${url}/fate`, {
+						method: "POST",
+						headers: {"content-type": "application/json"},
+						body: JSON.stringify({
+							version: 1,
+							operations: [
+								{
+									id: "attach",
+									kind: "mutation",
+									name: "liveSession.attach",
+									input: {sessionId: liveSnapshot.id},
+									select: [],
+								},
+							],
+						}),
+					}).then((response) => response.json()),
+				);
+				const attachedResult = attached as {
+					results: Array<{ok: boolean; data: {_tag: string; session: {sessionId: string}}}>;
+				};
+				assert.isTrue(attachedResult.results[0]?.ok ?? false);
+				assert.strictEqual(attachedResult.results[0]?.data._tag, "attached");
+				assert.strictEqual(attachedResult.results[0]?.data.session.sessionId, liveSnapshot.id);
+				child.kill("SIGTERM");
+				assert.strictEqual(yield* waitForExit(child), 130);
+			}),
+		);
 	});
 });

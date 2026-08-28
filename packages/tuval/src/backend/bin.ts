@@ -1,64 +1,63 @@
 #!/usr/bin/env node
-import {NodeRuntime} from "@effect/platform-node";
-import {Effect} from "effect";
-import {StartupFailure, startTuval} from "./server.js";
+import {createUnixTransportFactory} from "@earendil-works/pi-client/unix";
+import {NodeRuntime, NodeServices} from "@effect/platform-node";
+import {Console, Effect, Option, Schema} from "effect";
+import {Command, Flag} from "effect/unstable/cli";
+import {startTuval} from "./server.js";
 
-interface CliOptions {
-	readonly port?: number;
-	readonly open: boolean;
-}
+class CliFailure extends Schema.TaggedErrorClass<CliFailure>()("tuval/CliFailure", {
+	message: Schema.String,
+}) {}
 
-class CliFailure extends Error {
-	override readonly name = "CliFailure";
-}
-
-export const parseCliArgs = (args: ReadonlyArray<string>): CliOptions => {
-	let port: number | undefined;
-	let open = true;
-	for (let index = 0; index < args.length; index += 1) {
-		const argument = args[index];
-		if (argument === "--no-open") {
-			open = false;
-			continue;
-		}
-		if (argument === "--port") {
-			const value = args[index + 1];
-			if (value === undefined || !/^\d+$/.test(value)) {
-				throw new CliFailure("--port requires an integer between 0 and 65535");
-			}
-			port = Number(value);
-			if (port > 65_535) throw new CliFailure("--port requires an integer between 0 and 65535");
-			index += 1;
-			continue;
-		}
-		throw new CliFailure(`Unknown Tuval option: ${argument ?? ""}`);
-	}
-	return {open, ...(port === undefined ? {} : {port})};
-};
-
-const program = Effect.acquireUseRelease(
-	Effect.tryPromise({
-		try: async () => {
-			const options = parseCliArgs(process.argv.slice(2));
-			return await startTuval({
-				...(options.port === undefined ? {} : {port: options.port}),
-				...(options.open ? {} : {openBrowser: async () => {}}),
-				log: (line) => console.log(line),
-			});
-		},
-		catch: (error) =>
-			error instanceof StartupFailure || error instanceof CliFailure
-				? error
-				: new StartupFailure("Tuval failed during startup", error),
-	}),
-	() => Effect.never,
-	(server) =>
-		Effect.tryPromise({
-			try: () => server.close(),
-			catch: (error) => new StartupFailure("Tuval failed while shutting down", error),
-		}).pipe(Effect.orDie),
-).pipe(
-	Effect.tapError((error) => Effect.sync(() => console.error(`${error.name}: ${error.message}`))),
+const portFlag = Flag.integer("port").pipe(
+	Flag.optional,
+	Flag.withDescription("Loopback port (0-65535); omitted chooses a free port"),
 );
 
-NodeRuntime.runMain(program);
+const openFlag = Flag.boolean("open").pipe(
+	Flag.withDefault(true),
+	Flag.withDescription("Open Tuval in the default browser after readiness"),
+);
+
+const piSocketFlag = Flag.string("pi-socket").pipe(
+	Flag.optional,
+	Flag.withDescription("Unix socket exposed by `pi --experimental server --listen unix:///path`"),
+);
+
+export const tuvalCommand = Command.make(
+	"tuval",
+	{port: portFlag, open: openFlag, piSocket: piSocketFlag},
+	Effect.fn("tuval")(function* ({port, open, piSocket}) {
+		const selectedPort = Option.getOrUndefined(port);
+		if (selectedPort !== undefined && (selectedPort < 0 || selectedPort > 65_535)) {
+			return yield* new CliFailure({message: "--port requires an integer between 0 and 65535"});
+		}
+		const socketPath = Option.getOrUndefined(piSocket);
+		return yield* Effect.scoped(
+			Effect.gen(function* () {
+				yield* startTuval({
+					...(selectedPort === undefined ? {} : {port: selectedPort}),
+					...(open ? {} : {openBrowser: () => Effect.void}),
+					...(socketPath === undefined
+						? {}
+						: {liveSessionTransport: createUnixTransportFactory({path: socketPath})}),
+					log: (line) => console.log(line),
+				});
+				return yield* Effect.never;
+			}),
+		);
+	}),
+).pipe(Command.withDescription("Run the localhost Tuval pi-session workspace"));
+
+tuvalCommand.pipe(
+	Command.run({version: "0.0.0"}),
+	Effect.tapError((error) =>
+		Console.error(
+			`${error instanceof Error ? error.name : "TuvalFailure"}: ${
+				error instanceof Error ? error.message : String(error)
+			}`,
+		),
+	),
+	Effect.provide(NodeServices.layer),
+	NodeRuntime.runMain,
+);

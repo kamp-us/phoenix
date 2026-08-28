@@ -1,21 +1,49 @@
-import {createFateServer} from "@nkzw/fate/server";
-import type {DiscoveryOutcome} from "../shared/discovery.js";
+import {Fate, FateServer} from "@kampus/fate-effect";
+import {Effect, Schema} from "effect";
+import {AttachLiveSessionRequest, PromptLiveSessionRequest} from "../shared/live-session.js";
+import {LiveSession} from "./live-session.js";
+import {PiDiscovery} from "./pi-discovery.js";
 
-const noSources = {
-	registry: new Map(),
-	getSource: (): never => {
-		throw new Error("Tuval discovery has no entity sources");
+export const tuvalFateConfig = FateServer.config({
+	queries: {
+		discovery: Fate.query(
+			{type: "TuvalDiscovery"},
+			Effect.fn("discovery")(function* () {
+				const discovery = yield* PiDiscovery;
+				return yield* discovery.discover();
+			}),
+		),
+		"liveSession.current": Fate.query(
+			{type: "TuvalLiveSession"},
+			Effect.fn("liveSession.current")(function* () {
+				const liveSession = yield* LiveSession;
+				return yield* liveSession.current();
+			}),
+		),
 	},
-};
+	mutations: {
+		"liveSession.attach": Fate.mutation(
+			{input: AttachLiveSessionRequest, type: "TuvalLiveSession"},
+			Effect.fn("liveSession.attach")(function* ({input}) {
+				const liveSession = yield* LiveSession;
+				return yield* liveSession.attach(input.sessionId);
+			}),
+		),
+		"liveSession.prompt": Fate.mutation(
+			{input: PromptLiveSessionRequest, type: "TuvalPromptOutcome"},
+			Effect.fn("liveSession.prompt")(function* ({input}) {
+				const liveSession = yield* LiveSession;
+				return yield* liveSession.prompt(input);
+			}),
+		),
+		"liveSession.release": Fate.mutation(
+			{input: Schema.Struct({}), type: "TuvalLiveSession"},
+			Effect.fn("liveSession.release")(function* () {
+				const liveSession = yield* LiveSession;
+				return yield* liveSession.release();
+			}),
+		),
+	},
+});
 
-export const makeFateServer = (discover: () => Promise<DiscoveryOutcome>) =>
-	createFateServer({
-		roots: {},
-		sources: noSources,
-		queries: {
-			discovery: {
-				type: "TuvalDiscovery",
-				resolve: discover,
-			},
-		},
-	});
+export const TuvalFateServerLive = FateServer.layer(tuvalFateConfig);
