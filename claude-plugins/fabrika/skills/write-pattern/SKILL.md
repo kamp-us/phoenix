@@ -161,18 +161,20 @@ the doc in place instead. The scaffold's exact bytes are the verb's section
 When authoritative source is available as a local checkout, pass it before authoring:
 
 ```bash
-fabrika pattern new worker-queue-retry --decision <binding-decision-url> --source-repo <path> --source-package <pkg>
+fabrika pattern new worker-queue-retry --decision <binding-decision-url> --source-repo <path> --source-package <pkg> --json
 ```
 
 `--source-package` may be omitted only when the checkout has one unambiguous versioned public
 package. The verb resolves the validated repository root, reads tracked source, tests and docs at
-`HEAD`, and derives only portable evidence: canonical origin URL, full commit, relevant package
-version and repo-relative inspected paths. It writes that evidence and the dependency anchor into
-the scaffold; the supplied path is never serialized. Exit `17` is a proven refusal before any write
-when the path, Git root, origin, source/test/docs set, package selection, or version is unusable.
-Never continue from that refusal by reading intuition instead. For manual follow-up reads, resolve
-the root with `git -C <path> rev-parse --show-toplevel`, then use
-`git -C <validated-root> show HEAD:<repo-relative-path>` so a changed cwd cannot redirect inspection.
+`HEAD`, and returns portable evidence in the JSON answer's `sourceEvidence`: canonical origin URL,
+full `commit`, relevant package version and repo-relative inspected paths. It writes that evidence
+and the dependency anchor into the scaffold; the supplied path is never serialized. Exit `17` is a
+proven refusal before any write when the path, Git root, origin, source/test/docs set, package
+selection, or version is unusable. Never continue from that refusal by reading intuition instead.
+The returned `sourceEvidence.commit` binds every follow-up source, test and docs read. Resolve the
+root with `git -C <path> rev-parse --show-toplevel`, then read each path with
+`git -C <validated-root> show <sourceEvidence.commit>:<repo-relative-path>`. Never re-resolve `HEAD`
+after the verb returns; a moving checkout must not change the bytes behind the recorded evidence.
 
 **The source is the authority and the doc is the claim.** When they disagree the doc is wrong, and
 that holds with particular force during a re-grounding: the doc you are fixing is the least
