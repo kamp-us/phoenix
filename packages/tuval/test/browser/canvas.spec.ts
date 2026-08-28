@@ -363,15 +363,30 @@ test("stable identity updates preserve a moved React Flow node and viewport", as
 
 test("loading is explicit while discovery is in flight", async ({page}) => {
 	const errors = pageErrors(page);
-	await routeOutcome(page, () => ({_tag: "empty", sessions: []}), 300);
+	let discoveryCalls = 0;
+	await routeOutcome(
+		page,
+		() => {
+			discoveryCalls += 1;
+			return {_tag: "empty", sessions: []};
+		},
+		300,
+	);
 	await page.goto(tuvalUrl);
+	const retryAction = page.locator("#state-action");
 	await expect(page.locator("#status-label")).toHaveText("Oturumlar aranıyor");
 	await expect(page.locator("#state-title")).toHaveText("Etkin çalışmalar bulunuyor");
-	await expect(page.locator("#state-action")).toBeEnabled();
-	const retryRequest = page.waitForRequest("**/fate");
-	await page.locator("#state-action").click();
-	await retryRequest;
+	await expect(retryAction).toBeDisabled();
 	await expect(page.locator("#status-label")).toHaveText("Oturum yok");
+	expect(discoveryCalls).toBe(1);
+	await expect(retryAction).toBeEnabled();
+
+	const retryRequest = page.waitForRequest("**/fate");
+	await retryAction.click();
+	await retryRequest;
+	await expect(retryAction).toBeDisabled();
+	await expect.poll(() => discoveryCalls).toBe(2);
+	await expect(retryAction).toBeEnabled();
 	expect(errors).toEqual([]);
 });
 
