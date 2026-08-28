@@ -133,16 +133,26 @@ class SyntheticPiProtocol {
 	}
 
 	acknowledgePrompt(correlation: string, next: SessionSnapshot): void {
-		const pending = this.pendingPrompts.get(correlation);
-		if (pending === undefined) throw new Error(`No pending prompt ${correlation}`);
-		this.pendingPrompts.delete(correlation);
-		this.snapshots.set(pending.sessionId, next);
+		const pending = this.#takePendingPrompt(correlation, next);
 		this.#deliver({
 			type: "response",
 			id: pending.id,
 			ok: true,
 			result: {command: "prompt", session: next},
 		});
+	}
+
+	acknowledgePromptThenRemove(correlation: string, next: SessionSnapshot): void {
+		const pending = this.#takePendingPrompt(correlation, next);
+		this.#deliverTogether(
+			{
+				type: "response",
+				id: pending.id,
+				ok: true,
+				result: {command: "prompt", session: next},
+			},
+			{type: "event", event: {type: "session_removed", sessionId: pending.sessionId}},
+		);
 	}
 
 	refusePrompt(correlation: string): void {
@@ -165,6 +175,17 @@ class SyntheticPiProtocol {
 		this.#handlers?.onData(
 			encodeFrame(encodeCbor({type: "event", event: {type: "session_progress", sessionId: 42}})),
 		);
+	}
+
+	#takePendingPrompt(
+		correlation: string,
+		next: SessionSnapshot,
+	): {id: string; sessionId: string; text: string} {
+		const pending = this.pendingPrompts.get(correlation);
+		if (pending === undefined) throw new Error(`No pending prompt ${correlation}`);
+		this.pendingPrompts.delete(correlation);
+		this.snapshots.set(pending.sessionId, next);
+		return pending;
 	}
 
 	#receive(message: ClientMessage): void {
@@ -240,6 +261,17 @@ class SyntheticPiProtocol {
 
 	#deliver(message: ServerMessage): void {
 		this.#handlers?.onData(encodeServerMessage(message));
+	}
+
+	#deliverTogether(...messages: ReadonlyArray<ServerMessage>): void {
+		const frames = messages.map((message) => encodeServerMessage(message));
+		const chunk = new Uint8Array(frames.reduce((length, frame) => length + frame.length, 0));
+		let offset = 0;
+		for (const frame of frames) {
+			chunk.set(frame, offset);
+			offset += frame.length;
+		}
+		this.#handlers?.onData(chunk);
 	}
 }
 
@@ -382,6 +414,42 @@ describe("PiLiveSession", () => {
 				_tag: "refused",
 				correlationId: "prompt-2",
 				code: "lease-refused",
+			});
+		}),
+	);
+
+	it.effect("refuses acknowledgement when the same delivery removes the prompted session", () =>
+		Effect.gen(function* () {
+			const initial = snapshot("prompt-removed", 1);
+			const protocol = new SyntheticPiProtocol(initial);
+			const service = yield* connect(protocol);
+			yield* service.attach(initial.id);
+			const pending = yield* service
+				.prompt({correlationId: "removed-prompt", text: "remove after response"})
+				.pipe(Effect.forkChild);
+			yield* Effect.yieldNow;
+
+			protocol.acknowledgePromptThenRemove("remove after response", snapshot(initial.id, 2));
+
+			assert.deepInclude(yield* Fiber.join(pending), {
+				_tag: "refused",
+				correlationId: "removed-prompt",
+				code: "disconnected",
+			});
+			assert.deepInclude(yield* service.current(), {
+				_tag: "disconnected",
+				connection: "disconnected",
+				ownership: "none",
+			});
+			const promptEvent = (yield* service.eventsAfter()).findLast(
+				(event) => event._tag === "prompt",
+			);
+			assert.strictEqual(promptEvent?._tag, "prompt");
+			if (promptEvent?._tag !== "prompt") return;
+			assert.deepInclude(promptEvent.outcome, {
+				_tag: "refused",
+				correlationId: "removed-prompt",
+				code: "disconnected",
 			});
 		}),
 	);
@@ -529,12 +597,62 @@ describe("PiLiveSession", () => {
 		}),
 	);
 
+	it.effect("reduces partial and complete streamed tool-call arguments", () =>
+		Effect.gen(function* () {
+			const live = snapshot("tool-call-deltas", 1, [toolCallingAssistant("tool-target", 1)]);
+			const protocol = new SyntheticPiProtocol(live);
+			const service = yield* connect(protocol);
+			const attached = yield* service.attach(live.id);
+			const afterSequence = attached._tag === "attached" ? attached.session.lastEventSequence : 0;
+
+			protocol.emit({
+				type: "session_progress",
+				sessionId: live.id,
+				progress: {
+					type: "assistant_delta",
+					messageId: "tool-target",
+					contentIndex: 0,
+					kind: "toolCall",
+					delta: '{"path":',
+				},
+			});
+			assert.deepInclude((yield* service.current())?.transcript[0]?.content[0], {
+				type: "toolCall",
+				input: '{"path":',
+			});
+
+			protocol.emit({
+				type: "session_progress",
+				sessionId: live.id,
+				progress: {type: "item_updated", item: toolCallingAssistant("tool-target", 1)},
+			});
+			protocol.emit({
+				type: "session_progress",
+				sessionId: live.id,
+				progress: {
+					type: "assistant_delta",
+					messageId: "tool-target",
+					contentIndex: 0,
+					kind: "toolCall",
+					delta: '"README.md"}',
+				},
+			});
+
+			assert.deepInclude((yield* service.current())?.transcript[0]?.content[0], {
+				type: "toolCall",
+				input: {path: "README.md"},
+			});
+			const events = yield* service.eventsAfter(afterSequence);
+			assert.lengthOf(events, 3);
+			assert.isTrue(events.every((event) => event._tag === "session"));
+		}),
+	);
+
 	it.effect("diagnoses every incoherent assistant delta without publishing session state", () =>
 		Effect.gen(function* () {
 			const live = snapshot("incoherent-deltas", 1, [
 				user("user-target", "existing", 1),
 				assistant("text-target", "hello", 2, "streaming"),
-				toolCallingAssistant("tool-target", 3),
 			]);
 			const protocol = new SyntheticPiProtocol(live);
 			const service = yield* connect(protocol);
@@ -585,17 +703,6 @@ describe("PiLiveSession", () => {
 						delta: "!",
 					},
 				},
-				{
-					type: "session_progress",
-					sessionId: live.id,
-					progress: {
-						type: "assistant_delta",
-						messageId: "tool-target",
-						contentIndex: 0,
-						kind: "toolCall",
-						delta: "!",
-					},
-				},
 			];
 
 			for (const delta of deltas) protocol.emit(delta);
@@ -611,7 +718,6 @@ describe("PiLiveSession", () => {
 			assert.isTrue(messages.some((message) => /user-target/.test(message)));
 			assert.isTrue(messages.some((message) => /content index 1/i.test(message)));
 			assert.isTrue(messages.some((message) => /thinking.*text/i.test(message)));
-			assert.isTrue(messages.some((message) => /toolCall/i.test(message)));
 			assert.deepEqual(
 				(yield* service.current())?.transcript,
 				live.transcript.map((item) => ({

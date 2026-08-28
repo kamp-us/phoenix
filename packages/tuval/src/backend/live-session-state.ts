@@ -8,6 +8,7 @@ import {
 	type Unsubscribe,
 } from "@earendil-works/pi-client";
 import type {
+	JsonValue,
 	ServerEvent,
 	SessionSnapshot,
 	TranscriptItem,
@@ -35,6 +36,7 @@ interface Attachment {
 	readonly unsubscribes: ReadonlyArray<Unsubscribe>;
 	snapshot: SessionSnapshot;
 	transcript: Array<LiveTranscriptEntry>;
+	readonly toolCallBuffers: Map<string, string>;
 	disconnectedReason?: string;
 	leaseReleased: boolean;
 }
@@ -92,8 +94,27 @@ const replaceOrAppend = (
 	else transcript[index] = entry;
 };
 
+const isJsonValue = (value: unknown): value is JsonValue => {
+	if (value === null || typeof value === "boolean" || typeof value === "string") return true;
+	if (typeof value === "number") return Number.isFinite(value);
+	if (Array.isArray(value)) return value.every(isJsonValue);
+	if (typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype) return false;
+	return Object.values(value).every(isJsonValue);
+};
+
+const parsePartialToolInput = (value: string): JsonValue => {
+	try {
+		const parsed: unknown = JSON.parse(value);
+		if (isJsonValue(parsed)) return parsed;
+	} catch {
+		return value;
+	}
+	return value;
+};
+
 const appendAssistantDelta = (
 	transcript: Array<LiveTranscriptEntry>,
+	toolCallBuffers: Map<string, string>,
 	progress: Extract<TranscriptProgress, {type: "assistant_delta"}>,
 ): string | undefined => {
 	const index = transcript.findIndex((item) => item.id === progress.messageId);
@@ -109,16 +130,19 @@ const appendAssistantDelta = (
 	if (part === undefined) {
 		return `assistant delta targets missing content index ${progress.contentIndex} on ${progress.messageId}`;
 	}
-	if (progress.kind === "toolCall") {
-		return `assistant delta for ${progress.messageId} has unsupported toolCall kind`;
-	}
 	if (part.type !== progress.kind) {
 		return `assistant delta kind ${progress.kind} does not match ${part.type} content on ${progress.messageId}`;
 	}
 	if (part.type === "text") {
 		content[progress.contentIndex] = {...part, text: part.text + progress.delta};
-	} else {
+	} else if (part.type === "thinking") {
 		content[progress.contentIndex] = {...part, thinking: part.thinking + progress.delta};
+	} else {
+		const key = `${progress.messageId}:${progress.contentIndex}`;
+		const existing = toolCallBuffers.get(key) ?? (typeof part.input === "string" ? part.input : "");
+		const buffer = existing + progress.delta;
+		toolCallBuffers.set(key, buffer);
+		content[progress.contentIndex] = {...part, input: parsePartialToolInput(buffer)};
 	}
 	transcript[index] = {...entry, content};
 	return undefined;
@@ -126,9 +150,17 @@ const appendAssistantDelta = (
 
 const reduceProgress = (
 	transcript: Array<LiveTranscriptEntry>,
+	toolCallBuffers: Map<string, string>,
 	progress: TranscriptProgress,
 ): string | undefined => {
-	if (progress.type === "assistant_delta") return appendAssistantDelta(transcript, progress);
+	if (progress.type === "assistant_delta") {
+		return appendAssistantDelta(transcript, toolCallBuffers, progress);
+	}
+	if (progress.type === "item_finished") {
+		for (const key of toolCallBuffers.keys()) {
+			if (key.startsWith(`${progress.item.id}:`)) toolCallBuffers.delete(key);
+		}
+	}
 	replaceOrAppend(transcript, entryOf(progress.item));
 	return undefined;
 };
@@ -315,6 +347,7 @@ export class PiLiveSessionState implements LiveSessionState {
 				generation,
 				snapshot,
 				transcript: snapshot.transcript.map(entryOf),
+				toolCallBuffers: new Map(),
 				unsubscribes: [],
 				leaseReleased: false,
 			};
@@ -347,10 +380,20 @@ export class PiLiveSessionState implements LiveSessionState {
 		} else {
 			try {
 				await attachment.lease.prompt(request.text);
-				if (this.#attachment?.generation !== attachment.generation) {
+				if (this.#attachment !== attachment) {
 					throw new PiSessionOwnershipError(
 						attachment.snapshot.id,
 						"The selected session changed before the prompt was acknowledged",
+					);
+				}
+				if (
+					attachment.disconnectedReason !== undefined ||
+					attachment.leaseReleased ||
+					!attachment.lease.active
+				) {
+					throw new PiDisconnectedError(
+						attachment.disconnectedReason ??
+							"The attached pi session disconnected before the prompt was acknowledged",
 					);
 				}
 				outcome = {
@@ -412,6 +455,7 @@ export class PiLiveSessionState implements LiveSessionState {
 		if (attachment === undefined || attachment.generation !== generation) return;
 		attachment.snapshot = snapshot;
 		attachment.transcript = snapshot.transcript.map(entryOf);
+		attachment.toolCallBuffers.clear();
 		this.#publishSession(attachment);
 	}
 
@@ -426,7 +470,11 @@ export class PiLiveSessionState implements LiveSessionState {
 		}
 		try {
 			if (event.type === "session_progress") {
-				const incoherence = reduceProgress(attachment.transcript, event.progress);
+				const incoherence = reduceProgress(
+					attachment.transcript,
+					attachment.toolCallBuffers,
+					event.progress,
+				);
 				if (incoherence !== undefined) {
 					this.#publishDiagnostic(
 						`Malformed live event was ignored: ${incoherence}`,
