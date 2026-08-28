@@ -441,6 +441,17 @@ fabrika build claim <repair-pr>
 fabrika build verdicts --pr <repair-pr>
 ```
 
+A successful PR claim must print exactly one deterministic subject line:
+
+```text
+build claim: subject: PR #<repair-pr> serves #<served-issue> (fixes|part-of) — the admission test judges that issue, not the PR's own empty home.
+```
+
+Consume it as a cross-check against the two Ground operands already retained. If the line is absent,
+malformed, repeated, or names any other PR or issue, stop `STOPPED` before mutation; never guess an
+operand from a partial answer. The line proves which subject the claim admitted, not that the live PR
+body has one unique linkage — the two-subject `build tree` proof below still owns that stronger fact.
+
 **Step 1's refusal of a `type:decision` is about picking one up fresh, and it does not reach here.**
 An ADR PR is served by a decision issue, and repairing it is the ordinary path: the claim admits it
 with no flag and no `--override`, and says so on its purpose line (#5914) — no citation needed, since
@@ -452,7 +463,7 @@ The fold is the only entry: paginated, current-head, per-gate — polarity visib
 included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer, but an
 UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**. The budget is the
 fold's own `capReached` field, never a number you carry: on `true`, end `ESCALATED` and post the
-escalation via `fabrika build note $issue_or_pr_number --token <claim-token>` instead of another push.
+escalation via `fabrika build note <repair-pr> --token <claim-token>` instead of another push.
 
 **A founder can clear one more round, and you read that through the same field.** The clearance is
 data on the PR — an authorized account records it with `fabrika build clear`, and the fold counts it,
