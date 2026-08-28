@@ -7,7 +7,7 @@ The verbs sit under a `pattern` subcommand group in `packages/fabrika-cli/`, who
 [`registry.ts`](../../../../packages/fabrika-cli/src/registry.ts) at authoring time — at the time of
 writing the registered groups are `adr build epic hook ledger plan report review review-ui ship
 spend status triage ui wire`, though that list grows most weeks, so read the file rather than this
-sentence. The [CLI interface convention](../../docs/cli-interface-convention.md) governs all five;
+sentence. The [CLI interface convention](../../docs/cli-interface-convention.md) governs all five verbs;
 where this spec and that doc disagree, the doc wins and this spec is the bug.
 
 **`fabrika` calls `pipeline-cli` nowhere, and neither does the skill.** Every verb below is
@@ -135,6 +135,7 @@ restated per verb is a shared matrix that can drift from itself.
 | `14` | `MULTI_LINE_DIFF` | the edit would have changed a line beyond the one row — aborted before writing |
 | `15` | `INDEX_UNPARSEABLE` | proven: the index is absent, or holds no parseable table |
 | `16` | `SECTION_AMBIGUOUS` | proven: the named section matches more than one heading — the index needs disambiguating, not the flag |
+| `17` | `SOURCE_REPOSITORY_REFUSED` | proven: a supplied source checkout cannot yield complete portable grounding evidence; nothing was written |
 
 **The seats map to register.** `pattern` declares exactly these four shared seats, and this is the
 map the alignment registry needs — an implementer should not have to infer it:
@@ -168,7 +169,7 @@ oversight:
 | `6` `BARE_AT_PATH` | follows from `3` — nothing here composes a body from authored input |
 | `7` `ZERO_SCOPE` | **the important one.** No verb here judges over a corpus, so none has a vacuous pass to prevent. An empty or absent `.patterns/` is a *fact* this group reports at exit `0`, and refusing there would leave a repo adopting fabrika unable to write its first pattern doc on the documented path — the first-run dead-end the portability rules forbid, and the same correction #5254 applied to `adr next`. Where a question genuinely cannot be answered, the group says so in **vocabulary** — `unanchored`, `unknown` — never by falling silent. |
 
-**Private codes are group-local.** `12`–`16` mean what this table says within `pattern` and carry no
+**Private codes are group-local.** `12`–`17` mean what this table says within `pattern` and carry no
 cross-group obligation; `review` seats `12` as `STALE_HEAD` and `build` retired its own `12`,
 and those are separate namespaces rather than one collision.
 
@@ -645,7 +646,7 @@ $ fabrika pattern anchor worker-queue-retry --json --dir packages/fabrika-cli/te
 **Invocation**
 
 ```
-fabrika pattern new worker-queue-retry [--dir <path>] [--title <text>] [--anchor <pkg@version>] [--json]
+fabrika pattern new worker-queue-retry [--dir <path>] [--title <text>] [--anchor <pkg@version>] [--decision <url>] [--source-repo <path>] [--source-package <name>] [--json]
 ```
 
 **Inputs**
@@ -655,12 +656,16 @@ fabrika pattern new worker-queue-retry [--dir <path>] [--title <text>] [--anchor
 | `<slug>` | positional string | yes | — | the kebab-case basename the doc takes, without `.md` |
 | `--dir` | string | no | `.patterns` | the directory to write the doc into, created when absent |
 | `--title` | string | no | derived from the slug | the H1 text. The derivation: replace each `-` with a space, then upper-case the first character and leave every other character as it is. `worker-queue-retry` becomes `Worker queue retry`; `fate-effect-server` becomes `Fate effect server`. No acronym or digit special-casing — a doc wanting one passes `--title` |
-| `--anchor` | string | no | none | a `<pkg>@<version>` this doc is derived from; adds the anchor line `pattern anchor` reads. Validated by `pattern anchor`'s step-2 rule — split at the **last** `@`, both halves non-empty — so the writer and the reader accept exactly the same strings |
+| `--anchor` | string | no | none | a `<pkg>@<version>` this doc is derived from; adds the line `pattern anchor` reads. When source evidence exists it derives this token automatically; an explicit conflict refuses |
+| `--decision` | string | no | none | the cited binding decision; selects the prospective scaffold |
+| `--source-repo` | string | no | none | a local authoritative Git checkout to inspect before writing; its path is never serialized |
+| `--source-package` | string | no | inferred only when unique | the relevant package name; requires `--source-repo` and resolves monorepo ambiguity |
 | `--json` | boolean | no | `false` | emit the write record instead of the bare path |
 
 **Output** — one line, the path written, newline-terminated. With `--json`, one object with keys
-`path`, `slug`, `title`, and `anchored` — the latter the `<pkg>@<version>` string when `--anchor`
-was given, and `null` when it was not.
+`path`, `slug`, `title`, `anchored`, `decision`, and `sourceEvidence`. `sourceEvidence` is `null` or
+`{origin, commit, package, version, inspected: {source, tests, docs}}`; every path under `inspected`
+is repository-relative. The supplied local path is absent from both this object and the scaffold.
 
 The file's bytes are the canonical template, and **this block is that template's single home** — the
 skill carries no copy to drift against:
@@ -676,7 +681,7 @@ skill carries no copy to drift against:
 
 ## When this applies
 
-<The two or more places it is used, by path, and the boundary where it stops applying.>
+<The current in-repo scope, representative source paths, and the boundary where it stops applying.>
 
 ## Why it is not obvious
 
@@ -687,12 +692,21 @@ With `--anchor`, one more line is appended, and its bytes are exactly the gramma
 parses: a blockquote marker, `Derived from `, the backticked `<pkg>@<version>`, then
 ` — re-verify on pin bump.`
 
-**The three body headings mirror the admission bar** the skill applies in step 2 — used in 2+ places,
-non-obvious, a future agent would invent worse — so a doc that cannot fill them is a doc that did not
-clear the bar. **This is a starting shape and not a validated grammar**: nothing here or at any gate
-checks a pattern doc's headings, an existing doc keeps whatever shape it has, and exit `4` is a
-deliberate gap for that reason. The corpus is 83 docs with no shared skeleton, and imposing one
-retroactively would fail in every repo that is not this one.
+With `--decision`, `## When this applies` becomes `## Prospective scope`, followed by a
+`## Binding decision` section linking the citation. Its prompts require intended scope and forbid
+invented current call sites. With `--source-repo`, the verb first resolves the checkout's Git root,
+full `HEAD`, canonical network origin, tracked manifests, and representative source/test/docs files.
+It reads those files at `HEAD`, resolves `--source-package` by manifest name (or the sole versioned
+public package), then appends this portable grammar plus the ordinary anchor line:
+
+```
+> Source checkout evidence: <canonical-origin> at `<full-commit>`; package `<pkg>@<version>`; inspected `<source-path>`, `<test-path>`, and `<docs-path>`.
+> Derived from `<pkg>@<version>` — re-verify on pin bump.
+```
+
+The current and prospective forms are starting shapes, not a validated heading grammar. Both still
+require non-obviousness and a foreseeable worse alternative; obvious narration, generic framework
+advice, speculative conventions and intuition-only rules remain below the skill's bar.
 
 **Exit status**
 
@@ -701,6 +715,7 @@ retroactively would fail in every repo that is not this one.
 | `8` | the file could not be written, so whether anything landed is UNKNOWN |
 | `11` | the target-path existence check itself failed, so whether `<path>` exists is UNKNOWN — never read as absent, and never `13`, which is proven |
 | `13` | the target path already exists — refused, never overwritten |
+| `17` | the supplied checkout is absent/unreadable/non-Git, has no parseable network origin, full commit, tracked source/tests/docs, or uniquely resolvable package version, or conflicts with `--anchor`; nothing was written |
 
 **Errors**
 
@@ -710,6 +725,9 @@ retroactively would fail in every repo that is not this one.
 | `pattern new: cannot check <path>: <reason> — nothing was written.` | 11 | refusal |
 | `pattern new: slug "<slug>" is not kebab-case (lowercase letters, digits and single hyphens).` | 1 | usage error |
 | `pattern new: --anchor "<value>" is not <pkg>@<version>.` | 1 | usage error |
+| `pattern new: --source-package requires --source-repo.` | 1 | usage error |
+| `pattern new: supplied source repository refused: <reason> — nothing was written.` | 17 | refusal |
+| `pattern new: --anchor <token> conflicts with source evidence <token> — nothing was written.` | 17 | refusal |
 | `pattern new: cannot write <path>: <reason> — whether anything landed is UNKNOWN.` | 8 | refusal |
 
 **Scope** — not a judging verb. It writes exactly one file and never edits another; the index row is
@@ -733,12 +751,12 @@ $ echo $?
 
 ```
 $ fabrika pattern new worker-queue-retry --json
-{"path":".patterns/worker-queue-retry.md","slug":"worker-queue-retry","title":"Worker queue retry","anchored":null}
+{"path":".patterns/worker-queue-retry.md","slug":"worker-queue-retry","title":"Worker queue retry","anchored":null,"decision":null,"sourceEvidence":null}
 ```
 
 ```
 $ fabrika pattern new worker-queue-retry --anchor acme-queue@4.2.0 --json
-{"path":".patterns/worker-queue-retry.md","slug":"worker-queue-retry","title":"Worker queue retry","anchored":"acme-queue@4.2.0"}
+{"path":".patterns/worker-queue-retry.md","slug":"worker-queue-retry","title":"Worker queue retry","anchored":"acme-queue@4.2.0","decision":null,"sourceEvidence":null}
 ```
 
 **Grounding**
@@ -750,7 +768,10 @@ $ fabrika pattern new worker-queue-retry --anchor acme-queue@4.2.0 --json
   adopting fabrika has no `.patterns/`, and its first pattern doc has to be writable on the documented
   path. Refusing there is the first-run dead-end the portability rules forbid.
 - The `--anchor` line's bytes are pinned to `pattern anchor`'s grammar in one place, so the writer and
-  the reader of that line cannot disagree.
+  the reader of that line cannot disagree. Source evidence complements this pin-bump anchor rather
+  than bypassing it.
+- Git always runs with `-C <validated-root>` after root resolution. Evidence contains only the
+  canonical origin, full commit, package/version and repo-relative paths, never the supplied path.
 
 ---
 

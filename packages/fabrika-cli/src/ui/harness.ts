@@ -4,6 +4,10 @@
  * The portable replacement for v1's phoenix-hardcoded "alchemy dev" knowledge: the command, the base
  * URL and the readiness probe are the repo's own declaration, so the render leg needs no knowledge of
  * any particular stack. Validated whole-file, the same rule the registry gets.
+ *
+ * `storageState` is the one key naming a file rather than a value: a Playwright storage-state
+ * snapshot, so a repo whose surfaces sit behind a login can be rendered as a logged-in user. It is a
+ * credential, so it is a path the repo gitignores — never the cookies inline.
  */
 import {Effect, Result, Schema, SchemaGetter, SchemaIssue} from "effect";
 import {parseJsonOrReason} from "../io/json.ts";
@@ -30,6 +34,7 @@ const VIOLATION = {
 	width: '"viewport.width" is not a positive integer',
 	height: '"viewport.height" is not a positive integer',
 	evidenceStore: '"evidenceStore" is not a string',
+	storageState: '"storageState" is not a repo-root-relative path',
 } as const;
 
 const KEY_PLACEHOLDER = "%key%";
@@ -65,6 +70,15 @@ const Harness = Schema.Struct({
 	viewport: Viewport,
 	evidenceStore: Schema.NullOr(Schema.String)
 		.annotate({message: VIOLATION.evidenceStore})
+		.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	storageState: Schema.NullOr(
+		Schema.String.check(
+			Schema.makeFilter((value) => value.trim() !== "" && !value.startsWith("/"), {
+				message: VIOLATION.storageState,
+			}),
+		),
+	)
+		.annotate({message: VIOLATION.storageState})
 		.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
 }).annotate({message: VIOLATION.topLevel, messageUnexpectedKey: VIOLATION.unknownKey});
 

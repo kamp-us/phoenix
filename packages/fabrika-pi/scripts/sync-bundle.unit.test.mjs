@@ -2,14 +2,65 @@
  * Unit tests for the release-time bundle sync (`node --test scripts/`), kept dependency-free so the
  * package stays installable in isolation (#6985 — no `catalog:` strings may appear in its manifest).
  *
- * Every case runs against a throwaway fixture tree, never against the authored sources: the
- * fail-closed refusals must be provable without touching a source tree that is always full.
+ * The sync mechanics run against throwaway fixture trees. The packaged-agent regression copies the
+ * authored shells into a throwaway package so it exercises the same manifest boundary consumers do.
  */
 import assert from "node:assert/strict";
-import {mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync} from "node:fs";
-import {join} from "node:path";
+import {
+	copyFileSync,
+	lstatSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	readlinkSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import {dirname, join, resolve} from "node:path";
 import {test} from "node:test";
-import {syncBundle} from "./sync-bundle.mjs";
+import {fileURLToPath} from "node:url";
+import {SOURCES, syncBundle} from "./sync-bundle.mjs";
+
+const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const REPO_ROOT = resolve(PACKAGE_ROOT, "../..");
+
+function readAgentFrontmatter(filePath) {
+	const content = readFileSync(filePath, "utf8");
+	const match = /^---\n([\s\S]*?)\n---\n/.exec(content);
+	assert.ok(match, `${filePath} must carry frontmatter`);
+	return Object.fromEntries(
+		match[1].split("\n").map((line) => {
+			const separator = line.indexOf(":");
+			assert.notEqual(separator, -1, `${filePath} has malformed frontmatter: ${line}`);
+			return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
+		}),
+	);
+}
+
+function resolvePackagedAgents(packageRoot) {
+	const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
+	const agentDirs = manifest.pi?.subagents?.agents;
+	assert.ok(
+		Array.isArray(agentDirs) && agentDirs.length > 0,
+		"package must expose agent directories",
+	);
+
+	const agents = new Map();
+	for (const relativeDir of agentDirs) {
+		const dir = resolve(packageRoot, relativeDir);
+		for (const file of readdirSync(dir)
+			.filter((name) => name.endsWith(".md"))
+			.sort()) {
+			const frontmatter = readAgentFrontmatter(join(dir, file));
+			agents.set(frontmatter.name, {
+				inheritProjectContext: frontmatter.inheritProjectContext === "true",
+				skills: frontmatter.skills.split(",").map((skill) => skill.trim()),
+			});
+		}
+	}
+	return agents;
+}
 
 /** One temp dir holding both fixture sources and the destination. */
 function fixture({skills = 2, agents = 3} = {}) {
@@ -60,6 +111,57 @@ test("bundles every SKILL.md directory and every agent shell", () => {
 			readFileSync(join(fx.paths.dest, "agents", "shell-0.md"), "utf8"),
 			"---\nname: shell-0\n---\nbody\n",
 		);
+	} finally {
+		rmSync(fx.root, {recursive: true, force: true});
+	}
+});
+
+test("packaged builder and reviewer inherit the canonical project contract and keep their skills", () => {
+	const fx = fixture({skills: 1, agents: 0});
+	try {
+		copyFileSync(join(PACKAGE_ROOT, "package.json"), join(fx.root, "package.json"));
+		syncBundle({...fx.paths, agents: SOURCES.agents});
+		const agents = resolvePackagedAgents(fx.root);
+		assert.deepEqual(agents.get("builder"), {
+			inheritProjectContext: true,
+			skills: ["build"],
+		});
+		assert.deepEqual(agents.get("reviewer"), {
+			inheritProjectContext: true,
+			skills: ["review"],
+		});
+
+		const agentsFile = join(REPO_ROOT, "AGENTS.md");
+		const claudeLink = join(REPO_ROOT, "CLAUDE.md");
+		assert.ok(lstatSync(agentsFile).isFile(), "AGENTS.md must be the canonical regular file");
+		assert.ok(lstatSync(claudeLink).isSymbolicLink(), "CLAUDE.md must be a symlink");
+		assert.equal(readlinkSync(claudeLink), "AGENTS.md");
+		assert.equal(
+			readFileSync(claudeLink, "utf8"),
+			readFileSync(agentsFile, "utf8"),
+			"the inherited CLAUDE.md contract must resolve to canonical AGENTS.md contents",
+		);
+	} finally {
+		rmSync(fx.root, {recursive: true, force: true});
+	}
+});
+
+test("every packaged shell explicitly inherits context without changing its skill preload", () => {
+	const fx = fixture({skills: 1, agents: 0});
+	try {
+		copyFileSync(join(PACKAGE_ROOT, "package.json"), join(fx.root, "package.json"));
+		syncBundle({...fx.paths, agents: SOURCES.agents});
+		const agents = resolvePackagedAgents(fx.root);
+		assert.deepEqual(Object.fromEntries(agents), {
+			builder: {inheritProjectContext: true, skills: ["build"]},
+			"mixed-builder": {inheritProjectContext: true, skills: ["build", "build-ui"]},
+			operator: {inheritProjectContext: true, skills: ["operate"]},
+			reviewer: {inheritProjectContext: true, skills: ["review"]},
+			shipper: {inheritProjectContext: true, skills: ["ship"]},
+			triager: {inheritProjectContext: true, skills: ["triage"]},
+			"ui-builder": {inheritProjectContext: true, skills: ["build-ui"]},
+			"ui-reviewer": {inheritProjectContext: true, skills: ["review-ui"]},
+		});
 	} finally {
 		rmSync(fx.root, {recursive: true, force: true});
 	}

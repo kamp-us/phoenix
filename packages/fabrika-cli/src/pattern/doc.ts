@@ -45,7 +45,7 @@ export const ANCHOR_PREFIX = "> Derived from ";
 export const anchorLine = (token: string): string =>
 	`${ANCHOR_PREFIX}\`${token}\` — re-verify on pin bump.`;
 
-const TEMPLATE_BODY = `<One sentence: what shape this describes, and where in the tree it applies.>
+const CURRENT_BODY = `<One sentence: what shape this describes, and where in the tree it applies.>
 
 ## The shape
 
@@ -53,20 +53,41 @@ const TEMPLATE_BODY = `<One sentence: what shape this describes, and where in th
 
 ## When this applies
 
-<The two or more places it is used, by path, and the boundary where it stops applying.>
+<The current in-repo scope, representative source paths, and the boundary where it stops applying.>
+`;
 
+const prospectiveBody = (
+	decision: string,
+): string => `<One sentence: what prospective shape this describes and where it is intended to apply.>
+
+## The shape
+
+<The pattern itself, with a fenced example grounded in authoritative source or docs.>
+
+## Prospective scope
+
+<The intended scope and boundary. Do not claim current call sites that do not exist.>
+
+## Binding decision
+
+<Explain how [the binding decision](${decision}) requires this shape.>
+`;
+
+const WHY_BODY = `
 ## Why it is not obvious
 
 <What a reader would otherwise invent, and why that version is worse.>
 `;
 
-/**
- * The canonical pattern doc, ready to write.
- *
- * The three body headings mirror the admission bar the skill applies — used in 2+ places,
- * non-obvious, a future agent would invent worse — so a doc that cannot fill them is a doc that did
- * not clear the bar. It is a **starting shape and not a validated grammar**: nothing here or at any
- * gate checks a pattern doc's headings, which is why `4` is a deliberate gap in `codes.ts`.
- */
-export const docTemplate = (title: string, anchorToken: string | null): string =>
-	`# ${title}\n\n${TEMPLATE_BODY}${anchorToken === null ? "" : `\n${anchorLine(anchorToken)}\n`}`;
+/** The canonical pattern doc, ready to write for either admitted authoring path. */
+export const docTemplate = (
+	title: string,
+	anchorToken: string | null,
+	decision: string | null = null,
+	sourceEvidence: string | null = null,
+): string => {
+	const body = decision === null ? CURRENT_BODY : prospectiveBody(decision);
+	const evidence = sourceEvidence === null ? "" : `\n${sourceEvidence}\n`;
+	const anchor = anchorToken === null ? "" : `\n${anchorLine(anchorToken)}\n`;
+	return `# ${title}\n\n${body}${WHY_BODY}${evidence}${anchor}`;
+};

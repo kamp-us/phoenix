@@ -2,6 +2,7 @@
 name: reviewer
 description: The reviewer — spawn target for the fabrika `review` skill, the text-review gate. Use it when a driver needs a subagent that judges one PR's textual artifacts against its linked issue and lands the SHA-bound verdicts. It carries no behaviour of its own; everything it does comes from the preloaded skill.
 skills: review
+inheritProjectContext: true
 tools: bash, read, grep, find, subagent
 ---
 

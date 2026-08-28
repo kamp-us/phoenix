@@ -67,7 +67,9 @@ interface LaneRow {
 
 /** How a caller addresses this lane: a chore root's entries are keyed `chore:<name>` (`key.ts`). */
 const keyOf = (root: string, name: string): string =>
-	root === DEFAULT_CHORES_ROOT ? `${CHORE_PREFIX}${name}` : name;
+	// Suffix, never equality: the default root arrives absolute once it is derived off the owning
+	// repository (#5815), so a relocated or derived root still keys its chores correctly.
+	root.endsWith(DEFAULT_CHORES_ROOT) ? `${CHORE_PREFIX}${name}` : name;
 
 const migrateLane = (
 	root: string,

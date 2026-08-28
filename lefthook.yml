@@ -100,6 +100,15 @@ pre-commit:
 # → exit 0), so a lean worktree is never bricked. The distinction is toolchain-absence
 # (skip) vs toolchain-present-and-found-an-error (block) — the deps-tier does NOT silently
 # exit 0 on a real finding the way the leak-guard fail-open does.
+#
+# Every leg drains stdin first, under `use_stdin: true` (#6172, where `git push` died on
+# SIGPIPE/141 after the hook had already reported success). git writes the pushed-ref list into
+# the pre-push hook's stdin; without `use_stdin` lefthook hands each leg a fresh already-closed
+# pipe and leaves git's own pipe open-but-unread for the hook's whole run, so nothing under this
+# hook ever consumes what git wrote. The drain leads each body — ahead of the toolchain-absent
+# and docs-only skips — so no exit path can leave those bytes unread. It is `[ -t 0 ]`-guarded
+# because `lefthook run pre-push` by hand hands the leg a terminal, and an unguarded `cat` would
+# sit there waiting for a human to type EOF.
 pre-push:
   parallel: false
   commands:
@@ -111,7 +120,9 @@ pre-push:
       # leg gets from `--changed origin/main`. Fail-SAFE: any changed path not recognized as
       # docs — or a diff that can't be computed (origin/main unfetched) — runs the full
       # typecheck, so a code change is NEVER skipped. Toolchain-absence still fails open.
+      use_stdin: true
       run: |
+        [ -t 0 ] || cat >/dev/null   # git's pushed-ref list — see the pre-push note (#6172)
         command -v pnpm >/dev/null 2>&1 || {
           echo "typecheck: no pnpm on PATH (stripped-PATH/lean worktree); skipping local pre-push typecheck — CI is the authority" >&2
           exit 0
@@ -133,7 +144,9 @@ pre-push:
       # this branch changed vs origin/main, so a push stays cheap. Exits 0 cleanly when no
       # changed test is related (a docs-only push isn't spuriously blocked); a real failing
       # unit test fails closed and blocks the push.
+      use_stdin: true
       run: |
+        [ -t 0 ] || cat >/dev/null   # git's pushed-ref list — see the pre-push note (#6172)
         command -v pnpm >/dev/null 2>&1 || {
           echo "unit-changed: no pnpm on PATH (stripped-PATH/lean worktree); skipping local pre-push unit tests — CI is the authority" >&2
           exit 0

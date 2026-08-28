@@ -48,6 +48,8 @@ export interface ShotRequest {
 	readonly url: string;
 	readonly outPath: string;
 	readonly viewport: {readonly width: number; readonly height: number};
+	/** Absolute path to a Playwright storage-state file, or `null` to browse signed out. */
+	readonly storageState: string | null;
 }
 
 /** The injected browser leg: navigate, classify, screenshot to `outPath`. */
@@ -124,6 +126,7 @@ export const checkOperands = (options: RenderOptions): VerbOutcome | null => {
 const shoot = (
 	options: RenderOptions,
 	config: HarnessConfig,
+	root: string,
 	setDir: string,
 	surface: string,
 ): Effect.Effect<SurfaceResult, never, FileSystem.FileSystem> =>
@@ -133,6 +136,7 @@ const shoot = (
 			url: `${config.url}${surface}`,
 			outPath,
 			viewport: config.viewport,
+			storageState: config.storageState === null ? null : atRoot(root, config.storageState),
 		});
 		if (shot._tag === "Unreachable") {
 			return {
@@ -250,6 +254,24 @@ export const runRender = (
 			);
 		}
 
+		if (harness.config.storageState !== null) {
+			const sessionProbe = yield* probe(lane.root, harness.config.storageState);
+			if (sessionProbe._tag === "Unknown") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot probe ${harness.config.storageState}: ${sessionProbe.reason} — the render path is UNKNOWN.`,
+					lane.notes,
+				);
+			}
+			if (sessionProbe._tag === "Absent") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: ${harnessPath} declares storageState ${harness.config.storageState}, and no file is there — every surface behind a login would capture the login page. Re-authenticate and write the file, or drop the key.`,
+					lane.notes,
+				);
+			}
+		}
+
 		const setDir = `${laneScratchDir(options.tmpRoot, session.id, lane.number, lane.nonce)}/${options.out}`;
 		const started = yield* options.startHarness(harness.config, lane.root);
 		if (started._tag === "Failed") {
@@ -269,7 +291,7 @@ export const runRender = (
 
 		const results = yield* Effect.forEach(
 			options.surfaces,
-			(surface) => shoot(options, harness.config, setDir, surface),
+			(surface) => shoot(options, harness.config, lane.root, setDir, surface),
 			{concurrency: 1},
 		).pipe(Effect.ensuring(started.stop));
 

@@ -213,6 +213,7 @@ evidence lives — the portable replacement for v1's phoenix-hardcoded "alchemy 
 | `readyPath` | string | no (default `/`) | path polled for HTTP 200 to detect readiness; not ready within 60s is `11` |
 | `viewport` | object `{width, height}` | no (default `{1280, 900}`) | the capture viewport in CSS px |
 | `evidenceStore` | string | no | base URL of a content-addressed evidence store (the ADR 0144/0183 idiom); see `ui evidence` for the two-tier upload protocol |
+| `storageState` | string | no | repo-root-relative path to a Playwright storage-state JSON, seeded into every capture context so surfaces behind a login render as a signed-in user; declared-but-absent is `11` from `ui render`, never a screenshot of the login page. The file is a credential — the repo gitignores it, and the cookies are never inlined here |
 
 A file that exists but violates this schema is `4` from `ui render` — same whole-file rule as the
 registry.

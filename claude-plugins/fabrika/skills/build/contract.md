@@ -952,6 +952,19 @@ behavior: unset is a usage error, exit `1` — a claim without an identity is no
 
 **Output** — machine, one JSON object:
 
+A successful PR claim also writes this deterministic subject diagnostic to stderr:
+
+```text
+build claim: subject: PR #<pr> serves #<issue> (fixes|part-of) — the admission test judges that issue, not the PR's own empty home.
+```
+
+The repair skill consumes exactly one such line as a cross-check against the PR and served-issue
+operands retained from its two Ground URLs. An absent, malformed, repeated, or mismatched line stops
+the lane before mutation; it is never a source from which to guess a missing operand. The line proves
+the admission subject, while `build tree --issue <issue> --repair <pr>` re-reads the live PR with the
+plural linkage parser and refuses zero or several served issues on `4`. These are consecutive proofs,
+not substitutes: neither the scalar diagnostic nor the Ground URLs weaken the unique live relationship.
+
 - `claim` on a win: `{"answer": "won", "number": 4312, "token": "build:<sid>:<uuid>", "purpose":
   "build"}` — plus `"override": {"lane": "<lane>", "reason": "<reason>"}` when the win came through
   `--override`, so the answer records the exception as well as the marker does.

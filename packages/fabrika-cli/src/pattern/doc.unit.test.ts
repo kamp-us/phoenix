@@ -57,13 +57,27 @@ describe("the anchor line is composed and parsed from one home", () => {
 });
 
 describe("docTemplate", () => {
-	it("writes the four headings and nothing else without --anchor", () => {
+	it("writes the current-scope scaffold without --anchor", () => {
 		const text = docTemplate("Worker queue retry", null);
 		expect(text.startsWith("# Worker queue retry\n\n")).toBe(true);
 		expect(text).toContain("## The shape");
 		expect(text).toContain("## When this applies");
 		expect(text).toContain("## Why it is not obvious");
 		expect(text).not.toContain("Derived from");
+		expect(text).not.toContain("two or more places");
+	});
+
+	it("writes intended scope and a binding-decision citation for prospective patterns", () => {
+		const text = docTemplate(
+			"Worker queue retry",
+			null,
+			"https://github.com/acme/repo/issues/1#issuecomment-1",
+		);
+		expect(text).toContain("## Prospective scope");
+		expect(text).toContain("Do not claim current call sites that do not exist");
+		expect(text).toContain(
+			"[the binding decision](https://github.com/acme/repo/issues/1#issuecomment-1)",
+		);
 	});
 
 	it("appends the anchor line in the exact bytes pattern anchor parses", () => {

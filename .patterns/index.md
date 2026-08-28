@@ -168,14 +168,23 @@ The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-eff
 
 ## When to add a new pattern doc here
 
-Add a doc when:
+A pattern may enter through either source-backed path:
 
-- A pattern is used in **2+ places** and future agents will need to know it.
-- The pattern is **non-obvious from reading the codebase** — it codifies a design choice rather than describing existing structure.
-- A future agent would otherwise **invent a worse version** if they didn't know about it.
+- **Current shape:** in-repo source and tests demonstrate a reusable shape that future agents need.
+  Cite representative paths and state where the shape stops applying; no fixed call-site count is an
+  admission prerequisite.
+- **Prospective shape:** a cited binding decision names the technology or shape before its first
+  implementation, and authoritative dependency source or docs ground every rule. State the intended
+  scope without inventing current call sites.
 
-Don't add a doc for:
+Both paths must also clear the same two bars:
 
-- One-off implementation details.
-- Things that are obvious from reading the code.
-- Migration steps (those go in vault grill/RFC artifacts, not here).
+- The pattern is **non-obvious** — it codifies a choice rather than narrating code or generic
+  framework guidance.
+- A future agent would otherwise **invent a foreseeable worse version**.
+
+Don't add obvious descriptions, generic framework advice, speculative or undocumented conventions,
+intuition-only rules, one-off implementation details, or migration steps. Every claim must trace to
+the cited current source/tests or authoritative dependency source/docs; if that evidence is unusable,
+decline rather than fall back to intuition. Migration steps belong in vault grill/RFC artifacts, not
+here.

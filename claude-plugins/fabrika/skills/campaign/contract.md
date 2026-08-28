@@ -495,7 +495,7 @@ answer: a run that wrote nothing exits non-zero. Under `--json`:
 | `campaign open: --milestone must be a positive integer, got "<value>".` | 1 | usage error |
 | `campaign open: <name> holds "\|" or a newline — a campaign name must fit one table cell.` | 1 | usage error |
 | `campaign open: --cites "<value>" is not a comment URL in <repo> — expected .../issues/<n>#issuecomment-<id> or .../pull/<n>#issuecomment-<id>.` | 1 | usage error |
-| `campaign open: --<flag> is required.` | 1 | usage error |
+| `campaign open: <name> is required.` — positional spelling; `<name>` is declared positional, so no `--` prefix ever appears | 1 | usage error |
 | `campaign open: cannot read <file>: <reason> — UNKNOWN, nothing was written.` | 11 | refusal |
 | `campaign open: cannot write <file>: <reason> — UNKNOWN, the table may be half-written; re-read it.` | 8 | refusal |
 | `campaign open: <file>: <reason> — the whole ## Campaigns table is unreadable (ADR 0304). NOTHING was written.` | 12 | refusal |
