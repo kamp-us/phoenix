@@ -137,7 +137,7 @@ describe("deriveRepoRoot — the default root resolves off the owning repository
 
 	it("a .git entry that names no readable repository is Unestablished — UNKNOWN, never absent", async () => {
 		const fs = fakeFs({
-			files: {["/wt/.git"]: "gitdir: /primary/.git/worktrees/gone"},
+			files: {"/wt/.git": "gitdir: /primary/.git/worktrees/gone"},
 		});
 		const out = await Effect.runPromise(Effect.provide(deriveRepoRoot("/wt"), fs.layer));
 		expect(out._tag).toBe("Unestablished");
