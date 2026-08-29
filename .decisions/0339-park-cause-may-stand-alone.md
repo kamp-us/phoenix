@@ -85,7 +85,7 @@ that is nearby. Seating a token is a change to this repo's source, reviewed like
 or shipper — killed by its provider before it recorded a terminal: a session limit, a transport
 drop, a provider error. Its clearing condition is that the dead shell's residue is gone from the
 lane, so the same brief can be dispatched again, and the dispatch itself is the test of whether the
-provider is back. That is one class, four of the five observed instances, and one that reached every
+provider is back. That is one class, three of the four observed, and one that reached every
 shell role rather than only the one that takes a claim.
 
 The rest are licensed rather than seated:
