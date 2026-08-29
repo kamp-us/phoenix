@@ -194,10 +194,10 @@ Contract: [`skills/build/contract.md`](../../claude-plugins/fabrika/skills/build
 
 | Verb | Answers |
 |---|---|
-| `build tree` | whether the ground is clean and the complete fresh issue or repair PR→issue lane relationship is proven |
+| `build tree` | whether the ground is clean and the complete fresh issue or repair PR→explicit issue-in-linkage-set relationship is proven |
 | `build pick` | the ranked candidate pool, with every excluded issue under the axis that refused it |
 | `build eligible` | whether one issue's dependency gate is open |
-| `build claim` / `confirm` / `release` / `adopt` | the lane's claim on an issue: race it, re-prove it, retract it, or take a dead session's |
+| `build claim` / `confirm` / `release` / `adopt` | the lane's claim on an issue: race it, explicitly select a repair PR's served issue, re-prove it, retract it, or take a dead session's |
 | `build claimants` | who holds an issue's claim, read by a caller holding none — no token, no write, no clearance |
 | `build issue` | the claimed issue's body and its criteria — `found` / `absent` / `malformed`, all on exit 0 |
 | `build branch` / `scratch` | the lane's branch off a fresh base, and its scratch directory |
@@ -512,19 +512,20 @@ table a failure log matches. Contract:
 | Verb | Answers |
 |---|---|
 | `heal-ci diagnose` | one PR's stall class from an ordered, total predicate chain, with its evidence |
-| `heal-ci sweep` | every open PR classified with its strand age — the scheduled surface |
+| `heal-ci sweep` | every open PR classified with its strand age and its note arrow — the scheduled surface |
 | `heal-ci surface` | declared required contexts against the runs that actually post at the head |
 | `heal-ci logs` | the failed-job log text for **every** failing gating context at a head |
 | `heal-ci classify` | pure: log text on stdin → one signature from a ten-row ordered table, default-deny |
 | `heal-ci rerun` | the at-most-once transient rerun, precondition re-derived inside the verb |
-| `heal-ci note` | the durable stop-path comment |
+| `heal-ci note` | the durable stop-path comment, suppressed once per `<pr>:<class>:<head>` |
+| `heal-ci scratch` | the per-lane path a healer's note bodies go under |
 
 **Exit codes.** The shared table, plus `12` the live head moved past the inspected `--sha` · `13` a
 read completed and its scope is provably incomplete · `14` proven not in the state this write acts
 on · `15` the run's logs are proven expired or purged · `16` the rerun provably landed and its
 durable marker could not be written. `4` is a deliberate gap.
 
-Five behaviours are worth knowing:
+Six behaviours are worth knowing:
 
 - **Every classification is an exit-`0` answer**, `red` and `wedged` and `not-open` included. A
   non-zero exit means the verb could not produce an answer at all.
@@ -540,6 +541,9 @@ Five behaviours are worth knowing:
 - **`sweep` writes nothing.** It files no issue, assigns nobody and spawns nothing (ADR 0205): a
   detector emits claimable work and normal pull adopts it. Filing is `report file`'s, which is why
   `4` stays a deliberate gap here.
+- **The note's arrow is a lookup, and `sweep` emits it.** Each row's sixth column is the lane the
+  stall class hands the work to (`build`/`review`/`ship`/`author`/`human`/`nobody`), so the note's
+  first line relays a lane instead of a caller deriving one in a `run:` block (ADR 0228).
 
 ## The `hook` group
 
@@ -592,7 +596,7 @@ snapshot. Lane state is local and never committed.
 | `lane prove` | whether the board agrees with a lane event, before it is recorded |
 | `lane history` | the log verbatim, one `{task, event, at}` per event |
 | `lane print` | the compiled topology: phases, terminals, and each state's legal events |
-| `lane open` / `emit` | boot a lane from a committed template, or generate an epic's machine from its board topology |
+| `lane open` / `emit` | boot a lane from a committed template, or generate an epic's machine from its board topology — `open` refuses an epic at `46`, typed `type:epic` or carrying sub-issue links, since the coder template has one task; `emit` refuses a lane already on disk at `14` and names the two-step remedy, retire the directory then re-run |
 | `lane brief` | the spawn prompt for one task's current leaf state |
 | `lane assembly` / `push` | an epic run's assembly worktree, and its published branch |
 | `lane integrate` | one reviewed child merged into that worktree, its dependencies reconciled from the merged lockfile, then judged by the repo's `codeValidators` — last stdout line on exit 0 is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head; every refusal below the merge resets the branch to `ORIG_HEAD` and pushes nothing |
@@ -883,7 +887,7 @@ Judge a UI pull request over its preview deployment. Contract:
 
 | Verb | Answers |
 |---|---|
-| `review-ui render` | the named surfaces captured from a PR's preview deployment |
+| `review-ui render` | the named surfaces captured from a PR's preview deployment — a route, or a route plus a realized state (`/pano:auth` renders signed in as the test moderator, refusing on `11` unless the session proves it took). `--flag <key>=<on\|off>` forces a dark-shipped flag for the run, refusing on `10` unless every surface is `:auth` and on `11` unless the preview's own evaluation says the key took |
 | `review-ui post` | the `review-ui` verdict on stdin, posted as one comment |
 | `review-ui note` | a typed blocker note when the surfaces cannot be seen |
 | `review-ui route` | a head-bound `routed-elsewhere` record: this PR renders nothing, so no verdict is owed |

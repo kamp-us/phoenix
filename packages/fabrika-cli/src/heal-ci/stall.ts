@@ -26,6 +26,10 @@ export const STALL_TOKENS = [
 
 export type StallToken = (typeof STALL_TOKENS)[number];
 
+/** Whether a caller-supplied string is one of the ten — the closed-vocabulary guard on `--class`. */
+export const isStallToken = (value: string): value is StallToken =>
+	(STALL_TOKENS as ReadonlyArray<string>).includes(value);
+
 export type CiToken = "green" | "red" | "pending" | "wedged" | "no-runs" | "none";
 
 export interface StallFacts {

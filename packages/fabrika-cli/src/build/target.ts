@@ -131,10 +131,11 @@ export const resolveAdmissionSubject = (
 	repo: string,
 	dispatch: Dispatch,
 	target: IssueRecord,
+	requestedIssue: number | null = null,
 ): Effect.Effect<AdmissionSubject, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const own = {_tag: "Judged" as const, facts: target, note: null, repair: NOT_REPAIR};
-		const subject = scopeSubjectOf(target);
+		const subject = scopeSubjectOf(target, requestedIssue);
 		if (subject._tag === "Own") return own;
 		const unresolved = (reason: string): AdmissionSubject =>
 			dispatch._tag === "Active"

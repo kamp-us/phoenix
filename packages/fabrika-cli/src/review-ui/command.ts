@@ -55,7 +55,14 @@ const render = leafCommand(
 		surface: Flag.string("surface").pipe(
 			Flag.atLeast(1),
 			Flag.withDescription(
-				"a surface id to capture — a bare route such as /pano; repeatable, and zero operands is refused (no tool guesses surfaces from a diff)",
+				"a surface id to capture — a route such as /pano, or /pano:auth for the signed-in render (proved against the preview's session endpoint before the shot is recorded); repeatable, and zero operands is refused (no tool guesses surfaces from a diff)",
+			),
+		),
+		// `atLeast(0)` is the repeatable form with no floor: forcing nothing is the ordinary run.
+		flag: Flag.string("flag").pipe(
+			Flag.atLeast(0),
+			Flag.withDescription(
+				"force one flag for this run — <key>=on|off, repeatable; rides the preview's phoenix_flag_overrides cookie, which is honored only for an authorized platform-admin actor, so every --surface must name :auth and each forced key is proved against the preview's own evaluation before the shot is recorded",
 			),
 		),
 		app: Flag.string("app").pipe(
@@ -66,12 +73,13 @@ const render = leafCommand(
 		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({pr, out, surface, app, repo}) {
+	Effect.fn(function* ({pr, out, surface, flag, app, repo}) {
 		yield* emit(
 			yield* runRender({
 				pr,
 				out,
 				surfaces: surface,
+				flags: flag,
 				app: Option.getOrNull(app),
 				repo: Option.getOrNull(repo),
 				env: process.env,
@@ -83,7 +91,7 @@ const render = leafCommand(
 ).pipe(
 	Command.withShortDescription("Capture the named surfaces from a PR's preview deployment."),
 	Command.withDescription(
-		"Capture the named surfaces from a PR's announced preview deployment at the inspected head, one validated PNG per surface, and write the set manifest. Prints one JSON object: the set, the PR, the head, the preview URL, and one capture record per surface (path, dimensions, sha256, page errors); every surface's outcome is enumerated on stderr. Full success is the only exit 0. Exits 1 (zero --surface operands), 7 (PR absent or closed), 10 (--out is not kebab-case, or a --surface carries the reserved :state suffix), 11 (a read failed, the preview comment is malformed or names several apps, or a capture's validity is undeterminable), 12 (the preview deploys a head that is not the PR's live head — stale preview), 13 (a surface threw during render), 14 (a surface is unreachable), 15 (a capture is invalid), 16 (no preview-deploy comment — the CANT-SEE route). Example: fabrika review-ui render --pr 4321 --out judged --surface /pano",
+		"Capture the named surfaces from a PR's announced preview deployment at the inspected head, one validated PNG per surface, and write the set manifest. Prints one JSON object: the set, the PR, the head, the preview URL, and one capture record per surface (path, dimensions, sha256, page errors); every surface's outcome is enumerated on stderr. Full success is the only exit 0. Exits 1 (zero --surface operands), 7 (PR absent or closed), 10 (--out is not kebab-case, a --surface names a :state nothing renders — the realized set is auth, a --flag operand is not a <key>=<on|off> pair, or --flag was passed with an anonymous surface), 11 (a read failed, the preview comment is malformed or names several apps, a capture's validity is undeterminable, an :auth surface was requested with PREVIEW_TEST_SESSION_TOKEN/BETTER_AUTH_SECRET unset, an :auth surface's session proof did not come back signed in, or a forced flag evaluated at its default anyway), 12 (the preview deploys a head that is not the PR's live head — stale preview), 13 (a surface threw during render), 14 (a surface is unreachable), 15 (a capture is invalid), 16 (no preview-deploy comment — the CANT-SEE route). Example: fabrika review-ui render --pr 4321 --out judged --surface /pano",
 	),
 );
 

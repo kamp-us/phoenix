@@ -3,7 +3,8 @@ import {Effect, type FileSystem, type Path} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import type {VerbOutcome} from "../verb.ts";
-import {APPEND_UNKNOWN, LANE_EXISTS, LANE_UNREADABLE} from "./codes.ts";
+import {APPEND_UNKNOWN, LANE_EXISTS, LANE_UNREADABLE, SHAPE_MISMATCH} from "./codes.ts";
+import type {ExpectationRead} from "./expectation.ts";
 import {choreTemplateText, coderTemplateText} from "./fixtures.test-support.ts";
 import {runOpen} from "./open-verb.ts";
 import {runStatus} from "./status-verb.ts";
@@ -14,7 +15,16 @@ const DIR = `${ROOT}/42`;
 const WORKFLOW = `${DIR}/workflow.json`;
 const TEMPLATE = "/pkg/src/lane/templates/coder.workflow.json";
 
-const OPTIONS = {root: ROOT, lane: "42", templatePath: TEMPLATE};
+const reads = (read: ExpectationRead) => () => Effect.succeed(read);
+const childless = reads({_tag: "Read", expectation: {_tag: "Single"}});
+
+const OPTIONS = {
+	root: ROOT,
+	lane: "42",
+	templatePath: TEMPLATE,
+	issue: 42,
+	expectation: childless,
+};
 
 const run = (
 	fs: ReturnType<typeof fakeFs>,
@@ -48,6 +58,8 @@ describe("lane open", () => {
 			root: DEFAULT_CHORES_ROOT,
 			lane: "park-sweep",
 			templatePath: "/pkg/src/lane/templates/chore.workflow.json",
+			issue: null,
+			expectation: null,
 		};
 		const fs = fakeFs({files: {[chore.templatePath]: choreTemplateText()}});
 		const opened = await run(fs, runOpen(chore));
@@ -97,5 +109,57 @@ describe("lane open", () => {
 
 		expect(out.code).toBe(APPEND_UNKNOWN);
 		expect(out.stdout).toBe("");
+	});
+
+	it("refuses an issue carrying sub-issue links before writing, naming `lane emit`", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(
+			fs,
+			runOpen({
+				...OPTIONS,
+				expectation: reads({_tag: "Read", expectation: {_tag: "Epic", children: 3}}),
+			}),
+		);
+
+		expect(out.code).toBe(SHAPE_MISMATCH);
+		expect(fs.written.size).toBe(0);
+		expect(out.stderr.join("\n")).toContain("fabrika lane emit 42");
+		expect(out.stderr.join("\n")).toContain("plan the epic first");
+	});
+
+	it("refuses a `type:epic` issue that has no children yet — #7024's pre-plan window", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(
+			fs,
+			runOpen({
+				...OPTIONS,
+				expectation: reads({_tag: "Read", expectation: {_tag: "Epic", children: 0}}),
+			}),
+		);
+
+		expect(out.code).toBe(SHAPE_MISMATCH);
+		expect(fs.written.size).toBe(0);
+		expect(out.stderr.join("\n")).toContain("plan the epic first");
+		expect(out.stderr.join("\n")).toContain("no sub-issue links");
+	});
+
+	it("refuses an unreadable child list — UNKNOWN, never a boot", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(
+			fs,
+			runOpen({...OPTIONS, expectation: reads({_tag: "Unknown", reason: "the API answered 502"})}),
+		);
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(fs.written.size).toBe(0);
+		expect(out.stderr.join("\n")).toContain("502");
+	});
+
+	it("boots offline when no reader is passed, asking the board nothing", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(fs, runOpen({...OPTIONS, expectation: null}));
+
+		expect(out.code).toBe(0);
+		expect(fs.written.get(WORKFLOW)).toBe(coderTemplateText());
 	});
 });

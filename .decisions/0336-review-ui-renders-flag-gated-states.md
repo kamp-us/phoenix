@@ -47,3 +47,38 @@ The interim rider in §2 is the deferred direction's honest half — disclosure,
 - `render-verb.ts` grows an auth and flag seam it does not have today, which is real surface area on a verb that is otherwise read-only against a preview.
 - Until that lands, `review-ui` verdicts get longer: every unpainted state is named. That is the point.
 - The accidental coverage an atölye exhibit provides stays useful and stays optional.
+
+## Amendment — 2026-08-29: §1 shipped, so §2 and §3 retire
+
+[#7218](https://github.com/kamp-us/phoenix/issues/7218) landed §1, so the two interim clauses this
+ADR wrote against that absence are spent. Recorded here rather than by rewriting the body: what the
+gate did while it could not see is part of the record.
+
+**What replaced §2's interim rider.** `review-ui render` takes `--flag <key>=<on|off>`, repeatable.
+It rides the worker's existing `phoenix_flag_overrides` cookie into the capture context, so no route
+was added and `flagship/override-authz.ts` was not touched — its verdict still derives only from the
+environment and the actor's stored platform-admin relation, and an attacker-supplied cookie still
+cannot self-authorize. A flag-off state is therefore now a state the gate renders. What still owes
+disclosure is narrower and unchanged in kind: a state nothing here can put on screen — seeded data
+absent, credentials not handed over, a state with no mechanism.
+
+**What that gate costs, stated plainly.** On a deployed stage the override cookie is honored only
+for a request whose actor holds platform `Admin`, and `preview-seed test-account` provisions
+moderation authority, not admin. So a forced run is an authenticated admin's capture: every
+`--surface` must name `:auth` (a bare route beside `--flag` is refused on `10`), and the operator
+grants platform admin to the test account on that throwaway preview D1 through the offline
+`admin-grant` path ADR [0107](0107-capability-authz-framework.md) already sanctions. Two consequences worth
+naming: the admin grant is opt-in, so an ordinary `:auth` capture stays a plain yazar+moderator's
+view; and a forced capture shows admin-only affordances, which is the trade the operand buys and the
+reason it is not the default.
+
+**Why the override proves itself.** An override the preview dropped renders the flag-off page
+cleanly, which is a valid PNG under the flag-on name — the same class as the `:auth` cookie that did
+not authenticate ([#7051](https://github.com/kamp-us/phoenix/issues/7051)). So the shot asks the
+preview's own `/api/flags/evaluate` from the same context, with each forced key's default set to the
+opposite value, and refuses on `11` when a key came back at its default. The alternative was
+trusting the seeding, which is exactly the assumption §2 existed to stop.
+
+**§3's disclosure fork retires with it.** `claude-plugins/fabrika/skills/review-ui/SKILL.md` no
+longer forks on a flag-off capture; it directs the reviewer to render that state. The fork on an
+*unreachable* surface — the older #4305 rule — is untouched.

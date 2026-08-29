@@ -49,6 +49,7 @@ import {read as readRoute} from "../wire/routed-elsewhere.ts";
 import {read as readMarker} from "../wire/verdict-marker.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {commitPushedAt} from "./github.ts";
+import {type LaneToken, laneFor} from "./lane.ts";
 import {type Link, linkOf, renderLink} from "./link.ts";
 import {type CiToken, classifyStall, type StallToken, strandAgeMinutes} from "./stall.ts";
 import {compare, readDeclared} from "./surface.ts";
@@ -119,6 +120,8 @@ export interface DiagnoseOptions extends DiagnoseParams {
 export interface Diagnosis {
 	readonly pr: number;
 	readonly token: StallToken;
+	/** The lane the note's arrow names — derived here, where the class is, never by a caller. */
+	readonly lane: LaneToken;
 	readonly head: string;
 	readonly ageMinutes: number;
 	readonly owner: {
@@ -458,6 +461,7 @@ export const diagnoseOne = (
 			diagnosis: {
 				pr,
 				token: verdict.token,
+				lane: laneFor(verdict.token, {ownerLogin: owner, authorLogin: pull.authorLogin}),
 				head: bound,
 				ageMinutes: strandAgeMinutes(pushedAt.value, lastActivityAt, params.now),
 				owner: {login: owner, claimedAt, lastActivityAt},

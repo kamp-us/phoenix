@@ -7,6 +7,10 @@
  * A board report with an unnamed hole in it is the false completeness this verb exists to prevent,
  * so a single unclassifiable PR fails the whole sweep rather than being silently dropped, and a
  * rate limit exhausted mid-scan refuses with nothing partial emitted.
+ *
+ * Each row is `pr\t<number>\t<token>\t<age>\t<head>\t<lane>`. The lane is `lane.ts`'s lookup off the
+ * class, emitted here so the scheduled workflow relays the note's arrow instead of deriving one in
+ * its `run:` block (ADR 0228) — it used to hardcode `nobody` on every row (#7209).
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -143,6 +147,7 @@ export const runSweep = (
 							token: row.token,
 							ageMinutes: row.ageMinutes,
 							head: row.head,
+							lane: row.lane,
 						})),
 					}),
 					notices,
@@ -150,7 +155,9 @@ export const runSweep = (
 			: answer(
 					[
 						`swept\t${scanned}\t${stalled}`,
-						...rows.map((row) => `pr\t${row.pr}\t${row.token}\t${row.ageMinutes}\t${row.head}`),
+						...rows.map(
+							(row) => `pr\t${row.pr}\t${row.token}\t${row.ageMinutes}\t${row.head}\t${row.lane}`,
+						),
 					].join("\n"),
 					notices,
 				);

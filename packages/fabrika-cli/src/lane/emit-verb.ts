@@ -5,6 +5,12 @@
  * via `plan/github.ts`), the emission is the pure `emit.ts`, and the placement is the same guarded
  * boot `lane open` uses. Every topology defect seats on its own code, because each takes a
  * different remedy: plan the epic, fix the reference, break the cycle.
+ *
+ * An existing lane is refused, and nothing carves an exception into that refusal: ADR 0313's
+ * 2026-08-20 amendment rejected an overwrite path for a lane already on disk by name, and left
+ * `placeMachine`'s refusal standing as the answer. What this verb owes instead is a refusal that
+ * names the remedy exactly — retire the directory, then re-run it — so a wrong-template lane (#7024)
+ * is a two-step repair an operator can read off the line rather than a dead end.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -13,6 +19,7 @@ import {badNumber, openIssue, resolveTargetRepo} from "../build/target.ts";
 import {listSubIssues} from "../plan/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
+	LANE_EXISTS,
 	LANE_UNREADABLE,
 	MALFORMED_RECORD,
 	TOPOLOGY_ABSENT,
@@ -21,7 +28,7 @@ import {
 } from "./codes.ts";
 import {type EmitResult, emitMachine} from "./emit.ts";
 import {placementRefusal} from "./refusals.ts";
-import {placeMachine} from "./store.ts";
+import {type LaneRef, placeMachine} from "./store.ts";
 
 const VERB = "fabrika lane emit";
 
@@ -98,10 +105,14 @@ export const runEmit = (
 		}
 		const emitted = emitMachine(options.epic, target.issue.body, listed.value);
 		if (emitted._tag !== "Emitted") return emitRefusal(options.epic, emitted);
-		const placed = yield* placeMachine(
-			{root: options.root, lane: String(options.epic)},
-			emitted.text,
-		);
+		const ref: LaneRef = {root: options.root, lane: String(options.epic)};
+		const placed = yield* placeMachine(ref, emitted.text);
+		if (placed._tag === "Exists") {
+			return refuse(
+				LANE_EXISTS,
+				`${VERB}: a lane already exists at ${placed.dir} — resuming needs no boot, and a lane on disk is never re-emitted over (ADR 0313, amendment 2026-08-20). If it runs the wrong machine — \`fabrika lane migrate --check\` answers 46 and names it — the remedy is exactly two steps: retire ${placed.dir}, then re-run \`${VERB} ${options.epic}\`.`,
+			);
+		}
 		if (placed._tag !== "Placed") return placementRefusal(VERB, placed);
 		return answer(
 			JSON.stringify({

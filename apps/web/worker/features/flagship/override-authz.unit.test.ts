@@ -68,6 +68,25 @@ describe("overridesAuthorized — may this request honor its per-browser cookie 
 			assert.strictEqual(allowed, false);
 		}),
 	);
+
+	// `preview` and `audit` are deployed stages too (ADR 0088), and a PR preview is now a place
+	// somebody seeds this cookie on purpose (#7218) — so the "development is the only free arm"
+	// half of the invariant is proven for every deployed class, not for `production` alone.
+	for (const environment of ["preview", "audit"] as const) {
+		it.effect(`${environment}, non-admin: NOT authorized — only development is free`, () =>
+			Effect.gen(function* () {
+				const allowed = yield* authorize(environment, {isAdmin: false, actor: human("user-1")});
+				assert.strictEqual(allowed, false);
+			}),
+		);
+
+		it.effect(`${environment}, admin: authorized — the one path a forced capture rides`, () =>
+			Effect.gen(function* () {
+				const allowed = yield* authorize(environment, {isAdmin: true, actor: human("admin-1")});
+				assert.strictEqual(allowed, true);
+			}),
+		);
+	}
 });
 
 const OVERRIDDEN_FLAG = "phoenix-reactions";
@@ -94,6 +113,12 @@ describe("makeRequestFlagsContext — the verdict gates cookie parsing (#2741)",
 		Effect.gen(function* () {
 			const overrides = yield* contextOverrides("production", true);
 			assert.deepStrictEqual(overrides, {[OVERRIDDEN_FLAG]: true});
+		}),
+	);
+
+	it.effect("preview, verdict false: the cookie is dropped — a seeded one is inert too", () =>
+		Effect.gen(function* () {
+			assert.strictEqual(yield* contextOverrides("preview", false), undefined);
 		}),
 	);
 });

@@ -2,7 +2,8 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
-import {MIGRATION_UNSAFE} from "./codes.ts";
+import {MIGRATION_UNSAFE, SHAPE_MISMATCH} from "./codes.ts";
+import type {ExpectationReader} from "./expectation.ts";
 import {choreTemplateText, coderTemplateText} from "./fixtures.test-support.ts";
 import type {LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
@@ -131,6 +132,7 @@ describe("lane migrate", () => {
 			check?: boolean;
 			dirs?: Record<string, ReadonlyArray<string> | null>;
 			templatePaths?: ReadonlyArray<string>;
+			expectations?: ExpectationReader<never> | null;
 		} = {},
 	) => {
 		const fs = fakeFs({
@@ -143,6 +145,7 @@ describe("lane migrate", () => {
 				runMigrate({
 					roots: [{root: ROOT, templatePaths: options.templatePaths ?? [TEMPLATE]}],
 					check: options.check ?? false,
+					expectations: options.expectations ?? null,
 				}),
 				fs.layer,
 			),
@@ -254,5 +257,67 @@ describe("lane migrate", () => {
 
 		expect(outcome.code).not.toBe(0);
 		expect(outcome.stderr.join("\n")).toContain("UNKNOWN, never empty");
+	});
+
+	it("flags a coder-template lane on an epic that would otherwise have read current", async () => {
+		const epics: ExpectationReader<never> = (issue) =>
+			Effect.succeed(
+				issue === 42
+					? {_tag: "Read", expectation: {_tag: "Epic", children: 4}}
+					: {_tag: "Read", expectation: {_tag: "Single"}},
+			);
+
+		const {outcome, written} = await sweep(
+			{
+				[`${ROOT}/42/workflow.json`]: migratedText(),
+				[`${ROOT}/43/workflow.json`]: migratedText(),
+			},
+			{check: true, expectations: epics},
+		);
+
+		expect(outcome.code).toBe(SHAPE_MISMATCH);
+		expect(written.size).toBe(0);
+		expect(outcome.stderr.join("\n")).toContain("4 sub-issue link(s)");
+		expect(outcome.stderr.join("\n")).toContain("fabrika lane emit <n>");
+	});
+
+	it("carries an unknown shape onto the row it lands on rather than reading it as a match", async () => {
+		const unknown: ExpectationReader<never> = () =>
+			Effect.succeed({_tag: "Unknown", reason: "the API answered 502"});
+
+		const {outcome} = await sweep(
+			{
+				[`${ROOT}/42/workflow.json`]: migratedText(),
+				[`${ROOT}/43/workflow.json`]: migratedText(),
+			},
+			{check: true, expectations: unknown},
+		);
+
+		expect(outcome.code).toBe(0);
+		const lanes = JSON.parse(outcome.stdout).lanes;
+		expect(lanes[0]).toMatchObject({
+			verdict: "current",
+			shape: {state: "unknown", reason: "the API answered 502"},
+		});
+	});
+
+	it("asks the board nothing about a lane whose key is not an issue number", async () => {
+		const asked: number[] = [];
+		const expectations: ExpectationReader<never> = (issue) => {
+			asked.push(issue);
+			return Effect.succeed({_tag: "Read", expectation: {_tag: "Single"}});
+		};
+
+		const {outcome} = await sweep(
+			{[`${ROOT}/park-sweep/workflow.json`]: choreTemplateText()},
+			{
+				dirs: {[ROOT]: ["park-sweep"]},
+				templatePaths: [CHORE_TEMPLATE],
+				expectations,
+			},
+		);
+
+		expect(outcome.code).toBe(0);
+		expect(asked).toEqual([]);
 	});
 });

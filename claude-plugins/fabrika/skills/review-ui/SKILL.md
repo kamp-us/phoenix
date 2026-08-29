@@ -94,6 +94,30 @@ you render independently or you have not looked.
 fabrika review-ui render --pr $pr_number --out judged --surface /pano --surface /pano/yeni
 ```
 
+**A surface behind login is named, not skipped.** A surface id may carry a realized state, and
+`auth` is the one realized today: `--surface /pano:auth` renders the same route as the moderator-tier
+test account instead of a visitor, so a delta that only exists signed in is judged rather than
+missed. Anything else after the colon is refused on `10` — a state nothing renders would shoot the
+default pixels under a variant's name.
+
+Two environment values make `:auth` work, and both come from somewhere specific:
+`PREVIEW_TEST_SESSION_TOKEN` is the token an operator passed to
+`node packages/preview-seed/src/bin.ts test-account --database-id <preview-d1>`, which is what puts
+the account and its session row on this PR's preview D1; `BETTER_AUTH_SECRET` is the **preview
+worker's** secret, not your local one, because it is the worker that verifies the cookie's signature.
+Neither is yours to mint — if you do not have them, you have not been handed the account, and
+`review-ui note` is the honest route. A `--flag` run needs one thing more: that account holding
+platform admin on this preview's D1, granted offline with
+`node packages/admin-grant/src/bin.ts grant --user-id preview-test-moderator --database-id <preview-d1>`.
+That is an operator's act against a throwaway preview, never yours and never against a database
+holding real accounts.
+
+**You never have to judge whether the shot came back signed in.** The verb hits the preview's own
+session endpoint from the same browser context before it records anything, and refuses `11` when the
+answer is not a user — an unset credential, a wrong or expired token, an account absent from this
+preview's D1 all land there. So a `:auth` capture in a manifest is a proven signed-in render, and a
+missing one is a refusal you read, never a silent anonymous shot.
+
 The verb captures the PR's **preview deployment** at the inspected head — never a checkout, never
 the PR's code run on your machine. Every surface returns a proven outcome — captured, crashed
 (13), unreachable (14), invalid capture (15) — and two run-level refusals precede the per-surface
@@ -111,23 +135,38 @@ run-level refusal and what makes a capture valid are the verb's section
 `--heading "review-ui note"`). The two render paths this needs are
 `--heading "Required environment — the two render paths"`.
 
-**A surface that renders cleanly is not yet a judged surface.** The verb captures as an anonymous
-visitor with every flag at its default, and under ADR
+**A surface that renders cleanly is not yet a judged surface.** By default the verb captures as an
+anonymous visitor with every flag at its default, and under ADR
 [0083](../../../../.decisions/0083-agents-deploy-humans-release.md)'s dark-ship norm that is exactly
 who never sees the feature. So a flag-gated route serving its own 404, a signed-in view serving the
 auth wall, and a feed row correctly showing no new marker all come back `captured` — a clean
-capture of the state the PR did not add. The verb reports none of them as unreachable, so the
-disclosure fork above never fires and the run reads as coverage it does not have (#6541, on PR
+capture of the state the PR did not add, which the verb reports as no kind of problem (#6541, on PR
 #6434: six surfaces captured, four of the PR's compositions never painted).
 
-Derive the states the PR adds from the diff, and check each one against what actually painted.
-**Every state that did not paint is named in your verdict**, with why — flag off, signed out,
-seeded data absent. Name them and judge what did paint; a verdict that stays silent about them
-claims a judgment nobody made. When nothing the PR adds painted, that is CANT-SEE, on the same
-terms as an every-surface-unreachable render. ADR
-[0336](../../../../.decisions/0336-review-ui-renders-flag-gated-states.md) records why this is a
-disclosure rule today and what retires it: a flag-override plus seeded-session path on `review-ui
-render`, after which the gate reaches these states instead of naming them.
+**So derive the states the PR adds from the diff, and render each one rather than disclosing it.**
+`:auth` reaches what is behind login, and `--flag <key>=<on|off>` forces a dark-shipped flag on:
+
+```bash
+fabrika review-ui render --pr $pr_number --out forced --surface /hosgeldin:auth --flag phoenix-welcome=on
+```
+
+Both fences hold, so neither can quietly hand you the default pixels. A forced run must name
+`:auth` on every surface — the preview honors the override only for an authorized platform-admin
+actor — and each forced key is proved against the preview's own evaluation before a shot is
+recorded, so an override that got dropped is `11`, never a flag-off capture under the flag-on name.
+Those two `10`/`11` refusals are the whole grammar; the rest is the verb's section.
+
+The credentials are the operator's, not yours (see below), and one more grant rides with them:
+platform admin on that throwaway preview D1, minted offline. Without it a `--flag` run refuses on
+`11` and the honest route is `review-ui note` — the same answer as any other credential you were
+not handed.
+
+**What still owes disclosure is a state you could not render.** Seeded data absent, a state with no
+mechanism, a preview you hold no credentials for: name each one in the verdict, with why, and judge
+what did paint. When nothing the PR adds painted, that is CANT-SEE, on the same terms as an
+every-surface-unreachable render. ADR
+[0336](../../../../.decisions/0336-review-ui-renders-flag-gated-states.md) ruled the override in and
+its own interim rider out: a flag-off state is now a state you render, not one you disclose.
 
 **Two eyes, one record:** when this session's tool surface carries the `claude-in-chrome` tools you
 may additionally inspect the preview live — navigate, probe states, look closer. Detection is tool
@@ -184,7 +223,7 @@ are simply no row. `surface` refusing on `11` is UNKNOWN coverage, never a clean
 
 ```bash
 fabrika review-ui post $pr_number --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged <<'EOF'
-…per-row table with pixel evidence, coverage table (judged / unreachable+disclosed / captured-but-not-the-PR's-state, each with why), advisories…
+…per-row table with pixel evidence, coverage table (judged / unreachable+disclosed / could-not-render, each with why), advisories…
 EOF
 ```
 
