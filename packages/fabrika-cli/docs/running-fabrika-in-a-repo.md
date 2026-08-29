@@ -4,7 +4,8 @@ Recipes for getting `fabrika` installed, credentialed and answering in the repo 
 Each recipe below is independent — start at the one whose result you want.
 
 Facts about individual verbs — what a group does, what each exit code means — live in the
-[verb reference](../README.md).
+[verb reference](./verb-reference.md). How the package is published and which copy of the binary
+answers is in [packaging](./packaging.md).
 
 ## Install the CLI and confirm it runs
 
@@ -144,7 +145,7 @@ node packages/fabrika-cli/src/bin.ts --version
    11
    ```
 
-2. Look `11` up in the [verb reference](../README.md) — its shared exit table covers `3`–`11`, and
+2. Look `11` up in the [verb reference](./verb-reference.md) — its shared exit table covers `3`–`11`, and
    each group's own section lists the codes that group adds on top.
 
 3. Take the non-zero exit as UNKNOWN and re-run or stop. Do not read the empty stdout as "nothing

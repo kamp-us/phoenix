@@ -9,6 +9,25 @@ the same package without being a verb group.
 The package front door is [`../README.md`](../README.md); for what fabrika is and how to run it,
 read [the guide](../../../claude-plugins/fabrika/guide/README.md).
 
+## The interface every verb meets
+
+Governed by
+[`claude-plugins/fabrika/docs/interface-convention.md`](../../../claude-plugins/fabrika/docs/interface-convention.md).
+Four rules bind a caller:
+
+- **Stdout is the answer; everything else is stderr.** Scope lines, refusal reasons and progress are
+  diagnostics.
+- **The positive answer is a positive token, never an absence.** `adr sweep` prints `no-overlap`,
+  not an empty shortlist.
+- **The exit status is the answer; empty stdout never is.** `0` = the answer is on stdout, `1` =
+  usage error or the verb failed to run, `126` = the binary started but could not resolve an
+  implementation, `127` = the verb never ran, `3`+ = the verb's own proven outcomes below. A
+  non-zero exit is UNKNOWN. `2` is allocated by nothing: it is the code a `PreToolUse` hook blocks a
+  tool call on.
+- **Fail closed on missing scope or state.** A zero-record scan is a failed read, not an answer
+  ([ADR 0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)); an unreadable input
+  resolves to a refusal, never to a permissive default.
+
 **How a group's exit codes compose with the shared table below.** Most groups seat `3`–`11` on one
 imported table, so a code means the same thing whichever group produced it. Each group section then
 lists only what it adds on top, plus any shared seat it uses differently — so read a group's

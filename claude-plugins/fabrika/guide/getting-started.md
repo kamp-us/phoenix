@@ -251,5 +251,5 @@ Where to go next:
   state lives on disk.
 - [`delegation.md`](delegation.md) — which copy of `fabrika` served a command, and what each refusal
   means.
-- [`../../../packages/fabrika-cli/README.md`](../../../packages/fabrika-cli/README.md) — every verb,
-  its flags and its exit codes.
+- [`../../../packages/fabrika-cli/docs/verb-reference.md`](../../../packages/fabrika-cli/docs/verb-reference.md)
+  — every verb, its flags and its exit codes.
