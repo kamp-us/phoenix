@@ -67,7 +67,10 @@ type Standing = Pick<AuthorshipStanding, "karma" | "bar" | "vouchExists" | "inRe
 
 // A failed read resolves to `null` on purpose — the safe/off path, so an error
 // degrades to "no block" rather than throwing the whole header.
-function useAuthorshipStanding(enabled: boolean): Standing | null {
+//
+// Exported for `WelcomePage` (#7043): the welcome surface reads the SAME view selection
+// through this one hook rather than growing a second `myAuthorshipStanding` read.
+export function useAuthorshipStanding(enabled: boolean): Standing | null {
 	const {state} = useImperativeView("myAuthorshipStanding", StandingView, {enabled});
 	return state.status === "ok" ? state.data : null;
 }
