@@ -84,12 +84,14 @@ class SyntheticControlProtocol {
 		this.#deliver({type: "event", event: {type: "session_snapshot", snapshot: next}});
 	}
 
-	acknowledgeHeld(command: string): void {
-		const index = this.#held.findIndex((message) => message.request.command === command);
-		if (index === -1) throw new Error(`No held ${command} request`);
-		const [message] = this.#held.splice(index, 1);
-		if (message === undefined) throw new Error(`No held ${command} request`);
-		this.#acknowledge(message);
+	acknowledgeHeld(command: string, occurrence = 0): void {
+		const matching = this.#held
+			.map((message, index) => ({message, index}))
+			.filter(({message}) => message.request.command === command);
+		const held = matching[occurrence];
+		if (held === undefined) throw new Error(`No held ${command} request at ${occurrence}`);
+		this.#held.splice(held.index, 1);
+		this.#acknowledge(held.message);
 	}
 
 	#receive(message: ClientMessage): void {
@@ -287,6 +289,17 @@ class ManualDeadlines {
 		pending.resolve();
 	}
 }
+
+class DeadlineWaitError extends Schema.TaggedErrorClass<DeadlineWaitError>()(
+	"tuval/test/DeadlineWaitError",
+	{message: Schema.String},
+) {}
+
+const waitForActiveDeadline = (deadlines: ManualDeadlines) =>
+	Effect.tryPromise({
+		try: () => deadlines.waitForActive(),
+		catch: () => new DeadlineWaitError({message: "Acknowledgement deadline did not activate"}),
+	});
 
 const connect = (
 	protocol: SyntheticControlProtocol,
@@ -498,82 +511,123 @@ describe("PiLiveSession acknowledged controls", () => {
 			}),
 	);
 
-	it.effect("makes create and open acknowledgements inert after a returned timeout", () =>
-		Effect.gen(function* () {
-			const modelMetadata = model("small", ["off", "low"]);
-			const first = snapshot("timeout-first");
-			const second = snapshot("timeout-second");
+	it.effect(
+		"retries timed-out create and open correlations with inert prior acknowledgements",
+		() =>
+			Effect.gen(function* () {
+				const modelMetadata = model("small", ["off", "low"]);
+				const first = snapshot("timeout-first");
+				const second = snapshot("timeout-second");
 
-			const createDeadlines = new ManualDeadlines();
-			const createProtocol = new SyntheticControlProtocol([modelMetadata], first);
-			const createService = yield* connect(createProtocol, {
-				makeAcknowledgementDeadline: createDeadlines.make,
-			});
-			yield* createService.attach(first.id);
-			createProtocol.behavior.set("create", "hold");
-			let createCheckpoints = 0;
-			const pendingCreate = yield* createService
-				.create({correlationId: "late-create"}, async (_sessionId, commit) => {
-					createCheckpoints += 1;
-					commit();
-					return true;
-				})
-				.pipe(Effect.forkChild);
-			yield* Effect.tryPromise({
-				try: () => createDeadlines.waitForActive(),
-				catch: (cause) => cause,
-			});
-			createDeadlines.elapse();
-			assert.deepInclude(yield* Fiber.join(pendingCreate), {
-				_tag: "refused",
-				command: "create",
-				code: "timeout",
-			});
-			createProtocol.acknowledgeHeld("create");
-			yield* Effect.yieldNow;
-			yield* Effect.yieldNow;
-			assert.strictEqual(createCheckpoints, 0);
-			assert.strictEqual((yield* createService.current())?.sessionId, first.id);
-			assert.notInclude(
-				(yield* createService.eventsAfter()).map((event) =>
-					event._tag === "control"
-						? `${event.outcome._tag}:${event.outcome.correlationId}`
-						: event._tag,
-				),
-				"acknowledged:late-create",
-			);
+				const createDeadlines = new ManualDeadlines();
+				const createProtocol = new SyntheticControlProtocol([modelMetadata], first);
+				const createService = yield* connect(createProtocol, {
+					makeAcknowledgementDeadline: createDeadlines.make,
+				});
+				yield* createService.attach(first.id);
+				createProtocol.behavior.set("create", "hold");
+				const timedOutCreate = yield* createService
+					.create({correlationId: "retry-create"})
+					.pipe(Effect.forkChild);
+				yield* waitForActiveDeadline(createDeadlines);
+				createDeadlines.elapse();
+				assert.deepInclude(yield* Fiber.join(timedOutCreate), {
+					_tag: "refused",
+					command: "create",
+					code: "timeout",
+				});
+				let createCheckpoints = 0;
+				const retriedCreate = yield* createService
+					.create({correlationId: "retry-create"}, async (_sessionId, commit) => {
+						createCheckpoints += 1;
+						commit();
+						return true;
+					})
+					.pipe(Effect.forkChild);
+				yield* waitForActiveDeadline(createDeadlines);
+				assert.strictEqual(
+					createProtocol.commands.filter((command) => command === "create").length,
+					2,
+				);
+				createProtocol.acknowledgeHeld("create", 1);
+				const createOutcome = yield* Fiber.join(retriedCreate);
+				assert.deepInclude(createOutcome, {_tag: "acknowledged", command: "create"});
+				assert.strictEqual(createCheckpoints, 1);
+				assert.strictEqual((yield* createService.current())?.sessionId, "created-1");
+				createProtocol.acknowledgeHeld("create");
+				yield* Effect.yieldNow;
+				yield* Effect.yieldNow;
+				assert.strictEqual(createCheckpoints, 1);
+				assert.strictEqual((yield* createService.current())?.sessionId, "created-1");
+				assert.strictEqual(
+					(yield* createService.eventsAfter()).filter(
+						(event) =>
+							event._tag === "control" &&
+							event.outcome._tag === "acknowledged" &&
+							event.outcome.correlationId === "retry-create",
+					).length,
+					1,
+				);
 
-			const openDeadlines = new ManualDeadlines();
-			const openProtocol = new SyntheticControlProtocol([modelMetadata], first, second);
-			const openService = yield* connect(openProtocol, {
-				makeAcknowledgementDeadline: openDeadlines.make,
-			});
-			yield* openService.attach(first.id);
-			openProtocol.behavior.set("attach", "hold");
-			let openCheckpoints = 0;
-			const pendingOpen = yield* openService
-				.open({correlationId: "late-open", sessionId: second.id}, async (_sessionId, commit) => {
-					openCheckpoints += 1;
-					commit();
-					return true;
-				})
-				.pipe(Effect.forkChild);
-			yield* Effect.tryPromise({
-				try: () => openDeadlines.waitForActive(),
-				catch: (cause) => cause,
-			});
-			openDeadlines.elapse();
-			assert.deepInclude(yield* Fiber.join(pendingOpen), {
-				_tag: "refused",
-				command: "open",
-				code: "timeout",
-			});
-			openProtocol.acknowledgeHeld("attach");
-			yield* Effect.yieldNow;
-			yield* Effect.yieldNow;
-			assert.strictEqual(openCheckpoints, 0);
-			assert.strictEqual((yield* openService.current())?.sessionId, first.id);
-		}),
+				const openDeadlines = new ManualDeadlines();
+				const openProtocol = new SyntheticControlProtocol([modelMetadata], first, second);
+				const openService = yield* connect(openProtocol, {
+					makeAcknowledgementDeadline: openDeadlines.make,
+				});
+				yield* openService.attach(first.id);
+				const openAttachCount = openProtocol.commands.filter(
+					(command) => command === "attach",
+				).length;
+				openProtocol.behavior.set("attach", "hold");
+				const timedOutOpen = yield* openService
+					.open({correlationId: "retry-open", sessionId: second.id})
+					.pipe(Effect.forkChild);
+				yield* waitForActiveDeadline(openDeadlines);
+				openDeadlines.elapse();
+				assert.deepInclude(yield* Fiber.join(timedOutOpen), {
+					_tag: "refused",
+					command: "open",
+					code: "timeout",
+				});
+				let openCheckpoints = 0;
+				const retriedOpen = yield* openService
+					.open({correlationId: "retry-open", sessionId: second.id}, async (_sessionId, commit) => {
+						openCheckpoints += 1;
+						commit();
+						return true;
+					})
+					.pipe(Effect.forkChild);
+				yield* waitForActiveDeadline(openDeadlines);
+				yield* Effect.yieldNow;
+				assert.strictEqual(
+					openProtocol.commands.filter((command) => command === "attach").length,
+					openAttachCount + 1,
+				);
+				openProtocol.acknowledgeHeld("attach");
+				yield* Effect.yieldNow;
+				yield* Effect.yieldNow;
+				assert.strictEqual(
+					openProtocol.commands.filter((command) => command === "attach").length,
+					openAttachCount + 2,
+				);
+				assert.strictEqual(openCheckpoints, 0);
+				openProtocol.acknowledgeHeld("attach");
+				assert.deepInclude(yield* Fiber.join(retriedOpen), {
+					_tag: "acknowledged",
+					command: "open",
+				});
+				assert.strictEqual(openCheckpoints, 1);
+				assert.strictEqual((yield* openService.current())?.sessionId, second.id);
+				assert.strictEqual(
+					(yield* openService.eventsAfter()).filter(
+						(event) =>
+							event._tag === "control" &&
+							event.outcome._tag === "acknowledged" &&
+							event.outcome.correlationId === "retry-open",
+					).length,
+					1,
+				);
+			}),
 	);
 
 	it.effect("leaves the deadline before a slow replacement checkpoint", () =>

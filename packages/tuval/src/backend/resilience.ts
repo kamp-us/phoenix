@@ -20,6 +20,11 @@ export class WorkspaceStateStoreError extends Schema.TaggedErrorClass<WorkspaceS
 	{operation: Schema.Literals(["load", "save"]), message: Schema.String},
 ) {}
 
+export class WorkspaceSettingsRestoreError extends Schema.TaggedErrorClass<WorkspaceSettingsRestoreError>()(
+	"tuval/WorkspaceSettingsRestoreError",
+	{code: Schema.Literal("restore-failed"), message: Schema.String},
+) {}
+
 export interface WorkspaceStateLoad {
 	readonly source: "missing" | "persisted";
 	readonly document: WorkspaceStateDocumentType;
@@ -145,7 +150,11 @@ export const makePiOperationalWorkspaceSettings = (
 				}
 				await manager.flush();
 			},
-			catch: (cause) => cause,
+			catch: () =>
+				new WorkspaceSettingsRestoreError({
+					code: "restore-failed",
+					message: "Pi workspace settings could not be restored",
+				}),
 		}),
 });
 

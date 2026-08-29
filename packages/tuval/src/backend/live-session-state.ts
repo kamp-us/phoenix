@@ -317,6 +317,7 @@ export class PiLiveSessionState implements LiveSessionState {
 	readonly #events: Array<LiveSessionEvent> = [];
 	readonly #prompts = new Map<string, CorrelatedPrompt>();
 	readonly #controls = new Map<string, CorrelatedControl>();
+	readonly #openAttemptBarriers = new Map<string, Promise<void>>();
 	readonly #unsubscribeConnection: Unsubscribe;
 	readonly #unsubscribeEvents: Unsubscribe;
 	readonly #unsubscribeServer: Unsubscribe;
@@ -593,7 +594,16 @@ export class PiLiveSessionState implements LiveSessionState {
 			}
 		};
 		const result = this.#runControl(request, checkpoint, signal, cancelCorrelation).then(
-			(outcome) => this.#publishControl(outcome),
+			(outcome) => {
+				if (
+					(request.command === "create" || request.command === "open") &&
+					outcome._tag === "refused" &&
+					outcome.code === "timeout"
+				) {
+					cancelCorrelation();
+				}
+				return this.#publishControl(outcome);
+			},
 		);
 		correlated = {fingerprint, result, settled: false};
 		this.#controls.set(request.correlationId, correlated);
@@ -631,7 +641,10 @@ export class PiLiveSessionState implements LiveSessionState {
 				return this.#runReplacement(
 					request,
 					checkpoint,
-					() => this.#client.acquireSession(request.sessionId, {mode: "exclusive"}),
+					async () => {
+						await this.#openAttemptBarriers.get(request.sessionId);
+						return this.#client.acquireSession(request.sessionId, {mode: "exclusive"});
+					},
 					signal,
 					cancelCorrelation,
 				);
@@ -783,13 +796,22 @@ export class PiLiveSessionState implements LiveSessionState {
 		removeAbortListener();
 		if (winner._tag === "acknowledged") return winner;
 		if (winner._tag === "error") throw winner.error;
-		void acquisition.then(
+		const disposal = acquisition.then(
 			(lease) => lease.dispose().catch(() => undefined),
 			() => undefined,
 		);
+		if (request.command === "open") {
+			this.#openAttemptBarriers.set(request.sessionId, disposal);
+			void disposal.finally(() => {
+				if (this.#openAttemptBarriers.get(request.sessionId) === disposal) {
+					this.#openAttemptBarriers.delete(request.sessionId);
+				}
+			});
+		}
 		if (winner._tag === "interrupted") {
 			throw new ReplacementInterrupted(`Interrupted before ${request.command} acknowledgement`);
 		}
+		cancelCorrelation();
 		return {
 			_tag: "refused",
 			outcome: this.#controlRefusal(
