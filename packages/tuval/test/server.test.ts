@@ -276,6 +276,88 @@ describe("Tuval local server", () => {
 			}),
 		);
 
+		it.effect("keeps unreadable, invalid, and nameless package diagnostics path-free", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const {root, asset} = yield* fixture();
+				const packageRoots = ["unreadable", "invalid", "nameless"].map((name) =>
+					path.join(root, name),
+				);
+				for (const [index, packageRoot] of packageRoots.entries()) {
+					yield* fs.makeDirectory(packageRoot);
+					yield* fs.writeFileString(
+						path.join(packageRoot, "extension.js"),
+						"export default function() {}",
+					);
+					yield* fs.writeFileString(
+						path.join(packageRoot, "package.json"),
+						JSON.stringify({
+							name: `diagnostic-fixture-${index}`,
+							type: "module",
+							pi: {extensions: ["./extension.js"]},
+						}),
+					);
+				}
+				const settingsManager = SettingsManager.inMemory(
+					{packages: packageRoots},
+					{projectTrusted: true},
+				);
+				const packageManager = new DefaultPackageManager({
+					cwd: root,
+					agentDir: root,
+					settingsManager,
+				});
+				const resolved = yield* tryPromise(() => packageManager.resolve());
+				packageManager.resolve = async () => resolved;
+				yield* fs.remove(path.join(packageRoots[0] ?? "", "package.json"));
+				yield* fs.writeFileString(path.join(packageRoots[1] ?? "", "package.json"), "{");
+				yield* fs.writeFileString(
+					path.join(packageRoots[2] ?? "", "package.json"),
+					JSON.stringify({type: "module", pi: {extensions: ["./extension.js"]}}),
+				);
+
+				const server = yield* startTuval({
+					staticAsset: asset,
+					packageContributions: {
+						cwd: root,
+						agentDir: root,
+						settingsManager,
+						packageManager,
+					},
+					openBrowser: () => Effect.void,
+				});
+				const response = yield* tryPromise(() => fetch(`${server.url}/api/contributions`));
+				const catalog = (yield* tryPromise(() => response.json())) as {
+					diagnostics: Array<{packageName: string; message: string}>;
+				};
+				assert.deepStrictEqual(
+					catalog.diagnostics.map(({message}) => message),
+					[
+						"package.json is unreadable",
+						"package.json is not valid JSON",
+						"package.json has no valid package name",
+					],
+				);
+				for (const diagnostic of catalog.diagnostics) {
+					assert.match(
+						diagnostic.packageName,
+						/^unidentified-(?:user|project|temporary)-package-\d+$/,
+					);
+					assert.isFalse(path.isAbsolute(diagnostic.packageName));
+					assert.notInclude(JSON.stringify(diagnostic), root);
+				}
+				assert.strictEqual(
+					new Set(catalog.diagnostics.map(({packageName}) => packageName)).size,
+					packageRoots.length,
+				);
+				const reloaded = (yield* tryPromise(() =>
+					fetch(`${server.url}/api/contributions`).then((value) => value.json()),
+				)) as {diagnostics: Array<{packageName: string; message: string}>};
+				assert.deepStrictEqual(reloaded.diagnostics, catalog.diagnostics);
+			}),
+		);
+
 		it.effect("uses configured live-protocol session metadata as authoritative lineage", () =>
 			Effect.gen(function* () {
 				const {root, asset} = yield* fixture();

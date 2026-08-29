@@ -10,6 +10,10 @@ import {Effect, FileSystem, Layer, Path, Schema} from "effect";
 import {parsePackageJson} from "./package-json.js";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
+export const PublicPackageIdentity = NonEmptyString.pipe(
+	Schema.brand("TuvalPublicPackageIdentity"),
+);
+export type PublicPackageIdentity = typeof PublicPackageIdentity.Type;
 const ContributionKey = Schema.String.check(
 	Schema.isPattern(/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/),
 );
@@ -37,7 +41,7 @@ class TuvalManifest extends Schema.Class<TuvalManifest>("TuvalManifest")({
 }) {}
 
 class PackageFile extends Schema.Class<PackageFile>("TuvalPackageFile")({
-	name: Schema.String,
+	name: PublicPackageIdentity,
 	tuval: Schema.optionalKey(Schema.Unknown),
 }) {}
 
@@ -47,7 +51,7 @@ export interface FrontendContribution {
 	readonly kind: ContributionKind;
 	readonly key: string;
 	readonly asset: string;
-	readonly packageName: string;
+	readonly packageName: PublicPackageIdentity;
 	readonly source: string;
 }
 
@@ -58,7 +62,7 @@ const BackendLayer = Schema.declare<BackendLayer>((value): value is BackendLayer
 );
 
 export interface BackendContribution {
-	readonly packageName: string;
+	readonly packageName: PublicPackageIdentity;
 	readonly source: string;
 	readonly module: string;
 	readonly exportName: string;
@@ -66,7 +70,7 @@ export interface BackendContribution {
 }
 
 export interface ContributionDiagnostic {
-	readonly packageName: string;
+	readonly packageName: PublicPackageIdentity;
 	readonly source: string;
 	readonly message: string;
 }
@@ -81,7 +85,11 @@ export interface TuvalContributionCatalog {
 
 export class ContributionStartupFailure extends Schema.TaggedErrorClass<ContributionStartupFailure>()(
 	"tuval/ContributionStartupFailure",
-	{packageName: Schema.String, message: Schema.String, cause: Schema.optionalKey(Schema.Defect())},
+	{
+		packageName: PublicPackageIdentity,
+		message: Schema.String,
+		cause: Schema.optionalKey(Schema.Defect()),
+	},
 ) {}
 
 export interface LoadPackageContributionsOptions {
@@ -129,6 +137,9 @@ const manifestFrontend = (manifest: TuvalManifest) => [
 
 const contributionAssetUrl = (index: number) => `/api/contribution-assets/v1-${index}.js`;
 
+const fallbackPackageIdentity = (metadata: PathMetadata, index: number) =>
+	PublicPackageIdentity.make(`unidentified-${metadata.scope}-package-${index + 1}`);
+
 export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function* (
 	options: LoadPackageContributionsOptions = {},
 ) {
@@ -143,7 +154,7 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 		try: () => packageManager.resolve(),
 		catch: (cause) =>
 			new ContributionStartupFailure({
-				packageName: "pi",
+				packageName: PublicPackageIdentity.make("pi"),
 				message: "Pi package resolution failed",
 				cause,
 			}),
@@ -154,36 +165,38 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 	const diagnostics: Array<ContributionDiagnostic> = [];
 	const keys = new Set<string>();
 
-	for (const root of packageRoots(resolved.extensions)) {
+	for (const [index, root] of packageRoots(resolved.extensions).entries()) {
 		const packageJsonPath = path.join(root.baseDir, "package.json");
 		const source = root.metadata.source;
-		const reject = (packageName: string, message: string) => {
-			diagnostics.push({packageName, source, message});
+		let packageIdentity = fallbackPackageIdentity(root.metadata, index);
+		const reject = (message: string) => {
+			diagnostics.push({packageName: packageIdentity, source, message});
 		};
 		const text = yield* fs.readFileString(packageJsonPath).pipe(Effect.option);
 		if (text._tag === "None") {
-			reject(source, "package.json is unreadable");
+			reject("package.json is unreadable");
 			continue;
 		}
 		const parsedJson = parsePackageJson(text.value);
 		if (parsedJson._tag === "Failed") {
-			reject(source, "package.json is not valid JSON");
+			reject("package.json is not valid JSON");
 			continue;
 		}
 		const packageFile = yield* Schema.decodeUnknownEffect(PackageFile)(parsedJson.value, {
 			onExcessProperty: "ignore",
 		}).pipe(Effect.option);
 		if (packageFile._tag === "None") {
-			reject(source, "package.json has no valid package name");
+			reject("package.json has no valid package name");
 			continue;
 		}
+		packageIdentity = packageFile.value.name;
 		if (packageFile.value.tuval === undefined) continue;
-		const packageName = packageFile.value.name;
+		const packageName = packageIdentity;
 		const manifest = yield* Schema.decodeUnknownEffect(TuvalManifest)(packageFile.value.tuval, {
 			onExcessProperty: "error",
 		}).pipe(Effect.option);
 		if (manifest._tag === "None") {
-			reject(packageName, "Tuval manifest is invalid or uses an unsupported contract");
+			reject("Tuval manifest is invalid or uses an unsupported contract");
 			continue;
 		}
 		const packageFrontend: Array<FrontendContribution> = [];
@@ -211,7 +224,7 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 			packageFrontend.push({kind, key: entry.key, asset: assetUrl, packageName, source});
 		}
 		if (invalid !== undefined) {
-			reject(packageName, invalid);
+			reject(invalid);
 			continue;
 		}
 		const packageBackend: Array<BackendContribution> = [];
@@ -258,7 +271,7 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 			});
 		}
 		if (invalid !== undefined) {
-			reject(packageName, invalid);
+			reject(invalid);
 			continue;
 		}
 		for (const key of packageKeys) keys.add(key);

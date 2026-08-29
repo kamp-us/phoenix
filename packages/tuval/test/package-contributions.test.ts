@@ -12,6 +12,7 @@ import {
 	ContributionStartupFailure,
 	emitContributionCatalog,
 	loadPackageContributions,
+	PublicPackageIdentity,
 } from "../src/backend/package-contributions.js";
 
 const fixtures = fileURLToPath(new URL("./fixtures", import.meta.url));
@@ -51,7 +52,7 @@ describe("pi-native Tuval package contributions", () => {
 				try: () => loader.reload(),
 				catch: (cause) =>
 					new ContributionStartupFailure({
-						packageName: "fixture-plain-pi",
+						packageName: PublicPackageIdentity.make("fixture-plain-pi"),
 						message: "Plain pi extension loading failed",
 						cause,
 					}),
