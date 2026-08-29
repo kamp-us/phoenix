@@ -277,7 +277,7 @@ export function ChatPane({
 			return undefined;
 		} finally {
 			setPendingControl(null);
-			requestAnimationFrame(() => trigger?.focus());
+			requestAnimationFrame(() => requestAnimationFrame(() => trigger?.focus()));
 		}
 	};
 

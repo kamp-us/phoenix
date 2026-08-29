@@ -65,7 +65,7 @@
 	--topbar-height: 72px;
 	--node-width: 296px;
 	--pane-width: min(456px, calc(100vw - var(--space-8)));
-	--problem-panel-width: min(360px, calc(100vw - var(--space-8)));
+	--problem-panel-width: var(--problem-panel-width);
 	--state-width: min(480px, calc(100vw - var(--space-8)));
 	--t-body: 14px / 1.5;
 	--t-body-sm: 13px / 1.45;
@@ -1073,7 +1073,7 @@ kbd {
 	bottom: var(--space-4);
 	display: grid;
 	gap: var(--space-3);
-	width: min(360px, calc(100vw - var(--space-8)));
+	width: var(--problem-panel-width);
 	max-height: min(52vh, 480px);
 	overflow: auto;
 }
@@ -1183,7 +1183,182 @@ kbd {
 	font: var(--t-body-sm);
 }
 
+.extension-ui {
+	position: fixed;
+	z-index: 30;
+	inset: auto var(--space-4) var(--space-4) auto;
+	display: grid;
+	gap: var(--space-2);
+	width: var(--problem-panel-width);
+	pointer-events: none;
+}
+
+.extension-ui__connection,
+.extension-ui__current,
+.extension-ui__notices {
+	pointer-events: auto;
+}
+
+.extension-ui__connection {
+	justify-self: end;
+	padding: var(--space-1) var(--space-2);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-pill);
+	background: var(--surface-raised);
+	color: var(--text-muted);
+	font: var(--t-micro);
+}
+
+.extension-ui__connection[data-state="connected"] {
+	color: var(--text-secondary);
+}
+
+.extension-ui__current,
+.extension-ui__notices {
+	display: grid;
+	gap: var(--space-2);
+	max-height: calc(
+		var(--space-12) +
+		var(--space-12) +
+		var(--space-12) +
+		var(--space-12) +
+		var(--space-12) +
+		var(--space-12)
+	);
+	overflow: auto;
+}
+
+.extension-ui__current > p,
+.extension-ui__current > section,
+.extension-ui__notices > section {
+	display: grid;
+	gap: var(--space-1);
+	margin: 0;
+	padding: var(--space-2);
+	border-left: 2px solid var(--border-strong);
+}
+
+.extension-ui__current p,
+.extension-ui__current section p,
+.extension-ui__notices p {
+	margin: 0;
+	color: var(--text-secondary);
+	font: var(--t-meta);
+}
+
+.extension-ui__scope {
+	display: block;
+	color: var(--text-muted);
+	font: var(--t-micro);
+}
+
+.extension-ui__backdrop {
+	position: fixed;
+	z-index: 40;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	padding: var(--space-4);
+	background: var(--surface-sunken);
+	pointer-events: auto;
+}
+
+.extension-ui__dialog-shell {
+	width: min(var(--state-width), 100%);
+}
+
+.extension-ui__dialog {
+	display: grid;
+	gap: var(--space-3);
+	width: min(var(--state-width), 100%);
+	max-height: calc(100vh - var(--space-8));
+	overflow: auto;
+}
+
+.extension-ui__dialog h2,
+.extension-ui__dialog > p {
+	margin: 0;
+}
+
+.extension-ui__dialog h2 {
+	font: 750 var(--t-h-page);
+}
+
+.extension-ui__dialog > p {
+	color: var(--text-secondary);
+}
+
+.extension-ui__dialog form,
+.extension-ui__dialog label,
+.extension-ui__field {
+	display: grid;
+	gap: var(--space-2);
+}
+
+.extension-ui__dialog label > span,
+.extension-ui__field > span {
+	color: var(--text-muted);
+	font: 650 var(--t-meta);
+}
+
+.extension-ui__dialog select,
+.extension-ui__dialog input {
+	min-height: var(--control-min);
+	padding: 0 var(--space-3);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	background: var(--surface-sunken);
+	color: var(--text-primary);
+	font: inherit;
+}
+
+.extension-ui__editor {
+	min-height: calc(var(--space-12) + var(--space-12) + var(--space-12));
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	background: var(--surface-sunken);
+}
+
+.extension-ui__editor .ProseMirror {
+	min-height: calc(var(--space-12) + var(--space-12) + var(--space-12));
+	padding: var(--space-3);
+}
+
+.extension-ui__actions {
+	display: flex;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	margin-top: var(--space-3);
+}
+
+.extension-ui__actions .kp-btn {
+	min-width: var(--control-min);
+	min-height: var(--control-min);
+}
+
+.extension-ui__hint {
+	color: var(--text-muted);
+	font: var(--t-meta);
+}
+
 @media (max-width: 720px) {
+	.extension-ui {
+		right: var(--space-2);
+		bottom: var(--space-2);
+		width: calc(100vw - var(--space-4));
+	}
+
+	.extension-ui__backdrop {
+		align-items: end;
+		padding: var(--space-2);
+	}
+
+	.extension-ui__dialog {
+		width: 100%;
+		max-height: calc(100vh - var(--space-4));
+	}
+
 	.canvas {
 		display: flex;
 		flex-direction: column;
