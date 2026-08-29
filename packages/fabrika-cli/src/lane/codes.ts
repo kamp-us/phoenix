@@ -295,3 +295,43 @@ export const NOT_A_REPO = 39;
  * the code is what lets a shell tell "retry me" from "rethink me" without parsing prose.
  */
 export const CONCURRENT_WRITE = 40;
+
+/**
+ * No working tree holds the run's assembly branch, so there is nowhere to merge a child into. A
+ * proven absence, not an unreadable one: the working trees were listed and none of them is on
+ * `epic/<n>`. Its own seat rather than {@link LANE_ABSENT}'s — the lane record is fine and the
+ * remedy is `lane assembly`, which places the tree back.
+ */
+export const ASSEMBLY_UNSEATED = 41;
+
+/**
+ * The child's range does not merge into the assembly: git left conflicts, and the merge was aborted
+ * with the branch back where it started. The one integration refusal that reaches no merged tree at
+ * all, which is why nothing was installed and no validator ran.
+ *
+ * Its own seat rather than {@link ASSEMBLY_RED}'s: a conflict is two ranges disagreeing on the same
+ * lines, and the repair builder resolves it; a red is two ranges that merged cleanly and do not hold
+ * together.
+ */
+export const MERGE_CONFLICT = 42;
+
+/**
+ * The merged tree's dependencies could not be reconciled from its own lockfile: the declared
+ * `dependencyReconciler` exited non-zero, could not be executed at all, or ran and left a tracked
+ * file changed. The clean merge is reset and the assembly branch is unpublished either way.
+ *
+ * All three are one seat because they take one remedy — the child's dependency declaration is what
+ * has to change — and none of them is a claim about the code: no validator ran, so the merged tree
+ * was never judged. A reconciliation that rewrites the lockfile is a refusal rather than a repair
+ * the assembly quietly carries (#7188).
+ */
+export const RECONCILE_REFUSED = 43;
+
+/**
+ * The merged tree failed the repo's own code validators — the semantic collision an epic run exists
+ * to catch: two ranges that each passed alone and do not hold together. Proven red, on a tree whose
+ * dependencies were reconciled first, so it is the code that failed and not the install.
+ *
+ * The clean merge is reset, so the recorded `FAIL` names a branch that never carried it.
+ */
+export const ASSEMBLY_RED = 44;
