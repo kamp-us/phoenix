@@ -335,3 +335,17 @@ export const RECONCILE_REFUSED = 43;
  * The clean merge is reset, so the recorded `FAIL` names a branch that never carried it.
  */
 export const ASSEMBLY_RED = 44;
+
+/**
+ * The assembly worktree already held modified tracked files before the merge was attempted, so
+ * nothing about the child was ever tried: no merge, no install, no validator.
+ *
+ * Its own seat because it is neither {@link MERGE_CONFLICT} nor {@link RECONCILE_REFUSED}, and
+ * reading it as either charges a child for the driver's tree. Dirt on a tracked path makes
+ * `git merge` refuse to overwrite it, which is a non-zero merge indistinguishable from a real
+ * conflict; and dirt the merge happens to clear leaves `reconcile`'s post-install probe unable to
+ * tell it from a repair the install wrote. Both of those are a `FAIL` that spends the child's retry
+ * budget on state the child did not cause — the exact harm #7188 exists to stop — so this refusal
+ * sits with the codes the driver records nothing for (#7244). The remedy is the seat, not the range.
+ */
+export const ASSEMBLY_DIRTY = 45;

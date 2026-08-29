@@ -280,7 +280,11 @@ conflicts and nothing was installed, `43` the merged lockfile does not install o
 changed a tracked file, `44` the merged tree failed a validator — the semantic collision, two ranges
 that each passed alone and do not hold together. Those three are the whole `FAIL` set: they are the
 only exits that judge the merged tree, and every other one says something about the lane record, the
-worktrees or this checkout, which is never the child's to repair.
+worktrees or this checkout, which is never the child's to repair. **Exit `45` is the one that looks
+like a `FAIL` and is not**: the seat already held modified tracked files, so the merge was never
+attempted — dirt on the driver's tree reads as the child's conflict or its bad lockfile if you let it
+([#7244](https://github.com/kamp-us/phoenix/issues/7244)). Clean the seat, then integrate the same
+child again.
 
 **The assembly branch moves only on a `DONE`, and the verb is what keeps it there.** Every refusal
 below the merge resets the branch through `ORIG_HEAD` in the tree the merge happened in and reads
@@ -605,8 +609,8 @@ the report. An epic child's `BUILT-NO-PR` is the other proven `DONE` without a P
 is the range's own commits — a child opens no PR to prove one against (#6019).
 
 **An `integrate` has no spawn to report**, so its row is `lane integrate`'s own exit, and this table
-is the one home for that mapping — the verb exits twelve ways and every one is here, so there is no
-code left over for a catch-all to guess at:
+is the one home for that mapping — the verb exits thirteen ways and every one is here, so there is
+no code left over for a catch-all to guess at:
 
 | Exit | What it says | Record |
 | --- | --- | --- |
@@ -614,12 +618,14 @@ code left over for a catch-all to guess at:
 | `42` | the child conflicts; the merge was aborted | `FAIL` |
 | `43` | the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file | `FAIL` |
 | `44` | the merged tree failed a code validator | `FAIL` |
-| `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` | the lane record, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
+| `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` · `45` | the lane record, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
 
 The bottom row is the whole reason this table is closed. Only `42`/`43`/`44` judge the child's
 content, so only those three may spend its retry budget; a `41` (no tree holds `epic/<n>`, placed
-with `lane assembly`), a `33` (the main checkout is standing on that branch) or a `22` (a `--child`
-branch that is not this repo's, so not the one `lane prove` printed) is the driver's own state, and
+with `lane assembly`), a `33` (the main checkout is standing on that branch), a `22` (a `--child`
+branch that is not this repo's, so not the one `lane prove` printed) or a `45` (the assembly seat
+already held modified tracked files, so the merge was never attempted — clean the seat and integrate
+again) is the driver's own state, and
 recording a `FAIL` for it sends a child that is fine back through `build` — the exact harm
 [#7188](https://github.com/kamp-us/phoenix/issues/7188) exists to stop. `4` keeps the ruling
 [§1](#1--claim-the-lane-then-boot-or-resume) already gave it — a record read in full and not the
