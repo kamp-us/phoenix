@@ -106,10 +106,18 @@ button {
 
 button:focus-visible,
 [tabindex]:focus-visible,
-[contenteditable="true"]:focus-visible,
-.react-flow__node:focus-visible,
-.react-flow__edge:focus-visible {
+[contenteditable="true"]:focus-visible {
 	outline: var(--focus-ring);
+	outline-offset: var(--focus-ring-offset);
+}
+
+.canvas-stage .react-flow__node:focus,
+.canvas-stage .react-flow__node:focus-visible,
+.canvas-stage .react-flow__edge:focus,
+.canvas-stage .react-flow__edge:focus-visible {
+	outline-width: 2px;
+	outline-style: solid;
+	outline-color: var(--accent);
 	outline-offset: var(--focus-ring-offset);
 }
 
