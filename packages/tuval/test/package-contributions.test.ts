@@ -6,13 +6,14 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Exit, Layer} from "effect";
+import {Effect, Exit, FileSystem, Layer, Path, Schema} from "effect";
 import {makeExtensionUI, PackageExtensionUI} from "../src/backend/extension-ui.js";
 import {
 	buildPackageBackendLayers,
 	ContributionStartupFailure,
 	emitContributionCatalog,
 	loadPackageContributions,
+	PublicPackageIdentity,
 } from "../src/backend/package-contributions.js";
 
 const fixtures = fileURLToPath(new URL("./fixtures", import.meta.url));
@@ -52,7 +53,7 @@ describe("pi-native Tuval package contributions", () => {
 				try: () => loader.reload(),
 				catch: (cause) =>
 					new ContributionStartupFailure({
-						packageName: "fixture-plain-pi",
+						packageName: PublicPackageIdentity.make("fixture-plain-pi"),
 						message: "Plain pi extension loading failed",
 						cause,
 					}),
@@ -114,7 +115,7 @@ describe("pi-native Tuval package contributions", () => {
 		}),
 	);
 
-	it.effect("emits a typed catalog without importing frontend assets", () =>
+	it.effect("emits portable same-origin asset URLs without importing frontend assets", () =>
 		Effect.gen(function* () {
 			const catalog = yield* load(fixture("plain-pi"));
 			const emitted = emitContributionCatalog(catalog);
@@ -123,7 +124,12 @@ describe("pi-native Tuval package contributions", () => {
 				emitted.frontend.map(({kind, key}) => ({kind, key})),
 				[{kind: "node", key: "fixture.node"}],
 			);
-			assert.match(emitted.frontend[0]?.asset ?? "", /asset\.txt$/);
+			const asset = emitted.frontend[0]?.asset ?? "";
+			assert.match(asset, /^\/api\/contribution-assets\/v1-\d+\.js$/);
+			assert.isFalse(JSON.stringify(emitted).includes(fixtures));
+			assert.strictEqual(catalog.assetFiles.get(asset), fixture("plain-pi/asset.txt"));
+			const reloaded = emitContributionCatalog(yield* load(fixture("plain-pi")));
+			assert.strictEqual(reloaded.frontend[0]?.asset, asset);
 		}),
 	);
 
@@ -141,7 +147,7 @@ describe("pi-native Tuval package contributions", () => {
 					contractVersion: 1,
 					backend: [
 						{
-							packageName: "portable-package",
+							packageName: PublicPackageIdentity.make("portable-package"),
 							source: "fixture",
 							module: "fixture.js",
 							exportName: "makeLayer",
@@ -149,12 +155,186 @@ describe("pi-native Tuval package contributions", () => {
 						},
 					],
 					frontend: [],
+					assetFiles: new Map(),
 					diagnostics: [],
 				},
 				makeExtensionUI(),
 			);
 			assert.deepStrictEqual(observed, ["portable-package"]);
 		}),
+	);
+
+	it("admits only canonical public npm package identities", () => {
+		const valid = ["pi", "package-name", "package.name", "package_name", "@scope/name"];
+		const invalid = [
+			"",
+			"/absolute/package",
+			"./relative",
+			"../parent",
+			"C:\\windows\\package",
+			"file:///local/package",
+			"scope/name",
+			"@scope/name/extra",
+			"@scope/../name",
+			".",
+			"..",
+			"package%2fname",
+			"package%5Cname",
+			"package\u0000name",
+		];
+		for (const identity of valid) {
+			assert.strictEqual(Schema.decodeUnknownOption(PublicPackageIdentity)(identity)._tag, "Some");
+		}
+		for (const identity of invalid) {
+			assert.strictEqual(Schema.decodeUnknownOption(PublicPackageIdentity)(identity)._tag, "None");
+		}
+	});
+
+	it.effect("serializes only closed diagnostics and validated public values", () =>
+		Effect.gen(function* () {
+			const fs = yield* FileSystem.FileSystem;
+			const path = yield* Path.Path;
+			const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-public-diagnostics-"});
+			const packageRoot = path.join(root, "package");
+			yield* fs.makeDirectory(packageRoot);
+			yield* fs.writeFileString(
+				path.join(packageRoot, "extension.js"),
+				"export default function() {}",
+			);
+			const packageJson = path.join(packageRoot, "package.json");
+			const writeManifest = (name: string, tuval: unknown) =>
+				fs.writeFileString(
+					packageJson,
+					JSON.stringify({name, type: "module", pi: {extensions: ["./extension.js"]}, tuval}),
+				);
+			yield* writeManifest("diagnostic-package", undefined);
+			const settingsManager = settingsFor(packageRoot);
+			const packageManager = new DefaultPackageManager({
+				cwd: root,
+				agentDir: root,
+				settingsManager,
+			});
+			const resolved = yield* Effect.tryPromise({
+				try: () => packageManager.resolve(),
+				catch: (cause) =>
+					new ContributionStartupFailure({
+						packageName: PublicPackageIdentity.make("diagnostic-package"),
+						message: "Diagnostic fixture package resolution failed",
+						cause,
+					}),
+			});
+			packageManager.resolve = async () => resolved;
+			const options = {cwd: root, agentDir: root, settingsManager, packageManager};
+			const malicious = [
+				"/private/absolute-secret.js",
+				"../local-secret.js",
+				"encoded%2fsecret.js",
+				"encoded%5Csecret.js",
+			];
+			for (const value of malicious) {
+				yield* writeManifest("diagnostic-package", {
+					contractVersion: 1,
+					frontend: {nodes: [{key: "safe.key", asset: value}]},
+				});
+				const serialized = JSON.stringify(
+					emitContributionCatalog(yield* loadPackageContributions(options)),
+				);
+				assert.notInclude(serialized, value);
+				assert.notInclude(serialized, root);
+				assert.include(serialized, '"reason":"asset-unavailable"');
+				assert.include(serialized, '"key":"safe.key"');
+			}
+			for (const value of malicious) {
+				yield* writeManifest("diagnostic-package", {
+					contractVersion: 1,
+					backend: [{module: value, export: "unsafeFactory"}],
+				});
+				const serialized = JSON.stringify(
+					emitContributionCatalog(yield* loadPackageContributions(options)),
+				);
+				assert.notInclude(serialized, value);
+				assert.notInclude(serialized, root);
+				assert.include(serialized, '"reason":"backend-module-unavailable"');
+			}
+			for (const value of ["/absolute/name", "../local-name", "encoded%2fname"]) {
+				yield* writeManifest(value, {contractVersion: 1});
+				const serialized = JSON.stringify(
+					emitContributionCatalog(yield* loadPackageContributions(options)),
+				);
+				assert.notInclude(serialized, value);
+				assert.notInclude(serialized, root);
+				assert.include(serialized, '"reason":"package-name-invalid"');
+				assert.match(serialized, /unidentified-(?:user|project|temporary)-package-1/);
+			}
+		}).pipe(Effect.provide(NodeServices.layer)),
+	);
+
+	it.effect(
+		"canonicalizes same-root links and rejects non-files and links outside the package",
+		() =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-canonical-assets-"});
+				const outside = yield* fs.makeTempDirectoryScoped({prefix: "tuval-outside-assets-"});
+				const outsideFile = path.join(outside, "outside.js");
+				yield* fs.writeFileString(outsideFile, "export const outside = true;");
+				const packageRoots: Array<string> = [];
+				for (const [name, configure] of [
+					["same-root-link", "same"] as const,
+					["outside-link", "outside"] as const,
+					["directory-asset", "directory"] as const,
+				]) {
+					const packageRoot = path.join(root, name);
+					packageRoots.push(packageRoot);
+					yield* fs.makeDirectory(packageRoot);
+					yield* fs.writeFileString(
+						path.join(packageRoot, "extension.js"),
+						"export default function() {}",
+					);
+					const asset = path.join(packageRoot, "asset.js");
+					if (configure === "same") {
+						yield* fs.writeFileString(
+							path.join(packageRoot, "target.js"),
+							"export const same = true;",
+						);
+						yield* fs.symlink(path.join(packageRoot, "target.js"), asset);
+					} else if (configure === "outside") {
+						yield* fs.symlink(outsideFile, asset);
+					} else {
+						yield* fs.makeDirectory(asset);
+					}
+					yield* fs.writeFileString(
+						path.join(packageRoot, "package.json"),
+						JSON.stringify({
+							name,
+							type: "module",
+							pi: {extensions: ["./extension.js"]},
+							tuval: {
+								contractVersion: 1,
+								frontend: {nodes: [{key: `${name}.node`, asset: "./asset.js"}]},
+							},
+						}),
+					);
+				}
+				const catalog = yield* load(...packageRoots);
+				assert.deepStrictEqual(
+					catalog.frontend.map(({packageName}) => packageName),
+					["same-root-link"],
+				);
+				const assetUrl = catalog.frontend[0]?.asset ?? "";
+				assert.strictEqual(
+					catalog.assetFiles.get(assetUrl),
+					yield* fs.realPath(path.join(packageRoots[0] ?? "", "target.js")),
+				);
+				assert.deepStrictEqual(
+					catalog.diagnostics.map(({packageName, reason}) => ({packageName, reason})),
+					[
+						{packageName: "outside-link", reason: "asset-unavailable"},
+						{packageName: "directory-asset", reason: "asset-unavailable"},
+					],
+				);
+			}).pipe(Effect.provide(NodeServices.layer)),
 	);
 
 	it.effect("loads Tuval's built-in capability through its own pi package manifest", () =>

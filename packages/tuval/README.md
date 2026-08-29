@@ -20,6 +20,7 @@ then opens that URL in the default browser unless browser opening is disabled.
 | --- | --- |
 | `GET /health` | Report server readiness |
 | `GET /api/contributions` | Emit the validated headless frontend contribution catalog |
+| `GET /api/contribution-assets/<opaque-id>.js` | Serve one catalog-authorized JavaScript asset |
 | `GET /` | Serve the static shell |
 | `POST /fate` | Run Effect-native discovery, lineage, and live-session queries or mutations |
 | `GET /fate/live?afterSequence=<n>` | Stream ordered live-session events over SSE |
@@ -159,9 +160,21 @@ manifest beside its ordinary `pi` manifest:
 ```
 
 Backend exports are zero-argument factories returning Effect Layers. Tuval builds them during server
-startup and fails startup when layer construction fails. Frontend assets are checked but never
-imported by the backend. Invalid contracts, duplicate or shadowed keys, paths outside a package, and
-missing assets reject that package while valid packages remain in the catalog. Pi's resolved order
+startup and fails startup when layer construction fails. Public package identities accept npm-style
+unscoped names and `@scope/name` only; path, URL, dot-segment, control-character, and encoded-separator
+forms are rejected, and nameless-package fallbacks pass through that same schema. Public diagnostics
+contain a closed reason code plus only validated package identities and contribution keys; manifest
+paths, module/export values, pi source metadata, and filesystem paths are never included.
+
+Frontend assets are never imported by the backend. At startup, Tuval obtains the package root and each
+candidate's canonical path through Effect `FileSystem.realPath`, requires `FileSystem.stat` to report a
+file, and accepts it only when `Path.relative` keeps that canonical file beneath the canonical package
+root. A symlink to a file in the same package is accepted and the canonical target is stored; a
+symlink outside the package and a directory are rejected. The browser catalog exposes opaque
+same-origin JavaScript URLs. Each URL resolves only through the startup catalog's exact
+URL-to-canonical-file map; unknown URLs and files that cannot be read at request time return a
+path-free 404. Invalid contracts, duplicate or shadowed keys, unavailable canonical files, and invalid
+backend exports reject that package while valid packages remain in the catalog. Pi's resolved order
 sets precedence. Tuval itself declares its built-in package capability through this same manifest.
 
 ## Commands

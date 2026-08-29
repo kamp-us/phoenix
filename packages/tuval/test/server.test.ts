@@ -2,6 +2,7 @@ import {spawn} from "node:child_process";
 import {createServer as createHttpServer} from "node:http";
 import {createServer as createUnixServer} from "node:net";
 import {fileURLToPath} from "node:url";
+import {DefaultPackageManager, SettingsManager} from "@earendil-works/pi-coding-agent";
 import {
 	ClientMessageDecoder,
 	encodeServerMessage,
@@ -25,6 +26,45 @@ const fixture = Effect.fn("test.fixture")(function* () {
 	const asset = path.join(root, "index.html");
 	yield* fs.writeFileString(asset, "<!doctype html><main>Tuval test shell</main>");
 	return {root, asset, socket: path.join(root, "pi.sock")};
+});
+
+const contributionPackage = Effect.fn("test.contributionPackage")(function* (root: string) {
+	const fs = yield* FileSystem.FileSystem;
+	const path = yield* Path.Path;
+	const packageRoot = path.join(root, "package");
+	const contributionAsset = path.join(packageRoot, "contribution.js");
+	yield* fs.makeDirectory(packageRoot);
+	yield* fs.writeFileString(path.join(packageRoot, "extension.js"), "export default function() {}");
+	yield* fs.writeFileString(contributionAsset, "export const contribution = 'loaded';\n");
+	yield* fs.writeFileString(
+		path.join(packageRoot, "package.json"),
+		JSON.stringify({
+			name: "server-contribution-fixture",
+			type: "module",
+			pi: {extensions: ["./extension.js"]},
+			tuval: {
+				contractVersion: 1,
+				frontend: {nodes: [{key: "server.fixture", asset: "./contribution.js"}]},
+			},
+		}),
+	);
+	const settingsManager = SettingsManager.inMemory(
+		{packages: [packageRoot]},
+		{projectTrusted: true},
+	);
+	return {
+		contributionAsset,
+		options: {
+			cwd: root,
+			agentDir: root,
+			settingsManager,
+			packageManager: new DefaultPackageManager({
+				cwd: root,
+				agentDir: root,
+				settingsManager,
+			}),
+		},
+	};
 });
 
 const waitForUrl = (child: ReturnType<typeof spawn>) =>
@@ -189,6 +229,141 @@ describe("Tuval local server", () => {
 					version: 1,
 					results: [{id: "discovery", ok: true, data: {_tag: "empty", sessions: []}}],
 				});
+			}),
+		);
+
+		it.effect("serves only loaded exact contribution assets as JavaScript", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const {root, asset} = yield* fixture();
+				const contribution = yield* contributionPackage(root);
+				const server = yield* startTuval({
+					staticAsset: asset,
+					packageContributions: contribution.options,
+					openBrowser: () => Effect.void,
+				});
+				const catalogResponse = yield* tryPromise(() => fetch(`${server.url}/api/contributions`));
+				const catalog = (yield* tryPromise(() => catalogResponse.json())) as {
+					frontend: Array<{asset: string}>;
+				};
+				const assetUrl = catalog.frontend[0]?.asset;
+				assert.isDefined(assetUrl);
+				assert.notInclude(JSON.stringify(catalog), root);
+
+				const loaded = yield* tryPromise(() => fetch(`${server.url}${assetUrl}`));
+				assert.strictEqual(loaded.status, 200);
+				assert.include(loaded.headers.get("content-type") ?? "", "text/javascript");
+				assert.strictEqual(loaded.headers.get("cache-control"), "no-cache");
+				assert.strictEqual(
+					yield* tryPromise(() => loaded.text()),
+					"export const contribution = 'loaded';\n",
+				);
+
+				for (const refused of [
+					"/api/contribution-assets/v1-1.js",
+					"/api/contribution-assets/../package.json",
+					"/api/contribution-assets/%2e%2e%2fpackage.json",
+				]) {
+					const response = yield* tryPromise(() => fetch(`${server.url}${refused}`));
+					assert.strictEqual(response.status, 404);
+					assert.notInclude(yield* tryPromise(() => response.text()), root);
+				}
+
+				yield* fs.remove(contribution.contributionAsset);
+				const unreadable = yield* tryPromise(() => fetch(`${server.url}${assetUrl}`));
+				assert.strictEqual(unreadable.status, 404);
+				assert.notInclude(yield* tryPromise(() => unreadable.text()), root);
+			}),
+		);
+
+		it.effect("keeps unreadable, invalid, and nameless package diagnostics path-free", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const {root, asset} = yield* fixture();
+				const packageRoots = ["unreadable", "invalid", "nameless"].map((name) =>
+					path.join(root, name),
+				);
+				for (const [index, packageRoot] of packageRoots.entries()) {
+					yield* fs.makeDirectory(packageRoot);
+					yield* fs.writeFileString(
+						path.join(packageRoot, "extension.js"),
+						"export default function() {}",
+					);
+					yield* fs.writeFileString(
+						path.join(packageRoot, "package.json"),
+						JSON.stringify({
+							name: `diagnostic-fixture-${index}`,
+							type: "module",
+							pi: {extensions: ["./extension.js"]},
+						}),
+					);
+				}
+				const settingsManager = SettingsManager.inMemory(
+					{packages: packageRoots},
+					{projectTrusted: true},
+				);
+				const packageManager = new DefaultPackageManager({
+					cwd: root,
+					agentDir: root,
+					settingsManager,
+				});
+				const resolved = yield* tryPromise(() => packageManager.resolve());
+				packageManager.resolve = async () => resolved;
+				yield* fs.remove(path.join(packageRoots[0] ?? "", "package.json"));
+				yield* fs.writeFileString(path.join(packageRoots[1] ?? "", "package.json"), "{");
+				yield* fs.writeFileString(
+					path.join(packageRoots[2] ?? "", "package.json"),
+					JSON.stringify({type: "module", pi: {extensions: ["./extension.js"]}}),
+				);
+
+				const server = yield* startTuval({
+					staticAsset: asset,
+					packageContributions: {
+						cwd: root,
+						agentDir: root,
+						settingsManager,
+						packageManager,
+					},
+					openBrowser: () => Effect.void,
+				});
+				const response = yield* tryPromise(() => fetch(`${server.url}/api/contributions`));
+				const catalog = (yield* tryPromise(() => response.json())) as {
+					diagnostics: Array<{packageName: string; reason: string; message: string}>;
+				};
+				assert.deepStrictEqual(
+					catalog.diagnostics.map(({reason, message}) => ({reason, message})),
+					[
+						{
+							reason: "package-manifest-unreadable",
+							message: "Package manifest is unreadable",
+						},
+						{
+							reason: "package-manifest-invalid-json",
+							message: "Package manifest is not valid JSON",
+						},
+						{
+							reason: "package-name-invalid",
+							message: "Package manifest has no valid public package identity",
+						},
+					],
+				);
+				for (const diagnostic of catalog.diagnostics) {
+					assert.match(
+						diagnostic.packageName,
+						/^unidentified-(?:user|project|temporary)-package-\d+$/,
+					);
+					assert.isFalse(path.isAbsolute(diagnostic.packageName));
+					assert.notInclude(JSON.stringify(diagnostic), root);
+				}
+				assert.strictEqual(
+					new Set(catalog.diagnostics.map(({packageName}) => packageName)).size,
+					packageRoots.length,
+				);
+				const reloaded = (yield* tryPromise(() =>
+					fetch(`${server.url}/api/contributions`).then((value) => value.json()),
+				)) as {diagnostics: Array<{packageName: string; reason: string; message: string}>};
+				assert.deepStrictEqual(reloaded.diagnostics, catalog.diagnostics);
 			}),
 		);
 

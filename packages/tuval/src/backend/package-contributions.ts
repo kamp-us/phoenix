@@ -16,9 +16,15 @@ import {
 import {parsePackageJson} from "./package-json.js";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
-const ContributionKey = Schema.String.check(
+export const PublicPackageIdentity = Schema.String.check(
+	Schema.isMaxLength(214),
+	Schema.isPattern(/^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/),
+).pipe(Schema.brand("TuvalPublicPackageIdentity"));
+export type PublicPackageIdentity = typeof PublicPackageIdentity.Type;
+export const PublicContributionKey = Schema.String.check(
 	Schema.isPattern(/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/),
-);
+).pipe(Schema.brand("TuvalPublicContributionKey"));
+export type PublicContributionKey = typeof PublicContributionKey.Type;
 
 class BackendEntry extends Schema.Class<BackendEntry>("TuvalBackendEntry")({
 	module: NonEmptyString,
@@ -26,7 +32,7 @@ class BackendEntry extends Schema.Class<BackendEntry>("TuvalBackendEntry")({
 }) {}
 
 class FrontendEntry extends Schema.Class<FrontendEntry>("TuvalFrontendEntry")({
-	key: ContributionKey,
+	key: PublicContributionKey,
 	asset: NonEmptyString,
 }) {}
 
@@ -43,7 +49,7 @@ class TuvalManifest extends Schema.Class<TuvalManifest>("TuvalManifest")({
 }) {}
 
 class PackageFile extends Schema.Class<PackageFile>("TuvalPackageFile")({
-	name: Schema.String,
+	name: PublicPackageIdentity,
 	tuval: Schema.optionalKey(Schema.Unknown),
 }) {}
 
@@ -51,9 +57,9 @@ export type ContributionKind = "node" | "edge" | "panel";
 
 export interface FrontendContribution {
 	readonly kind: ContributionKind;
-	readonly key: string;
+	readonly key: PublicContributionKey;
 	readonly asset: string;
-	readonly packageName: string;
+	readonly packageName: PublicPackageIdentity;
 	readonly source: string;
 }
 
@@ -64,29 +70,63 @@ const BackendLayer = Schema.declare<BackendLayer>((value): value is BackendLayer
 );
 
 export interface BackendContribution {
-	readonly packageName: string;
+	readonly packageName: PublicPackageIdentity;
 	readonly source: string;
 	readonly module: string;
 	readonly exportName: string;
 	readonly layer: BackendLayer;
 }
 
-export interface ContributionDiagnostic {
-	readonly packageName: string;
-	readonly source: string;
-	readonly message: string;
-}
+type PackageDiagnosticReason =
+	| "package-root-unavailable"
+	| "package-manifest-unreadable"
+	| "package-manifest-invalid-json"
+	| "package-name-invalid"
+	| "manifest-invalid"
+	| "backend-module-unavailable"
+	| "backend-export-not-factory"
+	| "backend-export-not-layer";
+
+type KeyDiagnosticReason = "duplicate-key" | "shadowed-key" | "asset-unavailable";
+export type ContributionDiagnosticReason = PackageDiagnosticReason | KeyDiagnosticReason;
+
+type ContributionRejection =
+	| {readonly reason: PackageDiagnosticReason}
+	| {
+			readonly reason: KeyDiagnosticReason;
+			readonly kind: ContributionKind;
+			readonly key: PublicContributionKey;
+	  };
+
+export type ContributionDiagnostic =
+	| {
+			readonly packageName: PublicPackageIdentity;
+			readonly reason: PackageDiagnosticReason;
+			readonly message: string;
+	  }
+	| {
+			readonly packageName: PublicPackageIdentity;
+			readonly reason: KeyDiagnosticReason;
+			readonly kind: ContributionKind;
+			readonly key: PublicContributionKey;
+			readonly message: string;
+	  };
 
 export interface TuvalContributionCatalog {
 	readonly contractVersion: 1;
 	readonly backend: ReadonlyArray<BackendContribution>;
 	readonly frontend: ReadonlyArray<FrontendContribution>;
+	readonly assetFiles: ReadonlyMap<string, string>;
 	readonly diagnostics: ReadonlyArray<ContributionDiagnostic>;
 }
 
 export class ContributionStartupFailure extends Schema.TaggedErrorClass<ContributionStartupFailure>()(
 	"tuval/ContributionStartupFailure",
-	{packageName: Schema.String, message: Schema.String, cause: Schema.optionalKey(Schema.Defect())},
+	{
+		packageName: PublicPackageIdentity,
+		message: Schema.String,
+		cause: Schema.optionalKey(Schema.Defect()),
+	},
 ) {}
 
 export interface LoadPackageContributionsOptions {
@@ -114,23 +154,63 @@ const packageRoots = (extensions: Awaited<ReturnType<PackageManager["resolve"]>>
 	return roots;
 };
 
-const resolveInside = (
-	path: Pick<typeof import("node:path"), "resolve" | "relative" | "isAbsolute">,
-	baseDir: string,
+const canonicalFileInside = Effect.fn("TuvalPackages.canonicalFileInside")(function* (
+	fs: typeof FileSystem.FileSystem.Service,
+	path: typeof Path.Path.Service,
+	canonicalRoot: string,
 	entry: string,
-) => {
-	const resolved = path.resolve(baseDir, entry);
-	const relative = path.relative(baseDir, resolved);
-	return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
-		? resolved
-		: undefined;
-};
+) {
+	const candidate = yield* fs.realPath(path.resolve(canonicalRoot, entry));
+	const relative = path.relative(canonicalRoot, candidate);
+	if (
+		relative === "" ||
+		relative === ".." ||
+		relative.startsWith(`..${path.sep}`) ||
+		path.isAbsolute(relative)
+	) {
+		return undefined;
+	}
+	const info = yield* fs.stat(candidate);
+	return info.type === "File" ? candidate : undefined;
+});
 
 const manifestFrontend = (manifest: TuvalManifest) => [
 	...(manifest.frontend?.nodes ?? []).map((entry) => ({kind: "node" as const, entry})),
 	...(manifest.frontend?.edges ?? []).map((entry) => ({kind: "edge" as const, entry})),
 	...(manifest.frontend?.panels ?? []).map((entry) => ({kind: "panel" as const, entry})),
 ];
+
+const contributionAssetUrl = (index: number) => `/api/contribution-assets/v1-${index}.js`;
+
+const fallbackPackageIdentity = (metadata: PathMetadata, index: number) =>
+	Schema.decodeSync(PublicPackageIdentity)(`unidentified-${metadata.scope}-package-${index + 1}`);
+
+const diagnosticMessage = (rejection: ContributionRejection): string => {
+	switch (rejection.reason) {
+		case "package-root-unavailable":
+			return "Package root is unavailable";
+		case "package-manifest-unreadable":
+			return "Package manifest is unreadable";
+		case "package-manifest-invalid-json":
+			return "Package manifest is not valid JSON";
+		case "package-name-invalid":
+			return "Package manifest has no valid public package identity";
+		case "manifest-invalid":
+			return "Tuval manifest is invalid or uses an unsupported contract";
+		case "duplicate-key":
+			return `${rejection.kind} contribution key ${rejection.key} is duplicated in its package`;
+		case "shadowed-key":
+			return `${rejection.kind} contribution key ${rejection.key} is shadowed by a higher-precedence package`;
+		case "asset-unavailable":
+			return `${rejection.kind} contribution key ${rejection.key} has no available package-contained file`;
+		case "backend-module-unavailable":
+			return "Backend contribution module is unavailable";
+		case "backend-export-not-factory":
+			return "Backend contribution export is not a factory";
+		case "backend-export-not-layer":
+			return "Backend contribution factory did not return an Effect Layer";
+	}
+};
 
 export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function* (
 	options: LoadPackageContributionsOptions = {},
@@ -146,92 +226,116 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 		try: () => packageManager.resolve(),
 		catch: (cause) =>
 			new ContributionStartupFailure({
-				packageName: "pi",
+				packageName: PublicPackageIdentity.make("pi"),
 				message: "Pi package resolution failed",
 				cause,
 			}),
 	});
 	const backend: Array<BackendContribution> = [];
 	const frontend: Array<FrontendContribution> = [];
+	const assetFiles = new Map<string, string>();
 	const diagnostics: Array<ContributionDiagnostic> = [];
 	const keys = new Set<string>();
 
-	for (const root of packageRoots(resolved.extensions)) {
+	for (const [index, root] of packageRoots(resolved.extensions).entries()) {
 		const packageJsonPath = path.join(root.baseDir, "package.json");
 		const source = root.metadata.source;
-		const reject = (packageName: string, message: string) => {
-			diagnostics.push({packageName, source, message});
+		let packageIdentity = fallbackPackageIdentity(root.metadata, index);
+		const reject = (rejection: ContributionRejection) => {
+			diagnostics.push({
+				packageName: packageIdentity,
+				...rejection,
+				message: diagnosticMessage(rejection),
+			});
 		};
 		const text = yield* fs.readFileString(packageJsonPath).pipe(Effect.option);
 		if (text._tag === "None") {
-			reject(source, "package.json is unreadable");
+			reject({reason: "package-manifest-unreadable"});
 			continue;
 		}
 		const parsedJson = parsePackageJson(text.value);
 		if (parsedJson._tag === "Failed") {
-			reject(source, "package.json is not valid JSON");
+			reject({reason: "package-manifest-invalid-json"});
 			continue;
 		}
 		const packageFile = yield* Schema.decodeUnknownEffect(PackageFile)(parsedJson.value, {
 			onExcessProperty: "ignore",
 		}).pipe(Effect.option);
 		if (packageFile._tag === "None") {
-			reject(source, "package.json has no valid package name");
+			reject({reason: "package-name-invalid"});
 			continue;
 		}
+		packageIdentity = packageFile.value.name;
 		if (packageFile.value.tuval === undefined) continue;
-		const packageName = packageFile.value.name;
+		const packageName = packageIdentity;
 		const manifest = yield* Schema.decodeUnknownEffect(TuvalManifest)(packageFile.value.tuval, {
 			onExcessProperty: "error",
 		}).pipe(Effect.option);
 		if (manifest._tag === "None") {
-			reject(packageName, "Tuval manifest is invalid or uses an unsupported contract");
+			reject({reason: "manifest-invalid"});
+			continue;
+		}
+		const canonicalRoot = yield* fs.realPath(root.baseDir).pipe(Effect.option);
+		if (canonicalRoot._tag === "None") {
+			reject({reason: "package-root-unavailable"});
 			continue;
 		}
 		const packageFrontend: Array<FrontendContribution> = [];
+		const packageAssetFiles = new Map<string, string>();
 		const packageKeys = new Set<string>();
-		let invalid: string | undefined;
+		let invalid: ContributionRejection | undefined;
 		for (const {kind, entry} of manifestFrontend(manifest.value)) {
 			const key = `${kind}:${entry.key}`;
+			const context = {kind, key: entry.key};
 			if (packageKeys.has(key)) {
-				invalid = `duplicate ${kind} key ${entry.key} inside package`;
+				invalid = {reason: "duplicate-key", ...context};
 				break;
 			}
 			if (keys.has(key)) {
-				invalid = `${kind} key ${entry.key} is shadowed by a higher-precedence package`;
+				invalid = {reason: "shadowed-key", ...context};
 				break;
 			}
-			const asset = resolveInside(path, root.baseDir, entry.asset);
-			if (asset === undefined || !(yield* fs.exists(asset))) {
-				invalid = `${kind} asset ${entry.asset} is missing or outside the package`;
+			const asset = yield* canonicalFileInside(fs, path, canonicalRoot.value, entry.asset).pipe(
+				Effect.option,
+			);
+			if (asset._tag === "None" || asset.value === undefined) {
+				invalid = {reason: "asset-unavailable", ...context};
 				break;
 			}
+			const assetUrl = contributionAssetUrl(frontend.length + packageFrontend.length);
 			packageKeys.add(key);
-			packageFrontend.push({kind, key: entry.key, asset: asset as string, packageName, source});
+			packageAssetFiles.set(assetUrl, asset.value);
+			packageFrontend.push({kind, key: entry.key, asset: assetUrl, packageName, source});
 		}
 		if (invalid !== undefined) {
-			reject(packageName, invalid);
+			reject(invalid);
 			continue;
 		}
 		const packageBackend: Array<BackendContribution> = [];
 		for (const entry of manifest.value.backend ?? []) {
-			const modulePath = resolveInside(path, root.baseDir, entry.module);
-			if (modulePath === undefined || !(yield* fs.exists(modulePath))) {
-				invalid = `backend module ${entry.module} is missing or outside the package`;
+			const modulePath = yield* canonicalFileInside(
+				fs,
+				path,
+				canonicalRoot.value,
+				entry.module,
+			).pipe(Effect.option);
+			if (modulePath._tag === "None" || modulePath.value === undefined) {
+				invalid = {reason: "backend-module-unavailable"};
 				break;
 			}
+			const canonicalModulePath = modulePath.value;
 			const loaded = yield* Effect.tryPromise({
-				try: () => import(pathToFileURL(modulePath).href),
+				try: () => import(pathToFileURL(canonicalModulePath).href),
 				catch: (cause) =>
 					new ContributionStartupFailure({
 						packageName,
-						message: `Backend module ${entry.module} failed to load`,
+						message: "Backend contribution module failed to load",
 						cause,
 					}),
 			});
 			const factory = loaded[entry.export];
 			if (typeof factory !== "function") {
-				invalid = `backend export ${entry.export} is not a factory`;
+				invalid = {reason: "backend-export-not-factory"};
 				break;
 			}
 			const layer = yield* Effect.try({
@@ -239,32 +343,39 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 				catch: (cause) =>
 					new ContributionStartupFailure({
 						packageName,
-						message: `Backend factory ${entry.export} failed`,
+						message: "Backend contribution factory failed",
 						cause,
 					}),
 			});
 			const decodedLayer = Schema.decodeUnknownOption(BackendLayer)(layer);
 			if (decodedLayer._tag === "None") {
-				invalid = `backend export ${entry.export} did not return an Effect Layer`;
+				invalid = {reason: "backend-export-not-layer"};
 				break;
 			}
 			packageBackend.push({
 				packageName,
 				source,
-				module: modulePath,
+				module: canonicalModulePath,
 				exportName: entry.export,
 				layer: decodedLayer.value,
 			});
 		}
 		if (invalid !== undefined) {
-			reject(packageName, invalid);
+			reject(invalid);
 			continue;
 		}
 		for (const key of packageKeys) keys.add(key);
+		for (const [assetUrl, assetFile] of packageAssetFiles) assetFiles.set(assetUrl, assetFile);
 		frontend.push(...packageFrontend);
 		backend.push(...packageBackend);
 	}
-	return {contractVersion: 1, backend, frontend, diagnostics} satisfies TuvalContributionCatalog;
+	return {
+		contractVersion: 1,
+		backend,
+		frontend,
+		assetFiles,
+		diagnostics,
+	} satisfies TuvalContributionCatalog;
 });
 
 export const buildPackageBackendLayers = Effect.fn("TuvalPackages.buildBackend")(function* (
@@ -283,7 +394,7 @@ export const buildPackageBackendLayers = Effect.fn("TuvalPackages.buildBackend")
 				(cause) =>
 					new ContributionStartupFailure({
 						packageName: contribution.packageName,
-						message: `Backend layer ${contribution.exportName} failed to build`,
+						message: "Backend contribution layer failed to build",
 						cause,
 					}),
 			),
@@ -293,12 +404,11 @@ export const buildPackageBackendLayers = Effect.fn("TuvalPackages.buildBackend")
 
 export const emitContributionCatalog = (catalog: TuvalContributionCatalog) => ({
 	contractVersion: catalog.contractVersion,
-	frontend: catalog.frontend.map(({kind, key, asset, packageName, source}) => ({
+	frontend: catalog.frontend.map(({kind, key, asset, packageName}) => ({
 		kind,
 		key,
 		asset,
 		packageName,
-		source,
 	})),
-	diagnostics: catalog.diagnostics,
+	diagnostics: catalog.diagnostics.map((diagnostic) => ({...diagnostic})),
 });
