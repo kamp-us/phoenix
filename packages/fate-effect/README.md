@@ -45,21 +45,31 @@ runtime function.
 ## Compose one config and layer
 
 Build the one config shared by serving and code generation, then discharge domain services in its
-layer:
+layer. Pass the per-request service keys as `FateServer.layer`'s second argument: it is a type-level
+witness (ADR 0107 §7) that lifts those services out of the layer's build-time requirements, so their
+values arrive per request through `FateRequestContext.requestServices` instead. Wrap the mutations
+only on the serving path — code generation reads the plain config:
 
 ```ts
 import {FateServer} from "@kampus/fate-effect";
 import * as Layer from "effect/Layer";
+import {CurrentActor} from "@kampus/authz";
 import {fateConfig} from "./config.ts";
 import {makeFateLayer} from "./layers.ts";
+import {RequestFlagOverrides} from "../flagship/FlagsContext.ts";
+import {PanoFeedCache} from "../pano/feed-cache.ts";
+import {throttleMutations} from "../throttle/throttle-mutations.ts";
 
-export const PhoenixFateLive = FateServer.layer(fateConfig).pipe(
-	Layer.provideMerge(makeFateLayer),
-);
+export const PhoenixFateLive = FateServer.layer(
+	{...fateConfig, mutations: throttleMutations(fateConfig.mutations)},
+	[CurrentActor, RequestFlagOverrides, PanoFeedCache],
+).pipe(Layer.provideMerge(makeFateLayer));
 ```
 
-Use the [server pattern](../../.patterns/fate-effect-server.md) when adding sources or request
-services.
+Omit the second argument only when the config needs no request services; with it omitted, anything
+the operations require stays a build-time requirement of the layer. The shipping composition is the
+worker's [fate layers](../../apps/web/worker/features/fate/layers.ts). Use the
+[server pattern](../../.patterns/fate-effect-server.md) when adding sources or request services.
 
 ## Serve a request
 
