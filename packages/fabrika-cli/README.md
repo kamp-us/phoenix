@@ -208,6 +208,14 @@ Contract: [`skills/build/contract.md`](../../claude-plugins/fabrika/skills/build
 | `build verdicts` | the latest gate verdict per namespace at a PR's live head |
 | `build clear` | the founder's clearance of one extra repair round |
 | `build reap` | which finished `.claude/worktrees/agent-*` trees are provably safe to remove — a dry run unless `--execute` |
+| `build retire-branch` | which of an epic child's lane branches the board attests to, and the rename that moves the rest out of `build/` |
+
+`build retire-branch` is the recovery ADR [0324](../../.decisions/0324-retire-superseded-lane-branch.md)
+rules for a clone already in the two-branch state, where `lane prove` refuses because two branches
+carry one child's commits. It **renames** the superseded ones into `retired/` and deletes nothing, so
+a mistaken retirement costs a rename back rather than a child's only copy of its work. The survivor
+is the candidate whose lane nonce an authorized claim marker carries — where the board attests none,
+or attests two, it renames nothing and refuses.
 
 `build reap` is the bulk counterpart to `build retire`. `retire` targets the trees holding ONE
 number's lane branch and needs a board statement to release them; `reap` sweeps the whole agent
@@ -225,7 +233,9 @@ outside all three surfaces' validators · `23` the local head would drop publish
 `24` `git commit` ran and HEAD did not move · `25` this account may not clear a cap · `26` the
 quoted authorization is empty or undated · `29` the grant is on the PR and the local lane did not
 take it · `30` the deliverable is not a pull request a build lane produces · `31` the claim's mode
-and the child's standing verdict disagree. `12` is a retired seat.
+and the child's standing verdict disagree · `32` the issue body carries no readable acceptance
+criteria · `33` a working tree holds the lane branch and the board licenses no release · `34` the
+board attests no single survivor among a child's lane branches. `12` is a retired seat.
 
 ## The `ci` group
 

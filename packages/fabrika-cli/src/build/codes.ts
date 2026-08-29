@@ -197,3 +197,14 @@ export const NO_ACCEPTANCE_CRITERIA = 32;
  * is standing where you need to be, with the board declining to move it.
  */
 export const WORKTREE_HELD = 33;
+/**
+ * Proven: the board attests no survivor among a child's lane branches, so none is superseded.
+ *
+ * A *proven* refusal about the board — the markers were read in full and the ACL resolved — so it
+ * never borrows {@link PRECONDITION_UNKNOWN}. Its own seat rather than {@link CLAIM_NOT_MINE}'s:
+ * `15` is about the caller's own claim, and this verb runs against a branch its lane never cut, so
+ * whether the caller holds anything is not the question. The remedy is unlike every neighbour's —
+ * the live lane re-claims through `build resume-child`, and until some authorized marker carries a
+ * candidate's lane nonce there is nothing to rename (ADR 0324).
+ */
+export const SURVIVOR_UNATTESTED = 34;
